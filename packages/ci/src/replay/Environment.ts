@@ -9,6 +9,7 @@
 import { toolEnvironment } from "@smthrs/targets/Exec"
 import { availableParallelism } from "node:os"
 import { delimiter } from "node:path"
+import { runnerSoftware } from "../contract/Inventory.ts"
 
 /**
  * The directories a replay makes for the steps of one way of running a
@@ -248,6 +249,24 @@ export const stepEnvironment = (
     ...(declared["PATH"] === undefined ? {} : { PATH: guardedPath(place.guard, declared["PATH"]) })
   }, [])
 })
+
+/**
+ * What a step that runs as on a GitHub runner is told of the software this
+ * machine has: each of {@link runnerSoftware} that is set to something.
+ *
+ * @category environment
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const softwareEnvironment = (
+  environment: Readonly<Record<string, string | undefined>>
+): Readonly<Record<string, string>> =>
+  Object.fromEntries(
+    runnerSoftware.flatMap((name) => {
+      const value = environment[name]
+      return value === undefined || value === "" ? [] : [[name, value]]
+    })
+  )
 
 /**
  * The variables of the person who runs the replay, as this process has them.

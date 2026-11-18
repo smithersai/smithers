@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { parse as parseYaml } from "yaml"
 import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
-import { ci, commitNote, Inventory, runnerEntry, script, shell } from "../src/contract/Inventory.ts"
+import { ci, commitNote, Inventory, runnerEntry, runnerSoftware, script, shell } from "../src/contract/Inventory.ts"
 import {
   type Failure,
   type GeneratedFile,
@@ -381,8 +381,17 @@ describe("what a step becomes", () => {
     )
     expect(text).toContain("echo ${{ steps.pick.outputs.lane }} $RUNNER_TEMP $GITHUB_SHA linux")
     expect(target).toContain(JSON.stringify(`${shell.join(" ")} '${text.replaceAll("'", `'\\''`)}'`))
-    expect(target).not.toContain("inheritEnv")
+    // The runner text gives every runner variable itself. Where the machine has a runner's software it cannot give.
+    expect(target).toContain(`inheritEnv: ${JSON.stringify(runnerSoftware)}`)
     expect(source).not.toContain("not generated")
+  })
+
+  it("lets a step with runner text keep a software variable it sets itself", () => {
+    const runner = `${runnerEntry}() { bash -e -c "$1"; }`
+    const own = step("a:1", "java -version", { runner, env: { JAVA_HOME: "/own" } })
+    const target = declaration(targetsOf(inventory([job("a", [own])])), "a-1")
+    expect(target).toContain(`env: {"JAVA_HOME":"/own"}`)
+    expect(target).toContain(`inheritEnv: ${JSON.stringify(runnerSoftware.filter((name) => name !== "JAVA_HOME"))}`)
   })
 
   it("holds a step with runner text to its inputs only as its job's first step, and never when it reads the commit", () => {

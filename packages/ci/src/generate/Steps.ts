@@ -54,6 +54,7 @@ import {
   type Inventory,
   type Job,
   readsCommit,
+  runnerSoftware,
   script,
   shell,
   type Step,
@@ -421,9 +422,10 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     }
     // The runner's own variables reach a step only when it names them. They
     // enter its key, so a step that reads the commit reruns on every commit.
-    // Runner text gives its step every runner variable itself.
+    // Runner text gives its step every runner variable itself. What it cannot give is where the machine has the
+    // software a runner comes with: a step reads that from the machine, and an unset name is left out.
     const inheritEnv = step.runner !== undefined
-      ? []
+      ? runnerSoftware.filter((name) => !Object.hasOwn(env, name))
       : sorted([...command.matchAll(runnerVariable)].map((match) => match[1] as string))
         .filter((name) => name !== "GITHUB_TOKEN" && !Object.hasOwn(env, name))
     const title = `${job.name} / ${step.name ?? step.id}`

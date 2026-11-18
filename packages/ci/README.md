@@ -176,6 +176,9 @@ and none removes):
   steps or without. Such a step runs on a copy of what the steps before it left and leaves nothing; nothing may
   read its `outputs` or `outcome`. Any other code that removes a step from a job breaks the job: a step's runner
   text knows its place.
+- `Inventory.runnerSoftware`: the variables by which a GitHub runner tells a step where its Android SDK, Java versions,
+  browser drivers, Conda and vcpkg are. A step with runner text is given those the machine sets, in the baseline and
+  as a target, unless it sets one itself.
 - `Inventory.stateVariable` (`SMITHERS_CI_STATE`): the variable a baseline step is told by where files are kept
   from one run to the next, as a cache step keeps them. The replay sets it to a directory of its own, outside every
   checkout and every home. A generated target is told through Smithers build's cache directory, written into its

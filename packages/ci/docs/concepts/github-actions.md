@@ -168,6 +168,25 @@ deletes system directories to free disk space, is left out.
 A script that names another `GITHUB_` or `RUNNER_` variable leaves its job out:
 no runner is there to give it.
 
+### Software a runner comes with
+
+A GitHub runner has the Android SDK, several Java versions, browser drivers,
+Conda and vcpkg installed, and its variables say where they are. Steps use them
+without a workflow naming them. When your machine sets one of these variables,
+a step is given its value, in the baseline and in your new CI:
+
+| Software        | Variables                                                                                                            |
+| --------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Android         | `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `ANDROID_NDK`, `ANDROID_NDK_HOME`, `ANDROID_NDK_ROOT`, `ANDROID_NDK_LATEST_HOME` |
+| Java            | `JAVA_HOME`, `JAVA_HOME_8_X64`, `JAVA_HOME_11_X64`, `JAVA_HOME_17_X64`, `JAVA_HOME_21_X64`, `JAVA_HOME_25_X64`       |
+| Browser drivers | `CHROMEWEBDRIVER`, `EDGEWEBDRIVER`, `GECKOWEBDRIVER`, `SELENIUM_JAR_PATH`                                            |
+| Packages        | `CONDA`, `VCPKG_INSTALLATION_ROOT`                                                                                   |
+
+A step that sets one of them itself keeps its own value. Smithers CI installs
+none of this software. A job that needs what your machine lacks fails in the
+first run, and the report lists it with the first line of its error. Install
+the software and set its variable, then run again.
+
 ## Actions
 
 | A step that uses                                                    | Becomes                                                                                                                                                         |

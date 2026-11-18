@@ -265,6 +265,40 @@ export const toolCache = ".flows/tools"
 export const stateVariable = "SMITHERS_CI_STATE"
 
 /**
+ * The variables by which a GitHub runner tells a step where the software it
+ * comes with is: the Android SDK and NDK, the Java versions, the browser
+ * drivers, Conda and vcpkg. A workflow names none of them and its steps count
+ * on them. A step with `runner` text is given those this machine sets, in the
+ * baseline and as a target. The list is the "Environment variables" tables of
+ * GitHub's Ubuntu 24.04 image, with `JAVA_HOME`, which the image sets to its
+ * default Java:
+ * https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const runnerSoftware: ReadonlyArray<string> = [
+  "ANDROID_HOME",
+  "ANDROID_NDK",
+  "ANDROID_NDK_HOME",
+  "ANDROID_NDK_LATEST_HOME",
+  "ANDROID_NDK_ROOT",
+  "ANDROID_SDK_ROOT",
+  "CHROMEWEBDRIVER",
+  "CONDA",
+  "EDGEWEBDRIVER",
+  "GECKOWEBDRIVER",
+  "JAVA_HOME",
+  "JAVA_HOME_11_X64",
+  "JAVA_HOME_17_X64",
+  "JAVA_HOME_21_X64",
+  "JAVA_HOME_25_X64",
+  "JAVA_HOME_8_X64",
+  "SELENIUM_JAR_PATH",
+  "VCPKG_INSTALLATION_ROOT"
+]
+
+/**
  * The shell function a step's `runner` text defines.
  *
  * @category constants

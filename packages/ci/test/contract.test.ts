@@ -813,6 +813,12 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
     expect(JSON.stringify(Command.environment)).not.toContain(Inventory.stateVariable)
   })
 
+  it("names the variables a GitHub runner tells a step its software by, sorted and free of its own", () => {
+    expect(Inventory.runnerSoftware).toEqual([...Inventory.runnerSoftware].sort())
+    expect(Inventory.runnerSoftware).toEqual(expect.arrayContaining(["ANDROID_HOME", "ANDROID_SDK_ROOT", "JAVA_HOME"]))
+    expect(Inventory.runnerSoftware.filter((name) => /TOKEN|SECRET|KEY/.test(name))).toEqual([])
+  })
+
   it("compares a step with all the targets it was split into", () => {
     const entry = (label: string) => ({ label, job: "ci.yml:test", step: "ci.yml:test:1", variant: {} })
     const map = Schema.decodeUnknownSync(TargetMap.TargetMap)({

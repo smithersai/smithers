@@ -15,6 +15,7 @@ import {
   type NotReplayed,
   notReplayed,
   refusal,
+  runnerEntry,
   shell,
   stateVariable,
   stepTimeoutHours,
@@ -38,9 +39,11 @@ import { refusal as ownWorkspace } from "../native/Workspace.ts"
 import { withReasons } from "../native/Results.ts"
 import { type Confined, confine, held, reading, type Way } from "./Confine.vibe"
 import {
+  ambientEnvironment,
   coreCount,
   pushRefusal,
   searchPath,
+  softwareEnvironment,
   stepEnvironment,
   thisHost
 } from "./Environment.ts"
@@ -488,14 +491,16 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     let runs = 0
+    // Where this machine has the software a GitHub runner comes with. A step with runner text is told.
+    const software = softwareEnvironment(ambientEnvironment())
     /**
      * The whole environment of a `smthrs` started in `copy`: what a step of the way gets of the machine, with its
      * home, the stand-ins first on `PATH` and the push refusal, then where the shared cache and the compiled code
-     * are. Nothing else of the person's reaches it, the jail around it, or what it starts: a step can read the
-     * environment of every process it runs beside.
+     * are. Its targets take from it only what they name. Nothing else of the person's reaches it, the jail around
+     * it, or what it starts: a step can read the environment of every process it runs beside.
      */
     const startEnv = (copy: string, place: Confined) => ({
-      ...stepEnvironment(place.daemon, place),
+      ...stepEnvironment({ ...software, ...place.daemon }, place),
       ...(request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }),
       NODE_COMPILE_CACHE: path.join(copy, compiledCode)
     })
@@ -596,7 +601,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           // Only a step whose text names the variable is given it: the text takes it away before the step's own
           // script starts, and a step with no such text would hand it on.
           const told = step.command.includes(stateVariable) ? { [stateVariable]: kept } : {}
-          const environment = stepEnvironment({ ...place.daemon, ...step.env, ...told }, place)
+          const given = step.command.includes(runnerEntry) ? software : {}
+          const environment = stepEnvironment({ ...given, ...place.daemon, ...step.env, ...told }, place)
           // A step that cannot start, for example because its directory does not exist at this commit, has failed.
           const output = runStep(program, argv, path.join(copy, step.cwd), environment, stepLimit, stall)
             catch (cause) => ({ timedOut: false, stalled: false, exitCode: undefined, stderr: `could not start: ${describe(cause)}`, stdout: "" } satisfies StepRun)
