@@ -148,6 +148,53 @@ describe("text", () => {
   })
 })
 
+describe("jobs that were not replayed", () => {
+  const partial: ReplayReport = {
+    ...clean,
+    notReplayed: [
+      {
+        job: "ci.yml:handoff",
+        reasons: [
+          { feature: "secret-env", detail: "sets GH_TOKEN from a secret" },
+          { feature: "condition", detail: "runs only on main" },
+          { feature: "secret-env", detail: "sets NPM_TOKEN from a secret" }
+        ]
+      },
+      { job: "ci.yml:<e2e>\u001b[2J", reasons: [{ feature: "needs", detail: "needs ci.yml:handoff" }] },
+      { job: "ci.yml:plain", reasons: [] }
+    ]
+  }
+
+  it("counts them beside the commits and lists each with its reasons, in the terminal", () => {
+    const lines = text(partial).split("\n")
+    expect(lines).toContain("2 commits · 0 mismatches · 3 jobs not replayed")
+    expect(lines.slice(-3)).toEqual([
+      "ci.yml:handoff    secret-env, condition",
+      "ci.yml:<e2e>\uFFFD[2J  needs",
+      "ci.yml:plain"
+    ])
+    expect(text({ ...partial, notReplayed: [partial.notReplayed![2]!] })).toContain("· 1 job not replayed")
+  })
+
+  it("does the same on the page, escaped", () => {
+    const page = html(partial)
+    expect(page).toContain("<p class=\"summary\">2 commits · 0 mismatches · 3 jobs not replayed</p>")
+    expect(page).toContain(
+      "<tr><th scope=\"row\"><code>ci.yml:handoff</code></th><td class=\"sub\">secret-env, condition</td></tr>"
+    )
+    expect(page).toContain("<code>ci.yml:&lt;e2e&gt;")
+    expect(page.indexOf("<h2>Not replayed</h2>")).toBeGreaterThan(page.indexOf("<h2>Commits</h2>"))
+  })
+
+  it("says nothing when every job was replayed", () => {
+    for (const report of [clean, { ...clean, notReplayed: [] }]) {
+      expect(text(report)).not.toContain("not replayed")
+      expect(html(report)).not.toContain("Not replayed")
+      expect(text(report).split("\n").at(-1)).toBe("2 commits · 0 mismatches")
+    }
+  })
+})
+
 describe("html", () => {
   it("holds the same facts as the text", () => {
     const page = html(example)

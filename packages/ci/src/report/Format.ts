@@ -5,6 +5,8 @@
  * @since 0.1.0
  */
 
+import type { NotReplayed } from "../contract/Inventory.ts"
+
 /**
  * Elapsed time in the largest units that keep it short: `850ms`, `12.3s`,
  * `7m 20s`, `1h 05m`.
@@ -95,3 +97,20 @@ export const bar = (value: number, max: number, width: number): string => {
   const drawn = value > 0 ? Math.max(total, 1) : 0
   return "█".repeat(Math.floor(drawn / 8)) + eighths[drawn % 8]
 }
+
+/**
+ * How many CI jobs were left out, or nothing when none was.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const leftOut = (jobs: number): string => jobs === 0 ? "" : ` · ${count(jobs, "job")} not replayed`
+
+/**
+ * Why a job was left out: each feature once, in the order found.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const reasons = (entry: NotReplayed): string =>
+  [...new Set(entry.reasons.map((reason) => reason.feature))].join(", ")

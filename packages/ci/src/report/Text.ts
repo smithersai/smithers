@@ -1,7 +1,9 @@
 /**
  * The replay report as `smithers-ci` prints it: numbers and a bar chart, no
  * sentences. A mismatch is the first line whenever there is one, and every
- * mismatch is listed; nothing about a wrong verdict is summarised away.
+ * mismatch is listed; nothing about a wrong verdict is summarised away. A CI
+ * job that was not replayed is counted beside the commits and listed with its
+ * reasons, so the speedup is never read as covering it.
  *
  * Labels and commit ids come from the repository being replayed, so control
  * characters in them are replaced before they reach a terminal.
@@ -10,7 +12,7 @@
  */
 
 import type { RenderReport } from "../contract/Parts.ts"
-import { bar, count, duration, mismatches, ratio, shortCommit, speedup, times } from "./Format.ts"
+import { bar, count, duration, leftOut, mismatches, ratio, reasons, shortCommit, speedup, times } from "./Format.ts"
 
 const width = 24
 
@@ -60,7 +62,8 @@ export const text: RenderReport = (report) => {
       ...(mode.ratio === undefined ? [] : [times(mode.ratio).padStart(ratioWidth)])
     ].join("  ")
   ))
-  sections.push([`${count(report.commits.length, "commit")} · ${mismatches(found)}`])
+  const left = report.notReplayed ?? []
+  sections.push([`${count(report.commits.length, "commit")} · ${mismatches(found)}${leftOut(left.length)}`])
   if (listed.length > 0) {
     sections.push(listed.map((mismatch) =>
       [
@@ -70,6 +73,10 @@ export const text: RenderReport = (report) => {
         `${mismatch.baseline} → ${mismatch.got}`
       ].join("  ")
     ))
+  }
+  if (left.length > 0) {
+    const jobWidth = Math.max(...left.map((entry) => clean(entry.job).length))
+    sections.push(left.map((entry) => `${clean(entry.job).padEnd(jobWidth)}  ${clean(reasons(entry))}`.trimEnd()))
   }
   return sections.map(paragraph).join("\n\n")
 }

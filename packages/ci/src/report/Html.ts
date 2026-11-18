@@ -9,10 +9,11 @@
  * @since 0.1.0
  */
 
+import type { NotReplayed } from "../contract/Inventory.ts"
 import type { RenderReport } from "../contract/Parts.ts"
 import type { Mismatch, ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
 import type { Metrics } from "../contract/Selection.ts"
-import { count, duration, mismatches, percent, ratio, shortCommit, speedup, times } from "./Format.ts"
+import { count, duration, leftOut, mismatches, percent, ratio, reasons, shortCommit, speedup, times } from "./Format.ts"
 
 const entities: Readonly<Record<string, string>> = {
   "&": "&amp;",
@@ -137,6 +138,16 @@ const commitRows = (commit: ReplayCommit, withFast: boolean): string => {
   }</ul></td></tr>`
 }
 
+const notReplayedTable = (left: ReadonlyArray<NotReplayed>): string =>
+  [
+    "<h2>Not replayed</h2>",
+    "<div class=\"scroll\"><table>",
+    ...left.map((entry) =>
+      `<tr><th scope="row"><code>${escape(entry.job)}</code></th><td class="sub">${escape(reasons(entry))}</td></tr>`
+    ),
+    "</table></div>"
+  ].join("\n")
+
 const commitTable = (commits: ReadonlyArray<ReplayCommit>): string => {
   const withFast = commits.some((commit) => commit.fast !== undefined)
   return [
@@ -175,9 +186,13 @@ export const html: RenderReport = (report) => {
     }
     body.push(`<p class="hero">${speedup(report.speedup)}</p>`)
     body.push(bars(modes))
-    body.push(`<p class="summary">${count(report.commits.length, "commit")} · ${mismatches(found)}</p>`)
+    const left = report.notReplayed ?? []
+    body.push(
+      `<p class="summary">${count(report.commits.length, "commit")} · ${mismatches(found)}${leftOut(left.length)}</p>`
+    )
     if (report.selection !== undefined) body.push(selection(report.selection))
     body.push(commitTable(report.commits))
+    if (left.length > 0) body.push(notReplayedTable(left))
   }
   return `${head(`${report.repository} · Smithers CI`)}\n<body>\n<main>\n${
     body.join("\n")
