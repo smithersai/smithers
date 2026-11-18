@@ -260,6 +260,13 @@ not hold the daemon.
 A refused push fails its step in the baseline and as a target alike, so it is
 never a mismatch.
 
+A target runs the tools your CI runs. Every program on your `PATH` is there by
+name, wherever it is installed: Node under nvm, fnm, Volta, asdf or mise, Bun
+under `~/.bun`, Zig unpacked in your home directory. A target reads those
+tools and nothing else of your home directory, and it runs again when a tool
+its step names changes. A step whose tool is not installed fails with one
+line that names the tool.
+
 In the baseline, a GitHub Actions job runs in a fresh checkout of its own.
 The recipes of one Justfile, the rules of one Makefile, and the scripts of one
 `package.json` run one after another in one checkout, in the order the `ci`
