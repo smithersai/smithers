@@ -151,7 +151,8 @@ export const failureExitCodes = {
  * @since 0.1.0
  */
 export const syntax = {
-  value: "A flag's value is the next argument, as in `--commits 5`. `--json` and `--allow-docker` take no value.",
+  value:
+    "A flag's value is the next argument, as in `--commits 5`. `--no-trial`, `--cold`, `--json`, `--allow-root`, `--check` and `--allow-docker` take no value.",
   help: "`--help` and `-h` are accepted on every command and print its commands and flags."
 } as const
 

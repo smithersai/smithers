@@ -338,8 +338,11 @@ export interface FailedStep {
 }
 
 /**
- * The steps that failed at a commit. A step that failed the same way in the
- * baseline and in a mode is one entry.
+ * The steps that failed at a commit. A step that failed with the same exit
+ * code in the baseline and in a mode is one entry, with the reason of the
+ * first way it failed in: the two take their reason from the same output,
+ * and not always from the same line of it. Without an exit code, the reason
+ * tells one failure from another.
  *
  * @category formatting
  * @since 0.1.0
@@ -349,7 +352,7 @@ export const failedSteps = (commit: ReplayCommit): ReadonlyArray<FailedStep> => 
   const runs = [["baseline", commit.baseline], ["normal", commit.normal], ["fast", commit.fast]] as const
   for (const [way, totals] of runs) {
     for (const failure of totals?.failures ?? []) {
-      const key = JSON.stringify([failure.step, failure.exitCode, failure.reason])
+      const key = JSON.stringify([failure.step, failure.exitCode ?? failure.reason])
       const entry = found.get(key) ?? { ways: [], failure }
       if (!entry.ways.includes(way)) entry.ways.push(way)
       found.set(key, entry)

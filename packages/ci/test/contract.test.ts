@@ -526,7 +526,7 @@ describe("contract 7: command surface", () => {
     expect(Command.flags["allow-docker"].on).toEqual(["", "replay", "apply"])
     expect(Command.flags["allow-docker"].default).toBe("false")
     expect(Command.flags["allow-docker"].help).toContain("every file of this machine")
-    expect(Command.syntax.value).toContain("`--json` and `--allow-docker` take no value")
+    expect(Command.syntax.value).toContain("`--check` and `--allow-docker` take no value")
     expect(Object.keys(Command.environment)).toEqual(
       expect.arrayContaining([
         "PATH",

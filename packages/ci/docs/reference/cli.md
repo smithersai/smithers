@@ -85,6 +85,9 @@ it. The workflow `apply` writes runs this check as its first step; see
 | `--check`         | `smithers-ci apply`                                          | `false`  | Write nothing; name each file apply would change, and exit 1 if there is one.                                                                       |
 | `--allow-docker`  | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | `false`  | Take the jobs that run docker or podman too, and let a replayed step reach a container daemon, which can read and write every file of this machine. |
 
+A flag's value is the next argument, as in `--commits 5`. `--no-trial`, `--cold`, `--json`, `--allow-root`, `--check` and `--allow-docker` take no value.
+`--help` and `-h` are accepted on every command and print its commands and flags.
+
 Of the commits `--commits` counts, one that had no CI the program can run is not
 replayed; the report lists it with the reason.
 

@@ -83,6 +83,22 @@ describe("command reference", () => {
     expect(documented(reference)).toEqual(contract)
   })
 
+  it("names every flag: in the Flags table, and in the syntax line exactly when it takes no value", () => {
+    const names = Object.keys(Command.flags) as ReadonlyArray<keyof typeof Command.flags>
+    expect(Object.keys(documented(reference).flags).sort()).toEqual([...names].sort())
+    // The line gives one flag with its value as the example, and then every flag that takes none.
+    const [example = "", none = ""] = Command.syntax.value.split(". ")
+    const namedIn = (sentence: string) => [...sentence.matchAll(/`--([a-z-]+)[ `]/g)].map((match) => match[1])
+    expect(namedIn(none).sort()).toEqual(names.filter((name) => Command.flags[name].default === "false").sort())
+    for (const name of namedIn(example)) {
+      expect(Command.flags[name as keyof typeof Command.flags].default).not.toBe("false")
+    }
+    expect(namedIn(example)).toHaveLength(1)
+    // The page states both rules in the contract's words.
+    expect(reference).toContain(Command.syntax.value)
+    expect(reference).toContain(Command.syntax.help)
+  })
+
   it("gives each exit code the meaning contract 7 gives it", () => {
     const meanings = Object.fromEntries(
       table(reference, "Exit codes").map(([_value, name, meaning]) => [code(name!), meaning])

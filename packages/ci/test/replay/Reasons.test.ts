@@ -138,9 +138,42 @@ describe("what smthrs printed for a failed target", () => {
     expect(printedFailure(doubled).error).toBe("real error")
   })
 
+  it("finds the output after a script that follows other statements, as a job's middle step is written", () => {
+    // What `smthrs` prints for a generated step that is not its job's last: two statements, then the step's
+    // script as one quoted word, then what the step printed, error output first.
+    const middle = [
+      "command failed (exit 7): /bin/sh -c mkdir -p .flows/ci || exit",
+      ": > .flows/ci/ci.yml-build-2 || exit",
+      "bash -e -c '__smithers_ci_unit='\\'''\\''",
+      "__smithers_ci_step() {",
+      "set +e",
+      "}",
+      "__smithers_ci_step '\\''echo \"middle starts\"",
+      "echo \"the middle broke\" >&2",
+      "exit 7'\\'''",
+      "the middle broke",
+      "middle starts"
+    ].join("\n")
+    expect(printedFailure(middle)).toMatchObject({ error: "the middle broke", exitCode: 7 })
+    // A script on one line ends at its line break, whatever a later line quotes.
+    const oneLine = "command failed (exit 1): /bin/sh -c bash -c 'exit 1' now\nit said 'no\nand' more\nlast"
+    expect(printedFailure(oneLine).error).toBe("it said 'no")
+    // Only a command's first lines can hold its script: later, a quoted word over lines is what it printed.
+    const late = [
+      "command failed (exit 1): make",
+      ...Array.from({ length: 9 }, (_, n) => `line ${n}`),
+      "sh -c 'a",
+      "b'"
+    ]
+    expect(printedFailure(late.join("\n")).error).toBe("line 0")
+  })
+
   it("ends a command whose quotes never close at its first line break", () => {
     expect(printedFailure("command failed (exit 1): sh -c echo 'open\nthe error")).toMatchObject({ error: "the error" })
     expect(printedFailure("command failed (exit 1): sh -c echo 'open")).toMatchObject({ error: "it printed nothing" })
+    expect(printedFailure("command failed (exit 1): true\nsh -c 'open\nthe error")).toMatchObject({
+      error: "sh -c 'open"
+    })
   })
 
   it("reads any other text as its first line", () => {

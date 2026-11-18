@@ -85,6 +85,47 @@ describe("smithers-ci on a repository where one job cannot pass here", { timeout
   })
 })
 
+describe("smithers-ci on a job whose middle step fails", { timeout: 600_000 }, () => {
+  const steps = (...commands: ReadonlyArray<string>): string =>
+    [
+      "on: push",
+      "jobs:",
+      "  build:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      ...commands.map((command) => `      - run: ${command}`),
+      ""
+    ].join("\n")
+
+  it("gives the step's own error as the reason, in the baseline and in normal mode, on one line", async () => {
+    const file = ".github/workflows/ci.yml"
+    const root = repositoryOf({
+      [file]: steps("sh check.sh", "echo 'the middle starts'; echo 'the middle broke' >&2; exit 7", "sh check.sh"),
+      "check.sh": "exit 0\n"
+    })
+    const json = await spawn(bin, ["--commits", "1", "--no-trial", "--json"], root)
+    const report = JSON.parse(json.stdout) as {
+      readonly commits: ReadonlyArray<Record<"baseline" | "normal", { readonly failures?: ReadonlyArray<unknown> }>>
+    }
+    const failure = expect.objectContaining({ reason: "the middle broke", exitCode: 7 })
+    expect(report.commits[0]?.baseline.failures).toEqual([failure])
+    // Not the first line of what stands around the step in the generated build file.
+    expect(report.commits[0]?.normal.failures).toEqual([failure])
+  })
+
+  it("lists a step that wrote no error output once, though each way reads its reason from another line", async () => {
+    const file = ".github/workflows/ci.yml"
+    const root = repositoryOf({
+      [file]: steps("sh check.sh", "echo 'one'; echo 'two failed'; exit 6", "sh check.sh"),
+      "check.sh": "exit 0\n"
+    })
+    const outcome = await spawn(bin, ["--commits", "1", "--no-trial"], root)
+    const listed = outcome.stdout.split("\n").filter((line) => line.includes("exit 6"))
+    expect(listed).toHaveLength(1)
+    expect(listed[0]).toMatch(/^\w{7} {2}baseline, normal {2}\S.* {2}exit 6: two failed$/)
+  })
+})
+
 describe("smithers-ci on a repository whose CI fails here", { timeout: 600_000 }, () => {
   it("exits 3 with the first failure and no speedup when no step ever passes", async () => {
     const file = ".github/workflows/ci.yml"

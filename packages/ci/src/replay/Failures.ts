@@ -240,20 +240,42 @@ const commandOfArgv = (argv: ReadonlyArray<string>): string =>
 /** How `smthrs` heads the output of a shell target whose command failed. The command and the output follow. */
 const failedCommand = /^command failed \(exit (-?\d+)\): /
 
+/** How many lines of a printed command may come before the script a shell is given as one quoted word. */
+const leadingLines = 8
+
 /**
- * Where a printed shell command ends: at the first line break outside its
- * quotes, since a command can hold many lines. A command whose quotes never
- * close ends at its first line break.
+ * Where a printed shell command ends. A command can hold many lines: a
+ * script given to a shell as one quoted word after `-c`, with short
+ * statements on the lines before it. So it ends at the first line break
+ * outside quotes after such a word, when one opens in the command's first
+ * lines and holds a line break; else at its first line break outside quotes.
+ * A command whose quotes never close ends at its first line break.
  */
 const endOfCommand = (text: string): number => {
   let quote: string | undefined
+  // The first line break outside quotes, how many there were, and the script word: open, and closed over lines.
+  let first: number | undefined
+  let lines = 0
+  let script = false
+  let spanned = false
   for (let index = 0; index < text.length; index++) {
     const character = text[index]
     if (character === "\\" && quote !== "'") index++
-    else if (quote !== undefined) quote = character === quote ? undefined : quote
-    else if (character === "'" || character === "\"") quote = character
-    else if (character === "\n") return index
+    else if (quote !== undefined) {
+      if (character === quote) quote = undefined
+      else if (character === "\n" && script) spanned = true
+    } else if (character === "'" || character === "\"") {
+      quote = character
+      script ||= text.slice(index - 3, index) === "-c "
+    } else if (character === "\n") {
+      if (spanned) return index
+      first ??= index
+      lines++
+      // Past the first lines, what follows is what the command printed.
+      if (lines >= leadingLines) break
+    } else if (character === " " && !spanned) script = false
   }
+  if (first !== undefined) return first
   const firstBreak = text.indexOf("\n")
   return quote === undefined || firstBreak === -1 ? text.length : firstBreak
 }
