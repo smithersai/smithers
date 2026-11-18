@@ -516,6 +516,32 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       })
     })
 
+  it.effect("gives a step that starts Zig with a flag, or beside another program, Zig's caches and nothing else", () =>
+    effect {
+      const root = try repository({ "build.zig": "", "src/main.zig": "" })
+      const before = separately([
+        step("ci.yml:test:1", "zig build test --summary all"),
+        step("ci.yml:unit:1", "make deps && zig test src/main.zig"),
+        step("ci.yml:gen:1", "zig build test --summary all", { cwd: "tools/gen" })
+      ])
+      const after = try splitWith()(root, before)
+      try Effect.try(() => {
+        expect(stepsOf(after)).toEqual([
+          // Left beside build.zig, Zig's cache is a file the step read that a fresh checkout does not have.
+          { ...stepsOf(before)[0], env: ZigSteps.environment },
+          { ...stepsOf(before)[1], env: ZigSteps.environment },
+          // Zig starts in another directory, where a path from the root names another place.
+          stepsOf(before)[2]
+        ])
+      })
+      // One job: a later step follows the first and may read what it built, so the first stays as it was.
+      const steps = [step("s:1", "zig build --summary all"), step("s:2", "zig build test --summary all")]
+      const together = try splitWith()(root, ci(steps))
+      try Effect.try(() => {
+        expect(stepsOf(together)).toEqual([steps[0], { ...steps[1], env: ZigSteps.environment }])
+      })
+    })
+
   it.effect("splits a step that is one Zig build into the named steps its build step groups", () =>
     effect {
       const root = try repository({ "build.zig": "", "src/core.zig": "", "src/cli.zig": "" })

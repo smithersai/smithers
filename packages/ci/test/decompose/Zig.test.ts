@@ -54,6 +54,59 @@ describe("Zig.soleBuild", () => {
   })
 })
 
+describe("Zig.runs", () => {
+  it("is true for a step that starts zig in the root, whatever else it runs", () => {
+    for (
+      const command of [
+        "zig build test",
+        "zig build test --summary all",
+        "zig build -Doptimize=ReleaseSafe test",
+        "zig test src/main.zig",
+        "zig fmt --check . && zig build test -Dtest-filter=rlp",
+        "make deps; zig build",
+        "CI=1 zig build test",
+        "zig build test | tee log",
+        "set -euo pipefail\nzig build test --summary all",
+        `bash -c 'set -euo pipefail\nif [ -n "rlp" ]; then zig build test -Dtest-filter="rlp"; else zig build test; fi'`,
+        "zig build test -Doptimize=$MODE"
+      ]
+    ) expect([command, Zig.runs(step(command))]).toEqual([command, true])
+    // The root can be written as the directory the step starts in.
+    expect(Zig.runs(step("zig build test --summary all", { cwd: "." }))).toBe(true)
+  })
+
+  it("is false when no command is zig", () => {
+    for (
+      const command of [
+        "cargo test",
+        "echo zig build test",
+        "./zig-out/bin/app --version",
+        "CI=1",
+        "bash -c 'npm test'"
+      ]
+    ) expect([command, Zig.runs(step(command))]).toEqual([command, false])
+  })
+
+  it("is false when Zig starts somewhere else, so a path from its start would name another place", () => {
+    expect(Zig.runs(step("zig build test --summary all", { cwd: "tools/gen" }))).toBe(false)
+    expect(Zig.runs(step("cd tools/gen && zig build test"))).toBe(false)
+    expect(Zig.runs(step("pushd tools/gen; zig build; popd"))).toBe(false)
+    expect(Zig.runs(step("bash -c 'cd tools/gen && zig build test'"))).toBe(false)
+  })
+
+  it("is false when the step names Zig's cache, which it expects beside build.zig", () => {
+    expect(Zig.runs(step("zig build test --summary all && ls .zig-cache/o"))).toBe(false)
+    expect(Zig.runs(step("zig build --cache-dir .zig-cache test"))).toBe(false)
+  })
+
+  it("is false when a program is named by a variable, or the shell is more than is read", () => {
+    expect(Zig.runs(step("$ZIG build test"))).toBe(false)
+    expect(Zig.runs(step("zig build test; $AFTER"))).toBe(false)
+    expect(Zig.runs(step("for mode in Debug ReleaseSafe; do zig build test -Doptimize=$mode; done"))).toBe(false)
+    expect(Zig.runs(step("bash -c 'zig build $(cat step)'"))).toBe(false)
+  })
+})
+
 describe("Zig.dress", () => {
   it("keeps both of Zig's caches in the tool cache, and names no inputs", () => {
     const dressed = Zig.dress(step("zig build test"))

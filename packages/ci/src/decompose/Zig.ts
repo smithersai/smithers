@@ -22,6 +22,12 @@
  * what the change reaches, by Zig's own rules; and they stay out of what the
  * step is seen to read, so Zig's cache never makes it run again.
  *
+ * That holds for every step that starts `zig` where the repository's root
+ * is, whatever else is in it: `zig build test --summary all`, `zig test
+ * src/main.zig`, a build after another command. Left beside `build.zig`, the
+ * cache is a file the step read that a fresh checkout does not have, and the
+ * step would run again on every one.
+ *
  * @since 0.1.0
  */
 
@@ -66,6 +72,45 @@ const only = (list: ReadonlyArray<Command> | undefined): string | undefined => {
  * @since 0.1.0
  */
 export const soleBuild = (command: string): string | undefined => only(commands(command))
+
+/** Commands after which a path that does not start at `/` names another place. */
+const moves: ReadonlySet<string> = new Set(["cd", "pushd", "popd"])
+
+/** The program of every command a script can run, or `undefined` when one of them cannot be told. */
+const programs = (list: ReadonlyArray<Command> | undefined): ReadonlyArray<string> | undefined => {
+  if (list === undefined) return undefined
+  const found: Array<string> = []
+  for (const command of list) {
+    const head = command.words[0]
+    // Only variables are set: no program starts.
+    if (head === undefined) continue
+    const script = innerScript(command)
+    const inner = script === undefined ? [head.text] : programs(commands(script))
+    // A program named by a variable could be `zig`, or `cd`.
+    if (inner === undefined || !head.literal) return undefined
+    found.push(...inner)
+  }
+  return found
+}
+
+/**
+ * True when the step starts `zig` in the repository's root: one of its
+ * commands is `zig`, alone or beside others, straight or inside a `bash -c`.
+ *
+ * False when the step starts somewhere else or changes directory, because
+ * the cache directories are given from where Zig starts; when it names
+ * Zig's cache itself, which it then expects beside `build.zig`; and when its
+ * shell is more than this reader reads.
+ *
+ * @throws {never}
+ * @category reading
+ * @since 0.1.0
+ */
+export const runs = (step: Step): boolean => {
+  if ((step.cwd !== "" && step.cwd !== ".") || step.command.includes("zig-cache")) return false
+  const started = programs(commands(step.command))
+  return started !== undefined && started.includes("zig") && !started.some((program) => moves.has(program))
+}
 
 /**
  * A step that runs Zig, told where Zig keeps its caches. What the step

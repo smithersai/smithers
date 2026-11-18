@@ -151,6 +151,9 @@ const replaced = (
     // A Zig step names no inputs: its tests write where they start, so it runs in the open and is observed.
     return Zig.split(step, groups) ?? [Zig.dress(step)]
   }
+  // Zig with a flag, another of its commands, or beside a program this reader does not know: the step stays whole
+  // and keeps Zig's caches where a fresh checkout still has them.
+  if (understood === undefined && !relied && Zig.runs(step)) return [Zig.dress(step)]
   const decision = understood === undefined ? { kind: "whole" as const } : decide(step, understood, facts)
   if (decision.kind === "whole") return [step]
   if (decision.kind === "scope") return [{ ...step, inputs: decision.inputs, from: step.id }]

@@ -164,6 +164,16 @@ just ci:  tidy, then  zig build test
    runs, and nothing in it is part of the record. When a step does run again,
    Zig rebuilds only the compile steps whose files changed and reruns only the
    test binaries that came out different.
+6. **Any Zig command, not only a bare build.** `zig build test --summary all`,
+   `zig build -Doptimize=ReleaseSafe test`, `zig test src/main.zig` and
+   `make deps && zig build test` stay one step with their command as written,
+   and keep Zig's caches in the same place (`Zig.runs`). It matters on every
+   CI run: left in `.zig-cache` beside `build.zig`, the cache is a file the
+   step read that a fresh checkout does not have, so the step would run again
+   each time. `test/decompose/zig.smthrs.test.vibe` runs
+   `zig build test --summary all`, removes `.zig-cache` and runs it again: a
+   hit. A step that starts in another directory, changes directory or names
+   `.zig-cache` in its command keeps Zig's usual cache.
 
 A Zig step that a later step follows keeps its command, its place and Zig's
 usual cache directory: the later step may read what it built.
