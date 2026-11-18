@@ -209,7 +209,7 @@ describe("contract 7: command surface", () => {
     expect(Object.keys(Command.documents).sort()).toEqual([...Command.flags.json.on].sort())
     expect(Command.syntax.help).toContain("--help")
     expect(Command.syntax.value).toContain("--commits 5")
-    expect(Object.keys(Command.environment)).toEqual(["SMITHERS_CACHE_TOKEN"])
+    expect(Object.keys(Command.environment)).toEqual(["SMITHERS_CACHE_TOKEN", "AI_GATEWAY_API_KEY"])
   })
 })
 

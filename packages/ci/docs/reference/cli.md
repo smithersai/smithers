@@ -9,9 +9,9 @@ smithers-ci [command] [flags]
 
 Run it with `bunx smithers-ci` in the root of a Git repository.
 
-The three tables on this page are checked against the command surface in
+The four tables on this page are checked against the command surface in
 `src/contract/Command.ts` by `test/docs.test.ts`: a command, flag, default or
-exit code that one has and the other lacks fails the package's tests.
+exit code or variable that one has and the other lacks fails the package's tests.
 
 ## Commands
 
@@ -51,3 +51,14 @@ prints the inventory and the other two commands print the replay report.
 | `4`  | `failed`      | A step of the command could not finish.                                  |
 
 A mismatch is defined in [How it works](../concepts/how-it-works.md#3-replay).
+
+## Environment
+
+The program reads two environment variables and no others.
+
+| Variable               | What it is                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `SMITHERS_CACHE_TOKEN` | The token sent to the shared cache that `--cache` names.                                                      |
+| `AI_GATEWAY_API_KEY`   | The key for Jev, the judge fast mode asks. Without it, fast mode asks the model this machine is signed in to. |
+
+With neither a key nor a signed-in model, `--mode fast` and `--mode both` exit `4`.

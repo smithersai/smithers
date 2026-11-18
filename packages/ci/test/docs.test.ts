@@ -65,15 +65,21 @@ const documented = (reference: string) => ({
   ),
   exitCodes: Object.fromEntries(
     table(reference, "Exit codes").map(([value, name]) => [code(name!), Number(code(value!))])
-  )
+  ),
+  environment: Object.fromEntries(table(reference, "Environment").map(([name, help]) => [code(name!), help]))
 })
 
-const contract = { commands: Command.commands, flags: Command.flags, exitCodes: Command.exitCodes }
+const contract = {
+  commands: Command.commands,
+  flags: Command.flags,
+  exitCodes: Command.exitCodes,
+  environment: Command.environment
+}
 
 describe("command reference", () => {
   const reference = read("docs/reference/cli.md")
 
-  it("documents exactly the commands, flags, defaults and exit codes of contract 7", () => {
+  it("documents exactly the commands, flags, defaults, exit codes and variables of contract 7", () => {
     expect(documented(reference)).toEqual(contract)
   })
 
@@ -84,7 +90,9 @@ describe("command reference", () => {
       reference.replace(/\| `smithers-ci replay` +\|/, "| `smithers-ci rerun` |"),
       reference.replace(/(\| `--json` +\| `smithers-ci`), `smithers-ci inventory`/, "$1"),
       reference.replace(/\| `3` +\| `unsupported`/, "| `4` | `unsupported`"),
-      reference.replace(/^\| `--out` .*\n/m, "")
+      reference.replace(/^\| `--out` .*\n/m, ""),
+      reference.replace(/^\| `AI_GATEWAY_API_KEY` .*\n/m, ""),
+      reference.replace("The token sent to the shared cache", "A token for the shared cache")
     ]
     for (const drifted of drifts) {
       expect(drifted).not.toBe(reference)

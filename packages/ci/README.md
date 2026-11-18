@@ -24,6 +24,15 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-17, fifth round** (asked for by the program's lane):
+
+- **Fast mode's judge is the judge `smthrs` binds:** `NodeControl.layerSeatEvaluator(process.env)` from
+  `@smthrs/cli`. It is Jev with `AI_GATEWAY_API_KEY`, else the model the machine is signed in to. `Command.environment`
+  lists the key. The program adds no variable of its own for the model, and `smithers-ci` depends on `@smthrs/cli`,
+  which it also needs to run `smthrs`.
+- Fast mode's ledger and the judge's flow steps stay in memory for one run. The default command writes nothing
+  outside its temporary copies.
+
 **2026-11-17, fourth round** (found by the lead running the parts together on needlefish and eliza):
 
 - **What is CI.** An inventory lists everything a repository can run; eliza's holds 1,897 jobs, among them

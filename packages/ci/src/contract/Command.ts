@@ -120,7 +120,9 @@ export const documents = {
  * @since 0.1.0
  */
 export const environment = {
-  SMITHERS_CACHE_TOKEN: "The token sent to the shared cache that `--cache` names."
+  SMITHERS_CACHE_TOKEN: "The token sent to the shared cache that `--cache` names.",
+  AI_GATEWAY_API_KEY:
+    "The key for Jev, the judge fast mode asks. Without it, fast mode asks the model this machine is signed in to."
 } as const
 
 /**
