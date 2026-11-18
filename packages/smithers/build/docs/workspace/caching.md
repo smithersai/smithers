@@ -323,6 +323,7 @@ other file in `data` does not run the target again.
 | A path the run looked for and did not find        | It now exists                                               |
 | A symbolic link on the way to a file              | Its target differs                                          |
 | The command, `env`, an `inheritEnv` value, a tool | The declaration's key differs                               |
+| A variable `observe.env` names that the run used  | Its value differs                                           |
 
 The line of a target that runs again names the first difference:
 
@@ -339,7 +340,7 @@ declaration alone: the command, the environment, the executables it names, the
 platform and the labels it depends on. No file is in it. A run sees only its
 declared environment and a few host variables (`PATH`, `HOME`, the temporary
 directory), and every one of them is in the key by value, so no variable
-outside the key reaches it. Four records
+outside the key reaches it but those `observe.env` names. Four records
 are kept for one declaration, so a fresh checkout and a tree a run has already
 been through each find their own.
 
@@ -433,6 +434,58 @@ depend on what the network answers.
 
 `npm install`, `pip install -r requirements.txt` and every other command that
 may resolve a version at run time still store nothing when they connect.
+
+**Variables that differ from run to run.** A CI run is given the commit it is
+for, a run id and a run number, and each is another at the next run. In the
+key, each would make every run a new declaration. Left out of everything, a
+run that reads one would be answered with the result of another commit.
+`observe: { env: [...] }` names such variables:
+
+```ts
+S.Shell.Test({
+  shell: "npm test",
+  sandbox: "none",
+  observe: { env: ["GITHUB_SHA", "GITHUB_RUN_ID"] },
+  data: [S.glob("//**")]
+})
+```
+
+Each reaches the command with its host value, as with `inheritEnv`, and is no
+part of the declaration's key. No trace shows a process reading its
+environment: every shell copies all of it when it starts. So a record holds a
+variable's value when the run shows it could have used the variable:
+
+| What shows it                                                             | Example                                        |
+| ------------------------------------------------------------------------- | ---------------------------------------------- |
+| The variable's name in `shell`                                            | `echo "$GITHUB_SHA"`                           |
+| Its name in a file of the workspace the run read that git does not ignore | A test that reads `process.env.GITHUB_SHA`     |
+| Its value in what the run printed                                         | `printenv`, a tool that logs the commit        |
+| Its value in a file the run wrote and left                                | A version file, a report with the commit in it |
+| Its value in the arguments of a program the run started                   | `git show` with the commit                     |
+
+The record answers a later run only while each of those variables holds the
+same value. The line of a target that runs again says which one does not:
+
+```text
+//:test  runs again: the variable GITHUB_SHA has another value
+```
+
+A name in a file git ignores, such as an installed package or a build product,
+does not count on its own. Test runners and package managers hold the names of
+many variables they act on only when asked for a report, and then the value is
+in what they wrote. A commit id is also looked for by its first seven
+characters. A value shorter than six characters, such as a run attempt of `1`,
+is in every output by chance, so only its name shows a run used it. What a
+locked install fetched is not searched: a lockfile fixed it. A record holds a
+digest of each value, never the value.
+
+A program that builds a variable's name out of pieces and uses the value only
+to decide something, without printing or writing it, shows none of this. Name
+the variable in `inheritEnv` for such a command: its value is then part of the
+key at every run.
+
+On a host that cannot record reads, every variable `env` names is part of the
+key, as with `inheritEnv`.
 
 **What is left out.** `/proc`, `/sys` and `/dev` are the machine, not files. The
 workspace cache directory is the build's own. `observe: { ignore: [...] }` names

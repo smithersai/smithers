@@ -1581,6 +1581,229 @@ describe("a package manager that installs what a lockfile pins", () => {
   })
 })
 
+describe("the variables of the host a run could have used", () => {
+  const commit = "0123456789abcdef0123456789abcdef01234567"
+  const values = { COMMIT: commit, RUN: "1658821493", ATTEMPT: "1", UNSET: undefined }
+  const held = (...names: ReadonlyArray<keyof typeof values>) =>
+    names.map((name) => [name, ObservedReads.heldAs(values[name])])
+
+  /** A workspace that is a git repository which ignores `node_modules`, and a way to record a run in it. */
+  const places = async (repository = true) => {
+    const base = await directory()
+    const root = Path.join(base, "ws")
+    const write = async (file: string, text: string | Buffer = "x"): Promise<string> => {
+      const path = Path.resolve(root, file)
+      await Fs.mkdir(Path.dirname(path), { recursive: true })
+      await Fs.writeFile(path, text)
+      return path
+    }
+    await write(".gitignore", "node_modules\ndist\n")
+    if (repository) expect(spawnSync("git", ["-C", root, "init", "--quiet"]).status).toBe(0)
+    const open = (name: string): string => `100 openat(AT_FDCWD<${root}>, ${JSON.stringify(name)}, O_RDONLY) = 3`
+    const filled = (name: string): string =>
+      `100 openat(AT_FDCWD<${root}>, ${JSON.stringify(name)}, O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3`
+    const observe = (
+      lines: ReadonlyArray<string>,
+      variables: Partial<ObservedReads.Variables> = {},
+      io?: ObservedReads.Io
+    ) => {
+      const observed = ObservedReads.observe(ObservedReads.read(() => lines, root), {
+        root,
+        ignore: [],
+        startedMs: Date.now() + 60_000,
+        io,
+        variables: { values, text: "npm test", ...variables }
+      })
+      if ("refusal" in observed) throw new Error(observed.refusal)
+      return observed.record
+    }
+    return { base, root, write, open, filled, observe }
+  }
+
+  it("holds no variable for a run that shows no use of one", async () => {
+    const { observe, open, root, write } = await places()
+    await write("src/a.js", "module.exports = 1\n")
+    const record = observe([open("src/a.js")])
+    expect(record.variables).toBeUndefined()
+    // A record with no variable has the id it had before records held any.
+    expect(record.id).toBe(ObservedReads.idOf({ reads: record.reads, lists: record.lists }))
+    // Whatever the variables hold at the next run, the record answers.
+    expect(ObservedReads.changed(record, root, undefined, undefined, undefined, { COMMIT: "another" })).toBeUndefined()
+    expect(ObservedReads.changed(record, root)).toBeUndefined()
+  })
+
+  it("holds a variable whose name is in the command's own text", async () => {
+    const { observe, open, root, write } = await places()
+    await write("src/a.js")
+    const record = observe([open("src/a.js")], { text: "echo \"$COMMIT\" \"${UNSET-}\" && npm test" })
+    expect(record.variables).toEqual(held("COMMIT", "UNSET"))
+    expect(record.id).not.toBe(ObservedReads.idOf({ reads: record.reads, lists: record.lists }))
+    const now = (given: ObservedReads.Variables["values"]) =>
+      ObservedReads.changed(record, root, undefined, undefined, undefined, given)
+    expect(now(values)).toBeUndefined()
+    // A variable the run never showed it used may hold anything.
+    expect(now({ ...values, RUN: "2" })).toBeUndefined()
+    expect(now({ ...values, COMMIT: commit.replace("0", "f") })).toBe("the variable COMMIT has another value")
+    expect(now({ ...values, UNSET: "" })).toBe("the variable UNSET has another value")
+    // A caller that gives no value says the variable is not set.
+    expect(ObservedReads.changed(record, root)).toBe("the variable COMMIT has another value")
+    // A record never shows a value.
+    expect(JSON.stringify(record)).not.toContain(commit)
+    expect(ObservedReads.heldAs(undefined)).toBe("-")
+    expect(ObservedReads.heldAs("")).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it("holds a variable whose name is in a file of the workspace the run read, and not one in a file git ignores", async () => {
+    const { base, observe, open, write } = await places()
+    await write("test/a.test.js", "expect(process.env.COMMIT).toMatchSnapshot()\n")
+    await write("src/b.js", "module.exports = 2\n")
+    // A tool holds many names it never acts on: an installed package, a build product.
+    await write("node_modules/tool/index.js", "const run = process.env.RUN\n")
+    await write("dist/app.js", "process.env.RUN\n")
+    // A file of two-byte characters, as a script written on Windows is.
+    await write("tools/attempt.ps1", Buffer.from("echo $env:ATTEMPT", "utf16le"))
+    // A file outside the workspace is not the workspace's text.
+    const outside = Path.join(base, "outside.js")
+    await Fs.writeFile(outside, "process.env.RUN\n")
+    const reads = ["test/a.test.js", "src/b.js", "node_modules/tool/index.js", "dist/app.js", outside].map(open)
+    expect(observe(reads).variables).toEqual(held("COMMIT"))
+    expect(observe([...reads, open("tools/attempt.ps1")]).variables).toEqual(held("ATTEMPT", "COMMIT"))
+    // A file the run only asked about is read all the same when its state is measured.
+    expect(
+      observe([`100 newfstatat(AT_FDCWD<${Path.join(base, "ws")}>, "test/a.test.js", {st_mode=S_IFREG}, 0) = 0`])
+        .variables
+    ).toEqual(held("COMMIT"))
+    // The one who asks git may be another.
+    expect(observe(reads, { ignored: (paths) => new Set(paths) }).variables).toBeUndefined()
+    expect(observe(reads, { ignored: () => new Set() }).variables).toEqual(held("COMMIT", "RUN"))
+  })
+
+  it("takes every file of the workspace for its own where git cannot say", async () => {
+    const { observe, open, root, write } = await places(false)
+    await write("node_modules/tool/index.js", "process.env.RUN\n")
+    expect(observe([open("node_modules/tool/index.js")]).variables).toEqual(held("RUN"))
+    expect(ObservedReads.ignoredByGit(root)([Path.join(root, "node_modules/tool/index.js")])).toEqual(new Set())
+    const tracked = await places()
+    const installed = await tracked.write("node_modules/tool/index.js")
+    const own = await tracked.write("src/a.js")
+    expect(ObservedReads.ignoredByGit(tracked.root)([installed, own])).toEqual(new Set([installed]))
+    expect(ObservedReads.ignoredByGit(tracked.root)([own])).toEqual(new Set())
+  })
+
+  it("holds a variable whose value is in a file the run wrote and left", async () => {
+    const { filled, observe, write } = await places()
+    await write("out/version.txt", `built from ${commit}\n`)
+    await write("out/short.txt", `v1.2.3-${commit.slice(0, 7)}\n`)
+    await write("out/run.json", `{"run":${values.RUN}}`)
+    // Seven characters of the commit inside a longer run of digits are another number.
+    await write("out/other.txt", `a${commit.slice(0, 7)}9 ${commit.slice(0, 7)}f 1\n`)
+    await Fs.mkdir(Path.join(Path.dirname(await write("out/keep", "")), "empty"))
+    const made = `100 mkdir("out", 0777) = 0`
+    expect(observe([made, filled("out/other.txt")]).variables).toBeUndefined()
+    expect(observe([made, filled("out/version.txt")]).variables).toEqual(held("COMMIT"))
+    expect(observe([made, filled("out/short.txt")]).variables).toEqual(held("COMMIT"))
+    expect(observe([made, filled("out/run.json"), filled("out/other.txt")]).variables).toEqual(held("RUN"))
+    // A directory holds no text, and a variable already found is not looked for again.
+    expect(observe([made, `100 mkdir("out/empty", 0777) = 0`, filled("out/run.json")], { text: "echo $RUN" }).variables)
+      .toEqual(held("RUN"))
+    // A value of one character is in every file: only its name shows a run used it.
+    expect(observe([made, filled("out/other.txt")], { values: { ATTEMPT: "1" } }).variables).toBeUndefined()
+  })
+
+  it("does not look in what a locked install fetched, and takes a file it cannot read to hold every value", async () => {
+    const { base, filled, observe, root, write } = await places()
+    const fetched = await write("node_modules/pkg/sha.txt", commit)
+    const npm = await write(Path.join(base, "tools", "npm"), "#!/bin/sh\n")
+    const install = [
+      `100 execve("${npm}", ["npm", "ci"], 0x7ffd0 /* 3 vars */) = 0`,
+      `100 mkdir("node_modules", 0777) = 0`,
+      `100 mkdir("node_modules/pkg", 0777) = 0`,
+      filled("node_modules/pkg/sha.txt")
+    ]
+    expect(observe(install).variables).toBeUndefined()
+    // The same file written by any other program is the run's own writing.
+    expect(observe(install.slice(1)).variables).toEqual(held("COMMIT"))
+    const unreadable: ObservedReads.Io = {
+      ...ObservedReads.defaultIo,
+      readFile: (path) => {
+        if (path === fetched) throw new Error("EACCES")
+        return ObservedReads.defaultIo.readFile(path)
+      }
+    }
+    expect(observe(install.slice(1), {}, unreadable).variables).toEqual(held("COMMIT", "RUN"))
+    expect(root).toBe(Path.dirname(Path.dirname(Path.dirname(fetched))))
+  })
+
+  it("hears a value the run prints, also when it is cut in two, and sees one passed to a program", () => {
+    const listener = ObservedReads.listening(values)
+    listener.hear(Buffer.from(`ok 1\nbuild ${commit.slice(0, 20)}`))
+    expect([...listener.names]).toEqual([])
+    listener.hear(Buffer.from(`${commit.slice(20)} done\n`))
+    expect([...listener.names]).toEqual(["COMMIT"])
+    // The short form of a commit, cut after its first characters.
+    const short = ObservedReads.listening(values)
+    short.hear(Buffer.from(`at ${commit.slice(0, 3)}`))
+    short.hear(Buffer.from(`${commit.slice(3, 7)}\n`))
+    expect([...short.names]).toEqual(["COMMIT"])
+    // A line that starts a program holds its arguments. Any other line of a trace is a path.
+    const trace = ObservedReads.listening(values)
+    const lines = [
+      `100 openat(AT_FDCWD</w>, "/w/${values.RUN}.txt", O_RDONLY) = 3`,
+      `100 execve("/usr/bin/git", ["git", "show", "${commit}"], 0x7ffd0 /* 3 vars */) = 0`,
+      `100 execve("/usr/bin/true", ["true"], 0x7ffd0 /* 3 vars */) = 0`
+    ]
+    expect([...trace.lines(() => lines)()]).toEqual(lines)
+    expect([...trace.names]).toEqual(["COMMIT"])
+    // With nothing long enough to look for, nothing is kept of what goes by.
+    const none = ObservedReads.listening({ ATTEMPT: "1", UNSET: undefined })
+    none.hear(Buffer.from("1"))
+    expect([...none.lines(() => lines)()]).toEqual(lines)
+    expect([...none.names]).toEqual([])
+  })
+
+  it("takes what the run showed from whoever listened to it", async () => {
+    const { observe, open, write } = await places()
+    await write("src/a.js")
+    expect(observe([open("src/a.js")], { shown: new Set(["RUN"]) }).variables).toEqual(held("RUN"))
+  })
+
+  it("finds a value whole, or a commit by its first seven characters where no other digit touches them", () => {
+    expect(ObservedReads.holdsValue(`x${commit}y`, commit)).toBe(true)
+    expect(ObservedReads.holdsValue(`sha ${commit.slice(0, 7)}.`, commit)).toBe(true)
+    expect(ObservedReads.holdsValue(commit.slice(0, 7), commit)).toBe(true)
+    expect(ObservedReads.holdsValue(`${commit.slice(0, 7)}8`, commit)).toBe(false)
+    expect(ObservedReads.holdsValue(`c${commit.slice(0, 7)}`, commit)).toBe(false)
+    expect(ObservedReads.holdsValue(`c${commit.slice(0, 7)} ${commit.slice(0, 7)}`, commit)).toBe(true)
+    // Only an id written as a commit is has a short form.
+    expect(ObservedReads.holdsValue("run 1658821", "1658821493")).toBe(false)
+    expect(ObservedReads.holdsValue("run 1658821493", "1658821493")).toBe(true)
+    expect(ObservedReads.holdsValue("12345", "12345")).toBe(false)
+    expect(ObservedReads.minimumValueLength).toBe(6)
+    expect(ObservedReads.holdsName("a COMMIT b", "COMMIT")).toBe(true)
+    expect(ObservedReads.holdsName("a C\0O\0M\0M\0I\0T\0", "COMMIT")).toBe(true)
+    expect(ObservedReads.holdsName("a COMMI b", "COMMIT")).toBe(false)
+  })
+
+  it("keeps the variables of a record when it moves, and stores them", async () => {
+    const stored: ObservedReads.Record = {
+      reads: [],
+      lists: [],
+      from: [["//:install", "i1"]],
+      given: [["node_modules/a.js", "f:00", 0]],
+      variables: [["COMMIT", ObservedReads.heldAs(commit)]],
+      id: "1"
+    }
+    const moved = ObservedReads.anchored(stored, () => "i2")
+    expect(moved?.variables).toEqual(stored.variables)
+    expect(moved?.id).toBe(ObservedReads.idOf({ ...stored, from: [["//:install", "i2"]] }))
+    expect(ObservedReads.decode(ObservedReads.store(stored, []))).toEqual([stored])
+    const wrong = { ...stored, variables: [["COMMIT"]] }
+    expect(ObservedReads.decode({ kind: "observed", format: ObservedReads.format, records: [wrong] })).toEqual([])
+    const noList = { ...stored, variables: "COMMIT" }
+    expect(ObservedReads.decode({ kind: "observed", format: ObservedReads.format, records: [noList] })).toEqual([])
+  })
+})
+
 describe("the stored records", () => {
   const one: ObservedReads.Record = { reads: [["a", "-"], ["b", "f:00", "-"]], lists: [["d", "00", ["x"]]], id: "1" }
   const full: ObservedReads.Record = {

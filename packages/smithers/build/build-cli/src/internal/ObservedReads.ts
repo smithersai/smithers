@@ -33,6 +33,17 @@
  * (`npm ci`, `pnpm install --frozen-lockfile`, `uv sync --locked`), and of the
  * processes it starts. What it fetches is fixed by a file the run read.
  *
+ * A run is also given variables of the host whose values differ from one
+ * run to the next, such as the commit a CI run is for. No trace shows a
+ * process reading its environment: every shell copies all of it when it
+ * starts, and so does the call that starts a program. So a record holds a
+ * variable's value when the run shows it could have used it: the variable's
+ * name is in the command's text or in a file of the workspace the run read
+ * that git does not ignore, or its value is in what the run printed, in a
+ * file it wrote and left, or in the arguments of a program it started. A
+ * record answers a later run only while each of those variables holds the
+ * same value.
+ *
  * The tracer is `strace` with a seccomp filter, so only the file-system calls
  * stop the process. `io_uring` is refused to the run, as it is in a
  * container: a read submitted through a ring is in no trace. A traced run
@@ -971,6 +982,11 @@ export interface Record {
     readonly outside: ReadonlyArray<readonly [path: string, state: string]>
     readonly gone: ReadonlyArray<string>
   }
+  /**
+   * Each variable of the host the run could have used, with a digest of the
+   * value it held, or `-` when the host did not set it. See {@link Variables}.
+   */
+  readonly variables?: ReadonlyArray<readonly [name: string, held: string]>
   /** Names this record among the records of its declaration: a digest of everything above. */
   readonly id?: string
 }
@@ -1044,8 +1060,161 @@ export const keptLimits: { readonly paths: number; readonly bytes: number; reado
  */
 export const idOf = (record: Omit<Record, "id">): string =>
   createHash("sha256")
-    .update(JSON.stringify([record.reads, record.lists, record.from ?? [], record.given ?? [], record.left ?? false]))
+    .update(JSON.stringify([
+      record.reads,
+      record.lists,
+      record.from ?? [],
+      record.given ?? [],
+      record.left ?? false,
+      // A record with no variable keeps the id it had before records held any.
+      ...(record.variables === undefined ? [] : [record.variables])
+    ]))
     .digest("hex")
+
+/**
+ * The host variables a run was given without their values entering its key,
+ * and what besides the trace shows it used one.
+ *
+ * - `values`: each variable's name with the value the run was given, or
+ *   `undefined` when the host does not set it.
+ * - `text`: the command's own text. A name written in it is the run reading
+ *   the variable.
+ * - `shown`: the names whose values the run printed or passed to a program
+ *   it started ({@link listening}).
+ * - `ignored`: which of some absolute paths git leaves out of the workspace;
+ *   {@link ignoredByGit} unless a test gives another.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Variables {
+  readonly values: Readonly<{ readonly [name: string]: string | undefined }>
+  readonly text: string
+  readonly shown?: ReadonlySet<string> | undefined
+  readonly ignored?: ((paths: ReadonlyArray<string>) => ReadonlySet<string>) | undefined
+}
+
+/**
+ * A variable's value as a record holds it: a digest, so a record never
+ * shows a value, or `-` for a variable that is not set.
+ *
+ * @category measuring
+ * @since 1.0.0
+ */
+export const heldAs = (value: string | undefined): string =>
+  value === undefined ? absent : createHash("sha256").update(value).digest("hex")
+
+/**
+ * The fewest characters of a value that are looked for in what a run
+ * produced. A shorter value, such as `1` or `main`, is in every output by
+ * chance, so only its name shows a run used it.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const minimumValueLength = 6
+
+/** A commit id, or another id written the same way. */
+const hexId = /^[0-9a-f]{40,}$/
+
+const hexDigit = (character: string | undefined): boolean => character !== undefined && /[0-9a-f]/.test(character)
+
+/**
+ * Whether a text holds a variable's value: the whole value, or the first
+ * seven characters of a hexadecimal id of forty or more, the short form a
+ * commit is written in, where no other hexadecimal digit touches them. A
+ * value shorter than {@link minimumValueLength} is never looked for.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const holdsValue = (text: string, value: string): boolean => {
+  if (value.length < minimumValueLength) return false
+  if (text.includes(value)) return true
+  if (!hexId.test(value)) return false
+  const short = value.slice(0, 7)
+  for (let at = text.indexOf(short); at >= 0; at = text.indexOf(short, at + 1)) {
+    if (!hexDigit(text[at - 1]) && !hexDigit(text[at + short.length])) return true
+  }
+  return false
+}
+
+/**
+ * Whether a text holds a variable's name, as most files write it or as a
+ * file of two-byte characters does.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const holdsName = (text: string, name: string): boolean =>
+  text.includes(name) || text.includes([...name].join("\0"))
+
+/**
+ * Listens to what a run prints and to the lines of its trace, and collects
+ * the names of the variables whose values go by. `hear` takes what the run
+ * wrote to its output, a block at a time: a value cut in two by the end of a
+ * block is still found. `lines` gives a trace's lines back as they are, and
+ * looks for the values in each line that starts a program, where the
+ * program's arguments are.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const listening = (
+  values: Variables["values"]
+): {
+  readonly names: ReadonlySet<string>
+  readonly hear: (block: Uint8Array) => void
+  readonly lines: (trace: () => Iterable<string>) => () => Iterable<string>
+} => {
+  const sought = Object.entries(values).flatMap(([name, value]) =>
+    value === undefined || value.length < minimumValueLength ? [] : [[name, value] as const]
+  )
+  const longest = Math.max(0, ...sought.map(([, value]) => value.length))
+  const names = new Set<string>()
+  const look = (text: string): void => {
+    for (const [name, value] of sought) {
+      if (!names.has(name) && holdsValue(text, value)) names.add(name)
+    }
+  }
+  let rest = ""
+  return {
+    names,
+    hear: (block) => {
+      if (sought.length === 0) return
+      const text = rest + Buffer.from(block.buffer, block.byteOffset, block.byteLength).toString("latin1")
+      look(text)
+      // Enough of the end to hold a value cut in two, and the character before it.
+      rest = text.slice(-longest)
+    },
+    lines: (trace) =>
+      function*() {
+        for (const line of trace()) {
+          if (sought.length > names.size && line.includes("execve")) look(line)
+          yield line
+        }
+      }
+  }
+}
+
+/**
+ * Asks git which of some absolute paths it leaves out of the workspace at
+ * `root`: what `.gitignore` names, such as installed packages and build
+ * products. Every other path is the workspace's own. Where git cannot say,
+ * because the workspace is no repository or git is not there, none is left
+ * out.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const ignoredByGit = (root: string) => (paths: ReadonlyArray<string>): ReadonlySet<string> => {
+  const asked = spawnSync("git", ["-C", root, "check-ignore", "-z", "--stdin"], {
+    encoding: "utf8",
+    input: paths.map((path) => `${path}\0`).join(""),
+    maxBuffer: 64 * 1024 * 1024
+  })
+  return new Set(asked.status === 0 ? asked.stdout.split("\0").filter((path) => path !== "") : [])
+}
 
 const pseudo = (path: string): boolean => /^\/(?:proc|sys|dev)(?:\/|$)/.test(path)
 
@@ -1082,10 +1251,32 @@ export const observe = (
     readonly temporary?: ReadonlyArray<string> | undefined
     /** The limits on what is kept; {@link keptLimits} unless a test gives smaller ones. */
     readonly limits?: typeof keptLimits | undefined
+    /** The host variables the run was given, whose values are in the record only when the run could have used them. */
+    readonly variables?: Variables | undefined
   }
 ): Observation | { readonly refusal: string } => {
   if (trace.refusals.length > 0) return { refusal: trace.refusals[0]! }
   const io = options.io ?? defaultIo
+  const variables = options.variables
+  const variableNames = Object.keys(variables?.values ?? {}).sort(byCodeUnit)
+  /** The files of the workspace the run read that hold each variable's name. */
+  const naming = new Map<string, Array<string>>()
+  /** Measures a path, and looks for the variables' names in a file of the workspace as it is read. */
+  const measured = (path: string): string =>
+    variableNames.length === 0 || !under(path, options.root) ? measure(path, io) : measure(path, {
+      ...io,
+      readFile: (file) => {
+        const data = io.readFile(file)
+        const text = data.toString("latin1")
+        for (const name of variableNames) {
+          if (!holdsName(text, name)) continue
+          const files = naming.get(name)
+          if (files === undefined) naming.set(name, [path])
+          else files.push(path)
+        }
+        return data
+      }
+    })
   const kinds = new Map<string, { readonly link: string | undefined; readonly directory: boolean } | undefined>()
   const kindOf = (path: string): { readonly link: string | undefined; readonly directory: boolean } | undefined => {
     if (kinds.has(path)) return kinds.get(path)
@@ -1257,7 +1448,7 @@ export const observe = (
   for (const path of [...entries.keys()].sort(byCodeUnit)) {
     const entry = entries.get(path)!
     if (!visible(path) || entry.first === "made") continue
-    const state = measure(path, io)
+    const state = measured(path)
     if (entry.first === "missing") {
       reads.push(state !== absent && entry.made ? [inside(path), state, absent] : [inside(path), absent])
       continue
@@ -1286,11 +1477,50 @@ export const observe = (
     lists.push(added.length === 0 ? [inside(path), digest, names] : [inside(path), digest, names, added])
   }
   const survivors = [...touched].filter((path) => path !== options.root && present(path, io)).sort(byCodeUnit)
+  /** Whether the run wrote a path, or made a directory above it. */
+  const wrote = (path: string, among: ReadonlySet<string>): boolean => {
+    if (among.has(path)) return true
+    for (let above = NodePath.posix.dirname(path); above !== "/"; above = NodePath.posix.dirname(above)) {
+      if (among.has(above) && made.has(above)) return true
+    }
+    return false
+  }
+  /** The variables the run could have used, each with what it held. */
+  const used = (given: Variables): ReadonlyArray<readonly [string, string]> => {
+    const names = new Set(given.shown)
+    for (const name of variableNames) if (holdsName(given.text, name)) names.add(name)
+    // A name in a file git leaves out, such as an installed tool, says nothing: many tools hold names they never
+    // act on. A name in the workspace's own text is the run's to read.
+    const holders = [...new Set([...naming.values()].flat())]
+    const left = holders.length === 0 ? new Set<string>() : (given.ignored ?? ignoredByGit(options.root))(holders)
+    for (const [name, files] of naming) if (files.some((file) => !left.has(file))) names.add(name)
+    // A value in a file the run wrote and left. What a locked install fetched is fixed by a lockfile, not by the run.
+    const sought = variableNames.flatMap((name) => {
+      const value = given.values[name]
+      return names.has(name) || value === undefined || value.length < minimumValueLength ? [] : [[name, value] as const]
+    })
+    for (const path of sought.length === 0 ? [] : survivors) {
+      if (wrote(path, fetched)) continue
+      let text: string
+      try {
+        if (!io.lstat(path).isFile()) continue
+        text = io.readFile(path).toString("latin1")
+      } catch {
+        // A file that cannot be read may hold any of them.
+        for (const [name] of sought) names.add(name)
+        break
+      }
+      for (const [name, value] of sought) if (holdsValue(text, value)) names.add(name)
+    }
+    return [...names].sort(byCodeUnit).map((name) => [name, heldAs(given.values[name])] as const)
+  }
+  const held = variables === undefined ? [] : used(variables)
   const body = {
     reads,
     lists,
     ...(from.length === 0 ? {} : { from, given }),
-    ...(survivors.length > 0 ? { left: true as const } : {})
+    ...(survivors.length > 0 ? { left: true as const } : {}),
+    ...(held.length === 0 ? {} : { variables: held })
   }
   const record = { ...body, id: idOf(body) }
   if (survivors.length === 0) return { record, made, touched }
@@ -1304,14 +1534,6 @@ export const observe = (
       : temporary.some((directory) => under(path, directory))
       ? path
       : undefined
-  /** Whether the run wrote a path, or made a directory above it. */
-  const wrote = (path: string, among: ReadonlySet<string>): boolean => {
-    if (among.has(path)) return true
-    for (let above = NodePath.posix.dirname(path); above !== "/"; above = NodePath.posix.dirname(above)) {
-      if (among.has(above) && made.has(above)) return true
-    }
-    return false
-  }
   const leaves = (): Left | { readonly refusal: string } => {
     const keep: Array<string> = []
     const outside: Array<readonly [string, string]> = []
@@ -1454,7 +1676,8 @@ const interpreters = (path: string, io: Io): ReadonlyArray<string> => {
 
 /**
  * Says what a record's run read that is no longer the same, or `undefined`
- * when every path it read still holds what the run left there.
+ * when every path it read still holds what the run left there and every
+ * variable it could have used holds, in `values`, the value it had.
  *
  * @category recording
  * @since 1.0.0
@@ -1464,8 +1687,12 @@ export const changed = (
   root: string,
   measured: (path: string) => string = measure,
   io: Io = defaultIo,
-  answered: (label: string) => ReadonlySet<string> | undefined = () => undefined
+  answered: (label: string) => ReadonlySet<string> | undefined = () => undefined,
+  values: Variables["values"] = {}
 ): string | undefined => {
+  for (const [name, held] of stored.variables ?? []) {
+    if (heldAs(values[name]) !== held) return `the variable ${name} has another value`
+  }
   const absolute = (path: string): string => path === "." ? root : path.startsWith("/") ? path : `${root}/${path}`
   for (const [path, state, other] of stored.reads) {
     const now = measured(absolute(path))
@@ -1521,7 +1748,8 @@ export const anchored = (stored: Record, latest: (label: string) => string | und
     lists: stored.lists,
     from,
     given: stored.given ?? [],
-    ...(stored.left === true ? { left: true as const } : {})
+    ...(stored.left === true ? { left: true as const } : {}),
+    ...(stored.variables === undefined ? {} : { variables: stored.variables })
   }
   return { ...body, id: idOf(body), ...(stored.kept === undefined ? {} : { kept: stored.kept }) }
 }
@@ -1606,13 +1834,16 @@ const isKept = (value: unknown): boolean => {
 
 const isRecord = (value: unknown): value is Record => {
   if (typeof value !== "object" || value === null) return false
-  const { from = [], given = [], id, kept, left, lists, reads } = value as { readonly [key in keyof Record]?: unknown }
+  const { from = [], given = [], id, kept, left, lists, reads, variables = [] } = value as {
+    readonly [key in keyof Record]?: unknown
+  }
   const text = (part: unknown): boolean => typeof part === "string"
   /** A place in `from`. */
   const place = (part: unknown): boolean =>
     Number.isInteger(part) && (part as number) >= 0 && (part as number) < (from as ReadonlyArray<unknown>).length
   return Array.isArray(reads) && Array.isArray(lists) && Array.isArray(from) && Array.isArray(given) &&
     typeof id === "string" && (left === undefined || left === true) && isKept(kept) &&
+    Array.isArray(variables) && variables.every((row) => Array.isArray(row) && row.length === 2 && row.every(text)) &&
     reads.every((row) => Array.isArray(row) && (row.length === 2 || row.length === 3) && row.every(text)) &&
     from.every((row) => Array.isArray(row) && row.length === 2 && row.every(text)) &&
     given.every((row) => Array.isArray(row) && row.length === 3 && text(row[0]) && text(row[1]) && place(row[2])) &&

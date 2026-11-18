@@ -1006,7 +1006,9 @@ export const executeEffect = (
       candidateReads: ReadonlyArray<string> = [],
       archive = false,
       /** Puts the resolved command under a tracer; the command, its environment and its verdict are unchanged. */
-      traced?: (argv: ReadonlyArray<string>) => ReadonlyArray<string>
+      traced?: (argv: ReadonlyArray<string>) => ReadonlyArray<string>,
+      /** Hears everything the command writes to its output, before any of it is cut or redacted. */
+      heard?: (block: Uint8Array) => void
     ): Effect.Effect<SpawnOutcome, unknown> =>
       Effect.gen(function*() {
         const spawn = yield* resolveSpawn(node, override, archive)
@@ -1078,8 +1080,14 @@ export const executeEffect = (
                 variables: node.nixEnvironment.variables
               }
             }),
-            onStdout: output.onStdout,
-            onStderr: output.onStderr
+            onStdout: heard === undefined ? output.onStdout : (block) => {
+              heard(block)
+              output.onStdout(block)
+            },
+            onStderr: heard === undefined ? output.onStderr : (block) => {
+              heard(block)
+              output.onStderr(block)
+            }
           }, payload)
         ))).pipe(Effect.ensuring(Effect.sync(output.close)))
         if (Exit.isSuccess(exit)) {
@@ -2298,11 +2306,12 @@ export const executeEffect = (
     const spawnConsumer = (
       node: PackageNode,
       argv?: ReadonlyArray<string> | undefined,
-      traced?: (argv: ReadonlyArray<string>) => ReadonlyArray<string>
+      traced?: (argv: ReadonlyArray<string>) => ReadonlyArray<string>,
+      heard?: (block: Uint8Array) => void
     ): Effect.Effect<ExecOutcome, unknown> =>
       node.machine === undefined
-        ? runWithOverlays(node, (treeRoot) => spawnNode(node, treeRoot, argv, [], false, traced))
-        : Effect.flatMap(onMachine(node), (machine) => spawnNode(node, machine!.tree, argv, [], false, traced))
+        ? runWithOverlays(node, (treeRoot) => spawnNode(node, treeRoot, argv, [], false, traced, heard))
+        : Effect.flatMap(onMachine(node), (machine) => spawnNode(node, machine!.tree, argv, [], false, traced, heard))
 
     let observing: ObservedReads.Observer | undefined
     let unobservedNoted = false
@@ -2606,7 +2615,8 @@ export const executeEffect = (
                       real,
                       node.machine === undefined ? stateOf : unmade!.measured,
                       node.machine === undefined ? undefined : unmade!.io,
-                      (label) => kept.get(label)
+                      (label) => kept.get(label),
+                      node.observed!.variables
                     ) === undefined
                 )
               )
@@ -2674,7 +2684,9 @@ export const executeEffect = (
         const awaited = awaitedBy(node)
         let why: string | undefined
         for (const stored of earlier) {
-          const moved = yield* joined(async () => ObservedReads.changed(stored, NodeFs.realpathSync(place), stateOf))
+          const moved = yield* joined(async () =>
+            ObservedReads.changed(stored, NodeFs.realpathSync(place), stateOf, undefined, undefined, observed.variables)
+          )
           if (moved !== undefined) {
             why ??= moved
             continue
@@ -2731,10 +2743,13 @@ export const executeEffect = (
           // The trace file is made first: its time on the file system's clock is when the run began.
           yield* joined(() => Fs.writeFile(traceFile, ""))
           const startedMs = (yield* joined(() => Fs.stat(traceFile))).ctimeMs
+          // The values of the variables the run is given are looked for in what it prints and in what it starts.
+          const listener = ObservedReads.listening(observed.variables)
           const attempt = yield* spawnConsumer(
             node,
             undefined,
-            (argv) => ObservedReads.command(host.tracer, traceFile, argv)
+            (argv) => ObservedReads.command(host.tracer, traceFile, argv),
+            listener.hear
           )
           if (!attempt.ok) {
             log(`${node.label}  failed while its reads were recorded; it runs again without the recording`)
@@ -2754,8 +2769,13 @@ export const executeEffect = (
           const before = dependenciesOf(node.label)
           const read = yield* Effect.exit(joined(async () =>
             ObservedReads.observe(
-              ObservedReads.read(ObservedReads.linesOf(traceFile), NodePath.resolve(place, node.cwd)),
+              ObservedReads.read(listener.lines(ObservedReads.linesOf(traceFile)), NodePath.resolve(place, node.cwd)),
               {
+                variables: {
+                  values: observed.variables,
+                  text: (node.argv ?? []).join("\n"),
+                  shown: listener.names
+                },
                 root: NodeFs.realpathSync(place),
                 ignore: [
                   ...ObservedReads.ignored(place, machine?.home ?? NodeOs.homedir(), cacheDirectory, observed.ignore),

@@ -150,6 +150,18 @@ export const BuildAttrs = Schema.Struct({
 )
 
 /**
+ * The host variables an `observe` attribute names in `env`: none for
+ * `observe: true`, `false`, or an attribute that names none.
+ *
+ * @category accessors
+ * @since 1.0.0
+ */
+export const observedEnv = (observe: unknown): ReadonlyArray<string> =>
+  typeof observe === "object" && observe !== null
+    ? (observe as { readonly env?: ReadonlyArray<string> }).env ?? []
+    : []
+
+/**
  * Attrs for {@link Test}.
  *
  * @category schemas
@@ -175,11 +187,29 @@ export const TestAttrs = Schema.Struct({
    * the home directory as `~/...`. Use it for what a tool writes on every
    * run and never reads to decide its result, such as a log directory.
    *
+   * `env` names variables of the host the run is given whose values differ
+   * from one run to the next, such as the commit a CI run is for. Each
+   * reaches the command with its host value, as with `inheritEnv`, and its
+   * value is no part of the key. A stored result holds the value of each one
+   * the run could have used: one whose name is in `shell`, or in a file of
+   * the workspace the run read that git does not ignore, or whose value is in
+   * what the run printed, in a file it wrote and left, or in the arguments of
+   * a program it started. The result is reused only while each of those
+   * variables holds the same value. A value shorter than six characters is
+   * found by its name alone.
+   *
    * The run needs `sandbox: "none"` and a host that can trace it: Linux with
-   * `strace`. On any other host the target is keyed by its `data` alone.
+   * `strace`. On any other host the target is keyed by its `data` and by the
+   * value of every variable `env` names.
    */
   observe: Schema.optional(
-    Schema.Union([Schema.Boolean, Schema.Struct({ ignore: Schema.Array(Schema.NonEmptyString) })])
+    Schema.Union([
+      Schema.Boolean,
+      Schema.Struct({
+        ignore: Schema.optional(Schema.Array(Schema.NonEmptyString)),
+        env: Schema.optional(Attr.InheritEnv)
+      })
+    ])
   ),
   /**
    * Names the machine the target runs on. Targets that name the same machine
@@ -212,6 +242,12 @@ export const TestAttrs = Schema.Struct({
     if ((attrs.shards ?? 1) > 1) return "observe cannot be combined with shards"
     if ((attrs.services ?? []).length > 0) {
       return "observe cannot be combined with services, which run outside the observed process"
+    }
+    const twice = observedEnv(attrs.observe).filter((name) =>
+      (attrs.inheritEnv ?? []).includes(name) || (attrs.env !== undefined && Object.hasOwn(attrs.env, name))
+    )
+    if (twice.length > 0) {
+      return `observe.env names ${twice.join(", ")}, which env or inheritEnv also names; declare each variable once`
     }
     return undefined
   })

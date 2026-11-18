@@ -49,6 +49,27 @@ describe("a shell test that asks to be observed", () => {
       .toThrow(/observe cannot be combined with services/)
     expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: { ignore: [""] } })).toThrow()
   })
+
+  it("names the host variables it is given whose values are no part of its key", () => {
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: { env: ["CI_COMMIT"] } })).not.toThrow()
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: { ignore: [], env: [] } })).not.toThrow()
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: {}, inheritEnv: ["CI_COMMIT"] })).not.toThrow()
+    expect(Shell.observedEnv({ env: ["CI_COMMIT", "CI_RUN"] })).toEqual(["CI_COMMIT", "CI_RUN"])
+    expect(Shell.observedEnv({ ignore: ["logs"] })).toEqual([])
+    expect(Shell.observedEnv(true)).toEqual([])
+    expect(Shell.observedEnv(undefined)).toEqual([])
+    expect(Shell.observedEnv(null)).toEqual([])
+  })
+
+  it("refuses a variable that is no name, or that the target also sets or inherits", () => {
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: { env: ["not a name"] } })).toThrow()
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: { env: ["A", "B"] }, inheritEnv: ["B"] }))
+      .toThrow(/observe\.env names B, which env or inheritEnv also names; declare each variable once/)
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: { env: ["A"] }, env: { A: "1" } }))
+      .toThrow(/observe\.env names A, which env or inheritEnv also names/)
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: { env: ["A"] }, env: { B: "1" } }))
+      .not.toThrow()
+  })
 })
 
 describe("a shell target that names a machine", () => {

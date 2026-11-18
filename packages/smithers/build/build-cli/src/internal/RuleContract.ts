@@ -254,9 +254,16 @@ export interface SharedFields extends Planner.PlannedTarget {
    * Set for a shell test that asks to be observed. `key` names its
    * declaration alone: the command, its environment, its tools and the
    * labels it depends on. What each run read is stored under it. `ignore`
-   * holds the paths the declaration leaves out of that record.
+   * holds the paths the declaration leaves out of that record. `variables`
+   * holds the host variables `observe.env` names, each with its value on
+   * this host or `undefined` when it is not set: they reach the run, and are
+   * no part of `key`.
    */
-  readonly observed?: { readonly key: string; readonly ignore: ReadonlyArray<string> }
+  readonly observed?: {
+    readonly key: string
+    readonly ignore: ReadonlyArray<string>
+    readonly variables: Readonly<{ readonly [name: string]: string | undefined }>
+  }
   /**
    * Set for a shell target that names a machine: it runs in that machine's
    * private copy of the workspace, with that machine's home and temporary

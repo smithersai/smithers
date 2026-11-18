@@ -2067,8 +2067,16 @@ const visit = async (
     const shellAttrs = attrs as Shell.ExecAttrs
     const payload = Shell.execPayload(shellAttrs)
     // Inherited host values join the declared environment, so the key below
-    // carries each value, and an unset name keys apart from every value.
-    env = { ...(payload.env as Record<string, string>), ...Exec.inheritedValues(shellAttrs.inheritEnv ?? []) }
+    // carries each value, and an unset name keys apart from every value. The
+    // variables an observed test is given the same way are in that key too:
+    // it is the key a host that cannot observe a run falls back on.
+    env = {
+      ...(payload.env as Record<string, string>),
+      ...Exec.inheritedValues([
+        ...(shellAttrs.inheritEnv ?? []),
+        ...Shell.observedEnv((shellAttrs as { readonly observe?: unknown }).observe)
+      ])
+    }
     const resolved = await resolveCommand(
       payload.argv as ReadonlyArray<string>,
       (shellAttrs.bin as { readonly _tag?: string } | undefined)?._tag === "RuntimeNpx"
@@ -3458,8 +3466,11 @@ const visit = async (
   // temporary directory included: they decide which files a run looks for,
   // and a record holds only the paths one run looked at. The workspace root
   // inside a value is written as a token, so a search path that names
-  // `node_modules/.bin` keys alike in every checkout.
+  // `node_modules/.bin` keys alike in every checkout. The variables
+  // `observe.env` names are the one exception: each is in a record when its
+  // run could have used it, and in no key.
   const observe = rule === "Shell.Test" ? attrMember(attrs, "observe") : undefined
+  const observedVariables = Shell.observedEnv(observe)
   const machine = rule === "Shell.Test" || rule === "Shell.Build"
     ? attrMember(attrs, "machine") as string | undefined
     : undefined
@@ -3476,10 +3487,11 @@ const visit = async (
           toolchain,
           execution: {
             environment: Object.fromEntries(
-              Object.entries(spawnEnvironment).map(([name, value]) => [
-                name,
-                String(value).replaceAll(context.root, workspaceRootToken)
-              ])
+              Object.entries(spawnEnvironment).flatMap(([name, value]) =>
+                observedVariables.includes(name)
+                  ? []
+                  : [[name, String(value).replaceAll(context.root, workspaceRootToken)]]
+              )
             ),
             executable
           }
@@ -3487,7 +3499,10 @@ const visit = async (
         layers: [],
         capabilities: keyMaterial.capabilities
       }),
-      ignore: observe === true ? [] : (observe as { readonly ignore: ReadonlyArray<string> }).ignore
+      ignore: observe === true ? [] : (observe as { readonly ignore?: ReadonlyArray<string> }).ignore ?? [],
+      variables: Object.fromEntries(
+        observedVariables.map((name) => [name, spawnEnvironment[name]])
+      )
     }
 
   // A bundler build's preview key substitutes the cached graph digest when
