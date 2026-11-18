@@ -26,6 +26,7 @@ import * as Context from "effect/Context"
 import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as Semaphore from "effect/Semaphore"
 import { minimatch } from "minimatch"
 import { randomUUID } from "node:crypto"
 import * as NodeFs from "node:fs"
@@ -62,6 +63,7 @@ import * as ApprovalBridge from "./ApprovalBridge.ts"
 import * as CacheEvidence from "./CacheEvidence.ts"
 import * as GoCache from "./GoCache.ts"
 import * as InstalledTree from "./InstalledTree.ts"
+import * as Machine from "./Machine.ts"
 import * as MissingTool from "./MissingTool.ts"
 import * as ObservedReads from "./ObservedReads.ts"
 import type { ExecuteOptions, PackageNode, PackagePlan, TestOperandPlan } from "./PackageOptions.ts"
@@ -736,7 +738,8 @@ export const executeEffect = (
       : Workspace.credentialEnvNames(options.remoteCache.credentials)
     // A child repository runs this CLI over its own declarations; it inherits
     // the same scrubbed environment, never the parent's cache credentials.
-    const repoResolutions = RepoResolution.resolver(index, options.environment ?? process.env)
+    const hostEnvironment = options.environment ?? process.env
+    const repoResolutions = RepoResolution.resolver(index, hostEnvironment)
     const reports = new Map<string, Executor.TargetReport>()
     const notGreen = new Set<string>()
     /** Label → why its run found that its green result could not be stored. */
@@ -757,6 +760,56 @@ export const executeEffect = (
     const protects = (): boolean =>
       (protection ??= { refusal: services.writeProtection(services.sandboxHost()) }).refusal === undefined
     const byLabel = new Map(planned.workList.map((node) => [node.label, node]))
+    // The machines of this build are kept in one directory, emptied before the first target runs and removed when
+    // the build ends: a machine starts with nothing an earlier build left.
+    const machinesKept = planned.workList.some((node) => node.machine !== undefined)
+      ? yield* Effect.acquireRelease(
+        joined(() => Machine.prepare(NodeFs.realpathSync(root), hostEnvironment)),
+        (kept) => joined(() => Machine.remove(kept)).pipe(Effect.ignore)
+      )
+      : undefined
+    /** The machines made so far, by name, and the ones being made. */
+    const madeMachines = new Map<string, Machine.Machine>()
+    const makingMachines = new Map<string, Promise<Machine.Machine>>()
+    let machineStart: Promise<Machine.Start> | undefined
+    /** What every machine of this build starts from, asked of git and of the host once. */
+    const startOf = (): Promise<Machine.Start> =>
+      machineStart ??= (async () => {
+        const real = NodeFs.realpathSync(root)
+        return {
+          root: real,
+          cacheDirectory,
+          held: await Machine.fresh(real, cacheDirectory),
+          kept: machinesKept!,
+          homeTemplate: hostEnvironment[Machine.homeVariable],
+          // A version manager's home is put where its shims look for it under the machine's home.
+          links: Machine.homeLinks(
+            ExecSandbox.toolchain(hostEnvironment["PATH"], real, services.sandboxHost()).privateLinks
+          )
+        }
+      })()
+    /** The machine a target names, made when the first of its targets has to run; nothing for a target that names none. */
+    const onMachine = (node: PackageNode): Effect.Effect<Machine.Machine | undefined, unknown> =>
+      node.machine === undefined ? Effect.succeed(undefined) : joined(() => {
+        const name = node.machine!
+        const pending = makingMachines.get(name)
+        if (pending !== undefined) return pending
+        const began = performance.now()
+        const making = startOf()
+          .then((start) => Machine.make({ ...start, machine: Machine.named(start.kept, start.root, name) }))
+          .then((machine) => {
+            madeMachines.set(name, machine)
+            log(`smthrs: machine ${name} has a fresh checkout, made in ${Math.round(performance.now() - began)} ms`)
+            return machine
+          })
+        makingMachines.set(name, making)
+        return making
+      })
+    /** The machine a target runs on, once it is made. */
+    const machineOf = (node: PackageNode): Machine.Machine | undefined =>
+      node.machine === undefined ? undefined : madeMachines.get(node.machine)
+    /** Where a target runs: its machine's copy of the workspace once that is made, or the workspace. */
+    const placeOf = (node: PackageNode): string => machineOf(node)?.tree ?? root
 
     /** The first target whose report stopped a fail-fast run. */
     let stoppedBy: string | undefined
@@ -956,8 +1009,22 @@ export const executeEffect = (
       traced?: (argv: ReadonlyArray<string>) => ReadonlyArray<string>
     ): Effect.Effect<SpawnOutcome, unknown> =>
       Effect.gen(function*() {
-        const resolved = yield* resolveSpawn(node, override, archive)
-        if ("error" in resolved) return { ok: false as const, error: resolved.error }
+        const spawn = yield* resolveSpawn(node, override, archive)
+        if ("error" in spawn) return { ok: false as const, error: spawn.error }
+        // On its machine a target names the copy where its plan named the workspace, and is told the machine's home
+        // and temporary directory in place of the host's.
+        const machine = machineOf(node)
+        const onIts = machine !== undefined && workspaceRoot === machine.tree
+        const moved = (value: string): string =>
+          onIts ? Machine.relocated(value, root, machine.tree, cacheDirectory) : value
+        const resolved = {
+          ...spawn,
+          argv: spawn.argv.map(moved) as [string, ...Array<string>],
+          env: {
+            ...(onIts ? Machine.environment(machine) : {}),
+            ...Object.fromEntries(Object.entries(spawn.env).map(([name, value]) => [name, moved(value)]))
+          }
+        }
         const sandbox = yield* sandboxFor(node, workspaceRoot, candidateReads)
         const ambient = options.environment ?? process.env
         // The owned compile cache follows the tree the tool runs in, so a
@@ -2179,6 +2246,12 @@ export const executeEffect = (
     /** Runs, captures, and materializes a cacheable build, using scratch for overlays. */
     const runBuild = (node: PackageNode): Effect.Effect<Outcome, unknown> =>
       Effect.gen(function*() {
+        if (node.machine !== undefined) {
+          // What it builds stays on its machine, for the targets there that wait for it, so it always runs.
+          const machine = yield* onMachine(node)
+          const spawned = yield* spawnNode(node, machine!.tree)
+          return spawned.ok ? green("ran") : fail(spawned.error)
+        }
         const cached = yield* cacheGet(node)
         if (cached !== undefined && (yield* restoreBuild(node, cached.output))) return green("hit")
         if (node.overlays.length === 0) {
@@ -2223,7 +2296,9 @@ export const executeEffect = (
       argv?: ReadonlyArray<string> | undefined,
       traced?: (argv: ReadonlyArray<string>) => ReadonlyArray<string>
     ): Effect.Effect<ExecOutcome, unknown> =>
-      runWithOverlays(node, (treeRoot) => spawnNode(node, treeRoot, argv, [], false, traced))
+      node.machine === undefined
+        ? runWithOverlays(node, (treeRoot) => spawnNode(node, treeRoot, argv, [], false, traced))
+        : Effect.flatMap(onMachine(node), (machine) => spawnNode(node, machine!.tree, argv, [], false, traced))
 
     let observing: ObservedReads.Observer | undefined
     let unobservedNoted = false
@@ -2298,6 +2373,16 @@ export const executeEffect = (
             .map((directory) => NodeFs.realpathSync(directory))
         )
       ]
+    /** The temporary directories of a target's run: its machine's own comes first. */
+    const temporaryOf = (node: PackageNode): ReadonlyArray<string> => {
+      const machine = machineOf(node)
+      return machine === undefined ? temporary() : [machine.tmp, ...temporary()]
+    }
+    /** Whether two targets run in one tree, so that one can read what the other leaves. */
+    const together = (one: PackageNode, other: PackageNode): boolean => one.machine === other.machine
+    /** Whether a target that runs in the same tree waits for this one. */
+    const awaitedBy = (node: PackageNode, counts: (label: string) => boolean = () => true): boolean =>
+      [...dependentsOf(node.label)].some((label) => counts(label) && together(node, byLabel.get(label)!))
     /** A path as the kept files name it, and back. */
     const keptPath = (real: string, path: string): string =>
       path === real ? "." : path.startsWith(`${real}/`) ? path.slice(real.length + 1) : path
@@ -2330,7 +2415,7 @@ export const executeEffect = (
         }
         const tar = yield* services.findOnPath("tar")
         if (tar === undefined) return record
-        const real = NodeFs.realpathSync(root)
+        const real = NodeFs.realpathSync(placeOf(node))
         const stem = keptStem(observed, record.id!)
         const names = (absolute: boolean): string =>
           left.keep.filter((name) => name.startsWith("/") === absolute).map((name) => `${name}\0`).join("")
@@ -2395,7 +2480,7 @@ export const executeEffect = (
         const tar = yield* services.findOnPath("tar")
         if (stored.kept === undefined || tar === undefined) return false
         const { archive, gone } = stored.kept
-        const real = NodeFs.realpathSync(root)
+        const real = NodeFs.realpathSync(placeOf(node))
         const stem = keptStem(observed, archive)
         const listed = yield* spawnNode(node, root, [
           "/bin/sh",
@@ -2412,7 +2497,7 @@ export const executeEffect = (
             // Nothing is put back outside the workspace and the temporary directory, whatever an archive holds.
             if (
               ![...names.map((name) => name.replace(/\/$/, "")), ...gone].every((name) =>
-                ObservedReads.keptName(name, temporary())
+                ObservedReads.keptName(name, temporaryOf(node))
               )
             ) return undefined
             const paths = JSON.parse(await Fs.readFile(`${stem}.json`, "utf8")) as {
@@ -2457,7 +2542,10 @@ export const executeEffect = (
         for (const producer of inOrder) {
           const stored = leftBy.get(producer.label)
           if (stored === undefined || !before.has(producer.label) || putBack.has(producer.label)) continue
+          // A target on another machine reads nothing this one left.
+          if (!together(producer, node)) continue
           putBack.add(producer.label)
+          yield* onMachine(producer)
           if (yield* restore(producer, producer.observed!, stored)) {
             log(`${producer.label}  what it left is put back for ${node.label}`)
             continue
@@ -2494,6 +2582,9 @@ export const executeEffect = (
           kept.set(node.label, new Set(stored.map((record) => record.id!)))
         }
         const real = yield* joined(async () => NodeFs.realpathSync(root))
+        // A machine is made only for a target that has to run. Until then its record is held against what the
+        // machine would start with: a fresh checkout, an empty home and an empty temporary directory.
+        const unmade = machinesKept === undefined ? undefined : Machine.unmade(yield* joined(startOf), stateOf)
         /** A dependency that runs nothing, as a group of files does, holds nobody back. */
         const still = (label: string): boolean => kept.has(label) || byLabel.get(label)?.rule === "Filegroup"
         for (let settled = false; !settled;) {
@@ -2506,12 +2597,18 @@ export const executeEffect = (
               : yield* joined(async () =>
                 records.get(node.label)!.filter((record) =>
                   before.has(record.id!) &&
-                  ObservedReads.changed(record, real, stateOf, undefined, (label) => kept.get(label)) === undefined
+                  ObservedReads.changed(
+                      record,
+                      real,
+                      node.machine === undefined ? stateOf : unmade!.measured,
+                      node.machine === undefined ? undefined : unmade!.io,
+                      (label) => kept.get(label)
+                    ) === undefined
                 )
               )
             // What a step left is put back when a target after it runs. A record whose files are not kept answers
             // only while every such target is answered too.
-            const awaited = [...dependentsOf(node.label)].some((label) => !kept.has(label))
+            const awaited = awaitedBy(node, (label) => !kept.has(label))
             const answering = !awaited ?
               holding :
               yield* joined(async () =>
@@ -2567,11 +2664,13 @@ export const executeEffect = (
           return undefined
         }
         if (answered.has(node.label)) return green("hit")
+        const machine = yield* onMachine(node)
+        const place = machine?.tree ?? root
         const earlier = ObservedReads.decode((yield* cacheGet(node, observed.key))?.output)
-        const awaited = dependentsOf(node.label).size > 0
+        const awaited = awaitedBy(node)
         let why: string | undefined
         for (const stored of earlier) {
-          const moved = yield* joined(async () => ObservedReads.changed(stored, NodeFs.realpathSync(root), stateOf))
+          const moved = yield* joined(async () => ObservedReads.changed(stored, NodeFs.realpathSync(place), stateOf))
           if (moved !== undefined) {
             why ??= moved
             continue
@@ -2651,12 +2750,16 @@ export const executeEffect = (
           const before = dependenciesOf(node.label)
           const read = yield* Effect.exit(joined(async () =>
             ObservedReads.observe(
-              ObservedReads.read(ObservedReads.linesOf(traceFile), NodePath.resolve(root, node.cwd)),
+              ObservedReads.read(ObservedReads.linesOf(traceFile), NodePath.resolve(place, node.cwd)),
               {
-                root: NodeFs.realpathSync(root),
-                ignore: ObservedReads.ignored(root, NodeOs.homedir(), cacheDirectory, observed.ignore),
+                root: NodeFs.realpathSync(place),
+                ignore: [
+                  ...ObservedReads.ignored(place, machine?.home ?? NodeOs.homedir(), cacheDirectory, observed.ignore),
+                  // The cache is the build's own wherever a target runs.
+                  ...(machine === undefined ? [] : ObservedReads.ignored(root, machine.home, cacheDirectory, []))
+                ],
                 startedMs,
-                temporary: temporary(),
+                temporary: temporaryOf(node),
                 // In the order they ran or would have run: the last to write a path is the one it came from.
                 producers: inOrder.flatMap((earlier) => {
                   const producer = before.has(earlier.label) ? wroteHere.get(earlier.label) : undefined
@@ -3534,7 +3637,7 @@ export const executeEffect = (
                 const outcome = yield* runObserved(node, node.observed)
                 if (outcome !== undefined) return outcome
                 // Unobserved, nothing says what it leaves for the targets that wait for it: it runs every time.
-                if (dependentsOf(node.label).size > 0) {
+                if (awaitedBy(node)) {
                   const spawned = yield* spawnConsumer(node)
                   if (!spawned.ok) return fail(spawned.error)
                   unstored(node, "a step after it may read what it leaves, and its reads are not recorded")
@@ -4577,12 +4680,21 @@ export const executeEffect = (
     })
     const supervisor = yield* ServiceSupervisor.make
     const treeGate = yield* TreeGate.make(jobs)
+    // The targets of one machine share its tree, so they run one at a time, as the steps of a job do.
+    const machineTurns = new Map<string, Semaphore.Semaphore>()
+    for (const node of planned.workList) {
+      if (node.machine !== undefined && !machineTurns.has(node.machine)) {
+        machineTurns.set(node.machine, yield* Semaphore.make(1))
+      }
+    }
+    const inTurn = <A, E>(node: PackageNode, body: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+      node.machine === undefined ? body : machineTurns.get(node.machine)!.withPermit(body)
     const runOne = (label: string) =>
       Effect.gen(function*() {
         const node = byLabel.get(label)!
         const started = performance.now()
         if (!node.dependencies.some((dependency) => notGreen.has(dependency))) reporter.targetStarted(label)
-        const outcome = yield* treeGate(takesExclusiveTreePermit(node), settle(node)).pipe(
+        const outcome = yield* inTurn(node, treeGate(takesExclusiveTreePermit(node), settle(node))).pipe(
           Effect.onInterrupt(() =>
             Effect.sync(() => {
               if (stoppedBy !== undefined) cancel(node, performance.now() - started, "cancelled")

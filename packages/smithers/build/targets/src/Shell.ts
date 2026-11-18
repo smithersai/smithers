@@ -98,6 +98,9 @@ const executableIssue = (attrs: ExecAttrs): string | undefined => {
 }
 const executableCheck = Schema.makeFilter(executableIssue)
 
+const machineNeedsNoSandbox =
+  "machine requires sandbox: \"none\"; a confined target is already held to the files it declares"
+
 /**
  * Attrs for {@link Build}.
  *
@@ -113,7 +116,21 @@ export const BuildAttrs = Schema.Struct({
    */
   cache: Schema.optional(Schema.Literal(false)),
   outDirs: Schema.optional(Schema.Array(Schema.NonEmptyString)),
-  outFiles: Schema.optional(Schema.Array(Schema.NonEmptyString))
+  outFiles: Schema.optional(Schema.Array(Schema.NonEmptyString)),
+  /**
+   * Names the machine the target runs on. Targets that name the same machine
+   * run one at a time in one private copy of the workspace, with a home
+   * directory and a temporary directory of their own, as the steps of one CI
+   * job share a runner. The copy is a fresh checkout: what git tracks as the
+   * working tree has it, and every other file `.gitignore` does not leave
+   * out. It is made when the first of them has to run and removed when the
+   * build ends, so no other target sees what they write, and they see
+   * nothing another target wrote.
+   *
+   * The target needs `sandbox: "none"` and `cache: false`: what it builds
+   * stays on its machine, for the targets there that wait for it.
+   */
+  machine: Schema.optional(Schema.NonEmptyString)
 }).check(
   executableCheck,
   // An uncached build with no output is an action that runs every time and
@@ -122,7 +139,14 @@ export const BuildAttrs = Schema.Struct({
     attrs.cache !== false && (attrs.outDirs?.length ?? 0) + (attrs.outFiles?.length ?? 0) === 0
       ? "Shell.Build requires at least one outDirs or outFiles entry unless cache is false"
       : undefined
-  )
+  ),
+  Schema.makeFilter((attrs) => {
+    if (attrs.machine === undefined) return undefined
+    if (attrs.sandbox !== "none") return machineNeedsNoSandbox
+    return attrs.cache === false
+      ? undefined
+      : "machine requires cache: false; what a build leaves on a machine is never restored from the cache"
+  })
 )
 
 /**
@@ -156,9 +180,30 @@ export const TestAttrs = Schema.Struct({
    */
   observe: Schema.optional(
     Schema.Union([Schema.Boolean, Schema.Struct({ ignore: Schema.Array(Schema.NonEmptyString) })])
-  )
+  ),
+  /**
+   * Names the machine the target runs on. Targets that name the same machine
+   * run one at a time in one private copy of the workspace, with a home
+   * directory and a temporary directory of their own, as the steps of one CI
+   * job share a runner. The copy is a fresh checkout: what git tracks as the
+   * working tree has it, and every other file `.gitignore` does not leave
+   * out. It is made when the first of them has to run and removed when the
+   * build ends, so no other target sees what they write, and they see
+   * nothing another target wrote.
+   *
+   * The target needs `sandbox: "none"`: a confined target is already held to
+   * the files it declares.
+   */
+  machine: Schema.optional(Schema.NonEmptyString)
 }).check(
   executableCheck,
+  Schema.makeFilter((attrs) => {
+    if (attrs.machine === undefined) return undefined
+    if (attrs.sandbox !== "none") return machineNeedsNoSandbox
+    if ((attrs.shards ?? 1) > 1) return "machine cannot be combined with shards"
+    if ((attrs.services ?? []).length > 0) return "machine cannot be combined with services"
+    return undefined
+  }),
   Schema.makeFilter((attrs) => {
     if (attrs.observe === undefined || attrs.observe === false) return undefined
     if (attrs.sandbox !== "none") {

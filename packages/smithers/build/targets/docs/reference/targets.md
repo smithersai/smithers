@@ -334,6 +334,15 @@ A package manager told to install exactly what a lockfile pins (`npm ci`,
 `pnpm install --frozen-lockfile`, `uv sync --locked`) may open a connection
 and still be stored.
 
+`Shell.Test` and `Shell.Build` accept `machine: "<name>"`. Targets that name
+the same machine run one at a time in one private copy of the workspace, with a
+home directory and a temporary directory of their own, as the steps of one CI
+job share a runner. The copy is a fresh checkout, made when the first of them
+has to run and removed when the build ends. No other target sees what they
+write. It requires `sandbox: "none"`, and `cache: false` on a `Shell.Build`,
+and cannot be combined with `shards` or `services`. The build's caching page
+describes what a machine starts with and where machines are kept.
+
 `Shell.Build` command forms key the shell and the leading literal executable.
 List executables a shell target spawns by itself in `tools`: their bytes join
 the key the same way, and an absent one refuses the target. Executable

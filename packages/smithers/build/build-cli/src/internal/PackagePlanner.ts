@@ -3460,6 +3460,9 @@ const visit = async (
   // inside a value is written as a token, so a search path that names
   // `node_modules/.bin` keys alike in every checkout.
   const observe = rule === "Shell.Test" ? attrMember(attrs, "observe") : undefined
+  const machine = rule === "Shell.Test" || rule === "Shell.Build"
+    ? attrMember(attrs, "machine") as string | undefined
+    : undefined
   const observed = observe === undefined || observe === false
     ? undefined
     : {
@@ -3570,6 +3573,7 @@ const visit = async (
     ...(installedTrees.length === 0 ? {} : { installedTrees }),
     ...(evidence === undefined ? {} : { evidence }),
     ...(observed === undefined ? {} : { observed }),
+    ...(machine === undefined ? {} : { machine }),
     ...(uncachedBecause === undefined ? {} : { uncachedBecause }),
     outDirs,
     outFiles,

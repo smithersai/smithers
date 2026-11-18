@@ -80,6 +80,7 @@ const complete = [
   "src/internal/GoCache.ts",
   "src/internal/HostProbes.ts",
   "src/internal/InputPackage.ts",
+  "src/internal/Machine.ts",
   "src/internal/OutputCas.ts",
   "src/internal/PackageOptions.ts",
   "src/internal/PackagePlanner.ts",

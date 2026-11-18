@@ -483,6 +483,81 @@ real tracer: an unchanged tree, a changed file, a new file in a listed
 directory, a path that was missing and now exists, a command that fails only
 when traced, and a command that reaches a server outside the run.
 
+### A machine for the steps of a job
+
+A CI system starts every job on a machine of its own: a fresh checkout, an
+empty home directory, an empty temporary directory, and nothing another job
+did. Steps written for that pass there and can fail in one shared tree: one
+job edits a file another job checks, or two jobs each expect `~/.cache/tool`
+not to exist. `machine` gives the targets of a job the same in one build:
+
+```ts
+const install = S.Shell.Test({ shell: "npm ci", machine: "ci.yml:test", sandbox: "none", observe: true, data: [files] })
+const test = S.Shell.Test({
+  shell: "npm test",
+  machine: "ci.yml:test",
+  sandbox: "none",
+  observe: true,
+  data: [files, install]
+})
+const lint = S.Shell.Test({
+  shell: "npm run lint",
+  machine: "ci.yml:lint",
+  sandbox: "none",
+  observe: true,
+  data: [files]
+})
+```
+
+Targets that name the same machine run in one private copy of the workspace,
+one at a time, each after the targets it depends on. `HOME`, `XDG_CACHE_HOME`
+and `TMPDIR` name directories of that machine. No other target sees what they
+write, and they see nothing another target wrote, in the tree, the home or the
+temporary directory. Targets of different machines run at the same time under
+`--jobs`.
+
+| What a machine starts with | What it holds                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| The tree                   | A fresh checkout: what git tracks, as the working tree has it now, and every other file `.gitignore` does not leave out   |
+| The repository             | Its own `.git`: the same commit, branches, tags, remotes and index. Objects are read from the workspace's store           |
+| The home                   | Empty, or a copy of the directory `SMTHRS_MACHINE_HOME` names. A version manager on `PATH` is linked where its shims look |
+| The temporary directory    | Empty                                                                                                                     |
+
+An installed `node_modules` and a build's output are in no fresh checkout, so
+a machine has neither until one of its targets makes it. A workspace that is
+not the root of a git checkout is copied whole, apart from the cache
+directory. The tools on `PATH` are the host's.
+
+**A machine is made only for a target that runs.** The build decides which
+observed targets are answered from their records before the first target
+starts, against what a machine starts with. A build that answers every target
+of a machine makes no copy. When one target of a machine runs, the copy is
+made, what each answered target before it left is put back in the copy, and
+the target runs there. The line says how long the copy took:
+
+```text
+smthrs: machine ci.yml:test has a fresh checkout, made in 412 ms
+```
+
+Machines are kept under the user's cache directory
+(`$XDG_CACHE_HOME/smthrs/machines`, else `~/.cache/smthrs/machines`), outside
+the workspace, so a tool that walks up from the copy finds no file of the
+workspace. `SMTHRS_MACHINES` names another directory. They are removed when the
+build ends, and what an earlier build left there is removed before the first
+target runs. One build at a time uses a workspace's machines.
+
+`machine` requires `sandbox: "none"`. A `Shell.Build` on a machine also
+declares `cache: false`: what it builds stays on its machine for the targets
+there that depend on it, so it always runs. `machine` cannot be combined with
+`shards` or `services`. Only the temporary directory a program finds through
+`TMPDIR` is the machine's: a program that names `/tmp` itself writes the
+host's.
+
+`build-cli/test/MachineExecution.test.ts` runs real commands in a real git
+checkout: two machines that never see each other's writes, the steps of one
+machine in order, an answered step whose files are put back in the copy, and a
+build that makes no machine because every target is answered.
+
 ### An installed tree stays the tree a plan measured
 
 Some packages write into their own installed directory the first time they run.

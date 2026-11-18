@@ -50,3 +50,29 @@ describe("a shell test that asks to be observed", () => {
     expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: { ignore: [""] } })).toThrow()
   })
 })
+
+describe("a shell target that names a machine", () => {
+  it("is declared with a run nothing confines", () => {
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", machine: "ci.yml:lint" })).not.toThrow()
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", machine: "ci.yml:lint", observe: true })).not.toThrow()
+    expect(() => Shell.Build({ shell: "true", sandbox: "none", machine: "job", cache: false, outFiles: ["//out"] }))
+      .not.toThrow()
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", machine: "job", shards: 1, services: [] })).not.toThrow()
+  })
+
+  it("is refused under a confinement, with shards, with services, and as a build that is cached", () => {
+    expect(() => Shell.Test({ shell: "true", machine: "job" })).toThrow(/machine requires sandbox: "none"/)
+    expect(() => Shell.Test({ shell: "true", sandbox: { network: true }, machine: "job" }))
+      .toThrow(/machine requires sandbox: "none"/)
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", machine: "job", shards: 2 }))
+      .toThrow(/machine cannot be combined with shards/)
+    const service = Shell.Serve({ shell: "serve" })
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", machine: "job", services: [service] }))
+      .toThrow(/machine cannot be combined with services/)
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", machine: "" })).toThrow()
+    expect(() => Shell.Build({ shell: "true", machine: "job", cache: false, outFiles: ["//out"] }))
+      .toThrow(/machine requires sandbox: "none"/)
+    expect(() => Shell.Build({ shell: "true", sandbox: "none", machine: "job", outFiles: ["//out"] }))
+      .toThrow(/machine requires cache: false/)
+  })
+})

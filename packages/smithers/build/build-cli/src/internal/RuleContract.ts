@@ -258,6 +258,12 @@ export interface SharedFields extends Planner.PlannedTarget {
    */
   readonly observed?: { readonly key: string; readonly ignore: ReadonlyArray<string> }
   /**
+   * Set for a shell target that names a machine: it runs in that machine's
+   * private copy of the workspace, with that machine's home and temporary
+   * directory.
+   */
+  readonly machine?: string
+  /**
    * Why a green run of this node stores nothing, where the plan can say: a
    * test, type-check or lint node whose contract is incomplete, or a tool
    * rule that reuses no result as planned.
