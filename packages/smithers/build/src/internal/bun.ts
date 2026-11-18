@@ -145,14 +145,18 @@ export const readLockfile = (text: string): Lockfile | Refusal => {
       if (members.includes(resolution.slice("workspace:".length))) continue
       return refuse("lockfile_unreadable", "bun.lock holds a workspace package outside its workspaces")
     }
-    // Everything the staging copy can install comes from a network source.
-    // A folder, a link, or a local tarball is spelled as a bare or `file:`
-    // path, and none of them is in the copy.
-    if (!/^(?:\d|https?:\/\/|github:|git\+https:\/\/|git\+ssh:\/\/)/.test(resolution)) {
+    // Everything the staging copy can install comes from a network source: an
+    // exact registry version, an `http(s)` tarball, or a git source. A folder,
+    // a link, or a local tarball is spelled as a path, with or without
+    // `file:`, and a tarball named `1.0.0.tgz` is still a path.
+    if (
+      !/^(?:\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$|https?:\/\/|github:|git\+https:\/\/|git\+ssh:\/\/)/.test(resolution)
+    ) {
       return refuse(
         "unsupported",
-        `bun.lock resolves ${name.slice(0, 214)} from a local path; the fetch stages only manifests and patch ` +
-          "files, so a file:, link:, or local tarball dependency cannot be installed"
+        `bun.lock resolves ${name.slice(0, 214)} from a source the fetch does not install; registry versions, ` +
+          "workspace members, http(s) tarballs, and github:, git+https: and git+ssh: sources install, and file:, " +
+          "link:, and local tarball dependencies do not"
       )
     }
   }

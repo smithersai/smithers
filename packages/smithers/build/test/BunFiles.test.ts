@@ -30,7 +30,11 @@ describe("Bun.readLockfile", () => {
         "a": ["a@workspace:packages/a"],
         "@scope/pkg": ["@scope/pkg@1.2.3", "", {}, "sha512-x"],
         "remote": ["remote@https://example.com/remote.tgz", {}],
-        "git": ["git@github:owner/repo#abc", {}]
+        "git": ["git@github:owner/repo#abc", {}],
+        "hosted": ["hosted@git+https://git.example.com/owner/repo.git#abc", {}],
+        "keyed": ["keyed@git+ssh://git@git.example.com/owner/repo.git#abc", {}],
+        "prerelease": ["typescript@6.0.0-beta", "", {}, "sha512-x"],
+        "build": ["build@1.2.3+build.5", "", {}, "sha512-x"]
       }
     })).toEqual({
       members: ["packages/a", "packages/b"],
@@ -129,11 +133,16 @@ describe("Bun.readLockfile", () => {
     // Bun writes a tarball inside the project with no `./` and no `file:`.
     ["a bare tarball path", "local@vendor/local.tgz"],
     ["a repository on this host", "local@git+file:///opt/repo"],
+    // Bun writes a tarball named like a version exactly this way.
+    ["a tarball named like a version", "local@1.0.0.tgz"],
+    ["a tarball in a directory that starts with a digit", "local@3rdparty/local.tgz"],
     ["an identifier with no source", "local"]
   ])("refuses a dependency resolved from %s", (_name, identifier) => {
     const refused = lockfile({ packages: { local: [identifier, {}] } })
     expect(refused).toMatchObject({ code: "unsupported" })
-    expect((refused as Bun.Refusal).message).toContain("bun.lock resolves local from a local path")
+    expect((refused as Bun.Refusal).message).toContain(
+      "bun.lock resolves local from a source the fetch does not install"
+    )
   })
 
   it("refuses a workspace package that is not one of the lockfile's workspaces", () => {

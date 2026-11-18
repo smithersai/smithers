@@ -12,7 +12,8 @@
   `NPM_CONFIG_` variable. `Install.Content` gains optional `bunfig` and
   `patches`, the store manifest gains a v3 tuple for them, and
   `PackageManager.bunInstallUnsupported` and `bunInstallUnsupportedMessage`
-  are removed.
+  are removed. A Bun fetch whose inputs equal the staging copy a completed
+  fetch left does nothing.
 - With a forwarded `.npmrc` credential, `fetch` and `link` no longer put the
   operator's proxy URL, password included, on the pnpm command line, where every
   local user could read it. The proxy travels in the child environment, and

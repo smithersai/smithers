@@ -281,11 +281,16 @@ bun install --offline --frozen-lockfile --ignore-scripts --no-progress --cache-d
 **Fetch** first copies into `<store>/fetch` the files a frozen install reads:
 `bun.lock`, the root `package.json`, `bunfig.toml`, `.npmrc`, every workspace
 member's `package.json`, and every patch file. The member and patch paths come
-from `bun.lock`. The staging directory is emptied first, so every fetch
-installs its tree again from the cache, and a cache that lost a package is
-refilled. Bun installs into `<store>/fetch/node_modules`, which fills the
-cache. The project's `node_modules` is not touched, and Bun opens the copies,
-so a file that changes in the checkout during the fetch does not reach it.
+from `bun.lock`. The staging directory is emptied first, so Bun installs its
+tree from nothing and downloads every package the cache lacks. Bun installs
+into `<store>/fetch/node_modules`, which fills the cache. The project's
+`node_modules` is not touched, and Bun opens the copies, so a file that
+changes in the checkout during the fetch does not reach it.
+
+A fetch that completes writes `<store>/cache/.smithers-fetch`, naming the Bun
+version and the platform. The next fetch does nothing when that file names the
+same Bun and platform and every staged copy still equals its input byte for
+byte. Deleting the cache deletes the file with it, so the fetch runs again.
 
 **Link** passes `--offline`. A package the fetch did not store fails the link;
 it is never downloaded.
@@ -333,7 +338,9 @@ anywhere else, before it creates or deletes anything below it. Link refuses a
 
 A workspace manifest, a patch file, or `bunfig.toml` that is a symbolic link
 is refused with `manifest_unreadable`. These files are copied into the store
-and digested, and a link could point at `.env` or `.git/config`.
+and digested, and a link could point at `.env` or `.git/config`. The fetch
+refuses a root `package.json` or `.npmrc` that is one too. Every input is read
+before anything in the store is deleted.
 
 The environment files are read for variable names only. A value is never
 digested, logged, or put in an error, and the files are not among the link's
@@ -376,8 +383,8 @@ The flags outrank `frozenLockfile` and `ignoreScripts`.
   refused. Workspace members, registry versions, `http(s)` tarballs, and
   `github:`, `git+https:` and `git+ssh:` sources install; any other source is
   refused.
-- **No symbolic links** for workspace manifests, patch files, or
-  `bunfig.toml`.
+- **No symbolic links** for the root `package.json`, `.npmrc`, `bunfig.toml`,
+  workspace manifests, or patch files.
 - **Patch files end in `.patch`.** The declared read set names them by suffix.
 - **No lifecycle scripts.** `--ignore-scripts` skips the root `postinstall`
   and every `trustedDependencies` script. Run what a workspace needs as its
@@ -389,9 +396,16 @@ The flags outrank `frozenLockfile` and `ignoreScripts`.
 - **The checks parse, they do not run Bun.** `bunfig.toml` is read with a TOML
   parser and the environment files with a pattern. A file those read one way
   and Bun reads another is not caught.
-- **The fetch links a second tree, every time.** `<store>/fetch/node_modules`
-  is hardlinked from the cache on each fetch. It costs one link pass and its
-  directory entries, not a second copy of the packages.
+- **The fetch links a second tree.** `<store>/fetch/node_modules` is
+  hardlinked from the cache whenever the fetch runs. It costs one link pass
+  and its directory entries, not a second copy of the packages.
+- **A damaged cache is not repaired by itself.** A cache that lost a package
+  after a completed fetch fails the link, which names the package. Delete
+  `.flows/store/bun` and install again.
+- **The link writes through what `node_modules` already holds,** as it does
+  under pnpm. A checkout that carries a symbolic link at or inside
+  `node_modules` decides where the manager writes. Do not commit
+  `node_modules`.
 - **One store per checkout,** as for pnpm. Nothing is restored across runs.
 - **The cache is trusted.** Bun checks a package's integrity when it downloads
   it, not when it installs it from the cache. A checkout that carries its own

@@ -223,10 +223,15 @@ describe("fresh Bun installations", () => {
     expect(await exists(Path.join(root, "node_modules/scripty/postinstall.js"))).toBe(true)
     expect(await exists(Path.join(root, "node_modules/scripty/SCRIPT_RAN"))).toBe(false)
 
+    // An unchanged fetch does nothing: no request, and the staged tree is
+    // the one the first run left, not one deleted and installed again.
+    const stagedTree = Path.join(root, ".flows/store/bun/fetch/node_modules")
+    const staged = (await Fs.stat(stagedTree)).ino
     registry.requests.length = 0
     const second = await serve(root, ["install"])
     expect(second.exitCode, `${second.output}${second.logs}`).toBe(0)
     expect(registry.requests).toEqual([])
+    expect((await Fs.stat(stagedTree)).ino).toBe(staged)
 
     // The link is offline: with the tree gone and the registry refusing
     // tarballs, the store alone rebuilds it.
@@ -259,6 +264,44 @@ describe("fresh Bun installations", () => {
     expect(changed.exitCode, `${changed.output}${changed.logs}`).toBe(0)
     expect(await installed(root, "alpha")).toBe("1.1.0")
     expect(tarballs()).toEqual(["GET /alpha/-/alpha-1.1.0.tgz"])
+  }, 120_000)
+
+  it("fails closed when the root manifest names the staging copy as a workspace", async () => {
+    const root = await workspace()
+    // Bun installs from a parent whose manifest names its working directory,
+    // which would move the fetch out of the staging copy and into the project.
+    // The lockfile cannot name a workspace inside `.flows`, so the frozen
+    // install stops before it writes a tree anywhere.
+    const manifest = await Fs.readFile(Path.join(root, "package.json"), "utf8")
+    await write(root, "package.json", manifest.replace(`"packages/*"`, `"packages/*",\n    ".flows/store/bun/*"`))
+    registry.requests.length = 0
+    const { exitCode, logs, output } = await serve(root, ["install"])
+    expect(exitCode).toBe(1)
+    expect(`${output}${logs}`).toContain("bun install exited with status 1")
+    expect(await exists(Path.join(root, "node_modules"))).toBe(false)
+    expect(await exists(Path.join(root, ".flows/store/bun/fetch/node_modules"))).toBe(false)
+  }, 120_000)
+
+  it("fails the link when the cache lost a package, and recovers once the store is deleted", async () => {
+    const root = await workspace()
+    expect((await serve(root, ["install"])).exitCode).toBe(0)
+    const cache = Path.join(root, ".flows/store/bun/cache")
+    const lost = (await Fs.readdir(cache)).filter((entry) => entry.startsWith("beta@1.0.0"))
+    expect(lost.length).toBeGreaterThan(0)
+    await Promise.all(lost.map((entry) => Fs.rm(Path.join(cache, entry), { recursive: true })))
+    await Fs.rm(Path.join(root, "node_modules"), { recursive: true })
+    registry.requests.length = 0
+    // The fetch completed for these inputs, so it does not run again; the
+    // offline link is what notices, and it does not reach the registry.
+    const damaged = await serve(root, ["install"])
+    expect(damaged.exitCode).toBe(1)
+    expect(`${damaged.output}${damaged.logs}`).toContain("bun install --offline exited with status 1")
+    expect(tarballs()).toEqual([])
+
+    await Fs.rm(Path.join(root, ".flows/store/bun"), { recursive: true })
+    const recovered = await serve(root, ["install"])
+    expect(recovered.exitCode, `${recovered.output}${recovered.logs}`).toBe(0)
+    expect(await installed(root, "beta")).toBe("1.0.0")
   }, 120_000)
 
   it("refuses a workspace with no lockfile before Bun starts", async () => {

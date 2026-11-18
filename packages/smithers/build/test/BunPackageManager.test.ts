@@ -295,7 +295,7 @@ describe("PackageManager.makeBun", () => {
     })
   })
 
-  it("rebuilds the staging copy from nothing on every fetch", async () => {
+  it("rebuilds the staging copy from nothing when it fetches", async () => {
     await withProject(async ({ executable, root, write }) => {
       const stage = NodePath.join(root, ".flows/store/bun/fetch")
       // A workspace the lockfile named last time, and the tree Bun staged. A
@@ -307,6 +307,90 @@ describe("PackageManager.makeBun", () => {
       const manager = await makeBun(root, executable)
       await Effect.runPromise(manager.fetch)
       expect(await filesBelow(stage)).toEqual(["bun.lock", "package.json", "packages/a/package.json", patch])
+    })
+  })
+
+  it("does nothing on a fetch whose inputs the last completed fetch staged", async () => {
+    await withProject(async ({ calls, executable, root, write }) => {
+      await write("bunfig.toml", `[install]\nlinker = "isolated"\n`)
+      const manager = await makeBun(root, executable)
+      await Effect.runPromise(manager.fetch)
+      // The completion lives in the cache, so a deleted cache takes it along.
+      expect(await Fs.readFile(NodePath.join(root, ".flows/store/bun/cache/.smithers-fetch"), "utf8"))
+        .toBe("smithers-build/bun-fetch/v1\n1.4.2\nlinux-x64-null\n")
+      const staged = ".flows/store/bun/fetch/node_modules/dep/package.json"
+      await write(staged, `{ "name": "dep" }\n`)
+      await Effect.runPromise(manager.fetch)
+      expect(await calls()).toHaveLength(1)
+      expect(await Fs.readFile(NodePath.join(root, staged), "utf8")).toBe(`{ "name": "dep" }\n`)
+    })
+  })
+
+  it.each<
+    [
+      string,
+      (
+        project: { readonly root: string; readonly write: (path: string, text: string) => Promise<void> }
+      ) => Promise<void>
+    ]
+  >([
+    [
+      "the lockfile changes",
+      ({ write }) => write("bun.lock", lockfile.replace(`"name": "fixture"`, `"name": "renamed"`))
+    ],
+    // The same length, so only the bytes tell the two apart.
+    ["a workspace manifest changes", ({ write }) => write("packages/a/package.json", `{ "name": "b" }\n`)],
+    ["a patch file changes", ({ write }) => write(patch, "--- a/other.js\n+++ b/other.js\n")],
+    ["bunfig.toml appears", ({ write }) => write("bunfig.toml", `[install]\nlinker = "hoisted"\n`)],
+    ["the cache is deleted", ({ root }) => Fs.rm(NodePath.join(root, ".flows/store/bun/cache"), { recursive: true })],
+    ["a staged file is gone", ({ root }) => Fs.rm(NodePath.join(root, ".flows/store/bun/fetch/package.json"))],
+    ["a staged file is not a file", async ({ root }) => {
+      await Fs.rm(NodePath.join(root, ".flows/store/bun/fetch/package.json"))
+      await Fs.mkdir(NodePath.join(root, ".flows/store/bun/fetch/package.json"))
+    }],
+    [
+      "another Bun completed the cache",
+      ({ write }) =>
+        write(".flows/store/bun/cache/.smithers-fetch", "smithers-build/bun-fetch/v1\n1.5.0\nlinux-x64-null\n")
+    ]
+  ])("fetches again, from an empty staging copy, when %s", async (_name, change) => {
+    await withProject(async ({ calls, executable, root, write }) => {
+      const manager = await makeBun(root, executable)
+      await Effect.runPromise(manager.fetch)
+      await write(".flows/store/bun/fetch/node_modules/dep/package.json", `{ "name": "dep" }\n`)
+      await change({ root, write })
+      await Effect.runPromise(manager.fetch)
+      expect(await calls()).toHaveLength(2)
+      await expect(Fs.access(NodePath.join(root, ".flows/store/bun/fetch/node_modules"))).rejects.toThrow()
+    })
+  })
+
+  it("fetches again when a configuration file the staged install ran under is removed", async () => {
+    await withProject(async ({ calls, executable, root, write }) => {
+      await write("bunfig.toml", `[install]\nlinker = "isolated"\n`)
+      const manager = await makeBun(root, executable)
+      await Effect.runPromise(manager.fetch)
+      await Fs.rm(NodePath.join(root, "bunfig.toml"))
+      await Effect.runPromise(await makeBun(root, executable).then((service) => service.fetch))
+      expect(await calls()).toHaveLength(2)
+      await expect(Fs.access(NodePath.join(root, ".flows/store/bun/fetch/bunfig.toml"))).rejects.toThrow()
+    })
+  })
+
+  it("refuses an input before it deletes anything in the store", async () => {
+    await withProject(async ({ calls, executable, root, write }) => {
+      const manager = await makeBun(root, executable)
+      await Effect.runPromise(manager.fetch)
+      const staged = await filesBelow(NodePath.join(root, ".flows/store/bun"))
+      // A root manifest that is a link is refused like every staged file.
+      await write(".env", "TOKEN=secret-value\n")
+      await Fs.rm(NodePath.join(root, "package.json"))
+      await Fs.symlink(NodePath.join(root, ".env"), NodePath.join(root, "package.json"))
+      const error = await refused(manager.fetch)
+      expect(error.code).toBe("manifest_unreadable")
+      expect(error.message).toContain("not a symbolic link")
+      expect(await filesBelow(NodePath.join(root, ".flows/store/bun"))).toEqual(staged)
+      expect(await calls()).toHaveLength(1)
     })
   })
 
@@ -602,6 +686,8 @@ describe("PackageManager.makeBun", () => {
         code: "command_failed",
         message: "bun install --offline exited with status 1"
       })
+      // A fetch that failed completed nothing, so the next one runs Bun again.
+      await expect(Fs.access(NodePath.join(root, ".flows/store/bun/cache/.smithers-fetch"))).rejects.toThrow()
     })
   })
 

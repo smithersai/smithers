@@ -1528,7 +1528,8 @@ const bunLockfile = (
  *   names into it, and runs `bun install --frozen-lockfile --ignore-scripts`
  *   there with the cache at `<store>/cache`. The staging tree is inside the
  *   store, so the project's `node_modules` is never touched, and Bun opens
- *   the bytes this process wrote, not the checkout's files.
+ *   the bytes this process wrote, not the checkout's files. A fetch whose
+ *   inputs equal the staging copy a completed fetch left does nothing.
  * - `link` runs `bun install --offline --frozen-lockfile --ignore-scripts` in
  *   the project root against the same cache, so a package the fetch did not
  *   store fails the link instead of reaching the network.
@@ -1650,16 +1651,19 @@ export const makeBun = (options: Options): Effect.Effect<
           ? path
           : yield* Effect.fail(outside(path))
       })
+    const empty = (directory: string) =>
+      Effect.andThen(
+        fs.remove(directory, { recursive: true }).pipe(Effect.mapError(staging(`clear ${directory}`))),
+        create(directory)
+      )
     /**
-     * Creates the store, with an empty staging copy and an empty home.
+     * Creates the store, with an empty home.
      *
      * Staging deletes and writes files here, Bun writes the cache, and Bun
      * reads its user-level `.bunfig.toml` and `.npmrc` from the home, so each
      * directory must be the one it is named, and a checkout can carry files
-     * at any of these paths. The staging copy and the home are therefore
-     * emptied before every fetch. Emptying the staging copy also means a
-     * fetch reinstalls it from the cache, so a cache that lost a package is
-     * refilled instead of trusted.
+     * at any of these paths. The home is therefore emptied before every
+     * fetch.
      *
      * Bun installs from the nearest parent directory whose `package.json`
      * names the working directory as a workspace. A `package.json` between
@@ -1691,10 +1695,7 @@ export const makeBun = (options: Options): Effect.Effect<
           )
         }
       }
-      for (const directory of [stage, home]) {
-        yield* fs.remove(directory, { recursive: true }).pipe(Effect.mapError(staging(`clear ${directory}`)))
-        yield* create(directory)
-      }
+      yield* empty(home)
     })
     /** Refuses to link from a store directory that resolves anywhere but where it is named. */
     const checkStore = Effect.gen(function*() {
@@ -1707,15 +1708,44 @@ export const makeBun = (options: Options): Effect.Effect<
         }
       }
     })
-    /** Copies one project file into the staging tree, byte for byte. */
-    const stageFile = (file: string, code: ErrorCode, limit: number, known?: Uint8Array) =>
+    /**
+     * What a completed fetch leaves in the cache: the Bun that filled it and
+     * the platform it filled it for.
+     *
+     * It lives in the cache so that a deleted cache takes it along.
+     */
+    const completion = `${cache}/.smithers-fetch`
+    const completed = (measured: string) =>
+      `smithers-build/bun-fetch/v1\n${measured}\n${normalized.platform.os}-${normalized.platform.arch}-` +
+      `${normalized.platform.libc}\n`
+    /**
+     * Whether the cache already holds what these inputs install.
+     *
+     * True only when a fetch by this Bun on this platform completed in this
+     * cache and the staging copy it ran in equals the inputs byte for byte.
+     * Then the staged install would change nothing, and the fetch skips it.
+     * The staged copies are compared, never trusted: Bun does not run in
+     * them when they match, and they are deleted when they do not.
+     */
+    const fetched = (measured: string, files: ReadonlyArray<readonly [file: string, bytes: Uint8Array]>) =>
       Effect.gen(function*() {
-        const bytes = known ?? (yield* ownFile(fs, code, projectRoot, file, limit))
-        const target = `${stage}/${file}`
-        yield* fs.makeDirectory(target.slice(0, target.lastIndexOf("/")), { recursive: true }).pipe(
-          Effect.mapError(staging(`stage ${file}`))
-        )
-        yield* fs.writeFile(target, bytes).pipe(Effect.mapError(staging(`stage ${file}`)))
+        const marker = yield* fs.readFileString(completion).pipe(Effect.orElseSucceed(() => ""))
+        if (marker !== completed(measured)) return false
+        for (const [file, bytes] of files) {
+          const info = yield* fs.stat(`${stage}/${file}`).pipe(Effect.orElseSucceed(() => undefined))
+          if (info?.type !== "File" || info.size !== BigInt(bytes.byteLength)) return false
+          const copy = yield* fs.readFile(`${stage}/${file}`).pipe(Effect.mapError(staging(`read ${stage}/${file}`)))
+          if (!copy.every((byte, index) => byte === bytes[index])) return false
+        }
+        // A configuration file the project no longer has is one the staged
+        // install ran under.
+        for (const file of [bunfigName, ".npmrc"]) {
+          if (
+            !files.some(([name]) => name === file) &&
+            (yield* isPresent(fs, "manifest_unreadable", `${stage}/${file}`))
+          ) return false
+        }
+        return true
       })
     /**
      * Refuses a `.env` file that configures Bun's installer.
@@ -1748,27 +1778,42 @@ export const makeBun = (options: Options): Effect.Effect<
         }
       }), { discard: true })
     const fetch = Effect.gen(function*() {
-      yield* verify
+      const measured = yield* verify
       yield* refuseEnvironmentFiles
       const { bytes, lockfile } = yield* bunLockfile(fs, projectRoot)
-      yield* prepareStore
-      yield* stageFile(lockfileNames.bun, "lockfile_unreadable", maximumLockfileBytes, bytes)
-      yield* stageFile("package.json", "manifest_unreadable", maximumPackageJsonBytes)
+      // Every input is read before anything in the store is deleted, so a
+      // refusal leaves the store as it was.
+      const files: Array<readonly [file: string, bytes: Uint8Array]> = [[lockfileNames.bun, bytes]]
+      const read = (file: string, limit: number) =>
+        Effect.map(ownFile(fs, "manifest_unreadable", projectRoot, file, limit), (content) => {
+          files.push([file, content])
+        })
+      yield* read("package.json", maximumPackageJsonBytes)
       for (const [file, limit] of [[bunfigName, maximumBunfigBytes], [".npmrc", maximumNpmrcBytes]] as const) {
-        if (yield* isPresent(fs, "manifest_unreadable", `${projectRoot}/${file}`)) {
-          yield* stageFile(file, "manifest_unreadable", limit)
-        }
+        if (yield* isPresent(fs, "manifest_unreadable", `${projectRoot}/${file}`)) yield* read(file, limit)
       }
-      for (const member of lockfile.members) {
-        yield* stageFile(`${member}/package.json`, "manifest_unreadable", maximumPackageJsonBytes)
+      for (const member of lockfile.members) yield* read(`${member}/package.json`, maximumPackageJsonBytes)
+      for (const patch of lockfile.patches) yield* read(patch, maximumLockfileBytes)
+      yield* prepareStore
+      if (yield* fetched(measured, files)) return
+      // The cache is about to change, and the staging copy is rebuilt from
+      // nothing: a workspace or patch the lockfile no longer names is not left
+      // for Bun to find, and Bun installs every package again from the cache,
+      // which downloads any the cache lacks.
+      yield* fs.remove(completion, { force: true }).pipe(Effect.mapError(staging(`clear ${completion}`)))
+      yield* empty(stage)
+      for (const [file, content] of files) {
+        const target = `${stage}/${file}`
+        yield* create(target.slice(0, target.lastIndexOf("/")))
+        yield* fs.writeFile(target, content).pipe(Effect.mapError(staging(`stage ${file}`)))
       }
-      for (const patch of lockfile.patches) yield* stageFile(patch, "manifest_unreadable", maximumLockfileBytes)
       const child = yield* command(
         ["install", "--frozen-lockfile", "--ignore-scripts", "--no-progress", "--cache-dir", cache],
         stage,
         "inherit"
       )
       yield* run(spawner, "bun install", child, timeoutMs)
+      yield* fs.writeFileString(completion, completed(measured)).pipe(Effect.mapError(staging(`write ${completion}`)))
     })
     const link = Effect.gen(function*() {
       yield* verify
