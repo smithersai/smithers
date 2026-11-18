@@ -42,12 +42,13 @@ describe("declaration-owned accessor freezing", () => {
       kinds: ["test"],
       implementation: Target.catalogNotImplemented
     })
+    // The schema identity reads and freezes the document when the first target is declared.
+    expect(Target.metadata(make({ value: { x: 2 } })).target).toBe("AccessorAnnotationProbe")
     expect(reads).toBeGreaterThan(0)
     expect(Object.isFrozen(annotation)).toBe(true)
     expect(Object.getOwnPropertyDescriptor(annotation, "x")).toMatchObject({
       get: getter,
       configurable: false
     })
-    expect(Target.metadata(make({ value: { x: 2 } })).target).toBe("AccessorAnnotationProbe")
   })
 })

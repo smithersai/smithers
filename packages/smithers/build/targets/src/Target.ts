@@ -1392,14 +1392,6 @@ export const make = <
   const successSchema = options.success ?? Schema.Unknown
   const errorSchema = options.error ?? Schema.Unknown
   const decodeSuccess = Schema.decodeUnknownSync(Schema.toType(successSchema))
-  const schemaIdentity = freezeDocument({
-    // Owned identity, not the installed emitter: it is part of every target's
-    // cache key (`Planner.targetKeyBody`), and a later effect release must
-    // not re-key it.
-    attrs: Node.schemaIdentity(options.attrs, { onExcessProperty: "error" }),
-    success: Node.schemaIdentity(successSchema, { onExcessProperty: "error" }),
-    error: Node.schemaIdentity(errorSchema, { onExcessProperty: "error" })
-  })
   // The digest identifies the text of the functions a declaration passes in.
   // `Node.functionIdentity` is the wrong tool for that: for an uncaptured
   // function it folds in a per-process nonce, which is right for a plan node
@@ -1409,7 +1401,8 @@ export const make = <
   // function keeps its capture-aware identity; a plain one is its source.
   const functionIdentity = (operation: unknown): Node.FunctionIdentity | null =>
     operation === undefined ? null : sourceIdentity(operation)
-  const implementationDigest = createHash("sha256").update(JSON.stringify({
+  // Read here, so a definition given something that is not a function is refused where it is written.
+  const functions = {
     implementation: functionIdentity(options.implementation),
     attrsForKind: functionIdentity(options.attrsForKind),
     cache: typeof options.cache === "function"
@@ -1421,9 +1414,27 @@ export const make = <
     manual: functionIdentity(options.manual),
     verbGate: typeof options.verbGate === "function"
       ? sourceIdentity(options.verbGate)
-      : options.verbGate ?? null,
-    schemas: schemaIdentity
-  })).digest("hex")
+      : options.verbGate ?? null
+  }
+  // The schemas' identity is worked out when the first target of this
+  // definition is declared, and once. A process imports every definition this
+  // package has and declares a few: working all of them out at import cost
+  // each start about 200 ms.
+  let identity: { readonly schemaIdentity: unknown; readonly implementationDigest: string } | undefined
+  const identify = () => identity ??= identityOf()
+  const identityOf = () => {
+    const schemaIdentity = freezeDocument({
+      // Owned identity, not the installed emitter: it is part of every target's
+      // cache key (`Planner.targetKeyBody`), and a later effect release must
+      // not re-key it.
+      attrs: Node.schemaIdentity(options.attrs, { onExcessProperty: "error" }),
+      success: Node.schemaIdentity(successSchema, { onExcessProperty: "error" }),
+      error: Node.schemaIdentity(errorSchema, { onExcessProperty: "error" })
+    })
+    const implementationDigest = createHash("sha256").update(JSON.stringify({ ...functions, schemas: schemaIdentity }))
+      .digest("hex")
+    return { schemaIdentity, implementationDigest }
+  }
   const definition = (attrsInput: Attrs["~type.make.in"] & Presentation) => {
     // Resolved before the attrs are constructed so a rejection can name the
     // PACKAGE.ts line the author has to edit.
@@ -1505,8 +1516,8 @@ export const make = <
     const target = { _tag: id }
     const value: Metadata = Object.freeze({
       target: id,
-      implementationDigest,
-      schemaIdentity,
+      implementationDigest: identify().implementationDigest,
+      schemaIdentity: identify().schemaIdentity,
       kinds: Object.freeze([...new Set(options.kinds)]),
       attrs,
       attrsSchema: options.attrs,

@@ -295,6 +295,31 @@ describe("Target metadata traversal", () => {
     expect(Target.metadata(definition("first")({})).implementationDigest)
       .not.toBe(Target.metadata(definition("second")({})).implementationDigest)
   })
+
+  it("works out a definition's schema identity when its first target is declared, and once", () => {
+    // A process imports every definition and declares a few of them. The
+    // identity reads the annotation document; a definition nobody declares
+    // has no reason to.
+    let reads = 0
+    const annotation = {
+      get x() {
+        reads += 1
+        return 1
+      }
+    }
+    const definition = Target.make("RuleTestLazyIdentity", {
+      attrs: Schema.Struct({ value: Schema.Struct({ x: Schema.Number }).annotate({ default: annotation }) }),
+      kinds: ["build"],
+      implementation: () => Target.notImplemented("RuleTestLazyIdentity")
+    })
+    expect(reads).toBe(0)
+    const first = Target.metadata(definition({ value: { x: 2 } }))
+    expect(reads).toBeGreaterThan(0)
+    const second = Target.metadata(definition({ value: { x: 3 } }))
+    expect(second.schemaIdentity).toBe(first.schemaIdentity)
+    expect(second.implementationDigest).toBe(first.implementationDigest)
+    expect(first.implementationDigest).toMatch(/^[0-9a-f]{64}$/)
+  })
 })
 
 describe("Target implementation contract", () => {
