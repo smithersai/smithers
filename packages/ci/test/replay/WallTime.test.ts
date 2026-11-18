@@ -1,12 +1,14 @@
 /** What a wall time holds: the checkout and the run, and nothing only a replay does. */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
-import { rmSync } from "node:fs"
+import * as Layer from "effect/Layer"
+import { chmodSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { dirname, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { run } from "../../src/replay/index.ts"
-import { job, makeSmallRepository } from "./fixture.ts"
+import { compiledCode, Options, run } from "../../src/replay/index.ts"
+import { job, linkTargets, makeEmptyDirectory, makeSmallRepository, smthrs } from "./fixture.ts"
 import { parts } from "./TestParts.vibe"
 import { hour, jumping } from "./WallClock.vibe"
 
@@ -25,6 +27,39 @@ const replay = (moment: "prepare" | "checkout"): Promise<ReplayReport> => {
     ) as Effect.Effect<ReplayReport, Failure>
   )
 }
+
+describe("a start of smthrs in a copy", () => {
+  it("keeps Node's compiled code in the copy's cache directory, and no step sees where", async () => {
+    const log = join(makeEmptyDirectory(), "seen")
+    created.push(dirname(log))
+    // A real smthrs behind a script that writes down where Node was told to keep compiled code.
+    const command = join(dirname(log), "smthrs")
+    writeFileSync(command, `#!/bin/sh\necho "$NODE_COMPILE_CACHE" >> ${log}\nexec ${smthrs} "$@"\n`)
+    chmodSync(command, 0o755)
+    // The step passes only when it is not told: in the baseline, and as a target.
+    const root = makeSmallRepository([job("a", `test -z "$NODE_COMPILE_CACHE"`)])
+    created.push(root)
+    const host = Layer.succeed(Options, {
+      smthrs: [command],
+      reruns: 1,
+      prepare: (directory: string) => Effect.sync(() => linkTargets(directory))
+    })
+    const report = await Effect.runPromise(
+      run({ root, commits: 1, modes: ["normal", "fast"] }, parts("none") as unknown as ReplayParts<never>).pipe(
+        Effect.provide(Layer.provideMerge(host, NodeServices.layer))
+      ) as Effect.Effect<ReplayReport, Failure>
+    )
+    const starts = readFileSync(log, "utf8").split("\n").filter((line) => line !== "")
+    // Normal mode, the plan fast mode reads, and fast mode: each in its own copy's cache directory.
+    expect(starts.length).toBeGreaterThanOrEqual(3)
+    for (const line of starts) expect(line).toMatch(new RegExp(`/(normal|fast)/[^/]+/${compiledCode}$`))
+    expect(new Set(starts.map((line) => /\/(normal|fast)\//.exec(line)?.[1]))).toEqual(new Set(["normal", "fast"]))
+    const commit = report.commits[0]
+    expect(commit?.baseline).toMatchObject({ ok: true, counts: { ran: 1 } })
+    expect(commit?.normal).toMatchObject({ ok: true, counts: { ran: 1 } })
+    expect(commit?.mismatches).toEqual([])
+  }, 600_000)
+})
 
 describe("the wall time of one commit", () => {
   it("leaves out what only a replay does to a copy before the targets run", async () => {

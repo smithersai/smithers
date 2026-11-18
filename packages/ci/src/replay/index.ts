@@ -5,5 +5,5 @@
  * @since 0.1.0
  */
 
-export { type Host, Options, Progress, run } from "./Replay.vibe"
+export { compiledCode, type Host, Options, Progress, run } from "./Replay.vibe"
 export { maxReruns } from "./Summary.ts"

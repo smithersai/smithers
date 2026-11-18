@@ -4,7 +4,7 @@ import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contr
 import { toolCache } from "../src/contract/Inventory.ts"
 import type { GeneratedFile } from "../src/contract/Parts.ts"
 import { files } from "../src/generate/index.ts"
-import { packagePath, workflowPath, workspacePath } from "../src/generate/Render.ts"
+import { compiledCode, packagePath, workflowPath, workspacePath } from "../src/generate/Render.ts"
 import { heldChanged } from "../src/generate/Steps.ts"
 
 const step = (id: string, command: string, extra: Partial<Step> = {}): Step => ({
@@ -98,7 +98,7 @@ describe("a step that keeps a tool's cache", () => {
       generate([job("a", [step("a:1", "true", { env: { CACHE: `${toolCache}-other`, CI: "1" } })])]),
       workflowPath
     )
-    expect(plain).toContain(`          path: .flows/cache\n`)
+    expect(plain).toContain(`          path: |\n            .flows/cache\n            ${compiledCode}\n`)
     expect(plain).not.toContain(toolCache)
   })
 })

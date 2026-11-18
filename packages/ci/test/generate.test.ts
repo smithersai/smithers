@@ -12,7 +12,15 @@ import { shardOf } from "../src/contract/Shard.ts"
 import { labelsOf, path as targetMapPath, TargetMap } from "../src/contract/TargetMap.ts"
 import { forShell, forText } from "../src/generate/Expressions.ts"
 import { files } from "../src/generate/index.ts"
-import { noSharedCache, notesPath, packagePath, workflowPath, workspacePath } from "../src/generate/Render.ts"
+import {
+  compiledCode,
+  noSharedCache,
+  notesPath,
+  packagePath,
+  workflowPath,
+  workspacePath
+} from "../src/generate/Render.ts"
+import { compiledCode as replayed } from "../src/replay/index.ts"
 
 const fixture = (name: string): InventoryDocument =>
   Schema.decodeUnknownSync(Inventory)(JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8")))
@@ -152,6 +160,7 @@ describe("files", () => {
     // No URL given: the variable alone names the cache, and a run without it says so before the targets run.
     const plain = content(generate(document), workflowPath)
     expect(runOf(plain).env).toEqual({
+      NODE_COMPILE_CACHE: compiledCode,
       SMITHERS_CACHE_URL: "${{ vars.SMITHERS_CACHE_URL }}",
       SMITHERS_CACHE_TOKEN: token
     })
@@ -173,6 +182,7 @@ describe("files", () => {
       workflowPath
     )
     expect(runOf(cached).env).toEqual({
+      NODE_COMPILE_CACHE: compiledCode,
       SMITHERS_CACHE_URL: "${{ vars.SMITHERS_CACHE_URL || 'https://cache.example.com/it''s' }}",
       SMITHERS_CACHE_TOKEN: token
     })
@@ -935,7 +945,12 @@ describe("the workspace and workflow", () => {
     expect(workflow).toContain("# turbo (turbo.json) has no known setup action.")
     expect(workflow).toContain(`node-version: "24"`)
     expect(workflow).toMatch(/smthrs ci '\/\/\.\.\.'\n/)
-    expect(workflow.indexOf("path: .flows/cache")).toBeLessThan(workflow.indexOf("smthrs ci"))
+    // The runner keeps its results and the compiled code of smthrs, and the run reads both.
+    expect(workflow).toContain(`          path: |\n            .flows/cache\n            ${compiledCode}\n`)
+    expect(workflow.indexOf(`            ${compiledCode}`)).toBeLessThan(workflow.indexOf("smthrs ci"))
+    expect(workflow).toContain(`        env:\n          NODE_COMPILE_CACHE: ${compiledCode}\n`)
+    // A replay starts smthrs with the directory the workflow names.
+    expect(compiledCode).toBe(replayed)
   })
 
   it("installs the version a file pins when the CI's workflow holds none, and says the workflow's own is not kept", () => {

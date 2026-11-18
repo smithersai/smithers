@@ -49,6 +49,16 @@ const sharedInputsAbove = 32
 // Smithers refuses a larger PACKAGE.ts.
 const maximumPackageBytes = 1024 * 1024
 
+/**
+ * Where Node keeps the compiled code of `smthrs` between runs, from the
+ * repository's root. The workflow sets it and carries it from one run to the
+ * next; a replay starts `smthrs` with the same directory.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const compiledCode = ".flows/node-compile-cache"
+
 // The limit a baseline step has, which is GitHub's for a job; the build's own default is 30 minutes.
 const stepTimeout = `${stepTimeoutHours}h`
 
@@ -296,11 +306,13 @@ const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boo
     ...plan.toolchains.flatMap(renderSetup),
     ...(confined ? sandboxSetup : []),
     `      ${yamlComment("Unconfined results never reach a remote cache, so the runner keeps its own.")}`,
+    `      ${yamlComment("It also keeps the compiled code of smthrs, so the next run starts sooner.")}`,
     `      - uses: actions/cache@v4`,
     `        with:`,
-    ...(keepsTools
-      ? [`          path: |`, `            .flows/cache`, `            ${toolCache}`]
-      : [`          path: .flows/cache`]),
+    `          path: |`,
+    `            .flows/cache`,
+    ...(keepsTools ? [`            ${toolCache}`] : []),
+    `            ${compiledCode}`,
     `          key: smithers-ci-\${{ matrix.os }}-\${{ github.sha }}`,
     `          restore-keys: smithers-ci-\${{ matrix.os }}-`,
     ...(cache !== undefined ? [] : [
@@ -311,6 +323,7 @@ const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boo
     ...(serial ? [`      ${yamlComment("Targets that can write the same files run one at a time.")}`] : []),
     `      - run: npx --yes --package=@smthrs/cli@1.0.0-rc.18 smthrs ci '//...'${serial ? " --jobs 1" : ""}`,
     `        env:`,
+    `          NODE_COMPILE_CACHE: ${compiledCode}`,
     `          SMITHERS_CACHE_URL: ${cacheUrl(cache)}`,
     `          SMITHERS_CACHE_TOKEN: ${cacheToken}`,
     ``

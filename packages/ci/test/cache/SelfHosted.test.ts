@@ -104,7 +104,8 @@ const stepsOf = (root: string): ReadonlyArray<WorkflowStep> =>
  */
 const run = (root: string, settings: Settings) => {
   const step = stepsOf(root).find((entry) => entry.run?.includes("smthrs ci")) as WorkflowStep
-  expect(Object.keys(step.env ?? {})).toEqual(["SMITHERS_CACHE_URL", "SMITHERS_CACHE_TOKEN"])
+  // Beside the cache's two settings, the step names where Node keeps the compiled code of smthrs.
+  expect(Object.keys(step.env ?? {})).toEqual(["NODE_COMPILE_CACHE", "SMITHERS_CACHE_URL", "SMITHERS_CACHE_TOKEN"])
   const written = /\|\| '(.*)' \}\}$/.exec(step.env?.["SMITHERS_CACHE_URL"] ?? "")?.[1]
   const resultsFile = join(root, ".flows", "results.json")
   const command = (step.run as string).replace(/^npx .* smthrs /, `"$NODE" "$SMTHRS" `)

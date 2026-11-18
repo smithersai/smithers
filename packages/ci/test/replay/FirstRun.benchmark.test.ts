@@ -29,7 +29,7 @@
  * reviewer's fixture of this shape (`npm ci`, then `npm run lint` or
  * `npm test`) on the build server (48 cores, load 32, 2026-11-18, before the
  * install was shared): the baseline took 10.1 s and normal mode 16.8 s, of
- * which 3.4 s was the start and the planning and 13.4 s the four steps.
+ * which 4.5 s was the start and the planning and 12.3 s the four steps.
  * Sharing the install takes one `npm ci` off, 0.6 s. A cache hit is not
  * measured here: `test/replay` and `test/generate.smthrs.test.ts` hold reuse.
  */
