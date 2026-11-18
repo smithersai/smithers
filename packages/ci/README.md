@@ -24,6 +24,23 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-17, sixth round** (found by the lead reading eliza's 15 CI jobs: one posts to the GitHub API, most read
+`$RUNNER_TEMP` or `$GITHUB_OUTPUT`, and none of that was stopping a run):
+
+- **A job that cannot be reproduced is never run.** `Inventory.isRunnable` is now: the job has a step and no
+  blocker. A blocker is any unsupported feature outside `Inventory.harmless` (`host-action`, `trigger-filter`).
+  The importer writes `host-action` for checkout, toolchain setup, cache and upload-artifact steps, and `uses` for
+  every other action.
+- **`Inventory.Ci` is a branded type that only `Inventory.ci` returns.** `GenerateFiles` and `Decompose` accept
+  nothing else. If your code no longer compiles, call `Inventory.ci(inventory)` and delete your own rule for which
+  jobs run. The replay runs the baseline from the same value.
+- A job is left out together with every job that needs it (reason `needs`). In a `Ci`, every job has a step and
+  every need names a job in it: a need on a job that only groups others becomes a need on the jobs it groups. The
+  replay (`src/replay`) uses it and no longer has a rule of its own.
+- `ReplayReport.notReplayed` lists each CI job left out with its reasons (`Inventory.notReplayed(inventory)` at the
+  newest commit). The replay fills it; the report shows it above the speedup. With every job left out, the program
+  exits `unsupported` and prints the list.
+
 **2026-11-17, fifth round** (asked for by the program's lane):
 
 - **Fast mode's judge is the judge `smthrs` binds:** `NodeControl.layerSeatEvaluator(process.env)` from

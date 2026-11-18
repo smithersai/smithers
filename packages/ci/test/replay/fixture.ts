@@ -37,7 +37,7 @@ const job = (
   file: "Justfile",
   name: id,
   needs: extra.needs ?? [],
-  triggers: [],
+  triggers: ["push"],
   matrix: [],
   steps: [command, ...(extra.more ?? [])].map((text, index) => ({
     id: `${id}${index}`,

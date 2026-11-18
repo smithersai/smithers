@@ -56,7 +56,7 @@ interface Planned {
 }
 
 const plan = (inventory: Inventory): ReadonlyArray<Planned> => {
-  const jobs = inventory.jobs.filter((job) => job.triggers.length === 0)
+  const jobs = inventory.jobs
   const lastOf = (job: Job): ReadonlyArray<string> =>
     variantsOf(job).flatMap((_, index) => job.steps.slice(-1).map((step) => name(step, index)))
   return jobs.flatMap((job) => {

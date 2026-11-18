@@ -11,7 +11,7 @@
 
 import { CliConfig, CliError, CliOutput, Command, Flag, GlobalFlag } from "effect/cli"
 import * as Surface from "../contract/Command.ts"
-import { Inventory } from "../contract/Inventory.ts"
+import { ci, Inventory } from "../contract/Inventory.ts"
 import type {
   BuildRows,
   Failure,
@@ -216,7 +216,7 @@ function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
   const generate = (cache: Option.Option<string>) =>
     effect {
       const inventory = try parts.read(root)
-      return try checkPaths(try parts.files(inventory, { cache: Option.getOrUndefined(cache) }))
+      return try checkPaths(try parts.files(ci(inventory), { cache: Option.getOrUndefined(cache) }))
     }
 
   effect function replayAndPrint(input: ReplayInput, footer: string) {

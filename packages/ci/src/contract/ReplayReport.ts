@@ -11,6 +11,7 @@
  */
 
 import * as Schema from "effect/Schema"
+import { NotReplayed } from "./Inventory.ts"
 import { Mode, StatusCounts, Verdict } from "./RunRecord.ts"
 import { Metrics } from "./Selection.ts"
 
@@ -98,7 +99,8 @@ export const ReplayReport = Schema.Struct({
   speedup: Schema.Finite,
   mismatches: Schema.Int,
   fastWallMs: Schema.optionalKey(Schema.Finite),
-  selection: Schema.optionalKey(Metrics)
+  selection: Schema.optionalKey(Metrics),
+  notReplayed: Schema.optionalKey(Schema.Array(NotReplayed))
 })
 
 /**

@@ -95,7 +95,8 @@ describe("expressions", () => {
 describe("files", () => {
   it("has the contract 10 type and returns the workspace, targets and workflow", () => {
     const typed: GenerateFiles = files
-    const generated = Effect.runSync(typed(fixture("inventory.justfile-zig.json")))
+    expect(typed).toBe(files)
+    const generated = Effect.runSync(files(fixture("inventory.justfile-zig.json")))
     expect(generated.map((file) => file.path).sort()).toEqual([workflowPath, packagePath, workspacePath].sort())
     expect(generated.map((file) => file.path)).not.toContain(notesPath)
   })

@@ -101,7 +101,9 @@ describe("contract 4: inventory", () => {
     expect(Inventory.isRunnable({ ...job, steps: [] })).toBe(false)
     const server = { feature: Inventory.longRunning, detail: "bun run dev never exits" }
     expect(Inventory.isRunnable({ ...job, unsupported: [server] })).toBe(false)
-    expect(Inventory.isRunnable({ ...job, unsupported: [{ feature: "uses", detail: "actions/cache" }] })).toBe(true)
+    const cache = { feature: Inventory.hostAction, detail: "actions/cache@v4 has no command to run" }
+    const filter = { feature: Inventory.triggerFilter, detail: "push runs only for matching branches" }
+    expect(Inventory.isRunnable({ ...job, unsupported: [cache, filter] })).toBe(true)
   })
 
   it("refuses a source it does not know", () => {
@@ -299,7 +301,7 @@ describe("contract 10: the parts a replay is handed", () => {
       Effect.gen(function*() {
         calls.push(String(request.settings?.countCutoff ?? Selection.defaultSettings.countCutoff))
         const files = yield* given.files(
-          { version: 1, repository: "r", commit: "c", toolchains: [], jobs: [] },
+          Inventory.ci({ version: 1, repository: "r", commit: "c", toolchains: [], jobs: [] }),
           { cache: request.cache }
         )
         for (const file of files) calls.push(file.path, file.content)
@@ -498,7 +500,9 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
       "justfile:fmt",
       "justfile:ci"
     ])
-    expect(Inventory.ci(zig).jobs.map((entry) => entry.id)).toEqual(["justfile:test", "justfile:tidy", "justfile:fmt"])
+    const narrowed = Inventory.ci(zig)
+    expect(narrowed.jobs.map((entry) => entry.id)).toEqual(["justfile:test", "justfile:tidy", "justfile:fmt"])
+    expect(narrowed.jobs.map((entry) => entry.needs)).toEqual([[], ["justfile:fmt"], ["justfile:tidy"]])
   })
 
   it("finds no CI in a repository with only scripts, and never runs a job that does not exit", () => {
@@ -526,9 +530,8 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
       score: () => Effect.succeed([])
     }
     const commitOf = (parts: Parts.ReplayParts) =>
-      Effect.runPromise((parts.decompose ?? ((_root, given) => Effect.succeed(given)))("/repo", empty)).then((result) =>
-        result.commit
-      )
+      Effect.runPromise((parts.decompose ?? ((_root, given) => Effect.succeed(given)))("/repo", Inventory.ci(empty)))
+        .then((result) => result.commit)
     expect(await commitOf({ ...base, decompose: split })).toBe("split")
     expect(await commitOf(base)).toBe("c")
   })
@@ -558,5 +561,99 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
     expect(RunRecord.combine(["skipped", "pass"])).toBe("pass")
     expect(RunRecord.combine(["skipped"])).toBe("skipped")
     expect(RunRecord.combine([])).toBe("skipped")
+  })
+})
+
+describe("contract changes, sixth round: a job that cannot be reproduced is never run", () => {
+  const decode = Schema.decodeUnknownSync(Inventory.Inventory)
+  const job = (id: string, features: ReadonlyArray<string>, commands: ReadonlyArray<string> = ["true"]) => ({
+    id,
+    source: "github-actions",
+    file: ".github/workflows/ci.yml",
+    name: id,
+    needs: [],
+    triggers: ["push"],
+    matrix: [],
+    steps: commands.map((command, index) => ({ id: `${id}:${index + 1}`, command, cwd: "", env: {}, secrets: [] })),
+    unsupported: features.map((feature) => ({ feature, detail: `${id} ${feature}` }))
+  })
+  const inventory = decode({
+    version: 1,
+    repository: "r",
+    commit: "c",
+    toolchains: [],
+    jobs: [
+      job("ci.yml:test", [Inventory.hostAction, Inventory.triggerFilter]),
+      job("ci.yml:handoff", ["secret-env", Inventory.hostAction, "condition"], ["gh api --method POST /dispatches"]),
+      job("ci.yml:shards", ["runner-variable"]),
+      job("ci.yml:reusable", [Inventory.hostAction], []),
+      job("ci.yml:plain", []),
+      { ...job("ci.yml:gate", [], []), needs: ["ci.yml:test", "ci.yml:plain", "ci.yml:gone"] },
+      { ...job("ci.yml:after-gate", []), needs: ["ci.yml:gate", "ci.yml:test"] },
+      { ...job("ci.yml:after-shards", []), needs: ["ci.yml:shards"] },
+      { ...job("ci.yml:all", [], []), needs: ["ci.yml:after-shards"] },
+      { ...job("ci.yml:last", []), needs: ["ci.yml:all"] }
+    ]
+  })
+
+  it("runs a job only when every unsupported feature is harmless", () => {
+    expect(Inventory.harmless).toEqual(["host-action", "trigger-filter"])
+    expect(Inventory.hostActions).toContain("actions/checkout")
+    expect(Inventory.hostActions).not.toContain("actions/download-artifact")
+    expect(Inventory.ci(inventory).jobs.map((entry) => [entry.id, entry.needs])).toEqual([
+      ["ci.yml:test", []],
+      ["ci.yml:plain", []],
+      ["ci.yml:after-gate", ["ci.yml:test", "ci.yml:plain"]]
+    ])
+    for (const feature of ["uses", "condition", "expression", "services", "continue-on-error", "something-new"]) {
+      expect(Inventory.isRunnable(inventory.jobs[4]!)).toBe(true)
+      expect(Inventory.isRunnable({ ...inventory.jobs[4]!, unsupported: [{ feature, detail: "" }] })).toBe(false)
+    }
+  })
+
+  it("lists every CI job it leaves out, with the reasons", () => {
+    const left = Inventory.notReplayed(inventory)
+    expect(left).toEqual([
+      {
+        job: "ci.yml:handoff",
+        reasons: [
+          { feature: "secret-env", detail: "ci.yml:handoff secret-env" },
+          { feature: "condition", detail: "ci.yml:handoff condition" }
+        ]
+      },
+      { job: "ci.yml:shards", reasons: [{ feature: "runner-variable", detail: "ci.yml:shards runner-variable" }] },
+      {
+        job: "ci.yml:after-shards",
+        reasons: [{ feature: "needs", detail: "ci.yml:after-shards needs ci.yml:shards, which is not replayed" }]
+      },
+      {
+        job: "ci.yml:all",
+        reasons: [{ feature: "needs", detail: "ci.yml:all needs ci.yml:after-shards, which is not replayed" }]
+      },
+      {
+        job: "ci.yml:last",
+        reasons: [{ feature: "needs", detail: "ci.yml:last needs ci.yml:all, which is not replayed" }]
+      }
+    ])
+    const report = {
+      ...(fixture("replay-report.example.json") as object),
+      notReplayed: left
+    }
+    expect(Schema.decodeUnknownSync(ReplayReport.ReplayReport)(report).notReplayed).toEqual(left)
+    expect(() =>
+      Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...report, notReplayed: [{ job: "", reasons: [] }] })
+    ).toThrow()
+  })
+
+  it("gives the generator and the splitter only what `ci` returned", async () => {
+    const narrowed: Inventory.Ci = Inventory.ci(inventory)
+    const files: Parts.GenerateFiles = (given) =>
+      Effect.succeed(given.jobs.map((entry) => ({ path: `${entry.name}.ts`, content: "" })))
+    const split: Parts.Decompose = (_root, given) => Effect.succeed({ ...given, jobs: given.jobs.slice(0, 1) })
+    // @ts-expect-error an inventory that did not come from `ci` is refused
+    const refused = files(inventory)
+    expect(await Effect.runPromise(refused)).toHaveLength(10)
+    const once = await Effect.runPromise(split("/repo", narrowed))
+    expect((await Effect.runPromise(files(once))).map((file) => file.path)).toEqual(["ci.yml:test.ts"])
   })
 })

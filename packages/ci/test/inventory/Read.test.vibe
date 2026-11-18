@@ -104,7 +104,7 @@ it.layer(NodeServices.layer)("read", (it) => {
           secrets: ["CODECOV_TOKEN"],
           secretEnv: { CODECOV_TOKEN: "CODECOV_TOKEN" }
         })
-        expect(decoded.jobs[0]?.unsupported[0]?.feature).toBe("uses")
+        expect(decoded.jobs[0]?.unsupported[0]?.feature).toBe("host-action")
         expect(decoded.jobs[4]?.steps[0]).toMatchObject({ command: "bun run build", cwd: "packages/a" })
         expect(decoded.jobs[6]?.steps[0]?.command).toBe("bunx turbo run build")
         expect(decoded.toolchains).toContainEqual({ name: "node", source: ".nvmrc", version: "22" })

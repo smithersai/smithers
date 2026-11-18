@@ -9,6 +9,7 @@
  * @since 0.1.0
  */
 
+import * as Brand from "effect/Brand"
 import * as Schema from "effect/Schema"
 
 /**
@@ -173,15 +174,76 @@ export const shell = ["bash", "-e", "-c"] as const
 export const longRunning = "long-running"
 
 /**
- * Whether the baseline and the generator run a job: it has a step, and it
- * exits.
+ * The `Unsupported.feature` of an action step that only prepares the CI
+ * host: it checks the repository out, installs a toolchain the inventory
+ * lists, restores or saves a cache, or uploads a file. The replay makes the
+ * checkout itself and expects the toolchains on the machine, so leaving the
+ * step out cannot change a verdict.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const hostAction = "host-action"
+
+/**
+ * The actions that are host actions besides those the importer turns into a
+ * toolchain, named without their version.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const hostActions: ReadonlyArray<string> = [
+  "actions/checkout",
+  "actions/cache",
+  "actions/cache/restore",
+  "actions/cache/save",
+  "actions/upload-artifact"
+]
+
+/**
+ * The `Unsupported.feature` of a workflow that runs only for some branches
+ * or paths. The replay runs its jobs for every change, which is more often
+ * than the CI does and never less.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const triggerFilter = "trigger-filter"
+
+/**
+ * The only features a job may have and still be run. Every other feature
+ * means the job's commands, run on this machine, are not what its CI runs:
+ * a condition nobody evaluated, a variable only the CI host sets, a secret,
+ * a service container, an action with no command.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const harmless: ReadonlyArray<string> = [hostAction, triggerFilter]
+
+/**
+ * The reasons a job cannot be reproduced on this machine: its unsupported
+ * features that are not `harmless`. A job with one is never run, never
+ * turned into a target, and is listed in the report with these reasons.
  *
  * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
-export const isRunnable = (job: Job): boolean =>
-  job.steps.length > 0 && !job.unsupported.some((entry) => entry.feature === longRunning)
+export const blockers = (job: Job): ReadonlyArray<Unsupported> =>
+  job.unsupported.filter((entry) => !harmless.includes(entry.feature))
+
+/**
+ * Whether the baseline and the generator run a job: it has a step and no
+ * blocker. Running a job with a blocker would report a verdict its CI never
+ * gives, and may do what its CI guards against, such as a step meant only
+ * for a release.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const isRunnable = (job: Job): boolean => job.steps.length > 0 && blockers(job).length === 0
 
 /**
  * Replaces each `${{ matrix.<key> }}` with the variant's value. A nested
@@ -267,7 +329,89 @@ export const ciJobs = (inventory: Inventory): ReadonlyArray<Job> => {
 }
 
 /**
- * The inventory narrowed to its CI: `ciJobs` that pass `isRunnable`. The
+ * An inventory that holds only jobs safe to run: what `ci` returns. Every
+ * job in it has a step, and every need names a job in it. The generator and
+ * the splitter accept nothing else, so no part can run or generate a job
+ * that `ci` left out.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Ci = Inventory & Brand.Brand<"smithers-ci/Ci">
+
+const asCi = Brand.nominal<Ci>()
+
+/**
+ * The `Unsupported.feature` of a job left out because a job it needs is.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const needsLeftOut = "needs"
+
+/**
+ * A CI job the program does not run, and why.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const NotReplayed = Schema.Struct({
+  job: Schema.NonEmptyString,
+  reasons: Schema.Array(Unsupported)
+})
+
+/**
+ * A decoded `NotReplayed`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type NotReplayed = typeof NotReplayed.Type
+
+/** Sorts the CI jobs into those run and those left out. A job is left out with every job that needs it. */
+const sort = (
+  inventory: Inventory
+): { readonly kept: ReadonlyArray<Job>; readonly left: ReadonlyArray<NotReplayed> } => {
+  const byId = new Map(inventory.jobs.map((job) => [job.id, job]))
+  const reasons = new Map<string, ReadonlyArray<Unsupported>>()
+  const reasonsOf = (job: Job): ReadonlyArray<Unsupported> => {
+    const known = reasons.get(job.id)
+    if (known !== undefined) return known
+    // A job that needs itself is refused by the replay; here it only must not loop.
+    reasons.set(job.id, [])
+    const found = [
+      ...blockers(job),
+      ...job.needs.flatMap((id) => {
+        const need = byId.get(id)
+        return need === undefined || reasonsOf(need).length === 0
+          ? []
+          : [{ feature: needsLeftOut, detail: `${job.id} needs ${id}, which is not replayed` }]
+      })
+    ]
+    reasons.set(job.id, found)
+    return found
+  }
+  /** The nearest jobs with a step that a job waits for, looking through jobs that only group others. */
+  const waitsFor = (job: Job, seen: Set<string>): ReadonlyArray<string> =>
+    job.needs.flatMap((id) => {
+      const need = byId.get(id)
+      if (need === undefined || seen.has(id)) return []
+      seen.add(id)
+      return need.steps.length > 0 ? [id] : waitsFor(need, seen)
+    })
+  const jobs = ciJobs(inventory)
+  return {
+    kept: jobs
+      .filter((job) => job.steps.length > 0 && reasonsOf(job).length === 0)
+      .map((job) => ({ ...job, needs: waitsFor(job, new Set()) })),
+    left: jobs.filter((job) => reasonsOf(job).length > 0).map((job) => ({ job: job.id, reasons: reasonsOf(job) }))
+  }
+}
+
+/**
+ * The inventory narrowed to its CI: the `ciJobs` that have a step, have no
+ * blocker, and need no job that has one. A need on a job with no step, which
+ * only groups other jobs, becomes a need on the jobs it groups. The
  * baseline, the generator and the replay work from this, never from the
  * whole inventory.
  *
@@ -275,4 +419,15 @@ export const ciJobs = (inventory: Inventory): ReadonlyArray<Job> => {
  * @category accessors
  * @since 0.1.0
  */
-export const ci = (inventory: Inventory): Inventory => ({ ...inventory, jobs: ciJobs(inventory).filter(isRunnable) })
+export const ci = (inventory: Inventory): Ci => asCi({ ...inventory, jobs: sort(inventory).kept })
+
+/**
+ * The CI jobs `ci` leaves out, each with its reasons: its blockers, and a
+ * `needs` entry for each job it needs that is left out. The report lists
+ * them, so a speedup is never read as covering a job that was not run.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const notReplayed = (inventory: Inventory): ReadonlyArray<NotReplayed> => sort(inventory).left

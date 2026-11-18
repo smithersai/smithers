@@ -8,7 +8,7 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { type Inventory, shell } from "../contract/Inventory.ts"
+import { ci, type Inventory, notReplayed, shell } from "../contract/Inventory.ts"
 import type { Failure, ReplayParts, ReplayRequest } from "../contract/Parts.ts"
 import type { ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { type Mode, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
@@ -27,6 +27,7 @@ import {
   labelsOf,
   maxReruns,
   mismatchesOf,
+  nothingToReplay,
   predictedSafe,
   recordOf,
   recovered,
@@ -211,13 +212,16 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     const normalCopy = try copyAt("normal", "HEAD")
     const inventory: Inventory = try parts.read(normalCopy)
-    const generated = try parts.files(inventory, { cache: request.cache })
+    const left = notReplayed(inventory)
+    const narrowed = ci(inventory)
+    if (narrowed.jobs.length === 0) throw nothingToReplay(left)
+    const generated = try parts.files(narrowed, { cache: request.cache })
     const mapFile = generated.find((file) => file.path === targetMapPath)
     if (mapFile === undefined) throw failure("invalid-document", `the generated files have no ${targetMapPath}`)
     const targetMap = Schema.decodeUnknownEffect(Schema.fromJsonString(TargetMap))(mapFile.content) catch effect () => {
       throw failure("invalid-document", `${targetMapPath} is not a target map`)
     }
-    const units = unitsOf(inventory, targetMap)
+    const units = unitsOf(narrowed, targetMap)
     const allLabels = units.flatMap((unit) => labelsOf(unit, undefined))
     if (allLabels.length === 0) throw failure("unsupported", "no CI step that runs on a change has a target")
     const cycle = cycleIn(units)
@@ -359,5 +363,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         ...fastPart
       })
     }
-    return reportOf(inventory.repository, replayed, fastCopy === undefined ? undefined : selectionOf(allRows, selected))
+    return reportOf(
+      inventory.repository,
+      replayed,
+      fastCopy === undefined ? undefined : selectionOf(allRows, selected),
+      left
+    )
   })

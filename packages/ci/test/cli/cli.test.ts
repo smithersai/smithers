@@ -237,6 +237,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
         "job justfile:test (justfile justfile, needs justfile:build)",
         "  $ zig build test",
         "  $ zig build check",
+        "job justfile:ci (justfile justfile, needs justfile:test)",
         ""
       ])
       expect(changed(before, snapshot(root))).toEqual([])
@@ -245,7 +246,11 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
     it("prints an inventory that decodes with --json", async () => {
       const outcome = await exec(["inventory", "--json"], repo())
       expect(outcome.code).toBe(exitCodes.ok)
-      expect(decode(Inventory, outcome.stdout).jobs.map((job) => job.id)).toEqual(["justfile:build", "justfile:test"])
+      expect(decode(Inventory, outcome.stdout).jobs.map((job) => job.id)).toEqual([
+        "justfile:build",
+        "justfile:test",
+        "justfile:ci"
+      ])
     })
 
     it("exits 2 outside a repository", async () => {
@@ -290,7 +295,7 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     const root = repo()
     const inventory = await spawn(bin, ["inventory", "--json"], root)
     expect(inventory.code, inventory.stderr).toBe(exitCodes.ok)
-    expect(decode(Inventory, inventory.stdout).jobs).toHaveLength(2)
+    expect(decode(Inventory, inventory.stdout).jobs).toHaveLength(3)
     const files = await generated(root, onMain, environment)
     const before = snapshot(root)
     const apply = await spawn(bin, ["apply"], root)

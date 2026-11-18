@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { type Inventory, type Job, longRunning } from "../../src/contract/Inventory.ts"
+import { type Ci, ci, type Job, longRunning } from "../../src/contract/Inventory.ts"
 import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.ts"
 import type { TargetMap } from "../../src/contract/TargetMap.ts"
 import {
@@ -13,6 +13,7 @@ import {
   labelsOf,
   maxReruns,
   mismatchesOf,
+  nothingToReplay,
   predictedSafe,
   recordOf,
   recovered,
@@ -35,19 +36,20 @@ const job = (id: string, extra: Partial<Job> = {}): Job => ({
   file: "ci.yml",
   name: id,
   needs: [],
-  triggers: [],
+  triggers: ["push"],
   matrix: [],
   steps: [step(`${id}1`, "true")],
   unsupported: [],
   ...extra
 })
-const inventory = (jobs: ReadonlyArray<Job>): Inventory => ({
-  version: 1,
-  repository: "r",
-  commit: "c",
-  toolchains: [],
-  jobs
-})
+const inventory = (jobs: ReadonlyArray<Job>): Ci =>
+  ci({
+    version: 1,
+    repository: "r",
+    commit: "c",
+    toolchains: [],
+    jobs
+  })
 const ran = (label: string, durationMs = 5): TargetResult => ({ label, status: "ran", key: "k", durationMs })
 const failed = (label: string): TargetResult => ({
   label,
@@ -67,14 +69,15 @@ describe("unitsOf", () => {
     targets: entries.map(([job, step, variant, label]) => ({ job, step, variant, label }))
   })
 
-  it("keeps runnable jobs a push or pull request runs and drops needs on the others", () => {
+  it("makes a unit of every job the CI holds, and of no other", () => {
     const units = unitsOf(
       inventory([
-        job("push", { triggers: ["push"] }),
-        job("pr", { triggers: ["pull_request"], needs: ["push", "cron", "dev"] }),
+        job("push"),
+        job("pr", { triggers: ["pull_request"], needs: ["push", "gate"] }),
+        job("gate", { steps: [], needs: ["push"] }),
         job("cron", { triggers: ["schedule"] }),
         job("dev", { unsupported: [{ feature: longRunning, detail: "a server" }] }),
-        job("empty", { steps: [] })
+        job("after-dev", { needs: ["dev"] })
       ]),
       map([])
     )
@@ -252,17 +255,32 @@ describe("reportOf", () => {
   const entry = { commit: "c", changedFiles: 1, baseline: totals(30), normal: totals(10), mismatches: [] }
 
   it("divides baseline wall time by normal-mode wall time", () => {
-    const report = reportOf("r", [entry, entry], undefined)
+    const report = reportOf("r", [entry, entry], undefined, [])
+    expect(report.notReplayed).toBeUndefined()
     expect(report).toMatchObject({ baselineWallMs: 60, normalWallMs: 20, speedup: 3, mismatches: 0 })
     expect(report.fastWallMs).toBeUndefined()
   })
 
   it("is 0 when nothing ran, and sums fast mode when it ran", () => {
-    expect(reportOf("r", [], undefined).speedup).toBe(0)
+    expect(reportOf("r", [], undefined, []).speedup).toBe(0)
     const metrics = selectionOf([], new Map())
-    expect(reportOf("r", [{ ...entry, fast: totals(4) }, entry], metrics)).toMatchObject({
+    expect(reportOf("r", [{ ...entry, fast: totals(4) }, entry], metrics, [])).toMatchObject({
       fastWallMs: 4,
       selection: metrics
     })
+  })
+
+  it("lists the CI jobs that were left out, and says why nothing can be replayed", () => {
+    const left = [
+      { job: "deploy", reasons: [{ feature: "secret-env", detail: "a" }, { feature: "secret-env", detail: "b" }] },
+      { job: "after", reasons: [{ feature: "condition", detail: "c" }, { feature: "needs", detail: "d" }] }
+    ]
+    expect(reportOf("r", [entry], undefined, left).notReplayed).toEqual(left)
+    expect(nothingToReplay(left)).toEqual({
+      code: "unsupported",
+      part: "replay",
+      message: "none of the 2 CI jobs can be reproduced on this machine: deploy (secret-env); after (condition, needs)"
+    })
+    expect(nothingToReplay([]).message).toContain("no job runs on a push or a pull request")
   })
 })

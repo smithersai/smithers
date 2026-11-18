@@ -182,7 +182,7 @@ describe("readWorkflow steps", () => {
 `))
     expect(job.steps.map((step) => [step.id, step.command])).toEqual([["ci.yml:test:1", "bun test"]])
     expect(job.unsupported).toEqual([
-      { feature: "uses", detail: `${file}: actions/checkout@v4 has no command to run` },
+      { feature: "host-action", detail: `${file}: actions/checkout@v4 has no command to run` },
       { feature: "uses", detail: `${file}: codecov/codecov-action@v5 has no command to run` }
     ])
   })

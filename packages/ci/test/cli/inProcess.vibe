@@ -4,6 +4,7 @@
  * unhappy path.
  */
 
+import { ci } from "../../src/contract/Inventory.ts"
 import type { GeneratedFile } from "../../src/contract/Parts.ts"
 import { cli, type Parts } from "../../src/cli/Cli.vibe"
 import { type Environment, type Host, layer } from "../../src/cli/Host.vibe"
@@ -47,5 +48,7 @@ export async function generated(
   chosen: Parts<Host>,
   environment: Environment
 ): Promise<ReadonlyArray<GeneratedFile>> {
-  return await runPromise(Effect.provide(effect { return try chosen.files(try chosen.read(root)) }, layer(environment)))
+  return await runPromise(
+    Effect.provide(effect { return try chosen.files(ci(try chosen.read(root))) }, layer(environment))
+  )
 }

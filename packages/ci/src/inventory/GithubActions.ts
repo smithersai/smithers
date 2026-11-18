@@ -10,7 +10,7 @@
  */
 
 import { parseDocument } from "yaml"
-import { expand, type Toolchain } from "../contract/Inventory.ts"
+import { expand, hostAction, hostActions, type Toolchain } from "../contract/Inventory.ts"
 import { addStep, type Draft, draft, fileProblem, note, type Parsed } from "./Draft.ts"
 import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
 import { isLiteralSecret } from "./Secrets.ts"
@@ -211,7 +211,8 @@ const readStep = (context: JobContext, raw: unknown, index: number): void => {
   if (typeof uses === "string") {
     const tool = readSetup(uses, raw["with"], scope, file)
     if (tool !== undefined) context.toolchains.push(tool)
-    return note(job, "uses", `${uses} has no command to run`)
+    const prepares = tool !== undefined || hostActions.includes(uses.split("@")[0] as string)
+    return note(job, prepares ? hostAction : "uses", `${uses} has no command to run`)
   }
   const run = raw["run"]
   if (typeof run !== "string") return note(job, "malformed-step", `${where} has neither run nor uses`)

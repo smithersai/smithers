@@ -6,7 +6,7 @@
  * @since 0.1.0
  */
 
-import { type Inventory, isRunnable, type Job, withVariant } from "../contract/Inventory.ts"
+import { type Ci, type NotReplayed, withVariant } from "../contract/Inventory.ts"
 import type { Failure } from "../contract/Parts.ts"
 import type { Mismatch, ReplayCommit, ReplayReport, RunTotals } from "../contract/ReplayReport.ts"
 import { type Mode, type RunRecord, type StatusCounts, type TargetResult, verdictOf } from "../contract/RunRecord.ts"
@@ -59,26 +59,39 @@ export interface Unit {
  */
 export const failure = (code: Failure["code"], message: string): Failure => ({ code, message, part: "replay" })
 
-const runsOnChange = (job: Job): boolean =>
-  isRunnable(job) &&
-  (job.triggers.length === 0 || job.triggers.includes("push") || job.triggers.includes("pull_request"))
+/**
+ * Why nothing can be replayed: the repository has no CI, or every CI job was
+ * left out.
+ *
+ * @category constructors
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const nothingToReplay = (left: ReadonlyArray<NotReplayed>): Failure =>
+  failure(
+    "unsupported",
+    left.length === 0
+      ? "no job runs on a push or a pull request, and the repository root has no `ci` recipe or script"
+      : `none of the ${left.length} CI jobs can be reproduced on this machine: ${
+        left.map((entry) => `${entry.job} (${[...new Set(entry.reasons.map((reason) => reason.feature))].join(", ")})`)
+          .join("; ")
+      }`
+  )
 
 /**
- * The units a change runs: every runnable job a push or pull request triggers,
- * once per matrix variant. A need on a job that does not run is dropped.
+ * The units a change runs: every job of the CI (`Inventory.ci`), once per
+ * matrix variant.
  *
  * @category baseline
  * @throws {never}
  * @since 0.1.0
  */
-export const unitsOf = (inventory: Inventory, map: TargetMap): ReadonlyArray<Unit> => {
-  const jobs = inventory.jobs.filter(runsOnChange)
-  const known = new Set(jobs.map((job) => job.id))
-  return jobs.flatMap((job) => {
+export const unitsOf = (inventory: Ci, map: TargetMap): ReadonlyArray<Unit> =>
+  inventory.jobs.flatMap((job) => {
     const variants: ReadonlyArray<Readonly<Record<string, string>>> = job.matrix.length === 0 ? [{}] : job.matrix
     return variants.map((variant) => ({
       job: job.id,
-      needs: job.needs.filter((need) => known.has(need)),
+      needs: job.needs,
       steps: job.steps.map((step) => {
         const filled = withVariant(step, variant)
         return {
@@ -91,7 +104,6 @@ export const unitsOf = (inventory: Inventory, map: TargetMap): ReadonlyArray<Uni
       })
     }))
   })
-}
 
 /**
  * The target labels of a unit, limited to `wanted` when it is given.
@@ -335,7 +347,8 @@ export const selectionOf = (rows: ReadonlyArray<Row>, selected: ReadonlyMap<stri
 export const reportOf = (
   repository: string,
   commits: ReadonlyArray<ReplayCommit>,
-  selection: Metrics | undefined
+  selection: Metrics | undefined,
+  left: ReadonlyArray<NotReplayed>
 ): ReplayReport => {
   const sum = (wall: (commit: ReplayCommit) => number): number =>
     commits.reduce((total, commit) => total + wall(commit), 0)
@@ -349,6 +362,7 @@ export const reportOf = (
     normalWallMs,
     speedup: normalWallMs === 0 ? 0 : baselineWallMs / normalWallMs,
     mismatches: commits.reduce((total, commit) => total + commit.mismatches.length, 0),
-    ...(selection === undefined ? {} : { fastWallMs: sum((commit) => commit.fast?.wallMs ?? 0), selection })
+    ...(selection === undefined ? {} : { fastWallMs: sum((commit) => commit.fast?.wallMs ?? 0), selection }),
+    ...(left.length === 0 ? {} : { notReplayed: left })
   }
 }

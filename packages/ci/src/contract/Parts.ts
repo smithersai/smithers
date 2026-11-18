@@ -22,7 +22,7 @@
 import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type { Closure } from "./Closure.ts"
-import type { Inventory } from "./Inventory.ts"
+import type { Ci, Inventory } from "./Inventory.ts"
 import type { Plan } from "./Plan.ts"
 import type { ReplayReport } from "./ReplayReport.ts"
 import type { Mode, RunRecord } from "./RunRecord.ts"
@@ -88,7 +88,7 @@ export interface GenerateOptions {
  * @since 0.1.0
  */
 export type GenerateFiles<R = never> = (
-  inventory: Inventory,
+  inventory: Ci,
   options?: GenerateOptions
 ) => Effect.Effect<ReadonlyArray<GeneratedFile>, Failure, R>
 
@@ -149,7 +149,7 @@ export type ScoreRows<R = never> = (rows: ReadonlyArray<Row>) => Effect.Effect<R
  * @category parts
  * @since 0.1.0
  */
-export type Decompose<R = never> = (root: string, inventory: Inventory) => Effect.Effect<Inventory, Failure, R>
+export type Decompose<R = never> = (root: string, inventory: Ci) => Effect.Effect<Ci, Failure, R>
 
 /**
  * The parts a replay calls. The command-line program passes them, so the

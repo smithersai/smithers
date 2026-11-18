@@ -28,7 +28,7 @@ const inventoryOf = (targets: ReadonlyArray<string>): Inventory => ({
     file: "packages/ci/PACKAGE.ts",
     name: target,
     needs: [],
-    triggers: [],
+    triggers: ["push"],
     matrix: [],
     steps: [{
       id: stepId(target),
