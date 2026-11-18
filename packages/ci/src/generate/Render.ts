@@ -161,9 +161,6 @@ const renderPackage = (plan: StepPlan, narrowed: boolean): string => {
   ].join("\n")
 }
 
-const byNameThenSource = (left: Toolchain, right: Toolchain): number =>
-  `${left.name}\n${left.source}` < `${right.name}\n${right.source}` ? -1 : 1
-
 const renderSetup = (toolchain: Toolchain): ReadonlyArray<string> => {
   const action = setupActions.get(toolchain.name)
   if (action === undefined) {
@@ -195,17 +192,8 @@ const sandboxSetup: ReadonlyArray<string> = [
   `          fi`
 ]
 
-const renderWorkflow = (
-  inventory: Inventory,
-  plan: StepPlan,
-  cache: string | undefined,
-  confined: boolean
-): string => {
-  const toolchains = new Map<string, Toolchain>()
-  for (const toolchain of [...inventory.toolchains].sort(byNameThenSource)) {
-    if (!toolchains.has(toolchain.name)) toolchains.set(toolchain.name, toolchain)
-  }
-  const hasNode = toolchains.has("node")
+const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boolean): string => {
+  const hasNode = plan.toolchains.some((toolchain) => toolchain.name === "node")
   return [
     yamlComment(generated),
     `name: Smithers CI`,
@@ -223,7 +211,7 @@ const renderWorkflow = (
     `    steps:`,
     `      - uses: actions/checkout@v4`,
     ...(hasNode ? [] : [`      - uses: actions/setup-node@v4`, `        with:`, `          node-version: "24"`]),
-    ...[...toolchains.values()].flatMap(renderSetup),
+    ...plan.toolchains.flatMap(renderSetup),
     ...(confined ? sandboxSetup : []),
     `      ${yamlComment("Unconfined results never reach a remote cache, so the runner keeps its own.")}`,
     `      - uses: actions/cache@v4`,
@@ -303,7 +291,6 @@ export const renderFiles = (
     {
       path: workflowPath,
       content: renderWorkflow(
-        inventory,
         plan,
         options?.cache,
         // The runner needs the sandbox only when a target runs under it.

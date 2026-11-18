@@ -25,10 +25,19 @@
  */
 
 import * as Result from "effect/Result"
-import { type Ci, generatedWorkflow, type Inventory, type Job, shell, type Step } from "../contract/Inventory.ts"
+import {
+  type Ci,
+  generatedWorkflow,
+  type Inventory,
+  type Job,
+  shell,
+  type Step,
+  type Toolchain
+} from "../contract/Inventory.ts"
 import type { Failure } from "../contract/Parts.ts"
 import { shardOf } from "../contract/Shard.ts"
 import { forShell, forText, type Variant } from "./Expressions.ts"
+import { chooseToolchains } from "./Toolchains.ts"
 
 /**
  * An operating system a target can be limited to, in Node's names.
@@ -75,6 +84,8 @@ export interface StepPlan {
   readonly notes: ReadonlyArray<string>
   readonly runners: ReadonlyArray<string>
   readonly triggers: ReadonlyArray<string>
+  /** The tools the generated workflow installs: one entry, and so one version, per tool. */
+  readonly toolchains: ReadonlyArray<Toolchain>
 }
 
 /**
@@ -366,9 +377,11 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     }
   })
 
+  const tools = chooseToolchains(inventory)
   return Result.succeed({
     targets,
-    notes: sorted(notes),
+    toolchains: tools.toolchains,
+    notes: sorted([...notes, ...tools.notes]),
     runners: runners.size === 0 ? ["ubuntu-latest"] : sorted(runners),
     triggers: ((found) => found.length === 0 ? ["pull_request", "push"] : found)(
       sorted(jobs.flatMap((job) => job.triggers).filter((trigger) => workflowTriggers.has(trigger)))

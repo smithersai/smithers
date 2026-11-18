@@ -647,6 +647,66 @@ describe("the workspace and workflow", () => {
     expect(workflow.indexOf("path: .flows/cache")).toBeLessThan(workflow.indexOf("smthrs ci"))
   })
 
+  it("installs the version a file pins when the CI's workflow holds none, and says the workflow's own is not kept", () => {
+    // What the importer writes for `node-version: ${{ matrix.node }}` with `node: [18, 20]`, beside an `.nvmrc`.
+    const generated = generate(inventory(
+      [job("ci.yml:test", [step("t:1", "node test.js")], { matrix: [{ node: "18" }, { node: "20" }] })],
+      {
+        toolchains: [
+          { name: "node", source: ".github/workflows/ci.yml" },
+          { name: "node", source: ".nvmrc", version: "20" }
+        ]
+      }
+    ))
+    // The entry with no version sorts first; it no longer wins over the one that has a version.
+    expect(content(generated, workflowPath)).toContain(
+      `      - uses: actions/setup-node@v4\n        with:\n          node-version: "20"\n`
+    )
+    expect(content(generated, notesPath)).toContain(
+      "- node: .github/workflows/ci.yml sets it up with a version this inventory does not hold: none is written, " +
+        "or it is worked out when the workflow runs, as a matrix value is. Every target runs with node 20 (.nvmrc).\n"
+    )
+    expect(content(generated, packagePath)).toContain(`// Not reproduced from the original CI: see ${notesPath}`)
+  })
+
+  it("installs one version of each tool and names every other version the CI's own files hold", () => {
+    const generated = generate(inventory([job("ci.yml:test", [step("t:1", "make")])], {
+      toolchains: [
+        // Two jobs of the CI's workflow pin different versions: the inventory does not say which job has which.
+        { name: "node", source: ".github/workflows/ci.yml", version: "18" },
+        { name: "node", source: ".github/workflows/ci.yml", version: "20" },
+        // A pin file is less trusted than what the CI itself installs, so its version is no loss.
+        { name: "node", source: ".nvmrc", version: "22" },
+        // A version still written as an expression is not one to install.
+        { name: "python", source: ".github/workflows/ci.yml", version: "${{ matrix.python }}" },
+        // Two pin files disagree.
+        { name: "zig", source: "build.zig.zon", version: "0.15.1" },
+        { name: "zig", source: "a-later-file", version: "0.14.0" },
+        // Only workflows that are not CI name Go: the first version among them is used, and nothing is noted.
+        { name: "go", source: ".github/workflows/nightly.yml" },
+        { name: "go", source: ".github/workflows/release.yml", version: "1.22" },
+        { name: "go", source: ".github/workflows/weekly.yml", version: "1.21" },
+        // A pin file names Bun with no version: a workflow that is not CI is not asked for one.
+        { name: "bun", source: "package.json" },
+        { name: "bun", source: ".github/workflows/release.yml", version: "1.2.0" }
+      ]
+    }))
+    const workflow = content(generated, workflowPath)
+    expect(workflow).toContain(`      - uses: oven-sh/setup-bun@v2\n      - uses: actions/setup-go@v5\n`)
+    expect(workflow).toContain(`          go-version: "1.22"\n      - uses: actions/setup-node@v4\n`)
+    expect(workflow).toContain(`          node-version: "18"\n      - uses: actions/setup-python@v5\n      - uses:`)
+    expect(workflow).toContain(`          version: "0.14.0"\n`)
+    expect(workflow).not.toContain("${{ matrix.python }}")
+    expect(content(generated, notesPath).split("\n").filter((line) => line.startsWith("- "))).toEqual([
+      "- node 20 (.github/workflows/ci.yml) is not installed: every target runs with node 18 " +
+      "(.github/workflows/ci.yml).",
+      "- python: .github/workflows/ci.yml sets it up with a version this inventory does not hold: none is written, " +
+      "or it is worked out when the workflow runs, as a matrix value is. Every target runs with the version its " +
+      "setup action installs by default.",
+      "- zig 0.15.1 (build.zig.zon) is not installed: every target runs with zig 0.14.0 (a-later-file)."
+    ])
+  })
+
   it("installs the read sandbox on the runner when a target is held to its inputs, and only then", () => {
     const held = inventory([job("a", [step("a:1", "x", { inputs: ["src/**"], from: "a:1" })])])
     const workflow = content(generate(held), workflowPath)
