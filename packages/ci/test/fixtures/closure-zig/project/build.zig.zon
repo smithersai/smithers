@@ -1,0 +1,10 @@
+.{
+    .name = .closure_fixture,
+    .version = "0.0.0",
+    .fingerprint = 0x275d7f132152c1b4,
+    .minimum_zig_version = "0.17.1",
+    .dependencies = .{
+        .greet = .{ .path = "deps/greet" },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "deps", "data" },
+}

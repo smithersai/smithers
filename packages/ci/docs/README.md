@@ -35,6 +35,7 @@ See [Normal mode and fast mode](concepts/modes.md).
 | [The shared cache](concepts/shared-cache.md)   | Reusing results across machines and runs.                              |
 | [Repositories](about/repositories.md)          | What Smithers CI reads today, and what it cannot run yet.              |
 | [Command reference](reference/cli.md)          | Every command, flag and exit code.                                     |
+| [The Zig strategy](strategies/zig.md)          | Which files a Zig build step reads, as the Zig toolchain reports it.   |
 
 ## Where the parts live
 

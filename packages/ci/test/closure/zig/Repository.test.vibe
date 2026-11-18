@@ -1,0 +1,100 @@
+import { describe, expect, it } from "@effect/vitest"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import * as Zig from "../../../src/closure/zig/index.ts"
+import { isAffectedBy, isComplete } from "../../../src/contract/Closure.ts"
+import { changed, repository } from "./environment.ts"
+import { host } from "./support.vibe"
+
+/**
+ * Checks the strategy against Zig itself on a real repository.
+ *
+ *     SMITHERS_CI_ZIG_REPOSITORY=/path/to/clone \
+ *     SMITHERS_CI_ZIG_CHANGED=src/a.zig,src/b.json \
+ *     pnpm exec vitest run test/closure/zig/Repository.test.vibe --coverage.enabled=false
+ *
+ * For each named file it edits a copy of the repository, asks Zig to build
+ * every compile step again, and checks that every step Zig rebuilt is a step
+ * whose closure holds the file. It prints both counts, and which test steps
+ * the file reaches. The closures may name more steps than Zig rebuilds: an
+ * edit to `build.zig` that leaves the build graph as it was rebuilds nothing.
+ */
+
+interface Compile {
+  readonly index: number
+  readonly name: string
+}
+
+/** Builds the compile steps and returns each one's output path, which changes when Zig rebuilds it. */
+effect function outputs(root: string, compiles: ReadonlyArray<Compile>) {
+  const spawner = try ChildProcessSpawner
+  const request = Zig.Protocol.buildRequest(compiles.map((step) => step.index))
+  const command = ChildProcess.make("zig", ["build", "--listen=-"], {
+    cwd: root,
+    stdin: { stream: Stream.make(request), endOnDone: false },
+    stdout: "pipe",
+    stderr: "ignore"
+  })
+  const bytes = try scoped(effect {
+    const handle = try spawner.spawn(command)
+    return Zig.Protocol.join(try Stream.runCollect(handle.stdout))
+  })
+  const reply = Zig.Protocol.decodeBuild(bytes)
+  return new Map(reply.steps.map((step) => [step.step, step.outputs.map((output) => output.path).join(" ")]))
+}
+
+/** The compile steps of the build, read as the strategy reads them. */
+effect function compileSteps(root: string) {
+  const spawner = try ChildProcessSpawner
+  const text = try spawner.string(ChildProcess.make("zig", ["build", "--print-configuration"], { cwd: root }))
+  const parsed = Zig.Zon.parse(text)
+  const graph = parsed.ok ? Zig.Graph.read(parsed.value) : undefined
+  return (graph?.steps ?? []).filter(Zig.Draft.compiles).map((step) => ({ index: step.index, name: step.name }))
+}
+
+const row = (cells: ReadonlyArray<string>): string => `| ${cells.join(" | ")} |`
+
+describe.skipIf(repository === undefined)("the Zig repository named by SMITHERS_CI_ZIG_REPOSITORY", () => {
+  it.live("marks every step Zig rebuilds for a changed file", effect () => {
+    provide host {
+      try scoped(effect {
+        const fs = try FileSystem.FileSystem
+        const path = try Path.Path
+        const root = path.join(try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-repository-" }), "repository")
+        try fs.copy(repository!, root)
+        const project = { root } satisfies Zig.Project
+
+        const compiles = try compileSteps(root)
+        const tests = (try Zig.steps(project)).filter((step) => step.test || step.name === "test").map((step) => step.name)
+        const compileClosures = try Zig.ofSteps(project, compiles.map((step) => step.name))
+        const testClosures = try Zig.ofSteps(project, tests)
+        const before = try outputs(root, compiles)
+
+        try Console.log(row(["test step", "files", "packages", "complete"]))
+        try Console.log(row(["---", "---:", "---", "---"]))
+        for (const closure of testClosures) {
+          try Console.log(row([closure.entries[0]!, String(closure.files.length), closure.packages.join(" "), String(isComplete(closure))]))
+        }
+        try Console.log("")
+        try Console.log(row(["changed file", ...tests, "compile steps Zig rebuilt", "compile steps the closures name"]))
+        try Console.log(row(["---", ...tests.map(() => ":-:"), "---:", "---:"]))
+
+        for (const file of changed) {
+          const original = try fs.readFile(path.join(root, file))
+          try fs.writeFile(path.join(root, file), Zig.Protocol.join([original, new TextEncoder().encode("\n")]))
+          const after = try outputs(root, compiles)
+          try fs.writeFile(path.join(root, file), original)
+          const rebuilt = compiles.filter((step) => after.get(step.index) !== before.get(step.index)).map((step) => step.name)
+          const named = compiles.filter((_, index) => isAffectedBy(compileClosures[index]!, [file])).map((step) => step.name)
+          try Console.log(row([
+            file,
+            ...testClosures.map((closure) => isAffectedBy(closure, [file]) ? "yes" : "no"),
+            String(rebuilt.length),
+            String(named.length)
+          ]))
+          expect(named).toEqual(expect.arrayContaining(rebuilt))
+        }
+      })
+    }
+  }, 3_600_000)
+})

@@ -1,0 +1,1 @@
+pub const word = "hello";

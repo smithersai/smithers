@@ -1,0 +1,351 @@
+/**
+ * The Zig strategy for contract 9: every file a build step or an entry file
+ * reaches, as the Zig toolchain itself reports it.
+ *
+ * Nothing here parses Zig source. The step graph comes from
+ * `zig build --print-configuration`, the files a compile step read come from
+ * the cache manifest the compiler wrote for it, and the files a bare entry
+ * file reads come from the compiler's own report over `--listen=-`.
+ * `docs/strategies/zig.md` has the design and its sources.
+ *
+ * @since 0.1.0
+ */
+
+import { digest as sha256 } from "@smthrs/crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type { Closure } from "../../contract/Closure.ts"
+import type { Failure } from "../../contract/Parts.ts"
+import * as Draft from "./Draft.ts"
+import * as Graph from "./Graph.ts"
+import * as Manifest from "./Manifest.ts"
+import * as Protocol from "./Protocol.ts"
+import * as Zon from "./Zon.ts"
+
+/**
+ * The name this strategy writes in `Closure.strategy`.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const strategy = "zig"
+
+/**
+ * The Zig release line this strategy reads. The configuration text, the build
+ * server protocol and the manifest layout are all new in 0.17 and none is
+ * stable, so another line is refused, not guessed at.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const supported = "0.17."
+
+/**
+ * Why no closure could be produced at all. A consumer treats any of these as
+ * "every step is affected".
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export error ZigClosureError {
+  code: "zig-unavailable" | "unsupported-version" | "configure-failed" | "unknown-step" | "build-stopped"
+  message: string
+}
+
+/**
+ * Where the Zig project is and how to run Zig on it.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Project {
+  /** The repository's absolute path. Closure paths are relative to it. */
+  readonly root: string
+  /** The directory holding `build.zig`, relative to `root`. The root itself when omitted. */
+  readonly directory?: string | undefined
+  /** The Zig executable. `zig` on the search path when omitted. */
+  readonly zig?: string | undefined
+  /** Arguments every `zig build` gets, such as `-Doptimize=ReleaseSafe`. They change what a step reads. */
+  readonly args?: ReadonlyArray<string> | undefined
+  /** The cache directory to build in. `.zig-cache` beside `build.zig` when omitted. */
+  readonly cache?: string | undefined
+}
+
+/**
+ * One step a closure can be asked for.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface StepName {
+  readonly name: string
+  /** True when `zig build <name>` accepts the name. */
+  readonly named: boolean
+  /** True when the step runs a test binary. */
+  readonly test: boolean
+}
+
+interface Session {
+  readonly project: Project
+  readonly directory: string
+  readonly cache: string
+  readonly zig: string
+  readonly version: string
+}
+
+interface Ran {
+  readonly out: Uint8Array
+  readonly err: string
+  readonly code: number
+}
+
+/** The last lines of what a command wrote to its standard error, for a message. */
+const tail = (text: string): string => text.trim().split("\n").slice(-12).join("\n")
+
+/**
+ * Runs Zig in the project directory. A request is written to its standard
+ * input, which then stays open: Zig 0.17.1's build server panics if its input
+ * closes while it is still building, and leaves by itself once it reads the
+ * request's exit message. A Zig that a signal ended has the exit code -1.
+ */
+effect function run(session: Session, args: ReadonlyArray<string>, request?: Uint8Array): Ran!ZigClosureError!ChildProcessSpawner {
+  const spawner = try ChildProcessSpawner
+  const command = ChildProcess.make(session.zig, args, {
+    cwd: session.directory,
+    stdin: request === undefined ? "ignore" : { stream: Stream.make(request), endOnDone: false },
+    stdout: "pipe",
+    stderr: "pipe"
+  })
+  return scoped(effect {
+    const handle = try spawner.spawn(command)
+    const [out, err] = try.all [Stream.runCollect(handle.stdout), Stream.runCollect(handle.stderr)]
+    const code = map(handle.exitCode, Number) catch () => -1
+    return { out: Protocol.join(out), err: Protocol.utf8(Protocol.join(err)), code }
+  }) catch effect (cause) => {
+    throw new ZigClosureError({ code: "zig-unavailable", message: `${session.zig} did not run: ${cause.message}` })
+  }
+}
+
+/** Checks the Zig release and settles the directories every later command uses. */
+effect function open(project: Project): Session!ZigClosureError!(ChildProcessSpawner | Path.Path) {
+  const path = try Path.Path
+  const directory = path.join(project.root, project.directory ?? "")
+  const session = {
+    project,
+    directory,
+    cache: project.cache ?? path.join(directory, ".zig-cache"),
+    zig: project.zig ?? "zig",
+    version: ""
+  }
+  const ran = try run(session, ["version"])
+  const version = Protocol.utf8(ran.out).trim()
+  if (ran.code !== 0 || !version.startsWith(supported)) {
+    throw new ZigClosureError({
+      code: "unsupported-version",
+      message: `Zig ${supported}x is needed and ${session.zig} is ${version === "" ? "unknown" : version}`
+    })
+  }
+  return { ...session, version }
+}
+
+const place = (session: Session, path: Path.Path): Draft.Place => ({
+  root: session.project.root,
+  directory: session.directory,
+  version: session.version,
+  path
+})
+
+/** The arguments of a `zig build` in this session. */
+const build = (session: Session, ...first: ReadonlyArray<string>): ReadonlyArray<string> =>
+  ["build", ...first, "--cache-dir", session.cache, ...(session.project.args ?? [])]
+
+/** Reads the step graph. `build.zig` runs here if its result is not cached. */
+effect function graph(session: Session): Graph.Graph!ZigClosureError!ChildProcessSpawner {
+  const ran = try run(session, build(session, "--print-configuration"))
+  if (ran.code !== 0) {
+    throw new ZigClosureError({ code: "configure-failed", message: `build.zig did not configure:\n${tail(ran.err)}` })
+  }
+  const parsed = Zon.parse(Protocol.utf8(ran.out))
+  const read = parsed.ok ? Graph.read(parsed.value) : undefined
+  if (read === undefined) {
+    throw new ZigClosureError({ code: "configure-failed", message: "zig build printed a configuration this strategy cannot read" })
+  }
+  return read
+}
+
+/**
+ * Lists the steps a closure can be asked for.
+ *
+ * @category strategy
+ * @since 0.1.0
+ */
+export effect function steps(
+  project: Project
+): ReadonlyArray<StepName>!ZigClosureError!(ChildProcessSpawner | Path.Path) {
+  const read = try graph(try open(project))
+  const named = new Set(read.named.values())
+  return read.steps.map((step) => ({ name: step.name, named: named.has(step.index), test: step.test }))
+}
+
+/** Every finished manifest in the cache, by the output directory it belongs to. */
+effect function manifests(session: Session): ReadonlyMap<string, ReadonlyArray<Manifest.Input>>!!(FileSystem.FileSystem | Path.Path) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const directory = path.join(session.cache, "h")
+  const names = fs.readDirectory(directory) catch () => []
+  const found = new Map<string, ReadonlyArray<Manifest.Input>>()
+  for (const name of names.filter(Manifest.isName)) {
+    const bytes = fs.readFile(path.join(directory, name)) catch () => new Uint8Array()
+    const inputs = Manifest.decode(bytes)
+    if (inputs !== undefined) found.set(Manifest.outputDigest(name, inputs), inputs)
+  }
+  return found
+}
+
+/** Files a path a step declares: a file is followed, a directory or a missing path is reported. */
+effect function declare(session: Session, into: Draft.Draft, step: Graph.Step, declared: string): void!!(FileSystem.FileSystem | Path.Path) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const kind = map(fs.stat(path.join(session.directory, declared)), (info) => info.type) catch () => "Missing" as const
+  if (kind === "Missing") into.unresolved.push({ from: step.name, specifier: declared })
+  else Draft.admit(place(session, path), into, step.name, { prefix: "build-root", path: declared, directory: kind !== "File" })
+}
+
+/** Reads and digests every file the drafts name, then writes the closures. */
+effect function finish(
+  session: Session,
+  drafts: ReadonlyArray<Draft.Draft>
+): ReadonlyArray<Closure>!!(FileSystem.FileSystem | Path.Path | EffectDigest.Digest) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const paths = [...new Set(drafts.flatMap((made) => [...made.files]))]
+  const digests = new Map<string, string>()
+  for concurrent(16) (const file of paths) {
+    const digest = flatMap(fs.readFile(path.join(session.project.root, file)), (bytes) => sha256(bytes)) catch () => undefined
+    if (digest !== undefined) digests.set(file, digest)
+  }
+  return drafts.map((made) => Draft.close(strategy, made, digests))
+}
+
+/**
+ * The closure of each named build step: every file the step and the steps it
+ * depends on read.
+ *
+ * Compile steps are built, into `project.cache`, because only the compiler
+ * knows what it read. No test and no other command with side effects is run.
+ *
+ * @param project - Where the project is.
+ * @param names - Step names: one `zig build` accepts, such as `test`, or a
+ * step's own name, such as `run test`.
+ * @returns One closure per name, in order, each with the name as its entry.
+ *
+ * @category strategy
+ * @since 0.1.0
+ */
+export effect function ofSteps(
+  project: Project,
+  names: ReadonlyArray<string>
+): ReadonlyArray<Closure>!ZigClosureError!(FileSystem.FileSystem | Path.Path | ChildProcessSpawner | EffectDigest.Digest) {
+  if (names.length === 0) return []
+  const session = try open(project)
+  const where = place(session, try Path.Path)
+  const read = try graph(session)
+  const asked: Array<{ readonly name: string; readonly reached: ReadonlyArray<Graph.Step> }> = []
+  for (const name of names) {
+    const step = Graph.find(read, name)
+    if (step === undefined) throw new ZigClosureError({ code: "unknown-step", message: `zig build has no step named ${name}` })
+    asked.push({ name, reached: Graph.reach(read, step.index) })
+  }
+  const toBuild = [...new Set(asked.flatMap((entry) => entry.reached.filter(Draft.compiles).map((step) => step.index)))]
+  const ran = try run(session, build(session, "--listen=-"), Protocol.buildRequest(toBuild))
+  const reply = Protocol.decodeBuild(ran.out)
+  if (!reply.completed) {
+    throw new ZigClosureError({ code: "build-stopped", message: `zig build stopped before it finished:\n${tail(ran.err)}` })
+  }
+  const found = try manifests(session)
+  const results = new Map(reply.steps.map((result) => [result.step, result]))
+  const configured = Draft.listed(found, reply.configuration)
+  const drafts: Array<Draft.Draft> = []
+  for (const entry of asked) {
+    const made = Draft.make(entry.name)
+    if (configured === undefined) made.dynamic.push({ from: "build.zig", specifier: "it reads something Zig does not track" })
+    else for (const input of configured) Draft.admit(where, made, "build.zig", input)
+    for (const step of entry.reached) {
+      for (const reason of step.open) made.dynamic.push({ from: step.name, specifier: reason })
+      for (const declared of step.paths) try declare(session, made, step, declared)
+      Draft.settle(where, made, step, results.get(step.index), found)
+    }
+    drafts.push(made)
+  }
+  return try finish(session, drafts)
+}
+
+/**
+ * The closure of each entry file compiled on its own, as `zig test FILE`
+ * compiles it, with no `build.zig`.
+ *
+ * The compiler analyzes the file and emits nothing. A file that does not
+ * compile still yields a closure; what stopped it is in `unresolved`.
+ *
+ * @param project - Where the project is. `args` is not used.
+ * @param files - Entry files, relative to the directory holding the project.
+ * @returns One closure per file, in order, each with the file as its entry.
+ *
+ * @category strategy
+ * @since 0.1.0
+ */
+export effect function ofFiles(
+  project: Project,
+  files: ReadonlyArray<string>
+): ReadonlyArray<Closure>!ZigClosureError!(FileSystem.FileSystem | Path.Path | ChildProcessSpawner | EffectDigest.Digest) {
+  if (files.length === 0) return []
+  const session = try open(project)
+  const where = place(session, try Path.Path)
+  const drafts: Array<Draft.Draft> = []
+  for (const file of files) {
+    const made = Draft.make(file)
+    const ran = try run(session, ["test", file, "-fno-emit-bin", "--listen=-", "--cache-dir", session.cache], Protocol.compileRequest)
+    const reply = Protocol.decodeCompile(ran.out)
+    if (reply.inputs === undefined) made.unresolved.push({ from: file, specifier: "the compiler reported no files" })
+    else for (const input of reply.inputs) Draft.admit(where, made, file, { ...input, directory: false })
+    Draft.report(made, file, reply.problems)
+    drafts.push(made)
+  }
+  return try finish(session, drafts)
+}
+
+/** A `ZigClosureError` as contract 10's failure. Only a Zig of another release is `unsupported`. */
+const failure = (error: ZigClosureError): Failure => ({
+  code: error.code === "unsupported-version" ? "unsupported" : "command-failed",
+  message: error.message,
+  part: "closure"
+})
+
+/**
+ * Contract 10's `CloseEntries` for Zig: the closure of each entry in the
+ * repository at `root`, which holds `build.zig`.
+ *
+ * An entry that ends in `.zig` is an entry file, compiled on its own as
+ * {@link ofFiles} does. Any other entry is a build step's name, as
+ * {@link ofSteps} takes it.
+ *
+ * @param root - The repository's absolute path.
+ * @param entries - Step names and entry files.
+ * @returns One closure per entry, in order.
+ *
+ * @category strategy
+ * @since 0.1.0
+ */
+export effect function close(
+  root: string,
+  entries: ReadonlyArray<string>
+): ReadonlyArray<Closure>!Failure!(FileSystem.FileSystem | Path.Path | ChildProcessSpawner | EffectDigest.Digest) {
+  const isFile = (entry: string): boolean => entry.endsWith(".zig")
+  const closed = all([ofFiles({ root }, entries.filter(isFile)), ofSteps({ root }, entries.filter((entry) => !isFile(entry)))])
+  const [files, steps] = closed catch effect (error) => {
+    throw failure(error)
+  }
+  const made = [...files, ...steps]
+  return entries.flatMap((entry) => made.filter((closure) => closure.entries[0] === entry).slice(0, 1))
+}

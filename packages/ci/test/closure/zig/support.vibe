@@ -1,0 +1,69 @@
+import { WebCrypto } from "@smthrs/crypto"
+import { NodeHost } from "@smthrs/platform-node"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import type { Project } from "../../../src/closure/zig/index.ts"
+
+/** The real host: files, processes and SHA-256. */
+export const host = Layer.mergeAll(NodeHost.layer, WebCrypto.layer)
+
+/** A long limit: these tests compile real Zig programs, and the build machine is shared. */
+export const limit = 600_000
+
+const fixture = new URL("../../fixtures/closure-zig/project", import.meta.url).pathname
+
+/**
+ * Copies the fixture project into `project/` under a new repository root.
+ * The tests run the `zig` on the search path, which must be a 0.17 release.
+ */
+export effect function repository() {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-" })
+  try fs.copy(fixture, path.join(root, "project"))
+  return { root, directory: "project" } satisfies Project
+}
+
+/** Replaces the text of one file of a copied project. */
+export effect function write(project: Project, file: string, text: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  try fs.writeFileString(path.join(project.root, file), text)
+}
+
+/** Writes an executable shell script, a stand-in for a Zig that misbehaves, and returns its path. */
+export effect function script(project: Project, body: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const file = path.join(project.root, "stand-in-zig")
+  try fs.writeFileString(file, `#!/bin/sh\n${body}\n`)
+  try fs.chmod(file, 0o755)
+  return file
+}
+
+/**
+ * A process service that runs a shell command in place of any Zig command
+ * with `flag` among its arguments, and every other command as it is.
+ */
+export const instead = (flag: string, shell: string) =>
+  Layer.effect(ChildProcessSpawner, effect {
+    const real = try ChildProcessSpawner
+    return makeSpawner((command) =>
+      real.spawn(
+        ChildProcess.isStandardCommand(command) && command.args.includes(flag)
+          ? ChildProcess.make("sh", ["-c", shell], command.options)
+          : command
+      )
+    )
+  })
+
+/** A file service whose `method` fails for a path that `matches`, and is real otherwise. */
+export const failing = (method: "readDirectory" | "readFile" | "stat", matches: (path: string) => boolean) =>
+  Layer.effect(FileSystem.FileSystem, effect {
+    const real = try FileSystem.FileSystem
+    const missing = "/nonexistent/smithers-ci"
+    return {
+      ...real,
+      [method]: (path: string) => real[method](matches(path) ? missing : path)
+    } as FileSystem.FileSystem
+  })

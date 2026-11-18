@@ -1,0 +1,345 @@
+import { describe, expect, it, layer } from "@effect/vitest"
+import * as Zig from "../../../src/closure/zig/index.ts"
+import { isAffectedBy, isComplete } from "../../../src/contract/Closure.ts"
+import { close, paths, sha256 } from "./helpers.ts"
+import { failing, host, instead, limit, repository, script, write } from "./support.vibe"
+
+/** One copy of the fixture project that the tests of a block share and do not change. */
+service Shared {
+  readonly project: Zig.Project
+}
+
+const shared = Layer.provideMerge(Layer.effect(Shared, effect { return { project: try repository() } }), host)
+
+const built = ["project/build.zig", "project/build.zig.zon", "project/deps/greet/build.zig", "project/deps/greet/build.zig.zon"]
+
+layer(shared, { timeout: limit, excludeTestServices: true })("the closure of a Zig build step", (it) => {
+  it.effect("lists exactly the files each test step reads", effect () => {
+    const { project } = try Shared
+    const [alpha, beta, gamma] = try Zig.ofSteps(project, ["test-alpha", "test-beta", "test-gamma"])
+    expect(paths(alpha!)).toEqual([
+      ...built,
+      "project/deps/greet/src/greet.zig",
+      "project/deps/greet/src/tone.zig",
+      "project/src/alpha.txt",
+      "project/src/alpha.zig",
+      "project/src/shared.zig"
+    ])
+    expect(paths(beta!)).toEqual([...built, "project/src/beta.zig", "project/src/shared.zig"])
+    expect(paths(gamma!)).toEqual([built[0], built[1], "project/data/words.zig.in", built[2], built[3], "project/src/gamma.zig"])
+    for (const closure of [alpha!, beta!, gamma!]) {
+      expect(closure.strategy).toBe("zig")
+      expect(closure.packages).toEqual([expect.stringMatching(/^zig@0\.17\.\d+$/)])
+      expect(isComplete(closure)).toBe(true)
+    }
+    expect([alpha!.entries, beta!.entries, gamma!.entries]).toEqual([["test-alpha"], ["test-beta"], ["test-gamma"]])
+  }, limit)
+
+  it.effect("a file outside the closure affects nothing", effect () => {
+    const { project } = try Shared
+    const closures = try Zig.ofSteps(project, ["test-alpha", "test-beta", "test-gamma", "test"])
+    for (const closure of closures) {
+      // No step imports unused.zig, reads NOTES.md, or runs the program whose root is main.zig.
+      expect(isAffectedBy(closure, ["project/src/unused.zig", "project/NOTES.md", "project/src/main.zig"])).toBe(false)
+    }
+  }, limit)
+
+  it.effect("a shared file affects every step that imports it and no other", effect () => {
+    const { project } = try Shared
+    const [alpha, beta, gamma, all] = try Zig.ofSteps(project, ["test-alpha", "test-beta", "test-gamma", "test"])
+    expect(isAffectedBy(alpha!, ["project/src/shared.zig"])).toBe(true)
+    expect(isAffectedBy(beta!, ["project/src/shared.zig"])).toBe(true)
+    expect(isAffectedBy(gamma!, ["project/src/shared.zig"])).toBe(false)
+    // `test` depends on all three, so it reaches what any of them reaches.
+    expect(isAffectedBy(all!, ["project/src/shared.zig"])).toBe(true)
+    expect(new Set(paths(all!))).toEqual(new Set([...paths(alpha!), ...paths(beta!), ...paths(gamma!)]))
+  }, limit)
+
+  it.effect("an embedded file and a package from build.zig.zon are in the closure", effect () => {
+    const { project } = try Shared
+    const [alpha, beta] = try Zig.ofSteps(project, ["test-alpha", "test-beta"])
+    // src/alpha.zig holds @embedFile("alpha.txt") and @import("greet"); src/beta.zig holds neither.
+    expect(isAffectedBy(alpha!, ["project/src/alpha.txt"])).toBe(true)
+    expect(isAffectedBy(alpha!, ["project/deps/greet/src/tone.zig"])).toBe(true)
+    expect(isAffectedBy(beta!, ["project/src/alpha.txt"])).toBe(false)
+    expect(isAffectedBy(beta!, ["project/deps/greet/src/tone.zig"])).toBe(false)
+    // The package's build files shape every step, so every step reaches them.
+    expect(isAffectedBy(beta!, ["project/deps/greet/build.zig.zon"])).toBe(true)
+  }, limit)
+
+  it.effect("a file a command reads is in the closure of the step that compiles its output", effect () => {
+    const { project } = try Shared
+    const [gamma, alpha] = try Zig.ofSteps(project, ["test-gamma", "test-alpha"])
+    expect(isAffectedBy(gamma!, ["project/data/words.zig.in"])).toBe(true)
+    expect(isAffectedBy(alpha!, ["project/data/words.zig.in"])).toBe(false)
+  }, limit)
+
+  it.effect("what cannot be followed is reported, and makes the step affected by every change", effect () => {
+    const { project } = try Shared
+    const [broken, run] = try Zig.ofSteps(project, ["test-broken", "run"])
+    // A compile error: the compiler could not say what the step reads.
+    expect(broken!.unresolved).toEqual([{ from: "src/missing.zig", specifier: "unable to load \"missing.zig\": FileNotFound" }])
+    // A program Zig itself never caches.
+    expect(run!.dynamic).toEqual([{ from: "run exe hello", specifier: "a command Zig reruns every time" }])
+    expect(paths(run!)).toContain("project/src/main.zig")
+    for (const closure of [broken!, run!]) {
+      expect(isComplete(closure)).toBe(false)
+      expect(isAffectedBy(closure, ["project/NOTES.md"])).toBe(true)
+    }
+  }, limit)
+
+  it.effect("a directory a step reads whole is named, so a file added to it affects the step", effect () => {
+    const { project } = try Shared
+    const [fmt] = try Zig.ofSteps(project, ["fmt"])
+    expect(fmt!.directories).toEqual(["project/src"])
+    expect(isComplete(fmt!)).toBe(true)
+    expect(isAffectedBy(fmt!, ["project/src/added-later.zig"])).toBe(true)
+    expect(isAffectedBy(fmt!, ["project/NOTES.md", "project/data/words.zig.in"])).toBe(false)
+  }, limit)
+
+  it.effect("digests each file's content with SHA-256", effect () => {
+    const { project } = try Shared
+    const [beta] = try Zig.ofSteps(project, ["test-beta"])
+    expect(beta!.files.find((file) => file.path === "project/src/shared.zig")?.digest).toBe(
+      sha256("pub fn double(n: u32) u32 {\n    return n * 2;\n}\n")
+    )
+  }, limit)
+
+  it.effect("takes a step's own name, and lists the steps there are", effect () => {
+    const { project } = try Shared
+    const [byName, byOwnName] = try Zig.ofSteps(project, ["test-beta", "run test beta"])
+    expect(byOwnName!.entries).toEqual(["run test beta"])
+    expect(byOwnName!.files).toEqual(byName!.files)
+    const steps = try Zig.steps(project)
+    expect(steps.filter((step) => step.named).map((step) => step.name)).toEqual([
+      "install",
+      "uninstall",
+      "test-alpha",
+      "test-beta",
+      "test-gamma",
+      "test",
+      "test-broken",
+      "fmt",
+      "run"
+    ])
+    expect(steps.filter((step) => step.test).map((step) => step.name)).toEqual([
+      "run test alpha",
+      "run test beta",
+      "run test gamma",
+      "run test broken"
+    ])
+  }, limit)
+
+  it.effect("refuses a step the build does not have", effect () => {
+    const { project } = try Shared
+    expect(try flip(Zig.ofSteps(project, ["test-beta", "test-delta"]))).toMatchObject({
+      _tag: "ZigClosureError",
+      code: "unknown-step",
+      message: "zig build has no step named test-delta"
+    })
+  }, limit)
+
+  it.effect("gives paths from the repository root, wherever the project is in it", effect () => {
+    const { project } = try Shared
+    const path = try Path.Path
+    const inner = path.join(project.root, "project")
+    const [atRoot] = try Zig.ofSteps({ root: inner, args: ["-Doptimize=Debug"] }, ["test-beta"])
+    expect(paths(atRoot!)).toEqual(["build.zig", "build.zig.zon", "deps/greet/build.zig", "deps/greet/build.zig.zon", "src/beta.zig", "src/shared.zig"])
+    // A repository that holds only src/: everything else the step reads is on the host.
+    const [narrow] = try Zig.ofSteps({ root: path.join(inner, "src"), directory: ".." }, ["test-beta"])
+    expect(paths(narrow!)).toEqual(["beta.zig", "shared.zig"])
+    expect(narrow!.packages).toEqual(["host", expect.stringMatching(/^zig@/)])
+  }, limit)
+
+  it.effect("builds in the cache directory it is given", effect () => {
+    const { project } = try Shared
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const cache = try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-cache-" })
+    const [beta] = try Zig.ofSteps({ ...project, cache }, ["test-beta"])
+    expect(paths(beta!)).toEqual([...built, "project/src/beta.zig", "project/src/shared.zig"])
+    expect((try fs.readDirectory(path.join(cache, "h"))).length).toBeGreaterThan(0)
+  }, limit)
+})
+
+layer(shared, { timeout: limit, excludeTestServices: true })("the closure of a Zig entry file", (it) => {
+  it.effect("lists what the compiler read for the file alone", effect () => {
+    const { project } = try Shared
+    const [beta, alpha] = try Zig.ofFiles(project, ["src/beta.zig", "src/alpha.zig"])
+    expect(beta!.entries).toEqual(["src/beta.zig"])
+    expect(paths(beta!)).toEqual(["project/src/beta.zig", "project/src/shared.zig"])
+    expect(isComplete(beta!)).toBe(true)
+    expect(paths(alpha!)).toContain("project/src/alpha.zig")
+    // Without build.zig nothing names the package `greet`, so the compile fails and says so.
+    expect(alpha!.unresolved.length).toBeGreaterThan(0)
+  }, limit)
+
+  it.effect("reports a file that does not compile", effect () => {
+    const { project } = try Shared
+    const [broken] = try Zig.ofFiles(project, ["src/broken.zig"])
+    // The compiler names the file it looked for, so the closure names it too.
+    expect(broken!.unresolved).toEqual([
+      { from: "project/src/missing.zig", specifier: "the file cannot be read" },
+      { from: "src/missing.zig", specifier: "unable to load \"missing.zig\": FileNotFound" }
+    ])
+    expect(paths(broken!)).toEqual(["project/src/broken.zig"])
+    expect(isAffectedBy(broken!, ["project/NOTES.md"])).toBe(true)
+  }, limit)
+
+  it.effect("reports a compiler that says nothing", effect () => {
+    const { project } = try Shared
+    provide instead("--listen=-", "head -c 16 > /dev/null") {
+      const [beta] = try Zig.ofFiles(project, ["src/beta.zig"])
+      expect(beta).toMatchObject({ files: [], unresolved: [{ from: "src/beta.zig", specifier: "the compiler reported no files" }] })
+    }
+  }, limit)
+})
+
+layer(shared, { timeout: limit, excludeTestServices: true })("contract 10's close for Zig", (it) => {
+  it.effect("closes step names and entry files in the order they were given", effect () => {
+    const { project } = try Shared
+    const root = (try Path.Path).join(project.root, "project")
+    const closures = try close(root, ["src/beta.zig", "test-beta", "src/beta.zig"])
+    expect(closures.map((closure) => closure.entries)).toEqual([["src/beta.zig"], ["test-beta"], ["src/beta.zig"]])
+    expect(paths(closures[0]!)).toEqual(["src/beta.zig", "src/shared.zig"])
+    expect(paths(closures[1]!)).toEqual(["build.zig", "build.zig.zon", "deps/greet/build.zig", "deps/greet/build.zig.zon", "src/beta.zig", "src/shared.zig"])
+    expect(try close(root, ["test-beta"])).toEqual([closures[1]])
+    expect(try close(root, ["src/beta.zig"])).toEqual([closures[0]])
+    expect(try close(root, [])).toEqual([])
+  }, limit)
+
+  it.effect("fails as contract 10 says", effect () => {
+    const { project } = try Shared
+    const root = (try Path.Path).join(project.root, "project")
+    expect(try flip(close(root, ["test-delta"]))).toEqual({
+      code: "command-failed",
+      message: "zig build has no step named test-delta",
+      part: "closure"
+    })
+    provide instead("version", "echo 0.15.2") {
+      expect(try flip(close(root, ["test-beta"]))).toEqual({
+        code: "unsupported",
+        message: "Zig 0.17.x is needed and zig is 0.15.2",
+        part: "closure"
+      })
+    }
+  }, limit)
+})
+
+layer(host, { timeout: limit, excludeTestServices: true })("a Zig closure after an edit", (it) => {
+  it.effect("follows an import that was added and digests the new content", effect () => {
+    const project = try repository()
+    const [before] = try Zig.ofSteps(project, ["test-beta"])
+    try write(project, "project/src/beta.zig", "const unused = @import(\"unused.zig\");\ntest \"beta\" {\n    _ = unused.nobody_imports_this;\n}\n")
+    const [after] = try Zig.ofSteps(project, ["test-beta"])
+    expect(isAffectedBy(before!, ["project/src/unused.zig"])).toBe(false)
+    expect(paths(after!)).toEqual([
+      "project/build.zig",
+      "project/build.zig.zon",
+      "project/deps/greet/build.zig",
+      "project/deps/greet/build.zig.zon",
+      "project/src/beta.zig",
+      "project/src/unused.zig"
+    ])
+    const digest = (closure: typeof before) => closure!.files.find((file) => file.path === "project/src/beta.zig")?.digest
+    expect(digest(after)).not.toBe(digest(before))
+  }, limit)
+})
+
+layer(host, { timeout: limit, excludeTestServices: true })("a Zig closure that cannot be produced", (it) => {
+  it.effect("refuses when Zig cannot be started", effect () => {
+    const project = try repository()
+    expect(try flip(Zig.ofSteps({ ...project, zig: "/nonexistent/zig" }, ["test"]))).toMatchObject({
+      code: "zig-unavailable",
+      message: expect.stringContaining("/nonexistent/zig did not run")
+    })
+  }, limit)
+
+  it.effect("refuses a Zig release it does not read", effect () => {
+    const project = try repository()
+    const old = try script(project, "echo 0.15.2")
+    expect(try flip(Zig.steps({ ...project, zig: old }))).toMatchObject({
+      code: "unsupported-version",
+      message: `Zig 0.17.x is needed and ${old} is 0.15.2`
+    })
+    const silent = try script(project, "exit 1")
+    expect(try flip(Zig.ofFiles({ ...project, zig: silent }, ["src/beta.zig"]))).toMatchObject({
+      code: "unsupported-version",
+      message: `Zig 0.17.x is needed and ${silent} is unknown`
+    })
+    const failed = try script(project, "echo 0.17.1; exit 1")
+    expect((try flip(Zig.steps({ ...project, zig: failed }))).code).toBe("unsupported-version")
+    // A Zig that a signal ends has no exit code.
+    const killed = try script(project, "echo 0.17.1; kill -9 $$")
+    expect((try flip(Zig.steps({ ...project, zig: killed }))).code).toBe("unsupported-version")
+  }, limit)
+
+  it.effect("refuses a build.zig that does not configure", effect () => {
+    const project = try repository()
+    expect(try flip(Zig.ofSteps({ ...project, args: ["-Dno-such-option=1"] }, ["test"]))).toMatchObject({
+      code: "configure-failed",
+      message: expect.stringContaining("no-such-option")
+    })
+    try write(project, "project/build.zig", "pub fn build() void { nonsense }\n")
+    expect(try flip(Zig.ofSteps(project, ["test"]))).toMatchObject({
+      code: "configure-failed",
+      message: expect.stringContaining("build.zig did not configure")
+    })
+  }, limit)
+
+  it.effect("refuses a configuration it cannot read", effect () => {
+    const project = try repository()
+    provide instead("--print-configuration", "echo not zon") {
+      expect((try flip(Zig.steps(project))).message).toBe("zig build printed a configuration this strategy cannot read")
+    }
+    provide instead("--print-configuration", "echo '.{ .steps = .{} }'") {
+      expect((try flip(Zig.steps(project))).code).toBe("configure-failed")
+    }
+  }, limit)
+
+  it.effect("refuses a build that stops before it finishes", effect () => {
+    const project = try repository()
+    provide instead("--listen=-", "head -c 16 > /dev/null; echo the server fell over >&2") {
+      expect(try flip(Zig.ofSteps(project, ["test-beta"]))).toMatchObject({
+        code: "build-stopped",
+        message: "zig build stopped before it finished:\nthe server fell over"
+      })
+    }
+  }, limit)
+
+  it.effect("reports every compile step when the server finishes and says nothing of them", effect () => {
+    const project = try repository()
+    // Only the message that ends a build: tag 0x80000004, no body.
+    provide instead("--listen=-", "head -c 16 > /dev/null; printf '\\004\\000\\000\\200\\000\\000\\000\\000'") {
+      const [beta] = try Zig.ofSteps(project, ["test-beta"])
+      expect(beta).toMatchObject({
+        files: [],
+        unresolved: [{ from: "compile test beta debug native", specifier: "the step was not built" }],
+        dynamic: [{ from: "build.zig", specifier: "it reads something Zig does not track" }]
+      })
+    }
+  }, limit)
+
+  it.effect("reports what it cannot read from the cache or the repository", effect () => {
+    const project = try repository()
+    const left = { from: "compile test beta debug native", specifier: "the compiler left no list of the files it read" }
+    const untracked = { from: "build.zig", specifier: "it reads something Zig does not track" }
+    provide failing("readDirectory", (path) => path.endsWith("/h")) {
+      const [beta] = try Zig.ofSteps(project, ["test-beta"])
+      expect(beta).toMatchObject({ files: [], unresolved: [left], dynamic: [untracked] })
+    }
+    provide failing("readFile", (path) => path.includes("/.zig-cache/h/")) {
+      const [beta] = try Zig.ofSteps(project, ["test-beta"])
+      expect(beta).toMatchObject({ files: [], unresolved: [left], dynamic: [untracked] })
+    }
+    provide failing("readFile", (path) => path.endsWith("shared.zig")) {
+      const [beta] = try Zig.ofSteps(project, ["test-beta"])
+      expect(paths(beta!)).not.toContain("project/src/shared.zig")
+      expect(beta!.unresolved).toEqual([{ from: "project/src/shared.zig", specifier: "the file cannot be read" }])
+    }
+    provide failing("stat", (path) => path.endsWith("words.zig.in")) {
+      const [gamma] = try Zig.ofSteps(project, ["test-gamma"])
+      expect(gamma!.unresolved).toEqual([{ from: "run cp (words.zig)", specifier: "data/words.zig.in" }])
+    }
+  }, limit)
+})
