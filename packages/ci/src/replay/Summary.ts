@@ -275,29 +275,72 @@ export const splitOf = (units: ReadonlyArray<Unit>): ReadonlyMap<string, Readonl
   )
 
 /**
- * One job's units, which share its needs.
+ * Units the baseline starts together: one job's variants, or every job of
+ * one shared tree. `needs` are the jobs elsewhere that must pass first.
+ * Each of `runs` gets one fresh checkout, its units run there in order, and
+ * its first failure stops it: a job's variants are one run each, and the
+ * jobs of a shared tree are one run together.
  *
  * @category models
  * @since 0.1.0
  */
-export interface JobGroup {
-  readonly job: string
+export interface Station {
+  readonly jobs: ReadonlyArray<string>
   readonly needs: ReadonlyArray<string>
-  readonly units: ReadonlyArray<Unit>
+  readonly runs: ReadonlyArray<ReadonlyArray<Unit>>
 }
 
 /**
- * Groups units by job, in order of first appearance.
+ * The stations of the units that hold a wanted comparison name, or of every
+ * unit when none is named, in order of first appearance. A run of a shared
+ * tree is kept whole when any of its units is wanted: a recipe is rerun
+ * after the recipes before it, as it first ran.
  *
  * @category baseline
  * @throws {never}
  * @since 0.1.0
  */
-export const groupByJob = (units: ReadonlyArray<Unit>): ReadonlyArray<JobGroup> =>
-  [...new Set(units.map((unit) => unit.job))].map((job) => {
-    const members = units.filter((unit) => unit.job === job)
-    return { job, needs: members.flatMap((unit) => unit.needs), units: members }
+export const stationsOf = (
+  units: ReadonlyArray<Unit>,
+  wanted: ReadonlySet<string> | undefined = undefined
+): ReadonlyArray<Station> => {
+  const keyOf = (unit: Unit): string => unit.tree === undefined ? `job ${unit.job}` : `tree ${unit.tree}`
+  return [...new Set(units.map(keyOf))].flatMap((key) => {
+    const members = units.filter((unit) => keyOf(unit) === key)
+    const jobs = [...new Set(members.map((unit) => unit.job))]
+    const runs = (members.some((unit) => unit.tree !== undefined) ? [members] : members.map((unit) => [unit]))
+      .filter((run) => run.some((unit) => labelsOf(unit, wanted).length > 0))
+    const needs = [...new Set(members.flatMap((unit) => unit.needs))].filter((need) => !jobs.includes(need))
+    return runs.length === 0 ? [] : [{ jobs, needs, runs }]
   })
+}
+
+/**
+ * The steps one run executes, in order: every step of its units up to the
+ * last unit that holds a wanted comparison name.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const stepsThrough = (
+  run: ReadonlyArray<Unit>,
+  wanted: ReadonlySet<string> | undefined
+): ReadonlyArray<UnitStep> =>
+  run.slice(0, run.findLastIndex((unit) => labelsOf(unit, wanted).length > 0) + 1).flatMap((unit) => unit.steps)
+
+/**
+ * The lines of a copy's `.git/info/exclude` for what `git ls-files -z`
+ * listed as untracked there: each path from the copy's root, with the
+ * characters a pattern reads as wildcards taken literally.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const excludeLines = (listed: string): string =>
+  listed.split("\0").filter((entry) => entry !== "").map((entry) => `/${entry.replace(/[\\*?[\]]/g, "\\$&")}\n`)
+    .join("")
 
 /**
  * A job that can never start because its needs form a cycle, if there is one.

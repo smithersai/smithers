@@ -9,26 +9,25 @@
 import * as ChildProcess from "effect/process/ChildProcess"
 import type * as PlatformError from "effect/PlatformError"
 import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { ci, type Inventory, notReplayed, refusal, shell } from "../contract/Inventory.ts"
+import { ci, type Inventory, notReplayed, refusal, shell, stepTimeoutHours } from "../contract/Inventory.ts"
 import type { Failure, ReplayParts, ReplayRequest } from "../contract/Parts.ts"
 import type { ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { type Mode, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
-import { replaced } from "../native/Detect.vibe"
-import { overwriteRefusal, refusal as ownWorkspace } from "../native/Workspace.ts"
+import { check } from "../apply/index.ts"
+import { refusal as ownWorkspace } from "../native/Workspace.ts"
 import { noPushUrl, stepEnvironment, thisHost } from "./Environment.ts"
 import {
   addRerun,
   blocked,
   choose,
   cycleIn,
+  excludeLines,
   failure,
   firstAttempt,
   flakyOf,
-  groupByJob,
   isBlocked,
-  type JobGroup,
   jobsFor,
   labelsOf,
   maxReruns,
@@ -43,6 +42,9 @@ import {
   reportOf,
   selectionOf,
   splitOf,
+  type Station,
+  stationsOf,
+  stepsThrough,
   targetsOf,
   totalsOf,
   type Unit,
@@ -64,7 +66,11 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 /**
  * How the replay runs on this machine. `smthrs` is the command that starts
  * Smithers build, `reruns` how often a failed target reruns, and `prepare`
- * makes a fresh checkout runnable, such as by linking its dependencies.
+ * makes the checkout the generated targets run in loadable, such as by
+ * linking the package the generated files import. A baseline checkout is
+ * never prepared: it is what a fresh clone is. `stepTimeout` is how long one
+ * baseline step may run; without it the limit is the one generated targets
+ * have (`Inventory.stepTimeoutHours`).
  *
  * @category services
  * @since 0.1.0
@@ -73,6 +79,7 @@ export service Options {
   readonly smthrs: readonly [string, ...Array<string>]
   readonly reruns: number
   readonly prepare: (directory: string) => void!Failure
+  readonly stepTimeout?: Duration.Input | undefined
   static readonly defaultValue = () => ({
     smthrs: ["smthrs"] as const,
     reruns: maxReruns,
@@ -115,11 +122,15 @@ interface Measured {
 /** A step that could not start, for example because its directory does not exist at this commit, failed. */
 const noStart: Output = { exitCode: 127, text: "" }
 
+/** The exit code of a step stopped at its time limit, as `timeout` reports it. */
+const timedOut = 124
+
 const describe = (cause: { readonly message: string }): string => cause.message
 
 /**
- * Runs a command to its end, with end of file on its standard input. `env` is added to this process's environment,
- * or is the whole environment when `whole` is set, as it is for a CI step.
+ * Runs a command to its end, with end of file on its standard input. `env` is added to this process's environment.
+ * With `step`, the command is a CI step: `env` is its whole environment, and it is stopped, and has failed, when it
+ * runs longer than the limit.
  */
 effect function exec(
   command: string,
@@ -128,18 +139,29 @@ effect function exec(
   env: Readonly<Record<string, string | undefined>>,
   limit: number,
   output: (handle: ChildProcessHandle) => Stream.Stream<Uint8Array, PlatformError.PlatformError> = (handle) => handle.all,
-  whole = false
+  step: { readonly limit: Duration.Input } | undefined = undefined
 ) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
     const handle = try spawner.spawn(
-      ChildProcess.make(command, [...args], { cwd, env: { ...env }, extendEnv: !whole, stdin: "ignore" })
+      ChildProcess.make(command, [...args], {
+        cwd,
+        env: { ...env },
+        extendEnv: step === undefined,
+        stdin: "ignore",
+        forceKillAfter: "5 seconds"
+      })
     )
     const kept = try Ref.make("")
     const reader = fork (output(handle)
       |> Stream.decodeText(%)
       |> Stream.runForEach(%, (chunk: string) => Ref.update(kept, (text) => (text + chunk).slice(-limit))))
-    const exitCode = try handle.exitCode
+    const waited = step === undefined
+      ? Option.some(try handle.exitCode)
+      : try timeoutOption(handle.exitCode, step.limit)
+    // Leaving the scope stops a step that is still running.
+    if (Option.isNone(waited)) return { exitCode: timedOut, text: try Ref.get(kept) } satisfies Output
+    const exitCode = waited.value
     // A process a step left running keeps the pipe open, so only complete output is waited for without a limit.
     if (limit === Number.POSITIVE_INFINITY) try Fiber.join(reader)
     else try timeoutOption(Fiber.await(reader), "1 second")
@@ -214,7 +236,11 @@ effect function measure<R>(
  * step's verdict is the combined verdict of its targets.
  *
  * Each baseline job gets a fresh checkout, as each gets its own machine in CI,
- * and jobs run at once unless `request.jobs` limits them; generated targets also
+ * and jobs run at once unless `request.jobs` limits them. The jobs of one
+ * shared tree (`Inventory.treeOf`: the recipes of a Justfile, the scripts of a
+ * `package.json`) run one after another in one checkout, and the first failure
+ * stops them. A baseline step gets a target's environment and time limit, and
+ * its checkout holds nothing a fresh clone does not. Generated targets also
  * stay within the target map's `maxJobs`. Commits run oldest
  * first and the normal and fast copies keep their caches between commits, so
  * the first commit starts cold. Wall time covers each mode's checkout, setup and
@@ -239,6 +265,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const root = path.resolve(request.root)
     const cloned = try exec("git", ["clone", "--quiet", "--no-checkout", root, source], work, {}, outputLimit)
     if (cloned.exitCode !== 0) throw failure("not-a-repository", `${root} is not a git repository`)
+    const head = try exec("git", ["rev-parse", "--verify", "--quiet", "HEAD"], source, {}, outputLimit)
+    if (head.exitCode !== 0) throw failure("not-a-repository", `${root} is a git repository with no commit to replay`)
     const history = lines(try git(source, ["rev-list", "--first-parent", `--max-count=${request.commits}`, "HEAD"]))
     const commits = [...history].reverse()
 
@@ -266,8 +294,17 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const narrowed = ci(inventory)
     const split = parts.decompose === undefined ? narrowed : try parts.decompose(normalCopy, narrowed)
     const generated = try parts.files(split, { cache: request.cache })
-    const kept = try replaced(normalCopy, generated)
-    if (kept.length > 0) throw failure("unsupported", overwriteRefusal(kept))
+
+    /**
+     * Refuses a copy that holds a link, or a file its owner wrote, where a generated file goes. Nothing is written
+     * there, at the newest commit before anything runs and at each commit before its files are written.
+     */
+    effect function writable(copy: string) {
+      check(copy, generated) catch effect (cause) => {
+        throw failure("unsupported", cause.message)
+      }
+    }
+    try writable(normalCopy)
     const mapFile = generated.find((file) => file.path === targetMapPath)
     if (mapFile === undefined) throw failure("invalid-document", `the generated files have no ${targetMapPath}`)
     const targetMap = Schema.decodeUnknownEffect(Schema.fromJsonString(TargetMap))(mapFile.content) catch effect () => {
@@ -286,15 +323,19 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     effect function ready(copy: string, commit: string) {
       try checkout(copy, commit)
+      try writable(copy)
       for (const file of generated) {
         const target = path.resolve(copy, file.path)
-        if (path.relative(copy, target).startsWith("..")) {
-          throw failure("invalid-document", `generated file ${file.path} is outside the repository`)
-        }
         try orFail(fs.makeDirectory(path.dirname(target), { recursive: true }), `could not write ${file.path}`)
         try orFail(fs.writeFileString(target, file.content), `could not write ${file.path}`)
       }
       try options.prepare(copy)
+      // Everything untracked now is the replay's own: the generated files, the cache, what `prepare` linked. Listed in
+      // the copy's exclude file, it leaves `git status` as clean as in the baseline's fresh clone.
+      const own = try git(copy, ["ls-files", "--others", "--directory", "--exclude-per-directory=.gitignore", "-z"])
+      const info = path.join(copy, ".git", "info")
+      try orFail(fs.makeDirectory(info, { recursive: true }), "could not write .git/info/exclude")
+      try orFail(fs.writeFileString(path.join(info, "exclude"), excludeLines(own)), "could not write .git/info/exclude")
     }
 
     let runs = 0
@@ -342,15 +383,20 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return record.results
     }
 
-    effect function runUnit(unit: Unit, commit: string, targets: ReadonlySet<string> | undefined) {
+    const stepLimit = options.stepTimeout ?? Duration.hours(stepTimeoutHours)
+
+    /**
+     * One run of the baseline: its units' steps in order in one fresh checkout, named as the repository is. A step
+     * that fails blocks every step after it.
+     */
+    effect function runSequence(sequence: ReadonlyArray<Unit>, commit: string, wanted: ReadonlySet<string> | undefined) {
       return try scoped(effect {
         const directory = try orFail(fs.makeTempDirectoryScoped({ directory: work }), "could not make a directory")
-        const copy = path.join(directory, "copy")
+        const copy = path.join(directory, path.basename(root))
         try cloneAt(copy, commit)
-        try options.prepare(copy)
         const results: Array<TargetResult> = []
         let failed: string | undefined = undefined
-        for (const step of unit.steps) {
+        for (const step of stepsThrough(sequence, wanted)) {
           if (failed !== undefined) {
             results.push(blocked(step.label, failed))
             continue
@@ -358,39 +404,42 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           const start = try Clock.currentTimeMillis
           const argv = [...shell.slice(1), step.command]
           const environment = stepEnvironment(step.env)
-          const output = exec(shell[0], argv, path.join(copy, step.cwd), environment, outputLimit, undefined, true)
-            catch () => noStart
+          const output = exec(shell[0], argv, path.join(copy, step.cwd), environment, outputLimit, undefined, {
+            limit: stepLimit
+          }) catch () => noStart
           const durationMs = (try Clock.currentTimeMillis) - start
           const passed = output.exitCode === 0
           results.push({ label: step.label, status: passed ? "ran" : "failed", key: "", durationMs })
           if (!passed) failed = step.label
         }
-        return targets === undefined ? results : results.filter((result) => targets.has(result.label))
+        return wanted === undefined ? results : results.filter((result) => wanted.has(result.label))
       })
     }
 
     const baseline = (commit: string): Execute<Host> => (targets) => effect {
       const wanted = targets === undefined ? undefined : new Set(targets)
-      const chosen = wanted === undefined ? units : units.filter((unit) => labelsOf(unit, wanted).length > 0)
-      const limit = try Semaphore.make(Math.max(1, request.jobs ?? chosen.length))
-      const plan: Array<JobGroup & { readonly gate: Deferred.Deferred<boolean> }> = []
-      for (const group of groupByJob(chosen)) plan.push({ ...group, gate: try Deferred.make<boolean>() })
+      const chosen = stationsOf(units, wanted)
+      const atOnce = chosen.reduce((total, station) => total + station.runs.length, 0)
+      const limit = try Semaphore.make(Math.max(1, request.jobs ?? atOnce))
+      const plan: Array<Station & { readonly gate: Deferred.Deferred<boolean> }> = []
+      for (const station of chosen) plan.push({ ...station, gate: try Deferred.make<boolean>() })
       const collected: Array<TargetResult> = []
-      for concurrent (const group of plan) {
+      for concurrent (const station of plan) {
         let needsPassed = true
-        for (const need of plan.filter((other) => group.needs.includes(other.job))) {
+        for (const need of plan.filter((other) => other.jobs.some((job) => station.needs.includes(job)))) {
           needsPassed = (try Deferred.await(need.gate)) && needsPassed
         }
         const results: Array<TargetResult> = []
-        for concurrent (const unit of group.units) {
+        for concurrent (const sequence of station.runs) {
           if (needsPassed) {
-            results.push(...(try limit.withPermits(1)(runUnit(unit, commit, wanted))))
+            results.push(...(try limit.withPermits(1)(runSequence(sequence, commit, wanted))))
           } else {
-            results.push(...labelsOf(unit, wanted).map((label) => blocked(label, group.needs.join(", "))))
+            const waiting = sequence.flatMap((unit) => labelsOf(unit, wanted))
+            results.push(...waiting.map((label) => blocked(label, station.needs.join(", "))))
           }
         }
         collected.push(...results)
-        try Deferred.succeed(group.gate, needsPassed && results.every((result) => result.status === "ran"))
+        try Deferred.succeed(station.gate, needsPassed && results.every((result) => result.status === "ran"))
       }
       return collected
     }

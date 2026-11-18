@@ -1,8 +1,9 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { existsSync, readdirSync, rmSync } from "node:fs"
-import { join, relative } from "node:path"
+import { execFileSync } from "node:child_process"
+import { existsSync, readdirSync, rmSync, symlinkSync } from "node:fs"
+import { basename, join, relative } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
@@ -16,7 +17,7 @@ import {
   makeSmallRepository,
   recordingSmthrs
 } from "./fixture.ts"
-import { generated, noTemporaryDirectories, noWrites, options, parts } from "./TestParts.vibe"
+import { generated, gitFails, noTemporaryDirectories, noWrites, options, parts } from "./TestParts.vibe"
 
 const created: Array<string> = []
 const track = (root: string): string => {
@@ -75,10 +76,13 @@ describe("a replay that cannot run", () => {
     expect(failure).toMatchObject({ code: "not-a-repository", part: "replay" })
   })
 
-  it("reports git's failure on a repository with no commits", async () => {
-    const failure = await failureOf(replay(track(makeEmptyRepository())))
-    expect(failure.code).toBe("command-failed")
-    expect(failure.message).toContain("git rev-list failed")
+  it("says in one sentence that a repository with no commit has nothing to replay", async () => {
+    const root = track(makeEmptyRepository())
+    expect(await failureOf(replay(root))).toEqual({
+      code: "not-a-repository",
+      part: "replay",
+      message: `${root} is a git repository with no commit to replay`
+    })
   })
 
   it("is unsupported when no job runs on a change", async () => {
@@ -126,9 +130,42 @@ describe("a replay that cannot run", () => {
     const files: Parts["files"] = (inventory) =>
       Effect.succeed([...generated(inventory), { path: `../../../../../../../../tmp/${name}`, content: "x" }])
     const failure = await failureOf(replay(root, { files }))
-    expect(failure.code).toBe("invalid-document")
+    expect(failure).toMatchObject({ code: "unsupported", part: "replay" })
+    expect(failure.message).toContain("outside the repository")
     expect(existsSync(join("/tmp", name))).toBe(false)
   })
+
+  it(
+    "refuses, at the commit that holds it, a link where a generated file goes, and writes nothing through it",
+    async () => {
+      // Review finding 5, in a replay's copy: an older commit can hold a link the newest commit does not.
+      const root = track(makeSmallRepository(passing))
+      const outside = track(join(root, "..", `outside-${basename(root)}`))
+      const commit = (message: string): void => {
+        execFileSync("git", ["-C", root, "add", "-A"])
+        execFileSync("git", [
+          "-C",
+          root,
+          "-c",
+          "user.name=Replay",
+          "-c",
+          "user.email=replay@example.com",
+          "commit",
+          "-qm",
+          message
+        ])
+      }
+      symlinkSync(outside, join(root, "PACKAGE.ts"))
+      commit("a link where PACKAGE.ts goes")
+      rmSync(join(root, "PACKAGE.ts"))
+      commit("the link is gone")
+      const failure = await failureOf(replay(root, {}, { commits: 2 }))
+      expect(failure).toMatchObject({ code: "unsupported", part: "replay" })
+      expect(failure.message).toBe(`PACKAGE.ts is a link to ${outside}, which does not exist`)
+      expect(existsSync(outside)).toBe(false)
+    },
+    120_000
+  )
 
   it("reports a Smithers build that cannot start", async () => {
     const root = track(makeSmallRepository(passing))
@@ -152,6 +189,16 @@ describe("a replay that cannot run", () => {
     expect(failure.message).toContain("wrote no run record")
     expect(failure.message).toContain("ci_failed")
   }, 120_000)
+
+  it("reports a git command that fails, with what git said", async () => {
+    const root = track(makeSmallRepository(passing))
+    const failure = await failureOf(replay(root, {}, {}, gitFails("ls-files") as never))
+    expect(failure).toEqual({
+      code: "command-failed",
+      part: "replay",
+      message: "git ls-files failed: fatal: bad object\n"
+    })
+  })
 
   it("reports a temporary directory it cannot make", async () => {
     const root = track(makeSmallRepository(passing))

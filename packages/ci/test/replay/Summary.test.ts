@@ -7,9 +7,9 @@ import {
   blocked,
   choose,
   cycleIn,
+  excludeLines,
   firstAttempt,
   flakyOf,
-  groupByJob,
   isBlocked,
   jobsFor,
   labelsOf,
@@ -24,7 +24,9 @@ import {
   reportOf,
   selectionOf,
   splitOf,
+  stationsOf,
   stepKey,
+  stepsThrough,
   targetsOf,
   totalsOf,
   withoutCredentials
@@ -161,9 +163,59 @@ describe("replayable", () => {
     ])
   })
 
-  it("groups a job's variants", () => {
-    const units = unitsOf(inventory([job("m", { matrix: [{ a: "1" }, { a: "2" }] }), job("n")]))
-    expect(groupByJob(units).map((group) => [group.job, group.units.length])).toEqual([["m", 2], ["n", 1]])
+  it("starts a job's variants together, each in a run of its own", () => {
+    const units = unitsOf(
+      inventory([job("m", { matrix: [{ a: "1" }, { a: "2" }], needs: ["n"] }), job("n"), job("o", { needs: ["m"] })])
+    )
+    const stations = stationsOf(units)
+    expect(stations.map((station) => [station.jobs, station.needs, station.runs.map((run) => run.length)])).toEqual([
+      [["m"], ["n"], [1, 1]],
+      [["n"], [], [1]],
+      [["o"], ["m"], [1]]
+    ])
+    // A rerun names what it wants: only the runs that hold it are kept.
+    expect(stationsOf(units, new Set(["//:m1-2"])).map((station) => [station.jobs, station.runs.length])).toEqual([
+      [["m"], 1]
+    ])
+    expect(stationsOf(units, new Set(["//:gone"]))).toEqual([])
+  })
+
+  it("runs the jobs of one shared tree as one run, in order, and reruns a job after the jobs before it", () => {
+    const recipe = (id: string, needs: ReadonlyArray<string> = []) =>
+      job(id, { source: "justfile", file: "Justfile", needs: [...needs], triggers: [] })
+    const units = unitsOf(
+      inventory([
+        recipe("justfile:ci", ["justfile:build", "justfile:test", "justfile:lint"]),
+        recipe("justfile:lint"),
+        recipe("justfile:test", ["justfile:build"]),
+        recipe("justfile:build")
+      ])
+    )
+    const [station] = stationsOf(units)
+    expect(stationsOf(units)).toHaveLength(1)
+    // What its jobs need of each other is the order of the run, not a need on another station.
+    expect(station?.needs).toEqual([])
+    expect(station?.jobs).toEqual(["justfile:build", "justfile:test", "justfile:lint", "justfile:ci"])
+    expect(station?.runs.map((run) => run.map((unit) => unit.job))).toEqual([station?.jobs])
+    const run = station!.runs[0]!
+    expect(stepsThrough(run, undefined).map((step) => step.id)).toEqual([
+      "justfile:build1",
+      "justfile:test1",
+      "justfile:lint1",
+      "justfile:ci1"
+    ])
+    // A rerun of `test` runs `build` first, and stops there.
+    const wanted = new Set(["//:justfile:test1"])
+    expect(stationsOf(units, wanted)[0]?.runs[0]).toEqual(run)
+    expect(stepsThrough(run, wanted).map((step) => step.id)).toEqual(["justfile:build1", "justfile:test1"])
+    expect(stepsThrough(run, new Set(["//:gone"]))).toEqual([])
+  })
+
+  it("lists what is untracked in a copy as exclude patterns that match only those paths", () => {
+    expect(excludeLines("PACKAGE.ts\0.smithers/\0we[i]rd *?\\name\0")).toBe(
+      "/PACKAGE.ts\n/.smithers/\n/we\\[i\\]rd \\*\\?\\\\name\n"
+    )
+    expect(excludeLines("")).toBe("")
   })
 
   it("lists a unit's comparison names, limited to the wanted ones", () => {

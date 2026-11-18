@@ -1,5 +1,7 @@
 /** Real parts for the test repository: its CI is `ci.json`, and each step becomes one target. */
 import * as PlatformError from "effect/PlatformError"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import { Inventory, type Job, shell, type Step, withVariant } from "../../src/contract/Inventory.ts"
 import type { Failure, GeneratedFile, ReplayParts } from "../../src/contract/Parts.ts"
 import type { RunRecord } from "../../src/contract/RunRecord.ts"
@@ -150,6 +152,16 @@ const denied = (method: string) =>
 export const noTemporaryDirectories = Layer.effect(FileSystem.FileSystem, effect {
   const real = try FileSystem.FileSystem
   return { ...real, makeTempDirectoryScoped: () => Effect.fail(denied("makeTempDirectoryScoped")) }
+})
+
+/** The real processes, except that one git command fails as git does on a damaged object store. */
+export const gitFails = (subcommand: string) => Layer.effect(ChildProcessSpawner, effect {
+  const real = try ChildProcessSpawner
+  return makeSpawner((process) =>
+    process._tag === "StandardCommand" && process.command === "git" && process.args[0] === subcommand
+      ? real.spawn(ChildProcess.make("sh", ["-c", "echo 'fatal: bad object' >&2; exit 128"]))
+      : real.spawn(process)
+  )
 })
 
 /** The real file system, except that writing a file is refused. */

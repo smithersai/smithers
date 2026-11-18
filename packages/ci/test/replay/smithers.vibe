@@ -2,8 +2,9 @@
  * Replays this repository's own `packages/ci` targets and prints the replay
  * report as JSON. `smithers.sh` starts it.
  *
- * The baseline is what Smithers CI does today with no cache: `smthrs ci` on
- * each target with `--no-cache`. Normal mode is the same targets with the cache.
+ * The baseline is what Smithers CI does today with no cache: an install, then
+ * `smthrs ci` on each target with `--no-cache`. Normal mode is the same targets
+ * with the cache.
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import type { Inventory } from "../../src/contract/Inventory.ts"
@@ -11,7 +12,7 @@ import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { path as targetMapPath } from "../../src/contract/TargetMap.ts"
 import { maxReruns, Options, run } from "../../src/replay/index.ts"
-import { installDependencies } from "./install.ts"
+import { installCommand, installDependencies } from "./install.ts"
 
 const jobId = (target: string): string => `ci-${target}`
 const stepId = (target: string): string => `ci-${target}-1`
@@ -36,7 +37,8 @@ const inventoryOf = (targets: ReadonlyArray<string>): Inventory => ({
     matrix: [],
     steps: [{
       id: stepId(target),
-      command: `node_modules/.bin/smthrs ci ${label(target)} --no-cache --ui plain`,
+      // A baseline checkout is a fresh clone, so the step installs first, as the CI job does.
+      command: `${installCommand} && node_modules/.bin/smthrs ci ${label(target)} --no-cache --ui plain`,
       cwd: "",
       env: {},
       secrets: []
