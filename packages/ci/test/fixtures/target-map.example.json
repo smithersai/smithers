@@ -23,5 +23,6 @@
       "step": "justfile:build:1",
       "variant": {}
     }
-  ]
+  ],
+  "maxJobs": 1
 }

@@ -343,3 +343,96 @@ describe("contract 11: target map", () => {
     expect(() => Schema.decodeUnknownSync(TargetMap.Entry)(entry)).toThrow()
   })
 })
+
+describe("contract changes, third round", () => {
+  const firstRow = (): Selection.Row => {
+    const rows = fixture("selection-rows.example.json") as Array<unknown> | { rows: Array<unknown> }
+    return Schema.decodeUnknownSync(Selection.Row)((Array.isArray(rows) ? rows : rows.rows)[0])
+  }
+
+  it("is affected by any file under a directory the closure reads whole, and by nothing beside it", () => {
+    const closure: Closure.Closure = {
+      strategy: "zig",
+      entries: ["fmt"],
+      files: [{ path: "build.zig", digest: "d" }],
+      packages: ["zig@0.17.1"],
+      unresolved: [],
+      dynamic: [],
+      directories: ["src", "tools/"]
+    }
+    expect(Schema.decodeUnknownSync(Closure.Closure)(closure)).toEqual(closure)
+    expect(Closure.isAffectedBy(closure, ["src/new.zig"])).toBe(true)
+    expect(Closure.isAffectedBy(closure, ["tools/gen/a.zig"])).toBe(true)
+    expect(Closure.isAffectedBy(closure, ["build.zig"])).toBe(true)
+    expect(Closure.isAffectedBy(closure, ["src2/new.zig", "srcfile", "docs/src/a.zig"])).toBe(false)
+  })
+
+  it("holds a row's time, a run's test count and the distance of a target nothing is known to reach", () => {
+    const row = firstRow()
+    expect(row.at).toBe(1_794_873_600_000)
+    expect(
+      Schema.decodeUnknownSync(Selection.Row)({ ...row, features: { ...row.features, graphDistance: -1 } })
+        .features.graphDistance
+    ).toBe(Selection.unreachable)
+    const result = { label: "//a:test", status: "ran", key: "k", durationMs: 1, tests: 12 }
+    expect(Schema.decodeUnknownSync(RunRecord.TargetResult)(result).tests).toBe(12)
+    expect(() => Schema.decodeUnknownSync(RunRecord.TargetResult)({ ...result, tests: -1 })).toThrow()
+  })
+
+  it("counts a selection the same when one change has thousands of targets", () => {
+    const row = firstRow()
+    const rows = Array.from({ length: 4000 }, (_, index) => ({
+      ...row,
+      commit: "c1",
+      target: `//p${index}:test`,
+      failed: index % 1000 === 0,
+      flaky: false
+    }))
+    const selected = new Map([["c1", rows.filter((_, index) => index % 2 === 0).map((entry) => entry.target)]])
+    expect(Selection.metrics(rows, selected)).toEqual({
+      rows: 4000,
+      selected: 2000,
+      failures: 4,
+      failedChanges: 1,
+      selectionRate: 0.5,
+      testRecall: 1,
+      changeRecall: 1
+    })
+    expect(Selection.metrics(rows, new Map()).selected).toBe(0)
+  })
+
+  it("lets a closure strategy fail as a part, and hands a plan to the row builder", async () => {
+    const failure = { code: "unsupported", message: "zig 0.12 is too old", part: "closure" }
+    expect(Schema.decodeUnknownSync(Parts.Failure)(failure)).toEqual(failure)
+    const close: Parts.CloseEntries = (_root, entries) =>
+      Effect.succeed(entries.map((entry) => ({
+        strategy: "zig",
+        entries: [entry],
+        files: [],
+        packages: [],
+        unresolved: [],
+        dynamic: []
+      })))
+    const plan = Schema.decodeUnknownSync(Plan.Plan)(fixture("plan.generate-package.json"))
+    const seen: Array<number> = []
+    const rows: Parts.BuildRows = (_root, _record, given) =>
+      Effect.sync(() => {
+        seen.push(given?.targets.length ?? -1)
+        return []
+      })
+    const record = Schema.decodeUnknownSync(RunRecord.RunRecord)(fixture("run-record.rc18-workspace-targets.json"))
+    const closures = await Effect.runPromise(close("/repo", ["test", "fmt"]))
+    await Effect.runPromise(rows("/repo", record, plan))
+    await Effect.runPromise(rows("/repo", record))
+    expect(closures.map((closure) => closure.entries)).toEqual([["test"], ["fmt"]])
+    expect(seen).toEqual([plan.targets.length, -1])
+  })
+
+  it("caps how many generated targets run at once, and names what apply refuses and ignores", () => {
+    const map = Schema.decodeUnknownSync(TargetMap.TargetMap)(fixture("target-map.example.json"))
+    expect(map.maxJobs).toBe(1)
+    expect(() => Schema.decodeUnknownSync(TargetMap.TargetMap)({ ...map, maxJobs: 0 })).toThrow()
+    expect(Command.applyRefuses).toEqual(["PACKAGE.ts", "PACKAGE.vibe", ".smithers/WORKSPACE.ts"])
+    expect(Command.applyIgnores).toEqual([".flows"])
+  })
+})

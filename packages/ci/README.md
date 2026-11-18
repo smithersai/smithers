@@ -24,6 +24,18 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-17, third round** (asked for by the Zig, fast-mode and generator lanes):
+
+- Every pure function in a contract is marked `@throws {never}`, so VibeLang code calls it directly.
+- `Closure.directories` (optional): directories read whole; `isAffectedBy` counts any file under one. An entry may
+  be a build step's name. A cache key built from a closure includes `packages`.
+- `Parts.CloseEntries`: what a language's closure strategy exports as `close`. `Failure.part` gains `closure`.
+- `Parts.BuildRows` takes the commit's plan as an optional third argument.
+- `Selection.Row.at` (optional), `Selection.unreachable` (-1) for `graphDistance`, and `RunRecord.TargetResult.tests`
+  (optional). `Selection.metrics` gives the same numbers in linear time.
+- `TargetMap.maxJobs` (optional): a caller never runs more generated targets at once. The generator writes 1.
+- `Command.applyRefuses` and `Command.applyIgnores`: when `apply` exits `unsupported`, and what it adds to `.gitignore`.
+
 **2026-11-17, second round** (asked for by the inventory, replay, shard, docs and command-line lanes):
 
 - `Parts.RunReplay` takes the parts as a second argument, `ReplayParts`. `ReplayRequest.settings` is optional;

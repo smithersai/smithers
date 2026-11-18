@@ -54,7 +54,11 @@ export const OpenImport = Schema.Struct({
 export type OpenImport = typeof OpenImport.Type
 
 /**
- * Everything a set of entry files reaches.
+ * Everything a set of entries reaches. An entry is a file, or the name of a
+ * build step where the language's build tool owns the graph, as in Zig.
+ * `directories` are read whole: a file added under one affects the entries.
+ * `packages` names what was reached outside the repository, the toolchain's
+ * own library included, so a cache key built from a closure includes it.
  *
  * @category models
  * @since 0.1.0
@@ -65,7 +69,8 @@ export const Closure = Schema.Struct({
   files: Schema.Array(ClosureFile),
   packages: Schema.Array(Schema.String),
   unresolved: Schema.Array(OpenImport),
-  dynamic: Schema.Array(OpenImport)
+  dynamic: Schema.Array(OpenImport),
+  directories: Schema.optionalKey(Schema.Array(Schema.NonEmptyString))
 })
 
 /**
@@ -80,20 +85,24 @@ export type Closure = typeof Closure.Type
  * True when the closure names every file its entries can read, so a change
  * outside `files` cannot affect them.
  *
+ * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
 export const isComplete = (closure: Closure): boolean => closure.unresolved.length === 0 && closure.dynamic.length === 0
 
 /**
- * True when a change to `changed` can affect the closure's entries. An
+ * True when a change to `changed` can affect the closure's entries: a file
+ * it reaches changed, or any file under a directory it reads whole. An
  * incomplete closure is affected by every change.
  *
+ * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
 export const isAffectedBy = (closure: Closure, changed: ReadonlyArray<string>): boolean => {
   if (!isComplete(closure)) return true
   const reached = new Set(closure.files.map((file) => file.path))
-  return changed.some((path) => reached.has(path))
+  const under = (closure.directories ?? []).map((directory) => directory.endsWith("/") ? directory : `${directory}/`)
+  return changed.some((path) => reached.has(path) || under.some((directory) => path.startsWith(directory)))
 }

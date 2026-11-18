@@ -170,6 +170,7 @@ export const longRunning = "long-running"
  * Whether the baseline and the generator run a job: it has a step, and it
  * exits.
  *
+ * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
@@ -181,6 +182,7 @@ export const isRunnable = (job: Job): boolean =>
  * value uses a dotted key: `matrix.node.version` is the key `node.version`.
  * A key the variant lacks is left as written.
  *
+ * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
@@ -194,6 +196,7 @@ export const expand = (text: string, variant: Readonly<Record<string, string>>):
  * A step with one matrix variant filled into its command, directory and
  * environment values.
  *
+ * @throws {never}
  * @category accessors
  * @since 0.1.0
  */

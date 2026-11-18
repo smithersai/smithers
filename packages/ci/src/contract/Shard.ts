@@ -34,6 +34,7 @@ export type Shard = typeof Shard.Type
  * label's UTF-16 code units, modulo `count`. Pure, so every machine agrees
  * without talking to another.
  *
+ * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
@@ -49,6 +50,7 @@ export const shardOf = (label: string, count: number): number => {
 /**
  * The labels of `labels` that belong to `shard`, in their given order.
  *
+ * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
@@ -61,6 +63,7 @@ export const labelsOf = (labels: ReadonlyArray<string>, shard: Shard): ReadonlyA
  * measured duration goes where `shardOf` puts it. Every machine reading the
  * same durations computes the same answer.
  *
+ * @throws {never}
  * @category accessors
  * @since 0.1.0
  */

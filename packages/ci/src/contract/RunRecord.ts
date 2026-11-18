@@ -68,7 +68,8 @@ export const Attempt = Schema.Struct({
 export type Attempt = typeof Attempt.Type
 
 /**
- * One target's outcome in a run.
+ * One target's outcome in a run. `tests` is how many tests the target ran,
+ * when its runner reports that.
  *
  * @category models
  * @since 0.1.0
@@ -83,7 +84,8 @@ export const TargetResult = Schema.Struct({
   skipReason: Schema.optionalKey(SkipReason),
   attempts: Schema.optionalKey(Schema.Array(Attempt)),
   error: Schema.optionalKey(Schema.String),
-  failureDigest: Schema.optionalKey(Schema.String)
+  failureDigest: Schema.optionalKey(Schema.String),
+  tests: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
 })
 
 /**
@@ -185,6 +187,7 @@ export type Verdict = typeof Verdict.Type
 /**
  * The verdict of one target result.
  *
+ * @throws {never}
  * @category accessors
  * @since 0.1.0
  */

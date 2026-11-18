@@ -122,3 +122,23 @@ export const documents = {
 export const environment = {
   SMITHERS_CACHE_TOKEN: "The token sent to the shared cache that `--cache` names."
 } as const
+
+/**
+ * Smithers build files. `apply` exits `unsupported` and writes nothing when
+ * the repository already holds one: generated targets would hide or be
+ * hidden by the targets already there. `PACKAGE.ts` and `PACKAGE.vibe` count
+ * in any directory.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const applyRefuses = ["PACKAGE.ts", "PACKAGE.vibe", ".smithers/WORKSPACE.ts"] as const
+
+/**
+ * Lines `apply` adds to the repository's `.gitignore` when they are absent:
+ * where Smithers build keeps its local cache.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const applyIgnores = [".flows"] as const

@@ -21,7 +21,9 @@
 
 import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import type { Closure } from "./Closure.ts"
 import type { Inventory } from "./Inventory.ts"
+import type { Plan } from "./Plan.ts"
 import type { ReplayReport } from "./ReplayReport.ts"
 import type { Mode, RunRecord } from "./RunRecord.ts"
 import type { Row, Score, Settings } from "./Selection.ts"
@@ -36,7 +38,7 @@ import type { Row, Score, Settings } from "./Selection.ts"
 export const Failure = Schema.Struct({
   code: Schema.Literals(["unsupported", "not-a-repository", "command-failed", "invalid-document", "model-unavailable"]),
   message: Schema.NonEmptyString,
-  part: Schema.Literals(["inventory", "generate", "replay", "report", "select", "cli"])
+  part: Schema.Literals(["inventory", "generate", "replay", "report", "select", "cli", "closure"])
 })
 
 /**
@@ -116,14 +118,16 @@ export type RenderReport = (report: ReplayReport) => string
 
 /**
  * Builds the rows fast mode scores for one commit, from that commit's
- * normal-mode run record.
+ * normal-mode run record. With the commit's plan it measures each target's
+ * distance from the changed files; without it that distance is unknown.
  *
  * @category parts
  * @since 0.1.0
  */
 export type BuildRows<R = never> = (
   root: string,
-  record: RunRecord
+  record: RunRecord,
+  plan?: Plan
 ) => Effect.Effect<ReadonlyArray<Row>, Failure, R>
 
 /**
@@ -160,3 +164,16 @@ export type RunReplay<R = never> = (
   request: ReplayRequest,
   parts: ReplayParts<R>
 ) => Effect.Effect<ReplayReport, Failure, R>
+
+/**
+ * One language's strategy for contract 9: the closure of each entry, in the
+ * repository at `root`. Each strategy exports it as `close` from
+ * `src/closure/<language>`.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export type CloseEntries<R = never> = (
+  root: string,
+  entries: ReadonlyArray<string>
+) => Effect.Effect<ReadonlyArray<Closure>, Failure, R>

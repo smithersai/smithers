@@ -14,7 +14,8 @@ import * as Schema from "effect/Schema"
 
 /**
  * What the scorer reads about one change and one target: the paper's best
- * feature set.
+ * feature set. `graphDistance` is `unreachable` when no path from a changed
+ * file to the target is known.
  *
  * @category models
  * @since 0.1.0
@@ -39,7 +40,8 @@ export type Features = typeof Features.Type
 /**
  * One change and one target that depends on it. `failed` is true only when
  * every attempt failed; `flaky` is true when attempts disagreed. A flaky row
- * is never a positive.
+ * is never a positive. `at` is the time of the change, in milliseconds since
+ * the epoch; the eval splits rows by it.
  *
  * @category models
  * @since 0.1.0
@@ -50,7 +52,8 @@ export const Row = Schema.Struct({
   features: Features,
   attempts: Schema.Array(Schema.Boolean),
   failed: Schema.Boolean,
-  flaky: Schema.Boolean
+  flaky: Schema.Boolean,
+  at: Schema.optionalKey(Schema.Finite)
 })
 
 /**
@@ -142,6 +145,7 @@ export type Metrics = typeof Metrics.Type
  * The targets selected for one change, sorted by label. `scores` holds the
  * scores of that one change only.
  *
+ * @throws {never}
  * @category selection
  * @since 0.1.0
  */
@@ -159,6 +163,7 @@ export const select = (scores: ReadonlyArray<Score>, settings: Settings): Readon
  * `selected` maps a commit to the targets selected for it; a commit it does
  * not hold selected nothing.
  *
+ * @throws {never}
  * @category selection
  * @since 0.1.0
  */
@@ -166,7 +171,8 @@ export const metrics = (
   rows: ReadonlyArray<Row>,
   selected: ReadonlyMap<string, ReadonlyArray<string>>
 ): Metrics => {
-  const isSelected = (row: Row): boolean => (selected.get(row.commit) ?? []).includes(row.target)
+  const chosen = new Map([...selected].map(([commit, targets]) => [commit, new Set(targets)]))
+  const isSelected = (row: Row): boolean => chosen.get(row.commit)?.has(row.target) === true
   const failures = rows.filter((row) => row.failed)
   const failedChanges = new Set(failures.map((row) => row.commit))
   const caughtChanges = new Set(failures.filter(isSelected).map((row) => row.commit))
@@ -192,3 +198,11 @@ export const metrics = (
  * @since 0.1.0
  */
 export const defaultSettings: Settings = { scoreCutoff: 0.1, countCutoff: 5 }
+
+/**
+ * The `graphDistance` of a target no changed file is known to reach.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const unreachable = -1

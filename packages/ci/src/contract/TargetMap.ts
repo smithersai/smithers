@@ -42,14 +42,17 @@ export const Entry = Schema.Struct({
 export type Entry = typeof Entry.Type
 
 /**
- * Every step the generator turned into a target.
+ * Every step the generator turned into a target. `maxJobs` is the most of
+ * these targets that may run at once; a caller never exceeds it. It is 1
+ * while generated targets share one working tree.
  *
  * @category models
  * @since 0.1.0
  */
 export const TargetMap = Schema.Struct({
   version: Schema.Literal(1),
-  targets: Schema.Array(Entry)
+  targets: Schema.Array(Entry),
+  maxJobs: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)))
 })
 
 /**
@@ -63,6 +66,7 @@ export type TargetMap = typeof TargetMap.Type
 /**
  * One text for a variant, whatever order its keys were written in.
  *
+ * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
@@ -73,6 +77,7 @@ export const variantKey = (variant: Readonly<Record<string, string>>): string =>
  * The label of the target that runs a step, or `undefined` when the
  * generator made none for it.
  *
+ * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
