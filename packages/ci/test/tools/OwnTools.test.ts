@@ -253,6 +253,27 @@ describe("a tool that is told to read everything", () => {
     )
   }, 900_000)
 
+  it("Biome with no version-control setting reads the cache directory, and the report line says what to add", () => {
+    const root = project(base)
+    expect(node(root, biome, ["check", "--write", "."]).status).toBe(0)
+    commit(root, "formatted")
+    apply(root)
+    const check = (): Ran => node(root, biome, ["ci", "--colors=off", "."])
+    expect(check().status).toBe(0)
+    // What a run of the CI leaves in its cache directory, which `apply` added to .gitignore.
+    write(root, { ".flows/cache/ab/key.json": JSON.stringify({ ok: true, files: ["a", "b"] }) })
+    const after = check()
+    expect(after.status).toBe(1)
+    expect(seenIn(after.output, [...paths, ".flows/"])).toBe(
+      `Biome read .flows/cache/ab/key.json, which Smithers CI wrote. Add "!.flows" to "files.includes" in biome.json.`
+    )
+    // Told to read .gitignore, as `biome init` writes its configuration, Biome leaves the cache alone.
+    write(root, { "biome.json": json({ vcs: { enabled: true, clientKind: "git", useIgnoreFile: true } }) })
+    expect(node(root, biome, ["check", "--write", "."]).status).toBe(0)
+    const ignoring = check()
+    expect(ignoring.status, ignoring.output).toBe(0)
+  }, 900_000)
+
   it("Prettier with another line ending reads the workflow, and the report line says what to add", () => {
     const root = project(base)
     expect(node(root, prettier, ["--write", "."]).status).toBe(0)

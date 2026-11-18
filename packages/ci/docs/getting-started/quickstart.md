@@ -173,20 +173,27 @@ bunx smithers-ci apply
 It also adds the cache directory `.flows` to `.gitignore`.
 
 Nothing is written at the repository's root or beside your sources, and no
-file is one your own tools read as theirs. `tsc`, ESLint, Prettier, Biome,
-dprint, Vitest, Jest, Mocha, `node --test`, knip, cspell and `npm pack` give
-the same result after `apply` as before it. The workflow is the one file whose
-place GitHub fixes; it tells Prettier and Biome to leave it as written.
+file `apply` writes is one your own tools read as theirs. `tsc`, ESLint,
+Prettier, Biome, dprint, Vitest, Jest, Mocha, `node --test`, knip, cspell and
+`npm pack` give the same result with these files as without them. The workflow
+is the one file whose place GitHub fixes; it tells Prettier and Biome to leave
+it as written.
 
 `apply` never replaces a file it did not generate: it names the file and writes
 nothing. Review the files as you would any change, and commit them.
 
 ### When one of your tools reads a generated file
 
-A tool told to read every file, dot directories included, reads these too:
-`cspell --dot` is one. The replay finds that before `apply` does. A step that
-passes in your CI and fails beside the generated files is a mismatch, and the
-report says why under it:
+Two kinds of tool still read a file Smithers CI wrote:
+
+- A tool told to read every file, dot directories included, reads the files
+  above. `cspell --dot` is one.
+- A tool that reads dot directories and does not read `.gitignore` reads the
+  cache directory `.flows` while your CI runs. Biome is one until its
+  configuration sets `vcs.useIgnoreFile`, as `biome init` writes it.
+
+The replay finds both before `apply` does. A step that passes in your CI and
+fails beside those files is a mismatch, and the report says why under it:
 
 ```text
 3f2a1c9  normal  //:ci.yml-lint-1  pass → fail
