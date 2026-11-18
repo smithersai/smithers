@@ -341,7 +341,7 @@ out what happens before a CI machine is ready: starting the machine, fetching
 the repository over the network, installing tools and moving the cache.
 
 Every step that failed in a way is named, with its exit code and the first line
-of its error output. When the step wrote no error, the last line it printed
+of its error output. When the step wrote no error, a line of what it printed
 stands in. When its program is missing, the report says `` `docker` is not
 installed on this machine ``. A value shaped like a credential is withheld, by
 the rule the inventory uses.
