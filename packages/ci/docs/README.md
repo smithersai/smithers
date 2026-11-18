@@ -32,6 +32,7 @@ See [Normal mode and fast mode](concepts/modes.md).
 | [Quickstart](getting-started/quickstart.md)    | The first run: what it reads, what it prints, what it never touches.   |
 | [How it works](concepts/how-it-works.md)       | Inventory, targets, replay and report.                                 |
 | [Normal mode and fast mode](concepts/modes.md) | What each mode runs, how fast mode scores targets, and how it is held. |
+| [Splitting a step](concepts/splitting.md)      | How one step over a whole workspace becomes one step per package.      |
 | [Fast mode](fast-mode.md)                      | What fast mode skips, what its three numbers mean, and their limits.   |
 | [The shared cache](concepts/shared-cache.md)   | Reusing results across machines and runs.                              |
 | [Repositories](about/repositories.md)          | What Smithers CI reads today, and what it cannot run yet.              |

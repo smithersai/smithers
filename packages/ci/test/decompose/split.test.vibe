@@ -1,0 +1,487 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import * as PlatformError from "effect/PlatformError"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import type { Closure } from "../../src/contract/Closure.ts"
+import { WebCrypto } from "@smthrs/crypto"
+import { type Ci, ci as ciOf, Inventory, type Job, type Step } from "../../src/contract/Inventory.ts"
+import type { CloseEntries } from "../../src/contract/Parts.ts"
+import { combine, type Verdict } from "../../src/contract/RunRecord.ts"
+import { split, splitWith } from "../../src/decompose/index.ts"
+
+effect function run(root: string, command: string, args: ReadonlyArray<string>) {
+  const spawner = try ChildProcessSpawner
+  return Number(try spawner.exitCode(ChildProcess.make(command, args, { cwd: root })))
+}
+
+effect function git(root: string, args: ReadonlyArray<string>) {
+  const code = try run(root, "git", args)
+  try Effect.try(() => expect(code).toBe(0))
+}
+
+effect function commit(root: string) {
+  try git(root, ["add", "--all"])
+  try git(root, ["-c", "user.name=t", "-c", "user.email=t@example.test", "commit", "--quiet", "--allow-empty", "-m", "c"])
+}
+
+/** Writes files into a new directory and commits them, so the directory is a real repository. */
+effect function repository(files: Readonly<Record<string, string>>) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try fs.makeTempDirectoryScoped()
+  for (const [name, text] of Object.entries(files)) {
+    try fs.makeDirectory(path.dirname(path.join(root, name)), { recursive: true })
+    try fs.writeFileString(path.join(root, name), text)
+  }
+  try git(root, ["init", "--quiet"])
+  try commit(root)
+  return root
+}
+
+const step = (id: string, command: string, extra: Partial<Step> = {}): Step => ({
+  id,
+  command,
+  cwd: "",
+  env: {},
+  secrets: [],
+  ...extra
+})
+
+const ci = (steps: ReadonlyArray<Step>, extra: Partial<Job> = {}): Ci => ciOf({
+  version: 1,
+  repository: "example/repo",
+  commit: "0000000000000000000000000000000000000001",
+  toolchains: [],
+  jobs: [{
+    id: "ci.yml:test",
+    source: "github-actions",
+    file: ".github/workflows/ci.yml",
+    name: "test",
+    needs: [],
+    triggers: ["push"],
+    matrix: [],
+    steps,
+    unsupported: [],
+    ...extra
+  }]
+})
+
+const manifest = (name: string, scripts: Record<string, string> = {}, dependencies: ReadonlyArray<string> = []): string =>
+  JSON.stringify({ name, scripts, dependencies: Object.fromEntries(dependencies.map((dependency) => [dependency, "workspace:*"])) })
+
+const stepsOf = (inventory: Inventory): ReadonlyArray<Step> => inventory.jobs.flatMap((job) => job.steps)
+
+const byId = (inventory: Inventory): Readonly<Record<string, Step>> =>
+  Object.fromEntries(stepsOf(inventory).map((found) => [found.id, found]))
+
+/** A pnpm workspace: `web` depends on `ui`; `x` and `y` depend on each other; `docs` has no test. */
+const pnpmWorkspace = {
+  "package.json": JSON.stringify({ name: "root", packageManager: "pnpm@10.0.0", scripts: { "test:all": "pnpm -r run test" } }),
+  "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+  "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+  "scripts/check.mjs": "process.exit(0)\n",
+  "packages/web/package.json": manifest("web", { test: "node test.mjs" }, ["ui"]),
+  "packages/web/test.mjs": "import 'ui'\n",
+  "packages/ui/package.json": manifest("ui", { test: "node test.mjs" }),
+  "packages/x/package.json": manifest("x", { test: "node -e 0" }, ["y"]),
+  "packages/y/package.json": manifest("y", { test: "node -e 0" }, ["x"]),
+  "packages/docs/package.json": manifest("docs", { build: "node -e 0" }),
+  // Matched by no workspace pattern: no package manager runs it, and every step reads it.
+  "tools/outside/package.json": manifest("outside", { test: "node -e 0" })
+}
+
+const pnpmOutside = ["*", "packages/*", "scripts/**", "tools/**"]
+
+it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
+  it.effect("splits a pnpm run into one step per package that has the task, and leaves the rest whole", () =>
+    effect {
+      const root = try repository(pnpmWorkspace)
+      const before = ci([
+        step("ci.yml:test:1", "pnpm install --frozen-lockfile"),
+        step("ci.yml:test:2", "pnpm -r run test", { name: "Test", env: { CI: "true" }, secrets: ["TOKEN"] }),
+        step("ci.yml:test:3", "node scripts/check.mjs")
+      ])
+      const after = try split(root, before)
+      const decoded = try Schema.decodeUnknownEffect(Inventory)(after)
+      const steps = byId(decoded)
+      try Effect.try(() => {
+        // A package without the task gets no step; the package outside the workspace patterns gets none.
+        expect(Object.keys(steps)).toEqual([
+          "ci.yml:test:1",
+          "ci.yml:test:2:ui",
+          "ci.yml:test:2:web",
+          "ci.yml:test:2:x",
+          "ci.yml:test:2:y",
+          "ci.yml:test:3"
+        ])
+        // Steps that cannot be split are returned as they were.
+        expect(steps["ci.yml:test:1"]).toEqual(before.jobs[0]?.steps[0])
+        expect(steps["ci.yml:test:3"]).toEqual(before.jobs[0]?.steps[2])
+        expect(steps["ci.yml:test:2:web"]).toEqual({
+          id: "ci.yml:test:2:web",
+          name: "Test (web)",
+          command: "pnpm --filter=ui --filter=web run test",
+          cwd: "",
+          env: { CI: "true" },
+          secrets: ["TOKEN"],
+          inputs: [...pnpmOutside, "packages/ui/**", "packages/web/**"].sort(),
+          from: "ci.yml:test:2"
+        })
+        expect(steps["ci.yml:test:2:ui"]?.inputs).toEqual([...pnpmOutside, "packages/ui/**"].sort())
+        // A dependency cycle: each of the two reads both, and runs both.
+        expect(steps["ci.yml:test:2:x"]?.command).toBe("pnpm --filter=x --filter=y run test")
+        expect(steps["ci.yml:test:2:x"]?.inputs).toEqual([...pnpmOutside, "packages/x/**", "packages/y/**"].sort())
+        expect(steps["ci.yml:test:2:y"]?.inputs).toEqual(steps["ci.yml:test:2:x"]?.inputs)
+        // The job is otherwise unchanged.
+        expect({ ...decoded.jobs[0], steps: [] }).toEqual({ ...before.jobs[0], steps: [] })
+      })
+    })
+
+  it.effect("splits a root script that calls the package manager", () =>
+    effect {
+      const root = try repository(pnpmWorkspace)
+      const after = try split(root, ci([step("package.json:ci:1", "pnpm run test:all")]))
+      try Effect.try(() => {
+        expect(stepsOf(after).map((found) => [found.id, found.command, found.from])).toEqual([
+          ["package.json:ci:1:ui", "pnpm --filter=ui run test", "package.json:ci:1"],
+          ["package.json:ci:1:web", "pnpm --filter=ui --filter=web run test", "package.json:ci:1"],
+          ["package.json:ci:1:x", "pnpm --filter=x --filter=y run test", "package.json:ci:1"],
+          ["package.json:ci:1:y", "pnpm --filter=x --filter=y run test", "package.json:ci:1"]
+        ])
+        // A split step without a name gets none.
+        expect(stepsOf(after).every((found) => found.name === undefined)).toBe(true)
+      })
+    })
+
+  it.effect("names the inputs of a step that runs one package, and keeps its command", () =>
+    effect {
+      const root = try repository(pnpmWorkspace)
+      const command = "set -euo pipefail\npnpm --filter web run test 2>&1 | tee \"$RUNNER_TEMP/web.log\""
+      const after = try split(root, ci([step("ci.yml:test:1", command), step("ci.yml:test:2", "pnpm run test", { cwd: "packages/ui" })]))
+      try Effect.try(() => {
+        expect(stepsOf(after)).toEqual([
+          step("ci.yml:test:1", command, {
+            inputs: [...pnpmOutside, "packages/ui/**", "packages/web/**"].sort(),
+            from: "ci.yml:test:1"
+          }),
+          step("ci.yml:test:2", "pnpm run test", {
+            cwd: "packages/ui",
+            inputs: [...pnpmOutside, "packages/ui/**"].sort(),
+            from: "ci.yml:test:2"
+          })
+        ])
+      })
+    })
+
+  it.effect("splits Turborepo runs in a Bun workspace, direct and through a root script", () =>
+    effect {
+      const root = try repository({
+        "package.json": JSON.stringify({
+          name: "root",
+          packageManager: "bun@1.3.0",
+          workspaces: ["packages/*", "apps/*"],
+          scripts: { build: "turbo run build" }
+        }),
+        "bun.lock": "{}\n",
+        "turbo.jsonc": `{
+          // The task graph.
+          "globalDependencies": ["tsconfig.base.json"],
+          "tasks": {
+            "build": { "dependsOn": ["^build"], "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/tools/build.mjs"] },
+            "test": { "dependsOn": ["^build"] },
+            "lint": {}
+          }
+        }`,
+        "tsconfig.base.json": "{}",
+        "tools/build.mjs": "",
+        "packages/core/package.json": manifest("@acme/core", { build: "node ../../tools/build.mjs", test: "bun test" }),
+        "packages/core/turbo.json": `{ "extends": ["//"], "tasks": { "build": { "dependsOn": ["codegen"] }, "codegen": {} } }`,
+        "packages/ui/package.json": manifest("@acme/ui", { build: "node ../../tools/build.mjs", lint: "eslint ." }, ["@acme/core"]),
+        "apps/web/package.json": manifest("web", { test: "bun test", lint: "eslint ." }, ["@acme/ui"]),
+        "apps/web/src/index.ts": "export {}\n"
+      })
+      const after = try split(root, ci([
+        step("ci.yml:test:1", "bunx turbo run test --concurrency=2"),
+        step("ci.yml:test:2", "bun run build"),
+        step("ci.yml:test:3", "bun run --filter '*' lint")
+      ]))
+      const steps = byId(after)
+      const outside = ["*", "apps/*", "packages/*", "tools/**"]
+      try Effect.try(() => {
+        // ui has no test script and still has work: its test depends on core's build.
+        expect(Object.keys(steps)).toEqual([
+          "ci.yml:test:1:web",
+          "ci.yml:test:1:@acme/core",
+          "ci.yml:test:1:@acme/ui",
+          // web has no build script, and its build still has work: it depends on ui's.
+          "ci.yml:test:2:web",
+          "ci.yml:test:2:@acme/core",
+          "ci.yml:test:2:@acme/ui",
+          "ci.yml:test:3:web",
+          "ci.yml:test:3:@acme/ui"
+        ])
+        expect(steps["ci.yml:test:1:web"]?.command).toBe("bunx turbo run test --concurrency=2 --filter=web")
+        expect(steps["ci.yml:test:1:web"]?.inputs).toEqual(
+          // The build file is named by the task's inputs and already inside a directory every step reads.
+          [...outside, "apps/web/**", "packages/core/**", "packages/ui/**", "tsconfig.base.json"].sort()
+        )
+        expect(steps["ci.yml:test:1:@acme/core"]?.inputs).toEqual([...outside, "packages/core/**", "tsconfig.base.json"].sort())
+        // The root script's `turbo` goes behind `bunx`.
+        expect(steps["ci.yml:test:2:@acme/ui"]?.command).toBe("bunx turbo run build --filter=@acme/ui")
+        // Bun runs a task in a package and the packages it depends on, in order.
+        expect(steps["ci.yml:test:3:web"]?.command).toBe("bun run --filter @acme/ui --filter web lint")
+        expect(steps["ci.yml:test:3:web"]?.inputs).toEqual([...outside, "apps/web/**", "packages/core/**", "packages/ui/**"].sort())
+      })
+    })
+
+  it.effect("reads what a symbolic link points to, and skips binary and deleted files", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const root = try repository({
+        "package.json": JSON.stringify({ name: "root", workspaces: ["packages/*"] }),
+        "packages/a/package.json": manifest("a", { test: "t" }),
+        "packages/b/package.json": manifest("b", { test: "t" }),
+        "packages/b/shared.json": "{}",
+        "packages/c/package.json": manifest("c", { test: "t" }),
+        "packages/d/package.json": manifest("d", { test: "t" }),
+        // These name other packages, and none of them is text a program follows.
+        "packages/c/blob": "\0\0 import '../a/x' from \"a\"",
+        "packages/c/picture.png": "import \"a\"",
+        "packages/c/gone.ts": "import \"a\"",
+        "packages/d/absolute.ts": ""
+      })
+      try fs.symlink("../b/shared.json", path.join(root, "packages/a/linked.json"))
+      try fs.symlink("local.json", path.join(root, "packages/a/inner.json"))
+      try fs.remove(path.join(root, "packages/d/absolute.ts"))
+      try fs.symlink("/etc/hostname", path.join(root, "packages/d/absolute.ts"))
+      try commit(root)
+      try fs.remove(path.join(root, "packages/c/gone.ts"))
+      const after = try split(root, ci([step("s", "npm run test --workspaces --if-present")]))
+      const steps = byId(after)
+      try Effect.try(() => {
+        expect(steps["s:a"]?.inputs).toEqual(["*", "packages/*", "packages/a/**", "packages/b/shared.json"])
+        expect(steps["s:c"]?.inputs).toEqual(["*", "packages/*", "packages/c/**"])
+        expect(steps["s:d"]?.inputs).toEqual(["*", "packages/*", "packages/d/**"])
+      })
+    })
+
+  it.effect("reads a link it cannot follow as pointing nowhere", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const root = try repository({
+        "package.json": JSON.stringify({ name: "root", workspaces: ["packages/*"] }),
+        "packages/a/package.json": manifest("a", { test: "t" }),
+        "packages/b/package.json": manifest("b", { test: "t" })
+      })
+      try fs.symlink("../b/package.json", path.join(root, "packages/a/linked.json"))
+      try commit(root)
+      const faulty = {
+        ...fs,
+        readLink: (file: string) => fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: `readLink ${file}` }))
+      }
+      provide FileSystem.FileSystem = faulty {
+        const after = try split(root, ci([step("s", "npm run test --workspaces")]))
+        try Effect.try(() => expect(byId(after)["s:a"]?.inputs).toEqual(["*", "packages/*", "packages/a/**"]))
+      }
+    })
+
+  it.effect("returns the CI as it was when the repository has no workspace it can read", () =>
+    effect {
+      const before = ci([step("s", "pnpm -r run test"), step("t", "bunx turbo run build")])
+      for (const files of [
+        { "readme.md": "no manifest" },
+        { "package.json": "{ broken" },
+        { "package.json": JSON.stringify({ name: "single", scripts: { test: "vitest" } }) },
+        { "package.json": JSON.stringify({ workspaces: ["packages/{a,b}"] }), "packages/a/package.json": manifest("a", { test: "t" }) },
+        { "package.json": "{}", "pnpm-workspace.yaml": "packages: [unclosed" },
+        // The root's .npmrc makes every pnpm run include the root package.
+        { ...pnpmWorkspace, ".npmrc": "include-workspace-root=true\n" },
+        { "package.json": JSON.stringify({ workspaces: ["packages/*"] }), "packages/a/package.json": "{ broken" },
+        // A workspace with no Turborepo file, and one whose file does not parse.
+        { "package.json": JSON.stringify({ workspaces: ["packages/*"] }), "packages/a/package.json": manifest("a", { build: "t" }) },
+        {
+          "package.json": JSON.stringify({ workspaces: ["packages/*"] }),
+          "packages/a/package.json": manifest("a", { build: "t" }),
+          "turbo.json": "{ broken"
+        }
+      ]) {
+        const root = try repository(files)
+        const after = try split(root, before)
+        try Effect.try(() => expect(after, JSON.stringify(Object.keys(files))).toEqual(before))
+      }
+    })
+
+  it.effect("leaves steps whole when a file it needs cannot be read", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const root = try repository({
+        ...pnpmWorkspace,
+        ".npmrc": "registry=https://registry.npmjs.org/\n",
+        "turbo.json": `{ "tasks": { "test": {} } }`,
+        "packages/ui/turbo.json": `{ "extends": ["//"] }`
+      })
+      const before = ci([step("s", "pnpm -r run test"), step("t", "pnpm exec turbo run test")])
+      const whole = try split(root, before)
+      try Effect.try(() => expect(stepsOf(whole).map((found) => found.id)).toEqual(["s:ui", "s:web", "s:x", "s:y", "t:ui", "t:web", "t:x", "t:y"]))
+      // Each of these files exists and fails to read; what depends on it stays whole.
+      for (const [unreadable, expected] of [
+        ["pnpm-workspace.yaml", ["s", "t"]],
+        // Unread settings may choose packages for pnpm; Turborepo does not read them.
+        [".npmrc", ["s", "t:ui", "t:web", "t:x", "t:y"]],
+        ["packages/ui/package.json", ["s", "t"]],
+        ["turbo.json", ["s:ui", "s:web", "s:x", "s:y", "t"]],
+        ["packages/ui/turbo.json", ["s:ui", "s:web", "s:x", "s:y", "t"]]
+      ] as const) {
+        const faulty = {
+          ...fs,
+          readFileString: (file: string) =>
+            file.endsWith(`/${unreadable}`)
+              ? fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: `readFileString ${file}` }))
+              : fs.readFileString(file)
+        }
+        provide FileSystem.FileSystem = faulty {
+          const after = try split(root, before)
+          try Effect.try(() => expect(stepsOf(after).map((found) => found.id), unreadable).toEqual(expected))
+        }
+      }
+    })
+
+  it.effect("returns the CI as it was when git starts and cannot list the files", () =>
+    effect {
+      const root = try repository(pnpmWorkspace)
+      const real = try ChildProcessSpawner
+      const before = ci([step("s", "pnpm -r run test")])
+      const mute = { ...real, string: () => fail(PlatformError.systemError({ _tag: "Unknown", module: "ChildProcess", method: "string" })) }
+      provide ChildProcessSpawner = mute {
+        const after = try split(root, before)
+        try Effect.try(() => expect(after).toEqual(before))
+      }
+    })
+
+  it.effect("fails with not-a-repository outside a repository, and when git cannot start", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const outside = try fs.makeTempDirectoryScoped()
+      const before = ci([step("s", "pnpm -r run test")])
+      const failure = try flip(split(outside, before))
+      try Effect.try(() => expect(failure).toEqual({
+        code: "not-a-repository",
+        message: `${outside} is not a git repository`,
+        part: "decompose"
+      }))
+      const root = try repository(pnpmWorkspace)
+      const broken = makeSpawner(() => fail(PlatformError.systemError({ _tag: "NotFound", module: "ChildProcess", method: "spawn" })))
+      provide ChildProcessSpawner = broken {
+        const unstarted = try flip(split(root, before))
+        try Effect.try(() => expect(unstarted.code).toBe("not-a-repository"))
+      }
+    })
+
+  it.effect("gives a Zig build step the files its closure names", () =>
+    effect {
+      const root = try repository({ "build.zig": "", "src/main.zig": "", "Justfile": "test:\n  zig build test\n" })
+      const asked: Array<ReadonlyArray<string>> = []
+      const closure = (entries: ReadonlyArray<string>, extra: Partial<Closure> = {}): Closure => ({
+        strategy: "zig",
+        entries,
+        files: [{ path: "build.zig", digest: "d1" }, { path: "src/main.zig", digest: "d2" }],
+        packages: ["std"],
+        unresolved: [],
+        dynamic: [],
+        ...extra
+      })
+      const close: CloseEntries = (_root, entries) => effect {
+        asked.push(entries)
+        return [closure(["test"]), closure(["bench"], { unresolved: [{ from: "bench.zig", specifier: "gone" }] })]
+      }
+      const before = ci([
+        step("justfile:test:1", `bash -c 'set -euo pipefail\nif [ -n "" ]; then zig build test -Dtest-filter=""; else zig build test; fi'`),
+        step("justfile:bench:1", "zig build bench"),
+        step("justfile:docs:1", "zig build docs"),
+        step("justfile:tidy:1", "etc/scripts/tidy.sh")
+      ])
+      const after = try splitWith({ zig: close })(root, before)
+      try Effect.try(() => {
+        // One call names every build step, once.
+        expect(asked).toEqual([["bench", "docs", "test"]])
+        expect(stepsOf(after)).toEqual([
+          { ...before.jobs[0]?.steps[0], inputs: ["build.zig", "src/main.zig"], from: "justfile:test:1" },
+          // An incomplete closure, a step the strategy did not answer for, and an unknown program stay whole.
+          before.jobs[0]?.steps[1],
+          before.jobs[0]?.steps[2],
+          before.jobs[0]?.steps[3]
+        ])
+      })
+      // Without a strategy, or with one that fails, a Zig step stays whole.
+      const without = try split(root, before)
+      const failing: CloseEntries = () => fail({ code: "command-failed", message: "zig is not installed", part: "closure" })
+      const failed = try splitWith({ zig: failing })(root, before)
+      try Effect.try(() => {
+        expect(without).toEqual(before)
+        expect(failed).toEqual(before)
+      })
+    })
+
+  it.effect("splits a step that runs a wrapper the owner says stands for turbo", () =>
+    effect {
+      const root = try repository({
+        "package.json": JSON.stringify({ name: "root", packageManager: "bun@1.3.0", workspaces: ["packages/*"] }),
+        "turbo.json": `{ "tasks": { "build": {} } }`,
+        "packages/a/package.json": manifest("a", { build: "t" }),
+        "packages/b/package.json": manifest("b", { build: "t" }),
+        "packages/tools/package.json": manifest("tools"),
+        "packages/tools/run-turbo.ts": ""
+      })
+      const before = ci([step("s", "bun packages/tools/run-turbo.ts run build")])
+      const after = try splitWith({ turboWrappers: ["packages/tools/run-turbo.ts"] })(root, before)
+      const untold = try split(root, before)
+      try Effect.try(() => {
+        expect(stepsOf(after).map((found) => [found.command, found.inputs])).toEqual([
+          ["bun packages/tools/run-turbo.ts run build --filter=a", ["*", "packages/*", "packages/a/**", "packages/tools/run-turbo.ts"]],
+          ["bun packages/tools/run-turbo.ts run build --filter=b", ["*", "packages/*", "packages/b/**", "packages/tools/run-turbo.ts"]]
+        ])
+        expect(untold).toEqual(before)
+      })
+    })
+
+  it.effect("gives the original step's verdict when the split steps' verdicts are combined", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const check = "const assert = require('node:assert'); assert.strictEqual(require('./value.json').value, 1)"
+      const root = try repository({
+        "package.json": JSON.stringify({ name: "root", private: true, workspaces: ["packages/*"] }),
+        "packages/a/package.json": manifest("a", { test: `node -e "${check}"` }),
+        "packages/a/value.json": `{ "value": 1 }`,
+        "packages/b/package.json": manifest("b", { test: `node -e "${check}"` }),
+        "packages/b/value.json": `{ "value": 1 }`,
+        "packages/c/package.json": manifest("c", { build: "node -e 0" })
+      })
+      const original = step("ci.yml:test:1", "npm run test --workspaces --if-present")
+      const verdict = effect (command: string) => (try run(root, "bash", ["-e", "-c", command])) === 0 ? "pass" as Verdict : "fail" as Verdict
+      const parts = stepsOf(try split(root, ci([original])))
+      try Effect.try(() => expect(parts.map((part) => part.id)).toEqual(["ci.yml:test:1:a", "ci.yml:test:1:b"]))
+      // A clean commit: every step passes, and so does the original.
+      const clean: Array<Verdict> = []
+      for (const part of parts) clean.push(try verdict(part.command))
+      const cleanOriginal = try verdict(original.command)
+      // One package's test broken: its step fails, the other passes, and the original fails.
+      try fs.writeFileString(path.join(root, "packages/b/value.json"), `{ "value": 2 }`)
+      const broken: Array<Verdict> = []
+      for (const part of parts) broken.push(try verdict(part.command))
+      const brokenOriginal = try verdict(original.command)
+      try Effect.try(() => {
+        expect(clean).toEqual(["pass", "pass"])
+        expect(combine(clean)).toBe(cleanOriginal)
+        expect(broken).toEqual(["pass", "fail"])
+        expect(combine(broken)).toBe(brokenOriginal)
+        expect(brokenOriginal).toBe("fail")
+        // The broken file is read by the failing step and not by the passing one.
+        expect(parts[1]?.inputs).toContain("packages/b/**")
+        expect(parts[0]?.inputs).not.toContain("packages/b/**")
+      })
+    }, 60_000)
+})

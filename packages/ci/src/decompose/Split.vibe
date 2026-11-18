@@ -1,0 +1,201 @@
+/**
+ * The decompose part: reads the repository at a root and returns its CI with
+ * coarse steps replaced by steps that name what they read.
+ *
+ * It reads files and asks git which files exist. It never runs the
+ * repository's code or its package manager.
+ *
+ * @since 0.1.0
+ */
+
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type { Closure } from "../contract/Closure.ts"
+import { type Ci, ci, type Step } from "../contract/Inventory.ts"
+import type { CloseEntries, Decompose, Failure } from "../contract/Parts.ts"
+import { decide, type Facts, understand, type Understood } from "./Plan.ts"
+import { readConfig } from "./Turbo.ts"
+import {
+  assemble,
+  graph,
+  managerOf,
+  type Mentions,
+  packageDirectories,
+  readObject,
+  readPatterns,
+  scanner,
+  type Workspace
+} from "./Workspace.ts"
+
+/** File types that hold no path or package name a program follows. */
+const unscanned =
+  /\.(?:png|jpe?g|gif|webp|avif|ico|icns|bmp|tiff?|svg|pdf|zip|gz|tgz|bz2|xz|7z|tar|jar|wasm|node|so|dylib|dll|exe|bin|dat|db|sqlite|ttf|otf|woff2?|eot|mp[34]|wav|ogg|webm|mov|avi|flac|onnx|gguf|safetensors|lockb?|snap|map|md|txt|log|csv|tsv)$/i
+
+/** How many files are read at once. */
+const readers = 32
+
+interface Tree {
+  readonly fs: FileSystem.FileSystem
+  readonly path: Path.Path
+  readonly root: string
+  readonly files: ReadonlySet<string>
+}
+
+const notARepository = (root: string): Failure => ({
+  code: "not-a-repository",
+  message: `${root} is not a git repository`,
+  part: "decompose"
+})
+
+/** Runs git in the repository and gives what it prints. A git that cannot start, or refuses, fails. */
+effect function git(root: string, args: ReadonlyArray<string>): string!Failure!ChildProcessSpawner {
+  const spawner = try ChildProcessSpawner
+  const command = ChildProcess.make("git", ["-C", root, ...args])
+  const code = spawner.exitCode(command) catch () => undefined
+  if (code === undefined || Number(code) !== 0) throw notARepository(root)
+  return spawner.string(command) catch () => ""
+}
+
+/** A file's text, or `undefined` when it is missing or cannot be read. */
+effect function text(tree: Tree, file: string): (string | undefined)!! {
+  return tree.fs.readFileString(tree.path.join(tree.root, file)) catch () => undefined
+}
+
+/** Reads the workspace: its patterns, then each package's manifest. */
+effect function readWorkspace(tree: Tree): (Workspace | undefined)!! {
+  const manifest = readObject((try text(tree, "package.json")) ?? "")
+  if (manifest === undefined) return undefined
+  const declared = readPatterns(
+    manifest,
+    tree.files.has("pnpm-workspace.yaml") ? (try text(tree, "pnpm-workspace.yaml")) ?? "" : undefined,
+    tree.files.has(".npmrc") ? (try text(tree, ".npmrc")) ?? null : ""
+  )
+  const directories = declared === undefined ? undefined : packageDirectories(declared.patterns, tree.files)
+  if (declared === undefined || directories === undefined) return undefined
+  const manifests: Array<readonly [string, string]> = []
+  for (const directory of directories) {
+    manifests.push([directory, (try text(tree, `${directory}/package.json`)) ?? ""])
+  }
+  return assemble(managerOf(manifest, tree.files), manifest, declared.orchestrated, manifests)
+}
+
+/** Reads `turbo.json` at the root and in each package that has one. */
+effect function readTurbo(tree: Tree, workspace: Workspace) {
+  const file = ["turbo.json", "turbo.jsonc"].find((name) => tree.files.has(name))
+  if (file === undefined) return undefined
+  const own: Array<readonly [string, string]> = []
+  for (const owner of workspace.packages) {
+    const name = ["turbo.json", "turbo.jsonc"].find((candidate) => tree.files.has(`${owner.directory}/${candidate}`))
+    if (name !== undefined) own.push([owner.name, (try text(tree, `${owner.directory}/${name}`)) ?? ""])
+  }
+  return readConfig((try text(tree, file)) ?? "", own)
+}
+
+/** The tracked symbolic links, which git lists with mode 120000. */
+effect function links(tree: Tree): ReadonlySet<string>!Failure!ChildProcessSpawner {
+  const staged = try git(tree.root, ["ls-files", "-s", "-z"])
+  return new Set(
+    staged.split("\0").filter((entry) => entry.startsWith("120000 ")).map((entry) => entry.slice(entry.indexOf("\t") + 1))
+  )
+}
+
+/**
+ * Reads what every file in a package mentions, and builds the reach graph.
+ * A symbolic link mentions the path it points to.
+ */
+effect function readFacts(tree: Tree, workspace: Workspace): Facts!Failure!ChildProcessSpawner {
+  const scan = scanner(workspace)
+  const linked = try links(tree)
+  const found = new Map<string, Mentions>()
+  const none: Mentions = { names: [], relative: [], rooted: [] }
+  const owned = [...tree.files].filter((file) =>
+    !unscanned.test(file) && workspace.packages.some((owner) => file.startsWith(`${owner.directory}/`))
+  )
+  for concurrent(readers) (const file of owned) {
+    if (linked.has(file)) {
+      const target = tree.fs.readLink(tree.path.join(tree.root, file)) catch () => ""
+      found.set(file, { ...none, relative: target.startsWith("/") || target === "" ? [] : [`./${target}`] })
+    } else {
+      const content = try text(tree, file)
+      // A zero byte near the start marks a binary file, as it does for git.
+      if (content !== undefined && !content.slice(0, 8000).includes("\0")) {
+        found.set(file, scan(content, file.endsWith("package.json")))
+      }
+    }
+  }
+  return {
+    workspace,
+    graph: graph(workspace, tree.files, (file) => found.get(file) ?? none),
+    turbo: try readTurbo(tree, workspace)
+  }
+}
+
+const replaced = (step: Step, understood: Understood | undefined, facts: Facts | undefined, zig: ReadonlyMap<string, Closure>): ReadonlyArray<Step> => {
+  const decision = understood === undefined ? { kind: "whole" as const } : decide(step, understood, facts, zig)
+  if (decision.kind === "whole") return [step]
+  if (decision.kind === "scope") return [{ ...step, inputs: decision.inputs, from: step.id }]
+  return decision.parts.map((part) => ({
+    ...step,
+    id: `${step.id}:${part.name}`,
+    command: part.command,
+    ...(step.name === undefined ? {} : { name: `${step.name} (${part.name})` }),
+    inputs: part.inputs,
+    from: step.id
+  }))
+}
+
+/**
+ * What the decompose part is made with.
+ *
+ * - `zig`: the Zig closure strategy. Without it, or when it fails, a step
+ *   that runs `zig build` stays whole.
+ * - `turboWrappers`: files, from the repository root, that the repository's
+ *   owner says pass their arguments to `turbo`. A step that runs one is
+ *   split as a `turbo` step is, and reads the file.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Options<R = never> {
+  readonly zig?: CloseEntries<R> | undefined
+  readonly turboWrappers?: ReadonlyArray<string> | undefined
+}
+
+/**
+ * Makes the decompose part.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export const splitWith = <R = never>(
+  options: Options<R> = {}
+): Decompose<R | FileSystem.FileSystem | Path.Path | ChildProcessSpawner> =>
+  effect function (root: string, inventory: Ci) {
+    const steps = inventory.jobs.flatMap((job) => job.steps)
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const listed = try git(root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
+    const tree: Tree = { fs, path, root, files: new Set(listed.split("\0").filter((file) => file !== "")) }
+    const workspace = try readWorkspace(tree)
+    const understood = new Map(steps.map((step) => [step, understand(step, workspace, options.turboWrappers)]))
+    const found = [...understood.values()].filter((entry) => entry !== undefined)
+    const facts = workspace !== undefined && found.some((entry) => entry.runs.length > 0)
+      ? try readFacts(tree, workspace)
+      : undefined
+    const builds = [...new Set(found.flatMap((entry) => entry.zig))].sort()
+    const closures = options.zig === undefined || builds.length === 0
+      ? []
+      : options.zig(root, builds) catch (): ReadonlyArray<Closure> => []
+    const closed = new Map(builds.flatMap((name) => {
+      const closure = closures.find((candidate) => candidate.entries.includes(name))
+      return closure === undefined ? [] : [[name, closure] as const]
+    }))
+    // The same jobs with their steps replaced are still the repository's CI.
+    return ci({
+      ...inventory,
+      jobs: inventory.jobs.map((job) => ({
+        ...job,
+        steps: job.steps.flatMap((step) => replaced(step, understood.get(step), facts, closed))
+      }))
+    })
+  }
