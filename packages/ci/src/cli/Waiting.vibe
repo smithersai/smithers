@@ -1,0 +1,39 @@
+/**
+ * Stand-ins for parts that have not landed on `main` yet. Each fails with
+ * `unsupported`, so the program exits 3 and names the missing part. `parts.ts`
+ * drops each one the day its part lands.
+ *
+ * @since 0.1.0
+ */
+
+import type { BuildRows, Failure, ReplayParts, ReplayRequest, ScoreRows } from "../contract/Parts.ts"
+
+effect function waiting(part: Failure["part"]) {
+  throw { code: "unsupported", message: `the ${part} part is not built yet`, part } satisfies Failure
+}
+
+/**
+ * Waits for `src/replay`.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export function run<R>(_request: ReplayRequest, _parts: ReplayParts<R>) {
+  return waiting("replay")
+}
+
+/**
+ * Waits for `src/select`.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export const rows: BuildRows = () => waiting("select")
+
+/**
+ * Waits for `src/select`.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export const score: ScoreRows = () => waiting("select")

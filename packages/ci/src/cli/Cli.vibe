@@ -1,0 +1,288 @@
+/**
+ * The `smithers-ci` program: contract 7's commands, flags and exit codes,
+ * run over contract 10's parts.
+ *
+ * The program implements no part. It parses the command line, calls the parts
+ * it is given, prints their documents, writes what `apply` and `--out` ask
+ * for, and turns the outcome into one exit code.
+ *
+ * @since 0.1.0
+ */
+
+import { CliConfig, CliError, CliOutput, Command, Flag, GlobalFlag } from "effect/cli"
+import * as Surface from "../contract/Command.ts"
+import { Inventory } from "../contract/Inventory.ts"
+import type {
+  BuildRows,
+  Failure,
+  GeneratedFile,
+  GenerateFiles,
+  ReadInventory,
+  RenderReport,
+  ReplayRequest,
+  RunReplay,
+  ScoreRows
+} from "../contract/Parts.ts"
+import { ReplayReport } from "../contract/ReplayReport.ts"
+import type { Mode } from "../contract/RunRecord.ts"
+
+/**
+ * The parts the program calls, one function each, as contract 10 names them.
+ * `R` is the host services they need; the program provides them.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Parts<R> {
+  readonly read: ReadInventory<R>
+  readonly files: GenerateFiles<R>
+  readonly run: RunReplay<R>
+  readonly text: RenderReport
+  readonly html: RenderReport
+  readonly rows: BuildRows<R>
+  readonly score: ScoreRows<R>
+}
+
+/**
+ * The exit code for a part's failure, from contract 7's `failureExitCodes`.
+ *
+ * @category exit codes
+ * @since 0.1.0
+ */
+export function exitCodeOf(failure: Failure): number {
+  return Surface.failureExitCodes[failure.code]
+}
+
+/**
+ * The one line the program prints for a part's failure.
+ *
+ * @category exit codes
+ * @since 0.1.0
+ */
+export function lineOf(failure: Failure): string {
+  return `${Surface.name}: ${failure.part}: ${failure.message}`
+}
+
+const failed = (message: string): Failure => ({ code: "command-failed", message, part: "cli" })
+
+/** Renders a report; a renderer that throws is the report part's failure. */
+effect function render(renderer: RenderReport, report: ReplayReport) {
+  return try Effect.try({
+    try: () => renderer(report),
+    catch: (error): Failure => ({ code: "command-failed", message: `could not render the report: ${String(error)}`, part: "report" })
+  })
+}
+
+const isHttpUrl = (value: string): boolean => URL.canParse(value) && /^https?:\/\//i.test(value)
+
+const atLeastOne = (): string => "1 or more"
+
+/** A flag's help from contract 7, with its default when it has a value. */
+const helpOf = (flag: keyof typeof Surface.flags): string => {
+  const { default: fallback, help } = Surface.flags[flag]
+  return fallback === "" || fallback === "false" ? help : `${help} Default: ${fallback}.`
+}
+
+const commits = Flag.Int("commits").pipe(
+  Flag.filter((value) => value >= 1, atLeastOne),
+  Flag.withDefault(Number(Surface.flags.commits.default)),
+  Flag.withDescription(helpOf("commits"))
+)
+
+const mode = Flag.Literals("mode", ["normal", "fast", "both"]).pipe(
+  Flag.withDefault(Surface.flags.mode.default),
+  Flag.withDescription(helpOf("mode"))
+)
+
+const jobs = Flag.Int("jobs").pipe(
+  Flag.filter((value) => value >= 1, atLeastOne),
+  Flag.optional,
+  Flag.withDescription(helpOf("jobs"))
+)
+
+const cache = Flag.String("cache").pipe(
+  Flag.filter(isHttpUrl, () => "an http or https URL"),
+  Flag.optional,
+  Flag.withDescription(helpOf("cache"))
+)
+
+const out = Flag.String("out").pipe(
+  Flag.filter((value) => value.length > 0, () => "a file path"),
+  Flag.optional,
+  Flag.withDescription(helpOf("out"))
+)
+
+const json = Flag.Boolean("json").pipe(
+  Flag.withDefault(false),
+  Flag.withDescription(helpOf("json"))
+)
+
+const replayFlags = { commits, mode, jobs, cache, out, json }
+
+/** What `--mode` asks the replay to run. */
+const modes: Record<"normal" | "fast" | "both", ReadonlyArray<Mode>> = {
+  normal: ["normal"],
+  fast: ["fast"],
+  both: ["normal", "fast"]
+}
+
+interface ReplayInput {
+  readonly commits: number
+  readonly mode: "normal" | "fast" | "both"
+  readonly jobs: Option.Option<number>
+  readonly cache: Option.Option<string>
+  readonly out: Option.Option<string>
+  readonly json: boolean
+}
+
+const requestOf = (root: string, input: ReplayInput): ReplayRequest => ({
+  root,
+  commits: input.commits,
+  modes: modes[input.mode],
+  jobs: Option.getOrUndefined(input.jobs),
+  cache: Option.getOrUndefined(input.cache)
+})
+
+/** A document as indented JSON, checked against its schema on the way out. */
+effect function documentOf<S extends Schema.Top>(schema: S, value: S["Type"], part: Failure["part"]) {
+  const encoded = Schema.encodeUnknownEffect(schema)(value) catch effect (error) => {
+    throw { code: "invalid-document", message: error.message, part } satisfies Failure
+  }
+  return JSON.stringify(encoded, null, 2)
+}
+
+/** A plain listing of an inventory for a person. */
+function inventoryText(inventory: Inventory): string {
+  const lines = [`${inventory.repository} at ${inventory.commit}`]
+  for (const tool of inventory.toolchains) {
+    lines.push(`toolchain ${tool.name}${tool.version === undefined ? "" : ` ${tool.version}`} (${tool.source})`)
+  }
+  for (const job of inventory.jobs) {
+    const needs = job.needs.length === 0 ? "" : `, needs ${job.needs.join(", ")}`
+    lines.push(`job ${job.id} (${job.source} ${job.file}${needs})`)
+    for (const step of job.steps) {
+      lines.push(`  $ ${step.command}${step.cwd === "" || step.cwd === "." ? "" : `  (in ${step.cwd})`}`)
+    }
+    for (const unsupported of job.unsupported) {
+      lines.push(`  unsupported ${unsupported.feature}: ${unsupported.detail}`)
+    }
+  }
+  return lines.join("\n")
+}
+
+/** Refuses a generated path that is empty, absolute, leaves the root, or repeats. */
+effect function checkPaths(files: ReadonlyArray<GeneratedFile>) {
+  const seen = new Set<string>()
+  for (const file of files) {
+    const segments = file.path.split(/[\\/]/)
+    const escapes = file.path === "" || /^([\\/]|[A-Za-z]:)/.test(file.path) || segments.includes("..")
+    if (escapes || seen.has(file.path)) {
+      const reason = escapes ? "is not inside the repository" : "appears twice"
+      throw { code: "invalid-document", message: `generated path ${JSON.stringify(file.path)} ${reason}`, part: "generate" } satisfies Failure
+    }
+    seen.add(file.path)
+  }
+  return files
+}
+
+/** Writes one file, creating its directory. A host error becomes a `cli` failure. */
+effect function write(path: string, content: string) {
+  const fs = try FileSystem.FileSystem
+  const paths = try Path.Path
+  const written = effect {
+    try fs.makeDirectory(paths.dirname(path), { recursive: true })
+    try fs.writeFileString(path, content)
+  }
+  written catch effect (error) => {
+    throw failed(`could not write ${path}: ${error.message}`)
+  }
+}
+
+/**
+ * The command tree. Each handler returns the exit code it wants; a part's
+ * failure leaves through the error channel.
+ */
+function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
+  const settle = (code: number) => Ref.set(status, code)
+  const replayParts = { read: parts.read, files: parts.files, rows: parts.rows, score: parts.score }
+  const generate = (cache: Option.Option<string>) =>
+    effect {
+      const inventory = try parts.read(root)
+      return try checkPaths(try parts.files(inventory, { cache: Option.getOrUndefined(cache) }))
+    }
+
+  effect function replayAndPrint(input: ReplayInput, footer: string) {
+    const report = try parts.run(requestOf(root, input), replayParts)
+    const document = try documentOf(ReplayReport, report, "replay")
+    if (Option.isSome(input.out)) {
+      const paths = try Path.Path
+      const target = paths.resolve(root, input.out.value)
+      try write(target, try render(parts.html, report))
+      try Console.error(`${Surface.name}: wrote ${target}`)
+    }
+    try Console.log(input.json ? document : `${try render(parts.text, report)}${footer}`)
+    try settle(report.mismatches > 0 ? Surface.exitCodes.mismatch : Surface.exitCodes.ok)
+  }
+
+  const apply = Command.make("apply", { cache }, effect (input) => {
+    const files = try generate(input.cache)
+    const paths = try Path.Path
+    for (const file of files) {
+      try write(paths.join(root, file.path), file.content)
+      try Console.log(`wrote ${file.path}`)
+    }
+    try Console.log(`${Surface.name}: wrote ${files.length} files`)
+  }).pipe(Command.withDescription(Surface.commands.apply))
+
+  const inventory = Command.make("inventory", { json }, effect (input) => {
+    const read = try parts.read(root)
+    try Console.log(input.json ? try documentOf(Inventory, read, "inventory") : inventoryText(read))
+  }).pipe(Command.withDescription(Surface.commands.inventory))
+
+  const replay = Command.make("replay", replayFlags, effect (input) => {
+    try replayAndPrint(input, "")
+  }).pipe(Command.withDescription(Surface.commands.replay))
+
+  return Command.make(Surface.name, replayFlags, effect (input) => {
+    const files = try generate(input.cache)
+    const footer = `\n\n${Surface.name} apply would write ${files.length} files. This run wrote nothing to the repository.`
+    try replayAndPrint(input, footer)
+  }).pipe(
+    Command.withDescription(Surface.commands[""]),
+    Command.withSubcommands([apply, inventory, replay])
+  )
+}
+
+const reasonsOf = (errors: ReadonlyArray<{ readonly message: string }>): string =>
+  errors.map((error) => error.message.replace(/\s+/g, " ").trim()).join("; ")
+
+/**
+ * Help goes to standard output. A usage error is one line on standard error
+ * that points at `--help`, never a page of help.
+ */
+const presenter = CliOutput.layerPresenter({
+  present: (event) =>
+    event._tag === "InvalidInvocation"
+      ? Console.error(`${Surface.name}: ${reasonsOf(event.errors)}. Run ${Surface.name} --help for the commands and flags.`)
+      : CliOutput.defaultPresenter.present(event)
+})
+
+/**
+ * Runs `smithers-ci` with `args` against the repository at `root` and
+ * returns its exit code. The only built-in flag is `--help`.
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export effect function cli<R>(args: ReadonlyArray<string>, root: string, parts: Parts<R>) {
+  const status = try Ref.make<number>(Surface.exitCodes.ok)
+  const run = Command.runWith(commandOf(root, parts, status), { version: "0.1.0" })(args)
+  provide CliConfig.layer({ builtIns: [GlobalFlag.Help] }), presenter {
+    const outcome = run catch effect (error) => {
+      if (CliError.isCliError(error)) return Surface.exitCodes.usage
+      try Console.error(lineOf(error))
+      return exitCodeOf(error)
+    }
+    return outcome === undefined ? try Ref.get(status) : outcome
+  }
+}

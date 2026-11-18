@@ -6,8 +6,8 @@ const cwd = "packages/ci"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  // test/docs.test.ts reads the docs pages and the splash page.
-  testData: ["docs/**/*.md", "docs/splash/index.html"],
+  // test/docs.test.ts reads the docs pages and the splash page; test/cli runs bin/ and test/cli/program.mjs.
+  testData: ["docs/**/*.md", "docs/splash/index.html", "bin/*.mjs", "test/**/*.mjs", "test/fixtures/*.json"],
   cwd
 })
 

@@ -165,6 +165,9 @@ importers:
       semver:
         specifier: 7.8.5
         version: 7.8.5
+      smithers-ci:
+        specifier: workspace:*
+        version: link:packages/ci
       tinyglobby:
         specifier: 0.2.17
         version: 0.2.17
@@ -1230,6 +1233,9 @@ importers:
 
   packages/ci:
     dependencies:
+      '@effect/platform-node':
+        specifier: 4.1.1
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@smthrs/flow':
         specifier: 1.0.0-rc.18
         version: link:../smithers/flows/flow
@@ -1239,6 +1245,9 @@ importers:
       '@smthrs/plan':
         specifier: 1.0.0-rc.18
         version: link:../smithers/flows/plan
+      '@smthrs/platform-node':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/flows/platform-node
       effect:
         specifier: 4.1.1
         version: 4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c)
@@ -1255,9 +1264,6 @@ importers:
       '@effect/language-service':
         specifier: 0.87.2
         version: 0.87.2
-      '@effect/platform-node':
-        specifier: 4.1.1
-        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(vitest@5.0.0)
@@ -1270,9 +1276,6 @@ importers:
       '@smthrs/engine':
         specifier: 1.0.0-rc.18
         version: link:../smithers/flows/engine
-      '@smthrs/platform-node':
-        specifier: 1.0.0-rc.18
-        version: link:../smithers/flows/platform-node
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

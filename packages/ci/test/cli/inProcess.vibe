@@ -1,0 +1,47 @@
+/**
+ * Runs `smithers-ci` inside the test process, on the real Node host, with
+ * its console recorded. A faulty service replaces one host service for an
+ * unhappy path.
+ */
+
+import type { NodeHost } from "@smthrs/platform-node"
+import type { GeneratedFile } from "../../src/contract/Parts.ts"
+import { cli, type Parts } from "../../src/cli/Cli.vibe"
+import { layer } from "../../src/cli/main.vibe"
+
+/**
+ * Runs the program and resolves to its exit code.
+ */
+export async function inProcess(
+  args: ReadonlyArray<string>,
+  root: string,
+  chosen: Parts<NodeHost.NodeHost>,
+  sink: Console.Console,
+  faulty?: Layer.Layer<FileSystem.FileSystem, never, FileSystem.FileSystem>
+): Promise<number> {
+  const run = cli(args, root, chosen)
+  const program = (faulty === undefined ? run : Effect.provide(run, faulty))
+    |> Effect.provide(%, layer)
+    |> Effect.provideService(%, Console.Console, sink)
+  return await runPromise(program)
+}
+
+/**
+ * The real file system, except that writing a file fails as a full disk does.
+ */
+export const fullDisk = Layer.effect(FileSystem.FileSystem, effect {
+  const fs = try FileSystem.FileSystem
+  const full: FileSystem.FileSystem = {
+    ...fs,
+    writeFileString: (path: string) =>
+      Effect.fail(PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method: "writeFileString", pathOrDescriptor: path, description: "no space left on device" }))
+  }
+  return full
+})
+
+/**
+ * What the parts on `main` generate for the repository at `root`.
+ */
+export async function generated(root: string, chosen: Parts<NodeHost.NodeHost>): Promise<ReadonlyArray<GeneratedFile>> {
+  return await runPromise(Effect.provide(effect { return try chosen.files(try chosen.read(root)) }, layer))
+}

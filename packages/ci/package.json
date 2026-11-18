@@ -10,7 +10,11 @@
     "./package.json": "./package.json",
     ".": "./src/index.ts"
   },
+  "bin": {
+    "smithers-ci": "./bin/smithers-ci.mjs"
+  },
   "files": [
+    "bin/*.mjs",
     "src/**/*.ts",
     "src/**/*.vibe",
     "docs/**/*.md",
@@ -26,9 +30,11 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@effect/platform-node": "4.1.1",
     "@smthrs/flow": "1.0.0-rc.18",
     "@smthrs/model": "1.0.0-rc.18",
     "@smthrs/plan": "1.0.0-rc.18",
+    "@smthrs/platform-node": "1.0.0-rc.18",
     "effect": "4.1.1",
     "jsonc-parser": "3.3.1",
     "vibelang-runtime": "0.0.13",

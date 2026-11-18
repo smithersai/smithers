@@ -1,0 +1,64 @@
+/**
+ * The parts the `smithers-ci` tests run with: every part on `main`, and a
+ * small real replay in place of the replay part, which has not landed. It
+ * replays `git log`: each commit's normal-mode time is 100 ms per changed file
+ * against a 1 s baseline, and a subject holding `[mismatch]` reports one
+ * mismatch. It prints the request it got on standard error.
+ */
+
+import type { NodeHost } from "@smthrs/platform-node"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
+import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
+import type { ReplayCommit, ReplayReport, RunTotals } from "../../src/contract/ReplayReport.ts"
+import type { Parts } from "../../src/cli/Cli.vibe"
+import { parts as onMain } from "../../src/cli/parts.ts"
+
+effect function git(root: string, args: ReadonlyArray<string>) {
+  const spawner = try ChildProcessSpawner.ChildProcessSpawner
+  const output = spawner.string(ChildProcess.make("git", args, { cwd: root })) catch effect (error) => {
+    throw { code: "command-failed", message: `git ${args.join(" ")}: ${error.message}`, part: "replay" } satisfies Failure
+  }
+  return output.trim()
+}
+
+const totals = (wallMs: number): RunTotals => ({ ok: true, wallMs, workMs: wallMs, counts: { hit: 0, ran: 1, failed: 0, skipped: 0 } })
+
+/**
+ * Replays the newest `request.commits` commits.
+ */
+export effect function run<R>(request: ReplayRequest, _parts: ReplayParts<R>) {
+  try Console.error(`replay request: ${JSON.stringify(request)}`)
+  const log = try git(request.root, ["log", `-n${request.commits}`, "--format=%H%x09%s"])
+  const commits: Array<ReplayCommit> = []
+  for (const line of log.split("\n")) {
+    const [commit = "", subject = ""] = line.split("\t")
+    const changed = (try git(request.root, ["show", "--name-only", "--format=", commit])).split("\n").length
+    const fast = request.modes.includes("fast") ? { fast: totals(50) } : {}
+    commits.push({
+      commit,
+      changedFiles: changed,
+      baseline: totals(1000),
+      normal: totals(100 * changed),
+      mismatches: subject.includes("[mismatch]") ? [{ label: "//ci:test", mode: "normal", baseline: "fail", got: "pass" }] : [],
+      ...fast
+    })
+  }
+  const baselineWallMs = commits.reduce((sum, commit) => sum + commit.baseline.wallMs, 0)
+  const normalWallMs = commits.reduce((sum, commit) => sum + commit.normal.wallMs, 0)
+  const report: ReplayReport = {
+    version: 1,
+    repository: request.root.split("/").at(-1) ?? request.root,
+    commits,
+    baselineWallMs,
+    normalWallMs,
+    speedup: baselineWallMs / normalWallMs,
+    mismatches: commits.reduce((sum, commit) => sum + commit.mismatches.length, 0),
+    ...(request.modes.includes("fast") ? { fastWallMs: 50 * commits.length } : {})
+  }
+  return report
+}
+
+/**
+ * Every part on `main`, with this replay.
+ */
+export const parts: Parts<NodeHost.NodeHost> = { ...onMain, run }
