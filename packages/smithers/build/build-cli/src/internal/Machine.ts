@@ -75,6 +75,17 @@ export const holdingVariable = "SMTHRS_MACHINES"
 export const homeVariable = "SMTHRS_MACHINE_HOME"
 
 /**
+ * The variable a target on a machine finds the machine's temporary directory
+ * by, also when the target sets `TMPDIR` itself. What a tool keeps there for
+ * the later targets of its machine is gone with the machine, where a file
+ * under `/tmp` would still be there for the next build.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const temporaryVariable = "SMTHRS_MACHINE_TMP"
+
+/**
  * Where the machines of the workspace at `root` are kept: one directory for
  * the workspace, named by its path, outside the workspace. A tool that walks
  * up from a machine's copy so never finds a file of the workspace itself.
@@ -446,7 +457,8 @@ export const make = async (
 /**
  * What a target that runs on a machine is told in place of the host's
  * values: its home, its cache directory, its temporary directory, and where
- * git stops looking for a repository above its tree.
+ * git stops looking for a repository above its tree. The temporary directory
+ * is also named by `temporaryVariable`, which a target has no reason to set.
  *
  * @category rendering
  * @since 1.0.0
@@ -457,6 +469,7 @@ export const environment = (machine: Machine): Readonly<Record<string, string>> 
   TMPDIR: machine.tmp,
   TMP: machine.tmp,
   TEMP: machine.tmp,
+  [temporaryVariable]: machine.tmp,
   GIT_CEILING_DIRECTORIES: NodePath.dirname(machine.tree)
 })
 

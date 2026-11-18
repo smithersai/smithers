@@ -169,14 +169,23 @@ describe("the targets of one machine", () => {
       return {
         first,
         second: on("job", "grep -q built out.txt && grep -q tool ~/.tool && grep -q t \"$TMPDIR/t\"", [first]),
+        // A target that sets TMPDIR itself still finds its machine's temporary directory, by the machine's own name.
+        named: S.Shell.Test({
+          shell: "test \"$TMPDIR\" = /nowhere && grep -q t \"$SMTHRS_MACHINE_TMP/t\"",
+          env: { TMPDIR: "/nowhere" },
+          machine: "job",
+          sandbox: "none",
+          data: [S.glob("**"), first] as never
+        }),
         // Two targets of one machine that do not wait for each other still never run at once.
         busy: on("busy", "test ! -e busy.lock && : > busy.lock && sleep 0.4 && rm busy.lock"),
         also: on("busy", "test ! -e busy.lock && : > busy.lock && sleep 0.4 && rm busy.lock # also")
       }
     })
-    expect(await run(["second", "busy", "also"], untraced, 4)).toEqual({
+    expect(await run(["second", "named", "busy", "also"], untraced, 4)).toEqual({
       first: "ran",
       second: "ran",
+      named: "ran",
       busy: "ran",
       also: "ran"
     })

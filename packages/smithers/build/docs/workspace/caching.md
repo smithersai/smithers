@@ -566,10 +566,11 @@ const lint = S.Shell.Test({
 
 Targets that name the same machine run in one private copy of the workspace,
 one at a time, each after the targets it depends on. `HOME`, `XDG_CACHE_HOME`
-and `TMPDIR` name directories of that machine. No other target sees what they
-write, and they see nothing another target wrote, in the tree, the home or the
-temporary directory. Targets of different machines run at the same time under
-`--jobs`.
+and `TMPDIR` name directories of that machine, and `SMTHRS_MACHINE_TMP` names
+its temporary directory also for a target that sets `TMPDIR` itself. No other
+target sees what they write, and they see nothing another target wrote, in the
+tree, the home or the temporary directory. Targets of different machines run
+at the same time under `--jobs`.
 
 | What a machine starts with | What it holds                                                                                                             |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------- |

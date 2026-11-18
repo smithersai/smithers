@@ -406,8 +406,10 @@ describe("a target on a machine", () => {
       TMPDIR: machine.tmp,
       TMP: machine.tmp,
       TEMP: machine.tmp,
+      SMTHRS_MACHINE_TMP: machine.tmp,
       GIT_CEILING_DIRECTORIES: Path.dirname(machine.tree)
     })
+    expect(Machine.temporaryVariable).toBe("SMTHRS_MACHINE_TMP")
   })
 
   it("names the copy where its plan named the workspace, and the cache where it is", () => {
