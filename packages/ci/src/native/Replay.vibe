@@ -17,6 +17,7 @@ import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract
 import type { ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { type Mode, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
+import { noPushUrl, stepEnvironment } from "../replay/Environment.ts"
 import { type Execute, Options, Progress, settle } from "../replay/Replay.vibe"
 import {
   choose,
@@ -67,18 +68,25 @@ interface Output {
   readonly text: string
 }
 
-/** Runs a command to its end and keeps the last `limit` characters of what it printed. */
+/**
+ * Runs a command to its end, with end of file on its standard input, and keeps the last `limit` characters of what
+ * it printed. `env` is added to this process's environment, or is the whole environment when `whole` is set, as it
+ * is for what a past commit brings: its install scripts and its own `smthrs`.
+ */
 effect function exec(
   command: string,
   args: ReadonlyArray<string>,
   cwd: string,
-  env: Readonly<Record<string, string>>,
+  env: Readonly<Record<string, string | undefined>>,
   limit: number,
-  stream: "all" | "stdout" = "all"
+  stream: "all" | "stdout" = "all",
+  whole = false
 ) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
-    const handle = try spawner.spawn(ChildProcess.make(command, [...args], { cwd, env: { ...env }, extendEnv: true }))
+    const handle = try spawner.spawn(
+      ChildProcess.make(command, [...args], { cwd, env: { ...env }, extendEnv: !whole, stdin: "ignore" })
+    )
     const kept = try Ref.make("")
     const reader = fork ((stream === "all" ? handle.all : handle.stdout)
       |> Stream.decodeText(%)
@@ -138,7 +146,7 @@ export effect function install(checkout: string, workspaceFile: string): Install
     const manager = names.includes("package.json") ? managerFor(names) : undefined
     if (manager === undefined) continue
     const [command, ...args] = manager.command
-    const ran = exec(command, args, path.join(checkout, directory), {}, outputLimit)
+    const ran = exec(command, args, path.join(checkout, directory), stepEnvironment({}), outputLimit, "all", true)
       catch (): Output => ({ exitCode: 127, text: "" })
     if (ran.exitCode !== 0) return { ok: false, reason: commandFailed(manager.command, directory, ran.exitCode) }
   }
@@ -208,12 +216,13 @@ export const own = <R>(
     const commits = [...history].reverse()
 
     /**
-     * A copy of the repository for one mode. It is named as the repository is and has its remote, so what reads the
-     * copy names the repository, not the copy.
+     * A copy of the repository for one mode. It is named as the repository is and fetches from its remote, so what
+     * reads the copy names the repository, not the copy. It can push nowhere.
      */
     effect function copyOf(mode: string) {
       const copy = path.join(work, mode, path.basename(root))
-      try git(work, ["clone", "--quiet", "--shared", "--no-checkout", source, copy])
+      const noPush = ["--config", `remote.origin.pushurl=${noPushUrl}`]
+      try git(work, ["clone", "--quiet", "--shared", "--no-checkout", ...noPush, source, copy])
       if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", withoutCredentials(origin.text)])
       return copy
     }
@@ -258,7 +267,9 @@ export const own = <R>(
         "plain",
         ...jobs
       ]
-      const output = try exec(state.smthrs, args, copy, cached ? cacheEnv : {}, reasonsLimit)
+      // The cache's address is the one thing the copy's own `smthrs` gets beyond what a target gets.
+      const environment = { ...stepEnvironment({}), ...(cached ? cacheEnv : {}) }
+      const output = try exec(state.smthrs, args, copy, environment, reasonsLimit, "all", true)
       const unreadable = () =>
         failure("command-failed", `smthrs ci wrote no run record: ${output.text.slice(-outputLimit)}`)
       const text = fs.readFileString(file) catch effect () => {
@@ -273,7 +284,8 @@ export const own = <R>(
     /** The plan of the patterns in the normal copy, which fast mode's rows are measured against. */
     effect function planOf(command: string) {
       const args = ["ci", ...chosen.patterns, "--plan", "--format", "json", "--workspace", normalCopy]
-      const planned = try exec(command, args, normalCopy, cacheEnv, Number.POSITIVE_INFINITY, "stdout")
+      const environment = { ...stepEnvironment({}), ...cacheEnv }
+      const planned = try exec(command, args, normalCopy, environment, Number.POSITIVE_INFINITY, "stdout", true)
       const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
         throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
       }

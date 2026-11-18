@@ -17,8 +17,9 @@ import {
   own,
   run
 } from "../../src/native/index.ts"
+import { noPushUrl } from "../../src/replay/Environment.ts"
 import { Options, Progress } from "../../src/replay/index.ts"
-import { fakeSmthrs, makeOwn, makeOwnWith, type Own, ownFiles, smthrs } from "./own.ts"
+import { fakeSmthrs, installScript, makeOwn, makeOwnWith, type Own, ownFiles, smthrs } from "./own.ts"
 import { git, repository, temporary } from "./repo.ts"
 
 const head = (root: string): string => git(root, "rev-parse", "HEAD").trim()
@@ -199,6 +200,47 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
       /^cache=https:\/\/cache\.example\.invalid ci \/\/:c --workspace \S+ --cache-dir \.flows --results-file \S+ --ui plain --jobs 2$/
     )
     expect(said).toContain("replaying the repository's own targets (WORKSPACE.ts): //:c")
+  })
+
+  it("gives a commit's install and its own smthrs what a target gets of the environment, and no remote to push to", async () => {
+    const seen = keep(temporary("seen"))
+    const recording = fakeSmthrs(
+      [
+        `env > ${seen}/smthrs`,
+        `git remote get-url --push origin > ${seen}/push`,
+        `git remote get-url origin > ${seen}/fetch`,
+        `exec $real "$@"`
+      ].join("\n")
+    )
+    const install = `${installScript(recording)}writeFileSync(${
+      JSON.stringify(`${seen}/install`)
+    }, Object.keys(process.env).join("\\n"))\n`
+    const root = keep(makeOwnWith(recording, { "tools/install.mjs": install }))
+    git(root, "remote", "add", "origin", "https://example.invalid/acme/own.git")
+    const planted = {
+      AI_GATEWAY_API_KEY: "dummy-key-123",
+      SMITHERS_CACHE_TOKEN: "dummy-tok-456",
+      TOOL_HOME: "/opt/tool"
+    }
+    Object.assign(process.env, planted)
+    try {
+      const report = await onNode(
+        own(request(root, { cache: "https://cache.example.invalid" }), partsFor("none"), "WORKSPACE.ts")
+      )
+      expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 3, failed: 0, skipped: 0 })
+    } finally {
+      for (const name of Object.keys(planted)) delete process.env[name]
+    }
+    const text = (name: string): string => execFileSync("cat", [`${seen}/${name}`], { encoding: "utf8" })
+    for (const name of Object.keys(planted)) {
+      expect(text("install").split("\n")).not.toContain(name)
+      expect(text("smthrs")).not.toContain(`${name}=`)
+    }
+    expect(text("install").split("\n")).toContain("PATH")
+    // The last run was normal mode's, which is told where the shared cache is.
+    expect(text("smthrs")).toContain("SMITHERS_CACHE_URL=https://cache.example.invalid\n")
+    expect(text("fetch").trim()).toBe("https://example.invalid/acme/own.git")
+    expect(text("push").trim()).toBe(noPushUrl)
   })
 
   it("names the repository by its remote, and runs fast mode with the default settings", async () => {

@@ -207,7 +207,8 @@ export const hostActions: ReadonlyArray<string> = [
 /**
  * The `Unsupported.feature` of a workflow that runs only for some branches
  * or paths. The replay runs its jobs for every change, which is more often
- * than the CI does and never less.
+ * than the CI does and never less. A push limited to tags is not this: see
+ * `releaseTrigger`.
  *
  * @category constants
  * @since 0.1.0
@@ -215,10 +216,42 @@ export const hostActions: ReadonlyArray<string> = [
 export const triggerFilter = "trigger-filter"
 
 /**
+ * The `Unsupported.feature` of a workflow whose only change trigger is a
+ * push limited to tags. It runs for a release, never for a change, so its
+ * jobs are never run.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const releaseTrigger = "release-trigger"
+
+/**
+ * The `Unsupported.feature` of a job whose workflow or own `permissions`
+ * grant a `write` scope (`id-token: write` and `write-all` included). Such a
+ * job is trusted to change something outside its checkout, so it is never
+ * run.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const writePermission = "write-permission"
+
+/**
+ * The feature of the blocker `blockers` adds for a step that receives a
+ * secret. Without the secret the step is not what its CI runs, and a tool
+ * that publishes or deploys falls back to the credentials of whoever runs
+ * it.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const secret = "secret"
+
+/**
  * The only features a job may have and still be run. Every other feature
  * means the job's commands, run on this machine, are not what its CI runs:
  * a condition nobody evaluated, a variable only the CI host sets, a secret,
- * a service container, an action with no command.
+ * a service container, an action with no command, a release.
  *
  * @category constants
  * @since 0.1.0
@@ -227,21 +260,28 @@ export const harmless: ReadonlyArray<string> = [hostAction, triggerFilter]
 
 /**
  * The reasons a job cannot be reproduced on this machine: its unsupported
- * features that are not `harmless`. A job with one is never run, never
- * turned into a target, and is listed in the report with these reasons.
+ * features that are not `harmless`, and one `secret` entry for each step
+ * that receives a secret. A job with one is never run, never turned into a
+ * target, and is listed in the report with these reasons.
  *
  * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
-export const blockers = (job: Job): ReadonlyArray<Unsupported> =>
-  job.unsupported.filter((entry) => !harmless.includes(entry.feature))
+export const blockers = (job: Job): ReadonlyArray<Unsupported> => [
+  ...job.unsupported.filter((entry) => !harmless.includes(entry.feature)),
+  ...job.steps.flatMap((step) =>
+    step.secrets.length === 0
+      ? []
+      : [{ feature: secret, detail: `${step.id} receives ${step.secrets.join(", ")}` }]
+  )
+]
 
 /**
  * Whether the baseline and the generator run a job: it has a step and no
- * blocker. Running a job with a blocker would report a verdict its CI never
- * gives, and may do what its CI guards against, such as a step meant only
- * for a release.
+ * blocker, so no step of it receives a secret. Running a job with a blocker
+ * would report a verdict its CI never gives, and may do what its CI guards
+ * against, such as a step meant only for a release.
  *
  * @throws {never}
  * @category accessors

@@ -10,7 +10,16 @@
  */
 
 import { parseDocument } from "yaml"
-import { expand, hostAction, hostActions, type Toolchain } from "../contract/Inventory.ts"
+import {
+  changeTriggers,
+  expand,
+  hostAction,
+  hostActions,
+  releaseTrigger,
+  type Toolchain,
+  triggerFilter,
+  writePermission
+} from "../contract/Inventory.ts"
 import { addStep, type Draft, draft, fileProblem, note, type Parsed } from "./Draft.ts"
 import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
 import { isLiteralSecret, isSecretName } from "./Secrets.ts"
@@ -159,17 +168,38 @@ const jobFeatures: ReadonlyMap<string, string> = new Map([
   ["continue-on-error", "may fail without failing the workflow"]
 ])
 
-const readTriggers = (
-  on: unknown
-): { readonly triggers: ReadonlyArray<string>; readonly filters: ReadonlyArray<string> } => {
-  if (!isRecord(on)) return { triggers: asStrings(on) ?? [], filters: [] }
+interface Triggers {
+  readonly triggers: ReadonlyArray<string>
+  readonly filters: ReadonlyArray<string>
+  /** Set when the only change that starts the workflow is a push of a tag. */
+  readonly release: string | undefined
+}
+
+const readTriggers = (on: unknown): Triggers => {
+  if (!isRecord(on)) return { triggers: asStrings(on) ?? [], filters: [], release: undefined }
   const filters = Object.entries(on).flatMap(([event, config]) => {
     const keys = isRecord(config)
       ? Object.keys(config).filter((key) => /^(?:(?:branches|tags|paths)(?:-ignore)?|types|workflows)$/.test(key))
       : []
     return keys.length === 0 ? [] : [`${event} runs only for matching ${keys.join(", ")}`]
   })
-  return { triggers: Object.keys(on), filters }
+  // GitHub runs a push with `tags` and no `branches` for tags only.
+  const push = on["push"]
+  const tagsOnly = isRecord(push) && push["tags"] !== undefined
+    && push["branches"] === undefined && push["branches-ignore"] === undefined
+  const others = Object.keys(on).filter((event) => event !== "push" && changeTriggers.includes(event))
+  return {
+    triggers: Object.keys(on),
+    filters,
+    release: tagsOnly && others.length === 0 ? "push runs only for tags" : undefined
+  }
+}
+
+/** The scopes a `permissions` value lets a job write, such as `contents` or `id-token`. */
+const writeScopes = (permissions: unknown): ReadonlyArray<string> => {
+  if (permissions === "write-all") return ["every scope"]
+  if (!isRecord(permissions)) return []
+  return Object.entries(permissions).flatMap(([scope, level]) => level === "write" ? [scope] : [])
 }
 
 interface RunDefaults {
@@ -293,6 +323,9 @@ interface WorkflowContext {
   readonly base: string
   readonly triggers: ReadonlyArray<string>
   readonly filters: ReadonlyArray<string>
+  readonly release: string | undefined
+  /** The scopes the workflow's `permissions` let every job write. */
+  readonly writes: ReadonlyArray<string>
   readonly scope: Scope
   readonly defaults: RunDefaults
   readonly toolchains: Array<Toolchain>
@@ -300,7 +333,11 @@ interface WorkflowContext {
 
 const readJobBody = (workflow: WorkflowContext, job: Draft, raw: Record<string, unknown>, matrix: Matrix): void => {
   const { name } = job
-  for (const filter of workflow.filters) note(job, "trigger-filter", filter)
+  for (const filter of workflow.filters) note(job, triggerFilter, filter)
+  if (workflow.release !== undefined) note(job, releaseTrigger, workflow.release)
+  // A job's own `permissions` replace the workflow's.
+  const writes = raw["permissions"] === undefined ? workflow.writes : writeScopes(raw["permissions"])
+  if (writes.length > 0) note(job, writePermission, `${name} may write ${writes.join(", ")}`)
   if (matrix.problem !== undefined) note(job, "matrix", `${name}: ${matrix.problem}`)
   if (raw["strategy"] !== undefined && !isRecord(raw["strategy"])) {
     note(job, "matrix", `${name}: its strategy is computed when the workflow runs`)
@@ -403,7 +440,7 @@ export const readWorkflow = (file: string, text: string): Parsed => {
   if (!isRecord(workflow) || !isRecord(workflow["jobs"])) {
     return fileProblem(file, "malformed-file", "it has no jobs mapping")
   }
-  const { filters, triggers } = readTriggers(workflow["on"])
+  const { filters, release, triggers } = readTriggers(workflow["on"])
   const toolchains: Array<Toolchain> = []
   const holder = draft({ id: base, source, file, name: base })
   const empty: Scope = { env: new Map(), secretEnv: new Map(), secrets: [], matrix: noMatrix }
@@ -412,6 +449,8 @@ export const readWorkflow = (file: string, text: string): Parsed => {
     base,
     triggers,
     filters,
+    release,
+    writes: writeScopes(workflow["permissions"]),
     scope: withEnv(empty, workflow["env"], holder, "the workflow", false),
     defaults: readDefaults(workflow, { shell: undefined, cwd: undefined }),
     toolchains

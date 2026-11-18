@@ -611,6 +611,35 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     }
   })
 
+  it("never runs a job with a step that receives a secret, and lists it with the secret's name", () => {
+    const plain = inventory.jobs[4]!
+    const withSecret = {
+      ...plain,
+      id: "ci.yml:publish",
+      steps: [
+        ...plain.steps,
+        { id: "ci.yml:publish:2", command: "npm publish", cwd: "", env: {}, secrets: ["NPM_TOKEN", "OTHER"] }
+      ]
+    }
+    expect(Inventory.secret).toBe("secret")
+    expect(Inventory.isRunnable(plain)).toBe(true)
+    expect(Inventory.isRunnable(withSecret)).toBe(false)
+    expect(Inventory.blockers(withSecret)).toEqual([
+      { feature: "secret", detail: "ci.yml:publish:2 receives NPM_TOKEN, OTHER" }
+    ])
+    const both = decode({ ...inventory, jobs: [plain, withSecret] })
+    expect(Inventory.ci(both).jobs.map((entry) => entry.id)).toEqual(["ci.yml:plain"])
+    expect(Inventory.notReplayed(both)).toEqual([{ job: "ci.yml:publish", reasons: Inventory.blockers(withSecret) }])
+  })
+
+  it("never runs a release job or a job that may write outside its checkout", () => {
+    expect([Inventory.releaseTrigger, Inventory.writePermission]).toEqual(["release-trigger", "write-permission"])
+    for (const feature of [Inventory.releaseTrigger, Inventory.writePermission]) {
+      expect(Inventory.harmless).not.toContain(feature)
+      expect(Inventory.isRunnable({ ...inventory.jobs[4]!, unsupported: [{ feature, detail: "" }] })).toBe(false)
+    }
+  })
+
   it("never counts the workflow it generated as the repository's CI", () => {
     const own = { ...job("smithers-ci.yml:ci", []), file: Inventory.generatedWorkflow }
     const both = decode({ ...inventory, jobs: [own, inventory.jobs[4]!] })

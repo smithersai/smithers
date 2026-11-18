@@ -100,6 +100,49 @@ jobs: { test: { steps: [] } }
     ])
   })
 
+  it("reports a workflow that only a pushed tag starts as a release, not as a filter", () => {
+    const featuresFor = (on: string): ReadonlyArray<string> =>
+      features(jobOf(`on:\n${on}\njobs: { test: { steps: [] } }`))
+    const release = jobOf(`
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+jobs: { test: { steps: [] } }
+`)
+    expect(release.unsupported).toEqual([
+      { feature: "trigger-filter", detail: `${file}: push runs only for matching tags` },
+      { feature: "release-trigger", detail: `${file}: push runs only for tags` }
+    ])
+    // A push that also names branches, or a workflow a pull request also starts, runs for a change.
+    expect(featuresFor("  push: { branches: [main], tags: ['v*'] }")).toEqual(["trigger-filter"])
+    expect(featuresFor("  push: { branches-ignore: [wip], tags: ['v*'] }")).toEqual(["trigger-filter"])
+    expect(featuresFor("  push: { tags: ['v*'] }\n  pull_request:")).toEqual(["trigger-filter"])
+    expect(featuresFor("  push: { tags: ['v*'] }\n  merge_group:")).toEqual(["trigger-filter"])
+    expect(featuresFor("  push: { tags-ignore: ['v*'] }")).toEqual(["trigger-filter"])
+    expect(featuresFor("  push: { paths: [src/**] }")).toEqual(["trigger-filter"])
+    expect(featuresFor("  push:")).toEqual([])
+  })
+
+  it("reports a job its workflow or its own permissions let write", () => {
+    const written = (permissions: string, own = ""): ReadonlyArray<string> =>
+      jobOf(`on: push\n${permissions}\njobs: { test: { ${own}steps: [] } }`).unsupported
+        .filter((entry) => entry.feature === "write-permission").map((entry) => entry.detail)
+    expect(written("permissions: { contents: write, id-token: write, issues: read }")).toEqual([
+      `${file}: test may write contents, id-token`
+    ])
+    expect(written("permissions: write-all")).toEqual([`${file}: test may write every scope`])
+    expect(written("permissions: read-all")).toEqual([])
+    expect(written("permissions: { contents: read }")).toEqual([])
+    expect(written("")).toEqual([])
+    // A job's own permissions replace its workflow's.
+    expect(written("permissions: { contents: write }", "permissions: { contents: read }, ")).toEqual([])
+    expect(written("permissions: { contents: read }", "permissions: { packages: write }, ")).toEqual([
+      `${file}: test may write packages`
+    ])
+    expect(written("permissions: { contents: write }", "permissions: {}, ")).toEqual([])
+  })
+
   it("reports what a job needs that a command cannot reproduce", () => {
     const job = jobOf(`
 on: push

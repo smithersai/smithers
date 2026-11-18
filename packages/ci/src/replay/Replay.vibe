@@ -17,6 +17,7 @@ import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
 import { replaced } from "../native/Detect.vibe"
 import { overwriteRefusal, refusal as ownWorkspace } from "../native/Workspace.ts"
+import { noPushUrl, stepEnvironment } from "./Environment.ts"
 import {
   addRerun,
   blocked,
@@ -114,17 +115,24 @@ const noStart: Output = { exitCode: 127, text: "" }
 
 const describe = (cause: { readonly message: string }): string => cause.message
 
+/**
+ * Runs a command to its end, with end of file on its standard input. `env` is added to this process's environment,
+ * or is the whole environment when `whole` is set, as it is for a CI step.
+ */
 effect function exec(
   command: string,
   args: ReadonlyArray<string>,
   cwd: string,
-  env: Readonly<Record<string, string>>,
+  env: Readonly<Record<string, string | undefined>>,
   limit: number,
-  output: (handle: ChildProcessHandle) => Stream.Stream<Uint8Array, PlatformError.PlatformError> = (handle) => handle.all
+  output: (handle: ChildProcessHandle) => Stream.Stream<Uint8Array, PlatformError.PlatformError> = (handle) => handle.all,
+  whole = false
 ) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
-    const handle = try spawner.spawn(ChildProcess.make(command, [...args], { cwd, env: { ...env }, extendEnv: true }))
+    const handle = try spawner.spawn(
+      ChildProcess.make(command, [...args], { cwd, env: { ...env }, extendEnv: !whole, stdin: "ignore" })
+    )
     const kept = try Ref.make("")
     const reader = fork (output(handle)
       |> Stream.decodeText(%)
@@ -235,11 +243,17 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // A copy has the repository's directory name and remote, so a reader names it as it does in place.
     const origin = try exec("git", ["config", "--get", "remote.origin.url"], root, {}, outputLimit, (handle) => handle.stdout)
 
-    effect function copyAt(name: string, commit: string) {
-      const copy = path.join(work, name, path.basename(root))
-      try git(work, ["clone", "--quiet", "--shared", "--no-checkout", source, copy])
+    /** A checkout of `commit` at `copy`. It fetches from the repository's remote and can push nowhere. */
+    effect function cloneAt(copy: string, commit: string) {
+      const noPush = ["--config", `remote.origin.pushurl=${noPushUrl}`]
+      try git(work, ["clone", "--quiet", "--shared", "--no-checkout", ...noPush, source, copy])
       if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", withoutCredentials(origin.text)])
       try checkout(copy, commit)
+    }
+
+    effect function copyAt(name: string, commit: string) {
+      const copy = path.join(work, name, path.basename(root))
+      try cloneAt(copy, commit)
       return copy
     }
 
@@ -328,8 +342,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return try scoped(effect {
         const directory = try orFail(fs.makeTempDirectoryScoped({ directory: work }), "could not make a directory")
         const copy = path.join(directory, "copy")
-        try git(work, ["clone", "--quiet", "--shared", "--no-checkout", source, copy])
-        try checkout(copy, commit)
+        try cloneAt(copy, commit)
         try options.prepare(copy)
         const results: Array<TargetResult> = []
         let failed: string | undefined = undefined
@@ -340,7 +353,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           }
           const start = try Clock.currentTimeMillis
           const argv = [...shell.slice(1), step.command]
-          const output = exec(shell[0], argv, path.join(copy, step.cwd), step.env, outputLimit) catch () => noStart
+          const environment = stepEnvironment(step.env)
+          const output = exec(shell[0], argv, path.join(copy, step.cwd), environment, outputLimit, undefined, true)
+            catch () => noStart
           const durationMs = (try Clock.currentTimeMillis) - start
           const passed = output.exitCode === 0
           if (step.label !== undefined) {

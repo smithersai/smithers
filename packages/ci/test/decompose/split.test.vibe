@@ -106,7 +106,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       const before = ci([
         step("ci.yml:test:1", "pnpm install --frozen-lockfile"),
         step("ci.yml:test:3", "node scripts/check.mjs"),
-        step("ci.yml:test:2", "pnpm -r run test", { name: "Test", env: { CI: "true" }, secrets: ["TOKEN"] })
+        step("ci.yml:test:2", "pnpm -r run test", { name: "Test", env: { CI: "true" } })
       ])
       const after = try split(root, before)
       const decoded = try Schema.decodeUnknownEffect(Inventory)(after)
@@ -130,7 +130,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
           command: "pnpm --filter=ui --filter=web run test",
           cwd: "",
           env: { CI: "true" },
-          secrets: ["TOKEN"],
+          secrets: [],
           inputs: [...pnpmOutside, "packages/ui/**", "packages/web/**"].sort(),
           from: "ci.yml:test:2"
         })
