@@ -29,11 +29,17 @@
  * @since 1.0.0
  */
 
+import * as Data from "effect/Data"
 import { createHash, randomBytes } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import { byCodeUnit } from "./Text.ts"
+
+/** A tree too deep or too large to measure. */
+class InstalledTreeRefused extends Data.TaggedError("smithers-build/InstalledTreeRefused")<{
+  readonly message: string
+}> {}
 
 /** The format tag a saved file carries; any other tag is ignored. */
 const format = "smthrs-installed-trees/1"
@@ -297,9 +303,15 @@ const list = (
 ): ReadonlyArray<Entry> => {
   const entries: Array<Entry> = []
   const visit = (absolute: string, relative: string, depth: number): void => {
-    if (depth > limits.depth) throw new Error(`installed tree is deeper than ${limits.depth} directories: ${absolute}`)
+    if (depth > limits.depth) {
+      throw new InstalledTreeRefused({
+        message: `installed tree is deeper than ${limits.depth} directories: ${absolute}`
+      })
+    }
     budget.remaining -= 1
-    if (budget.remaining < 0) throw new Error(`installed tree holds more than ${limits.entries} entries`)
+    if (budget.remaining < 0) {
+      throw new InstalledTreeRefused({ message: `installed tree holds more than ${limits.entries} entries` })
+    }
     const stats = io.lstat(absolute)
     if (stats.isSymbolicLink()) {
       entries.push({ path: relative, kind: "link", stats, target: io.readlink(absolute) })

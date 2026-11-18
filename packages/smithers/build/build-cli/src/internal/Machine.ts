@@ -12,6 +12,7 @@
  * @since 1.0.0
  */
 
+import * as Data from "effect/Data"
 import { createHash } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
@@ -140,6 +141,12 @@ export const named = (kept: string, root: string, name: string): Machine => {
     tmp: NodePath.join(directory, "tmp")
   }
 }
+
+/** A path a machine does not have, with the code a missing file carries. */
+class MachinePathMissing extends Data.TaggedError("smithers-build/MachinePathMissing")<{
+  readonly message: string
+  readonly code: "ENOENT"
+}> {}
 
 const under = (path: string, directory: string): boolean => path === directory || path.startsWith(`${directory}/`)
 
@@ -298,8 +305,8 @@ export const unmade = (
     if (part !== "w" || rest.length > 1 || (rest.length === 1 && rest[0] !== NodePath.basename(root))) return undefined
     return rest.length === 0 ? { names: [NodePath.basename(root)] } : { at: root }
   }
-  const missing = (path: string): Error =>
-    Object.assign(new Error(`ENOENT: no such file or directory, lstat '${path}'`), { code: "ENOENT" })
+  const missing = (path: string): MachinePathMissing =>
+    new MachinePathMissing({ message: `ENOENT: no such file or directory, lstat '${path}'`, code: "ENOENT" })
   return {
     measured: (path) => {
       const found = find(path)

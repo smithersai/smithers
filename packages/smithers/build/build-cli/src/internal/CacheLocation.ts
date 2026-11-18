@@ -19,6 +19,7 @@
  */
 
 import * as Config from "@smthrs/targets/Config"
+import * as Data from "effect/Data"
 import { createHash } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as NodeOs from "node:os"
@@ -170,6 +171,11 @@ const within = (root: string, candidate: string): string | undefined => {
     : relative
 }
 
+/** A cache directory that clearing the cache would take the checkout with. */
+class CacheDirectoryRefused extends Data.TaggedError("smithers-build/CacheDirectoryRefused")<{
+  readonly message: string
+}> {}
+
 const depth = (path: string): number => path.split(NodePath.sep).filter((segment) => segment !== "").length
 
 /**
@@ -184,7 +190,9 @@ const encode = (root: string, target: string): string => {
   const inside = within(root, target) ?? within(real, resolved)
   if (inside !== undefined) return Config.normalizeDeclaredCacheDirectory(inside.split(NodePath.sep).join("/"))
   if (within(target, root) !== undefined || within(resolved, real) !== undefined) {
-    throw new Error(`the cache directory ${target} holds the workspace; name a directory beside or inside it`)
+    throw new CacheDirectoryRefused({
+      message: `the cache directory ${target} holds the workspace; name a directory beside or inside it`
+    })
   }
   const climb = Math.max(minimumClimb, depth(root), depth(real))
   const tail = NodePath.relative(NodePath.parse(real).root, target).split(NodePath.sep)
