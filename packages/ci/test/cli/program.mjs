@@ -4,4 +4,4 @@ process.env.VIBELANG_PROJECT = new URL("../../tsconfig.test.json", import.meta.u
 await import("vibelang/register")
 const { run } = await import("../../src/cli/main.vibe")
 const { parts } = await import("./parts.vibe")
-process.exitCode = await run(process.argv.slice(2), process.cwd(), parts)
+process.exitCode = await run(process.argv.slice(2), process.cwd(), process.env, parts)

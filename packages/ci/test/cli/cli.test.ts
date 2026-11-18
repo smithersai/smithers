@@ -1,7 +1,8 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { afterAll, describe, expect, it } from "vitest"
-import { layer, main } from "../../src/cli/main.vibe"
+import { layer } from "../../src/cli/Host.vibe"
+import { main } from "../../src/cli/main.vibe"
 import { parts as onMain } from "../../src/cli/parts.ts"
 import { exitCodes, failureExitCodes, flags } from "../../src/contract/Command.ts"
 import { Inventory } from "../../src/contract/Inventory.ts"
@@ -33,12 +34,16 @@ const keep = (path: string): string => {
 }
 afterAll(() => made.forEach(remove))
 
+/** No judge key and an empty home: no signed-in model either, so a judgment fails `model-unavailable`. */
+const environment = { HOME: keep(temporary("home")), PATH: process.env["PATH"] }
+const host = layer(environment)
+
 const repo = (subjects?: ReadonlyArray<string>): string => keep(repository(subjects))
 const scratch = (): string => keep(temporary("scratch"))
 
 const runIn = async (args: ReadonlyArray<string>, root: string, chosen: Chosen, faulty?: typeof fullDisk) => {
   const sink = recorder()
-  const code = await inProcess(args, root, chosen, sink.service as never, faulty)
+  const code = await inProcess(args, root, chosen, sink.service as never, environment, faulty)
   return { code, stdout: sink.stdout(), stderr: sink.stderr() } satisfies Outcome
 }
 
@@ -141,7 +146,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
   describe.concurrent("the default command", () => {
     it("prints the report and leaves the repository byte-identical", async () => {
       const root = repo()
-      const files = await generated(root, parts)
+      const files = await generated(root, parts, environment)
       const before = snapshot(root)
       const outcome = await exec([], root)
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
@@ -257,7 +262,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
   describe.concurrent("apply", () => {
     it("writes exactly the generated files", async () => {
       const root = repo()
-      const files = await generated(root, parts)
+      const files = await generated(root, parts, environment)
       const before = snapshot(root)
       const outcome = await exec(["apply", "--cache", "https://cache.example.invalid"], root)
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
@@ -286,32 +291,38 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     const inventory = await spawn(bin, ["inventory", "--json"], root)
     expect(inventory.code, inventory.stderr).toBe(exitCodes.ok)
     expect(decode(Inventory, inventory.stdout).jobs).toHaveLength(2)
-    const files = await generated(root, onMain)
+    const files = await generated(root, onMain, environment)
     const before = snapshot(root)
     const apply = await spawn(bin, ["apply"], root)
     expect(apply.code, apply.stderr).toBe(exitCodes.ok)
     expect(changed(before, snapshot(root))).toEqual(pathsOf(files))
   })
 
-  it("exits 3 naming the replay part, which has not landed, and writes nothing", async () => {
+  it("replays with main's replay part and writes nothing to the repository", async () => {
     const root = repo()
     const before = snapshot(root)
-    for (const args of [[], ["replay"]]) {
-      expect(await spawn(bin, args, root)).toEqual({
-        code: exitCodes.unsupported,
-        stdout: "",
-        stderr: "smithers-ci: replay: the replay part is not built yet\n"
-      })
+    const outcomes = [
+      await spawn(bin, ["replay", "--commits", "1", "--json"], root),
+      await spawn(bin, ["--commits", "1", "--json"], root)
+    ]
+    for (const outcome of outcomes) {
+      if (outcome.code === exitCodes.ok || outcome.code === exitCodes.mismatch) {
+        expect(decode(ReplayReport, outcome.stdout).commits).toHaveLength(1)
+      } else {
+        expect([exitCodes.unsupported, exitCodes.failed]).toContain(outcome.code)
+        expect(outcome.stdout).toBe("")
+        expect(outcome.stderr).toMatch(/^smithers-ci: replay: [^\n]+\n$/)
+      }
     }
-    expect(await main(["replay"], root)).toBe(exitCodes.unsupported)
+    expect(await main(["replay", "--commits", "1"], root, environment)).toBe(outcomes[0]!.code)
     expect(changed(before, snapshot(root))).toEqual([])
   })
 
   it("provides the select part's services, with no judge configured", async () => {
     const root = repo()
     const record = { ok: true, counts: { hit: 0, ran: 0, failed: 0, skipped: 0 }, results: [], commit: head(root) }
-    expect(await Effect.runPromise(Effect.provide(onMain.rows(root, record), layer))).toEqual([])
-    expect(await Effect.runPromise(Effect.provide(onMain.score([]), layer))).toEqual([])
+    expect(await Effect.runPromise(Effect.provide(onMain.rows(root, record), host))).toEqual([])
+    expect(await Effect.runPromise(Effect.provide(onMain.score([]), host))).toEqual([])
     const features = {
       extensions: [".zig"],
       fileChanges: { d3: 1, d14: 1, d56: 1 },
@@ -321,7 +332,7 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
       graphDistance: 1
     }
     const row = { commit: "c", target: "//ci:test", features, attempts: [true], failed: false, flaky: false }
-    const failure = await Effect.runPromise(Effect.provide(Effect.flip(onMain.score([row])), layer))
+    const failure = await Effect.runPromise(Effect.provide(Effect.flip(onMain.score([row])), host))
     expect([failure.code, failure.part]).toEqual(["model-unavailable", "select"])
   })
 })

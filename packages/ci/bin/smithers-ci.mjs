@@ -7,4 +7,4 @@ const checkout = existsSync(new URL("../../../pnpm-workspace.yaml", import.meta.
 if (checkout) await import("vibelang/register")
 const entry = new URL(checkout ? "../src/cli/main.vibe" : "../dist/esm/cli/main.js", import.meta.url)
 const { main } = await import(entry.href)
-process.exitCode = await main(process.argv.slice(2), process.cwd())
+process.exitCode = await main(process.argv.slice(2), process.cwd(), process.env)

@@ -207,8 +207,8 @@ effect function write(path: string, content: string) {
 }
 
 /**
- * The command tree. Each handler returns the exit code it wants; a part's
- * failure leaves through the error channel.
+ * The command tree. A handler that finishes sets its exit code in `status`;
+ * a part's failure leaves through the error channel.
  */
 function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
   const settle = (code: number) => Ref.set(status, code)

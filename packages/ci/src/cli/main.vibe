@@ -5,26 +5,24 @@
  */
 
 import { cli, type Parts } from "./Cli.vibe"
-import { type Host, layer } from "./Host.vibe"
+import { type Environment, type Host, layer } from "./Host.vibe"
 import { parts } from "./parts.ts"
 
 /**
- * The host the program provides to itself and to every part.
- *
- * @category layers
- * @since 0.1.0
- */
-export { layer }
-
-/**
  * Runs the program with `args` in the repository at `root` over the given
- * parts, and resolves to the exit code.
+ * parts, and resolves to the exit code. `environment` chooses fast mode's
+ * judge.
  *
  * @category running
  * @since 0.1.0
  */
-export async function run(args: ReadonlyArray<string>, root: string, chosen: Parts<Host>): Promise<number> {
-  return await runPromise(Effect.provide(cli(args, root, chosen), layer))
+export async function run(
+  args: ReadonlyArray<string>,
+  root: string,
+  environment: Environment,
+  chosen: Parts<Host>
+): Promise<number> {
+  return await runPromise(Effect.provide(cli(args, root, chosen), layer(environment)))
 }
 
 /**
@@ -33,6 +31,6 @@ export async function run(args: ReadonlyArray<string>, root: string, chosen: Par
  * @category running
  * @since 0.1.0
  */
-export async function main(args: ReadonlyArray<string>, root: string): Promise<number> {
-  return await run(args, root, parts)
+export async function main(args: ReadonlyArray<string>, root: string, environment: Environment): Promise<number> {
+  return await run(args, root, environment, parts)
 }
