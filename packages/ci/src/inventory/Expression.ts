@@ -510,6 +510,28 @@ interface Each {
   readonly items: ReadonlyArray<Value>
 }
 
+/**
+ * What {@link finish} gives: the value, or why there is none.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Finished =
+  | { readonly kind: "ok"; readonly value: Value }
+  | { readonly kind: "problem"; readonly why: string }
+
+/** The result of `work`, or why it stopped. */
+const stopped = <A>(work: () => A): A | Exclude<Evaluated, { readonly kind: "ok" }> => {
+  try {
+    return work()
+  } catch (stop) {
+    // Anything else thrown here is the stack running out on an expression nested thousands deep.
+    return stop instanceof Stop
+      ? stop.result as Exclude<Evaluated, { readonly kind: "ok" }>
+      : { kind: "problem", why: "it nests too deep to read" }
+  }
+}
+
 const evaluateNode = (node: Node, scope: Scope): Residual => {
   const settle = (found: Context | Each, what: string): Residual => {
     if (found.kind === "value") return literal(found.value)
@@ -594,14 +616,54 @@ const evaluateNode = (node: Node, scope: Scope): Residual => {
  * @since 0.1.0
  * @throws {never}
  */
-export const evaluate = (text: string, scope: Scope): Evaluated => {
-  try {
-    return { kind: "ok", residual: evaluateNode(parse(text), scope) }
-  } catch (stop) {
-    // Anything else thrown here is the stack running out on an expression nested thousands deep.
-    return stop instanceof Stop ? stop.result : { kind: "problem", why: "it nests too deep to read" }
-  }
+export const evaluate = (text: string, scope: Scope): Evaluated =>
+  stopped(() => ({
+    kind: "ok",
+    residual: evaluateNode(parse(text), scope)
+  }))
+
+/**
+ * The variables an expression still to finish reads, once for each place it
+ * reads one.
+ *
+ * @category evaluation
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const variablesOf = (node: Residual): ReadonlyArray<Variable> => {
+  if (node.kind === "variable") return [node.variable]
+  if (node.kind === "not") return variablesOf(node.operand)
+  if (node.kind === "binary") return [...variablesOf(node.left), ...variablesOf(node.right)]
+  return node.kind === "call" ? node.args.flatMap(variablesOf) : []
 }
+
+const valueOf = (node: Residual, known: (found: Variable) => Value): Value => {
+  const of = (operand: Residual): Value => valueOf(operand, known)
+  if (node.kind === "literal") return node.value
+  if (node.kind === "variable") return known(node.variable)
+  if (node.kind === "not") return !truthy(of(node.operand))
+  if (node.kind === "call") {
+    const [, , apply] = functions.get(node.name) as readonly [number, number, Apply]
+    return apply(node.args.map(of))
+  }
+  const left = of(node.left)
+  const { operator } = node
+  if (operator !== "&&" && operator !== "||") return compare(operator, left, of(node.right))
+  return truthy(left) === (operator === "&&") ? of(node.right) : left
+}
+
+/**
+ * Finishes an expression once `known` gives every variable it reads, by the
+ * same rules as {@link evaluate}: a matrix value is known for one variant,
+ * so an expression over the matrix has one answer per variant.
+ *
+ * @category evaluation
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const finish = (node: Residual, known: (found: Variable) => Value): Finished =>
+  // A value is all these functions read, so what stops them is always a problem.
+  stopped(() => ({ kind: "ok", value: valueOf(node, known) })) as Finished
 
 /**
  * One piece of text with expressions in it: text, or an expression still to

@@ -256,15 +256,59 @@ jobs:
         run: echo numeric
 `)
     const job = jobOf(repo, "ci.yml:test")
-    // A number in a matrix is only known here as text, so comparing it is refused.
-    expect(details(job)).toEqual([
-      "test step 3: a comparison decided while the job runs is between values that are not both text"
-    ])
+    // A number in a matrix is compared as a number, for each variant.
+    expect(details(job)).toEqual([])
     expect(outputs(runJob(repo, job, { lane: "core", shard: "1" }))).toEqual([
       "",
-      "smithers-ci: not run, its condition is false"
+      "smithers-ci: not run, its condition is false",
+      "numeric"
     ])
-    expect(outputs(runJob(repo, job, { lane: "voice", shard: "1" }))).toEqual(["", "only --filter=voice 1/2"])
+    expect(outputs(runJob(repo, job, { lane: "voice", shard: "1" }))).toEqual([
+      "",
+      "only --filter=voice 1/2",
+      "numeric"
+    ])
+  })
+
+  // spf13/cobra's test job: the value depends on two matrix keys, and one of them is ordered as a number.
+  it("works out a job's env value with && and || for each matrix variant", () => {
+    const repo = withWorkflow(`
+on: pull_request
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [ubuntu, macOS]
+        go: [17, 24]
+    env:
+      FLAGS: \${{ matrix.platform == 'macOS' && matrix.go < 24 && '-external' || '' }}
+    steps:
+      - run: echo "[$FLAGS]"
+`)
+    const job = jobOf(repo, "ci.yml:test")
+    expect(details(job)).toEqual([])
+    const flags = (platform: string, go: string) => outputs(runJob(repo, job, { platform, go }))
+    expect(flags("macOS", "17")).toEqual(["[-external]"])
+    expect(flags("macOS", "24")).toEqual(["[]"])
+    expect(flags("ubuntu", "17")).toEqual(["[]"])
+  })
+
+  it("refuses a comparison of a value only the running job knows", () => {
+    const repo = withWorkflow(`
+on: pull_request
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - id: mark
+        run: echo "n=1" >> "$GITHUB_OUTPUT"
+      - if: steps.mark.outputs.n < 2
+        run: echo reached
+`)
+    expect(details(jobOf(repo, "ci.yml:test"))).toEqual([
+      "test step 2: < orders values decided while the job runs, which a shell does not do as GitHub does"
+    ])
   })
 
   // "hashFiles": the SHA-256 of the files' SHA-256 hashes.

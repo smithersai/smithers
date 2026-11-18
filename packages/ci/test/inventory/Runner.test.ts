@@ -1097,6 +1097,80 @@ describe("write", () => {
     })
   })
 
+  describe("an expression over the matrix", () => {
+    const go = named("matrix:go", false, true)
+    const os = named("matrix:os")
+    const variants = [{ os: "linux", go: "17" }, { os: "mac", go: "17" }, { os: "mac", go: "24" }]
+    const matrix = job({ matrixKeys: ["go", "os"], variants })
+    const at = (variant: Readonly<Record<string, string>>, facts = matrix) => ({ job: facts, variant })
+    /** The expression's value in the first step of a job. */
+    const valueAt = (expression: Residual, options: Options): string =>
+      pass({ first: true, fills: [["${{ x }}", expression]] }, `printf '[%s]' "\${{ x }}"`, options)
+    const flags = binary(
+      "||",
+      binary("&&", binary("&&", binary("==", os, literal("mac")), binary("<", go, literal(24))), literal("-x")),
+      literal("")
+    )
+
+    it("is worked out for the variant that runs, by GitHub's rules", () => {
+      expect(valueAt(flags, at({ os: "mac", go: "17" }))).toBe("[-x]")
+      expect(valueAt(flags, at({ os: "mac", go: "24" }))).toBe("[]")
+      expect(valueAt(flags, at({ os: "linux", go: "17" }))).toBe("[]")
+      // Text is ordered without case, which a shell does not do.
+      expect(valueAt(binary("<", os, literal("M")), at({ os: "linux", go: "17" }))).toBe("[true]")
+      expect(valueAt(binary("<", os, literal("M")), at({ os: "mac", go: "17" }))).toBe("[false]")
+    })
+
+    it("gives a key written as a number or a boolean that type, and keeps other text", () => {
+      const typed = (key: string) => named(`matrix:${key}`, false, true)
+      const facts = job({
+        matrixKeys: ["n", "on", "v"],
+        variants: [{ n: "0", on: "true", v: "1.20" }, { n: "2", on: "false", v: "beta" }]
+      })
+      const first = at({ n: "0", on: "true", v: "1.20" }, facts)
+      const second = at({ n: "2", on: "false", v: "beta" }, facts)
+      // The number 0 is false; the text "0" would be true.
+      expect(valueAt(binary("||", typed("n"), literal("zero")), first)).toBe("[zero]")
+      expect(valueAt(binary("||", typed("n"), literal("zero")), second)).toBe("[2]")
+      expect(valueAt(not(typed("on")), first)).toBe("[false]")
+      expect(valueAt(not(typed("on")), second)).toBe("[true]")
+      expect(valueAt(typed("v"), first)).toBe("[1.20]")
+      expect(valueAt(typed("v"), second)).toBe("[beta]")
+    })
+
+    it("reads a key a variant lacks as null", () => {
+      const facts = job({ matrixKeys: ["n"], variants: [{ n: "5" }, {}] })
+      const less = binary("<", named("matrix:n", false, true), literal(2))
+      expect(valueAt(less, at({ n: "5" }, facts))).toBe("[false]")
+      expect(valueAt(less, at({ n: "" }, facts))).toBe("[true]")
+    })
+
+    it("decides a step's condition", () => {
+      const facts = { condition: binary("<", go, literal(24)) }
+      const ranAt = (variant: Readonly<Record<string, string>>) => {
+        const ran = run({ first: true, ...facts }, "echo ran", at(variant))
+        return `${ran.stdout}${ran.stderr}`.trim()
+      }
+      expect(ranAt({ os: "mac", go: "17" })).toBe("ran")
+      expect(ranAt({ os: "mac", go: "24" })).toBe("smithers-ci: not run, its condition is false")
+    })
+
+    it("stays in the shell when a shell can finish it", () => {
+      const written = write(matrix, { ...defaults, fills: [["x", binary("==", os, literal("mac"))]] }, "true")
+      expect("text" in written ? written.text : written.problem).not.toContain("case '|os=")
+    })
+
+    it.each<[string, Residual, string]>([
+      ["text that is not JSON", call("fromjson", named("matrix:j", false, true)), "fromJSON was given text"],
+      ["a list", call("fromjson", named("matrix:l", false, true)), "a list or mapping"],
+      ["a value read while the job runs", binary("<", go, output("V")), "< orders values"]
+    ])("refuses %s", (_name, expression, problem) => {
+      const facts = job({ matrixKeys: ["go", "j", "l"], variants: [{ go: "1", j: "{", l: "[1]" }] })
+      const written = write(facts, { ...defaults, fills: [["x", expression]] }, "true")
+      expect("problem" in written ? written.problem : written.text).toContain(problem)
+    })
+  })
+
   describe("refuses an expression a shell cannot finish", () => {
     const typed = output("N", true)
     it.each<[string, Partial<StepFacts>, string]>([

@@ -1185,6 +1185,7 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     runner: {
       id,
       matrixKeys: [...matrix.keys].sort(),
+      variants: matrix.variants,
       variables: variables(workflow.event, workflow.facts, { job: key, workflow: workflow.name }),
       event: eventFile(workflow.event, workflow.facts)
     },

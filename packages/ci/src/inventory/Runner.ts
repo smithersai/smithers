@@ -28,7 +28,17 @@
 
 import { commitNote, runnerEntry } from "../contract/Inventory.ts"
 import { shardOf } from "../contract/Shard.ts"
-import { formatPieces, type Part, type Residual, toText, truthy, type Variable } from "./Expression.ts"
+import {
+  finish,
+  formatPieces,
+  type Part,
+  type Residual,
+  toText,
+  truthy,
+  type Value,
+  type Variable,
+  variablesOf
+} from "./Expression.ts"
 
 /**
  * What a job's steps share: the job's name for its state directory, the
@@ -41,6 +51,8 @@ import { formatPieces, type Part, type Residual, toText, truthy, type Variable }
 export interface JobFacts {
   readonly id: string
   readonly matrixKeys: ReadonlyArray<string>
+  /** The job's matrix variants: what an expression over the matrix is worked out for. */
+  readonly variants?: ReadonlyArray<Readonly<Record<string, string>>> | undefined
   readonly variables: Readonly<Record<string, string>>
   /** The event file's JSON, with `commitMark` and `parentMark` where the commit and its first parent go. */
   readonly event: string
@@ -474,7 +486,25 @@ export const variableKinds: ReadonlyArray<string> = [
 
 interface Emitter {
   readonly lines: Array<string>
+  readonly variants: ReadonlyArray<Readonly<Record<string, string>>>
   count: number
+}
+
+const matrixPrefix = "matrix:"
+
+/** True for an expression that reads the matrix and nothing else decided while the job runs. */
+const overMatrix = (node: Residual, emitter: Emitter): boolean => {
+  const read = variablesOf(node)
+  return emitter.variants.length > 0 && read.length > 0 && read.every((found) => found.id.startsWith(matrixPrefix))
+}
+
+/** A matrix value as GitHub holds it: a key written as a number or a boolean gives one, and a key a variant lacks is `null`. */
+const matrixValue = (found: Variable, variant: Readonly<Record<string, string>>): Value => {
+  const text = variant[found.id.slice(matrixPrefix.length)]
+  if (text === undefined) return null
+  if (!found.typed) return text
+  if (text === "true" || text === "false") return text === "true"
+  return String(Number(text)) === text ? Number(text) : text
 }
 
 const callTests: ReadonlyMap<string, string> = new Map([
@@ -530,7 +560,9 @@ export const settled = (node: Residual): boolean | undefined => {
  * A value that is tested or compared must be one a shell can tell apart. A matrix value that is a number on
  * GitHub is only known here as text: `0` is false there and `'0'` is true, so it is never tested.
  */
-const tested = (node: Residual, compared: boolean): Residual => {
+const tested = (node: Residual, compared: boolean, emitter: Emitter): Residual => {
+  // Worked out per variant, it has the type GitHub gives it.
+  if (overMatrix(node, emitter)) return node
   const kinds = kindsOf(node)
   if (kinds.includes("other") || (compared && (kinds.includes("true") || kinds.includes("false")))) {
     throw new Refused(
@@ -547,6 +579,51 @@ const tested = (node: Residual, compared: boolean): Residual => {
  * the pair `__v<n>` and `__t<n>` that holds the result.
  */
 const compile = (node: Residual, emitter: Emitter): number => {
+  if (!overMatrix(node, emitter)) return compileInShell(node, emitter)
+  if (kindsOf(node).includes("other")) return compileByVariant(node, emitter)
+  const inner: Emitter = { ...emitter, lines: [] }
+  try {
+    const n = compileInShell(node, inner)
+    emitter.count = inner.count
+    emitter.lines.push(...inner.lines)
+    return n
+  } catch {
+    // A shell cannot finish it: GitHub's rules can, one variant at a time.
+    return compileByVariant(node, emitter)
+  }
+}
+
+const assignment = (n: number, held: Value): string =>
+  `__v${n}=${quote(toText(held))}; __t${n}=${typeof held === "string" ? "s" : truthy(held) ? "t" : "f"}`
+
+/**
+ * Writes an expression over the matrix as its answer for each variant, worked out here by GitHub's rules. The
+ * shell picks the answer by the matrix values a variant's runner text holds.
+ */
+const compileByVariant = (node: Residual, emitter: Emitter): number => {
+  emitter.count += 1
+  const n = emitter.count
+  const keys = [...new Set(variablesOf(node).map((found) => found.id.slice(matrixPrefix.length)))].sort()
+  const arms = new Map<string, Array<string>>()
+  for (const variant of emitter.variants) {
+    const finished = finish(node, (found) => matrixValue(found, variant))
+    if (finished.kind === "problem") throw new Refused(finished.why)
+    const held = finished.value
+    if (typeof held === "object" && held !== null) {
+      throw new Refused("a list or mapping is used with a value decided while the job runs")
+    }
+    const set = assignment(n, held)
+    arms.set(set, [...(arms.get(set) ?? []), quote(keys.map((key) => `|${key}=${variant[key] ?? ""}`).join(""))])
+  }
+  emitter.lines.push(
+    `case ${quote(keys.map((key) => `|${key}=\${{ matrix.${key} }}`).join(""))} in`,
+    ...[...arms].map(([set, patterns]) => `  ${patterns.join("|")}) ${set} ;;`),
+    "esac"
+  )
+  return n
+}
+
+const compileInShell = (node: Residual, emitter: Emitter): number => {
   emitter.count += 1
   const n = emitter.count
   const set = (held: string, tag: string): string => `__v${n}=${held}; __t${n}=${tag}`
@@ -557,11 +634,11 @@ const compile = (node: Residual, emitter: Emitter): number => {
     if (typeof held === "object" && held !== null) {
       throw new Refused("a list or mapping is used with a value decided while the job runs")
     }
-    emitter.lines.push(set(quote(toText(held)), typeof held === "string" ? "s" : truthy(held) ? "t" : "f"))
+    emitter.lines.push(assignment(n, held))
   } else if (node.kind === "variable") {
     emitter.lines.push(`${loadOf(node.variable)}; ${set("$__v", "$__t")}`)
   } else if (node.kind === "not") {
-    const operand = compile(tested(node.operand, false), emitter)
+    const operand = compile(tested(node.operand, false, emitter), emitter)
     emitter.lines.push(decide(`! __ci_true ${pair(operand)}`))
   } else if (node.kind === "call") {
     const args = node.args.map((arg) => compile(arg, emitter))
@@ -580,9 +657,9 @@ const compile = (node: Residual, emitter: Emitter): number => {
       throw new Refused(`${node.name} of a value decided while the job runs`)
     }
   } else if (node.operator === "&&" || node.operator === "||") {
-    const left = compile(tested(node.left, false), emitter)
+    const left = compile(tested(node.left, false, emitter), emitter)
     // The right side is read only when the left side does not decide, as GitHub reads it.
-    const inner: Emitter = { lines: [], count: emitter.count }
+    const inner: Emitter = { ...emitter, lines: [] }
     const right = compile(node.right, inner)
     emitter.count = inner.count
     emitter.lines.push(
@@ -592,8 +669,8 @@ const compile = (node: Residual, emitter: Emitter): number => {
       `else ${set(`$__v${left}`, `$__t${left}`)}; fi`
     )
   } else if (node.operator === "==" || node.operator === "!=") {
-    const left = compile(tested(node.left, true), emitter)
-    const right = compile(tested(node.right, true), emitter)
+    const left = compile(tested(node.left, true, emitter), emitter)
+    const right = compile(tested(node.right, true, emitter), emitter)
     emitter.lines.push(decide(`${node.operator === "==" ? "" : "! "}__ci_equal ${pair(left)} ${pair(right)}`))
   } else {
     throw new Refused(
@@ -612,7 +689,7 @@ const compile = (node: Residual, emitter: Emitter): number => {
  * @throws {never}
  */
 export const write = (job: JobFacts, step: StepFacts, command: string): Written => {
-  const emitter: Emitter = { lines: [], count: 0 }
+  const emitter: Emitter = { lines: [], count: 0, variants: job.variants ?? [] }
   // Each matrix value under its key, with its length, so two variants never share a state whatever they hold.
   const variant = job.matrixKeys.map((key) =>
     `__m='\${{ matrix.${key} }}'; __variant="$__variant|${key}=\${#__m}:$__m"`
@@ -639,7 +716,7 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
     emitter.lines.push(`__ci_load ${quote(step.own.join(" "))}`)
     for (const [name, parts] of step.keeps) emitter.lines.push(`__ci_keep ${quote(name)} ${words(parts)}`)
     if (step.condition !== undefined) {
-      const result = compile(tested(step.condition, false), emitter)
+      const result = compile(tested(step.condition, false, emitter), emitter)
       emitter.lines.push(`__ci_true "$__t${result}" "$__v${result}" || __ci_skip ${quote(step.key)}`)
     }
     exported(step.env)

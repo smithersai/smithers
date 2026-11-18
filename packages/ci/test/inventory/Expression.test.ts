@@ -5,6 +5,7 @@ import {
   type Evaluated,
   fields,
   fill,
+  finish,
   formatPieces,
   type Residual,
   type Scope,
@@ -16,6 +17,7 @@ import {
   type Value,
   value,
   variable,
+  variablesOf,
   whole
 } from "../../src/inventory/Expression.ts"
 
@@ -275,6 +277,47 @@ describe("residuals", () => {
 })
 
 // Property dereference: names read without case; a missing property is null.
+describe("finishing an expression once its variables are known", () => {
+  const scope: Scope = { context: (name) => variable(name, name) }
+  const residualOf = (text: string): Residual => {
+    const evaluated = evaluate(text, scope)
+    if (evaluated.kind !== "ok") throw new Error(text)
+    return evaluated.residual
+  }
+  const finished = (text: string, known: Readonly<Record<string, Value>>) =>
+    finish(residualOf(text), (found) => known[found.id] as Value)
+
+  it("lists every variable it reads", () => {
+    expect(variablesOf(residualOf("!a && (b < 2) || format('{0}', c)")).map((found) => found.id)).toEqual([
+      "a",
+      "b",
+      "c"
+    ])
+    expect(variablesOf(residualOf("1"))).toEqual([])
+  })
+
+  it.each<[string, Readonly<Record<string, Value>>, Value]>([
+    ["a", { a: 1 }, 1],
+    ["!a", { a: 0 }, true],
+    ["a < 2", { a: 1 }, true],
+    ["a == 'X'", { a: "x" }, true],
+    ["format('{0}-{1}', a, 2)", { a: "v" }, "v-2"],
+    ["a && 'yes'", { a: 1 }, "yes"],
+    ["a && 'yes'", { a: 0 }, 0],
+    ["a || 'no'", { a: 0 }, "no"],
+    ["a || 'no'", { a: 1 }, 1]
+  ])("%s with %j", (text, known, expected) => {
+    expect(finished(text, known)).toEqual({ kind: "ok", value: expected })
+  })
+
+  it("says why when a function cannot take the value", () => {
+    expect(finished("fromJSON(a)", { a: "{" })).toEqual({
+      kind: "problem",
+      why: "fromJSON was given text that is not JSON"
+    })
+  })
+})
+
 describe("contexts and properties", () => {
   it("asks a fields context in lower case", () => {
     expect(run("GitHub.Event_Name")).toEqual(lit("push"))
