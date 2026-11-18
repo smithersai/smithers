@@ -101,7 +101,7 @@ describe("Eval.run", () => {
     const green = observations.filter((observation) => observation.row.commit === "c4")
     const outcome = try Eval.run(options, green, (rows) => succeed(rows.map((row) => ({ commit: row.commit, target: row.target, score: 0.01 }))))
     try Effect.try(() => {
-      expect(outcome.report!.recall).toBe("refused: no row failed, so there is no failure to recall")
+      expect(outcome.report!.recall).toBe("refused: no entry failed, so there is no failure to recall")
       expect(outcome.report!.start.metrics).toEqual({ rows: 2, selected: 2, failures: 0, failedChanges: 0, selectionRate: 1 })
     })
   })
@@ -112,7 +112,7 @@ describe("Eval.executor", () => {
     const failed = try flip(Eval.executor(() => succeed([])).run({ name: "bad", input: { rows: "none" } }))
     try Effect.try(() => {
       expect(failed.code).toBe("executor")
-      expect(failed.message).toBe("Case bad holds no rows")
+      expect(failed.message).toBe("Case bad holds no entries")
     })
   })
 })
@@ -135,7 +135,7 @@ describe("Eval.caught and Eval.skipped", () => {
     const noRows = try flip(Eval.caught.score({ input: {}, output: [] }))
     const noScores = try flip(Eval.skipped.score({ input: { rows }, output: [{ commit: "c3" }] }))
     try Effect.try(() => {
-      expect(noRows.message).toContain("The rows of a fast-mode case could not be read")
+      expect(noRows.message).toContain("The entries of a fast-mode case could not be read")
       expect(noScores.message).toContain("The scores of a fast-mode case could not be read")
     })
   })

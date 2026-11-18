@@ -26,7 +26,7 @@ import { Repository } from "./Repository.vibe"
  */
 export effect function rows(root: string, record: RunRecord) {
   if (record.mode === "fast") {
-    throw failure("invalid-document", "Rows are built from a normal-mode run record; this one is fast mode's")
+    throw failure("invalid-document", "Entries are built from a normal-mode run record; this one is fast mode's")
   }
   const commit = record.commit ?? ""
   if (commit === "") throw failure("invalid-document", "The run record names no commit")

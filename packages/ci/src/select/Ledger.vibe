@@ -102,7 +102,7 @@ export const layerFile = (directory: string) =>
       for (const [index, line] of held.split("\n").entries()) {
         if (line.trim() === "") continue
         entries.push(decodeEntry(line) catch effect () => {
-          throw failure("invalid-document", `Line ${index + 1} of ${rowsFile} is not a ledger row`)
+          throw failure("invalid-document", `Line ${index + 1} of ${rowsFile} is not a ledger entry`)
         })
       }
       return latest(entries)

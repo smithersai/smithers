@@ -13,7 +13,7 @@ directly, so the parts are built at the same time.
 | 3  | Cache protocol     | [remote caching](../smithers/build/docs/workspace/remote-caching.md) | `/ac` and `/cas` over HTTP. Equal key means equal verdict                                      |
 | 4  | CI inventory       | `Inventory`                                                          | What a repository's CI does today, as shell commands                                           |
 | 5  | Replay report      | `ReplayReport`                                                       | Past commits run as the baseline, in normal mode and in fast mode, compared                    |
-| 6  | Selection          | `Selection`                                                          | Fast mode's rows, scores, settings and metrics, as the Facebook paper defines them             |
+| 6  | Selection          | `Selection`                                                          | Fast mode's entries, scores, settings and metrics, as the Facebook paper defines them          |
 | 7  | Command surface    | `Command`                                                            | The commands, flags and exit codes of `smithers-ci`                                            |
 | 8  | Shards             | `Shard`                                                              | Which machine runs which target                                                                |
 | 9  | Dependency closure | `Closure`                                                            | Every file a set of entry files reaches; one strategy per language                             |
@@ -317,7 +317,7 @@ and none removes):
 | `src/generate`  | Writes Smithers targets from contract 4                    |
 | `src/replay`    | Runs past commits and writes contract 5                    |
 | `src/report`    | Renders contract 5 for a terminal and as HTML              |
-| `src/select`    | Fast mode: builds rows, scores them, measures the result   |
+| `src/select`    | Fast mode: builds its entries, asks the model, measures    |
 | `src/decompose` | Splits a coarse CI step into per-package steps             |
 | `src/closure`   | Contract 9, one strategy per language                      |
 | `src/apply`     | Checks every generated path, and what writing would change |

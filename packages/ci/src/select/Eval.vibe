@@ -32,7 +32,7 @@ const unreadable = (what: string) => new EvalError.EvalError({ code: "invalid_su
 /** One change's rows, its scores, and what the starting settings select from them. */
 effect function graded(input: { readonly input: unknown; readonly output: unknown }) {
   const { rows } = decodeInput(input.input) catch effect () => {
-    throw unreadable("rows")
+    throw unreadable("entries")
   }
   const scores = decodeScores(input.output) catch effect () => {
     throw unreadable("scores")
@@ -110,7 +110,7 @@ export effect function suite(name: string, test: ReadonlyArray<Observation>, con
 export const executor = (score: (rows: ReadonlyArray<Selection.Row>) => ReadonlyArray<Selection.Score>!Failure) =>
   CaseExecutor.make((suiteCase) => effect {
     const { rows } = decodeInput(suiteCase.input) catch effect () => {
-      throw new EvalError.EvalError({ code: "executor", message: `Case ${suiteCase.name} holds no rows` })
+      throw new EvalError.EvalError({ code: "executor", message: `Case ${suiteCase.name} holds no entries` })
     }
     const started = try Clock.currentTimeMillis
     const output = score(rows) catch effect (failure) => {

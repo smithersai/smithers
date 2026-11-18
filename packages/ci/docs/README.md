@@ -20,7 +20,8 @@ you want, `smithers-ci apply` writes the files that make it your CI.
 
 - **Normal mode** runs every target a change affects and reuses a result only
   when its key matches. The replay checks its pass or fail against your CI's.
-- **Fast mode** also skips targets a scorer judges safe to skip, and the replay
+- **Fast mode** also skips targets the model that predicts which tests a change cannot break
+  says are safe to skip, and the replay
   counts every failure that skipping would have missed.
 
 See [Normal mode and fast mode](concepts/modes.md).

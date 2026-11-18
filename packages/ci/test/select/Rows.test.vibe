@@ -99,7 +99,7 @@ describe("rows", () => {
     provide Layer.merge(layerMemory(), Layer.succeed(Repository, { change: () => die("never read") })) {
       const failed = try flip(rows("/repo", record("c1", [result("//a:test", "ran")], "fast")))
       try Effect.try(() => {
-        expect(failed).toEqual(failure("invalid-document", "Rows are built from a normal-mode run record; this one is fast mode's"))
+        expect(failed).toEqual(failure("invalid-document", "Entries are built from a normal-mode run record; this one is fast mode's"))
       })
     }
   }))

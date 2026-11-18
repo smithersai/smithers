@@ -30,7 +30,7 @@ export type TargetStatus = typeof TargetStatus.Type
 
 /**
  * Why a `skipped` target did not run. `dependency-failed` is normal mode: a
- * dependency was red. `predicted-safe` is fast mode: the scorer judged the
+ * dependency was red. `predicted-safe` is fast mode: the model predicted the
  * target safe to skip. A `predicted-safe` skip is never a pass and is never
  * written to a cache.
  *
@@ -123,7 +123,7 @@ export type StatusCounts = typeof StatusCounts.Type
 
 /**
  * Which selection a run used. `normal` runs every affected target; `fast`
- * also skips targets the scorer judged safe.
+ * also skips targets the model predicted safe.
  *
  * @category models
  * @since 0.1.0
@@ -172,7 +172,7 @@ export type RunRecord = typeof RunRecord.Type
 /**
  * What a target's attempts say about it, as the Facebook paper labels them:
  * `pass` when the first attempt passed, `fail` when every attempt failed, and
- * `flaky` when attempts disagree. A target with no recorded attempts is judged
+ * `flaky` when attempts disagree. A target with no recorded attempts is read
  * by its status.
  *
  * @category models

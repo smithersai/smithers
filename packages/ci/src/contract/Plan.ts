@@ -5,7 +5,7 @@
  * `smthrs ci --plan --format json` prints the same facts under two other
  * names, `target` for `rule` and `keyPreview` for `key`, and no `mode`; the
  * replay converts what it prints (`planOfPrinted` in `src/replay`). Shard
- * assignment, the replay, and fast mode's scorer all read it.
+ * assignment, the replay, and fast mode's model all read it.
  *
  * @since 0.1.0
  */

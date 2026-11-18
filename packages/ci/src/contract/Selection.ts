@@ -1,10 +1,10 @@
 /**
- * Contract 6: fast mode's data, scorer and metrics.
+ * Contract 6: fast mode's data, its model's answers and its metrics.
  *
  * The definitions follow Machalica, Samylkin, Porth and Chandra, "Predictive
- * Test Selection" (arXiv:1810.05286), sections III and IV. A row is one change
- * and one target the dependency graph selects for it. The scorer returns a
- * number from 0 to 1 per row. Selection keeps every target at or above a
+ * Test Selection" (arXiv:1810.05286), sections III and IV. An entry is one change
+ * and one target the dependency graph selects for it. The model returns a
+ * number from 0 to 1 per entry. Selection keeps every target at or above a
  * score cutoff, plus the highest-scoring few.
  *
  * @since 0.1.0
@@ -13,7 +13,7 @@
 import * as Schema from "effect/Schema"
 
 /**
- * What the scorer reads about one change and one target: the paper's best
+ * What the model reads about one change and one target: the paper's best
  * feature set. `graphDistance` is `unreachable` when no path from a changed
  * file to the target is known.
  *
@@ -39,9 +39,9 @@ export type Features = typeof Features.Type
 
 /**
  * One change and one target that depends on it. `failed` is true only when
- * every attempt failed; `flaky` is true when attempts disagreed. A flaky row
+ * every attempt failed; `flaky` is true when attempts disagreed. A flaky entry
  * is never a positive. `at` is the time of the change, in milliseconds since
- * the epoch; the eval splits rows by it.
+ * the epoch; the eval splits entries by it.
  *
  * @category models
  * @since 0.1.0
@@ -65,7 +65,7 @@ export const Row = Schema.Struct({
 export type Row = typeof Row.Type
 
 /**
- * The scorer's answer for one row: the estimated chance the target fails on
+ * The model's answer for one entry: the estimated chance the target fails on
  * the change, from 0 to 1.
  *
  * @category models
@@ -108,7 +108,7 @@ export const Settings = Schema.Struct({
 export type Settings = typeof Settings.Type
 
 /**
- * How well a selection did against rows whose outcomes are known.
+ * How well a selection did against entries whose outcomes are known.
  *
  * - `testRecall`: of all failures, the share whose target was selected.
  * - `changeRecall`: of all changes with a failure, the share where at least
@@ -116,7 +116,7 @@ export type Settings = typeof Settings.Type
  * - `selectionRate`: targets selected, divided by targets the dependency
  *   graph selected.
  *
- * Both recalls are absent when no row failed: the paper defines them only
+ * Both recalls are absent when no entry failed: the paper defines them only
  * over a set with at least one failure. `failures` and `failedChanges` are
  * the counts behind them.
  *
@@ -159,7 +159,7 @@ export const select = (scores: ReadonlyArray<Score>, settings: Settings): Readon
 }
 
 /**
- * The paper's three metrics for a selection over rows with known outcomes.
+ * The paper's three metrics for a selection over entries with known outcomes.
  * `selected` maps a commit to the targets selected for it; a commit it does
  * not hold selected nothing.
  *

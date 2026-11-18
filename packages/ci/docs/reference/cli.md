@@ -125,7 +125,9 @@ smithers-ci: 2/5 3f2a1c9 normal
 ```
 
 A replay runs commits. When the working tree has changes that are not
-committed, standard error says first that they are not replayed.
+committed, standard error says first that they are not replayed. When this
+machine cannot record what a step reads, standard error says so once, with the
+reason.
 
 `--out` is read from the directory you run the command in. When the file is
 inside the repository, it is the one file the command writes there, and the
@@ -253,32 +255,32 @@ what the job names.
 ## Environment
 
 The program reads these environment variables and no others. It never prints a
-value. All but `PATH` and `SMITHERS_CACHE_TOKEN` choose fast mode's judge or how
-it reaches the judge.
+value. All but `PATH` and `SMITHERS_CACHE_TOKEN` choose fast mode's model or how
+it reaches the model.
 
-| Variable                          | What it is                                                                                                    |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `PATH`                            | Where the program finds Node.js to run Smithers build, and `claude` for fast mode.                            |
-| `HOME`                            | Where fast mode finds this machine's Claude Code and Codex logins.                                            |
-| `SMITHERS_CACHE_TOKEN`            | The token sent to the shared cache that `--cache` names.                                                      |
-| `AI_GATEWAY_API_KEY`              | The key for Jev, the judge fast mode asks. Without it, fast mode asks the model this machine is signed in to. |
-| `AI_GATEWAY_API_KEY_FILE`         | A file that holds that key, read when `AI_GATEWAY_API_KEY` is empty.                                          |
-| `ANTHROPIC_API_KEY`               | When set, fast mode does not judge on this machine's Claude Code login. Unset it to use that login.           |
-| `ANTHROPIC_API_KEY_FILE`          | A file that holds that key, read when `ANTHROPIC_API_KEY` is empty.                                           |
-| `CLAUDE_CONFIG_DIR`               | Where Claude Code keeps its login, when that is not its default directory.                                    |
-| `CODEX_HOME`                      | Where Codex keeps its login, when that is not `~/.codex`.                                                     |
-| `SMITHERS_OPENAI_AUTH`            | `chatgpt` lets fast mode judge on this machine's Codex login.                                                 |
-| `OPENROUTER_API_KEY`              | A key for OpenRouter, which fast mode judges through when no subscription can.                                |
-| `OPENROUTER_API_KEY_FILE`         | A file that holds that key, read when `OPENROUTER_API_KEY` is empty.                                          |
-| `SMITHERS_ACCOUNT_POOL_URL`       | The address of a Smithers account pool, which fast mode can judge through.                                    |
-| `SMITHERS_ACCOUNT_POOL_KEY`       | The key for that account pool.                                                                                |
-| `SMITHERS_ACCOUNT_POOL_PROVIDERS` | The providers that account pool serves, separated by commas.                                                  |
-| `SMITHERS_EVALUATOR_BASE_URL`     | Another address for Jev, in place of the AI Gateway.                                                          |
-| `SMITHERS_MODEL_PROXY_URL`        | A proxy that carries fast mode's requests to its model.                                                       |
-| `SMITHERS_MODEL_PROXY_PROVIDERS`  | The providers that proxy carries, separated by commas.                                                        |
-| `HTTP_PROXY`                      | The proxy for fast mode's HTTP requests; `http_proxy` also works.                                             |
-| `HTTPS_PROXY`                     | The proxy for fast mode's HTTPS requests; `https_proxy` also works.                                           |
-| `NO_PROXY`                        | The hosts fast mode reaches without a proxy; `no_proxy` also works.                                           |
+| Variable                          | What it is                                                                                                                                |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `PATH`                            | Where the program finds Node.js to run Smithers build, and `claude` for fast mode.                                                        |
+| `HOME`                            | Where fast mode finds this machine's Claude Code and Codex logins.                                                                        |
+| `SMITHERS_CACHE_TOKEN`            | The token sent to the shared cache that `--cache` names.                                                                                  |
+| `AI_GATEWAY_API_KEY`              | The key for the model that predicts which tests a change cannot break. Without it, fast mode uses the model this machine is signed in to. |
+| `AI_GATEWAY_API_KEY_FILE`         | A file that holds that key, read when `AI_GATEWAY_API_KEY` is empty.                                                                      |
+| `ANTHROPIC_API_KEY`               | When set, fast mode does not use this machine's Claude Code login. Unset it to use that login.                                            |
+| `ANTHROPIC_API_KEY_FILE`          | A file that holds that key, read when `ANTHROPIC_API_KEY` is empty.                                                                       |
+| `CLAUDE_CONFIG_DIR`               | Where Claude Code keeps its login, when that is not its default directory.                                                                |
+| `CODEX_HOME`                      | Where Codex keeps its login, when that is not `~/.codex`.                                                                                 |
+| `SMITHERS_OPENAI_AUTH`            | `chatgpt` lets fast mode use this machine's Codex login.                                                                                  |
+| `OPENROUTER_API_KEY`              | A key for OpenRouter, which fast mode uses when no subscription can answer.                                                               |
+| `OPENROUTER_API_KEY_FILE`         | A file that holds that key, read when `OPENROUTER_API_KEY` is empty.                                                                      |
+| `SMITHERS_ACCOUNT_POOL_URL`       | The address of a Smithers account pool, which fast mode can use.                                                                          |
+| `SMITHERS_ACCOUNT_POOL_KEY`       | The key for that account pool.                                                                                                            |
+| `SMITHERS_ACCOUNT_POOL_PROVIDERS` | The providers that account pool serves, separated by commas.                                                                              |
+| `SMITHERS_EVALUATOR_BASE_URL`     | Another address for the model, in place of the AI Gateway.                                                                                |
+| `SMITHERS_MODEL_PROXY_URL`        | A proxy that carries fast mode's requests to its model.                                                                                   |
+| `SMITHERS_MODEL_PROXY_PROVIDERS`  | The providers that proxy carries, separated by commas.                                                                                    |
+| `HTTP_PROXY`                      | The proxy for fast mode's HTTP requests; `http_proxy` also works.                                                                         |
+| `HTTPS_PROXY`                     | The proxy for fast mode's HTTPS requests; `https_proxy` also works.                                                                       |
+| `NO_PROXY`                        | The hosts fast mode reaches without a proxy; `no_proxy` also works.                                                                       |
 
 To sign this machine in instead of setting a key, run `claude auth login` with
 `ANTHROPIC_API_KEY` unset, or `codex login` with `SMITHERS_OPENAI_AUTH=chatgpt`.

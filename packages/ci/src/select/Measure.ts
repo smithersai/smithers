@@ -200,7 +200,7 @@ export interface Report {
   readonly failures: number
   readonly failedChanges: number
   readonly flaky: number
-  readonly recall: "measured" | "refused: no row failed, so there is no failure to recall"
+  readonly recall: "measured" | "refused: no entry failed, so there is no failure to recall"
   readonly start: Point
   readonly byScore: ReadonlyArray<Point>
   readonly byCount: ReadonlyArray<Point>
@@ -231,7 +231,7 @@ export const report = (rows: ReadonlyArray<Selection.Row>, scores: ReadonlyArray
     byCount
   }
   if (start.metrics.failures === 0) {
-    return { ...counted, recall: "refused: no row failed, so there is no failure to recall" }
+    return { ...counted, recall: "refused: no entry failed, so there is no failure to recall" }
   }
   // A score cutoff of 0 selects every target, so each search below finds a point.
   const passing = byScore.find((point) => point.metrics.testRecall! > bar.testRecall)!
@@ -277,11 +277,11 @@ const line = (point: Point): string => {
 export const render = (name: string, measured: Report): string => {
   const lines = [
     `Fast mode eval: ${name}`,
-    `Test set: ${whole(measured.rows)} rows in ${whole(measured.changes)} changes; ${
+    `Test set: ${whole(measured.rows)} entries in ${whole(measured.changes)} changes; ${
       whole(measured.failures)
     } failures in ${whole(measured.failedChanges)} changes; ${
       whole(measured.flaky)
-    } flaky rows, which are not failures`,
+    } flaky entries, which are not failures`,
     "",
     "Starting settings",
     line(measured.start),

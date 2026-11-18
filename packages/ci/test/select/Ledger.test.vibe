@@ -92,14 +92,14 @@ describe("Ledger.layerFile", () => {
     }
   }))
 
-  it.live("fails invalid-document for a line that is not a ledger row, naming the line", () => live(effect {
+  it.live("fails invalid-document for a line that is not a ledger entry, naming the line", () => live(effect {
     const fs = try FileSystem.FileSystem
     const root = try directory()
     try fs.writeFileString(`${root}/rows.jsonl`, `${JSON.stringify(seen(now, "c1", "//a:test"))}\n\n{"at":1,"row":{"commit":""}}\n`)
     provide layerFile(root) {
       const failed = try flip((try Ledger).observations())
       try Effect.try(() => {
-        expect(failed).toEqual({ code: "invalid-document", message: `Line 3 of ${root}/rows.jsonl is not a ledger row`, part: "select" })
+        expect(failed).toEqual({ code: "invalid-document", message: `Line 3 of ${root}/rows.jsonl is not a ledger entry`, part: "select" })
       })
     }
   }))

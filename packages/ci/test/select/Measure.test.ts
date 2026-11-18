@@ -213,7 +213,7 @@ describe("report", () => {
   it("refuses to report a recall when no row failed, and still reports the selection rate", () => {
     const passing = rows.map((each) => ({ ...each, failed: false }))
     const measured = Measure.report(passing, scores)
-    expect(measured.recall).toBe("refused: no row failed, so there is no failure to recall")
+    expect(measured.recall).toBe("refused: no entry failed, so there is no failure to recall")
     expect(measured.calibrated).toBeUndefined()
     expect(measured.weekly).toBeUndefined()
     expect(measured.failures).toBe(0)
@@ -230,7 +230,7 @@ describe("render", () => {
     const text = Measure.render("example", Measure.report(rows, scores))
     expect(text.split("\n")[0]).toBe("Fast mode eval: example")
     expect(text).toContain(
-      "Test set: 9 rows in 3 changes; 3 failures in 2 changes; 1 flaky rows, which are not failures"
+      "Test set: 9 entries in 3 changes; 3 failures in 2 changes; 1 flaky entries, which are not failures"
     )
     expect(text).toContain(
       "  score >= 0.3, top 0: test recall 0.667 (2 of 3), change recall 1.000 (2 of 2), selection rate 0.222 (2 of 9)"
@@ -268,7 +268,7 @@ describe("render", () => {
   it("prints no recall for rows with no failure, and says why", () => {
     const text = Measure.render("green", Measure.report(rows.map((each) => ({ ...each, failed: false })), scores))
     expect(text).toContain("  score >= 0.3, top 0: selection rate 0.222 (2 of 9)")
-    expect(text).toContain("Recall refused: no row failed, so there is no failure to recall.")
+    expect(text).toContain("Recall refused: no entry failed, so there is no failure to recall.")
     expect(text).not.toContain("test recall")
     expect(text).not.toContain("Calibrated")
     expect(text).not.toContain("Weekly check")

@@ -147,7 +147,7 @@ export interface ReplayRequest {
 export type RenderReport = (report: ReplayReport) => string
 
 /**
- * Builds the rows fast mode scores for one commit, from that commit's
+ * Builds the entries fast mode asks the model about for one commit, from that commit's
  * normal-mode run record. With the commit's plan it measures each target's
  * distance from the changed files; without it that distance is unknown.
  *
@@ -161,7 +161,8 @@ export type BuildRows<R = never> = (
 ) => Effect.Effect<ReadonlyArray<Row>, Failure, R>
 
 /**
- * Scores rows: for each, the chance its target fails on its change.
+ * Asks the model about entries: for each, the chance its target fails on its
+ * change.
  *
  * @category parts
  * @since 0.1.0

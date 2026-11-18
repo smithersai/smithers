@@ -184,7 +184,8 @@ A step that reached the network, or a program outside its own run, stores
 nothing and runs every time: what those answered is on no list. Recording
 needs Linux with `strace`, which the generated workflow installs on its
 runners. On any other system such a step runs on every change, as it does in
-the repository's CI today.
+the repository's CI today, and a replay says once on standard error that this
+machine cannot record what a step reads, and why.
 
 Each step runs under the tool versions its job sets up, so a matrix over Node
 18 and 20 tests both. Steps that need different versions run on separate
@@ -200,11 +201,11 @@ and the targets are made again from that commit's own files, so a commit that
 renamed a script is replayed with the name it had. A commit that had no CI, or
 none that can be run on this machine, is not replayed and the report lists it.
 
-| Way      | What runs                                                                                                |
-| -------- | -------------------------------------------------------------------------------------------------------- |
-| Baseline | The repository's CI as it is today.                                                                      |
-| Normal   | Only the targets the change affects, with the cache.                                                     |
-| Fast     | Normal mode, minus the targets the scorer judged safe to skip. Only with `--mode fast` or `--mode both`. |
+| Way      | What runs                                                                                                            |
+| -------- | -------------------------------------------------------------------------------------------------------------------- |
+| Baseline | The repository's CI as it is today.                                                                                  |
+| Normal   | Only the targets the change affects, with the cache.                                                                 |
+| Fast     | Normal mode, minus the targets the model predicts the change cannot break. Only with `--mode fast` or `--mode both`. |
 
 Every run happens in a copy. The replay never changes the repository it reads.
 `--jobs` caps how many jobs run at once, the same in the baseline and in each
@@ -310,7 +311,7 @@ What a step can do depends on the machine:
 | leaves a process running after it ends                | no                    | yes              | yes   |
 
 On macOS, and on Linux without bubblewrap, there is no jail. `smithers-ci`
-says so once on standard error and names what to install. The first five rows
+says so once on standard error and names what to install. The first five lines of the table
 still hold there. They stop a step that does what CI steps ordinarily do; they
 do not stop one written to get around them. Replay there only a history you
 trust.
@@ -516,7 +517,7 @@ With fast mode, it also gives fast mode's selection metrics; see
 
 The report prints as text: the totals, one line for each commit that says
 whether each way passed, with its wall time, and the failed steps. `--out` also
-writes it as an HTML file with a row for each commit. `--json` prints it as
+writes it as an HTML file with a line for each commit. `--json` prints it as
 JSON, which also holds work time, the target counts and each failed step's
 command.
 

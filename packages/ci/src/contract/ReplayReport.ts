@@ -3,7 +3,7 @@
  *
  * The replay runs past commits three ways and compares them: the baseline is
  * the repository's CI as it is today, normal mode runs only affected targets
- * with the cache, and fast mode also skips what the scorer judged safe. The
+ * with the cache, and fast mode also skips what the model predicted safe. The
  * report renderer, the splash page's numbers and the cache acceptance test all
  * read this one document.
  *

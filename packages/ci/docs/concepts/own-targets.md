@@ -51,7 +51,13 @@ run here.
 When the CI names no pattern, for example because a script wraps `smthrs`,
 every target is replayed: `//...`.
 
-The report holds the patterns in `targets`, and shows them above the speedup.
+Each commit runs the patterns its own CI names, so a commit that renamed a
+target is replayed with the name it had, and it is installed for the workspace
+file it holds. A commit whose CI cannot be read is not replayed, and the report
+lists it with the reason. `--targets` names the patterns of every commit.
+
+The report holds the newest commit's patterns in `targets`, and shows them above
+the speedup.
 It lists under "not replayed" each CI job with no step that runs a target: its
 commands are not run.
 
@@ -111,11 +117,16 @@ cache that normal mode then finds full. `--cache` gives normal and fast mode
 the address of a shared cache, and only the address.
 
 An install runs the scripts of a commit's dependencies, so it and the copy's
-`smthrs` run under the rules every replayed step runs under: see
-[What a step can reach](how-it-works.md#what-a-step-can-reach).
+`smthrs` run under the rules every replayed step runs under, and an install has
+a step's time limit: see
+[What a step can reach](how-it-works.md#what-a-step-can-reach). A target gets
+that home and that jail through `smthrs`. Smithers build passes it no other
+variable, so the home's `.gitconfig` refuses its push: it sends every push to an
+address where nothing is, and a hooks directory the repository sets does not
+undo that.
 
 Fast mode runs in a third copy, as on any repository: the targets the patterns
-select, less the ones the scorer judges safe to skip. What a target depends on
+select, less the ones the model predicts the change cannot break. What a target depends on
 runs with it.
 
 ## What is timed

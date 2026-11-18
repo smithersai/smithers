@@ -16,7 +16,7 @@ normal mode still runs everything before a release.
 
 ## What it does
 
-1. **Rows.** After a normal-mode run of a commit, one row is recorded per
+1. **Entries.** After a normal-mode run of a commit, one entry is recorded per
    target that ran: the change, the target, and whether the target failed.
 2. **Scores.** For a new change, each affected target gets a score from 0 to
    1, the estimated chance it fails, with a one-line reason.
@@ -28,7 +28,7 @@ The method is Machalica, Samylkin, Porth and Chandra, "Predictive Test
 Selection" ([arXiv:1810.05286](https://arxiv.org/abs/1810.05286)), sections
 III to VI.
 
-## A row
+## An entry
 
 | Field                       | What it holds                                                                                               |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -40,19 +40,19 @@ III to VI.
 | Dependency-graph distance   | The fewest dependency edges from a changed file's project to the target. `-1` when no path is known.        |
 | Attempts, `failed`, `flaky` | A target is `failed` only when every attempt failed. Attempts that disagree make it `flaky`, not a failure. |
 
-A target that never ran has no row: a cache hit, a target skipped because a
+A target that never ran has no entry: a cache hit, a target skipped because a
 dependency failed, and a target fast mode skipped all have no outcome to learn
-from. Rows are built only from a normal-mode run.
+from. Entries are built only from a normal-mode run.
 
-The failure rates come from earlier rows, so a repository's first runs have
+The failure rates come from earlier entries, so a repository's first runs have
 rates of 0 everywhere. The distance needs the change's plan; without one, a
 target is at distance 0 only inside a changed file's own project.
 
 ## A score
 
 Scores come from the model that predicts which tests a change cannot break. It
-reads a row's six features and nothing else: not the target's name, not the
-diff. For each row it answers the chance the target fails, and which fact most
+reads an entry's six features and nothing else: not the target's name, not the
+diff. For each entry it answers the chance the target fails, and which fact most
 decides that:
 
 | Reason the score carries                                   | The fact               |
@@ -64,10 +64,10 @@ decides that:
 | The target holds many tests.                               | Test count             |
 | Nothing in the features points to a failure.               | None                   |
 
-Rows with equal features share one question, so a change with thousands of
+Entries with equal features share one question, so a change with thousands of
 targets asks about a few dozen feature sets. An answer is kept for the rest of
-the run, so no question is paid for twice. When the model cannot answer, nothing
-is scored by guess.
+the run, so no question is paid for twice. When the model cannot answer, no score
+is guessed.
 
 ## Reaching the model
 
@@ -103,7 +103,7 @@ lowers change recall: that change would have looked green. A selection rate of
 0.3 means fast mode ran three targets in ten.
 
 Every number is reported with its counts: failures caught of failures, changes
-caught of failed changes, targets run of targets. When no row failed, no recall
+caught of failed changes, targets run of targets. When no entry failed, no recall
 is reported at all.
 
 Facebook's bar before a merge is a test recall above 0.95 and a change recall
@@ -129,9 +129,9 @@ behind it, and never claims the bar.
 
 The eval measures fast mode the way the paper measures its model.
 
-- **Split by time.** The newest seven days of rows are the test set. Earlier
-  rows only supply the test set's failure rates; the classifier is not trained.
-- **Score.** Every change of the test set is scored by the real model.
+- **Split by time.** The newest seven days of entries are the test set. Earlier
+  entries only supply the test set's failure rates; the classifier is not trained.
+- **Score.** The real model gives every change of the test set its scores.
 - **Sweep.** The score cutoff is swept with the count cutoff at 0, and the
   count cutoff with the score cutoff at 1.
 - **Weekly check.** The paper accepts a new model when, at a test recall of at
@@ -141,7 +141,7 @@ The eval measures fast mode the way the paper measures its model.
   bar is taken, then the lowest swept count cutoff that, with it, passes the
   change-recall bar. The two are measured together.
 - **Refuse.** With no failure in the test set there is no recall to report.
-  When a change could not be scored there is no report: the recall of part of
+  When a change could not get a score there is no report: the recall of part of
   a test set is not the test set's recall.
 
 It is a Smithers eval: a suite with one case per change, graded per change by
@@ -150,7 +150,7 @@ two measures (`caught`, the share of the change's failures selected, and
 
 ### Running it
 
-From `packages/ci`, with rows in `rows.jsonl` in a directory of your choice:
+From `packages/ci`, with entries in `rows.jsonl` in a directory of your choice:
 
 ```sh
 SMITHERS_CI_EVAL_DIR=<directory> pnpm exec vitest run --config evals/vitest.config.ts
@@ -160,7 +160,7 @@ SMITHERS_CI_EVAL_DIR=<directory> pnpm exec vitest run --config evals/vitest.conf
 | ------------------------------ | -------------------------------------------------------------------------------- |
 | `SMITHERS_CI_EVAL_DIR`         | Where `rows.jsonl` is and where the run's journal, `eval.sqlite`, is kept.       |
 | `SMITHERS_CI_EVAL_CHANGES`     | Scores that many evenly spaced changes of the test week in place of all of them. |
-| `SMITHERS_CI_EVAL_CONCURRENCY` | How many changes are scored at once. The default is 4.                           |
+| `SMITHERS_CI_EVAL_CONCURRENCY` | How many changes the model answers for at once. The default is 4.                |
 
 With `SMITHERS_CI_EVAL_DIR` unset the eval is skipped. A run that stops is run
 again with the same command: the journal answers every request it already
@@ -171,15 +171,15 @@ merge queue's run records.
 
 Run on 2026-11-18 on the build server. The history is the VibeLang merge
 queue's 159 trains from 2026-11-07 to 2026-11-14, each one change: 458,062
-rows. The test week is its newest seven days.
+entries. The test week is its newest seven days.
 
-| What       | Count                                                                               |
-| ---------- | ----------------------------------------------------------------------------------- |
-| Test set   | 443,007 rows in 152 changes                                                         |
-| Failures   | 687, in 94 changes                                                                  |
-| Flaky rows | 41, not counted as failures                                                         |
-| Model      | GPT-6 Luna, through a subscription. The build server holds no `AI_GATEWAY_API_KEY`. |
-| Requests   | 481, in 17 minutes. A second run replayed every one from the journal, in 2 minutes. |
+| What          | Count                                                                               |
+| ------------- | ----------------------------------------------------------------------------------- |
+| Test set      | 443,007 entries in 152 changes                                                      |
+| Failures      | 687, in 94 changes                                                                  |
+| Flaky entries | 41, not counted as failures                                                         |
+| Model         | GPT-6 Luna, through a subscription. The build server holds no `AI_GATEWAY_API_KEY`. |
+| Requests      | 481, in 17 minutes. A second run replayed every one from the journal, in 2 minutes. |
 
 | Settings                                    | Test recall        | Change recall    | Selection rate             |
 | ------------------------------------------- | ------------------ | ---------------- | -------------------------- |
@@ -203,11 +203,11 @@ What the numbers say:
 Why the scores separate so little here:
 
 - 240 of the 687 failures were at targets with no recorded failure. Their
-  rows read like the passing rows around them, and 224 failures scored below
-  0.02, where 400,000 passing rows also sit.
+  entries read like the passing entries around them, and 224 failures had a
+  score below 0.02, where 400,000 passing entries also sit.
 - The queue kept no dependency graph per train, so the distance says only
   whether a target is in a changed file's project.
 - 684 of the 687 failures ran once. The queue reran few failures, so some are
   flaky failures that the paper's ten attempts would have removed.
-- Only 15,055 rows, eight hours of them, precede the test week. A target's
+- Only 15,055 entries, eight hours of them, precede the test week. A target's
   failure rate is built from the test week's own earlier changes.

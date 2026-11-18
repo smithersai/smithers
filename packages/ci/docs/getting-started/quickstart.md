@@ -24,7 +24,7 @@ With no command, `smithers-ci` does four things:
 On Linux, install `strace` first (`sudo apt-get install strace`). Smithers CI
 uses it to record the files each CI command reads, so a command runs again
 only when one of them changes. Without it, a command that names no inputs runs
-on every commit.
+on every commit, and the replay says so on standard error.
 
 The baseline runs your CI's commands once per replayed commit, so the first
 run takes a while. `--commits` sets how many commits to replay:
@@ -73,7 +73,7 @@ time. Under them it lists:
 `--json` also gives, for each commit and each way, its work time (the sum of
 every target's own time), how many targets were cache hits, ran, failed or
 were skipped, and each failed step's name, exit code, first error line and
-command. The HTML page has a row for each commit with its times, `fail` beside
+command. The HTML page has a line for each commit with its times, `fail` beside
 the time of a run that failed, its mismatches and its failed steps.
 
 To keep a copy or feed it to another program:
