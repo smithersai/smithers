@@ -10,9 +10,9 @@ import { type Inventory, stepTimeoutHours, toolCache, type Toolchain } from "../
 import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.ts"
 import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.ts"
 import { variantKey } from "./Expressions.ts"
-import { type Leg, markerDirectory, repositoryLabel, type StepPlan, type StepTarget, workflowPath } from "./Steps.ts"
+import { type Leg, repositoryLabel, type StepPlan, type StepTarget, workflowPath } from "./Steps.ts"
 
-// The cache directory of the generated workspace, from the repository root. `toolCache` is a directory inside it.
+// The name of the generated workspace's cache directory. The directory itself is outside the checkout.
 const cacheDirectory = ".flows"
 
 export { workflowPath }
@@ -84,14 +84,26 @@ const sharedInputsAbove = 32
 const maximumPackageBytes = 1024 * 1024
 
 /**
- * Where Node keeps the compiled code of `smthrs` between runs, from the
- * repository's root. The workflow sets it and carries it from one run to the
- * next; a replay starts `smthrs` with the same directory.
+ * Where Node keeps the compiled code of `smthrs` between runs, in the
+ * directory Smithers build keeps its cache in. The workflow sets it and
+ * carries it from one run to the next; a replay starts `smthrs` with the same
+ * directory.
  *
  * @category constants
  * @since 0.1.0
  */
-export const compiledCode = ".flows/node-compile-cache"
+export const compiledCode = "node-compile-cache"
+
+/**
+ * Where the generated workflow keeps what Smithers build keeps between runs,
+ * on a runner: a directory of the runner, outside the checkout, which the
+ * workflow saves and restores. A step that lists its checkout finds nothing
+ * of Smithers CI there.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const stateDirectory = "${{ runner.temp }}/smithers-ci"
 
 // The limit a baseline step has, which is GitHub's for a job; the build's own default is 30 minutes.
 const stepTimeout = `${stepTimeoutHours}h`
@@ -128,7 +140,8 @@ const workspaceName = (repository: string): string => {
 const renderWorkspace = (inventory: Inventory): ReadonlyArray<string> => [
   `export const Workspace = S.Workspace(${text(workspaceName(inventory.repository))}, {`,
   `  repository: ${text(inventory.repository)},`,
-  `  cache: S.Cache({ directory: ${JSON.stringify(cacheDirectory)} }),`,
+  // Outside the checkout: a step that lists its files finds the repository's and nothing of Smithers build's.
+  `  cache: S.Cache({ directory: ${JSON.stringify(cacheDirectory)}, outside: true }),`,
   `  host: S.Host({ bins: ["bash", "sh"] })`,
   `})`,
   ``
@@ -166,12 +179,12 @@ const filesOf = (target: StepTarget, narrowed: boolean): ReadonlyArray<string> =
   return target.rule === "setup" ? [] : ["repository"]
 }
 
-// What a setup target declares it writes: its marker, and the step's own outputs when it names them.
+// What a setup target declares it writes: the step's own outputs when it names them. It runs every time and its
+// result is never reused, so it may declare none.
 const outputsOf = (target: StepTarget, narrowed: boolean): ReadonlyArray<string> => {
   const own = narrowed && target.outputs !== undefined ? target.outputs : { directories: [], files: [] }
-  const files = [`${markerDirectory}/${target.label}`, ...own.files]
   return [
-    `outFiles: [${files.map((file) => text(`//${file}`)).join(", ")}]`,
+    ...(own.files.length === 0 ? [] : [`outFiles: [${own.files.map((file) => text(`//${file}`)).join(", ")}]`]),
     ...(own.directories.length === 0
       ? []
       : [`outDirs: [${own.directories.map((directory) => text(`//${directory}`)).join(", ")}]`]),
@@ -210,27 +223,6 @@ const observation = (target: StepTarget): string =>
     target.runEnv.length === 0 ? "" : `, env: ${JSON.stringify(target.runEnv)}`
   } }`
 
-// The text Smithers build fills in with its cache directory, in a target's command and its variables.
-const cacheDirectoryMark = "{smthrs:cache-directory}"
-
-// The variables a target's step is given. A step that keeps a tool's own cache names a directory under the tool
-// cache, by a path from where it starts (`.flows/tools/zig`, `../.flows/tools/zig`). A target on a machine starts
-// in the machine's copy of the checkout, which has no cache directory: the tool's cache would go with the machine,
-// and the tool would start cold at every run. So the directory is named from the build's own cache directory,
-// which is the workspace's on a machine too.
-const envOf = (target: StepTarget): Readonly<Record<string, string>> =>
-  target.machine === undefined ? target.env : Object.fromEntries(
-    Object.entries(target.env).map(([name, value]) => {
-      const fromRoot = value.replace(/^(?:\.\.\/)+/, "")
-      return [
-        name,
-        fromRoot === toolCache || fromRoot.startsWith(`${toolCache}/`)
-          ? `${cacheDirectoryMark}${fromRoot.slice(cacheDirectory.length)}`
-          : value
-      ]
-    })
-  )
-
 const renderTarget = (
   target: StepTarget,
   index: number,
@@ -245,7 +237,9 @@ const renderTarget = (
   const fields = [
     `shell: ${text(target.script)}`,
     ...(target.rule === "setup" ? outputsOf(target, narrowed) : []),
-    ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(envOf(target))}`]),
+    // A step that keeps a tool's own cache names a directory under the tool cache, which is named whole, from
+    // Smithers build's own cache directory: the same one on a machine and from any directory a step starts in.
+    ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(target.env)}`]),
     ...(inheritEnv.length === 0 ? [] : [`inheritEnv: ${JSON.stringify(inheritEnv)}`]),
     ...(target.host === undefined ? [] : [`hosts: [${text(target.host)}]`]),
     // A target that declares what it reads is held to it: a read outside its
@@ -503,13 +497,11 @@ const renderWorkflow = (
   observed: boolean,
   allowDocker: boolean
 ): string => {
-  // A step that keeps a tool's own cache names a directory under the tool cache in its environment: from the
-  // root, or from the directory under it where the step starts (`../../.flows/tools/zig`).
+  // A step that keeps a tool's own cache names a directory under the tool cache in its environment. The tool cache
+  // is a directory of Smithers build's cache directory, which the workflow puts in `stateDirectory`: the same
+  // one from whichever directory the step starts in.
   const keepsTools = plan.targets.some((target) =>
-    Object.values(target.env).some((value) => {
-      const fromRoot = value.replace(/^(?:\.\.\/)+/, "")
-      return fromRoot === toolCache || fromRoot.startsWith(`${toolCache}/`)
-    })
+    Object.values(target.env).some((value) => value === toolCache || value.startsWith(`${toolCache}/`))
   )
   // The jobs that run on a machine of their own: each has a checkout, a home and a temporary directory.
   const machines = new Set(plan.targets.flatMap((target) => target.machine === undefined ? [] : [target.machine]))
@@ -559,12 +551,15 @@ const renderWorkflow = (
     ...(observed ? tracerSetup : []),
     `      ${yamlComment("Unconfined results never reach a remote cache, so the runner keeps its own.")}`,
     `      ${yamlComment("It also keeps the compiled code of smthrs, so the next run starts sooner.")}`,
+    `      ${
+      yamlComment("Both are kept outside the checkout: a step that lists its files finds only the repository's.")
+    }`,
     `      - uses: actions/cache@v4`,
     `        with:`,
     `          path: |`,
-    `            .flows/cache`,
-    ...(keepsTools ? [`            ${toolCache}`] : []),
-    `            ${compiledCode}`,
+    `            ${stateDirectory}/cache`,
+    ...(keepsTools ? [`            ${stateDirectory}/tools`] : []),
+    `            ${stateDirectory}/${compiledCode}`,
     `          key: ${cacheKey}\${{ github.sha }}`,
     `          restore-keys: ${cacheKey}`,
     ...(cache !== undefined ? [] : [
@@ -574,9 +569,11 @@ const renderWorkflow = (
       `        run: echo ${text(noSharedCache)}`
     ]),
     ...(serial ? [`      ${yamlComment("Targets that can write the same files run one at a time.")}`] : []),
-    `      - run: npx --yes --package=@smthrs/cli@${release} smthrs ci ${selection}${serial ? " --jobs 1" : ""}`,
+    `      - run: npx --yes --package=@smthrs/cli@${release} smthrs ci ${selection}${
+      serial ? " --jobs 1" : ""
+    } --cache-dir "${stateDirectory}"`,
     `        env:`,
-    `          NODE_COMPILE_CACHE: ${compiledCode}`,
+    `          NODE_COMPILE_CACHE: ${stateDirectory}/${compiledCode}`,
     // Two jobs on one runner: neither finds what the other left in `/tmp`.
     ...(machines.size > 1 ? [`          ${ownTmpVariable}: required`] : []),
     `          SMITHERS_CACHE_URL: ${cacheUrl(cache)}`,

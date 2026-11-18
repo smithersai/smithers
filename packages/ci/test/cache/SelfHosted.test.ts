@@ -4,7 +4,7 @@
  */
 
 import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
@@ -167,9 +167,16 @@ const run = (root: string, settings: Settings) => {
   const given = Object.fromEntries(
     ["SMITHERS_CACHE_URL", "SMITHERS_CACHE_TOKEN"].map((name) => [name, evaluate(step.env?.[name] as string, settings)])
   )
+  // Each clone is a runner of its own: its temporary directory is beside the checkout, never in it.
+  const runner = `${root}.runner`
+  if (!existsSync(runner)) mkdirSync(keep(runner))
   // The CLI refuses to overwrite a results file, so each run names its own.
-  const resultsFile = join(root, ".flows", `results-${++runs}.json`)
-  const command = (step.run as string).replace(/^npx .* smthrs /, `"$NODE" "$SMTHRS" `)
+  const resultsFile = join(runner, `results-${++runs}.json`)
+  const command = (step.run as string).replace(/^npx .* smthrs /, `"$NODE" "$SMTHRS" `).replaceAll(
+    "${{ runner.temp }}",
+    runner
+  )
+  expect(command).toContain(`--cache-dir "${runner}/smithers-ci"`)
   expect(command).toContain("$SMTHRS")
   const environment: NodeJS.ProcessEnv = { ...process.env, NODE: process.execPath, SMTHRS: smthrs, ...given }
   delete environment["SMITHERS_CACHE_READ_TOKEN"]
@@ -183,6 +190,8 @@ const run = (root: string, settings: Settings) => {
     // A run that hangs fails its test instead of holding the suite.
     timeout: 300_000
   })
+  // The run kept its cache on the runner and left the checkout as git made it.
+  expect(existsSync(join(root, ".flows"))).toBe(false)
   const record = existsSync(resultsFile)
     ? JSON.parse(readFileSync(resultsFile, "utf8")) as {
       readonly results: ReadonlyArray<{ readonly label: string; readonly status: string }>

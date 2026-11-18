@@ -35,6 +35,7 @@ import {
   notesPath,
   packagePath,
   packIgnorePath,
+  stateDirectory,
   workflowPath,
   workspacePath
 } from "../src/generate/Render.ts"
@@ -194,7 +195,7 @@ describe("files", () => {
     // No URL given: the variable alone names the cache, and a run without it says so before the targets run.
     const plain = content(generate(document), workflowPath)
     expect(runOf(plain).env).toEqual({
-      NODE_COMPILE_CACHE: compiledCode,
+      NODE_COMPILE_CACHE: `${stateDirectory}/${compiledCode}`,
       SMITHERS_CACHE_URL: "${{ vars.SMITHERS_CACHE_URL }}",
       SMITHERS_CACHE_TOKEN: token
     })
@@ -216,7 +217,7 @@ describe("files", () => {
       workflowPath
     )
     expect(runOf(cached).env).toEqual({
-      NODE_COMPILE_CACHE: compiledCode,
+      NODE_COMPILE_CACHE: `${stateDirectory}/${compiledCode}`,
       SMITHERS_CACHE_URL: "${{ vars.SMITHERS_CACHE_URL || 'https://cache.example.com/it''s' }}",
       SMITHERS_CACHE_TOKEN: token
     })
@@ -279,7 +280,9 @@ describe("what a step becomes", () => {
     const source = targetsOf(inventory([job("a", [step("a:1", "bun install"), step("a:2", "bun test")])]))
     expect(declaration(source, "a-1")).toContain("S.Shell.Build(")
     expect(declaration(source, "a-1")).toContain("cache: false")
-    expect(declaration(source, "a-1")).toContain(`outFiles: ["//.flows/ci/a-1"]`)
+    // It is never reused, so it declares no file of its own to say that it ran: nothing is written for Smithers CI.
+    expect(declaration(source, "a-1")).not.toContain("outFiles")
+    expect(source).not.toContain(".flows/ci")
     expect(declaration(source, "a-2")).toContain("S.Shell.Test(")
     expect(declaration(source, "a-2")).toContain(`shell: "bash -e -c 'bun test'"`)
     expect(declaration(source, "a-2")).toMatch(/data: \[repository, step\d+\]/)
@@ -346,7 +349,7 @@ describe("what a step becomes", () => {
     ]))
     expect(declaration(source, "a-1")).toContain(
       JSON.stringify(
-        `mkdir -p .flows/ci || exit\n: > .flows/ci/a-1 || exit\nbash -e -c 'echo '\\''hi'\\'' && false\necho next'`
+        `bash -e -c 'echo '\\''hi'\\'' && false\necho next'`
       )
     )
     // A command of plain words is no exception: `source` and `time` are not `/bin/sh` words.
@@ -802,24 +805,28 @@ describe("the /tmp of a job in the workflow", () => {
 })
 
 describe("a step that keeps a tool's own cache", () => {
-  const zig = (cwd: string, back: string): Step =>
+  // The tool cache is named whole, from Smithers build's own cache directory, which is outside every checkout.
+  const zig = (cwd: string): Step =>
     step("z:1", "zig build test", {
       cwd,
-      env: { ZIG_LOCAL_CACHE_DIR: `${back}.flows/tools/zig/local`, MODE: "../release", OTHER: ".flows/toolsmith" }
+      env: {
+        ZIG_LOCAL_CACHE_DIR: "{smthrs:cache-directory}/tools/zig/local",
+        MODE: "../release",
+        OTHER: ".flows/toolsmith"
+      }
     })
+  const env =
+    `env: {"MODE":"../release","OTHER":".flows/toolsmith","ZIG_LOCAL_CACHE_DIR":"{smthrs:cache-directory}/tools/zig/local"}`
 
-  it("names the cache from the build's cache directory on a machine, where the copy of the checkout has none", () => {
-    // A GitHub job runs in a copy of the checkout that goes when the run ends: a cache named by a path from there
-    // would go with it.
-    const source = targetsOf(inventory([job("z", [zig("project", "../")])]))
+  it("gives a job on a machine and a recipe in the repository the same tool cache, with every variable as written", () => {
+    // A GitHub job runs in a copy of the checkout that goes when the run ends: the cache is not in it.
+    const source = targetsOf(inventory([job("z", [zig("project")])]))
     expect(declaration(source, "z-1")).toContain(`machine: "z"`)
-    expect(declaration(source, "z-1")).toContain(
-      `env: {"MODE":"../release","OTHER":".flows/toolsmith","ZIG_LOCAL_CACHE_DIR":"{smthrs:cache-directory}/tools/zig/local"}`
-    )
-    // A recipe of a Justfile runs in the repository itself, where the path leads to the cache directory.
-    const tree = targetsOf(inventory([job("z", [zig("", "")], { source: "justfile", file: "Justfile" })]))
+    expect(declaration(source, "z-1")).toContain(env)
+    // A recipe of a Justfile runs in the repository itself: the cache is not in that checkout either.
+    const tree = targetsOf(inventory([job("z", [zig("")], { source: "justfile", file: "Justfile" })]))
     expect(declaration(tree, "z-1")).not.toContain("machine")
-    expect(declaration(tree, "z-1")).toContain(`"ZIG_LOCAL_CACHE_DIR":".flows/tools/zig/local"`)
+    expect(declaration(tree, "z-1")).toContain(env)
   })
 })
 
@@ -834,7 +841,7 @@ describe("how many targets run at once", () => {
     // One chain: each target runs after the one before it.
     const chain = inventory([job("a", [step("a:1", "npm ci"), step("a:2", "npm test")])])
     expect(mapOf(chain).maxJobs).toBeUndefined()
-    expect(workflowOf(chain)).toMatch(/smthrs ci '\/\/\.\.\.'\n/)
+    expect(workflowOf(chain)).toMatch(/smthrs ci '\/\/\.\.\.' --cache-dir /)
     expect(workflowOf(chain)).not.toContain("one at a time")
     // Targets held to their inputs cannot write the working tree, so they run beside each other.
     const held = inventory([job("a", [part("a:1:ui", "ui"), part("a:1:web", "web")])])
@@ -855,7 +862,7 @@ describe("how many targets run at once", () => {
     expect(mapOf(two).maxJobs).toBe(1)
     expect(workflowOf(two)).toContain(
       "      # Targets that can write the same files run one at a time.\n" +
-        `      - run: npx --yes --package=@smthrs/cli@${releaseVersion} smthrs ci '//...' --jobs 1\n`
+        `      - run: npx --yes --package=@smthrs/cli@${releaseVersion} smthrs ci '//...' --jobs 1 --cache-dir "${stateDirectory}"\n`
     )
     // A target that can write the tree beside one held to its inputs: the held one could read a half-written file.
     const beside = inventory([job("a", [part("a:1:ui", "ui")]), job("b", [step("b:1", "make")])])
@@ -881,7 +888,7 @@ describe("how many targets run at once", () => {
     const zig = inventory([job("t", [tidy, root("test-a"), root("test-b"), root("test-c")])])
     expect(mapOf(zig).targets).toHaveLength(4)
     expect(mapOf(zig).maxJobs).toBeUndefined()
-    expect(workflowOf(zig)).toMatch(/smthrs ci '\/\/\.\.\.'\n/)
+    expect(workflowOf(zig)).toMatch(/smthrs ci '\/\/\.\.\.' --cache-dir /)
     expect(workflowOf(zig)).not.toContain("one at a time")
     // Split steps that do not say so can write the same files, and so can one that says so beside one that does not.
     const silent = { atOnce: false }
@@ -1125,7 +1132,7 @@ describe("a step that says what it writes", () => {
     // The setup target still always runs, in the open. Its key now holds what it reads.
     expect(declaration(source, "a-1")).toContain("S.Shell.Build(")
     expect(declaration(source, "a-1")).toContain(`data: [S.glob("//Makefile"), S.glob("//config/**")]`)
-    expect(declaration(source, "a-1")).toContain(`outFiles: ["//.flows/ci/a-1", "//build/info.txt"]`)
+    expect(declaration(source, "a-1")).toContain(`outFiles: ["//build/info.txt"]`)
     expect(declaration(source, "a-1")).toContain(`outDirs: ["//packages/a/dist", "//packages/b/dist"]`)
     expect(declaration(source, "a-1")).toContain("cache: false")
     expect(declaration(source, "a-1")).toContain(`sandbox: "none"`)
@@ -1139,8 +1146,8 @@ describe("a step that says what it writes", () => {
       step("a:2", "make more", { inputs: ["more/**"], from: "a:2", ...extra })
     const last = step("a:3", "make test", { inputs: ["packages/a/**"], from: "a:3" })
     const all = targetsOf(inventory([job("a", [build({ outputs: [] }), middle({ outputs: ["out/**"] }), last])]))
-    // A step that says it writes nothing declares only its marker.
-    expect(declaration(all, "a-1")).toContain(`outFiles: ["//.flows/ci/a-1"]`)
+    // A step that says it writes nothing declares no output.
+    expect(declaration(all, "a-1")).not.toContain("outFiles")
     expect(declaration(all, "a-1")).not.toContain("outDirs")
     expect(declaration(all, "a-2")).toContain(`data: [S.glob("//more/**"), step0]`)
     expect(declaration(all, "a-2")).toContain(`outDirs: ["//out"]`)
@@ -1384,12 +1391,20 @@ describe("the workspace and workflow", () => {
     expect(workflow.indexOf("oven-sh/setup-bun@v2")).toBeLessThan(workflow.indexOf("mlugg/setup-zig@v2"))
     expect(workflow).toContain("# turbo (turbo.json) has no known setup action.")
     expect(workflow).toContain(`node-version: "24"`)
-    expect(workflow).toMatch(/smthrs ci '\/\/\.\.\.'\n/)
+    // Smithers build keeps its cache in a directory of the runner, outside the checkout.
+    expect(stateDirectory).toBe("${{ runner.temp }}/smithers-ci")
+    expect(workflow).toContain(`smthrs ci '//...' --cache-dir "${stateDirectory}"\n`)
     // The runner keeps its results and the compiled code of smthrs, and the run reads both.
-    expect(workflow).toContain(`          path: |\n            .flows/cache\n            ${compiledCode}\n`)
-    expect(workflow.indexOf(`            ${compiledCode}`)).toBeLessThan(workflow.indexOf("smthrs ci"))
-    expect(workflow).toContain(`        env:\n          NODE_COMPILE_CACHE: ${compiledCode}\n`)
-    // A replay starts smthrs with the directory the workflow names.
+    expect(workflow).toContain(
+      `          path: |\n            ${stateDirectory}/cache\n            ${stateDirectory}/${compiledCode}\n`
+    )
+    expect(workflow.indexOf(`            ${stateDirectory}/${compiledCode}`)).toBeLessThan(
+      workflow.indexOf("smthrs ci")
+    )
+    expect(workflow).toContain(`        env:\n          NODE_COMPILE_CACHE: ${stateDirectory}/${compiledCode}\n`)
+    // Nothing the workflow keeps or the workspace declares is in the checkout.
+    expect(workflow).not.toContain(".flows")
+    // A replay starts smthrs with the directory the workflow names, in the cache directory it gives Smithers build.
     expect(compiledCode).toBe(replayed)
   })
 

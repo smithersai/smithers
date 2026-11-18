@@ -81,36 +81,46 @@ effect function append(root: string, file: string, text: string) {
   try write(root, file, `${try fs.readFileString(path.join(root, file))}${text}`)
 }
 
-/** The fixture project as a repository whose CI is `just ci`: `tidy`, then `test`. */
-effect function repository() {
+/** The text Smithers build replaces, in a step's environment, with the directory it keeps its cache in. */
+const cacheToken = "{smthrs:cache-directory}"
+
+/** Where a step finds a directory of the tool cache, with Smithers build's cache directory at `state`. */
+const placed = (variable: string, state: string): string =>
+  (ZigSteps.environment[variable] as string).replace(cacheToken, state)
+
+/**
+ * The fixture project as a repository whose CI is `just ci`: `tidy`, then `test`. `state` is where Smithers build
+ * keeps its cache for it: a directory beside the repository, as a runner's temporary directory is.
+ */
+effect function repository(state: string) {
   const fs = try FileSystem.FileSystem
   const root = try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-split-" })
   try fs.copy(fixture, root)
   try write(root, "Justfile", justfile)
   try write(root, "tidy.sh", tidy, 0o755)
   try append(root, "src/gamma.zig", writes)
-  return try committed(root)
+  return try committed(root, state)
 }
 
 /** The fixture project in `project`, in a repository whose CI is a workflow that tests it there. */
-effect function nested() {
+effect function nested(state: string) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
   const root = try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-nested-" })
   try fs.copy(fixture, path.join(root, "project"))
   try write(root, ".github/workflows/ci.yml", workflow)
-  return try committed(root)
+  return try committed(root, state)
 }
 
-/** Gives the repository at `root` a warm tool cache and its first commit. */
-effect function committed(root: string) {
+/** Gives the repository at `root` a warm tool cache, in `state`, and its first commit. */
+effect function committed(root: string, state: string) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
-  try write(root, ".gitignore", ".flows\n.zig-cache\nzig-out\n")
+  try write(root, ".gitignore", ".zig-cache\nzig-out\n")
   // This machine's Zig has already compiled its own build runner; a new repository's tool cache starts from that.
   const environment = try run(root, "zig", ["env"])
   const warm = /\.global_cache_dir = "([^"]+)"/.exec(environment.out)?.[1]
-  const seeded = path.join(root, ZigSteps.environment["ZIG_GLOBAL_CACHE_DIR"] as string)
+  const seeded = placed("ZIG_GLOBAL_CACHE_DIR", state)
   if (warm !== undefined && (try fs.exists(warm))) {
     try fs.makeDirectory(path.dirname(seeded), { recursive: true })
     try fs.copy(warm, seeded)
@@ -144,16 +154,17 @@ const Record = Schema.fromJsonString(Schema.Struct({
  * Runs every target, as many at once as Smithers build chooses, with the programs in `first` before the others on
  * `PATH`, and gives each one's status.
  */
-effect function statuses(root: string, name: string, first: string) {
+effect function statuses(root: string, state: string, name: string, first: string) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
-  const results = path.join(root, ".flows", `${name}.json`)
+  const results = path.join(state, `${name}.json`)
   const ran = try run(root, "sh", [
     "-c",
-    `PATH="$1:$PATH" exec node "$0" ci //... --results-file "$2" --ui plain`,
+    `PATH="$1:$PATH" exec node "$0" ci //... --cache-dir "$3" --results-file "$2" --ui plain`,
     smthrs,
     first,
-    results
+    results,
+    state
   ])
   const record = try Schema.decodeUnknownEffect(Record)(try fs.readFileString(results))
   return {
@@ -174,7 +185,8 @@ describe.skipIf(!observes)("zig build test on a real repository", () => {
       try scoped(effect {
         const fs = try FileSystem.FileSystem
         const path = try Path.Path
-        const root = try repository()
+        const state = try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-state-" })
+        const root = try repository(state)
         const { steps, maxJobs } = try generate(root)
         const brief = (step: Step) => [step.id, step.command, step.inputs, step.from, step.atOnce, step.env]
         const from = "justfile:test:1"
@@ -194,28 +206,31 @@ describe.skipIf(!observes)("zig build test on a real repository", () => {
         try write(tools, "zig", `#!/bin/sh\nexec ${real} "$@"\n`, 0o755)
 
         // `tidy` always runs: `test` follows it. Each test root runs in the open, and its run is recorded.
-        const first = try statuses(root, "first", tools)
+        const first = try statuses(root, state, "first", tools)
         expect([first.statuses, first.out]).toEqual([{ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "ran" }, first.out])
         // Nothing changed, so no test root runs again, though `tidy` ran before each of them.
-        expect((try statuses(root, "second", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
-        // Zig kept its caches in the tool cache. A test made its directory where it started, as Zig's tests do.
-        expect(try fs.exists(path.join(root, ZigSteps.environment["ZIG_LOCAL_CACHE_DIR"] as string, "o"))).toBe(true)
+        expect((try statuses(root, state, "second", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
+        // Zig kept its caches in the tool cache, which is in Smithers build's cache directory and not in the
+        // checkout. A test made its directory where it started, as Zig's tests do.
+        expect(ZigSteps.environment["ZIG_LOCAL_CACHE_DIR"]).toBe(`${cacheToken}/tools/zig/local`)
+        expect(try fs.exists(path.join(placed("ZIG_LOCAL_CACHE_DIR", state), "o"))).toBe(true)
+        expect(try fs.exists(path.join(root, ".flows"))).toBe(false)
         expect(try fs.exists(path.join(root, ".zig-cache", "tmp"))).toBe(true)
 
         // A file one root reads reruns that root.
         try append(root, "src/gamma.zig", "\n// edited\n")
-        expect((try statuses(root, "gamma", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "ran" })
+        expect((try statuses(root, state, "gamma", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "ran" })
         // A file two roots import reruns those two.
         try append(root, "src/shared.zig", "\n// edited\n")
-        expect((try statuses(root, "shared", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "hit" })
+        expect((try statuses(root, state, "shared", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "hit" })
         // A file no root reads reruns none.
         try write(root, "NOTES.md", "changed\n")
-        expect((try statuses(root, "notes", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
+        expect((try statuses(root, state, "notes", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
 
         // The Zig a root started is among the files it read: another Zig at the same place reruns all three.
         try write(tools, "zig", `#!/bin/sh\n# another release\nexec ${real} "$@"\n`, 0o755)
-        expect((try statuses(root, "zig", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "ran" })
-        expect((try statuses(root, "again", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
+        expect((try statuses(root, state, "zig", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "ran" })
+        expect((try statuses(root, state, "again", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
       })
     }
   }, limit)
@@ -225,32 +240,31 @@ describe.skipIf(!observes)("zig build test on a real repository", () => {
       try scoped(effect {
         const fs = try FileSystem.FileSystem
         const path = try Path.Path
-        const root = try nested()
+        const state = try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-state-" })
+        const root = try nested(state)
         const { steps } = try generate(root)
-        // The flag keeps the step whole. It is still told where Zig keeps its caches; Zig takes a cache directory
-        // from where it starts, so the step is given the way back up to the root.
+        // The flag keeps the step whole. It is still told where Zig keeps its caches: the directories a step at the
+        // root is given, each named whole.
         expect(steps.map((step) => [step.command, step.cwd, step.env])).toEqual([
-          ["zig build test --summary all", "project", {
-            ZIG_GLOBAL_CACHE_DIR: `../${ZigSteps.environment["ZIG_GLOBAL_CACHE_DIR"]}`,
-            ZIG_LOCAL_CACHE_DIR: `../${ZigSteps.environment["ZIG_LOCAL_CACHE_DIR"]}`
-          }]
+          ["zig build test --summary all", "project", ZigSteps.environment]
         ])
         const tools = path.dirname((try run(root, "sh", ["-c", "command -v zig"])).out.trim())
-        const first = try statuses(root, "first", tools)
+        const first = try statuses(root, state, "first", tools)
         expect([first.statuses, first.out]).toEqual([{ [job]: "ran" }, first.out])
-        // The caches are the repository's one tool cache, not a second one beside the project.
-        expect(try fs.exists(path.join(root, ZigSteps.environment["ZIG_LOCAL_CACHE_DIR"] as string, "o"))).toBe(true)
+        // The caches are the repository's one tool cache, outside the checkout: none is beside the project.
+        expect(try fs.exists(path.join(placed("ZIG_LOCAL_CACHE_DIR", state), "o"))).toBe(true)
         expect(try fs.exists(path.join(root, "project", ".flows"))).toBe(false)
+        expect(try fs.exists(path.join(root, ".flows"))).toBe(false)
 
         // A fresh checkout holds the tracked files and the cache a CI run restores, and nothing Zig left beside
         // `build.zig`. With Zig's cache there, the step would have read files that are now gone, and run again.
         try fs.remove(path.join(root, "project", ".zig-cache"), { recursive: true, force: true })
-        const fresh = try statuses(root, "fresh", tools)
+        const fresh = try statuses(root, state, "fresh", tools)
         expect([fresh.statuses, fresh.out]).toEqual([{ [job]: "hit" }, fresh.out])
 
         // It still runs again when a file it compiled changes.
         try append(root, "project/src/beta.zig", "\n// edited\n")
-        expect((try statuses(root, "edited", tools)).statuses).toEqual({ [job]: "ran" })
+        expect((try statuses(root, state, "edited", tools)).statuses).toEqual({ [job]: "ran" })
       })
     }
   }, limit)

@@ -5,8 +5,8 @@ import type * as Path from "effect/Path"
 import { existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { besidePaths, besideRefusal, check, formerPaths, ignoresFor } from "../../src/apply/index.ts"
-import { applyIgnores, exitCodes } from "../../src/contract/Command.ts"
+import { besidePaths, besideRefusal, check, formerPaths } from "../../src/apply/index.ts"
+import { exitCodes } from "../../src/contract/Command.ts"
 import { type Failure, type GeneratedFile, writtenFiles } from "../../src/contract/Parts.ts"
 import * as TargetMap from "../../src/contract/TargetMap.ts"
 import { generatedMark } from "../../src/native/index.ts"
@@ -107,8 +107,7 @@ describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
     const missing = [
       `${workflow} is missing: run smithers-ci apply`,
       ".smithers/WORKSPACE.smithers is missing: run smithers-ci apply",
-      ".smithers/.npmignore is missing: run smithers-ci apply",
-      ".gitignore lacks .flows: run smithers-ci apply"
+      ".smithers/.npmignore is missing: run smithers-ci apply"
     ]
 
     it("names each file apply would write, exits 1 and writes nothing", async () => {
@@ -134,7 +133,7 @@ describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
       expect(changed(before, snapshot(root)).filter((path) => !path.startsWith(".git/"))).toEqual([])
     })
 
-    it("names a file edited by hand, one removed, one an earlier smithers-ci left, and a .gitignore that lost the cache", async () => {
+    it("names a file edited by hand, one removed and one an earlier smithers-ci left, and never the .gitignore", async () => {
       const root = repo()
       expect((await exec(["apply"], root)).code).toBe(exitCodes.ok)
       const edited = `${read(`${root}/.smithers/WORKSPACE.smithers`)}// mine\n`
@@ -151,7 +150,6 @@ describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
           ".smithers/WORKSPACE.smithers is out of date: run smithers-ci apply",
           ".smithers/.npmignore is missing: run smithers-ci apply",
           "PACKAGE.ts is no longer used: run smithers-ci apply",
-          ".gitignore lacks .flows: run smithers-ci apply",
           ""
         ].join("\n"),
         stderr: ""
@@ -160,7 +158,8 @@ describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
       // apply makes each of those changes; then there is nothing left to change.
       expect((await exec(["apply"], root)).code).toBe(exitCodes.ok)
       expect((await exec(["apply", "--check"], root)).code).toBe(exitCodes.ok)
-      expect(read(`${root}/.gitignore`)).toBe("dist\n.flows\n")
+      // The repository's ignore file is its own: apply adds no line to it.
+      expect(read(`${root}/.gitignore`)).toBe("dist\n")
     })
 
     it("compares bytes: a byte-order mark or a changed line ending is a change apply would make", async () => {
@@ -276,8 +275,8 @@ describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
       }
       expect(first.stdout).toContain("wrote .smithers/WORKSPACE.smithers\n")
       expect(read(`${root}/.smithers/WORKSPACE.smithers`)).toContain("export const Package = S.Package({")
-      // Nothing is left at the repository root but what was there, and the cache line in .gitignore.
-      expect(readdirSync(root).sort()).toEqual([".git", ".github", ".gitignore", ".smithers", "justfile", "src"])
+      // Nothing is left at the repository root but what was there.
+      expect(readdirSync(root).sort()).toEqual([".git", ".github", ".smithers", "justfile", "src"])
       const before = snapshot(root)
       const second = await exec(["apply"], root)
       expect(second.code, second.stderr).toBe(exitCodes.ok)
@@ -391,44 +390,36 @@ describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
     it("writes nothing when a file is where a directory must go, and names each such path", async () => {
       const root = repo()
       commit(root, "a file", { ".github/workflows": "not a directory\n" })
-      mkdirSync(join(root, ".gitignore"))
       const before = snapshot(root)
       const outcome = await exec(["apply"], root)
       expect(outcome).toEqual({
         code: exitCodes.unsupported,
         stdout: "",
-        stderr:
-          `smithers-ci: generate: .github/workflows is not a directory, so ${workflow} cannot be written; .gitignore is not a file\n`
+        stderr: `smithers-ci: generate: .github/workflows is not a directory, so ${workflow} cannot be written\n`
       })
       expect(changed(before, snapshot(root))).toEqual([])
     })
   })
 
-  describe.concurrent("the cache directory", () => {
-    it("adds it to a .gitignore that lacks it, says so, and adds it once", async () => {
+  describe.concurrent("the repository's .gitignore", () => {
+    it("is left as it is: nothing Smithers build keeps is in the checkout", async () => {
       const root = repo()
       commit(root, "ignore", { ".gitignore": "node_modules" })
       const first = await exec(["apply"], root)
       expect(first.code, first.stderr).toBe(exitCodes.ok)
-      expect(first.stdout).toContain("added .flows to .gitignore\n")
-      expect(read(`${root}/.gitignore`)).toBe("node_modules\n.flows\n")
-      const second = await exec(["apply"], root)
-      expect(second.code, second.stderr).toBe(exitCodes.ok)
-      expect(second.stdout).not.toContain(".gitignore")
-      expect(read(`${root}/.gitignore`)).toBe("node_modules\n.flows\n")
+      expect(first.stdout).not.toContain(".gitignore")
+      expect(read(`${root}/.gitignore`)).toBe("node_modules")
+      // A directory where the file would be does not stop apply either: it never reads it.
+      const odd = repo()
+      mkdirSync(join(odd, ".gitignore"))
+      expect((await exec(["apply"], odd)).code).toBe(exitCodes.ok)
     })
 
-    it("makes the .gitignore when there is none, and leaves one that names the directory", async () => {
+    it("is not made when there is none", async () => {
       const root = repo()
       const outcome = await exec(["apply"], root)
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
-      expect(read(`${root}/.gitignore`)).toBe(applyIgnores.map((line) => `${line}\n`).join(""))
-      const named = repo()
-      commit(named, "ignore", { ".gitignore": "dist\r\n/.flows/\r\n" })
-      const kept = await exec(["apply"], named)
-      expect(kept.code, kept.stderr).toBe(exitCodes.ok)
-      expect(kept.stdout).not.toContain(".gitignore")
-      expect(read(`${named}/.gitignore`)).toBe("dist\r\n/.flows/\r\n")
+      expect(existsSync(join(root, ".gitignore"))).toBe(false)
     })
   })
 })
@@ -453,15 +444,6 @@ describe.concurrent("what apply checks before it writes", () => {
     { path: ".smithers/ci/NOT-REPRODUCED.md", content: "# Not reproduced\n\nGenerated by smithers-ci. Do not edit.\n" }
   ]
 
-  it("gives the lines .gitignore lacks, with its new text", () => {
-    expect(ignoresFor("")).toEqual({ added: [".flows"], text: ".flows\n" })
-    expect(ignoresFor("dist\n")).toEqual({ added: [".flows"], text: "dist\n.flows\n" })
-    expect(ignoresFor("dist")).toEqual({ added: [".flows"], text: "dist\n.flows\n" })
-    for (const line of [".flows", "/.flows", ".flows/", "  /.flows/  "]) {
-      expect(ignoresFor(`dist\n${line}\n`)).toEqual({ added: [], text: `dist\n${line}\n` })
-    }
-  })
-
   it("passes absent files and files smithers-ci wrote", async () => {
     const root = repo()
     expect((await onNode(check(root, files)))._tag).toBe("Success")
@@ -469,20 +451,19 @@ describe.concurrent("what apply checks before it writes", () => {
       mkdirSync(join(root, file.path, ".."), { recursive: true })
       writeFileSync(join(root, file.path), file.content)
     }
-    expect(await onNode(check(root, files))).toMatchObject({ _tag: "Success", success: { added: [".flows"] } })
+    expect(await onNode(check(root, files))).toMatchObject({ _tag: "Success", success: { former: [], changes: [] } })
     expect(existsSync(join(root, ".gitignore"))).toBe(false)
   })
 
-  it("counts a file it cannot read as the owner's, and refuses a .gitignore it cannot read", async () => {
+  it("counts a file it cannot read as the owner's", async () => {
     const root = repo()
     writeFileSync(join(root, "PACKAGE.ts"), files[0]!.content)
-    writeFileSync(join(root, ".gitignore"), "dist\n")
     const outcome = await onNode(Effect.provide(check(root, files), unreadable))
     expect(outcome).toMatchObject({
       _tag: "Failure",
       failure: {
         code: "unsupported",
-        message: "PACKAGE.ts was not written by smithers-ci and would be replaced; .gitignore cannot be read",
+        message: "PACKAGE.ts was not written by smithers-ci and would be replaced",
         part: "generate"
       }
     })
@@ -544,10 +525,9 @@ describe.concurrent("what apply checks before it writes", () => {
     writeFileSync(join(unread, "PACKAGE.ts"), files[0]!.content)
     mkdirSync(join(unread, ".smithers"))
     writeFileSync(join(unread, TargetMap.path), "{}\n")
-    writeFileSync(join(unread, ".gitignore"), ".flows\n")
     expect(await onNode(Effect.provide(check(unread, []), unreadable))).toMatchObject({
       _tag: "Failure",
-      failure: { message: `${besideRefusal(["PACKAGE.ts"])}; .gitignore cannot be read` }
+      failure: { message: besideRefusal(["PACKAGE.ts"]) }
     })
     // A directory where Smithers build reads a file is refused; one where it does not is not looked at.
     const directory = repo()
@@ -582,8 +562,7 @@ describe.concurrent("what apply checks before it writes", () => {
       success: {
         changes: [
           { path: "PACKAGE.ts", change: "missing" },
-          { path: ".smithers/ci/NOT-REPRODUCED.md", change: "missing" },
-          { path: ".gitignore", change: "ignores" }
+          { path: ".smithers/ci/NOT-REPRODUCED.md", change: "missing" }
         ]
       }
     })
@@ -591,7 +570,6 @@ describe.concurrent("what apply checks before it writes", () => {
       mkdirSync(join(root, file.path, ".."), { recursive: true })
       writeFileSync(join(root, file.path), file.content)
     }
-    writeFileSync(join(root, ".gitignore"), ".flows\n")
     expect(await onNode(check(root, files))).toMatchObject({ _tag: "Success", success: { changes: [] } })
     // A generated file whose bytes cannot be read is written again.
     expect(await onNode(Effect.provide(check(root, files), noBytes))).toMatchObject({
@@ -607,6 +585,9 @@ describe.concurrent("what apply checks before it writes", () => {
 
   it("checks paths under a root that is not there yet", async () => {
     const root = join(repo(), "missing")
-    expect(await onNode(check(root, files))).toMatchObject({ _tag: "Success", success: { text: ".flows\n" } })
+    expect(await onNode(check(root, files))).toMatchObject({
+      _tag: "Success",
+      success: { former: [], changes: files.map((file) => ({ path: file.path, change: "missing" })) }
+    })
   })
 })

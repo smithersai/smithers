@@ -12,6 +12,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { stateDirectory } from "../../src/generate/Render.ts"
 import { probe } from "../../src/replay/Jail.ts"
 import { bin, commit, git, remove, spawn, temporary } from "./repo.ts"
 
@@ -99,9 +100,11 @@ describe("a workflow whose jobs pass only on machines of their own", () => {
     // The command of the generated workflow, with the `smthrs` of this checkout in place of the published one.
     const generated = readFileSync(join(root, ".github/workflows/smithers-ci.yml"), "utf8")
     const command = /smthrs ci (.*)$/m.exec(generated)?.[1]
-    expect(command).toBe("'//...' --jobs 1")
+    // The workflow keeps the cache in a directory of the runner's, outside the checkout.
+    expect(command).toBe(`'//...' --jobs 1 --cache-dir "${stateDirectory}"`)
+    const state = join(keep(temporary("job-machine-state")), "smithers-ci")
     const run = () =>
-      spawnSync(process.execPath, [smthrs, "ci", "//...", "--jobs", "1"], {
+      spawnSync(process.execPath, [smthrs, "ci", "//...", "--jobs", "1", "--cache-dir", state], {
         cwd: root,
         encoding: "utf8",
         maxBuffer: 64 * 1024 * 1024,
@@ -170,8 +173,9 @@ describe.skipIf(!mounts)("a workflow whose jobs each expect an empty /tmp", () =
     const generated = readFileSync(join(root, ".github/workflows/smithers-ci.yml"), "utf8")
     // What the workflow tells Smithers build: on a Linux runner it has installed bubblewrap for the mount.
     expect(generated).toContain("SMTHRS_MACHINE_OWN_TMP: required")
+    const state = join(keep(temporary("job-machine-tmp-state")), "smithers-ci")
     const run = () =>
-      spawnSync(process.execPath, [smthrs, "ci", "//...", "--jobs", "1"], {
+      spawnSync(process.execPath, [smthrs, "ci", "//...", "--jobs", "1", "--cache-dir", state], {
         cwd: root,
         encoding: "utf8",
         maxBuffer: 64 * 1024 * 1024,

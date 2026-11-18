@@ -120,13 +120,13 @@ describe("one failing commit among passing ones", () => {
 
 describe("what a failure says", () => {
   it("names a step that fails only in a mode", async () => {
-    // The cache directory exists where a target runs and in no baseline checkout.
-    const step = "test ! -e .flows || { echo 'found the cache' >&2; exit 5; }"
+    // A mode's copy is in a directory named for the mode; a baseline checkout is not.
+    const step = `case "$PWD" in */normal/*) echo 'found the mode' >&2; exit 5;; esac`
     const root = track(makeSmallRepository([job("mode", step)]))
     const [commit] = (await replay(root)).commits
     expect(commit?.baseline.failures).toBeUndefined()
     expect(commit?.normal.failures).toEqual([
-      { step: "mode0", reason: "found the cache", exitCode: 5, command: step }
+      { step: "mode0", reason: "found the mode", exitCode: 5, command: step }
     ])
   }, 600_000)
 

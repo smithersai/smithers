@@ -1,6 +1,15 @@
 /** A real git repository for the replay tests, with real commits and real scripts. */
 import { execFileSync } from "node:child_process"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -9,11 +18,14 @@ import { fileURLToPath } from "node:url"
 export const smthrs = fileURLToPath(new URL("../../../../node_modules/.bin/smthrs", import.meta.url))
 const targetsPackage = fileURLToPath(new URL("../../../../node_modules/@smthrs/targets", import.meta.url))
 
-/** Lets a generated workspace in `directory` import the targets package. */
+/**
+ * Lets a generated workspace file in `directory` import the targets package. A replay asks at every commit, for a
+ * directory it keeps: the link is made once.
+ */
 export const linkTargets = (directory: string): void => {
   const scope = join(directory, "node_modules", "@smthrs")
   mkdirSync(scope, { recursive: true })
-  symlinkSync(targetsPackage, join(scope, "targets"))
+  if (!existsSync(join(scope, "targets"))) symlinkSync(targetsPackage, join(scope, "targets"))
 }
 
 const git = (root: string, ...args: ReadonlyArray<string>): string =>
@@ -79,11 +91,12 @@ export interface Repository {
 }
 
 /**
- * A script that fails on every odd run and passes on every even one. A target
- * can write only under `.flows`, which the replay keeps between commits, so
- * the count lives there unless `COUNTER` names a place, as the baseline does.
+ * A script that fails on every odd run and passes on every even one. The
+ * count lives in a directory the step's target declares it writes
+ * (`countsIn` of the test parts), which lasts from a run to its rerun, unless
+ * `COUNTER` names a place, as the baseline does.
  */
-const flaky = `f=\${COUNTER:-.flows/c-runs}
+const flaky = `f=\${COUNTER:-c-state/runs}
 n=$(cat "$f" 2>/dev/null || echo 0)
 echo $((n + 1)) > "$f"
 test $((n % 2)) -eq 1

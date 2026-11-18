@@ -179,7 +179,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       expect(outcome.stdout).toContain("× faster")
       expect(outcome.stdout).toContain("3 commits · 0 mismatches")
       expect(outcome.stdout).toContain(
-        `smithers-ci apply would write ${files.length} files and add .flows to .gitignore. This run wrote nothing to the repository.`
+        `smithers-ci apply would write ${files.length} files. This run wrote nothing to the repository.`
       )
       expect(requestOf(outcome.stderr)).toEqual({ root, commits: 20, modes: ["normal"], ...measuring })
       expect(changed(before, snapshot(root))).toEqual([])
@@ -417,10 +417,10 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       const outcome = await exec(["apply", "--cache", "https://cache.example.invalid"], root)
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
       expect(files.length).toBeGreaterThan(0)
-      expect(changed(before, snapshot(root))).toEqual([...pathsOf(files), ".gitignore"].sort())
+      expect(changed(before, snapshot(root))).toEqual([...pathsOf(files)].sort())
       for (const file of files) expect(read(`${root}/${file.path}`)).toBe(file.content)
       for (const file of files) expect(outcome.stdout).toContain(`wrote ${file.path}\n`)
-      expect(outcome.stdout).toContain("added .flows to .gitignore\n")
+      expect(outcome.stdout).not.toContain(".gitignore")
       expect(outcome.stdout).toContain(`smithers-ci: wrote ${files.length} files`)
       // A second apply writes the same files over its own and has nothing to add to .gitignore.
       const applied = snapshot(root)
@@ -453,7 +453,8 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     const before = snapshot(root)
     const apply = await spawn(bin, ["apply"], root)
     expect(apply.code, apply.stderr).toBe(exitCodes.ok)
-    expect(changed(before, snapshot(root))).toEqual([...pathsOf(files), ".gitignore"].sort())
+    // The generated files and nothing else: the repository's `.gitignore` is left as it is.
+    expect(changed(before, snapshot(root))).toEqual([...pathsOf(files)].sort())
   })
 
   it("replays a commit end to end with every part on main, and writes nothing to the repository", async () => {

@@ -328,8 +328,10 @@ given to each of them: `zig build test --summary all` becomes
 keeps the step whole: `-Doptimize=ReleaseSafe` changes what is built, and a
 build can name other steps for it.
 
-A Zig step keeps Zig's two caches in `.flows/tools/zig`. They last from one
-run to the next, and the generated workflow saves them with the results: a
+A Zig step keeps Zig's two caches with Smithers CI's own, outside your
+checkout (see [Where the cache is on a machine](cache.md#where-the-cache-is-on-a-machine)).
+They last from one run to the next, and the generated workflow saves them with
+the results: a
 step that does run again compiles and reruns only the binaries the change
 reaches, by Zig's own rules. What Zig reads and writes in its cache is left
 out of the step's record.
@@ -346,8 +348,8 @@ working-directory: tools/gen            a project in a directory under the root
 
 Zig's usual cache is `.zig-cache` beside `build.zig`. A step reads it, and a
 fresh checkout does not have it, so with the cache left there the step would
-run again on every CI run. Zig takes a cache directory from where it starts,
-so a step that starts in `tools/gen` is given `../../.flows/tools/zig`. Three
+run again on every CI run. A step that starts in `tools/gen` is given the
+same cache directory as a step at the root. Three
 steps keep Zig's usual place: one that changes directory with `cd` or starts
 outside the repository; one whose command names `.zig-cache`; and one whose
 shell holds a loop, a subshell or a program named by a variable.

@@ -36,8 +36,9 @@ refuses, and names the path, when:
 - a link in the path leads outside the repository, or to nothing;
 - a file is where a directory must go, or a directory where the file must go.
 
-`apply` also adds `.flows`, the local cache directory, to the root
-`.gitignore` when it is not there, and prints that it did.
+`apply` writes those files and nothing else. It adds no line to your
+`.gitignore`: the cache is never in your checkout (see
+[Where the cache is on a machine](../concepts/cache.md#where-the-cache-is-on-a-machine)).
 
 Every file it writes is under `.smithers/`, except the workflow, whose place
 GitHub fixes. [Make it your CI](../getting-started/quickstart.md#make-it-your-ci)
@@ -56,7 +57,6 @@ files there. It prints one line for each file `apply` would change and exits
 .smithers/WORKSPACE.smithers is out of date: run smithers-ci apply
 .smithers/ci/legs.txt is missing: run smithers-ci apply
 PACKAGE.ts is no longer used: run smithers-ci apply
-.gitignore lacks .flows: run smithers-ci apply
 ```
 
 When nothing would change, it prints

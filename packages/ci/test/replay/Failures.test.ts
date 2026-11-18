@@ -122,6 +122,17 @@ describe("a replay that cannot run", () => {
     expect(failure.message).toContain(targetMapPath)
   })
 
+  it("refuses generated files with no workspace file", async () => {
+    const root = track(makeSmallRepository(passing))
+    const files: Parts["files"] = (inventory) =>
+      Effect.succeed(generated(inventory).filter((file) => file.path !== workspacePath))
+    expect(await failureOf(replay(root, { files }))).toEqual({
+      code: "invalid-document",
+      part: "replay",
+      message: "the generated files have no workspace file"
+    })
+  })
+
   it("refuses a target map it cannot read", async () => {
     const root = track(makeSmallRepository(passing))
     const files: Parts["files"] = () => Effect.succeed([{ path: targetMapPath, content: "{" }])
@@ -199,40 +210,21 @@ describe("a replay that cannot run", () => {
     expect(existsSync(join(root, "PACKAGE.ts"))).toBe(true)
   }, 600_000)
 
-  it("says why a step failed only beside the files it wrote: the tool, the file, and what to add", async () => {
+  it("passes a step that fails beside a generated file: no copy holds one", async () => {
     const root = track(makeSmallRepository([job("a", "sh seen.sh")]))
-    // A spell checker told to read dot directories: it passes on a fresh clone and fails on the generated workspace.
+    // A spell checker told to read dot directories: it passes on a fresh clone and would fail on a generated file.
     writeFileSync(
       join(root, "seen.sh"),
-      `if [ -e ${workspacePath} ]; then\n  echo "${workspacePath}:2:19 - Unknown word (smthrs)"\n  exit 1\nfi\n`
+      `if [ -e .smithers ] || [ -e .flows ]; then\n  echo "${workspacePath}:2:19 - Unknown word (smthrs)"\n  exit 1\nfi\n`
     )
     execFileSync("git", ["add", "-A"], { cwd: root })
     execFileSync("git", ["-c", "user.name=Replay", "-c", "user.email=replay@example.com", "commit", "-qm", "check"], {
       cwd: root
     })
-    // The step's target may read the whole repository, as a generated target that names no inputs may.
-    const reading: Parts["files"] = (inventory) =>
-      Effect.succeed(
-        generated(inventory).map((file) =>
-          file.path === workspacePath
-            ? {
-              ...file,
-              content: file.content.replace(`S.file("//seen.sh")`, `S.file("//seen.sh"), S.file("//${workspacePath}")`)
-            }
-            : file
-        )
-      )
-    const report = await replay(root, { files: reading })
-    // It is still a mismatch.
-    expect(report.mismatches).toBe(1)
-    expect(report.commits[0]?.mismatches).toEqual([{
-      label: "//:a0_0",
-      mode: "normal",
-      baseline: "pass",
-      got: "fail",
-      cause:
-        `cspell read ${workspacePath}, which Smithers CI wrote. Add .smithers to "ignorePaths" in the cspell configuration.`
-    }])
+    const report = await replay(root)
+    expect(report.mismatches).toBe(0)
+    expect(report.commits[0]?.baseline).toMatchObject({ ok: true, counts: { ran: 1 } })
+    expect(report.commits[0]?.normal).toMatchObject({ ok: true, counts: { ran: 1 } })
   }, 600_000)
 
   it("reports a Smithers build that cannot start", async () => {
@@ -264,11 +256,11 @@ describe("a replay that cannot run", () => {
 
   it("reports a git command that fails, with what git said", async () => {
     const root = track(makeSmallRepository(passing))
-    const failure = await failureOf(replay(root, {}, {}, gitFails("ls-files") as never))
+    const failure = await failureOf(replay(root, {}, {}, gitFails("clean") as never))
     expect(failure).toEqual({
       code: "command-failed",
       part: "replay",
-      message: "git ls-files failed: fatal: bad object\n"
+      message: "git clean failed: fatal: bad object\n"
     })
   })
 
@@ -461,63 +453,5 @@ describe("a replay that runs", () => {
     expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 0 })
     expect(commit?.normal.ok).toBe(true)
     expect(commit?.mismatches).toEqual([{ label: "//:a0_0", mode: "normal", baseline: "fail", got: "pass" }])
-  }, 600_000)
-})
-
-describe("what a copy holds beside the commit", () => {
-  const commit = (root: string, message: string): void => {
-    execFileSync("git", ["add", "-A"], { cwd: root })
-    execFileSync("git", ["-c", "user.name=Replay", "-c", "user.email=replay@example.com", "commit", "-qm", message], {
-      cwd: root
-    })
-  }
-
-  /** Records, as each copy is made ready, its `.gitignore` and what git says changed in it. */
-  const observing = (seen: Array<{ readonly ignore: string; readonly changed: string }>) =>
-    Layer.succeed(Options, {
-      smthrs: [smthrs],
-      reruns: 1,
-      prepare: (directory) =>
-        Effect.sync(() => {
-          linkTargets(directory)
-          seen.push({
-            ignore: readFileSync(join(directory, ".gitignore"), "utf8"),
-            changed: execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], {
-              cwd: directory,
-              encoding: "utf8"
-            })
-          })
-        })
-    })
-
-  it("has the cache directory in .gitignore, as apply leaves it, and git counts no change", async () => {
-    const root = track(makeSmallRepository(passing))
-    // The repository's own .gitignore does not name the cache directory, at two commits.
-    writeFileSync(join(root, ".gitignore"), "node_modules\n")
-    commit(root, "an ignore file without the cache directory")
-    writeFileSync(join(root, "b.txt"), "b\n")
-    commit(root, "another file")
-    const seen: Array<{ readonly ignore: string; readonly changed: string }> = []
-    const report = await replay(root, {}, { commits: 2 }, observing(seen) as never)
-    expect(report.commits).toHaveLength(2)
-    expect(report.mismatches).toBe(0)
-    // A formatter or a linter run over the root reads .gitignore to know what is not the repository's.
-    expect(seen).toEqual([
-      { ignore: "node_modules\n.flows\n", changed: "" },
-      { ignore: "node_modules\n.flows\n", changed: "" }
-    ])
-    // The repository itself is as it was.
-    expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe("node_modules\n")
-  }, 600_000)
-
-  it("makes the .gitignore a commit lacks", async () => {
-    const root = track(makeSmallRepository(passing))
-    rmSync(join(root, ".gitignore"))
-    commit(root, "no ignore file")
-    const seen: Array<{ readonly ignore: string; readonly changed: string }> = []
-    const report = await replay(root, {}, {}, observing(seen) as never)
-    expect(report.mismatches).toBe(0)
-    expect(seen).toEqual([{ ignore: ".flows\n", changed: "" }])
-    expect(existsSync(join(root, ".gitignore"))).toBe(false)
   }, 600_000)
 })

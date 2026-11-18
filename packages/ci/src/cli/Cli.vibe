@@ -219,12 +219,11 @@ const checkOnly = Flag.Boolean("check").pipe(
 )
 
 /** What `apply --check` prints for one file `apply` would change. */
-const changeLine = (change: Change, added: ReadonlyArray<string>): string => {
+const changeLine = (change: Change): string => {
   const what = {
     missing: "is missing",
     differs: "is out of date",
-    unused: "is no longer used",
-    ignores: `lacks ${added.join(", ")}`
+    unused: "is no longer used"
   }[change.change]
   return `${change.path} ${what}: run ${Surface.name} apply`
 }
@@ -405,7 +404,7 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
       const options = { cache: Option.getOrUndefined(cache), ...(allowDocker ? { allowDocker } : {}) }
       const all = try checkPaths(try parts.files(split, options))
       // The target map is the program's own document: it is not written into the repository.
-      return { files: writtenFiles(all), ignores: try check(root, all) }
+      return { files: writtenFiles(all), checked: try check(root, all) }
     }
 
   /**
@@ -457,12 +456,12 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
   const apply = Command.make("apply", { cache, check: checkOnly, allowDocker }, effect (input) => {
     // Every path was checked before the first is written, so a refusal leaves nothing written.
     const read = allowed(try parts.read(root), input.allowDocker)
-    const { files, ignores } = try generate(read, input.cache, input.allowDocker)
+    const { files, checked } = try generate(read, input.cache, input.allowDocker)
     if (input.check) {
       // What the writes below would change, from the same files: nothing is written.
-      for (const change of ignores.changes) try Console.log(changeLine(change, ignores.added))
-      if (ignores.changes.length === 0) try Console.log(`${Surface.name}: the generated files are up to date`)
-      try settle(ignores.changes.length === 0 ? Surface.exitCodes.ok : Surface.exitCodes.mismatch)
+      for (const change of checked.changes) try Console.log(changeLine(change))
+      if (checked.changes.length === 0) try Console.log(`${Surface.name}: the generated files are up to date`)
+      try settle(checked.changes.length === 0 ? Surface.exitCodes.ok : Surface.exitCodes.mismatch)
       return
     }
     const paths = try Path.Path
@@ -471,13 +470,9 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
       try Console.log(`wrote ${file.path}`)
     }
     // What an earlier smithers-ci wrote where the repository's own tools read it: its content is in the files above.
-    for (const former of ignores.former) {
+    for (const former of checked.former) {
       try remove(paths.join(root, former))
       try Console.log(`removed ${former}`)
-    }
-    if (ignores.added.length > 0) {
-      try write(paths.join(root, ".gitignore"), ignores.text)
-      try Console.log(`added ${ignores.added.join(", ")} to .gitignore`)
     }
     try Console.log(`${Surface.name}: wrote ${files.length} files`)
   }).pipe(Command.withDescription(Surface.commands.apply))
@@ -529,10 +524,9 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     const applies = refusal(read) === undefined
     const installs = notReplayed(read).some((entry) => entry.reasons.some((reason) => reason.feature === changesMachine))
     const here = applies || !installs ? read : allowed(try replayParts.read(root), input.allowDocker)
-    const { files, ignores } = try generate(here, input.cache, input.allowDocker)
-    const adds = ignores.added.length === 0 ? "" : ` and add ${ignores.added.join(", ")} to .gitignore`
+    const { files } = try generate(here, input.cache, input.allowDocker)
     const wouldApply = applies
-      ? `${Surface.name} apply would write ${files.length} files${adds}.`
+      ? `${Surface.name} apply would write ${files.length} files.`
       : `${Surface.name} apply would write nothing: every job here changes the machine, so it stays in your CI as it is.`
     try replayAndPrint(input, read, (report, written) =>
       report.targets === undefined

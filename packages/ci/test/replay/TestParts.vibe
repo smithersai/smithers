@@ -43,14 +43,25 @@ export const Workspace = S.Workspace("replay", {
 })
 `
 
+/**
+ * True for a step whose script counts its runs in the file `COUNTER` names, or in `countsIn` when nothing names
+ * one. A tool target is held to the files it declares, with a home of its own for each run, so the one place it
+ * has that lasts from a run to its rerun is a directory it declares it writes.
+ */
+const counts = (step: Step): boolean => Object.hasOwn(step.env, "COUNTER")
+
+/** The directory a counting step declares it writes, from the repository root. */
+const countsIn = "c-state"
+
 const declaration = (step: Step, variant: Readonly<Record<string, string>>, id: string, deps: ReadonlyArray<string>) => {
   const script = /(\w+)\.sh/.exec(step.command)?.[0] ?? "ci.json"
+  const command = withVariant(step, variant).command
   return `const ${id} = S.ToolBuild({
   tool: "bash",
   command: ${JSON.stringify(shell[0])},
-  args: ${JSON.stringify([...shell.slice(1), withVariant(step, variant).command])},
+  args: ${JSON.stringify([...shell.slice(1), counts(step) ? `mkdir -p ${countsIn} && ${command}` : command])},
   inputs: [S.file(${JSON.stringify(`//${script}`)})],
-  outputs: [],
+  outputs: ${JSON.stringify(counts(step) ? [countsIn] : [])},
   deps: [${deps.join(", ")}],
   env: {},
   cache: true
@@ -213,6 +224,21 @@ export const gitFails = (subcommand: string) => Layer.effect(ChildProcessSpawner
   )
 })
 
+/**
+ * The real file system, except that the directory a replay makes for itself is not removed when the replay ends:
+ * `kept` gains its path, and the test removes it.
+ */
+export const keepingWork = (kept: Array<string>) => Layer.effect(FileSystem.FileSystem, effect {
+  const real = try FileSystem.FileSystem
+  return {
+    ...real,
+    makeTempDirectoryScoped: (options?: Parameters<FileSystem.FileSystem["makeTempDirectoryScoped"]>[0]) =>
+      options?.prefix === "smithers-ci-replay-"
+        ? tap(real.makeTempDirectory(options), (directory) => sync(() => { kept.push(directory) }))
+        : real.makeTempDirectoryScoped(options)
+  }
+})
+
 /** The real file system, except that writing a file is refused. */
 export const noWrites = Layer.effect(FileSystem.FileSystem, effect {
   const real = try FileSystem.FileSystem
@@ -225,6 +251,6 @@ export const noGeneratedWrites = Layer.effect(FileSystem.FileSystem, effect {
   return {
     ...real,
     writeFileString: (path: string, data: string) =>
-      path.endsWith(workspacePath) ? Effect.fail(denied("writeFileString")) : real.writeFileString(path, data)
+      path.endsWith("/WORKSPACE.smithers") ? Effect.fail(denied("writeFileString")) : real.writeFileString(path, data)
   }
 })

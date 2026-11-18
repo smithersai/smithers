@@ -7,7 +7,6 @@ import {
   blocked,
   choose,
   cycleIn,
-  excludeLines,
   failedAt,
   failedTwice,
   failureTexts,
@@ -280,13 +279,6 @@ describe("replayable", () => {
     expect(stationsOf(units, wanted)[0]?.runs[0]).toEqual(run)
     expect(stepsThrough(run, wanted).map((step) => step.id)).toEqual(["justfile:build1", "justfile:test1"])
     expect(stepsThrough(run, new Set(["//:gone"]))).toEqual([])
-  })
-
-  it("lists what is untracked in a copy as exclude patterns that match only those paths", () => {
-    expect(excludeLines("PACKAGE.ts\0.smithers/\0we[i]rd *?\\name\0")).toBe(
-      "/PACKAGE.ts\n/.smithers/\n/we\\[i\\]rd \\*\\?\\\\name\n"
-    )
-    expect(excludeLines("")).toBe("")
   })
 
   it("lists a unit's comparison names, limited to the wanted ones", () => {

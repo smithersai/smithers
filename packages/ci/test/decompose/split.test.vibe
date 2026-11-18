@@ -531,14 +531,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
           // Left beside build.zig, Zig's cache is a file the step read that a fresh checkout does not have.
           { ...stepsOf(before)[0], env: ZigSteps.environment },
           { ...stepsOf(before)[1], env: ZigSteps.environment },
-          // Zig starts two directories down and takes the cache directory from there.
-          {
-            ...stepsOf(before)[2],
-            env: {
-              ZIG_GLOBAL_CACHE_DIR: `../../${ZigSteps.environment["ZIG_GLOBAL_CACHE_DIR"]}`,
-              ZIG_LOCAL_CACHE_DIR: `../../${ZigSteps.environment["ZIG_LOCAL_CACHE_DIR"]}`
-            }
-          },
+          // Zig starts two directories down. The tool cache is named whole, so it is the same one from there.
+          { ...stepsOf(before)[2], env: ZigSteps.environment },
           // Zig starts outside the repository: the step stays as it was.
           stepsOf(before)[3]
         ])

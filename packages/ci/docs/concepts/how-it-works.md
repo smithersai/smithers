@@ -299,6 +299,10 @@ none that can be run on this machine, is not replayed and the report lists it.
 | Fast     | Normal mode, minus the targets the model predicts the change cannot break. Only with `--mode fast` or `--mode both`. |
 
 Every run happens in a copy. The replay never changes the repository it reads.
+A copy holds the commit's files and nothing else: the cache, the files Smithers
+CI generates and its records are kept beside the copy, never in it. A step
+that lists its checkout, with `git status --ignored`, `git clean -n`, `find`
+or `ls`, sees what a fresh clone holds, in the baseline and in each mode.
 `--jobs` caps how many jobs run at once, the same in the baseline and in each
 mode, so the times compare like with like. The default is this machine's core
 count.
@@ -714,8 +718,8 @@ Wall time is elapsed time. Work time is the sum of every target's own time.
 Wall time holds what a CI machine spends on a commit once it is ready:
 checking the commit out and running the commands. In normal and fast mode
 that includes starting Smithers build and deciding what to run, once per
-commit. It leaves out what only a replay does to its copy, such as writing
-the target files there, which `apply` commits once. For every way it leaves
+commit. It leaves out what only a replay does, such as writing the file that
+lists your steps for Smithers build, which `apply` commits once. For every way it leaves
 out what happens before a CI machine is ready: starting the machine, fetching
 the repository over the network, installing tools and moving the cache.
 

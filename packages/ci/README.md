@@ -22,6 +22,23 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Fourteenth round, 2026-11-18.** Nothing of Smithers CI is in the checkout a step sees (`sci-clean-tree`).
+
+- **`Command.applyIgnores` is empty.** `apply` adds no line to `.gitignore`: Smithers build keeps its cache outside
+  the checkout, so there is nothing to ignore. `apply --check` no longer names `.gitignore`.
+- **`Inventory.toolCache` is `{smthrs:cache-directory}/tools`.** A tool's own cache is a directory of Smithers build's
+  cache directory, outside the checkout. The value starts with the text Smithers build replaces, in a target's `env`,
+  with that directory when the step starts; a key holds the text, never the place.
+- **`Command.declarationOf(files)`** (added): the generated file Smithers build reads as the workspace declaration,
+  the written one at a place of `applyRefuses`. A replay writes that one file beside its copy of the repository and
+  names it to Smithers build (`--workspace-file`). No other generated file is written in a replay.
+- Not contracts, and changed with them: a replay's copy holds the commit's files and nothing else. Smithers build's
+  cache directory, the compiled code of `smthrs`, the generated workspace file and the run records are beside the
+  copy (`--cache-dir`, `--workspace-file`), with no ignore line, exclude entry or index bit. The generated workspace
+  declares `S.Cache({ directory: ".flows", outside: true })`, so `smthrs ci '//...'` keeps its cache in the user's
+  cache directory; the generated workflow keeps it in `${{ runner.temp }}/smithers-ci` and saves and restores it from
+  there. A setup target writes no marker file.
+
 **Thirteenth round, 2026-11-18 (open).** A promise that changed; made by the runner-variables lane
 (`sci-runner-env`), accepted by the lead.
 

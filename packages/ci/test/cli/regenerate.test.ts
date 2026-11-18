@@ -17,7 +17,12 @@ import { workflowPath } from "../../src/generate/Render.ts"
 import { bin, commit, git, head, remove, repository, spawn, temporary, workspace } from "./repo.ts"
 
 const made: Array<string> = []
-afterAll(() => made.forEach(remove))
+afterAll(() =>
+  made.forEach((root) => {
+    remove(root)
+    remove(runnerOf(root))
+  })
+)
 
 const release: string = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version
 
@@ -34,6 +39,9 @@ interface Step {
   readonly run?: string
   readonly env?: Readonly<Record<string, string>>
 }
+
+/** The temporary directory of the runner that checks `root` out: a directory beside it, never in it. */
+const runnerOf = (root: string): string => `${root}.runner`
 
 /**
  * The commands of the workflow in `root`, in order. A step with an `if:` prepares a GitHub runner (it installs
@@ -52,11 +60,15 @@ const commandsOf = (root: string): ReadonlyArray<{ readonly run: string; readonl
     expect(version).toBe(release)
     const entry = programs[`${name}@${program}`]
     expect(entry, whole).toBeDefined()
-    // A value GitHub fills from the repository's settings is empty: this repository sets none.
+    // The runner's temporary directory is one of this test's own. Any other value GitHub fills is from the
+    // repository's settings and is empty: this repository sets none.
+    const onRunner = (text: string): string => text.replaceAll("${{ runner.temp }}", runnerOf(root))
     const env = Object.fromEntries(
-      Object.entries(step.env ?? {}).map(([key, value]) => [key, value.includes("${{") ? "" : value])
+      Object.entries(step.env ?? {}).map((
+        [key, value]
+      ) => [key, onRunner(value).includes("${{") ? "" : onRunner(value)])
     )
-    return [{ run: `"$NODE" "${entry}" ${step.run.slice(whole.length)}`, env }]
+    return [{ run: `"$NODE" "${entry}" ${onRunner(step.run.slice(whole.length))}`, env }]
   })
 }
 

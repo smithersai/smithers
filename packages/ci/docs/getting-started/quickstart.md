@@ -194,7 +194,9 @@ bunx smithers-ci apply
 | `.smithers/ci/legs.txt`             | Which machine runs which step, when steps need different tool versions |
 | `.smithers/ci/NOT-REPRODUCED.txt`   | What your CI does that the new workflow does not, when there is any    |
 
-It also adds the cache directory `.flows` to `.gitignore`.
+It changes no other file. The cache is kept outside your checkout, so there is
+nothing to add to `.gitignore`, and a step of yours that checks for a clean
+tree passes as it does today.
 
 Nothing is written at the repository's root or beside your sources, and no
 file `apply` writes is one your own tools read as theirs. `tsc`, ESLint,
@@ -237,23 +239,16 @@ check the same one; the workflow does.
 
 ### When one of your tools reads a generated file
 
-Two kinds of tool still read a file Smithers CI wrote:
-
-- A tool told to read every file, dot directories included, reads the files
-  above. `cspell --dot` is one.
-- A tool that reads dot directories and does not read `.gitignore` reads the
-  cache directory `.flows` while your CI runs. Biome is one until its
-  configuration sets `vcs.useIgnoreFile`, as `biome init` writes it.
-
-The replay finds both before `apply` does. A step that passes in your CI and
-fails beside those files is a mismatch, and the report says why under it:
+A tool told to read every file, dot directories included, reads the files
+above. `cspell --dot` is one, and it stops at a word it does not know:
 
 ```text
-3f2a1c9  normal  //:ci.yml-lint-1  pass → fail
-  cspell read .smithers/WORKSPACE.smithers, which Smithers CI wrote. Add .smithers to "ignorePaths" in the cspell configuration.
+.smithers/WORKSPACE.smithers:2:19 - Unknown word (smthrs)
 ```
 
-Add the path to that tool's ignore list and run the report again.
+Add `.smithers` to that tool's ignore list; for cspell that is `"ignorePaths"`
+in its configuration. No tool reads the cache: it is never in your checkout
+(see [Where the cache is on a machine](../concepts/cache.md#where-the-cache-is-on-a-machine)).
 
 ## Next
 

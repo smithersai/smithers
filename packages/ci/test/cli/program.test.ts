@@ -127,7 +127,7 @@ describe.concurrent("what the default command says it wrote", () => {
     const outcome = await runIn(["--commits", "1", "--out", "pages/report.html"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(outcome.stdout).toContain(
-      " files and add .flows to .gitignore. This run wrote one file to the repository: pages/report.html."
+      " files. This run wrote one file to the repository: pages/report.html."
     )
     expect(outcome.stdout).not.toContain("wrote nothing")
     expect(changed(before, snapshot(root))).toEqual(["pages/report.html"])

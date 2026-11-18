@@ -156,16 +156,9 @@ describe("Zig.dress", () => {
     })
   })
 
-  it("gives a step that starts under the root the way back up to the tool cache", () => {
-    expect(Zig.dress(step("zig build test", { cwd: "tools/gen" })).env).toEqual({
-      ZIG_GLOBAL_CACHE_DIR: `../../${toolCache}/zig/global`,
-      ZIG_LOCAL_CACHE_DIR: `../../${toolCache}/zig/local`
-    })
-    expect(Zig.dress(step("zig build test", { cwd: "./project/" })).env).toEqual({
-      ZIG_GLOBAL_CACHE_DIR: `../${toolCache}/zig/global`,
-      ZIG_LOCAL_CACHE_DIR: `../${toolCache}/zig/local`
-    })
-    // Where the step starts cannot be named: the caches are given as from the root, as for any other step.
+  it("gives a step that starts under the root the same directories: each is named whole, outside the checkout", () => {
+    expect(Zig.dress(step("zig build test", { cwd: "tools/gen" })).env).toEqual(Zig.environment)
+    expect(Zig.dress(step("zig build test", { cwd: "./project/" })).env).toEqual(Zig.environment)
     expect(Zig.dress(step("zig build test", { cwd: "$DIR" })).env).toEqual(Zig.environment)
   })
 

@@ -27,13 +27,13 @@ import {
   variantsFailedHere,
   withoutFailedHere
 } from "../contract/Inventory.ts"
+import { declarationOf } from "../contract/Command.ts"
 import {
   type Failure,
   type GeneratedFile,
   type ReplayParts,
   type ReplayRequest,
-  type ScoreRows,
-  writtenFiles
+  type ScoreRows
 } from "../contract/Parts.ts"
 import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport, StepFailure } from "../contract/ReplayReport.ts"
 import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
@@ -80,7 +80,6 @@ import {
   stoppedResults
 } from "./Failures.ts"
 import {
-  cacheDirectory,
   checkoutAt,
   cloneCopy,
   describe,
@@ -102,11 +101,9 @@ import {
   blocked,
   choose,
   cycleIn,
-  excludeLines,
   failedAt,
   failedTwice,
   failure,
-  failureTexts,
   fastRunOf,
   finishedReport,
   firstAttempt,
@@ -126,7 +123,6 @@ import {
   recordOf,
   recovered,
   replayable,
-  seenIn,
   splitOf,
   type Station,
   stationsOf,
@@ -141,26 +137,27 @@ import {
 } from "./Summary.ts"
 
 /**
- * Where Node keeps the compiled code of `smthrs` between runs, from a copy's
- * root: a later run starts sooner. The generated workflow names the same
- * directory and carries it from one run to the next, so a replay starts
- * `smthrs` as that workflow does.
+ * Where Node keeps the compiled code of `smthrs` between runs, in the
+ * directory Smithers build keeps its cache in: a later run starts sooner.
+ * The generated workflow names the same directory and carries it from one
+ * run to the next, so a replay starts `smthrs` as that workflow does.
  *
  * @category constants
  * @since 0.1.0
  */
-export const compiledCode = `${cacheDirectory}/node-compile-cache`
+export const compiledCode = "node-compile-cache"
 
 /**
  * Where a `smthrs` that runs from source keeps what it compiled of itself,
- * from a copy's root. Without it that is under the temporary directory, which
+ * in the directory Smithers build keeps its cache in, beside the copy.
+ * Without it that is under the temporary directory, which
  * a mode finds empty at every commit, as a CI run does: every start would
  * compile `smthrs` again.
  *
  * @category constants
  * @since 0.1.0
  */
-export const compiledSource = `${cacheDirectory}/vibelang-cache`
+export const compiledSource = "vibelang-cache"
 
 /**
  * The host services a replay uses.
@@ -174,10 +171,11 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
  * How the replay runs on this machine. `smthrs` is the command that starts
  * Smithers build, `reruns` how often a failed target reruns when the request
  * names no number, and `prepare`
- * runs before the generated targets run in a checkout, and fails when this
- * machine cannot run them. It puts nothing into the checkout: a step would
- * find it there. A baseline checkout is never prepared: it is what a fresh
- * clone is. `stepTimeout` is how long one
+ * runs before the generated targets do, with the directory that holds the
+ * workspace file, and fails when this machine cannot run them. For a generated
+ * workspace file that is a directory of the replay's own, beside the checkout.
+ * Nothing is put into a checkout, a step would find it there: each is what a
+ * fresh clone is. `stepTimeout` is how long one
  * baseline step may run; without it the limit is the one generated targets
  * have (`Inventory.stepTimeoutHours`). `confine` says whether this machine can
  * hold a step in a file-system jail; without it the machine is asked. `cores`
@@ -252,12 +250,10 @@ export type Counting = (bucket: CpuBucket | undefined) => void
 /** What one commit's own CI gives the replay: the files to write, the units to run, and what is left out. */
 interface Prepared {
   readonly inventory: Inventory
-  /** The generated files a copy holds: those that are written. */
-  readonly generated: ReadonlyArray<GeneratedFile>
+  /** The generated workspace file, which Smithers build is pointed at. */
+  readonly declaration: GeneratedFile
   /** Files an earlier smithers-ci wrote, which this commit holds where Smithers build would read them too. */
   readonly former: ReadonlyArray<string>
-  /** The text of `.gitignore` as `apply` leaves it, when `apply` adds the cache directory to it. */
-  readonly ignore: string | undefined
   readonly units: ReadonlyArray<Unit>
   /** Every target of the units, each once. */
   readonly labels: ReadonlyArray<string>
@@ -265,6 +261,17 @@ interface Prepared {
   readonly left: ReadonlyArray<NotReplayed>
   /** How many generated targets may run at once. */
   readonly jobs: number | undefined
+}
+
+/**
+ * Where one mode runs a commit: its copy of the repository, and, beside the copy and never in it, the directory
+ * Smithers build keeps its cache in and the directory of the generated workspace file.
+ */
+interface Site {
+  readonly copy: string
+  readonly place: Confined
+  readonly cache: string
+  readonly declared: string
 }
 
 /**
@@ -383,7 +390,7 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * jail: it can write its checkout, that home and that directory, and cannot
  * read the person's credentials. Generated targets also
  * stay within the target map's `maxJobs`. Commits run oldest
- * first and the normal and fast copies keep their caches between commits.
+ * first and normal and fast mode keep their caches between commits.
  *
  * With `request.warm`, every way first runs once at the parent of the oldest
  * commit, in its own home, and fills what it keeps from one commit to the
@@ -407,6 +414,13 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * that could run here, the replay fails `unsupported` with each of them and
  * its reason: a speedup over the rest would not be this CI's.
  *
+ * A copy holds the commit's files and nothing else. What Smithers build keeps
+ * between commits (its cache, and the compiled code of `smthrs`), the
+ * generated workspace file and the run records are in the replay's own
+ * directory, beside the copies, and Smithers build is pointed at them. No
+ * ignore line, exclude entry or index bit hides anything: a step that lists
+ * its checkout, by any means, sees what a fresh clone holds.
+ *
  * The baseline, normal mode and fast mode each have a home and a temporary
  * directory of their own. No way is timed with a cache another way paid for.
  * A baseline job is a machine: beside its fresh checkout it has a home and a
@@ -424,7 +438,7 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * Wall time is what a CI machine spends on the commit once it is ready: the
  * checkout, and the first pass, which for a mode holds the start of Smithers
  * build and its planning. What only a replay does is not counted: writing the
- * generated files into the copy, which `apply` commits once. Neither are the
+ * generated workspace file, which `apply` commits once. Neither are the
  * reruns that label flaky targets.
  *
  * A failed step runs again `request.reruns` times, or as often as the host
@@ -501,22 +515,34 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // A copy has the repository's directory name and remote, so a reader names it as it does in place.
     const origin = try originOf(root)
 
+    /** Checks `commit` out in `copy` and removes every file the commit does not hold: nothing of ours is there. */
+    const checkout = (copy: string, commit: string, place: Confined) => checkoutAt(copy, commit, place, [])
+
     /**
      * A checkout of `commit` at `copy`, for the steps of `place`. It fetches from the repository's remote and can
      * push nowhere.
      */
     effect function cloneAt(copy: string, commit: string, place: Confined) {
       try cloneCopy(work, source, copy, origin)
-      try checkoutAt(copy, commit, place)
+      try checkout(copy, commit, place)
     }
 
-    effect function copyAt(way: Way, commit: string) {
+    /**
+     * Where a mode runs: its copy at `commit`, and beside it the two directories of the replay's own that
+     * Smithers build is pointed at, so the copy holds the commit's files and nothing else.
+     */
+    effect function siteAt(way: Way, commit: string) {
       const copy = path.join(work, way, path.basename(root))
       try cloneAt(copy, commit, places[way])
-      return copy
+      const cache = path.join(work, "kept", way)
+      const declared = path.join(work, "declared", way)
+      try orFail(fs.makeDirectory(cache, { recursive: true }), "could not make a directory")
+      try orFail(fs.makeDirectory(declared, { recursive: true }), "could not make a directory")
+      return { copy, place: places[way], cache, declared } satisfies Site
     }
 
-    const normalCopy = try copyAt("normal", "HEAD")
+    const normal = try siteAt("normal", "HEAD")
+    const normalCopy = normal.copy
     const spawner = try ChildProcessSpawner
     /**
      * Runs a part on the normal copy, which the targets wrote: every `git` the part starts there runs as a step
@@ -563,11 +589,14 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       if (labels.length === 0) throw failure("unsupported", nothingToReplay(replayed.left))
       const cycle = cycleIn(replayed.units)
       if (cycle !== undefined) throw failure("invalid-document", `job ${cycle} needs itself`)
+      // Smithers build is pointed at this one file, beside the copy. A repository with a workspace file of its own
+      // is replayed by its own targets and never comes here.
+      const declaration = declarationOf(generated)
+      if (declaration === undefined) throw failure("invalid-document", "the generated files have no workspace file")
       return {
         inventory,
-        generated: writtenFiles(generated),
+        declaration,
         former: checked.former,
-        ignore: checked.added.length === 0 ? undefined : checked.text,
         units: replayed.units,
         labels,
         splits: splitOf(replayed.units),
@@ -576,51 +605,43 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       }
     }
 
-    // The copies whose `.gitignore` holds what `apply` adds, which git is told to leave out of what changed.
-    const ignoring = new Set<string>()
-
-    /** Checks `commit` out in a copy that generated targets ran in: its `.gitignore` is the commit's again. */
-    effect function checkoutCopy(copy: string, commit: string, held: Confined) {
-      if (ignoring.delete(copy)) try git(copy, ["update-index", "--no-skip-worktree", "--", ".gitignore"], held)
-      try checkoutAt(copy, commit, held)
-    }
-
     // The newest commit's CI must be replayable: it is what the repository runs today.
     let newest = try prepared()
-    const fastCopy = request.modes.includes("fast") ? try copyAt("fast", "HEAD") : undefined
+    const fast = request.modes.includes("fast") ? try siteAt("fast", "HEAD") : undefined
 
-    /** Makes a checked-out copy one the generated targets run in. A repository that ran `apply` holds all of it. */
-    effect function equip(copy: string, own: Prepared, place: Confined) {
-      for (const file of own.generated) {
-        const target = path.resolve(copy, file.path)
-        try orFail(fs.makeDirectory(path.dirname(target), { recursive: true }), `could not write ${file.path}`)
-        try orFail(fs.writeFileString(target, file.content), `could not write ${file.path}`)
-      }
+    /** Where a site's generated workspace file is: beside the copy, under the name the generator gave it. */
+    const declarationAt = (site: Site, declaration: GeneratedFile): string =>
+      path.join(site.declared, path.basename(declaration.path))
+
+    /**
+     * Gives Smithers build what it reads for a commit, beside the copy and never in it: the generated workspace
+     * file, and what makes that file loadable. A repository that ran `apply` holds the file as one of its own; a
+     * replayed commit does not, so its copy is left as the commit has it.
+     */
+    effect function equip(site: Site, own: Prepared) {
+      try orFail(
+        fs.writeFileString(declarationAt(site, own.declaration), own.declaration.content),
+        `could not write ${own.declaration.path}`
+      )
       // A commit made after an earlier `apply` holds that layout's files; `apply` removes them as it writes these.
       for (const former of own.former) {
-        try orFail(fs.remove(path.resolve(copy, former)), `could not remove ${former}`)
+        try orFail(fs.remove(path.resolve(site.copy, former)), `could not remove ${former}`)
       }
-      // `apply` adds the cache directory to `.gitignore`, which the repository's own tools read to know what is not
-      // theirs: without the line a formatter run over the root reads the cache. The line is committed with `apply`,
-      // so git is told that the file does not differ from the commit.
-      if (own.ignore !== undefined) {
-        try orFail(fs.writeFileString(path.join(copy, ".gitignore"), own.ignore), "could not write .gitignore")
-        // A commit with no `.gitignore` has none to hide: the new file is listed below with the generated ones.
-        const tracked = try git(copy, ["ls-files", "--", ".gitignore"], place)
-        if (tracked !== "") {
-          try git(copy, ["update-index", "--skip-worktree", "--", ".gitignore"], place)
-          ignoring.add(copy)
-        }
-      }
-      try options.prepare(copy)
-      // Everything untracked now is the replay's own: the generated files and the cache. Listed in
-      // the copy's exclude file, it leaves `git status` as clean as in the baseline's fresh clone.
-      const listed = ["ls-files", "--others", "--directory", "--exclude-per-directory=.gitignore", "-z"]
-      const untracked = try git(copy, listed, place)
-      const info = path.join(copy, ".git", "info")
-      try orFail(fs.makeDirectory(info, { recursive: true }), "could not write .git/info/exclude")
-      try orFail(fs.writeFileString(path.join(info, "exclude"), excludeLines(untracked)), "could not write .git/info/exclude")
+      try options.prepare(site.declared)
     }
+
+    /**
+     * What points Smithers build at a site: the copy is the workspace, and the generated workspace file and the
+     * cache directory are beside it.
+     */
+    const pointed = (site: Site, own: Prepared): ReadonlyArray<string> => [
+      "--workspace",
+      site.copy,
+      "--workspace-file",
+      declarationAt(site, own.declaration),
+      "--cache-dir",
+      site.cache
+    ]
 
     const reads = readsListener()
     /** Says once in a replay that this machine cannot record what a step reads, when `smthrs` reports that. */
@@ -633,7 +654,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // Where this machine has the software a GitHub runner comes with. A step with runner text is told.
     const software = softwareEnvironment(person)
     /**
-     * The whole environment of a `smthrs` started in `copy`: what a step of the way gets of the machine, with its
+     * The whole environment of a `smthrs` started for a site: what a step of the way gets of the machine, with its
      * home, the stand-ins first on `PATH` and the push refusal, then where the shared cache and the compiled code
      * are. Its targets take from it only what they name. Nothing else of the person's reaches it, the jail around
      * it, or what it starts: a step can read the environment of every process it runs beside.
@@ -655,51 +676,37 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return { ...runValues(commit, count), [eventsVariable]: directory }
     }
 
-    const startEnv = (copy: string, place: Confined) => ({
-      ...stepEnvironment({ ...software, ...place.daemon }, place),
-      ...jobHomes(place),
+    const startEnv = (site: Site) => ({
+      ...stepEnvironment({ ...software, ...site.place.daemon }, site.place),
+      ...jobHomes(site.place),
       ...(request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }),
-      NODE_COMPILE_CACHE: path.join(copy, compiledCode),
-      VIBELANG_CACHE_DIR: path.join(copy, compiledSource)
+      NODE_COMPILE_CACHE: path.join(site.cache, compiledCode),
+      VIBELANG_CACHE_DIR: path.join(site.cache, compiledSource)
     })
 
-    effect function planOf(copy: string, own: Prepared) {
-      const plan = ["ci", ...own.labels, "--plan", "--format", "json", "--workspace", copy]
-      const [command, ...args] = held(places.normal, [copy], [...options.smthrs, ...plan])
-      const env = startEnv(copy, places.normal)
-      const planned = try exec(command, args, copy, env, Number.POSITIVE_INFINITY, stdoutOf, true)
+    effect function planOf(site: Site, own: Prepared) {
+      const plan = ["ci", ...own.labels, "--plan", "--format", "json", ...pointed(site, own)]
+      const [command, ...args] = held(site.place, [site.copy, site.cache], [...options.smthrs, ...plan])
+      const planned = try exec(command, args, site.copy, startEnv(site), Number.POSITIVE_INFINITY, stdoutOf, true)
       const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
         throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
       }
       return planOfPrinted(printed)
     }
 
-    /**
-     * Runs targets in a copy, in the place of the way the copy belongs to. `causes` gains, by label, why a target
-     * failed over a file this replay wrote into the copy: the generated files, and what fills the cache directory.
-     */
-    const smithers = (
-      commit: string,
-      copy: string,
-      own: Prepared,
-      place: Confined,
-      causes: Map<string, string>
-    ): Execute<Host> => (targets) => effect {
-      const written = [...own.generated.map((file) => file.path), `${cacheDirectory}/`]
+    /** Runs the targets of `commit` at a site, in the place of the way the site belongs to. */
+    const smithers = (commit: string, site: Site, own: Prepared): Execute<Host> => (targets) => effect {
       const selected = targets ?? own.labels
       if (selected.length === 0) return []
       runs += 1
       const file = path.join(records, `run-${runs}.json`)
       // With a token to give, Smithers build is started by the program that reads it from a pipe.
       const starter = token === undefined ? undefined : options.smthrsWithToken
-      const [command, ...args] = held(place, [copy, records], [
+      const [command, ...args] = held(site.place, [site.copy, records, site.cache], [
         ...(starter ?? options.smthrs),
         "ci",
         ...selected,
-        "--workspace",
-        copy,
-        "--cache-dir",
-        cacheDirectory,
+        ...pointed(site, own),
         "--results-file",
         file,
         "--ui",
@@ -707,9 +714,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         ...(own.jobs === undefined ? [] : ["--jobs", String(own.jobs)])
       ])
       const watch = try watchFor(stall.minutes, stall.table)
-      const environment = { ...startEnv(copy, place), ...(try givenAt(commit, place, own)), ...printsNotes }
+      const environment = { ...startEnv(site), ...(try givenAt(commit, site.place, own)), ...printsNotes }
       const handed = starter === undefined ? undefined : token
-      const output = try exec(command, args, copy, environment, printedLimit, undefined, true, heard, watch, handed, count)
+      const output = try exec(command, args, site.copy, environment, printedLimit, undefined, true, heard, watch, handed, count)
       const stalled = try Ref.get(watch.stalled)
       const record = effect {
         const text = try fs.readFileString(file)
@@ -719,17 +726,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         throw failure("command-failed", `smthrs ci wrote no run record: ${output.text.slice(-outputLimit)}`)
       }
       const recorded = record === undefined ? undefined : withReasons(record.results, output.text)
-      const results = stalled
+      return stalled
         ? stoppedResults(recorded, selected, watch.limitMs, noProgress(stall.minutes))
         : recorded as ReadonlyArray<TargetResult>
-      // What a failed target printed may name a file this replay wrote into the copy: a tool of the repository read
-      // it as one of its own. A mismatch of that target then says so.
-      const said = failureTexts(output.text)
-      for (const result of results) {
-        const cause = result.status === "failed" ? seenIn(said.get(result.label), written) : undefined
-        if (cause !== undefined) causes.set(result.label, cause)
-      }
-      return results
     }
 
     const stepLimit = options.stepTimeout ?? Duration.hours(stepTimeoutHours)
@@ -846,7 +845,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * because none of it runs here, is not a failed replay: the reason is kept and the commit is listed.
      */
     effect function preparedAt(commit: string) {
-      try checkoutCopy(normalCopy, commit, places.normal)
+      try checkout(normalCopy, commit, normal.place)
       return prepared() catch effect (cause) => {
         if (cause.code !== "unsupported" && cause.code !== "invalid-document") throw cause
         return { reason: cause.message }
@@ -902,7 +901,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         for (const entry of named) try progress.say(`fails here: ${entry.job}: ${entry.reason}`)
         failedHere.push(...named)
         // With what failed left out, nothing may be left to replay: then no job can pass here.
-        try checkoutCopy(normalCopy, tip, places.normal)
+        try checkout(normalCopy, tip, normal.place)
         newest = prepared() catch effect (cause) => {
           throw cause.code === "unsupported" ? failure("unsupported", noJobPassed(at, first, ranAgainAt(again, at, tip))) : cause
         }
@@ -927,14 +926,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           own: first
         }
       const own = judged.own
-      effect function mode(way: "normal" | "fast", copy: string | undefined) {
-        if (own === undefined || copy === undefined) return undefined
+      effect function mode(way: "normal" | "fast", site: Site | undefined) {
+        if (own === undefined || site === undefined) return undefined
         try progress.say(`first run ${short} ${way}`)
-        const place = places[way]
         const run = measure(
-          checkoutCopy(copy, at, place),
-          equip(copy, own, place),
-          smithers(at, copy, own, place, new Map()),
+          checkout(site.copy, at, site.place),
+          equip(site, own),
+          smithers(at, site, own),
           undefined,
           0,
           last[way],
@@ -945,8 +943,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         }
         return run?.wallMs
       }
-      const normalMs = try mode("normal", normalCopy)
-      const fastMs = try mode("fast", fastCopy)
+      const normalMs = try mode("normal", normal)
+      const fastMs = try mode("fast", fast)
       return {
         commit: at,
         baselineMs: judged.wallMs,
@@ -1014,9 +1012,6 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         continue
       }
       const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
-      // A step that fails only beside the files written into the copy, and names one, is explained in the report.
-      const normalCauses = new Map<string, string>()
-      const fastCauses = new Map<string, string>()
       try progress.say(`${at} baseline`)
       const base = try measure(
         Effect.void,
@@ -1034,35 +1029,35 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       try progress.say(`${at} normal`)
       // A mode starts each commit as a CI run starts: with a home and a temporary directory nothing wrote to.
       try orFail(renew(places.normal), "could not empty the home of normal mode")
-      const normal = try measure(
-        checkoutCopy(normalCopy, commit, places.normal),
-        equip(normalCopy, own, places.normal),
-        smithers(commit, normalCopy, own, places.normal, normalCauses),
+      const ran = try measure(
+        checkout(normalCopy, commit, normal.place),
+        equip(normal, own),
+        smithers(commit, normal, own),
         undefined,
         reruns,
         last.normal,
         tally,
         counting
       )
-      const normalRecord = recordOf(normal.results, commit, normal.wallMs, "normal")
+      const normalRecord = recordOf(ran.results, commit, ran.wallMs, "normal")
       let fastPart: Pick<ReplayCommit, "fast"> = {}
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
       flaky += flakyOf([baseRecord, normalRecord])
-      if (fastCopy !== undefined && fastNotMeasured === undefined) {
-        const rows = try onNormalCopy(parts.rows(normalCopy, normalRecord, try planOf(normalCopy, own)))
+      if (fast !== undefined && fastNotMeasured === undefined) {
+        const rows = try onNormalCopy(parts.rows(normalCopy, normalRecord, try planOf(normal, own)))
         const scores = try scoresOrReason(parts.score, rows)
         if (typeof scores === "string") {
           fastNotMeasured = scores
           try progress.say(`${at} fast not measured`)
         } else {
           const choice = choose(scores, request.settings ?? defaultSettings)
-          const labels = normal.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
+          const labels = ran.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
           try progress.say(`${at} fast`)
           try orFail(renew(places.fast), "could not empty the home of fast mode")
-          const fast = try measure(
-            checkoutCopy(fastCopy, commit, places.fast),
-            equip(fastCopy, own, places.fast),
-            smithers(commit, fastCopy, own, places.fast, fastCauses),
+          const sped = try measure(
+            checkout(fast.copy, commit, fast.place),
+            equip(fast, own),
+            smithers(commit, fast, own),
             labels,
             reruns,
             last.fast,
@@ -1070,15 +1065,15 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             counting
           )
           const run = fastRunOf(
-            normal.results,
-            fast.results,
+            ran.results,
+            sped.results,
             commit,
-            fast.wallMs,
+            sped.wallMs,
             baseRecord,
             names,
             own.splits,
-            fastCauses,
-            fast.cpuMs
+            undefined,
+            sped.cpuMs
           )
           fastPart = run.part
           fastMismatches = run.mismatches
@@ -1091,8 +1086,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         commit,
         changedFiles: changed.length,
         baseline: totalsOf(baseRecord, names, base.cpuMs),
-        normal: totalsOf(normalRecord, names, normal.cpuMs),
-        mismatches: [...mismatchesOf("normal", baseRecord, normalRecord, own.splits, normalCauses), ...fastMismatches],
+        normal: totalsOf(normalRecord, names, ran.cpuMs),
+        mismatches: [...mismatchesOf("normal", baseRecord, normalRecord, own.splits), ...fastMismatches],
         ...fastPart
       })
     }
@@ -1100,7 +1095,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const nothing = nothingPassed(baselines, stepNames(newest.units))
     if (nothing !== undefined) throw failure("unsupported", nothing)
     return finishedReport(newest.inventory, commitsDone, {
-      fastAsked: fastCopy !== undefined,
+      fastAsked: fast !== undefined,
       rows: allRows,
       selected,
       left: newest.left,

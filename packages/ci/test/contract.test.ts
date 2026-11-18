@@ -764,7 +764,8 @@ describe("contract changes, third round", () => {
     expect(map.maxJobs).toBe(1)
     expect(() => Schema.decodeUnknownSync(TargetMap.TargetMap)({ ...map, maxJobs: 0 })).toThrow()
     expect(Command.applyRefuses).toEqual([".smithers/WORKSPACE.ts", ".smithers/WORKSPACE.smithers", "WORKSPACE.ts"])
-    expect(Command.applyIgnores).toEqual([".flows"])
+    // Nothing of Smithers CI is in the checkout, so apply has no line to add.
+    expect(Command.applyIgnores).toEqual([])
   })
 })
 
@@ -891,8 +892,9 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
       "stays one step: the script has the hook `precheck`, which the package manager runs with it"
     )
     expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...whole, whole: { feature: "", detail: "" } })).toThrow()
-    // A tool's cache is kept inside the directory `apply` keeps out of git.
-    expect(Inventory.toolCache.startsWith(`${Command.applyIgnores[0]}/`)).toBe(true)
+    // A tool's cache is kept inside Smithers build's cache directory, which is outside the checkout: the constant
+    // starts with the text Smithers build replaces with that directory.
+    expect(Inventory.toolCache).toBe("{smthrs:cache-directory}/tools")
     const failure = { code: "command-failed", message: "bun pm ls exited 1", part: "decompose" }
     expect(Schema.decodeUnknownSync(Parts.Failure)(failure)).toEqual(failure)
   })
@@ -1326,6 +1328,22 @@ describe("contract changes, twelfth round: files a repository's own tools never 
       ".smithers/ci/legs.txt"
     ])
     expect(Parts.writtenFiles([])).toEqual([])
+  })
+
+  it("names the generated file Smithers build reads as the workspace declaration", () => {
+    const workspace = { path: ".smithers/WORKSPACE.smithers", content: "x" }
+    const files: ReadonlyArray<Parts.GeneratedFile> = [
+      { path: ".github/workflows/smithers-ci.yml", content: "w" },
+      workspace,
+      { path: ".smithers/ci-targets.json", content: "{}", written: false }
+    ]
+    // A replay writes this one file beside its copy and names it to Smithers build.
+    expect(Command.declarationOf(files)).toBe(workspace)
+    for (const path of Command.applyRefuses) expect(Command.declarationOf([{ path, content: "x" }])?.path).toBe(path)
+    // A repository with a workspace of its own has no generated one, and a file that is not written is not it.
+    expect(Command.declarationOf([files[0]!, files[2]!])).toBeUndefined()
+    expect(Command.declarationOf([{ ...workspace, written: false }])).toBeUndefined()
+    expect(Command.declarationOf([])).toBeUndefined()
   })
 
   it("lets a mismatch say which tool read a file Smithers CI wrote", () => {

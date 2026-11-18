@@ -176,9 +176,9 @@ const programs = (list: ReadonlyArray<Command> | undefined): ReadonlyArray<strin
  * others, straight or inside a `bash -c`.
  *
  * False when the step changes directory or starts outside the repository,
- * because the cache directories are given from where Zig starts; when it
- * names Zig's cache itself, which it then expects beside `build.zig`; and
- * when its shell is more than this reader reads.
+ * where this reader cannot say which project Zig builds; when it names Zig's
+ * cache itself, which it then expects beside `build.zig`; and when its shell
+ * is more than this reader reads.
  *
  * @throws {never}
  * @category reading
@@ -191,20 +191,17 @@ export const runs = (step: Step): boolean => {
 }
 
 /**
- * A step that runs Zig, told where Zig keeps its caches. Zig takes a cache
- * directory from where it starts, so a step that starts under the root is
- * given the way back up: `../../.flows/tools/zig/local` from `tools/gen`.
+ * A step that runs Zig, told where Zig keeps its caches. The tool cache is in
+ * Smithers build's cache directory, outside the checkout, and each directory
+ * is named whole, so a step that starts in a directory under the root is
+ * given the same ones as a step at the root.
  * What the step already sets wins. The step names no inputs: it is observed.
  *
  * @throws {never}
  * @category planning
  * @since 0.1.0
  */
-export const dress = (step: Step): Step => {
-  const up = "../".repeat(depth(step.cwd) ?? 0)
-  const caches = Object.fromEntries(Object.entries(environment).map(([name, directory]) => [name, `${up}${directory}`]))
-  return { ...step, env: { ...caches, ...step.env } }
-}
+export const dress = (step: Step): Step => ({ ...step, env: { ...environment, ...step.env } })
 
 /**
  * The steps a CI step becomes when it is nothing but `zig build <step>` in

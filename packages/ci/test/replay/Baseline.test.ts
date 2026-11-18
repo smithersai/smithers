@@ -178,7 +178,7 @@ describe("a baseline step", () => {
   it("runs in a checkout that is clean, named as the repository is, and never prepared", async () => {
     // Review finding 13: the baseline's copy held the linked package, so a "tree is clean" check failed there.
     const out = track(makeEmptyDirectory())
-    const seen = [`test -z "$(git status --porcelain)"`, `basename "$PWD" > ${out}/name`].join(" && ")
+    const seen = [`test -z "$(git status --porcelain --ignored)"`, `basename "$PWD" > ${out}/name`].join(" && ")
     const root = track(makeSmallRepository([job("clean", seen)]))
     const prepared: Array<string> = []
     const recording = Layer.succeed(Options, {
@@ -194,14 +194,16 @@ describe("a baseline step", () => {
     // Fast mode's rows are built in the copy the targets ran in: what does git say about that copy?
     const status: Array<string> = []
     const rows: Parts["rows"] = (copy, record) => {
-      status.push(execFileSync("git", ["-C", copy, "status", "--porcelain"], { encoding: "utf8" }))
+      status.push(execFileSync("git", ["-C", copy, "status", "--porcelain", "--ignored"], { encoding: "utf8" }))
       return base.rows(copy, record)
     }
     const report = await replay(root, { rows }, { modes: ["normal", "fast"] }, recording as never)
     expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
     expect(readFileSync(join(out, "name"), "utf8").trim()).toBe(basename(root))
-    // The copies the targets run in hold generated files, the cache and the linked package, and git calls them clean.
+    // The copy the targets ran in holds the commit's files and nothing else: git lists nothing, ignored or not.
     expect(status).toEqual([""])
-    expect(prepared.map((directory) => basename(join(directory, ".."))).sort()).toEqual(["fast", "normal"])
+    // What is prepared is a directory of each mode beside its copy, where the generated workspace file is.
+    expect(prepared.map((directory) => basename(directory)).sort()).toEqual(["fast", "normal"])
+    expect(new Set(prepared.map((directory) => basename(join(directory, ".."))))).toEqual(new Set(["declared"]))
   }, 600_000)
 })

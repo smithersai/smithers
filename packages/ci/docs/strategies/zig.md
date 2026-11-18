@@ -167,8 +167,9 @@ just ci:  tidy, then  zig build test
    reads are among the recorded files, so another Zig release runs every Zig
    step again. The build mode (`-Doptimize=…`) is part of the command.
 5. **Zig keeps its own cache.** The step sets `ZIG_LOCAL_CACHE_DIR` and
-   `ZIG_GLOBAL_CACHE_DIR` to `.flows/tools/zig`. The directory lasts between
-   runs, and nothing in it is part of the record. When a step does run again,
+   `ZIG_GLOBAL_CACHE_DIR` to a directory beside Smithers CI's own cache,
+   outside your checkout. The directory lasts between runs, and nothing in it
+   is part of the record. When a step does run again,
    Zig rebuilds only the compile steps whose files changed and reruns only the
    test binaries that came out different.
 6. **Any Zig command, not only a bare build.** `zig build test --summary all`,
@@ -178,9 +179,8 @@ just ci:  tidy, then  zig build test
    CI run: left in `.zig-cache` beside `build.zig`, the cache is a file the
    step read that a fresh checkout does not have, so the step would run again
    each time. A step that starts in a directory under the root
-   (`working-directory: tools/gen`) is given the way back up,
-   `../../.flows/tools/zig`, because Zig takes a cache directory from where it
-   starts. `test/decompose/zig.smthrs.test.vibe` runs
+   (`working-directory: tools/gen`) is given the same cache directory as a
+   step at the root. `test/decompose/zig.smthrs.test.vibe` runs
    `zig build test --summary all` in such a directory, removes `.zig-cache`
    and runs it again: a hit. A step that changes directory with `cd`, starts
    outside the repository or names `.zig-cache` in its command keeps Zig's

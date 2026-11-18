@@ -1,6 +1,6 @@
 ---
 title: "The cache"
-description: "What Smithers CI caches, when a result is reused, how to host the cache yourself, and how to point CI at it."
+description: "What Smithers CI caches, when a result is reused, where the cache is on a machine, how to host the cache yourself, and how to point CI at it."
 ---
 
 A CI runner starts empty. The cache lets a run reuse what an earlier run
@@ -44,6 +44,42 @@ is part of it only for a step whose command uses the commit.
 
 Two machines share results when they run the same tools on the same operating
 system.
+
+## Where the cache is on a machine
+
+Never in your checkout. A step that checks its tree, with
+`git status --porcelain --ignored`, `git clean -ndx`, `find` or `ls`, finds
+your repository's files and nothing of Smithers CI's. `apply` adds no line to
+your `.gitignore`, because there is nothing to ignore.
+
+| Where it runs                           | The cache directory                                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| The generated workflow, on a runner     | `smithers-ci` in the runner's temporary directory. `actions/cache` saves it when a job ends and restores it at the next.             |
+| `smthrs ci '//...'` on your own machine | A directory named after the repository in your user cache directory: `~/.cache/smithers/`, or `~/Library/Caches/smithers/` on macOS. |
+| `smithers-ci` and `smithers-ci replay`  | A temporary directory beside the copies the replay runs in. The replay removes it when it ends.                                      |
+
+On Linux `XDG_CACHE_HOME` moves the user cache directory, as it does for every
+program that reads it. Each checkout has a directory of its own, so two clones
+of one repository never share a result by accident.
+
+To see the directory a checkout uses and how much it holds:
+
+```bash
+smthrs cache status
+```
+
+To clear it:
+
+```bash
+smthrs cache clear
+```
+
+The next run starts cold and fills it again. Deleting the directory does the
+same. To keep the cache somewhere else for one run, name the directory:
+
+```bash
+smthrs ci '//...' --cache-dir /mnt/fast/smithers-ci
+```
 
 ## Host the cache
 

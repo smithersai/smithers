@@ -731,19 +731,6 @@ export const stepsThrough = (
   run.slice(0, run.findLastIndex((unit) => labelsOf(unit, wanted).length > 0) + 1).flatMap((unit) => unit.steps)
 
 /**
- * The lines of a copy's `.git/info/exclude` for what `git ls-files -z`
- * listed as untracked there: each path from the copy's root, with the
- * characters a pattern reads as wildcards taken literally.
- *
- * @category baseline
- * @throws {never}
- * @since 0.1.0
- */
-export const excludeLines = (listed: string): string =>
-  listed.split("\0").filter((entry) => entry !== "").map((entry) => `/${entry.replace(/[\\*?[\]]/g, "\\$&")}\n`)
-    .join("")
-
-/**
  * A job that can never start because its needs form a cycle, if there is one.
  *
  * @category baseline

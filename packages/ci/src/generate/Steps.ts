@@ -109,7 +109,7 @@ export interface StepTarget {
    * writes. `undefined` for a `setup` target that declares no files.
    */
   readonly inputs: ReadonlyArray<string> | undefined
-  /** What a `setup` target declares it writes, beside its marker; `undefined` when it declares only the marker. */
+  /** What a `setup` target declares it writes; `undefined` when its step does not say. */
   readonly outputs: Outputs | undefined
   /** The other steps this target runs too: the same work at the same point of another job or variant. */
   readonly also: ReadonlyArray<SameStep>
@@ -186,15 +186,6 @@ export interface StepPlan {
   /** Empty when every target runs under the same versions. */
   readonly legs: ReadonlyArray<Leg>
 }
-
-/**
- * Where a `setup` target records that it ran. The build requires a declared
- * output, and the cache directory stays out of every target's inputs.
- *
- * @category constants
- * @since 0.1.0
- */
-export const markerDirectory = ".flows/ci"
 
 /**
  * The generated GitHub Actions workflow. Reading a repository again finds it,
@@ -339,9 +330,8 @@ const outputsOf = (step: Step): Outputs | undefined => {
 // under the contract's shell, as the baseline runs it: `source`, `time`, `[[`
 // and `pipefail` mean in the target what they mean in the repository's CI.
 // The lines before it are read the same way by every shell.
-const scriptOf = (command: string, directory: string, marker: string | undefined): string =>
+const scriptOf = (command: string, directory: string): string =>
   [
-    ...(marker === undefined ? [] : [`mkdir -p ${markerDirectory} || exit`, `: > ${marker} || exit`]),
     ...(directory === "" ? [] : [`cd -- ${quote(directory)} || exit`]),
     `${shell.join(" ")} ${quote(command)}`
   ].join("\n")
@@ -424,7 +414,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
   const sameWork = new Map<string, Draft>()
 
   // The labels taken so far, in lower case. Smithers build refuses a package with two labels that differ only by
-  // case, and a setup target's marker is a file, which a macOS disk finds whatever its case.
+  // case.
   const taken = new Set<string>([repositoryLabel.toLowerCase()])
 
   // A label another step took gets a suffix from this step's id, hashed. An id can be written to equal such a
@@ -631,7 +621,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
         rule: setup ? "setup" : "check",
         script: underVersions(
           versions,
-          scriptOf(command, directory, setup ? `${markerDirectory}/${draft.label}` : undefined)
+          scriptOf(command, directory)
         )
       }
     }

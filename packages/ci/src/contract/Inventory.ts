@@ -256,8 +256,11 @@ export type Inventory = typeof Inventory.Type
 export const shell = ["bash", "-e", "-c"] as const
 
 /**
- * Where a tool a step starts keeps its own cache between runs, from the
- * repository root: a directory inside Smithers build's cache directory. A
+ * Where a tool a step starts keeps its own cache between runs: a directory
+ * inside Smithers build's cache directory, which is outside the checkout. It
+ * starts with the text Smithers build replaces, in a target's `env`, with
+ * that directory when the step starts (`cacheDirectoryToken` of
+ * `@smthrs/targets/Exec`), so a key holds the text and never the place. A
  * step names a directory under it in its `env`, such as
  * `ZIG_LOCAL_CACHE_DIR`. The generated workflow saves it with the results
  * and a replay keeps it between commits. What a step reads and writes there
@@ -267,7 +270,7 @@ export const shell = ["bash", "-e", "-c"] as const
  * @category constants
  * @since 0.1.0
  */
-export const toolCache = ".flows/tools"
+export const toolCache = "{smthrs:cache-directory}/tools"
 
 /**
  * The variable that tells a baseline step where files are kept from one run to

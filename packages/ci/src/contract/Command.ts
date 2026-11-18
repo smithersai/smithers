@@ -8,7 +8,7 @@
  * @since 0.1.0
  */
 
-import type { Failure } from "./Parts.ts"
+import type { Failure, GeneratedFile } from "./Parts.ts"
 
 /**
  * The program's name on npm and on the command line.
@@ -220,11 +220,26 @@ export const environment = {
 export const applyRefuses = [".smithers/WORKSPACE.ts", ".smithers/WORKSPACE.smithers", "WORKSPACE.ts"] as const
 
 /**
- * Lines `apply` adds to the repository's root `.gitignore` when they are
- * absent, and prints that it did: where Smithers build keeps its local cache,
- * which must not be committed.
+ * The generated file Smithers build reads as the workspace declaration: the
+ * written one at a place a workspace declaration has (`applyRefuses`), or
+ * `undefined` when the files hold none, as for a repository with a workspace
+ * of its own. A replay writes this one file beside its copy of the
+ * repository, never into it, and names it to Smithers build, so the copy
+ * holds the commit's files and nothing else.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const declarationOf = (files: ReadonlyArray<GeneratedFile>): GeneratedFile | undefined =>
+  files.find((file) => file.written !== false && (applyRefuses as ReadonlyArray<string>).includes(file.path))
+
+/**
+ * Lines `apply` adds to the repository's root `.gitignore`: none. Smithers
+ * build keeps its cache outside the checkout, so nothing of Smithers CI is
+ * there to ignore, and `apply` leaves the file as the repository has it.
  *
  * @category constants
  * @since 0.1.0
  */
-export const applyIgnores = [".flows"] as const
+export const applyIgnores: ReadonlyArray<string> = []

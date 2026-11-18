@@ -5,7 +5,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from "node:os"
 import { delimiter, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
 import { parse as parseYaml } from "yaml"
 import type { Ci, Inventory as InventoryDocument, Job } from "../src/contract/Inventory.ts"
 import { ci, Inventory, shell } from "../src/contract/Inventory.ts"
@@ -27,13 +27,26 @@ const run = (cwd: string, command: string, args: ReadonlyArray<string>, env: Nod
   return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
 
+/**
+ * Where the runs of a repository keep their cache and write their results: a directory beside the repository, as
+ * a runner's temporary directory is. Nothing a run keeps is in the checkout.
+ */
+const stateOf = (root: string): string => `${root}.state`
+
+const states: Array<string> = []
+afterAll(() => {
+  for (const state of states) rmSync(state, { recursive: true, force: true })
+})
+
 /** A real git repository holding `sources` and the files generated for `document`. */
 const repository = (document: InventoryDocument, sources: Readonly<Record<string, string>> = {}): string => {
   const root = mkdtempSync(join(tmpdir(), "smithers-ci-generate-"))
+  mkdirSync(stateOf(root))
+  states.push(stateOf(root))
   expect(run(root, "git", ["init", "-q", "."]).status).toBe(0)
   const generated = Effect.runSync(files(document as Ci))
   const all = [...Object.entries(sources), ...generated.map((file) => [file.path, file.content] as const)]
-  for (const [path, content] of [[".gitignore", ".flows\n"] as const, ...all]) {
+  for (const [path, content] of all) {
     mkdirSync(dirname(join(root, path)), { recursive: true })
     writeFileSync(join(root, path), content)
   }
@@ -52,7 +65,16 @@ interface PlannedTarget {
 const confines = process.platform === "darwin" || spawnSync("bwrap", ["--version"]).status === 0
 
 const plan = (root: string): ReadonlyArray<PlannedTarget> => {
-  const result = run(root, process.execPath, [cli, "ci", "//...", "--plan", "--format", "json"])
+  const result = run(root, process.execPath, [
+    cli,
+    "ci",
+    "//...",
+    "--plan",
+    "--format",
+    "json",
+    "--cache-dir",
+    stateOf(root)
+  ])
   expect(result.stderr).not.toContain("error")
   expect(result.status).toBe(0)
   return (JSON.parse(result.stdout) as { readonly targets: ReadonlyArray<PlannedTarget> }).targets
@@ -61,8 +83,15 @@ const plan = (root: string): ReadonlyArray<PlannedTarget> => {
 /** Runs every target and returns each one's status from the run's results file. */
 const execute = (root: string, name: string, env: NodeJS.ProcessEnv = process.env) => {
   // The CLI refuses to overwrite a results file, so each run names its own.
-  const resultsFile = join(root, ".flows", `${name}.json`)
-  const result = run(root, process.execPath, [cli, "ci", "//...", "--jobs", "1", "--results-file", resultsFile], env)
+  const resultsFile = join(stateOf(root), `${name}.json`)
+  const result = run(
+    root,
+    process.execPath,
+    [cli, "ci", "//...", "--jobs", "1", "--cache-dir", stateOf(root), "--results-file", resultsFile],
+    env
+  )
+  // The checkout holds the repository's files and nothing a run keeps.
+  expect(existsSync(join(root, ".flows"))).toBe(false)
   const record = JSON.parse(readFileSync(resultsFile, "utf8")) as {
     readonly results: ReadonlyArray<{ readonly label: string; readonly status: string }>
   }
@@ -532,13 +561,15 @@ jobs:
       const runLeg = (leg: Record<string, string>, name: string) => {
         const script = `set -- ${selection.replace("${{ matrix.leg }}", leg["leg"] as string)}; printf '%s\n' "$@"`
         const labels = run(root, "bash", ["-c", script]).stdout.trim().split("\n")
-        const resultsFile = join(root, ".flows", `${name}.json`)
+        const resultsFile = join(stateOf(root), `${name}.json`)
         const outcome = run(root, process.execPath, [
           cli,
           "ci",
           ...labels,
           "--jobs",
           "1",
+          "--cache-dir",
+          stateOf(root),
           "--results-file",
           resultsFile
         ])
@@ -570,7 +601,8 @@ jobs:
     const second = repository(inventory, sources)
     try {
       expect(execute(first, "first").statuses.get("check-1")).toBe("ran")
-      cpSync(join(first, ".flows", "cache"), join(second, ".flows", "cache"), { recursive: true })
+      // What `actions/cache` saves on one runner and restores on the next: the results, from outside the checkout.
+      cpSync(join(stateOf(first), "cache"), join(stateOf(second), "cache"), { recursive: true })
       expect(execute(second, "second").statuses.get("check-1")).toBe("hit")
     } finally {
       rmSync(first, { recursive: true, force: true })
