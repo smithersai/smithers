@@ -326,9 +326,10 @@ out of the record. It requires `sandbox: "none"` and cannot be combined with
 `shards` or `services`. It needs Linux with `strace`; on any other host the
 target is keyed by its `data`. The build's caching page describes the record,
 what stores nothing, and the hosts. An observed test may
-name another observed test in `data`, as a job's steps follow each other: a
-step that left files behind is run again only when a step that waits for it
-runs, and a job whose every step would read what it read before runs no step.
+name another observed test in `data`, as a job's steps follow each other: what
+a step left is kept and put back when a step that waits for it runs, so only
+the steps that read a changed file run, and a job whose every step would read
+what it read before runs no step.
 A package manager told to install exactly what a lockfile pins (`npm ci`,
 `pnpm install --frozen-lockfile`, `uv sync --locked`) may open a connection
 and still be stored.

@@ -2263,10 +2263,211 @@ export const executeEffect = (
       }
       return found
     }
+    /** The targets of this run, each after every target it waits for. */
+    const inOrder = (() => {
+      const placed = new Set<string>()
+      const order: Array<PackageNode> = []
+      const place = (node: PackageNode): void => {
+        if (placed.has(node.label)) return
+        placed.add(node.label)
+        for (const dependency of node.dependencies) place(byLabel.get(dependency)!)
+        order.push(node)
+      }
+      for (const node of planned.workList) place(node)
+      return order
+    })()
     /** What each observed target that ran here and stored a record wrote, in the order they ran. */
     const wroteHere = new Map<string, ObservedReads.Producer>()
     /** The observed targets answered together before any target ran, each with the ids of the records that answer it. */
     let answered: ReadonlyMap<string, ReadonlySet<string>> = new Map()
+    /** Of those, the ones that left files: the record whose kept files are put back when a target after it runs. */
+    const leftBy = new Map<string, ObservedReads.Record>()
+    /** The answered targets whose files were put back, or that ran in their place. */
+    const putBack = new Set<string>()
+    /** Where what an observed run left is kept: beside the cache, never among a target's inputs. */
+    const keptDirectory = NodePath.join(root, ...cacheDirectory.split("/"), "kept")
+    const keptStem = (observed: NonNullable<PackageNode["observed"]>, archive: string): string =>
+      NodePath.join(keptDirectory, `${observed.key.slice(0, 32)}-${archive}`)
+    let temporaryRoots: ReadonlyArray<string> | undefined
+    /** The temporary directories, by their real paths: what a run leaves there is kept with what it leaves in the workspace. */
+    const temporary = (): ReadonlyArray<string> =>
+      temporaryRoots ??= [
+        ...new Set(
+          [NodeOs.tmpdir(), "/tmp"]
+            .filter((directory) => NodeFs.existsSync(directory))
+            .map((directory) => NodeFs.realpathSync(directory))
+        )
+      ]
+    /** A path as the kept files name it, and back. */
+    const keptPath = (real: string, path: string): string =>
+      path === real ? "." : path.startsWith(`${real}/`) ? path.slice(real.length + 1) : path
+    const fromKept = (real: string, name: string): string => name.startsWith("/") ? name : NodePath.join(real, name)
+    /** Whether a record's kept files are there, and what its run left outside the workspace still as it left it. */
+    const restorable = (observed: NonNullable<PackageNode["observed"]>, stored: ObservedReads.Record): boolean => {
+      if (stored.kept === undefined || !ObservedReads.outsideHolds(stored, stateOf)) return false
+      const stem = keptStem(observed, stored.kept.archive)
+      return NodeFs.existsSync(`${stem}.tar`) && NodeFs.existsSync(`${stem}.json`)
+    }
+    /**
+     * Keeps what a run left in the workspace and in the temporary directory:
+     * one archive beside the cache, and beside it the paths the run wrote,
+     * which name the files a later run read from it. Answers the record to
+     * store, which says so when the files are kept. A run whose files cannot
+     * be kept is stored as before, and runs again when a target after it
+     * runs.
+     */
+    const keep = (
+      node: PackageNode,
+      observed: NonNullable<PackageNode["observed"]>,
+      observation: ObservedReads.Observation
+    ): Effect.Effect<ObservedReads.Record, unknown> =>
+      Effect.gen(function*() {
+        const { left, record } = observation
+        if (left === undefined) return record
+        if ("refusal" in left) {
+          log(`${node.label}  what it left is not kept: ${left.refusal}; it runs again when a step after it runs`)
+          return record
+        }
+        const tar = yield* services.findOnPath("tar")
+        if (tar === undefined) return record
+        const real = NodeFs.realpathSync(root)
+        const stem = keptStem(observed, record.id!)
+        const names = (absolute: boolean): string =>
+          left.keep.filter((name) => name.startsWith("/") === absolute).map((name) => `${name}\0`).join("")
+        yield* joined(async () => {
+          await Fs.mkdir(keptDirectory, { recursive: true })
+          await Fs.writeFile(`${stem}.inside`, names(false))
+          await Fs.writeFile(`${stem}.beside`, names(true))
+          await Fs.writeFile(
+            `${stem}.json`,
+            JSON.stringify({
+              made: [...observation.made].map((path) => keptPath(real, path)),
+              touched: [...observation.touched].map((path) => keptPath(real, path))
+            })
+          )
+        })
+        // Paths in the workspace are kept from its root, so another checkout puts them back in its own.
+        const archived = yield* spawnNode(node, root, [
+          "/bin/sh",
+          "-c",
+          "\"$1\" -C \"$3\" --no-recursion --null -T \"$2.inside\" -cf \"$2.part\" && " +
+          "\"$1\" -P --no-recursion --null -T \"$2.beside\" -rf \"$2.part\" && mv \"$2.part\" \"$2.tar\"",
+          "sh",
+          tar,
+          stem,
+          real
+        ])
+        yield* joined(() =>
+          Promise.all([".inside", ".beside", ".part"].map((suffix) => Fs.rm(`${stem}${suffix}`, { force: true })))
+        )
+        if (!archived.ok) {
+          yield* joined(() => Fs.rm(`${stem}.json`, { force: true }))
+          log(`${node.label}  what it left could not be kept; it runs again when a step after it runs`)
+          return record
+        }
+        return { ...record, kept: { archive: record.id!, outside: left.outside, gone: left.gone } }
+      })
+    /** Removes the kept files of records a declaration no longer holds. */
+    const prune = (
+      observed: NonNullable<PackageNode["observed"]>,
+      stored: ObservedReads.Stored
+    ): Effect.Effect<void, unknown> =>
+      joined(async () => {
+        const held = new Set(stored.records.flatMap((record) => record.kept === undefined ? [] : [record.kept.archive]))
+        const prefix = `${observed.key.slice(0, 32)}-`
+        for (const name of await Fs.readdir(keptDirectory).catch(() => [])) {
+          if (!name.startsWith(prefix) || held.has(name.slice(prefix.length).split(".")[0]!)) continue
+          await Fs.rm(NodePath.join(keptDirectory, name), { force: true })
+        }
+      })
+    /**
+     * Puts back what a kept record's run left: removes what the run removed,
+     * then unpacks its files where they were. False when they cannot be put
+     * back, and the step has to run. The paths the run wrote are known again
+     * to the targets after it.
+     */
+    const restore = (
+      node: PackageNode,
+      observed: NonNullable<PackageNode["observed"]>,
+      stored: ObservedReads.Record
+    ): Effect.Effect<boolean, unknown> =>
+      Effect.gen(function*() {
+        const tar = yield* services.findOnPath("tar")
+        if (stored.kept === undefined || tar === undefined) return false
+        const { archive, gone } = stored.kept
+        const real = NodeFs.realpathSync(root)
+        const stem = keptStem(observed, archive)
+        const listed = yield* spawnNode(node, root, [
+          "/bin/sh",
+          "-c",
+          "exec \"$1\" -tf \"$2.tar\" > \"$2.names\"",
+          "sh",
+          tar,
+          stem
+        ])
+        const wrote = yield* joined(async () => {
+          try {
+            if (!listed.ok) return undefined
+            const names = (await Fs.readFile(`${stem}.names`, "utf8")).split("\n").filter((name) => name !== "")
+            // Nothing is put back outside the workspace and the temporary directory, whatever an archive holds.
+            if (
+              ![...names.map((name) => name.replace(/\/$/, "")), ...gone].every((name) =>
+                ObservedReads.keptName(name, temporary())
+              )
+            ) return undefined
+            const paths = JSON.parse(await Fs.readFile(`${stem}.json`, "utf8")) as {
+              readonly made: ReadonlyArray<string>
+              readonly touched: ReadonlyArray<string>
+            }
+            for (const name of gone) await Fs.rm(fromKept(real, name), { recursive: true, force: true })
+            return {
+              made: new Set(paths.made.map((name) => fromKept(real, name))),
+              touched: new Set(paths.touched.map((name) => fromKept(real, name)))
+            }
+          } catch {
+            return undefined
+          } finally {
+            await Fs.rm(`${stem}.names`, { force: true })
+          }
+        })
+        if (wrote === undefined) return false
+        const unpacked = yield* spawnNode(node, root, [
+          tar,
+          "-C",
+          real,
+          "-xpPf",
+          `${stem}.tar`,
+          "--delay-directory-restore"
+        ])
+        if (!unpacked.ok) return false
+        wroteHere.set(node.label, { label: node.label, id: stored.id!, ...wrote })
+        return true
+      })
+    /**
+     * Before a target that was not answered runs: puts back what each
+     * answered target it waits for left, in the order they would have run.
+     * When the files of one cannot be put back, that step runs in their
+     * place. Answers why the target cannot run, when a step it waits for
+     * fails now.
+     */
+    const putBackFor = (node: PackageNode): Effect.Effect<string | undefined, unknown> =>
+      Effect.gen(function*() {
+        if (leftBy.size === 0 || answered.has(node.label)) return undefined
+        const before = dependenciesOf(node.label)
+        for (const producer of inOrder) {
+          const stored = leftBy.get(producer.label)
+          if (stored === undefined || !before.has(producer.label) || putBack.has(producer.label)) continue
+          putBack.add(producer.label)
+          if (yield* restore(producer, producer.observed!, stored)) {
+            log(`${producer.label}  what it left is put back for ${node.label}`)
+            continue
+          }
+          log(`${producer.label}  what it left could not be put back; it runs for ${node.label}`)
+          const ran = yield* spawnConsumer(producer)
+          if (!ran.ok) return `${producer.label}, which this target waits for, failed when it ran again: ${ran.error}`
+        }
+        return undefined
+      })
     /**
      * Finds the observed targets that are answered without any of them
      * running. A step that leaves files behind, as an install does, can only
@@ -2308,15 +2509,27 @@ export const executeEffect = (
                   ObservedReads.changed(record, real, stateOf, undefined, (label) => kept.get(label)) === undefined
                 )
               )
-            const leaves = holding.some((record) => record.left === true)
-            if (holding.length === 0 || (leaves && [...dependentsOf(node.label)].some((label) => !kept.has(label)))) {
+            // What a step left is put back when a target after it runs. A record whose files are not kept answers
+            // only while every such target is answered too.
+            const awaited = [...dependentsOf(node.label)].some((label) => !kept.has(label))
+            const answering = !awaited ?
+              holding :
+              yield* joined(async () =>
+                holding.filter((record) => record.left !== true || restorable(node.observed!, record))
+              )
+            if (answering.length === 0) {
               kept.delete(node.label)
               settled = false
-            } else if (holding.length !== before.size) {
-              kept.set(node.label, new Set(holding.map((record) => record.id!)))
+            } else if (answering.length !== before.size) {
+              kept.set(node.label, new Set(answering.map((record) => record.id!)))
               settled = false
             }
           }
+        }
+        for (const node of candidates) {
+          const ids = kept.get(node.label)
+          const left = records.get(node.label)?.find((record) => ids?.has(record.id!) === true && record.left === true)
+          if (left !== undefined) leftBy.set(node.label, left)
         }
         return kept
       })
@@ -2363,14 +2576,21 @@ export const executeEffect = (
             why ??= moved
             continue
           }
-          // What it left is not restored, and a target that waits for it is about to run or be compared with it.
-          if (stored.left === true && awaited) {
+          // A target that waits for it is about to run or be compared with what it left: that is put back, or
+          // the step runs again.
+          if (
+            stored.left === true && awaited &&
+            !(restorable(observed, stored) && (yield* restore(node, observed, stored)))
+          ) {
             why ??= "a step after it runs, and may read what this one leaves"
             continue
           }
           // The steps it read from ran again here and left what it read: its record now holds for their new records.
           const anchored = ObservedReads.anchored(stored, (label) => wroteHere.get(label)?.id)
           if (anchored !== undefined) {
+            // What it left was put back under its record's old name: the targets after it read it under the new one.
+            const mine = wroteHere.get(node.label)
+            if (mine !== undefined) wroteHere.set(node.label, { ...mine, id: anchored.id! })
             // The record fit before under ids of the same length, so it fits now.
             yield* cachePut(
               node,
@@ -2436,7 +2656,12 @@ export const executeEffect = (
                 root: NodeFs.realpathSync(root),
                 ignore: ObservedReads.ignored(root, NodeOs.homedir(), cacheDirectory, observed.ignore),
                 startedMs,
-                producers: [...wroteHere.values()].filter((producer) => before.has(producer.label))
+                temporary: temporary(),
+                // In the order they ran or would have run: the last to write a path is the one it came from.
+                producers: inOrder.flatMap((earlier) => {
+                  const producer = before.has(earlier.label) ? wroteHere.get(earlier.label) : undefined
+                  return producer === undefined ? [] : [producer]
+                })
               }
             )
           ))
@@ -2448,11 +2673,13 @@ export const executeEffect = (
             unstored(node, read.value.refusal)
             return green("ran")
           }
-          const { made, record, touched } = read.value
+          const { made, touched } = read.value
+          const record = yield* keep(node, observed, read.value)
           const stored = ObservedReads.store(record, earlier)
           if (stored === undefined) unstored(node, "it read more paths than one record holds")
           else {
             yield* cachePut(node, stored, observed.key, false)
+            yield* prune(observed, stored)
             wroteHere.set(node.label, { label: node.label, id: record.id!, made, touched })
           }
           return green("ran")
@@ -4332,6 +4559,8 @@ export const executeEffect = (
         if (current !== node) refreshedNodes.set(node.label, current)
         node = current
         if (node.refusal !== undefined) return fail(node.refusal)
+        const unready = yield* putBackFor(node)
+        if (unready !== undefined) return fail(unready)
         if (node.approval !== undefined) {
           const stale = yield* approvalRecheck({ ...node, approval: node.approval })
           if (stale !== undefined) return fail(stale)

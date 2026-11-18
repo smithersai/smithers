@@ -11,6 +11,7 @@
 import { Smithers as S } from "@smthrs/targets"
 import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import * as Effect from "effect/Effect"
+import { spawnSync } from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Net from "node:net"
@@ -393,9 +394,13 @@ describe("an observed test", () => {
  * and `test` leave none. Every step notes that it ran in the build's own
  * cache directory, which no record holds.
  */
-const job = async (settings: { readonly shared?: boolean; readonly install?: string } = {}) => {
+const job = async (
+  settings: { readonly shared?: boolean; readonly install?: string | ((outside: string) => string) } = {}
+) => {
   const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smithers-observed-job-")))
-  temporary.push(base)
+  // A directory that is neither in the workspace nor temporary, as a home directory is.
+  const outside = await Fs.realpath(await Fs.mkdtemp("/var/tmp/smithers-observed-outside-"))
+  temporary.push(base, outside)
   const root = Path.join(base, "ws")
   const write = async (name: string, text: string, mode = 0o644): Promise<void> => {
     const file = Path.isAbsolute(name) ? name : Path.join(root, name)
@@ -418,9 +423,10 @@ const job = async (settings: { readonly shared?: boolean; readonly install?: str
       observe,
       data: [files, ...after] as never
     })
+  const installing = "/bin/cat registry.cfg > /dev/null\n/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt"
   const install = step(
     "install",
-    settings.install ?? "/bin/cat registry.cfg > /dev/null\n/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt",
+    typeof settings.install === "function" ? settings.install(outside) : settings.install ?? installing,
     []
   )
   const build = step("build", "/bin/cat deps/installed.txt src/a.txt > deps/built.txt", [install])
@@ -507,7 +513,11 @@ const job = async (settings: { readonly shared?: boolean; readonly install?: str
   /** What a fresh checkout is: nothing a step wrote is there. */
   const checkout = (): Promise<void> => Fs.rm(Path.join(root, "deps"), { recursive: true, force: true })
   const exists = (name: string): boolean => NodeFs.existsSync(Path.join(root, name))
-  return { base, root, write, run, ran, checkout, exists, logs, reasons, unstored }
+  const read = (name: string): string => NodeFs.readFileSync(Path.join(root, name), "utf8")
+  /** The archives kept beside the cache, by name. */
+  const kept = async (): Promise<ReadonlyArray<string>> =>
+    (await Fs.readdir(Path.join(root, ".flows", "kept")).catch(() => [])).filter((name) => name.endsWith(".tar")).sort()
+  return { base, outside, root, write, run, ran, checkout, exists, read, kept, logs, reasons, unstored }
 }
 
 const all = (status: string) => ({ install: status, build: status, lint: status, test: status })
@@ -529,37 +539,40 @@ describe("a job of observed steps", () => {
     expect(exists("deps")).toBe(false)
   })
 
-  tracedIt("runs the steps that leave files again when a step after them runs", async () => {
-    const { checkout, ran, reasons, run, write } = await job()
+  tracedIt("puts back what the steps before left when a step after them runs, and runs only that step", async () => {
+    const { checkout, exists, kept, logs, ran, read, reasons, run, write } = await job()
     expect(await run()).toEqual(all("ran"))
     await ran()
+    // What the install and the build left is kept beside the cache; the lint and the test left nothing.
+    expect(await kept()).toHaveLength(2)
     await checkout()
-    // Only the test reads this file. It runs, so what it reads of the install and the build must be there.
+    // Only the test reads this file. It runs, and finds what the install and the build left: neither ran.
     await write("tests/t.txt", "test 2\n")
-    expect(await run()).toEqual({ install: "ran", build: "ran", lint: "hit", test: "ran" })
-    expect(await ran()).toEqual(["install", "build", "test"])
-    expect(reasons).toEqual({
-      install: "a step after it runs, and may read what this one leaves",
-      build: "a step after it runs, and may read what this one leaves",
-      test: "tests/t.txt changed"
-    })
+    expect(await run()).toEqual({ install: "hit", build: "hit", lint: "hit", test: "ran" })
+    expect(await ran()).toEqual(["test"])
+    expect(reasons).toEqual({ test: "tests/t.txt changed" })
+    expect([read("deps/installed.txt"), read("deps/built.txt")]).toEqual(["locked 1\n", "locked 1\nsource 1\n"])
+    expect(logs).toContain("//:install  what it left is put back for //:test")
+    expect(logs).toContain("//:build  what it left is put back for //:test")
+    // The test read what was put back as what those steps wrote: a fresh checkout is answered whole.
     await checkout()
     expect(await run()).toEqual(all("hit"))
+    expect(exists("deps")).toBe(false)
     // Both states now have their records.
     await write("tests/t.txt", "test 1\n")
     expect(await run()).toEqual(all("hit"))
     expect(await ran()).toEqual([])
   })
 
-  tracedIt("fails as the step fails after the steps before it ran", async () => {
+  tracedIt("fails as the step fails, with what the steps before it left in place", async () => {
     const { checkout, ran, run, write } = await job()
     expect(await run()).toEqual(all("ran"))
     await ran()
     await checkout()
     await write("tests/t.txt", "fail\n")
-    expect(await run()).toEqual({ install: "ran", build: "ran", lint: "hit", test: "failed" })
+    expect(await run()).toEqual({ install: "hit", build: "hit", lint: "hit", test: "failed" })
     // Traced, then again untraced: the verdict is the untraced run's.
-    expect(await ran()).toEqual(["install", "build", "test", "test"])
+    expect(await ran()).toEqual(["test", "test"])
   })
 
   tracedIt("runs a step again when what an earlier step left for it differs", async () => {
@@ -584,15 +597,16 @@ describe("a job of observed steps", () => {
     expect(await ran()).toEqual([])
   })
 
-  tracedIt("runs a step that leaves nothing alone, and answers the step after it", async () => {
-    const { checkout, ran, run, write } = await job()
+  tracedIt("runs a step in the middle of a job alone", async () => {
+    const { checkout, exists, ran, run, write } = await job()
     expect(await run()).toEqual(all("ran"))
     await ran()
     await checkout()
     await write("lint.cfg", "lint 2\n")
-    // The test waits for the lint, so the install and the build run for it; it finds what it read and does not run.
-    expect(await run()).toEqual({ install: "ran", build: "ran", lint: "ran", test: "hit" })
-    expect(await ran()).toEqual(["install", "build", "lint"])
+    // What the install and the build left is put back for the lint; the test finds what it read and does not run.
+    expect(await run()).toEqual({ install: "hit", build: "hit", lint: "ran", test: "hit" })
+    expect(await ran()).toEqual(["lint"])
+    expect(exists("deps/built.txt")).toBe(true)
     await checkout()
     expect(await run()).toEqual(all("hit"))
   })
@@ -604,13 +618,11 @@ describe("a job of observed steps", () => {
     await checkout()
     // The install reads this and writes the same tree: its record is a new one, what it left is not.
     await write("registry.cfg", "registry 2\n")
-    expect(await run()).toEqual({ install: "ran", build: "ran", lint: "hit", test: "hit" })
-    expect(reasons).toEqual({
-      install: "registry.cfg changed",
-      build: "a step after it runs, and may read what this one leaves"
-    })
-    expect(await ran()).toEqual(["install", "build"])
-    // The test's record now names the build's new record, so a fresh checkout is answered whole.
+    // The build finds what it read of the install, so what it left is put back in place of a run.
+    expect(await run()).toEqual({ install: "ran", build: "hit", lint: "hit", test: "hit" })
+    expect(reasons).toEqual({ install: "registry.cfg changed" })
+    expect(await ran()).toEqual(["install"])
+    // The build's record names the install's new record, and the test's the build's: a fresh checkout is answered whole.
     await checkout()
     expect(await run()).toEqual(all("hit"))
     expect(await ran()).toEqual([])
@@ -622,19 +634,234 @@ describe("a job of observed steps", () => {
     await checkout()
     expect(await run(["build"])).toEqual({ install: "hit", build: "hit" })
     await ran()
-    // The whole job after it: the first two steps are answered, the rest have no record and need their files.
-    expect(await run()).toEqual({ install: "ran", build: "ran", lint: "ran", test: "ran" })
-    expect(await ran()).toEqual(["install", "build", "lint", "test"])
+    // The whole job after it: the first two steps are answered and what they left is put back for the rest.
+    expect(await run()).toEqual({ install: "hit", build: "hit", lint: "ran", test: "ran" })
+    expect(await ran()).toEqual(["lint", "test"])
   })
 
-  tracedIt("runs a step that leaves files when a target that is not observed waits for it", async () => {
-    const { checkout, ran, run } = await job()
+  tracedIt("puts back what a step left for a target that is not observed", async () => {
+    const { checkout, exists, ran, run } = await job()
     expect(await run(["after"])).toEqual({ install: "ran", build: "ran", after: "ran" })
     await ran()
     await checkout()
-    // The target is answered from its declared files, but nothing says so before the steps it waits for run.
-    expect(await run(["after"])).toEqual({ install: "ran", build: "ran", after: "hit" })
-    expect(await ran()).toEqual(["install", "build"])
+    // The target is answered from its declared files, but nothing says so before its turn: the files are there.
+    expect(await run(["after"])).toEqual({ install: "hit", build: "hit", after: "hit" })
+    expect(await ran()).toEqual([])
+    expect(exists("deps/built.txt")).toBe(true)
+  })
+
+  tracedIt("runs a step again when what it left outside the workspace is not as it left it", async () => {
+    // The install also puts a program where a home directory keeps them: nothing puts that back.
+    const { checkout, logs, outside, ran, reasons, run, write } = await job({
+      install: (elsewhere) =>
+        `/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt\n/bin/cat lock.txt > ${elsewhere}/tool`
+    })
+    expect(await run()).toEqual(all("ran"))
+    await ran()
+    await checkout()
+    // While it is there as the install left it, the kept files stand for the install.
+    await write("tests/t.txt", "test 2\n")
+    expect(await run()).toEqual({ install: "hit", build: "hit", lint: "hit", test: "ran" })
+    await ran()
+    await checkout()
+    await Fs.rm(Path.join(outside, "tool"))
+    await write("tests/t.txt", "test 3\n")
+    expect(await run()).toEqual({ install: "ran", build: "hit", lint: "hit", test: "ran" })
+    expect(reasons["install"]).toBe("a step after it runs, and may read what this one leaves")
+    expect(await ran()).toEqual(["install", "test"])
+    expect(NodeFs.readFileSync(Path.join(outside, "tool"), "utf8")).toBe("locked 1\n")
+    expect(logs.filter((line) => line.includes("is not kept"))).toEqual([])
+  })
+
+  tracedIt("does not keep what cannot be put back, and runs such a step again", async () => {
+    // A link into what the step wrote outside the workspace would lead nowhere on another machine.
+    const linking = await job({
+      install: (elsewhere) =>
+        `/bin/mkdir -p deps ${elsewhere}/store\n/bin/cat lock.txt > ${elsewhere}/store/installed.txt\n` +
+        `/bin/ln -s ${elsewhere}/store/installed.txt deps/installed.txt`
+    })
+    expect(await linking.run()).toEqual(all("ran"))
+    expect(linking.logs).toContain(
+      `//:install  what it left is not kept: deps/installed.txt is a link to ${linking.outside}/store/installed.txt, ` +
+        "which it wrote outside the workspace; it runs again when a step after it runs"
+    )
+    await linking.ran()
+    await linking.checkout()
+    await linking.write("tests/t.txt", "test 2\n")
+    expect(await linking.run()).toEqual({ install: "ran", build: "hit", lint: "hit", test: "ran" })
+    expect(await linking.ran()).toEqual(["install", "test"])
+    // Nor is what a step wrote into the repository's own store.
+    const storing = await job({
+      install: "/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt\n: > .git/marker"
+    })
+    await storing.write(".git/HEAD", "ref: refs/heads/main\n")
+    expect(await storing.run()).toEqual(all("ran"))
+    expect(storing.logs).toContain(
+      "//:install  what it left is not kept: it wrote .git/marker, in the repository's own store; " +
+        "it runs again when a step after it runs"
+    )
+  })
+
+  tracedIt("removes what the step removed when it puts back what the step left", async () => {
+    // `unlink` removes the name without asking first whether it is there, so the file is nothing the step read.
+    const { checkout, exists, ran, run, write } = await job({
+      install: "/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt\n/usr/bin/unlink stale.txt"
+    })
+    await write("stale.txt", "a file the install removes\n")
+    expect(await run()).toEqual(all("ran"))
+    expect(exists("stale.txt")).toBe(false)
+    await ran()
+    // A fresh checkout holds the file again.
+    await checkout()
+    await write("stale.txt", "a file the install removes\n")
+    await write("tests/t.txt", "test 2\n")
+    expect(await run()).toEqual({ install: "hit", build: "hit", lint: "hit", test: "ran" })
+    expect(await ran()).toEqual(["test"])
+    expect(exists("stale.txt")).toBe(false)
+  })
+
+  tracedIt("runs the step when its kept files cannot be put back", async () => {
+    const { checkout, kept, logs, ran, read, root, run, write } = await job()
+    expect(await run()).toEqual(all("ran"))
+    await ran()
+    await checkout()
+    // The archive of what the install left is cut short, as a cache restored in part leaves it.
+    const archives = await kept()
+    for (const name of archives) {
+      const file = Path.join(root, ".flows", "kept", name)
+      if ((await Fs.readFile(file)).includes("installed.txt")) await Fs.writeFile(file, "not an archive")
+    }
+    await write("tests/t.txt", "test 2\n")
+    expect(await run()).toEqual({ install: "hit", build: "hit", lint: "hit", test: "ran" })
+    expect(logs).toContain("//:install  what it left could not be put back; it runs for //:test")
+    expect(await ran()).toEqual(["install", "test"])
+    expect(read("deps/built.txt")).toBe("locked 1\nsource 1\n")
+  })
+
+  /** The live services with another `tar`, or none. */
+  const withTar = (tar: string | undefined): ExecutionServices => ({
+    ...executionServicesLive,
+    findOnPath: (name, ...rest) =>
+      name === "tar" ? Effect.succeed(tar) : executionServicesLive.findOnPath(name, ...rest)
+  })
+
+  tracedIt("keeps nothing on a host with no tar, or one whose tar fails, and runs such a step again", async () => {
+    const none = await job()
+    expect(await none.run(["test"], withTar(undefined))).toEqual(all("ran"))
+    expect(await none.kept()).toEqual([])
+    await none.ran()
+    await none.checkout()
+    await none.write("tests/t.txt", "test 2\n")
+    expect(await none.run()).toEqual({ install: "ran", build: "ran", lint: "hit", test: "ran" })
+    expect(await none.ran()).toEqual(["install", "build", "test"])
+
+    const failing = await job()
+    await failing.write(Path.join(failing.base, "tools", "tar"), "#!/bin/sh\nexit 1\n", 0o755)
+    expect(await failing.run(["test"], withTar(Path.join(failing.base, "tools", "tar")))).toEqual(all("ran"))
+    expect(failing.logs).toContain(
+      "//:install  what it left could not be kept; it runs again when a step after it runs"
+    )
+    expect(await failing.kept()).toEqual([])
+    expect(await Fs.readdir(Path.join(failing.root, ".flows", "kept"))).toEqual([])
+  })
+
+  tracedIt("runs the step when a host that kept its files has no tar to put them back", async () => {
+    const { checkout, logs, ran, run, write } = await job()
+    expect(await run()).toEqual(all("ran"))
+    await ran()
+    await checkout()
+    await write("tests/t.txt", "test 2\n")
+    expect(await run(["test"], withTar(undefined))).toEqual({ install: "hit", build: "hit", lint: "hit", test: "ran" })
+    expect(logs).toContain("//:install  what it left could not be put back; it runs for //:test")
+    expect(await ran()).toEqual(["install", "build", "test"])
+  })
+
+  tracedIt(
+    "puts back nothing from an archive that names a path elsewhere, or whose list of paths cannot be read",
+    async () => {
+      const { base, checkout, kept, logs, outside, ran, root, run, write } = await job({
+        // The install also gives the workspace's own directory a mode, which is one more path it wrote.
+        install: "/bin/chmod u+w .\n/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt"
+      })
+      expect(await run()).toEqual(all("ran"))
+      await ran()
+      const directory = Path.join(root, ".flows", "kept")
+      const [first, second] = await kept()
+      // One archive now holds a file outside the workspace and the temporary directory.
+      await write(Path.join(outside, "elsewhere.txt"), "not the run's\n")
+      const packed = spawnSync("tar", ["-P", "-cf", Path.join(directory, first!), Path.join(outside, "elsewhere.txt")])
+      expect(packed.status).toBe(0)
+      // The other's list of the paths its run wrote is no longer one.
+      await Fs.writeFile(Path.join(directory, second!.replace(/\.tar$/, ".json")), "not a list")
+      await Fs.rm(Path.join(outside, "elsewhere.txt"))
+      await checkout()
+      await write("tests/t.txt", "test 2\n")
+      expect(await run()).toEqual({ install: "hit", build: "hit", lint: "hit", test: "ran" })
+      expect(logs).toContain("//:install  what it left could not be put back; it runs for //:test")
+      expect(logs).toContain("//:build  what it left could not be put back; it runs for //:test")
+      expect(await ran()).toEqual(["install", "build", "test"])
+      expect(NodeFs.existsSync(Path.join(outside, "elsewhere.txt"))).toBe(false)
+      expect(NodeFs.existsSync(base)).toBe(true)
+    }
+  )
+
+  tracedIt("runs the step when its kept files cannot be unpacked where they were", async () => {
+    const { checkout, logs, ran, read, root, run, write } = await job()
+    expect(await run()).toEqual(all("ran"))
+    await ran()
+    await checkout()
+    // A directory nothing can be written in, where the install's files go.
+    const locked = Path.join(root, "deps")
+    await Fs.mkdir(locked)
+    await Fs.chmod(locked, 0o555)
+    try {
+      await write("tests/t.txt", "test 2\n")
+      expect(await run()).toEqual({ install: "hit", build: "hit", lint: "hit", test: "ran" })
+      expect(logs).toContain("//:install  what it left could not be put back; it runs for //:test")
+      expect((await ran()).at(-1)).toBe("test")
+      expect(read("deps/built.txt")).toBe("locked 1\nsource 1\n")
+    } finally {
+      await Fs.chmod(locked, 0o755)
+    }
+  })
+
+  tracedIt(
+    "fails the step that waits when the files cannot be put back and the step that left them fails now",
+    async () => {
+      // The install passes once in a checkout: what it keeps in the build's own cache directory is in no record.
+      const { checkout, exists, ran, run, write } = await job({
+        install:
+          "test ! -f .flows/once || exit 1\n: > .flows/once\n/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt"
+      })
+      expect(await run()).toEqual(all("ran"))
+      await ran()
+      await checkout()
+      await write("tests/t.txt", "test 2\n")
+      expect(await run(["test"], withTar(undefined))).toEqual({
+        install: "hit",
+        build: "hit",
+        lint: "hit",
+        test: "failed"
+      })
+      expect(await ran()).toEqual(["install"])
+      expect(exists("deps/installed.txt")).toBe(false)
+    }
+  )
+
+  tracedIt("keeps only the files of the records it still holds", async () => {
+    const { checkout, kept, run, write } = await job()
+    expect(await run(["install"])).toEqual({ install: "ran" })
+    const first = await kept()
+    expect(first).toHaveLength(1)
+    // Each lockfile is another record, with its own kept files; a fifth record takes the place of the first.
+    for (const lock of [2, 3, 4, 5]) {
+      await checkout()
+      await write("lock.txt", `locked ${lock}\n`)
+      expect(await run(["install"])).toEqual({ install: "ran" })
+    }
+    const last = await kept()
+    expect(last).toHaveLength(ObservedReads.maximumRecords)
+    expect(last).not.toContain(first[0])
   })
 
   tracedIt("is answered whole when its steps share a group of files", async () => {
@@ -685,7 +912,7 @@ describe("a job of observed steps", () => {
       expect(await open.run()).toEqual(all("ran"))
       expect(open.unstored).toEqual({ install: `it reached a program outside the run on local port ${port}` })
       await open.checkout()
-      expect(await open.run()).toEqual({ install: "ran", build: "ran", lint: "hit", test: "hit" })
+      expect(await open.run()).toEqual({ install: "ran", build: "hit", lint: "hit", test: "hit" })
     } finally {
       await new Promise((resolve) => server.close(resolve))
     }

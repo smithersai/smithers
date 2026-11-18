@@ -1220,6 +1220,197 @@ describe("what a run read that an earlier step wrote", () => {
   })
 })
 
+describe("what a run left behind", () => {
+  /** A workspace beside a temporary directory and a home, each with something a run could have written. */
+  const places = async () => {
+    const base = await directory()
+    const root = Path.join(base, "ws")
+    const temp = Path.join(base, "tmp")
+    const home = Path.join(base, "home")
+    const write = async (file: string, text = "x"): Promise<string> => {
+      await Fs.mkdir(Path.dirname(file), { recursive: true })
+      await Fs.writeFile(file, text)
+      return file
+    }
+    await write(Path.join(root, "src/a.txt"))
+    const made = (path: string): string => `100 mkdir("${path}", 0777) = 0`
+    const filled = (path: string): string =>
+      `100 openat(AT_FDCWD<${root}>, "${path}", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3`
+    const observe = (
+      lines: ReadonlyArray<string>,
+      limits?: typeof ObservedReads.keptLimits,
+      temporary: ReadonlyArray<string> = [temp]
+    ) => {
+      const observed = ObservedReads.observe(ObservedReads.read(() => lines, root), {
+        root,
+        ignore: [Path.join(root, ".flows")],
+        startedMs: Date.now() + 60_000,
+        temporary,
+        limits
+      })
+      if ("refusal" in observed) throw new Error(observed.refusal)
+      return observed
+    }
+    return { root, temp, home, write, made, filled, observe }
+  }
+
+  it("is told apart by where it is: kept in the workspace and the temporary directory, checked anywhere else", async () => {
+    const { filled, home, made, observe, root, temp, write } = await places()
+    await write(Path.join(root, "node_modules/pkg/index.js"), "package")
+    await write(Path.join(root, "node_modules/.bin/placeholder"))
+    await Fs.symlink("../pkg/index.js", Path.join(root, "node_modules/.bin/pkg"))
+    await Fs.symlink("/usr/bin/env", Path.join(root, "node_modules/.bin/env"))
+    await write(Path.join(root, ".flows/cache/entry"))
+    await write(Path.join(temp, "state/env"), "A=1")
+    await write(Path.join(home, "bin/tool"), "tool")
+    await write(Path.join(home, ".npm/_cacache/blob"), "fetched")
+    await write(Path.join(home, ".npm/_cacache/later"), "fetched later")
+    const observed = observe([
+      made(`${root}/node_modules`),
+      made(`${root}/node_modules/pkg`),
+      filled("node_modules/pkg/index.js"),
+      made(`${root}/node_modules/.bin`),
+      `100 symlink("../pkg/index.js", "${root}/node_modules/.bin/pkg") = 0`,
+      `100 symlink("/usr/bin/env", "${root}/node_modules/.bin/env") = 0`,
+      filled(".flows/cache/entry"),
+      filled(`${temp}/state/env`),
+      filled(`${temp}/state/removed-again`),
+      `100 unlink("${temp}/state/removed-again") = 0`,
+      `100 unlink("${root}/src/stale.txt") = 0`,
+      `100 unlink("${home}/old") = 0`,
+      `100 chmod("${root}", 0755) = 0`,
+      filled(`${home}/bin/tool`),
+      "100 openat(AT_FDCWD</dev>, \"/dev/null\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3",
+      "100 unlink(\"/dev/shm/gone\") = 0",
+      // A package manager that installs what a lockfile pins fills its own cache.
+      `100 unlink("${root}/.flows/cache/old") = 0`,
+      "100 execve(\"/bin/sh\", [\"npm\", \"ci\"], 0x7ffc /* 9 vars */) = 0",
+      made(`${home}/.npm`),
+      made(`${home}/.npm/_cacache`),
+      filled(`${home}/.npm/_cacache/blob`),
+      // What another process puts into the cache the install made is the cache's too.
+      `200 openat(AT_FDCWD<${root}>, "${home}/.npm/_cacache/later", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3`
+    ])
+    expect(observed.record.left).toBe(true)
+    expect(observed.left).toEqual({
+      keep: [
+        `${temp}/state/env`,
+        "node_modules",
+        "node_modules/.bin",
+        "node_modules/.bin/env",
+        "node_modules/.bin/pkg",
+        "node_modules/pkg",
+        "node_modules/pkg/index.js"
+      ],
+      gone: [`${temp}/state/removed-again`, "src/stale.txt"],
+      outside: [[`${home}/bin/tool`, ObservedReads.measure(`${home}/bin/tool`)]]
+    })
+    // With no temporary directory named, what is there is somewhere else like any other place.
+    const elsewhere = observe([filled(`${temp}/state/env`)], undefined, [])
+    expect(elsewhere.left).toEqual({ keep: [], gone: [], outside: [[`${temp}/state/env`, expect.any(String)]] })
+  })
+
+  it("is nothing for a run that wrote nothing that is still there", async () => {
+    const { filled, observe, root } = await places()
+    expect(observe([filled("out.txt"), `100 unlink("${root}/out.txt") = 0`]).left).toBeUndefined()
+    expect(observe([`100 chmod("${root}", 0755) = 0`]).left).toBeUndefined()
+  })
+
+  it("is not kept when a step cannot be given it back whole", async () => {
+    const { filled, home, made, observe, root, temp, write } = await places()
+    // A link into what the run wrote outside the workspace.
+    await write(Path.join(home, "store/pkg/index.js"))
+    await Fs.symlink(Path.join(home, "store/pkg"), Path.join(root, "linked"))
+    expect(
+      observe([
+        made(`${home}/store`),
+        made(`${home}/store/pkg`),
+        filled(`${home}/store/pkg/index.js`),
+        `100 symlink("${home}/store/pkg", "${root}/linked") = 0`
+      ]).left
+    ).toEqual({ refusal: `linked is a link to ${home}/store/pkg, which it wrote outside the workspace` })
+    // A file in the repository's own store.
+    await write(Path.join(root, ".git/hooks/pre-commit"))
+    expect(observe([filled(".git/hooks/pre-commit")]).left).toEqual({
+      refusal: "it wrote .git/hooks/pre-commit, in the repository's own store"
+    })
+    // More than the limits allow: paths, bytes, paths outside, and paths removed.
+    await write(Path.join(root, "one"), "12345")
+    await write(Path.join(root, "two"), "12345")
+    await write(Path.join(temp, "three"))
+    await write(Path.join(home, "four"))
+    await write(Path.join(home, "five"))
+    const few = { paths: 1, bytes: 100, outside: 1 }
+    expect(observe([filled("one"), filled("two")], few).left).toEqual({ refusal: "it left too much to keep" })
+    expect(observe([filled("one"), filled("two")], { ...few, paths: 9, bytes: 9 }).left).toEqual({
+      refusal: "it left too much to keep"
+    })
+    expect(observe([filled(`${home}/four`), filled(`${home}/five`)], few).left).toEqual({
+      refusal: "it left too many files outside the workspace to keep"
+    })
+    expect(
+      observe([filled("one"), `100 unlink("${root}/gone-1") = 0`, `100 unlink("${root}/gone-2") = 0`], few).left
+    ).toEqual({ refusal: "it left too much to keep" })
+    expect(observe([filled("one"), filled(`${temp}/three`), filled(`${home}/four`)], { ...few, paths: 2 }).left)
+      .toEqual({ keep: [`${temp}/three`, "one"], gone: [], outside: [[`${home}/four`, expect.any(String)]] })
+  })
+
+  it.skipIf(process.platform === "win32")("leaves out a socket or a pipe a process left", async () => {
+    const { filled, observe, root } = await places()
+    const pipe = Path.join(root, "pipe")
+    expect(spawnSync("mkfifo", [pipe]).status).toBe(0)
+    await Fs.writeFile(Path.join(root, "out.txt"), "x")
+    expect(observe([`100 mknod("${pipe}", S_IFIFO|0644) = 0`, filled("pipe"), filled("out.txt")]).left).toEqual({
+      keep: ["out.txt"],
+      gone: [],
+      outside: []
+    })
+  })
+
+  it("stands for its run while what the run left outside the workspace is as it left it", async () => {
+    const { home, write } = await places()
+    const tool = await write(Path.join(home, "bin/tool"), "tool")
+    const stored: ObservedReads.Record = {
+      reads: [],
+      lists: [],
+      left: true,
+      id: "1",
+      kept: { archive: "a".repeat(64), outside: [[tool, ObservedReads.measure(tool)]], gone: [] }
+    }
+    expect(ObservedReads.outsideHolds(stored)).toBe(true)
+    expect(ObservedReads.outsideHolds({ reads: [], lists: [], id: "2" })).toBe(true)
+    await Fs.writeFile(tool, "another tool")
+    expect(ObservedReads.outsideHolds(stored)).toBe(false)
+    await Fs.rm(tool)
+    expect(ObservedReads.outsideHolds(stored, () => "-")).toBe(false)
+  })
+
+  it("puts back only names in the workspace or under a temporary directory", () => {
+    const temporary = ["/tmp", "/var/folders/x"]
+    for (
+      const name of ["node_modules", "node_modules/pkg/index.js", "/tmp/state/env", "/var/folders/x/a", ".gitignore"]
+    ) {
+      expect([name, ObservedReads.keptName(name, temporary)]).toEqual([name, true])
+    }
+    for (
+      const name of [
+        "",
+        "../outside",
+        "a/../../b",
+        ".git",
+        ".git/config",
+        "a//b",
+        "a\0b",
+        "/etc/passwd",
+        "/tmp",
+        "/tmp/../etc/passwd",
+        "/tmpx/a",
+        "/home/u/.ssh/authorized_keys"
+      ]
+    ) expect([name, ObservedReads.keptName(name, temporary)]).toEqual([name, false])
+  })
+})
+
 describe("a package manager that installs what a lockfile pins", () => {
   it("is known by its command line", () => {
     const locked = [
@@ -1313,6 +1504,30 @@ describe("a package manager that installs what a lockfile pins", () => {
     ])
   })
 
+  it("is told apart in what it wrote, with what a process it started wrote and what it moved", () => {
+    const trace = read([
+      "100 openat(AT_FDCWD</w>, \"before.txt\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3",
+      start(100, "npm", "ci"),
+      "100 mkdir(\"/home/u/.npm/_cacache/tmp/a1\", 0777) = 0",
+      "100 openat(AT_FDCWD</w>, \"/home/u/.npm/_cacache/tmp/a1/blob\", O_WRONLY|O_CREAT|O_EXCL, 0666) = 3",
+      "100 rename(\"/home/u/.npm/_cacache/tmp/a1\", \"/home/u/.npm/_cacache/content/a1\") = 0",
+      "100 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 102",
+      "102 openat(AT_FDCWD</w>, \"node_modules/pkg/built.node\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3",
+      start(100, "node", "after.js"),
+      "100 openat(AT_FDCWD</w>, \"after.txt\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3",
+      "100 unlink(\"/w/before.txt\") = 0",
+      "100 rmdir(\"/w/missing\") = -1 ENOENT (No such file or directory)"
+    ].join("\n"))
+    expect([...trace.fetched].sort()).toEqual([
+      "/home/u/.npm/_cacache/content/a1",
+      "/home/u/.npm/_cacache/content/a1/blob",
+      "/home/u/.npm/_cacache/tmp/a1",
+      "/home/u/.npm/_cacache/tmp/a1/blob",
+      "/w/node_modules/pkg/built.node"
+    ])
+    expect([...trace.removed].sort()).toEqual(["/home/u/.npm/_cacache/tmp/a1", "/w/before.txt"])
+  })
+
   it("stops being one when it goes on to run another program", () => {
     // `uv run` installs, then becomes the command it was given.
     const running = [start(100, "uv", "run", "--locked", "tox", "run"), remote(100), start(100, "tox", "run")]
@@ -1397,6 +1612,21 @@ describe("the stored records", () => {
     expect(ObservedReads.store(half, [{ ...half, id: "half-again" }, one])?.records).toEqual([half])
   })
 
+  const digest = "a".repeat(64)
+
+  it("keeps what says that a record's files are kept, also when the record moves", () => {
+    const kept = { archive: digest, outside: [["/home/u/bin/tool", "f:00:x"]], gone: ["stale.txt"] } as const
+    const holding: ObservedReads.Record = { ...full, kept }
+    expect(ObservedReads.decode(ObservedReads.store(holding, []))).toEqual([holding])
+    // The kept files are named by the id the record had, so a record under a new id still finds them.
+    expect(ObservedReads.anchored(holding, () => "i2")?.kept).toEqual(kept)
+    expect(ObservedReads.anchored(full, () => "i2")?.kept).toBeUndefined()
+    // The id of a record does not say whether its files are kept.
+    const { id: _, kept: __, ...body } = holding
+    const { id: ___, ...same } = full
+    expect(ObservedReads.idOf(body)).toBe(ObservedReads.idOf(same))
+  })
+
   it("names a record by a digest of what it holds", () => {
     const { id: _, ...body } = full
     const id = ObservedReads.idOf(body)
@@ -1466,7 +1696,16 @@ describe("the stored records", () => {
         { ...stored, records: [{ ...full, lists: [["d", "00", [], [["x"]]]] }] },
         { ...stored, records: [{ ...full, lists: [["d", "00", [], [[1, 0]]]] }] },
         { ...stored, records: [{ ...full, lists: [["d", "00", [], [["x", 3]]]] }] },
-        { ...stored, records: [{ ...full, lists: [["d", "00", [], [], "more"]] }] }
+        { ...stored, records: [{ ...full, lists: [["d", "00", [], [], "more"]] }] },
+        { ...stored, records: [{ ...full, kept: "yes" }] },
+        { ...stored, records: [{ ...full, kept: null }] },
+        { ...stored, records: [{ ...full, kept: { archive: "../x", outside: [], gone: [] } }] },
+        { ...stored, records: [{ ...full, kept: { archive: 1, outside: [], gone: [] } }] },
+        { ...stored, records: [{ ...full, kept: { archive: digest, outside: "none", gone: [] } }] },
+        { ...stored, records: [{ ...full, kept: { archive: digest, outside: [["/a"]], gone: [] } }] },
+        { ...stored, records: [{ ...full, kept: { archive: digest, outside: [["/a", 1]], gone: [] } }] },
+        { ...stored, records: [{ ...full, kept: { archive: digest, outside: [], gone: "none" } }] },
+        { ...stored, records: [{ ...full, kept: { archive: digest, outside: [], gone: [1] } }] }
       ]
     ) expect(ObservedReads.decode(other)).toEqual([])
   })

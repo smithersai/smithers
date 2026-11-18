@@ -275,6 +275,10 @@ export interface Trace {
   readonly changed: ReadonlySet<string>
   /** Programs the run started. */
   readonly started: ReadonlyMap<string, number>
+  /** Paths the run removed or moved away. */
+  readonly removed: ReadonlySet<string>
+  /** Paths written by a package manager installing what a lockfile pins, or by a process it started. */
+  readonly fetched: ReadonlySet<string>
   /** Why what the run read cannot all be known, when it cannot. */
   readonly refusals: ReadonlyArray<string>
 }
@@ -485,6 +489,7 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       for (const path of [...(below.get(source) ?? [])]) {
         const moved = `${target}${path.slice(source.length)}`
         write(moved)
+        if (fetched.has(path)) fetched.add(moved)
         if (made.has(path)) first(made, moved, at)
         if (emptied.has(path)) first(emptied, moved, at)
         moves.push([path, moved])
@@ -505,6 +510,8 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
   /** Processes that are a locked install now, and the processes started under one. */
   const installing = new Set<number>()
   const installed = new Set<number>()
+  /** What those processes wrote. */
+  const fetched = new Set<string>()
 
   // Which line starts each process, and whether it shares its parent's directory.
   const children = new Map<number, { readonly child: number; readonly shared: boolean }>()
@@ -601,6 +608,7 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       }
       if (failed) return saw(path)
       write(path)
+      if (installing.has(pid) || installed.has(pid)) fetched.add(path)
       if (!ok) return
       if (how !== "changed") first(how === "made" ? made : emptied, path, at)
       // A call that only succeeds where nothing was says so: the name was not there when it began.
@@ -838,7 +846,7 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
     const paren = open.text.indexOf("(")
     if (paren > 0) handle(pid, open.text.slice(0, paren), open.text.slice(paren + 1), undefined, open.at)
   }
-  return { found, missing, listed, made, emptied, changed, started, refusals: [...refusals] }
+  return { found, missing, listed, made, emptied, changed, started, removed, fetched, refusals: [...refusals] }
 }
 
 /**
@@ -950,6 +958,19 @@ export interface Record {
   readonly given?: ReadonlyArray<readonly [path: string, state: string, from: number]>
   /** Set when the run left something behind that it wrote: a file, a directory or a link. */
   readonly left?: true
+  /**
+   * Set when what the run left in the workspace and in the temporary
+   * directory is kept beside the record, to be put back in place of running
+   * the step again. `outside` holds what it left anywhere else, with what was
+   * there: the kept files stand for the run only while each of those is
+   * unchanged. `gone` holds the paths the run removed. `archive` names the
+   * kept files: the id the record had when they were kept.
+   */
+  readonly kept?: {
+    readonly archive: string
+    readonly outside: ReadonlyArray<readonly [path: string, state: string]>
+    readonly gone: ReadonlyArray<string>
+  }
   /** Names this record among the records of its declaration: a digest of everything above. */
   readonly id?: string
 }
@@ -980,6 +1001,39 @@ export interface Observation {
   readonly record: Record
   readonly made: ReadonlySet<string>
   readonly touched: ReadonlySet<string>
+  /** What the run left behind, when it left anything: what to keep of it, or why it cannot be kept. */
+  readonly left?: Left | { readonly refusal: string }
+}
+
+/**
+ * What a run left behind, sorted so that a directory comes before what it
+ * holds. `keep` is every file, directory and link it wrote that is still
+ * there, in the workspace (written from its root) or under a temporary
+ * directory (absolute). `gone` is every path in those places it removed.
+ * `outside` is what it wrote anywhere else and left there, with what is
+ * there now, apart from what a locked install fetched: a package manager's
+ * own cache, which it fills again when a file is missing.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Left {
+  readonly keep: ReadonlyArray<string>
+  readonly gone: ReadonlyArray<string>
+  readonly outside: ReadonlyArray<readonly [path: string, state: string]>
+}
+
+/**
+ * The most paths kept for one run, the most bytes in them, and the most
+ * paths a run may leave outside the workspace and still be kept.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const keptLimits: { readonly paths: number; readonly bytes: number; readonly outside: number } = {
+  paths: 300_000,
+  bytes: 2 * 1024 * 1024 * 1024,
+  outside: 2_000
 }
 
 /**
@@ -1024,6 +1078,10 @@ export const observe = (
     readonly startedMs: number
     readonly io?: Io | undefined
     readonly producers?: ReadonlyArray<Producer> | undefined
+    /** The temporary directories, by their real paths: what a run left there is kept with what it left in the workspace. */
+    readonly temporary?: ReadonlyArray<string> | undefined
+    /** The limits on what is kept; {@link keptLimits} unless a test gives smaller ones. */
+    readonly limits?: typeof keptLimits | undefined
   }
 ): Observation | { readonly refusal: string } => {
   if (trace.refusals.length > 0) return { refusal: trace.refusals[0]! }
@@ -1137,6 +1195,7 @@ export const observe = (
     touch(path, kind === "emptied" ? "made" : kind)
   }
   const touched = new Set<string>()
+  const fetched = new Set<string>()
   for (const raw of trace.changed) {
     if (pseudo(raw)) continue
     // Both the name the run wrote and the file a link under that name leads to are the run's to change.
@@ -1145,7 +1204,10 @@ export const observe = (
     for (const written of new Set([path, resolve(raw) ?? path])) {
       const entry = entries.get(written)
       if (entry !== undefined) entry.changed = true
+      // Making a name writes the name: a link the run made leads to a file the run may never have written.
+      if (written !== path && trace.made.has(raw)) continue
       if (visible(written)) touched.add(written)
+      if (trace.fetched.has(raw)) fetched.add(written)
     }
     const parent = NodePath.posix.dirname(path)
     let names = own.get(parent)
@@ -1223,14 +1285,96 @@ export const observe = (
     if (names.length === 0 && moved(path)) return { refusal: `${inside(path)} changed while it ran` }
     lists.push(added.length === 0 ? [inside(path), digest, names] : [inside(path), digest, names, added])
   }
-  const left = [...touched].some((path) => present(path, io))
+  const survivors = [...touched].filter((path) => path !== options.root && present(path, io)).sort(byCodeUnit)
   const body = {
     reads,
     lists,
     ...(from.length === 0 ? {} : { from, given }),
-    ...(left ? { left: true as const } : {})
+    ...(survivors.length > 0 ? { left: true as const } : {})
   }
-  return { record: { ...body, id: idOf(body) }, made, touched }
+  const record = { ...body, id: idOf(body) }
+  if (survivors.length === 0) return { record, made, touched }
+
+  const limits = options.limits ?? keptLimits
+  const temporary = options.temporary ?? []
+  /** A path as it is kept: from the root inside the workspace, absolute under a temporary directory. */
+  const keptAs = (path: string): string | undefined =>
+    under(path, options.root)
+      ? inside(path)
+      : temporary.some((directory) => under(path, directory))
+      ? path
+      : undefined
+  /** Whether the run wrote a path, or made a directory above it. */
+  const wrote = (path: string, among: ReadonlySet<string>): boolean => {
+    if (among.has(path)) return true
+    for (let above = NodePath.posix.dirname(path); above !== "/"; above = NodePath.posix.dirname(above)) {
+      if (among.has(above) && made.has(above)) return true
+    }
+    return false
+  }
+  const leaves = (): Left | { readonly refusal: string } => {
+    const keep: Array<string> = []
+    const outside: Array<readonly [string, string]> = []
+    let bytes = 0
+    for (const path of survivors) {
+      const name = keptAs(path)
+      if (name === undefined) {
+        // A package manager fills its own cache again when a file of it is missing.
+        if (wrote(path, fetched)) continue
+        outside.push([path, measure(path, io)])
+        if (outside.length > limits.outside) return { refusal: "it left too many files outside the workspace to keep" }
+        continue
+      }
+      if (under(path, `${options.root}/.git`)) return { refusal: `it wrote ${name}, in the repository's own store` }
+      const stats = io.lstat(path)
+      if (stats.isSymbolicLink()) {
+        const target = NodePath.posix.resolve(NodePath.posix.dirname(path), io.readlink(path))
+        if (keptAs(target) === undefined && wrote(target, touched)) {
+          return { refusal: `${name} is a link to ${target}, which it wrote outside the workspace` }
+        }
+      } else if (stats.isFile()) bytes += stats.size
+      // A socket or a pipe a process left is nothing to put back.
+      else if (!stats.isDirectory()) continue
+      keep.push(name)
+      if (keep.length > limits.paths || bytes > limits.bytes) return { refusal: "it left too much to keep" }
+    }
+    const gone: Array<string> = []
+    for (const raw of trace.removed) {
+      const path = pseudo(raw) ? undefined : named(raw)
+      if (path === undefined || !visible(path) || present(path, io)) continue
+      const name = keptAs(path)
+      if (name !== undefined) gone.push(name)
+    }
+    if (gone.length > limits.paths) return { refusal: "it left too much to keep" }
+    return { keep, gone: [...new Set(gone)].sort(byCodeUnit), outside }
+  }
+  return { record, made, touched, left: leaves() }
+}
+
+/**
+ * Whether what a kept record's run left outside the workspace is still as
+ * the run left it. The kept files stand for the run only then: a step after
+ * it may read a program the run installed in the home directory.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const outsideHolds = (stored: Record, measured: (path: string) => string = measure): boolean =>
+  (stored.kept?.outside ?? []).every(([path, state]) => measured(path) === state)
+
+/**
+ * Whether a name in a kept archive may be put back: a path inside the
+ * workspace, written from its root and never in `.git`, or an absolute path
+ * under one of the temporary directories.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const keptName = (name: string, temporary: ReadonlyArray<string>): boolean => {
+  const parts = name.split("/")
+  if (name === "" || name.includes("\0") || parts.includes("..")) return false
+  if (!name.startsWith("/")) return parts[0] !== ".git" && !parts.includes("")
+  return temporary.some((directory) => name.startsWith(`${directory}/`))
 }
 
 /** The names in a directory, sorted; none when it cannot be listed. */
@@ -1379,7 +1523,7 @@ export const anchored = (stored: Record, latest: (label: string) => string | und
     given: stored.given ?? [],
     ...(stored.left === true ? { left: true as const } : {})
   }
-  return { ...body, id: idOf(body) }
+  return { ...body, id: idOf(body), ...(stored.kept === undefined ? {} : { kept: stored.kept }) }
 }
 
 /**
@@ -1451,15 +1595,24 @@ export interface Stored {
   readonly records: ReadonlyArray<Record>
 }
 
+const isKept = (value: unknown): boolean => {
+  if (value === undefined) return true
+  if (typeof value !== "object" || value === null) return false
+  const { archive, gone, outside } = value as { readonly [key in "archive" | "gone" | "outside"]?: unknown }
+  return typeof archive === "string" && /^[0-9a-f]{64}$/.test(archive) &&
+    Array.isArray(gone) && gone.every((path) => typeof path === "string") && Array.isArray(outside) &&
+    outside.every((row) => Array.isArray(row) && row.length === 2 && row.every((part) => typeof part === "string"))
+}
+
 const isRecord = (value: unknown): value is Record => {
   if (typeof value !== "object" || value === null) return false
-  const { from = [], given = [], id, left, lists, reads } = value as { readonly [key in keyof Record]?: unknown }
+  const { from = [], given = [], id, kept, left, lists, reads } = value as { readonly [key in keyof Record]?: unknown }
   const text = (part: unknown): boolean => typeof part === "string"
   /** A place in `from`. */
   const place = (part: unknown): boolean =>
     Number.isInteger(part) && (part as number) >= 0 && (part as number) < (from as ReadonlyArray<unknown>).length
   return Array.isArray(reads) && Array.isArray(lists) && Array.isArray(from) && Array.isArray(given) &&
-    typeof id === "string" && (left === undefined || left === true) &&
+    typeof id === "string" && (left === undefined || left === true) && isKept(kept) &&
     reads.every((row) => Array.isArray(row) && (row.length === 2 || row.length === 3) && row.every(text)) &&
     from.every((row) => Array.isArray(row) && row.length === 2 && row.every(text)) &&
     given.every((row) => Array.isArray(row) && row.length === 3 && text(row[0]) && text(row[1]) && place(row[2])) &&

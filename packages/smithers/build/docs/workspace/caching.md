@@ -364,27 +364,54 @@ const build = S.Shell.Test({ shell: "npm run build", sandbox: "none", observe: t
 const test = S.Shell.Test({ shell: "npm test", sandbox: "none", observe: true, data: [files, build] })
 ```
 
-A cache hit restores no file, so a step that left files behind can only be
-left out when no target that waits for it runs. The build decides that for all
-of them at once, before the first target starts:
+What a step left is kept, so a step after it can run without it. After a run,
+the files, directories and links the run wrote that are still there, in the
+workspace and under the temporary directory, are packed into one archive in
+`<cache directory>/kept`. The build decides for all the steps at once, before
+the first target starts, which of them are answered from their records. When
+one that is not answered is about to run, what each answered step it waits for
+left is put back first: what the run removed is removed, and its files are
+unpacked where they were.
 
 | Tree                                                      | What runs                                                     |
 | --------------------------------------------------------- | ------------------------------------------------------------- |
-| Every step would read what it read before                 | Nothing. No install, no build, in a fresh checkout too        |
-| Only `test` reads a changed file                          | `install`, `build` and `test`                                 |
-| Only `install` reads a changed file, and writes as before | `install` and `build`; `test` finds what it read and is a hit |
+| Every step would read what it read before                 | Nothing, and nothing is put back, in a fresh checkout too     |
+| Only `test` reads a changed file                          | `test`, after what `install` and `build` left is put back     |
+| Only `build` reads a changed file                         | `build`, after what `install` left is put back, then `test`   |
+| Only `install` reads a changed file, and writes as before | `install`; what `build` left is put back, and `test` is a hit |
 
 A path a step read that an earlier step wrote is recorded with that step. It
 matches when it holds what the run read there. In a fresh checkout it is
 missing, and it matches while the step that wrote it is itself answered from the
-record this run read it under: that step would write it again as it was. A step
-that left nothing behind, as a lint does, is answered on its own.
+record this run read it under: that step would write it again as it was.
 
-A step that runs because a later step needs its files says so:
+The kept files stand for a run only while everything else the run left is as
+it left it. What a run wrote outside the workspace and the temporary directory,
+such as a program it installed in the home directory, is recorded with what was
+there, and is checked before the files are put back. What a locked install
+fetched into its own cache is left out: a package manager fills its cache again
+when a file is missing. Four things are never kept, and the step then runs
+again when a step after it runs:
+
+| What the run left                               | The line                                                                                     |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| A link to a file it wrote outside the workspace | `what it left is not kept: <link> is a link to <path>, which it wrote outside the workspace` |
+| A file under `.git`                             | `what it left is not kept: it wrote <path>, in the repository's own store`                   |
+| More than 300,000 paths or 2 GiB                | `what it left is not kept: it left too much to keep`                                         |
+| More than 2,000 files outside the workspace     | `what it left is not kept: it left too many files outside the workspace to keep`             |
+
+Keeping needs `tar` on the host. When the kept files cannot be put back (an
+archive cut short, a host without `tar`), the step itself runs in their place.
+A step that runs because a later step needs what it left, and it is not kept,
+says so:
 
 ```text
 //:install  runs again: a step after it runs, and may read what this one leaves
 ```
+
+The archives of a declaration's four records are the only ones kept; an older
+one is removed with its record. A CI machine that carries the cache directory
+from one run to the next carries `kept` with it.
 
 On a host that cannot record reads, an observed step another target waits for
 runs every time, and only the last step of a chain is reused, from its `data`.
