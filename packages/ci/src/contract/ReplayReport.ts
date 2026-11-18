@@ -192,6 +192,11 @@ export type FirstRun = typeof FirstRun.Type
  * that found the jobs that pass on this machine took, when there was one. It
  * is in no other time.
  *
+ * `reruns` says how many times a failed step ran again to tell a flaky
+ * failure from a broken one, in every way and in the first run, and how long
+ * those runs took together. That time is in no other time. It is absent when
+ * no step ran again.
+ *
  * `firstRun` is present when every way ran once before the first counted
  * commit (`FirstRun`), so that commit started with the caches a CI run finds.
  * Without it the first counted commit started with an empty cache. `cold`
@@ -210,6 +215,7 @@ export const ReplayReport = Schema.Struct({
   speedupCommits: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   jobs: Schema.optionalKey(Schema.Struct({ replayed: Schema.Int, total: Schema.Int })),
   trialMs: Schema.optionalKey(Schema.Finite),
+  reruns: Schema.optionalKey(Schema.Struct({ count: Schema.Int, ms: Schema.Finite })),
   firstRun: Schema.optionalKey(FirstRun),
   cold: Schema.optionalKey(Schema.NonEmptyString),
   mismatches: Schema.Int,

@@ -20,7 +20,17 @@ import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { type Confined, confine, held, reading, type Way } from "../replay/Confine.vibe"
 import { gitConfig, pushesGoNowhere, searchPath, stepEnvironment } from "../replay/Environment.ts"
 import { probeWith } from "../replay/Jail.ts"
-import { failuresOf, noJobPassed, noProgress, nothingPassed, printedLimit, stoppedResults } from "../replay/Failures.ts"
+import {
+  failuresOf,
+  type LastFailures,
+  noJobPassed,
+  noProgress,
+  nothingPassed,
+  printedLimit,
+  remember,
+  type RerunTally,
+  stoppedResults
+} from "../replay/Failures.ts"
 import {
   cacheDirectory,
   checkoutAt,
@@ -177,7 +187,9 @@ interface CommitCi {
  * Each is then installed, and its own `smthrs` runs the patterns. Wall time
  * covers the checkout, the install and the first pass, the same in every
  * mode; the reruns that label flaky targets, and the cleaning of a copy after
- * its run, are not counted.
+ * its run, are not counted. A failed target runs again `request.reruns` times,
+ * or as often as the host sets, and not at all when it failed the same way in
+ * the same way's run of the commit before, or in the first run.
  *
  * The copy's install and its `smthrs` get what a target gets of the
  * environment and no credential, so no run reads or writes a shared cache
@@ -412,8 +424,17 @@ export const own = <R>(
     const head = commits.at(-1) as string
     const oldest = commits[0] as string
     const newestCi = { patterns: chosen.patterns, workspaceFile } satisfies CommitCi
+    // How often a failed target runs again: what the person asked for, else what the host sets.
+    const reruns = request.reruns ?? options.reruns
     // How often a target that fails the first run runs again before it is left out.
-    const again = Math.min(1, options.reruns)
+    const again = Math.min(1, reruns)
+    const tally: RerunTally = { count: 0, ms: 0 }
+    // What each way's targets failed with in its run before: the same failure again is not run again.
+    const last: Record<"baseline" | "normal" | "fast", LastFailures> = {
+      baseline: new Map(),
+      normal: new Map(),
+      fast: new Map()
+    }
 
     // The copy of the run that only judges, made when it is first needed, and what it is installed for.
     let judging: { readonly copy: string; readonly at: string; readonly state: Installed } | undefined = undefined
@@ -442,7 +463,9 @@ export const own = <R>(
       const unplanned = at !== head && ran.some((result) => result.label === installLabel || result.label === noRecordLabel)
       const first = unplanned ? try atNewest(undefined) : ran
       const judged = unplanned ? head : at
-      const results = try settle(atNewest, first, again, first.length)
+      // A target that fails this way again at the first counted commit is broken, not flaky.
+      remember(last.baseline, first)
+      const results = try settle(atNewest, first, again, first.length, new Map(), tally)
       const failures = failuresOf(results)
       const passed = results.filter((result) => result.status === "ran" || result.status === "hit")
       if (passed.length === 0 && failures[0] !== undefined) {
@@ -477,17 +500,21 @@ export const own = <R>(
       return plan === undefined ? patterns : rootsWithout(plan, leftHere)
     }
 
-    /** One mode of one commit: the checkout, the install and the first pass are timed, the reruns are not. */
+    /**
+     * One way of one commit: the checkout, the install and the first pass are timed, the reruns are not. A target
+     * that fails as it did in the way's run before is not run again.
+     */
     effect function measure(
       at: string,
       copy: string,
       commit: string,
       cached: boolean,
       targets: ReadonlyArray<string> | undefined,
-      place: Confined,
+      way: "baseline" | "normal" | "fast",
       ci: CommitCi,
-      reruns: number = options.reruns
+      times: number = reruns
     ) {
+      const place = places[way]
       try progress.say(at)
       const start = try Clock.currentTimeMillis
       const state = try ready(copy, commit, cached ? [cacheDirectory] : [], place, ci.workspaceFile)
@@ -498,7 +525,8 @@ export const own = <R>(
       const execute = smthrs(copy, cached, state, place, patterns)
       const first = try execute(targets)
       const wallMs = (try Clock.currentTimeMillis) - start - planned
-      const results = try settle(execute, first, reruns, first.length)
+      const results = try settle(execute, first, times, first.length, last[way], tally)
+      remember(last[way], results)
       for (const line of linesOf(at, results, wallMs)) try progress.say(line)
       return { results, wallMs, state } satisfies Measured
     }
@@ -510,13 +538,13 @@ export const own = <R>(
      */
     effect function warmed(at: string, ci: CommitCi) {
       const named = `first run ${at.slice(0, 7)}`
-      const base = try measure(`${named} baseline`, baselineCopy, at, false, undefined, places.baseline, ci, 0)
+      const base = try measure(`${named} baseline`, baselineCopy, at, false, undefined, "baseline", ci, 0)
       try cleanCopy(baselineCopy, [], places.baseline)
       if (request.trial === true) try judge(at, base.results)
-      const normal = try measure(`${named} normal`, normalCopy, at, true, undefined, places.normal, ci, 0)
+      const normal = try measure(`${named} normal`, normalCopy, at, true, undefined, "normal", ci, 0)
       try cleanCopy(normalCopy, [cacheDirectory], places.normal)
       if (fastCopy === undefined) return { commit: at, baselineMs: base.wallMs, normalMs: normal.wallMs } satisfies FirstRun
-      const fast = try measure(`${named} fast`, fastCopy, at, true, undefined, places.fast, ci, 0)
+      const fast = try measure(`${named} fast`, fastCopy, at, true, undefined, "fast", ci, 0)
       try cleanCopy(fastCopy, [cacheDirectory], places.fast)
       return { commit: at, baselineMs: base.wallMs, normalMs: normal.wallMs, fastMs: fast.wallMs } satisfies FirstRun
     }
@@ -576,13 +604,13 @@ export const own = <R>(
         continue
       }
       const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
-      const base = try measure(`${at} baseline`, baselineCopy, commit, false, undefined, places.baseline, ci)
+      const base = try measure(`${at} baseline`, baselineCopy, commit, false, undefined, "baseline", ci)
       // Each copy is cleaned after its run, untimed, so the next commit's timed setup starts from the same clean
       // tree in every mode.
       try cleanCopy(baselineCopy, [], places.baseline)
       const baseRecord = recordOf(base.results, commit, base.wallMs)
       baselines.push(baseRecord)
-      const normal = try measure(`${at} normal`, normalCopy, commit, true, undefined, places.normal, ci)
+      const normal = try measure(`${at} normal`, normalCopy, commit, true, undefined, "normal", ci)
       for (const line of ranAgainLines(`${at} normal`, ranAgain(passedWith, normal.results))) try progress.say(line)
       for (const result of normal.results) {
         if (result.status === "ran" || result.status === "hit") passedWith.set(result.label, result.key)
@@ -615,7 +643,7 @@ export const own = <R>(
             : normal.results.map((result) => result.label).filter((label) =>
               named.has(label) && !choice.skipped.has(label)
             )
-          const fast = try measure(`${at} fast`, fastCopy, commit, true, labels, places.fast, ci)
+          const fast = try measure(`${at} fast`, fastCopy, commit, true, labels, "fast", ci)
           try cleanCopy(fastCopy, [cacheDirectory], places.fast)
           const run = fastRunOf(normal.results, fast.results, commit, fast.wallMs, baseRecord)
           fastPart = run.part
@@ -648,6 +676,7 @@ export const own = <R>(
       fastNotMeasured,
       jobs: covered,
       trialMs,
+      reruns: tally,
       firstRun: started.firstRun,
       cold: started.cold
     })

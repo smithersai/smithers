@@ -1275,6 +1275,17 @@ describe("what a report says about a failure", () => {
     expect(request.warm).toBe(true)
   })
 
+  it("holds how many failed steps ran again and how long that took", () => {
+    const decoded = Schema.decodeUnknownSync(ReplayReport.ReplayReport)(report)
+    expect(decoded.reruns).toEqual({ count: 2, ms: 2_600_000 })
+    expect(() => Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...report, reruns: { count: 1.5, ms: 1 } }))
+      .toThrow()
+    // A person sets the number; one rerun tells a flaky failure from a broken one.
+    expect(Command.flags.reruns).toMatchObject({ on: ["", "replay"], default: "1" })
+    const request: Parts.ReplayRequest = { root: ".", commits: 1, modes: ["normal"], reruns: 0 }
+    expect(request.reruns).toBe(0)
+  })
+
   it("refuses a failure with no step or no reason, and a negative count of commits", () => {
     const decode = Schema.decodeUnknownSync(ReplayReport.StepFailure)
     expect(decode({ step: "a", reason: "b" })).toEqual({ step: "a", reason: "b" })

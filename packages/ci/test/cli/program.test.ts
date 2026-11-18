@@ -99,6 +99,7 @@ describe.concurrent("smithers-ci from a directory of the repository", () => {
       modes: ["normal"],
       trial: true,
       warm: true,
+      reruns: 1,
       stallMinutes: 10
     })
     expect(outcome.stderr).toContain(`smithers-ci: wrote ${join(root, "src", "report.html")}\n`)

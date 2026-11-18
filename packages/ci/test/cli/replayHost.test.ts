@@ -148,7 +148,7 @@ describe("what a replay is running", () => {
 })
 
 describe("how the program lets a replay run in a stranger's checkout", () => {
-  it("gives the replay this install's smthrs and two reruns", async () => {
+  it("gives the replay this install's smthrs and one rerun, where the command line names no number", async () => {
     const options = await Effect.runPromise(Effect.provide(
       Effect.gen(function*() {
         return yield* Options
@@ -156,7 +156,7 @@ describe("how the program lets a replay run in a stranger's checkout", () => {
       layer({})
     ))
     expect(options.smthrs).toEqual(smthrsCommand())
-    expect(options.reruns).toBe(2)
+    expect(options.reruns).toBe(1)
     // The variables the program was started with, and the way its smthrs is given a token.
     expect(options.environment).toEqual({})
     expect(options.smthrsWithToken).toEqual(smthrsWithToken())

@@ -131,6 +131,65 @@ export const madeNoProgress = (result: Pick<TargetResult, "error">): boolean =>
   result.error?.startsWith(stallPrefix) === true
 
 /**
+ * What tells one failure of a step from another: its exit code and the first
+ * line of its error.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const failureMark = (result: Pick<TargetResult, "error" | "exitCode">): string =>
+  `${result.exitCode ?? ""} ${firstLine(readable(result.error ?? ""))}`
+
+/**
+ * What each step last failed with in one way of running commits, by label
+ * (`failureMark`). A step that passed since is not in it.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type LastFailures = Map<string, string>
+
+/**
+ * True for a result that failed the same way the step failed in the run
+ * before: twice the same is broken, not flaky, so it is not run again.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const failedAsBefore = (last: ReadonlyMap<string, string>, result: TargetResult): boolean =>
+  result.status === "failed" && last.get(result.label) === failureMark(result)
+
+/**
+ * Keeps what a run's results say for the run after it: a failed step's mark
+ * replaces what was known of it, and a step that passed is forgotten. A step
+ * that did not run leaves what was known.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const remember = (last: LastFailures, results: ReadonlyArray<TargetResult>): void => {
+  for (const result of results) {
+    if (result.status === "failed") last.set(result.label, failureMark(result))
+    else if (result.status !== "skipped") last.delete(result.label)
+  }
+}
+
+/**
+ * How many times failed steps ran again in a replay, and how long those runs
+ * took together.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface RerunTally {
+  count: number
+  ms: number
+}
+
+/**
  * The results of a run of `smthrs` that was stopped for making no progress.
  * A target that failed after running at least `limitMs` was one of those
  * stopped. With no run record, every target asked for counts as stopped:

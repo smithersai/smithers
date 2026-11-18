@@ -68,6 +68,11 @@ export const flags = {
     help:
       "Count from an empty cache: skip the run before the first counted commit that fills the caches a CI run finds."
   },
+  reruns: {
+    on: ["", "replay"],
+    default: "1",
+    help: "How many times a failed step runs again to tell a flaky failure from a broken one; 0 turns it off."
+  },
   "stall-minutes": {
     on: ["", "replay"],
     default: "10",

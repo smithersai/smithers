@@ -309,6 +309,16 @@ export const firstRunTime = (run: FirstRun): string => {
 }
 
 /**
+ * How many times failed steps ran again and what that took, as one line:
+ * `2 failed steps ran again, which took 50m 10s and is in none of these times`.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const rerunTime = (reruns: { readonly count: number; readonly ms: number }): string =>
+  `${count(reruns.count, "failed step")} ran again, which took ${duration(reruns.ms)} and is in none of these times`
+
+/**
  * Why the first counted commit started with an empty cache, as one line.
  *
  * @category formatting

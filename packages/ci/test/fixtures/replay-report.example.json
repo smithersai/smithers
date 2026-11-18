@@ -70,6 +70,7 @@
   "fastWallMs": 90000,
   "speedup": 5.5,
   "speedupCommits": 1,
+  "reruns": { "count": 2, "ms": 2600000 },
   "firstRun": {
     "commit": "0000000000000000000000000000000000000001",
     "baselineMs": 1390000,

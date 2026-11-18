@@ -158,6 +158,14 @@ export interface ReplayRequest {
    * starts with an empty cache and `ReplayReport.cold` says why.
    */
   readonly warm?: boolean | undefined
+  /**
+   * How many times a failed step runs again to tell a flaky failure from a
+   * broken one; 0 is never. A step that failed the same way, with the same
+   * exit code and first line of error, in the same way's run of the commit
+   * before, or in the first run, is not run again. Without it, the replay
+   * uses the number its host sets.
+   */
+  readonly reruns?: number | undefined
 }
 
 /**

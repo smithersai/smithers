@@ -91,6 +91,8 @@ describe("text", () => {
       "",
       "the first run, with an empty cache, took 23m 10s as the baseline, 24m 30s in normal mode and 24m 40s in fast mode; it happens once and is in none of these times",
       "",
+      "2 failed steps ran again, which took 43m 20s and is in none of these times",
+      "",
       "commit   files  baseline      normal       fast",
       "0000000      3  pass 22m 00s  pass 4m 00s  pass 1m 30s",
       "0000000      1  fail 21m 40s  fail 3m 20s  pass 1m 00s",
@@ -709,6 +711,16 @@ describe("failed steps", () => {
     )
     expect(text(normalOnly())).not.toContain("the first run")
     expect(html(normalOnly())).not.toContain("the first run")
+  })
+
+  it("says how many failed steps ran again and what that took, in the text and on the page", () => {
+    const line = "1 failed step ran again, which took 25m 03s and is in none of these times"
+    const report: ReplayReport = { ...normalOnly(), reruns: { count: 1, ms: 1_503_000 } }
+    expect(text(report).split("\n")).toContain(line)
+    expect(body(html(report))).toContain(`<p class="summary">${line}</p>`)
+    expect(body(html(example))).toContain("2 failed steps ran again, which took 43m 20s")
+    expect(text(normalOnly())).not.toContain("ran again")
+    expect(html(normalOnly())).not.toContain("ran again")
   })
 
   it("says why the first commit started with an empty cache, in the text and on the page", () => {

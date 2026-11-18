@@ -77,8 +77,11 @@ const judge = (environment: Environment) => {
   }))
 }
 
-/** How often a failed target runs again before its verdict is `fail`; a pass on a rerun is `flaky`. */
-const reruns = 2
+/**
+ * How often a failed target runs again before its verdict is `fail`, when the command line does not say; a pass on a
+ * rerun is `flaky`.
+ */
+const reruns = 1
 
 const noNode: Failure = {
   code: "unsupported",

@@ -137,8 +137,10 @@ modes, because a CI machine pays for it either way. The speedup is therefore
 lower than the ratio of the two `smthrs ci` runs alone; `workMs` in the report
 is the sum of the targets' own time in each mode, with no install in it.
 
-A failed target is run again, up to twice, to tell a failure from a flake.
-Those reruns are not timed, and neither is the cleaning of a copy after its run.
+A failed target is run once more, to tell a failure from a flake, and not at
+all when it failed the same way at the commit before; `--reruns` sets another
+number. Those reruns are not timed, and neither is the cleaning of a copy after
+its run.
 
 Two things are outside what the replay controls:
 

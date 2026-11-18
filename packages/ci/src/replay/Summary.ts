@@ -186,7 +186,8 @@ export const seenIn = (error: string | undefined, written: ReadonlyArray<string>
 }
 
 /**
- * How many times a failed target reruns after its first run.
+ * How many times a failed target reruns after its first run, where a replay's
+ * host names no number.
  *
  * @category constants
  * @throws {never}
@@ -1013,6 +1014,8 @@ export interface Findings {
   readonly jobs?: { readonly replayed: number; readonly total: number } | undefined
   /** How long the run that found the jobs that pass here took, when there was one. */
   readonly trialMs?: number | undefined
+  /** How many times failed steps ran again, and how long that took. */
+  readonly reruns?: { readonly count: number; readonly ms: number } | undefined
   /** The run of each way before the first counted commit, when there was one. */
   readonly firstRun?: FirstRun | undefined
   /** Why the first counted commit started with an empty cache, when a run before it was asked for. */
@@ -1068,6 +1071,9 @@ export const reportOf = (
     speedupCommits: measured.length,
     ...(found.jobs === undefined ? {} : { jobs: found.jobs }),
     ...(found.trialMs === undefined ? {} : { trialMs: found.trialMs }),
+    ...(found.reruns === undefined || found.reruns.count === 0
+      ? {}
+      : { reruns: { count: found.reruns.count, ms: found.reruns.ms } }),
     ...(found.firstRun === undefined ? {} : { firstRun: found.firstRun }),
     ...(found.cold === undefined ? {} : { cold: found.cold }),
     mismatches: commits.reduce((total, commit) => total + commit.mismatches.length, 0),
@@ -1140,6 +1146,8 @@ export interface Gathered {
   readonly jobs?: { readonly replayed: number; readonly total: number } | undefined
   /** How long the run that found the jobs that pass here took, when there was one. */
   readonly trialMs?: number | undefined
+  /** How many times failed steps ran again, and how long that took. */
+  readonly reruns?: { readonly count: number; readonly ms: number } | undefined
   /** The run of each way before the first counted commit, when there was one. */
   readonly firstRun?: FirstRun | undefined
   /** Why the first counted commit started with an empty cache, when a run before it was asked for. */
@@ -1169,6 +1177,7 @@ export const finishedReport = (
     fastNotMeasured: gathered.fastNotMeasured,
     jobs: gathered.jobs,
     trialMs: gathered.trialMs,
+    reruns: gathered.reruns,
     firstRun: gathered.firstRun,
     cold: gathered.cold
   })

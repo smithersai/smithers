@@ -49,6 +49,12 @@ directly, so the parts are built at the same time.
   `ReplayReport.FirstRun`, `ReplayReport.firstRun`, `ReplayReport.cold`, `ReplayRequest.warm`,
   `Command.flags.cold`. Measured cause: on needlefish's five commits the cold count is 1.67 and the count with the
   cache of the commit before is 2.5.
+- **A failure costs one rerun** (`sci-warm-start`). A failed step runs once more, not twice, and not at all when
+  the same step failed with the same exit code and first error line in the same way's run of the commit before or
+  in the first run. `--reruns <n>` sets the number (`Command.flags.reruns`, `ReplayRequest.reruns`); 0 turns it
+  off. `ReplayReport.reruns` (`{ count, ms }`, optional) says how many steps ran again and how long that took,
+  which is in no other time. Measured cause: on eliza a failed step cost three runs of its 25-minute job, in each
+  way.
 - **An install under the step's own home is not a machine change** (`sci-replay-robust`): `go install`,
   `cargo install`, `pip install --user` and the like, on a host where steps run in the jail. `changes-machine` stays
   for what needs root or writes outside the checkout and the home, and on a host with no jail.

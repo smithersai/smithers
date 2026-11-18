@@ -54,13 +54,17 @@ import {
 import { type Probe, probeWith } from "./Jail.ts"
 import {
   commandLine,
+  failedAsBefore,
   firstLine,
+  type LastFailures,
   madeNoProgress,
   noJobPassed,
   noProgress,
   nothingPassed,
   printedLimit,
   reasonOf,
+  remember,
+  type RerunTally,
   stoppedResults
 } from "./Failures.ts"
 import {
@@ -144,7 +148,8 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 
 /**
  * How the replay runs on this machine. `smthrs` is the command that starts
- * Smithers build, `reruns` how often a failed target reruns, and `prepare`
+ * Smithers build, `reruns` how often a failed target reruns when the request
+ * names no number, and `prepare`
  * runs before the generated targets run in a checkout, and fails when this
  * machine cannot run them. It puts nothing into the checkout: a step would
  * find it there. A baseline checkout is never prepared: it is what a fresh
@@ -228,7 +233,9 @@ interface Prepared {
 /**
  * Runs a first pass to its verdicts: each failed target reruns until it passes
  * or `reruns` runs out, and when a rerun passes, the targets that waited on it
- * run. `rounds` bounds how often that can repeat.
+ * run. `rounds` bounds how often that can repeat. A target that failed as it
+ * did in the run before (`last`) is not run again: twice the same is broken.
+ * `tally` gains how many targets ran again and how long that took.
  *
  * @category internals
  * @since 0.1.0
@@ -237,20 +244,28 @@ export effect function settle<R>(
   execute: Execute<R>,
   first: ReadonlyArray<TargetResult>,
   reruns: number,
-  rounds: number
+  rounds: number,
+  last: ReadonlyMap<string, string> = new Map(),
+  tally: RerunTally = { count: 0, ms: 0 }
 ): ReadonlyArray<TargetResult>!Failure!R {
   let settled: ReadonlyArray<TargetResult> = first.map(firstAttempt)
   for (let rerun = 0; rerun < reruns; rerun++) {
     // A step stopped for making no progress would only wait as long again.
-    const failing = settled.filter((result) => result.status === "failed" && !madeNoProgress(result))
-    if (failing.length === 0) break
-    const again = new Map((try execute(failing.map((result) => result.label))).map((result) => [result.label, result]))
-    settled = settled.map((result) => result.status === "failed" ? addRerun(result, again.get(result.label)) : result)
+    const failing = new Set(
+      settled.filter((result) => result.status === "failed" && !madeNoProgress(result) && !failedAsBefore(last, result))
+        .map((result) => result.label)
+    )
+    if (failing.size === 0) break
+    const start = try Clock.currentTimeMillis
+    const again = new Map((try execute([...failing])).map((result) => [result.label, result]))
+    tally.count += failing.size
+    tally.ms += (try Clock.currentTimeMillis) - start
+    settled = settled.map((result) => failing.has(result.label) ? addRerun(result, again.get(result.label)) : result)
   }
   const waiting = settled.filter(isBlocked).map((result) => result.label)
   if (rounds === 0 || waiting.length === 0 || !settled.some(recovered)) return settled
   const ran = (try execute(waiting)).filter((result) => waiting.includes(result.label))
-  const next = new Map((try settle(execute, ran, reruns, rounds - 1)).map((result) => [result.label, result]))
+  const next = new Map((try settle(execute, ran, reruns, rounds - 1, last, tally)).map((result) => [result.label, result]))
   return settled.map((result) => next.get(result.label) ?? result)
 }
 
@@ -258,14 +273,17 @@ export effect function settle<R>(
  * Runs one way of running a commit and times it. The time holds `checkout`
  * and the first pass, which a CI machine spends too. It leaves out `equip`,
  * what only a replay does between the two, and the reruns that label flaky
- * targets.
+ * targets. `last` holds what the way's steps failed with in its run before,
+ * and afterwards what they failed with in this one.
  */
 effect function measure<R>(
   checkout: void!Failure!R,
   equip: void!Failure!R,
   execute: Execute<R>,
   targets: ReadonlyArray<string> | undefined,
-  reruns: number
+  reruns: number,
+  last: LastFailures,
+  tally: RerunTally
 ) {
   const start = try Clock.currentTimeMillis
   try checkout
@@ -274,7 +292,8 @@ effect function measure<R>(
   const equipped = try Clock.currentTimeMillis
   const first = try execute(targets)
   const wallMs = (try Clock.currentTimeMillis) - equipped + (checkedOut - start)
-  const results = try settle(execute, first, reruns, first.length)
+  const results = try settle(execute, first, reruns, first.length, last, tally)
+  remember(last, results)
   return { results, wallMs } satisfies Measured
 }
 
@@ -348,6 +367,12 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * build and its planning. What only a replay does is not counted: writing the
  * generated files into the copy, which `apply` commits once. Neither are the
  * reruns that label flaky targets.
+ *
+ * A failed step runs again `request.reruns` times, or as often as the host
+ * sets, until it passes. A step that fails with the exit code and first error
+ * line it failed with in the same way's run of the commit before, or in the
+ * first run, is not run again: twice the same is broken. The report says how
+ * many steps ran again and how long that took (`ReplayReport.reruns`).
  *
  * When the model fast mode needs stops answering, the baseline and normal mode
  * still run for every commit, fast mode runs for no further commit, and the
@@ -746,8 +771,17 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     const tip = commits.at(-1) as string
     const oldest = commits[0] as string
+    // How often a failed step runs again: what the person asked for, else what the host sets.
+    const reruns = request.reruns ?? options.reruns
     // How often a job that fails the first run runs again before it is left out.
-    const again = Math.min(1, options.reruns)
+    const again = Math.min(1, reruns)
+    const tally: RerunTally = { count: 0, ms: 0 }
+    // What each way's steps failed with in its run before: the same failure again is not run again.
+    const last: Record<"baseline" | "normal" | "fast", LastFailures> = {
+      baseline: new Map(),
+      normal: new Map(),
+      fast: new Map()
+    }
 
     /**
      * Runs the baseline once at `at`, in `place`, and leaves out what cannot pass on this machine. A unit that fails
@@ -768,7 +802,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const start = try Clock.currentTimeMillis
         const ran = try baseline(at, own, place)(wanted)
         wallMs ??= (try Clock.currentTimeMillis) - start
-        const results = try settle(baseline(tip, newest, places.trial), ran, again, wanted.length)
+        // A step that fails this way again at the first counted commit is broken, not flaky.
+        remember(last.baseline, ran)
+        const results = try settle(baseline(tip, newest, places.trial), ran, again, wanted.length, new Map(), tally)
         const found = trialOf(waiting, results, stepNames(own.units))
         for (const key of found.passed) passed.add(key)
         if (found.first === undefined) break
@@ -802,7 +838,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       try progress.say(`first run ${short} baseline`)
       const judged = request.trial === true
         ? try judge(at, first, places.baseline)
-        : { wallMs: (try measure(Effect.void, Effect.void, baseline(at, first), undefined, 0)).wallMs, own: first }
+        : {
+          wallMs: (try measure(Effect.void, Effect.void, baseline(at, first), undefined, 0, last.baseline, tally)).wallMs,
+          own: first
+        }
       const own = judged.own
       effect function mode(way: "normal" | "fast", copy: string | undefined) {
         if (own === undefined || copy === undefined) return undefined
@@ -813,7 +852,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           equip(copy, own, place),
           smithers(at, copy, own, place, new Map()),
           undefined,
-          0
+          0,
+          last[way],
+          tally
         ) catch effect (cause) => {
           try progress.say(`the first run in ${way} mode did not finish: ${firstLine(cause.message)}`)
           return undefined
@@ -887,7 +928,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const normalCauses = new Map<string, string>()
       const fastCauses = new Map<string, string>()
       try progress.say(`${at} baseline`)
-      const base = try measure(Effect.void, Effect.void, baseline(commit, own), undefined, options.reruns)
+      const base = try measure(Effect.void, Effect.void, baseline(commit, own), undefined, reruns, last.baseline, tally)
       const baseRecord = recordOf(base.results, commit, base.wallMs)
       baselines.push(baseRecord)
       const names = stepNames(own.units)
@@ -897,7 +938,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         equip(normalCopy, own, places.normal),
         smithers(commit, normalCopy, own, places.normal, normalCauses),
         undefined,
-        options.reruns
+        reruns,
+        last.normal,
+        tally
       )
       const normalRecord = recordOf(normal.results, commit, normal.wallMs, "normal")
       let fastPart: Pick<ReplayCommit, "fast"> = {}
@@ -918,7 +961,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             equip(fastCopy, own, places.fast),
             smithers(commit, fastCopy, own, places.fast, fastCauses),
             labels,
-            options.reruns
+            reruns,
+            last.fast,
+            tally
           )
           const run = fastRunOf(normal.results, fast.results, commit, fast.wallMs, baseRecord, names, own.splits, fastCauses)
           fastPart = run.part
@@ -951,6 +996,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       fastNotMeasured,
       jobs: jobsCovered(newest.units, newest.left),
       trialMs,
+      reruns: tally,
       firstRun: started.firstRun,
       cold: started.cold
     })

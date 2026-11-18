@@ -77,6 +77,7 @@ it. The workflow `apply` writes runs this check as its first step; see
 | `--targets`       | `smithers-ci`, `smithers-ci replay`                          | none     | Smithers build patterns to replay, separated by commas, on a repository that already builds with Smithers build; the default is what its CI runs.   |
 | `--no-trial`      | `smithers-ci`, `smithers-ci replay`                          | `false`  | Replay every job, without first running the CI once to leave out the jobs that fail on this machine.                                                |
 | `--cold`          | `smithers-ci`, `smithers-ci replay`                          | `false`  | Count from an empty cache: skip the run before the first counted commit that fills the caches a CI run finds.                                       |
+| `--reruns`        | `smithers-ci`, `smithers-ci replay`                          | `1`      | How many times a failed step runs again to tell a flaky failure from a broken one; 0 turns it off.                                                  |
 | `--stall-minutes` | `smithers-ci`, `smithers-ci replay`                          | `10`     | Stop a step whose processes use no CPU and print nothing for this many minutes; it counts as failed.                                                |
 | `--out`           | `smithers-ci`, `smithers-ci replay`                          | none     | Also write the report as an HTML file here.                                                                                                         |
 | `--json`          | `smithers-ci`, `smithers-ci inventory`, `smithers-ci replay` | `false`  | Print the document as JSON.                                                                                                                         |
@@ -143,6 +144,20 @@ the time that run took, which is in no other number.
 A job that passes the first run and fails at a later commit is a failed baseline
 at that commit. `smithers-ci apply` writes every job, those left out here too:
 they pass on your runners. `--no-trial` leaves no job out and replays every one.
+
+### Steps that fail
+
+A step that fails runs once more, in the baseline and in each mode. When it
+passes then, it is `flaky`; when it fails again, it failed. `--reruns` sets how
+many times it runs again, and `--reruns 0` turns that off. A step that fails
+with the exit code and the first line of error it failed with at the commit
+before, or in the first run, is not run again: twice the same is broken, not
+flaky. No such run is in a commit's time or in the speedup. The report says how
+many there were and what they took (`reruns` under `--json`):
+
+```text
+2 failed steps ran again, which took 50m 10s and is in none of these times
+```
 
 ### Steps that stop making progress
 

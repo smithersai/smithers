@@ -60,7 +60,7 @@ const ways = {
 }
 
 /** What a replay is asked for unless the flags say otherwise. */
-const measuring = { trial: true, warm: true, stallMinutes: 10 }
+const measuring = { trial: true, warm: true, reruns: 1, stallMinutes: 10 }
 
 const commandNames = ["", "apply", "inventory", "replay"] as const
 const flagNames = Object.keys(flags) as ReadonlyArray<keyof typeof flags>
@@ -78,6 +78,7 @@ const sample = (flag: keyof typeof flags, out: string): ReadonlyArray<string> =>
     "allow-docker": ["--allow-docker"],
     "no-trial": ["--no-trial"],
     cold: ["--cold"],
+    reruns: ["--reruns", "3"],
     "stall-minutes": ["--stall-minutes", "5"]
   })[flag]
 
@@ -146,6 +147,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       ["--commits that is not a number", ["--commits", "many"], "--commits"],
       ["--jobs 0", ["replay", "--jobs", "0"], "1 or more"],
       ["--stall-minutes 0", ["--stall-minutes", "0"], "a number of minutes above 0"],
+      ["--reruns -1", ["--reruns", "-1"], "0 or more"],
       ["a --mode outside normal, fast and both", ["--mode", "slow"], "slow"],
       ["a --cache that is not a URL", ["--cache", "cache"], "http or https URL"],
       ["a --cache that is not http", ["apply", "--cache", "ftp://cache.example.invalid"], "http or https URL"],
@@ -205,6 +207,8 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
         ...args,
         "--no-trial",
         "--cold",
+        "--reruns",
+        "0",
         "--stall-minutes",
         "2.5",
         "--out",
@@ -217,6 +221,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
         root,
         trial: false,
         warm: false,
+        reruns: 0,
         stallMinutes: 2.5,
         commits: 2,
         modes: ["normal", "fast"],

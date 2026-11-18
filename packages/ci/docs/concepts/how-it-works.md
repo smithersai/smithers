@@ -617,9 +617,12 @@ exit `2`. In a throwaway container, `--allow-root` lets them run.
 
 ### Verdicts
 
-A failed target reruns up to the limit the program sets (two) or until it
-passes, unless it was stopped for making no progress. Its attempts give its
-verdict:
+A failed target runs once more, unless it was stopped for making no progress.
+`--reruns` sets another number, and `--reruns 0` turns it off. A target that
+fails with the exit code and the first line of error it failed with at the
+commit before, or in the first run, is not run again: twice the same is
+broken, not flaky. The report says how many steps ran again and what that took,
+which is in no other time. Its attempts give a target's verdict:
 
 | Verdict   | When                                  |
 | --------- | ------------------------------------- |

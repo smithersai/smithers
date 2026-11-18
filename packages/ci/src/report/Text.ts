@@ -16,7 +16,8 @@
  * when that is not all of them, and every step that failed is listed with its
  * exit code and the first line of its error output. The run of each way
  * before the first counted commit has one line with its times, or a line
- * that says why that commit started with an empty cache.
+ * that says why that commit started with an empty cache. When failed steps
+ * ran again, a line says how many and how long that took.
  *
  * Labels, reasons and commit ids come from the repository being replayed, so control
  * characters in them are replaced before they reach a terminal.
@@ -48,6 +49,7 @@ import {
   ownTargets,
   ratio,
   reasons,
+  rerunTime,
   shortCommit,
   speedup,
   speedupCommits,
@@ -151,6 +153,7 @@ export const text: RenderReport = (report) => {
   if (report.trialMs !== undefined) sections.push([trialTime(report.trialMs)])
   if (report.firstRun !== undefined) sections.push([firstRunTime(report.firstRun)])
   if (report.cold !== undefined) sections.push([clean(coldStart(report.cold))])
+  if (report.reruns !== undefined) sections.push([rerunTime(report.reruns)])
   sections.push([...commitLines(report.commits)])
   const failed = report.commits.flatMap((commit) => failedSteps(commit).map((entry) => ({ ...entry, commit })))
   if (failed.length > 0) {

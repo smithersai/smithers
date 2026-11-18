@@ -49,8 +49,8 @@ export type SkipReason = typeof SkipReason.Type
 
 /**
  * One execution of a target. A failed target reruns up to the limit the
- * program sets (two) or until it passes; each execution is one attempt, in
- * order.
+ * program sets (once, unless `--reruns` says otherwise) or until it passes;
+ * each execution is one attempt, in order.
  *
  * @category models
  * @since 0.1.0

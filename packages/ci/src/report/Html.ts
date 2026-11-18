@@ -36,6 +36,7 @@ import {
   percent,
   ratio,
   reasons,
+  rerunTime,
   shortCommit,
   speedup,
   speedupCommits,
@@ -287,6 +288,7 @@ export const html: RenderReport = (report) => {
     if (report.trialMs !== undefined) body.push(`<p class="summary">${trialTime(report.trialMs)}</p>`)
     if (report.firstRun !== undefined) body.push(`<p class="summary">${firstRunTime(report.firstRun)}</p>`)
     if (report.cold !== undefined) body.push(`<p class="summary">${escape(coldStart(report.cold))}</p>`)
+    if (report.reruns !== undefined) body.push(`<p class="summary">${rerunTime(report.reruns)}</p>`)
     if (report.selection !== undefined) body.push(selection(report.selection))
     body.push(commitTable(report.commits))
     if (commitsLeft.length > 0) body.push(commitsLeftTable(commitsLeft))

@@ -1,7 +1,14 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
 import { type TargetResult, verdictOf } from "../../src/contract/RunRecord.ts"
-import { noProgress } from "../../src/replay/Failures.ts"
+import {
+  failedAsBefore,
+  failureMark,
+  type LastFailures,
+  noProgress,
+  remember,
+  type RerunTally
+} from "../../src/replay/Failures.ts"
 import { maxReruns } from "../../src/replay/index.ts"
 import { type Execute, settle } from "../../src/replay/Replay.vibe"
 
@@ -79,5 +86,77 @@ describe("settle", () => {
     expect(calls.every((labels) => labels.join() === "a")).toBe(true)
     expect(results[1]?.status).toBe("skipped")
     expect(results[1]?.skipReason).toBe("dependency-failed")
+  })
+
+  it("gives a failed attempt only to what ran again", async () => {
+    const { calls, execute } = scripted({ a: ["failed"], b: ["failed"] })
+    const stalled = { ...result("a", "failed"), error: noProgress(10) }
+    const [a, b] = await settled(execute, [stalled, result("b", "failed")])
+    expect(calls.every((labels) => labels.join() === "b")).toBe(true)
+    expect(a?.attempts).toHaveLength(1)
+    expect(b?.attempts).toHaveLength(11)
+  })
+})
+
+describe("a failure seen in the run before", () => {
+  const failing = (label: string, error: string, exitCode = 1): TargetResult => ({
+    ...result(label, "failed"),
+    error,
+    exitCode
+  })
+  const settledWith = (
+    execute: Execute<never>,
+    first: ReadonlyArray<TargetResult>,
+    last: LastFailures,
+    tally: RerunTally = { count: 0, ms: 0 }
+  ) => Effect.runPromise(settle(execute, first, 1, first.length, last, tally))
+
+  it("is not run again when the step fails the same way: twice the same is broken", async () => {
+    const { calls, execute } = scripted({ a: ["failed"], b: ["failed"] })
+    const last: LastFailures = new Map()
+    remember(last, [failing("a", "expected 2, got 3")])
+    const [a, b] = await settledWith(execute, [failing("a", "expected 2, got 3"), failing("b", "other")], last)
+    expect(calls).toEqual([["b"]])
+    expect(a?.attempts).toHaveLength(1)
+    expect(verdictOf(a!)).toBe("fail")
+    expect(b?.attempts).toHaveLength(2)
+  })
+
+  it("is run again when the exit code or the first line of the error differs", async () => {
+    const { calls, execute } = scripted({ a: ["failed"], b: ["failed"] })
+    const last: LastFailures = new Map()
+    remember(last, [failing("a", "expected 2, got 3"), failing("b", "killed", 137)])
+    await settledWith(execute, [failing("a", "expected 2, got 4"), failing("b", "killed", 1)], last)
+    expect(calls).toEqual([["a", "b"]])
+  })
+
+  it("is told apart by exit code and first error line, whatever follows and whatever color it has", () => {
+    expect(failureMark({ error: "\u001b[31mboom\u001b[0m\nat line 3", exitCode: 2 })).toBe(
+      failureMark({ error: "boom\nat line 9", exitCode: 2 })
+    )
+    expect(failureMark({ error: "boom", exitCode: 2 })).not.toBe(failureMark({ error: "boom", exitCode: 3 }))
+    expect(failureMark({ error: "boom" })).not.toBe(failureMark({ error: "boom", exitCode: 0 }))
+    expect(failureMark({})).toBe(failureMark({ error: "" }))
+  })
+
+  it("is forgotten when the step passes, and kept when the step did not run", () => {
+    const last: LastFailures = new Map()
+    remember(last, [failing("a", "boom"), failing("b", "boom"), failing("c", "boom")])
+    remember(last, [result("a", "ran"), result("b", "skipped"), result("c", "hit")])
+    expect([...last.keys()]).toEqual(["b"])
+    expect(failedAsBefore(last, failing("b", "boom"))).toBe(true)
+    expect(failedAsBefore(last, failing("a", "boom"))).toBe(false)
+    // A step that passes is never taken for a failure seen before.
+    expect(failedAsBefore(last, { ...result("b", "ran"), error: "boom", exitCode: 1 })).toBe(false)
+  })
+
+  it("counts what ran again and how long that took", async () => {
+    const { execute } = scripted({ a: ["failed"], b: ["ran"], c: ["ran"] })
+    const tally: RerunTally = { count: 0, ms: 0 }
+    const first = [failing("a", "one"), failing("b", "two"), result("c", "skipped")]
+    await settledWith(execute, first, new Map(), tally)
+    // a and b ran again; c, which waited on them, ran for the first time and is no rerun.
+    expect(tally.count).toBe(2)
+    expect(tally.ms).toBeGreaterThanOrEqual(0)
   })
 })
