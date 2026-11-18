@@ -1,17 +1,26 @@
 import { describe, expect, it } from "vitest"
 import type { Closure } from "../../src/contract/Closure.ts"
-import type { Step } from "../../src/contract/Inventory.ts"
+import type { Job, Step } from "../../src/contract/Inventory.ts"
 import {
   closureInputs,
   decide,
   type Decision,
   everything,
   type Facts,
+  followed,
   inputsOf,
+  keepCommand,
   understand
 } from "../../src/decompose/Plan.ts"
 import { readConfig } from "../../src/decompose/Turbo.ts"
-import { assemble, graph, type Manager, type Mentions, scanner } from "../../src/decompose/Workspace.ts"
+import {
+  assemble,
+  graph,
+  type Manager,
+  manifestMentions,
+  type Mentions,
+  scanner
+} from "../../src/decompose/Workspace.ts"
 
 const step = (command: string, extra: Partial<Step> = {}): Step => ({
   id: "ci.yml:test:1",
@@ -62,7 +71,8 @@ const factsOf = (repository: Repository): Facts => {
     workspace,
     graph: graph(workspace, files, (file) => {
       const text = repository.files[file]
-      return text === undefined ? none : scan(text, file.endsWith("package.json"))
+      if (text === undefined) return none
+      return file.endsWith("package.json") ? manifestMentions(scan, text) : scan(text, false)
     }),
     turbo: repository.turbo === undefined
       ? undefined
@@ -654,6 +664,56 @@ describe("decide: Zig", () => {
   it("reads closure inputs only from a complete closure", () => {
     expect(closureInputs(undefined)).toBeUndefined()
     expect(closureInputs(closure())).toEqual(["build.zig", "src/main.zig"])
+  })
+})
+
+describe("followed and keepCommand", () => {
+  const job = (id: string, steps: ReadonlyArray<Step>, extra: Partial<Job> = {}): Job => ({
+    id,
+    source: "github-actions",
+    file: ".github/workflows/ci.yml",
+    name: id,
+    needs: [],
+    triggers: ["push"],
+    matrix: [],
+    steps,
+    unsupported: [],
+    ...extra
+  })
+  const named = (id: string): Step => step("true", { id })
+
+  it("finds every step but a job's last", () => {
+    const found = followed([
+      job("one", [named("a"), named("b"), named("c")]),
+      job("two", [named("only")]),
+      job("empty", [])
+    ])
+    expect([...found].map((each) => each.id)).toEqual(["a", "b"])
+  })
+
+  it("finds the last step of a job that another job follows in the same working tree", () => {
+    const recipes = followed([
+      job("build", [named("build")], { source: "justfile" }),
+      job("test", [named("test")], { source: "justfile", needs: ["build"] })
+    ])
+    expect([...recipes].map((each) => each.id)).toEqual(["build"])
+    // GitHub jobs run on separate machines: a need only orders them.
+    const hosted = followed([job("build", [named("build")]), job("lint", [named("lint")], { needs: ["build"] })])
+    expect([...hosted]).toEqual([])
+  })
+
+  it("keeps a step's command by leaving nothing to replace", () => {
+    const facts = factsOf(plain)
+    const subject = step("pnpm -r run test")
+    const understood = understand(subject, facts.workspace)
+    if (understood === undefined) throw new Error("the step was not understood")
+    expect(understood.runs[0]?.replace).toEqual([0, 16])
+    const kept = keepCommand(understood)
+    expect(kept.runs[0]?.replace).toBeUndefined()
+    expect(decide(subject, understood, facts, new Map()).kind).toBe("split")
+    expect(scoped(decide(subject, kept, facts, new Map()))).toEqual(
+      [...outside, "packages/app/**", "packages/lib/**", "packages/lone/**"].sort()
+    )
   })
 })
 

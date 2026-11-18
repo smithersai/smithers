@@ -4,7 +4,10 @@
  *
  * A job's steps share one machine, so a step can leave files the next step
  * needs. A cache hit restores no files, so only a step nothing later relies on
- * may be replayed. Every other step is a `setup` target, which always runs.
+ * may be replayed. Every other step is a `setup` target, which always runs
+ * and declares no files of its own. Steps split from one step (`Step.from`)
+ * stand side by side: none relies on another, and the step after them waits
+ * for all of them.
  * GitHub jobs run on separate machines, so `needs` only orders them; the other
  * sources run in one working tree, so what they need is `setup` too.
  *
@@ -45,8 +48,11 @@ export interface StepTarget {
   readonly dependencies: ReadonlyArray<string>
   readonly title: string
   readonly job: string
+  /** The step of the original CI: a step that was split names the step it was split from. */
   readonly step: string
   readonly variant: Variant
+  /** The paths and globs the step reads, from the repository root; `undefined` when it may read any file. */
+  readonly inputs: ReadonlyArray<string> | undefined
 }
 
 /**
@@ -111,6 +117,20 @@ const invalid = (message: string): Result.Result<never, Failure> =>
 const compare = (left: string, right: string): number => left < right ? -1 : 1
 
 const sorted = (values: Iterable<string>): ReadonlyArray<string> => [...new Set(values)].sort(compare)
+
+// The input that names every file: a step with it reads the whole repository.
+const everything = "**"
+
+// A job's steps in order, with the steps split from one step kept together.
+const groupsOf = (steps: ReadonlyArray<Step>): ReadonlyArray<ReadonlyArray<Step>> => {
+  const groups: Array<Array<Step>> = []
+  for (const step of steps) {
+    const last = groups.at(-1)
+    if (last !== undefined && step.from !== undefined && last[0]?.from === step.from) last.push(step)
+    else groups.push([step])
+  }
+  return groups
+}
 
 const quote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
 
@@ -284,8 +304,9 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       host,
       dependencies,
       title: `${job.name} / ${step.name ?? step.id}`,
-      step: step.id,
+      step: step.from ?? step.id,
       variant,
+      inputs: step.inputs === undefined || step.inputs.includes(everything) ? undefined : sorted(step.inputs),
       job,
       command,
       directory
@@ -303,14 +324,20 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       else if (runsOn !== undefined) runners.add(runsOn)
       let previous = upstreamOf(job, host)
       let sharesTree = job.source !== "github-actions"
-      for (const step of job.steps) {
-        const draft = draftOf(job, step, variant, host, previous)
-        if (draft === undefined) continue
-        drafts.set(draft.label, draft)
+      for (const group of groupsOf(job.steps)) {
+        // Steps split from one step each follow the step before them, never each other.
+        const made: Array<string> = []
+        for (const step of group) {
+          const draft = draftOf(job, step, variant, host, previous)
+          if (draft === undefined) continue
+          drafts.set(draft.label, draft)
+          made.push(draft.label)
+        }
+        if (made.length === 0) continue
         if (sharesTree) { for (const label of previous) reliedOn.add(label) }
         // Steps of one job always share a machine.
         sharesTree = true
-        previous = [draft.label]
+        previous = made
       }
       jobTails.push({ host, labels: previous })
     }

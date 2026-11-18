@@ -87,8 +87,30 @@ const renderWorkspace = (inventory: Inventory): string =>
     ``
   ].join("\n")
 
-const renderTarget = (target: StepTarget, index: number, variables: ReadonlyMap<string, string>): string => {
-  const data = ["repository", ...target.dependencies.map((label) => variables.get(label) as string)]
+// True for a target that declares its step's inputs in place of the whole repository.
+const narrows = (target: StepTarget, narrowed: boolean): boolean =>
+  narrowed && target.rule === "check" && target.inputs !== undefined
+
+// The files a target declares. A setup target always runs, so it declares
+// none: a dependency's key is part of a target's key, and a setup target that
+// declared the repository would rerun every target after it on any change.
+// What a later target reads of a setup step's work is in that target's own
+// inputs. Any other target declares its step's inputs, or the whole
+// repository when the step names none.
+const filesOf = (target: StepTarget, narrowed: boolean): ReadonlyArray<string> => {
+  if (target.rule === "setup") return []
+  return narrows(target, narrowed)
+    ? (target.inputs as ReadonlyArray<string>).map((input) => `S.glob(${text(`//${input}`)})`)
+    : ["repository"]
+}
+
+const renderTarget = (
+  target: StepTarget,
+  index: number,
+  variables: ReadonlyMap<string, string>,
+  narrowed: boolean
+): string => {
+  const data = [...filesOf(target, narrowed), ...target.dependencies.map((label) => variables.get(label) as string)]
   const fields = [
     `shell: ${text(target.script)}`,
     ...(target.rule === "setup"
@@ -97,7 +119,10 @@ const renderTarget = (target: StepTarget, index: number, variables: ReadonlyMap<
     ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(target.env)}`]),
     ...(target.inheritEnv.length === 0 ? [] : [`inheritEnv: ${JSON.stringify(target.inheritEnv)}`]),
     ...(target.host === undefined ? [] : [`hosts: [${text(target.host)}]`]),
-    `sandbox: "none"`,
+    // A target that declares what it reads is held to it: a read outside its
+    // inputs fails the target instead of passing on a stale result. The
+    // network stays open, as it is for the step in the original CI.
+    `sandbox: ${narrows(target, narrowed) ? "{ network: true }" : text("none")}`,
     `timeout: ${text(stepTimeout)}`,
     `data: [${data.join(", ")}]`
   ]
@@ -110,7 +135,7 @@ const renderTarget = (target: StepTarget, index: number, variables: ReadonlyMap<
   ].join("\n")
 }
 
-const renderPackage = (plan: StepPlan): string => {
+const renderPackage = (plan: StepPlan, narrowed: boolean): string => {
   const shared = plan.targets.length > sharedInputsAbove
   const variables = new Map(plan.targets.map((target, index) => [target.label, `step${index}`]))
   return [
@@ -118,10 +143,11 @@ const renderPackage = (plan: StepPlan): string => {
     ...(plan.notes.length === 0 ? [] : [comment(`Not reproduced from the original CI: see ${notesPath}`)]),
     `import { Smithers as S } from "@smthrs/targets"`,
     ``,
-    comment("A step can read any file, so every target declares the whole repository."),
+    comment("A step can read any file, so a target declares the whole repository unless its step names what it reads."),
+    comment("A setup target always runs and declares no files."),
     `const repository = ${shared ? `S.Filegroup({ srcs: [S.glob("//**")] })` : `S.glob("//**")`}`,
     ``,
-    ...plan.targets.map((target, index) => renderTarget(target, index, variables)),
+    ...plan.targets.map((target, index) => renderTarget(target, index, variables, narrowed)),
     `export const Package = S.Package({`,
     `  targets: {`,
     [
@@ -221,8 +247,12 @@ const renderNotes = (plan: StepPlan): string =>
 
 /**
  * Renders the workspace, the targets, the target map and the workflow. With
- * `options.cache`, the workflow sends results to that shared cache. Fails
- * when the targets do not fit in one `PACKAGE.ts`.
+ * `options.cache`, the workflow sends results to that shared cache.
+ *
+ * A target declares its step's inputs and runs confined to them. When that
+ * makes the targets too large for one `PACKAGE.ts`, every target declares the
+ * whole repository instead, which reruns more and is never wrong. Fails when
+ * the targets still do not fit.
  *
  * @throws {never}
  * @category rendering
@@ -233,8 +263,10 @@ export const renderFiles = (
   plan: StepPlan,
   options?: GenerateOptions
 ): Result.Result<ReadonlyArray<GeneratedFile>, Failure> => {
-  const targets = renderPackage(plan)
-  if (new TextEncoder().encode(targets).length > maximumPackageBytes) {
+  const fits = (content: string): boolean => new TextEncoder().encode(content).length <= maximumPackageBytes
+  const narrowed = renderPackage(plan, true)
+  const targets = fits(narrowed) ? narrowed : renderPackage(plan, false)
+  if (!fits(targets)) {
     return Result.fail({
       code: "unsupported",
       message: `The generated targets exceed the ${maximumPackageBytes} bytes Smithers reads from a PACKAGE.ts.`,

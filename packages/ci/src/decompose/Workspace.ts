@@ -288,7 +288,7 @@ const quotes = new Set(["\"", "'", "`"])
  *
  * - A scoped package name counts wherever it appears. An unscoped name is an
  *   ordinary word, so it counts only inside quotes, after `node_modules/`,
- *   or anywhere in a `package.json`, whose scripts name packages bare.
+ *   or anywhere in text read as `bare`, such as a script.
  * - A relative path is a run of path characters that starts with `./` or
  *   `../` and names something: `../..` alone names only a directory above,
  *   and what is read from there is named by other text.
@@ -299,12 +299,14 @@ const quotes = new Set(["\"", "'", "`"])
  * @category scanning
  * @since 0.1.0
  */
-export const scanner = (workspace: Workspace): (text: string, manifest: boolean) => Mentions => {
+export const scanner = (workspace: Workspace): (text: string, bare: boolean) => Mentions => {
   const names = new Set(workspace.packages.map((candidate) => candidate.name))
   const tops = new Set(workspace.packages.map((candidate) => candidate.directory.split("/")[0] as string))
-  const bare = [...names].filter((name) => !name.includes("/")).map((name) => name.replace(/[.+^$()|]/g, "\\$&"))
-  const unscoped = new RegExp(`(?<![A-Za-z0-9_@.~/-])(?:${bare.join("|")})(?![A-Za-z0-9_@.~/-])`, "g")
-  return (text, manifest) => {
+  const unscopedNames = [...names].filter((name) => !name.includes("/")).map((name) =>
+    name.replace(/[.+^$()|]/g, "\\$&")
+  )
+  const unscoped = new RegExp(`(?<![A-Za-z0-9_@.~/-])(?:${unscopedNames.join("|")})(?![A-Za-z0-9_@.~/-])`, "g")
+  return (text, bare) => {
     const found = new Set<string>()
     const relative = new Set<string>()
     const rooted = new Set<string>()
@@ -318,17 +320,40 @@ export const scanner = (workspace: Workspace): (text: string, manifest: boolean)
       const parts = specifier.split("/")
       const scoped = specifier.startsWith("@")
       const name = scoped ? `${parts[0]}/${(parts[1] ?? "").replace(/(?:@.*|\.+)$/, "")}` : parts[0] as string
-      if (names.has(name) && (scoped || manifest || modules >= 0 || quotes.has(text[start - 1] ?? ""))) {
+      if (names.has(name) && (scoped || bare || modules >= 0 || quotes.has(text[start - 1] ?? ""))) {
         found.add(name)
       }
       if (tops.has(parts[0] as string) && modules < 0) rooted.add(run)
     }
-    if (bare.length > 0) {
+    if (unscopedNames.length > 0) {
       for (const match of text.matchAll(unscoped)) {
-        if (manifest || quotes.has(text[match.index - 1] ?? "")) found.add(match[0])
+        if (bare || quotes.has(text[match.index - 1] ?? "")) found.add(match[0])
       }
     }
     return { names: [...found].sort(), relative: [...relative].sort(), rooted: [...rooted].sort() }
+  }
+}
+
+/**
+ * What a `package.json` mentions. Its scripts name packages bare, as in
+ * `pnpm --filter ui build`, so there an unscoped name counts anywhere. In
+ * the rest of the file a name counts as it does in any text: a script's own
+ * name, such as `build:website`, names no package.
+ *
+ * @throws {never}
+ * @category scanning
+ * @since 0.1.0
+ */
+export const manifestMentions = (scan: (text: string, bare: boolean) => Mentions, text: string): Mentions => {
+  const scripts = readObject(text)?.["scripts"]
+  const bodies = Object.values(isRecord(scripts) ? scripts : {}).filter((body) => typeof body === "string").join("\n")
+  const parts = [scan(bodies, true), scan(text, false)]
+  const union = (pick: (mentions: Mentions) => ReadonlyArray<string>): ReadonlyArray<string> =>
+    [...new Set(parts.flatMap(pick))].sort()
+  return {
+    names: union((mentions) => mentions.names),
+    relative: union((mentions) => mentions.relative),
+    rooted: union((mentions) => mentions.rooted)
   }
 }
 
@@ -412,9 +437,9 @@ interface Edges {
  *   that names anything else adds that package whole.
  *
  * `files` are the repository's files, and `mentioned` gives one file's
- * mentions. A relative path is tried from the file's own directory and from
- * its package's directory, the two places such a path is resolved from; a
- * rooted path is tried from the repository root.
+ * mentions. A relative path is read from the file's own directory; when it
+ * names nothing there, it is also read from the package's directory, where a
+ * program runs. A rooted path is read from the repository root.
  *
  * @throws {never}
  * @category closure
@@ -442,17 +467,32 @@ export const graph = (
     if (owner !== undefined) (owned.get(owner.name) as Array<string>).push(file)
   }
 
+  const directories = new Set<string>()
+  for (const file of files) {
+    for (
+      let end = file.lastIndexOf("/");
+      end > 0 && !directories.has(file.slice(0, end));
+      end = file.lastIndexOf("/", end - 1)
+    ) {
+      directories.add(file.slice(0, end))
+    }
+  }
+  const exists = (path: string): boolean => directories.has(path) || resolveFile(path, files) !== undefined
+
   // What one file adds. `whole` is true when the file's own package is
   // already reached whole, so paths that stay inside it add nothing.
   const edgesOfFile = (file: string, owner: Package, whole: boolean): Edges => {
     const found = mentioned(file)
     const packages = found.names.map((name) => byName.get(name) as Package)
     const single: Array<string> = []
-    const bases = [...new Set([directoryOf(file), owner.directory])]
-    const targets = [
-      ...found.relative.flatMap((path) => bases.map((base) => join(base, path))),
-      ...found.rooted.map((path) => join("", path))
-    ]
+    const targets = found.rooted.map((path) => join("", path))
+    for (const path of found.relative) {
+      const beside = join(directoryOf(file), path)
+      targets.push(beside)
+      // A path means what it names from the file it is written in. When
+      // that names nothing, a program may read it from where it runs.
+      if (beside === undefined || !exists(beside)) targets.push(join(owner.directory, path))
+    }
     for (const target of targets) {
       const targetOwner = target === undefined ? undefined : ownerOf(target)
       if (target === undefined || targetOwner === undefined || (whole && targetOwner === owner)) continue
@@ -491,7 +531,10 @@ export const graph = (
     return edges
   }
 
+  const reaches = new Map<Package | string, Reach>()
   const reachOf = (start: Package | string): Reach => {
+    const known = reaches.get(start)
+    if (known !== undefined) return known
     const packages = new Set<Package>()
     const single = new Set<string>()
     const pending: Array<Package | string> = [start]
@@ -503,11 +546,12 @@ export const graph = (
       else packages.add(next)
       pending.push(...edges.packages, ...edges.files)
     }
-    const directories = new Set([...packages].map((reached) => reached.directory))
-    return {
-      packages: directories,
+    const reach = {
+      packages: new Set([...packages].map((reached) => reached.directory)),
       files: new Set([...single].filter((file) => !packages.has(ownerOf(file) as Package)))
     }
+    reaches.set(start, reach)
+    return reach
   }
 
   return { ownerOf, named: (name) => byName.get(name), reachOf, outside: outsideGlobs(workspace, files) }

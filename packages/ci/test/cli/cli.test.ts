@@ -5,9 +5,10 @@ import { layer } from "../../src/cli/Host.vibe"
 import { main } from "../../src/cli/main.vibe"
 import { parts as onMain } from "../../src/cli/parts.ts"
 import { exitCodes, failureExitCodes, flags } from "../../src/contract/Command.ts"
-import { Inventory } from "../../src/contract/Inventory.ts"
+import { ci as ciOf, Inventory } from "../../src/contract/Inventory.ts"
 import type { Failure, GeneratedFile } from "../../src/contract/Parts.ts"
 import { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import * as TargetMap from "../../src/contract/TargetMap.ts"
 import { fullDisk, generated, inProcess } from "./inProcess.vibe"
 import { parts } from "./parts.vibe"
 import {
@@ -22,7 +23,8 @@ import {
   repository,
   snapshot,
   spawn,
-  temporary
+  temporary,
+  workspace
 } from "./repo.ts"
 
 type Chosen = typeof parts
@@ -341,6 +343,48 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     const row = { commit: "c", target: "//ci:test", features, attempts: [true], failed: false, flaky: false }
     const failure = await Effect.runPromise(Effect.provide(Effect.flip(onMain.score([row])), host))
     expect([failure.code, failure.part]).toEqual(["model-unavailable", "select"])
+  })
+})
+
+describe.concurrent("smithers-ci on a workspace", () => {
+  it("applies one target per package for a step that runs a task over the workspace", async () => {
+    const root = keep(workspace())
+    const outcome = await runIn(["apply"], root, parts)
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+    const map = decode(TargetMap.TargetMap, read(`${root}/${TargetMap.path}`))
+    // One step of the workflow became two targets, and the map names the step for both.
+    expect(map.targets.map((target) => [target.label, target.step])).toEqual([
+      ["//:ci.yml-test-1-a", "ci.yml:test:1"],
+      ["//:ci.yml-test-1-b", "ci.yml:test:1"]
+    ])
+    expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:1", {})).toHaveLength(2)
+    const targets = read(`${root}/PACKAGE.ts`)
+    // Package a's target reads a; package b depends on a, so its target reads both and runs both.
+    expect(targets).toContain(`shell: "npm run test --workspace=a --if-present"`)
+    expect(targets).toContain(`shell: "npm run test --workspace=a --workspace=b --if-present"`)
+    expect(targets).toContain(
+      `data: [S.glob("//*"), S.glob("//.github/**"), S.glob("//packages/*"), S.glob("//packages/a/**")]`
+    )
+    expect(targets).toContain(`S.glob("//packages/a/**"), S.glob("//packages/b/**")]`)
+  })
+
+  it("passes the decompose part to the replay", async () => {
+    const seen: Array<string> = []
+    const chosen: Chosen = {
+      ...parts,
+      run: (request, given) =>
+        Effect.gen(function*() {
+          const inventory = yield* given.read(request.root)
+          const split = given.decompose === undefined
+            ? undefined
+            : yield* given.decompose(request.root, ciOf(inventory))
+          seen.push(...(split?.jobs.flatMap((job) => job.steps.map((step) => step.id)) ?? []))
+          return yield* parts.run(request, given)
+        })
+    }
+    const outcome = await runIn(["replay", "--commits", "1"], keep(workspace()), chosen)
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+    expect(seen).toEqual(["ci.yml:test:1:a", "ci.yml:test:1:b"])
   })
 })
 

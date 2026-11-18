@@ -68,6 +68,38 @@ export const repository = (subjects: ReadonlyArray<string> = ["first", "second",
 }
 
 /**
+ * A git repository holding an npm workspace of two packages, `a` and `b`,
+ * and a workflow whose one command runs both packages' tests.
+ */
+export const workspace = (): string => {
+  const root = temporary("workspace")
+  const files: Readonly<Record<string, string>> = {
+    "package.json": JSON.stringify({ name: "root", private: true, workspaces: ["packages/*"] }),
+    "package-lock.json": "{}\n",
+    "packages/a/package.json": JSON.stringify({ name: "a", scripts: { test: "node -e 0" } }),
+    "packages/b/package.json": JSON.stringify({ name: "b", scripts: { test: "node -e 0" }, dependencies: { a: "*" } }),
+    ".github/workflows/ci.yml": [
+      "on: [push]",
+      "jobs:",
+      "  test:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - uses: actions/checkout@v4",
+      "      - run: npm run test --workspaces --if-present",
+      ""
+    ].join("\n")
+  }
+  git(root, "init", "--quiet", "--initial-branch=main")
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, path)), { recursive: true })
+    writeFileSync(join(root, path), content)
+  }
+  git(root, "add", "--all")
+  git(root, "commit", "--quiet", "--message", "first")
+  return root
+}
+
+/**
  * Every file under `root`, `.git` included, by relative path: its mode and the
  * SHA-256 of its bytes. Equal snapshots mean a byte-identical tree.
  */
@@ -112,7 +144,8 @@ export const spawn = (entry: string, args: ReadonlyArray<string>, cwd: string): 
     execFile(
       process.execPath,
       [entry, ...args],
-      { cwd, encoding: "utf8", timeout: 120_000 },
+      // A real replay runs the repository's commands and the generated targets.
+      { cwd, encoding: "utf8", timeout: 540_000 },
       (error, stdout, stderr) => {
         if (error !== null && typeof error.code !== "number") reject(error)
         else resolve({ code: error === null ? 0 : Number(error.code), stdout, stderr })

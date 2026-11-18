@@ -13,7 +13,7 @@
 
 import type { Closure } from "../contract/Closure.ts"
 import { isComplete } from "../contract/Closure.ts"
-import type { Step } from "../contract/Inventory.ts"
+import type { Job, Step } from "../contract/Inventory.ts"
 import { executorOf, type Invocation, type Known, type Pattern, recognize, turbo } from "./Runners.ts"
 import { type Command, commands, quote } from "./Shell.ts"
 import { type Config, defines, rootRuns, walk } from "./Turbo.ts"
@@ -459,6 +459,41 @@ export const closureInputs = (closure: Closure | undefined): ReadonlyArray<strin
       ...closure.files.map((file) => file.path),
       ...(closure.directories ?? []).map((directory) => `${directory.replace(/\/$/, "")}/**`)
     ]
+
+/**
+ * The steps a later step relies on: every step but a job's last, and the
+ * last step of a job that another job runs after in the same working tree.
+ * The generator makes each of them a target that always runs, so splitting
+ * one would only run it more times.
+ *
+ * @throws {never}
+ * @category planning
+ * @since 0.1.0
+ */
+export const followed = (jobs: ReadonlyArray<Job>): ReadonlySet<Step> => {
+  const found = new Set<Step>()
+  for (const job of jobs) {
+    // GitHub jobs run on separate machines; every other source shares one tree.
+    const needed = jobs.some((other) => other.source !== "github-actions" && other.needs.includes(job.id))
+    for (const [index, step] of job.steps.entries()) {
+      if (needed || index < job.steps.length - 1) found.add(step)
+    }
+  }
+  return found
+}
+
+/**
+ * The same understanding with no run to replace, so the step keeps its
+ * command and only gains inputs.
+ *
+ * @throws {never}
+ * @category planning
+ * @since 0.1.0
+ */
+export const keepCommand = (understood: Understood): Understood => ({
+  ...understood,
+  runs: understood.runs.map((run) => ({ ...run, replace: undefined }))
+})
 
 /**
  * Decides what a step becomes.

@@ -11,14 +11,16 @@
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Closure } from "../contract/Closure.ts"
-import { type Ci, ci, type Step } from "../contract/Inventory.ts"
+import type { Ci, Inventory, Step } from "../contract/Inventory.ts"
 import type { CloseEntries, Decompose, Failure } from "../contract/Parts.ts"
-import { decide, type Facts, understand, type Understood } from "./Plan.ts"
+import { withoutAliases } from "./Aliases.ts"
+import { decide, type Facts, followed, keepCommand, understand, type Understood } from "./Plan.ts"
 import { readConfig } from "./Turbo.ts"
 import {
   assemble,
   graph,
   managerOf,
+  manifestMentions,
   type Mentions,
   packageDirectories,
   readObject,
@@ -30,6 +32,9 @@ import {
 /** File types that hold no path or package name a program follows. */
 const unscanned =
   /\.(?:png|jpe?g|gif|webp|avif|ico|icns|bmp|tiff?|svg|pdf|zip|gz|tgz|bz2|xz|7z|tar|jar|wasm|node|so|dylib|dll|exe|bin|dat|db|sqlite|ttf|otf|woff2?|eot|mp[34]|wav|ogg|webm|mov|avi|flac|onnx|gguf|safetensors|lockb?|snap|map|md|txt|log|csv|tsv)$/i
+
+/** A package's manifest. */
+const manifest = /(?:^|\/)package\.json$/
 
 /** How many files are read at once. */
 const readers = 32
@@ -105,6 +110,7 @@ effect function links(tree: Tree): ReadonlySet<string>!Failure!ChildProcessSpawn
  */
 effect function readFacts(tree: Tree, workspace: Workspace): Facts!Failure!ChildProcessSpawner {
   const scan = scanner(workspace)
+  const names = new Set(workspace.packages.map((owner) => owner.name))
   const linked = try links(tree)
   const found = new Map<string, Mentions>()
   const none: Mentions = { names: [], relative: [], rooted: [] }
@@ -119,7 +125,8 @@ effect function readFacts(tree: Tree, workspace: Workspace): Facts!Failure!Child
       const content = try text(tree, file)
       // A zero byte near the start marks a binary file, as it does for git.
       if (content !== undefined && !content.slice(0, 8000).includes("\0")) {
-        found.set(file, scan(content, file.endsWith("package.json")))
+        const read = withoutAliases(file, content, names)
+        found.set(file, manifest.test(file) ? manifestMentions(scan, read) : scan(read, false))
       }
     }
   }
@@ -177,7 +184,12 @@ export const splitWith = <R = never>(
     const listed = try git(root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
     const tree: Tree = { fs, path, root, files: new Set(listed.split("\0").filter((file) => file !== "")) }
     const workspace = try readWorkspace(tree)
-    const understood = new Map(steps.map((step) => [step, understand(step, workspace, options.turboWrappers)]))
+    const relied = followed(inventory.jobs)
+    const understood = new Map(steps.map((step) => {
+      const read = understand(step, workspace, options.turboWrappers)
+      // A step a later step relies on always runs: it keeps its command.
+      return [step, read !== undefined && relied.has(step) ? keepCommand(read) : read]
+    }))
     const found = [...understood.values()].filter((entry) => entry !== undefined)
     const facts = workspace !== undefined && found.some((entry) => entry.runs.length > 0)
       ? try readFacts(tree, workspace)
@@ -190,12 +202,14 @@ export const splitWith = <R = never>(
       const closure = closures.find((candidate) => candidate.entries.includes(name))
       return closure === undefined ? [] : [[name, closure] as const]
     }))
-    // The same jobs with their steps replaced are still the repository's CI.
-    return ci({
+    // The same jobs with their steps replaced are still the repository's CI: every job keeps a step and its needs.
+    // `Inventory.ci` cannot be asked again: a root `ci` recipe that only groups jobs is gone from its own answer.
+    const split: Inventory = {
       ...inventory,
       jobs: inventory.jobs.map((job) => ({
         ...job,
         steps: job.steps.flatMap((step) => replaced(step, understood.get(step), facts, closed))
       }))
-    })
+    }
+    return split as Ci
   }

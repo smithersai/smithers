@@ -365,6 +365,110 @@ describe("large graphs", () => {
   })
 })
 
+describe("a step that names what it reads", () => {
+  const split = (tail: ReadonlyArray<Step> = []) =>
+    inventory([job("a", [
+      step("a:1", "pnpm install"),
+      step("a:2:ui", "pnpm --filter=ui run test", { inputs: ["packages/ui/**", "*"], from: "a:2" }),
+      step("a:2:web", "pnpm --filter=ui --filter=web run test", {
+        inputs: ["*", "packages/ui/**", "packages/web/**"],
+        from: "a:2"
+      }),
+      ...tail
+    ])])
+
+  it("declares the step's inputs in place of the whole repository, and holds the target to them", () => {
+    const source = targetsOf(split())
+    expect(declaration(source, "a-2-ui")).toContain("S.Shell.Test(")
+    expect(declaration(source, "a-2-ui")).toContain(`data: [S.glob("//*"), S.glob("//packages/ui/**"), step0]`)
+    expect(declaration(source, "a-2-web")).toContain(
+      `data: [S.glob("//*"), S.glob("//packages/ui/**"), S.glob("//packages/web/**"), step0]`
+    )
+    // A read outside the inputs must fail the target, so it runs confined to them.
+    expect(declaration(source, "a-2-ui")).toContain("sandbox: { network: true }")
+    // The setup step always runs and declares no files, so no change to a file re-keys the steps after it.
+    expect(declaration(source, "a-1")).toMatch(/data: \[\]/)
+    expect(declaration(source, "a-1")).toContain(`sandbox: "none"`)
+    // A step with no inputs still reads everything, unconfined.
+    const whole = declaration(targetsOf(inventory([job("b", [step("b:1", "make test")])])), "b-1")
+    expect(whole).toMatch(/data: \[repository\]/)
+    expect(whole).toContain(`sandbox: "none"`)
+  })
+
+  it("places steps split from one step side by side, and the next step after all of them", () => {
+    const last = targetsOf(split())
+    // Neither relies on the other: both follow the install, and both can be replayed.
+    expect(declaration(last, "a-2-ui")).toMatch(/, step0\]/)
+    expect(declaration(last, "a-2-web")).toMatch(/, step0\]/)
+    expect(declaration(last, "a-2-web")).not.toContain("step1")
+    const followed = targetsOf(split([step("a:3", "pnpm run report")]))
+    expect(declaration(followed, "a-3")).toMatch(/data: \[repository, step1, step2\]/)
+    // A later step relies on them, so they always run, unconfined, and declare no files.
+    expect(declaration(followed, "a-2-ui")).toContain("S.Shell.Build(")
+    expect(declaration(followed, "a-2-ui")).toMatch(/data: \[step0\]/)
+    expect(declaration(followed, "a-2-ui")).toContain(`sandbox: "none"`)
+    expect(declaration(followed, "a-2-web")).toContain("cache: false")
+  })
+
+  it("groups only neighbours split from the same step", () => {
+    const source = targetsOf(inventory([job("a", [
+      step("a:1:x", "x", { inputs: ["x/**"], from: "a:1" }),
+      step("a:2", "y", { inputs: ["y/**"], from: "a:2" }),
+      step("a:3:x", "z", { inputs: ["x/**"], from: "a:1" })
+    ])]))
+    expect(declaration(source, "a-2")).toMatch(/data: \[step0\]/)
+    expect(declaration(source, "a-3-x")).toContain(`data: [S.glob("//x/**"), step1]`)
+  })
+
+  it("reads the whole repository when an input is every file", () => {
+    const source = targetsOf(inventory([job("a", [step("a:1", "x", { inputs: ["**"], from: "a:1" })])]))
+    expect(declaration(source, "a-1")).toMatch(/data: \[repository\]/)
+    expect(declaration(source, "a-1")).toContain(`sandbox: "none"`)
+  })
+
+  it("skips a split step it cannot generate and keeps its neighbours", () => {
+    const source = targetsOf(inventory([job("a", [
+      step("a:1", "setup"),
+      step("a:2:x", "x ${{ steps.a.outputs.b }}", { inputs: ["x/**"], from: "a:2" }),
+      step("a:2:y", "y", { inputs: ["y/**"], from: "a:2" }),
+      step("a:3:z", "z ${{ steps.a.outputs.b }}", { inputs: ["z/**"], from: "a:3" }),
+      step("a:4", "last")
+    ])]))
+    expect(source).toContain("a:2:x: not generated")
+    expect(declaration(source, "a-2-y")).toMatch(/data: \[step0\]/)
+    // The step after a group that made nothing follows the last step that was made.
+    expect(declaration(source, "a-4")).toMatch(/data: \[repository, step1\]/)
+  })
+
+  it("declares the whole repository for every target when the inputs do not fit in one PACKAGE.ts", () => {
+    const inputs = Array.from({ length: 4000 }, (_, index) => `packages/${"p".repeat(200)}-${index}/**`)
+    const steps = Array.from(
+      { length: 3 },
+      (_, index) => step(`a:1:${index}`, "true", { inputs, from: "a:1" })
+    )
+    const source = content(generate(inventory([job("a", steps)])), packagePath)
+    expect(source).not.toContain("S.glob(\"//packages/")
+    expect(source.match(/data: \[repository\]/g)).toHaveLength(3)
+    // No target is held to inputs it does not declare.
+    expect(source).not.toContain("sandbox: {")
+  })
+
+  it("gives a step that was split one target map entry per target, each naming the original step", () => {
+    const document = inventory([job("a", [
+      step("a:1", "pnpm install"),
+      step("a:2:ui", "pnpm --filter=ui run test", { inputs: ["packages/ui/**"], from: "a:2" }),
+      step("a:2:web", "pnpm --filter=web run test", { inputs: ["packages/web/**"], from: "a:2" }),
+      step("a:3", "pnpm run report", { inputs: ["*"], from: "a:3" })
+    ])])
+    const map = Schema.decodeUnknownSync(Schema.fromJsonString(TargetMap))(content(generate(document), targetMapPath))
+    expect(labelsOf(map, "a", "a:2", {})).toEqual(["//:a-2-ui", "//:a-2-web"])
+    expect(labelsOf(map, "a", "a:1", {})).toEqual(["//:a-1"])
+    // A step that kept its command names itself.
+    expect(labelsOf(map, "a", "a:3", {})).toEqual(["//:a-3"])
+    expect(labelsOf(map, "a", "a:2:ui", {})).toEqual([])
+  })
+})
+
 describe("the size limit", () => {
   it("refuses targets too large for one PACKAGE.ts", () => {
     const failure = failureOf(inventory([job("a", [step("a:1", `echo ${"x".repeat(1024 * 1024)}`)])]))

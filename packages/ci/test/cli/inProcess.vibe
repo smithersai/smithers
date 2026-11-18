@@ -50,6 +50,9 @@ export async function generated(
   cache?: string
 ): Promise<ReadonlyArray<GeneratedFile>> {
   return await runPromise(
-    Effect.provide(effect { return try chosen.files(ci(try chosen.read(root)), { cache }) }, layer(environment))
+    Effect.provide(
+      effect { return try chosen.files(try chosen.decompose(root, ci(try chosen.read(root))), { cache }) },
+      layer(environment)
+    )
   )
 }

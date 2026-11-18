@@ -4,6 +4,7 @@ import {
   graph,
   join,
   managerOf,
+  manifestMentions,
   type Mentions,
   outsideGlobs,
   packageDirectories,
@@ -33,7 +34,11 @@ const graphOf = (packages: Readonly<Record<string, string>>, texts: Readonly<Rec
   const built = graph(
     workspace,
     new Set(Object.keys(all)),
-    (file) => all[file] === undefined ? none : scan(all[file] as string, file.endsWith("package.json"))
+    (file) => {
+      const text = all[file]
+      if (text === undefined) return none
+      return file.endsWith("package.json") ? manifestMentions(scan, text) : scan(text, false)
+    }
   )
   const reach = (name: string) => {
     const found = built.reachOf(built.named(name) ?? name)
@@ -249,6 +254,30 @@ describe("scanner", () => {
   })
 })
 
+describe("manifestMentions", () => {
+  const scan = scanner(workspaceOf({ "apps/web": manifest("website"), "packages/ui": manifest("ui") }))
+
+  it("counts an unscoped name anywhere in a script, and only in quotes elsewhere", () => {
+    const found = manifestMentions(
+      scan,
+      JSON.stringify({
+        name: "docs",
+        scripts: { "build:website": "vite build", prebuild: "pnpm --filter ui build && node ../tools/gen.mjs", odd: 7 },
+        keywords: ["a website builder"],
+        prettier: "ui"
+      })
+    )
+    // The script named `build:website` names no package; the script that runs `--filter ui` does.
+    expect(found).toEqual({ names: ["ui"], relative: ["../tools/gen.mjs"], rooted: [] })
+    expect(manifestMentions(scan, `{ "scripts": [], "files": ["packages/ui/dist"] }`)).toEqual({
+      names: [],
+      relative: [],
+      rooted: ["packages/ui/dist"]
+    })
+    expect(manifestMentions(scan, `{ broken "website"`).names).toEqual(["website"])
+  })
+})
+
 describe("join and resolveFile", () => {
   it("joins a relative path to a directory, and refuses to leave the repository", () => {
     expect(join("packages/a/src", "../../b/x.ts")).toBe("packages/b/x.ts")
@@ -311,6 +340,20 @@ describe("graph", () => {
     })
   })
 
+  it("reads a file two packages both name once", () => {
+    const { reach } = graphOf({
+      "packages/a": manifest("a"),
+      "packages/b": manifest("b"),
+      "packages/tools": manifest("tools")
+    }, {
+      "packages/a/x.ts": `import "../tools/run.mjs"`,
+      "packages/b/y.ts": `import "../tools/run.mjs"`,
+      "packages/tools/run.mjs": ``
+    })
+    expect(reach("a").files).toEqual(["packages/tools/run.mjs"])
+    expect(reach("b").files).toEqual(["packages/tools/run.mjs"])
+  })
+
   it("adds a package whole when a path into it names no file", () => {
     const { reach } = graphOf({
       "packages/a": manifest("a"),
@@ -344,6 +387,17 @@ describe("graph", () => {
       "packages/b/data.json": `{}`
     })
     expect(reach("a")).toEqual({ packages: ["packages/a", "packages/a/b"], files: ["packages/b/data.json"] })
+  })
+
+  it("reads a relative path from the file's directory alone when it names something there", () => {
+    const { reach } = graphOf({ "packages/dom": manifest("dom"), "packages/utils": manifest("utils") }, {
+      // `../utils/rect` is this package's own src/utils/rect.ts, not the package named utils.
+      "packages/dom/src/platform/a.ts": `import "../utils/rect"; import "../shared"`,
+      "packages/dom/src/utils/rect.ts": ``,
+      "packages/dom/src/shared/index.md": ``,
+      "packages/utils/rect.ts": ``
+    })
+    expect(reach("dom")).toEqual({ packages: ["packages/dom"], files: [] })
   })
 
   it("ignores paths that stay inside the package, leave the repository, or name no package", () => {

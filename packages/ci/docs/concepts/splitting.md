@@ -52,13 +52,24 @@ A package step's inputs are paths and globs from the repository root:
    - packages it declares in `dependencies`, `devDependencies`,
      `peerDependencies` or `optionalDependencies`;
    - packages its files name: `@acme/ui` anywhere, an unscoped name such as
-     `ui` only in quotes, after `node_modules/`, or in a `package.json`;
+     `ui` only in quotes, after `node_modules/`, or in a `package.json` script;
    - paths its files write that lead into another package: `../ui/src/a.ts`,
      or `packages/ui/src/a.ts` from the root. A path that names a file adds
      that file and what the file itself names. Any other path into a package
      adds the whole package. A symbolic link counts as the path it points to.
+     A relative path is read from the file it is written in; when it names
+     nothing there, it is also read from the package's directory, where a
+     program runs.
 4. **What Turborepo's configuration declares:** `globalDependencies`, and task
    `inputs` that start with `$TURBO_ROOT$` or leave the package.
+
+An alias is a definition, not a read. `"paths": { "@acme/ui": ["../ui/src"] }`
+in a `tsconfig.json`, or `alias: { "@acme/ui": path.resolve("../ui/src") }` in
+a bundler's configuration, says where an import of `@acme/ui` would be found.
+Only a file that imports the name reads the package, and that file names it.
+So an entry keyed by a package's name is left out, in code only when its value
+does nothing but build a path. A shared configuration that lists an alias for
+every package would otherwise make every package reach every other.
 
 Files git ignores are never inputs. They are made from files that are.
 
@@ -82,19 +93,20 @@ task graph removes the repeat.
 
 ## What is never split
 
-| Left whole                                                                   | Why                                                             |
-| ---------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| A step with a command Smithers CI does not recognize                         | It can read any file                                            |
-| A step with shell it does not read: `$(…)`, globs, loops, subshells, `<`     | The commands it runs are not known                              |
-| A flag it does not know, or `--affected`, `--only`, `...`, `[ref]` selectors | The set of packages depends on more than the files              |
-| A script run through a wrapper, such as `bun scripts/run-turbo.ts run build` | The wrapper may do anything with its arguments                  |
-| A root script with a `pre` or `post` hook, or more than one command          | The hook reads files no package owns                            |
-| A workspace pattern with braces, classes or `?`; a package with no name      | The package manager may see packages Smithers CI does not       |
-| pnpm with `tasks` in `pnpm-workspace.yaml`                                   | pnpm orders tasks from a configuration Smithers CI does not run |
-| A selector that matches the root package, when the root has the script       | The root package's script reads the whole repository            |
-| A `turbo` task nothing defines, or a task of the root package (`//#task`)    | Turborepo refuses the first; the second reads everything        |
-| A step still holding a `${{ matrix.… }}` expression                          | Its command differs per variant                                 |
-| A Zig build step whose closure has an import it could not follow             | An incomplete closure is affected by every change               |
+| Left whole                                                                   | Why                                                                                                                              |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| A step with a command Smithers CI does not recognize                         | It can read any file                                                                                                             |
+| A step with shell it does not read: `$(…)`, globs, loops, subshells, `<`     | The commands it runs are not known                                                                                               |
+| A flag it does not know, or `--affected`, `--only`, `...`, `[ref]` selectors | The set of packages depends on more than the files                                                                               |
+| A script run through a wrapper, such as `bun scripts/run-turbo.ts run build` | The wrapper may do anything with its arguments                                                                                   |
+| A root script with a `pre` or `post` hook, or more than one command          | The hook reads files no package owns                                                                                             |
+| A workspace pattern with braces, classes or `?`; a package with no name      | The package manager may see packages Smithers CI does not                                                                        |
+| pnpm with `tasks` in `pnpm-workspace.yaml`                                   | pnpm orders tasks from a configuration Smithers CI does not run                                                                  |
+| A selector that matches the root package, when the root has the script       | The root package's script reads the whole repository                                                                             |
+| A `turbo` task nothing defines, or a task of the root package (`//#task`)    | Turborepo refuses the first; the second reads everything                                                                         |
+| A step that a later step of its job follows                                  | Its target always runs, so one command over every package is cheaper than one per package. It keeps its command and gains inputs |
+| A step still holding a `${{ matrix.… }}` expression                          | Its command differs per variant                                                                                                  |
+| A Zig build step whose closure has an import it could not follow             | An incomplete closure is affected by every change                                                                                |
 
 A step that runs several recognized commands, or pipes one into `tee`, keeps
 its command and reads what all of them read. It is split only when the run is
@@ -111,9 +123,9 @@ Inputs come from reading files, never from running them.
   into a failure. Until generated targets run that way, the replay is the
   check: it runs the original step and the package steps on the same commits
   and reports every verdict that differs.
-- **Every mention of a package counts, used or not.** A package that lists
-  others by name in a catalog reaches all of them, so its step reruns when any
-  of them changes. This costs time, never correctness.
+- **Every other mention of a package counts, used or not.** A package that
+  lists others by name in a catalog reaches all of them, so its step reruns
+  when any of them changes. This costs time, never correctness.
 
 ## How this compares
 

@@ -40,7 +40,11 @@ interface PlannedTarget {
   readonly target: string
   readonly cacheable: boolean
   readonly dependencies: ReadonlyArray<string>
+  readonly keyPreview: unknown
 }
+
+/** True when this machine can hold a target to its declared reads: bubblewrap on Linux, seatbelt on macOS. */
+const confines = process.platform === "darwin" || spawnSync("bwrap", ["--version"]).status === 0
 
 const plan = (root: string): ReadonlyArray<PlannedTarget> => {
   const result = run(root, process.execPath, [cli, "ci", "//...", "--plan", "--format", "json"])
@@ -165,6 +169,86 @@ describe("generated files under the real smthrs", () => {
       expect(execute(root, "second").statuses.get("many-33")).toBe("hit")
       writeFileSync(join(root, "input.txt"), "changed\n")
       expect(execute(root, "third").statuses.get("many-33")).toBe("failed")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, slow)
+
+  it("reruns only the package steps that read the changed file", () => {
+    const part = (name: string, command: string) => ({
+      id: `ci:2:${name}`,
+      command,
+      cwd: "",
+      env: {},
+      secrets: [],
+      inputs: ["*", `packages/${name}/**`],
+      from: "ci:2"
+    })
+    const steps = [
+      { id: "ci:1", command: "true", cwd: "", env: {}, secrets: [] },
+      part("a", "grep -q source packages/a/input.txt"),
+      part("b", "grep -q source packages/b/input.txt")
+    ]
+    const root = repository(document([{ ...job("ci", []), steps }]), {
+      "packages/a/input.txt": "source\n",
+      "packages/b/input.txt": "source\n",
+      "readme.md": "x\n",
+      "docs/guide.md": "x\n"
+    })
+    try {
+      // Both package steps follow the setup step, and neither follows the other.
+      const before = plan(root)
+      expect(before.map((target) => [target.label, target.cacheable, target.dependencies])).toEqual([
+        [`${prefix}ci-1`, false, []],
+        [`${prefix}ci-2-a`, true, [`${prefix}ci-1`]],
+        [`${prefix}ci-2-b`, true, [`${prefix}ci-1`]]
+      ])
+      const keys = () =>
+        Object.fromEntries(plan(root).map((target) => [target.label, JSON.stringify(target.keyPreview)]))
+      const original = keys()
+      // A file only package b's step reads changes b's key and no other.
+      writeFileSync(join(root, "packages/b/input.txt"), "source again\n")
+      const edited = keys()
+      expect(edited[`${prefix}ci-2-a`]).toBe(original[`${prefix}ci-2-a`])
+      expect(edited[`${prefix}ci-2-b`]).not.toBe(original[`${prefix}ci-2-b`])
+      // A file no step names changes no package step's key; a root file changes both.
+      writeFileSync(join(root, "docs/guide.md"), "changed\n")
+      expect(keys()).toEqual(edited)
+      writeFileSync(join(root, "readme.md"), "changed\n")
+      const rooted = keys()
+      expect(rooted[`${prefix}ci-2-a`]).not.toBe(edited[`${prefix}ci-2-a`])
+      expect(rooted[`${prefix}ci-2-b`]).not.toBe(edited[`${prefix}ci-2-b`])
+      // Running needs a machine that can confine a target to its declared reads.
+      if (!confines) return
+      const statuses = (name: string) => Object.fromEntries(execute(root, name).statuses)
+      expect(statuses("first")).toEqual({ "ci-1": "ran", "ci-2-a": "ran", "ci-2-b": "ran" })
+      expect(statuses("second")).toEqual({ "ci-1": "ran", "ci-2-a": "hit", "ci-2-b": "hit" })
+      writeFileSync(join(root, "packages/b/input.txt"), "changed\n")
+      expect(statuses("third")).toEqual({ "ci-1": "ran", "ci-2-a": "hit", "ci-2-b": "failed" })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, slow)
+
+  it.runIf(confines)("fails a package step that reads a file outside its inputs", () => {
+    const leak = {
+      id: "ci:1:a",
+      // Its inputs name package a only, and it reads package b.
+      command: "grep -q source packages/b/input.txt",
+      cwd: "",
+      env: {},
+      secrets: [],
+      inputs: ["packages/a/**"],
+      from: "ci:1"
+    }
+    const root = repository(document([{ ...job("ci", []), steps: [leak] }]), {
+      "packages/a/input.txt": "source\n",
+      "packages/b/input.txt": "source\n"
+    })
+    try {
+      // The command would pass in the open: the file is there and holds the word.
+      expect(run(root, "sh", ["-c", leak.command]).status).toBe(0)
+      expect(Object.fromEntries(execute(root, "only").statuses)).toEqual({ "ci-1-a": "failed" })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

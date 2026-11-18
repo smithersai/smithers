@@ -67,6 +67,12 @@ const ci = (steps: ReadonlyArray<Step>, extra: Partial<Job> = {}): Ci => ciOf({
   }]
 })
 
+/** One job for each step, so each step is its job's last. */
+const separately = (steps: ReadonlyArray<Step>): Ci => ciOf({
+  ...ci([]),
+  jobs: steps.map((each, index) => ({ ...(ci([each]).jobs[0] as Job), id: `ci.yml:job-${index}`, name: `job ${index}` }))
+})
+
 const manifest = (name: string, scripts: Record<string, string> = {}, dependencies: ReadonlyArray<string> = []): string =>
   JSON.stringify({ name, scripts, dependencies: Object.fromEntries(dependencies.map((dependency) => [dependency, "workspace:*"])) })
 
@@ -99,8 +105,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       const root = try repository(pnpmWorkspace)
       const before = ci([
         step("ci.yml:test:1", "pnpm install --frozen-lockfile"),
-        step("ci.yml:test:2", "pnpm -r run test", { name: "Test", env: { CI: "true" }, secrets: ["TOKEN"] }),
-        step("ci.yml:test:3", "node scripts/check.mjs")
+        step("ci.yml:test:3", "node scripts/check.mjs"),
+        step("ci.yml:test:2", "pnpm -r run test", { name: "Test", env: { CI: "true" }, secrets: ["TOKEN"] })
       ])
       const after = try split(root, before)
       const decoded = try Schema.decodeUnknownEffect(Inventory)(after)
@@ -109,15 +115,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         // A package without the task gets no step; the package outside the workspace patterns gets none.
         expect(Object.keys(steps)).toEqual([
           "ci.yml:test:1",
+          "ci.yml:test:3",
           "ci.yml:test:2:ui",
           "ci.yml:test:2:web",
           "ci.yml:test:2:x",
-          "ci.yml:test:2:y",
-          "ci.yml:test:3"
+          "ci.yml:test:2:y"
         ])
         // Steps that cannot be split are returned as they were.
         expect(steps["ci.yml:test:1"]).toEqual(before.jobs[0]?.steps[0])
-        expect(steps["ci.yml:test:3"]).toEqual(before.jobs[0]?.steps[2])
+        expect(steps["ci.yml:test:3"]).toEqual(before.jobs[0]?.steps[1])
         expect(steps["ci.yml:test:2:web"]).toEqual({
           id: "ci.yml:test:2:web",
           name: "Test (web)",
@@ -135,6 +141,23 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         expect(steps["ci.yml:test:2:y"]?.inputs).toEqual(steps["ci.yml:test:2:x"]?.inputs)
         // The job is otherwise unchanged.
         expect({ ...decoded.jobs[0], steps: [] }).toEqual({ ...before.jobs[0], steps: [] })
+      })
+    })
+
+  it.effect("keeps the command of a step a later step follows, and names what it reads", () =>
+    effect {
+      const root = try repository(pnpmWorkspace)
+      const test = step("ci.yml:test:1", "pnpm -r run test")
+      // The generator makes a step a later step relies on a target that always runs:
+      // one command over every package is then cheaper than one per package.
+      const after = try split(root, ci([test, step("ci.yml:test:2", "node scripts/check.mjs")]))
+      try Effect.try(() => {
+        expect(stepsOf(after).map((found) => found.id)).toEqual(["ci.yml:test:1", "ci.yml:test:2"])
+        expect(stepsOf(after)[0]).toEqual({
+          ...test,
+          inputs: [...pnpmOutside, "packages/ui/**", "packages/web/**", "packages/x/**", "packages/y/**"].sort(),
+          from: "ci.yml:test:1"
+        })
       })
     })
 
@@ -201,7 +224,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         "apps/web/package.json": manifest("web", { test: "bun test", lint: "eslint ." }, ["@acme/ui"]),
         "apps/web/src/index.ts": "export {}\n"
       })
-      const after = try split(root, ci([
+      const after = try split(root, separately([
         step("ci.yml:test:1", "bunx turbo run test --concurrency=2"),
         step("ci.yml:test:2", "bun run build"),
         step("ci.yml:test:3", "bun run --filter '*' lint")
@@ -323,7 +346,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         "turbo.json": `{ "tasks": { "test": {} } }`,
         "packages/ui/turbo.json": `{ "extends": ["//"] }`
       })
-      const before = ci([step("s", "pnpm -r run test"), step("t", "pnpm exec turbo run test")])
+      const before = separately([step("s", "pnpm -r run test"), step("t", "pnpm exec turbo run test")])
       const whole = try split(root, before)
       try Effect.try(() => expect(stepsOf(whole).map((found) => found.id)).toEqual(["s:ui", "s:web", "s:x", "s:y", "t:ui", "t:web", "t:x", "t:y"]))
       // Each of these files exists and fails to read; what depends on it stays whole.
@@ -359,6 +382,46 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         const after = try split(root, before)
         try Effect.try(() => expect(after).toEqual(before))
       }
+    })
+
+  it.effect("keeps every job of a CI that is the root ci recipe", () =>
+    effect {
+      const root = try repository({ ...pnpmWorkspace, "Justfile": "build:\n  pnpm install\ntest: build\n  pnpm -r run test\nci: test\n" })
+      const recipe = (name: string, steps: ReadonlyArray<Step>, needs: ReadonlyArray<string>): Job => ({
+        id: `justfile:${name}`,
+        source: "justfile",
+        file: "Justfile",
+        name,
+        needs,
+        triggers: [],
+        matrix: [],
+        steps,
+        unsupported: []
+      })
+      // The `ci` recipe has no command of its own: it only groups the recipes it needs.
+      const before = ciOf({
+        ...ci([]),
+        jobs: [
+          recipe("build", [step("justfile:build:1", "pnpm install")], []),
+          recipe("test", [step("justfile:test:1", "pnpm -r run test")], ["justfile:build"]),
+          recipe("ci", [], ["justfile:test"])
+        ]
+      })
+      const after = try split(root, before)
+      try Effect.try(() => {
+        expect(before.jobs.map((job) => job.id)).toEqual(["justfile:build", "justfile:test"])
+        expect(after.jobs.map((job) => [job.id, job.needs])).toEqual([
+          ["justfile:build", []],
+          ["justfile:test", ["justfile:build"]]
+        ])
+        expect(stepsOf(after).map((found) => found.id)).toEqual([
+          "justfile:build:1",
+          "justfile:test:1:ui",
+          "justfile:test:1:web",
+          "justfile:test:1:x",
+          "justfile:test:1:y"
+        ])
+      })
     })
 
   it.effect("fails with not-a-repository outside a repository, and when git cannot start", () =>
