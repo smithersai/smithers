@@ -155,14 +155,18 @@ for each target that failed and then passed when run again:
 ```text
 smithers-ci: 2/3 3f2a1c9 normal
 smithers-ci: 2/3 3f2a1c9 normal: 3 ran, 4 from the cache, 0 failed, 0 skipped in 41 s
-smithers-ci: 2/3 3f2a1c9 normal: 2 ran again with an unchanged key, so Smithers build does not cache them: //packages/ci:fmt //packages/ci:lib
+smithers-ci: 2/3 3f2a1c9 normal: 2 ran again though their keys did not change: //packages/ci:fmt //packages/ci:lib
 ```
 
 The last line names targets that ran in normal mode with the key they passed
-with at an earlier commit. Their inputs did not change and the cache was there,
-so the target's rule is one Smithers build does not cache. No cache makes such
-a target faster; `smthrs ci --plan --format json` shows it as
-`"cacheable": false`.
+with at an earlier commit. Nothing they read changed and the cache was there,
+yet it did not serve them, so no cache makes them faster as the build stands.
+There are two causes to look for:
+
+- The target's rule is one Smithers build does not cache.
+  `smthrs ci --plan --format json` shows it as `"cacheable": false`.
+- The result was stored under a key that a clean checkout never asks for,
+  because the run left files in the tree that the target also reads.
 
 ## A commit that cannot be installed or planned
 

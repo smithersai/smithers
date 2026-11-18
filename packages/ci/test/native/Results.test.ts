@@ -156,11 +156,11 @@ describe("a target that ran again with an unchanged key", () => {
   it("is named on one line, the first five and how many more", () => {
     expect(ranAgainLines("2/3 abc1234 normal", [])).toEqual([])
     expect(ranAgainLines("2/3 abc1234 normal", ["//:a"])).toEqual([
-      "2/3 abc1234 normal: 1 ran again with an unchanged key, so Smithers build does not cache it: //:a"
+      "2/3 abc1234 normal: 1 ran again though its key did not change: //:a"
     ])
     const many = ["a", "b", "c", "d", "e", "f", "g"].map((name) => `//:${name}`)
     expect(ranAgainLines("2/3 abc1234 normal", many)).toEqual([
-      "2/3 abc1234 normal: 7 ran again with an unchanged key, so Smithers build does not cache them: //:a //:b //:c //:d //:e +2"
+      "2/3 abc1234 normal: 7 ran again though their keys did not change: //:a //:b //:c //:d //:e +2"
     ])
   })
 })

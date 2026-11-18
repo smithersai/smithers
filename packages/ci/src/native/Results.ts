@@ -126,10 +126,10 @@ export const linesOf = (
 }
 
 /**
- * The targets that ran although the cache should have held them: each ran
- * and passed with the key it passed with at an earlier commit, kept in
- * `passedWith` by label. Smithers build does not cache such a target, so no
- * cache makes it faster.
+ * The targets that ran although nothing they read changed: each ran and
+ * passed with the key it passed with at an earlier commit, kept in
+ * `passedWith` by label. The cache was there and did not serve them, so no
+ * cache makes them faster as the build stands.
  *
  * @throws {never}
  * @category accessors
@@ -144,7 +144,9 @@ export const ranAgain = (
     .map((result) => result.label)
 
 /**
- * The line for {@link ranAgain}'s targets, or none when there is none.
+ * The line for {@link ranAgain}'s targets, or none when there is none. It
+ * says what was seen and no more: why a target is not served from the cache
+ * is for its owner to find.
  *
  * @throws {never}
  * @category accessors
@@ -154,9 +156,9 @@ export const ranAgainLines = (at: string, labels: ReadonlyArray<string>): Readon
   if (labels.length === 0) return []
   const more = labels.length - failedLimit
   return [
-    `${at}: ${labels.length} ran again with an unchanged key, so Smithers build does not cache ${
-      labels.length === 1 ? "it" : "them"
-    }: ${labels.slice(0, failedLimit).join(" ")}${more > 0 ? ` +${more}` : ""}`
+    `${at}: ${labels.length} ran again though ${labels.length === 1 ? "its key" : "their keys"} did not change: ${
+      labels.slice(0, failedLimit).join(" ")
+    }${more > 0 ? ` +${more}` : ""}`
   ]
 }
 

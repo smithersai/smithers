@@ -308,7 +308,7 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     expect(report.commits[1]?.normal.counts).toEqual({ hit: 3, ran: 1, failed: 0, skipped: 0 })
     expect(report.mismatches).toBe(0)
     expect(said).toContain(
-      `2/2 ${second.slice(0, 7)} normal: 1 ran again with an unchanged key, so Smithers build does not cache it: //:u`
+      `2/2 ${second.slice(0, 7)} normal: 1 ran again though its key did not change: //:u`
     )
   })
 
