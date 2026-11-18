@@ -112,20 +112,37 @@ A step that runs several recognized commands, or pipes one into `tee`, keeps
 its command and reads what all of them read. It is split only when the run is
 the step's one command, apart from lines such as `set -euo pipefail`.
 
-## Two limits
+## Held to its inputs
 
-Inputs come from reading files, never from running them.
+A target made from a step with inputs runs in Smithers build's sandbox: it can
+read its inputs and nothing else in the repository. A read outside them fails
+the target. It never passes on a result from before the file changed.
 
-- **A path built while the program runs is not seen.** `join(root, "packages",
-  name)` names no package in the text. A path written whole, such as
-  `join(root, "packages/ui")`, is found. Running package steps in a sandbox
-  that refuses reads outside their inputs turns such a read from a wrong pass
-  into a failure. Until generated targets run that way, the replay is the
-  check: it runs the original step and the package steps on the same commits
-  and reports every verdict that differs.
-- **Every other mention of a package counts, used or not.** A package that
-  lists others by name in a catalog reaches all of them, so its step reruns
-  when any of them changes. This costs time, never correctness.
+```text
+grep: packages/b/input.txt: No such file or directory
+sandbox: packages/b/input.txt is outside the declared read set
+```
+
+This is what makes a missing input safe. Inputs come from reading files, never
+from running them, so one kind of read is not found: a path built while the
+program runs. `join(root, "packages", name)` names no package in the text; a
+path written whole, such as `join(root, "packages/ui")`, is found. Under the
+sandbox such a read fails where it would have passed stale.
+
+The sandbox also refuses a write outside a target's declared outputs, and a
+step in a real repository writes: Turborepo creates `.turbo/cache`, a test
+runner keeps a cache. Such a package step fails under the sandbox today. It
+needs the discarded write layer Smithers build gives its own test targets,
+which a generated target cannot ask for yet.
+
+A step with no inputs, and a step a later step follows, run in the open as
+before and declare the whole repository.
+
+## One cost
+
+Every mention of a package counts, used or not, unless it is an alias. A
+package that lists others by name in a catalog reaches all of them, so its
+step reruns when any of them changes. This costs time, never correctness.
 
 ## How this compares
 
