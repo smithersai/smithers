@@ -8,7 +8,7 @@
  */
 import * as Schema from "effect/Schema"
 import { execFileSync } from "node:child_process"
-import { copyFileSync, cpSync, existsSync, linkSync, mkdirSync, realpathSync, symlinkSync } from "node:fs"
+import { copyFileSync, cpSync, existsSync, mkdirSync, realpathSync, symlinkSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { afterAll, expect, it } from "vitest"
 import { exitCodes } from "../../src/contract/Command.ts"
@@ -30,11 +30,9 @@ const npmPackage = resolve(dirname(node), "../lib/node_modules/npm")
 const install = (home: string): string => {
   const prefix = join(home, ".local", "node")
   mkdirSync(join(prefix, "bin"), { recursive: true })
-  try {
-    linkSync(node, join(prefix, "bin", "node"))
-  } catch {
-    copyFileSync(node, join(prefix, "bin", "node"))
-  }
+  // A copy, never a hard link: a link changes the status of the machine's own Node, and every observed step
+  // running on the machine at that moment reads that as Node having changed while it ran, and is not stored.
+  copyFileSync(node, join(prefix, "bin", "node"))
   cpSync(npmPackage, join(prefix, "lib", "node_modules", "npm"), { recursive: true })
   symlinkSync("../lib/node_modules/npm/bin/npm-cli.js", join(prefix, "bin", "npm"))
   return join(prefix, "bin")
