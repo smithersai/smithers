@@ -42,6 +42,10 @@ and a TypeScript monorepo driven by GitHub Actions and Turborepo look alike:
   file that names it, its version when the file gives one, and the job that
   installs it. The version may be a matrix value.
 
+The recipes of one Justfile, and the scripts of one `package.json`, share a
+working tree, so they count as CI in the order they run: the order the `ci`
+recipe names them.
+
 ### Setup actions
 
 A step that uses an action to put a tool on the CI machine means the job needs

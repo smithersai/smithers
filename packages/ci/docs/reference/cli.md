@@ -49,6 +49,9 @@ refuses, and names the path, when:
 | `--out`     | `smithers-ci`, `smithers-ci replay`                          | none     | Also write the report as an HTML file here.                                                                                                       |
 | `--json`    | `smithers-ci`, `smithers-ci inventory`, `smithers-ci replay` | `false`  | Print the document as JSON.                                                                                                                       |
 
+Of the commits `--commits` counts, one that had no CI the program can run is not
+replayed; the report lists it with the reason.
+
 `--mode fast` and `--mode both` add fast mode to the replay; see
 [Normal mode and fast mode](../concepts/modes.md). `--cache` is described in
 [The cache](../concepts/cache.md); a URL with a user name or a
