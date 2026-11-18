@@ -49,6 +49,15 @@ export type Source = typeof Source.Type
  * groups. Steps with the same `from` and `atOnce` may run at once though
  * each can write the tree: the command they came from already ran them so.
  *
+ * `inOrder` marks a step split from a command that ran its parts one after
+ * another and stopped at the first that failed, as a script that is
+ * `npm run lint && npm run test` does. Steps with the same `from` and
+ * `inOrder` run in the order listed, each only when the one before it passed.
+ *
+ * `whole` says why a step that runs a script made of several commands was
+ * left as one step: a feature of `Reasons.wholeScript` and what its sentence
+ * names. `Reasons.wholeScriptSentence` gives the words.
+ *
  * `outputs` lists every path the step writes, from the repository root, in
  * the same forms. Without `outputs` the step may write any file, so a step
  * that runs after it in the same working tree cannot be held to its own
@@ -85,6 +94,8 @@ export const Step = Schema.Struct({
   outputs: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   from: Schema.optionalKey(Schema.NonEmptyString),
   atOnce: Schema.optionalKey(Schema.Boolean),
+  inOrder: Schema.optionalKey(Schema.Boolean),
+  whole: Schema.optionalKey(Schema.Struct({ feature: Schema.NonEmptyString, detail: Schema.String })),
   withheld: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   runner: Schema.optionalKey(Schema.NonEmptyString)
 })

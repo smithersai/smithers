@@ -218,3 +218,37 @@ export const reasonRows = (): ReadonlyArray<readonly [feature: string, meaning: 
     const text = reason.sentence.replace("{}", reason.slot ?? "")
     return [feature, reason.next === undefined ? text : `${text}; ${reason.next}`] as const
   })
+
+/**
+ * Why a step that runs a script made of several commands stays one step, by
+ * the feature recorded in `Step.whole`. `{}` is filled with the entry's
+ * detail. Each sentence follows "stays one step:".
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const wholeScript: Readonly<Record<string, string>> = {
+  "script-arguments": "the step gives the script `{}`, which the package manager passes on or reads itself",
+  "script-command":
+    "the script runs `{}`, which is not another script of the same package.json, run by the same package manager with no option",
+  "script-cycle": "the script `{}` runs itself",
+  "script-first":
+    "the step is the first of its job and others follow it, and what it leaves for them is kept for the whole script",
+  "script-hook": "the script has the hook `{}`, which the package manager runs with it",
+  "script-limit": "the step has a time limit, which is for the whole script",
+  "script-release": "it runs under {}, where a script inside a script was not checked",
+  "script-setting": "{} changes how the package manager runs a script",
+  "script-syntax": "the script {}"
+}
+
+/**
+ * Why a step stays one step (`Step.whole`), as one line.
+ *
+ * @category formatting
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const wholeScriptSentence = (why: { readonly feature: string; readonly detail: string }): string =>
+  `stays one step: ${
+    (wholeScript[why.feature] ?? "its commands cannot be run one at a time").replace("{}", () => why.detail)
+  }`

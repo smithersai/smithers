@@ -17,6 +17,7 @@ import {
   bin,
   changed,
   commit,
+  git,
   head,
   type Outcome,
   passingJustfile,
@@ -296,6 +297,99 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
         "justfile:test",
         "justfile:ci"
       ])
+    })
+
+    it("says why a step that runs a script of several commands stays one step", async () => {
+      const root = keep(temporary("scripts"))
+      git(root, "init", "--quiet", "--initial-branch=main")
+      commit(root, "base", {
+        ".github/workflows/ci.yml": [
+          "on: [push]",
+          "jobs:",
+          "  check:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - uses: actions/checkout@v4",
+          "      - run: node -e 0",
+          "      - run: npm run check",
+          "      - run: npm run build",
+          "  timed:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - uses: actions/checkout@v4",
+          "      - run: npm run check",
+          "        timeout-minutes: 5",
+          "  first:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - uses: actions/checkout@v4",
+          "      - run: npm run check",
+          "      - run: node -e 0",
+          ""
+        ].join("\n"),
+        "package.json": JSON.stringify({
+          name: "fixture",
+          scripts: {
+            check: "npm run lint && npm run types",
+            lint: "node -e 0",
+            types: "node -e 0",
+            prebuild: "node -e 0",
+            build: "npm run lint && npm run types"
+          }
+        })
+      })
+      const listed = await exec(["inventory"], root)
+      expect(listed.code, listed.stderr).toBe(exitCodes.ok)
+      const lines = listed.stdout.split("\n")
+      /** The lines of a job, after its heading. */
+      const job = (name: string): ReadonlyArray<string> => {
+        const rest = lines.slice(lines.findIndex((line) => line.startsWith(`job ci.yml:${name} `)) + 1)
+        const end = rest.findIndex((line) => line.startsWith("job "))
+        return (end < 0 ? rest : rest.slice(0, end)).filter((line) => !line.startsWith("  unsupported "))
+      }
+      // A script that is split says nothing: the step is listed as the repository wrote it.
+      expect(job("check")).toEqual([
+        "  $ node -e 0",
+        "  $ npm run check",
+        "  $ npm run build",
+        "    stays one step: the script has the hook `prebuild`, which the package manager runs with it"
+      ])
+      // A time limit is for the whole script: five minutes for each of its scripts would be another limit.
+      expect(job("timed")).toEqual([
+        "  $ npm run check",
+        "    stays one step: the step has a time limit, which is for the whole script"
+      ])
+      // A job's first step starts the place its steps leave values for each other in.
+      expect(job("first").filter((line) => line !== "")).toEqual([
+        "  $ npm run check",
+        "    stays one step: the step is the first of its job and others follow it, and what it leaves for them is " +
+        "kept for the whole script",
+        "  $ node -e 0"
+      ])
+      const document = decode(Inventory, (await exec(["inventory", "--json"], root)).stdout)
+      // The scripts of `package.json` are listed too; the workflow's jobs are the CI.
+      const workflow = document.jobs.filter((entry) => entry.source === "github-actions")
+      expect(workflow.map((entry) => entry.steps.map((step) => [step.command, step.whole?.feature]))).toEqual([
+        [["node -e 0", undefined], ["npm run check", undefined], ["npm run build", "script-hook"]],
+        [["npm run check", "script-limit"]],
+        [["npm run check", "script-first"], ["node -e 0", undefined]]
+      ])
+      // The CI `apply` writes has one step per script of the chain, each after the one before it.
+      const applied = await exec(["apply"], root)
+      expect(applied.code, applied.stderr).toBe(exitCodes.ok)
+      const written = read(`${root}/.smithers/WORKSPACE.smithers`)
+      const stepsOf = [...written.matchAll(/^const (step\d+) = [\s\S]*?^\}\)$/gm)].map((match) => match[0])
+      const shells = stepsOf.map((text) => JSON.parse(/shell: (".*"),$/m.exec(text)?.[1] ?? "\"\"") as string)
+      const path = "PATH=\"$PWD/node_modules/.bin:$PATH\""
+      const lint = shells.findIndex((shell) => shell.includes(`${path} npm run lint`))
+      const types = shells.findIndex((shell) => shell.includes(`${path} npm run types`))
+      expect(lint).toBeGreaterThan(0)
+      expect(types).toBe(lint + 1)
+      expect(stepsOf[types]).toContain(`data: [step${lint}]`)
+      // Only the chain that was split is run link by link: every other step runs the command the repository wrote.
+      expect(shells.filter((shell) => shell.includes(path))).toHaveLength(2)
+      expect(shells.filter((shell) => shell.includes("npm run check"))).toHaveLength(2)
+      expect(shells.filter((shell) => shell.includes("npm run build"))).toHaveLength(1)
     })
 
     it("exits 3 with one line outside a repository", async () => {
@@ -606,6 +700,28 @@ describe.concurrent("smithers-ci with a faulty part or host", () => {
       expect(changed(before, snapshot(root))).toEqual([])
     })
   }
+
+  it("lists an inventory as it was read when its steps cannot be split here, or none of it is CI", async () => {
+    const root = repo()
+    const read = (await runIn(["inventory"], root, parts)).stdout
+    const unsplit = await runIn(["inventory"], root, {
+      ...parts,
+      decompose: () => Effect.fail({ code: "not-a-repository", message: "no git", part: "decompose" })
+    })
+    expect(unsplit).toEqual({ code: exitCodes.ok, stdout: read, stderr: "" })
+    // A splitter is never asked about a repository with no job that runs on a change.
+    const asked: Array<string> = []
+    const none = await runIn(["inventory"], root, {
+      ...parts,
+      read: (at) => Effect.map(parts.read(at), (inventory) => ({ ...inventory, jobs: [] })),
+      decompose: (at, given) => {
+        asked.push(at)
+        return parts.decompose(at, given)
+      }
+    })
+    expect(none.code).toBe(exitCodes.ok)
+    expect(asked).toEqual([])
+  })
 
   it("indents a command's later lines and prints no control character from the repository", async () => {
     const zig = Schema.decodeUnknownSync(Inventory)(

@@ -30,6 +30,7 @@ the step whole.
 | One package's script, as `bun run --cwd packages/core test`            | The same command, with its inputs named                                  |
 | `zig build <step>`                                                     | The same command, told to keep Zig's cache between runs                  |
 | `zig build <step>` alone, where the build step only groups named steps | One `zig build <name>` per named step                                    |
+| `npm run <script>`, where the script is `npm run a && npm run b`       | One step per script the chain runs, in order                             |
 
 The packages come from the workspace the package manager reads:
 `pnpm-workspace.yaml`, or `workspaces` in the root `package.json` for npm, Yarn
@@ -112,6 +113,115 @@ task graph removes the repeat.
 A step that runs several recognized commands, or pipes one into `tee`, keeps
 its command and reads what all of them read. It is split only when the run is
 the step's one command, apart from lines such as `set -euo pipefail`.
+
+## A script that runs other scripts
+
+`npm run check` is often several checks in one command:
+
+```json
+{
+  "scripts": {
+    "check": "npm run check:type && npm run check:lint && npm run check:format",
+    "check:type": "tsc -p .",
+    "check:lint": "eslint .",
+    "check:format": "prettier --check ."
+  }
+}
+```
+
+As one step, a change that only the format check reads runs the type check and
+the lint again. Smithers CI makes one step per script the chain runs. Each step
+has its own record of what it read, so it runs again only when one of those
+files changes.
+
+```text
+npm run check        ──>     npm run check:type      reads the sources and tsconfig.json
+                             npm run check:lint      reads the sources and the ESLint settings
+                             npm run check:format    reads every file Prettier formats
+```
+
+The steps run in the chain's order. `&&` stops at the first failure, so a step
+after a failed one does not run, and the report names the script that failed.
+The replay compares the original step's verdict with the verdicts of its
+scripts taken together: failed if any failed.
+
+A script that the chain runs and that is itself such a chain is split again, to
+any depth. Any other script is run by the command the chain wrote for it, its
+`pre` and `post` scripts included.
+
+The same holds for `npm run-script`, `npm test`, `pnpm run <script>`,
+`pnpm <script>`, `yarn run <script>`, `yarn <script>` and `bun run <script>`.
+
+A chain is split wherever its step stands in its job, after an install and
+before other steps: its scripts keep their order, so each still finds what the
+steps and the scripts before it left.
+
+### What a split keeps
+
+A package manager does more than start a script's command. Each step of a split
+keeps all of it:
+
+| The package manager                                                 | A step of a split                                                             |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Puts `node_modules/.bin` on `PATH`                                  | Runs its script through the package manager, which does the same              |
+| Sets `npm_lifecycle_event`, `npm_lifecycle_script`, `npm_package_*` | The same: the package manager sets them for the script it runs                |
+| Runs `pre<script>` and `post<script>`                               | The same, for the script the step runs. The script that was split has neither |
+| Starts the script in the directory of its `package.json`            | Starts there too                                                              |
+| Reads the script's text with a shell                                | Needs none: its command is plain words, which every shell reads the same      |
+| Finds `npm` itself in `node_modules/.bin` first, inside a script    | Looks in the same directories first                                           |
+| Yarn 1 leaves `npm_config_argv` and `YARN_WRAP_OUTPUT` set          | Sets both to what the outer `yarn` left                                       |
+
+So a step's command is the chain's own words, found where the script found
+them:
+
+```text
+PATH="$PWD/node_modules/.bin:$PATH" npm run check:lint
+```
+
+A script run this way gets the same environment, variable for variable, as it
+gets inside `npm run check`. This is tested with npm, pnpm, Yarn 1 and Bun. Two
+variables are a shell's own and are left as they fall:
+
+- `SHLVL` counts shells. A step of a split runs under fewer, so where the
+  script's shell is bash (Bun on any system; npm, pnpm and Yarn on macOS) it is
+  lower by one for each script that ran around the step.
+- `_` names the program a shell last started. It differs only when the package
+  installs a package manager of its own: it then names that one, where inside
+  the whole script it names the machine's.
+
+### Why a script stays one step
+
+A script is split only when each step runs exactly what it ran inside the whole
+script. Otherwise the step stays as it was, and `smithers-ci inventory` says
+why:
+
+| Reason             | The step stays one step because                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `script-arguments` | the step gives the script `WORDS`, which the package manager passes on or reads itself                                          |
+| `script-command`   | the script runs `COMMAND`, which is not another script of the same package.json, run by the same package manager with no option |
+| `script-cycle`     | the script `SCRIPT` runs itself                                                                                                 |
+| `script-first`     | the step is the first of its job and others follow it, and what it leaves for them is kept for the whole script                 |
+| `script-hook`      | the script has the hook `HOOK`, which the package manager runs with it                                                          |
+| `script-limit`     | the step has a time limit, which is for the whole script                                                                        |
+| `script-release`   | it runs under RELEASE, where a script inside a script was not checked                                                           |
+| `script-setting`   | SETTING changes how the package manager runs a script                                                                           |
+| `script-syntax`    | the script WHAT                                                                                                                 |
+
+- **`script-syntax`.** The script's text must be plain words joined by `&&`. A
+  `;`, `||`, `|`, `&`, a subshell, a redirection, a variable, a quote or a
+  pattern the shell expands leaves it whole.
+- **`script-command`.** A link that is a command of its own, such as `tsc -p .`,
+  `cd app` or `CI=1 npm run lint`, gets its `PATH` and its `npm_*` variables
+  from the script around it. Run alone it would lose them.
+- **`script-first`.** A step can leave values for the steps after it, as a
+  GitHub Actions step does through `GITHUB_ENV`, `GITHUB_OUTPUT` and
+  `GITHUB_PATH`. A job's first step starts the place they are kept in. Run
+  once per script, only the last script's values would be there.
+- **`script-setting`.** `script-shell`, `shell-emulator` or Bun's `shell` in a
+  settings file of the repository, or a variable such as `npm_config_loglevel`
+  on the step.
+- **`script-release`.** npm 6 or earlier, pnpm 7 or earlier, and Yarn 2 or
+  later.
 
 ## Held to its inputs
 

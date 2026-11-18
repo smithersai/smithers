@@ -1,0 +1,423 @@
+/**
+ * Splits a step that runs one `package.json` script into one step per
+ * command of that script.
+ *
+ * `npm run check`, where `check` is `npm run check:type && npm run check:lint`,
+ * reruns the type check whenever the lint reads a changed file. As two steps,
+ * each runs again only when a file it read itself has changed.
+ *
+ * A split is made only when each new step runs what it ran inside the whole
+ * script, in the same order, with the same environment:
+ *
+ * - The script's text is nothing but script runs joined by `&&`: no other
+ *   operator, no variable, no quote, no pattern, no redirection.
+ * - Every link runs another script of the same `package.json` with the same
+ *   package manager and no option: `npm run a && npm run b`. The package
+ *   manager then still starts every command itself, so it sets that command's
+ *   `PATH`, `npm_lifecycle_event`, `npm_package_*` and working directory, and
+ *   runs its `pre` and `post` scripts, as it did inside the whole. A link that
+ *   is a command of its own, such as `tsc -p .`, would lose all of that.
+ * - The split script has no `pre` or `post` script, and the step gives it no
+ *   option or argument.
+ * - Nothing about the step is meant for the script as a whole: a time limit,
+ *   or the place a job's first step starts for the values it leaves to the
+ *   steps after it.
+ *
+ * What the outer package manager added for its links is put back by the
+ * link's own command: where its shell finds programs first, and, for Yarn 1,
+ * two variables it leaves set. Two variables are a shell's own and are not
+ * put back. `SHLVL`, which counts shells, is lower where the script's shell
+ * is bash, by one for each script that ran around the link. `_`, the program
+ * a shell last started, names the package's own package manager when it
+ * installs one, where inside the whole it names the machine's.
+ *
+ * `&&` stops at the first failure. The links are steps that run in order
+ * (`Step.inOrder`), so a link after a failed one does not run.
+ *
+ * Nothing here runs a package manager or the repository's code.
+ *
+ * @since 0.1.0
+ */
+
+import type { Step, Unsupported } from "../contract/Inventory.ts"
+import { pnpmCommands, yarnCommands } from "./Runners.ts"
+import { commands, quote } from "./Shell.ts"
+import { join, readObject } from "./Workspace.ts"
+
+/**
+ * A package manager whose script runs are read.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Manager = "npm" | "pnpm" | "yarn" | "bun"
+
+/**
+ * One run of a package script: `npm run build`. `rest` holds the words after
+ * the script's name, which the package manager passes on or reads itself.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Run {
+  readonly manager: Manager
+  readonly script: string
+  readonly rest: ReadonlyArray<string>
+}
+
+/**
+ * One command of a split script: the script the link runs and the step's
+ * new command.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Link {
+  readonly name: string
+  readonly command: string
+}
+
+/**
+ * What a step becomes.
+ *
+ * - `none`: it does not run a script made of several commands. It says nothing.
+ * - `whole`: it does, and cannot be split. `why` is recorded in `Step.whole`.
+ * - `links`: one step per link, in order.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Decision =
+  | { readonly kind: "none" }
+  | { readonly kind: "whole"; readonly why: Unsupported }
+  | { readonly kind: "links"; readonly links: ReadonlyArray<Link> }
+
+const managers: ReadonlySet<string> = new Set(["npm", "pnpm", "yarn", "bun"])
+
+// The words that run a script by name, per package manager.
+const runWords: Readonly<Record<Manager, ReadonlyArray<string>>> = {
+  npm: ["run", "run-script"],
+  pnpm: ["run", "run-script"],
+  yarn: ["run"],
+  bun: ["run"]
+}
+
+// Words after `pnpm` and `yarn` that are their own commands and that `Runners` does not list.
+const ownCommands: Readonly<Record<"pnpm" | "yarn", ReadonlySet<string>>> = {
+  pnpm: new Set(
+    ("access adduser bin bugs cat-file cat-index deprecate dist-tag docs edit explore find-hash get help-search hook " +
+      "ignored-builds info issues login logout org owner ping pkg prefix profile repo sbom search set show star stars t " +
+      "team token tst unpublish unstar version view whoami xmas").split(" ")
+  ),
+  yarn: new Set("generateLockEntry lockfile prune run upgradeInteractive workspace".split(" "))
+}
+
+/**
+ * Reads a command's words as one run of a package script, or `undefined`
+ * when they are anything else. The forms are `npm run <name>`, `npm
+ * run-script <name>`, `npm test`, `pnpm run <name>`, `pnpm <name>`, `yarn run
+ * <name>`, `yarn <name>` and `bun run <name>`. `bun <name>` may run a file
+ * and `bun test` runs Bun's own tests, so neither is read.
+ *
+ * @throws {never}
+ * @category reading
+ * @since 0.1.0
+ */
+export const runOf = (words: ReadonlyArray<string>): Run | undefined => {
+  const [manager, second, ...after] = words
+  if (manager === undefined || !managers.has(manager) || second === undefined) return undefined
+  const named = manager as Manager
+  if (runWords[named].includes(second)) {
+    const [script, ...rest] = after
+    return script === undefined || script.startsWith("-") ? undefined : { manager: named, script, rest }
+  }
+  if (second.startsWith("-") || named === "bun") return undefined
+  if (named === "npm") return second === "test" ? { manager: named, script: second, rest: after } : undefined
+  const builtin = named === "pnpm" ? pnpmCommands : yarnCommands
+  return builtin.has(second) || ownCommands[named].has(second)
+    ? undefined
+    : { manager: named, script: second, rest: after }
+}
+
+// The step's one command as a script run, and the directory it runs in from the repository root.
+const stepRun = (
+  step: Pick<Step, "command" | "cwd">
+): { readonly run: Run; readonly directory: string; readonly words: ReadonlyArray<string> } | undefined => {
+  if (step.cwd.startsWith("/") || step.cwd.includes("${{")) return undefined
+  const directory = join("", step.cwd)
+  const [command, ...more] = commands(step.command) ?? []
+  if (directory === undefined || command === undefined || more.length > 0) return undefined
+  if (command.assignments.length > 0 || command.piped || command.background) return undefined
+  if (command.start === undefined || command.words.some((word) => !word.literal)) return undefined
+  // Nothing but the command: a redirection or a comment beside it is more than a script run.
+  const around = `${step.command.slice(0, command.start)}${step.command.slice(command.end)}`
+  if (around.trim() !== "") return undefined
+  const words = command.words.map((word) => word.text)
+  const run = runOf(words)
+  return run === undefined ? undefined : { run, directory, words }
+}
+
+// A path from the repository root for a file in a directory.
+const inDirectory = (directory: string, file: string): string => directory === "" ? file : `${directory}/${file}`
+
+// The files of one directory that say how a package manager runs a script there.
+const settingFiles = [
+  ".npmrc",
+  ".yarnrc",
+  ".yarnrc.yml",
+  "bunfig.toml",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "yarn.lock"
+]
+
+/**
+ * The files `decide` reads for a step, from the repository root: none when
+ * the step's command is not one script run. They are the `package.json` of
+ * the step's directory and of the root, and beside each the files that say
+ * which package manager release runs a script and with which settings.
+ *
+ * @throws {never}
+ * @category reading
+ * @since 0.1.0
+ */
+export const filesOf = (step: Pick<Step, "command" | "cwd">): ReadonlyArray<string> => {
+  const read = stepRun(step)
+  if (read === undefined) return []
+  return [...new Set([read.directory, ""])].flatMap((directory) =>
+    ["package.json", ...settingFiles].map((file) => inDirectory(directory, file))
+  )
+}
+
+// What a script holds beside plain words and `&&`, in the order a reader names them.
+const syntax: ReadonlyArray<readonly [found: RegExp, what: string]> = [
+  [/\|\|/, "joins commands with `||`"],
+  [/[;\n\r]/, "joins commands with `;` or a line break"],
+  [/\|/, "pipes one command into another"],
+  [/&/, "runs a command in the background"],
+  [/[<>]/, "redirects input or output"],
+  [/[()]/, "runs commands in a subshell"],
+  [/[$`]/, "reads a variable or the output of a command"],
+  [/["'\\]/, "quotes a word"],
+  [/[^A-Za-z0-9_@%+:,./=\s-]/, "has a character the shell reads in its own way"]
+]
+
+// The links of a script that is nothing but plain words joined by `&&`, or what else the script holds.
+const linksOf = (
+  text: string
+): { readonly links: ReadonlyArray<ReadonlyArray<string>> } | { readonly syntax: string } => {
+  // `&&` is the one operator a chain may hold: what is left is looked through for every other.
+  const rest = text.replaceAll("&&", " ")
+  const found = syntax.find(([pattern]) => pattern.test(rest))
+  if (found !== undefined) return { syntax: found[1] }
+  const links = text.split("&&").map((link) => link.split(/\s+/).filter((word) => word !== ""))
+  return links.some((link) => link.length === 0) ? { syntax: "has `&&` with no command beside it" } : { links }
+}
+
+// The script a link runs: a script of the same manifest, run by the same package manager with no option.
+const linkScript = (
+  words: ReadonlyArray<string>,
+  manager: Manager,
+  scripts: Readonly<Record<string, string>>
+): string | undefined => {
+  const run = runOf(words)
+  return run !== undefined && run.manager === manager && run.rest.length === 0 && Object.hasOwn(scripts, run.script)
+    ? run.script
+    : undefined
+}
+
+const hooked = (scripts: Readonly<Record<string, string>>, name: string): string | undefined =>
+  [`pre${name}`, `post${name}`].find((hook) => Object.hasOwn(scripts, hook))
+
+interface Leaf {
+  readonly script: string
+  /** The link as its script writes it. */
+  readonly words: ReadonlyArray<string>
+}
+
+// The commands a link runs, to any depth, or the name of a script that reaches itself, which never ends. A script
+// that cannot be split is run by its link as it is, hooks and all: the package manager runs it the same wherever
+// it is started.
+const leavesOf = (
+  words: ReadonlyArray<string>,
+  script: string,
+  seen: ReadonlySet<string>,
+  manager: Manager,
+  scripts: Readonly<Record<string, string>>
+): ReadonlyArray<Leaf> | string => {
+  if (seen.has(script)) return script
+  const read = hooked(scripts, script) === undefined ? linksOf(scripts[script] as string) : { syntax: "" }
+  const inner = "links" in read ? read.links.map((link) => linkScript(link, manager, scripts)) : []
+  if (!("links" in read) || inner.includes(undefined)) return [{ script, words }]
+  const leaves: Array<Leaf> = []
+  for (const [index, link] of read.links.entries()) {
+    const found = leavesOf(link, inner[index] as string, new Set([...seen, script]), manager, scripts)
+    if (typeof found === "string") return found
+    leaves.push(...found)
+  }
+  return leaves
+}
+
+// A variable of a step that a package manager reads as a setting.
+const settingVariable = /^(?:npm_config_|pnpm_config_|yarn_|bun_config_)/i
+
+// The settings that change the shell a script's text is read by, per file and package manager.
+const shellSettings: ReadonlyArray<
+  readonly [file: string, managers: ReadonlyArray<Manager>, pattern: RegExp]
+> = [
+  [".npmrc", ["npm", "pnpm", "yarn"], /^\s*(script-shell|shell-emulator)\s*=/m],
+  [".yarnrc", ["yarn"], /^\s*"?(script-shell)"?\s/m],
+  ["pnpm-workspace.yaml", ["pnpm"], /^\s*(scriptShell|shellEmulator)\s*:/m],
+  ["bunfig.toml", ["bun"], /^\s*(shell)\s*=/m]
+]
+
+const majorOf = (text: string | undefined, pattern: RegExp): number | undefined => {
+  const found = text === undefined ? null : pattern.exec(text)
+  return found === null ? undefined : Number(found[1])
+}
+
+// The release of a package manager a script inside a script was not checked under, when the files name one.
+const uncheckedRelease = (
+  manager: Manager,
+  directories: ReadonlyArray<string>,
+  text: (path: string) => string | null | undefined
+): string | undefined => {
+  const each = (file: string): ReadonlyArray<string> =>
+    directories.flatMap((directory) => text(inDirectory(directory, file)) ?? [])
+  const fields = each("package.json").flatMap((manifest) => {
+    const field = readObject(manifest)?.["packageManager"]
+    return typeof field === "string" ? [field] : []
+  })
+  // The nearest `packageManager` names the release, when it names this package manager.
+  const named = majorOf(fields[0], new RegExp(`^${manager}@(\\d+)`))
+  if (manager === "yarn") {
+    const later = (named ?? 1) >= 2 || each(".yarnrc.yml").length > 0 ||
+      each("yarn.lock").some((lock) => lock.includes("__metadata:"))
+    return later ? "Yarn 2 or later" : undefined
+  }
+  if (manager === "npm") {
+    // npm 7 writes a lockfile of version 2 or 3.
+    const locks = [...each("package-lock.json"), ...each("npm-shrinkwrap.json")]
+    const old = (named ?? 7) < 7 ||
+      locks.some((lock) => (majorOf(lock.slice(0, 2000), /"lockfileVersion":\s*(\d+)/) ?? 1) < 2)
+    return old ? "npm 6 or earlier" : undefined
+  }
+  if (manager === "pnpm") {
+    // pnpm 8 writes a lockfile of version 6.
+    const old = (named ?? 8) < 8 ||
+      each("pnpm-lock.yaml").some((lock) => (majorOf(lock.slice(0, 2000), /^lockfileVersion:\s*'?(\d+)/m) ?? 5) < 6)
+    return old ? "pnpm 7 or earlier" : undefined
+  }
+  return undefined
+}
+
+// The directories whose `node_modules/.bin` a script's shell finds programs in before anything else, as shell
+// text from the step's directory. A link's command is found there first too: a package that installs its own
+// package manager runs that one inside a script. Yarn 1 puts itself first on the path and needs none.
+const binDirectories = (manager: Manager, directory: string, workspace: boolean): ReadonlyArray<string> => {
+  const depth = directory === "" ? 0 : directory.split("/").length
+  const at = (up: number): string => `$PWD/${"../".repeat(up)}node_modules/.bin`
+  if (manager === "yarn") return []
+  if (manager === "pnpm") return depth > 0 && workspace ? [at(0), at(depth)] : [at(0)]
+  return Array.from({ length: depth + 1 }, (_, up) => at(up))
+}
+
+// What the outer package manager left set for the links it started.
+const carried = (run: Run, stepWords: ReadonlyArray<string>): string => {
+  if (run.manager !== "yarn") return ""
+  // Yarn 1 keeps the first `npm_config_argv` it is given, and prints no banner inside a script.
+  const argv = JSON.stringify({ remain: [], cooked: ["run", run.script], original: stepWords.slice(1) })
+  return `YARN_WRAP_OUTPUT=false npm_config_argv=${quote(argv)} `
+}
+
+// A link's command: the words its script wrote, which are plain, after what the outer package manager set.
+const commandOf = (leaf: Leaf, run: Run, stepWords: ReadonlyArray<string>, bins: ReadonlyArray<string>): string => {
+  const path = bins.length === 0 ? "" : `PATH="${bins.join(":")}:$PATH" `
+  return `${path}${carried(run, stepWords)}${leaf.words.join(" ")}`
+}
+
+// A name for each link: the script it runs, numbered from its second appearance.
+const namesOf = (leaves: ReadonlyArray<Leaf>): ReadonlyArray<string> => {
+  const count = new Map<string, number>()
+  return leaves.map((leaf) => {
+    const seen = (count.get(leaf.script) ?? 0) + 1
+    count.set(leaf.script, seen)
+    return seen === 1 ? leaf.script : `${leaf.script}#${seen}`
+  })
+}
+
+/**
+ * Decides what a step that runs a package script becomes. `text` gives a
+ * file's text by its path from the repository root, `undefined` when the
+ * repository has no such file, and `null` when it has one that cannot be
+ * read; only the paths `filesOf` lists are asked for. A file that cannot be
+ * read may set anything, so the step stays whole.
+ *
+ * `leads` is true for the first step of a job that has more steps, when the
+ * step is run as its CI's runner runs it (`Step.runner`). That text starts
+ * the job's state anew each time it runs, so of the values the scripts of a
+ * chain leave for later steps only the last script's would be there.
+ *
+ * @throws {never}
+ * @category planning
+ * @since 0.1.0
+ */
+export const decide = (
+  step: Pick<Step, "command" | "cwd" | "env" | "runner">,
+  text: (path: string) => string | null | undefined,
+  leads = false
+): Decision => {
+  const none: Decision = { kind: "none" }
+  const whole = (feature: string, detail: string): Decision => ({ kind: "whole", why: { feature, detail } })
+  const read = stepRun(step)
+  if (read === undefined) return none
+  const { directory, run, words } = read
+  const declared = readObject(text(inDirectory(directory, "package.json")) ?? "")?.["scripts"]
+  const scripts: Record<string, string> = {}
+  for (const [name, body] of Object.entries(typeof declared === "object" && declared !== null ? declared : {})) {
+    if (typeof body === "string") scripts[name] = body
+  }
+  const body = scripts[run.script]
+  if (body === undefined) return none
+  const chain = linksOf(body)
+  // One command with shell syntax of its own, such as a quoted word, is still one command.
+  if (!("links" in chain)) return /&&|\|\||[;|&\n\r]/.test(body) ? whole("script-syntax", chain.syntax) : none
+  const inner = chain.links.map((link) => linkScript(link, run.manager, scripts))
+  const stray = chain.links.find((_, index) => inner[index] === undefined)
+  if (stray !== undefined) return chain.links.length > 1 ? whole("script-command", stray.join(" ")) : none
+  const leaves: Array<Leaf> = []
+  for (const [index, link] of chain.links.entries()) {
+    const found = leavesOf(link, inner[index] as string, new Set([run.script]), run.manager, scripts)
+    if (typeof found === "string") return whole("script-cycle", found)
+    leaves.push(...found)
+  }
+  // A script that only names another, down to one command, is that command.
+  if (leaves.length < 2) return none
+  const hook = hooked(scripts, run.script)
+  if (hook !== undefined) return whole("script-hook", hook)
+  if (run.rest.length > 0) return whole("script-arguments", run.rest.join(" "))
+  // The runner stops a step at its limit, and the limit is for the whole script.
+  if (step.runner !== undefined && /^__limit=/m.test(step.runner)) return whole("script-limit", "")
+  if (step.runner !== undefined && leads) return whole("script-first", "")
+  const variable = Object.keys(step.env).find((name) => settingVariable.test(name))
+  if (variable !== undefined) return whole("script-setting", `the step's variable \`${variable}\``)
+  const unread = filesOf(step).find((file) => text(file) === null)
+  if (unread !== undefined) return whole("script-setting", `what \`${unread}\` sets, which cannot be read,`)
+  const directories = [...new Set([directory, ""])]
+  for (const [file, users, pattern] of shellSettings) {
+    for (const where of users.includes(run.manager) ? directories : []) {
+      const setting = pattern.exec(text(inDirectory(where, file)) ?? "")?.[1]
+      if (setting !== undefined) return whole("script-setting", `\`${setting}\` in \`${inDirectory(where, file)}\``)
+    }
+  }
+  const release = uncheckedRelease(run.manager, directories, text)
+  if (release !== undefined) return whole("script-release", release)
+  const bins = binDirectories(run.manager, directory, text("pnpm-workspace.yaml") !== undefined)
+  const names = namesOf(leaves)
+  return {
+    kind: "links",
+    links: leaves.map((leaf, index) => ({ name: names[index] as string, command: commandOf(leaf, run, words, bins) }))
+  }
+}

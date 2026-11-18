@@ -801,6 +801,16 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
     // A step split from a command that ran its parts at the same time may say so.
     expect(Schema.decodeUnknownSync(Inventory.Step)({ ...split, atOnce: true }).atOnce).toBe(true)
     expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, atOnce: "yes" })).toThrow()
+    // A step split from a command that ran its parts in order may say so.
+    expect(Schema.decodeUnknownSync(Inventory.Step)({ ...split, inOrder: true }).inOrder).toBe(true)
+    expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, inOrder: "yes" })).toThrow()
+    // A step that runs a script of several commands and stays one step says why, in a sentence of `Reasons`.
+    const whole = { ...step("ci.yml:test:2", "npm run check"), whole: { feature: "script-hook", detail: "precheck" } }
+    expect(Schema.decodeUnknownSync(Inventory.Step)(whole)).toEqual(whole)
+    expect(Reasons.wholeScriptSentence(whole.whole)).toBe(
+      "stays one step: the script has the hook `precheck`, which the package manager runs with it"
+    )
+    expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...whole, whole: { feature: "", detail: "" } })).toThrow()
     // A tool's cache is kept inside the directory `apply` keeps out of git.
     expect(Inventory.toolCache.startsWith(`${Command.applyIgnores[0]}/`)).toBe(true)
     const failure = { code: "command-failed", message: "bun pm ls exited 1", part: "decompose" }

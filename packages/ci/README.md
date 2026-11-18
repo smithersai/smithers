@@ -71,6 +71,18 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-18, a script that runs other scripts** (optional additions by the script-split lane):
+
+- `Step.inOrder` (optional): a step split from a command that ran its parts one after another and stopped at the
+  first that failed, as a script that is `npm run lint && npm run types` does. The generator keeps the order of
+  steps with the same `from` and `inOrder`: each waits for the one before it, so a part after a failed one does not
+  run. Steps with the same `from` and no `inOrder` stand side by side, as before.
+- `Step.whole` (optional): why a step that runs a script made of several commands was left as one step, as a
+  feature and a detail. `Reasons.wholeScript` holds the sentence of each feature and `Reasons.wholeScriptSentence`
+  gives the line; a test holds them to the table in `docs/concepts/splitting.md`.
+- Tests: `test/contract.test.ts`, `test/generate.test.ts` "keeps the order of steps split from a command that ran its
+  parts in order", `test/decompose/Script.test.ts`.
+
 **2026-11-18, what a replay measures on a machine where part of the CI cannot pass** (optional additions by the
 replay lane):
 

@@ -220,8 +220,13 @@ const pnpmOptions: Options = {
   valued: new Set(["--filter", "-F", "-C", "--dir", "--workspace-concurrency", "--reporter", "--loglevel"])
 }
 
-// Words after `pnpm` that are its own commands, so never a script's name.
-const pnpmCommands = new Set(
+/**
+ * Words after `pnpm` that are its own commands, so never a script's name.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const pnpmCommands: ReadonlySet<string> = new Set(
   ("add audit bin cache ci config create dedupe deploy dlx doctor env exec fetch import init install i install-test it " +
     "licenses link ln list ls la ll outdated pack patch patch-commit patch-remove prune publish rebuild rb recursive " +
     "multi m remove rm uninstall un root server setup store unlink dislink update up upgrade why self-update " +
@@ -446,8 +451,13 @@ export const npm = (words: ReadonlyArray<string>, cwd: string): Invocation | und
   }
 }
 
-// Words after `yarn` that are its own commands, so never a script's name.
-const yarnCommands = new Set(
+/**
+ * Words after `yarn` that are its own commands, so never a script's name.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const yarnCommands: ReadonlySet<string> = new Set(
   ("add audit autoclean bin cache check config constraints create dedupe dlx exec explain generate-lock-entry global " +
     "help import info init install licenses link list login logout node npm outdated owner pack patch patch-commit " +
     "plugin policies publish rebuild remove search self-update set stage tag team unlink unplug up upgrade " +

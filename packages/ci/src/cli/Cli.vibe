@@ -34,6 +34,7 @@ import {
   type ScoreRows,
   writtenFiles
 } from "../contract/Parts.ts"
+import { wholeScriptSentence } from "../contract/Reasons.ts"
 import { ReplayReport } from "../contract/ReplayReport.ts"
 import type { Mode } from "../contract/RunRecord.ts"
 import * as Native from "../native/index.ts"
@@ -295,6 +296,8 @@ function inventoryText(inventory: Inventory): string {
     for (const step of job.steps) {
       const where = step.cwd === "" || step.cwd === "." ? "" : `  (in ${step.cwd})`
       lines.push(`  $ ${step.command.replaceAll("\n", "\n    ")}${where}`)
+      // A step that runs a script of several commands and cannot be split says why.
+      if (step.whole !== undefined) lines.push(`    ${wholeScriptSentence(step.whole)}`)
     }
     for (const unsupported of job.unsupported) {
       lines.push(`  unsupported ${unsupported.feature}: ${unsupported.detail}`)
@@ -457,8 +460,29 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     try Console.log(`${Surface.name}: wrote ${files.length} files`)
   }).pipe(Command.withDescription(Surface.commands.apply))
 
+  /**
+   * The inventory with why each step that runs a script of several commands stays one step (`Step.whole`), as the
+   * splitter finds it. A CI nothing of which can be run, or that cannot be split here, is listed as it was read.
+   */
+  effect function withWholeScripts(read: Inventory) {
+    const narrowed = ci(read)
+    if (narrowed.jobs.length === 0) return read
+    const split = parts.decompose(root, narrowed) catch () => narrowed
+    const whys = new Map(split.jobs.flatMap((job) =>
+      job.steps.flatMap((step) => step.whole === undefined ? [] : [[step.id, step.whole] as const])
+    ))
+    const told = (step: Inventory["jobs"][number]["steps"][number]) => {
+      const why = whys.get(step.id)
+      return why === undefined ? step : { ...step, whole: why }
+    }
+    return { ...read, jobs: read.jobs.map((job) => ({ ...job, steps: job.steps.map(told) })) }
+  }
+
   const inventory = Command.make("inventory", { json }, effect (input) => {
-    const read = try parts.read(root)
+    const found = try parts.read(root)
+    // A document that breaks its contract is refused before anything is read from it.
+    try documentOf(Inventory, found, "inventory")
+    const read = try withWholeScripts(found)
     try Console.log(input.json ? try documentOf(Inventory, read, "inventory") : inventoryText(read))
   }).pipe(Command.withDescription(Surface.commands.inventory))
 

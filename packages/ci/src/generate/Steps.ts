@@ -7,7 +7,9 @@
  * may be replayed. Every other step is a `setup` target, which always runs
  * and declares no files of its own. Steps split from one step (`Step.from`)
  * stand side by side: none relies on another, and the step after them waits
- * for all of them.
+ * for all of them. Steps split from a command that ran its parts in order
+ * (`Step.inOrder`) keep that order: each waits for the one before it, so a
+ * part after one that failed does not run.
  *
  * A step that follows another in one working tree can read what that step
  * wrote. Its target declares the step's inputs only when every earlier step
@@ -219,12 +221,14 @@ const sorted = (values: Iterable<string>): ReadonlyArray<string> => [...new Set(
 // The input that names every file: a step with it reads the whole repository.
 const everything = "**"
 
-// A job's steps in order, with the steps split from one step kept together.
+// A job's steps in order, with the steps split from one step kept together. Steps split from a command that ran
+// its parts in order (`Step.inOrder`) stay apart: each follows the one before it, and does not run when that failed.
 const groupsOf = (steps: ReadonlyArray<Step>): ReadonlyArray<ReadonlyArray<Step>> => {
   const groups: Array<Array<Step>> = []
   for (const step of steps) {
     const last = groups.at(-1)
-    if (last !== undefined && step.from !== undefined && last[0]?.from === step.from) last.push(step)
+    const beside = step.from !== undefined && step.inOrder !== true && last?.[0]?.from === step.from
+    if (last !== undefined && beside) last.push(step)
     else groups.push([step])
   }
   return groups

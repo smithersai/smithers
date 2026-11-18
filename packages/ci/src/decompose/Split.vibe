@@ -14,6 +14,7 @@ import { type Ci, type Step, withSteps } from "../contract/Inventory.ts"
 import type { Decompose, Failure } from "../contract/Parts.ts"
 import { withoutAliases } from "./Aliases.ts"
 import { decide, type Facts, followed, keepCommand, preceded, understand, type Understood } from "./Plan.ts"
+import * as Script from "./Script.ts"
 import { readConfig } from "./Turbo.ts"
 import * as Zig from "./Zig.ts"
 import {
@@ -164,6 +165,35 @@ const replaced = (
 }
 
 /**
+ * A step that runs one package script made of several commands: one step per command, in order, or the step with
+ * why it stays whole. Any other step is returned as it is. `files` holds the text of each file `Script.filesOf`
+ * names that the repository has, or `null` for one that cannot be read. `leads` is true for the first step of a job
+ * that has more.
+ */
+const chained = (step: Step, files: ReadonlyMap<string, string | null>, leads: boolean): ReadonlyArray<Step> => {
+  const decision = Script.decide(step, (path) => files.get(path), leads)
+  if (decision.kind === "none") return [step]
+  if (decision.kind === "whole") return [{ ...step, whole: decision.why }]
+  return decision.links.map((link) => ({
+    ...step,
+    id: `${step.id}:${link.name}`,
+    command: link.command,
+    ...(step.name === undefined ? {} : { name: `${step.name} (${link.name})` }),
+    from: step.id,
+    inOrder: true
+  }))
+}
+
+/** Reads the files that say how each step's package script runs. A file that cannot be read is `null`. */
+effect function readScriptFiles(tree: Tree, steps: ReadonlyArray<Step>): ReadonlyMap<string, string | null>!! {
+  const found = new Map<string, string | null>()
+  for (const file of new Set(steps.flatMap((step) => Script.filesOf(step)))) {
+    if (tree.files.has(file)) found.set(file, (try text(tree, file)) ?? null)
+  }
+  return found
+}
+
+/**
  * What the decompose part is made with.
  *
  * - `zigGroups`: the named steps each Zig build step only groups. With it, a
@@ -225,7 +255,14 @@ export const splitWith = <R = never>(
       ? []
       : options.zigGroups(root, builds) catch (): ReadonlyArray<ReadonlyArray<string>> => []
     const groups = new Map(builds.map((name, index) => [name, grouped[index] ?? []]))
+    const scripts = try readScriptFiles(tree, steps)
     // The same jobs with their steps replaced are still the repository's CI: `withSteps` keeps every job and its needs.
     return withSteps(inventory, (job) =>
-      job.steps.flatMap((step) => replaced(step, understood.get(step), facts, groups, relied.has(step))))
+      job.steps.flatMap((step) => {
+        const made = replaced(step, understood.get(step), facts, groups, relied.has(step))
+        // A step nothing else changed may run a script that is a chain of scripts.
+        return made.length === 1 && made[0] === step
+          ? chained(step, scripts, job.steps.length > 1 && job.steps[0] === step)
+          : made
+      }))
   }

@@ -785,6 +785,28 @@ describe("a step that names what it reads", () => {
     expect(declaration(followed, "a-2-web")).toContain("cache: false")
   })
 
+  it("keeps the order of steps split from a command that ran its parts in order", () => {
+    // `npm run check` was `npm run lint && npm run types`: the types never ran after a lint that failed.
+    const links = [
+      step("a:2:lint", "npm run lint", { from: "a:2", inOrder: true }),
+      step("a:2:types", "npm run types", { from: "a:2", inOrder: true })
+    ]
+    const source = targetsOf(inventory([job("a", [step("a:1", "npm ci"), ...links, step("a:3", "npm test")])]))
+    // Each link waits for the one before it, and the step after them for the last.
+    expect(declaration(source, "a-2-lint")).toMatch(/data: \[step0\]/)
+    expect(declaration(source, "a-2-types")).toMatch(/data: \[step1\]/)
+    expect(declaration(source, "a-2-types")).not.toContain("step0")
+    expect(declaration(source, "a-3")).toMatch(/data: \[repository, step2\]/)
+    // Both links answer for the step they were split from.
+    const map = Schema.decodeUnknownSync(Schema.fromJsonString(TargetMap))(
+      content(generate(inventory([job("a", [step("a:1", "npm ci"), ...links])])), targetMapPath)
+    )
+    expect(labelsOf(map, "a", "a:2", {})).toEqual(["//:a-2-lint", "//:a-2-types"])
+    // A dependency orders every pair, so the links never make the run one at a time on their own account.
+    const alone = generate(inventory([job("a", links)]))
+    expect(content(alone, workflowPath)).not.toContain("--jobs 1")
+  })
+
   it("groups only neighbours split from the same step", () => {
     const source = targetsOf(inventory([job("a", [
       step("a:1:x", "x", { inputs: ["x/**"], from: "a:1" }),

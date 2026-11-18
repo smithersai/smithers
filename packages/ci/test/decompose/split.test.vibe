@@ -623,6 +623,123 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       })
     })
 
+  it.effect("splits a step that runs a chain of scripts into one step per script, in order", () =>
+    effect {
+      const root = try repository({
+        "package.json": JSON.stringify({
+          name: "root",
+          scripts: {
+            check: "npm run check:types && npm run check:lint",
+            "check:types": "npm run check:types:js && npm run check:types:ts",
+            "check:types:js": "node -e 0",
+            "check:types:ts": "node -e 0 && node -e 0",
+            "check:lint": "node -e 0",
+            build: "npm run check:lint || true",
+            pretest: "node -e 0",
+            test: "npm run check:lint && npm run check:types:js"
+          }
+        }),
+        "package-lock.json": `{ "lockfileVersion": 3 }`,
+        "app/package.json": JSON.stringify({ name: "app", scripts: { check: "npm run a && npm run b", a: "node -e 0", b: "node -e 0" } })
+      })
+      // The check follows an install and a later step follows it: a chain is split wherever it stands in its job.
+      const before = ci([
+        step("ci.yml:test:1", "npm ci"),
+        step("ci.yml:test:2", "npm run check", { name: "Check", env: { CI: "true" } }),
+        step("ci.yml:test:3", "npm run build"),
+        step("ci.yml:test:4", "npm test"),
+        step("ci.yml:test:5", "npm run check", { cwd: "app" })
+      ])
+      const after = try split(root, before)
+      const decoded = try Schema.decodeUnknownEffect(Inventory)(after)
+      const steps = byId(decoded)
+      try Effect.try(() => {
+        expect(Object.keys(steps)).toEqual([
+          "ci.yml:test:1",
+          "ci.yml:test:2:check:types:js",
+          "ci.yml:test:2:check:types:ts",
+          "ci.yml:test:2:check:lint",
+          "ci.yml:test:3",
+          "ci.yml:test:4",
+          "ci.yml:test:5:a",
+          "ci.yml:test:5:b"
+        ])
+        expect(steps["ci.yml:test:1"]).toEqual(before.jobs[0]?.steps[0])
+        // A link keeps the step's name, directory and environment, and says which step it came from.
+        expect(steps["ci.yml:test:2:check:lint"]).toEqual({
+          id: "ci.yml:test:2:check:lint",
+          name: "Check (check:lint)",
+          command: `PATH="$PWD/node_modules/.bin:$PATH" npm run check:lint`,
+          cwd: "",
+          env: { CI: "true" },
+          secrets: [],
+          from: "ci.yml:test:2",
+          inOrder: true
+        })
+        // A script of the chain that is itself a chain is split again; one that is not is run as written.
+        expect(steps["ci.yml:test:2:check:types:ts"]?.command).toBe(
+          `PATH="$PWD/node_modules/.bin:$PATH" npm run check:types:ts`
+        )
+        // A step with no name gets none.
+        expect(steps["ci.yml:test:5:a"]).toEqual({
+          id: "ci.yml:test:5:a",
+          command: `PATH="$PWD/node_modules/.bin:$PWD/../node_modules/.bin:$PATH" npm run a`,
+          cwd: "app",
+          env: {},
+          secrets: [],
+          from: "ci.yml:test:5",
+          inOrder: true
+        })
+        // A script that cannot be split stays one step and says why.
+        expect(steps["ci.yml:test:3"]).toEqual({
+          ...before.jobs[0]?.steps[2],
+          whole: { feature: "script-syntax", detail: "joins commands with `||`" }
+        })
+        expect(steps["ci.yml:test:4"]?.whole).toEqual({ feature: "script-hook", detail: "pretest" })
+      })
+    })
+
+  it.effect("leaves the first step of a job whole when later steps read what it leaves them", () =>
+    effect {
+      const root = try repository({
+        "package.json": JSON.stringify({ name: "root", scripts: { check: "npm run a && npm run b", a: "node -e 0", b: "node -e 0" } })
+      })
+      const runner = "__smithers_ci_step() {\nbash -e -c \"$1\"\n}"
+      const first = step("ci.yml:test:1", "npm run check", { runner })
+      const last = step("ci.yml:test:2", "npm run check", { runner })
+      const after = stepsOf(try split(root, ci([first, last])))
+      const alone = stepsOf(try split(root, ci([first])))
+      try Effect.try(() => {
+        expect(after.map((found) => found.id)).toEqual(["ci.yml:test:1", "ci.yml:test:2:a", "ci.yml:test:2:b"])
+        expect(after[0]?.whole).toEqual({ feature: "script-first", detail: "" })
+        // With no step after it, nothing reads what it leaves.
+        expect(alone.map((found) => found.id)).toEqual(["ci.yml:test:1:a", "ci.yml:test:1:b"])
+      })
+    })
+
+  it.effect("leaves a step whole when a file that says how its script runs cannot be read", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const root = try repository({
+        "package.json": JSON.stringify({ name: "root", scripts: { check: "npm run a && npm run b", a: "node -e 0", b: "node -e 0" } }),
+        ".npmrc": "script-shell=zsh\n"
+      })
+      const before = ci([step("ci.yml:test:1", "npm run check")])
+      const told = try split(root, before)
+      // The file is still listed and can no longer be read: nothing in it is known.
+      try fs.chmod(path.join(root, ".npmrc"), 0o000)
+      const unread = try split(root, before)
+      try fs.chmod(path.join(root, ".npmrc"), 0o644)
+      try Effect.try(() => {
+        expect(stepsOf(told)[0]?.whole).toEqual({ feature: "script-setting", detail: "`script-shell` in `.npmrc`" })
+        expect(stepsOf(unread)[0]?.whole).toEqual({
+          feature: "script-setting",
+          detail: "what `.npmrc` sets, which cannot be read,"
+        })
+      })
+    })
+
   it.effect("gives the original step's verdict when the split steps' verdicts are combined", () =>
     effect {
       const fs = try FileSystem.FileSystem
