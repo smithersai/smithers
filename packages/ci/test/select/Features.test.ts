@@ -72,11 +72,10 @@ describe("extensionsOf", () => {
     expect(Features.extensionsOf(["a/b.TS", "c.ts", "d/e.test.vibe", "x.md"])).toEqual([".md", ".ts", ".vibe"])
   })
 
-  it("counts a file with no extension, or only a leading dot, by its name", () => {
-    expect(Features.extensionsOf(["Justfile", "tools/Makefile", ".gitignore"])).toEqual([
-      ".gitignore",
-      "Justfile",
-      "Makefile"
+  it("counts every file with no extension, or only a leading dot, once", () => {
+    expect(Features.extensionsOf(["Justfile", "tools/Makefile", ".gitignore", "cases/eqeq-0", "a.zig"])).toEqual([
+      Features.noExtension,
+      ".zig"
     ])
     expect(Features.extensionsOf([])).toEqual([])
   })

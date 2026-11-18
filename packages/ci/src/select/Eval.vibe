@@ -1,0 +1,163 @@
+/**
+ * Fast mode's eval, as a Smithers eval: one case per change of the test
+ * week, executed by the real scorer, graded per change, then measured over
+ * the whole test set.
+ *
+ * @since 0.1.0
+ */
+
+import { CaseExecutor, EvalError, Runner, Suite } from "@smthrs/evals"
+import { Binding, Scorer } from "@smthrs/scorers"
+import type { Failure } from "../contract/Parts.ts"
+import * as Selection from "../contract/Selection.ts"
+import type { Observation } from "./Features.ts"
+import * as Measure from "./Measure.ts"
+import { ScoreFlow } from "./Score.vibe"
+
+/**
+ * What one case holds: the rows of one change. Their labels are the ground
+ * truth; the scorer under test reads only their features.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const CaseInput = Schema.Struct({ rows: Schema.Array(Selection.Row) })
+
+const decodeInput = Schema.decodeUnknownEffect(CaseInput)
+const decodeScores = Schema.decodeUnknownEffect(Schema.Array(Selection.Score))
+
+/** A scorer's failure to read its case. */
+const unreadable = (what: string) => new EvalError.EvalError({ code: "invalid_suite", message: `The ${what} of a fast-mode case could not be read` })
+
+/** One change's rows, its scores, and what the starting settings select from them. */
+effect function graded(input: { readonly input: unknown; readonly output: unknown }) {
+  const { rows } = decodeInput(input.input) catch effect () => {
+    throw unreadable("rows")
+  }
+  const scores = decodeScores(input.output) catch effect () => {
+    throw unreadable("scores")
+  }
+  return Measure.measure(rows, scores, Measure.defaults).metrics
+}
+
+/**
+ * Grades one change: the share of its failures the starting settings
+ * select. A change with no failure has nothing to miss and scores 1.
+ *
+ * @category scorers
+ * @since 0.1.0
+ */
+export const caught = Scorer.make({
+  id: "ci/select/caught",
+  version: "1",
+  name: "caught",
+  score: (input) => effect {
+    const metrics = try graded(input)
+    return metrics.testRecall === undefined
+      ? { score: 1, reason: "no failure to catch" }
+      : { score: metrics.testRecall, reason: `${Math.round(metrics.testRecall * metrics.failures)} of ${metrics.failures} failures selected` }
+  }
+})
+
+/**
+ * Grades one change: the share of its targets the starting settings skip.
+ *
+ * @category scorers
+ * @since 0.1.0
+ */
+export const skipped = Scorer.make({
+  id: "ci/select/skipped",
+  version: "1",
+  name: "skipped",
+  score: (input) => effect {
+    const metrics = try graded(input)
+    return { score: 1 - metrics.selectionRate, reason: `${metrics.rows - metrics.selected} of ${metrics.rows} targets skipped` }
+  }
+})
+
+/** Both scorers grade the scorer's flow. */
+const bindings = [Binding.make({ scorer: caught, appliesTo: ScoreFlow }), Binding.make({ scorer: skipped, appliesTo: ScoreFlow })]
+
+/**
+ * The suite for a test set: one case per change, oldest first, each named by
+ * its commit. `concurrency` is how many changes are scored at once.
+ *
+ * @category suites
+ * @since 0.1.0
+ */
+export effect function suite(name: string, test: ReadonlyArray<Observation>, concurrency = 1) {
+  const changes = new Map<string, { at: number; rows: Array<Selection.Row> }>()
+  for (const observation of test) {
+    const known = changes.get(observation.row.commit)
+    if (known === undefined) changes.set(observation.row.commit, { at: observation.at, rows: [observation.row] })
+    else known.rows.push(observation.row)
+  }
+  const ordered = [...changes].sort(([, a], [, b]) => a.at - b.at)
+  return try Suite.make({
+    name,
+    cases: ordered.map(([commit, change]) => ({ name: commit, input: { rows: change.rows } })),
+    bindings,
+    concurrency
+  })
+}
+
+/**
+ * Executes a case with `score`, the scorer under test.
+ *
+ * @category suites
+ * @since 0.1.0
+ */
+export const executor = (score: (rows: ReadonlyArray<Selection.Row>) => ReadonlyArray<Selection.Score>!Failure) =>
+  CaseExecutor.make((suiteCase) => effect {
+    const { rows } = decodeInput(suiteCase.input) catch effect () => {
+      throw new EvalError.EvalError({ code: "executor", message: `Case ${suiteCase.name} holds no rows` })
+    }
+    const started = try Clock.currentTimeMillis
+    const output = score(rows) catch effect (failure) => {
+      throw new EvalError.EvalError({ code: "executor", message: `${failure.code}: ${failure.message}` })
+    }
+    return { output, stepKey: suiteCase.name, latencyMs: (try Clock.currentTimeMillis) - started, target: ScoreFlow }
+  })
+
+/**
+ * What {@link run} answers: the Smithers eval run, and the report over the
+ * whole test set when every case finished.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Outcome {
+  readonly split: Measure.Split
+  readonly run: Runner.RunResult
+  readonly unfinished: ReadonlyArray<string>
+  readonly report?: Measure.Report
+}
+
+/**
+ * Runs the eval over `observations`: splits them by time, scores each change
+ * of the test week with `score`, grades each change, and measures the whole
+ * test set. `changes` caps the test set at that many evenly spaced changes,
+ * and `concurrency` is how many changes are scored at once.
+ * When a case did not finish there is no report: a recall over a part of the
+ * test set is not the test set's recall.
+ *
+ * @category suites
+ * @since 0.1.0
+ */
+export effect function run(
+  options: { readonly name: string; readonly runId: string; readonly at: string; readonly changes?: number; readonly concurrency?: number },
+  observations: ReadonlyArray<Observation>,
+  score: (rows: ReadonlyArray<Selection.Row>) => ReadonlyArray<Selection.Score>!Failure
+) {
+  const whole = Measure.split(observations)
+  const split = options.changes === undefined ? whole : { ...whole, test: Measure.sample(whole.test, options.changes) }
+  const declared = try suite(options.name, split.test, options.concurrency)
+  provide CaseExecutor.CaseExecutor = executor(score) {
+    const result = try Runner.run(declared, { runId: options.runId, at: options.at })
+    const unfinished = result.cases.filter((each) => each.error !== undefined).map((each) => each.case)
+    if (unfinished.length > 0) return { split, run: result, unfinished } satisfies Outcome
+    const scores = result.cases.flatMap((each) => each.execution!.output as ReadonlyArray<Selection.Score>)
+    const report = Measure.report(split.test.map((observation) => observation.row), scores)
+    return { split, run: result, unfinished, report } satisfies Outcome
+  }
+}

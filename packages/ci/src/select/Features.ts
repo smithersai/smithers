@@ -77,8 +77,17 @@ export const projectOf = (label: string): string => {
 const inside = (project: string, file: string): boolean => project === "." || file.startsWith(`${project}/`)
 
 /**
- * The extensions of the changed files, lowercased, distinct and sorted. A
- * file with no extension, such as `Justfile`, counts by its name.
+ * What every changed file with no extension counts as.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const noExtension = "(none)"
+
+/**
+ * The extensions of the changed files, lowercased, distinct and sorted.
+ * Every file with no extension, such as `Justfile` or `.gitignore`, counts
+ * once, as {@link noExtension}.
  *
  * @category features
  * @since 0.1.0
@@ -89,7 +98,7 @@ export const extensionsOf = (files: ReadonlyArray<string>): ReadonlyArray<string
   for (const file of files) {
     const name = file.slice(file.lastIndexOf("/") + 1)
     const dot = name.lastIndexOf(".")
-    found.add(dot > 0 ? name.slice(dot).toLowerCase() : name)
+    found.add(dot > 0 ? name.slice(dot).toLowerCase() : noExtension)
   }
   return [...found].sort()
 }

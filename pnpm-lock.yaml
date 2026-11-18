@@ -1245,6 +1245,9 @@ importers:
       '@smthrs/engine':
         specifier: 1.0.0-rc.18
         version: link:../smithers/flows/engine
+      '@smthrs/evals':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/agent/evals
       '@smthrs/flow':
         specifier: 1.0.0-rc.18
         version: link:../smithers/flows/flow
@@ -1257,6 +1260,9 @@ importers:
       '@smthrs/platform-node':
         specifier: 1.0.0-rc.18
         version: link:../smithers/flows/platform-node
+      '@smthrs/scorers':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/agent/scorers
       effect:
         specifier: 4.1.1
         version: 4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c)
@@ -1279,6 +1285,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/cli':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

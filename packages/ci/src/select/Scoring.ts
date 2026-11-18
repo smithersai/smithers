@@ -30,6 +30,15 @@ export const batchSize = 16
 export const concurrency = 4
 
 /**
+ * How many times one request is tried before scoring fails. A judge now and
+ * then answers something that is not a judgment; the next try asks again.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const attempts = 4
+
+/**
  * The facts the judge can name as what most decides a score, each with the
  * one-line reason a score carries.
  *

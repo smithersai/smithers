@@ -1,0 +1,42 @@
+// Fast mode's eval, live: real rows, the real scorer, a real model. Nothing is scripted.
+//
+// On nyc-01, from packages/ci, with rows derived by evals/merge-queue-history.ts in $SMITHERS_CI_EVAL_DIR/rows.jsonl:
+//
+//   SMITHERS_CI_EVAL_DIR=<directory> pnpm exec vitest run --config evals/vitest.config.ts
+//
+// It splits the rows by time, scores every change of the newest week (or SMITHERS_CI_EVAL_CHANGES of them, evenly
+// spaced), and prints test recall, change recall and selection rate with their counts. Each request to the judge is a
+// durable flow step journaled in eval.sqlite, so a run that stops resumes without paying for a batch twice.
+import { expect, it } from "@effect/vitest"
+import * as Eval from "../src/select/Eval.vibe"
+import { Ledger, layerFile } from "../src/select/Ledger.vibe"
+import * as Measure from "../src/select/Measure.ts"
+import { type Host, score } from "../src/select/Score.vibe"
+import { changes, concurrency, directory, layer } from "./host.ts"
+
+it.live.skipIf(directory === "")("fast mode on real history: the paper's three metrics, with their counts", () => effect {
+  provide layer {
+    const observations = try effect {
+      provide layerFile(directory) {
+        return try (try Ledger).observations()
+      }
+    }
+    const services = try context<Host>()
+    const at = new Date(try Clock.currentTimeMillis).toISOString()
+    const outcome = try Eval.run(
+      { name: "fast-mode", runId: `fast-mode-${at}`, at, concurrency, ...(changes === undefined ? {} : { changes }) },
+      observations,
+      (rows) => Effect.provideContext(score(rows), services)
+    )
+    const span = (from: number, to: number) => `${new Date(from).toISOString()} to ${new Date(to).toISOString()}`
+    try Console.log(`History: ${outcome.split.history.length} rows up to ${new Date(outcome.split.from).toISOString()}. Test week: ${span(outcome.split.from, outcome.split.to)}.`)
+    for (const failed of outcome.run.cases.filter((each) => each.error !== undefined)) {
+      try Console.log(`Not scored: ${failed.case}: ${failed.error!.message}`)
+    }
+    if (outcome.report !== undefined) try Console.log(Measure.render("VibeLang merge queue", outcome.report))
+    try Effect.try(() => {
+      expect(outcome.unfinished).toEqual([])
+      expect(outcome.report).toBeDefined()
+    })
+  }
+}, 6 * 60 * 60 * 1000)

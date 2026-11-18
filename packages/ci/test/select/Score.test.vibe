@@ -5,7 +5,7 @@ import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Evaluator } from "@smthrs/model"
 import * as Selection from "../../src/contract/Selection.ts"
-import { score } from "../../src/select/Score.vibe"
+import { layer, score, ScoreFlow } from "../../src/select/Score.vibe"
 import * as Scoring from "../../src/select/Scoring.ts"
 import { row } from "./support.vibe"
 
@@ -23,7 +23,7 @@ const judge = (asked: Asked) => Evaluator.layerScripted((request) => {
   ]))
 })
 
-const host = (evaluator: Layer.Layer<Evaluator.Evaluator>) => Layer.mergeAll(FlowEngine.layerMemory, WebCrypto.layer, evaluator)
+const host = (evaluator: Layer.Layer<Evaluator.Evaluator>) => Layer.provideMerge(layer, Layer.mergeAll(FlowEngine.layerMemory, WebCrypto.layer, evaluator))
 
 const rate = (d7: number) => ({ failureRates: { d7, d14: 0, d28: 0, d56: 0 } })
 
@@ -67,6 +67,56 @@ describe("score", () => {
     }
   })
 
+  it.live("asks again when the questions changed: an old answer never replays for a new question", () => effect {
+    const asked: Asked = { requests: 0, questions: 0 }
+    const items = [row("c1", "//a:test").features]
+    provide host(judge(asked)) {
+      try ScoreFlow.execute({ items, questions: "digest-1" }, { executionId: "old" })
+      try ScoreFlow.execute({ items, questions: "digest-1" }, { executionId: "old" })
+      const replayed = asked.requests
+      try ScoreFlow.execute({ items, questions: "digest-2" }, { executionId: "new" })
+      try Effect.try(() => {
+        expect(replayed).toBe(1)
+        expect(asked.requests).toBe(2)
+      })
+    }
+  })
+
+  it.live("scores several changes at once on one host", () => effect {
+    // A judge slow enough that the four calls overlap: each waits until all four have asked.
+    const arrived = try Deferred.make<void>()
+    let asking = 0
+    const slow = Layer.succeed(Evaluator.Evaluator, Evaluator.Evaluator.of({
+      evaluate: (request) => effect {
+        asking += 1
+        if (asking === 4) try Deferred.succeed(arrived, undefined)
+        try Deferred.await(arrived)
+        return {
+          answers: Object.fromEntries(Object.keys(request.questions).map((id) => [
+            id,
+            id.startsWith("fails") ? { type: "boolean" as const, probability: 0.25 } : { type: "choice" as const, choice: "none" }
+          ])),
+          latencyMs: 0
+        }
+      }
+    }))
+    provide host(slow) {
+      const scored = try Effect.forEach(
+        [1, 2, 3, 4],
+        (change) => score([row(`c${change}`, "//a:test", false, { testCount: change })]),
+        { concurrency: "unbounded" }
+      )
+      try Effect.try(() => {
+        expect(scored.map((scores) => scores.map((each) => [each.commit, each.score]))).toEqual([
+          [["c1", 0.25]],
+          [["c2", 0.25]],
+          [["c3", 0.25]],
+          [["c4", 0.25]]
+        ])
+      })
+    }
+  })
+
   it.live("scores no rows without asking", () => effect {
     const asked: Asked = { requests: 0, questions: 0 }
     provide host(judge(asked)) {
@@ -91,13 +141,67 @@ describe("score", () => {
     }
   })
 
-  it.live("fails model-unavailable when the judge answers something that is not a score", () => effect {
-    const malformed = Evaluator.layerScripted(() => ({ fails0: { probability: 0.5 }, why0: { choice: "weather" } }))
+  it.live("asks again when the judge answers something that is not a score", () => effect {
+    let requests = 0
+    const flaky = Evaluator.layerScripted(() => {
+      requests += 1
+      return { fails0: { probability: 0.5 }, why0: { choice: requests === 1 ? "weather" : "churn" } }
+    })
+    provide host(flaky) {
+      const scores = try score([row("c1", "//a:test")])
+      try Effect.try(() => {
+        expect(scores).toEqual([{ commit: "c1", target: "//a:test", score: 0.5, reason: Scoring.reasons.churn }])
+        expect(requests).toBe(2)
+      })
+    }
+  })
+
+  it.live("fails model-unavailable when every attempt is answered with something that is not a score", () => effect {
+    let requests = 0
+    const malformed = Evaluator.layerScripted(() => {
+      requests += 1
+      return { fails0: { probability: 0.5 }, why0: { choice: "weather" } }
+    })
     provide host(malformed) {
       const failed = try flip(score([row("c1", "//a:test")]))
       try Effect.try(() => {
         expect(failed.code).toBe("model-unavailable")
         expect(failed.message).toContain("\"weather\" is not an option")
+        expect(requests).toBe(Scoring.attempts)
+      })
+    }
+  })
+
+  it.live("lets every batch settle when one fails: the failure is typed, and no batch is cut off", () => effect {
+    // The batch holding test count 0 is refused; the other batch answers only after that refusal.
+    const refused = try Deferred.make<void>()
+    let answered = 0
+    const partial = Layer.succeed(Evaluator.Evaluator, Evaluator.Evaluator.of({
+      evaluate: (request) => effect {
+        const state = request.state as typeof Scoring.State.Type
+        if (state.items.some((item) => item.testsInTarget === 0)) {
+          try Deferred.succeed(refused, undefined)
+          throw new Evaluator.EvaluatorError({ code: "unconfigured", message: "No judge is configured" })
+        }
+        try Deferred.await(refused)
+        try yieldNow
+        answered += 1
+        return {
+          answers: Object.fromEntries(Object.keys(request.questions).map((id) => [
+            id,
+            id.startsWith("fails") ? { type: "boolean" as const, probability: 0.25 } : { type: "choice" as const, choice: "none" }
+          ])),
+          latencyMs: 0
+        }
+      }
+    }))
+    const rows = Array.from({ length: Scoring.batchSize + 1 }, (_, index) => row("c1", `//t${index}:test`, false, { testCount: index }))
+    provide host(partial) {
+      const exit = try Effect.exit(score(rows))
+      try Effect.try(() => {
+        expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(false)
+        expect(Exit.isFailure(exit) && Cause.hasFails(exit.cause)).toBe(true)
+        expect(answered).toBe(1)
       })
     }
   })
