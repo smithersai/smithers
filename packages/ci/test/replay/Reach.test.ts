@@ -173,10 +173,17 @@ describe.skipIf(!jailable)("the person's home, in the jail", () => {
         const real = yield* ChildProcessSpawner
         const places = yield* confine(work, () => found, () => Effect.void, [], false)
         const git = reading(real, places.fast, copy)
-        return yield* git.string(ChildProcess.make("git", ["-c", `alias.peek=${peek}`, "peek"], { stderr: "ignore" }))
-      })).pipe(Effect.provide(NodeServices.layer)) as Effect.Effect<string>
+        const asked = yield* git.string(
+          ChildProcess.make("git", ["-c", `alias.peek=${peek}`, "peek"], { stderr: "ignore" })
+        )
+        // Any other program a part starts to read the copy, as `zig build` runs the commit's build.zig.
+        const other = yield* git.string(
+          ChildProcess.make("sh", ["-c", `cat ${unlisted.inside} ${unlisted.beside}; echo done`], { stderr: "ignore" })
+        )
+        return [asked, other]
+      })).pipe(Effect.provide(NodeServices.layer), Effect.orDie)
     )
-    expect(printed).toBe("done\n")
+    expect(printed).toEqual(["done\n", "done\n"])
   })
 })
 

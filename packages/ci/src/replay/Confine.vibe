@@ -266,26 +266,37 @@ export const held = (
 ): readonly [string, ...Array<string>] => jailed(place.jail, [place.home, ...writable], [place.hooks], argv)
 
 /**
- * The process runner a part is given while it reads `copy`, a checkout a
- * step may have written. git runs the commands its repository's
- * configuration names, such as `core.fsmonitor` under `git status` and
- * `git ls-files`, and a step can write that configuration. So every `git`
- * the part starts runs as a step of `place` does: in the jail, where it can
- * write the copy and that way's home, with a step's environment and nothing
- * else of the person's. Any other command starts as it is.
+ * The process runner a part is given while it reads `copy`, a checkout of a
+ * past commit that a step may have written. What a part starts there runs
+ * that commit's code: git runs the commands its repository's configuration
+ * names, such as `core.fsmonitor` under `git status` and `git ls-files`, and
+ * a step can write that configuration; `zig build` runs the commit's
+ * `build.zig` to say what its steps are. So every command the part starts
+ * runs as a step of `place` does: in the jail, where it can write the copy
+ * and that way's home, with a step's environment, the variables the part
+ * itself gives the command, and nothing else of the person's. Each command
+ * of a pipe runs so.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const reading = (real: ChildProcessSpawner["Service"], place: Confined, copy: string) =>
-  makeSpawner((command) => {
-    if (command._tag !== "StandardCommand" || command.command !== "git") return real.spawn(command)
-    const [program, ...before] = held(place, [copy], ["git"])
-    return real.spawn(ChildProcess.make(program, [...before, ...command.args], {
+export const reading = (real: ChildProcessSpawner["Service"], place: Confined, copy: string) => {
+  const asStep = (command: ChildProcess.Command): ChildProcess.Command => {
+    if (command._tag === "PipedCommand") {
+      return ChildProcess.pipeTo(asStep(command.left), asStep(command.right), command.options)
+    }
+    const [program, ...before] = held(place, [copy], [command.command])
+    const given: Record<string, string> = {}
+    for (const [name, value] of Object.entries(command.options.env ?? {})) {
+      if (value !== undefined) given[name] = Redacted.isRedacted(value) ? Redacted.value(value) : value
+    }
+    return ChildProcess.make(program, [...before, ...command.args], {
       ...command.options,
-      // git is told its repository on the command line or by its directory, never by the program's own.
+      // A command is told its repository on the command line or by its directory, never by the program's own.
       cwd: command.options.cwd ?? copy,
-      env: stepEnvironment({}, place),
+      env: stepEnvironment(given, place),
       extendEnv: false
-    }))
-  })
+    })
+  }
+  return makeSpawner((command) => real.spawn(asStep(command)))
+}

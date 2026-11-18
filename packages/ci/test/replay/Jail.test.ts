@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import { execFileSync } from "node:child_process"
 import {
   accessSync,
@@ -428,20 +429,34 @@ describe("git a part starts in a copy a step wrote", () => {
     else expect(linesOf(outside)).toEqual([step])
   }, 120_000)
 
-  it("starts any other command as it is", async () => {
+  it("starts every other command as a step too, each side of a pipe, with the variables the part gives it", async () => {
     const copy = directory("copy")
     const work = directory("work")
-    const printed = await live(Effect.gen(function*() {
+    const seen = await live(Effect.gen(function*() {
       const real = yield* ChildProcessSpawner
       const places = yield* confine(work, () => ({ refusal: "no bubblewrap" }), () => Effect.void, [], false)
       const held = reading(real, places.normal, copy)
-      const plain = yield* held.string(ChildProcess.make("sh", ["-c", "echo $HOME"]))
-      const piped = yield* held.string(
-        ChildProcess.make("echo", ["git"]).pipe(ChildProcess.pipeTo(ChildProcess.make("cat")))
-      )
-      return [plain.trim(), piped.trim()]
+      // What a part runs to read a commit, as `zig build` runs the commit's own build.zig: it sees a step's home,
+      // the copy as its directory, the variable it was given, and no variable of the person's.
+      // A part may give a value it keeps from its logs, and may name a variable it leaves out.
+      const shows =
+        "echo $HOME; pwd; echo ${GIVEN-none}; echo ${PERSONS-none}; echo ${KEPT-none}; echo ${LEFT_OUT-none}"
+      const given = { GIVEN: "by the part", KEPT: Redacted.make("kept from logs"), LEFT_OUT: undefined }
+      process.env["PERSONS"] = "a variable of the person"
+      try {
+        const plain = yield* held.string(ChildProcess.make("sh", ["-c", shows], { env: given }))
+        const piped = yield* held.string(
+          ChildProcess.make("sh", ["-c", shows]).pipe(
+            ChildProcess.pipeTo(ChildProcess.make("sh", ["-c", "cat; echo $HOME"]))
+          )
+        )
+        return { plain: plain.trim().split("\n"), piped: piped.trim().split("\n"), home: places.normal.home }
+      } finally {
+        delete process.env["PERSONS"]
+      }
     }))
-    expect(printed).toEqual([process.env["HOME"], "git"])
+    expect(seen.plain).toEqual([seen.home, copy, "by the part", "none", "kept from logs", "none"])
+    expect(seen.piped).toEqual([seen.home, copy, "none", "none", "none", "none", seen.home])
   })
 })
 
