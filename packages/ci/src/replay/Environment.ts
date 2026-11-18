@@ -11,11 +11,14 @@ import { availableParallelism } from "node:os"
 import { delimiter } from "node:path"
 
 /**
- * The directories a replay makes for its steps and removes when it ends: the
- * home every step gets in place of the person's, the temporary directory a
- * jailed step finds in place of the machine's, and `guard`, which holds the
- * stand-ins first on every step's `PATH`. The first two are kept for the whole
- * replay, so what a package manager caches at one commit is there at the next.
+ * The directories a replay makes for the steps of one way of running a
+ * commit and removes when it ends: the home a step gets in place of the
+ * person's, the temporary directory a jailed step finds in place of the
+ * machine's, and `guard`, which holds the stand-ins first on every step's
+ * `PATH`. The first two are kept for the whole replay, so what a package
+ * manager caches at one commit is there at the next. The baseline, normal mode
+ * and fast mode each have their own home and temporary directory, so each
+ * fills its caches itself.
  *
  * @category models
  * @since 0.1.0

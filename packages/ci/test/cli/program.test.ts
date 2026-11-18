@@ -313,7 +313,8 @@ describe("a signal", () => {
       // processes by a name no other process has.
       const token = `slow-${basename(work)}`
       const hang = `sh -c 'sleep 600' ${token}-child &\n: > "$TMPDIR/started"\nwait\n`
-      const once = `if [ ! -f "$HOME/ran-once" ]; then touch "$HOME/ran-once"; exit 0; fi\n`
+      // The baseline and normal mode each have a home of their own, named for them: the baseline's step passes.
+      const once = `if [ "$(basename "$HOME")" = baseline ]; then exit 0; fi\n`
       commit(root, "first", {
         "package.json": JSON.stringify({ name: "slow", scripts: { ci: `sh ./${token}.sh` } }),
         [`${token}.sh`]: phase === "the baseline" ? hang : `${once}${hang}`
@@ -323,9 +324,11 @@ describe("a signal", () => {
           .filter((line) => line.includes(token))
       const replays = (): ReadonlyArray<string> => readdirSync(temp).filter((name) => name.startsWith("smithers-ci-"))
       const running = start(bin, ["replay", "--commits", "1"], root, { TMPDIR: temp })
-      // In a jail the step's temporary directory is the replay's own; with no jail it is the program's.
+      // In a jail the step's temporary directory is the replay's own for its way; with no jail it is the program's.
+      const ways = ["baseline", "normal"]
       const started = (): boolean =>
-        existsSync(join(temp, "started")) || replays().some((name) => existsSync(join(temp, name, "tmp", "started")))
+        existsSync(join(temp, "started"))
+        || replays().some((name) => ways.some((way) => existsSync(join(temp, name, "tmp", way, "started"))))
       await until(started, "the step to start", 250_000)
       expect(named().some((line) => line.includes(`${token}.sh`))).toBe(true)
       expect(named().some((line) => line.includes(`${token}-child`))).toBe(true)

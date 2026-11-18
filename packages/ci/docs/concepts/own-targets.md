@@ -105,8 +105,10 @@ A shared cache the workspace declares is off in every mode. `--no-cache` stops
 credentials would store its results where the repository's CI reads them, and
 normal mode would then find them at the same commit. The replay gives a copy's
 install and its `smthrs` what a target gets of your environment (`PATH` and a
-few more), a home directory of its own, and no credential. `--cache` gives
-normal and fast mode the address of a shared cache, and only the address.
+few more), a home directory of its own, and no credential. Each mode has its
+own home, empty when the replay starts, so the baseline never fills a tool's
+cache that normal mode then finds full. `--cache` gives normal and fast mode
+the address of a shared cache, and only the address.
 
 An install runs the scripts of a commit's dependencies, so it and the copy's
 `smthrs` run under the rules every replayed step runs under: see

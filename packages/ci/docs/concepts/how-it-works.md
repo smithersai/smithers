@@ -220,6 +220,13 @@ no `.npmrc`, no `.gitconfig`, no token. What a package manager downloads at
 one commit is in its cache at the next. Your tools stay reachable through
 `PATH`.
 
+The baseline, normal mode and fast mode each have a home of their own, empty
+when the replay starts. A tool that keeps a cache in its user's home, as Zig,
+Go, npm and Cargo do, fills it once in each: the first time the baseline runs
+the tool, the first time normal mode does, and the first time fast mode does.
+The speedup never compares a baseline that filled a cache with a mode that
+found it full.
+
 **Its own variables.** A step gets a short list of the machine's variables,
 such as `PATH`, then the step's own `env`, end of file on standard input, and
 a limit of six hours. It gets no other variable of yours: no token and no

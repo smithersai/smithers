@@ -1,7 +1,8 @@
 /**
  * What a replay sets up before it runs a step of a past commit: the home and
- * temporary directory its steps get, the hook that refuses a push, the
- * stand-ins for `sudo`, `su` and `doas`, and the jail it holds its steps in.
+ * temporary directory the steps of each way get, the hook that refuses a
+ * push, the stand-ins for `sudo`, `su` and `doas`, and the jail it holds its
+ * steps in.
  *
  * @since 0.1.0
  */
@@ -21,9 +22,18 @@ import {
 } from "./Jail.ts"
 
 /**
- * Where the steps of one replay run: their home and temporary directory, the
- * directory of the hook that refuses a push, and the jail, when this machine
- * can hold one.
+ * The ways a replay runs a commit: the repository's CI as it is, and the
+ * modes.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Way = "baseline" | "normal" | "fast"
+
+/**
+ * Where the steps of one way of a replay run: their home and temporary
+ * directory, the directory of the hook that refuses a push, and the jail,
+ * when this machine can hold one.
  *
  * @category models
  * @since 0.1.0
@@ -34,18 +44,29 @@ export interface Confined extends Place {
 }
 
 /**
- * Makes the steps' home and temporary directory under `work`, writes the
- * stand-ins beside them, where a jailed step can run them and not change them,
- * and asks the machine for a jail. The home holds the hook and nothing of the
- * person's.
- * On a machine that cannot jail a step, `say` is told once. `programs` are
- * the paths the replay runs its own programs from. A jailed step finds the
- * machine's temporary directories replaced by the replay's own, and still
- * reads there the programs, the caches the machine names, and `work`.
+ * The place of each way. No way finds what another left in its home or its
+ * temporary directory.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Places = Readonly<Record<Way, Confined>>
+
+/**
+ * Makes a home and a temporary directory for each way under `work`, writes
+ * the stand-ins beside them, where a jailed step can run them and not change
+ * them, and asks the machine for a jail. Each home starts with the hook and
+ * nothing else, and lasts until the replay ends: a tool that keeps a cache
+ * for its user fills it once in the baseline, once in normal mode and once in
+ * fast mode, so no way is timed with a cache another way paid for. On a
+ * machine that cannot jail a step, `say` is told once. `programs` are the
+ * paths the replay runs its own programs from. A jailed step finds the
+ * machine's temporary directories replaced by its way's own, and still reads
+ * there the programs, the caches the machine names, and `work`.
  *
  * A step can leave a directory nothing can be removed from, as Go leaves its
- * module cache, so before `work` is removed everything under both
- * directories is made writable again.
+ * module cache, so before `work` is removed everything under the homes and
+ * the temporary directories is made writable again.
  *
  * @category constructors
  * @since 0.1.0
@@ -59,12 +80,11 @@ export effect function confine(
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
   const spawner = try ChildProcessSpawner
-  const home = path.join(work, "home")
-  const tmp = path.join(work, "tmp")
-  const hooks = path.join(home, hooksDirectory)
+  const homes = path.join(work, "home")
+  const tmps = path.join(work, "tmp")
   const guard = path.join(work, "guard")
-  try fs.makeDirectory(hooks, { recursive: true })
-  try fs.makeDirectory(tmp)
+  try fs.makeDirectory(homes)
+  try fs.makeDirectory(tmps)
   try fs.makeDirectory(guard)
   for (const program of guardedPrograms) {
     const standIn = path.join(guard, program)
@@ -73,7 +93,7 @@ export effect function confine(
   }
   try addFinalizer(() =>
     ignore(scoped(effect {
-      const unlock = ChildProcess.make("chmod", ["-R", "u+rwX", home, tmp], {
+      const unlock = ChildProcess.make("chmod", ["-R", "u+rwX", homes, tmps], {
         stdin: "ignore",
         stdout: "ignore",
         stderr: "ignore"
@@ -81,14 +101,27 @@ export effect function confine(
       try (try spawner.spawn(unlock)).exitCode
     }))
   )
-  const hook = path.join(hooks, "pre-push")
-  try fs.writeFileString(hook, prePush)
-  try fs.chmod(hook, 0o755)
-  try fs.writeFileString(path.join(home, ".gitconfig"), gitConfig)
+  effect function make(way: Way) {
+    const home = path.join(homes, way)
+    const tmp = path.join(tmps, way)
+    const hooks = path.join(home, hooksDirectory)
+    try fs.makeDirectory(hooks, { recursive: true })
+    try fs.makeDirectory(tmp)
+    const hook = path.join(hooks, "pre-push")
+    try fs.writeFileString(hook, prePush)
+    try fs.chmod(hook, 0o755)
+    try fs.writeFileString(path.join(home, ".gitconfig"), gitConfig)
+    return { home, tmp, guard, hooks }
+  }
+  const made = { baseline: try make("baseline"), normal: try make("normal"), fast: try make("fast") }
   const found = probe()
   if ("refusal" in found) {
     try say(unjailed(found.refusal))
-    return { home, tmp, guard, hooks, jail: undefined } satisfies Confined
+    return {
+      baseline: { ...made.baseline, jail: undefined },
+      normal: { ...made.normal, jail: undefined },
+      fast: { ...made.fast, jail: undefined }
+    } satisfies Places
   }
   const masks: Array<Mask> = []
   for (const hidden of [...credentials.map((name) => path.join(found.home, name)), ...found.hidden]) {
@@ -103,7 +136,12 @@ export effect function confine(
     if (try fs.exists(cache)) caches.push(cache)
   }
   const visible = [...temporaryRoots(programs, temporary), ...caches, work]
-  return { home, tmp, guard, hooks, jail: { bwrap: found.bwrap, masks, tmp, temporary, visible } } satisfies Confined
+  const jailOf = (tmp: string): Jail => ({ bwrap: found.bwrap, masks, tmp, temporary, visible })
+  return {
+    baseline: { ...made.baseline, jail: jailOf(made.baseline.tmp) },
+    normal: { ...made.normal, jail: jailOf(made.normal.tmp) },
+    fast: { ...made.fast, jail: jailOf(made.fast.tmp) }
+  } satisfies Places
 }
 
 /**

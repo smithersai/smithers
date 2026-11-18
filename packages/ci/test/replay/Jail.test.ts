@@ -15,6 +15,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -22,16 +23,18 @@ import {
   writeFileSync
 } from "node:fs"
 import { homedir, tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import type { Mode } from "../../src/contract/RunRecord.ts"
 import { files } from "../../src/generate/index.ts"
 import { confine, held } from "../../src/replay/Confine.vibe"
 import { gitConfig, hooksDirectory, prePush, pushRefused } from "../../src/replay/Environment.ts"
 import { Options, Progress, run } from "../../src/replay/index.ts"
 import { credentials, jailed, type Probe, probe, temporaryOf, temporaryRoots, unjailed } from "../../src/replay/Jail.ts"
 import { inventoryWith, job, linkTargets, smthrs } from "./fixture.ts"
+import { placeIn } from "./place.ts"
 import { parts } from "./TestParts.vibe"
 
 const created: Array<string> = []
@@ -80,7 +83,19 @@ const repository = (jobs: Jobs, commits: ReadonlyArray<Readonly<Record<string, s
 /** The real generator in place of the test one: its targets are the ones `smithers-ci` runs. */
 const generating = { ...parts("none"), files } as unknown as ReplayParts<never>
 
-const replay = async (root: string, commits: number, confined: () => Probe) => {
+/** Fast mode judges every target worth running, so fast mode runs each step too. */
+const runningAll: ReplayParts<never> = {
+  ...generating,
+  score: (rows) => Effect.succeed(rows.map((row) => ({ commit: row.commit, target: row.target, score: 1 })))
+}
+
+const replay = async (
+  root: string,
+  commits: number,
+  confined: () => Probe,
+  modes: ReadonlyArray<Mode> = ["normal"],
+  chosen: ReplayParts<never> = generating
+) => {
   const said: Array<string> = []
   const host = Layer.mergeAll(
     Layer.succeed(Options, {
@@ -92,7 +107,7 @@ const replay = async (root: string, commits: number, confined: () => Probe) => {
     Layer.succeed(Progress, { say: (line) => Effect.sync(() => void said.push(line)) })
   )
   const report = await Effect.runPromise(
-    run({ root, commits, modes: ["normal"] }, generating).pipe(
+    run({ root, commits, modes }, chosen).pipe(
       Effect.provide(Layer.provideMerge(host as never, NodeServices.layer))
     ) as Effect.Effect<ReplayReport, Failure>
   )
@@ -248,13 +263,46 @@ describe("a step on a machine with no jail", () => {
       expect(lines.length).toBeGreaterThanOrEqual(4)
       expect(readFileSync(join(out, name), "utf8")).not.toContain("Everything up-to-date")
     }
-    // The baseline's step and the target's saw one home, the replay's, and it is gone with the replay.
-    const homes = [...new Set(readFileSync(join(out, "home"), "utf8").trim().split("\n"))]
-    expect(homes).toHaveLength(1)
-    expect(homes[0]).not.toBe(homedir())
-    expect(existsSync(dirname(homes[0] as string))).toBe(false)
+    // The baseline's step saw the baseline's home and the target's saw normal mode's: two homes the replay made
+    // side by side, both gone with the replay.
+    const homes = [...new Set(readFileSync(join(out, "home"), "utf8").trim().split("\n"))].sort()
+    expect(homes.map((home) => basename(home))).toEqual(["baseline", "normal"])
+    expect(new Set(homes.map((home) => dirname(home))).size).toBe(1)
+    expect(existsSync(dirname(dirname(homes[0] as string)))).toBe(false)
     expect(existsSync(join(out, "written"))).toBe(true)
     expect(said.filter((line) => line.includes("jail"))).toEqual([unjailed(refusal)])
+  }, 1_200_000)
+})
+
+describe.each(
+  [
+    { where: "in the jail", asked: () => found, runs: jailable },
+    { where: "with no jail", asked: () => ({ refusal: "no bubblewrap" }), runs: true }
+  ] as const
+)("a tool that keeps a cache for its user, $where", ({ asked, runs }) => {
+  it.skipIf(!runs)("is cold once in the baseline, once in normal mode and once in fast mode", async () => {
+    // A tool as Zig or Go is: its first run in a home takes two seconds to fill a cache there, and every later run
+    // finds it. The first commit's step passes only in a home with no cache, and the second's only in one with it.
+    const cold = `test ! -e "$HOME/.cache/tool" && sleep 2 && mkdir -p "$HOME/.cache/tool"\n`
+    const warm = `test -d "$HOME/.cache/tool"\n`
+    const root = repository(
+      [job("tool", "sh tool.sh")],
+      [{ "tool.sh": cold }, { "tool.sh": warm }],
+      neighbour("origin")
+    )
+
+    const { report } = await replay(root, 2, asked, ["normal", "fast"], runningAll)
+
+    const once = { hit: 0, ran: 1, failed: 0, skipped: 0 }
+    const [first, second] = report.commits
+    // At the first commit each way found its home empty and paid the two seconds itself.
+    for (const totals of [first?.baseline, first?.normal, first?.fast]) {
+      expect(totals?.counts).toEqual(once)
+      expect(totals?.workMs).toBeGreaterThanOrEqual(2000)
+    }
+    // At the second commit each way found the cache it filled at the first.
+    for (const totals of [second?.baseline, second?.normal, second?.fast]) expect(totals?.counts).toEqual(once)
+    expect(report.commits.flatMap((commit) => commit.mismatches)).toEqual([])
   }, 1_200_000)
 })
 
@@ -262,7 +310,7 @@ describe("confine", () => {
   const scoped = <A>(work: Effect.Effect<A, unknown, unknown>) =>
     Effect.runPromise(Effect.scoped(work).pipe(Effect.provide(NodeServices.layer)) as Effect.Effect<A>)
 
-  it("makes the home with the hook, and hides each credential of the person's home where it really is", async () => {
+  it("makes each way a home with the hook, and hides each credential of the person's home where it really is", async () => {
     const owner = person()
     const work = directory("work")
     const programs = ["node", "/tmp/bunx-1000-smithers-ci@latest/node_modules/@smthrs/cli/bin/smithers.mjs"]
@@ -274,34 +322,45 @@ describe("confine", () => {
       tmp: "/tmp/of-the-machine",
       caches: [cache, join(cache, "none")]
     })
-    const place = await scoped(confine(work, asked, () => Effect.void, programs))
+    const places = await scoped(confine(work, asked, () => Effect.void, programs))
 
-    expect(place.home).toBe(join(work, "home"))
-    expect(place.tmp).toBe(join(work, "tmp"))
-    expect(place.hooks).toBe(join(work, "home", hooksDirectory))
-    expect(readFileSync(join(place.hooks, "pre-push"), "utf8")).toBe(prePush)
-    accessSync(join(place.hooks, "pre-push"), constants.X_OK)
-    expect(readFileSync(join(place.home, ".gitconfig"), "utf8")).toBe(gitConfig)
-    expect(existsSync(place.tmp)).toBe(true)
-    expect(place.jail).toEqual({
-      bwrap: "/usr/bin/bwrap",
-      masks: [
-        { path: join(owner.home, ".ssh"), directory: true },
-        { path: owner.cloud, directory: true },
-        { path: join(owner.home, ".npmrc"), directory: false },
-        { path: owner.runtime, directory: true }
-      ],
-      tmp: join(work, "tmp"),
-      temporary: ["/tmp", "/tmp/of-the-machine"],
-      visible: ["/tmp/bunx-1000-smithers-ci@latest", cache, work]
-    })
+    expect(Object.keys(places)).toEqual(["baseline", "normal", "fast"])
+    for (const way of ["baseline", "normal", "fast"] as const) {
+      const place = places[way]
+      // Each way's home and temporary directory are its own.
+      expect(place.home).toBe(join(work, "home", way))
+      expect(place.tmp).toBe(join(work, "tmp", way))
+      expect(place.hooks).toBe(join(work, "home", way, hooksDirectory))
+      expect(readFileSync(join(place.hooks, "pre-push"), "utf8")).toBe(prePush)
+      accessSync(join(place.hooks, "pre-push"), constants.X_OK)
+      expect(readFileSync(join(place.home, ".gitconfig"), "utf8")).toBe(gitConfig)
+      expect(readdirSync(place.home).sort()).toEqual([".gitconfig", ".smithers-ci"])
+      expect(readdirSync(place.tmp)).toEqual([])
+      expect(place.jail).toEqual({
+        bwrap: "/usr/bin/bwrap",
+        masks: [
+          { path: join(owner.home, ".ssh"), directory: true },
+          { path: owner.cloud, directory: true },
+          { path: join(owner.home, ".npmrc"), directory: false },
+          { path: owner.runtime, directory: true }
+        ],
+        tmp: join(work, "tmp", way),
+        temporary: ["/tmp", "/tmp/of-the-machine"],
+        visible: ["/tmp/bunx-1000-smithers-ci@latest", cache, work]
+      })
+    }
   })
 
   it("says once why there is no jail", async () => {
     const said: Array<string> = []
     const say = (line: string) => Effect.sync(() => void said.push(line))
-    const place = await scoped(confine(directory("work"), () => ({ refusal: "no bubblewrap" }), say, []))
-    expect(place.jail).toBeUndefined()
+    const work = directory("work")
+    const places = await scoped(confine(work, () => ({ refusal: "no bubblewrap" }), say, []))
+    expect(places).toEqual({
+      baseline: placeIn(work, "baseline"),
+      normal: placeIn(work, "normal"),
+      fast: placeIn(work, "fast")
+    })
     expect(said).toEqual([
       "steps run without a file-system jail: no bubblewrap. Each step still gets a home directory of its own and " +
       "cannot push with git"

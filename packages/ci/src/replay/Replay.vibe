@@ -33,7 +33,7 @@ import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
 import { check } from "../apply/index.ts"
 import { refusal as ownWorkspace } from "../native/Workspace.ts"
 import { withReasons } from "../native/Results.ts"
-import { type Confined, confine, held } from "./Confine.vibe"
+import { type Confined, confine, held, type Way } from "./Confine.vibe"
 import {
   coreCount,
   noPushUrl,
@@ -392,13 +392,19 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * `package.json`) run one after another in one checkout, and the first failure
  * stops them. A baseline step gets a target's environment and time limit, and
  * its checkout holds nothing a fresh clone does not. Every step, baseline or
- * target, gets the replay's own home and temporary directory, a `git` that
+ * target, gets a home and a temporary directory the replay made, a `git` that
  * refuses to push, and, where the machine can hold one, the same file-system
  * jail: it can write its checkout, that home and that directory, and cannot
  * read the person's credentials. Generated targets also
  * stay within the target map's `maxJobs`. Commits run oldest
  * first and the normal and fast copies keep their caches between commits, so
  * the first commit starts cold.
+ *
+ * The baseline, normal mode and fast mode each have a home and a temporary
+ * directory of their own, empty at the start and kept until the replay ends.
+ * A tool that keeps a cache for its user, as Zig, Go and every package
+ * manager do, fills it once in each way, at the first commit that way runs
+ * it. No way is timed with a cache another way paid for.
  *
  * Wall time is what a CI machine spends on the commit once it is ready: the
  * checkout, and the first pass, which for a mode holds the start of Smithers
@@ -432,9 +438,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-replay-" }), "could not make a directory")
     const source = path.join(work, "source")
     const root = path.resolve(request.root)
-    const place = try orFail(
+    // Each way has a home of its own: none finds a cache another way filled.
+    const places = try orFail(
       confine(work, options.confine ?? probe, progress.say, [...options.smthrs, ...searchPath()]),
-      "could not make the steps' home"
+      "could not make the steps' homes"
     )
     // Where `smthrs` writes its run records: the one place it can write that a step run on its own cannot.
     const records = path.join(work, "records")
@@ -449,17 +456,20 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // A copy has the repository's directory name and remote, so a reader names it as it does in place.
     const origin = try exec("git", ["config", "--get", "remote.origin.url"], root, {}, outputLimit, (handle) => handle.stdout)
 
-    /** A checkout of `commit` at `copy`. It fetches from the repository's remote and can push nowhere. */
-    effect function cloneAt(copy: string, commit: string) {
+    /**
+     * A checkout of `commit` at `copy`, for the steps of `place`. It fetches from the repository's remote and can
+     * push nowhere.
+     */
+    effect function cloneAt(copy: string, commit: string, place: Confined) {
       const noPush = ["--config", `remote.origin.pushurl=${noPushUrl}`]
       try git(work, ["clone", "--quiet", "--shared", "--no-checkout", ...noPush, source, copy])
       if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", withoutCredentials(origin.text)])
       try checkout(copy, commit, place)
     }
 
-    effect function copyAt(name: string, commit: string) {
-      const copy = path.join(work, name, path.basename(root))
-      try cloneAt(copy, commit)
+    effect function copyAt(way: Way, commit: string) {
+      const copy = path.join(work, way, path.basename(root))
+      try cloneAt(copy, commit, places[way])
       return copy
     }
 
@@ -519,7 +529,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const fastCopy = request.modes.includes("fast") ? try copyAt("fast", "HEAD") : undefined
 
     /** Makes a checked-out copy one the generated targets run in. A repository that ran `apply` holds all of it. */
-    effect function equip(copy: string, own: Prepared) {
+    effect function equip(copy: string, own: Prepared, place: Confined) {
       for (const file of own.generated) {
         const target = path.resolve(copy, file.path)
         try orFail(fs.makeDirectory(path.dirname(target), { recursive: true }), `could not write ${file.path}`)
@@ -561,9 +571,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     let runs = 0
     /**
      * What a start of `smthrs` in `copy` adds to this process's environment, and so hands on to a target: the
-     * steps' home and temporary directory, and the push refusal.
+     * home of the way's steps, and the push refusal.
      */
-    const startEnv = (copy: string) => ({
+    const startEnv = (copy: string, place: Confined) => ({
       ...(request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }),
       NODE_COMPILE_CACHE: path.join(copy, compiledCode),
       ...placeEnvironment(place),
@@ -572,8 +582,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     effect function planOf(copy: string, own: Prepared) {
       const plan = ["ci", ...own.labels, "--plan", "--format", "json", "--workspace", copy]
-      const [command, ...args] = held(place, [copy], [...options.smthrs, ...plan])
-      const planned = try exec(command, args, copy, startEnv(copy), Number.POSITIVE_INFINITY, (handle) => handle.stdout)
+      const [command, ...args] = held(places.normal, [copy], [...options.smthrs, ...plan])
+      const env = startEnv(copy, places.normal)
+      const planned = try exec(command, args, copy, env, Number.POSITIVE_INFINITY, (handle) => handle.stdout)
       const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
         throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
       }
@@ -581,10 +592,15 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     /**
-     * Runs targets in a copy. `causes` gains, by label, why a target failed over a file this replay wrote into the
-     * copy: the generated files, and what fills the cache directory.
+     * Runs targets in a copy, in the place of the way the copy belongs to. `causes` gains, by label, why a target
+     * failed over a file this replay wrote into the copy: the generated files, and what fills the cache directory.
      */
-    const smithers = (copy: string, own: Prepared, causes: Map<string, string>): Execute<Host> => (targets) => effect {
+    const smithers = (
+      copy: string,
+      own: Prepared,
+      place: Confined,
+      causes: Map<string, string>
+    ): Execute<Host> => (targets) => effect {
       const written = [...own.generated.map((file) => file.path), `${cacheDirectory}/`]
       const selected = targets ?? own.labels
       if (selected.length === 0) return []
@@ -604,7 +620,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         "plain",
         ...(own.jobs === undefined ? [] : ["--jobs", String(own.jobs)])
       ])
-      const output = try exec(command, args, copy, { ...startEnv(copy), ...printsNotes }, printedLimit, undefined, undefined, heard)
+      const output = try exec(command, args, copy, { ...startEnv(copy, place), ...printsNotes }, printedLimit, undefined, undefined, heard)
       const unreadable = () => failure("command-failed", `smthrs ci wrote no run record: ${output.text.slice(-outputLimit)}`)
       const text = fs.readFileString(file) catch effect () => {
         throw unreadable()
@@ -631,9 +647,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      */
     effect function runSequence(sequence: ReadonlyArray<Unit>, commit: string, wanted: ReadonlySet<string> | undefined) {
       return try scoped(effect {
+        const place = places.baseline
         const directory = try orFail(fs.makeTempDirectoryScoped({ directory: work }), "could not make a directory")
         const copy = path.join(directory, path.basename(root))
-        try cloneAt(copy, commit)
+        try cloneAt(copy, commit, place)
         const results: Array<TargetResult> = []
         let failed: string | undefined = undefined
         for (const step of stepsThrough(sequence, wanted)) {
@@ -710,7 +727,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * because none of it runs here, is not a failed replay: the reason is kept and the commit is listed.
      */
     effect function preparedAt(commit: string) {
-      try checkoutCopy(normalCopy, commit, place)
+      try checkoutCopy(normalCopy, commit, places.normal)
       return prepared() catch effect (cause) => {
         if (cause.code !== "unsupported" && cause.code !== "invalid-document") throw cause
         return { reason: cause.message }
@@ -736,9 +753,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const names = stepNames(own.units)
       try progress.say(`${at} normal`)
       const normal = try measure(
-        checkoutCopy(normalCopy, commit, place),
-        equip(normalCopy, own),
-        smithers(normalCopy, own, normalCauses),
+        checkoutCopy(normalCopy, commit, places.normal),
+        equip(normalCopy, own, places.normal),
+        smithers(normalCopy, own, places.normal, normalCauses),
         undefined,
         options.reruns
       )
@@ -757,9 +774,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           const labels = normal.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
           try progress.say(`${at} fast`)
           const fast = try measure(
-            checkoutCopy(fastCopy, commit, place),
-            equip(fastCopy, own),
-            smithers(fastCopy, own, fastCauses),
+            checkoutCopy(fastCopy, commit, places.fast),
+            equip(fastCopy, own, places.fast),
+            smithers(fastCopy, own, places.fast, fastCauses),
             labels,
             options.reruns
           )

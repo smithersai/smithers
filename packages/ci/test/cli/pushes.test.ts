@@ -128,8 +128,8 @@ describe("smithers-ci on a repository whose CI pushes", () => {
     expect(refs()).toEqual(before)
     const lines = readFileSync(log, "utf8").trim().split("\n")
     const homes = new Set(lines.map((line) => /home=(.*)$/.exec(line)?.[1]))
-    // Every step, baseline or target, ran with one home: the replay's own.
-    expect(homes.size).toBe(1)
+    // Every step ran with a home the replay made: the baseline's steps with one, the targets with another.
+    expect([...homes].map((home) => home?.replace(/^.*\/home\//, "")).sort()).toEqual(["baseline", "normal"])
     expect(homes).not.toContain(homedir())
     expect(homes).not.toContain(environment.HOME)
     expect(homes).not.toContain(undefined)

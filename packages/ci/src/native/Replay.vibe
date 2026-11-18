@@ -17,7 +17,7 @@ import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract
 import type { ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { type Mode, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
-import { type Confined, confine, held } from "../replay/Confine.vibe"
+import { type Confined, confine, held, type Way } from "../replay/Confine.vibe"
 import { noPushUrl, searchPath, stepEnvironment } from "../replay/Environment.ts"
 import { probe } from "../replay/Jail.ts"
 import { nothingPassed, printedLimit } from "../replay/Failures.ts"
@@ -201,11 +201,14 @@ interface Measured {
  *
  * The copy's install and its `smthrs` get what a target gets of the
  * environment and no credential, so no run reads or writes a shared cache
- * the workspace declares. Both get the replay's own home and temporary
- * directory and a `git` that refuses to push, and, where the machine can
+ * the workspace declares. Both get a home and a temporary directory the
+ * replay made and a `git` that refuses to push, and, where the machine can
  * hold one, a file-system jail: they can write the copy, that home and that
- * directory, and cannot read the person's credentials. `request.cache` names one for normal and fast
- * mode. The baseline's first pass reads no cache at all.
+ * directory, and cannot read the person's credentials. The baseline, normal
+ * mode and fast mode each have a home and a temporary directory of their own,
+ * empty at the start and kept until the replay ends, so each fills the caches
+ * its tools keep for their user itself. `request.cache` names one for normal
+ * and fast mode. The baseline's first pass reads no cache at all.
  *
  * A commit that cannot be installed, or that `smthrs ci` cannot plan, is one
  * failed result in every mode. When no target passes in the baseline of any
@@ -233,9 +236,10 @@ export const own = <R>(
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-own-" }), "could not make a directory")
     const source = path.join(work, "source")
     const root = path.resolve(request.root)
-    const place = try orFail(
+    // Each mode has a home of its own: none finds a cache another mode filled.
+    const places = try orFail(
       confine(work, options.confine ?? probe, progress.say, searchPath()),
-      "could not make the home of the runs"
+      "could not make the homes of the runs"
     )
     // Where `smthrs` writes its run records: the one place it can write that an install cannot.
     const records = path.join(work, "records")
@@ -250,24 +254,24 @@ export const own = <R>(
      * A copy of the repository for one mode. It is named as the repository is and fetches from its remote, so what
      * reads the copy names the repository, not the copy. It can push nowhere.
      */
-    effect function copyOf(mode: string) {
-      const copy = path.join(work, mode, path.basename(root))
+    effect function copyOf(way: Way) {
+      const copy = path.join(work, way, path.basename(root))
       const noPush = ["--config", `remote.origin.pushurl=${noPushUrl}`]
       try git(work, ["clone", "--quiet", "--shared", "--no-checkout", ...noPush, source, copy])
       if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", withoutCredentials(origin.text)])
       // Every copy starts with a whole tree, so the first timed checkout is the same work in each mode.
-      try git(copy, ["checkout", "--quiet", "--force", "--detach", "HEAD"], place)
+      try git(copy, ["checkout", "--quiet", "--force", "--detach", "HEAD"], places[way])
       return copy
     }
 
     /** Removes every untracked and ignored file from `copy` but what `kept` names. */
-    const clean = (copy: string, kept: ReadonlyArray<string>) =>
+    const clean = (copy: string, kept: ReadonlyArray<string>, place: Confined) =>
       git(copy, ["clean", "-ffdxq", ...kept.flatMap((name) => ["-e", name])], place)
 
     /** Puts `copy` at `commit` with nothing untracked but what `kept` names, and installs it. */
-    effect function ready(copy: string, commit: string, kept: ReadonlyArray<string>) {
+    effect function ready(copy: string, commit: string, kept: ReadonlyArray<string>, place: Confined) {
       try git(copy, ["checkout", "--quiet", "--force", "--detach", commit], place)
-      try clean(copy, kept)
+      try clean(copy, kept, place)
       return try install(copy, workspaceFile, place)
     }
 
@@ -300,7 +304,12 @@ export const own = <R>(
      * baseline's first pass, the one that is timed, reads no cache: its reruns reuse what that pass built, as the
      * reruns of the other modes do.
      */
-    const smthrs = (copy: string, cached: boolean, state: Installed): Execute<Host> => (targets) => effect {
+    const smthrs = (
+      copy: string,
+      cached: boolean,
+      state: Installed,
+      place: Confined
+    ): Execute<Host> => (targets) => effect {
       if (!state.ok) return [notInstalled(state.reason)]
       const selected = (targets ?? chosen.patterns).filter((label) => label !== installLabel && label !== noRecordLabel)
       if (selected.length === 0) return []
@@ -334,8 +343,8 @@ export const own = <R>(
     /** The plan of the patterns in the normal copy, which fast mode's rows are measured against. */
     effect function planOf(smthrs: string) {
       const plan = ["ci", ...chosen.patterns, "--plan", "--format", "json", "--workspace", normalCopy]
-      const [command, ...args] = held(place, [normalCopy], [smthrs, ...plan])
-      const environment = { ...stepEnvironment({}, place), ...cacheEnv }
+      const [command, ...args] = held(places.normal, [normalCopy], [smthrs, ...plan])
+      const environment = { ...stepEnvironment({}, places.normal), ...cacheEnv }
       const planned = try exec(command, args, normalCopy, environment, Number.POSITIVE_INFINITY, "stdout", true)
       const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
         throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
@@ -349,12 +358,13 @@ export const own = <R>(
       copy: string,
       commit: string,
       cached: boolean,
-      targets: ReadonlyArray<string> | undefined
+      targets: ReadonlyArray<string> | undefined,
+      place: Confined
     ) {
       try progress.say(at)
       const start = try Clock.currentTimeMillis
-      const state = try ready(copy, commit, cached ? [cacheDirectory] : [])
-      const execute = smthrs(copy, cached, state)
+      const state = try ready(copy, commit, cached ? [cacheDirectory] : [], place)
+      const execute = smthrs(copy, cached, state, place)
       const first = try execute(targets)
       const wallMs = (try Clock.currentTimeMillis) - start
       const results = try settle(execute, first, options.reruns, first.length)
@@ -373,13 +383,13 @@ export const own = <R>(
     for (const commit of commits) {
       const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
       const at = `${replayed.length + 1}/${commits.length} ${commit.slice(0, 7)}`
-      const base = try measure(`${at} baseline`, baselineCopy, commit, false, undefined)
+      const base = try measure(`${at} baseline`, baselineCopy, commit, false, undefined, places.baseline)
       // Each copy is cleaned after its run, untimed, so the next commit's timed setup starts from the same clean
       // tree in every mode.
-      try clean(baselineCopy, [])
+      try clean(baselineCopy, [], places.baseline)
       const baseRecord = recordOf(base.results, commit, base.wallMs)
       baselines.push(baseRecord)
-      const normal = try measure(`${at} normal`, normalCopy, commit, true, undefined)
+      const normal = try measure(`${at} normal`, normalCopy, commit, true, undefined, places.normal)
       for (const line of ranAgainLines(`${at} normal`, ranAgain(passedWith, normal.results))) try progress.say(line)
       for (const result of normal.results) {
         if (result.status === "ran" || result.status === "hit") passedWith.set(result.label, result.key)
@@ -389,11 +399,11 @@ export const own = <R>(
       let fastPart: Pick<ReplayCommit, "fast"> = {}
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
       flaky += flakyOf([baseRecord, normalRecord])
-      if (fastCopy === undefined) try clean(normalCopy, [cacheDirectory])
+      if (fastCopy === undefined) try clean(normalCopy, [cacheDirectory], places.normal)
       else {
         const plan = normal.state.ok ? try planOf(normal.state.smthrs) : undefined
         const rows = plan === undefined ? [] : try parts.rows(normalCopy, normalRecord, plan)
-        try clean(normalCopy, [cacheDirectory])
+        try clean(normalCopy, [cacheDirectory], places.normal)
         const scores = try parts.score(rows)
         const choice = choose(scores, request.settings ?? defaultSettings)
         // Only a target the patterns select can be named to `smthrs ci`; what it depends on runs with it.
@@ -401,8 +411,8 @@ export const own = <R>(
         const labels = normal.results.map((result) => result.label).filter((label) =>
           (named === undefined || named.has(label)) && !choice.skipped.has(label)
         )
-        const fast = try measure(`${at} fast`, fastCopy, commit, true, labels)
-        try clean(fastCopy, [cacheDirectory])
+        const fast = try measure(`${at} fast`, fastCopy, commit, true, labels, places.fast)
+        try clean(fastCopy, [cacheDirectory], places.fast)
         const byLabel = new Map(fast.results.map((result) => [result.label, result]))
         const merged = normal.results.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
         const fastRecord = recordOf(merged, commit, fast.wallMs, "fast" satisfies Mode)

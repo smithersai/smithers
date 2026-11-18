@@ -2,7 +2,7 @@
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { Confined } from "../../src/replay/Confine.vibe"
+import type { Confined, Way } from "../../src/replay/Confine.vibe"
 import { hooksDirectory } from "../../src/replay/Environment.ts"
 
 /** Why the tests that watch a step through a file outside its copy run it with no jail. */
@@ -15,10 +15,10 @@ export const watched = "the test reads what a step wrote outside its copy"
  */
 export const unconfined = () => ({ refusal: watched })
 
-/** The directories under `work`, made, with no jail. */
-export const placeIn = (work: string): Confined => {
-  const home = join(work, "home")
-  const tmp = join(work, "tmp")
+/** The place of one way under `work`, made, with no jail: where the replay itself puts it. */
+export const placeIn = (work: string, way: Way = "normal"): Confined => {
+  const home = join(work, "home", way)
+  const tmp = join(work, "tmp", way)
   mkdirSync(home, { recursive: true })
   mkdirSync(tmp, { recursive: true })
   return { home, tmp, guard: join(work, "guard"), hooks: join(home, hooksDirectory), jail: undefined }
