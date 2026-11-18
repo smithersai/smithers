@@ -4,6 +4,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { ci, type Step } from "../../src/contract/Inventory.ts"
+import { path as targetMapPath, TargetMap } from "../../src/contract/TargetMap.ts"
 import { split } from "../../src/decompose/index.ts"
 import * as ZigSteps from "../../src/decompose/Zig.ts"
 import { files } from "../../src/generate/index.ts"
@@ -90,26 +91,36 @@ effect function repository() {
   return root
 }
 
-/** Reads the repository's CI, splits it and writes the generated files. Returns the split steps. */
+/**
+ * Reads the repository's CI, splits it and writes the generated files. Returns the split steps and the most
+ * targets that may run at once.
+ */
 effect function generate(root: string) {
   const inventory = try read(root)
   const after = try split(root, ci(inventory))
-  for (const file of try files(after)) try write(root, file.path, file.content)
-  return after.jobs.flatMap((job) => job.steps)
+  const generated = try files(after)
+  for (const file of generated) try write(root, file.path, file.content)
+  const map = try Schema.decodeUnknownEffect(Schema.fromJsonString(TargetMap))(
+    generated.find((file) => file.path === targetMapPath)?.content
+  )
+  return { steps: after.jobs.flatMap((job) => job.steps), maxJobs: map.maxJobs }
 }
 
 const Record = Schema.fromJsonString(Schema.Struct({
   results: Schema.Array(Schema.Struct({ label: Schema.String, status: Schema.String }))
 }))
 
-/** Runs every target, with the programs in `first` before the others on `PATH`, and gives each one's status. */
+/**
+ * Runs every target, as many at once as Smithers build chooses, with the programs in `first` before the others on
+ * `PATH`, and gives each one's status.
+ */
 effect function statuses(root: string, name: string, first: string) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
   const results = path.join(root, ".flows", `${name}.json`)
   const ran = try run(root, "sh", [
     "-c",
-    `PATH="$1:$PATH" exec node "$0" ci //... --jobs 1 --results-file "$2" --ui plain`,
+    `PATH="$1:$PATH" exec node "$0" ci //... --results-file "$2" --ui plain`,
     smthrs,
     first,
     results
@@ -133,14 +144,17 @@ describe.skipIf(!observes)("zig build test on a real repository", () => {
         const fs = try FileSystem.FileSystem
         const path = try Path.Path
         const root = try repository()
-        const steps = try generate(root)
-        const brief = (step: Step) => [step.id, step.command, step.inputs, step.from, step.env]
+        const { steps, maxJobs } = try generate(root)
+        const brief = (step: Step) => [step.id, step.command, step.inputs, step.from, step.atOnce, step.env]
+        const from = "justfile:test:1"
         expect(steps.map(brief)).toEqual([
-          ["justfile:tidy:1", "./tidy.sh", undefined, undefined, {}],
-          ["justfile:test:1:test-alpha", "zig build test-alpha", undefined, "justfile:test:1", ZigSteps.environment],
-          ["justfile:test:1:test-beta", "zig build test-beta", undefined, "justfile:test:1", ZigSteps.environment],
-          ["justfile:test:1:test-gamma", "zig build test-gamma", undefined, "justfile:test:1", ZigSteps.environment]
+          ["justfile:tidy:1", "./tidy.sh", undefined, undefined, undefined, {}],
+          [`${from}:test-alpha`, "zig build test-alpha", undefined, from, true, ZigSteps.environment],
+          [`${from}:test-beta`, "zig build test-beta", undefined, from, true, ZigSteps.environment],
+          [`${from}:test-gamma`, "zig build test-gamma", undefined, from, true, ZigSteps.environment]
         ])
+        // One build ran the three roots at the same time, so nothing holds the targets to one at a time.
+        expect(maxJobs).toBeUndefined()
 
         // The Zig every step starts: a program of two lines that starts this machine's Zig.
         const tools = path.join(try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-" }), "bin")

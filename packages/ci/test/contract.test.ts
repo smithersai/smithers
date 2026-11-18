@@ -798,6 +798,9 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
     expect(Schema.decodeUnknownSync(Inventory.Step)({ ...split, outputs: ["packages/core/dist/**"] }).outputs)
       .toEqual(["packages/core/dist/**"])
     expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, outputs: [""] })).toThrow()
+    // A step split from a command that ran its parts at the same time may say so.
+    expect(Schema.decodeUnknownSync(Inventory.Step)({ ...split, atOnce: true }).atOnce).toBe(true)
+    expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, atOnce: "yes" })).toThrow()
     // A tool's cache is kept inside the directory `apply` keeps out of git.
     expect(Inventory.toolCache.startsWith(`${Command.applyIgnores[0]}/`)).toBe(true)
     const failure = { code: "command-failed", message: "bun pm ls exited 1", part: "decompose" }

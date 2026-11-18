@@ -9,6 +9,7 @@ import * as Result from "effect/Result"
 import { type Inventory, stepTimeoutHours, toolCache, type Toolchain } from "../contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.ts"
 import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.ts"
+import { variantKey } from "./Expressions.ts"
 import { type Leg, markerDirectory, repositoryLabel, type StepPlan, type StepTarget, workflowPath } from "./Steps.ts"
 
 export { workflowPath }
@@ -347,8 +348,8 @@ export const noSharedCache =
 //
 // A target held to its inputs by the read sandbox cannot write the working tree. Every other target can: a setup
 // target, and a target that declares the whole repository. Such a target is safe beside another only when one of
-// the two always runs after the other, or when they run on different systems. `plan.targets` is in dependency
-// order.
+// the two always runs after the other, when they run on different systems, or when both were split from one
+// command that ran them at the same time (`Step.atOnce`). `plan.targets` is in dependency order.
 const collides = (plan: StepPlan, narrowed: boolean): boolean => {
   const before = new Map<string, ReadonlySet<string>>()
   for (const target of plan.targets) {
@@ -363,9 +364,14 @@ const collides = (plan: StepPlan, narrowed: boolean): boolean => {
     (before.get(other.label) as ReadonlySet<string>).has(one.label)
   const apart = (one: StepTarget, other: StepTarget): boolean =>
     one.host !== undefined && other.host !== undefined && one.host !== other.host
+  const together = (one: StepTarget, other: StepTarget): boolean =>
+    one.atOnce && other.atOnce && one.job === other.job && one.step === other.step &&
+    variantKey(one.variant) === variantKey(other.variant)
   return plan.targets.some((writer) =>
     !narrows(writer, narrowed) &&
-    plan.targets.some((other) => other !== writer && !ordered(writer, other) && !apart(writer, other))
+    plan.targets.some((other) =>
+      other !== writer && !ordered(writer, other) && !apart(writer, other) && !together(writer, other)
+    )
   )
 }
 

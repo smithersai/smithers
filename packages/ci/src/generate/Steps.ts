@@ -94,6 +94,11 @@ export interface StepTarget {
   readonly outputs: Outputs | undefined
   /** The other steps this target runs too: the same work at the same point of another job or variant. */
   readonly also: ReadonlyArray<SameStep>
+  /**
+   * True for a step split from a command that ran its parts at the same time (`Step.atOnce`). Two such targets of
+   * one `step`, job and variant may run at once.
+   */
+  readonly atOnce: boolean
 }
 
 /**
@@ -449,6 +454,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       variant,
       ...files,
       also: [],
+      atOnce: step.atOnce === true,
       job,
       command,
       directory,

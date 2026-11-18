@@ -203,7 +203,8 @@ just ci        tidy     etc/scripts/tidy.sh     always runs: test follows it
 
 When the step is nothing but `zig build <step>` and that build step only
 groups named steps, it becomes one step per named step. Each has a record of
-its own, so a change runs again only the steps whose own run read it.
+its own, so a change runs again only the steps whose own run read it. Zig ran
+those named steps at the same time, and the steps still run at the same time.
 
 A Zig step keeps Zig's two caches in `.flows/tools/zig`. They last from one
 run to the next, and the generated workflow saves them with the results: a

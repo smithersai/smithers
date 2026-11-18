@@ -76,7 +76,7 @@ describe("Zig.dress", () => {
 describe("Zig.split", () => {
   const groups = new Map([["test", ["test-core", "test cli"]], ["check", ["check-a"]], ["docs", []]])
 
-  it("makes one step per named step, each with Zig's caches and no inputs", () => {
+  it("makes one step per named step, each with Zig's caches, no inputs and leave to run beside the others", () => {
     const parts = Zig.split(step("set -e\nzig build test", { name: "Test", env: { CI: "1" } }), groups)
     expect(parts).toEqual([
       {
@@ -86,7 +86,9 @@ describe("Zig.split", () => {
         cwd: "",
         env: { CI: "1", ...Zig.environment },
         secrets: [],
-        from: "justfile:test:1"
+        from: "justfile:test:1",
+        // One build ran the named steps at the same time, so the steps still may.
+        atOnce: true
       },
       {
         id: "justfile:test:1:test cli",
@@ -96,7 +98,9 @@ describe("Zig.split", () => {
         cwd: "",
         env: { CI: "1", ...Zig.environment },
         secrets: [],
-        from: "justfile:test:1"
+        from: "justfile:test:1",
+        // One build ran the named steps at the same time, so the steps still may.
+        atOnce: true
       }
     ])
     // A step with no name of its own gets none.

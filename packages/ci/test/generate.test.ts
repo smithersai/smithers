@@ -638,6 +638,37 @@ describe("how many targets run at once", () => {
     ])
     expect(mapOf(same).maxJobs).toBe(1)
   })
+
+  it("runs at once the steps split from a command that ran them at once", () => {
+    const root = (name: string, extra: Partial<Step> = {}): Step =>
+      step(`t:2:${name}`, `zig build ${name}`, { from: "t:2", atOnce: true, ...extra })
+    const tidy = step("t:1", "./tidy.sh")
+    // `zig build test` ran its named steps at the same time in one tree: the steps split from it still do.
+    const zig = inventory([job("t", [tidy, root("test-a"), root("test-b"), root("test-c")])])
+    expect(mapOf(zig).targets).toHaveLength(4)
+    expect(mapOf(zig).maxJobs).toBeUndefined()
+    expect(workflowOf(zig)).toMatch(/smthrs ci '\/\/\.\.\.'\n/)
+    expect(workflowOf(zig)).not.toContain("one at a time")
+    // Split steps that do not say so can write the same files, and so can one that says so beside one that does not.
+    const silent = { atOnce: false }
+    expect(mapOf(inventory([job("t", [tidy, root("test-a", silent), root("test-b", silent)])])).maxJobs).toBe(1)
+    expect(mapOf(inventory([job("t", [tidy, root("test-a"), root("test-b", silent)])])).maxJobs).toBe(1)
+    // A step that was not split from another has no such sibling, whatever it says.
+    const whole = (id: string, command: string): Step => step(id, command, { atOnce: true })
+    expect(
+      mapOf(inventory([job("t", [whole("t:2", "zig build test")]), job("u", [whole("u:2", "zig build check")])]))
+        .maxJobs
+    )
+      .toBe(1)
+    // Another job's step never ran beside them, and neither did the same steps of another job or variant.
+    expect(mapOf(inventory([job("t", [root("test-a"), root("test-b")]), job("u", [step("u:1", "make")])])).maxJobs)
+      .toBe(1)
+    expect(mapOf(inventory([job("t", [root("test-a")]), job("u", [root("test-b")])])).maxJobs).toBe(1)
+    const variants = job("t", [root("test-a"), root("test-b")], {
+      matrix: [{ mode: "Debug" }, { mode: "ReleaseSafe" }]
+    })
+    expect(mapOf(inventory([variants])).maxJobs).toBe(1)
+  })
 })
 
 describe("large graphs", () => {

@@ -12,7 +12,9 @@
  * A build step that only groups named steps, as `test` groups `test-core`
  * and `test-cli`, runs exactly what `zig build` of each of them runs. A CI
  * step that is nothing but `zig build test` therefore becomes one step per
- * named step: a change reruns only the steps whose own run read it.
+ * named step: a change reruns only the steps whose own run read it. Zig ran
+ * those named steps at the same time in one tree, so the steps are marked
+ * `atOnce` and still run at the same time.
  *
  * Zig writes a cache beside `build.zig` and another in the home directory.
  * The step is told to keep both in the tool cache. There they last from one
@@ -78,8 +80,8 @@ export const dress = (step: Step): Step => ({ ...step, env: { ...environment, ..
 /**
  * The steps a CI step becomes when it is nothing but `zig build <step>` and
  * that build step only groups named steps: one `zig build <name>` per named
- * step. `undefined` when the command is more than that or the build step
- * groups fewer than two.
+ * step, each marked `atOnce`, as one build runs them. `undefined` when the
+ * command is more than that or the build step groups fewer than two.
  *
  * @param step - The CI step.
  * @param groups - The named steps each build step groups.
@@ -100,7 +102,8 @@ export const split = (
       id: `${step.id}:${name}`,
       command: `zig build ${quote(name)}`,
       ...(step.name === undefined ? {} : { name: `${step.name} (${name})` }),
-      from: step.id
+      from: step.id,
+      atOnce: true
     })
   )
 }

@@ -545,6 +545,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
           ["justfile:both:1", "zig build test && zig build bench", undefined, undefined]
         ])
         expect(stepsOf(after)[0]).toMatchObject({ name: "test (test-core)", env: ZigSteps.environment })
+        // Only the steps one build ran at the same time say so.
+        expect(stepsOf(after).map((found) => found.atOnce)).toEqual([true, true, undefined, undefined, undefined])
         for (const found of stepsOf(after)) expect(found.env).toEqual(ZigSteps.environment)
       })
       // Without the groups, or when reading them fails, the step keeps its command.
@@ -587,6 +589,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
             id: `s:4:${name}`,
             command: `zig build ${name}`,
             from: "s:4",
+            atOnce: true,
             env: ZigSteps.environment
           }))
         ])

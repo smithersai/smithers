@@ -73,6 +73,15 @@ Newest first. A part built before a change adopts it before it lands again.
 - Not a contract, and changed with it: the generated workflow runs `smithers-ci apply --check` right after the
   checkout and Node, so a commit that adds a package or a test file the generated files do not list fails there.
 
+**2026-11-18, fourteenth round** (the needlefish lane: steps one build ran at the same time still do):
+
+- `Step.atOnce` (optional): a step split from a command that ran its parts at the same time in one working tree, as
+  `zig build test` runs the named steps it groups. The generator lets targets of one such command (same `from`, job
+  and variant) run at once; every other pair of targets that can write the tree still makes the run one at a time
+  (`TargetMap.maxJobs` 1). Before, ten steps split from one `zig build test` ran one after another where Zig ran
+  ten test binaries at once. Tests: `test/generate.test.ts` "runs at once the steps split from a command that ran
+  them at once", `test/decompose/zig.smthrs.test.vibe`.
+
 **2026-11-18, thirteenth round** (optional additions by the generated-files lane, so a repository's own tools never read
 a generated file as one of theirs):
 

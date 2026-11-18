@@ -44,6 +44,11 @@ export type Source = typeof Source.Type
  * nobody enforces would let a step pass on a file it never declared, which
  * is a stale pass. `from` is the id of the step this one was split from.
  *
+ * `atOnce` marks a step split from a command that ran its parts at the same
+ * time in one working tree, as `zig build test` runs the named steps it
+ * groups. Steps with the same `from` and `atOnce` may run at once though
+ * each can write the tree: the command they came from already ran them so.
+ *
  * `outputs` lists every path the step writes, from the repository root, in
  * the same forms. Without `outputs` the step may write any file, so a step
  * that runs after it in the same working tree cannot be held to its own
@@ -79,6 +84,7 @@ export const Step = Schema.Struct({
   inputs: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   outputs: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   from: Schema.optionalKey(Schema.NonEmptyString),
+  atOnce: Schema.optionalKey(Schema.Boolean),
   withheld: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   runner: Schema.optionalKey(Schema.NonEmptyString)
 })

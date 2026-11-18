@@ -122,9 +122,9 @@ just ci:  tidy, then  zig build test
           Zig.groups      │  test = test-core + test-cli + test-util ?
                           ▼
    yes: one step per named step        no: the step as it was
-   zig build test-core
-   zig build test-cli                  zig build test
-   zig build test-util
+   zig build test-core  ┐
+   zig build test-cli   ├ at once      zig build test
+   zig build test-util  ┘
                           │
                           ▼
    each runs in the open, with what it reads recorded:
@@ -139,6 +139,10 @@ just ci:  tidy, then  zig build test
    a group is opened too. A step that depends on a step with no name, as
    `test` does in a build that adds its test binaries straight to it, keeps
    its command.
+
+   One `zig build test` runs its named steps at the same time, so the steps
+   made from it run at the same time too: as many as the machine has cores.
+   Other steps that can write the working tree run one at a time.
 2. **Nothing but the build.** The split replaces the command, so the command
    must be only `zig build <step>`: alone, after `set` lines, or as the whole
    script of a `bash -c`. `zig build test || true` passes where a build fails,
