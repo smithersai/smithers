@@ -63,6 +63,11 @@ and none removes):
   other step reads the files it opens and what earlier steps of its job left, and nothing that differs from one
   run to the next. So a step the generator has observed (`observe` of `Shell.Test`) is reused until one of those
   changes: `test/cli/observedRunner.test.ts` replays that under `strace`. The only step of a job leaves no state.
+- Steps split from one step each carry that step's runner text. The ones split from a job's second step share the
+  job's state: each finds what the ones before it wrote to `GITHUB_ENV`, `GITHUB_OUTPUT` and `RUNNER_TEMP`. The
+  ones split from a job's first step each start the state anew, as a first step does, so a later step finds what
+  the last of them wrote and not what the others did. The splitter should leave whole a first step whose script
+  names `GITHUB_ENV`, `GITHUB_OUTPUT`, `GITHUB_PATH` or `RUNNER_TEMP`.
 - A `command` may hold a `${{ }}` that is not a matrix value, such as `${{ steps.diff.outputs.base }}`: the runner
   text replaces it when the step runs. The generator writes only matrix values into a step that has runner text,
   and passes it no runner variable of the machine: the runner text sets them all.

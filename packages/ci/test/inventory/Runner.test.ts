@@ -798,6 +798,34 @@ describe("write", () => {
       expect(pass({}, `echo "$RUN [\${LATER-}] $(ls "$RUNNER_TEMP")"`)).toBe("two [] \n")
     })
 
+    // The splitter turns one step into several, each with the step's runner text. The ones split from a job's
+    // second step all start from what the first step left, and each keeps what the ones before it wrote.
+    it("is copied once for the steps split from the job's second step", () => {
+      pass({ key: "INSTALL", first: true }, `echo "FROM=first" >> "$GITHUB_ENV"`)
+      const part = (command: string): string => pass({ key: "TEST", second: true }, command)
+      expect(part(`echo "$FROM"; echo a > "$RUNNER_TEMP/a.log"; echo "A=done" >> "$GITHUB_ENV"`)).toBe("first\n")
+      expect(part(`echo "$FROM $A"; echo b > "$RUNNER_TEMP/b.log"`)).toBe("first done\n")
+      expect(pass({}, `ls "$RUNNER_TEMP"`)).toBe("a.log\nb.log\n")
+      // The first step runs again: the job starts from nothing but what that step leaves.
+      pass({ key: "INSTALL", first: true }, `echo "FROM=first" >> "$GITHUB_ENV"`)
+      expect(part(`echo "$FROM [\${A-}] $(ls "$RUNNER_TEMP")"; echo "A=again" >> "$GITHUB_ENV"`)).toBe("first [] \n")
+      // The workflow changes and the job starts with another step: what the job had is not carried over.
+      pass({ key: "INSTALL", first: true }, `echo "FROM=changed" >> "$GITHUB_ENV"`)
+      expect(part(`echo "$FROM [\${A-}]"`)).toBe("changed []\n")
+    })
+
+    // Another first step in the same checkout, of another job, leaves this job's state alone.
+    it("removes the state of the jobs that started from it, and of no other job", () => {
+      const other = job({ id: "other" })
+      pass({ key: "INSTALL", first: true }, `echo "FROM=first" >> "$GITHUB_ENV"`)
+      pass({}, `echo "KEPT=yes" >> "$GITHUB_ENV"`)
+      const kept = mark
+      pass({ key: "OTHER", first: true }, "true", { job: other })
+      pass({}, "true", { job: other })
+      mark = kept
+      expect(pass({ second: false }, `echo "$FROM $KEPT"`)).toBe("first yes\n")
+    })
+
     // "Default environment variables: GITHUB_JOB". A first step is told its job only when it asks.
     it("is given GITHUB_JOB only when its script names it, and every later step is", () => {
       expect(pass({ first: true, job: undefined }, `echo "[\${GITHUB_JOB-unset}]"`)).toBe("[unset]\n")

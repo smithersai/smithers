@@ -54,7 +54,8 @@ export interface JobFacts {
  *   step itself, which starts the state.
  * - `job`: the job's key, given as `GITHUB_JOB`. A first step is given none unless its script names the variable,
  *   so two jobs that start with the same step share it.
- * - `second`: the step is the second of its job, so it starts the job's own state from what the first step left.
+ * - `second`: the step is the second of its job, so it starts the job's own state from what the first step left,
+ *   unless a step split from the same step has started it since the first step ran.
  * - `cwd`: the directory the step is started in, from the repository root.
  * - `directory`: a directory decided while the job runs, which the step enters from the root before its script.
  * - `start`: the shell and its flags; the script follows `-c`.
@@ -615,11 +616,13 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
             ]
             : [
               ...named("__state", `first|${mark}`),
-              // The state of a checkout that is gone, such as a replay's copy, is removed with the first step of a
-              // job.
+              // A first step that runs starts every job after it anew: the state of each job that started from
+              // what this step left is removed. So is the state of a checkout that is gone, such as a replay's
+              // copy.
               `for __d in "$__base"/*; do`,
               `  [ -f "$__d/root" ] || continue`,
-              `  IFS= read -r -d '' __r < "$__d/root"; [ -d "$__r" ] || rm -rf -- "$__d"`,
+              `  IFS= read -r -d '' __r < "$__d/root"; __o=; [ ! -f "$__d/first" ] || IFS= read -r __o < "$__d/first"`,
+              `  [ -d "$__r" ] && [ "$__o" != "\${__state##*/}" ] || rm -rf -- "$__d"`,
               `done`,
               `rm -rf -- "$__state"`
             ]),
@@ -636,10 +639,17 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
               `[ -f "$__first/lib.sh" ] || ${fail("the first step of this job has not run in $__root")}`,
               // The job's own state starts as a copy of what its first step left: that step may have run for
               // another job that starts the same way. The event file is the first step's own and stays there.
-              `rm -rf -- "$__state"; mkdir -- "$__state" || exit 1`,
-              `for __e in "$__first"/*; do`,
-              `  case \${__e##*/} in event.json) ;; *) cp -R "$__e" "$__state/" || exit 1;; esac`,
-              `done`
+              // The copy is made once for each run of the first step, which removes it: steps split from this
+              // one each find what the ones before them left. A state that started from another first step, as
+              // the job had before its workflow changed, is not this job's. The copy is moved into place whole.
+              `__o=; [ ! -f "$__state/first" ] || IFS= read -r __o < "$__state/first"`,
+              `if [ "$__o" != "\${__first##*/}" ]; then`,
+              `  rm -rf -- "$__state" "$__state.$$"; mkdir -- "$__state.$$" || exit 1`,
+              `  for __e in "$__first"/*; do`,
+              `    case \${__e##*/} in event.json) ;; *) cp -R "$__e" "$__state.$$/" || exit 1;; esac`,
+              `  done`,
+              `  printf %s "\${__first##*/}" > "$__state.$$/first" && mv -- "$__state.$$" "$__state" || exit 1`,
+              `fi`
             ]
             : [])
         ]),
