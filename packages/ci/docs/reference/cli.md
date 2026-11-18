@@ -49,15 +49,16 @@ in the files it writes now. A second `apply` writes the same bytes.
 
 ## Flags
 
-| Flag        | Commands                                                     | Default  | What it does                                                                                                                                      |
-| ----------- | ------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--commits` | `smithers-ci`, `smithers-ci replay`                          | `20`     | How many past commits to replay.                                                                                                                  |
-| `--mode`    | `smithers-ci`, `smithers-ci replay`                          | `normal` | normal, fast, or both.                                                                                                                            |
-| `--jobs`    | `smithers-ci`, `smithers-ci replay`                          | none     | Most targets to run at once; the default is the machine's.                                                                                        |
-| `--cache`   | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | none     | URL of a shared cache, with no user name or password; its token is read from SMITHERS_CACHE_TOKEN.                                                |
-| `--targets` | `smithers-ci`, `smithers-ci replay`                          | none     | Smithers build patterns to replay, separated by commas, on a repository that already builds with Smithers build; the default is what its CI runs. |
-| `--out`     | `smithers-ci`, `smithers-ci replay`                          | none     | Also write the report as an HTML file here.                                                                                                       |
-| `--json`    | `smithers-ci`, `smithers-ci inventory`, `smithers-ci replay` | `false`  | Print the document as JSON.                                                                                                                       |
+| Flag           | Commands                                                     | Default  | What it does                                                                                                                                      |
+| -------------- | ------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--commits`    | `smithers-ci`, `smithers-ci replay`                          | `20`     | How many past commits to replay.                                                                                                                  |
+| `--mode`       | `smithers-ci`, `smithers-ci replay`                          | `normal` | normal, fast, or both.                                                                                                                            |
+| `--jobs`       | `smithers-ci`, `smithers-ci replay`                          | none     | Most targets to run at once; the default is the machine's.                                                                                        |
+| `--cache`      | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | none     | URL of a shared cache, with no user name or password; its token is read from SMITHERS_CACHE_TOKEN.                                                |
+| `--targets`    | `smithers-ci`, `smithers-ci replay`                          | none     | Smithers build patterns to replay, separated by commas, on a repository that already builds with Smithers build; the default is what its CI runs. |
+| `--out`        | `smithers-ci`, `smithers-ci replay`                          | none     | Also write the report as an HTML file here.                                                                                                       |
+| `--json`       | `smithers-ci`, `smithers-ci inventory`, `smithers-ci replay` | `false`  | Print the document as JSON.                                                                                                                       |
+| `--allow-root` | `smithers-ci`, `smithers-ci replay`                          | `false`  | Replay even when run as root, where a past commit's commands could change this machine.                                                           |
 
 Of the commits `--commits` counts, one that had no CI the program can run is not
 replayed; the report lists it with the reason.
@@ -113,7 +114,7 @@ A workflow that does not parse is listed there and nowhere else.
 | ---- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`  | `ok`          | The command finished.                                                                                                                                                   |
 | `1`  | `mismatch`    | A replayed target's verdict in a mode differs from its baseline verdict. A flaky target, which passed on a rerun, agrees with a pass and does not make the exit code 1. |
-| `2`  | `usage`       | The command line was wrong: an unknown command or flag, or a bad value.                                                                                                 |
+| `2`  | `usage`       | The command line was wrong: an unknown command or flag, a bad value, or a replay as root without --allow-root.                                                          |
 | `3`  | `unsupported` | The repository uses something Smithers CI cannot run.                                                                                                                   |
 | `4`  | `failed`      | A step of the command could not finish.                                                                                                                                 |
 

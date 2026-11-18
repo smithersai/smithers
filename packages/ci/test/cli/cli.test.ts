@@ -68,7 +68,8 @@ const sample = (flag: keyof typeof flags, out: string): ReadonlyArray<string> =>
     cache: ["--cache", "https://cache.example.invalid"],
     targets: ["--targets", "//packages/ci/..."],
     out: ["--out", out],
-    json: ["--json"]
+    json: ["--json"],
+    "allow-root": ["--allow-root"]
   })[flag]
 
 const requestOf = (stderr: string): unknown => JSON.parse(/replay request: (.*)/.exec(stderr)?.[1] ?? "null")

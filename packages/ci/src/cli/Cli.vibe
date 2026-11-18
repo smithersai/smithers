@@ -29,6 +29,7 @@ import {
 import { ReplayReport } from "../contract/ReplayReport.ts"
 import type { Mode } from "../contract/RunRecord.ts"
 import * as Native from "../native/index.ts"
+import { runningAsRoot } from "./Root.ts"
 import { uncommittedFooter } from "../native/Workspace.ts"
 import * as Preflight from "./Preflight.ts"
 
@@ -155,7 +156,12 @@ const json = Flag.Boolean("json").pipe(
   Flag.withDescription(helpOf("json"))
 )
 
-const replayFlags = { commits, mode, jobs, cache, targets, out, json }
+const allowRoot = Flag.Boolean("allow-root").pipe(
+  Flag.withDefault(false),
+  Flag.withDescription(helpOf("allow-root"))
+)
+
+const replayFlags = { commits, mode, jobs, cache, targets, out, json, allowRoot }
 
 /** What `--mode` asks the replay to run. */
 const modes: Record<"normal" | "fast" | "both", ReadonlyArray<Mode>> = {
@@ -172,7 +178,23 @@ interface ReplayInput {
   readonly targets: Option.Option<ReadonlyArray<string>>
   readonly out: Option.Option<string>
   readonly json: boolean
+  readonly allowRoot: boolean
 }
+
+/**
+ * Who runs the program. A replay starts a repository's past commands, and as
+ * root nothing on the machine is out of their reach.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export service RunningUser {
+  readonly isRoot: () => boolean
+  static readonly defaultValue = () => ({ isRoot: runningAsRoot })
+}
+
+const rootRefusal =
+  `${Surface.name}: refusing to run as root, where a past commit's commands could change this machine; run it as another user, or pass --allow-root to accept that`
 
 const requestOf = (root: string, input: ReplayInput): ReplayRequest => ({
   root,
@@ -275,6 +297,16 @@ const wroteLine = (file: string | undefined): string =>
  */
 function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: Ref.Ref<number>) {
   const settle = (code: number) => Ref.set(status, code)
+
+  /** True when the program is root and was not told that is fine: it has said so and set the exit code. */
+  effect function refusesRoot(input: ReplayInput) {
+    const user = try RunningUser
+    if (input.allowRoot || !user.isRoot()) return false
+    try Console.error(rootRefusal)
+    try settle(Surface.exitCodes.usage)
+    return true
+  }
+
   const replayParts = {
     read: parts.readHere ?? parts.read,
     decompose: parts.decompose,
@@ -364,10 +396,12 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
   }).pipe(Command.withDescription(Surface.commands.inventory))
 
   const replay = Command.make("replay", replayFlags, effect (input) => {
+    if (try refusesRoot(input)) return
     try replayAndPrint(input, try parts.read(root), () => "")
   }).pipe(Command.withDescription(Surface.commands.replay))
 
   return Command.make(Surface.name, replayFlags, effect (input) => {
+    if (try refusesRoot(input)) return
     const read = try parts.read(root)
     // The footer says what the replay did, which the report holds: it ran the newest commit, and the inventory
     // was read from the working tree. A report with `targets` is a replay of the repository's own targets.

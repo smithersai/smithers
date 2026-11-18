@@ -54,7 +54,12 @@ export const flags = {
       "Smithers build patterns to replay, separated by commas, on a repository that already builds with Smithers build; the default is what its CI runs."
   },
   out: { on: ["", "replay"], default: "", help: "Also write the report as an HTML file here." },
-  json: { on: ["", "inventory", "replay"], default: "false", help: "Print the document as JSON." }
+  json: { on: ["", "inventory", "replay"], default: "false", help: "Print the document as JSON." },
+  "allow-root": {
+    on: ["", "replay"],
+    default: "false",
+    help: "Replay even when run as root, where a past commit's commands could change this machine."
+  }
 } as const
 
 /**
@@ -82,7 +87,8 @@ export const exitCodeHelp = {
   ok: "The command finished.",
   mismatch:
     "A replayed target's verdict in a mode differs from its baseline verdict. A flaky target, which passed on a rerun, agrees with a pass and does not make the exit code 1.",
-  usage: "The command line was wrong: an unknown command or flag, or a bad value.",
+  usage:
+    "The command line was wrong: an unknown command or flag, a bad value, or a replay as root without --allow-root.",
   unsupported: "The repository uses something Smithers CI cannot run.",
   failed: "A step of the command could not finish."
 } as const satisfies Record<keyof typeof exitCodes, string>
