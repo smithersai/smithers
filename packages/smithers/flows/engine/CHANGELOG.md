@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- A memory-engine round no longer ends interrupted when the registration
+  serving it closes while another registration of the same flow tag is still
+  open. Rounds now run in the engine's scope: a closing registration stops the
+  bodies its handler is running, and the execution is driven again on the
+  latest still-open registration, so `execute` callers and joiners get its
+  result. With no registration left, the execution stays parked until the
+  flow is registered again. A requested cancellation still ends it cancelled.
+
 - Retrying an identical deeply nested JSON payload with the same execution id
   joins the recorded run instead of reporting a different input. Opaque
   memory-only payload comparisons retain their conservative depth bound.

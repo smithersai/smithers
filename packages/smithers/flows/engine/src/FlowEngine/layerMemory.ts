@@ -66,7 +66,14 @@ interface Registration {
     payload: object,
     executionId: string
   ) => Effect.Effect<unknown, unknown, FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime>
-  readonly scope: Scope.Scope
+  /** False once the registration's scope began to close: its handler starts no more bodies. */
+  open: boolean
+  /**
+   * The body fibers running this handler now, with each one's round
+   * instance. Closing the registration stops them, so no handler code runs
+   * after its scope is gone.
+   */
+  readonly bodies: Map<Fiber.Fiber<unknown, unknown>, Instance>
 }
 
 /** One admitted execution and the round fiber currently driving it. */
@@ -500,36 +507,62 @@ const redriveParent = (memory: Memory, state: ExecutionState, result: Result) =>
 }
 
 /**
- * Forks one round of `state` in its registration's scope: the body runs on a
- * fresh copy of the payload, under the execution's admitted ceilings, with
- * this engine and the round's instance provided. Cancellation needs no
- * handler; after its registration closes it settles in the engine's scope.
+ * Runs `entry`'s handler as one round's body, listed among the bodies the
+ * registration's close stops. A registration that already began closing
+ * starts no body: the round parks for `handOver`.
+ */
+const serve = (state: ExecutionState, entry: Registration, instance: Instance) =>
+  Effect.withFiber((fiber) => {
+    if (!entry.open) return Flow.suspend(instance)
+    entry.bodies.set(fiber, instance)
+    return snapshot(instance.flow, state.payload).pipe(
+      Effect.flatMap((payload) => entry.execute(payload as object, instance.executionId)),
+      Effect.ensuring(Effect.sync(() => entry.bodies.delete(fiber)))
+    )
+  })
+
+/**
+ * Drives a round again once it has settled `Suspended` because its
+ * registration closed under it. The latest still-open registration serves the
+ * new round; with none, the execution stays parked like any other.
+ */
+const handOver = (memory: Memory, executionId: string) =>
+  Effect.withFiber((round) =>
+    Effect.forkIn(Effect.andThen(Fiber.await(round), resume(memory, executionId)), memory.scope)
+  )
+
+/**
+ * Forks one round of `state` in the engine's scope: the body runs on a fresh
+ * copy of the payload, under the execution's admitted ceilings, with this
+ * engine and the round's instance provided. Cancellation needs no handler.
+ * The round's lifetime is the engine's, not its registration's: a closing
+ * registration parks the rounds it serves, and `handOver` drives them again,
+ * so their callers follow the execution instead of seeing an interruption.
  */
 const drive = (memory: Memory, state: ExecutionState, entry: Registration | undefined, instance: Instance) =>
-  (entry === undefined
-    ? Effect.interrupt
-    : snapshot(instance.flow, state.payload).pipe(
-      Effect.flatMap((payload) => entry.execute(payload as object, instance.executionId))
-    )).pipe(
-      CapabilitySet.attenuateGroups(state.capabilityCeilings),
-      (body) => startBody(state, instance, body),
-      Effect.onExit(() => interruptCancelled(instance)),
-      Flow.intoResult,
-      Effect.provideService(FlowRuntime.FlowInstance, instance),
-      Effect.provideService(FlowRuntime.FlowRuntime, memory.engine()),
-      Effect.tap((result) => endExpiredLineage(memory, state, result)),
-      Effect.tap((result) => redriveParent(memory, state, result)),
-      Effect.onExit((exit) =>
-        Effect.gen(function*() {
-          // A forced round interrupt bypasses the normal completion taps.
-          if (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)) {
-            yield* redriveParent(memory, state, new Flow.Complete({ exit }))
-          }
-          wake(memory, state.instance.executionId)
-        })
-      ),
-      Effect.forkIn(entry?.scope ?? memory.scope)
-    )
+  (entry === undefined ? Effect.interrupt : serve(state, entry, instance)).pipe(
+    CapabilitySet.attenuateGroups(state.capabilityCeilings),
+    (body) => startBody(state, instance, body),
+    Effect.onExit(() => interruptCancelled(instance)),
+    Flow.intoResult,
+    Effect.provideService(FlowRuntime.FlowInstance, instance),
+    Effect.provideService(FlowRuntime.FlowRuntime, memory.engine()),
+    Effect.tap((result) => endExpiredLineage(memory, state, result)),
+    Effect.tap((result) => redriveParent(memory, state, result)),
+    Effect.onExit((exit) =>
+      Effect.gen(function*() {
+        // A forced round interrupt bypasses the normal completion taps.
+        if (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)) {
+          yield* redriveParent(memory, state, new Flow.Complete({ exit }))
+        }
+        wake(memory, state.instance.executionId)
+        if (entry?.open === false && Exit.isSuccess(exit) && exit.value._tag === "Suspended") {
+          yield* handOver(memory, state.instance.executionId)
+        }
+      })
+    ),
+    Effect.forkIn(memory.scope)
+  )
 
 // Untraced because resume recursively drives suspended executions.
 const resumeUnlocked = Effect.fnUntraced(function*(
@@ -749,22 +782,31 @@ const execute = Effect.fnUntraced(function*(memory: Memory, flow: Flow.Any, opti
 })
 
 /**
- * Stacks a registration under its flow's tag until its scope closes. Untraced
- * because registration feeds back into the in-memory engine.
+ * Stacks a registration under its flow's tag until its scope closes. Closing
+ * splices it out first, then stops every body its handler is running: each
+ * round parks unless it is being cancelled, and `handOver` drives it again on
+ * the latest still-open registration. Untraced because registration feeds
+ * back into the in-memory engine.
  */
 const register = Effect.fnUntraced(function*(
   memory: Memory,
   flow: Flow.Any,
   execute: Registration["execute"]
 ) {
-  const registration: Registration = { flow, execute, scope: yield* Effect.scope }
+  const registration: Registration = { flow, execute, open: true, bodies: new Map() }
   const entries = memory.flows.get(flow._tag) ?? []
   memory.flows.set(flow._tag, entries)
   entries.push(registration)
   yield* Effect.addFinalizer(() =>
-    Effect.sync(() => {
+    Effect.suspend(() => {
+      registration.open = false
       entries.splice(entries.indexOf(registration), 1)
       if (entries.length === 0) memory.flows.delete(flow._tag)
+      return Effect.forEach([...registration.bodies], ([body, instance]) => {
+        // A cancellation already requested still ends the execution cancelled.
+        if (!instance.interrupted) instance.suspended = true
+        return Fiber.interrupt(body)
+      }, { concurrency: "unbounded", discard: true })
     })
   )
 })

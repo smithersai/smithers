@@ -586,8 +586,7 @@ describe("a lineage on the memory engine", () => {
   // `layerMemory.register` keeps a per-tag stack with a scope-aware restore,
   // mirroring `make.register`'s declaration table: a closed inner
   // registration is spliced back out, so executions land on the still-open
-  // outer registration — and in its still-open scope — rather than on a
-  // stale entry whose closed scope would interrupt the round fiber at fork.
+  // outer registration rather than on a stale entry whose handler is gone.
   it.effect("serves the outer registration after an inner scoped registration of the same tag closes", () =>
     Effect.gen(function*() {
       yield* withCrypto(
