@@ -430,8 +430,8 @@ describe("confine", () => {
     })
     const places = await scoped(confine(work, asked, () => Effect.void, programs, false))
 
-    expect(Object.keys(places)).toEqual(["baseline", "normal", "fast"])
-    for (const way of ["baseline", "normal", "fast"] as const) {
+    expect(Object.keys(places)).toEqual(["baseline", "normal", "fast", "trial"])
+    for (const way of ["baseline", "normal", "fast", "trial"] as const) {
       const place = places[way]
       // Each way's home and temporary directory are its own.
       expect(place.home).toBe(join(work, "home", way))
@@ -469,7 +469,8 @@ describe("confine", () => {
     expect(places).toEqual({
       baseline: placeIn(work, "baseline"),
       normal: placeIn(work, "normal"),
-      fast: placeIn(work, "fast")
+      fast: placeIn(work, "fast"),
+      trial: placeIn(work, "trial")
     })
     expect(said).toEqual([
       "steps run without a file-system jail: no bubblewrap. Each step still gets a home directory of its own and " +

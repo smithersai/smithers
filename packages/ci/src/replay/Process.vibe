@@ -12,6 +12,15 @@ import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/Chi
 import { type Confined, held } from "./Confine.vibe"
 import { noPushUrl, stepEnvironment } from "./Environment.ts"
 import type { StepOutput } from "./Failures.ts"
+import {
+  defaultStall,
+  exitOrStall,
+  exitStoppingStalled,
+  type StallLimit,
+  touching,
+  type Watch,
+  watchFor
+} from "./Stall.vibe"
 import { failure, withoutCredentials } from "./Summary.ts"
 
 /**
@@ -44,13 +53,14 @@ export interface Output {
 
 /**
  * What a CI step or an install left behind. `timedOut` says it was stopped at
- * the time limit.
+ * the time limit, and `stalled` that it was stopped for making no progress.
  *
  * @category models
  * @since 0.1.0
  */
 export interface StepRun extends StepOutput {
   readonly timedOut: boolean
+  readonly stalled: boolean
 }
 
 /** The exit code of a step stopped at its time limit, as `timeout` reports it. */
@@ -118,7 +128,8 @@ const keep = (
  * the last `limit` characters of what it printed. `env` is added to this
  * process's environment. With `whole`, the command is a past commit's: `env`
  * is its whole environment. `heard` is given the output as it comes. A command
- * that outlives its stop signal is killed.
+ * that outlives its stop signal is killed. With `watch`, what a stalled command
+ * waits in is stopped, so a run of `smthrs` can still write its record.
  *
  * @category running
  * @since 0.1.0
@@ -131,7 +142,8 @@ export effect function exec(
   limit: number,
   output: (handle: ChildProcessHandle) => Stream.Stream<Uint8Array, PlatformError.PlatformError> = (handle) => handle.all,
   whole = false,
-  heard: (chunk: string) => void!! = () => Effect.void
+  heard: (chunk: string) => void!! = () => Effect.void,
+  watch: Watch | undefined = undefined
 ) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
@@ -145,8 +157,9 @@ export effect function exec(
       })
     )
     const kept = try Ref.make("")
-    const reader = fork keep(output(handle), kept, (text, chunk) => (text + chunk).slice(-limit), heard)
-    const exitCode = try handle.exitCode
+    const printed = watch === undefined ? output(handle) : touching(output(handle), watch)
+    const reader = fork keep(printed, kept, (text, chunk) => (text + chunk).slice(-limit), heard)
+    const exitCode = watch === undefined ? try handle.exitCode : try exitStoppingStalled(handle, watch)
     // A process a step left running keeps the pipe open, so only complete output is waited for without a limit.
     if (limit === Number.POSITIVE_INFINITY) try Fiber.join(reader)
     else try timeoutOption(Fiber.await(reader), "1 second")
@@ -159,7 +172,7 @@ export effect function exec(
 /**
  * Runs a past commit's command, a CI step or an install, in the shell's place.
  * `env` is its whole environment, and it is stopped, and has failed, when it
- * runs longer than `limit`. The start of its error output and the end of what
+ * runs longer than `limit` or makes no progress for `stall`. The start of its error output and the end of what
  * it printed are kept: the first says why it failed, and the second does when
  * it wrote no error.
  *
@@ -171,7 +184,8 @@ export effect function runStep(
   args: ReadonlyArray<string>,
   cwd: string,
   env: Readonly<Record<string, string | undefined>>,
-  limit: Duration.Input
+  limit: Duration.Input,
+  stall: StallLimit = defaultStall()
 ) {
   const spawner = try ChildProcessSpawner
   return try scoped(effect {
@@ -186,18 +200,22 @@ export effect function runStep(
     )
     const stderr = try Ref.make("")
     const stdout = try Ref.make("")
+    const watch = try watchFor(stall.minutes, stall.table)
     const readers = fork all([
-      keep(handle.stderr, stderr, (text, chunk) => text.length < outputLimit ? (text + chunk).slice(0, outputLimit) : text),
-      keep(handle.stdout, stdout, (text, chunk) => (text + chunk).slice(-outputLimit))
+      keep(touching(handle.stderr, watch), stderr, (text, chunk) => text.length < outputLimit ? (text + chunk).slice(0, outputLimit) : text),
+      keep(touching(handle.stdout, watch), stdout, (text, chunk) => (text + chunk).slice(-outputLimit))
     ], { concurrency: "unbounded" })
-    const waited = try timeoutOption(handle.exitCode, limit)
+    const waited = try timeoutOption(exitOrStall(handle, watch), limit)
     // Leaving the scope stops a step that is still running.
     if (Option.isNone(waited)) {
-      return { timedOut: true, exitCode: timedOut, stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun
+      return { timedOut: true, stalled: false, exitCode: timedOut, stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun
+    }
+    if (waited.value === "stalled") {
+      return { timedOut: false, stalled: true, stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun
     }
     // A process a step left running keeps the pipes open, so its output is waited for only briefly.
     try timeoutOption(Fiber.await(readers), "1 second")
-    return { timedOut: false, exitCode: Number(waited.value), stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun
+    return { timedOut: false, stalled: false, exitCode: waited.value, stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun
   })
 }
 

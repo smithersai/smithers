@@ -234,15 +234,61 @@ export const speedupCommits = (report: ReplayReport): number => report.speedupCo
 export const noSpeedup = "no speedup: the CI failed at every replayed commit"
 
 /**
- * Which commits the speedup covers, or nothing when it covers them all.
+ * How many of the CI's jobs the numbers cover, or nothing when they cover
+ * them all: `3 of 5 jobs`.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const jobsCovered = (report: ReplayReport): string =>
+  report.jobs === undefined || report.jobs.replayed === report.jobs.total
+    ? ""
+    : `${report.jobs.replayed} of ${count(report.jobs.total, "job")}`
+
+/**
+ * The commits and jobs the speedup covers, or nothing when it covers them
+ * all: `over 2 of 3 commits and 3 of 5 jobs`.
  *
  * @category formatting
  * @since 0.1.0
  */
 export const coverage = (report: ReplayReport): string => {
   const covered = speedupCommits(report)
-  return covered === report.commits.length ? "" : `over ${covered} of ${count(report.commits.length, "commit")}`
+  const parts = [
+    ...(covered === report.commits.length ? [] : [`${covered} of ${count(report.commits.length, "commit")}`]),
+    ...(jobsCovered(report) === "" ? [] : [jobsCovered(report)])
+  ]
+  return parts.length === 0 ? "" : `over ${parts.join(" and ")}`
 }
+
+/**
+ * The jobs replayed, for the line that counts commits, or nothing when every
+ * job was.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const jobsCount = (report: ReplayReport): string => jobsCovered(report) === "" ? "" : ` · ${jobsCovered(report)}`
+
+/**
+ * How many jobs were not replayed at all. A job with only some matrix
+ * variants left out is listed, and was replayed, so it is not counted when
+ * the report says how many jobs it covers.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const jobsLeftOut = (report: ReplayReport): number =>
+  report.jobs === undefined ? (report.notReplayed ?? []).length : report.jobs.total - report.jobs.replayed
+
+/**
+ * What finding the jobs that pass on this machine cost, as one line.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const trialTime = (ms: number): string =>
+  `found the jobs that pass on this machine in ${duration(ms)}, which is in none of these times`
 
 /**
  * One failed step of a commit, with the ways of running it that it failed in.

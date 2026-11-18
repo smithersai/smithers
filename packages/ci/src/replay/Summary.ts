@@ -11,6 +11,7 @@ import * as Schema from "effect/Schema"
 import {
   type Ci,
   expand,
+  type FailedHere,
   hostOf,
   type Inventory,
   isSelfHosted,
@@ -30,7 +31,14 @@ import {
 import type { Failure } from "../contract/Parts.ts"
 import type { Plan } from "../contract/Plan.ts"
 import { reasonsSentence } from "../contract/Reasons.ts"
-import type { Mismatch, NotReplayedCommit, ReplayCommit, ReplayReport, RunTotals } from "../contract/ReplayReport.ts"
+import type {
+  Mismatch,
+  NotReplayedCommit,
+  ReplayCommit,
+  ReplayReport,
+  RunTotals,
+  StepFailure
+} from "../contract/ReplayReport.ts"
 import {
   combine,
   type Mode,
@@ -223,6 +231,30 @@ export interface Unit {
   readonly needs: ReadonlyArray<string>
   readonly steps: ReadonlyArray<UnitStep>
   readonly tree?: string | undefined
+  /** The matrix variant, for a job that has a matrix. */
+  readonly variant?: Readonly<Record<string, string>> | undefined
+}
+
+/**
+ * The roots of a plan, without the targets in `left` and every target that
+ * waits on one of them.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const rootsWithout = (plan: Plan, left: ReadonlySet<string>): ReadonlyArray<string> => {
+  const needs = new Map(plan.targets.map((target) => [target.label, target.dependencies]))
+  const known = new Map<string, boolean>()
+  const reachesLeft = (label: string): boolean => {
+    const found = known.get(label)
+    if (found !== undefined) return found
+    known.set(label, left.has(label))
+    const reaches = left.has(label) || (needs.get(label) ?? []).some(reachesLeft)
+    known.set(label, reaches)
+    return reaches
+  }
+  return plan.roots.filter((label) => !reachesLeft(label))
 }
 
 /**
@@ -337,6 +369,7 @@ export const replayable = (inventory: Ci, map: TargetMap, host: string): Replaya
       job: job.id,
       needs: job.needs,
       tree: treeOf(job),
+      ...(job.matrix.length === 0 ? {} : { variant }),
       steps: job.steps.map((step) => {
         const filled = withVariant(step, variant)
         const targets = targetsOfStep(map, job.id, step.id, variant)
@@ -359,6 +392,82 @@ export const replayable = (inventory: Ci, map: TargetMap, host: string): Replaya
     return reasons.length === 0 ? [] : [{ job: job.id, reasons }]
   })
   return { units, left }
+}
+
+/**
+ * What names a unit among the units of a CI: its job and its matrix variant.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const unitKey = (unit: Pick<Unit, "job" | "variant">): string => stepKey(unit.job, unit.variant ?? {})
+
+/**
+ * What one run of the baseline says of each unit it was asked about.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface TrialResult {
+  /** The units all of whose steps passed. */
+  readonly passed: ReadonlyArray<string>
+  /** The units with a step that failed, with the first line of its error. */
+  readonly failed: ReadonlyArray<FailedHere>
+  /** The first failure, in the order of the CI. */
+  readonly first: StepFailure | undefined
+}
+
+/**
+ * Sorts `units` by their steps' results. A unit whose steps neither all
+ * passed nor failed was kept from running by what ran before it, and is in
+ * neither list.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const trialOf = (
+  units: ReadonlyArray<Unit>,
+  results: ReadonlyArray<TargetResult>,
+  names: StepNames
+): TrialResult => {
+  const byLabel = new Map(results.map((result) => [result.label, result]))
+  const passed: Array<string> = []
+  const failed: Array<FailedHere> = []
+  let first: StepFailure | undefined
+  for (const unit of units) {
+    const own = unit.steps.flatMap((step) => {
+      const result = byLabel.get(step.label)
+      return result === undefined ? [] : [result]
+    })
+    const [failure] = failuresOf(own, names)
+    if (failure !== undefined) {
+      first ??= failure
+      const variant = unit.variant === undefined ? {} : { variant: unit.variant }
+      const prefix = unit.variant === undefined ? "" : `${stepKey("", unit.variant).trim()} `
+      failed.push({ job: unit.job, ...variant, reason: `${prefix}${failure.reason}` })
+    } else if (own.length === unit.steps.length && own.every((result) => result.status === "ran")) {
+      passed.push(unitKey(unit))
+    }
+  }
+  return { passed, failed, first }
+}
+
+/**
+ * How many of the CI's jobs a replay covers: the jobs of `units`, of those and
+ * the jobs in `left`.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const jobsCovered = (
+  units: ReadonlyArray<Pick<Unit, "job">>,
+  left: ReadonlyArray<NotReplayed>
+): { readonly replayed: number; readonly total: number } => {
+  const replayed = new Set(units.map((unit) => unit.job))
+  return { replayed: replayed.size, total: new Set([...replayed, ...left.map((entry) => entry.job)]).size }
 }
 
 /**
@@ -824,6 +933,10 @@ export interface Findings {
   readonly commitsLeft?: ReadonlyArray<NotReplayedCommit> | undefined
   /** Why fast mode has no numbers, when the model stopped answering during the replay. */
   readonly fastNotMeasured?: string | undefined
+  /** How many of the CI's jobs the numbers cover. */
+  readonly jobs?: { readonly replayed: number; readonly total: number } | undefined
+  /** How long the run that found the jobs that pass here took, when there was one. */
+  readonly trialMs?: number | undefined
 }
 
 /**
@@ -873,6 +986,8 @@ export const reportOf = (
     normalWallMs,
     speedup: normalWallMs === 0 ? 0 : baselineWallMs / normalWallMs,
     speedupCommits: measured.length,
+    ...(found.jobs === undefined ? {} : { jobs: found.jobs }),
+    ...(found.trialMs === undefined ? {} : { trialMs: found.trialMs }),
     mismatches: commits.reduce((total, commit) => total + commit.mismatches.length, 0),
     flaky: found.flaky,
     ...(found.selection === undefined
@@ -939,6 +1054,10 @@ export interface Gathered {
   readonly fastFlaky: number
   readonly commitsLeft?: ReadonlyArray<NotReplayedCommit> | undefined
   readonly fastNotMeasured: string | undefined
+  /** How many of the CI's jobs the numbers cover. */
+  readonly jobs?: { readonly replayed: number; readonly total: number } | undefined
+  /** How long the run that found the jobs that pass here took, when there was one. */
+  readonly trialMs?: number | undefined
 }
 
 /**
@@ -961,6 +1080,8 @@ export const finishedReport = (
     left: gathered.left,
     flaky: measured ? gathered.flaky + gathered.fastFlaky : gathered.flaky,
     commitsLeft: gathered.commitsLeft,
-    fastNotMeasured: gathered.fastNotMeasured
+    fastNotMeasured: gathered.fastNotMeasured,
+    jobs: gathered.jobs,
+    trialMs: gathered.trialMs
   })
 }

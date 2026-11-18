@@ -92,7 +92,8 @@ describe("a repository whose CI is npm ci, then npm run lint and npm test", () =
         "packages/b/extra.test.js": "require(\"node:assert\").strictEqual(1, 2)\n"
       })
 
-      const outcome = await spawn(bin, ["--commits", "5", "--json"], root)
+      // The newest commit fails on purpose, and its verdict is what is compared: nothing is left out.
+      const outcome = await spawn(bin, ["--commits", "5", "--json", "--no-trial"], root)
       expect(outcome.stderr).not.toContain("reads are not observed")
       const report = JSON.parse(outcome.stdout) as ReplayReport
       const subjects = git(root, "log", "--reverse", "--format=%H %s", "-5").trim().split("\n")

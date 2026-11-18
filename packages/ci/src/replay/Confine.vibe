@@ -31,13 +31,13 @@ import {
 } from "./Jail.ts"
 
 /**
- * The ways a replay runs a commit: the repository's CI as it is, and the
- * modes.
+ * The ways a replay runs a commit: the repository's CI as it is, the modes,
+ * and the one run that finds what can pass on this machine.
  *
  * @category models
  * @since 0.1.0
  */
-export type Way = "baseline" | "normal" | "fast"
+export type Way = "baseline" | "normal" | "fast" | "trial"
 
 /**
  * Where the steps of one way of a replay run: their home and temporary
@@ -133,14 +133,20 @@ export effect function confine(
     try fs.writeFileString(path.join(home, ".gitconfig"), gitConfig)
     return { home, tmp, guard, hooks, daemon: daemonEnvironment(allowDocker, ambientEnvironment()) }
   }
-  const made = { baseline: try make("baseline"), normal: try make("normal"), fast: try make("fast") }
+  const made = {
+    baseline: try make("baseline"),
+    normal: try make("normal"),
+    fast: try make("fast"),
+    trial: try make("trial")
+  }
   const found = probe()
   if ("refusal" in found) {
     try say(unjailed(found.refusal, allowDocker))
     return {
       baseline: { ...made.baseline, jail: undefined },
       normal: { ...made.normal, jail: undefined },
-      fast: { ...made.fast, jail: undefined }
+      fast: { ...made.fast, jail: undefined },
+      trial: { ...made.trial, jail: undefined }
     } satisfies Places
   }
   // A socket is hidden where it really is: `/var/run` is a link to `/run` on most machines.
@@ -176,7 +182,8 @@ export effect function confine(
   return {
     baseline: { ...made.baseline, jail: jailOf(made.baseline.tmp) },
     normal: { ...made.normal, jail: jailOf(made.normal.tmp) },
-    fast: { ...made.fast, jail: jailOf(made.fast.tmp) }
+    fast: { ...made.fast, jail: jailOf(made.fast.tmp) },
+    trial: { ...made.trial, jail: jailOf(made.trial.tmp) }
   } satisfies Places
 }
 

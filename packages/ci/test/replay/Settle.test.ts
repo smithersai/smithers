@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
 import { type TargetResult, verdictOf } from "../../src/contract/RunRecord.ts"
+import { noProgress } from "../../src/replay/Failures.ts"
 import { maxReruns } from "../../src/replay/index.ts"
 import { type Execute, settle } from "../../src/replay/Replay.vibe"
 
@@ -33,6 +34,14 @@ const settled = <R>(execute: Execute<R>, first: ReadonlyArray<TargetResult>) =>
   Effect.runPromise(settle(execute, first, maxReruns, first.length) as Effect.Effect<ReadonlyArray<TargetResult>>)
 
 describe("settle", () => {
+  it("does not run again a target stopped for making no progress", async () => {
+    const { calls, execute } = scripted({ a: ["failed"], b: ["ran"] })
+    const stalled = { ...result("a", "failed"), error: noProgress(10) }
+    const [a] = await settled(execute, [stalled, result("b", "ran")])
+    expect(calls).toEqual([])
+    expect(a?.error).toBe(noProgress(10))
+  })
+
   it("reruns a target that keeps failing ten times, for eleven attempts", async () => {
     const { calls, execute } = scripted({ a: ["failed"] })
     const [a] = await settled(execute, [result("a", "failed")])

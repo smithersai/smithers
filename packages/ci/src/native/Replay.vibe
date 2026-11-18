@@ -12,7 +12,7 @@
 
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { applyRefuses } from "../contract/Command.ts"
-import { stepTimeoutHours } from "../contract/Inventory.ts"
+import { failsHere, needsLeftOut, type NotReplayed, stepTimeoutHours } from "../contract/Inventory.ts"
 import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract/Parts.ts"
 import type { NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
@@ -20,7 +20,7 @@ import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { type Confined, confine, held, reading, type Way } from "../replay/Confine.vibe"
 import { gitConfig, pushesGoNowhere, searchPath, stepEnvironment } from "../replay/Environment.ts"
 import { probe } from "../replay/Jail.ts"
-import { nothingPassed, printedLimit } from "../replay/Failures.ts"
+import { failuresOf, noJobPassed, noProgress, nothingPassed, printedLimit, stoppedResults } from "../replay/Failures.ts"
 import {
   cacheDirectory,
   checkoutAt,
@@ -39,6 +39,7 @@ import {
 } from "../replay/Process.vibe"
 import { printsNotes, readsListener } from "../replay/Reads.ts"
 import { type Execute, Options, Progress, scoresOrReason, settle } from "../replay/Replay.vibe"
+import { defaultStall, defaultStallMinutes, type StallLimit, tableFor, watchFor } from "../replay/Stall.vibe"
 import {
   choose,
   failure,
@@ -49,6 +50,7 @@ import {
   planOfPrinted,
   PrintedPlan,
   recordOf,
+  rootsWithout,
   totalsOf
 } from "../replay/Summary.ts"
 import {
@@ -109,7 +111,8 @@ export effect function install(
   checkout: string,
   workspaceFile: string,
   place: Confined,
-  limit: Duration.Input = Duration.hours(stepTimeoutHours)
+  limit: Duration.Input = Duration.hours(stepTimeoutHours),
+  stall: StallLimit = defaultStall()
 ): Installed!!Host {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
@@ -120,8 +123,9 @@ export effect function install(
     if (manager === undefined) continue
     const [command, ...args] = held(place, [checkout], manager.command)
     const environment = stepEnvironment(place.daemon, place)
-    const ran = runStep(command, args, path.join(checkout, directory), environment, limit)
-      catch () => ({ timedOut: false, exitCode: 127 })
+    const ran = runStep(command, args, path.join(checkout, directory), environment, limit, stall)
+      catch () => ({ timedOut: false, stalled: false, exitCode: 127 })
+    if (ran.stalled) return { ok: false, reason: commandStopped(manager.command, directory, noProgress(stall.minutes)) }
     if (ran.timedOut) return { ok: false, reason: commandStopped(manager.command, directory, pastLimit(limit)) }
     if (ran.exitCode !== 0) return { ok: false, reason: commandFailed(manager.command, directory, ran.exitCode) }
   }
@@ -190,6 +194,11 @@ interface CommitCi {
  * still run for every commit, fast mode runs for no further commit, and the
  * report holds no fast-mode number and says why (`fastNotMeasured`).
  *
+ * With `request.trial` the patterns run once at the newest commit first, in
+ * a home of their own. A target that fails there, and every target that waits
+ * on it, is left out at every commit and listed. When none passes, the replay
+ * fails `unsupported`.
+ *
  * @category parts
  * @since 0.1.0
  */
@@ -204,6 +213,10 @@ export const own = <R>(
     const options = try Options
     const progress = try Progress
     const stepLimit = options.stepTimeout ?? Duration.hours(stepTimeoutHours)
+    const stall: StallLimit = {
+      minutes: request.stallMinutes ?? defaultStallMinutes,
+      table: options.processes ?? tableFor()
+    }
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-own-" }), "could not make a directory")
     const source = path.join(work, "source")
     const root = path.resolve(request.root)
@@ -248,7 +261,7 @@ export const own = <R>(
       file: string
     ) {
       try checkoutAt(copy, commit, place, kept)
-      return try install(copy, file, place, stepLimit)
+      return try install(copy, file, place, stepLimit, stall)
     }
 
     const normalCopy = try copyOf("normal")
@@ -335,24 +348,80 @@ export const own = <R>(
       ])
       // The cache's address is the one thing the copy's own `smthrs` gets beyond what a target gets.
       const environment = { ...stepEnvironment(place.daemon, place), ...printsNotes, ...(cached ? cacheEnv : {}) }
-      const output = try exec(command, args, copy, environment, printedLimit, undefined, true, heard)
+      const watch = try watchFor(stall.minutes, stall.table)
+      const output = try exec(command, args, copy, environment, printedLimit, undefined, true, heard, watch)
+      const record = effect {
+        const text = try fs.readFileString(file)
+        return try Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text)
+      } catch () => undefined
+      const recorded = record === undefined ? undefined : withReasons(record.results, output.text)
+      if (try Ref.get(watch.stalled)) {
+        return stoppedResults(recorded, selected, watch.limitMs, noProgress(stall.minutes))
+      }
       // A run with no record is a commit `smthrs` could not plan: a failed commit, not a failed replay.
-      const text = fs.readFileString(file) catch () => undefined
-      if (text === undefined) return [noRecord(output.text)]
-      const record = Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text) catch () => undefined
-      return record === undefined ? [noRecord(output.text)] : withReasons(record.results, output.text)
+      return recorded ?? [noRecord(output.text)]
     }
 
-    /** The plan of the patterns in the normal copy, which fast mode's rows are measured against. */
-    effect function planOf(smthrs: string, patterns: ReadonlyArray<string>) {
-      const plan = ["ci", ...patterns, "--plan", "--format", "json", "--workspace", normalCopy]
-      const [command, ...args] = held(places.normal, [normalCopy], [smthrs, ...plan])
-      const environment = { ...stepEnvironment(places.normal.daemon, places.normal), ...cacheEnv }
-      const planned = try exec(command, args, normalCopy, environment, Number.POSITIVE_INFINITY, stdoutOf, true)
+    /** The plan of the patterns in a copy; fast mode's rows are measured against the normal copy's. */
+    effect function planOf(
+      smthrs: string,
+      patterns: ReadonlyArray<string>,
+      copy: string = normalCopy,
+      place: Confined = places.normal
+    ) {
+      const plan = ["ci", ...patterns, "--plan", "--format", "json", "--workspace", copy]
+      const [command, ...args] = held(place, [copy], [smthrs, ...plan])
+      const environment = { ...stepEnvironment(place.daemon, place), ...cacheEnv }
+      const planned = try exec(command, args, copy, environment, Number.POSITIVE_INFINITY, stdoutOf, true)
       const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
         throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
       }
       return planOfPrinted(printed)
+    }
+
+    // What the one run at the newest commit left out: it failed there, or waits on what did.
+    const leftHere = new Set<string>()
+    const left: Array<NotReplayed> = [...chosen.left]
+    let covered: { readonly replayed: number; readonly total: number } | undefined = undefined
+    let trialMs: number | undefined = undefined
+
+    if (request.trial === true) {
+      const head = commits.at(-1) as string
+      const start = try Clock.currentTimeMillis
+      try progress.say(`checking which targets pass on this machine at ${head.slice(0, 7)}`)
+      const copy = try copyOf("trial")
+      const state = try install(copy, workspaceFile, places.trial, stepLimit, stall)
+      const execute = smthrs(copy, false, state, places.trial, chosen.patterns)
+      const first = try execute(undefined)
+      const results = try settle(execute, first, Math.min(1, options.reruns), first.length)
+      const failures = failuresOf(results)
+      const passed = results.filter((result) => result.status === "ran" || result.status === "hit")
+      if (passed.length === 0 && failures[0] !== undefined) throw failure("unsupported", noJobPassed(head, failures[0]))
+      for (const failed of failures) {
+        try progress.say(`fails here: ${failed.step}: ${failed.reason}`)
+        leftHere.add(failed.step)
+        left.push({ job: failed.step, reasons: [{ feature: failsHere, detail: failed.reason }] })
+      }
+      for (const result of results.filter((entry) => entry.status === "skipped")) {
+        leftHere.add(result.label)
+        left.push({
+          job: result.label,
+          reasons: [{ feature: needsLeftOut, detail: `${result.label} needs a target that fails here, which is not replayed` }]
+        })
+      }
+      covered = { replayed: passed.length, total: results.length }
+      trialMs = (try Clock.currentTimeMillis) - start
+    }
+
+    /**
+     * What the first pass runs in a copy when the run at the newest commit left targets out: the commit's patterns'
+     * targets without those and what waits on them. A commit that cannot be planned runs its patterns and fails as
+     * it would.
+     */
+    effect function firstPass(copy: string, state: Installed, place: Confined, patterns: ReadonlyArray<string>) {
+      if (leftHere.size === 0 || !state.ok) return patterns
+      const plan = planOf(state.smthrs, patterns, copy, place) catch () => undefined
+      return plan === undefined ? patterns : rootsWithout(plan, leftHere)
     }
 
     /** One mode of one commit: the checkout, the install and the first pass are timed, the reruns are not. */
@@ -368,9 +437,13 @@ export const own = <R>(
       try progress.say(at)
       const start = try Clock.currentTimeMillis
       const state = try ready(copy, commit, cached ? [cacheDirectory] : [], place, ci.workspaceFile)
-      const execute = smthrs(copy, cached, state, place, ci.patterns)
+      // Finding what to leave out is the replay's own work, so it is not timed.
+      const planning = try Clock.currentTimeMillis
+      const patterns = targets === undefined ? try firstPass(copy, state, place, ci.patterns) : ci.patterns
+      const planned = (try Clock.currentTimeMillis) - planning
+      const execute = smthrs(copy, cached, state, place, patterns)
       const first = try execute(targets)
-      const wallMs = (try Clock.currentTimeMillis) - start
+      const wallMs = (try Clock.currentTimeMillis) - start - planned
       const results = try settle(execute, first, options.reruns, first.length)
       for (const line of linesOf(at, results, wallMs)) try progress.say(line)
       return { results, wallMs, state } satisfies Measured
@@ -463,11 +536,13 @@ export const own = <R>(
       fastAsked: fastCopy !== undefined,
       rows: allRows,
       selected,
-      left: chosen.left,
+      left,
       flaky,
       fastFlaky,
       commitsLeft,
-      fastNotMeasured
+      fastNotMeasured,
+      jobs: covered,
+      trialMs
     })
     return { ...report, targets: chosen.patterns }
   })

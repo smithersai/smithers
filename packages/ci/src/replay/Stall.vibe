@@ -1,0 +1,232 @@
+/**
+ * Stops a step that has stopped working. A step can wait forever on something
+ * that will never come, and its time limit is hours away. Time alone says
+ * nothing: a step is stalled when its whole process tree has used no CPU and
+ * printed nothing for the limit.
+ *
+ * @since 0.1.0
+ */
+
+import * as ChildProcess from "effect/process/ChildProcess"
+import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type * as PlatformError from "effect/PlatformError"
+import { thisHost } from "./Environment.ts"
+import { fromPs, fromStat, type ProcessEntry, treeOf, workOver } from "./ProcessTable.ts"
+
+/**
+ * What reading and stopping processes needs of the machine.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type TableHost = FileSystem.FileSystem | ChildProcessSpawner
+
+/**
+ * The machine's processes. `read` gives `undefined` when they cannot be read;
+ * nothing is then called stalled, because a step is never stopped on time
+ * alone. `stop` ends processes at once.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Table {
+  readonly read: (ReadonlyArray<ProcessEntry> | undefined)!!TableHost
+  readonly stop: (pids: ReadonlyArray<number>) => void!!TableHost
+}
+
+/** Runs a program to its end and gives its standard output, or `undefined` when it fails. */
+effect function outputOf(command: string, args: ReadonlyArray<string>) {
+  const spawner = try ChildProcessSpawner
+  return scoped(effect {
+    const handle = try spawner.spawn(ChildProcess.make(command, [...args], { stdin: "ignore", stderr: "ignore" }))
+    const text = try (handle.stdout |> Stream.decodeText(%) |> Stream.mkString(%))
+    return Number(try handle.exitCode) === 0 ? text : undefined
+  }) catch () => undefined
+}
+
+/** Every process, from `/proc`. A process that ends while it is read is left out. */
+effect function readProc() {
+  const fs = try FileSystem.FileSystem
+  const names = fs.readDirectory("/proc") catch () => undefined
+  if (names === undefined) return undefined
+  const entries: Array<ProcessEntry> = []
+  for concurrent(16) (const name of names.filter((entry) => /^\d+$/.test(entry))) {
+    const text = fs.readFileString(`/proc/${name}/stat`) catch () => ""
+    const entry = fromStat(text)
+    if (entry !== undefined) entries.push(entry)
+  }
+  return entries
+}
+
+/** Every process, from `ps`. */
+effect function readPs() {
+  const text = try outputOf("ps", ["-axo", "pid=,ppid=,time="])
+  return text === undefined ? undefined : fromPs(text)
+}
+
+/**
+ * The process table of a system, in Node's names: `/proc` on Linux and `ps`
+ * elsewhere.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const tableFor = (host: string = thisHost()): Table => ({
+  read: host === "linux" ? readProc() : readPs(),
+  stop: (pids) => effect {
+    if (pids.length > 0) try outputOf("kill", ["-KILL", ...pids.map(String)])
+  }
+})
+
+/**
+ * The stall limit when none is asked for, in minutes.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const defaultStallMinutes = 10
+
+/** How long a tree that was stopped in part gets to end by itself, before more of it is stopped. */
+const graceMs = 30_000
+
+/** How many times the processes a stalled tree waits in are stopped before the whole tree is. */
+const stopRounds = 5
+
+/**
+ * What a replay stops a stalled command by: how many minutes of no progress
+ * it allows, and where it reads the processes.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface StallLimit {
+  readonly minutes: number
+  readonly table: Table
+}
+
+/**
+ * The limit when a caller names none.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const defaultStall = (): StallLimit => ({ minutes: defaultStallMinutes, table: tableFor() })
+
+/**
+ * One running command under watch. `touched` holds when it last printed, and
+ * `stalled` whether it was stopped for making no progress. `table` is where
+ * its processes are read.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Watch {
+  readonly limitMs: number
+  readonly table: Table
+  readonly touched: Ref.Ref<number>
+  readonly stalled: Ref.Ref<boolean>
+}
+
+/**
+ * A watch that starts now.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function watchFor(minutes: number, table: Table) {
+  return {
+    limitMs: minutes * 60_000,
+    table,
+    touched: try Ref.make(try Clock.currentTimeMillis),
+    stalled: try Ref.make(false)
+  } satisfies Watch
+}
+
+/**
+ * `stream`, noting in `watch` each time it gives something.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const touching = <E, R>(stream: Stream.Stream<Uint8Array, E, R>, watch: Watch) =>
+  Stream.tap(stream, () => effect {
+    try Ref.set(watch.touched, try Clock.currentTimeMillis)
+  })
+
+/** Ends when the tree under `root` has used no CPU and printed nothing for `limitMs`. Else it runs on. */
+effect function untilStalled(root: number, limitMs: number, watch: Watch) {
+  const tick = Duration.millis(Math.min(Math.max(limitMs / 20, 100), 30_000))
+  let since = try Clock.currentTimeMillis
+  let spent: number | undefined = undefined
+  while (true) {
+    try sleep(tick)
+    const now = try Clock.currentTimeMillis
+    const entries = try watch.table.read
+    const tree = entries === undefined ? undefined : treeOf(entries, root)
+    // What cannot be measured is never called a stall.
+    if (tree === undefined || tree.pids.length === 0) {
+      since = now
+      spent = undefined
+      continue
+    }
+    if (spent === undefined) spent = tree.cpuMs
+    // A child that ended takes its time with it: the sum can fall.
+    spent = Math.min(spent, tree.cpuMs)
+    if ((try Ref.get(watch.touched)) > since || tree.cpuMs - spent >= workOver(now - since)) {
+      since = now
+      spent = tree.cpuMs
+    } else if (now - since >= limitMs) return
+  }
+}
+
+/**
+ * Waits for a step run on its own: its exit code, or `"stalled"`, and then
+ * the caller ends the whole step.
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export effect function exitOrStall(
+  handle: Pick<ChildProcessHandle, "exitCode" | "pid">,
+  watch: Watch
+) {
+  return try.race [
+    map(handle.exitCode, Number) as number!PlatformError.PlatformError,
+    effect {
+      try untilStalled(Number(handle.pid), watch.limitMs, watch)
+      try Ref.set(watch.stalled, true)
+      return "stalled" as const
+    }
+  ]
+}
+
+/**
+ * Waits for `smthrs`, which runs targets, and keeps it alive when they stall:
+ * only the processes a stalled tree waits in are stopped, so their targets
+ * fail, `smthrs` goes on and writes its run record. What is still stuck after
+ * that is stopped in turn. Gives the exit code, or `undefined` when the tree
+ * never ended and the caller must end it.
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export effect function exitStoppingStalled(
+  handle: Pick<ChildProcessHandle, "exitCode" | "pid">,
+  watch: Watch
+) {
+  const root = Number(handle.pid)
+  return try.race [
+    map(handle.exitCode, Number) as (number | undefined)!PlatformError.PlatformError,
+    effect {
+      try untilStalled(root, watch.limitMs, watch)
+      try Ref.set(watch.stalled, true)
+      for (let round = 0; round < stopRounds; round++) {
+        const entries = try watch.table.read
+        const leaves = entries === undefined ? [] : treeOf(entries, root).leaves.filter((pid) => pid !== root)
+        try watch.table.stop(leaves)
+        try untilStalled(root, Math.min(graceMs, watch.limitMs), watch)
+      }
+      return undefined
+    }
+  ]
+}

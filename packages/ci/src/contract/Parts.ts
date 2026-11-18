@@ -136,6 +136,18 @@ export interface ReplayRequest {
   readonly targets?: ReadonlyArray<string> | undefined
   readonly settings?: Settings | undefined
   readonly allowDocker?: boolean | undefined
+  /**
+   * How many minutes a step may go with no CPU used by its whole process tree
+   * and nothing printed before it is stopped and has failed. The default is
+   * 10; a fraction is allowed.
+   */
+  readonly stallMinutes?: number | undefined
+  /**
+   * Runs the baseline once at the newest commit before anything else, and
+   * replays only the jobs that pass there. The others are listed with the
+   * reason `Inventory.failsHere`.
+   */
+  readonly trial?: boolean | undefined
 }
 
 /**

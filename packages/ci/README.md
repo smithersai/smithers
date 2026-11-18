@@ -65,6 +65,18 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-18, what a replay measures on a machine where part of the CI cannot pass** (optional additions by the
+replay lane):
+
+- `ReplayRequest.trial`: the baseline runs once at the newest commit first, and only what passes is replayed.
+  `ReplayRequest.stallMinutes`: how long a step may use no CPU and print nothing. `Command.flags` gains `no-trial` and
+  `stall-minutes`.
+- `Inventory.failsHere` (`fails-here`), `FailedHere`, `withoutFailedHere` and `variantsFailedHere`: a job, or one
+  matrix variant of it, that failed in that run is left out of `ci`, and listed with the first line of its error. The
+  inventory `apply` reads never has them, so `apply` still writes the job.
+- `ReplayReport.jobs` (`{ replayed, total }`) says how many jobs the numbers cover. `ReplayReport.trialMs` is how long
+  that run took, which is in no other time.
+
 **2026-11-18, generated files that go stale** (additive, by the `sci-never-stale` lane):
 
 - Contract 7: the flag `check` on `apply`. `apply --check` writes nothing, prints one line for each file `apply` would

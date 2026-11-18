@@ -86,7 +86,8 @@ describe.concurrent("a replay on a machine with docker", () => {
       "build.sh": "docker info\n",
       "test.sh": "exit 0\n"
     })
-    const report = await replay(root, env)
+    // The failing step is what this test reads, so it is measured and not left out.
+    const report = await replay(root, env, "--no-trial")
     expect(report.notReplayed ?? []).toEqual([])
     // The machine's docker passes, so the step failed on the stand-in that stood in its place.
     const counts = { hit: 0, ran: 1, failed: 1, skipped: 0 }

@@ -44,18 +44,31 @@ no toolchain.
   report gives both versions.
 - A job for another operating system is left out. When every job is, the
   command names the system in one line and exits with code 3.
+- A job that cannot pass here, because it needs Docker, a service or a
+  credential, is left out too. Before the replay, the command runs your CI once
+  at the newest commit. A job that fails in that run is listed as failing on this
+  machine, with the first line of its error, and runs at no commit. The numbers cover the
+  jobs that passed. `smithers-ci apply` still writes every job: it passes on your
+  runners. `--no-trial` skips that run.
 
 [Setup actions](../concepts/how-it-works.md#setup-actions) has the rules.
+
+A step that stops working fails in minutes. When a step's processes use no CPU
+and print nothing for 10 minutes, the replay stops it and reports `it made no
+progress for 10 minutes`. A step that waits that long on purpose needs a higher
+limit: `--stall-minutes 30`.
 
 ## What it prints
 
 The text report gives the totals: the baseline wall time, the normal-mode wall
 time, the speedup (baseline wall time divided by normal-mode wall time), how
 many commits were replayed, and the number of mismatches. The times and the
-speedup cover the commits where your CI passed. When it failed at some of them,
-the speedup says how many it covers: `6.0× faster over 4 of 5 commits`. When it
-failed at all of them, the report prints no speedup. Then it gives one line for
-each commit: the files it changed, and whether each way passed, with its wall
+speedup cover the commits where your CI passed and the jobs that can pass here.
+When they leave some out, the speedup says what it covers:
+`6.0× faster over 4 of 5 commits and 3 of 5 jobs`. When your CI failed at every
+commit, the report prints no speedup. A line says how long finding the jobs that
+pass took; that time is in no other number. Then it gives one line for each
+commit: the files it changed, and whether each way passed, with its wall
 time. Under them it lists:
 
 - every commit it did not replay because that commit had no CI it can run,
@@ -132,13 +145,13 @@ says fast mode was not measured and why, and the command exits `4`.
 | `3`  | The directory is not a Git repository with a commit, its CI cannot be replayed here, or its CI does not pass on this machine. |
 | `4`  | A step of the command could not finish.                                                                                       |
 
-Code `3` also means your CI does not pass on this machine: no step passed at
-any replayed commit, so there is nothing to measure. The program prints no
-speedup. It prints the first failure of the newest commit, with the step, its
+Code `3` also means your CI does not pass on this machine: no job passed when
+the command ran it at the newest commit, so there is nothing to measure. The
+program prints no speedup. It prints the first failure, with the step, its
 command, its exit code and the first line of its error:
 
 ```text
-smithers-ci: replay: this repository's CI does not pass on this machine, so there is no speedup to measure. No step passed at any of the 2 replayed commits.
+smithers-ci: replay: this repository's CI does not pass on this machine, so there is no speedup to measure. No job passed at adbc881.
 First failure at adbc881:
   step     test.yml:lint:1
   command  golangci-lint run ./...

@@ -212,6 +212,42 @@ Every run happens in a copy. The replay never changes the repository it reads.
 mode, so the times compare like with like. The default is this machine's core
 count.
 
+### Jobs that cannot pass here
+
+A repository often has a job that cannot pass on the machine you measure on: it
+needs Docker, a service, a credential or another system. One such job must not
+cost you the whole measurement. So the replay starts by running the baseline
+once at the newest commit, in a home of its own, which warms no cache that a
+measured run reads.
+
+- A job that passes is replayed.
+- A job that fails is run once more, so a flaky failure leaves nothing out. If
+  it fails again, it runs at no commit, in no way. The report lists it as
+  failing on this machine, with the first line of its error, and every job that
+  needs it as left out with it. In a matrix job, this holds for each variant.
+- In a Justfile, Makefile or `package.json`, where jobs share one working tree,
+  the jobs after a failed one run again without it, as they will in the replay.
+- When no job passes, there is nothing to measure: the command prints the first
+  failure and exits `3`.
+
+The report gives the time this run took, and that time is in no other number. A
+job that passes here and fails at an older commit is an ordinary failed baseline
+at that commit. `apply` still writes every job, because a job that cannot pass
+on your machine passes on your runners. `--no-trial` skips this run.
+
+### Steps that stop making progress
+
+A step can wait forever for something that will never come, such as a pipe
+nobody writes. When a step's whole process tree uses less than one hundredth of a
+CPU core and prints nothing for 10 minutes, the replay stops it, and it fails with
+`it made no progress for 10 minutes`. This holds in the baseline, as a target and
+for every install. A target is stopped through the processes it waits in, so the
+targets beside it keep their results. A stopped step is not run again.
+
+CPU time comes from `/proc` on Linux and from `ps` on macOS, never from the clock
+alone: when they cannot be read, no step is stopped this way. A step that waits
+longer on purpose needs `--stall-minutes` set above its wait.
+
 ### What a step can reach
 
 A step is a command from a past commit, and someone else may have written it.
@@ -448,7 +484,8 @@ exit `2`. In a throwaway container, `--allow-root` lets them run.
 ### Verdicts
 
 A failed target reruns up to the limit the program sets (two) or until it
-passes. Its attempts give its verdict:
+passes, unless it was stopped for making no progress. Its attempts give its
+verdict:
 
 | Verdict   | When                                  |
 | --------- | ------------------------------------- |
@@ -495,12 +532,14 @@ Over the commits where the baseline passed it gives the total wall time of each
 way and the speedup: the baseline wall time divided by the normal-mode wall
 time. A failed baseline stops at its failure, so its time says nothing about
 your CI. Such a commit is shown with its failure and left out of these numbers,
-and the report says how many commits they cover. It also gives the number of
-mismatches and the number of flaky verdicts over every commit.
+and the report says how many commits they cover, and how many jobs:
+`over 4 of 5 commits and 3 of 5 jobs`. It also gives the number of mismatches and
+the number of flaky verdicts over every commit.
 
-When no step passes in the baseline of any commit, your CI does not pass on this
-machine and there is nothing to measure. The command prints the first failure of
-the newest commit, prints no speedup and exits with code 3.
+When no job passes at the newest commit, or, with `--no-trial`, no step passes in
+the baseline of any commit, your CI does not pass on this machine and there is
+nothing to measure. The command prints the first failure, prints no speedup and
+exits with code 3.
 
 It lists each CI job that was not replayed with its reasons,
 and each file the inventory could not read, so the speedup is never read as

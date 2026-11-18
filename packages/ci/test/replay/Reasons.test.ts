@@ -95,6 +95,7 @@ describe("what smthrs printed for a failed target", () => {
   })
 
   it("joins the arguments of a command no shell ran", () => {
+    expect(printedFailure(`${printed({ exitCode: 1, stderr: "boom" })}\na note from smthrs`).error).toBe("boom")
     expect(printedFailure(printed({ argv: ["node", "build.js"], exitCode: 1, stderr: "boom" }))).toEqual({
       error: "boom",
       exitCode: 1,

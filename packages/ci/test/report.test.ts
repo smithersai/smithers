@@ -680,6 +680,58 @@ describe("failed steps", () => {
     expect(shown).not.toContain("█")
   })
 
+  it("says how many jobs the numbers cover, beside the commits, and what finding them took", () => {
+    const report: ReplayReport = { ...normalOnly(), jobs: { replayed: 3, total: 5 }, trialMs: 62_000 }
+    const shown = text(report)
+    expect(shown).toContain("5.5× faster over 3 of 5 jobs\n")
+    expect(shown).toContain("1 commit · 3 of 5 jobs · 0 mismatches")
+    expect(shown).toContain("found the jobs that pass on this machine in 1m 02s, which is in none of these times")
+    const page = body(html(report))
+    expect(page).toContain("<p class=\"summary\">over 3 of 5 jobs</p>")
+    expect(page).toContain("1 commit · 3 of 5 jobs · 0 mismatches")
+    expect(page).toContain("found the jobs that pass on this machine in 1m 02s")
+  })
+
+  it("names commits and jobs together when the speedup leaves out both", () => {
+    const [first] = normalOnly().commits as [ReplayCommit]
+    const report: ReplayReport = {
+      ...normalOnly(),
+      commits: [first, { ...first, commit: "b2c3d4e5f6a1" }],
+      speedupCommits: 1,
+      jobs: { replayed: 1, total: 2 }
+    }
+    expect(text(report)).toContain("5.5× faster over 1 of 2 commits and 1 of 2 jobs\n")
+  })
+
+  it("keeps what it says of jobs and of the first run in the document", () => {
+    const decoded = Schema.decodeUnknownSync(ReplayReport)({
+      ...normalOnly(),
+      jobs: { replayed: 1, total: 2 },
+      trialMs: 5
+    })
+    expect(decoded).toMatchObject({ jobs: { replayed: 1, total: 2 }, trialMs: 5 })
+  })
+
+  it("does not count a job that was replayed with one variant left out as not replayed", () => {
+    const report: ReplayReport = {
+      ...normalOnly(),
+      jobs: { replayed: 1, total: 2 },
+      notReplayed: [
+        { job: "docker", reasons: [{ feature: "fails-here", detail: "no docker" }] },
+        { job: "test", reasons: [{ feature: "other-system", detail: "test (os=macos) runs on darwin" }] }
+      ]
+    }
+    expect(text(report)).toContain("1 commit · 1 of 2 jobs · 0 mismatches · 1 job not replayed")
+    expect(body(html(report))).toContain("1 of 2 jobs · 0 mismatches · 1 job not replayed")
+  })
+
+  it("says nothing of jobs when every job was replayed", () => {
+    const shown = text({ ...normalOnly(), jobs: { replayed: 2, total: 2 } })
+    expect(shown).toContain("5.5× faster\n")
+    expect(shown).toContain("1 commit · 0 mismatches")
+    expect(shown).not.toContain("found the jobs")
+  })
+
   it("keeps a report that says nothing about coverage as it was", () => {
     expect(text(normalOnly())).toContain("5.5× faster\n")
   })

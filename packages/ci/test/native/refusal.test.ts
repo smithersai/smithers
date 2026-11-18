@@ -56,7 +56,7 @@ describe("smithers-ci on a repository with its own Smithers workspace", { timeou
       })
       // The repository depends on no smthrs, so its own targets cannot be replayed either.
       const where = file === "WORKSPACE.ts" ? "the repository root" : ".smithers or the repository root"
-      for (const args of [["--commits", "1"], ["replay", "--commits", "1"]]) {
+      for (const args of [["--commits", "1", "--no-trial"], ["replay", "--commits", "1", "--no-trial"]]) {
         const outcome = await run(args, root)
         expect(outcome.code).toBe(exitCodes.unsupported)
         expect(outcome.stdout).toBe("")

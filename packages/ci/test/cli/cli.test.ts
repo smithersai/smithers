@@ -58,6 +58,9 @@ const ways = {
   "as a process": (args: ReadonlyArray<string>, root: string): Promise<Outcome> => spawn(program, args, root)
 }
 
+/** What a replay is asked for unless the flags say otherwise. */
+const measuring = { trial: true, stallMinutes: 10 }
+
 const commandNames = ["", "apply", "inventory", "replay"] as const
 const flagNames = Object.keys(flags) as ReadonlyArray<keyof typeof flags>
 const sample = (flag: keyof typeof flags, out: string): ReadonlyArray<string> =>
@@ -71,7 +74,9 @@ const sample = (flag: keyof typeof flags, out: string): ReadonlyArray<string> =>
     json: ["--json"],
     "allow-root": ["--allow-root"],
     check: ["--check"],
-    "allow-docker": ["--allow-docker"]
+    "allow-docker": ["--allow-docker"],
+    "no-trial": ["--no-trial"],
+    "stall-minutes": ["--stall-minutes", "5"]
   })[flag]
 
 const requestOf = (stderr: string): unknown => JSON.parse(/replay request: (.*)/.exec(stderr)?.[1] ?? "null")
@@ -138,6 +143,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       ["--commits 0", ["--commits", "0"], "1 or more"],
       ["--commits that is not a number", ["--commits", "many"], "--commits"],
       ["--jobs 0", ["replay", "--jobs", "0"], "1 or more"],
+      ["--stall-minutes 0", ["--stall-minutes", "0"], "a number of minutes above 0"],
       ["a --mode outside normal, fast and both", ["--mode", "slow"], "slow"],
       ["a --cache that is not a URL", ["--cache", "cache"], "http or https URL"],
       ["a --cache that is not http", ["apply", "--cache", "ftp://cache.example.invalid"], "http or https URL"],
@@ -171,7 +177,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       expect(outcome.stdout).toContain(
         `smithers-ci apply would write ${files.length} files and add .flows to .gitignore. This run wrote nothing to the repository.`
       )
-      expect(requestOf(outcome.stderr)).toEqual({ root, commits: 20, modes: ["normal"] })
+      expect(requestOf(outcome.stderr)).toEqual({ root, commits: 20, modes: ["normal"], ...measuring })
       expect(changed(before, snapshot(root))).toEqual([])
     })
 
@@ -193,10 +199,21 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       const cache = "https://cache.example.invalid"
       const patterns = "//packages/ci/..., //apps/site:check,"
       const args = ["--commits", "2", "--mode", "both", "--jobs", "3", "--cache", cache, "--targets", patterns]
-      const outcome = await exec([...args, "--out", page, "--json", "--allow-docker"], root)
+      const outcome = await exec([
+        ...args,
+        "--no-trial",
+        "--stall-minutes",
+        "2.5",
+        "--out",
+        page,
+        "--json",
+        "--allow-docker"
+      ], root)
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
       expect(requestOf(outcome.stderr)).toEqual({
         root,
+        trial: false,
+        stallMinutes: 2.5,
         commits: 2,
         modes: ["normal", "fast"],
         jobs: 3,
@@ -216,7 +233,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       const root = repo()
       const outcome = await exec(["--mode", "fast"], root)
       expect(outcome.code).toBe(exitCodes.ok)
-      expect(requestOf(outcome.stderr)).toEqual({ root, commits: 20, modes: ["fast"] })
+      expect(requestOf(outcome.stderr)).toEqual({ root, commits: 20, modes: ["fast"], ...measuring })
     })
 
     it("resolves a relative --out against the repository, the one file it writes", async () => {
@@ -344,7 +361,11 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     const outcome = await spawn(bin, ["--commits", "1", "--json"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     const at = `smithers-ci: 1/1 ${head(root).slice(0, 7)}`
-    expect(outcome.stderr.trim().split("\n")).toEqual([`${at} baseline`, `${at} normal`])
+    expect(outcome.stderr.trim().split("\n")).toEqual([
+      `smithers-ci: checking which jobs pass on this machine at ${head(root).slice(0, 7)}`,
+      `${at} baseline`,
+      `${at} normal`
+    ])
     const report = decode(ReplayReport, outcome.stdout)
     expect(report.repository).toBe(basename(root))
     expect(report.commits).toHaveLength(1)

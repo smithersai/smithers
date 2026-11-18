@@ -68,18 +68,20 @@ it. The workflow `apply` writes runs this check as its first step; see
 
 ## Flags
 
-| Flag             | Commands                                                     | Default  | What it does                                                                                                                                        |
-| ---------------- | ------------------------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--commits`      | `smithers-ci`, `smithers-ci replay`                          | `20`     | How many past commits to replay.                                                                                                                    |
-| `--mode`         | `smithers-ci`, `smithers-ci replay`                          | `normal` | normal, fast, or both.                                                                                                                              |
-| `--jobs`         | `smithers-ci`, `smithers-ci replay`                          | none     | Most jobs to run at once, in the baseline and in each mode; the default is this machine's core count.                                               |
-| `--cache`        | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | none     | URL of a shared cache, with no user name or password; its token is read from SMITHERS_CACHE_TOKEN.                                                  |
-| `--targets`      | `smithers-ci`, `smithers-ci replay`                          | none     | Smithers build patterns to replay, separated by commas, on a repository that already builds with Smithers build; the default is what its CI runs.   |
-| `--out`          | `smithers-ci`, `smithers-ci replay`                          | none     | Also write the report as an HTML file here.                                                                                                         |
-| `--json`         | `smithers-ci`, `smithers-ci inventory`, `smithers-ci replay` | `false`  | Print the document as JSON.                                                                                                                         |
-| `--allow-root`   | `smithers-ci`, `smithers-ci replay`                          | `false`  | Replay even when run as root, where a past commit's commands could change this machine.                                                             |
-| `--check`        | `smithers-ci apply`                                          | `false`  | Write nothing; name each file apply would change, and exit 1 if there is one.                                                                       |
-| `--allow-docker` | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | `false`  | Take the jobs that run docker or podman too, and let a replayed step reach a container daemon, which can read and write every file of this machine. |
+| Flag              | Commands                                                     | Default  | What it does                                                                                                                                        |
+| ----------------- | ------------------------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--commits`       | `smithers-ci`, `smithers-ci replay`                          | `20`     | How many past commits to replay.                                                                                                                    |
+| `--mode`          | `smithers-ci`, `smithers-ci replay`                          | `normal` | normal, fast, or both.                                                                                                                              |
+| `--jobs`          | `smithers-ci`, `smithers-ci replay`                          | none     | Most jobs to run at once, in the baseline and in each mode; the default is this machine's core count.                                               |
+| `--cache`         | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | none     | URL of a shared cache, with no user name or password; its token is read from SMITHERS_CACHE_TOKEN.                                                  |
+| `--targets`       | `smithers-ci`, `smithers-ci replay`                          | none     | Smithers build patterns to replay, separated by commas, on a repository that already builds with Smithers build; the default is what its CI runs.   |
+| `--no-trial`      | `smithers-ci`, `smithers-ci replay`                          | `false`  | Replay every job, without first running the CI once to leave out the jobs that fail on this machine.                                                |
+| `--stall-minutes` | `smithers-ci`, `smithers-ci replay`                          | `10`     | Stop a step whose processes use no CPU and print nothing for this many minutes; it counts as failed.                                                |
+| `--out`           | `smithers-ci`, `smithers-ci replay`                          | none     | Also write the report as an HTML file here.                                                                                                         |
+| `--json`          | `smithers-ci`, `smithers-ci inventory`, `smithers-ci replay` | `false`  | Print the document as JSON.                                                                                                                         |
+| `--allow-root`    | `smithers-ci`, `smithers-ci replay`                          | `false`  | Replay even when run as root, where a past commit's commands could change this machine.                                                             |
+| `--check`         | `smithers-ci apply`                                          | `false`  | Write nothing; name each file apply would change, and exit 1 if there is one.                                                                       |
+| `--allow-docker`  | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | `false`  | Take the jobs that run docker or podman too, and let a replayed step reach a container daemon, which can read and write every file of this machine. |
 
 Of the commits `--commits` counts, one that had no CI the program can run is not
 replayed; the report lists it with the reason.
@@ -99,6 +101,33 @@ those jobs are replayed and applied, and their steps reach your daemon. A
 daemon does what it is asked with every file of this machine, whatever else a
 step is kept from, so give the flag only for a history you trust. See
 [What a step can reach](../concepts/how-it-works.md#what-a-step-can-reach).
+
+### Jobs that cannot pass here
+
+Before the replay, the program runs the CI once at the newest commit, in a home
+of its own. A step that fails runs once more, so one flaky failure leaves
+nothing out. A job that still fails is not replayed at any commit: the report
+lists it as failing on this machine with the first line of its error
+(`fails-here` under `--json`), and says the same of every job that needs it. For
+a matrix job this holds per variant. The speedup says how many jobs it covers,
+such as `over 3 of 5 jobs`. A line gives the time this run took, which is in no
+other number. On a repository with [its own targets](../concepts/own-targets.md),
+the same holds for each target.
+
+A job that passes in this run and fails at an older commit is a failed baseline
+at that commit. `smithers-ci apply` writes every job, those left out here too:
+they pass on your runners. `--no-trial` skips this run and replays every job.
+
+### Steps that stop making progress
+
+A step whose whole process tree uses less than one hundredth of a CPU core and
+prints nothing for `--stall-minutes` is stopped and fails with `it made no
+progress for 10 minutes`, in the baseline and in every mode. It is not run again.
+A step that waits that long on purpose, such as a test that sleeps, needs a
+higher limit. The value may be a fraction. A value that is not above 0 is a usage
+error (exit `2`). The program reads CPU time from `/proc` on Linux and from `ps`
+on macOS; when it cannot read them, it stops no step this way. The limit of six
+hours for one step still applies.
 
 ### Fast mode and its model
 
@@ -150,12 +179,14 @@ A workflow that does not parse is listed there and nowhere else.
 | `3`  | `unsupported` | The repository cannot be replayed: it is not a Git repository with a commit, it uses something Smithers CI cannot run, or its CI does not pass on this machine.                                                               |
 | `4`  | `failed`      | A step of the command could not finish.                                                                                                                                                                                       |
 
-Exit `3` also means the repository's CI does not pass on this machine: no step
-passed in the baseline of any replayed commit. The program then prints no
-report and no speedup. Standard error gives the first failure of the newest
-commit: the step, its command, its exit code and the first line of its error.
-When only some commits fail, the program exits `0`, the report names each failed
-step, and the speedup covers the commits where the CI passed.
+Exit `3` also means the repository's CI does not pass on this machine: no job
+passed when the program ran it at the newest commit, or, with `--no-trial`, no
+step passed in the baseline of any replayed commit. The program then prints no
+report and no speedup. Standard error gives the first failure: the step, its
+command, its exit code and the first line of its error. When only some jobs
+fail, the program exits `0`, the report lists them, and the speedup covers the
+others. When only some commits fail, the program exits `0`, the report names each
+failed step, and the speedup covers the commits where the CI passed.
 
 A mismatch is defined in [How it works](../concepts/how-it-works.md#3-replay).
 A target that failed and then passed on a rerun is `flaky`. The report counts
@@ -193,6 +224,7 @@ what the job names.
 | `environment`          | deploys to an environment                                                                                   |
 | `expansion`            | expands to more of the Makefile                                                                             |
 | `expression`           | depends on a value known only while the CI runs                                                             |
+| `fails-here`           | fails on this machine: ERROR                                                                                |
 | `file-target`          | has the name of a file in the repository, so Make may skip it                                               |
 | `function`             | calls a Make function                                                                                       |
 | `grouped-targets`      | is built together with other Make rules                                                                     |

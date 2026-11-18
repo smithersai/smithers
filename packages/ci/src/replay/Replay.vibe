@@ -10,12 +10,15 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import {
   allowingDocker,
   ci,
+  type FailedHere,
   type Inventory,
   type NotReplayed,
   notReplayed,
   refusal,
   shell,
-  stepTimeoutHours
+  stepTimeoutHours,
+  variantsFailedHere,
+  withoutFailedHere
 } from "../contract/Inventory.ts"
 import {
   type Failure,
@@ -25,7 +28,7 @@ import {
   type ScoreRows,
   writtenFiles
 } from "../contract/Parts.ts"
-import type { NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
+import type { NotReplayedCommit, ReplayCommit, ReplayReport, StepFailure } from "../contract/ReplayReport.ts"
 import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
@@ -41,7 +44,16 @@ import {
   thisHost
 } from "./Environment.ts"
 import { probe, type Probe } from "./Jail.ts"
-import { commandLine, nothingPassed, printedLimit, reasonOf } from "./Failures.ts"
+import {
+  commandLine,
+  madeNoProgress,
+  noJobPassed,
+  noProgress,
+  nothingPassed,
+  printedLimit,
+  reasonOf,
+  stoppedResults
+} from "./Failures.ts"
 import {
   cacheDirectory,
   checkoutAt,
@@ -59,6 +71,7 @@ import {
   stdoutOf
 } from "./Process.vibe"
 import { printsNotes, readsListener } from "./Reads.ts"
+import { defaultStallMinutes, type StallLimit, type Table, tableFor, watchFor } from "./Stall.vibe"
 import {
   addRerun,
   blocked,
@@ -72,6 +85,7 @@ import {
   firstAttempt,
   flakyOf,
   isBlocked,
+  jobsCovered,
   jobsFor,
   labelsOf,
   maxReruns,
@@ -90,7 +104,9 @@ import {
   stepsThrough,
   targetsOf,
   totalsOf,
-  type Unit
+  trialOf,
+  type Unit,
+  unitKey
 } from "./Summary.ts"
 
 /**
@@ -122,7 +138,8 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
  * have (`Inventory.stepTimeoutHours`). `confine` says whether this machine can
  * hold a step in a file-system jail; without it the machine is asked. `cores`
  * is how many baseline jobs run at once when the request sets no limit; without
- * it, the machine's core count.
+ * it, the machine's core count. `processes` is where a step's processes are
+ * read and stopped.
  *
  * @category services
  * @since 0.1.0
@@ -134,6 +151,7 @@ export service Options {
   readonly stepTimeout?: Duration.Input | undefined
   readonly confine?: (() => Probe) | undefined
   readonly cores?: number | undefined
+  readonly processes?: Table | undefined
   static readonly defaultValue = () => ({
     smthrs: ["smthrs"] as const,
     reruns: maxReruns,
@@ -202,7 +220,8 @@ export effect function settle<R>(
 ): ReadonlyArray<TargetResult>!Failure!R {
   let settled: ReadonlyArray<TargetResult> = first.map(firstAttempt)
   for (let rerun = 0; rerun < reruns; rerun++) {
-    const failing = settled.filter((result) => result.status === "failed")
+    // A step stopped for making no progress would only wait as long again.
+    const failing = settled.filter((result) => result.status === "failed" && !madeNoProgress(result))
     if (failing.length === 0) break
     const again = new Map((try execute(failing.map((result) => result.label))).map((result) => [result.label, result]))
     settled = settled.map((result) => result.status === "failed" ? addRerun(result, again.get(result.label)) : result)
@@ -360,13 +379,16 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       }
     }
 
+    // What the one run at the newest commit found does not pass on this machine.
+    const failedHere: Array<FailedHere> = []
+
     /**
      * What the CI of the commit checked out in the normal copy gives the replay: read, split and generated from that
      * commit's own tree. It fails `unsupported` when nothing of that CI can be replayed on this machine.
      */
     effect function prepared(): Prepared!Failure!(R | Host) {
       const read: Inventory = try onNormalCopy(parts.read(normalCopy))
-      const inventory = allowDocker ? allowingDocker(read) : read
+      const inventory = withoutFailedHere(allowDocker ? allowingDocker(read) : read, failedHere)
       const why = ownWorkspace(inventory) ?? refusal(inventory)
       if (why !== undefined) throw failure("unsupported", why)
       const narrowed = ci(inventory)
@@ -400,7 +422,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         units: replayed.units,
         labels,
         splits: splitOf(replayed.units),
-        left: [...notReplayed(inventory), ...replayed.left],
+        left: [...notReplayed(inventory), ...variantsFailedHere(inventory, failedHere), ...replayed.left],
         jobs: jobsFor(request.jobs, targetMap.maxJobs)
       }
     }
@@ -415,7 +437,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     // The newest commit's CI must be replayable: it is what the repository runs today.
-    const newest = try prepared()
+    let newest = try prepared()
     const fastCopy = request.modes.includes("fast") ? try copyAt("fast", "HEAD") : undefined
 
     /** Makes a checked-out copy one the generated targets run in. A repository that ran `apply` holds all of it. */
@@ -511,15 +533,20 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         "plain",
         ...(own.jobs === undefined ? [] : ["--jobs", String(own.jobs)])
       ])
-      const output = try exec(command, args, copy, { ...startEnv(copy, place), ...printsNotes }, printedLimit, undefined, true, heard)
-      const unreadable = () => failure("command-failed", `smthrs ci wrote no run record: ${output.text.slice(-outputLimit)}`)
-      const text = fs.readFileString(file) catch effect () => {
-        throw unreadable()
+      const watch = try watchFor(stall.minutes, stall.table)
+      const output = try exec(command, args, copy, { ...startEnv(copy, place), ...printsNotes }, printedLimit, undefined, true, heard, watch)
+      const stalled = try Ref.get(watch.stalled)
+      const record = effect {
+        const text = try fs.readFileString(file)
+        return try Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text)
+      } catch () => undefined
+      if (record === undefined && !stalled) {
+        throw failure("command-failed", `smthrs ci wrote no run record: ${output.text.slice(-outputLimit)}`)
       }
-      const record = Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text) catch effect () => {
-        throw unreadable()
-      }
-      const results = withReasons(record.results, output.text)
+      const recorded = record === undefined ? undefined : withReasons(record.results, output.text)
+      const results = stalled
+        ? stoppedResults(recorded, selected, watch.limitMs, noProgress(stall.minutes))
+        : recorded as ReadonlyArray<TargetResult>
       // What a failed target printed may name a file this replay wrote into the copy: a tool of the repository read
       // it as one of its own. A mismatch of that target then says so.
       const said = failureTexts(output.text)
@@ -531,14 +558,22 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     const stepLimit = options.stepTimeout ?? Duration.hours(stepTimeoutHours)
+    const stall: StallLimit = {
+      minutes: request.stallMinutes ?? defaultStallMinutes,
+      table: options.processes ?? tableFor()
+    }
 
     /**
      * One run of the baseline: its units' steps in order in one fresh checkout, named as the repository is. A step
      * that fails blocks every step after it.
      */
-    effect function runSequence(sequence: ReadonlyArray<Unit>, commit: string, wanted: ReadonlySet<string> | undefined) {
+    effect function runSequence(
+      sequence: ReadonlyArray<Unit>,
+      commit: string,
+      wanted: ReadonlySet<string> | undefined,
+      place: Confined
+    ) {
       return try scoped(effect {
-        const place = places.baseline
         const directory = try orFail(fs.makeTempDirectoryScoped({ directory: work }), "could not make a directory")
         const copy = path.join(directory, path.basename(root))
         try cloneAt(copy, commit, place)
@@ -553,8 +588,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           const [program, ...argv] = held(place, [copy], [...shell, step.command])
           const environment = stepEnvironment({ ...place.daemon, ...step.env }, place)
           // A step that cannot start, for example because its directory does not exist at this commit, has failed.
-          const output = runStep(program, argv, path.join(copy, step.cwd), environment, stepLimit)
-            catch (cause) => ({ timedOut: false, exitCode: undefined, stderr: `could not start: ${describe(cause)}`, stdout: "" } satisfies StepRun)
+          const output = runStep(program, argv, path.join(copy, step.cwd), environment, stepLimit, stall)
+            catch (cause) => ({ timedOut: false, stalled: false, exitCode: undefined, stderr: `could not start: ${describe(cause)}`, stdout: "" } satisfies StepRun)
           const durationMs = (try Clock.currentTimeMillis) - start
           if (output.exitCode === 0) {
             results.push({ label: step.label, status: "ran", key: "", durationMs })
@@ -565,7 +600,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             status: "failed",
             key: "",
             durationMs,
-            error: output.timedOut ? pastLimit(stepLimit) : reasonOf(output),
+            error: output.stalled ? noProgress(stall.minutes) : output.timedOut ? pastLimit(stepLimit) : reasonOf(output),
             command: commandLine(step.written),
             ...(output.exitCode === undefined ? {} : { exitCode: output.exitCode })
           })
@@ -575,7 +610,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       })
     }
 
-    const baseline = (commit: string, own: Prepared): Execute<Host> => (targets) => effect {
+    const baseline = (commit: string, own: Prepared, place: Confined = places.baseline): Execute<Host> => (targets) => effect {
       const wanted = targets === undefined ? undefined : new Set(targets)
       const chosen = stationsOf(own.units, wanted)
       const limit = try Semaphore.make(own.jobs ?? options.cores ?? coreCount())
@@ -590,7 +625,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const results: Array<TargetResult> = []
         for concurrent (const sequence of station.runs) {
           if (needsPassed) {
-            results.push(...(try limit.withPermits(1)(runSequence(sequence, commit, wanted))))
+            results.push(...(try limit.withPermits(1)(runSequence(sequence, commit, wanted, place))))
           } else {
             const waiting = sequence.flatMap((unit) => labelsOf(unit, wanted))
             results.push(...waiting.map((label) => blocked(label, station.needs.join(", "))))
@@ -603,6 +638,39 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const order = new Map(own.units.flatMap((unit) => unit.steps).map((step, index) => [step.label, index]))
       return collected.toSorted((a, b) => (order.get(a.label) as number) - (order.get(b.label) as number))
     }
+
+    /**
+     * Runs the baseline once at the newest commit, in a home of its own so it warms nothing a measured run reads,
+     * and leaves out what fails. A unit that was kept from running by a failure before it runs again without that
+     * failure, as it will in the replay. Gives the time it took.
+     */
+    effect function trial() {
+      const head = commits.at(-1) as string
+      const start = try Clock.currentTimeMillis
+      try progress.say(`checking which jobs pass on this machine at ${head.slice(0, 7)}`)
+      const passed = new Set<string>()
+      let firstFailure: StepFailure | undefined = undefined
+      while (true) {
+        const waiting = newest.units.filter((unit) => !passed.has(unitKey(unit)))
+        const wanted = waiting.flatMap((unit) => labelsOf(unit, undefined))
+        const execute = baseline(head, newest, places.trial)
+        const results = try settle(execute, try execute(wanted), Math.min(1, options.reruns), wanted.length)
+        const found = trialOf(waiting, results, stepNames(newest.units))
+        for (const key of found.passed) passed.add(key)
+        if (found.first === undefined) break
+        const first: StepFailure = firstFailure ?? found.first
+        firstFailure = first
+        for (const entry of found.failed) try progress.say(`fails here: ${entry.job}: ${entry.reason}`)
+        failedHere.push(...found.failed)
+        // With what failed left out, nothing may be left to replay: then no job can pass here.
+        newest = prepared() catch effect (cause) => {
+          throw cause.code === "unsupported" ? failure("unsupported", noJobPassed(head, first)) : cause
+        }
+      }
+      return (try Clock.currentTimeMillis) - start
+    }
+
+    const trialMs = request.trial === true ? try trial() : undefined
 
     const commitsDone: Array<ReplayCommit> = []
     const commitsLeft: Array<NotReplayedCommit> = []
@@ -699,6 +767,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       flaky,
       fastFlaky,
       commitsLeft,
-      fastNotMeasured
+      fastNotMeasured,
+      jobs: jobsCovered(newest.units, newest.left),
+      trialMs
     })
   })

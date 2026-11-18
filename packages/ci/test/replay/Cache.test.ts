@@ -53,7 +53,8 @@ describe("a replay of a job that uses actions/cache", () => {
     commit(root, "the build takes the tool from the cache", { "expect-cache": "", "src.txt": "two\n" })
     commit(root, "a source change", { "src.txt": "three\n" })
 
-    const outcome = await spawn(bin, ["--commits", "3", "--json"], root)
+    // The step passes only with what an earlier commit saved, so a first run at the newest commit alone would fail.
+    const outcome = await spawn(bin, ["--commits", "3", "--json", "--no-trial"], root)
     expect(outcome.stderr).not.toContain("error")
     const report = JSON.parse(outcome.stdout) as ReplayReport
     expect(report.notReplayed ?? []).toEqual([])

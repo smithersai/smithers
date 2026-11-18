@@ -59,8 +59,8 @@ const machine = (installed: ReadonlyArray<string>) => {
   return { log, env: { ...process.env, PATH: `${tools}:${process.env["PATH"]}` } }
 }
 
-const replay = async (root: string, env: NodeJS.ProcessEnv) => {
-  const outcome = await spawn(bin, ["--commits", "1", "--json"], root, env)
+const replay = async (root: string, env: NodeJS.ProcessEnv, flags: ReadonlyArray<string> = []) => {
+  const outcome = await spawn(bin, ["--commits", "1", "--json", ...flags], root, env)
   expect(outcome.stderr).not.toContain("error")
   expect(outcome.code).toBe(0)
   return JSON.parse(outcome.stdout) as ReplayReport
@@ -124,7 +124,8 @@ jobs:
         ""
       ].join("\n")
     })
-    const report = await replay(root, env)
+    // A job that fails is measured here, not left out: the failure itself is what this test reads.
+    const report = await replay(root, env, ["--no-trial"])
     const commit = report.commits[0]
     expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 0 })
     expect(commit?.normal.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 0 })

@@ -107,6 +107,53 @@ export const reasonOf = (output: StepOutput): string => {
     || noOutput
 }
 
+const stallPrefix = "it made no progress for "
+
+/**
+ * Why a step that was stopped for making no progress failed.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const noProgress = (minutes: number): string =>
+  `${stallPrefix}${minutes} ${minutes === 1 ? "minute" : "minutes"}`
+
+/**
+ * True for a result that failed for making no progress. Running it again
+ * would wait as long and tell nothing, so it is not rerun.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const madeNoProgress = (result: Pick<TargetResult, "error">): boolean =>
+  result.error?.startsWith(stallPrefix) === true
+
+/**
+ * The results of a run of `smthrs` that was stopped for making no progress.
+ * A target that failed after running at least `limitMs` was one of those
+ * stopped. With no run record, every target asked for counts as stopped:
+ * nothing says which of them had finished.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const stoppedResults = (
+  recorded: ReadonlyArray<TargetResult> | undefined,
+  asked: ReadonlyArray<string>,
+  limitMs: number,
+  reason: string
+): ReadonlyArray<TargetResult> =>
+  recorded === undefined
+    ? asked.map((label) => ({ label, status: "failed", key: "", durationMs: limitMs, error: reason }))
+    : recorded.map((result) => {
+      if (result.status !== "failed" || result.durationMs < limitMs) return result
+      const { exitCode: _exitCode, ...rest } = result
+      return { ...rest, error: reason }
+    })
+
 /**
  * A command as one line of a report.
  *
@@ -173,7 +220,8 @@ const failedWith = (
  * @since 0.1.0
  */
 export const printedFailure = (printed: string): Pick<TargetResult, "command" | "error" | "exitCode"> => {
-  const decoded = decodePrinted(printed)
+  // The error stands on its own line; what `smthrs` prints after it, such as a note about the machine, is not part of it.
+  const decoded = decodePrinted(printed.split("\n", 1)[0])
   if (Option.isSome(decoded)) {
     const { argv, exitCode, stderr, stdout } = decoded.value
     return failedWith({ exitCode, stderr, stdout }, commandOfArgv(argv))
@@ -236,6 +284,23 @@ const detailsOf = (failure: StepFailure): ReadonlyArray<string> => [
   ...(failure.exitCode === undefined ? [] : [`  exit     ${failure.exitCode}`]),
   `  error    ${failure.reason}`
 ]
+
+/**
+ * Why there is nothing to measure when no job passed in the one run at the
+ * newest commit: that commit and its first failure.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const noJobPassed = (commit: string, first: StepFailure): string => {
+  const at = commit.slice(0, 7)
+  return [
+    `this repository's CI does not pass on this machine, so there is no speedup to measure. No job passed at ${at}.`,
+    `First failure at ${at}:`,
+    ...detailsOf(first)
+  ].join("\n")
+}
 
 /**
  * Why there is nothing to measure, or `undefined` when a step passed in a

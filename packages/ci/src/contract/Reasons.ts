@@ -61,6 +61,12 @@ export const reasons: Readonly<Record<string, Reason>> = {
   "continue-on-error": { sentence: "may fail without failing the run, so its result says nothing" },
   "default-rule": { sentence: "relies on the Makefile's default rule" },
   define: { sentence: "uses a Make `define` block" },
+  "fails-here": {
+    sentence: "fails on this machine: {}",
+    slot: "ERROR",
+    none: "it did not pass",
+    subject: whole
+  },
   "dependency-arguments": { sentence: "passes arguments to a recipe it depends on" },
   docker: {
     sentence: "runs {}, and a container daemon can reach every file of this machine",

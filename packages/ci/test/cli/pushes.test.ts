@@ -87,7 +87,8 @@ const fixture = () => {
 /** Runs the program in `root`. With `refusal`, the machine says it cannot jail a step. */
 const program = async (root: string, refusal?: string) => {
   const sink = recorder()
-  const run = cli(["--commits", "1"], root, parts)
+  // The job that pushes fails, and this test is about what it did at every step: it is not left out.
+  const run = cli(["--commits", "1", "--no-trial"], root, parts)
   const noJail = Layer.effect(
     Options,
     Effect.gen(function*() {

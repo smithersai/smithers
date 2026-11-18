@@ -93,7 +93,7 @@ describe.concurrent("smithers-ci from a directory of the repository", () => {
     const before = snapshot(root)
     const outcome = await spawn(program, ["--commits", "1", "--out", "report.html"], join(root, "src"))
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
-    expect(requestOf(outcome.stderr)).toEqual({ root, commits: 1, modes: ["normal"] })
+    expect(requestOf(outcome.stderr)).toEqual({ root, commits: 1, modes: ["normal"], trial: true, stallMinutes: 10 })
     expect(outcome.stderr).toContain(`smithers-ci: wrote ${join(root, "src", "report.html")}\n`)
     expect(outcome.stdout).toContain("This run wrote one file to the repository: src/report.html.")
     expect(changed(before, snapshot(root))).toEqual(["src/report.html"])
@@ -323,7 +323,7 @@ describe("a signal", () => {
         execFileSync("ps", ["-A", "-ww", "-o", "args="], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }).split("\n")
           .filter((line) => line.includes(token))
       const replays = (): ReadonlyArray<string> => readdirSync(temp).filter((name) => name.startsWith("smithers-ci-"))
-      const running = start(bin, ["replay", "--commits", "1"], root, { TMPDIR: temp })
+      const running = start(bin, ["replay", "--commits", "1", "--no-trial"], root, { TMPDIR: temp })
       // In a jail the step's temporary directory is the replay's own for its way; with no jail it is the program's.
       const ways = ["baseline", "normal"]
       const started = (): boolean =>

@@ -34,6 +34,55 @@ const repositoryOf = (...commits: ReadonlyArray<Readonly<Record<string, string>>
   return root
 }
 
+describe("smithers-ci on a repository where one job cannot pass here", { timeout: 600_000 }, () => {
+  const file = ".github/workflows/ci.yml"
+  const failing = "echo no docker here >&2; exit 1"
+
+  it("measures the jobs that pass, lists the other with its error, and exits 0", async () => {
+    const root = repositoryOf({ [file]: workflow("sh check.sh", failing), "check.sh": "exit 0\n" }, {
+      "note.txt": "x\n"
+    })
+    const outcome = await spawn(bin, ["--commits", "2"], root)
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+    expect(outcome.stdout).toMatch(/× (faster|slower) over 1 of 2 jobs\n/)
+    expect(outcome.stdout).toContain("2 commits · 1 of 2 jobs · 0 mismatches · 1 job not replayed")
+    expect(outcome.stdout).toContain("found the jobs that pass on this machine in ")
+    expect(outcome.stdout).toMatch(/ci\.yml:job1 +fails on this machine: no docker here\n/)
+  })
+
+  it("exits 3 when no job passes", async () => {
+    const root = repositoryOf({ [file]: workflow(failing) })
+    const outcome = await spawn(bin, ["--commits", "1"], root)
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.unsupported)
+    expect(outcome.stdout).toBe("")
+    expect(outcome.stderr).toContain(`No job passed at ${head(root).slice(0, 7)}.`)
+    expect(outcome.stderr).toContain("  error    no docker here\n")
+  })
+
+  it("with --no-trial runs every job, and the failing job fails each commit", async () => {
+    const root = repositoryOf({ [file]: workflow("sh check.sh", failing), "check.sh": "exit 0\n" })
+    const outcome = await spawn(bin, ["--commits", "1", "--no-trial"], root)
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+    expect(outcome.stdout).toContain("no speedup: the CI failed at every replayed commit")
+    expect(outcome.stdout).not.toContain("fails on this machine")
+  })
+
+  it("stops a step that makes no progress at the limit --stall-minutes sets", async () => {
+    const blocked = "d=$(mktemp -d); mkfifo $d/pipe; cat $d/pipe"
+    const root = repositoryOf({ [file]: workflow("sh check.sh", blocked), "check.sh": "exit 0\n" })
+    const outcome = await spawn(bin, ["--commits", "1", "--stall-minutes", "0.1"], root)
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+    expect(outcome.stdout).toMatch(/ci\.yml:job1 +fails on this machine: it made no progress for 0\.1 minutes\n/)
+  })
+
+  it("refuses a stall limit that is not above 0", async () => {
+    const root = repositoryOf({ [file]: workflow("sh check.sh"), "check.sh": "exit 0\n" })
+    const outcome = await spawn(bin, ["--stall-minutes", "0"], root)
+    expect(outcome.code).toBe(exitCodes.usage)
+    expect(outcome.stderr).toContain("a number of minutes above 0")
+  })
+})
+
 describe("smithers-ci on a repository whose CI fails here", { timeout: 600_000 }, () => {
   it("exits 3 with the first failure and no speedup when no step ever passes", async () => {
     const file = ".github/workflows/ci.yml"

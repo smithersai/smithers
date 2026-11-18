@@ -162,6 +162,11 @@ export type NotReplayedCommit = typeof NotReplayedCommit.Type
  * then still has its baseline and normal-mode results, and no commit, total
  * or mismatch holds a fast-mode number: part of a measurement is not one.
  *
+ * `jobs` says how many of the CI's jobs the numbers cover: those replayed, of
+ * those replayed and those in `notReplayed`. `trialMs` is how long the run
+ * that found the jobs that pass on this machine took, when there was one. It
+ * is in no other time.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -173,6 +178,8 @@ export const ReplayReport = Schema.Struct({
   normalWallMs: Schema.Finite,
   speedup: Schema.Finite,
   speedupCommits: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  jobs: Schema.optionalKey(Schema.Struct({ replayed: Schema.Int, total: Schema.Int })),
+  trialMs: Schema.optionalKey(Schema.Finite),
   mismatches: Schema.Int,
   fastWallMs: Schema.optionalKey(Schema.Finite),
   selection: Schema.optionalKey(Metrics),

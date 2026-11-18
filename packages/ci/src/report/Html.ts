@@ -24,6 +24,8 @@ import {
   fastNotMeasured,
   firstLine,
   flaky,
+  jobsCount,
+  jobsLeftOut,
   leftEmpty,
   leftOut,
   mismatches,
@@ -37,6 +39,7 @@ import {
   speedupCommits,
   times,
   toolVersion,
+  trialTime,
   unread,
   unreadText,
   verdict
@@ -275,10 +278,11 @@ export const html: RenderReport = (report) => {
     const notRead = report.notRead ?? []
     const commitsLeft = report.notReplayedCommits ?? []
     body.push(
-      `<p class="summary">${count(report.commits.length, "commit")} · ${mismatches(found)}${flaky(report.flaky ?? 0)}${
-        commitsLeftOut(commitsLeft.length)
-      }${leftOut(left.length)}${unread(notRead.length)}</p>`
+      `<p class="summary">${count(report.commits.length, "commit")}${jobsCount(report)} · ${mismatches(found)}${
+        flaky(report.flaky ?? 0)
+      }${commitsLeftOut(commitsLeft.length)}${leftOut(jobsLeftOut(report))}${unread(notRead.length)}</p>`
     )
+    if (report.trialMs !== undefined) body.push(`<p class="summary">${trialTime(report.trialMs)}</p>`)
     if (report.selection !== undefined) body.push(selection(report.selection))
     body.push(commitTable(report.commits))
     if (commitsLeft.length > 0) body.push(commitsLeftTable(commitsLeft))

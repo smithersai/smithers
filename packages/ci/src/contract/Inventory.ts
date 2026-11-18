@@ -417,8 +417,25 @@ export const changesMachine = "changes-machine"
  */
 export const docker = "docker"
 
+/**
+ * The feature of a job, or of one matrix variant of it, that failed when the
+ * replay ran the CI once at the newest commit: it needs something this machine
+ * does not have. Its `detail` is the first line of the error. Such a job is run
+ * in no way at any commit, and it stays in the CI `apply` writes: it passes on
+ * the repository's own runners.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const failsHere = "fails-here"
+
 /** The features whose reasons are shown with their details, and what separates the details. */
-const detailed: ReadonlyMap<string, string> = new Map([[missingTool, ", "], [changesMachine, "; "], [docker, "; "]])
+const detailed: ReadonlyMap<string, string> = new Map([
+  [missingTool, ", "],
+  [changesMachine, "; "],
+  [docker, "; "],
+  [failsHere, "; "]
+])
 
 /**
  * The reasons a job is left out as feature words, for comparing them; the
@@ -441,6 +458,70 @@ export const reasonsText = (reasons: ReadonlyArray<Unsupported>): string =>
       return `${feature} (${[...details].join(separator)})`
     })
     .join(", ")
+
+/**
+ * What failed when the CI ran once at the newest commit: a job, or with
+ * `variant` one matrix variant of it, and the first line of the error.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface FailedHere {
+  readonly job: string
+  readonly variant?: Readonly<Record<string, string>> | undefined
+  readonly reason: string
+}
+
+const variantId = (variant: Readonly<Record<string, string>>): string =>
+  JSON.stringify(Object.entries(variant).sort(([a], [b]) => (a < b ? -1 : 1)))
+
+/**
+ * An inventory without what failed here: a job that failed whole, or whose
+ * every variant did, gets the feature {@link failsHere}, so {@link ci} leaves
+ * it and every job that needs it out, and a variant that failed leaves the
+ * job's matrix. A job or variant the inventory does not hold is ignored: an
+ * older commit may not have it.
+ *
+ * @throws {never}
+ * @category constructors
+ * @since 0.1.0
+ */
+export const withoutFailedHere = (inventory: Inventory, failed: ReadonlyArray<FailedHere>): Inventory => ({
+  ...inventory,
+  jobs: inventory.jobs.map((job) => {
+    const own = failed.filter((entry) => entry.job === job.id)
+    const [first] = own
+    if (first === undefined) return job
+    const gone = new Set(own.flatMap((entry) => entry.variant === undefined ? [] : [variantId(entry.variant)]))
+    const matrix = job.matrix.filter((variant) => !gone.has(variantId(variant)))
+    const whole = own.find((entry) => entry.variant === undefined)
+    return whole === undefined && matrix.length > 0
+      ? { ...job, matrix }
+      : { ...job, unsupported: [...job.unsupported, { feature: failsHere, detail: (whole ?? first).reason }] }
+  })
+})
+
+/**
+ * The jobs that still run with a matrix variant left out by
+ * {@link withoutFailedHere}, listed so the variant is not read as covered.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const variantsFailedHere = (
+  inventory: Inventory,
+  failed: ReadonlyArray<FailedHere>
+): ReadonlyArray<NotReplayed> => {
+  const kept = withoutFailedHere(inventory, failed)
+  return kept.jobs.flatMap((job) => {
+    const reasons = failed.filter((entry) => entry.job === job.id && entry.variant !== undefined)
+      .map((entry) => ({ feature: failsHere, detail: entry.reason }))
+    return reasons.length === 0 || blockers(job).some((entry) => entry.feature === failsHere)
+      ? []
+      : [{ job: job.id, reasons }]
+  })
+}
 
 /**
  * The `NotReplayed` feature of a CI job that has no command: every step of

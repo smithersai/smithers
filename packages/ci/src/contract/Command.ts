@@ -57,6 +57,16 @@ export const flags = {
     help:
       "Smithers build patterns to replay, separated by commas, on a repository that already builds with Smithers build; the default is what its CI runs."
   },
+  "no-trial": {
+    on: ["", "replay"],
+    default: "false",
+    help: "Replay every job, without first running the CI once to leave out the jobs that fail on this machine."
+  },
+  "stall-minutes": {
+    on: ["", "replay"],
+    default: "10",
+    help: "Stop a step whose processes use no CPU and print nothing for this many minutes; it counts as failed."
+  },
   out: { on: ["", "replay"], default: "", help: "Also write the report as an HTML file here." },
   json: { on: ["", "inventory", "replay"], default: "false", help: "Print the document as JSON." },
   "allow-root": {

@@ -35,6 +35,8 @@ import {
   fastNotMeasured,
   firstLine,
   flaky,
+  jobsCount,
+  jobsLeftOut,
   leftEmpty,
   leftOut,
   mismatches,
@@ -47,6 +49,7 @@ import {
   speedupCommits,
   times,
   toolVersion,
+  trialTime,
   unread,
   unreadText,
   verdict
@@ -137,10 +140,11 @@ export const text: RenderReport = (report) => {
   const notRead = report.notRead ?? []
   const commitsLeft = report.notReplayedCommits ?? []
   sections.push([
-    `${count(report.commits.length, "commit")} · ${mismatches(found)}${flaky(report.flaky ?? 0)}${
+    `${count(report.commits.length, "commit")}${jobsCount(report)} · ${mismatches(found)}${flaky(report.flaky ?? 0)}${
       commitsLeftOut(commitsLeft.length)
-    }${leftOut(left.length)}${unread(notRead.length)}`
+    }${leftOut(jobsLeftOut(report))}${unread(notRead.length)}`
   ])
+  if (report.trialMs !== undefined) sections.push([trialTime(report.trialMs)])
   sections.push([...commitLines(report.commits)])
   const failed = report.commits.flatMap((commit) => failedSteps(commit).map((entry) => ({ ...entry, commit })))
   if (failed.length > 0) {
