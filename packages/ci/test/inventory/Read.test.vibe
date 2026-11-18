@@ -3,7 +3,7 @@ import { expect, it } from "@effect/vitest"
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
-import { Inventory } from "../../src/contract/Inventory.ts"
+import { Inventory, uncommittedChanges } from "../../src/contract/Inventory.ts"
 import { read } from "../../src/inventory/index.ts"
 
 const denied = (method: string) =>
@@ -195,7 +195,7 @@ it.layer(NodeServices.layer)("read", (it) => {
       const inventory = try read(root)
       try Effect.try(() => {
         expect(inventory.unsupported).toEqual([{
-          feature: "uncommitted-changes",
+          feature: uncommittedChanges,
           detail: `the working tree differs from ${inventory.commit}`
         }])
       })

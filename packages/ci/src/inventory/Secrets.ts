@@ -36,6 +36,12 @@ const valueShapes = [
   "\\bmysql(?:dump)?\\b[^\\n|;&]*\\s-p(?!\\$)[^\\s\"']+"
 ].join("|")
 
+/**
+ * A URL with a path of 20 or more characters. Such a path is often the
+ * credential itself, as in a Slack or Discord webhook.
+ */
+const credentialUrl = /^[a-z][a-z0-9+.-]*:\/\/[^\s/?#]+\/[^\s?#]{19,}/i
+
 const secretName = new RegExp(`(?:^|_)(?:${secretWords})(?:_|$)|[a-z0-9]token$|_(?:pass|pwd|auth)$`, "i")
 const describingName = new RegExp(`_(?:${describingParts})$`, "i")
 
@@ -62,15 +68,17 @@ export const hasSecretValue = (text: string): boolean => new RegExp(valueShapes)
 
 /**
  * True when a variable holding this written-out value is a secret: the value
- * has a credential's shape, or the name says it is one. CI files do not expand
- * `$NAME` in these values, so only a workflow expression holds nothing.
+ * has a credential's shape, it is a URL with a path of 20 or more characters,
+ * or the name says it is one. CI files do not expand `$NAME` in these values,
+ * so only a workflow expression holds nothing.
  *
  * @category secrets
  * @since 0.1.0
  * @throws {never}
  */
 export const isLiteralSecret = (name: string, value: string): boolean =>
-  hasSecretValue(value) || (isSecretName(name) && value !== "" && !reference.test(value))
+  hasSecretValue(value) || credentialUrl.test(value)
+  || (isSecretName(name) && value !== "" && !reference.test(value))
 
 /**
  * Replaces everything shaped like a credential, in every string and mapping

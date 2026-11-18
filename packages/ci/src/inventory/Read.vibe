@@ -9,6 +9,7 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { uncommittedChanges } from "../contract/Inventory.ts"
 import type { Failure, ReadInventory } from "../contract/Parts.ts"
 import { workspace } from "../native/Detect.vibe"
 import { found } from "../native/Workspace.ts"
@@ -187,7 +188,7 @@ export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProces
   // The files are read from the working tree, which may not be what `commit` holds.
   const parts: Array<Parsed> = changes === ""
     ? []
-    : [{ ...nothing, unsupported: [{ feature: "uncommitted-changes", detail: `the working tree differs from ${commit}` }] }]
+    : [{ ...nothing, unsupported: [{ feature: uncommittedChanges, detail: `the working tree differs from ${commit}` }] }]
   const own = try workspace(root)
   if (own !== undefined) parts.push({ ...nothing, unsupported: [found(own)] })
   parts.push(...try readWorkflows(tree))

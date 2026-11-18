@@ -26,12 +26,25 @@ export const duration = (ms: number): string => {
 const pad = (value: number): string => String(value).padStart(2, "0")
 
 /**
- * A ratio as a multiplier: one decimal below 100, whole above.
+ * A ratio as a multiplier: one decimal below 100, whole above, and two
+ * significant digits below a tenth, so a mode 26 times slower reads `0.038×`
+ * and not `0.0×`.
  *
  * @since 0.1.0
  * @private
  */
-export const times = (ratio: number): string => `${ratio < 100 ? ratio.toFixed(1) : Math.round(ratio)}×`
+export const times = (ratio: number): string => {
+  if (ratio > 0 && ratio < 0.095) return `${Number(ratio.toPrecision(2))}×`
+  return `${ratio < 100 ? ratio.toFixed(1) : Math.round(ratio)}×`
+}
+
+/**
+ * Whether a run passed, as one word.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const verdict = (ok: boolean): string => ok ? "pass" : "fail"
 
 /**
  * The headline: `6.0× faster`, or `1.3× slower` when the ratio is below one.

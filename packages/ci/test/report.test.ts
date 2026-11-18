@@ -86,14 +86,42 @@ describe("text", () => {
       "",
       "2 commits · 1 mismatch",
       "",
+      "commit   files  baseline      normal       fast",
+      "0000000      3  pass 22m 00s  pass 4m 00s  pass 1m 30s",
+      "0000000      1  fail 21m 40s  fail 3m 20s  pass 1m 00s",
+      "",
       "0000000  fast    //packages/core:test  fail → skipped"
     ].join("\n"))
+  })
+
+  it("says for each commit whether the CI passed or failed, in the baseline and in each mode", () => {
+    // Review finding 24: a replay whose baseline failed at every commit printed the same block as a passing one.
+    const failing = {
+      ...normalOnly(),
+      commits: [1, 22].map((changedFiles) => ({
+        ...normalOnly().commits[0]!,
+        changedFiles,
+        baseline: { ...green.baseline, ok: false },
+        normal: { ...green.normal, ok: false }
+      }))
+    }
+    expect(text(failing).split("\n").slice(-3)).toEqual([
+      "commit   files  baseline      normal",
+      "a1b2c3d      1  fail 22m 00s  fail 4m 00s",
+      "a1b2c3d     22  fail 22m 00s  fail 4m 00s"
+    ])
+    expect(text(normalOnly()).split("\n").at(-1)).toBe("a1b2c3d      3  pass 22m 00s  pass 4m 00s")
+    // A commit fast mode did not run has an empty cell.
+    const { fast: _fast, ...plain } = red
+    expect(text({ ...clean, commits: [green, { ...plain, mismatches: [] }] }).split("\n").at(-1)).toBe(
+      "0000000      1  fail 21m 40s  fail 3m 20s"
+    )
   })
 
   it("leads with the speedup when nothing mismatched", () => {
     const lines = text(clean).split("\n")
     expect(lines[0]).toBe("6.0× faster")
-    expect(lines.at(-1)).toBe("2 commits · 0 mismatches")
+    expect(lines).toContain("2 commits · 0 mismatches")
     expect(text(clean)).not.toContain("✗")
   })
 
@@ -104,7 +132,10 @@ describe("text", () => {
       "baseline  ████████████████████████  22m 00s",
       "normal    ████▍                      4m 00s  5.5×",
       "",
-      "1 commit · 0 mismatches"
+      "1 commit · 0 mismatches",
+      "",
+      "commit   files  baseline      normal",
+      "a1b2c3d      3  pass 22m 00s  pass 4m 00s"
     ].join("\n"))
   })
 
@@ -131,6 +162,14 @@ describe("text", () => {
   it("says slower when normal mode took longer than the baseline", () => {
     const slow = { ...normalOnly(), normalWallMs: 1_650_000, speedup: 0.8 }
     expect(text(slow).split("\n")[0]).toBe("1.3× slower")
+    // Much slower: the row's ratio agrees with the headline; it read `0.0×` under "26.1× slower".
+    const slower = { ...normalOnly(), baselineWallMs: 1000, normalWallMs: 26_100, speedup: 1000 / 26_100 }
+    expect(text(slower).split("\n").slice(0, 4)).toEqual([
+      "26.1× slower",
+      "",
+      "baseline  ▉                          1.0s",
+      "normal    ████████████████████████  26.1s  0.038×"
+    ])
   })
 
   it("omits fast mode's ratio when fast mode took no time", () => {
@@ -219,14 +258,14 @@ describe("jobs that were not replayed", () => {
     for (const report of [clean, { ...clean, notReplayed: [] }]) {
       expect(text(report)).not.toContain("not replayed")
       expect(html(report)).not.toContain("Not replayed")
-      expect(text(report).split("\n").at(-1)).toBe("2 commits · 0 mismatches")
+      expect(text(report).split("\n")).toContain("2 commits · 0 mismatches")
     }
   })
 })
 
 describe("flaky verdicts and what was not read", () => {
   it("counts flaky verdicts beside the mismatches, never among them", () => {
-    expect(text({ ...clean, flaky: 2 }).split("\n").at(-1)).toBe("2 commits · 0 mismatches · 2 flaky")
+    expect(text({ ...clean, flaky: 2 }).split("\n")).toContain("2 commits · 0 mismatches · 2 flaky")
     expect(text({ ...clean, flaky: 2 })).not.toContain("✗")
     expect(html({ ...clean, flaky: 2 })).toContain("<p class=\"summary\">2 commits · 0 mismatches · 2 flaky</p>")
     expect(html({ ...clean, flaky: 2 })).not.toContain("role=\"alert\"")
@@ -247,9 +286,8 @@ describe("flaky verdicts and what was not read", () => {
   }
 
   it("lists what the inventory could not read under the jobs not replayed, in the terminal", () => {
-    expect(text(unread).split("\n").slice(-7)).toEqual([
-      "2 commits · 0 mismatches · 1 flaky · 1 job not replayed · 2 not read",
-      "",
+    expect(text(unread).split("\n")).toContain("2 commits · 0 mismatches · 1 flaky · 1 job not replayed · 2 not read")
+    expect(text(unread).split("\n").slice(-5)).toEqual([
       "ci.yml:package  no-command",
       "",
       "not read",
@@ -323,11 +361,13 @@ describe("html", () => {
   it("writes one row per commit with its three times, and its mismatches on a full-width row under it", () => {
     const tbody = html(example).match(/<tbody>\n([^]*?)\n<\/tbody>/)![1]!.split("\n")
     const time = (value: string) => `<td class="num">${value}</td>`
+    const failed = (value: string) => time(`<span class="sub">fail</span> ${value}`)
     expect(tbody).toEqual([
       `<tr><td><code title="${green.commit}">0000000</code></td>${time("22m 00s")}${time("4m 00s")}${
         time("1m 30s")
       }</tr>`,
-      `<tr class="bad lead"><td><code title="${red.commit}">0000000</code></td>${time("21m 40s")}${time("3m 20s")}${
+      // A run that failed says so beside its time.
+      `<tr class="bad lead"><td><code title="${red.commit}">0000000</code></td>${failed("21m 40s")}${failed("3m 20s")}${
         time("1m 00s")
       }</tr>`,
       "<tr class=\"bad\"><td colspan=\"4\"><ul><li><code>//packages/core:test</code> <span class=\"sub\">fast: fail → skipped</span></li></ul></td></tr>"
@@ -349,7 +389,9 @@ describe("html", () => {
   it("leaves a commit's fast cell empty when only that commit lacks fast mode", () => {
     const { fast: _fast, ...plain } = red
     const page = html({ ...example, commits: [green, plain] })
-    expect(page).toContain("<td class=\"num\">21m 40s</td><td class=\"num\">3m 20s</td><td class=\"num\"></td>")
+    expect(page).toContain(
+      "<span class=\"sub\">fail</span> 21m 40s</td><td class=\"num\"><span class=\"sub\">fail</span> 3m 20s</td><td class=\"num\"></td>"
+    )
   })
 
   it("has no fast column, bar or section without fast mode", () => {
@@ -423,6 +465,14 @@ describe("numbers", () => {
 
   it("prints ratios with one decimal below 100", () => {
     expect([1, 5.954, 99.94, 100, 1234.5].map(times)).toEqual(["1.0×", "6.0×", "99.9×", "100×", "1235×"])
+    expect([0, 0.0004, 0.0383, 0.0949, 0.095, 0.5].map(times)).toEqual([
+      "0.0×",
+      "0.0004×",
+      "0.038×",
+      "0.095×",
+      "0.1×",
+      "0.5×"
+    ])
     expect([0, 0.5, 1, 2].map(speedup)).toEqual(["0.0× faster", "2.0× slower", "1.0× faster", "2.0× faster"])
   })
 

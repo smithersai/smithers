@@ -384,6 +384,34 @@ jobs:
     expect(JSON.stringify(job)).not.toContain("plain-text")
   })
 
+  it("withholds a URL whose path is long enough to be the credential, as a webhook's is", () => {
+    // Review finding 6: this value was printed by `inventory --json` and written into the generated PACKAGE.ts.
+    const webhook = "https://hooks.example.com/services/T000/B000/PLANTED-value-13"
+    const job = jobOf(withSteps(`
+      - run: echo ok
+        env:
+          webhook: ${webhook}
+          DOCS: https://example.com/docs/ci
+          HOME_PAGE: https://example.com
+          EXACT: https://example.com/1234567890123456789
+          SHORT: https://example.com/123456789012345678
+          WITH_QUERY: https://example.com/short?ref=${"x".repeat(40)}
+          NOT_A_URL: packages/app/src/generated/schema/index.ts
+`))
+    expect(job.steps[0]?.env).toEqual({
+      DOCS: "https://example.com/docs/ci",
+      HOME_PAGE: "https://example.com",
+      // 19 characters after the slash make a path of 20; 18 do not.
+      SHORT: "https://example.com/123456789012345678",
+      WITH_QUERY: `https://example.com/short?ref=${"x".repeat(40)}`,
+      NOT_A_URL: "packages/app/src/generated/schema/index.ts"
+    })
+    expect(job.steps[0]?.secretEnv).toEqual({ webhook: "webhook", EXACT: "EXACT" })
+    expect(job.steps[0]?.secrets).toEqual(["webhook", "EXACT"])
+    expect(JSON.stringify(job)).not.toContain("PLANTED")
+    expect(features(job)).toContain("secret-value")
+  })
+
   it("reads working directories", () => {
     const job = jobOf(`
 on: push

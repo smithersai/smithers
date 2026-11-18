@@ -26,7 +26,8 @@ import {
   shortCommit,
   speedup,
   times,
-  unread
+  unread,
+  verdict
 } from "./Format.ts"
 
 const entities: Readonly<Record<string, string>> = {
@@ -127,8 +128,13 @@ const selection = (metrics: Metrics): string =>
     "</table></div>"
   ].join("")
 
+/** A run's time, led by `fail` when the run failed: a time alone would read as a passing run. */
 const time = (totals: RunTotals | undefined): string =>
-  `<td class="num">${totals === undefined ? "" : duration(totals.wallMs)}</td>`
+  `<td class="num">${
+    totals === undefined
+      ? ""
+      : `${totals.ok ? "" : `<span class="sub">${verdict(totals.ok)}</span> `}${duration(totals.wallMs)}`
+  }</td>`
 
 const mismatchItem = (mismatch: Mismatch): string =>
   `<li><code>${
@@ -189,7 +195,8 @@ const commitTable = (commits: ReadonlyArray<ReplayCommit>): string => {
  * Renders a replay report as one self-contained HTML page, light and dark,
  * readable on a phone: the speedup, a bar per mode, fast mode's recall and
  * selection rate with the counts behind them, one row per commit with its
- * times and mismatches, the jobs not replayed and what was not read.
+ * times, `fail` beside the time of a run that failed, and its mismatches,
+ * the jobs not replayed and what was not read.
  *
  * @category renderers
  * @since 0.1.0

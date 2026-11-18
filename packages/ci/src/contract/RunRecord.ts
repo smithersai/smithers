@@ -48,8 +48,9 @@ export const SkipReason = Schema.Literals(["dependency-failed", "predicted-safe"
 export type SkipReason = typeof SkipReason.Type
 
 /**
- * One execution of a target. A failed target reruns up to ten times or until
- * it passes; each execution is one attempt, in order.
+ * One execution of a target. A failed target reruns up to the limit the
+ * program sets (two) or until it passes; each execution is one attempt, in
+ * order.
  *
  * @category models
  * @since 0.1.0

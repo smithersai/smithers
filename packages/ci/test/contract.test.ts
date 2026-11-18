@@ -672,6 +672,7 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     expect(Schema.decodeUnknownSync(Inventory.Host)("darwin")).toBe("darwin")
     expect([Inventory.otherSystem, Inventory.noTarget]).toEqual(["other-system", "no-target"])
     expect(Inventory.stepTimeoutHours).toBe(6)
+    expect(Inventory.uncommittedChanges).toBe("uncommitted-changes")
   })
 
   it("holds what was read and belongs to no job, without the workspace file it found", () => {

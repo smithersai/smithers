@@ -650,6 +650,16 @@ export const notRead = (inventory: Inventory): ReadonlyArray<Unsupported> =>
   (inventory.unsupported ?? []).filter((entry) => entry.feature !== smithersBuild)
 
 /**
+ * The top-level `unsupported` feature of a working tree that differs from
+ * its commit. The files are read from the working tree; a replay runs the
+ * commits, so the changes are not replayed.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const uncommittedChanges = "uncommitted-changes"
+
+/**
  * The top-level `unsupported` feature of a repository that already builds
  * with Smithers build. Its `detail` is the workspace file.
  *

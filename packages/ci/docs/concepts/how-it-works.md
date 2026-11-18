@@ -36,7 +36,8 @@ and a TypeScript monorepo driven by GitHub Actions and Turborepo look alike:
   one set of variables per variant, or none when the job runs once.
 - A **step** is one shell command with its working directory and plain
   environment values. A secret the step uses appears by name only, never by
-  value.
+  value. A value under `env:` that is a URL with a path of 20 or more
+  characters is withheld the same way: a webhook's path is its credential.
 - A **toolchain** is a tool the repository pins, such as Zig or Bun, with the
   file that pins it and its version when the file gives one.
 
@@ -44,6 +45,18 @@ Some CI features have no command to run, such as a hosted service container or
 a third-party action. The inventory lists each one under its job as
 unsupported, with the reason. When the repository depends on something
 Smithers CI cannot run yet, the command stops with exit code 3.
+
+A job with one of these is never run and never becomes a target:
+
+| Feature            | The job                                                   |
+| ------------------ | --------------------------------------------------------- |
+| `secret`           | has a step that receives a secret                         |
+| `release-trigger`  | is in a workflow that only a pushed tag starts            |
+| `write-permission` | may write outside its checkout (`permissions: ... write`) |
+| any other feature  | except `host-action` and `trigger-filter`, which are safe |
+
+A workflow limited to some branches or paths (`trigger-filter`) is run for
+every change: more often than its CI runs it, never less.
 
 ## 2. Targets
 
@@ -76,8 +89,27 @@ measures each one up to three ways:
 Every run happens in a copy. The replay never changes the repository it reads.
 `--jobs` caps how many targets run at once; the default is the machine's.
 
-A failed target reruns up to ten times or until it passes. Its attempts give
-its verdict:
+A copy fetches from the repository's remote and has no remote to push to. A
+baseline step gets what a target gets: a short list of the machine's
+variables such as `PATH` and `HOME`, the step's own `env`, end of file on
+standard input, and a limit of six hours. It gets no other variable of the
+person running the replay.
+
+In the baseline, a GitHub Actions job runs in a fresh checkout of its own.
+The recipes of one Justfile, and the scripts of one `package.json`, run one
+after another in one checkout, in the order the `ci` recipe lists them, and
+stop at the first failure.
+
+Three things are left out and listed in the report:
+
+| Feature        | What is not replayed                                      |
+| -------------- | --------------------------------------------------------- |
+| `other-system` | a matrix variant whose runner is another operating system |
+| `no-target`    | a job with a step that has no target                      |
+| `needs`        | a job that needs a job left out                           |
+
+A failed target reruns up to the limit the program sets (two) or until it
+passes. Its attempts give its verdict:
 
 | Verdict   | When                                  |
 | --------- | ------------------------------------- |
@@ -87,8 +119,9 @@ its verdict:
 | `skipped` | The target did not run.               |
 
 A **mismatch** is a target whose verdict in normal or fast mode differs from
-its baseline verdict. Fast mode skipping a target that failed in the baseline
-is a mismatch. Skipping one that passed is not.
+its baseline verdict. `pass` and `flaky` agree: the step passed in the end.
+Flaky verdicts are counted apart. Fast mode skipping a target that failed in
+the baseline is a mismatch. Skipping one that passed is not.
 
 ## 4. Report
 
@@ -105,14 +138,19 @@ work time and its target counts:
 
 Wall time is elapsed time. Work time is the sum of every target's own time.
 
-Over all commits it gives the total wall time of each way, the speedup and the
-number of mismatches. The speedup is the baseline wall time divided by the
-normal-mode wall time, both summed over every commit. With fast mode, it also
+Over all commits it gives the total wall time of each way, the speedup, the
+number of mismatches and the number of flaky verdicts. The speedup is the
+baseline wall time divided by the normal-mode wall time, both summed over
+every commit. It lists each CI job that was not replayed with its reasons,
+and each file the inventory could not read, so the speedup is never read as
+covering them. With fast mode, it also
 gives fast mode's selection metrics; see
 [Normal mode and fast mode](modes.md#how-fast-mode-is-measured).
 
-The report prints as text. `--out` also writes it as an HTML file, and `--json`
-prints it as JSON.
+The report prints as text: the totals, then one line for each commit that
+says whether each way passed, with its wall time. `--out` also writes it as an
+HTML file, and `--json` prints it as JSON; both also hold work time and the
+target counts.
 
 ## See also
 
