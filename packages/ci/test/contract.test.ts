@@ -618,6 +618,39 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     expect(Inventory.ciJobs(decode({ ...inventory, jobs: [own] }))).toEqual([])
   })
 
+  it("refuses with one answer when nothing of the CI can be run", () => {
+    expect(Inventory.refusal(inventory)).toBeUndefined()
+    const blocked = (id: string, features: ReadonlyArray<string>) => ({
+      ...inventory.jobs[4]!,
+      id,
+      needs: [],
+      unsupported: features.map((feature) => ({ feature, detail: "" }))
+    })
+    expect(Inventory.refusal(decode({ ...inventory, jobs: [blocked("ci.yml:a", ["condition"])] }))).toBe(
+      "0 of 1 CI job can be reproduced on this machine\n  ci.yml:a  condition"
+    )
+    expect(
+      Inventory.refusal(
+        decode({
+          ...inventory,
+          jobs: [
+            blocked("ci.yml:deploy", ["secret-env", "condition", "secret-env"]),
+            blocked("ci.yml:e2e", ["services"])
+          ]
+        })
+      )
+    ).toBe(
+      [
+        "0 of 2 CI jobs can be reproduced on this machine",
+        "  ci.yml:deploy  secret-env, condition",
+        "  ci.yml:e2e     services"
+      ].join("\n")
+    )
+    expect(Inventory.refusal(decode({ ...inventory, jobs: [] }))).toBe(
+      "no job runs on a push or a pull request, and the repository root has no `ci` recipe or script"
+    )
+  })
+
   it("lists every CI job it leaves out, with the reasons", () => {
     const left = Inventory.notReplayed(inventory)
     expect(left).toEqual([

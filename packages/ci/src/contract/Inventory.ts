@@ -447,3 +447,28 @@ export const ci = (inventory: Inventory): Ci => asCi({ ...inventory, jobs: sort(
  * @since 0.1.0
  */
 export const notReplayed = (inventory: Inventory): ReadonlyArray<NotReplayed> => sort(inventory).left
+
+/**
+ * Why nothing of this CI can be run, or `undefined` when `ci` keeps a job.
+ * The replay and `apply` refuse with this text, so a repository reads one
+ * answer: it has no CI, or the jobs left out, one per line with their
+ * features.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const refusal = (inventory: Inventory): string | undefined => {
+  const { kept, left } = sort(inventory)
+  if (kept.length > 0) return undefined
+  if (left.length === 0) {
+    return "no job runs on a push or a pull request, and the repository root has no `ci` recipe or script"
+  }
+  const width = Math.max(...left.map((entry) => entry.job.length))
+  return [
+    `0 of ${left.length} CI job${left.length === 1 ? "" : "s"} can be reproduced on this machine`,
+    ...left.map((entry) =>
+      `  ${entry.job.padEnd(width)}  ${[...new Set(entry.reasons.map((reason) => reason.feature))].join(", ")}`
+    )
+  ].join("\n")
+}

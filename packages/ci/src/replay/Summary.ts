@@ -62,25 +62,6 @@ export interface Unit {
 export const failure = (code: Failure["code"], message: string): Failure => ({ code, message, part: "replay" })
 
 /**
- * Why nothing can be replayed: the repository has no CI, or every CI job was
- * left out.
- *
- * @category constructors
- * @throws {never}
- * @since 0.1.0
- */
-export const nothingToReplay = (left: ReadonlyArray<NotReplayed>): Failure =>
-  failure(
-    "unsupported",
-    left.length === 0
-      ? "no job runs on a push or a pull request, and the repository root has no `ci` recipe or script"
-      : `none of the ${left.length} CI jobs can be reproduced on this machine: ${
-        left.map((entry) => `${entry.job} (${[...new Set(entry.reasons.map((reason) => reason.feature))].join(", ")})`)
-          .join("; ")
-      }`
-  )
-
-/**
  * The units a change runs: every job of the CI (`Inventory.ci`), once per
  * matrix variant.
  *

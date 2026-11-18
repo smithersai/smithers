@@ -83,7 +83,11 @@ describe("a replay that cannot run", () => {
 
   it("is unsupported when no job runs on a change", async () => {
     const root = track(makeSmallRepository([{ ...job("nightly", "exit 0"), triggers: ["schedule"] }]))
-    expect(await failureOf(replay(root))).toMatchObject({ code: "unsupported" })
+    expect(await failureOf(replay(root))).toMatchObject({
+      code: "unsupported",
+      part: "replay",
+      message: "no job runs on a push or a pull request, and the repository root has no `ci` recipe or script"
+    })
   })
 
   it("refuses jobs that need each other", async () => {

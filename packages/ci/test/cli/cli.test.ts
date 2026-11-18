@@ -353,6 +353,30 @@ describe.concurrent("smithers-ci with a faulty part or host", () => {
     })
   }
 
+  it("exits 3 and lists the jobs when nothing of the CI can be reproduced, for apply and for a replay", async () => {
+    const read = await Effect.runPromise(Effect.provide(parts.read(repo()), host))
+    const blocked: Chosen = {
+      ...parts,
+      read: () =>
+        Effect.succeed({
+          ...read,
+          jobs: read.jobs.map((job) => ({ ...job, unsupported: [{ feature: "condition", detail: "if: always()" }] }))
+        })
+    }
+    for (const args of [["apply"], ["--commits", "1"]]) {
+      const root = repo()
+      const before = snapshot(root)
+      const outcome = await runIn(args, root, blocked)
+      expect(outcome.code).toBe(exitCodes.unsupported)
+      expect(outcome.stdout).toBe("")
+      expect(outcome.stderr.split("\n").slice(0, 2)).toEqual([
+        "smithers-ci: inventory: 0 of 3 CI jobs can be reproduced on this machine",
+        "  justfile:build  condition"
+      ])
+      expect(changed(before, snapshot(root))).toEqual([])
+    }
+  })
+
   it("hands --cache to the generate part", async () => {
     const root = repo()
     const echo: Chosen = {

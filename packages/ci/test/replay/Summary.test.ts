@@ -14,7 +14,6 @@ import {
   labelsOf,
   maxReruns,
   mismatchesOf,
-  nothingToReplay,
   planOfPrinted,
   predictedSafe,
   recordOf,
@@ -298,17 +297,11 @@ describe("reportOf", () => {
     })
   })
 
-  it("lists the CI jobs that were left out, and says why nothing can be replayed", () => {
+  it("lists the CI jobs that were left out", () => {
     const left = [
       { job: "deploy", reasons: [{ feature: "secret-env", detail: "a" }, { feature: "secret-env", detail: "b" }] },
       { job: "after", reasons: [{ feature: "condition", detail: "c" }, { feature: "needs", detail: "d" }] }
     ]
     expect(reportOf("r", [entry], undefined, left).notReplayed).toEqual(left)
-    expect(nothingToReplay(left)).toEqual({
-      code: "unsupported",
-      part: "replay",
-      message: "none of the 2 CI jobs can be reproduced on this machine: deploy (secret-env); after (condition, needs)"
-    })
-    expect(nothingToReplay([]).message).toContain("no job runs on a push or a pull request")
   })
 })
