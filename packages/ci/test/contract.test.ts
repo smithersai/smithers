@@ -322,16 +322,16 @@ describe("contract 11: target map", () => {
   const map = Schema.decodeUnknownSync(TargetMap.TargetMap)(fixture("target-map.example.json"))
 
   it("finds the target a step became, per matrix variant", () => {
-    expect(TargetMap.labelOf(map, "ci.yml:test", "ci.yml:test:1", { os: "macos-latest" }))
-      .toBe("//:ci-yml-test-1-os-macos-latest")
-    expect(TargetMap.labelOf(map, "justfile:build", "justfile:build:1", {})).toBe("//:justfile-build-1")
+    expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:1", { os: "macos-latest" }))
+      .toEqual(["//:ci-yml-test-1-os-macos-latest"])
+    expect(TargetMap.labelsOf(map, "justfile:build", "justfile:build:1", {})).toEqual(["//:justfile-build-1"])
   })
 
   it("has no target for a step, job or variant the generator did not write", () => {
-    expect(TargetMap.labelOf(map, "ci.yml:test", "ci.yml:test:2", { os: "macos-latest" })).toBeUndefined()
-    expect(TargetMap.labelOf(map, "ci.yml:lint", "ci.yml:test:1", { os: "macos-latest" })).toBeUndefined()
-    expect(TargetMap.labelOf(map, "ci.yml:test", "ci.yml:test:1", { os: "windows-latest" })).toBeUndefined()
-    expect(TargetMap.labelOf(map, "ci.yml:test", "ci.yml:test:1", {})).toBeUndefined()
+    expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:2", { os: "macos-latest" })).toEqual([])
+    expect(TargetMap.labelsOf(map, "ci.yml:lint", "ci.yml:test:1", { os: "macos-latest" })).toEqual([])
+    expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:1", { os: "windows-latest" })).toEqual([])
+    expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:1", {})).toEqual([])
   })
 
   it("reads a variant the same whatever order its keys are in", () => {
@@ -616,6 +616,23 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     const both = decode({ ...inventory, jobs: [own, inventory.jobs[4]!] })
     expect(Inventory.ciJobs(both).map((entry) => entry.id)).toEqual(["ci.yml:plain"])
     expect(Inventory.ciJobs(decode({ ...inventory, jobs: [own] }))).toEqual([])
+  })
+
+  it("replaces the steps of a CI's jobs, and never leaves a job without a step", () => {
+    const narrowed = Inventory.ci(inventory)
+    const split = Inventory.withSteps(narrowed, (entry) =>
+      entry.id === "ci.yml:test"
+        ? entry.steps.flatMap((step) => [{ ...step, id: `${step.id}-a`, from: step.id }, {
+          ...step,
+          id: `${step.id}-b`,
+          from: step.id
+        }])
+        : [])
+    expect(split.jobs.map((entry) => [entry.id, entry.needs, entry.steps.length])).toEqual(
+      narrowed.jobs.map((entry) => [entry.id, entry.needs, entry.steps.length * (entry.id === "ci.yml:test" ? 2 : 1)])
+    )
+    expect(split.jobs[0]!.steps.every((step) => step.from !== undefined)).toBe(true)
+    expect(split.jobs[1]).toEqual(narrowed.jobs[1])
   })
 
   it("refuses with one answer when nothing of the CI can be run", () => {

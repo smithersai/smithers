@@ -75,25 +75,6 @@ export const variantKey = (variant: Readonly<Record<string, string>>): string =>
   JSON.stringify(Object.entries(variant).sort(([a], [b]) => (a < b ? -1 : 1)))
 
 /**
- * The label of the target that runs a step, or `undefined` when the
- * generator made none for it.
- *
- * @throws {never}
- * @category accessors
- * @since 0.1.0
- */
-export const labelOf = (
-  map: TargetMap,
-  job: string,
-  step: string,
-  variant: Readonly<Record<string, string>>
-): string | undefined => {
-  const key = variantKey(variant)
-  return map.targets.find((entry) => entry.job === job && entry.step === step && variantKey(entry.variant) === key)
-    ?.label
-}
-
-/**
  * The labels of every target that runs a step: one, or several when the
  * step was split. Empty when the generator made none for it.
  *

@@ -24,6 +24,16 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-17, eighth round** (the replay runs split steps):
+
+- `Inventory.withSteps(ci, steps)` returns a `Ci` with the steps of each job replaced. `split` uses it in place of
+  asserting the type; `Inventory.ci` must not be called on its own result.
+- `TargetMap.labelOf` is removed. `labelsOf` is the one accessor: one label, or several for a split step.
+- The replay calls `parts.decompose` before `parts.files`. The baseline runs the unsplit steps; a split step is
+  compared, under its own id, with `RunRecord.combine` of the verdicts of its targets.
+- `Inventory.refusal(inventory)` words every "nothing of this CI can be run" answer; `apply` and the replay use it.
+- The replay says what it runs through the `Progress` service of `src/replay` (silent unless provided).
+
 **2026-11-17, seventh round** (asked for by the splitter and replay lanes):
 
 - `Step.inputs` are globs as Smithers build's `glob` reads them. **A target generated from a step with `inputs` must

@@ -20,6 +20,8 @@ import {
   recovered,
   reportOf,
   selectionOf,
+  splitOf,
+  targetsOf,
   totalsOf,
   unitsOf
 } from "../../src/replay/Summary.ts"
@@ -101,11 +103,27 @@ describe("unitsOf", () => {
     expect(one?.steps[0]).toEqual({
       id: "s",
       label: "//:linux",
+      targets: ["//:linux"],
       command: "echo linux",
       cwd: "linux",
       env: { WHERE: "linux" }
     })
-    expect(two?.steps[0]).toMatchObject({ label: undefined, command: "echo mac" })
+    expect(two?.steps[0]).toMatchObject({ label: undefined, targets: [], command: "echo mac" })
+  })
+
+  it("compares a split step under its own id, and runs every target it became", () => {
+    const units = unitsOf(
+      inventory([job("j", { steps: [step("whole", "true"), step("split", "true"), step("none", "true")] })]),
+      map([["j", "whole", {}, "//:whole"], ["j", "split", {}, "//:split-a"], ["j", "split", {}, "//:split-b"]])
+    )
+    expect(units[0]!.steps.map((entry) => [entry.label, entry.targets])).toEqual([
+      ["//:whole", ["//:whole"]],
+      ["split", ["//:split-a", "//:split-b"]],
+      [undefined, []]
+    ])
+    expect(labelsOf(units[0]!, undefined)).toEqual(["//:whole", "split"])
+    expect(targetsOf(units)).toEqual(["//:whole", "//:split-a", "//:split-b"])
+    expect([...splitOf(units)]).toEqual([["split", ["//:split-a", "//:split-b"]]])
   })
 
   it("groups a job's variants", () => {
@@ -251,6 +269,46 @@ describe("mismatchesOf", () => {
     expect(mismatchesOf("fast", record([failed("a")]), got)).toEqual([
       { label: "a", mode: "fast", baseline: "fail", got: "skipped" }
     ])
+  })
+
+  describe("a step that was split", () => {
+    const split = new Map([["s", ["a", "b"]]])
+    const mismatch = (baseline: string, got: string) => [{ label: "s", mode: "normal", baseline, got }]
+
+    it("agrees when its targets' combined verdict is the step's", () => {
+      expect(mismatchesOf("normal", record([ran("s")]), record([ran("a"), ran("b")]), split)).toEqual([])
+      expect(mismatchesOf("normal", record([failed("s")]), record([ran("a"), failed("b")]), split)).toEqual([])
+    })
+
+    it("differs when one target fails a step that passed, or every target passes a step that failed", () => {
+      expect(mismatchesOf("normal", record([ran("s")]), record([ran("a"), failed("b")]), split)).toEqual(
+        mismatch("pass", "fail")
+      )
+      expect(mismatchesOf("normal", record([failed("s")]), record([ran("a"), ran("b")]), split)).toEqual(
+        mismatch("fail", "pass")
+      )
+    })
+
+    it("counts a target that was never reported as skipped", () => {
+      expect(mismatchesOf("normal", record([ran("s")]), record([]), split)).toEqual(mismatch("pass", "skipped"))
+      expect(mismatchesOf("normal", record([ran("s")]), record([ran("a")]), split)).toEqual([])
+    })
+
+    it("forgives predicted-safe skips unless the baseline failed and no target that ran shows it", () => {
+      const fast = (baseline: string, got: string) => [{ label: "s", mode: "fast", baseline, got }]
+      expect(mismatchesOf("fast", record([ran("s")]), record([ran("a"), predictedSafe("b")]), split)).toEqual([])
+      expect(mismatchesOf("fast", record([ran("s")]), record([predictedSafe("a"), predictedSafe("b")]), split))
+        .toEqual([])
+      expect(mismatchesOf("fast", record([ran("s")]), record([failed("a"), predictedSafe("b")]), split)).toEqual(
+        fast("pass", "fail")
+      )
+      expect(mismatchesOf("fast", record([failed("s")]), record([failed("a"), predictedSafe("b")]), split)).toEqual([])
+      expect(mismatchesOf("fast", record([failed("s")]), record([ran("a"), predictedSafe("b")]), split)).toEqual(
+        fast("fail", "pass")
+      )
+      expect(mismatchesOf("fast", record([failed("s")]), record([predictedSafe("a"), predictedSafe("b")]), split))
+        .toEqual(fast("fail", "skipped"))
+    })
   })
 
   it("ignores a target only the mode has", () => {

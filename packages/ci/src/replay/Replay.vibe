@@ -37,6 +37,8 @@ import {
   recovered,
   reportOf,
   selectionOf,
+  splitOf,
+  targetsOf,
   totalsOf,
   type Unit,
   unitsOf
@@ -195,6 +197,10 @@ effect function measure<R>(
 /**
  * Replays the last `request.commits` commits and reports.
  *
+ * The baseline runs the CI's steps as they are. The targets come from the CI
+ * after `parts.decompose` split its steps, when the part is given, and a split
+ * step's verdict is the combined verdict of its targets.
+ *
  * Each baseline job gets a fresh checkout, as each gets its own machine in CI,
  * and jobs run at once unless `request.jobs` limits them; generated targets also
  * stay within the target map's `maxJobs`. Commits run oldest
@@ -237,7 +243,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     if (why !== undefined) throw failure("unsupported", why)
     const left = notReplayed(inventory)
     const narrowed = ci(inventory)
-    const generated = try parts.files(narrowed, { cache: request.cache })
+    const split = parts.decompose === undefined ? narrowed : try parts.decompose(normalCopy, narrowed)
+    const generated = try parts.files(split, { cache: request.cache })
     const kept = try Native.replaced(normalCopy, generated)
     if (kept.length > 0) throw failure("unsupported", Native.overwriteRefusal(kept))
     const mapFile = generated.find((file) => file.path === targetMapPath)
@@ -246,7 +253,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       throw failure("invalid-document", `${targetMapPath} is not a target map`)
     }
     const units = unitsOf(narrowed, targetMap)
-    const allLabels = units.flatMap((unit) => labelsOf(unit, undefined))
+    const allLabels = targetsOf(units)
+    const splits = splitOf(units)
     if (allLabels.length === 0) throw failure("unsupported", "no CI step that runs on a change has a target")
     const cycle = cycleIn(units)
     if (cycle !== undefined) throw failure("invalid-document", `job ${cycle} needs itself`)
@@ -390,7 +398,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const merged = normal.results.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
         const fastRecord = recordOf(merged, commit, fast.wallMs, "fast" satisfies Mode)
         fastPart = { fast: totalsOf(fastRecord) }
-        fastMismatches = mismatchesOf("fast", baseRecord, fastRecord)
+        fastMismatches = mismatchesOf("fast", baseRecord, fastRecord, splits)
         allRows.push(...rows)
         selected.set(commit, choice.selected)
       }
@@ -399,7 +407,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         changedFiles: changed.length,
         baseline: totalsOf(baseRecord),
         normal: totalsOf(normalRecord),
-        mismatches: [...mismatchesOf("normal", baseRecord, normalRecord), ...fastMismatches],
+        mismatches: [...mismatchesOf("normal", baseRecord, normalRecord, splits), ...fastMismatches],
         ...fastPart
       })
     }

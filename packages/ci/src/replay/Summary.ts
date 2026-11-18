@@ -11,9 +11,16 @@ import { type Ci, type NotReplayed, withVariant } from "../contract/Inventory.ts
 import type { Failure } from "../contract/Parts.ts"
 import type { Plan } from "../contract/Plan.ts"
 import type { Mismatch, ReplayCommit, ReplayReport, RunTotals } from "../contract/ReplayReport.ts"
-import { type Mode, type RunRecord, type StatusCounts, type TargetResult, verdictOf } from "../contract/RunRecord.ts"
+import {
+  combine,
+  type Mode,
+  type RunRecord,
+  type StatusCounts,
+  type TargetResult,
+  verdictOf
+} from "../contract/RunRecord.ts"
 import { type Metrics, metrics, type Row, type Score, select, type Settings } from "../contract/Selection.ts"
-import { labelOf, type TargetMap } from "../contract/TargetMap.ts"
+import { labelsOf as targetsOfStep, type TargetMap } from "../contract/TargetMap.ts"
 
 /**
  * How many times a failed target reruns after its first run.
@@ -34,7 +41,10 @@ export const maxReruns = 10
  */
 export interface UnitStep {
   readonly id: string
+  /** The name the step's verdict is compared under: its target's label, or its own id when it was split. */
   readonly label: string | undefined
+  /** The targets that run the step: one, several when it was split, none when the generator made none. */
+  readonly targets: ReadonlyArray<string>
   readonly command: string
   readonly cwd: string
   readonly env: Readonly<Record<string, string>>
@@ -77,9 +87,11 @@ export const unitsOf = (inventory: Ci, map: TargetMap): ReadonlyArray<Unit> =>
       needs: job.needs,
       steps: job.steps.map((step) => {
         const filled = withVariant(step, variant)
+        const targets = targetsOfStep(map, job.id, step.id, variant)
         return {
           id: step.id,
-          label: labelOf(map, job.id, step.id, variant),
+          label: targets.length > 1 ? step.id : targets[0],
+          targets,
           command: filled.command,
           cwd: filled.cwd,
           env: filled.env
@@ -98,6 +110,30 @@ export const unitsOf = (inventory: Ci, map: TargetMap): ReadonlyArray<Unit> =>
 export const labelsOf = (unit: Unit, wanted: ReadonlySet<string> | undefined): ReadonlyArray<string> =>
   unit.steps.flatMap((step) =>
     step.label !== undefined && (wanted === undefined || wanted.has(step.label)) ? [step.label] : []
+  )
+
+/**
+ * Every target the units' steps became.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const targetsOf = (units: ReadonlyArray<Unit>): ReadonlyArray<string> =>
+  units.flatMap((unit) => unit.steps.flatMap((step) => step.targets))
+
+/**
+ * The steps that were split: the name each is compared under, with its targets.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const splitOf = (units: ReadonlyArray<Unit>): ReadonlyMap<string, ReadonlyArray<string>> =>
+  new Map(
+    units.flatMap((unit) =>
+      unit.steps.flatMap((step) => step.targets.length > 1 ? [[step.id, step.targets] as const] : [])
+    )
   )
 
 /**
@@ -325,21 +361,35 @@ export const totalsOf = (record: RunRecord): RunTotals => ({
 })
 
 /**
- * Every baseline target whose verdict differs in a mode. A target the mode
- * never reported counts as skipped, so a mode that ran nothing cannot agree.
- * A `predicted-safe` skip differs only from a baseline failure.
+ * Every baseline step whose verdict differs in a mode. A step that was split
+ * (`split` names its targets) has the combined verdict of its targets. A
+ * target the mode never reported counts as skipped, so a mode that ran
+ * nothing cannot agree. `predicted-safe` skips differ only from a baseline
+ * failure: the targets that did run must then show it.
  *
  * @category report
  * @throws {never}
  * @since 0.1.0
  */
-export const mismatchesOf = (mode: Mode, baseline: RunRecord, got: RunRecord): ReadonlyArray<Mismatch> => {
+export const mismatchesOf = (
+  mode: Mode,
+  baseline: RunRecord,
+  got: RunRecord,
+  split: ReadonlyMap<string, ReadonlyArray<string>> = new Map()
+): ReadonlyArray<Mismatch> => {
   const byLabel = new Map(got.results.map((result) => [result.label, result]))
   return baseline.results.flatMap((result) => {
     const expected = verdictOf(result)
-    const other = byLabel.get(result.label)
-    const verdict = other === undefined ? "skipped" : verdictOf(other)
-    const same = other?.skipReason === "predicted-safe" ? expected !== "fail" : verdict === expected
+    const others = (split.get(result.label) ?? [result.label]).map((label) => byLabel.get(label))
+    const judged = others.filter((other) => other?.skipReason !== "predicted-safe")
+    const verdictOfAll = (all: typeof others) =>
+      combine(all.map((other) => other === undefined ? "skipped" : verdictOf(other)))
+    const verdict = verdictOfAll(others)
+    const same = judged.length === others.length
+      ? verdict === expected
+      : expected === "fail"
+      ? verdictOfAll(judged) === "fail"
+      : judged.length === 0 || verdictOfAll(judged) === expected
     return same ? [] : [{ label: result.label, mode, baseline: expected, got: verdict }]
   })
 }

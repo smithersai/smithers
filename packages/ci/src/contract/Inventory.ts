@@ -449,6 +449,25 @@ export const ci = (inventory: Inventory): Ci => asCi({ ...inventory, jobs: sort(
 export const notReplayed = (inventory: Inventory): ReadonlyArray<NotReplayed> => sort(inventory).left
 
 /**
+ * A CI with each job's steps replaced, for a part that splits steps. `ci`
+ * cannot be called again on its own result (a root `ci` recipe is gone from
+ * it), so this is how a `Ci` is changed. A job given no steps keeps the steps
+ * it had: every job of a `Ci` has a step.
+ *
+ * @throws {never}
+ * @category constructors
+ * @since 0.1.0
+ */
+export const withSteps = (inventory: Ci, steps: (job: Job) => ReadonlyArray<Step>): Ci =>
+  asCi({
+    ...inventory,
+    jobs: inventory.jobs.map((job) => {
+      const replaced = steps(job)
+      return replaced.length === 0 ? job : { ...job, steps: replaced }
+    })
+  })
+
+/**
  * Why nothing of this CI can be run, or `undefined` when `ci` keeps a job.
  * The replay and `apply` refuse with this text, so a repository reads one
  * answer: it has no CI, or the jobs left out, one per line with their
