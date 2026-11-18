@@ -1,14 +1,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Console from "effect/Console"
 import * as Effect from "effect/Effect"
-import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { layer, replayOptions } from "../../src/cli/Host.vibe"
-import { nodeProgram, smthrsCommand, targetsDirectory } from "../../src/cli/Install.ts"
+import { nodeProgram, smthrsCommand } from "../../src/cli/Install.ts"
 import { Options, Progress } from "../../src/replay/index.ts"
 import { recorder } from "./repo.ts"
 
@@ -35,16 +34,14 @@ const missing = (): string => {
 }
 
 describe("this install", () => {
-  it("finds the smthrs program and the targets package smithers-ci depends on", () => {
+  it("finds the smthrs program smithers-ci depends on", () => {
     const [node, script] = smthrsCommand()
     expect(node).toBe(process.execPath)
     expect(readFileSync(script!, "utf8")).toContain("#!/usr/bin/env node")
-    expect(JSON.parse(readFileSync(join(targetsDirectory()!, "package.json"), "utf8")).name).toBe("@smthrs/targets")
   })
 
-  it("falls back to the smthrs on the path, and to no targets package, when they are not installed", () => {
+  it("falls back to the smthrs on the path when it is not installed", () => {
     expect(smthrsCommand(missing)).toEqual(["smthrs"])
-    expect(targetsDirectory(missing)).toBeUndefined()
   })
 })
 
@@ -123,30 +120,17 @@ describe("how the program lets a replay run in a stranger's checkout", () => {
     expect(options.reruns).toBe(2)
   })
 
-  it("links the targets package into a checkout, once", async () => {
+  it("puts nothing into a checkout: smthrs finds the package the generated files import by itself", async () => {
+    // An install step would find a linked package under `node_modules`, and remove it.
     const checkout = directory()
-    const options = await optionsOf(replayOptions(["smthrs"], targetsDirectory()))
+    const options = await optionsOf(replayOptions(["smthrs"]))
     await Effect.runPromise(options.prepare(checkout))
-    const manifest = join(checkout, "node_modules", "@smthrs", "targets", "package.json")
-    expect(JSON.parse(readFileSync(manifest, "utf8")).name).toBe("@smthrs/targets")
-    await Effect.runPromise(options.prepare(checkout))
-    expect(existsSync(manifest)).toBe(true)
-  })
-
-  it("fails, naming the checkout, when it cannot link", async () => {
-    const checkout = directory()
-    writeFileSync(join(checkout, "node_modules"), "a file where the directory must go")
-    const options = await optionsOf(replayOptions(["smthrs"], targetsDirectory()))
-    const exit = await Effect.runPromiseExit(options.prepare(checkout))
-    expect(Exit.isFailure(exit)).toBe(true)
-    const failure = await Effect.runPromise(Effect.flip(options.prepare(checkout)))
-    expect(failure).toMatchObject({ code: "command-failed", part: "cli" })
-    expect(failure.message).toContain(checkout)
+    expect(readdirSync(checkout)).toEqual([])
   })
 
   it("refuses a checkout, naming Node, when the machine has none", async () => {
     const checkout = directory()
-    const options = await optionsOf(replayOptions(["node"], targetsDirectory(), false))
+    const options = await optionsOf(replayOptions(["node"], false))
     const failure = await Effect.runPromise(Effect.flip(options.prepare(checkout)))
     expect(failure).toEqual({
       code: "unsupported",
@@ -155,15 +139,5 @@ describe("how the program lets a replay run in a stranger's checkout", () => {
       part: "cli"
     })
     expect(existsSync(join(checkout, "node_modules"))).toBe(false)
-  })
-
-  it("fails when this install has no targets package", async () => {
-    const options = await optionsOf(replayOptions(["smthrs"], undefined))
-    const failure = await Effect.runPromise(Effect.flip(options.prepare(directory())))
-    expect(failure).toEqual({
-      code: "command-failed",
-      message: "this install of smithers-ci has no @smthrs/targets package to give the checkout",
-      part: "cli"
-    })
   })
 })

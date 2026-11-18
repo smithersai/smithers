@@ -8,8 +8,8 @@
  *   run, git history, an in-memory flow engine for the judge's durable steps,
  *   Web Crypto, and the judge `smthrs` binds: Jev with `AI_GATEWAY_API_KEY`,
  *   else the model this machine is signed in to.
- * - How a replay runs in a stranger's checkout: this install's `smthrs`, and
- *   its targets package linked into the checkout.
+ * - How a replay runs in a stranger's checkout: this install's `smthrs`,
+ *   which finds the package the generated files import by itself.
  * - What a replay is running, one line on standard error as each mode of each
  *   commit starts.
  *
@@ -25,7 +25,7 @@ import type { Failure } from "../contract/Parts.ts"
 import { name } from "../contract/Command.ts"
 import { Options, Progress } from "../replay/index.ts"
 import { Ledger, Repository } from "../select/index.ts"
-import { nodeProgram, smthrsCommand, targetsDirectory } from "./Install.ts"
+import { nodeProgram, smthrsCommand } from "./Install.ts"
 
 /** An environment, read once at the composition root and never printed. */
 export type Environment = Readonly<Record<string, string | undefined>>
@@ -58,8 +58,6 @@ const judge = (environment: Environment) => {
 /** How often a failed target runs again before its verdict is `fail`; a pass on a rerun is `flaky`. */
 const reruns = 2
 
-const cannot = (message: string): Failure => ({ code: "command-failed", message, part: "cli" })
-
 const noNode: Failure = {
   code: "unsupported",
   message: "Replaying commits needs Node.js 22.19 or newer, and none is on the path. Install Node.js and run this again.",
@@ -67,38 +65,21 @@ const noNode: Failure = {
 }
 
 /**
- * How a replay runs on this machine. `smthrs` starts Smithers build. `targets`
- * is the directory of the `@smthrs/targets` package, linked into each checkout
- * because the generated `PACKAGE.ts` imports it and a stranger's repository
- * does not have it. `hasNode` says whether `smthrs` has a Node to run on.
+ * How a replay runs on this machine. `smthrs` starts Smithers build, which
+ * finds the package the generated files import by itself, so nothing is put
+ * into a checkout for it: a step that installs would find it under
+ * `node_modules`, and remove it. `hasNode` says whether `smthrs` has a Node
+ * to run on.
  *
  * @category layers
  * @since 0.1.0
  */
-export const replayOptions = (
-  smthrs: readonly [string, ...Array<string>],
-  targets: string | undefined,
-  hasNode: boolean = true
-) =>
-  Layer.effect(Options, effect {
-    const fs = try FileSystem.FileSystem
-    const path = try Path.Path
-    return {
-      smthrs,
-      reruns,
-      prepare: effect (checkout: string) => {
-        if (!hasNode) throw noNode
-        if (targets === undefined) {
-          throw cannot("this install of smithers-ci has no @smthrs/targets package to give the checkout")
-        }
-        const scope = path.join(checkout, "node_modules", "@smthrs")
-        const link = path.join(scope, "targets")
-        const linked = fs.exists(link) catch () => false
-        if (linked) return
-        all([fs.makeDirectory(scope, { recursive: true }), fs.symlink(targets, link)]) catch effect (cause) => {
-          throw cannot(`could not link @smthrs/targets into ${checkout}: ${cause.message}`)
-        }
-      }
+export const replayOptions = (smthrs: readonly [string, ...Array<string>], hasNode: boolean = true) =>
+  Layer.succeed(Options, {
+    smthrs,
+    reruns,
+    prepare: effect (_checkout: string) => {
+      if (!hasNode) throw noNode
     }
   })
 
@@ -127,7 +108,7 @@ export const layer = (environment: Environment) => {
       FlowEngine.layerMemory,
       WebCrypto.layer,
       judge(environment),
-      replayOptions(smthrsCommand(undefined, runtime), targetsDirectory(), runtime !== undefined),
+      replayOptions(smthrsCommand(undefined, runtime), runtime !== undefined),
       replayProgress
     ),
     node

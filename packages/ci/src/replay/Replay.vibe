@@ -132,9 +132,10 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 /**
  * How the replay runs on this machine. `smthrs` is the command that starts
  * Smithers build, `reruns` how often a failed target reruns, and `prepare`
- * makes the checkout the generated targets run in loadable, such as by
- * linking the package the generated files import. A baseline checkout is
- * never prepared: it is what a fresh clone is. `stepTimeout` is how long one
+ * runs before the generated targets run in a checkout, and fails when this
+ * machine cannot run them. It puts nothing into the checkout: a step would
+ * find it there. A baseline checkout is never prepared: it is what a fresh
+ * clone is. `stepTimeout` is how long one
  * baseline step may run; without it the limit is the one generated targets
  * have (`Inventory.stepTimeoutHours`). `confine` says whether this machine can
  * hold a step in a file-system jail; without it the machine is asked. `cores`
@@ -309,8 +310,8 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * Wall time is what a CI machine spends on the commit once it is ready: the
  * checkout, and the first pass, which for a mode holds the start of Smithers
  * build and its planning. What only a replay does is not counted: writing the
- * generated files into the copy, which `apply` commits once, and linking the
- * package they import. Neither are the reruns that label flaky targets.
+ * generated files into the copy, which `apply` commits once. Neither are the
+ * reruns that label flaky targets.
  *
  * When the model fast mode needs stops answering, the baseline and normal mode
  * still run for every commit, fast mode runs for no further commit, and the
@@ -470,7 +471,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         }
       }
       try options.prepare(copy)
-      // Everything untracked now is the replay's own: the generated files, the cache, what `prepare` linked. Listed in
+      // Everything untracked now is the replay's own: the generated files and the cache. Listed in
       // the copy's exclude file, it leaves `git status` as clean as in the baseline's fresh clone.
       const listed = ["ls-files", "--others", "--directory", "--exclude-per-directory=.gitignore", "-z"]
       const untracked = try git(copy, listed, place)

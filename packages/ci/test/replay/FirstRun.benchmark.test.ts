@@ -43,7 +43,6 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { layer, replayOptions } from "../../src/cli/Host.vibe"
-import { targetsDirectory } from "../../src/cli/Install.ts"
 import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { split } from "../../src/decompose/index.ts"
@@ -132,7 +131,7 @@ const recorded = (command: string) =>
         return { ...(yield* Options), confine: unconfined }
       })
     ),
-    replayOptions([command], targetsDirectory())
+    replayOptions([command])
   )
 
 const measure = async (root: string, installs: string): Promise<Measurement> => {

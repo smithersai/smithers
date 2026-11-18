@@ -1,7 +1,6 @@
 /**
- * Where this install keeps the two things a replay needs inside a stranger's
- * checkout: the `smthrs` program, and the targets package a generated
- * workspace imports.
+ * Where this install keeps what a replay needs to run in a stranger's
+ * checkout: the `smthrs` program, and a Node to run it on.
  *
  * @since 0.1.0
  */
@@ -71,14 +70,3 @@ export const smthrsCommand = (
   const cli = directoryOf("@smthrs/cli", resolve)
   return cli === undefined ? ["smthrs"] : [node, join(cli, "bin", "smithers.mjs")]
 }
-
-/**
- * The directory of this install's `@smthrs/targets` package, which a
- * generated `PACKAGE.ts` imports.
- *
- * @throws {never}
- * @category accessors
- * @since 0.1.0
- */
-export const targetsDirectory = (resolve: Resolve = fromHere): string | undefined =>
-  directoryOf("@smthrs/targets", resolve)
