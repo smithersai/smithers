@@ -296,10 +296,10 @@ const jj = Smithers.CiToolchain.Jj({ release: "0.39.0" })
 const ripgrep = Smithers.CiToolchain.Ripgrep({ release: "14.1.1" })
 // Confined targets run under bubblewrap on Linux, which the hosted runner
 // image does not ship. The step is a no-op on the macOS and Windows rows.
-const bubblewrap = Smithers.CiToolchain.Apt({ packages: ["bubblewrap"] })
+const bubblewrap = Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "strace"] })
 // TerminalRecording renders GIFs and inspects their timing through ffmpeg/ffprobe.
-const graphSystemTools = Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "ffmpeg"] })
-const packageSystemTools = Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "ffmpeg", "openssh-server"] })
+const graphSystemTools = Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "ffmpeg", "strace"] })
+const packageSystemTools = Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "ffmpeg", "openssh-server", "strace"] })
 // `//packages/smithers/build/build-cli:test` drives a real `forge` and a real Go toolchain:
 // it builds and tests a Foundry package and asserts `forge fmt --check` drift,
 // and it builds a Go package tree. Without them six cases fail on the REQUIRED
@@ -646,7 +646,7 @@ const ci = Smithers.GithubCiGen({
         runtimes: [node, bun],
         jj,
         ripgrep,
-        apt: Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "tmux"] }),
+        apt: Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "strace", "tmux"] }),
         artifacts: Smithers.CiToolchain.Artifacts({
           artifact: "apps-e2e-artifacts",
           sources: [
