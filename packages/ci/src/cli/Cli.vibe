@@ -151,7 +151,14 @@ effect function documentOf<S extends Schema.Top>(schema: S, value: S["Type"], pa
   return JSON.stringify(encoded, null, 2)
 }
 
-/** A plain listing of an inventory for a person. */
+/** Repository text for a terminal: control characters other than newline and tab become U+FFFD. */
+const clean = (value: string): string => value.replace(/[^\P{Cc}\n\t]/gu, "\uFFFD")
+
+/**
+ * A plain listing of an inventory for a person. A command's later lines are
+ * indented under its first, and nothing from the repository reaches the
+ * terminal as a control character.
+ */
 function inventoryText(inventory: Inventory): string {
   const lines = [`${inventory.repository} at ${inventory.commit}`]
   for (const tool of inventory.toolchains) {
@@ -161,13 +168,14 @@ function inventoryText(inventory: Inventory): string {
     const needs = job.needs.length === 0 ? "" : `, needs ${job.needs.join(", ")}`
     lines.push(`job ${job.id} (${job.source} ${job.file}${needs})`)
     for (const step of job.steps) {
-      lines.push(`  $ ${step.command}${step.cwd === "" || step.cwd === "." ? "" : `  (in ${step.cwd})`}`)
+      const where = step.cwd === "" || step.cwd === "." ? "" : `  (in ${step.cwd})`
+      lines.push(`  $ ${step.command.replaceAll("\n", "\n    ")}${where}`)
     }
     for (const unsupported of job.unsupported) {
       lines.push(`  unsupported ${unsupported.feature}: ${unsupported.detail}`)
     }
   }
-  return lines.join("\n")
+  return clean(lines.join("\n"))
 }
 
 /** Refuses a generated path that is empty, absolute, leaves the root, or repeats. */

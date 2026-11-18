@@ -401,6 +401,25 @@ describe.concurrent("smithers-ci with a faulty part or host", () => {
     })
   }
 
+  it("indents a command's later lines and prints no control character from the repository", async () => {
+    const zig = Schema.decodeUnknownSync(Inventory)(
+      JSON.parse(read(`${import.meta.dirname}/../fixtures/inventory.justfile-zig.json`))
+    )
+    const job = zig.jobs[0]!
+    const steps = [{ ...job.steps[0]!, command: "sh -c 'set -eu\nzig build\tall'" }, {
+      ...job.steps[0]!,
+      id: "red",
+      command: "echo \u001b[31mred\u0007"
+    }]
+    const inventory = { ...zig, jobs: [{ ...job, steps }] }
+    const outcome = await runIn(["inventory"], repo(), { ...parts, read: () => Effect.succeed(inventory) })
+    const lines = outcome.stdout.split("\n")
+    expect(lines).toContain("  $ sh -c 'set -eu")
+    expect(lines).toContain("    zig build\tall'")
+    expect(lines).toContain("  $ echo \uFFFD[31mred\uFFFD")
+    expect(outcome.stdout).not.toMatch(/\u001b|\u0007/)
+  })
+
   it("lists toolchains, needs, working directories and unsupported features of an inventory", async () => {
     const fixture = (name: string): Inventory =>
       Schema.decodeUnknownSync(Inventory)(JSON.parse(read(`${import.meta.dirname}/../fixtures/${name}`)))
