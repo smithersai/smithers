@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -167,6 +167,21 @@ describe("generated files under the real smthrs", () => {
       expect(execute(root, "third").statuses.get("many-33")).toBe("failed")
     } finally {
       rmSync(root, { recursive: true, force: true })
+    }
+  }, slow)
+
+  it("replays a verdict in a fresh checkout that restored the workflow's cache", () => {
+    const inventory = document([job("check", ["grep -q source input.txt"])])
+    const sources = { "input.txt": "source\n" }
+    const first = repository(inventory, sources)
+    const second = repository(inventory, sources)
+    try {
+      expect(execute(first, "first").statuses.get("check-1")).toBe("ran")
+      cpSync(join(first, ".flows", "cache"), join(second, ".flows", "cache"), { recursive: true })
+      expect(execute(second, "second").statuses.get("check-1")).toBe("hit")
+    } finally {
+      rmSync(first, { recursive: true, force: true })
+      rmSync(second, { recursive: true, force: true })
     }
   }, slow)
 })

@@ -426,6 +426,7 @@ describe("the workspace and workflow", () => {
     expect(workflow).toContain("# turbo (turbo.json) has no known setup action.")
     expect(workflow).toContain(`node-version: "24"`)
     expect(workflow).toContain("smthrs ci '//...' --jobs 1")
+    expect(workflow.indexOf("path: .flows/cache")).toBeLessThan(workflow.indexOf("smthrs ci"))
   })
 
   it("uses the repository's Node and defaults its triggers and runner", () => {

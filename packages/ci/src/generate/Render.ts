@@ -173,6 +173,12 @@ const renderWorkflow = (inventory: Inventory, plan: StepPlan): string => {
     `      - uses: actions/checkout@v4`,
     ...(hasNode ? [] : [`      - uses: actions/setup-node@v4`, `        with:`, `          node-version: "24"`]),
     ...[...toolchains.values()].flatMap(renderSetup),
+    `      ${yamlComment("Unconfined results never reach a remote cache, so the runner keeps its own.")}`,
+    `      - uses: actions/cache@v4`,
+    `        with:`,
+    `          path: .flows/cache`,
+    `          key: smithers-ci-\${{ matrix.os }}-\${{ github.sha }}`,
+    `          restore-keys: smithers-ci-\${{ matrix.os }}-`,
     `      ${yamlComment("Targets share one working tree, so they run one at a time.")}`,
     `      - run: npx --yes --package=@smthrs/cli@next smthrs ci '//...' --jobs 1`,
     ``
