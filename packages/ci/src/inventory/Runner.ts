@@ -26,7 +26,8 @@
  * @since 0.1.0
  */
 
-import { commitNote, runnerEntry, stateVariable } from "../contract/Inventory.ts"
+import * as Contract from "../contract/Inventory.ts"
+import { commitNote, eventsVariable, noParent, runnerEntry, stateVariable } from "../contract/Inventory.ts"
 import { shardOf } from "../contract/Shard.ts"
 import {
   finish,
@@ -54,8 +55,12 @@ export interface JobFacts {
   /** The job's matrix variants: what an expression over the matrix is worked out for. */
   readonly variants?: ReadonlyArray<Readonly<Record<string, string>>> | undefined
   readonly variables: Readonly<Record<string, string>>
+  /** The runner variables only GitHub can fill, each with a value of the right shape (`Contexts.standIns`). */
+  readonly standIns?: Readonly<Record<string, string>> | undefined
   /** The event file's JSON, with `commitMark` and `parentMark` where the commit and its first parent go. */
   readonly event: string
+  /** The event the job's workflow is replayed as: a replay's event file for the job is named after it. */
+  readonly eventName?: string | undefined
 }
 
 /**
@@ -87,7 +92,8 @@ export interface JobFacts {
  * - `outer`: the variables of the job and the workflow whose values are decided while the job runs.
  * - `env`: the step's own variables whose values are decided while the job runs.
  * - `fills`: the `${{ }}` texts left in the script, each with the expression that replaces it.
- * - `commit`: the step's script names the commit, so its verdict belongs to one commit.
+ * - `commit`: the step's script names the commit or the run, so its verdict belongs to one commit.
+ * - `action`: the step's own name, given as `GITHUB_ACTION`: its `id`, or `__run` and its place in the job.
  * - `store`: the step keeps files from one run to the next, as a cache step does. It is told where in
  *   `SMITHERS_CI_CACHE_STORE`: under the directory Smithers build keeps its cache in when the step is a target,
  *   under the one `Inventory.stateVariable` names in a baseline, and else in the user's own cache directory.
@@ -114,6 +120,7 @@ export interface StepFacts {
   readonly env: ReadonlyArray<readonly [name: string, parts: ReadonlyArray<Part>]>
   readonly fills: ReadonlyArray<readonly [written: string, residual: Residual]>
   readonly commit: boolean
+  readonly action?: string | undefined
   readonly limit?: number | undefined
   readonly store?: boolean | undefined
 }
@@ -123,15 +130,12 @@ export interface StepFacts {
  * its expressions cannot be finished in a shell. `alone` is the text of a
  * first step that turns out to be the only step of its job: nothing reads
  * what it leaves, so it leaves nothing and looks at no state but its own.
- * `temp` is true when an expression of the step reads `runner.temp` or
- * `runner.tool_cache`: a first step that does is its job's alone, and its
- * caller names the job to it.
  *
  * @category models
  * @since 0.1.0
  */
 export type Written =
-  | { readonly text: string; readonly mark: string; readonly alone: string; readonly temp: boolean }
+  | { readonly text: string; readonly mark: string; readonly alone: string }
   | { readonly problem: string }
 
 /** Ends a compilation that cannot go on. Caught where it started. */
@@ -157,26 +161,25 @@ const marker = "__SMITHERS_CI_LIB__"
 const cacheDirectoryToken = "{smthrs:cache-directory}"
 
 /**
- * Where the commit goes in `JobFacts.event`. A control character cannot be part of a branch or repository name,
- * so nothing else in the JSON reads as this mark.
+ * Where the commit goes in `JobFacts.event`: the contract's mark.
  *
  * @category constants
  * @since 0.1.0
  */
-export const commitMark = "\u0001commit"
+export const commitMark = Contract.commitMark
 
 /**
- * Where the commit's first parent goes in `JobFacts.event`.
+ * Where the commit's first parent goes in `JobFacts.event`: the contract's mark.
  *
  * @category constants
  * @since 0.1.0
  */
-export const parentMark = "\u0001parent"
+export const parentMark = Contract.parentMark
 
 /** The event file's text as shell words: all of it in single quotes, but the commit and its parent. */
 const eventText = (event: string): string =>
   quote(event)
-    .replaceAll(JSON.stringify(commitMark).slice(1, -1), `'"$GITHUB_SHA"'`)
+    .replaceAll(JSON.stringify(commitMark).slice(1, -1), `'"$__sha"'`)
     .replaceAll(JSON.stringify(parentMark).slice(1, -1), `'"$__parent"'`)
 
 /**
@@ -242,25 +245,45 @@ const library = (job: JobFacts): string =>
     // The variables a runner gives every step.
     `__ci_start() {`,
     `  mkdir -p -- "$__state/temp" "$__state/tool-cache" "$__state/steps" || exit 1`,
-    // The commit, the event file and the job's name are given to the step that names them, by the lines after
-    // this. What the machine holds under those names is not the workflow's.
-    `  unset GITHUB_SHA GITHUB_EVENT_PATH GITHUB_JOB __limit ${stateVariable}`,
+    // The job's name is given by the line after this, to the step that is told its job. What the machine holds
+    // under that name is not the workflow's.
+    `  unset GITHUB_JOB __limit ${stateVariable}`,
     `  case $(uname -m) in arm64|aarch64) RUNNER_ARCH=ARM64;; x86_64|amd64) RUNNER_ARCH=X64;; *) RUNNER_ARCH=$(uname -m);; esac`,
     `  case $(uname -s) in Linux) RUNNER_OS=Linux;; Darwin) RUNNER_OS=macOS;; *) RUNNER_OS=Windows;; esac`,
     `  export RUNNER_OS RUNNER_ARCH GITHUB_WORKSPACE="$__root" RUNNER_TEMP="$__state/temp" RUNNER_TOOL_CACHE="$__state/tool-cache"`,
     // A workflow may set CI itself. Every other runner variable is the runner's to set.
     `  export CI="\${CI-true}"${
-      Object.entries(job.variables).map(([name, held]) => ` ${name}=${quote(held)}`).join("")
+      Object.entries({ ...job.standIns, ...job.variables }).map(([name, held]) => ` ${name}=${quote(held)}`).join("")
     }`,
     `}`,
-    // The commit and the event file, for a step that reads them. A step that does not never asks git, so nothing
-    // it reads changes from one commit to the next but the files it opens itself.
+    // What differs from one run to the next: the commit, the run's id, number and attempt, and the event file. A
+    // runner gives every step all of them, and so does a replay, for the commit it replays: they are in the
+    // step's environment already, and the step finds the event file of its workflow's event among the ones the
+    // replay wrote for the commit. A step nobody gave them works them out itself: the commit the checkout stands
+    // on, an id made from it, and as the run's number the count of commits up to it. Where there is no
+    // repository there is no commit to give: a step that reads it fails, and any other runs without these.
+    //
+    // The names of these variables, and of the one that says where the event file is, are put together here and
+    // never written out. Smithers build reuses a result at another commit unless the step's own text names one of
+    // them, and this text is every step's.
     `__ci_commit() {`,
-    `  GITHUB_SHA=$(git -C "$__root" rev-parse --verify --quiet HEAD) ||`,
+    `  __g=GITHUB_`,
+    `  eval "__sha=\\\${\${__g}SHA-}"`,
+    `  if [ -n "$__sha" ]; then`,
+    `    [ -z "\${${eventsVariable}-}" ] || export "\${__g}EVENT_PATH=$${eventsVariable}/${
+      job.eventName ?? "push"
+    }.json"`,
+    `    return 0`,
+    `  fi`,
+    `  __sha=$(git -C "$__root" rev-parse --verify --quiet HEAD) || {`,
+    `    [ -n "$1" ] || return 0`,
     `    __ci_fail "this step reads the commit, and git cannot be read in $__root"`,
-    `  export GITHUB_SHA GITHUB_EVENT_PATH="$__state/event.json"`,
-    `  __parent=$(git -C "$__root" rev-parse --verify --quiet 'HEAD^') || __parent=0000000000000000000000000000000000000000`,
-    `  printf '%s\\n' ${eventText(job.event)} > "$GITHUB_EVENT_PATH"`,
+    `  }`,
+    `  __count=$(git -C "$__root" rev-list --count HEAD) || __count=1`,
+    `  export "\${__g}SHA=$__sha" "\${__g}WORKFLOW_SHA=$__sha" "\${__g}RUN_ID=$((16#\${__sha:0:9}))"`,
+    `  export "\${__g}RUN_NUMBER=$__count" "\${__g}RUN_ATTEMPT=1" "\${__g}EVENT_PATH=$__state/event.json"`,
+    `  __parent=$(git -C "$__root" rev-parse --verify --quiet 'HEAD^') || __parent=${noParent}`,
+    `  printf '%s\\n' ${eventText(job.event)} > "$__state/event.json"`,
     `}`,
     // What the steps before this one wrote to GITHUB_ENV and GITHUB_PATH, step by step in the order they ran. A
     // step's own variables, and the runner's, stay. Each step keeps what it wrote in a place of its own, named
@@ -416,6 +439,10 @@ const library = (job: JobFacts): string =>
     `  : > "$__files/output"; : > "$__files/env"; : > "$__files/path"; : > "$__files/summary"; : > "$__files/state"`,
     `  export GITHUB_OUTPUT="$__files/output" GITHUB_ENV="$__files/env" GITHUB_PATH="$__files/path"`,
     `  export GITHUB_STEP_SUMMARY="$__files/summary" GITHUB_STATE="$__files/state"`,
+    // The files a step declares artifacts in and reads the job's artifacts from. Nothing is uploaded here, so
+    // the job has none.
+    `  : > "$__files/artifacts"; printf '{}' > "$__files/artifacts-list"`,
+    `  export GITHUB_ARTIFACTS="$__files/artifacts" GITHUB_ARTIFACTS_LIST="$__files/artifacts-list"`,
     `  if [ -n "\${__limit-}" ]; then __ci_limited "$@"; else "$@" -c "$__script"; __status=$?; fi`,
     `  [ "$__status" -eq 0 ] || exit "$__status"`,
     // A step a replay may leave out leaves nothing for later steps. One that tried is stopped: without it the
@@ -474,6 +501,9 @@ const loadOf = (found: Variable): string => {
 /** The variables a step reads from its runner's own shell variables. */
 const shellNames: ReadonlyMap<string, string> = new Map([
   ["sha", "GITHUB_SHA"],
+  ["runid", "GITHUB_RUN_ID"],
+  ["runnumber", "GITHUB_RUN_NUMBER"],
+  ["runattempt", "GITHUB_RUN_ATTEMPT"],
   ["os", "RUNNER_OS"],
   ["workspace", "__root"],
   ["temp", "RUNNER_TEMP"],
@@ -495,7 +525,7 @@ const shellNames: ReadonlyMap<string, string> = new Map([
  * - `matrix:key`: a matrix value, filled in for each variant.
  * - `path:dir`: a directory of the repository.
  * - `base:what`: the commit's first parent, which must exist; `before`: the same, or 40 zeros.
- * - `sha`, `workspace`, `temp`, `toolcache`, `arch`.
+ * - `sha`, `runid`, `runnumber`, `runattempt`, `os`, `workspace`, `temp`, `toolcache`, `arch`.
  *
  * @category constants
  * @since 0.1.0
@@ -769,8 +799,10 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
     // Anything else thrown here is the stack running out on an expression nested thousands deep.
     return { problem: refused instanceof Refused ? refused.why : "it nests too deep to finish in a shell" }
   }
-  // A step that reads the commit, or its parent, says so: its verdict is that commit's and no other's.
-  const commit = step.commit || emitter.lines.some((line) => /\$GITHUB_SHA|'HEAD\^'/.test(line))
+  // A step that reads the commit, its parent or the run's own numbers says so: its verdict is that commit's and
+  // no other's.
+  const commit = step.commit ||
+    emitter.lines.some((line) => /\$GITHUB_(?:SHA|RUN_ID|RUN_NUMBER|RUN_ATTEMPT)|'HEAD\^'/.test(line))
   const fail = (why: string): string => `{ echo "smithers-ci: ${why}" >&2; exit 1; }`
   const shared = library(job)
   // What a first step does names what it leaves: its text, its command and the functions it writes.
@@ -924,12 +956,12 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       `. "$__state/lib.sh" || exit 1`,
       `__ci_start`,
       ...(step.job === undefined ? [] : [`export GITHUB_JOB=${quote(step.job)}`]),
-      ...(commit ? [`__ci_commit`] : []),
+      ...(step.action === undefined ? [] : [`export GITHUB_ACTION=${quote(step.action)}`]),
+      `__ci_commit ${commit ? "1" : "''"}`,
       ...(step.store === true ? [`export SMITHERS_CI_CACHE_STORE="$__kept/actions-cache"`] : []),
       ...emitter.lines,
       `__ci_run ${quote(step.key)} "$__script" ${step.start.map(quote).join(" ")}`,
       `}`
     ].join("\n")
-  const temp = emitter.lines.some((line) => /\$RUNNER_(?:TEMP|TOOL_CACHE)\b/.test(line))
-  return { mark, text: textOf(false), alone: textOf(true), temp }
+  return { mark, text: textOf(false), alone: textOf(true) }
 }

@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto"
-import { mkdirSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import type { Job } from "../../src/contract/Inventory.ts"
+import { defaultVariables } from "../../src/inventory/Contexts.ts"
 import { readWorkflow } from "../../src/inventory/GithubActions.ts"
 import { installsOf } from "../../src/inventory/MachineChanges.ts"
+import { githubDefaultVariables } from "./githubDefaultVariables.ts"
 import { commits, jobsOf, type Repository, repository, runJob } from "./run.ts"
 
 const file = ".github/workflows/ci.yml"
@@ -1377,15 +1379,15 @@ jobs:
     // `other` finds nothing of what `named` built.
     expect(outputs(runJob(repo, other))).toEqual(["", "0"])
     expect(outputs(runJob(repo, read))).toEqual(["", "work"])
-    // A first step that asks for neither is still shared.
-    expect(plain.steps[0]?.runner).toBe(same.steps[0]?.runner)
+    // A first step that asks for neither is its job's own too.
+    expect(plain.steps[0]?.runner).not.toBe(same.steps[0]?.runner)
   })
 })
 
 describe("two jobs that start with the same step", () => {
-  // The generator runs an equal first step of two jobs once. So the step's text does not name its job, and each
-  // job's later steps start from a copy of what it left.
-  it("have the same first step, and each goes on from what it left", () => {
+  // Each job has a machine of its own on GitHub, and a runner tells every step its job. So each job runs the step
+  // for itself, and its later steps start from what its own run left.
+  it("each run it for themselves, and each is told its job", () => {
     const repo = withWorkflow(
       `
 on: pull_request
@@ -1402,23 +1404,14 @@ jobs:
       - uses: actions/checkout@v4
       - run: sh install.sh
       - run: echo "test $DEPS $GITHUB_JOB"
-  named:
-    runs-on: ubuntu-latest
-    steps:
-      - run: sh install.sh "$GITHUB_JOB"
 `,
-      { "install.sh": "echo \"DEPS=ready\" >> \"$GITHUB_ENV\"\necho \"job=${1-none}\"\n" }
+      { "install.sh": "echo \"DEPS=ready\" >> \"$GITHUB_ENV\"\necho \"job=$GITHUB_JOB\"\n" }
     )
-    const [lint, test, named] = ["lint", "test", "named"].map((id) => jobOf(repo, `ci.yml:${id}`)) as [Job, Job, Job]
-    expect(lint.steps[0]?.runner).toBe(test.steps[0]?.runner)
+    const [lint, test] = ["lint", "test"].map((id) => jobOf(repo, `ci.yml:${id}`)) as [Job, Job]
     expect(lint.steps[0]?.command).toBe(test.steps[0]?.command)
-    expect(lint.steps[1]?.runner).not.toBe(test.steps[1]?.runner)
-    // The step ran once, for `lint`. `test` starts from what it left.
-    expect(outputs(runJob(repo, lint))).toEqual(["job=none", "lint ready lint"])
-    expect(outputs(runJob(repo, { ...test, steps: test.steps.slice(1) }))).toEqual(["test ready test"])
-    // A first step that asks for its job is told, and is then no other job's step.
-    expect(named.steps[0]?.runner).not.toBe(lint.steps[0]?.runner)
-    expect(outputs(runJob(repo, named))).toEqual(["job=named"])
+    expect(lint.steps[0]?.runner).not.toBe(test.steps[0]?.runner)
+    expect(outputs(runJob(repo, lint))).toEqual(["job=lint", "lint ready lint"])
+    expect(outputs(runJob(repo, test))).toEqual(["job=test", "test ready test"])
   })
 
   // Nothing reads what the only step of a job leaves. It is written to leave nothing and to look at no state but
@@ -1451,6 +1444,103 @@ jobs:
     expect(outputs(runJob(repo, { ...more, steps: [first] }))).toEqual(["job=none"])
     expect(outputs(runJob(repo, only))).toEqual(["job=none"])
     expect(outputs(runJob(repo, { ...more, steps: [second] }))).toEqual(["more ready"])
+  })
+})
+
+// "Variables reference: Default environment variables": a runner sets them for every step, whatever the step runs.
+describe("the variables a runner gives", () => {
+  // The script names no variable. A program it starts reads them from its own code, as a test does.
+  const show = [
+    "const mine = Object.entries(process.env).filter(([name]) => /^(?:CI$|GITHUB_|RUNNER_)/.test(name))",
+    "console.log(JSON.stringify(Object.fromEntries(mine)))",
+    ""
+  ].join("\n")
+
+  it("gives every step every default variable, with no token, whatever its script names", () => {
+    const repo = withWorkflow(
+      `
+name: Checks
+on: pull_request
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: node show.js
+      - id: again
+        run: node show.js
+`,
+      { "show.js": show }
+    )
+    const { head, parent } = commits(repo)
+    const job = jobOf(repo, "ci.yml:test")
+    expect(job.unsupported).toEqual([])
+    const ran = runJob(repo, job)
+    expect(ran.map((step) => step.status)).toEqual([0, 0])
+    const [first, again] = ran.map((step) => JSON.parse(step.output) as Record<string, string>) as [
+      Record<string, string>,
+      Record<string, string>
+    ]
+    // Everything in GitHub's table but what a runner itself leaves unset for a script step outside an action.
+    const given = githubDefaultVariables.filter((name) => !["unset", "action"].includes(String(defaultVariables[name])))
+    for (const seen of [first, again]) {
+      expect(Object.keys(seen).filter((name) => name !== "GITHUB_STATE").sort()).toEqual([...given].sort())
+      expect(Object.keys(seen).filter((name) => /TOKEN|^ACTIONS_/.test(name))).toEqual([])
+    }
+    expect(first).toMatchObject({
+      CI: "true",
+      GITHUB_ACTIONS: "true",
+      GITHUB_ACTION: "__run",
+      GITHUB_ACTOR: "smithers-ci",
+      GITHUB_BASE_REF: "main",
+      GITHUB_EVENT_NAME: "pull_request",
+      GITHUB_HEAD_REF: "smithers-ci",
+      GITHUB_JOB: "test",
+      GITHUB_REF: "refs/pull/1/merge",
+      GITHUB_REF_NAME: "1/merge",
+      GITHUB_REPOSITORY: "acme/widgets",
+      GITHUB_REPOSITORY_OWNER: "acme",
+      GITHUB_RUN_ATTEMPT: "1",
+      GITHUB_RUN_ID: String(Number.parseInt(head.slice(0, 9), 16)),
+      GITHUB_RUN_NUMBER: "2",
+      GITHUB_SHA: head,
+      GITHUB_WORKFLOW: "Checks",
+      GITHUB_WORKFLOW_REF: "acme/widgets/.github/workflows/ci.yml@refs/pull/1/merge",
+      GITHUB_WORKFLOW_SHA: head,
+      GITHUB_WORKSPACE: repo.root,
+      RUNNER_ENVIRONMENT: "self-hosted",
+      RUNNER_NAME: "smithers-ci"
+    })
+    expect(again["GITHUB_ACTION"]).toBe("again")
+    expect(again["GITHUB_SHA"]).toBe(head)
+    // The event file is a real file, and each step's own files are its own.
+    expect(JSON.parse(readFileSync(String(again["GITHUB_EVENT_PATH"]), "utf8"))).toMatchObject({
+      pull_request: { head: { sha: head }, base: { sha: parent } }
+    })
+    expect(again["GITHUB_ENV"]).not.toBe(first["GITHUB_ENV"])
+  })
+
+  // "Default environment variables: GITHUB_ACTION": `__run` for a script with no id, with its place after the first.
+  it("names a script with no id by its place", () => {
+    const repo = withWorkflow(
+      `
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: node show.js
+`,
+      { "show.js": show }
+    )
+    const [ran] = runJob(repo, jobOf(repo, "ci.yml:test"))
+    expect(JSON.parse(ran?.output ?? "")).toMatchObject({
+      GITHUB_ACTION: "__run_2",
+      GITHUB_EVENT_NAME: "push",
+      GITHUB_REF: "refs/heads/main",
+      GITHUB_HEAD_REF: "",
+      GITHUB_WORKFLOW: ".github/workflows/ci.yml"
+    })
   })
 })
 

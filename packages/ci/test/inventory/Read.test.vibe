@@ -3,7 +3,7 @@ import { expect, it } from "@effect/vitest"
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
-import { Inventory, uncommittedChanges } from "../../src/contract/Inventory.ts"
+import { commitMark, Inventory, parentMark, uncommittedChanges } from "../../src/contract/Inventory.ts"
 import { read } from "../../src/inventory/index.ts"
 
 const denied = (method: string) =>
@@ -116,6 +116,13 @@ it.layer(NodeServices.layer)("read", (it) => {
           action: "oven-sh/setup-bun@v2"
         })
         expect(decoded.toolchains).toContainEqual({ name: "just", source: "Justfile" })
+        // A runner starts a workflow for an event: the inventory holds each event's file for a replay to write.
+        expect(Object.keys(decoded.events ?? {})).toEqual(["pull_request", "push", "merge_group"])
+        expect(JSON.parse(decoded.events?.["push"] ?? "")).toMatchObject({
+          after: commitMark,
+          before: parentMark,
+          repository: { full_name: "acme/widgets" }
+        })
         expect(JSON.stringify(decoded)).not.toContain("hunter2")
       })
     })
@@ -193,6 +200,8 @@ jobs:
       const inventory = try read(root)
       try Effect.try(() => {
         expect(inventory.repository).toBe(path.basename(root))
+        // No runner starts anything here, so there is no event to write a file for.
+        expect(inventory.events).toBeUndefined()
         expect(inventory.jobs).toEqual([])
         expect(inventory.toolchains).toEqual([])
         expect(inventory.unsupported).toBeUndefined()

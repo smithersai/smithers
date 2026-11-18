@@ -18,8 +18,8 @@
  * **What it holds.**
  *
  * 1. `smthrs` starts once for the commit.
- * 2. The install both jobs start with runs once, where the baseline runs it
- *    once per job.
+ * 2. Each job runs its own install, as in the baseline and on GitHub: a
+ *    runner tells every step its job, so the two installs are two steps.
  * 3. The steps take no longer than in the baseline, give or take one start.
  * 4. Around its steps, normal mode adds at most two starts of `smthrs`:
  *    the start itself, reading the generated files, and deciding what to run.
@@ -29,11 +29,10 @@
  * other, where the baseline runs its two jobs side by side: `lint` and `test`
  * can both write the checkout, so they never run at once. Measured on the
  * reviewer's fixture of this shape (`npm ci`, then `npm run lint` or
- * `npm test`) on the build server (48 cores, load 32, 2026-11-18, before the
- * install was shared): the baseline took 10.1 s and normal mode 16.8 s, of
- * which 4.5 s was the start and the planning and 12.3 s the four steps.
- * Sharing the install takes one `npm ci` off, 0.6 s. A cache hit is not
- * measured here: `test/replay` and `test/generate.smthrs.test.ts` hold reuse.
+ * `npm test`) on the build server (48 cores, load 32, 2026-11-18): the
+ * baseline took 10.1 s and normal mode 16.8 s, of which 4.5 s was the start
+ * and the planning and 12.3 s the four steps. A cache hit is not measured
+ * here: `test/replay` and `test/generate.smthrs.test.ts` hold reuse.
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
@@ -154,7 +153,7 @@ const measure = async (root: string, installs: string): Promise<Measurement> => 
 }
 
 describe("a first run, with nothing to reuse", () => {
-  it("starts smthrs once, installs once for both jobs, and adds at most two starts around the steps", async () => {
+  it("starts smthrs once, runs each job's own steps, and adds at most two starts around the steps", async () => {
     const installs = join(directory(), "installs")
     const root = repository(installs)
     const overheads: Array<number> = []
@@ -164,10 +163,10 @@ describe("a first run, with nothing to reuse", () => {
       const commit = measured.report.commits[0]
       expect(measured.report.mismatches).toBe(0)
       expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 4, failed: 0, skipped: 0 })
-      // Three targets: the install both jobs start with is one of them.
-      expect(commit?.normal.counts).toEqual({ hit: 0, ran: 3, failed: 0, skipped: 0 })
-      // Two installs in the baseline, one per job, and one in normal mode.
-      expect(measured.installs).toBe(3)
+      // Four targets, as many as the baseline has steps: each job's install is its own.
+      expect(commit?.normal.counts).toEqual({ hit: 0, ran: 4, failed: 0, skipped: 0 })
+      // Two installs in the baseline and two in normal mode, one per job.
+      expect(measured.installs).toBe(4)
       expect(measured.starts).toBe(1)
       const normal = commit?.normal as ReplayReport["commits"][number]["normal"]
       const baseline = commit?.baseline as ReplayReport["commits"][number]["baseline"]

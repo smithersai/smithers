@@ -173,11 +173,36 @@ const outputsOf = (target: StepTarget, narrowed: boolean): ReadonlyArray<string>
   ]
 }
 
-// The variables of the machine a target passes to its step: the ones its step names, and `passed`, the ones every
-// target passes. A variable the step sets itself keeps the step's value.
-const inheritedBy = (target: StepTarget, passed: ReadonlyArray<string>): ReadonlyArray<string> =>
-  [...new Set([...target.inheritEnv, ...passed.filter((name) => !Object.hasOwn(target.env, name))])]
-    .sort((left, right) => left < right ? -1 : 1)
+// The variables of the machine a target passes to its step with their values in its key: the ones its step names,
+// and `passed`, the ones every target passes. A variable the step sets itself keeps the step's value. The
+// variables a run gives are among them only for a target that is neither observed nor held to its inputs: nothing
+// then says whether its step could use one, so each value is part of its key.
+const inheritedBy = (target: StepTarget, passed: ReadonlyArray<string>, told: boolean): ReadonlyArray<string> =>
+  [
+    ...new Set([
+      ...target.inheritEnv,
+      ...(told ? [] : target.runEnv),
+      ...passed.filter((name) => !Object.hasOwn(target.env, name))
+    ])
+  ].sort((left, right) => left < right ? -1 : 1)
+
+// What tells as much of a run as the variables it gives: where the event file is. A step that reads the file reads
+// the commit.
+const runNames: ReadonlyArray<string> = ["GITHUB_EVENT_PATH"]
+
+// What a target held to its inputs asks Smithers build for the variables a run gives. The step can read no file
+// of the repository but its inputs, so the values are part of its key only when its text or one of those files
+// names one. Any other held step is reused at another commit, from a shared cache too.
+const given = (target: StepTarget): string =>
+  `given: { env: ${JSON.stringify(target.runEnv)}, names: ${JSON.stringify(runNames)} }`
+
+// What an observed target asks Smithers build to record. The variables a run gives are passed on with their values
+// out of the key: a result holds the value of each one its run could have used, and is reused at another commit
+// when it used none.
+const observation = (target: StepTarget): string =>
+  `observe: { ignore: ${JSON.stringify(bookkeeping)}${
+    target.runEnv.length === 0 ? "" : `, env: ${JSON.stringify(target.runEnv)}`
+  } }`
 
 const renderTarget = (
   target: StepTarget,
@@ -187,7 +212,9 @@ const renderTarget = (
   passed: ReadonlyArray<string>
 ): string => {
   const data = [...filesOf(target, narrowed), ...target.dependencies.map((label) => variables.get(label) as string)]
-  const inheritEnv = inheritedBy(target, passed)
+  const observed = observes(target, narrowed)
+  const held = narrows(target, narrowed) && target.runEnv.length > 0
+  const inheritEnv = inheritedBy(target, passed, observed || held)
   const fields = [
     `shell: ${text(target.script)}`,
     ...(target.rule === "setup" ? outputsOf(target, narrowed) : []),
@@ -198,7 +225,8 @@ const renderTarget = (
     // inputs fails the target instead of passing on a stale result. The
     // network stays open, as it is for the step in the original CI.
     `sandbox: ${narrows(target, narrowed) ? "{ network: true }" : text("none")}`,
-    ...(observes(target, narrowed) ? [`observe: { ignore: ${JSON.stringify(bookkeeping)} }`] : []),
+    ...(observed ? [observation(target)] : []),
+    ...(held ? [given(target)] : []),
     `timeout: ${text(stepTimeout)}`,
     `data: [${data.join(", ")}]`
   ]

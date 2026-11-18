@@ -2,19 +2,23 @@ import { describe, expect, it } from "vitest"
 import type { Host } from "../../src/contract/Inventory.ts"
 import {
   admits,
+  defaultVariables,
   type Event,
   eventFile,
+  eventFilesOf,
   eventName,
   eventOf,
   type Facts,
   github,
   type Place,
   runner,
+  standIns,
   startedVariables,
   variables
 } from "../../src/inventory/Contexts.ts"
 import { evaluate, type Evaluated } from "../../src/inventory/Expression.ts"
 import { commitMark, parentMark } from "../../src/inventory/Runner.ts"
+import { githubDefaultVariables } from "./githubDefaultVariables.ts"
 
 const eliza: Facts = { repository: "elizaOS/eliza", defaultBranch: "develop" }
 const ci: Place = { job: "test", workflow: "CI" }
@@ -274,12 +278,16 @@ describe("github context: fields", () => {
     expect(problem(read("github.repository_owner", "push", {}))).toContain("the repository's owner is not known here")
   })
 
-  it("stands in one actor and one run", () => {
+  it("stands in one actor", () => {
     expect(read("github.actor", "push")).toEqual(literal("smithers-ci"))
     expect(read("github.triggering_actor", "push")).toEqual(literal("smithers-ci"))
-    expect(read("github.run_id", "push")).toEqual(literal("1"))
-    expect(read("github.run_number", "push")).toEqual(literal("1"))
-    expect(read("github.run_attempt", "push")).toEqual(literal("1"))
+  })
+
+  // Another commit is another run: the run's id, number and attempt are read when the step starts.
+  it("finishes the run's id, number and attempt while the job runs", () => {
+    expect(read("github.run_id", "push")).toEqual(variable("runid", "github.run_id"))
+    expect(read("github.run_number", "push")).toEqual(variable("runnumber", "github.run_number"))
+    expect(read("github.run_attempt", "push")).toEqual(variable("runattempt", "github.run_attempt"))
   })
 
   it("reads the job and workflow from the place", () => {
@@ -435,9 +443,6 @@ describe("variables", () => {
     GITHUB_GRAPHQL_URL: "https://api.github.com/graphql",
     GITHUB_SERVER_URL: "https://github.com",
     GITHUB_WORKFLOW: "CI",
-    GITHUB_RUN_ID: "1",
-    GITHUB_RUN_NUMBER: "1",
-    GITHUB_RUN_ATTEMPT: "1",
     GITHUB_REF_TYPE: "branch",
     RUNNER_NAME: "smithers-ci",
     RUNNER_ENVIRONMENT: "self-hosted"
@@ -497,6 +502,106 @@ describe("variables", () => {
     expect(startedVariables).toContain("GITHUB_JOB")
     expect(startedVariables).toContain("GITHUB_EVENT_PATH")
     expect(startedVariables).toContain("RUNNER_TOOL_CACHE")
+    expect(startedVariables).toContain("GITHUB_RUN_ID")
+  })
+})
+
+// "Variables reference: Default environment variables". `githubDefaultVariables.ts` holds GitHub's table.
+describe("defaultVariables", () => {
+  const names = (...kinds: ReadonlyArray<string>): ReadonlyArray<string> =>
+    Object.keys(defaultVariables).filter((name) => kinds.includes(defaultVariables[name] as string)).sort()
+
+  it("lists every default variable GitHub documents, and no other", () => {
+    expect(Object.keys(defaultVariables).sort()).toEqual([...githubDefaultVariables].sort())
+    expect(githubDefaultVariables).toHaveLength(46)
+  })
+
+  it("gives no token", () => {
+    expect(Object.keys(defaultVariables).filter((name) => /TOKEN|^ACTIONS_/.test(name))).toEqual([])
+  })
+
+  it.each(["pull_request", "push", "merge_group", undefined] as const)(
+    "has a value for every variable a job fixes, for the event %s, whatever is known of the repository",
+    (event) => {
+      for (const facts of [eliza, {}, { directory: "widgets" }]) {
+        const fixed = { ...standIns(event, facts, ci), ...variables(event, facts, ci) }
+        expect(Object.keys(fixed).sort()).toEqual(names("job"))
+        expect(Object.values(fixed).every((held) => typeof held === "string")).toBe(true)
+      }
+    }
+  )
+
+  it("lets a script read what a step is given when it starts, and the run's own", () => {
+    const started = new Set([...names("step", "run"), "GITHUB_STATE"])
+    expect(startedVariables.filter((name) => !started.has(name))).toEqual([])
+    expect(names("run").filter((name) => !startedVariables.includes(name))).toEqual([])
+  })
+
+  it("leaves unset what a runner leaves unset for a script step, and sets the action's path inside an action", () => {
+    expect(names("unset")).toEqual(["GITHUB_ACTION_REPOSITORY", "RUNNER_DEBUG"])
+    expect(names("action")).toEqual(["GITHUB_ACTION_PATH"])
+  })
+})
+
+describe("standIns", () => {
+  const file: Place = { ...ci, file: ".github/workflows/test.yml" }
+
+  // "Default environment variables: GITHUB_REF": `refs/pull/<pr_number>/merge` for a pull request.
+  it("stands a pull request in as number 1 from the branch smithers-ci", () => {
+    expect(standIns("pull_request", eliza, file)).toEqual({
+      GITHUB_ACTOR_ID: "1",
+      GITHUB_REPOSITORY_ID: "1",
+      GITHUB_REPOSITORY_OWNER_ID: "1",
+      GITHUB_RETENTION_DAYS: "90",
+      GITHUB_REF: "refs/pull/1/merge",
+      GITHUB_REF_NAME: "1/merge",
+      GITHUB_REF_PROTECTED: "false",
+      GITHUB_HEAD_REF: "smithers-ci",
+      GITHUB_WORKFLOW_REF: "elizaOS/eliza/.github/workflows/test.yml@refs/pull/1/merge"
+    })
+  })
+
+  it("names a merge group's branch after the default branch", () => {
+    expect(standIns("merge_group", eliza, ci)).toMatchObject({
+      GITHUB_REF: "refs/heads/gh-readonly-queue/develop/pr-1",
+      GITHUB_REF_NAME: "gh-readonly-queue/develop/pr-1",
+      GITHUB_WORKFLOW_REF: "elizaOS/eliza/.github/workflows/ci.yml@refs/heads/gh-readonly-queue/develop/pr-1"
+    })
+  })
+
+  it("names a repository no remote names after its directory, and reads the default branch as main", () => {
+    expect(standIns("push", { directory: "widgets" }, ci)).toEqual({
+      GITHUB_ACTOR_ID: "1",
+      GITHUB_REPOSITORY: "local/widgets",
+      GITHUB_REPOSITORY_OWNER: "local",
+      GITHUB_REPOSITORY_ID: "1",
+      GITHUB_REPOSITORY_OWNER_ID: "1",
+      GITHUB_RETENTION_DAYS: "90",
+      GITHUB_REF: "refs/heads/main",
+      GITHUB_REF_NAME: "main",
+      GITHUB_REF_PROTECTED: "false",
+      GITHUB_WORKFLOW_REF: "local/widgets/.github/workflows/ci.yml@refs/heads/main"
+    })
+    expect(standIns("pull_request", {}, ci)).toMatchObject({
+      GITHUB_REPOSITORY: "local/repository",
+      GITHUB_BASE_REF: "main"
+    })
+  })
+
+  it("never replaces a value that is known", () => {
+    const known = variables("push", eliza, ci)
+    expect(Object.keys(standIns("push", eliza, ci)).filter((name) => Object.hasOwn(known, name))).toEqual([])
+    expect(standIns(undefined, eliza, ci)["GITHUB_EVENT_NAME"]).toBe("push")
+  })
+})
+
+describe("eventFilesOf", () => {
+  it("holds the event file of each event a replay can stand for", () => {
+    const files = eventFilesOf(eliza)
+    expect(Object.keys(files)).toEqual(["pull_request", "push", "merge_group"])
+    expect(files.pull_request).toBe(eventFile("pull_request", eliza))
+    expect(files.push).toBe(eventFile("push", eliza))
+    expect(files.merge_group).toBe(eventFile("merge_group", eliza))
   })
 })
 

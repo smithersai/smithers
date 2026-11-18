@@ -154,11 +154,9 @@ changes, so an unchanged target is a cache hit instead of a rerun. For one
 change, the plan is the set of targets the change selects, each with its key
 and its dependencies.
 
-Jobs often start with the same step, such as `npm ci`. When two GitHub Actions
-jobs run the same command, in the same directory, with the same environment,
-after the same steps, one target runs it for both: the install runs once, and
-each job's next step waits for it. The report still lists the step under each
-job.
+Each GitHub Actions job runs its own steps, as each has a machine of its own
+on GitHub. Two jobs that start with the same step, such as `npm ci`, each run
+it, and each step is told its own job.
 
 Targets that cannot write the same files run at the same time. A target
 confined to the files it reads cannot write the checkout, so any number of
@@ -192,6 +190,55 @@ Each step runs under the tool versions its job sets up, so a matrix over Node
 machines of the generated workflow, and a result made under one version is
 never reused for another. A step does not wait for a job that runs under other
 versions: both run, and the workflow fails when either fails.
+
+### A runner's variables
+
+A GitHub runner gives every step the commit and the run's id, number and
+attempt, and each is another at every commit. Smithers CI gives them to every
+step too, so a test that reads `GITHUB_SHA` finds it. A step's result is reused
+at another commit only when its run did not use one of them. No trace shows a
+program reading a variable, so a run counts as having used one when any of
+these holds:
+
+| What shows it                                                                | Example                                    |
+| ---------------------------------------------------------------------------- | ------------------------------------------ |
+| The variable's name in the step's script                                     | `echo "$GITHUB_SHA"`                       |
+| Its name in a file of your repository the step read that git does not ignore | A test that reads `process.env.GITHUB_SHA` |
+| Its value in what the step printed                                           | `env`, a tool that logs the commit         |
+| Its value in a file the step wrote and left                                  | A version file, a report naming the commit |
+| Its value in the arguments of a program the step started                     | `git show` with the commit                 |
+
+Such a step runs again at every commit. Every other step is reused while the
+files it read are unchanged.
+
+A tool that only holds a variable's name in its own code does not make its
+step run again: Bun, Vitest and Playwright each hold `GITHUB_SHA`. When such a
+tool writes the commit into a report, the commit is in the report, and the step
+runs again. A commit is also looked for by its first seven characters. A value
+shorter than six characters, such as the attempt `1`, is found by its name
+alone.
+
+One thing shows nothing: a program that puts a variable's name together from
+pieces and uses the value only to decide something, without printing or
+writing it. Name the variable in the step's script and the step runs at every
+commit.
+
+The event file is a file. A step that opens it has read it, and runs again when
+it is another.
+
+A step held to its own files, such as the tests of one package, is not traced:
+it can read no other file of your repository. It runs again at every commit
+when its script or one of those files names one of the variables, or
+`GITHUB_EVENT_PATH`. Any other held step is reused at another commit, from a
+shared cache too.
+
+Where reads are not recorded, on macOS or without `strace`, nothing says
+whether a step used a variable, so every step that is not held to its files
+runs again at every commit.
+
+A command of a Justfile, a Makefile or a package script is started by no
+runner. It is given the commit and the run's numbers only when it names one,
+as `$GITHUB_SHA`, and then it runs again at every commit.
 
 ## 3. Replay
 
@@ -304,7 +351,9 @@ the tool, the first time normal mode does, and the first time fast mode does.
 The speedup never compares a baseline that filled a cache with a mode that
 found it full.
 
-**Its own variables.** A step gets a short list of the machine's variables,
+**Its own variables.** A step of a GitHub Actions workflow gets every variable a
+runner sets: see [what a step is given](github-actions.md#what-a-step-is-given).
+A step gets a short list of the machine's variables,
 such as `PATH`, then the step's own `env`, end of file on standard input, and
 a limit of six hours. It gets no other variable of yours: no token, no
 `SSH_AUTH_SOCK` and no `DOCKER_HOST`.

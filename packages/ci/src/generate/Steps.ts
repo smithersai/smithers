@@ -49,6 +49,7 @@
 import * as Result from "effect/Result"
 import {
   type Ci,
+  eventsVariable,
   expand,
   generatedWorkflow,
   type Host,
@@ -57,6 +58,7 @@ import {
   type Job,
   readsCommit,
   runnerSoftware,
+  runVariables,
   script,
   shell,
   type Step,
@@ -80,6 +82,14 @@ export interface StepTarget {
   readonly script: string
   readonly env: Readonly<Record<string, string>>
   readonly inheritEnv: ReadonlyArray<string>
+  /**
+   * The variables a run gives the step whose values are another at every run (`Inventory.runVariables`): the
+   * commit, and the run's id, number and attempt. A step with runner text is given all of them, as a runner gives
+   * them to every step. Their values are no part of an observed target's key: its result is reused at another
+   * commit unless its run used one of them. Nor are they part of the key of a target held to its inputs, unless
+   * its text or one of those inputs names one.
+   */
+  readonly runEnv: ReadonlyArray<string>
   readonly host: Host | undefined
   readonly dependencies: ReadonlyArray<string>
   readonly title: string
@@ -210,6 +220,9 @@ interface Draft extends Omit<StepTarget, "rule" | "script" | "job" | "also"> {
 }
 
 const runnerVariable = /\$\{?((?:GITHUB|RUNNER)_[A-Z0-9_]+)/g
+
+// Where a runner says the event file is.
+const eventPath = "GITHUB_EVENT_PATH"
 const workflowTriggers: ReadonlySet<string> = new Set(["merge_group", "pull_request", "push", "workflow_dispatch"])
 
 const invalid = (message: string): Result.Result<never, Failure> =>
@@ -432,18 +445,23 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       if (value === undefined) notes.add(`${step.id}: ${name} is not set, its value exists only on GitHub Actions.`)
       else env[name] = value
     }
-    // The runner's own variables reach a step only when it names them. They
-    // enter its key, so a step that reads the commit reruns on every commit.
-    // Runner text gives its step every runner variable itself. What it cannot give is where the machine has the
-    // software a runner comes with: a step reads that from the machine, and an unset name is left out.
+    // Without runner text, the runner's own variables reach a step only when it names them. They enter its key,
+    // so a step that reads the commit reruns on every commit. Runner text gives its step every runner variable
+    // itself, but three things. What a run alone knows: the commit and the run's numbers, which the target passes
+    // on from the run (`runEnv`). The event file, which the runner names or a replay wrote: its place is the same
+    // at every run, and what it holds is one more file the step may read. And where the machine has the software a
+    // runner comes with: a step reads that from the machine, and an unset name is left out.
+    const unset = (name: string): boolean => !Object.hasOwn(env, name)
     const inheritEnv = step.runner !== undefined
-      ? runnerSoftware.filter((name) => !Object.hasOwn(env, name))
+      ? sorted([eventsVariable, eventPath, ...runnerSoftware]).filter(unset)
       : sorted([...command.matchAll(runnerVariable)].map((match) => match[1] as string))
-        .filter((name) => name !== "GITHUB_TOKEN" && !Object.hasOwn(env, name))
+        .filter((name) => name !== "GITHUB_TOKEN" && unset(name))
+    const runEnv = step.runner === undefined ? [] : runVariables.filter(unset)
     const title = `${job.name} / ${step.name ?? step.id}`
     // A step with runner text reads what the steps before it in its job left for it, which no input names, so it
     // is held to its inputs only as the first step of its tree. One that reads the commit is never held to them:
-    // its verdict is that commit's.
+    // its verdict is that commit's. A held step is given the commit and the run's numbers all the same, and
+    // Smithers build keys it on them only when its text or one of its inputs names one (`runEnv`).
     const free = step.runner === undefined || (alone && !readsCommit(step))
     // Kept only for a step whose reads its inputs can stand for: see `scoped` where the steps are walked.
     const files = free && scoped && step.inputs !== undefined && !step.inputs.includes(everything)
@@ -451,7 +469,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       : { inputs: undefined, outputs: undefined }
     // Steps under different tool versions are different work, whatever their text.
     const versions = versionsText(installs)
-    const work = JSON.stringify([host, command, directory, env, inheritEnv, dependencies, files, versions])
+    const work = JSON.stringify([host, command, directory, env, inheritEnv, runEnv, dependencies, files, versions])
     const same = own ? sameWork.get(work) : undefined
     if (same !== undefined) {
       same.also.push({ title, job: job.id, step: step.id, variant })
@@ -461,6 +479,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       label: uniqueLabel(step, variant),
       env,
       inheritEnv,
+      runEnv,
       host,
       dependencies,
       title,

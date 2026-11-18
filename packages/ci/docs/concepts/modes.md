@@ -24,10 +24,9 @@ key means an equal verdict.
 
 ### A first run
 
-With nothing to reuse, normal mode runs every command your CI runs. Three
+With nothing to reuse, normal mode runs every command your CI runs. Two
 things differ from your CI:
 
-- A step two jobs both start with, such as an install, runs once.
 - Jobs that can write the same files run one after another, where your CI
   runs them on separate machines.
 - Starting Smithers build takes a few seconds, once per run.

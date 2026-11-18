@@ -219,6 +219,11 @@ export type ToolVersion = typeof ToolVersion.Type
  * tool the machine lacks has a `missingTool` entry, and `toolVersions` lists
  * each tool the machine has at another version than a job asks for.
  *
+ * `events` holds, for a repository whose CI a runner starts for an event,
+ * the event file a step finds for each event a replay can stand for, by the
+ * event's name: JSON text with `commitMark` where the commit goes and
+ * `parentMark` where its first parent goes (`eventFiles`).
+ *
  * @category models
  * @since 0.1.0
  */
@@ -229,7 +234,8 @@ export const Inventory = Schema.Struct({
   toolchains: Schema.Array(Toolchain),
   jobs: Schema.Array(Job),
   unsupported: Schema.optionalKey(Schema.Array(Unsupported)),
-  toolVersions: Schema.optionalKey(Schema.Array(ToolVersion))
+  toolVersions: Schema.optionalKey(Schema.Array(ToolVersion)),
+  events: Schema.optionalKey(Schema.Record(Schema.String, Schema.String))
 })
 
 /**
@@ -364,6 +370,133 @@ export const commitNote = "# reads the commit"
  */
 export const readsCommit = (step: Pick<Step, "runner">): boolean =>
   step.runner !== undefined && step.runner.split("\n").includes(commitNote)
+
+/**
+ * The variables a run gives every step whose values are another at every
+ * run: the commit, and the run's id, number and attempt. A GitHub runner sets
+ * them. A replay sets them for each commit it replays (`runValues`). A
+ * generated target is given them without their values in its key: a result
+ * is reused at another value only when its run did not use the variable.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const runVariables = [
+  "GITHUB_RUN_ATTEMPT",
+  "GITHUB_RUN_ID",
+  "GITHUB_RUN_NUMBER",
+  "GITHUB_SHA",
+  "GITHUB_WORKFLOW_SHA"
+] as const
+
+/**
+ * What a replay gives the steps of one commit under each of `runVariables`:
+ * the commit itself, an id made from it, and as the run's number `count`,
+ * the number of commits up to it, so that a later commit is a later run. The
+ * same commit always gets the same values, in the baseline and in every
+ * mode.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const runValues = (
+  commit: string,
+  count: number
+): Readonly<Record<(typeof runVariables)[number], string>> => ({
+  GITHUB_RUN_ATTEMPT: "1",
+  GITHUB_RUN_ID: String(Number.parseInt(commit.slice(0, 9), 16)),
+  GITHUB_RUN_NUMBER: String(count),
+  GITHUB_SHA: commit,
+  GITHUB_WORKFLOW_SHA: commit
+})
+
+/**
+ * What a step with this script is given of `given`, the variables a run
+ * gives (`runValues`, `eventsVariable`). A step with runner text is given all
+ * of them, as a runner gives them to every step. Any other step is started
+ * by no runner: it is given the ones its script names as a shell reads a
+ * variable, `$NAME` or `${NAME}`, which are the ones its generated target
+ * passes on. So a step finds the same variables in a baseline and as a
+ * target.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const givenTo = (
+  script: string,
+  given: Readonly<Record<string, string>>
+): Readonly<Record<string, string>> =>
+  script.includes(runnerEntry)
+    ? given
+    : Object.fromEntries(
+      Object.entries(given).filter(([name]) => new RegExp(`\\$\\{?${name}(?![A-Z0-9_])`).test(script))
+    )
+
+/**
+ * The variable that names the directory of the event files a replay wrote
+ * for the commit a step runs at: one file for each event, named after it, as
+ * in `pull_request.json`. A step's runner text points `GITHUB_EVENT_PATH` at
+ * the file of its workflow's event. Where the variable is not set, as on a
+ * GitHub runner, the runner's own `GITHUB_EVENT_PATH` stays.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const eventsVariable = "SMITHERS_CI_EVENTS"
+
+/**
+ * Where the commit goes in an event file of `Inventory.events`. A control
+ * character cannot be part of a branch or repository name, so nothing else in
+ * the JSON reads as this mark.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const commitMark = "\u0001commit"
+
+/**
+ * Where the commit's first parent goes in an event file of
+ * `Inventory.events`.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const parentMark = "\u0001parent"
+
+/**
+ * What an event names as the commit before the first one: forty zeros.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const noParent = "0".repeat(40)
+
+/**
+ * The event files of one commit: each file's name and its text, with the
+ * commit and its first parent where the marks stand. A commit with no parent
+ * has `noParent` there.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const eventFiles = (
+  events: Readonly<Record<string, string>>,
+  commit: string,
+  parent: string | undefined
+): ReadonlyArray<readonly [name: string, text: string]> =>
+  Object.entries(events).map(([event, text]) =>
+    [
+      `${event}.json`,
+      `${
+        text
+          .replaceAll(JSON.stringify(commitMark).slice(1, -1), commit)
+          .replaceAll(JSON.stringify(parentMark).slice(1, -1), parent ?? noParent)
+      }\n`
+    ] as const
+  )
 
 /**
  * How long one step may run, in hours. The baseline stops a step that runs

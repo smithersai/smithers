@@ -86,6 +86,22 @@ Newest first. A part built before a change adopts it before it lands again.
 - Tests: `test/contract.test.ts`, `test/generate.test.ts` "keeps the order of steps split from a command that ran its
   parts in order", `test/decompose/Script.test.ts`, `test/replay/Summary.test.ts`.
 
+**2026-11-18, a runner's variables** (additive, by the runner-variables lane):
+
+- Contract 4: `Inventory.runVariables`, the variables a run gives every step that are another at every run
+  (`GITHUB_SHA`, `GITHUB_WORKFLOW_SHA`, `GITHUB_RUN_ID`, `GITHUB_RUN_NUMBER`, `GITHUB_RUN_ATTEMPT`), and
+  `Inventory.runValues(commit, count)`, what a replay gives the steps of one commit under those names.
+- Contract 4: `Inventory.events` (optional), the event file of each event a replay can stand for, with
+  `Inventory.commitMark` and `Inventory.parentMark` where the commit and its first parent go;
+  `Inventory.eventFiles(events, commit, parent)` fills them in; `Inventory.eventsVariable` (`SMITHERS_CI_EVENTS`)
+  names the directory a replay wrote them to. `Inventory.noParent` is what an event names before the first commit.
+- Contract 4: `Inventory.givenTo(script, given)`, what a step is given of a run's variables: all of them with
+  runner text, else the ones its script names as `$NAME`. A baseline gives a step what its target passes on.
+- Not a contract, and changed with it: every step of a workflow is given every default variable of a GitHub
+  runner. A generated target passes on what a run gives with its value out of the target's key (Smithers build's
+  `observe: { env }`, or `given` for a step held to its inputs), so a result is reused at another commit unless
+  its run used the variable. A step is told its job always, so two jobs that start with the same step each run it.
+
 **2026-11-18, what a replay measures on a machine where part of the CI cannot pass** (optional additions by the
 replay lane):
 

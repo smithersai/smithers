@@ -13,7 +13,7 @@ import { uncommittedChanges } from "../contract/Inventory.ts"
 import type { Failure, ReadInventory } from "../contract/Parts.ts"
 import { workspace } from "../native/Detect.vibe"
 import { found } from "../native/Workspace.ts"
-import type { Facts } from "./Contexts.ts"
+import { eventFilesOf, type Facts } from "./Contexts.ts"
 import { assemble, fileProblem, type Parsed } from "./Draft.ts"
 import { readWorkflow } from "./GithubActions.ts"
 import { readJustfile } from "./Justfile.ts"
@@ -171,6 +171,15 @@ effect function defaultBranch(root: string) {
   return branch === "" ? undefined : branch
 }
 
+/** What is known of the repository besides its files: its name, and the branch a replayed commit is on. */
+effect function known(root: string, repository: string) {
+  return {
+    // A name with no owner is the directory's, taken when the repository has no remote.
+    ...(repository.includes("/") ? { repository } : { directory: repository }),
+    defaultBranch: try defaultBranch(root)
+  } satisfies Facts
+}
+
 effect function readWorkflows(tree: Tree, repository: string) {
   const directory = ".github/workflows"
   const loaded: Array<readonly [string, Loaded]> = []
@@ -178,12 +187,7 @@ effect function readWorkflows(tree: Tree, repository: string) {
     if (/\.ya?ml$/.test(name)) loaded.push([`${directory}/${name}`, try load(tree, `${directory}/${name}`)])
   }
   const local = try readLocal(tree, loaded.flatMap(([, file]) => file.kind === "text" ? [file.text] : []))
-  const facts: Facts = {
-    // A name with no owner is the directory's, taken when the repository has no remote.
-    ...(repository.includes("/") ? { repository } : {}),
-    defaultBranch: try defaultBranch(tree.root),
-    read: (path) => local.get(path)
-  }
+  const facts: Facts = { ...(try known(tree.root, repository)), read: (path) => local.get(path) }
   return loaded.map(([file, found]) => parsedOf(file, found, (text) => readWorkflow(file, text, facts)))
 }
 
@@ -264,5 +268,9 @@ export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProces
     const text = rootFiles.includes(name) ? try optional(tree, name) : undefined
     if (text !== undefined) parts.push({ ...nothing, toolchains: readToolFile(name, text) })
   }
-  return assemble(repository, commit, parts)
+  const inventory = assemble(repository, commit, parts)
+  // A runner starts a workflow for an event and gives every step the event's file. A replay writes that file for
+  // each commit, from what is known of each event here.
+  if (!inventory.jobs.some((job) => job.source === "github-actions")) return inventory
+  return { ...inventory, events: eventFilesOf(try known(root, repository)) }
 }

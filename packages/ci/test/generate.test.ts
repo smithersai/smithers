@@ -6,7 +6,17 @@ import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { parse as parseYaml } from "yaml"
 import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
-import { ci, commitNote, Inventory, runnerEntry, runnerSoftware, script, shell } from "../src/contract/Inventory.ts"
+import {
+  ci,
+  commitNote,
+  eventsVariable,
+  Inventory,
+  runnerEntry,
+  runnerSoftware,
+  runVariables,
+  script,
+  shell
+} from "../src/contract/Inventory.ts"
 import {
   type Failure,
   type GeneratedFile,
@@ -76,6 +86,11 @@ const content = (generated: ReadonlyArray<GeneratedFile>, path: string): string 
   generated.find((file) => file.path === path)?.content ?? ""
 
 /** The targets, followed by the notes written as the comments the tests look for. */
+// What a target with runner text passes on with its value in the key: where the event file is and where the
+// machine has a runner's software, with `more`.
+const passedOn = (more: ReadonlyArray<string> = []): ReadonlyArray<string> =>
+  [...new Set(["GITHUB_EVENT_PATH", eventsVariable, ...runnerSoftware, ...more])].sort()
+
 const targetsOf = (document: InventoryDocument): string => {
   const generated = generate(document)
   return `${content(generated, packagePath)}\n${content(generated, notesPath).replaceAll("\n- ", "\n// ")}`
@@ -381,8 +396,9 @@ describe("what a step becomes", () => {
     )
     expect(text).toContain("echo ${{ steps.pick.outputs.lane }} $RUNNER_TEMP $GITHUB_SHA linux")
     expect(target).toContain(JSON.stringify(`${shell.join(" ")} '${text.replaceAll("'", `'\\''`)}'`))
-    // The runner text gives every runner variable itself. Where the machine has a runner's software it cannot give.
-    expect(target).toContain(`inheritEnv: ${JSON.stringify(runnerSoftware)}`)
+    // The runner text gives every runner variable itself, but where the event file is and where the machine has
+    // a runner's software.
+    expect(target).toContain(`inheritEnv: ${JSON.stringify(passedOn())}`)
     expect(source).not.toContain("not generated")
   })
 
@@ -391,7 +407,43 @@ describe("what a step becomes", () => {
     const own = step("a:1", "java -version", { runner, env: { JAVA_HOME: "/own" } })
     const target = declaration(targetsOf(inventory([job("a", [own])])), "a-1")
     expect(target).toContain(`env: {"JAVA_HOME":"/own"}`)
-    expect(target).toContain(`inheritEnv: ${JSON.stringify(runnerSoftware.filter((name) => name !== "JAVA_HOME"))}`)
+    expect(target).toContain(`inheritEnv: ${JSON.stringify(passedOn().filter((name) => name !== "JAVA_HOME"))}`)
+  })
+
+  // A runner gives every step the commit, the run's id, number and attempt, and the event file. A target passes
+  // the first four on from the run with their values out of its key, so its result is reused at another commit
+  // unless its run used one. The event file's place is the same at every run and is part of the key.
+  it("passes on what a run gives every step, with what is another at every run out of the key", () => {
+    const runner = `${runnerEntry}() { bash -e -c "$1"; }`
+    const source = targetsOf(inventory([job("a", [
+      step("a:1", "npm ci", { runner }),
+      step("a:2", "npm test", { runner }),
+      step("a:3", "npm run lint", { runner, env: { GITHUB_SHA: "pinned", [eventsVariable]: "/elsewhere" } }),
+      step("a:4", "true")
+    ])]))
+    const run = JSON.stringify(runVariables)
+    expect(runVariables).toEqual([
+      "GITHUB_RUN_ATTEMPT",
+      "GITHUB_RUN_ID",
+      "GITHUB_RUN_NUMBER",
+      "GITHUB_SHA",
+      "GITHUB_WORKFLOW_SHA"
+    ])
+    // A step the steps after it wait for always runs and is not observed: every value is part of its key.
+    expect(declaration(source, "a-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn(runVariables))}`)
+    expect(declaration(source, "a-1")).not.toContain("observe")
+    // Smithers build refuses a variable a target both sets and passes on, and the step's value is the one it means.
+    expect(declaration(source, "a-3")).toContain(
+      `inheritEnv: ${
+        JSON.stringify(passedOn(runVariables).filter((name) => name !== "GITHUB_SHA" && name !== eventsVariable))
+      }`
+    )
+    // A step without runner text is given no runner variable it does not name.
+    expect(declaration(source, "a-4")).toContain(`observe: { ignore: ["~/.npm/_logs"] }`)
+    expect(declaration(source, "a-4")).not.toContain("inheritEnv")
+    const last = targetsOf(inventory([job("a", [step("a:1", "npm test", { runner })])]))
+    expect(declaration(last, "a-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn())}`)
+    expect(declaration(last, "a-1")).toContain(`observe: { ignore: ["~/.npm/_logs"], env: ${run} }`)
   })
 
   it("holds a step with runner text to its inputs only as its job's first step, and never when it reads the commit", () => {
@@ -410,12 +462,25 @@ describe("what a step becomes", () => {
     ]))
     const held = `sandbox: { network: true }`
     expect(declaration(source, "first-1")).toContain(held)
+    // A held step is given what a run gives every step. Smithers build keys it on the values only when its text
+    // or one of its inputs names one, or names where the event file is.
+    expect(declaration(source, "first-1")).toContain(
+      `given: { env: ${JSON.stringify(runVariables)}, names: ["GITHUB_EVENT_PATH"] }`
+    )
+    expect(declaration(source, "first-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn())}`)
+    expect(declaration(source, "first-1")).not.toContain("observe")
     // Its verdict is one commit's, so it declares the whole repository and is never reused for another.
     expect(declaration(source, "commit-1")).toContain(`sandbox: "none"`)
     expect(declaration(source, "commit-1")).toContain("data: [repository]")
     // It reads what the step before it left for the job, which is in no input.
     expect(declaration(source, "later-2")).toContain(`sandbox: "none"`)
+    for (const label of ["commit-1", "later-2"]) {
+      expect(declaration(source, label)).toContain(`env: ${JSON.stringify(runVariables)} }`)
+      expect(declaration(source, label)).not.toContain("given:")
+    }
+    // No runner starts it, so no run gives it anything.
     expect(declaration(source, "plain-2")).toContain(held)
+    expect(declaration(source, "plain-2")).not.toContain("given:")
   })
 
   it("enters the step's directory and refuses one outside the repository", () => {

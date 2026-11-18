@@ -43,17 +43,17 @@ one of them is left out.
 operators in the same order, loose equality, text compared without case, and
 the same values counted as false.
 
-| Context    | What it holds                                                                                                                                     |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `github`   | The event above, `sha`, `workspace`, `repository`, `job`, `workflow`. `actor` is `smithers-ci`; `run_id`, `run_number` and `run_attempt` are `1`. |
-| `env`      | The `env:` of the workflow, the job and the step, and what earlier steps wrote to `GITHUB_ENV`.                                                   |
-| `matrix`   | The variant's values.                                                                                                                             |
-| `inputs`   | What `with:` gives a local action or a called workflow, with its defaults. Empty for a push or a pull request, as on GitHub.                      |
-| `vars`     | Empty.                                                                                                                                            |
-| `runner`   | `os` from `runs-on`, `arch`, `temp`, `tool_cache`. `name` is `smithers-ci` and `environment` is `self-hosted`.                                    |
-| `steps`    | Each earlier step's `outputs`, `outcome` and `conclusion`.                                                                                        |
-| `strategy` | `job-total`, and `job-index` for a job with no matrix.                                                                                            |
-| `job`      | `status`.                                                                                                                                         |
+| Context    | What it holds                                                                                                                          |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `github`   | The event above, `sha`, `workspace`, `repository`, `job`, `workflow`, `run_id`, `run_number`, `run_attempt`. `actor` is `smithers-ci`. |
+| `env`      | The `env:` of the workflow, the job and the step, and what earlier steps wrote to `GITHUB_ENV`.                                        |
+| `matrix`   | The variant's values.                                                                                                                  |
+| `inputs`   | What `with:` gives a local action or a called workflow, with its defaults. Empty for a push or a pull request, as on GitHub.           |
+| `vars`     | Empty.                                                                                                                                 |
+| `runner`   | `os` from `runs-on`, `arch`, `temp`, `tool_cache`. `name` is `smithers-ci` and `environment` is `self-hosted`.                         |
+| `steps`    | Each earlier step's `outputs`, `outcome` and `conclusion`.                                                                             |
+| `strategy` | `job-total`, and `job-index` for a job with no matrix.                                                                                 |
+| `job`      | `status`.                                                                                                                              |
 
 The functions are `contains`, `startsWith`, `endsWith`, `format`, `join`,
 `toJSON`, `fromJSON`, `hashFiles` of files named without a wildcard, and the
@@ -115,23 +115,45 @@ or a matrix value, leaves the job out: no limit is guessed.
 
 ## What a step is given
 
-| Variable                                                                            | Value                                                                       |
-| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `CI`, `GITHUB_ACTIONS`                                                              | `true`. A workflow that sets `CI` itself keeps its own value.               |
-| `GITHUB_WORKSPACE`                                                                  | The repository root                                                         |
-| `GITHUB_SHA`                                                                        | The commit, for a step that names it                                        |
-| `GITHUB_EVENT_NAME`                                                                 | The event                                                                   |
-| `GITHUB_EVENT_PATH`                                                                 | A file holding what is known of the event as JSON, for a step that names it |
-| `GITHUB_REPOSITORY`, `GITHUB_REPOSITORY_OWNER`                                      | From your remote                                                            |
-| `GITHUB_REF`, `GITHUB_REF_NAME`                                                     | The default branch, for a push                                              |
-| `GITHUB_BASE_REF`                                                                   | The default branch, for a pull request                                      |
-| `GITHUB_JOB`, `GITHUB_WORKFLOW`                                                     | The job's key and the workflow's name                                       |
-| `GITHUB_RUN_ID`, `GITHUB_RUN_NUMBER`, `GITHUB_RUN_ATTEMPT`                          | `1`                                                                         |
-| `GITHUB_ACTOR`, `RUNNER_NAME`                                                       | `smithers-ci`                                                               |
-| `RUNNER_OS`, `RUNNER_ARCH`                                                          | The system `runs-on` names, and this machine's architecture                 |
-| `RUNNER_ENVIRONMENT`                                                                | `self-hosted`                                                               |
-| `RUNNER_TEMP`, `RUNNER_TOOL_CACHE`                                                  | Directories of the job under `/tmp`, emptied when the job starts            |
-| `GITHUB_ENV`, `GITHUB_PATH`, `GITHUB_OUTPUT`, `GITHUB_STEP_SUMMARY`, `GITHUB_STATE` | A fresh file for each step                                                  |
+Every step is given every
+[default variable of a GitHub runner](https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables),
+whatever it runs. A test that reads `process.env.GITHUB_SHA` from its own code
+finds the commit, as it does on GitHub.
+
+| Variable                                                                                                                         | Value                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `CI`, `GITHUB_ACTIONS`                                                                                                           | `true`. A workflow that sets `CI` itself keeps its own value.                          |
+| `GITHUB_WORKSPACE`                                                                                                               | The repository root                                                                    |
+| `GITHUB_SHA`, `GITHUB_WORKFLOW_SHA`                                                                                              | The commit                                                                             |
+| `GITHUB_RUN_ID`, `GITHUB_RUN_NUMBER`, `GITHUB_RUN_ATTEMPT`                                                                       | An id made from the commit, the number of commits up to it, and `1`                    |
+| `GITHUB_EVENT_NAME`                                                                                                              | The event                                                                              |
+| `GITHUB_EVENT_PATH`                                                                                                              | A file holding what is known of the event as JSON                                      |
+| `GITHUB_REPOSITORY`, `GITHUB_REPOSITORY_OWNER`                                                                                   | From your remote. `local` and the directory's name when there is none.                 |
+| `GITHUB_REF`, `GITHUB_REF_NAME`                                                                                                  | The default branch, for a push. `refs/pull/1/merge` and `1/merge`, for a pull request. |
+| `GITHUB_BASE_REF`, `GITHUB_HEAD_REF`                                                                                             | The default branch and `smithers-ci`, for a pull request. Empty for any other event.   |
+| `GITHUB_REF_TYPE`, `GITHUB_REF_PROTECTED`                                                                                        | `branch` and `false`                                                                   |
+| `GITHUB_JOB`, `GITHUB_WORKFLOW`                                                                                                  | The job's key and the workflow's name                                                  |
+| `GITHUB_WORKFLOW_REF`                                                                                                            | The workflow's file and `GITHUB_REF`                                                   |
+| `GITHUB_ACTION`                                                                                                                  | The step's `id`, or `__run` with its place in the job                                  |
+| `GITHUB_ACTOR`, `GITHUB_TRIGGERING_ACTOR`, `RUNNER_NAME`                                                                         | `smithers-ci`                                                                          |
+| `GITHUB_ACTOR_ID`, `GITHUB_REPOSITORY_ID`, `GITHUB_REPOSITORY_OWNER_ID`                                                          | `1`                                                                                    |
+| `GITHUB_SERVER_URL`, `GITHUB_API_URL`, `GITHUB_GRAPHQL_URL`                                                                      | The addresses of github.com                                                            |
+| `GITHUB_RETENTION_DAYS`                                                                                                          | `90`                                                                                   |
+| `RUNNER_OS`, `RUNNER_ARCH`                                                                                                       | The system `runs-on` names, and this machine's architecture                            |
+| `RUNNER_ENVIRONMENT`                                                                                                             | `self-hosted`                                                                          |
+| `RUNNER_TEMP`, `RUNNER_TOOL_CACHE`                                                                                               | Directories of the job under `/tmp`, emptied when the job starts                       |
+| `GITHUB_ENV`, `GITHUB_PATH`, `GITHUB_OUTPUT`, `GITHUB_STEP_SUMMARY`, `GITHUB_STATE`, `GITHUB_ARTIFACTS`, `GITHUB_ARTIFACTS_LIST` | A fresh file for each step                                                             |
+
+No step is given a token: `GITHUB_TOKEN` and the `ACTIONS_` credentials are not
+set. `GITHUB_ACTION_REPOSITORY` and `RUNNER_DEBUG` are not set either, as a
+runner leaves them for a script with debug logging off. `GITHUB_ACTION_PATH` is
+set inside an action.
+
+A pull request's number and branch, and the numbers GitHub gives an account and
+a repository, exist only on GitHub. A step still finds a value under each name:
+a replayed commit stands for pull request `1` from the branch `smithers-ci`. A
+script of yours that names one of them leaves its job out, as an expression
+that reads one does: it would act on a value that is not GitHub's.
 
 A step that writes `NAME=value`, or `NAME<<MARK` with the value on the lines up
 to `MARK`, to `GITHUB_ENV` sets that variable for every later step of its job.
@@ -144,16 +166,19 @@ A step is given what the steps before it wrote, and nothing else. When a
 change makes one step of a job run again and the steps around it are reused,
 the step does not see what a later step wrote the last time the job ran.
 
-`GITHUB_SHA` and the event file are another at every commit. A step that names
-neither in its script, and reads neither `github.sha` nor the event's commits,
-is given neither. What it reads is then the files it opens and what earlier
-steps gave it, so its result is reused until one of those changes. A step that
-does read the commit runs again at every commit.
+The commit, the run's id, number and attempt, and the event file are another at
+every commit, and every step is given them. A step that used none of them is
+reused at the next commit while the files it read are unchanged. A step that
+used one runs again: its result is that commit's. See
+[when a step used a runner's variable](how-it-works.md#a-runners-variables).
 
-Two jobs that start with the same step run it once and share its result. So a
-job's first step is given `GITHUB_JOB` only when its script names it; every
-later step is given it always. A first step that names `GITHUB_JOB`,
-`RUNNER_TEMP` or `RUNNER_TOOL_CACHE` is run for each job that starts with it.
+In the workflow `smithers-ci apply` writes, GitHub's own runner gives each step
+the commit, the run's id, number and attempt, and the event file. Every other
+value in the table is the same there as in a replay.
+
+Each job runs its own steps, as each has a machine of its own on GitHub. Two
+jobs that start with the same step each run it, and each is told its own
+`GITHUB_JOB`.
 
 A step that only installs system packages, such as `sudo apt-get install -y zsh`,
 is left out when your machine already has them. So it takes no part in what the
@@ -165,8 +190,8 @@ its `outputs` or `outcome` leaves the job out, and one that writes to
 GitHub's. A step a workflow keeps for GitHub's own machines, such as one that
 deletes system directories to free disk space, is left out.
 
-A script that names another `GITHUB_` or `RUNNER_` variable leaves its job out:
-no runner is there to give it.
+A script that names a `GITHUB_` or `RUNNER_` variable outside GitHub's list
+leaves its job out: no runner gives it.
 
 ### Software a runner comes with
 
@@ -256,16 +281,16 @@ carries it from one run to the next with that cache.
 every job left out with the matching
 [sentence](../reference/cli.md#why-a-job-is-not-replayed).
 
-| Reason            | The job                                                                          |
-| ----------------- | -------------------------------------------------------------------------------- |
-| `condition`       | has an `if:` that is false for the event, or that reads what only GitHub knows   |
-| `expression`      | has a step whose `${{ }}` reads what only GitHub knows, or what another job gave |
-| `secret`          | has a step that receives a secret                                                |
-| `uses`            | uses an action that is none of those above                                       |
-| `checkout`        | checks out something other than the commit under replay                          |
-| `runner-variable` | has a script that names a runner variable outside the list above                 |
-| `services`        | starts service containers                                                        |
-| `needs`           | needs a job that is left out                                                     |
+| Reason            | The job                                                                             |
+| ----------------- | ----------------------------------------------------------------------------------- |
+| `condition`       | has an `if:` that is false for the event, or that reads what only GitHub knows      |
+| `expression`      | has a step whose `${{ }}` reads what only GitHub knows, or what another job gave    |
+| `secret`          | has a step that receives a secret                                                   |
+| `uses`            | uses an action that is none of those above                                          |
+| `checkout`        | checks out something other than the commit under replay                             |
+| `runner-variable` | has a script that names a runner variable no runner gives, or one only GitHub knows |
+| `services`        | starts service containers                                                           |
+| `needs`           | needs a job that is left out                                                        |
 
 A job left out is not run in the baseline either, so the times compare the same
 work on both sides.

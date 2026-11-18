@@ -46,6 +46,7 @@ import {
   type Facts,
   github,
   runner as runnerContext,
+  standIns,
   startedVariables,
   variables
 } from "./Contexts.ts"
@@ -168,8 +169,6 @@ interface JobState extends Shape {
   apart: boolean
   /** The mark of the job's first command, by which the commands after it find what it left. */
   mark: string | undefined
-  /** True when the job's first command leaves a state of its own, which the job's second command copies. */
-  shared: boolean
   /** Where the job's first command is among its steps, and the runner text it takes when no command follows it. */
   only: { readonly at: number; readonly text: string } | undefined
   /** Values to work out once, when the next command starts, and keep for later steps under a name. */
@@ -569,6 +568,8 @@ interface StepContext {
   readonly limit: number | undefined
   /** True for a step that keeps files from one run to the next, as a cache step does. */
   readonly store?: boolean
+  /** The step's name as a runner gives it in `GITHUB_ACTION`. */
+  readonly action: string
 }
 
 /** Adds a command to the job, with the runner text that runs it as its step. */
@@ -627,16 +628,15 @@ const addRun = (
   // second and the rest with it or without it.
   const apart = installsOf(command) !== undefined
   const first = state.placed === 0
-  // Two jobs that start with the same step run it once, so a first step is told its job only when it asks for
-  // it, or for a directory a runner gives a job: that step is then this job's alone.
-  const asks = (reads: boolean): boolean => reads || /\b(?:GITHUB_JOB|RUNNER_TEMP|RUNNER_TOOL_CACHE)\b/.test(command)
   const keeps = state.keeps.splice(0)
-  const facts = (reads: boolean): StepFacts => ({
+  // Every step is told its job, the first one too: a runner gives `GITHUB_JOB` to every step, and a job's steps
+  // are its own, as each job has a machine of its own on GitHub.
+  const facts: StepFacts = {
     key: context.key,
     after: first ? undefined : state.mark,
-    second: state.placed === 1 && state.shared,
+    second: false,
     apart,
-    job: first && !asks(reads) ? undefined : state.key,
+    job: state.key,
     before: [...state.keys],
     cwd,
     directory,
@@ -647,15 +647,12 @@ const addRun = (
     outer: decided.filter(([, , own]) => !own).map(([name, entry]) => [name, entry] as const),
     env: decided.filter(([, , own]) => own).map(([name, entry]) => [name, entry] as const),
     fills: [...fills],
-    commit: /\bGITHUB_(?:SHA|EVENT_PATH)\b/.test(command),
+    commit: /\bGITHUB_(?:SHA|WORKFLOW_SHA|EVENT_PATH|RUN_ID|RUN_NUMBER|RUN_ATTEMPT)\b/.test(command),
+    action: context.action,
     limit: secondsOf(context.limit),
     store: context.store
-  })
-  const told = facts(false)
-  const tried = write(state.runner, told, command)
-  // An expression of the step may read such a directory with the script never naming it.
-  const reads = "text" in tried && tried.temp && told.job === undefined
-  const written = reads ? write(state.runner, facts(true), command) : tried
+  }
+  const written = write(state.runner, facts, command)
   if ("problem" in written) return note(job, "expression", `${where}: ${written.problem}`)
   const before = job.steps.length
   addStep(job, {
@@ -674,7 +671,6 @@ const addRun = (
     if (apart) return
     if (first) {
       state.mark = written.mark
-      state.shared = !asks(reads)
       state.only = { at: before, text: written.alone }
     }
     state.placed += 1
@@ -966,7 +962,9 @@ const readStep = (state: JobState, scope: StepScope, raw: unknown, index: number
     env,
     reads: own,
     ran,
-    limit: withinLimit(scope.limit, limit.minutes)
+    limit: withinLimit(scope.limit, limit.minutes),
+    // "Default environment variables": a step's `id`, or `__run` with the place of a script that has none.
+    action: id ?? (number === 1 ? "__run" : `__run_${number}`)
   }
   if (typeof uses === "string") return record(readUses(context, raw, uses))
   const run = raw["run"]
@@ -1214,6 +1212,7 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     note(job, "expression", `${name} has a timeout-minutes a replay cannot keep: ${limit.problem}`)
   }
   const host = hostOfJob(job.runsOn, matrix)
+  const place = { job: key, workflow: workflow.name, file: workflow.file }
   const state: JobState = {
     ...shape,
     file,
@@ -1226,15 +1225,16 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
       id,
       matrixKeys: [...matrix.keys].sort(),
       variants: matrix.variants,
-      variables: variables(workflow.event, workflow.facts, { job: key, workflow: workflow.name }),
-      event: eventFile(workflow.event, workflow.facts)
+      variables: variables(workflow.event, workflow.facts, place),
+      standIns: standIns(workflow.event, workflow.facts, place),
+      event: eventFile(workflow.event, workflow.facts),
+      eventName: workflow.event
     },
     ran: false,
     placed: 0,
     keys: [],
     apart: false,
     mark: undefined,
-    shared: false,
     only: undefined,
     setupNames: new Set(),
     keeps: [],

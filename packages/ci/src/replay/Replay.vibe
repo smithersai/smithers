@@ -10,12 +10,16 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import {
   allowingDocker,
   ci,
+  eventFiles,
+  eventsVariable,
   type FailedHere,
+  givenTo,
   type Inventory,
   type NotReplayed,
   notReplayed,
   refusal,
   runnerEntry,
+  runValues,
   shell,
   stateVariable,
   stepTimeoutHours,
@@ -543,6 +547,23 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * are. Its targets take from it only what they name. Nothing else of the person's reaches it, the jail around
      * it, or what it starts: a step can read the environment of every process it runs beside.
      */
+    /**
+     * What a run gives the steps of `commit` in one way of running it, as a runner gives it to every step: the
+     * commit, the run's id, number and attempt, and where the event files of the commit are. The files are written
+     * here, outside every step, so a step that opens one has read a file that is another at the next commit, and a
+     * step that opens none has read nothing of the commit.
+     */
+    effect function givenAt(commit: string, place: Confined, own: Prepared) {
+      const count = Number(try git(source, ["rev-list", "--count", commit]))
+      const [, parent] = (lines(try git(source, ["rev-list", "--parents", "--max-count=1", commit]))[0] as string).split(" ")
+      const directory = path.join(work, "events", path.basename(place.home))
+      try orFail(fs.makeDirectory(directory, { recursive: true }), "could not write the event files")
+      for (const [name, text] of eventFiles(own.inventory.events ?? {}, commit, parent)) {
+        try orFail(fs.writeFileString(path.join(directory, name), text), "could not write the event files")
+      }
+      return { ...runValues(commit, count), [eventsVariable]: directory }
+    }
+
     const startEnv = (copy: string, place: Confined) => ({
       ...stepEnvironment({ ...software, ...place.daemon }, place),
       ...(request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }),
@@ -565,6 +586,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * failed over a file this replay wrote into the copy: the generated files, and what fills the cache directory.
      */
     const smithers = (
+      commit: string,
       copy: string,
       own: Prepared,
       place: Confined,
@@ -592,7 +614,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         ...(own.jobs === undefined ? [] : ["--jobs", String(own.jobs)])
       ])
       const watch = try watchFor(stall.minutes, stall.table)
-      const environment = { ...startEnv(copy, place), ...printsNotes }
+      const environment = { ...startEnv(copy, place), ...(try givenAt(commit, place, own)), ...printsNotes }
       const handed = starter === undefined ? undefined : token
       const output = try exec(command, args, copy, environment, printedLimit, undefined, true, heard, watch, handed)
       const stalled = try Ref.get(watch.stalled)
@@ -632,7 +654,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       commit: string,
       wanted: ReadonlySet<string> | undefined,
       place: Confined,
-      store: string
+      store: string,
+      given: Readonly<Record<string, string>>
     ) {
       return try scoped(effect {
         const directory = try orFail(fs.makeTempDirectoryScoped({ directory: work }), "could not make a directory")
@@ -650,8 +673,11 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           // Only a step whose text names the variable is given it: the text takes it away before the step's own
           // script starts, and a step with no such text would hand it on.
           const told = step.command.includes(stateVariable) ? { [stateVariable]: store } : {}
-          const given = step.command.includes(runnerEntry) ? software : {}
-          const environment = stepEnvironment({ ...given, ...place.daemon, ...step.env, ...told }, place)
+          // A step with runner text is told where this machine has a runner's software.
+          const found = step.command.includes(runnerEntry) ? software : {}
+          // A step no runner starts is given the run's variables its script names: what its target passes on.
+          const run = givenTo(step.command, given)
+          const environment = stepEnvironment({ ...found, ...place.daemon, ...run, ...step.env, ...told }, place)
           // A step that cannot start, for example because its directory does not exist at this commit, has failed.
           const output = runStep(program, argv, path.join(copy, step.cwd), environment, stepLimit, stall)
             catch (cause) => ({ timedOut: false, stalled: false, exitCode: undefined, stderr: `could not start: ${describe(cause)}`, stdout: "" } satisfies StepRun)
@@ -680,6 +706,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const chosen = stationsOf(own.units, wanted)
       const store = place === places.trial ? keptTrial : kept
       const limit = try Semaphore.make(own.jobs ?? options.cores ?? coreCount())
+      const given = try givenAt(commit, place, own)
       const plan: Array<Station & { readonly gate: Deferred.Deferred<boolean> }> = []
       for (const station of chosen) plan.push({ ...station, gate: try Deferred.make<boolean>() })
       const collected: Array<TargetResult> = []
@@ -691,7 +718,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const results: Array<TargetResult> = []
         for concurrent (const sequence of station.runs) {
           if (needsPassed) {
-            results.push(...(try limit.withPermits(1)(runSequence(sequence, commit, wanted, place, store))))
+            results.push(...(try limit.withPermits(1)(runSequence(sequence, commit, wanted, place, store, given))))
           } else {
             const waiting = sequence.flatMap((unit) => labelsOf(unit, wanted))
             results.push(...waiting.map((label) => blocked(label, station.needs.join(", "))))
@@ -784,7 +811,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const run = measure(
           checkoutCopy(copy, at, place),
           equip(copy, own, place),
-          smithers(copy, own, place, new Map()),
+          smithers(at, copy, own, place, new Map()),
           undefined,
           0
         ) catch effect (cause) => {
@@ -868,7 +895,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const normal = try measure(
         checkoutCopy(normalCopy, commit, places.normal),
         equip(normalCopy, own, places.normal),
-        smithers(normalCopy, own, places.normal, normalCauses),
+        smithers(commit, normalCopy, own, places.normal, normalCauses),
         undefined,
         options.reruns
       )
@@ -889,7 +916,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           const fast = try measure(
             checkoutCopy(fastCopy, commit, places.fast),
             equip(fastCopy, own, places.fast),
-            smithers(fastCopy, own, places.fast, fastCauses),
+            smithers(commit, fastCopy, own, places.fast, fastCauses),
             labels,
             options.reruns
           )

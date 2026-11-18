@@ -318,6 +318,81 @@ describe("contract 4: inventory", () => {
     expect(Inventory.readsCommit({})).toBe(false)
   })
 
+  // "Default environment variables": the commit, and the run's id, number and attempt, are another at every run.
+  it("names what a run gives every step, and what a replay gives for a commit", () => {
+    expect(Inventory.runVariables).toEqual([
+      "GITHUB_RUN_ATTEMPT",
+      "GITHUB_RUN_ID",
+      "GITHUB_RUN_NUMBER",
+      "GITHUB_SHA",
+      "GITHUB_WORKFLOW_SHA"
+    ])
+    const commit = "0123456789abcdef0123456789abcdef01234567"
+    const given = Inventory.runValues(commit, 12)
+    expect(Object.keys(given).sort()).toEqual([...Inventory.runVariables])
+    expect(given).toEqual({
+      GITHUB_RUN_ATTEMPT: "1",
+      // The first nine digits of the commit, read as a number.
+      GITHUB_RUN_ID: String(0x012345678),
+      GITHUB_RUN_NUMBER: "12",
+      GITHUB_SHA: commit,
+      GITHUB_WORKFLOW_SHA: commit
+    })
+    // The same commit is the same run, and another commit another.
+    expect(Inventory.runValues(commit, 12)).toEqual(given)
+    expect(Inventory.runValues(commit.replace("0", "f"), 13).GITHUB_RUN_ID).not.toBe(given.GITHUB_RUN_ID)
+  })
+
+  it("gives a step with runner text every variable of a run, and any other step the ones its script names", () => {
+    const commit = "0123456789abcdef0123456789abcdef01234567"
+    const given = { ...Inventory.runValues(commit, 3), [Inventory.eventsVariable]: "/events" }
+    const started = Inventory.script({ command: "npm test", runner: "# what a runner does" })
+    expect(Inventory.givenTo(started, given)).toEqual(given)
+    // No runner starts this step. It is given what it names as a shell reads a variable, with or without braces.
+    expect(Inventory.givenTo("echo \"$GITHUB_SHA\" \"${GITHUB_RUN_NUMBER}\"", given)).toEqual({
+      GITHUB_RUN_NUMBER: "3",
+      GITHUB_SHA: commit
+    })
+    // A name that only starts like one, a name with no `$`, and a script that names none: nothing.
+    expect(Inventory.givenTo("echo \"$GITHUB_SHA_SHORT\" GITHUB_RUN_ID; printenv GITHUB_SHA", given)).toEqual({})
+    expect(Inventory.givenTo(Inventory.script({ command: "just test" }), given)).toEqual({})
+  })
+
+  it("writes each event's file for a commit, with the commit and its parent where the marks stand", () => {
+    const events = {
+      pull_request: JSON.stringify({
+        pull_request: { head: { sha: Inventory.commitMark }, base: { sha: Inventory.parentMark } },
+        again: Inventory.commitMark
+      }),
+      push: JSON.stringify({ before: Inventory.parentMark, after: Inventory.commitMark })
+    }
+    const files = Inventory.eventFiles(events, "c".repeat(40), "p".repeat(40))
+    expect(files.map(([name]) => name)).toEqual(["pull_request.json", "push.json"])
+    expect(files.map(([, text]) => JSON.parse(text))).toEqual([
+      {
+        pull_request: { head: { sha: "c".repeat(40) }, base: { sha: "p".repeat(40) } },
+        again: "c".repeat(40)
+      },
+      { before: "p".repeat(40), after: "c".repeat(40) }
+    ])
+    expect(files.every(([, text]) => text.endsWith("}\n"))).toBe(true)
+    // The first commit of a repository has no parent: an event names forty zeros there.
+    const [, first] = Inventory.eventFiles({ push: events.push }, "c".repeat(40), undefined)[0]!
+    expect(JSON.parse(first)).toEqual({ before: Inventory.noParent, after: "c".repeat(40) })
+    expect(Inventory.noParent).toBe("0".repeat(40))
+    expect(Inventory.eventFiles({}, "c".repeat(40), undefined)).toEqual([])
+    expect(Inventory.eventsVariable).toBe("SMITHERS_CI_EVENTS")
+  })
+
+  it("holds each event's file in an inventory, or none", () => {
+    const zig = Schema.decodeUnknownSync(Inventory.Inventory)(fixture("inventory.justfile-zig.json"))
+    expect(zig.events).toBeUndefined()
+    const events = { push: JSON.stringify({ after: Inventory.commitMark }) }
+    const decoded = Schema.decodeUnknownSync(Inventory.Inventory)({ ...zig, events })
+    expect(decoded.events).toEqual(events)
+    expect(() => Schema.decodeUnknownSync(Inventory.Inventory)({ ...zig, events: { push: 1 } })).toThrow()
+  })
+
   it("runs a job only when it has a step and exits", () => {
     const zig = Schema.decodeUnknownSync(Inventory.Inventory)(fixture("inventory.justfile-zig.json"))
     const job = zig.jobs[0]!

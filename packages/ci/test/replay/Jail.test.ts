@@ -330,6 +330,38 @@ describe("a step on a machine with no jail", () => {
   }, 1_200_000)
 })
 
+describe("a step no runner starts", () => {
+  it(
+    "is given the commit and the run's number when its script names them, in the baseline and as a target",
+    async () => {
+      const origin = neighbour("origin")
+      const names =
+        "GITHUB_SHA GITHUB_WORKFLOW_SHA GITHUB_RUN_ID GITHUB_RUN_NUMBER GITHUB_RUN_ATTEMPT SMITHERS_CI_EVENTS"
+      const jobs: Jobs = [
+        // It names no variable, so it is given none: a program it starts finds none in its environment.
+        job("unnamed", `test -z "$(printenv ${names})"`),
+        // It names two, and finds the commit it runs at and the number of commits up to it, and no third.
+        job(
+          "named",
+          `test "$GITHUB_SHA" = "$(git rev-parse HEAD)" && test "\${GITHUB_RUN_NUMBER}" = "$(git rev-list --count HEAD)"` +
+            ` && test -z "$(printenv GITHUB_RUN_ID)"`
+        )
+      ]
+      const root = repository(jobs, [{ "one.txt": "one\n" }, { "two.txt": "two\n" }], origin)
+
+      const { report } = await replay(root, 2, () => ({ refusal: "no bubblewrap" }))
+
+      const passed = { hit: 0, ran: 2, failed: 0, skipped: 0 }
+      expect(report.commits.map((commit) => commit.baseline.counts)).toEqual([passed, passed])
+      expect(report.commits.map((commit) => commit.normal.counts.failed)).toEqual([0, 0])
+      expect(report.commits.flatMap((commit) => commit.mismatches)).toEqual([])
+      // The step that names the commit has it in its key: it ran at the second commit too.
+      expect(report.commits[1]?.normal.counts.ran).toBeGreaterThanOrEqual(1)
+    },
+    600_000
+  )
+})
+
 describe.each(
   [
     { where: "in the jail", asked: () => found, runs: jailable },

@@ -15,7 +15,15 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { expand, readsCommit, script, shell } from "../../src/contract/Inventory.ts"
+import {
+  eventsVariable,
+  expand,
+  readsCommit,
+  runValues,
+  runVariables,
+  script,
+  shell
+} from "../../src/contract/Inventory.ts"
 import { type Residual, type Value, variable } from "../../src/inventory/Expression.ts"
 import {
   commitMark,
@@ -471,6 +479,9 @@ describe("write", () => {
       "base",
       "before",
       "sha",
+      "runid",
+      "runnumber",
+      "runattempt",
       "os",
       "workspace",
       "temp",
@@ -824,7 +835,8 @@ describe("write", () => {
   })
 
   // A `working-directory` that is a symbolic link: the step is started in the directory the link names, whose
-  // path does not end with the link's. The root is found without git, so also in a tree that has no `.git`.
+  // path does not end with the link's. The root is found without git, so also in a tree that has no `.git`: git
+  // is asked for the commit alone, and a tree with none runs the step without one.
   it("finds the repository when the step's directory is reached through a link, without asking git", () => {
     const plain = mkdtempSync(join(tmpdir(), "smithers-runner-export-"))
     roots.push(plain)
@@ -839,7 +851,7 @@ describe("write", () => {
     expect(pass({ first: true, cwd: "link" }, `printf '%s\\n' "$GITHUB_WORKSPACE" "$PWD"`, options)).toBe(
       `${tree}\n${join(tree, "real", "deep")}\n`
     )
-    expect(existsSync(asked)).toBe(false)
+    expect(readFileSync(asked, "utf8")).toBe(`-C ${tree} rev-parse --verify --quiet HEAD\n`)
     const outside = run({ first: true, cwd: "packages/app" }, "echo ran", { cwd: at.tmp })
     expect(outside.status).toBe(1)
     expect(outside.stdout).toBe("")
@@ -997,18 +1009,10 @@ describe("write", () => {
       expect(pass({}, `cat "${temp}/work/artifact"`)).toBe("built\n")
       // Run again, it starts the job from nothing.
       expect(pass({ first: true, job: "build" }, `echo "$RUNNER_TEMP"; ls "$RUNNER_TEMP"`)).toBe(`${temp}\n`)
-      // The caller is told when an expression of the step reads the directory with its script never naming it.
-      const reads = (fills: StepFacts["fills"]): boolean => {
-        const written = write(job(), { ...defaults, after: undefined, job: undefined, fills }, "echo @T@")
-        return "text" in written && written.temp
-      }
-      expect(reads([["@T@", named("temp")]])).toBe(true)
-      expect(reads([["@T@", named("toolcache")]])).toBe(true)
-      expect(reads([["@T@", named("workspace")]])).toBe(false)
     })
 
-    // "Default environment variables: GITHUB_JOB". A first step is told its job only when it asks.
-    it("is given GITHUB_JOB only when its script names it, and every later step is", () => {
+    // "Default environment variables: GITHUB_JOB". A first step is told its job when its caller names it.
+    it("is given GITHUB_JOB when its caller names its job, and every later step is", () => {
       expect(pass({ first: true, job: undefined }, `echo "[\${GITHUB_JOB-unset}]"`)).toBe("[unset]\n")
       expect(pass({ first: true, job: "lint" }, `echo "[$GITHUB_JOB]"`)).toBe("[lint]\n")
       expect(pass({ job: "lint" }, `echo "[$GITHUB_JOB]"`)).toBe("[lint]\n")
@@ -1077,42 +1081,134 @@ describe("write", () => {
       expect(noted({})).toBe(false)
       expect(noted({ commit: true })).toBe(true)
       expect(noted({ fills: [["@S@", named("sha")]] })).toBe(true)
+      expect(noted({ fills: [["@R@", named("runid")]] })).toBe(true)
+      expect(noted({ fills: [["@N@", named("runnumber")]] })).toBe(true)
+      expect(noted({ fills: [["@A@", named("runattempt")]] })).toBe(true)
       expect(noted({ condition: binary("==", named("base:the pull request"), literal("x")) })).toBe(true)
       expect(noted({ env: [["BEFORE", [{ residual: named("before"), written: "" }]]] })).toBe(true)
       expect(noted({ fills: [["@W@", named("workspace")]] })).toBe(false)
     })
 
-    // Inside a step held to its inputs git cannot be read. A step that needs the commit fails there, and says why.
-    // A step that does not name the commit is given neither it nor the event file, and never asks git: what it
-    // reads is then the same at the next commit, so a result kept from what it read is still its result.
-    it("is the only step given GITHUB_SHA and GITHUB_EVENT_PATH, whatever the machine holds under those names", () => {
+    // "Default environment variables": a runner sets the commit, the run's id, number and attempt and the event
+    // file for every step, whatever its script names. A step no run gave them works them out: the run's number is
+    // the count of commits, and its id is made from the commit.
+    it("gives every step the commit, the run's numbers and the event file when no run gave them", () => {
+      const head = at.git("rev-parse", "HEAD")
+      // An event file alone is not a run's: the commit says whether a run gave the step its variables.
+      const env = { GITHUB_EVENT_PATH: "/machine.json", GITHUB_JOB: "machine" }
+      const show = `echo "$GITHUB_SHA $GITHUB_WORKFLOW_SHA $GITHUB_RUN_ID $GITHUB_RUN_NUMBER $GITHUB_RUN_ATTEMPT `
+        + `[\${GITHUB_JOB-unset}]"; cat "$GITHUB_EVENT_PATH"`
+      const numbers = `${head} ${head} ${Number.parseInt(head.slice(0, 9), 16)} 2 1`
+      const options = { env, job: job({ event: JSON.stringify({ after: commitMark, before: parentMark }) }) }
+      const file = `{"after":"${head}","before":"${at.git("rev-parse", "HEAD^")}"}\n`
+      expect(pass({ first: true, job: undefined }, show, options)).toBe(`${numbers} [unset]\n${file}`)
+      expect(pass({}, show, options)).toBe(`${numbers} [build]\n${file}`)
+      // `github.run_id`, `github.run_number` and `github.run_attempt` are what the variables hold.
+      const fills: StepFacts["fills"] = [["@I@", named("runid")], ["@N@", named("runnumber")], [
+        "@A@",
+        named("runattempt")
+      ]]
+      expect(pass({ fills }, "echo @I@ @N@ @A@")).toBe(`${Number.parseInt(head.slice(0, 9), 16)} 2 1\n`)
+    })
+
+    // A runner, and a replay for the commit it replays, give every step the commit and the run's numbers. The step
+    // takes them as given and asks git nothing, so it reads nothing that is another at the next commit.
+    it("takes the commit, the run's numbers and the event file from the run that gave them, and never asks git", () => {
       const asked = join(at.tmp, "asked")
       const bin = join(at.tmp, "bin")
       mkdirSync(bin)
       writeFileSync(join(bin, "git"), `#!/bin/sh\necho "$@" >> ${quote(asked)}\nexit 1\n`, { mode: 0o755 })
-      const env = {
-        PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
-        GITHUB_SHA: "machine",
-        GITHUB_EVENT_PATH: "/machine.json",
-        GITHUB_JOB: "machine"
-      }
-      const show = `echo "[\${GITHUB_SHA-unset}] [\${GITHUB_EVENT_PATH-unset}] [\${GITHUB_JOB-unset}]"`
-      expect(pass({ first: true, job: undefined }, show, { env })).toBe("[unset] [unset] [unset]\n")
-      expect(pass({}, show, { env })).toBe("[unset] [unset] [build]\n")
-      expect(pass({}, show, { env })).toBe("[unset] [unset] [build]\n")
+      const events = join(at.tmp, "events")
+      mkdirSync(events)
+      writeFileSync(join(events, "pull_request.json"), "{\"event\":\"a pull request\"}\n")
+      writeFileSync(join(events, "push.json"), "{\"event\":\"a push\"}\n")
+      const given = runValues("c".repeat(40), 7)
+      const env = { PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}`, ...given, [eventsVariable]: events }
+      const show = `echo "$GITHUB_SHA $GITHUB_WORKFLOW_SHA $GITHUB_RUN_ID $GITHUB_RUN_NUMBER $GITHUB_RUN_ATTEMPT"; `
+        + `cat "$GITHUB_EVENT_PATH"`
+      const numbers = `${"c".repeat(40)} ${"c".repeat(40)} ${Number.parseInt("c".repeat(9), 16)} 7 1`
+      const options = { env, job: job({ eventName: "pull_request" }) }
+      expect(pass({ first: true }, show, options)).toBe(`${numbers}\n{"event":"a pull request"}\n`)
+      expect(pass({ commit: true }, show, options)).toBe(`${numbers}\n{"event":"a pull request"}\n`)
+      // A workflow no change starts is replayed as a push.
+      expect(pass({ first: true }, show, { env })).toBe(`${numbers}\n{"event":"a push"}\n`)
+      expect(pass({ fills: [["@S@", named("sha")], ["@N@", named("runnumber")]] }, "echo @S@ @N@", { env })).toBe(
+        `${"c".repeat(40)} 7\n`
+      )
+      // On a GitHub runner no replay wrote an event file: the runner's own stays.
+      const runner = { PATH: env.PATH, ...given, GITHUB_EVENT_PATH: join(events, "push.json") }
+      expect(pass({ first: true }, show, { env: runner, job: job({ eventName: "pull_request" }) })).toBe(
+        `${numbers}\n{"event":"a push"}\n`
+      )
       expect(existsSync(asked)).toBe(false)
     })
 
-    // The event file holds the commit. A job's own state starts without the one its first step was given.
-    it("writes the event file for itself, and a later step that does not read the commit finds none", () => {
+    // Smithers build reuses a step's result at another commit unless the step's own text names one of the
+    // variables a run gives. The text every step starts with therefore names none of them.
+    it("names none of the run's variables in a step's text unless the step's own script or expressions do", () => {
+      const textOf = (facts: Partial<StepFacts>, command: string): string => {
+        const written = write(job({ event: JSON.stringify({ after: commitMark }) }), { ...defaults, ...facts }, command)
+        if (!("text" in written)) throw new Error(written.problem)
+        return `${script({ command, runner: written.text })}\n${script({ command, runner: written.alone })}`
+      }
+      // Where the event file is tells as much as the commit: a step held to its files is keyed on the run when
+      // its text names that variable too.
+      const named_ = (text: string): ReadonlyArray<string> =>
+        [...runVariables, "GITHUB_EVENT_PATH"].filter((name) => text.includes(name))
+      for (const after of [undefined, "none"]) {
+        expect(named_(textOf({ after }, "npm test"))).toEqual([])
+        expect(named_(textOf({ after, apart: true }, "npm test"))).toEqual([])
+        expect(named_(textOf({ after, limit: 60, action: "lint" }, "npm test"))).toEqual([])
+      }
+      expect(named_(textOf({ after: undefined, commit: true }, "echo \"$GITHUB_SHA\""))).toEqual(["GITHUB_SHA"])
+      expect(named_(textOf({ fills: [["@R@", named("runid")]] }, "echo @R@"))).toEqual(["GITHUB_RUN_ID"])
+      expect(named_(textOf({ after: undefined, commit: true }, "cat \"$GITHUB_EVENT_PATH\""))).toEqual([
+        "GITHUB_EVENT_PATH"
+      ])
+      expect(named_(textOf({ fills: [["@S@", named("sha")]] }, "echo @S@"))).toEqual(["GITHUB_SHA"])
+    })
+
+    // Each step writes the event file into the state it runs in. A job's own state starts without the file its
+    // first step was given, so no step reads the event of another commit.
+    it("writes the event file for itself, in the state it runs in", () => {
       const event = JSON.stringify({ after: commitMark })
       const head = at.git("rev-parse", "HEAD")
       const options = { job: job({ event }) }
-      expect(pass({ first: true, commit: true }, `cat "$GITHUB_EVENT_PATH"`, options)).toBe(`{"after":"${head}"}\n`)
-      expect(pass({}, `ls "$RUNNER_TEMP/.." | grep -c event.json || true`, options)).toBe("0\n")
-      expect(pass({ commit: true }, `cat "$GITHUB_EVENT_PATH"; echo "$GITHUB_SHA"`, options)).toBe(
-        `{"after":"${head}"}\n${head}\n`
+      const show = `echo "$GITHUB_EVENT_PATH"; cat "$GITHUB_EVENT_PATH"`
+      const [first, ...shown] = pass({ first: true }, show, options).split("\n")
+      expect(shown).toEqual([`{"after":"${head}"}`, ""])
+      const [later, ...again] = pass({}, show, options).split("\n")
+      expect(again).toEqual(shown)
+      expect(later).not.toBe(first)
+      expect(pass({}, `echo "$GITHUB_EVENT_PATH"`, options)).toBe(`${later}\n`)
+    })
+
+    // A shallow checkout whose history git cannot count still has a commit: the run's number is then 1.
+    it("numbers the run 1 where git cannot count the commits", () => {
+      const bin = join(at.tmp, "bin")
+      mkdirSync(bin)
+      const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim()
+      writeFileSync(
+        join(bin, "git"),
+        `#!/bin/sh\ncase " $* " in *" rev-list "*) exit 1;; esac\nexec ${quote(real)} "$@"\n`,
+        { mode: 0o755 }
       )
+      const env = { PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}` }
+      expect(pass({ first: true }, `echo "$GITHUB_SHA $GITHUB_RUN_NUMBER"`, { env })).toBe(
+        `${at.git("rev-parse", "HEAD")} 1\n`
+      )
+    })
+
+    // "Default environment variables: GITHUB_ACTION", "GITHUB_ARTIFACTS", "GITHUB_ARTIFACTS_LIST", and the
+    // variables only GitHub can fill, which the job's own values replace.
+    it("gives a step its own name, the files artifacts are declared in, and the job's stand-in values", () => {
+      const options = {
+        job: job({ standIns: { GITHUB_HEAD_REF: "smithers-ci", GITHUB_ACTIONS: "stand-in" } })
+      }
+      const show = `echo "[\${GITHUB_ACTION-unset}] $GITHUB_HEAD_REF $GITHUB_ACTIONS"; cat "$GITHUB_ARTIFACTS_LIST"; `
+        + `test ! -s "$GITHUB_ARTIFACTS" && echo " empty"; echo x >> "$GITHUB_ARTIFACTS"`
+      expect(pass({ first: true, action: "lint" }, show, options)).toBe("[lint] smithers-ci true\n{} empty\n")
+      expect(pass({}, show, options)).toBe("[unset] smithers-ci true\n{} empty\n")
     })
 
     // A later step run alone at a new commit, as a step that failed is: the event file is that commit's.
