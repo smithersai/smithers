@@ -60,6 +60,8 @@ const storageReference = [
 ].join("\n")
 
 const seededSources = {
+  "packages/ci/src/generate/Render.ts":
+    "`      - run: npx --yes --package=@smthrs/cli@0.1.0 smthrs ci '//...' --jobs 1`,\n",
   "packages/smithers/flows/database/src/internal/ReleasePolicy.ts": "export const releaseVersion = \"0.1.0\"\n",
   "packages/smithers/flows/observability/src/Otlp.ts": "export const defaultServiceVersion = \"0.1.0\"\n",
   "packages/smithers/migrate/src/flow/Cli.ts": "export const version = \"0.1.0\"\n",
@@ -71,7 +73,6 @@ const seededSources = {
   "packages/smithers/flows/database/docs/api.md": storageReference,
   "apps/site/src/content/docs/docs/reference/api/database.mdx": storageReference,
   "packages/smithers/flows/database/docs/troubleshooting.md": [
-    "### `0.1.0 runs the durable engine on Node.js >=26.4.0 only`",
     "### `<path> is not a Smithers 1.0 database (0.1.0 does not load a 0.x smithers.db)`",
     ""
   ].join("\n"),

@@ -214,14 +214,12 @@ test("the storage docs quote the release through versioned sources, on the packa
     "packages/smithers/flows/database/docs/api.md",
     "packages/smithers/flows/database/docs/api.md",
     "packages/smithers/flows/database/docs/api.md",
-    "packages/smithers/flows/database/docs/troubleshooting.md",
     "packages/smithers/flows/database/docs/troubleshooting.md"
   ])
   const text = [
     "ignored: SMITHERS_TEST_PG_URL has no effect in 1.0.0-rc.0 (use SMITHERS_POSTGRES_URL to select PostgreSQL)",
     "A refusal to open a durable database in 1.0.0-rc.0, raised as a defect rather",
-    "| `<path> is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)` |",
-    "### `1.0.0-rc.0 runs the durable engine on Node.js >=26.4.0 only`"
+    "| `<path> is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)` |"
   ].join("\n")
   const rewritten = rows.reduce((current, row) => row.pattern.test(current) ? retargetSource(current, "1.0.0-rc.10", row) : current, text)
   // "Smithers 1.0 database" names the format, not the release, and stays.

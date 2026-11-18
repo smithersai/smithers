@@ -94,6 +94,7 @@ export const publishedPackages = [
   "@smthrs/time-travel",
   "@smthrs/triggers",
   "@smthrs/views",
+  "smithers-ci",
   "smthrs"
 ]
 
@@ -551,6 +552,11 @@ export const stagePackage = async (packageRoot, stagedPackage, manifest, nativeH
       const binary = join(stagedPackage, "bin", platform, filename)
       if (!platform.startsWith("win32") && existsSync(binary)) await chmod(binary, 0o755)
     }
+  }
+  // npm shows the tarball's README. A package whose repository README is written
+  // for the people who work on it names the page its users should read instead.
+  if (manifest.smthrs?.npmReadme !== undefined) {
+    await cp(join(packageRoot, manifest.smthrs.npmReadme), join(stagedPackage, "README.md"))
   }
   await writeFile(join(stagedPackage, "package.json"), `${JSON.stringify(publicationManifest(manifest), null, 2)}\n`)
 }

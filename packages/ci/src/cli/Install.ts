@@ -6,8 +6,9 @@
  * @since 0.1.0
  */
 
+import { realpathSync, statSync } from "node:fs"
 import { createRequire } from "node:module"
-import { dirname, join } from "node:path"
+import { delimiter, dirname, join } from "node:path"
 
 /**
  * Finds a module's file from this package, as `require.resolve` does.
@@ -27,18 +28,48 @@ const directoryOf = (name: string, resolve: Resolve): string | undefined => {
   }
 }
 
+const isProgram = (path: string, self: string): boolean => {
+  try {
+    return statSync(path).isFile() && realpathSync(path) !== self
+  } catch {
+    return false
+  }
+}
+
 /**
- * The command that starts this install's `smthrs`: the one `smithers-ci`
- * depends on, run by the Node that runs `smithers-ci`. Without it, the
- * `smthrs` on the path.
+ * The Node that runs `smthrs`, which does not run on Bun. Under Node it is this
+ * process. Under Bun it is the first `node` on the path that is not Bun itself:
+ * `bunx` puts a `node` link to Bun on the path of a machine with no Node.
  *
  * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
-export const smthrsCommand = (resolve: Resolve = fromHere): readonly [string, ...Array<string>] => {
+export const nodeProgram = (
+  path: string | undefined,
+  versions: Readonly<Record<string, string | undefined>> = process.versions,
+  self: string = process.execPath
+): string | undefined => {
+  if (versions["bun"] === undefined) return self
+  const bun = realpathSync(self)
+  return (path ?? "").split(delimiter).map((directory) => join(directory, "node")).find((node) => isProgram(node, bun))
+}
+
+/**
+ * The command that starts this install's `smthrs`: the one `smithers-ci`
+ * depends on, run by `node`, by default the program running now. Without it,
+ * the `smthrs` on the path.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const smthrsCommand = (
+  resolve: Resolve = fromHere,
+  node: string = process.execPath
+): readonly [string, ...Array<string>] => {
   const cli = directoryOf("@smthrs/cli", resolve)
-  return cli === undefined ? ["smthrs"] : [process.execPath, join(cli, "bin", "smithers.mjs")]
+  return cli === undefined ? ["smthrs"] : [node, join(cli, "bin", "smithers.mjs")]
 }
 
 /**

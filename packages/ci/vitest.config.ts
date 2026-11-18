@@ -25,7 +25,7 @@ export default defineConfig({
       provider: "v8",
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
-      reportsDirectory: join(tmpdir(), `smithers-ci-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-ci-coverage-${process.pid}`),
       include: ["src/**"],
       thresholds: {
         branches: 100,

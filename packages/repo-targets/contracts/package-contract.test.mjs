@@ -71,7 +71,7 @@ const pnpmOverrides = (planner) => {
 }
 
 /** Executables own their runtime; libraries make the host supply the singleton. */
-const effectRuntimeOwners = new Set(["@smthrs/build-cli", "@smthrs/cli", "@smthrs/migrate"])
+const effectRuntimeOwners = new Set(["@smthrs/build-cli", "@smthrs/cli", "@smthrs/migrate", "smithers-ci"])
 
 /** Public packages whose implementation and API do not touch Effect. */
 const effectIndependent = new Set([])
@@ -420,7 +420,7 @@ describe("the workspace package contract", () => {
     // 8c69f33c moved host runtimes out of the platform-neutral flows barrel.
     assert.deepEqual(owners.map(({ manifest }) => manifest.name).sort(), [
       "@smthrs/build-cli", "@smthrs/cli", "@smthrs/gateway", "@smthrs/migrate",
-      "@smthrs/platform-bun", "@smthrs/platform-node"
+      "@smthrs/platform-bun", "@smthrs/platform-node", "smithers-ci"
     ])
     for (const { manifest } of owners) {
       // An executable requires the exact peer its adapters are built from. A

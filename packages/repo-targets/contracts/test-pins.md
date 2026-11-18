@@ -157,6 +157,7 @@ only.
 
 | Package                       | Test                                                                                               | Form                                                        |
 | ----------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `ci` | `bunx smithers-ci from npm` | `describe.runIf(process.env.SMITHERS_CI_PUBLISHED === "1")` |
 | `smithers/flows/platform-bun` | `executes the declared Bun lane in a Bun worker`                                                   | `it.skipIf(process.env.SMITHERS_PLATFORM_BUN_LANE === "1")` |
 | `smithers/agent/harness`      | `workerd smoke`                                                                                    | `describe.skipIf(FLOWS_WORKERD_SMOKE !== "1")`              |
 | `smithers/flows/platform-cloudflare` | `workerd smoke (FLOWS_WORKERD_SMOKE=1, ${Postgres.direct.label})`                         | `describe.skipIf(FLOWS_WORKERD_SMOKE !== "1")`              |
@@ -626,6 +627,11 @@ Prefer fixing the defect. If a pin is genuinely the right call:
 
 `node --test packages/repo-targets/contracts/check-test-pins.test.mjs` enforces step 3. Steps 1 and 2
 are review conventions; nothing checks them.
+
+**`ci` — `bunx smithers-ci` from npm.** `packages/ci/test/package/registry.test.ts` runs the published package, which
+does not exist until the first release that carries it. Until then `packages/ci/test/package/tarball.e2e.mjs` proves
+the same commands from the release tarballs. After that release, run the test with `SMITHERS_CI_PUBLISHED=1` and remove
+the gate and this entry. If it regressed, the first command on the Smithers CI page would fail for everyone.
 
 **`database` — transaction-pooling endpoints.** `test/PostgresPooling.test.ts`
 runs its suite against PgBouncer in transaction-pooling mode (`apps/mvp`'s

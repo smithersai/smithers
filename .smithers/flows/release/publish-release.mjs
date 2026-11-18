@@ -20,6 +20,17 @@ const retryDelays = [10, 30, 60]
  * does not hold the rest. Different bytes still fail at once. */
 const settleDelays = Array(30).fill(30)
 
+/**
+ * Packages people run by bare name. `bunx smithers-ci` installs what `latest`
+ * names, and npm leaves `latest` on a package's first version, so `latest`
+ * follows every release of these, prereleases included.
+ */
+export const runByName = new Set(["smithers-ci"])
+
+/** The consumer tags a published version takes. */
+export const consumerTags = ({ name, version }) =>
+  !version.includes("-") ? ["latest"] : runByName.has(name) ? ["next", "latest"] : ["next"]
+
 /** Record the relative release date without treating a clock or a build as shipment.
  * The Mac lifecycle and authenticated artifact receipt providers are not mounted
  * in this publisher yet (T-INS-07 / T-MNT-05). Keep stage M dark until they are.
@@ -166,15 +177,16 @@ export const publishCandidate = async (directory, candidate, options) => {
     // local receipt over the registry or publishing immutable versions twice.
     // A resumed older train never moves a consumer tag back: a newer version
     // keeps it, and npm-dist-tag.yml remains the deliberate way to move it.
-    const tag = entry.version.includes("-") ? "next" : "latest"
-    const current = await options.readTag(entry, tag)
-    // Loaded here, not at the top: the installer jobs import this module for
-    // its candidate checks with no dependencies installed, and never promote.
-    const { gt } = await import("semver")
-    if (current !== undefined && gt(current, entry.version)) continue
-    await options.promote(entry, tag)
-    promoted.push(entry.name)
-    await record()
+    for (const tag of consumerTags(entry)) {
+      const current = await options.readTag(entry, tag)
+      // Loaded here, not at the top: the installer jobs import this module for
+      // its candidate checks with no dependencies installed, and never promote.
+      const { gt } = await import("semver")
+      if (current !== undefined && gt(current, entry.version)) continue
+      await options.promote(entry, tag)
+      if (!promoted.includes(entry.name)) promoted.push(entry.name)
+      await record()
+    }
   }
   return published
 }

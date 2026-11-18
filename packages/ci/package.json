@@ -1,6 +1,6 @@
 {
   "name": "smithers-ci",
-  "version": "0.1.0",
+  "version": "1.0.0-rc.18",
   "license": "MIT",
   "author": "Smithers",
   "description": "Fast CI for agents",
@@ -15,9 +15,14 @@
   },
   "files": [
     "bin/*.mjs",
-    "src/**/*.ts",
-    "src/**/*.vibe",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "dist/vendor/**",
     "docs/**/*.md",
+    "LICENSE",
     "README.md"
   ],
   "scripts": {
@@ -30,7 +35,6 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@effect/platform-node": "4.1.1",
     "@smthrs/cli": "1.0.0-rc.18",
     "@smthrs/crypto": "1.0.0-rc.18",
     "@smthrs/engine": "1.0.0-rc.18",
@@ -41,22 +45,49 @@
     "@smthrs/platform-node": "1.0.0-rc.18",
     "@smthrs/scorers": "1.0.0-rc.18",
     "@smthrs/targets": "1.0.0-rc.18",
-    "effect": "4.1.1",
+    "@types/ws": "8.18.2",
     "jsonc-parser": "3.3.1",
+    "redis": "6.2.1",
+    "undici": "8.12.4",
     "vibelang-runtime": "0.0.13",
+    "ws": "8.22.0",
     "yaml": "2.9.0"
+  },
+  "peerDependencies": {
+    "effect": "4.1.1"
   },
   "engines": {
     "node": ">=22.19.0"
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      }
+    }
+  },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.1.1",
+    "@effect/platform-node-shared": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@smthrs/cli": "1.0.0-rc.18",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
+    "effect": "4.1.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -71,7 +102,12 @@
     "vitest": "5.0.0"
   },
   "smthrs": {
-    "group": "tooling"
+    "group": "tooling",
+    "npmReadme": "scripts/npm-readme.md",
+    "privateEffectAdapters": [
+      "@effect/platform-node",
+      "@effect/platform-node-shared"
+    ]
   },
   "homepage": "https://github.com/smithersai/smithers",
   "bugs": {

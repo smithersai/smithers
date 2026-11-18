@@ -127,6 +127,25 @@ test("packResultFilename makes pnpm's absolute pack result portable", () => {
   )
 })
 
+test("stagePackage ships the README a package names for npm", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "smithers-pack-readme-"))
+  try {
+    const source = join(directory, "source")
+    await mkdir(join(source, "scripts"), { recursive: true })
+    await writeFile(join(source, "README.md"), "for the people who work on it\n")
+    await writeFile(join(source, "scripts/npm-readme.md"), "for the people who run it\n")
+    const exports = { "./package.json": "./package.json" }
+    for (const [name, smthrs, expected] of [
+      ["named", { npmReadme: "scripts/npm-readme.md" }, "for the people who run it\n"],
+      ["unnamed", {}, "for the people who work on it\n"]
+    ]) {
+      const staged = join(directory, name)
+      await stagePackage(source, staged, { name, version: "1.0.0", smthrs, publishConfig: { exports } })
+      assert.equal(readFileSync(join(staged, "README.md"), "utf8"), expected)
+    }
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test("publicationManifest rejects a package without publication exports", () => {
   assert.throws(
     () => publicationManifest({ name: "@smthrs/example", publishConfig: { access: "public" } }),
@@ -169,7 +188,7 @@ test("workspaces covers every non-private engine and agent package under package
   assert.ok(tooling.length > 0)
   assert.deepEqual(
     tooling.filter(([, manifest]) => manifest.private !== true).map(([, manifest]) => manifest.name).sort(),
-    ["@smthrs/build", "@smthrs/build-cli", "@smthrs/targets"]
+    ["@smthrs/build", "@smthrs/build-cli", "@smthrs/targets", "smithers-ci"]
   )
   assert.deepEqual(
     tooling.filter(([, manifest]) => manifest.private === true).map(([, manifest]) => manifest.name).sort(),
@@ -211,14 +230,14 @@ test("importing the release scripts reads no workspace tree", async () => {
   }
 })
 
-test("the packed set is exactly the 52 names the RC contract publishes", () => {
+test("the packed set is exactly the 53 names the RC contract publishes", () => {
   // `publishedPackages` is the release decision; group membership is
   // only how it is enforced. Restating the roster here means a package that
   // joins or leaves the release has to change both files in one diff.
   const manifests = readWorkspaceManifests()
   const packed = packedWorkspaces.map((directory) => manifests.get(directory).name)
 
-  assert.equal(publishedPackages.length, 52)
+  assert.equal(publishedPackages.length, 53)
   assert.deepEqual([...packed].sort(), [...publishedPackages].sort())
   assert.ok(publishedPackages.includes("smthrs"), "the unscoped deprecation notice publishes with the RC")
 })
@@ -450,7 +469,7 @@ test("every published library takes Effect as a ranged peer and every executable
   const installed = published.filter((manifest) => !library(manifest) && manifest.peerDependencies?.effect !== undefined)
   assert.deepEqual(
     installed.map((manifest) => [manifest.name, manifest.peerDependencies.effect, manifest.dependencies?.effect]).sort(),
-    ["@smthrs/build-cli", "@smthrs/cli", "@smthrs/migrate"].map((name) => [name, EXPECTED_EFFECT_VERSION, undefined]),
+    ["@smthrs/build-cli", "@smthrs/cli", "@smthrs/migrate", "smithers-ci"].map((name) => [name, EXPECTED_EFFECT_VERSION, undefined]),
     "executables require the exact tested peer and never a nested Effect runtime"
   )
   const misplaced = published

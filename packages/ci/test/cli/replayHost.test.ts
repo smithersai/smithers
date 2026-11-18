@@ -3,12 +3,12 @@ import * as Console from "effect/Console"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { delimiter, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { layer, replayOptions } from "../../src/cli/Host.vibe"
-import { smthrsCommand, targetsDirectory } from "../../src/cli/Install.ts"
+import { nodeProgram, smthrsCommand, targetsDirectory } from "../../src/cli/Install.ts"
 import { Options, Progress } from "../../src/replay/index.ts"
 import { recorder } from "./repo.ts"
 
@@ -45,6 +45,45 @@ describe("this install", () => {
   it("falls back to the smthrs on the path, and to no targets package, when they are not installed", () => {
     expect(smthrsCommand(missing)).toEqual(["smthrs"])
     expect(targetsDirectory(missing)).toBeUndefined()
+  })
+})
+
+describe("the Node that runs smthrs", () => {
+  const bun = { bun: "1.4.2" }
+
+  /** A directory holding an executable file named `node`. */
+  const withNode = (): string => {
+    const path = directory()
+    writeFileSync(join(path, "node"), "#!/bin/sh\n", { mode: 0o755 })
+    return path
+  }
+
+  it("is this process under Node", () => {
+    expect(nodeProgram("/nowhere", { node: "26.5.0" }, "/opt/node")).toBe("/opt/node")
+  })
+
+  it("is the first node on the path under Bun", () => {
+    const [first, second] = [withNode(), withNode()]
+    expect(nodeProgram(`${directory()}${delimiter}${first}${delimiter}${second}`, bun, process.execPath))
+      .toBe(join(first, "node"))
+  })
+
+  it("is never the link to Bun that bunx puts on the path", () => {
+    const self = join(withNode(), "node")
+    const shim = directory()
+    symlinkSync(self, join(shim, "node"))
+    const real = withNode()
+    expect(nodeProgram(shim, bun, self)).toBeUndefined()
+    expect(nodeProgram(`${shim}${delimiter}${real}`, bun, self)).toBe(join(real, "node"))
+  })
+
+  it("is missing when the path has none", () => {
+    expect(nodeProgram(directory(), bun, process.execPath)).toBeUndefined()
+    expect(nodeProgram(undefined, bun, process.execPath)).toBeUndefined()
+  })
+
+  it("starts the smthrs of this install", () => {
+    expect(smthrsCommand(undefined, "/opt/node")[0]).toBe("/opt/node")
   })
 })
 
@@ -103,6 +142,19 @@ describe("how the program lets a replay run in a stranger's checkout", () => {
     const failure = await Effect.runPromise(Effect.flip(options.prepare(checkout)))
     expect(failure).toMatchObject({ code: "command-failed", part: "cli" })
     expect(failure.message).toContain(checkout)
+  })
+
+  it("refuses a checkout, naming Node, when the machine has none", async () => {
+    const checkout = directory()
+    const options = await optionsOf(replayOptions(["node"], targetsDirectory(), false))
+    const failure = await Effect.runPromise(Effect.flip(options.prepare(checkout)))
+    expect(failure).toEqual({
+      code: "unsupported",
+      message:
+        "Replaying commits needs Node.js 22.19 or newer, and none is on the path. Install Node.js and run this again.",
+      part: "cli"
+    })
+    expect(existsSync(join(checkout, "node_modules"))).toBe(false)
   })
 
   it("fails when this install has no targets package", async () => {

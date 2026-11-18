@@ -839,6 +839,7 @@ const releaseSources = [
 const packDirectory = "dist/release-packs"
 
 const privateAdapterManifests = [
+  "packages/ci",
   "packages/smithers",
   "packages/smithers/build/build-cli",
   "packages/smithers/migrate",

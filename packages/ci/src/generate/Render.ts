@@ -309,7 +309,7 @@ const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boo
       `        run: ${text(`echo ${text(noSharedCache)}`)}`
     ]),
     ...(serial ? [`      ${yamlComment("Targets that can write the same files run one at a time.")}`] : []),
-    `      - run: npx --yes --package=@smthrs/cli@next smthrs ci '//...'${serial ? " --jobs 1" : ""}`,
+    `      - run: npx --yes --package=@smthrs/cli@1.0.0-rc.18 smthrs ci '//...'${serial ? " --jobs 1" : ""}`,
     `        env:`,
     `          SMITHERS_CACHE_URL: ${cacheUrl(cache)}`,
     `          SMITHERS_CACHE_TOKEN: ${cacheToken}`,

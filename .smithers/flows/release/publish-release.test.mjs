@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { maintainerReleasePlan, integrity, preflight, publishCandidate, recordSmokeSuccess, registryPublisher } from "./publish-release.mjs"
+import { consumerTags, maintainerReleasePlan, integrity, preflight, publishCandidate, recordSmokeSuccess, registryPublisher } from "./publish-release.mjs"
 
 const fixture = async (body) => {
   const directory = await mkdtemp(join(tmpdir(), "smithers-publish-"))
@@ -365,6 +365,33 @@ for (const eventuallyServed of [true, false]) {
     }
   }))
 }
+
+test("a package people run by name takes latest with every prerelease", () => {
+  assert.deepEqual(consumerTags({ name: "smithers-ci", version: "1.0.0-rc.2" }), ["next", "latest"])
+  assert.deepEqual(consumerTags({ name: "smithers-ci", version: "1.0.0" }), ["latest"])
+  assert.deepEqual(consumerTags({ name: "@smthrs/cli", version: "1.0.0-rc.2" }), ["next"])
+  assert.deepEqual(consumerTags({ name: "@smthrs/cli", version: "1.0.0" }), ["latest"])
+})
+
+test("a prerelease moves latest of smithers-ci and of nothing else", () => fixture(async (directory, candidate, options) => {
+  const version = "1.0.0-rc.2"
+  candidate.packages = candidate.packages.map((entry, index) => ({ ...entry, version, name: index === 0 ? "a" : "smithers-ci" }))
+  candidate.source.tag = `v${version}`
+  await writeFile(join(directory, "manifest.json"), JSON.stringify(candidate.packages))
+  await writeFile(join(directory, "release-manifest.json"), JSON.stringify(candidate))
+  await recordSmokeSuccess(directory, candidate)
+  const registry = new Map()
+  const promotions = []
+  await publishCandidate(directory, candidate, { ...options, releaseTag: candidate.source.tag,
+    readRegistry: async (spec) => registry.get(spec),
+    publish: async (_path, entry) => registry.set(`${entry.name}@${entry.version}`, entry.integrity),
+    verifyVersion: async () => true,
+    readTag: async (entry, tag) => entry.name === "smithers-ci" && tag === "latest" ? "1.0.0-rc.1" : undefined,
+    promote: async (entry, tag) => promotions.push(`${entry.name}:${tag}`)
+  })
+  assert.deepEqual(promotions, ["a:next", "smithers-ci:next", "smithers-ci:latest"])
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "publish-receipt.json"), "utf8")).promoted, ["a", "smithers-ci"])
+}))
 
 // An older train resumed after a newer one became the consumer tag must not
 // hand new installs the older train. Only the npm boundary is recorded.

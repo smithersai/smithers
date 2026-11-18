@@ -41,6 +41,13 @@ export const versionedTemplates = []
  * version; the bump and the `--check` mode then cover it for free.
  */
 export const versionedSources = [
+  // `smithers-ci apply` writes this version into the workflow it generates. The
+  // train publishes it together with `smithers-ci`, so the two always exist together.
+  {
+    path: "packages/ci/src/generate/Render.ts",
+    declaration: "the @smthrs/cli version of the generated workflow",
+    pattern: /(--package=@smthrs\/cli@)([^\s`]+)( smthrs ci)/
+  },
   {
     path: "packages/smithers/flows/observability/src/Otlp.ts",
     declaration: "defaultServiceVersion",
@@ -218,12 +225,6 @@ export const versionedSources = [
     package: "packages/smithers/flows",
     declaration: "the platform-node install line",
     pattern: /(npm install\s+@smthrs\/platform-node@)(\S+)()/
-  },
-  {
-    path: "packages/smithers/flows/database/docs/troubleshooting.md",
-    package: "packages/smithers/flows/database",
-    declaration: "the runtime refusal heading",
-    pattern: /(### `)(\S+)( runs the durable engine on Node\.js)/
   },
   {
     path: "packages/smithers/flows/database/docs/troubleshooting.md",

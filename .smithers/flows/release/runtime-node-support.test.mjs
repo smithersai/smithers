@@ -27,7 +27,9 @@ test("the complete CLI dependency closure declares the supported Node range", ()
     "@smthrs/fuzz": supported,
     "@smthrs/platform-browser": ">=26.4.0",
     "@smthrs/platform-cloudflare": ">=26.4.0",
-    "@smthrs/testing": ">=26.4.0"
+    "@smthrs/testing": ">=26.4.0",
+    // An executable that depends on the CLI; nothing in the CLI depends on it.
+    "smithers-ci": supported
   }
   assert.deepEqual(outside.map(manifest => manifest.name).sort(), Object.keys(standaloneRanges).sort())
   for (const manifest of outside) assert.equal(manifest.engines.node, standaloneRanges[manifest.name], manifest.name)
