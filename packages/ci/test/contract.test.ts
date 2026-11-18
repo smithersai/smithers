@@ -207,7 +207,7 @@ describe("contract 4: inventory", () => {
     // One job left out for another reason alone, and the answer is the list.
     const blocked = { ...elsewhere("ubuntu-latest")("lint"), unsupported: [{ feature: "uses", detail: "an action" }] }
     expect(Inventory.refusal(read(elsewhere("macos-latest")("test"), blocked))).toBe(
-      "0 of 2 CI jobs can be reproduced on this machine\n  test  other-system\n  lint  uses"
+      "0 of 2 CI jobs can be reproduced on this machine\n  test  runs only on another operating system; run smithers-ci on that system\n  lint  uses the action with no command, which Smithers CI does not run"
     )
     // A macOS job that also receives a secret would not run on a Mac either: the list says both.
     const guarded = {
@@ -218,7 +218,7 @@ describe("contract 4: inventory", () => {
       ]
     }
     expect(Inventory.refusal(read(elsewhere("macos-latest")("test"), guarded))).toBe(
-      "0 of 2 CI jobs can be reproduced on this machine\n  test    other-system\n  deploy  other-system, secret"
+      "0 of 2 CI jobs can be reproduced on this machine\n  test    runs only on another operating system; run smithers-ci on that system\n  deploy  runs only on another operating system; run smithers-ci on that system; receives the secret TOKEN, which a replay never has"
     )
     // A job that waits for a job on that system runs there with it.
     const after = { ...elsewhere("macos-latest")("after"), needs: ["test"] }
@@ -230,7 +230,7 @@ describe("contract 4: inventory", () => {
       unsupported: [{ feature: Inventory.missingTool, detail: "ruby 3.4.6" }]
     }
     expect(Inventory.refusal(read(tool))).toBe(
-      "0 of 1 CI job can be reproduced on this machine\n  build  missing-tool (ruby 3.4.6)"
+      "0 of 1 CI job can be reproduced on this machine\n  build  needs ruby 3.4.6, which this machine does not have; install it and run smithers-ci again"
     )
   })
 
@@ -877,7 +877,7 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
       ["ci.yml:after", ["ci.yml:plain"]]
     ])
     expect(Inventory.refusal(decode({ ...inventory, jobs: [upload] }))).toBe(
-      "0 of 1 CI job can be reproduced on this machine\n  ci.yml:package  no-command"
+      "0 of 1 CI job can be reproduced on this machine\n  ci.yml:package  has no command to run: all its steps only prepare the CI machine"
     )
   })
 
@@ -1024,7 +1024,7 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
       unsupported: features.map((feature) => ({ feature, detail: "" }))
     })
     expect(Inventory.refusal(decode({ ...inventory, jobs: [blocked("ci.yml:a", ["condition"])] }))).toBe(
-      "0 of 1 CI job can be reproduced on this machine\n  ci.yml:a  condition"
+      "0 of 1 CI job can be reproduced on this machine\n  ci.yml:a  runs only when a condition holds that a replay cannot check"
     )
     expect(
       Inventory.refusal(
@@ -1039,8 +1039,8 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     ).toBe(
       [
         "0 of 2 CI jobs can be reproduced on this machine",
-        "  ci.yml:deploy  secret-env, condition",
-        "  ci.yml:e2e     services"
+        "  ci.yml:deploy  builds a variable from a secret, which a replay never has; runs only when a condition holds that a replay cannot check",
+        "  ci.yml:e2e     starts service containers, which Smithers CI does not start"
       ].join("\n")
     )
     expect(Inventory.refusal(decode({ ...inventory, jobs: [] }))).toBe(

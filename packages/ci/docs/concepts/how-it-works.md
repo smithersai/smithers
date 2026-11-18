@@ -298,7 +298,8 @@ Five things are left out and listed in the report:
 A matrix over `ubuntu-latest`, `macos-latest` and `windows-latest` is replayed
 on Linux for its Ubuntu variants. The other variants are listed; the job is
 not dropped. A missing tool is listed with what to install, as in
-`missing-tool (ruby 3.4.6)`.
+`needs ruby 3.4.6, which this machine does not have`. The command reference
+lists [every reason and its sentence](../reference/cli.md#why-a-job-is-not-replayed).
 
 When every CI job runs on another operating system, nothing can be measured
 here. The command says so in one line that names the system, and exits with

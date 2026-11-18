@@ -11,6 +11,7 @@
 
 import * as Brand from "effect/Brand"
 import * as Schema from "effect/Schema"
+import { reasonsSentence } from "./Reasons.ts"
 
 /**
  * Where a job was read from.
@@ -401,8 +402,9 @@ export const changesMachine = "changes-machine"
 const detailed: ReadonlyMap<string, string> = new Map([[missingTool, ", "], [changesMachine, "; "]])
 
 /**
- * The reasons a job is left out, as one line: each feature once, in the
- * order found, a missing tool with what to install, as in
+ * The reasons a job is left out as feature words, for comparing them; the
+ * program prints `Reasons.reasonsSentence`. Each feature once, in the order
+ * found, a missing tool with what to install, as in
  * `missing-tool (go 1.23, ruby 3.4.6)`, and a change to the machine with what
  * the job does, as in `changes-machine (installs zsh with apt-get)`.
  *
@@ -963,7 +965,7 @@ const everyJobElsewhere = (inventory: Inventory, left: ReadonlyArray<NotReplayed
  * The replay and `apply` refuse with this text, so a repository reads one
  * answer: it has no CI, every job of it runs on another operating system
  * (one line that names the system), or the jobs left out, one per line with
- * their features and the tools to install.
+ * why each is left out, in the sentences of `Reasons`.
  *
  * @throws {never}
  * @category accessors
@@ -980,6 +982,6 @@ export const refusal = (inventory: Inventory): string | undefined => {
   const width = Math.max(...left.map((entry) => entry.job.length))
   return [
     `0 of ${left.length} CI job${left.length === 1 ? "" : "s"} can be reproduced on this machine`,
-    ...left.map((entry) => `  ${entry.job.padEnd(width)}  ${reasonsText(entry.reasons)}`)
+    ...left.map((entry) => `  ${entry.job.padEnd(width)}  ${reasonsSentence(entry.reasons)}`)
   ].join("\n")
 }

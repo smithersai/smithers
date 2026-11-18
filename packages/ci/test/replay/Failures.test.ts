@@ -134,7 +134,8 @@ describe("a replay that cannot run", () => {
     expect(await failureOf(replay(root, { files }))).toEqual({
       code: "unsupported",
       part: "replay",
-      message: "no CI step that runs on a change has a target on this machine\n  a  no-target"
+      message:
+        "no CI step that runs on a change has a target on this machine\n  a  has a step Smithers CI could not turn into a build step"
     })
   })
 

@@ -20,7 +20,6 @@ import {
   notRead,
   type NotReplayed,
   otherSystem,
-  reasonsText,
   script,
   selfHosted,
   treeOf,
@@ -30,6 +29,7 @@ import {
 } from "../contract/Inventory.ts"
 import type { Failure } from "../contract/Parts.ts"
 import type { Plan } from "../contract/Plan.ts"
+import { reasonsSentence } from "../contract/Reasons.ts"
 import type { Mismatch, NotReplayedCommit, ReplayCommit, ReplayReport, RunTotals } from "../contract/ReplayReport.ts"
 import {
   combine,
@@ -373,7 +373,7 @@ export const labelsOf = (unit: Unit, wanted: ReadonlySet<string> | undefined): R
 
 /**
  * Why a replay has nothing to run although the CI has jobs: each job left
- * out, one per line with its features.
+ * out, one per line with why.
  *
  * @category baseline
  * @throws {never}
@@ -383,7 +383,7 @@ export const nothingToReplay = (left: ReadonlyArray<NotReplayed>): string => {
   const width = Math.max(0, ...left.map((entry) => entry.job.length))
   return [
     "no CI step that runs on a change has a target on this machine",
-    ...left.map((entry) => `  ${entry.job.padEnd(width)}  ${reasonsText(entry.reasons)}`)
+    ...left.map((entry) => `  ${entry.job.padEnd(width)}  ${reasonsSentence(entry.reasons)}`)
   ].join("\n")
 }
 

@@ -164,7 +164,8 @@ one is left out.
 ## What leaves a job out
 
 `smithers-ci inventory` shows each of these under its job, and the report lists
-every job left out with them.
+every job left out with the matching
+[sentence](../reference/cli.md#why-a-job-is-not-replayed).
 
 | Reason            | The job                                                                          |
 | ----------------- | -------------------------------------------------------------------------------- |

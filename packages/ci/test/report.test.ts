@@ -266,8 +266,8 @@ describe("jobs that were not replayed", () => {
     const lines = text(partial).split("\n")
     expect(lines).toContain("2 commits · 0 mismatches · 3 jobs not replayed")
     expect(lines.slice(-3)).toEqual([
-      "ci.yml:handoff    secret-env, condition",
-      "ci.yml:<e2e>\uFFFD[2J  needs",
+      "ci.yml:handoff    builds a variable from a secret, which a replay never has; runs only when a condition holds that a replay cannot check",
+      "ci.yml:<e2e>\uFFFD[2J  needs a job, which is not replayed",
       "ci.yml:plain"
     ])
     expect(text({ ...partial, notReplayed: [partial.notReplayed![2]!] })).toContain("· 1 job not replayed")
@@ -277,7 +277,7 @@ describe("jobs that were not replayed", () => {
     const page = html(partial)
     expect(page).toContain("<p class=\"summary\">2 commits · 0 mismatches · 3 jobs not replayed</p>")
     expect(page).toContain(
-      "<tr><th scope=\"row\"><code>ci.yml:handoff</code></th><td class=\"sub\">secret-env, condition</td></tr>"
+      "<tr><th scope=\"row\"><code>ci.yml:handoff</code></th><td class=\"sub\">builds a variable from a secret, which a replay never has; runs only when a condition holds that a replay cannot check</td></tr>"
     )
     expect(page).toContain("<code>ci.yml:&lt;e2e&gt;")
     expect(page.indexOf("<h2>Not replayed</h2>")).toBeGreaterThan(page.indexOf("<h2>Commits</h2>"))
@@ -317,11 +317,11 @@ describe("flaky verdicts and what was not read", () => {
   it("lists what the inventory could not read under the jobs not replayed, in the terminal", () => {
     expect(text(unread).split("\n")).toContain("2 commits · 0 mismatches · 1 flaky · 1 job not replayed · 2 not read")
     expect(text(unread).split("\n").slice(-5)).toEqual([
-      "ci.yml:package  no-command",
+      "ci.yml:package  has no command to run: all its steps only prepare the CI machine",
       "",
       "not read",
-      "malformed-file  .github/workflows/<tests>.yml: BAD_INDENT at line 3\uFFFD[2J",
-      "package-turbo"
+      ".github/workflows/<tests>.yml: BAD_INDENT at line 3\uFFFD[2J",
+      "is in a package whose Turborepo settings were not read"
     ])
   })
 
@@ -331,7 +331,7 @@ describe("flaky verdicts and what was not read", () => {
       "<p class=\"summary\">2 commits · 0 mismatches · 1 flaky · 1 job not replayed · 2 not read</p>"
     )
     expect(page).toContain(
-      "<tr><th scope=\"row\"><code>malformed-file</code></th><td class=\"sub\">.github/workflows/&lt;tests&gt;.yml: BAD_INDENT at line 3\u001b[2J</td></tr>"
+      "<tr><td class=\"sub\">.github/workflows/&lt;tests&gt;.yml: BAD_INDENT at line 3\u001b[2J</td></tr>"
     )
     expect(page.indexOf("<h2>Not read</h2>")).toBeGreaterThan(page.indexOf("<h2>Not replayed</h2>"))
   })
@@ -421,8 +421,12 @@ describe("flaky verdicts and what was not read", () => {
         ]
       }]
     }
-    expect(text(missing).split("\n").at(-1)).toBe("linux.yml:build  missing-tool (go 1.23, ruby 3.4.6), needs")
-    expect(html(missing)).toContain("<td class=\"sub\">missing-tool (go 1.23, ruby 3.4.6), needs</td>")
+    expect(text(missing).split("\n").at(-1)).toBe(
+      "linux.yml:build  needs go 1.23, ruby 3.4.6, which this machine does not have; install it and run smithers-ci again; needs a job, which is not replayed"
+    )
+    expect(html(missing)).toContain(
+      "<td class=\"sub\">needs go 1.23, ruby 3.4.6, which this machine does not have; install it and run smithers-ci again; needs a job, which is not replayed</td>"
+    )
   })
 
   it("says nothing when everything was read", () => {

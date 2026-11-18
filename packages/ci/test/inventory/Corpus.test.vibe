@@ -422,9 +422,9 @@ it.layer(NodeServices.layer)("a first run on the shape of a public repository", 
         // Without uv the jobs are not run, and the answer names what to install.
         expect(bare.refusal).toBe([
           "0 of 3 CI jobs can be reproduced on this machine",
-          "  pre-commit.yaml:main  missing-tool (uv)",
-          "  tests.yaml:typing     missing-tool (uv)",
-          "  zizmor.yaml:zizmor    uses"
+          "  pre-commit.yaml:main  needs uv, which this machine does not have; install it and run smithers-ci again",
+          "  tests.yaml:typing     needs uv, which this machine does not have; install it and run smithers-ci again",
+          "  zizmor.yaml:zizmor    uses the action zizmorcore/zizmor-action@v0.6.0, which Smithers CI does not run"
         ].join("\n"))
       })
     })
@@ -439,9 +439,9 @@ it.layer(NodeServices.layer)("a first run on the shape of a public repository", 
       try Effect.try(() => {
         expect(without.refusal).toBe([
           "0 of 3 CI jobs can be reproduced on this machine",
-          "  linux.yml:build  missing-tool (go 1.23, ruby 3.4.6)",
-          "  macos.yml:build  other-system",
-          "  typos.yml:typos  uses"
+          "  linux.yml:build  needs go 1.23, ruby 3.4.6, which this machine does not have; install it and run smithers-ci again",
+          "  macos.yml:build  runs only on macOS; run smithers-ci on a Mac",
+          "  typos.yml:typos  uses the action crate-ci/typos@v1.29.4, which Smithers CI does not run"
         ].join("\n"))
         expect(without.replayed).toEqual([])
         // With Go and Ruby on the machine the Linux job runs, on the Go that is there.

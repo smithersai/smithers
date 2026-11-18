@@ -65,7 +65,7 @@ describe.concurrent("a first run that cannot measure anything", () => {
       stdout: "",
       stderr: [
         "smithers-ci: replay: 0 of 1 CI job can be reproduced on this machine",
-        "  main.yml:test  missing-tool (no-such-tool-of-smithers-ci 9.1)",
+        "  main.yml:test  needs no-such-tool-of-smithers-ci 9.1, which this machine does not have; install it and run smithers-ci again",
         ""
       ].join("\n")
     })

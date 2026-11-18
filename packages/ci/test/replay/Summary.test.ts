@@ -288,14 +288,14 @@ describe("replayable", () => {
     ])
     expect(nothingToReplay(left)).toBe([
       "no CI step that runs on a change has a target on this machine",
-      "  x        no-target",
-      "  after-x  needs",
-      "  last     needs",
-      "  m        no-target"
+      "  x        has a step Smithers CI could not turn into a build step",
+      "  after-x  needs x, which is not replayed",
+      "  last     needs after-x, which is not replayed",
+      "  m        has a step Smithers CI could not turn into a build step"
     ].join("\n"))
     expect(nothingToReplay([])).toBe("no CI step that runs on a change has a target on this machine")
     expect(nothingToReplay([{ job: "gems", reasons: [{ feature: "missing-tool", detail: "ruby 3.4.6" }] }])).toBe(
-      "no CI step that runs on a change has a target on this machine\n  gems  missing-tool (ruby 3.4.6)"
+      "no CI step that runs on a change has a target on this machine\n  gems  needs ruby 3.4.6, which this machine does not have; install it and run smithers-ci again"
     )
   })
 

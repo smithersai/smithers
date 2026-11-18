@@ -48,6 +48,7 @@ import {
   times,
   toolVersion,
   unread,
+  unreadText,
   verdict
 } from "./Format.ts"
 
@@ -175,11 +176,7 @@ export const text: RenderReport = (report) => {
     sections.push(left.map((entry) => `${clean(entry.job).padEnd(jobWidth)}  ${clean(reasons(entry))}`.trimEnd()))
   }
   if (notRead.length > 0) {
-    const featureWidth = Math.max(...notRead.map((entry) => clean(entry.feature).length))
-    sections.push([
-      "not read",
-      ...notRead.map((entry) => `${clean(entry.feature).padEnd(featureWidth)}  ${clean(entry.detail)}`.trimEnd())
-    ])
+    sections.push(["not read", ...notRead.map((entry) => clean(unreadText(entry)).trimEnd())])
   }
   const tools = report.toolVersions ?? []
   if (tools.length > 0) {

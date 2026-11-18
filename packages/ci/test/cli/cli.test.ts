@@ -493,7 +493,7 @@ describe.concurrent("smithers-ci with a faulty part or host", () => {
       expect(outcome.stdout).toBe("")
       expect(outcome.stderr.split("\n").slice(0, 2)).toEqual([
         "smithers-ci: inventory: 0 of 3 CI jobs can be reproduced on this machine",
-        "  justfile:build  condition"
+        "  justfile:build  runs only when a condition holds that a replay cannot check"
       ])
       expect(changed(before, snapshot(root))).toEqual([])
     }

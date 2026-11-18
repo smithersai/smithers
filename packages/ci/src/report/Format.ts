@@ -5,7 +5,8 @@
  * @since 0.1.0
  */
 
-import { type NotReplayed, reasonsText, type ToolVersion } from "../contract/Inventory.ts"
+import type { NotReplayed, ToolVersion, Unsupported } from "../contract/Inventory.ts"
+import { reasonsSentence } from "../contract/Reasons.ts"
 import type { ReplayCommit, ReplayReport, StepFailure } from "../contract/ReplayReport.ts"
 
 /**
@@ -163,13 +164,21 @@ export const commitsLeftOut = (commits: number): string =>
 export const firstLine = (reason: string): string => reason.split("\n")[0] as string
 
 /**
- * Why a job was left out: each feature once, in the order found, and a
- * missing tool with what to install.
+ * Why a job was left out, in sentences a person can act on.
  *
  * @category formatting
  * @since 0.1.0
  */
-export const reasons = (entry: NotReplayed): string => reasonsText(entry.reasons)
+export const reasons = (entry: NotReplayed): string => reasonsSentence(entry.reasons)
+
+/**
+ * What could not be read, as a person reads it: the entry's own words, or the
+ * sentence for its reason when it has none.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const unreadText = (entry: Unsupported): string => entry.detail === "" ? reasonsSentence([entry]) : entry.detail
 
 /**
  * A tool this machine has at another version than a job asks for, as one

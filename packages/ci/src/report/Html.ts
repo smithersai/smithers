@@ -38,6 +38,7 @@ import {
   times,
   toolVersion,
   unread,
+  unreadText,
   verdict
 } from "./Format.ts"
 
@@ -203,9 +204,7 @@ const notReadTable = (entries: ReadonlyArray<Unsupported>): string =>
   [
     "<h2>Not read</h2>",
     "<div class=\"scroll\"><table>",
-    ...entries.map((entry) =>
-      `<tr><th scope="row"><code>${escape(entry.feature)}</code></th><td class="sub">${escape(entry.detail)}</td></tr>`
-    ),
+    ...entries.map((entry) => `<tr><td class="sub">${escape(unreadText(entry))}</td></tr>`),
     "</table></div>"
   ].join("\n")
 

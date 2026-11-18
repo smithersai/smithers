@@ -153,6 +153,92 @@ Ctrl-C (`SIGINT`) and `SIGTERM` stop the program: the step it is running is
 stopped, its temporary copies are removed, and it exits `130` or `143`, as a
 shell reports a program ended by that signal. A second signal ends it at once.
 
+## Why a job is not replayed
+
+The report and the exit-`3` line give one of these sentences for each job left
+out. `--json` gives the name in the first column. A word in capitals stands for
+what the job names.
+
+| Name                   | What the report says                                                               |
+| ---------------------- | ---------------------------------------------------------------------------------- |
+| `attribute`            | is a recipe with an attribute that changes how it runs                             |
+| `automatic-variable`   | uses a variable only Make can fill in                                              |
+| `changes-machine`      | changes the machine it runs on: WHAT                                               |
+| `checkout`             | checks out something other than the commit being replayed                          |
+| `computed-name`        | sets a Make variable whose name is computed                                        |
+| `condition`            | runs only when a condition holds that a replay cannot check                        |
+| `condition-false`      | does not run on this kind of change                                                |
+| `conditional`          | depends on a Make conditional                                                      |
+| `container`            | runs inside a container, which Smithers CI does not start                          |
+| `continue-on-error`    | may fail without failing the run, so its result says nothing                       |
+| `default-rule`         | relies on the Makefile's default rule                                              |
+| `define`               | uses a Make `define` block                                                         |
+| `dependency-arguments` | passes arguments to a recipe it depends on                                         |
+| `double-colon`         | has a Make double-colon rule                                                       |
+| `duplicate-recipe`     | is defined more than once in the Justfile                                          |
+| `empty-command`        | has a step with no command                                                         |
+| `environment`          | deploys to an environment                                                          |
+| `expansion`            | expands to more of the Makefile                                                    |
+| `expression`           | depends on a value known only while the CI runs                                    |
+| `file-target`          | has the name of a file in the repository, so Make may skip it                      |
+| `function`             | calls a Make function                                                              |
+| `grouped-targets`      | is built together with other Make rules                                            |
+| `host-action`          | only prepares the CI machine, which a replay does itself                           |
+| `ignored-failure`      | ignores a failing command, so its result says nothing                              |
+| `implicit-rule`        | depends on a file Make builds by its own rules                                     |
+| `include`              | includes a Makefile that was not read                                              |
+| `interpreter`          | runs in an interpreter other than a plain shell                                    |
+| `load`                 | loads a Make extension                                                             |
+| `long-running`         | keeps running until it is stopped                                                  |
+| `make-setting`         | sets something that changes how Make runs                                          |
+| `malformed-env`        | sets an environment variable to a list or mapping                                  |
+| `malformed-file`       | is in a file that cannot be read; fix the file                                     |
+| `malformed-job`        | is written in a way that cannot be read                                            |
+| `malformed-script`     | is a script that is not text                                                       |
+| `malformed-step`       | has a step that cannot be read                                                     |
+| `matrix`               | has a matrix known only while the workflow runs                                    |
+| `missing-prerequisite` | needs a file that no rule builds and the repository lacks                          |
+| `missing-tool`         | needs TOOL, which this machine does not have; install it and run smithers-ci again |
+| `module`               | needs a recipe from a Justfile module that was not read                            |
+| `needs`                | needs JOB, which is not replayed                                                   |
+| `no-command`           | has no command to run: all its steps only prepare the CI machine                   |
+| `no-target`            | has a step Smithers CI could not turn into a build step                            |
+| `not-selected`         | runs builds `--targets` did not name; add them to `--targets`                      |
+| `not-smithers-build`   | runs nothing from Smithers build                                                   |
+| `other-system`         | runs only on SYSTEM; run smithers-ci on that system                                |
+| `package-turbo`        | is in a package whose Turborepo settings were not read                             |
+| `pattern-rule`         | depends on a Make pattern rule                                                     |
+| `platform`             | does not run on this operating system                                              |
+| `positional-arguments` | reads the arguments of its recipe                                                  |
+| `recipe-argument`      | needs a value for a recipe argument                                                |
+| `recursive-make`       | runs Make on itself                                                                |
+| `release-trigger`      | runs for a release, never for a change                                             |
+| `runner`               | picks its runner while the workflow runs                                           |
+| `runner-variable`      | reads a variable only the CI machine sets                                          |
+| `second-expansion`     | uses Make's second expansion                                                       |
+| `secret`               | receives the secret SECRET, which a replay never has                               |
+| `secret-env`           | builds a variable from a secret, which a replay never has                          |
+| `secret-value`         | holds a value shaped like a secret                                                 |
+| `self-hosted`          | runs on a self-hosted runner, which has things this machine does not               |
+| `services`             | starts service containers, which Smithers CI does not start                        |
+| `setting`              | depends on a Justfile setting that changes how recipes run                         |
+| `shell`                | runs in a shell other than bash or sh                                              |
+| `smithers-build`       | already builds with Smithers build                                                 |
+| `subsequent-recipes`   | runs recipes after itself                                                          |
+| `substitution`         | rewrites a value with a Make substitution                                          |
+| `suffix-rule`          | relies on Make suffix rules                                                        |
+| `syntax`               | uses Make syntax that cannot be read                                               |
+| `target-variable`      | sets a Make variable for one rule                                                  |
+| `trigger-filter`       | runs only for some branches or paths                                               |
+| `uncommitted-changes`  | differs from its commit; commit the changes to replay them                         |
+| `unreadable-file`      | is in a file that could not be opened                                              |
+| `uses`                 | uses the action ACTION, which Smithers CI does not run                             |
+| `variable`             | reads a Make variable that has no value here                                       |
+| `vpath`                | uses Make's `vpath` search                                                         |
+| `working-directory`    | runs in a directory it cannot name inside the repository                           |
+| `workspace-pattern`    | is in a workspace pattern that was not read                                        |
+| `write-permission`     | may write to the repository, so a replay never runs it                             |
+
 ## Environment
 
 The program reads these environment variables and no others. It never prints a

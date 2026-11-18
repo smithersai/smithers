@@ -153,6 +153,6 @@ jobs:
     expect(existsSync(log)).toBe(false)
     const applied = await spawn(bin, ["apply"], root, env)
     expect(applied.code).toBe(3)
-    expect(applied.stderr).toContain("changes-machine (installs zsh with apt-get)")
+    expect(applied.stderr).toContain("changes the machine it runs on: installs zsh with apt-get")
   }, replayLimit)
 })
