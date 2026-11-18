@@ -216,6 +216,16 @@ pattern (`dist/**`, `!dist/tmp`) or leads outside those three places. So does
 one whose `key` or `path` cannot be worked out on your machine, such as one
 that reads a secret. Its job is replayed all the same.
 
+A setup action that keeps its package manager's cache is read the same way,
+with the same store. `actions/setup-node` with `cache: npm`, `pnpm` or `yarn`,
+`actions/setup-go` from version 4 on, and `actions/setup-python` with
+`cache: pip` restore the cache when the step starts and save it after the job.
+The directory is asked of the tool, as the action asks it (`npm config get
+cache`, `go env GOMODCACHE`, `pip cache dir`), and the key holds the hash of
+the lockfile, or of the files `cache-dependency-path` names. With no lockfile
+the step does what the action does: `setup-node` and `setup-python` stop, and
+`setup-go` goes on without a cache.
+
 Where the store is: in a replay, in the replay's own working directory, which
 is removed when the replay ends. When you run the generated targets yourself,
 in the directory Smithers build keeps its cache in, so the generated workflow

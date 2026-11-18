@@ -28,7 +28,15 @@ import {
   writePermission
 } from "../contract/Inventory.ts"
 import { cacheActions, checkoutProblems, parseYaml, readAction, setupVariables } from "./Actions.ts"
-import { cacheUse, handedOn, restoreScript, saveScript, shell as cacheShell } from "./Cache.ts"
+import {
+  type CacheUse,
+  cacheUse,
+  handedOn,
+  restoreScript,
+  saveScript,
+  shell as cacheShell,
+  variables as cacheVariables
+} from "./Cache.ts"
 import { leaveCacheEmpty } from "./CacheCredentials.ts"
 import {
   type Event,
@@ -64,6 +72,7 @@ import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
 import { type JobFacts, settled, type StepFacts, write } from "./Runner.ts"
 import { isLiteralSecret, isSecretName } from "./Secrets.ts"
 import { readSetup, type Setup } from "./Setup.ts"
+import { before as beforeSetupCache, lockVariable, setupCache } from "./SetupCache.ts"
 import { readLimit, secondsOf, within as withinLimit } from "./TimeLimit.ts"
 import { asScalar, asStrings, isRecord, normalizeDirectory } from "./Values.ts"
 
@@ -789,14 +798,22 @@ const secretsIn = (inputs: unknown, scope: Expressions): ReadonlyArray<string> =
  * files a pattern names: a replay runs nothing for it, and a cache that restores nothing is a miss.
  */
 const readCache = (context: StepContext, raw: Record<string, unknown>, uses: string): StepRecord | undefined => {
+  const use = cacheUse(uses.split("@")[0] as string, raw["with"])
+  return use === undefined ? undefined : keepCache(context, uses, use, "")
+}
+
+/**
+ * Adds the commands of a cache to the job. `first` is shell text that runs before the restoring script, as a setup
+ * action's cache asks its tool where the cache is (`SetupCache.ts`).
+ */
+const keepCache = (context: StepContext, uses: string, use: CacheUse, first: string): StepRecord | undefined => {
   const { state, where } = context
   const { job } = state
   const reads = { ...context.reads, hashFiles: hashFilesForKey }
-  const use = cacheUse(uses.split("@")[0] as string, raw["with"])
-  if (use === undefined || Object.values(use.env).some((text) => fill(text, reads).kind !== "ok")) return undefined
+  if (Object.values(use.env).some((text) => fill(text, reads).kind !== "ok")) return undefined
   const named = { ...context, name: context.name ?? uses, store: true }
   const env = withEnv(context.env, use.env, job, where, reads, true)
-  addRun({ ...named, env }, [use.kind === "save" ? saveScript : restoreScript], cacheShell, "")
+  addRun({ ...named, env }, [`${first}${use.kind === "save" ? saveScript : restoreScript}`], cacheShell, "")
   const output = (name: string): Variable => ({
     id: `output:${context.key}/${name.toUpperCase()}`,
     name: `an output of ${where}`,
@@ -857,8 +874,16 @@ const readUses = (context: StepContext, raw: Record<string, unknown>, uses: stri
     for (const entry of setup.tools) {
       for (const name of setupVariables.get(entry.name) ?? []) state.setupNames.add(name)
     }
+    // "Caching packages data": a setup action may keep its package manager's cache, as a cache step does.
+    const cache = setupCache(uses, raw["with"])
+    const kept = cache === undefined ? undefined : keepCache(
+      { ...context, key: `${context.key}.CACHE` },
+      uses,
+      { kind: "cache", env: { [cacheVariables.key]: cache.key, [lockVariable]: cache.lock } },
+      `${beforeSetupCache(cache)}\n`
+    )
     // An input can make the action run a command too, such as installing what a lockfile names.
-    if (setup.command === undefined) return recordOf(ran, notRun, undefined)
+    if (setup.command === undefined) return kept ?? recordOf(ran, notRun, undefined)
     addRun({ ...context, name: context.name ?? uses }, [setup.command], ["bash", "-e"], "")
     return recordOf(ran, notRun, () => variable(`outcome:${context.key}`, `how ${where} ended`))
   }

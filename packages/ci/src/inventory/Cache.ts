@@ -91,6 +91,7 @@ const common = [
   `      '~/'?*) __line=\${__line#'~/'}; __home+=("$__line"); __list="$__list"$'\\n'"home:$__line";;`,
   `      "$RUNNER_TEMP"/?*) __line=\${__line#"$RUNNER_TEMP"/}; __temp+=("$__line"); __list="$__list"$'\\n'"temp:$__line";;`,
   `      "$GITHUB_WORKSPACE"/?*) __line=\${__line#"$GITHUB_WORKSPACE"/}; __work+=("$__line"); __list="$__list"$'\\n'"work:$__line";;`,
+  `      "$HOME"/?*) __line=\${__line#"$HOME"/}; __home+=("$__line"); __list="$__list"$'\\n'"home:$__line";;`,
   `      /*|'~'*) echo "smithers-ci: the cache path $__line is outside the checkout, the home and the temporary directory"; return 1;;`,
   `      *) __line=\${__line#./}; __work+=("$__line"); __list="$__list"$'\\n'"work:$__line";;`,
   `    esac`,

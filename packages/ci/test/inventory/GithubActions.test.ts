@@ -817,13 +817,16 @@ jobs:
       tool("uv", "astral-sh/setup-uv@v9"),
       tool("terraform", "hashicorp/setup-terraform@v3")
     ])
-    // Each is left out as a step; the one that receives a secret keeps its job from running.
+    // Each is left out as a step, but for the cache `actions/setup-go` keeps from version 4 on (`SetupCache.ts`);
+    // the one that receives a secret keeps its job from running.
     expect(features(jobs[0] as Job).filter((feature) => feature === "host-action")).toHaveLength(9)
     expect(jobs[0]?.unsupported.filter((entry) => entry.feature !== "host-action")).toEqual([{
       feature: "secret",
       detail: `${file}: test step 8: hashicorp/setup-terraform@v3 receives PIN`
     }])
-    expect(jobs[0]?.steps).toEqual([])
+    expect(jobs[0]?.steps.map((step) => step.name)).toEqual(["actions/setup-go@v5", "Post actions/setup-go@v5"])
+    // The version is a matrix value, so each variant's cache has a key of its own.
+    expect(jobs[0]?.steps[0]?.runner).toContain("'setup-go-1.'")
   })
 
   it("reads a setup action outside any list by its name, and runs what it also runs", () => {
