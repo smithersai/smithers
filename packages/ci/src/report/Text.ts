@@ -1,0 +1,75 @@
+/**
+ * The replay report as `smithers-ci` prints it: numbers and a bar chart, no
+ * sentences. A mismatch is the first line whenever there is one, and every
+ * mismatch is listed; nothing about a wrong verdict is summarised away.
+ *
+ * Labels and commit ids come from the repository being replayed, so control
+ * characters in them are replaced before they reach a terminal.
+ *
+ * @since 0.1.0
+ */
+
+import type { RenderReport } from "../contract/Parts.ts"
+import { bar, count, duration, mismatches, ratio, shortCommit, speedup, times } from "./Format.ts"
+
+const width = 24
+
+const paragraph = (lines: ReadonlyArray<string>): string => lines.join("\n")
+
+const clean = (value: string): string => value.replace(/\p{Cc}/gu, "\uFFFD")
+
+/**
+ * Renders a replay report for a terminal.
+ *
+ * @example
+ * ```
+ * 6.0× faster
+ *
+ * baseline  ████████████████████████  43m 40s
+ * normal    ████                       7m 20s   6.0×
+ * fast      █▍                         2m 30s  17.5×
+ *
+ * 2 commits · 0 mismatches
+ * ```
+ *
+ * @category renderers
+ * @since 0.1.0
+ */
+export const text: RenderReport = (report) => {
+  const listed = report.commits.flatMap((commit) => commit.mismatches.map((mismatch) => ({ ...mismatch, commit })))
+  const found = Math.max(report.mismatches, listed.length)
+  const sections: Array<Array<string>> = []
+  if (found > 0) sections.push([`✗ ${mismatches(found)}`])
+  if (report.commits.length === 0) return [...sections, [count(0, "commit")]].map(paragraph).join("\n\n")
+  const modes = [
+    { name: "baseline", ms: report.baselineWallMs, ratio: undefined },
+    { name: "normal", ms: report.normalWallMs, ratio: report.speedup },
+    ...(report.fastWallMs === undefined ?
+      [] :
+      [{ name: "fast", ms: report.fastWallMs, ratio: ratio(report.baselineWallMs, report.fastWallMs) }])
+  ]
+  const max = Math.max(...modes.map((mode) => mode.ms))
+  const timeWidth = Math.max(...modes.map((mode) => duration(mode.ms).length))
+  const ratioWidth = Math.max(...modes.map((mode) => (mode.ratio === undefined ? "" : times(mode.ratio)).length))
+  sections.push([speedup(report.speedup)])
+  sections.push(modes.map((mode) =>
+    [
+      mode.name.padEnd(8),
+      bar(mode.ms, max, width).padEnd(width),
+      duration(mode.ms).padStart(timeWidth),
+      ...(mode.ratio === undefined ? [] : [times(mode.ratio).padStart(ratioWidth)])
+    ].join("  ")
+  ))
+  sections.push([`${count(report.commits.length, "commit")} · ${mismatches(found)}`])
+  if (listed.length > 0) {
+    sections.push(listed.map((mismatch) =>
+      [
+        clean(shortCommit(mismatch.commit.commit)),
+        mismatch.mode.padEnd(6),
+        clean(mismatch.label),
+        `${mismatch.baseline} → ${mismatch.got}`
+      ].join("  ")
+    ))
+  }
+  return sections.map(paragraph).join("\n\n")
+}
