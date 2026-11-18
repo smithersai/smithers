@@ -1761,7 +1761,11 @@ function declaredTypeTextIfBetter(propDecl: Node | undefined, tsType: string, pr
 /** The one opaque type that stands for every object type a host library declares (a package's own typings, not
  *  TypeScript's standard library): Foldkit's `Command<…>`, Effect's `Effect<…>`, the record a command definition
  *  returns. LemmaScript models none of their structure, so they share one abstract carrier: a value of it can only be
- *  passed along and compared (fixtures/host-extern). */
+ *  passed along and compared (fixtures/host-extern).
+ *
+ * @since 0.1.0
+ * @category constants
+ */
 export const HOST_TYPE = "Host";
 
 function inHostLibrary(node: Node): boolean {
