@@ -38,15 +38,15 @@ export interface LoadedFactory {
 
 /**
  * The factory declaration file beside one workspace declaration file:
- * `.smithers/FACTORY.ts` beside `.smithers/WORKSPACE.ts`, `FACTORY.ts`
- * beside a root `WORKSPACE.ts`.
+ * `.smithers/FACTORY.ts` beside `.smithers/WORKSPACE.ts` or
+ * `.smithers/WORKSPACE.smithers`, `FACTORY.ts` beside a root `WORKSPACE.ts`.
  *
  * @category discovery
  * @since 1.0.0
  */
 export const factoryFileBeside = (workspaceFile: string): string =>
-  workspaceFile.endsWith("/WORKSPACE.ts")
-    ? `${workspaceFile.slice(0, -"WORKSPACE.ts".length)}FACTORY.ts`
+  workspaceFile.includes("/")
+    ? `${workspaceFile.slice(0, workspaceFile.lastIndexOf("/") + 1)}FACTORY.ts`
     : "FACTORY.ts"
 
 /**

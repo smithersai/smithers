@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- A workspace can keep its whole declaration in `.smithers/`. The plain
+  workspace file, `.smithers/WORKSPACE.smithers`, is a JavaScript module that
+  exports `Workspace` and may export `Package`, the root package `//`: its
+  labels are `//:name` and its paths resolve from the workspace root. No type
+  checker, linter or formatter of the repository reads a `.smithers` file as
+  one of its own, so a build file no longer has to sit among the sources.
+  Discovery looks for `.smithers/WORKSPACE.ts`, then
+  `.smithers/WORKSPACE.smithers`, then the root `WORKSPACE.ts`; a root holding
+  both files under `.smithers/` fails `workspace_root_invalid`, and a root
+  `PACKAGE.ts` beside a plain file that exports `Package` fails
+  `duplicate_package_path`, naming both files.
 - Bun workspaces install. `S.Install` with `S.PackageManager.BunPackages`,
   `runInstall`, and the install Flow payload accept Bun, and `smthrs init`
   writes a Bun workspace for a `bun@` manifest. The fetch runs a frozen,

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- The workspace declaration may be the plain workspace file,
+  `.smithers/WORKSPACE.smithers`: a JavaScript module that exports `Workspace`
+  and may export `Package`, the root package `//`. Discovery looks for
+  `.smithers/WORKSPACE.ts`, then the plain file, then the root `WORKSPACE.ts`,
+  and refuses a root that holds both files under `.smithers/`
+  (`workspace_root_invalid`). A root `PACKAGE.ts` beside a plain file that
+  exports `Package` fails `duplicate_package_path`, and the message now names
+  both files. `PackageDiscovery` exports `plainWorkspaceFile`, `workspaceFiles`
+  and `isWorkspaceFileName`; `WorkspaceLoader` exports `rootPackageOf`. See
+  [The whole declaration in `.smithers/`](../docs/workspace/structure.md#the-whole-declaration-in-smithers).
 - `Shell.Test` with `observe: true` is reused from what its run read. The run
   is traced (`strace` on Linux), and the stored result holds every path it
   looked at: each file, each directory listing and each path it did not find,

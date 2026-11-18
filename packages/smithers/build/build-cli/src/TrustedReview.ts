@@ -332,7 +332,8 @@ export const prepareSource = async (source: ReviewSource, options: Selection) =>
     )
   )
   const policyChanges = [...changed].filter((path) =>
-    /(?:^|\/)(?:PACKAGE|WORKSPACE|security)\.ts$/.test(path) || path === TargetIndex.indexPath
+    /(?:^|\/)(?:(?:PACKAGE|WORKSPACE|security)\.ts|WORKSPACE\.smithers)$/.test(path) ||
+    path === TargetIndex.indexPath
   ).sort()
   const declarations = new Set(policyChanges.filter((path) => path !== TargetIndex.indexPath))
   if (declarations.size > 0) {

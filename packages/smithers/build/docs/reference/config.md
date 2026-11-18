@@ -29,7 +29,10 @@ I/O, so evaluating the module reads nothing and spawns nothing.
 
 ## Where the file lives
 
-The CLI looks for `.smithers/WORKSPACE.ts` first, then a root `WORKSPACE.ts`.
+The CLI looks for `.smithers/WORKSPACE.ts` first, then
+`.smithers/WORKSPACE.smithers` (the
+[plain workspace file](../workspace/structure.md#the-whole-declaration-in-smithers)),
+then a root `WORKSPACE.ts`.
 The first one it finds is the workspace declaration.
 
 The module may export other declarations, as the example exports `runtime` and

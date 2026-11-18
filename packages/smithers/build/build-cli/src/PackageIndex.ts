@@ -190,12 +190,17 @@ export class PackageIndex {
     const packagePaths = new Set<string>()
     const packageOwners = new Map<string, Owners.Declaration>()
     const sortedPackages = [...graph.packages].sort((left, right) => byCodeUnit(left.file, right.file))
+    const declaredBy = new Map<string, string>()
     for (const loaded of sortedPackages) {
-      if (packagePaths.has(loaded.packagePath)) {
-        throw new PackageError("duplicate_package_path", "two Package modules resolve to one package directory", {
-          path: loaded.file
-        })
+      const first = declaredBy.get(loaded.packagePath)
+      if (first !== undefined) {
+        throw new PackageError(
+          "duplicate_package_path",
+          `two Package modules resolve to one package directory: ${first} and ${loaded.file} both declare //${loaded.packagePath}; keep one of them`,
+          { path: loaded.file }
+        )
       }
+      declaredBy.set(loaded.packagePath, loaded.file)
       packagePaths.add(loaded.packagePath)
       const metadata = PackageValue.metadata(loaded.value)
       if (metadata.owners !== undefined) packageOwners.set(loaded.packagePath, metadata.owners)

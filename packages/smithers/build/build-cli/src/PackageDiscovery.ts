@@ -1,6 +1,6 @@
 /**
  * Ignore-blind package declaration (PACKAGE.ts, PACKAGE.vibe) and
- * WORKSPACE.ts discovery.
+ * workspace declaration (WORKSPACE.ts, WORKSPACE.smithers) discovery.
  *
  * Discovery walks the filesystem from the canonical workspace root and never
  * consults git: gitignore status is irrelevant, so a gitignored or generated
@@ -21,7 +21,10 @@ import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import { factoryFileBeside } from "./FactoryLoader.ts"
 import { byCodeUnit, posix } from "./internal/Text.ts"
+import { workspaceFileNames, workspaceFiles } from "./internal/WorkspaceFiles.ts"
 import { PackageError } from "./PackageError.ts"
+
+export { isWorkspaceFileName, plainWorkspaceFile, workspaceFiles } from "./internal/WorkspaceFiles.ts"
 
 /** Hard traversal ceilings; a workspace beyond them fails, never truncates. */
 const limits = {
@@ -98,13 +101,8 @@ const declarationAt = async (absolute: string): Promise<boolean> => {
 export const findWorkspaceRoot = async (start: string): Promise<string | undefined> => {
   let directory = NodePath.resolve(start)
   while (true) {
-    for (
-      const candidate of [
-        NodePath.join(directory, ".smithers", "WORKSPACE.ts"),
-        NodePath.join(directory, "WORKSPACE.ts")
-      ]
-    ) {
-      if (await declarationAt(candidate)) return directory
+    for (const candidate of workspaceFiles) {
+      if (await declarationAt(NodePath.join(directory, ...candidate.split("/")))) return directory
     }
     const parent = NodePath.dirname(directory)
     if (parent === directory) return undefined
@@ -114,16 +112,16 @@ export const findWorkspaceRoot = async (start: string): Promise<string | undefin
 
 /**
  * The workspace declaration file a root holds: `.smithers/WORKSPACE.ts`
- * first, the root `WORKSPACE.ts` fallback, or undefined when neither
- * exists. A cheap lstat probe like {@link findWorkspaceRoot}; {@link discover}
+ * first, then `.smithers/WORKSPACE.smithers`, then the root `WORKSPACE.ts`
+ * fallback, or undefined when none exists. A cheap lstat probe like {@link findWorkspaceRoot}; {@link discover}
  * re-admits the file under the full SafeFs policy.
  *
  * @category discovery
  * @since 0.1.0
  */
 export const workspaceFileOf = async (root: string): Promise<string | undefined> => {
-  for (const candidate of [".smithers/WORKSPACE.ts", "WORKSPACE.ts"]) {
-    if (await declarationAt(NodePath.join(root, candidate))) return candidate
+  for (const candidate of workspaceFiles) {
+    if (await declarationAt(NodePath.join(root, ...candidate.split("/")))) return candidate
   }
   return undefined
 }
@@ -225,9 +223,13 @@ const walkDirectory = async (walk: Walk, relative: string): Promise<void> => {
     // A nested workspace this root did not declare. The root's own
     // `.smithers/` holds this workspace's descriptor and is never one.
     if (relative !== ".smithers") {
-      const smithers = entries.some((child) => child.name === ".smithers" && child.isDirectory()) &&
-        await declarationAt(NodePath.join(absolute, ".smithers", "WORKSPACE.ts"))
-      if (smithers) throw undeclaredNestedWorkspace(relative, `${relative}/.smithers/WORKSPACE.ts`)
+      if (entries.some((child) => child.name === ".smithers" && child.isDirectory())) {
+        for (const name of workspaceFileNames) {
+          if (await declarationAt(NodePath.join(absolute, ".smithers", name))) {
+            throw undeclaredNestedWorkspace(relative, `${relative}/.smithers/${name}`)
+          }
+        }
+      }
       if (entries.some((child) => child.name === "WORKSPACE.ts" && !child.isDirectory())) {
         throw undeclaredNestedWorkspace(relative, `${relative}/WORKSPACE.ts`)
       }
@@ -317,26 +319,32 @@ export const discover = async (
   const repositories = Object.entries(options.repositories ?? {})
     .map(([name, repository]) => ({ name, path: repository.path }))
     .sort((left, right) => byCodeUnit(left.name, right.name))
-  let workspaceFile: string | undefined
-  for (const candidate of [".smithers/WORKSPACE.ts", "WORKSPACE.ts"]) {
-    let present: boolean
+  const present: Array<string> = []
+  for (const candidate of workspaceFiles) {
     try {
-      present = await admitDeclaration(canonical, candidate)
+      if (await admitDeclaration(canonical, candidate)) present.push(candidate)
     } catch (cause) {
       throw new PackageError("module_not_regular", "the workspace declaration could not be admitted", {
         path: candidate,
         cause
       })
     }
-    if (present) {
-      workspaceFile = candidate
-      break
-    }
   }
+  // One directory holds one declaration, as it does for PACKAGE.ts and
+  // PACKAGE.vibe: neither file under `.smithers/` silently wins.
+  const beside = present.filter((file) => file.startsWith(".smithers/"))
+  if (beside.length > 1) {
+    throw new PackageError(
+      "workspace_root_invalid",
+      `${beside.join(" and ")} both declare the workspace; keep one of them`,
+      { path: beside[0] }
+    )
+  }
+  const workspaceFile = present[0]
   if (workspaceFile === undefined) {
     throw new PackageError(
       "workspace_root_invalid",
-      "the workspace root has no .smithers/WORKSPACE.ts and no WORKSPACE.ts",
+      "the workspace root has no .smithers/WORKSPACE.ts, no .smithers/WORKSPACE.smithers and no WORKSPACE.ts",
       { path: posix(NodePath.relative(process.cwd(), canonical)) || "." }
     )
   }

@@ -45,9 +45,10 @@ import { type LoadedFactory, validateFactoryModule } from "./FactoryLoader.ts"
 import { assertDeclarationDependencies } from "./internal/DeclarationDependencies.ts"
 import { containedRelative } from "./internal/Path.ts"
 import { byCodeUnit, posix } from "./internal/Text.ts"
+import { isWorkspaceFileName } from "./internal/WorkspaceFiles.ts"
 import type { Discovery } from "./PackageDiscovery.ts"
 import { PackageError } from "./PackageError.ts"
-import { validateWorkspaceModule } from "./WorkspaceLoader.ts"
+import { rootPackageOf, validateWorkspaceModule } from "./WorkspaceLoader.ts"
 
 /**
  * One evaluated, validated PACKAGE.ts module.
@@ -56,7 +57,10 @@ import { validateWorkspaceModule } from "./WorkspaceLoader.ts"
  * @since 0.1.0
  */
 export interface LoadedPackage {
-  /** The workspace-relative module path, for example `src/PACKAGE.ts`. */
+  /**
+   * The workspace-relative module path, for example `src/PACKAGE.ts`. The root
+   * package a plain workspace file declares names that file.
+   */
   readonly file: string
   /** The package path the file's directory derives, `""` for the root. */
   readonly packagePath: string
@@ -510,7 +514,7 @@ const scanImports = async (discovery: Discovery): Promise<StaticScan> => {
           )
         }
         const basename = resolved.split("/").at(-1)!
-        if (basename === "WORKSPACE.ts" || basename === "WORKSPACE.js") {
+        if (isWorkspaceFileName(basename) || basename === "WORKSPACE.js") {
           if (!rules.workspaceOneWay) continue
           throw new PackageError(
             "unsupported_module_specifier",
@@ -762,6 +766,10 @@ const importGraph = async (
     ? undefined
     : validateFactoryModule(entry.factory, discovery.factoryFile)
   const packages: Array<LoadedPackage> = []
+  // The root package a plain workspace file declares. A root PACKAGE.ts beside
+  // it is a second declaration of `//`, which the index refuses.
+  const rootPackage = rootPackageOf(entry.workspace, discovery.workspaceFile)
+  if (rootPackage !== undefined) packages.push({ file: discovery.workspaceFile, packagePath: "", value: rootPackage })
   for (const [file, namespace] of entry.packages) {
     packages.push({
       file,

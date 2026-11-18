@@ -240,13 +240,16 @@ const buildModuleBase = (url) => {
   // File flows and the registry's content-pinned load siblings are authored
   // ES modules too, even when their repository declares type: commonjs.
   // PACKAGE.ts, WORKSPACE.ts, and the .smithers/*.ts siblings WORKSPACE.ts
-  // imports are declaration modules.
+  // imports are declaration modules. So is the plain workspace file,
+  // .smithers/WORKSPACE.smithers: JavaScript under a name Node cannot place,
+  // so the format pinned here is also what lets it load at all.
   // All are authored as ES modules regardless of the host repository's
   // package.json `type`, so their format is pinned here.
   const declaration = /\/\.smithers-[a-f0-9]{64}-[^/]+\.ts$/.test(pathname) ||
     /\/flows\/[^/]+\/flow\.ts$/.test(pathname) ||
     pathname.endsWith("/PACKAGE.ts") ||
     pathname.endsWith("/WORKSPACE.ts") ||
+    pathname.endsWith("/.smithers/WORKSPACE.smithers") ||
     (pathname.includes("/.smithers/") && pathname.endsWith(".ts"))
   return declaration ? base : undefined
 }

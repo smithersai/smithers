@@ -10,6 +10,10 @@ A smithers build workspace is a directory tree containing package declarations:
 workspace root is whatever `--workspace` points at, and it defaults to the
 process working directory.
 
+A workspace can also keep its whole declaration in one file under `.smithers/`,
+out of the sight of the repository's own tools: see
+[The whole declaration in `.smithers/`](#the-whole-declaration-in-smithers).
+
 ## Discovery
 
 `Workspace.make` lists the workspace before it evaluates anything.
@@ -100,6 +104,57 @@ must include the `PACKAGE.vibe` and resolve `@smthrs/targets`. The compiler runs
 only when a command loads a `.vibe` module; a workspace of `PACKAGE.ts` files
 never starts it.
 
+## The whole declaration in `.smithers/`
+
+A repository's own type checker, linter and formatter walk its tree and read
+every `.ts` file they find, a `PACKAGE.ts` and a `WORKSPACE.ts` included. Where
+those tools must not see a build file, declare the workspace in the plain
+workspace file instead:
+
+```text
+.smithers/WORKSPACE.smithers      -> the workspace, and the package //
+```
+
+It is a JavaScript module: what a `WORKSPACE.ts` holds, written without type
+annotations. No type checker, linter or formatter reads a `.smithers` file as
+one of its own. It exports `Workspace`, and it may export `Package`, which
+declares the root package exactly as a root `PACKAGE.ts` does. Its labels are
+`//:name`, and a path in one of its targets resolves from the workspace root.
+
+```js
+// .smithers/WORKSPACE.smithers
+import { Smithers as S } from "@smthrs/targets"
+
+export const Workspace = S.Workspace("demo", {
+  repository: "git+https://example.invalid/demo.git",
+  cache: S.Cache({ directory: ".flows" }),
+  host: S.Host({ bins: ["sh"] })
+})
+
+export const Package = S.Package({
+  targets: {
+    test: S.Shell.Test({ shell: "sh test.sh", data: [S.glob("//**")] })
+  }
+})
+```
+
+A repository with that one file is a workspace: `smthrs ci //...` runs
+`//:test`, and nothing sits at the repository root or beside the sources.
+
+- Discovery looks for `.smithers/WORKSPACE.ts`, then
+  `.smithers/WORKSPACE.smithers`, then the root `WORKSPACE.ts`. A root that
+  holds both files under `.smithers/` fails `workspace_root_invalid`, naming
+  both; neither wins.
+- A root `PACKAGE.ts` beside a plain workspace file that exports `Package`
+  fails `duplicate_package_path`: both declare `//`.
+- Only the plain workspace file declares a package. A `WORKSPACE.ts` that
+  exports a `Package` value fails `workspace_export_duplicate`, as it always
+  has.
+- A package below the root is still declared by a `PACKAGE.ts` or
+  `PACKAGE.vibe` in its own directory.
+- No Package module may import the plain workspace file, as none may import
+  `WORKSPACE.ts`.
+
 ## Lazy evaluation
 
 The workspace imports only the `PACKAGE.ts` modules a command needs.
@@ -123,7 +178,8 @@ applies to the exporting package and every package below it; the root's is the
 workspace's, and a package that exports its own overrides it for that package
 alone. Two environment exports in one `PACKAGE.ts` fail the load. See
 [Environments](../concepts/environments.md). Workspace configuration belongs in
-`.smithers/WORKSPACE.ts` or the root `WORKSPACE.ts` fallback.
+`.smithers/WORKSPACE.ts`, in `.smithers/WORKSPACE.smithers`, or in the root
+`WORKSPACE.ts` fallback.
 
 Three guards apply. A `PACKAGE.ts` must resolve, inside the canonical workspace
 root, to a regular file; a link out of the workspace is refused rather than

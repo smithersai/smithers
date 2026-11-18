@@ -56,6 +56,7 @@ import { jsExtensionSiblings } from "./internal/js-extension-siblings.js"
 import { parseModule } from "./internal/ParseModule.ts"
 import * as Path from "./internal/Path.ts"
 import { posix, sha256Hex as sha256 } from "./internal/Text.ts"
+import { isWorkspaceFileName } from "./internal/WorkspaceFiles.ts"
 
 /**
  * Identity of this resolver implementation, combined with the compiler version into
@@ -1264,7 +1265,7 @@ export const expandAnchoredSources = async (options: {
       const basename = NodePath.posix.basename(match)
       // PACKAGE/WORKSPACE modules are build declarations, not members of a
       // source glob. They remain available when named explicitly as S.file.
-      if (!Input.isDeclarationFileName(basename) && basename !== "WORKSPACE.ts") found.add(match)
+      if (!Input.isDeclarationFileName(basename) && !isWorkspaceFileName(basename)) found.add(match)
     }
   }
   return [...found].sort()
