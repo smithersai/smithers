@@ -3424,7 +3424,9 @@ const visit = async (
   // the lockfile is one more file a run may read. Every variable the run
   // sees enters by value, the search path, the home directory and the
   // temporary directory included: they decide which files a run looks for,
-  // and a record holds only the paths one run looked at.
+  // and a record holds only the paths one run looked at. The workspace root
+  // inside a value is written as a token, so a search path that names
+  // `node_modules/.bin` keys alike in every checkout.
   const observe = rule === "Shell.Test" ? attrMember(attrs, "observe") : undefined
   const observed = observe === undefined || observe === false
     ? undefined
@@ -3437,7 +3439,15 @@ const visit = async (
           attrs: Planner.attrsValue(attrs, depLabels, new Map()),
           dependencies: dependencyRows.map((row) => row.label),
           toolchain,
-          execution: { environment: spawnEnvironment, executable }
+          execution: {
+            environment: Object.fromEntries(
+              Object.entries(spawnEnvironment).map(([name, value]) => [
+                name,
+                String(value).replaceAll(context.root, workspaceRootToken)
+              ])
+            ),
+            executable
+          }
         },
         layers: [],
         capabilities: keyMaterial.capabilities

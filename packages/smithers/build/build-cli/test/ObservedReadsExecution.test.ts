@@ -180,6 +180,15 @@ describe("a plan", () => {
       () => node("check")
     )
     expect(elsewhere.observed?.key).not.toBe(original.observed?.key)
+    // A search path that names a directory of the workspace names the same one in any checkout.
+    const one = await fixture()
+    const other = await fixture()
+    const local = (root: string): string =>
+      `${Path.join(root, "node_modules", ".bin")}${Path.delimiter}${process.env["PATH"]}`
+    const inOne = await withPath(local(one.root), () => one.node("check"))
+    const inOther = await withPath(local(other.root), () => other.node("check"))
+    expect(inOne.observed?.key).not.toBe(original.observed?.key)
+    expect(inOther.observed?.key).toBe(inOne.observed?.key)
     const ignoring = await fixture({ observe: { ignore: ["volatile.txt"] } })
     const declared = await ignoring.node("check")
     expect(declared.observed?.ignore).toEqual(["volatile.txt"])
