@@ -343,7 +343,7 @@ been through each find their own.
 product and never an input. A path it found missing and then made matches when
 it is missing again or still as the run left it. A file the run read and then
 rewrote is compared with what the run wrote, because what it held before is
-gone. A step is therefore taken to give the same verdict when it runs again on
+gone. A new mode or time the run gave a file counts as such a write. A step is therefore taken to give the same verdict when it runs again on
 files exactly as it left them.
 
 **What is left out.** `/proc`, `/sys` and `/dev` are the machine, not files. The

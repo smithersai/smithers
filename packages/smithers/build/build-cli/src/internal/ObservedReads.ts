@@ -69,6 +69,8 @@ const calls: ReadonlyArray<string> = [
   "access",
   "bind",
   "chdir",
+  "chmod",
+  "chown",
   "chroot",
   "clone",
   "clone3",
@@ -79,10 +81,17 @@ const calls: ReadonlyArray<string> = [
   "faccessat",
   "faccessat2",
   "fchdir",
+  "fchmod",
+  "fchmodat",
+  "fchmodat2",
+  "fchown",
+  "fchownat",
+  "futimesat",
   "fork",
   "getdents",
   "getdents64",
   "io_uring_setup",
+  "lchown",
   "link",
   "linkat",
   "lstat",
@@ -107,6 +116,9 @@ const calls: ReadonlyArray<string> = [
   "truncate",
   "unlink",
   "unlinkat",
+  "utime",
+  "utimensat",
+  "utimes",
   "vfork"
 ]
 
@@ -137,6 +149,8 @@ const quoted = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
  * trace writes the command's exit status beside the trace file the moment
  * the command ends. A process still followed a second later is killed: one
  * the tracer let go would keep the tracer's filter and fail every file call.
+ * A tracer that has to be killed itself may not have written its last lines,
+ * so a line no trace holds is added and the run stores nothing.
  */
 const supervisor = [
   "tracer=$1",
@@ -156,7 +170,10 @@ const supervisor = [
   `        kill -KILL "\${left%/status}" 2>/dev/null`,
   "      done",
   "    fi",
-  `    if [ "$rounds" -gt 100 ]; then kill -KILL "$tracing" 2>/dev/null; fi`,
+  `    if [ "$rounds" -gt 100 ]; then`,
+  `      kill -KILL "$tracing" 2>/dev/null`,
+  `      echo "the tracer was stopped before it wrote its last lines" >> "$out"`,
+  "    fi",
   "    sleep 0.1",
   "  done",
   "fi",
@@ -501,9 +518,25 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       case "unlink":
       case "rmdir":
       case "truncate":
+      // A new mode, owner or time changes when the file last changed, as a write does.
+      case "chmod":
+      case "chown":
+      case "lchown":
+      case "utime":
+      case "utimes":
         return wrote(pathOf(args[0], cell.path), "changed")
       case "unlinkat":
+      case "fchmodat":
+      case "fchmodat2":
+      case "fchownat":
+      case "futimesat":
         return wrote(pathOf(args[1], baseOf(args[0])), "changed")
+      case "utimensat":
+        // With no path, the descriptor itself is the file.
+        return wrote(args[1] === "NULL" ? baseOf(args[0]) : pathOf(args[1], baseOf(args[0])), "changed")
+      case "fchmod":
+      case "fchown":
+        return wrote(baseOf(args[0]), "changed")
       case "mkdir":
         return wrote(pathOf(args[0], cell.path), "made")
       case "mkdirat":

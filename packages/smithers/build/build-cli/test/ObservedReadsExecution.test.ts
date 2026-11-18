@@ -300,6 +300,14 @@ describe("an observed test", () => {
     expect(await run()).toEqual({ check: "ran" })
   })
 
+  tracedIt("is reused after a run that changed the mode and the time of a file it read", async () => {
+    const marking = "/bin/chmod +x input.txt\n/usr/bin/touch input.txt\n/bin/cat input.txt > /dev/null"
+    const { logs, run } = await fixture({ check: marking })
+    expect(await run()).toEqual({ check: "ran" })
+    expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+    expect(await run()).toEqual({ check: "hit" })
+  })
+
   tracedIt("ends when its command ends, and stops a process the command left running", async () => {
     const leaving = "sleep 600 > /dev/null 2>&1 &\necho $! > left.pid\n/bin/cat input.txt > /dev/null"
     const { root, run, traceFiles } = await fixture({ check: leaving })

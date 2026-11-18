@@ -74,6 +74,11 @@ describe("the tracer command", () => {
     expect(run(ObservedReads.command(tracer, trace, ["/bin/sh", "-c", "exit 4"])).status).toBe(4)
     expect(Date.now() - started).toBeLessThan(120_000)
     expect(NodeFs.existsSync(`${trace}.status`)).toBe(false)
+    // A tracer that had to be stopped may have lost its last lines, so its trace stores nothing.
+    const cut = ObservedReads.read(ObservedReads.linesOf(trace), "/w")
+    expect(cut.refusals).toContain(
+      "its trace holds a line that cannot be read: the tracer was stopped before it wrote its last lines"
+    )
   })
 })
 
@@ -261,6 +266,32 @@ describe("reading a trace", () => {
     ])
     expect(paths(trace.found)).toEqual(["/w/exists", "/w/f2", "/w/from", "/w/h3", "/w/o2", "/w/o3", "/w/orig"])
     expect(paths(trace.missing)).toEqual(["/w/d2/sub", "/w/f3", "/w/hard-gone", "/w/orig-gone", "/w/t3", "/w/tmp2"])
+  })
+
+  it("counts a new mode, owner or time as the run's own change", () => {
+    const trace = read([
+      "100 chmod(\"/w/a\", 0755)               = 0",
+      "100 fchmodat(AT_FDCWD</w>, \"b\", 0755)  = 0",
+      "100 fchmodat2(AT_FDCWD</w>, \"c\", 0755, AT_SYMLINK_NOFOLLOW) = 0",
+      "100 fchmod(3</w/d>, 0644)              = 0",
+      "100 chown(\"/w/e\", 1000, 1000)         = 0",
+      "100 lchown(\"/w/f\", 1000, 1000)        = 0",
+      "100 fchownat(AT_FDCWD</w>, \"g\", 1000, 1000, 0) = 0",
+      "100 fchown(4</w/h>, 1000, 1000)        = 0",
+      "100 utime(\"/w/i\", NULL)               = 0",
+      "100 utimes(\"/w/j\", NULL)              = 0",
+      "100 futimesat(AT_FDCWD</w>, \"k\", NULL) = 0",
+      "100 utimensat(AT_FDCWD</w>, \"l\", NULL, 0) = 0",
+      "100 utimensat(5</w/m>, NULL, [UTIME_NOW, UTIME_NOW], 0) = 0",
+      "100 chmod(\"/w/gone\", 0755)            = -1 ENOENT (No such file or directory)",
+      "100 chown(\"/w/kept\", 0, 0)            = -1 EPERM (Operation not permitted)",
+      "100 fchmod(6<pipe:[77]>, 0644)         = 0"
+    ].join("\n"))
+    expect(trace.refusals).toEqual([])
+    expect([...trace.changed].sort()).toEqual("abcdefghijklm".split("").map((name) => `/w/${name}`))
+    expect(paths(trace.missing)).toEqual(["/w/gone"])
+    expect(paths(trace.found)).toEqual(["/w/kept"])
+    expect(paths(trace.made)).toEqual([])
   })
 
   it("stores nothing for a run that reached a program or a network outside it", () => {
