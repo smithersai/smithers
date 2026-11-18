@@ -121,12 +121,16 @@ describe("files", () => {
     ])
     const generated = generate(document)
     const map = Schema.decodeUnknownSync(Schema.fromJsonString(TargetMap))(content(generated, targetMapPath))
+    // The two shards run beside each other in one tree and can write the same files.
     expect(map.maxJobs).toBe(1)
     expect(map.targets).toHaveLength(5)
     const declared = [...content(generated, packagePath).matchAll(/^ {4}"([^"]+)": step/gm)].map((match) =>
       `//:${match[1]}`
     )
-    expect(map.targets.map((entry) => entry.label).sort()).toEqual([...declared].sort())
+    // Both shards install the same way, so one target installs for both.
+    expect(declared).toHaveLength(4)
+    expect([...new Set(map.targets.map((entry) => entry.label))].sort()).toEqual([...declared].sort())
+    expect(labelsOf(map, "a", "a:1", { shard: "2" })).toEqual(labelsOf(map, "a", "a:1", { shard: "1" }))
     expect(labelsOf(map, "b", "b:1", {})).toEqual(["//:b-1"])
     const first = labelsOf(map, "a", "a:2", { shard: "1" })
     const second = labelsOf(map, "a", "a:2", { shard: "2" })
@@ -405,6 +409,115 @@ describe("what counts as CI", () => {
     const asGiven = content(generate(inventory([recipe("start"), recipe("clean")])), packagePath)
     expect(asGiven).toContain(`"start-1": step`)
     expect(asGiven).toContain(`"clean-1": step`)
+  })
+})
+
+describe("a step two jobs both run", () => {
+  const mapOf = (document: InventoryDocument): TargetMap =>
+    Schema.decodeUnknownSync(Schema.fromJsonString(TargetMap))(content(generate(document), targetMapPath))
+  const labels = (source: string): ReadonlyArray<string> =>
+    [...source.matchAll(/^ {4}"([^"]+)": step/gm)].map((match) => match[1] as string)
+  const lint = job("lint", [step("lint:1", "npm ci"), step("lint:2", "npm run lint")])
+  const test = job("test", [step("test:1", "npm ci"), step("test:2", "npm test")])
+
+  it("installs once for two jobs that each start with the same install", () => {
+    const document = inventory([test, lint])
+    const source = targetsOf(document)
+    expect(labels(source)).toEqual(["lint-1", "lint-2", "test-2"])
+    expect(declaration(source, "lint-1")).toContain("S.Shell.Build(")
+    expect(source).toContain("// lint / lint:1\n// test / test:1: the same step, run once\nconst step0 =")
+    expect(declaration(source, "lint-2")).toMatch(/data: \[repository, step0\]/)
+    expect(declaration(source, "test-2")).toMatch(/data: \[repository, step0\]/)
+    // Each step keeps its own entry in the target map, and the two installs name one target.
+    const map = mapOf(document)
+    expect(map.targets.map((entry) => entry.step)).toEqual(["lint:1", "test:1", "lint:2", "test:2"])
+    expect(labelsOf(map, "test", "test:1", {})).toEqual(["//:lint-1"])
+    expect(labelsOf(map, "lint", "lint:1", {})).toEqual(["//:lint-1"])
+    expect(labelsOf(map, "test", "test:2", {})).toEqual(["//:test-2"])
+  })
+
+  it("keeps sharing while the steps stay equal, and a shared step another job builds on always runs", () => {
+    const build = job("build", [step("build:1", "npm ci"), step("build:2", "npm run build")])
+    const pack = job("pack", [step("pack:1", "npm ci"), step("pack:2", "npm run build"), step("pack:3", "npm pack")])
+    const source = targetsOf(inventory([build, pack]))
+    expect(labels(source)).toEqual(["build-1", "build-2", "pack-3"])
+    // `build:2` ends its own job, and `pack:3` needs what it wrote.
+    expect(declaration(source, "build-2")).toContain("S.Shell.Build(")
+    expect(declaration(source, "pack-3")).toMatch(/data: \[repository, step1\]/)
+    // Two jobs that are equal from start to end are one chain.
+    const again = job("again", [step("again:1", "npm ci"), step("again:2", "npm run lint")])
+    expect(labels(targetsOf(inventory([lint, again])))).toEqual(["again-1", "again-2"])
+  })
+
+  it("keeps apart steps that differ in directory, environment, system or what ran before them", () => {
+    const apart = (other: Job): ReadonlyArray<string> => labels(targetsOf(inventory([lint, other])))
+    expect(apart(job("test", [step("test:1", "npm ci", { cwd: "web" }), step("test:2", "npm test")]))).toHaveLength(4)
+    expect(apart(job("test", [step("test:1", "npm ci", { env: { CI: "1" } }), step("test:2", "npm test")])))
+      .toHaveLength(4)
+    expect(apart({ ...test, runsOn: "macos-latest" })).toHaveLength(4)
+    // After a job it needs, the install starts from that job's tree, not from a fresh checkout.
+    expect(apart({ ...test, needs: ["lint"] })).toHaveLength(4)
+  })
+
+  it("keeps apart the recipes of one working tree, and steps split from one step", () => {
+    const recipe = (name: string): Job =>
+      job(`justfile:${name}`, [step(`${name}:1`, "make")], { source: "justfile", file: "justfile", triggers: [] })
+    // The second `make` runs in the tree the first one left: it is not the same work.
+    expect(labels(targetsOf(inventory([recipe("build"), recipe("test")])))).toHaveLength(2)
+    const part = (id: string): Step =>
+      step(id, "pnpm --filter=ui run test", { inputs: ["packages/ui/**"], from: "t:1" })
+    expect(labels(targetsOf(inventory([job("a", [part("a:1:ui")]), job("b", [part("b:1:ui")])])))).toHaveLength(2)
+  })
+})
+
+describe("how many targets run at once", () => {
+  const mapOf = (document: InventoryDocument): TargetMap =>
+    Schema.decodeUnknownSync(Schema.fromJsonString(TargetMap))(content(generate(document), targetMapPath))
+  const workflowOf = (document: InventoryDocument): string => content(generate(document), workflowPath)
+  const part = (id: string, name: string): Step =>
+    step(id, `pnpm --filter=${name} run test`, { inputs: [`packages/${name}/**`], from: "a:1" })
+
+  it("leaves the number to Smithers build when no two targets can write the same files", () => {
+    // One chain: each target runs after the one before it.
+    const chain = inventory([job("a", [step("a:1", "npm ci"), step("a:2", "npm test")])])
+    expect(mapOf(chain).maxJobs).toBeUndefined()
+    expect(workflowOf(chain)).toMatch(/smthrs ci '\/\/\.\.\.'\n/)
+    expect(workflowOf(chain)).not.toContain("one at a time")
+    // Targets held to their inputs cannot write the working tree, so they run beside each other.
+    const held = inventory([job("a", [part("a:1:ui", "ui"), part("a:1:web", "web")])])
+    expect(mapOf(held).maxJobs).toBeUndefined()
+    // Two jobs for two systems never run on one machine.
+    const systems = inventory([
+      job("linux", [step("linux:1", "make")], { runsOn: "ubuntu-latest" }),
+      job("mac", [step("mac:1", "make")], { runsOn: "macos-latest" })
+    ])
+    expect(mapOf(systems).maxJobs).toBeUndefined()
+  })
+
+  it("runs one target at a time when two of them can write the same files", () => {
+    const two = inventory([
+      job("lint", [step("lint:1", "npm ci"), step("lint:2", "npm run lint")]),
+      job("test", [step("test:1", "npm ci"), step("test:2", "npm test")])
+    ])
+    expect(mapOf(two).maxJobs).toBe(1)
+    expect(workflowOf(two)).toContain(
+      "      # Targets that can write the same files run one at a time.\n" +
+        "      - run: npx --yes --package=@smthrs/cli@next smthrs ci '//...' --jobs 1\n"
+    )
+    // A target that can write the tree beside one held to its inputs: the held one could read a half-written file.
+    const beside = inventory([job("a", [part("a:1:ui", "ui")]), job("b", [step("b:1", "make")])])
+    expect(mapOf(beside).maxJobs).toBe(1)
+    // A job for every system runs beside a job for one of them.
+    const anywhere = inventory([
+      job("any", [step("any:1", "make")]),
+      job("linux", [step("linux:1", "make test")], { runsOn: "ubuntu-latest" })
+    ])
+    expect(mapOf(anywhere).maxJobs).toBe(1)
+    const same = inventory([
+      job("one", [step("one:1", "make")], { runsOn: "ubuntu-latest" }),
+      job("two", [step("two:1", "make test")], { runsOn: "ubuntu-22.04" })
+    ])
+    expect(mapOf(same).maxJobs).toBe(1)
   })
 })
 
@@ -702,7 +815,7 @@ describe("labels", () => {
     const document = inventory([
       job("j1", [step(taken, "false")]),
       job("j2", [step("ci:x y", "true")]),
-      job("j3", [step("ci:x-y", "true")])
+      job("j3", [step("ci:x-y", "exit 0")])
     ])
     const labels = labelsOfSteps(document)
     expect(labels.slice(0, 2)).toEqual([taken.replace(":", "-"), "ci-x-y"])
@@ -821,7 +934,7 @@ describe("the workspace and workflow", () => {
     expect(workflow.indexOf("oven-sh/setup-bun@v2")).toBeLessThan(workflow.indexOf("mlugg/setup-zig@v2"))
     expect(workflow).toContain("# turbo (turbo.json) has no known setup action.")
     expect(workflow).toContain(`node-version: "24"`)
-    expect(workflow).toContain("smthrs ci '//...' --jobs 1")
+    expect(workflow).toMatch(/smthrs ci '\/\/\.\.\.'\n/)
     expect(workflow.indexOf("path: .flows/cache")).toBeLessThan(workflow.indexOf("smthrs ci"))
   })
 

@@ -19,7 +19,11 @@
  * after it. Without that, the later target declares the whole repository, as
  * a step with no inputs does: its own inputs would not hold the files the
  * earlier step read, and it would pass stale when one of them changed.
- * GitHub jobs run on separate machines, so `needs` only orders them. The jobs
+ * GitHub jobs run on separate machines, so `needs` only orders them. Two of
+ * their steps that run the same command, in the same directory and
+ * environment, after the same targets, do the same work in the same tree: one
+ * target runs both, so two jobs that each start with `npm ci` install once.
+ * The jobs
  * of any other source run one after another in one working tree, in
  * `Inventory.treeOrder`: each waits for the job before it, as `just ci` runs
  * `build` and then `test` for `ci: build test`, and what a later job relies
@@ -77,6 +81,22 @@ export interface StepTarget {
   readonly inputs: ReadonlyArray<string> | undefined
   /** What a `setup` target declares it writes, beside its marker; `undefined` when it declares only the marker. */
   readonly outputs: Outputs | undefined
+  /** The other steps this target runs too: the same work at the same point of another job or variant. */
+  readonly also: ReadonlyArray<SameStep>
+}
+
+/**
+ * A step that another step's target runs, because both do the same work in
+ * the same tree.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface SameStep {
+  readonly title: string
+  readonly job: string
+  readonly step: string
+  readonly variant: Variant
 }
 
 /**
@@ -140,10 +160,11 @@ interface Tail {
   readonly known: boolean
 }
 
-interface Draft extends Omit<StepTarget, "rule" | "script" | "job"> {
+interface Draft extends Omit<StepTarget, "rule" | "script" | "job" | "also"> {
   readonly job: Job
   readonly command: string
   readonly directory: string
+  readonly also: Array<SameStep>
 }
 
 const runnerVariable = /\$\{?((?:GITHUB|RUNNER)_[A-Z0-9_]+)/g
@@ -297,6 +318,9 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
   const runners = new Set<string>()
   // Targets a later target needs on disk: these can never be replayed.
   const reliedOn = new Set<string>()
+  // The steps of jobs with a machine of their own, by the work they do: what runs, where, with which values, and
+  // after which targets. A second step with the same work joins the first one's target.
+  const sameWork = new Map<string, Draft>()
 
   // The labels taken so far, in lower case. Smithers build refuses a package with two labels that differ only by
   // case, and a setup target's marker is a file, which a macOS disk finds whatever its case.
@@ -332,7 +356,8 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     variant: Variant,
     host: Host | undefined,
     dependencies: ReadonlyArray<string>,
-    scoped: boolean
+    scoped: boolean,
+    own: boolean
   ): Draft | undefined => {
     const command = forShell(step.command, variant)
     const cwd = forText(step.cwd, variant)
@@ -351,23 +376,34 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     // enter its key, so a step that reads the commit reruns on every commit.
     const inheritEnv = sorted([...command.matchAll(runnerVariable)].map((match) => match[1] as string))
       .filter((name) => name !== "GITHUB_TOKEN" && !Object.hasOwn(env, name))
-    return {
+    const title = `${job.name} / ${step.name ?? step.id}`
+    // Kept only for a step whose reads its inputs can stand for: see `scoped` where the steps are walked.
+    const files = scoped && step.inputs !== undefined && !step.inputs.includes(everything)
+      ? { inputs: sorted(step.inputs), outputs: outputsOf(step) }
+      : { inputs: undefined, outputs: undefined }
+    const work = JSON.stringify([host, command, directory, env, inheritEnv, dependencies, files])
+    const same = own ? sameWork.get(work) : undefined
+    if (same !== undefined) {
+      same.also.push({ title, job: job.id, step: step.id, variant })
+      return same
+    }
+    const draft: Draft = {
       label: uniqueLabel(step, variant),
       env,
       inheritEnv,
       host,
       dependencies,
-      title: `${job.name} / ${step.name ?? step.id}`,
+      title,
       step: step.from ?? step.id,
       variant,
-      // Kept only for a step whose reads its inputs can stand for: see `scoped` where the steps are walked.
-      ...(scoped && step.inputs !== undefined && !step.inputs.includes(everything)
-        ? { inputs: sorted(step.inputs), outputs: outputsOf(step) }
-        : { inputs: undefined, outputs: undefined }),
+      ...files,
+      also: [],
       job,
       command,
       directory
     }
+    if (own) sameWork.set(work, draft)
+    return draft
   }
 
   for (const job of jobs) {
@@ -390,8 +426,11 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
         // What an earlier step left in this working tree, these steps can read. Their own inputs stand for all
         // they read only when nothing ran before them, or when all of it is declared.
         const scoped = !(sharesTree && previous.length > 0) || known
+        // A job with a machine of its own starts from a fresh checkout, so its step can stand for an equal step
+        // of another such job. Steps split from one step are kept apart.
+        const own = job.source === "github-actions" && group.length === 1 && group[0]?.from === undefined
         for (const step of group) {
-          const draft = draftOf(job, step, variant, host, previous, scoped)
+          const draft = draftOf(job, step, variant, host, previous, scoped, own)
           if (draft === undefined) continue
           drafts.set(draft.label, draft)
           made.push(draft)

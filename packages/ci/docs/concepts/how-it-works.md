@@ -69,6 +69,17 @@ changes, so an unchanged target is a cache hit instead of a rerun. For one
 change, the plan is the set of targets the change selects, each with its key
 and its dependencies.
 
+Jobs often start with the same step, such as `npm ci`. When two GitHub Actions
+jobs run the same command, in the same directory, with the same environment,
+after the same steps, one target runs it for both: the install runs once, and
+each job's next step waits for it. The report still lists the step under each
+job.
+
+Targets that cannot write the same files run at the same time. A target
+confined to the files it reads cannot write the checkout, so any number of
+them run together. Two targets that can write the checkout run one after the
+other.
+
 What a target reads comes from its dependency closure: every file its entry
 files reach. Each language has its own strategy for finding them, and every
 strategy returns the same shape. A strategy never guesses. When it meets an

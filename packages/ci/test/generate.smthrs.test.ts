@@ -209,7 +209,8 @@ describe("generated files under the real smthrs", () => {
   it("plans and runs steps whose ids differ only by letter case, each as its own target", () => {
     const steps = ["ci:Build", "ci:build", "ci:a b", "ci:a-b"].map((id) => ({
       id,
-      command: id === "ci:build" ? "false" : "true",
+      // Each command is its own: two jobs that run the same command share one target.
+      command: id === "ci:build" ? "false" : `: ${id}`,
       cwd: "",
       env: {},
       secrets: []

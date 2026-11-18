@@ -141,6 +141,7 @@ const renderTarget = (
   ]
   return [
     comment(target.title),
+    ...target.also.map((same) => comment(`${same.title}: the same step, run once`)),
     `const step${index} = S.Shell.${target.rule === "setup" ? "Build" : "Test"}({`,
     fields.map((field) => `  ${field}`).join(",\n"),
     `})`,
@@ -224,7 +225,33 @@ const cacheToken =
 export const noSharedCache =
   "No shared cache, so results stay on this runner. To share them, set the SMITHERS_CACHE_URL variable and the SMITHERS_CACHE_TOKEN secret."
 
-const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boolean): string => {
+// True when two targets that may run at once could write the same files.
+//
+// A target held to its inputs by the read sandbox cannot write the working tree. Every other target can: a setup
+// target, and a target that declares the whole repository. Such a target is safe beside another only when one of
+// the two always runs after the other, or when they run on different systems. `plan.targets` is in dependency
+// order.
+const collides = (plan: StepPlan, narrowed: boolean): boolean => {
+  const before = new Map<string, ReadonlySet<string>>()
+  for (const target of plan.targets) {
+    const earlier = new Set<string>(target.dependencies)
+    for (const label of target.dependencies) {
+      for (const other of before.get(label) as ReadonlySet<string>) earlier.add(other)
+    }
+    before.set(target.label, earlier)
+  }
+  const ordered = (one: StepTarget, other: StepTarget): boolean =>
+    (before.get(one.label) as ReadonlySet<string>).has(other.label) ||
+    (before.get(other.label) as ReadonlySet<string>).has(one.label)
+  const apart = (one: StepTarget, other: StepTarget): boolean =>
+    one.host !== undefined && other.host !== undefined && one.host !== other.host
+  return plan.targets.some((writer) =>
+    !narrows(writer, narrowed) &&
+    plan.targets.some((other) => other !== writer && !ordered(writer, other) && !apart(writer, other))
+  )
+}
+
+const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boolean, serial: boolean): string => {
   const hasNode = plan.toolchains.some((toolchain) => toolchain.name === "node")
   return [
     yamlComment(generated),
@@ -256,8 +283,8 @@ const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boo
       `        if: \${{ vars.SMITHERS_CACHE_URL == '' }}`,
       `        run: ${text(`echo ${text(noSharedCache)}`)}`
     ]),
-    `      ${yamlComment("Targets share one working tree, so they run one at a time.")}`,
-    `      - run: npx --yes --package=@smthrs/cli@next smthrs ci '//...' --jobs 1`,
+    ...(serial ? [`      ${yamlComment("Targets that can write the same files run one at a time.")}`] : []),
+    `      - run: npx --yes --package=@smthrs/cli@next smthrs ci '//...'${serial ? " --jobs 1" : ""}`,
     `        env:`,
     `          SMITHERS_CACHE_URL: ${cacheUrl(cache)}`,
     `          SMITHERS_CACHE_TOKEN: ${cacheToken}`,
@@ -267,18 +294,22 @@ const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boo
 
 /**
  * The target map (contract 11): the label a run record reports for each
- * step. Targets share one working tree, so at most one runs at a time.
+ * step. A step that shares its target with an equal step of another job has
+ * an entry of its own with that target's label. At most one target runs at a
+ * time when two of them could write the same files.
  */
-const renderTargetMap = (plan: StepPlan): string => {
+const renderTargetMap = (plan: StepPlan, serial: boolean): string => {
   const map: TargetMap = {
     version: 1,
-    targets: plan.targets.map((target) => ({
-      label: `//:${target.label}`,
-      job: target.job,
-      step: target.step,
-      variant: target.variant
-    })),
-    maxJobs: 1
+    targets: plan.targets.flatMap((target) =>
+      [target, ...target.also].map((step) => ({
+        label: `//:${target.label}`,
+        job: step.job,
+        step: step.step,
+        variant: step.variant
+      }))
+    ),
+    ...(serial ? { maxJobs: 1 } : {})
   }
   return `${JSON.stringify(map, undefined, 2)}\n`
 }
@@ -323,6 +354,7 @@ export const renderFiles = (
       part: "generate"
     })
   }
+  const serial = collides(plan, held)
   return Result.succeed([
     {
       path: workflowPath,
@@ -330,12 +362,13 @@ export const renderFiles = (
         plan,
         options?.cache,
         // The runner needs the sandbox only when a target runs under it.
-        plan.targets.some((target) => narrows(target, held))
+        plan.targets.some((target) => narrows(target, held)),
+        serial
       )
     },
     { path: workspacePath, content: renderWorkspace(inventory) },
     { path: packagePath, content: targets },
-    { path: targetMapPath, content: renderTargetMap(plan) },
+    { path: targetMapPath, content: renderTargetMap(plan, serial) },
     ...(plan.notes.length === 0 ? [] : [{ path: notesPath, content: renderNotes(plan) }])
   ])
 }
