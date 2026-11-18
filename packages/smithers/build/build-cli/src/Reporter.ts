@@ -200,6 +200,21 @@ export const plainSummary = (summary: Summary): string =>
   (summary.counts.cancelled === undefined ? "" : `, ${summary.counts.cancelled} cancelled`) +
   ` (${formatDuration(summary.durationMs)})`
 
+/**
+ * The line that counts the green results a run did not store, by reason, or
+ * nothing when it stored every one.
+ *
+ * @category formatting
+ * @since 1.0.0
+ */
+export const notStoredSummary = (summary: Summary): string | undefined => {
+  const counts = summary.notStored ?? []
+  if (counts.length === 0) return undefined
+  const total = counts.reduce((sum, entry) => sum + entry.count, 0)
+  return `${total} ${total === 1 ? "result" : "results"} not stored: ` +
+    counts.map((entry) => `${entry.count} ${entry.reason}`).join("; ")
+}
+
 const noop = (): void => {}
 
 const lines = (chunk: string): ReadonlyArray<string> => {
@@ -224,7 +239,11 @@ export const plain = (writeLine: (line: string) => void): Reporter => ({
   },
   note: writeLine,
   warn: writeLine,
-  summary: (summary) => writeLine(plainSummary(summary)),
+  summary: (summary) => {
+    writeLine(plainSummary(summary))
+    const notStored = notStoredSummary(summary)
+    if (notStored !== undefined) writeLine(notStored)
+  },
   close: noop
 })
 
@@ -302,7 +321,11 @@ const humanPlain = (terminal: Terminal): Reporter => {
     targetStarted: (label) => Clack.log.step(`Running ${label}`, { output }),
     note: (line) => Clack.log.message(Ansi.strip(line), { output }),
     warn: (line) => Clack.log.warn(Ansi.strip(line), { output }),
-    summary: (summary) => Clack.outro(plainSummary(summary), { output })
+    summary: (summary) => {
+      const notStored = notStoredSummary(summary)
+      if (notStored !== undefined) Clack.log.message(notStored, { output })
+      Clack.outro(plainSummary(summary), { output })
+    }
   }
 }
 
@@ -462,6 +485,8 @@ const pretty = (options: MakeOptions, live: boolean): Reporter => {
       const failed = summary.results.filter((entry) => entry.status === "failed").map((entry) => entry.label)
       out.push(c.red(c.bold(`✗ ${counts.failed} of ${summary.results.length} targets failed: ${failed.join(", ")}`)))
     }
+    const notStored = notStoredSummary(summary)
+    if (notStored !== undefined) out.push(c.dim(notStored))
     return out
   }
 

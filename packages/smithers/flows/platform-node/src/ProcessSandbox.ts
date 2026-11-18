@@ -1689,3 +1689,76 @@ export const diagnose = (confinement: Plan, text: string): string | undefined =>
   return `${lines.join("\n")}\nsandbox: ${confinement.mechanism._tag}, network ${confinement.network}, ` +
     `${confinement.reads.length} read path(s), ${confinement.writes.length} write path(s)`
 }
+
+/**
+ * Wraps an argv so that neither the process nor a descendant can write below
+ * `paths`, while it keeps every file, the network, the process table and the
+ * environment of an unwrapped run.
+ *
+ * This is not a confinement. A caller uses it to hold a tree still under a
+ * run it does not confine: an installed dependency tree a content key has
+ * already measured, for one. A write there fails with a read-only file
+ * system error, which is what a tool written for one expects.
+ *
+ * The mechanism is a mount namespace, and it shows in four ways a caller has
+ * to know. An unprivileged caller runs in a user namespace with its own user
+ * and group mapped, so a file another user owns reads as owned by `nobody`.
+ * `no_new_privs` is set, so `sudo` and other setuid programs do not gain
+ * privileges. Each protected path is a mount of its own, so a hard link
+ * between it and anywhere else fails as a cross-device link. And a tool a
+ * signal kills is reported by exit status, 128 plus the signal number.
+ *
+ * Each path is absolute. A path that does not exist is skipped, because the
+ * mechanism cannot bind a missing path and there is nothing there to hold
+ * still. Only Linux with bubblewrap has the mechanism: the host is bound as
+ * it is, then each path is bound read-only over itself. Nothing is answered
+ * on any other host, and the caller runs the argv as it is; see
+ * {@link writeProtectionRefusal} for the reason.
+ *
+ * @category rendering
+ * @since 1.0.0
+ */
+export const writeProtected = (
+  paths: ReadonlyArray<string>,
+  argv: ReadonlyArray<string>,
+  hostFacts: Host = host()
+): ReadonlyArray<string> | undefined => {
+  const executable = hostFacts.platform === "linux" ? hostFacts.executable("bwrap") : undefined
+  if (executable === undefined) return undefined
+  const out: Array<string> = [executable, "--dev-bind", "/", "/"]
+  for (const path of collapse(paths.filter((path) => hostFacts.exists(path)))) out.push("--ro-bind", path, path)
+  // A run as root stays the run it was unwrapped: it keeps its capabilities.
+  if (hostFacts.uid === 0) out.push("--cap-add", "ALL")
+  out.push("--die-with-parent", "--", ...argv)
+  return out
+}
+
+/**
+ * Why this host cannot write-protect a path under a run, or nothing when it
+ * can.
+ *
+ * Having the program is not enough: a container without user namespaces, or
+ * a host whose policy forbids them, has bubblewrap and refuses to start it.
+ * So the mechanism is started once, over the directory holding its own
+ * program, and its refusal is the answer. `timeoutMs` bounds that start.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const writeProtectionRefusal = (hostFacts: Host = host(), timeoutMs = 60_000): string | undefined => {
+  if (hostFacts.platform !== "linux") {
+    return `write protection needs bubblewrap, which runs only on Linux; this host is ${hostFacts.platform}`
+  }
+  const executable = hostFacts.executable("bwrap")
+  if (executable === undefined) {
+    return "write protection needs bubblewrap, and bwrap is not on PATH (install the bubblewrap package)"
+  }
+  const [program, ...args] = writeProtected([NodePath.dirname(executable)], [executable, "--version"], hostFacts)!
+  try {
+    execFileSync(program!, args, { stdio: ["ignore", "ignore", "pipe"], timeout: timeoutMs })
+    return undefined
+  } catch (cause) {
+    const stderr = String((cause as { readonly stderr?: unknown }).stderr ?? "").trim().split("\n")[0]!
+    return `bubblewrap could not start on this host: ${stderr === "" ? (cause as Error).message : stderr}`
+  }
+}

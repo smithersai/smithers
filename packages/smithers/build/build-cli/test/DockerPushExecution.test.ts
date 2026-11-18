@@ -166,7 +166,8 @@ if (image.endsWith(":two")) {
     roots: [node.label],
     workList: [build, node],
     nodes: new Map([[build.label, build], [node.label, node]]),
-    closures: new Map()
+    closures: new Map(),
+    installedTrees: new Map()
   }
   const readLines = async (file: string): Promise<Array<unknown>> => {
     const text = await Fs.readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {

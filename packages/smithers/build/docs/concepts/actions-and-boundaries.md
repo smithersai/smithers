@@ -181,6 +181,14 @@ a private layer discarded with the run, and each installed tree is granted
 entry by entry so a tool's own state inside it stays hidden. Reads are
 unchanged. Seatbelt and Docker have no such layer and refuse the request.
 
+A run nothing confines still cannot write into an
+[installed tree its key measured](../workspace/caching.md#an-installed-tree-stays-the-tree-a-plan-measured).
+On Linux with `bwrap` it starts under bubblewrap with the host bound as it is
+and the tree's keyed entries bound read-only. It keeps the host's files and
+network; it runs in a user and mount namespace with `no_new_privs` set, which
+the linked section spells out. On a host that cannot start `bwrap`, and for a
+target that declares `sandbox: "none"`, the run starts as before.
+
 | Host    | Mechanism                                                                                                                                                                                                                                                                                                                                                     |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Linux   | bubblewrap. An empty root exposes enumerated runtime paths and declared grants. A tmpfs covers the workspace, the declared set is bound on top, the root and workspace are remounted read-only, and the network namespace is unshared. A `loopback` request is refused because bubblewrap cannot expose host loopback without granting the full host network. |

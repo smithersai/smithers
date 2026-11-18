@@ -4,6 +4,12 @@
 
 ### Added
 
+- `ProcessSandbox.writeProtected(paths, argv, host?)` wraps an argv so the
+  process keeps the whole host and finds the named paths read-only: bubblewrap
+  with the host bound as it is and each path bound read-only over itself. It is
+  not a confinement. `ProcessSandbox.writeProtectionRefusal(host?)` starts the
+  mechanism once and says why a host cannot use it.
+
 - `ProcessConfinement` takes `verification`, a mode for a project's own
   install, typecheck, and test commands, which execute files an agent edited.
   It binds the toolchain read-only (`ProcessSandbox.toolchainReads`: every

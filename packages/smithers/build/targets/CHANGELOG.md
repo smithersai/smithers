@@ -8,6 +8,12 @@ of it.
 
 ### Added
 
+- `ExecSandbox.Request.writeProtected` names workspace paths a run nothing
+  confines may not write. `Exec.run` starts such a run through
+  `ExecSandbox.protect`, which wraps the argv on a host that has the mechanism
+  and leaves it alone elsewhere. `ExecSandbox.writeProtectionRefusal` says why
+  a host cannot.
+
 - `RunAttrs.manual` marks a run target for explicit selection.
 
 - Added `LlmLint.CredentialDelivery`, the schema of the document a review host

@@ -23,6 +23,7 @@
  */
 
 import * as ProcessSandbox from "@smthrs/platform-node/ProcessSandbox"
+import * as NodePath from "node:path"
 import type * as Attr from "./Attr.ts"
 import type * as WorkspaceDeclaration from "./WorkspaceDeclaration.ts"
 
@@ -130,7 +131,15 @@ export {
    * @category rendering
    * @since 0.1.0
    */
-  wrap
+  wrap,
+  /**
+   * Why this host cannot hold a path read-only under an unconfined run, or
+   * nothing when it can.
+   *
+   * @category resolution
+   * @since 0.1.0
+   */
+  writeProtectionRefusal
 } from "@smthrs/platform-node/ProcessSandbox"
 
 /**
@@ -194,6 +203,17 @@ export interface Request {
    * layer; under any other mechanism the request is refused.
    */
   readonly scratch?: boolean | undefined
+  /**
+   * Workspace paths the run may not write even when nothing confines it: the
+   * policy is `"none"` or the workspace declared `Sandbox.None()`. The run
+   * keeps the host's files and network and finds these paths read-only, so a
+   * tree a content key has measured stays the tree while a tool runs over
+   * it. It runs in a mount namespace to do so; `ProcessSandbox.writeProtected`
+   * says what that changes. A confined run needs no entry here: what it may
+   * write is its `writes`. A host without the mechanism runs the tool
+   * unprotected; see {@link protect}.
+   */
+  readonly writeProtected?: ReadonlyArray<string> | undefined
 }
 
 /**
@@ -355,4 +375,28 @@ export const plan = (
   if (selected._tag === "none") return undefined
   const planned = ProcessSandbox.plan(lower(request), location, hostFacts)
   return ProcessSandbox.isUnenforceable(planned) ? advised(planned) : planned
+}
+
+/**
+ * The argv an unconfined run starts: `argv` wrapped so the request's
+ * {@link Request.writeProtected} paths are read-only for it, or `argv` itself
+ * when the request names none or the host has no mechanism to hold them.
+ *
+ * Call it only for a request {@link plan} answered nothing for. A path that
+ * leaves the workspace is dropped, and one that does not exist is skipped.
+ *
+ * @category rendering
+ * @since 0.1.0
+ */
+export const protect = (
+  request: Request,
+  workspaceRoot: string,
+  argv: ReadonlyArray<string>,
+  hostFacts: ProcessSandbox.Host
+): ReadonlyArray<string> => {
+  const paths = (request.writeProtected ?? [])
+    .map((path) => NodePath.resolve(workspaceRoot, ...path.split("/")))
+    .filter((path) => path.startsWith(workspaceRoot + NodePath.sep))
+  if (paths.length === 0) return argv
+  return ProcessSandbox.writeProtected(paths, argv, hostFacts) ?? argv
 }

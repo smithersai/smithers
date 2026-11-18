@@ -1392,6 +1392,17 @@ policy and closes Unix sockets; build tools retain their declared policy. Build
 output files may open a parent directory; agent permission profiles never use
 that build-specific option.
 
+`writeProtected(paths, argv, host?)` is not a confinement. It wraps an argv so
+the process keeps the host's files, network and environment and finds the named
+paths read-only: on Linux with bubblewrap, the host bound as it is and each
+path bound read-only over itself. The run is in a user and mount namespace with
+`no_new_privs` set, so setuid programs gain nothing, another user's files read
+as owned by `nobody`, and a hard link out of a protected path is a cross-device
+link. It answers nothing on a host without the mechanism, and
+`writeProtectionRefusal(host?)` starts the mechanism once and says why not. The
+build uses it to hold an installed dependency tree still under a run it does
+not confine.
+
 A launcher mounts its named package root so scripts can load sibling modules.
 Module-format-only manifests under `bin/` do not narrow that root. Custom host
 probes can implement `Host.packageDirectory`; omitted, manifest existence is

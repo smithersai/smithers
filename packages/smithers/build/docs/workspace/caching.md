@@ -278,7 +278,8 @@ outputs still measure the same.
   the unconfined verdict is reported and the target runs every time.
 - A missing tool: the run fails.
 - An installed tree that changed after the plan measured it: the trees are
-  measured again before the result is stored.
+  measured again before the result is stored. See
+  [An installed tree stays the tree a plan measured](#an-installed-tree-stays-the-tree-a-plan-measured).
 - A dependency output that changed under an unchanged key, an entry stored
   without evidence, a run whose `PATH` is not the one the plan fingerprinted:
   each is a miss.
@@ -292,6 +293,114 @@ network, `services`, `Typecheck` in build or incremental mode, and `EsLint` with
 stored still has to rerun, so a file no declaration names selects every
 tool-backed target in its package, as before
 (`build-cli/test/AffectedEvidence.test.ts`).
+
+### An installed tree stays the tree a plan measured
+
+Some packages write into their own installed directory the first time they run.
+A launcher whose install script did not run links its platform binary beside
+itself. A fresh install is in that state on every CI machine. The write changes
+a tree after the plan measured it, and every result keyed on that tree would then
+be stored under bytes its run did not read. The rule is: a result is never
+stored under a key that names bytes its run did not read.
+
+So a run of a rule whose key measures an installed tree (`TsBuild`, `Typecheck`,
+`Vitest`, `EsLint`, `Dprint`, `NodeTest`) finds the keyed entries of that tree
+read-only:
+
+| Run                                                                                           | The tree                                                                                               |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Confined                                                                                      | Read-only: it is a read grant                                                                          |
+| The workspace declares `S.Sandbox.None()`, host can start `bwrap`                             | Read-only: bubblewrap binds the host as it is, then each keyed entry of the tree read-only over itself |
+| The workspace declares `S.Sandbox.None()`, host cannot start `bwrap` (macOS, some containers) | Writable. A write lands                                                                                |
+| The target declares `sandbox: "none"`                                                         | Writable. The target asked for the host exactly as it is                                               |
+
+The protected run keeps every file, the network, the process table and the
+environment of an unconfined run. It is a mount namespace, and four things
+differ in it:
+
+- A file another user owns reads as owned by `nobody`, because the run is in a
+  user namespace that maps only its own user and group.
+- `sudo` and other setuid programs gain no privileges: `no_new_privs` is set.
+- A hard link between a held entry and anywhere else fails as a cross-device
+  link, because each held entry is its own mount.
+- A tool a signal kills is reported by its exit status, 128 plus the signal.
+
+A target that cannot run that way declares `sandbox: "none"`. Its results are
+then never reused, and what it writes into a tree keeps other targets' results
+out of the cache for that run.
+
+- The entries held are the ones a key measures and a bind can hold: `.bin`,
+  `.pnpm`, and each other entry that is not a link and whose name does not start
+  with a dot. A tool's own state under a dot name (`node_modules/.vite`,
+  `node_modules/.cache`) stays writable.
+- A write into a held entry fails with a read-only file system error. A launcher
+  built for one runs its binary from where it is and writes nothing.
+- A tool that cannot work under the protection fails that run. When its output
+  names a read-only file system, a cross-device link, refused privileges, or
+  bubblewrap itself, the run is made once more without the protection, the line
+  `ran again with its installed trees writable` is printed, and the target keeps
+  its verdict. If the tree changed, results keyed on it are not stored in that
+  run. A tool that fails another way under the protection is not run again:
+  declare `sandbox: "none"` on that target.
+- Before any result keyed on an installed tree is stored, the tree is measured
+  again. A tree that differs stores nothing and prints the reason below. This
+  holds on every host, protected or not.
+
+Only those six rules are held. A `Shell` target that writes into `node_modules`
+still changes the tree. To keep such a run's results, run the tool once after
+the install and before `smthrs`, or let its install script run.
+
+`build-cli/test/InstalledTreeFirstUse.test.ts` runs a launcher that links its
+binary on first use, in a real workspace under real bubblewrap: the tree is
+unchanged after the first run and the second run hits. It also covers the tool
+that cannot fall back and the host that cannot protect.
+
+### Why a result was not stored
+
+A green target that stores nothing runs again next time. Each one has a reason.
+
+A reason the run found is printed on the target's own line:
+
+```text
+//packages/app:lint  not cached: an installed tree changed after it was planned: node_modules unit .pnpm/formatter@1.2.0: node_modules/formatter/native was written
+```
+
+| Reason                                                       | What the line adds                                             | What to do                                                                                   |
+| ------------------------------------------------------------ | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `an installed tree changed after it was planned`             | The tree, the unit, and up to three paths written in it        | Find what wrote there. Run it before `smthrs`, or run again: the next run plans the new tree |
+| `it passed, but failed when confined to its declared inputs` | The paths the confinement closed, and the file with its output | Declare the missing inputs                                                                   |
+| `an installed tree is a link or links out of the workspace`  | The tree                                                       | Install into the workspace                                                                   |
+| `its run's search path is not the one it was planned under`  |                                                                | Plan and execute under one `PATH`                                                            |
+| `this host cannot confine a run to its declared inputs`      | One line for the run names what the host lacks                 | Install `bubblewrap` on Linux. Hits stored elsewhere still answer                            |
+| `the cache could not store it`                               | The store's error, on a `smthrs:` line                         | Fix the cache directory or the remote                                                        |
+| `its result cannot be written as a cache entry`              | Why, on a `smthrs:` line                                       | Return a plain value from the target                                                         |
+
+A changed unit reads `was added` or `was removed` when the unit itself appeared
+or disappeared, and `changed` when no entry in it is newer than the plan's
+measurement. `; 2 more units changed` counts the rest. `could not be measured
+again` means the tree could not be read after the run; nothing is stored then
+either. On a host that could not hold the tree read-only, the line ends with
+why.
+
+The last line of the run counts every green result that was not stored, by
+reason. It adds two kinds the run does not print one by one: a plan's own
+decision (`the target declares cache: false`), and one of the six rules above
+planned in a way that reuses no result (`Dprint results are not reused`).
+
+```text
+6 targets: 2 hit, 4 ran, 0 failed, 0 skipped (41.0s)
+4 results not stored: 2 an installed tree changed after it was planned; 1 Dprint results are not reused; 1 TsBuild results are not reused
+```
+
+The structured summary carries the same counts as `notStored`, a list of
+`{ reason, count }`, most common first. A target's own row carries `notStored`
+only for a reason its run found. `--results-file` writes both.
+
+A stored result that is not reused prints a line too:
+
+```text
+//packages/app:test  not reused: its stored result read dependency outputs that have changed: packages/app/dist
+```
 
 ### What is not reused yet
 

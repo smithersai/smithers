@@ -3270,6 +3270,15 @@ const visit = async (
     !plannedWrite && installedProblem === undefined &&
     (view.cacheable || RulePolicy.cacheable(rule, mode, repositoryState?.dirty) || evidence !== undefined)
 
+  // Why a green run of this node stores nothing, where the plan can say: the
+  // reason an evidence rule's contract is incomplete, or a tool rule that
+  // reuses no result as it is planned here.
+  const uncachedBecause = evidenceDecision !== undefined && !CacheEvidence.isEvidence(evidenceDecision)
+    ? evidenceDecision.reason
+    : !cacheable && (catalogToolBody || rule === "NodeTest")
+    ? `${rule} results are not reused`
+    : undefined
+
   const spawnEnvironment = Exec.toolEnvironment(
     env,
     context.remoteCache === undefined ? [] : Workspace.credentialEnvNames(context.remoteCache.credentials),
@@ -3489,9 +3498,7 @@ const visit = async (
     ...(dependencyInstallations.size === 0 ? {} : { dependencyInstallations: [...dependencyInstallations] }),
     ...(installedTrees.length === 0 ? {} : { installedTrees }),
     ...(evidence === undefined ? {} : { evidence }),
-    ...(evidenceDecision === undefined || CacheEvidence.isEvidence(evidenceDecision)
-      ? {}
-      : { uncachedBecause: evidenceDecision.reason }),
+    ...(uncachedBecause === undefined ? {} : { uncachedBecause }),
     outDirs,
     outFiles,
     ...(emptyOutDirs.length === 0 ? {} : { emptyOutDirs }),
@@ -4189,7 +4196,13 @@ const planWithServices = async (
     }
   }
   const workList = [...workLabels].map((label) => context.nodes.get(label)!)
-  return { roots, workList, nodes: context.nodes, closures: context.closureResults }
+  // A tree that could not be measured is in no key, so nothing names it later.
+  const installedTrees = new Map(
+    [...context.installedTrees].filter((entry): entry is [string, InstalledTree.Identity] =>
+      typeof entry[1] !== "string"
+    )
+  )
+  return { roots, workList, nodes: context.nodes, closures: context.closureResults, installedTrees }
 }
 
 /** Plans with invocation-local Effect host services.

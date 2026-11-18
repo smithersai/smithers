@@ -140,8 +140,17 @@ One line per settled target goes to standard error, followed by a summary:
 4 targets: 1 hit, 1 ran, 1 failed, 1 skipped (3.6s)
 ```
 
+A run that did not store every green result adds one line that counts them by
+reason; see
+[Why a result was not stored](caching.md#why-a-result-was-not-stored):
+
+```text
+2 results not stored: 2 an installed tree changed after it was planned
+```
+
 The structured result on standard output reports the verb, pattern, jobs,
-duration, counts, verdict, and one report per target.
+duration, counts, verdict, one report per target, and `notStored` when a green
+result was not stored.
 
 ## Planning only
 

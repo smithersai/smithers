@@ -12,6 +12,7 @@ import type * as Executor from "../Executor.ts"
 import type * as PackageIndexModule from "../PackageIndex.ts"
 import type * as Reporter from "../Reporter.ts"
 import type * as Workspace from "../Workspace.ts"
+import type * as InstalledTree from "./InstalledTree.ts"
 import type * as RuleContract from "./RuleContract.ts"
 
 /**
@@ -267,4 +268,9 @@ export interface PackagePlan {
    * consumers. Execution reports the same result rather than resolving twice.
    */
   readonly closures: ReadonlyMap<string, Compose.ClosureResult>
+  /**
+   * Canonical `node_modules` directory → what the plan measured there, unit
+   * by unit. A tree that changes before a result is stored is named from it.
+   */
+  readonly installedTrees: ReadonlyMap<string, InstalledTree.Identity>
 }

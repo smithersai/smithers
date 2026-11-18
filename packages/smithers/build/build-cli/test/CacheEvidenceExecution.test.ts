@@ -413,9 +413,14 @@ describe("a confined run", () => {
     const [first] = await attempts()
     expect(first).toMatchObject({ label: "//pkg:test", denied: ["pkg/data.txt is outside the declared read set"] })
     expect(await run("test")).toEqual({ test: "ran" })
-    // The declaration did not change, so the second run did not attempt again.
+    // The declaration did not change, so the second run did not attempt again, and said why it stored nothing.
     expect(await attempts()).toEqual([first])
-    expect(logs.filter((line) => line.includes("not cached")).length).toBe(1)
+    const reasons = logs.filter((line) => line.includes("not cached"))
+    expect(reasons.length).toBe(2)
+    expect(reasons[1]).toContain(
+      "//pkg:test  not cached: it passed, but failed when confined to its declared inputs, on an earlier run"
+    )
+    expect(reasons[1]).toContain("The confined run's output is in .flows/evidence/")
     // The undeclared file moves and the key does not: a stored result here would be stale.
     await write(inPackage("data.txt"), "other data\n")
     expect(await run("test")).toEqual({ test: "ran" })
@@ -570,12 +575,9 @@ describe("a confined run", () => {
     // Granted whole, the tree shows a tool's own state too, which no key covers.
     expect(await outward.run("test")).toEqual({ test: "ran" })
     expect(await outward.run("test")).toEqual({ test: "ran" })
-    expect(outward.logs.filter((line) => line.includes("not cached"))).toEqual([
-      "//pkg:test  not cached: the installed tree pkg/node_modules is a link or links out of the workspace, " +
-      "so a run cannot be shown only the entries its key measures",
-      "//pkg:test  not cached: the installed tree pkg/node_modules is a link or links out of the workspace, " +
-      "so a run cannot be shown only the entries its key measures"
-    ])
+    const whyNot = "//pkg:test  not cached: an installed tree is a link or links out of the workspace: " +
+      "pkg/node_modules; a run cannot be shown only the entries its key measures"
+    expect(outward.logs.filter((line) => line.includes("not cached"))).toEqual([whyNot, whyNot])
 
     const linked = await fixture()
     const shared = Path.join(Path.dirname(linked.root), "shared", "node_modules")
@@ -594,7 +596,9 @@ describe("a confined run", () => {
     expect(whole.links ?? []).toEqual([])
     expect(await linked.run("test")).toEqual({ test: "ran" })
     expect(await linked.run("test")).toEqual({ test: "ran" })
-    expect(linked.logs.filter((line) => line.includes("is a link or links out of the workspace")).length).toBe(2)
+    expect(linked.logs.filter((line) => line.includes("not cached: an installed tree is a link")).length).toBe(2)
+    // The end of each run counts the result it did not store.
+    expect(linked.logs).toContain("1 result not stored: 1 an installed tree is a link or links out of the workspace")
   })
 
   confinedIt("hides a tree installed after the plan, which no key measured", async () => {
@@ -631,7 +635,10 @@ describe("a confined run", () => {
     // The dependency runs after the plan and patches a package the test can read.
     const { root, run, logs } = await fixture({ unstableDependency: true, patchesInstalledTree: true })
     expect(await run("test")).toEqual({ unstable: "ran", test: "ran" })
-    expect(logs).toContain("//pkg:test  not cached: an installed tree changed after it was planned")
+    expect(logs).toContain(
+      "//pkg:test  not cached: an installed tree changed after it was planned: " +
+        "pkg/node_modules unit runner: lib.txt was written"
+    )
     expect(
       NodeFs.existsSync(Path.join(root, ".flows", "cache")) &&
         NodeFs.readdirSync(Path.join(root, ".flows", "cache"), { recursive: true })

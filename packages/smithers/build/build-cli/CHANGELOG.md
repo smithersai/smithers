@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- A fresh install no longer loses every test, type-check and lint result of
+  its first run. A run of `TsBuild`, `Typecheck`, `Vitest`, `EsLint`, `Dprint`
+  or `NodeTest` that the workspace does not confine now finds the keyed entries
+  of its installed trees read-only (Linux with `bwrap`), so a tool that links
+  its binary into its own package on first use writes nothing and the tree stays
+  the one the plan measured. A tool that cannot work without the write runs once
+  more with the tree writable. The check before a store now covers every
+  cacheable target keyed on a tree, and its line names what changed:
+  `not cached: an installed tree changed after it was planned: node_modules unit .pnpm/<id>: <path> was written`.
+  The summary counts green results that were not stored, by reason, as
+  `notStored`; a row and a `--results-file` row carry `notStored` for a reason
+  the run found. A remembered confined failure, a run under another `PATH` and
+  a stored result whose dependency outputs changed now print their reason too.
+
 - `affected` selects the whole graph when a declaration helper changes: any
   workspace module a `PACKAGE.ts` evaluates, imported by relative path or by
   package name, directly or through another such module. Such a helper builds

@@ -22,6 +22,10 @@
  * was read is never remembered, because a later write inside the same
  * timestamp tick would leave its status unchanged.
  *
+ * A measurement keeps each unit's digest and the newest status change among
+ * its entries. Two measurements of one tree can then say which unit differs,
+ * and which entries in it were written after the first.
+ *
  * @since 1.0.0
  */
 
@@ -77,6 +81,23 @@ export interface Remembered {
 }
 
 /**
+ * One measured unit of an installed tree.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Unit {
+  /** The unit's content digest. */
+  readonly digest: string
+  /**
+   * The newest status change among the unit's entries when it was measured,
+   * in nanoseconds since the epoch. The host sets that time on every write to
+   * an entry, so an entry with a later one was written after the measurement.
+   */
+  readonly latest: bigint
+}
+
+/**
  * The measured identity of one installed tree.
  *
  * @category models
@@ -87,7 +108,40 @@ export interface Identity {
   readonly digest: string
   readonly units: number
   readonly files: number
+  /** Each unit's measurement by name, which is what lets a later change be named. */
+  readonly byUnit: ReadonlyMap<string, Unit>
 }
+
+/**
+ * What changed in an installed tree between two measurements of it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Change {
+  /** The first unit, in name order, that differs. */
+  readonly unit: string
+  /** Whether the unit appeared, disappeared, or holds different content. */
+  readonly kind: "added" | "removed" | "written"
+  /**
+   * Paths inside a written unit whose status changed after the first
+   * measurement, in path order and at most {@link maximumChangedPaths}. Empty
+   * when no entry is newer than that measurement.
+   */
+  readonly paths: ReadonlyArray<string>
+  /** How many more paths changed in the unit than `paths` names. */
+  readonly morePaths: number
+  /** How many more units differ. */
+  readonly moreUnits: number
+}
+
+/**
+ * Paths one {@link Change} names before it counts the rest.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maximumChangedPaths = 3
 
 /**
  * What measuring a tree reads through; a test supplies a failing member.
@@ -356,6 +410,7 @@ export const identify = (
 ): Identity => {
   const budget = { remaining: limits.entries }
   const hash = createHash("sha256")
+  const byUnit = new Map<string, Unit>()
   let files = 0
   let count = 0
   for (const unit of units(directory, io)) {
@@ -384,8 +439,80 @@ export const identify = (
       }
     }
     hash.update(`${unit}\0${row.digest}\n`)
+    byUnit.set(unit, { digest: row.digest, latest: latestOf(entries) })
     files += row.files
     count += 1
   }
-  return { digest: hash.digest("hex"), units: count, files }
+  return { digest: hash.digest("hex"), units: count, files, byUnit }
+}
+
+/** The newest status change among a unit's entries. */
+const latestOf = (entries: ReadonlyArray<Entry>): bigint =>
+  entries.reduce((latest, { stats }) => stats.ctimeNs > latest ? stats.ctimeNs : latest, 0n)
+
+/**
+ * Names what changed in a tree between two measurements, or nothing when the
+ * two are the same tree.
+ *
+ * `before` is the earlier measurement, `after` a later one of the same
+ * `directory`. The first differing unit in name order is named. For a unit
+ * both hold, the tree is read once more to name the entries whose status
+ * changed after `before` was taken: a created or rewritten file, a new link,
+ * or the directory an entry was removed from. A file is named before the
+ * directory that holds it. An entry that changed in the same clock tick as
+ * the first measurement is not named, and the unit still is. The host also
+ * changes a file's status when a hard link to it is made anywhere, so in a
+ * unit that differs, a file whose bytes did not change can be named beside
+ * the one that was written.
+ *
+ * @category measuring
+ * @since 1.0.0
+ */
+export const difference = (
+  directory: string,
+  before: Identity,
+  after: Identity,
+  io: Io = defaultIo,
+  limits: Limits = defaultLimits
+): Change | undefined => {
+  if (before.digest === after.digest) return undefined
+  const names = [...new Set([...before.byUnit.keys(), ...after.byUnit.keys()])].sort()
+  const differing = names.filter((name) => before.byUnit.get(name)?.digest !== after.byUnit.get(name)?.digest)
+  const unit = differing[0]!
+  const earlier = before.byUnit.get(unit)
+  const rest = { morePaths: 0, moreUnits: differing.length - 1 }
+  if (earlier === undefined) return { unit, kind: "added", paths: [], ...rest }
+  if (!after.byUnit.has(unit)) return { unit, kind: "removed", paths: [], ...rest }
+  const root = NodePath.join(directory, ...unit.split("/"))
+  const newer = list(io, root, limits, { remaining: limits.entries })
+    .filter((entry) => entry.stats.ctimeNs > earlier.latest)
+  // A file or link says more than the directory whose listing it changed.
+  const leaves = newer.filter((entry) => entry.kind !== "directory")
+  const named = (leaves.length > 0 ? leaves : newer).map((entry) => entry.path === "" ? "." : entry.path)
+  return {
+    unit,
+    kind: "written",
+    paths: named.slice(0, maximumChangedPaths),
+    morePaths: Math.max(0, named.length - maximumChangedPaths),
+    moreUnits: rest.moreUnits
+  }
+}
+
+/**
+ * One line naming a {@link Change} of the tree at the workspace-relative
+ * `tree`: the tree, the unit, and the paths written in it.
+ *
+ * @category formatting
+ * @since 1.0.0
+ */
+export const describeChange = (tree: string, change: Change): string => {
+  const others = change.moreUnits === 0
+    ? ""
+    : `; ${change.moreUnits} more ${change.moreUnits === 1 ? "unit" : "units"} changed`
+  const unit = `${tree} unit ${change.unit}`
+  if (change.kind !== "written") return `${unit} was ${change.kind}${others}`
+  if (change.paths.length === 0) return `${unit} changed${others}`
+  const more = change.morePaths === 0 ? "" : ` and ${change.morePaths} more`
+  const verb = change.paths.length + change.morePaths === 1 ? "was" : "were"
+  return `${unit}: ${change.paths.join(", ")}${more} ${verb} written${others}`
 }

@@ -241,7 +241,11 @@ export interface SharedFields extends Planner.PlannedTarget {
    * result is stored only after a run confined that way.
    */
   readonly evidence?: CacheEvidence.Evidence
-  /** Why a test, type-check or lint node's result is never reused. */
+  /**
+   * Why a green run of this node stores nothing, where the plan can say: a
+   * test, type-check or lint node whose contract is incomplete, or a tool
+   * rule that reuses no result as planned.
+   */
   readonly uncachedBecause?: string
   readonly outDirs: ReadonlyArray<string>
   readonly outFiles: ReadonlyArray<string>

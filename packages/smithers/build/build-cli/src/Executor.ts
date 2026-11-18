@@ -54,6 +54,40 @@ export interface TargetReport {
   readonly error?: string | undefined
   /** The dependency whose red outcome kept a `skipped` target from running. */
   readonly blockedBy?: string | undefined
+  /**
+   * Why this run could not store the green result of a target whose results
+   * are reusable: an installed tree changed under it, for one. Absent when
+   * the result was stored, and for a target whose rule or declaration reuses
+   * no result; the summary counts those.
+   */
+  readonly notStored?: string | undefined
+}
+
+/**
+ * How many green results one execution did not store, for one reason.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface NotStoredCount {
+  readonly reason: string
+  readonly count: number
+}
+
+/**
+ * Counts the results an execution did not store, by reason: the most common
+ * reason first, equal counts in reason order. `reasons` holds one entry for
+ * each green result that was not stored.
+ *
+ * @category reporting
+ * @since 1.0.0
+ */
+export const notStoredCounts = (reasons: Iterable<string>): ReadonlyArray<NotStoredCount> => {
+  const counts = new Map<string, number>()
+  for (const reason of reasons) counts.set(reason, (counts.get(reason) ?? 0) + 1)
+  return [...counts]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((left, right) => right.count - left.count || byCodeUnit(left.reason, right.reason))
 }
 
 /**
@@ -89,6 +123,12 @@ export interface Summary {
   readonly counts: StatusCounts
   readonly ok: boolean
   readonly results: ReadonlyArray<TargetReport>
+  /**
+   * Green results this execution did not store, by reason: what a run found,
+   * what a plan decided, or a rule whose results are not reused. Absent when
+   * every green result was stored.
+   */
+  readonly notStored?: ReadonlyArray<NotStoredCount> | undefined
 }
 
 /**

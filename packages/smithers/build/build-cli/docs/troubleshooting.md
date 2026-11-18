@@ -148,6 +148,19 @@ A sandboxed target is a separate case. A result produced outside an enforced
 confinement is evidence for this machine only and never reaches the shared
 cache tier, so it will not hit on another host.
 
+A key that did not move means the earlier run stored nothing. That run said so:
+
+- A `not cached:` line on the target, with the reason. For
+  `an installed tree changed after it was planned` it names the tree, the unit
+  and the path written, for example
+  `node_modules unit .pnpm/formatter@1.2.0: node_modules/formatter/native was written`.
+- A last line that counts the results not stored, by reason:
+  `2 results not stored: 2 an installed tree changed after it was planned`.
+
+A `not reused:` line means the entry exists and a dependency output it read has
+changed. Every reason and what to do about it is in
+[Why a result was not stored](../../docs/workspace/caching.md#why-a-result-was-not-stored).
+
 ## A sandbox refused the target
 
 **The run refuses a target that declares `sandbox`, and `--plan` reports the

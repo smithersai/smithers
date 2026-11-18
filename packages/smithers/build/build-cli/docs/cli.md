@@ -139,7 +139,10 @@ and each job uploads the files as the artifact
 `smthrs-results-<job>-<index>-<attempt>`. A check receipt reads a label's
 status from that artifact, never from the log (`.specs/engineering/checks/README.md`).
 `hit` appears only for cached green results, and `cancelled` only under
-`--fail-fast`.
+`--fail-fast`. A row carries `notStored`, the reason, when its run found that a
+green result could not be stored. The record carries `notStored`, a list of
+`{ reason, count }`, when any green result was not stored
+([reasons](../../docs/workspace/caching.md#why-a-result-was-not-stored)).
 
 ### Shards
 

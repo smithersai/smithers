@@ -1061,6 +1061,7 @@ const runCi = async (
     const nodes = new Map(packagePlans.flatMap(({ plan }) => [...plan.nodes]))
     for (const target of merged.targets) nodes.set(target.label, target as PackageExec.PackageNode)
     const closures = new Map(packagePlans.flatMap(({ plan }) => [...plan.closures]))
+    const installedTrees = new Map(packagePlans.flatMap(({ plan }) => [...plan.installedTrees]))
     return rememberExecution(
       index,
       knownRed,
@@ -1069,7 +1070,8 @@ const runCi = async (
           roots: merged.roots,
           workList: merged.targets as ReadonlyArray<PackageExec.PackageNode>,
           nodes,
-          closures
+          closures,
+          installedTrees
         },
         {
           index,
@@ -1279,13 +1281,15 @@ const writeResults = async (
   summary: Executor.Summary,
   config: RuntimeConfig
 ): Promise<string | undefined> => {
-  const results = summary.results.map(({ durationMs, key, label, status, blocking, failureDigest }) => ({
+  const results = summary.results.map(({ durationMs, key, label, status, blocking, failureDigest, notStored }) => ({
     label,
     status,
     key,
     durationMs,
     ...(blocking === undefined ? {} : { blocking }),
-    ...(failureDigest === undefined ? {} : { failureDigest })
+    ...(failureDigest === undefined ? {} : { failureDigest }),
+    // Absent from the record when the result was stored: JSON drops an undefined member.
+    notStored
   }))
   try {
     await writeReceipt(
@@ -1294,6 +1298,7 @@ const writeResults = async (
         JSON.stringify({
           ok: summary.ok,
           counts: summary.counts,
+          notStored: summary.notStored,
           results,
           version: 1,
           ...((summary as ShardedSummary).shard === undefined ? {} : { shard: (summary as ShardedSummary).shard })
@@ -1518,7 +1523,8 @@ const runSelected = async (
     roots: [...new Set(plans.flatMap((plan) => plan.roots))],
     workList: [...work.values()],
     nodes,
-    closures: new Map(plans.flatMap((plan) => [...plan.closures]))
+    closures: new Map(plans.flatMap((plan) => [...plan.closures])),
+    installedTrees: new Map(plans.flatMap((plan) => [...plan.installedTrees]))
   }
   const combined = shard === undefined ? whole : Shards.selectPackage(whole, shard)
   if (flags.plan) {

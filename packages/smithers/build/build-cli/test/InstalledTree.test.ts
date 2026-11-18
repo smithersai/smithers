@@ -336,3 +336,123 @@ describe("remembered units on disk", () => {
     expect([...loaded.rows]).toEqual([["/kept", { fingerprint: digest, digest, files: 3 }]])
   })
 })
+
+describe("difference", () => {
+  /** Long enough that a write after it carries a later status change than every entry before it. */
+  const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 25))
+  const inRunner = ".pnpm/runner@1.0.0/node_modules/runner"
+
+  it("answers nothing for two measurements of one tree", async () => {
+    const root = await tree()
+    const before = InstalledTree.identify(root)
+    await write(root, ".vite/results.json", "{\"changed\":true}")
+    expect(InstalledTree.difference(root, before, InstalledTree.identify(root))).toBeUndefined()
+  })
+
+  it("names the unit and the file a tool wrote beside its own program", async () => {
+    const root = await tree()
+    const before = InstalledTree.identify(root)
+    await tick()
+    await write(root, `${inRunner}/native`, "binary\n", 0o755)
+    const change = InstalledTree.difference(root, before, InstalledTree.identify(root))
+    expect(change).toEqual({
+      unit: ".pnpm/runner@1.0.0",
+      kind: "written",
+      paths: ["node_modules/runner/native"],
+      morePaths: 0,
+      moreUnits: 0
+    })
+    expect(InstalledTree.describeChange("node_modules", change!)).toBe(
+      "node_modules unit .pnpm/runner@1.0.0: node_modules/runner/native was written"
+    )
+  })
+
+  it("names a rewritten file, and the directory a file was removed from", async () => {
+    const root = await tree()
+    const before = InstalledTree.identify(root)
+    await tick()
+    await write(root, `${inRunner}/bin/run.js`, "console.log(2)\n", 0o755)
+    expect(InstalledTree.difference(root, before, InstalledTree.identify(root))?.paths).toEqual([
+      "node_modules/runner/bin/run.js"
+    ])
+    const rewritten = InstalledTree.identify(root)
+    await tick()
+    await Fs.rm(Path.join(root, inRunner, "bin/run.js"))
+    expect(InstalledTree.difference(root, rewritten, InstalledTree.identify(root))?.paths).toEqual([
+      "node_modules/runner/bin"
+    ])
+  })
+
+  it("names a unit that is itself the entry written", async () => {
+    const root = await tree()
+    const before = InstalledTree.identify(root)
+    await tick()
+    await Fs.rm(Path.join(root, "runner"))
+    await Fs.symlink("@scope/plain", Path.join(root, "runner"))
+    const change = InstalledTree.difference(root, before, InstalledTree.identify(root))
+    expect(change).toMatchObject({ unit: "runner", kind: "written", paths: ["."] })
+    expect(InstalledTree.describeChange("node_modules", change!)).toBe("node_modules unit runner: . was written")
+  })
+
+  it("names a unit that appeared or disappeared, and counts the other units that differ", async () => {
+    const root = await tree()
+    const before = InstalledTree.identify(root)
+    await write(root, "added/index.js", "")
+    const added = InstalledTree.difference(root, before, InstalledTree.identify(root))
+    expect(added).toEqual({ unit: "added", kind: "added", paths: [], morePaths: 0, moreUnits: 0 })
+    expect(InstalledTree.describeChange("pkg/node_modules", added!)).toBe("pkg/node_modules unit added was added")
+    await Fs.rm(Path.join(root, "@scope"), { recursive: true })
+    await Fs.rm(Path.join(root, ".bin"), { recursive: true })
+    const several = InstalledTree.difference(root, before, InstalledTree.identify(root))
+    expect(several).toEqual({ unit: ".bin", kind: "removed", paths: [], morePaths: 0, moreUnits: 2 })
+    expect(InstalledTree.describeChange("node_modules", several!)).toBe(
+      "node_modules unit .bin was removed; 2 more units changed"
+    )
+  })
+
+  it("names the first paths written in a unit and counts the rest", async () => {
+    const root = await tree()
+    const before = InstalledTree.identify(root)
+    await tick()
+    for (const name of ["a", "b", "c", "d", "e"]) await write(root, `${inRunner}/${name}.js`, name)
+    await write(root, "@scope/plain/index.js", "export const changed = true\n")
+    const change = InstalledTree.difference(root, before, InstalledTree.identify(root))
+    expect(change).toEqual({
+      unit: ".pnpm/runner@1.0.0",
+      kind: "written",
+      paths: ["node_modules/runner/a.js", "node_modules/runner/b.js", "node_modules/runner/c.js"],
+      morePaths: 2,
+      moreUnits: 1
+    })
+    expect(InstalledTree.describeChange("node_modules", change!)).toBe(
+      "node_modules unit .pnpm/runner@1.0.0: node_modules/runner/a.js, node_modules/runner/b.js, " +
+        "node_modules/runner/c.js and 2 more were written; 1 more unit changed"
+    )
+  })
+
+  it("still names the unit when no entry is newer than the first measurement", async () => {
+    const root = await tree()
+    const measured = InstalledTree.identify(root)
+    // A first measurement taken in the same clock tick as the write that followed it.
+    const before = {
+      ...measured,
+      byUnit: new Map([...measured.byUnit].map(([unit, row]) => [unit, { ...row, latest: 2n ** 62n }]))
+    }
+    await write(root, `${inRunner}/native`, "binary\n")
+    const change = InstalledTree.difference(root, before, InstalledTree.identify(root))
+    expect(change).toEqual({ unit: ".pnpm/runner@1.0.0", kind: "written", paths: [], morePaths: 0, moreUnits: 0 })
+    expect(InstalledTree.describeChange("node_modules", change!)).toBe("node_modules unit .pnpm/runner@1.0.0 changed")
+  })
+
+  it("says two paths were written", () => {
+    expect(
+      InstalledTree.describeChange("node_modules", {
+        unit: "tool",
+        kind: "written",
+        paths: ["a", "b"],
+        morePaths: 0,
+        moreUnits: 0
+      })
+    ).toBe("node_modules unit tool: a, b were written")
+  })
+})

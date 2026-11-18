@@ -123,6 +123,8 @@ export interface ExecutionServices {
   ) => Effect.Effect<Awaited<ReturnType<typeof openCache>>, unknown>
   /** The host facts that decide whether a run can gather cache evidence. */
   readonly sandboxHost: () => ExecSandbox.Host
+  /** Why this host cannot hold an installed tree read-only under an unconfined run, or nothing when it can. */
+  readonly writeProtection: (host: ExecSandbox.Host) => string | undefined
 }
 
 /**
@@ -145,7 +147,8 @@ export const executionServicesLive: ExecutionServices = {
   dockerService: DockerExec.serviceSpec,
   anvilService: AnvilExec.serviceSpec,
   cache: (options) => joined(() => openCache(options)),
-  sandboxHost: () => ExecSandbox.host()
+  sandboxHost: () => ExecSandbox.host(),
+  writeProtection: (host) => ExecSandbox.writeProtectionRefusal(host)
 }
 
 /**
@@ -451,6 +454,51 @@ const installedEntries = (
 }
 
 /**
+ * The entries of installed trees a run nothing confines is to find read-only:
+ * each real file or directory among the entries a key measures
+ * ({@link InstalledTree.units}), workspace-relative. A tool can then neither
+ * rewrite an installed package nor add a file beside its own program, so the
+ * tree a plan measured is still the tree when its results are stored. A
+ * tool's own state under a dot name stays writable, as an unconfined run
+ * expects. A link is skipped: its target is protected where that is itself a
+ * keyed entry, and a bind would land on the target, not on the link. A tree
+ * that is missing, is a link, or cannot be listed contributes nothing.
+ *
+ * @category internal
+ * @since 1.0.0
+ */
+export const protectedEntries = (root: string, directories: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const entries: Array<string> = []
+  for (const directory of directories) {
+    const absolute = NodePath.join(root, ...directory.split("/"))
+    try {
+      if (!NodeFs.lstatSync(absolute).isDirectory()) continue
+      for (const name of NodeFs.readdirSync(absolute)) {
+        if (name !== ".bin" && name !== ".pnpm" && name.startsWith(".")) continue
+        if (!NodeFs.lstatSync(NodePath.join(absolute, name)).isSymbolicLink()) entries.push(`${directory}/${name}`)
+      }
+    } catch {
+      continue
+    }
+  }
+  return entries
+}
+
+/**
+ * Whether a failed run's output reads like the write protection's own doing:
+ * a write refused by a read-only file system, a hard link refused across the
+ * mount a protected entry becomes, a program refused new privileges, or the
+ * mechanism's own complaint at the start of a line. The tool's text is the
+ * only witness, so this is a reading of it, in any letter case, as plain
+ * text or as it sits inside a rendered failure.
+ *
+ * @category internal
+ * @since 1.0.0
+ */
+export const refusedByProtection = (output: string): boolean =>
+  /read-only file system|\bEROFS\b|\bEXDEV\b|cross-device link|no new privileges|(?:^|\n|\\n|")bwrap: /i.test(output)
+
+/**
  * Every dependency output a confined run of `node` can read: the declared
  * output directories and files of its transitive dependencies. They are the
  * paths {@link sandboxRequest} grants for the same reason, so what a result's
@@ -676,6 +724,21 @@ export const executeEffect = (
     const repoResolutions = RepoResolution.resolver(index, options.environment ?? process.env)
     const reports = new Map<string, Executor.TargetReport>()
     const notGreen = new Set<string>()
+    /** Label → why its run found that its green result could not be stored. */
+    const unstoredReasons = new Map<string, string>()
+    /** Why each green result that was not stored was not, one entry a result. */
+    const notStoredReasons: Array<string> = []
+    /** Label → the node as it ran, where an installation it waited for replaced the planned one. */
+    const refreshedNodes = new Map<string, PackageNode>()
+    /** Says why `node`'s result is not stored, on its own line and in the run's summary. */
+    const unstored = (node: PackageNode, reason: string, detail = ""): void => {
+      unstoredReasons.set(node.label, reason)
+      log(`${node.label}  not cached: ${reason}${detail}`)
+    }
+    let protection: { readonly refusal: string | undefined } | undefined
+    /** Whether this host can hold an installed tree read-only under an unconfined run; asked once. */
+    const protects = (): boolean =>
+      (protection ??= { refusal: services.writeProtection(services.sandboxHost()) }).refusal === undefined
     const byLabel = new Map(planned.workList.map((node) => [node.label, node]))
 
     /** The first target whose report stopped a fail-fast run. */
@@ -822,7 +885,48 @@ export const executeEffect = (
         const sandbox = sandboxRequest(node, planned.nodes, index.workspace, cacheDirectory, candidateReads)
         // Dependency grants are bound by the planner. Resolving a new link here
         // would let post-plan filesystem changes create new host authority.
-        return sandbox
+        //
+        // A run nothing confines can write anywhere, and a tool that writes
+        // into an installed tree changes what every key that measured the
+        // tree names. So the keyed entries of the trees this node's key
+        // measured are held read-only for its run, where the host can.
+        // A target that declares `sandbox: "none"` asked for the host as it
+        // is, and the protection is a namespace of its own: it gets neither.
+        const selected = ExecSandbox.select(sandbox, services.sandboxHost())
+        const entries = workspaceRoot !== root || node.sandbox === "none" ||
+            ExecSandbox.isUnenforceable(selected) || selected._tag !== "none"
+          ? []
+          : protectedEntries(root, node.installedTrees ?? [])
+        return entries.length > 0 && protects() ? { ...sandbox, writeProtected: entries } : sandbox
+      })
+
+    /**
+     * Runs a body as the workspace declares. A tool that cannot work under
+     * the write protection (it must write into an installed tree, link a
+     * file out of one, or gain privileges) fails with a message that says
+     * so; that run is made once more without the protection, so the target
+     * keeps its verdict and the check after the run sees any change.
+     */
+    const runDeclared = (
+      node: PackageNode,
+      run: (
+        sandbox: ExecSandbox.Request,
+        write: (stream: "stdout" | "stderr", text: string) => void
+      ) => Effect.Effect<Exit.Exit<unknown, unknown>, unknown>,
+      write: (stream: "stdout" | "stderr", text: string) => void
+    ): Effect.Effect<Exit.Exit<unknown, unknown>, unknown> =>
+      Effect.gen(function*() {
+        const declared = yield* sandboxFor(node, root)
+        const exit = yield* run(declared, write)
+        if (
+          declared.writeProtected === undefined || Exit.isSuccess(exit) ||
+          !refusedByProtection(Executor.describeFailure(Cause.squash(exit.cause)))
+        ) return exit
+        log(
+          `${node.label}  ran again with its installed trees writable: ` +
+            "the first run failed on the protection that holds them read-only"
+        )
+        return yield* run({ ...declared, writeProtected: undefined }, write)
       })
 
     const spawnNode = (
@@ -1076,6 +1180,7 @@ export const executeEffect = (
             output,
             storedAt: new Date().toISOString()
           }, { shared: publishable(node, confined, evidenced) }).catch((cause: unknown) => {
+            unstoredReasons.set(node.label, "the cache could not store it")
             log(`smthrs: could not store ${node.label} in the cache: ${Diagnostic.describe(cause)}`)
           })
         )
@@ -1094,26 +1199,45 @@ export const executeEffect = (
       )
 
     /**
-     * Whether every installed tree in `node`'s key still measures as planned.
-     * A dependency, or anything else on the host, can change a tree between
-     * the plan and the end of the run; the result would then be stored under
-     * a key that names bytes the run did not read.
+     * What changed in an installed tree in `node`'s key since it was planned,
+     * or nothing when every one still measures as planned. A tool, a
+     * dependency, or anything else on the host can change a tree between the
+     * plan and the end of the run; the result would then be stored under a
+     * key that names bytes the run did not read. The answer names the tree,
+     * and the unit and paths written in it when this plan holds the
+     * measurement the node's key names. A tree that cannot be measured again
+     * (another process is writing it, or it is gone) is a changed tree: the
+     * answer says so, and the green target stays green.
      */
-    const installedTreesHold = (node: PackageNode): Effect.Effect<boolean, unknown> =>
+    const installedTreeChange = (node: PackageNode): Effect.Effect<string | undefined, unknown> =>
       joined(async () => {
         const remembered = await InstalledTree.load(InstalledTree.path(root, cacheDirectory))
         const rows: Array<Record<string, unknown>> = []
         collectTagged(node.keyMaterial.inputs, "InstalledTree", rows, new Set())
-        return rows.every((row) =>
-          InstalledTree.identify(
-            NodeFs.realpathSync(NodePath.join(root, ...String(row["path"]).split("/"))),
-            remembered
-          ).digest === row["digest"]
-        )
+        for (const row of rows) {
+          const tree = String(row["path"])
+          try {
+            const real = NodeFs.realpathSync(NodePath.join(root, ...tree.split("/")))
+            const now = InstalledTree.identify(real, remembered)
+            if (now.digest === row["digest"]) continue
+            // A node planned again after an installation keys a later
+            // measurement than this plan holds; comparing against the plan's
+            // would name what the installation did.
+            const before = planned.installedTrees.get(real)
+            return before === undefined || before.digest !== row["digest"]
+              ? tree
+              : InstalledTree.describeChange(tree, InstalledTree.difference(real, before, now)!)
+          } catch (cause) {
+            return `${tree} could not be measured again: ${Diagnostic.describe(cause)}`
+          }
+        }
+        return undefined
       })
 
     /** How much of a failed confined attempt's failure text is kept beside its record. */
     const attemptOutputCharacters = 8_000
+    /** Why a result whose confined attempt failed is not stored. */
+    const failedConfined = "it passed, but failed when confined to its declared inputs"
     let unprovableNoted = false
     /**
      * Runs one evidence rule's body and says whether the run proved its reads.
@@ -1136,10 +1260,9 @@ export const executeEffect = (
     ): Effect.Effect<{ readonly exit: Exit.Exit<unknown, unknown>; readonly evidenced: boolean }, unknown> =>
       Effect.gen(function*() {
         const live = (stream: "stdout" | "stderr", text: string): void => reporter.toolOutput(node.label, stream, text)
-        const declared = yield* sandboxFor(node, root)
         /** Runs as the workspace declares; whatever the verdict, it proves nothing and is not stored. */
         const unproven = Effect.map(
-          Effect.suspend(() => run(declared, live)),
+          Effect.suspend(() => runDeclared(node, run, live)),
           (exit) => ({ exit, evidenced: false })
         )
         // A target body resolves its package manager from this process's
@@ -1149,15 +1272,19 @@ export const executeEffect = (
         if (
           node.nixEnvironment === undefined && options.environment !== undefined &&
           options.environment["PATH"] !== process.env["PATH"]
-        ) return yield* unproven
+        ) {
+          unstored(node, "its run's search path is not the one it was planned under")
+          return yield* unproven
+        }
         // Evidence needs the run to see exactly the keyed entries of each
         // installed tree. A tree that is a link, or holds a link out of the
         // workspace, can only be granted whole, tool scratch and all.
         const whole = (node.installedTrees ?? []).find((directory) => installedEntries(root, directory) === undefined)
         if (whole !== undefined) {
-          log(
-            `${node.label}  not cached: the installed tree ${whole} is a link or links out of the workspace, ` +
-              "so a run cannot be shown only the entries its key measures"
+          unstored(
+            node,
+            "an installed tree is a link or links out of the workspace",
+            `: ${whole}; a run cannot be shown only the entries its key measures`
           )
           return yield* unproven
         }
@@ -1172,6 +1299,7 @@ export const executeEffect = (
             unprovableNoted = true
             log(`smthrs: test, type-check and lint results are not cached on this host: ${unprovable.message}`)
           }
+          unstoredReasons.set(node.label, "this host cannot confine a run to its declared inputs")
           return yield* unproven
         }
         if (node.evidence.mode === "declared") {
@@ -1187,7 +1315,16 @@ export const executeEffect = (
           reads: node.readSet,
           installedTrees: node.installedTrees ?? []
         })
-        if (yield* joined(() => CacheEvidence.attemptFailed(root, cacheDirectory, identity))) return yield* unproven
+        const evidencePath = posix(NodePath.relative(root, CacheEvidence.attemptPath(root, cacheDirectory, identity)))
+        if (yield* joined(() => CacheEvidence.attemptFailed(root, cacheDirectory, identity))) {
+          unstored(
+            node,
+            failedConfined,
+            `, on an earlier run; it is tried again a day after that run, or once its declaration changes. ` +
+              `The confined run's output is in ${evidencePath}`
+          )
+          return yield* unproven
+        }
         const buffered: Array<readonly ["stdout" | "stderr", string]> = []
         // A failed attempt is discarded whole, so a test runner is told to
         // stop at its first failure; a passing run is the same run either way.
@@ -1198,7 +1335,7 @@ export const executeEffect = (
           for (const [stream, text] of buffered) live(stream, text)
           return { exit: attempt, evidenced: true }
         }
-        const exit = yield* run(declared, live)
+        const exit = yield* runDeclared(node, run, live)
         if (Exit.isSuccess(exit)) {
           // What a failed target prints: the tool's own captured output, past
           // the line limit of the live view, with the sandbox's reading of it.
@@ -1211,12 +1348,10 @@ export const executeEffect = (
               output: [failure.slice(-attemptOutputCharacters)]
             }).catch(() => undefined)
           )
-          log(
-            `${node.label}  not cached: it passed, but failed when confined to its declared inputs${
-              denied.length === 0 ? "" : `: ${denied.join("; ")}`
-            }; the confined run's output is in ${
-              posix(NodePath.relative(root, CacheEvidence.attemptPath(root, cacheDirectory, identity)))
-            }`
+          unstored(
+            node,
+            failedConfined,
+            `${denied.length === 0 ? "" : `: ${denied.join("; ")}`}; the confined run's output is in ${evidencePath}`
           )
         }
         return { exit, evidenced: false }
@@ -3694,12 +3829,23 @@ export const executeEffect = (
                 } else {
                   // The entry answers only while every dependency output its
                   // run could read still measures as it did then.
-                  const stored = CacheEvidence.decode(cached.output)
-                  if (
-                    stored !== undefined &&
-                    JSON.stringify(stored.reads) === JSON.stringify(yield* dependencyReads(node)) &&
-                    (yield* answerTargetHit(node, stored.result))
-                  ) return green("hit")
+                  const entry = CacheEvidence.decode(cached.output)
+                  if (entry !== undefined) {
+                    const reads = yield* dependencyReads(node)
+                    if (JSON.stringify(entry.reads) === JSON.stringify(reads)) {
+                      if (yield* answerTargetHit(node, entry.result)) return green("hit")
+                    } else {
+                      const was = new Map(entry.reads)
+                      const now = new Map(reads)
+                      const moved = [...new Set([...was.keys(), ...now.keys()])]
+                        .filter((path) => was.get(path) !== now.get(path))
+                      log(
+                        `${node.label}  not reused: its stored result read dependency outputs that have changed: ${
+                          moved.sort(byCodeUnit).join(", ")
+                        }`
+                      )
+                    }
+                  }
                 }
               }
               const runBody = (
@@ -3731,8 +3877,9 @@ export const executeEffect = (
               const { evidenced, exit } = evidenceNode === undefined
                 ? {
                   evidenced: false,
-                  exit: yield* runBody(
-                    yield* sandboxFor(node, root),
+                  exit: yield* runDeclared(
+                    node,
+                    runBody,
                     (stream, text) => reporter.toolOutput(node.label, stream, text)
                   )
                 }
@@ -3755,21 +3902,33 @@ export const executeEffect = (
                   const value = Target.metadata(node.declaration).decodeSuccess(exit.value)
                   const encoded = Executor.encodeCacheOutput(value)
                   if ("output" in encoded) {
-                    const stored = node.declaredOutputs === undefined
+                    const captured = node.declaredOutputs === undefined
                       ? encoded.output
                       : yield* captureTargetOutputs(node, encoded.output, node.declaredOutputs)
-                    if (evidenced && !(yield* installedTreesHold(node))) {
-                      log(`${node.label}  not cached: an installed tree changed after it was planned`)
+                    // Only a result about to be stored is checked: the key
+                    // it would go under must still name the trees it read.
+                    const changed = (node.evidence === undefined || evidenced) && (node.installedTrees ?? []).length > 0
+                      ? yield* installedTreeChange(node)
+                      : undefined
+                    if (changed !== undefined) {
+                      // Where the host could not hold the trees, the line says why.
+                      const unheld = protection?.refusal === undefined
+                        ? ""
+                        : `; installed trees are not held read-only on this host: ${protection.refusal}`
+                      unstored(node, "an installed tree changed after it was planned", `: ${changed}${unheld}`)
                     } else {
                       yield* cachePut(
                         node,
-                        evidenced ? CacheEvidence.record(yield* dependencyReads(node), stored) : stored,
+                        evidenced ? CacheEvidence.record(yield* dependencyReads(node), captured) : captured,
                         node.keyPreview,
                         true,
                         evidenced
                       )
                     }
-                  } else log(`smthrs: skipped the cache store for ${node.label}: ${encoded.reason}`)
+                  } else {
+                    unstoredReasons.set(node.label, "its result cannot be written as a cache entry")
+                    log(`smthrs: skipped the cache store for ${node.label}: ${encoded.reason}`)
+                  }
                   return green("ran")
                 }).pipe(Effect.catchCause((failure) =>
                   Effect.sync(() => {
@@ -3902,6 +4061,7 @@ export const executeEffect = (
         }
         const current = yield* refreshInstalledNode(node)
         if (typeof current === "string") return fail(current)
+        if (current !== node) refreshedNodes.set(node.label, current)
         node = current
         if (node.refusal !== undefined) return fail(node.refusal)
         if (node.approval !== undefined) {
@@ -3933,6 +4093,15 @@ export const executeEffect = (
           )
         )
         if (outcome.status === "failed" || outcome.status === "skipped") notGreen.add(label)
+        // A green run whose result is not stored is counted under why: the
+        // reason its run found, or the one its plan gave. Only a reason the
+        // run found is news about this target, so only that one is put on
+        // its row.
+        const notStored = outcome.status === "ran" ? unstoredReasons.get(label) : undefined
+        const reason = outcome.status === "ran"
+          ? notStored ?? (refreshedNodes.get(label) ?? node).uncachedBecause
+          : undefined
+        if (reason !== undefined) notStoredReasons.push(reason)
         report({
           label,
           target: node.rule,
@@ -3940,7 +4109,8 @@ export const executeEffect = (
           durationMs: outcome.status === "skipped" ? 0 : performance.now() - started,
           key: keyFor(node),
           ...(outcome.error === undefined ? {} : { error: outcome.error }),
-          ...(outcome.blockedBy === undefined ? {} : { blockedBy: outcome.blockedBy })
+          ...(outcome.blockedBy === undefined ? {} : { blockedBy: outcome.blockedBy }),
+          ...(notStored === undefined ? {} : { notStored })
         })
       })
     yield* Executor.scheduleEffect(planned.workList, jobs, runOne, options.signal, {
@@ -3963,6 +4133,7 @@ export const executeEffect = (
         : { cancelled: results.filter((entry) => entry.status === "cancelled").length })
     }
     const durationMs = performance.now() - startedAt
+    const notStored = Executor.notStoredCounts(notStoredReasons)
     const summary: Executor.Summary = {
       verb: options.verb,
       pattern: options.patterns.join(" "),
@@ -3970,7 +4141,8 @@ export const executeEffect = (
       durationMs,
       counts,
       ok: counts.failed === 0 && stoppedBy === undefined,
-      results
+      results,
+      ...(notStored.length === 0 ? {} : { notStored })
     }
     reporter.summary(summary)
     return summary

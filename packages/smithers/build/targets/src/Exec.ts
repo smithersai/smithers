@@ -1602,7 +1602,26 @@ export const run = (
             },
             hostFacts!
           )
-        return { resolved, sensitiveEnv, cwd, confinement, destinations: options.sandbox?.destinations, hostFacts }
+        // A run nothing confines may still be told to hold some paths still.
+        const request = options.sandbox
+        const protect = request === undefined || confinement !== undefined
+          ? undefined
+          : (argv: ReadonlyArray<string>): ReadonlyArray<string> =>
+            ExecSandbox.protect(
+              request,
+              NodeFs.realpathSync(NodePath.resolve(options.workspaceRoot)),
+              argv,
+              hostFacts!
+            )
+        return {
+          resolved,
+          sensitiveEnv,
+          cwd,
+          confinement,
+          destinations: options.sandbox?.destinations,
+          hostFacts,
+          protect
+        }
       },
       catch: refused
     }))
@@ -1615,7 +1634,7 @@ export const run = (
     ))
   return Effect.flatMap(
     expanded,
-    ({ confinement, cwd, resolved, sensitiveEnv, destinations, hostFacts }) => {
+    ({ confinement, cwd, resolved, sensitiveEnv, destinations, hostFacts, protect }) => {
       if (ExecSandbox.isUnenforceable(confinement)) {
         return Effect.fail(
           execError({
@@ -1663,7 +1682,7 @@ export const run = (
         () =>
           withSecretEnvironment(resolved, diagnostic, (secretEnv, brokered) =>
             Effect.flatMap(
-              confined(confinement, cwd, brokered, sensitiveEnv, secretEnv, options, destinations, hostFacts),
+              confined(confinement, cwd, brokered, sensitiveEnv, secretEnv, options, destinations, hostFacts, protect),
               (output) =>
                 resolved.expectedExitCodes.includes(output.exitCode)
                   ? Effect.succeed({
@@ -1717,10 +1736,21 @@ const confined = (
     readonly onStderr?: ((chunk: Uint8Array) => void) | undefined
   },
   destinations?: ReadonlyArray<string>,
-  hostFacts?: ExecSandbox.Host
+  hostFacts?: ExecSandbox.Host,
+  /** Wraps the argv of a run nothing confines so the paths its request protects are read-only for it. */
+  protect?: (argv: ReadonlyArray<string>) => ReadonlyArray<string>
 ): Effect.Effect<Spawned, ExecError> => {
   if (confinement === undefined) {
-    return spawnTool(cwd, resolved, sensitiveEnv, secretEnv, options.onStdout, options.onStderr, options.environment)
+    // The wrapper's argv never reaches a diagnostic: an error carries the tool's own.
+    return spawnTool(
+      cwd,
+      { ...resolved, argv: (protect?.(resolved.argv) ?? resolved.argv) as [string, ...Array<string>] },
+      sensitiveEnv,
+      secretEnv,
+      options.onStdout,
+      options.onStderr,
+      options.environment
+    ).pipe(Effect.mapError((error) => ({ ...error, argv: resolved.argv })))
   }
   const preparationError = (cause: unknown): ExecError =>
     execError({
