@@ -8,10 +8,12 @@
  *
  * **Method.** One commit is replayed with the real reader, generator and
  * replay, and the repository's own `smthrs`, from an empty cache. The start
- * of `smthrs` is timed beside it (`smthrs --version`, before and after, the
- * slower of the two). The measurement is repeated up to three times and the
- * best is kept, because the machine is shared and one slow start says
- * nothing about the code.
+ * of `smthrs` is timed beside it (`smthrs --help`, before and after, the
+ * slower of the two): it loads every command, as a run does, and does no
+ * work. `--version` alone is answered before a command loads, so it is not
+ * a start. The measurement is repeated up to three times and the best is
+ * kept, because the machine is shared and one slow start says nothing about
+ * the code.
  *
  * **What it holds.**
  *
@@ -103,7 +105,7 @@ const linesOf = (file: string): number =>
 /** How long `smthrs` takes to start and stop, in milliseconds. */
 const startOf = (): number => {
   const from = performance.now()
-  execFileSync(smthrs, ["--version"], { stdio: "ignore" })
+  execFileSync(smthrs, ["--help"], { stdio: "ignore" })
   return performance.now() - from
 }
 

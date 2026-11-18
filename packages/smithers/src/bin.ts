@@ -11,6 +11,7 @@ import { agentArguments, formattedLogArguments, legacyArguments } from "./cli/Co
 import { deferTypeScript } from "./internal/Bootstrap.ts"
 import * as Failure from "./internal/Failure.ts"
 import * as NodeVersion from "./internal/NodeVersion.ts"
+import { packageVersion } from "./Version.ts"
 
 const start = async (): Promise<void> => {
   // Before any command loads: on an older Node a dependency fails at link time
@@ -21,10 +22,16 @@ const start = async (): Promise<void> => {
     process.exitCode = 1
     return
   }
+  const original = process.argv.slice(2)
+  // `--version` alone prints the version in the manifest and a newline, which
+  // is what the command tree prints for it. Answering here loads no command.
+  if (original.length === 1 && original[0] === "--version") {
+    process.stdout.write(`${packageVersion}\n`)
+    return
+  }
   // The hook module itself imports registerHooks. Load it only after the
   // version check, so older Node releases get the actionable refusal too.
   const { installEffectResolution } = await import("@smthrs/build-cli/effect-resolution")
-  const original = process.argv.slice(2)
   // What a project flow imports besides Effect and the flow core. Owning them
   // lets a CLI installed outside the project host a flow built on a pattern.
   installEffectResolution({
