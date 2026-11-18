@@ -1,0 +1,79 @@
+/**
+ * Replays this repository's own `packages/ci` targets and prints the replay
+ * report as JSON. `smithers.sh` starts it.
+ *
+ * The baseline is what Smithers CI does today with no cache: `smthrs ci` on
+ * each target with `--no-cache`. Normal mode is the same targets with the cache.
+ */
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import type { Inventory } from "../../src/contract/Inventory.ts"
+import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
+import { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { path as targetMapPath } from "../../src/contract/TargetMap.ts"
+import { Options, run } from "../../src/replay/index.ts"
+import { installDependencies } from "./install.ts"
+
+const jobId = (target: string): string => `ci-${target}`
+const stepId = (target: string): string => `ci-${target}-1`
+const label = (target: string): string => `//packages/ci:${target}`
+
+const inventoryOf = (targets: ReadonlyArray<string>): Inventory => ({
+  version: 1,
+  repository: "smithersai/smithers",
+  commit: "HEAD",
+  toolchains: [],
+  jobs: targets.map((target) => ({
+    id: jobId(target),
+    source: "package-json",
+    file: "packages/ci/PACKAGE.ts",
+    name: target,
+    needs: [],
+    triggers: [],
+    matrix: [],
+    steps: [{
+      id: stepId(target),
+      command: `node_modules/.bin/smthrs ci ${label(target)} --no-cache --ui plain`,
+      cwd: "",
+      env: {},
+      secrets: []
+    }],
+    unsupported: []
+  }))
+})
+
+const targetMapOf = (targets: ReadonlyArray<string>): string =>
+  `{"version":1,"targets":[${
+    targets.map((target) =>
+      `{"label":"${label(target)}","job":"${jobId(target)}","step":"${stepId(target)}","variant":{}}`
+    ).join(",")
+  }]}`
+
+effect function install(directory: string) {
+  try tryPromise({
+    try: () => installDependencies(directory),
+    catch: (cause): Failure => ({ code: "command-failed", message: `pnpm install failed: ${cause}`, part: "replay" })
+  })
+}
+
+export effect function main() {
+  const root = try Config.String("REPLAY_ROOT")
+  const commits = try Config.Number("REPLAY_COMMITS")
+  const targets = (try Config.String("REPLAY_TARGETS")).split(",")
+  const parts: ReplayParts = {
+    read: (_root) => Effect.succeed(inventoryOf(targets)),
+    files: () => Effect.succeed([{ path: targetMapPath, content: targetMapOf(targets) }]),
+    rows: () => Effect.succeed([]),
+    score: () => Effect.succeed([])
+  }
+  provide Options = {
+    // Smithers build refuses a CLI from outside the checkout it runs in.
+    smthrs: ["node_modules/.bin/smthrs"],
+    reruns: 1,
+    prepare: (directory) => install(directory)
+  } {
+    const report = try run({ root, commits, modes: ["normal"] }, parts)
+    try Console.log(try Schema.encodeEffect(Schema.fromJsonString(ReplayReport))(report))
+  }
+}
+
+await runPromise(Effect.provide(main(), NodeServices.layer))

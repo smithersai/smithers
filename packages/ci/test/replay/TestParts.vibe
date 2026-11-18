@@ -1,0 +1,159 @@
+/** Real parts for the test repository: its CI is `ci.json`, and each step becomes one target. */
+import * as PlatformError from "effect/PlatformError"
+import { Inventory, type Job, shell, type Step, withVariant } from "../../src/contract/Inventory.ts"
+import type { Failure, GeneratedFile, ReplayParts } from "../../src/contract/Parts.ts"
+import type { RunRecord } from "../../src/contract/RunRecord.ts"
+import type { Row, Score } from "../../src/contract/Selection.ts"
+import { path as targetMapPath } from "../../src/contract/TargetMap.ts"
+import { Options } from "../../src/replay/index.ts"
+import { linkTargets, smthrs } from "./fixture.ts"
+
+const name = (step: Step, variant: number): string => `${step.id}_${variant}`
+
+const variantsOf = (job: Job): ReadonlyArray<Readonly<Record<string, string>>> =>
+  job.matrix.length === 0 ? [{}] : job.matrix
+
+const invalid = (message: string): Failure => ({ code: "invalid-document", message, part: "inventory" })
+
+export effect function read(root: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const text = fs.readFileString(path.join(root, "ci.json")) catch effect () => {
+    throw invalid("no ci.json")
+  }
+  return Schema.decodeUnknownEffect(Schema.fromJsonString(Inventory))(text) catch effect () => {
+    throw invalid("bad ci.json")
+  }
+}
+
+const workspace = `import { Smithers as S } from "@smthrs/targets"
+export const Workspace = S.Workspace("replay", {
+  repository: "git+https://example.com/replay.git",
+  cache: S.Cache({ directory: ".flows" })
+})
+`
+
+const declaration = (step: Step, variant: Readonly<Record<string, string>>, id: string, deps: ReadonlyArray<string>) => {
+  const script = /(\w+)\.sh/.exec(step.command)?.[0] ?? "ci.json"
+  return `const ${id} = S.ToolBuild({
+  tool: "bash",
+  command: ${JSON.stringify(shell[0])},
+  args: ${JSON.stringify([...shell.slice(1), withVariant(step, variant).command])},
+  inputs: [S.file(${JSON.stringify(`//${script}`)})],
+  outputs: [],
+  deps: [${deps.join(", ")}],
+  env: {},
+  cache: true
+})`
+}
+
+interface Planned {
+  readonly id: string
+  readonly job: string
+  readonly step: string
+  readonly variant: Readonly<Record<string, string>>
+  readonly text: string
+}
+
+const plan = (inventory: Inventory): ReadonlyArray<Planned> => {
+  const jobs = inventory.jobs.filter((job) => job.triggers.length === 0)
+  const lastOf = (job: Job): ReadonlyArray<string> =>
+    variantsOf(job).flatMap((_, index) => job.steps.slice(-1).map((step) => name(step, index)))
+  return jobs.flatMap((job) => {
+    const needed = jobs.filter((other) => job.needs.includes(other.id)).flatMap(lastOf)
+    return variantsOf(job).flatMap((variant, index) =>
+      job.steps.map((step, position) => {
+        const before = job.steps.slice(Math.max(0, position - 1), position).map((other) => name(other, index))
+        const id = name(step, index)
+        const deps = position === 0 ? needed : before
+        return { id, job: job.id, step: step.id, variant, text: declaration(step, variant, id, deps) }
+      })
+    )
+  })
+}
+
+/** The generated files. `mapped` chooses the steps the target map names. */
+export const generated = (
+  inventory: Inventory,
+  mapped: (entry: { readonly step: string }) => boolean = () => true
+): ReadonlyArray<GeneratedFile> => {
+  const planned = plan(inventory)
+  const targets = planned.filter(mapped).map((entry) => ({
+    label: `//:${entry.id}`,
+    job: entry.job,
+    step: entry.step,
+    variant: entry.variant
+  }))
+  const packageFile = [
+    `import { Smithers as S } from "@smthrs/targets"`,
+    ...planned.map((entry) => entry.text),
+    `export const Package = S.Package({ targets: { ${planned.map((entry) => entry.id).join(", ")} } })`,
+    ""
+  ].join("\n")
+  return [
+    { path: ".smithers/WORKSPACE.ts", content: workspace },
+    { path: "PACKAGE.ts", content: packageFile },
+    { path: targetMapPath, content: JSON.stringify({ version: 1, targets }) }
+  ]
+}
+
+export effect function files(inventory: Inventory) {
+  return generated(inventory)
+}
+
+/** One row per target that executed. */
+export effect function rows(_root: string, record: RunRecord) {
+  return record.results.filter((result) => result.status === "ran" || result.status === "failed").map((result) => ({
+    commit: record.commit ?? "",
+    target: result.label,
+    features: {
+      extensions: [".sh"],
+      fileChanges: { d3: 0, d14: 0, d56: 0 },
+      failureRates: { d7: 0, d14: 0, d28: 0, d56: 0 },
+      project: "replay",
+      testCount: 1,
+      graphDistance: 0
+    },
+    attempts: (result.attempts ?? []).map((attempt) => attempt.passed),
+    failed: (result.attempts ?? []).every((attempt) => !attempt.passed),
+    flaky: new Set((result.attempts ?? []).map((attempt) => attempt.passed)).size === 2
+  } satisfies Row))
+}
+
+/** Scores `d0` high on every commit but the first, and every other target low. */
+export const scoreKeeping = (first: string) => effect function (input: ReadonlyArray<Row>) {
+  return input.map((row) => ({
+    commit: row.commit,
+    target: row.target,
+    score: row.target === "//:d0_0" && row.commit !== first ? 1 : 0
+  } satisfies Score))
+}
+
+export const parts = (first: string): ReplayParts<FileSystem.FileSystem | Path.Path> => ({
+  read,
+  files,
+  rows,
+  score: scoreKeeping(first)
+})
+
+/** One rerun keeps the tests quick; the ten-rerun limit has its own test. */
+export const options = Layer.succeed(Options, {
+  smthrs: [smthrs],
+  reruns: 1,
+  prepare: (directory) => sync(() => linkTargets(directory))
+})
+
+const denied = (method: string) =>
+  PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method })
+
+/** The real file system, except that making a temporary directory is refused. */
+export const noTemporaryDirectories = Layer.effect(FileSystem.FileSystem, effect {
+  const real = try FileSystem.FileSystem
+  return { ...real, makeTempDirectoryScoped: () => Effect.fail(denied("makeTempDirectoryScoped")) }
+})
+
+/** The real file system, except that writing a file is refused. */
+export const noWrites = Layer.effect(FileSystem.FileSystem, effect {
+  const real = try FileSystem.FileSystem
+  return { ...real, writeFileString: () => Effect.fail(denied("writeFileString")) }
+})
