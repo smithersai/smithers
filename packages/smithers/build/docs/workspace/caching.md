@@ -487,6 +487,31 @@ key at every run.
 On a host that cannot record reads, every variable `env` names is part of the
 key, as with `inheritEnv`.
 
+**The same variables for a test held to its files.** A test in the read sandbox
+is not observed: `data` names every file of the workspace it can read. `given`
+names the variables for it:
+
+```ts
+S.Shell.Test({
+  shell: "npm test",
+  sandbox: { network: true },
+  given: { env: ["GITHUB_SHA", "GITHUB_RUN_ID"], names: ["GITHUB_EVENT_PATH"] },
+  data: [S.glob("//packages/a/**")]
+})
+```
+
+Each variable of `env` reaches the command with its host value. The values are
+part of the key only when the test could read one: when `shell`, or a file
+`data` names, holds the name of one of the variables or one of `names`. `names`
+lists other names that tell as much, such as a variable the command works out
+from one of them. When a name is found, every value is in the key, and the test
+runs again at each new value. When none is found, the key is the same at every
+value: the result is reused at another commit, from the remote cache too.
+
+The values are always in the key where the declared files are not all the test
+can read: with `sandbox: "none"`, with a dependency, whose outputs it may read,
+and with an `S.link` among `data`.
+
 **What is left out.** `/proc`, `/sys` and `/dev` are the machine, not files. The
 workspace cache directory is the build's own. `observe: { ignore: [...] }` names
 more: a file, or a directory with all it holds, from the workspace root,

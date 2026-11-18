@@ -162,6 +162,22 @@ export const observedEnv = (observe: unknown): ReadonlyArray<string> =>
     : []
 
 /**
+ * What a `given` attribute names: the host variables the test is given, and
+ * every name that shows the test could read one: the variables' own names
+ * and those of `names`. Nothing for a test that declares none.
+ *
+ * @category accessors
+ * @since 1.0.0
+ */
+export const givenEnv = (
+  given: unknown
+): { readonly env: ReadonlyArray<string>; readonly names: ReadonlyArray<string> } => {
+  const declared = (given ?? {}) as { readonly env?: ReadonlyArray<string>; readonly names?: ReadonlyArray<string> }
+  const env = declared.env ?? []
+  return { env, names: [...env, ...(declared.names ?? [])] }
+}
+
+/**
  * Attrs for {@link Test}.
  *
  * @category schemas
@@ -213,6 +229,30 @@ export const TestAttrs = Schema.Struct({
     ])
   ),
   /**
+   * Names variables of the host a test held to its declared files is given
+   * whose values differ from one run to the next, such as the commit a CI run
+   * is for. Each variable of `env` reaches the command with its host value,
+   * as with `inheritEnv`.
+   *
+   * The read sandbox lets the test read no file of the workspace but those
+   * `data` names. So the values are in the key only when the test could read
+   * one: when `shell`, or a file `data` names, holds the name of one of the
+   * variables or one of `names`. `names` lists other names that tell as
+   * much, such as a variable the command works out from one of them. When
+   * one name is found, every value is in the key. When none is, the result
+   * is reused at any value, from the remote cache too.
+   *
+   * The values are always in the key where the declared files are not all
+   * the test can read: with `sandbox: "none"`, with a dependency, whose
+   * outputs it may read, or with a symbolic link among the files.
+   */
+  given: Schema.optional(
+    Schema.Struct({
+      env: Attr.InheritEnv,
+      names: Schema.optional(Schema.Array(Schema.NonEmptyString))
+    })
+  ),
+  /**
    * Names the machine the target runs on. Targets that name the same machine
    * run one at a time in one private copy of the workspace, with a home
    * directory and a temporary directory of their own, as the steps of one CI
@@ -249,6 +289,19 @@ export const TestAttrs = Schema.Struct({
     )
     if (twice.length > 0) {
       return `observe.env names ${twice.join(", ")}, which env or inheritEnv also names; declare each variable once`
+    }
+    return undefined
+  }),
+  Schema.makeFilter((attrs) => {
+    if (attrs.given === undefined) return undefined
+    if (attrs.observe !== undefined && attrs.observe !== false) {
+      return "given cannot be combined with observe; an observed test names such variables in observe.env"
+    }
+    const twice = attrs.given.env.filter((name) =>
+      (attrs.inheritEnv ?? []).includes(name) || (attrs.env !== undefined && Object.hasOwn(attrs.env, name))
+    )
+    if (twice.length > 0) {
+      return `given.env names ${twice.join(", ")}, which env or inheritEnv also names; declare each variable once`
     }
     return undefined
   })

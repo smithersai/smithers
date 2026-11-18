@@ -61,6 +61,32 @@ describe("a shell test that asks to be observed", () => {
     expect(Shell.observedEnv(null)).toEqual([])
   })
 
+  it("names the host variables a test held to its declared files is given", () => {
+    expect(() => Shell.Test({ shell: "true", given: { env: ["CI_COMMIT"] } })).not.toThrow()
+    expect(() => Shell.Test({ shell: "true", given: { env: ["CI_COMMIT"], names: ["CI_EVENT_PATH"] } })).not.toThrow()
+    expect(() => Shell.Test({ shell: "true", given: { env: [] }, observe: false, inheritEnv: ["CI"] })).not.toThrow()
+    expect(() => Shell.Test({ shell: "true", given: { env: ["A"] }, env: { B: "b" }, inheritEnv: ["C"] })).not.toThrow()
+    // Every name that shows the test could read one: the variables' own, then the others.
+    expect(Shell.givenEnv({ env: ["CI_COMMIT", "CI_RUN"], names: ["CI_EVENT_PATH"] })).toEqual({
+      env: ["CI_COMMIT", "CI_RUN"],
+      names: ["CI_COMMIT", "CI_RUN", "CI_EVENT_PATH"]
+    })
+    expect(Shell.givenEnv({ env: ["CI_COMMIT"] })).toEqual({ env: ["CI_COMMIT"], names: ["CI_COMMIT"] })
+    expect(Shell.givenEnv(undefined)).toEqual({ env: [], names: [] })
+    expect(Shell.givenEnv({})).toEqual({ env: [], names: [] })
+  })
+
+  it("refuses given variables on an observed test, a name that is none, and a variable declared twice", () => {
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: true, given: { env: ["A"] } }))
+      .toThrow(/given cannot be combined with observe/)
+    expect(() => Shell.Test({ shell: "true", given: { env: ["not a name"] } })).toThrow()
+    expect(() => Shell.Test({ shell: "true", given: { env: ["A"], names: [""] } })).toThrow()
+    expect(() => Shell.Test({ shell: "true", given: { env: ["A", "B"] }, inheritEnv: ["B"] }))
+      .toThrow(/given.env names B, which env or inheritEnv also names/)
+    expect(() => Shell.Test({ shell: "true", given: { env: ["A", "B"] }, env: { A: "a" } }))
+      .toThrow(/given.env names A, which env or inheritEnv also names/)
+  })
+
   it("refuses a variable that is no name, or that the target also sets or inherits", () => {
     expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: { env: ["not a name"] } })).toThrow()
     expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: { env: ["A", "B"] }, inheritEnv: ["B"] }))

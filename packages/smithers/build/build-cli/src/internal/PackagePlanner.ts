@@ -1374,6 +1374,46 @@ const linkInput = async <A>(measure: () => Promise<A>): Promise<A> => {
  * 56 minutes of a one-minute plan. Planning finishes before any target runs,
  * so every target of a plan also keys the same bytes for a shared input.
  */
+/** For each plan, whether a declared file holds one of a list of names, by the names and the file's path. */
+const heldNames = new WeakMap<PlanContext, Map<string, Promise<boolean>>>()
+
+/**
+ * Whether a shell test that is given variables whose values differ from run
+ * to run (`given`) could read one, so that their values belong in its key.
+ *
+ * A test the read sandbox holds to its declared files reads no other file of
+ * the workspace. It could read a variable when its command, or one of those
+ * files, holds the name of one. Anywhere the declared files are not all it
+ * can read, it could: with no read sandbox, with a dependency, whose outputs
+ * it may read, and with a symbolic link among the files, whose target is not
+ * measured.
+ */
+const couldReadGiven = async (
+  context: PlanContext,
+  names: ReadonlyArray<string>,
+  command: string,
+  confined: boolean,
+  declared: ReadonlyArray<Workspace.ExpandedInput>
+): Promise<boolean> => {
+  if (!confined) return true
+  if (names.some((name) => ObservedReads.holdsName(command, name))) return true
+  const memo = heldNames.get(context) ?? new Map<string, Promise<boolean>>()
+  heldNames.set(context, memo)
+  for (const input of declared) {
+    for (const file of input.files) {
+      if (file.link !== undefined) return true
+      const key = JSON.stringify([names, file.path])
+      const holds = memo.get(key) ??
+        Fs.readFile(NodePath.join(context.root, ...file.path.split("/")), "latin1").then((text) =>
+          names.some((name) => ObservedReads.holdsName(text, name))
+        )
+      memo.set(key, holds)
+      if (await holds) return true
+    }
+  }
+  return false
+}
+
 const expandInputs = async (
   context: PlanContext,
   packagePath: string,
@@ -1893,6 +1933,8 @@ const visit = async (
   const spawnedTools: Array<string> = []
   const pathTools: Array<{ readonly name: string; readonly path: string }> = []
   let env: Record<string, string> = {}
+  // The variables of `env` whose values are no part of the key: see `couldReadGiven`.
+  let unkeyedEnvironment: ReadonlyArray<string> = []
   let bunTemplate: PackageNode["bunTemplate"]
   let emit: PackageNode["emit"]
   let stdoutPath: string | undefined
@@ -2069,13 +2111,29 @@ const visit = async (
     // Inherited host values join the declared environment, so the key below
     // carries each value, and an unset name keys apart from every value. The
     // variables an observed test is given the same way are in that key too:
-    // it is the key a host that cannot observe a run falls back on.
+    // it is the key a host that cannot observe a run falls back on. The
+    // variables a test held to its declared files is given are in the key
+    // only when the test could read one.
+    const given = Shell.givenEnv((shellAttrs as { readonly given?: unknown }).given)
     env = {
       ...(payload.env as Record<string, string>),
       ...Exec.inheritedValues([
         ...(shellAttrs.inheritEnv ?? []),
-        ...Shell.observedEnv((shellAttrs as { readonly observe?: unknown }).observe)
+        ...Shell.observedEnv((shellAttrs as { readonly observe?: unknown }).observe),
+        ...given.env
       ])
+    }
+    if (
+      given.env.length > 0 &&
+      !(await couldReadGiven(
+        context,
+        given.names,
+        JSON.stringify(payload.argv),
+        sandbox !== "none" && depLabels.size === 0,
+        declaredInputs
+      ))
+    ) {
+      unkeyedEnvironment = given.env
     }
     const resolved = await resolveCommand(
       payload.argv as ReadonlyArray<string>,
@@ -3307,6 +3365,7 @@ const visit = async (
   const environmentDigest = sha256Hex(JSON.stringify(
     Object.keys(spawnEnvironment).sort()
       .filter((name) => name in declaredEnvironment || !["HOME", "TMPDIR", "TEMP", "TMP"].includes(name))
+      .filter((name) => !unkeyedEnvironment.includes(name))
       .map((name) => [name, name in declaredEnvironment ? spawnEnvironment[name] : true])
   ))
   const executableCommands = argv === undefined ? [] : [argv[0]!, ...spawnedTools]
