@@ -3,7 +3,7 @@ title: Fast Smithers CI (customer zero for smithers-ci)
 status: in-progress
 area: build
 owner: Claude Fable, Will's chat session 20474551, since 2026-11-17 16:50 PST
-updated: 2026-11-17 19:40 PST
+updated: 2026-11-17 20:45 PST
 links: [ci-cd-parity.md, ci-parity-cache.md, second-build-machine.md, release-burn-down.md, ../../../../packages/smithers/build/docs/workspace/caching.md, ../../../../packages/smithers/build/docs/workspace/adoption.md]
 ---
 
@@ -158,6 +158,34 @@ the ones that need judgement, on the Claude accounts that reset soonest first.
 | `sci-shard` | Opus | One run across many machines |
 | `sci-docs` | Opus | The docs and a splash page draft |
 | `sci-generated-package-targets` | Opus | A defect: a generated package got no targets |
+| `sci-decompose` | Fable | Splitting a CI step into per-package steps (added 20:40) |
+
+### What the first two hours showed (2026-11-17, 19:30 to 20:40 PST)
+
+- The contracts changed four times at the lanes' request; `packages/ci/README.md` lists each round. There are
+  eleven now: contract 11, the target map, says which target each CI step became.
+- Report and docs lanes finished. The reader, generator, fast-mode scorer and program each landed a first version.
+- `smithers-ci inventory` reads both outside repositories in under 5 seconds:
+
+  | Repository | Jobs read | Of which a change triggers |
+  | --- | --- | --- |
+  | `refcell/needlefish` | 22 Justfile recipes | none; `just ci` needs `tidy` and `test` |
+  | `elizaOS/eliza` | 1,897 (143 workflow jobs, 1,649 package scripts, 105 Turborepo tasks) | 15 workflow jobs |
+
+- **Only CI is ever run.** eliza's inventory holds scripts such as `db:cloud:migrate` and `ios:device:deploy`, and
+  needlefish's holds `clean` and a Docker recipe. `Inventory.ci` narrows an inventory to what a push, pull request
+  or merge group triggers, or else the root `ci` recipe. A repository with neither is refused, not guessed at.
+- **One target per CI step measures nothing.** A step such as `turbo run test` reads the whole repository, so every
+  change reruns it. The splitter (`sci-decompose`) turns it into one step per package with declared inputs, and the
+  replay compares a step with the combined verdict of its targets.
+- Generated targets run one at a time for now: they share one working tree. The gain on an outside repository is
+  from caching, not from parallel jobs.
+
+### Needs Will
+
+- The generated workflow runs `@smthrs/cli@next`, which is rc.16 and refuses the generated workspace. An outside
+  repository needs a published build newer than rc.16.
+- nyc-01 has no `AI_GATEWAY_API_KEY`, so the fast-mode eval ran on the signed-in subscription model, not Jev.
 
 The lead (Will's chat session) owns the contracts and the join: one end-to-end
 run of `smithers-ci` on a fixture repository, then on the four repositories
