@@ -8,6 +8,7 @@ import { basename, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { path as targetMapPath } from "../../src/contract/TargetMap.ts"
 import { Options, run } from "../../src/replay/index.ts"
 import { job, linkTargets, makeEmptyDirectory, makeSmallRepository, smthrs } from "./fixture.ts"
 import { unconfined } from "./place.ts"
@@ -50,6 +51,69 @@ const recipe = (
   triggers: [],
   needs: needs.map((need) => `justfile:${need}`),
   steps: commands.map((command, index) => ({ id: `${name}${index}`, command, cwd: "", env, secrets: [] }))
+})
+
+describe("how many baseline jobs run at once", () => {
+  /**
+   * Six jobs that note when they start and end. The first `together` wait for one another, so that many are running
+   * at one moment however busy the machine is. Normal mode's copy only passes: the file shows the baseline.
+   */
+  const sixJobs = (log: string, together: number) =>
+    ["a", "b", "c", "d", "e", "f"].map((name) =>
+      job(
+        name,
+        [
+          "case $PWD in */normal/*) exit 0;; esac",
+          `echo + >> ${log}`,
+          `for i in $(seq 240); do [ "$(grep -c + ${log})" -ge ${together} ] && break; sleep 0.25; done`,
+          "sleep 0.2",
+          `echo - >> ${log}`
+        ].join("\n")
+      )
+    )
+  const peakOf = (log: string): number => {
+    let running = 0
+    let peak = 0
+    for (const line of readFileSync(log, "utf8").trim().split("\n")) {
+      running += line === "+" ? 1 : -1
+      peak = Math.max(peak, running)
+    }
+    return peak
+  }
+  const withCores = (cores: number) =>
+    Layer.succeed(Options, {
+      smthrs: [smthrs],
+      reruns: 1,
+      prepare: (directory) => Effect.sync(() => linkTargets(directory)),
+      confine: unconfined,
+      cores
+    })
+
+  it("is the machine's core count when nothing is asked for", async () => {
+    const log = join(track(makeEmptyDirectory()), "log")
+    await replay(track(makeSmallRepository(sixJobs(log, 2))), {}, {}, withCores(2) as never)
+    expect(peakOf(log)).toBe(2)
+  }, 600_000)
+
+  it("is what --jobs says, above the core count too", async () => {
+    const log = join(track(makeEmptyDirectory()), "log")
+    await replay(track(makeSmallRepository(sixJobs(log, 3))), {}, { jobs: 3 }, withCores(1) as never)
+    expect(peakOf(log)).toBe(3)
+  }, 600_000)
+
+  it("never passes what the target map allows normal mode", async () => {
+    const log = join(track(makeEmptyDirectory()), "log")
+    const files: Parts["files"] = (inventory) =>
+      Effect.map(
+        base.files(inventory),
+        (all) =>
+          all.map((file) =>
+            file.path === targetMapPath ? { ...file, content: file.content.replace("{", `{"maxJobs":1,`) } : file
+          )
+      )
+    await replay(track(makeSmallRepository(sixJobs(log, 1))), { files }, { jobs: 4 }, withCores(4) as never)
+    expect(peakOf(log)).toBe(1)
+  }, 600_000)
 })
 
 describe("the recipes of one Justfile, in the baseline", () => {

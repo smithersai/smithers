@@ -34,7 +34,15 @@ import { check } from "../apply/index.ts"
 import { refusal as ownWorkspace } from "../native/Workspace.ts"
 import { withReasons } from "../native/Results.ts"
 import { type Confined, confine, held } from "./Confine.vibe"
-import { noPushUrl, placeEnvironment, pushRefusal, searchPath, stepEnvironment, thisHost } from "./Environment.ts"
+import {
+  coreCount,
+  noPushUrl,
+  placeEnvironment,
+  pushRefusal,
+  searchPath,
+  stepEnvironment,
+  thisHost
+} from "./Environment.ts"
 import { probe, type Probe } from "./Jail.ts"
 import { commandLine, nothingPassed, printedLimit, reasonOf, type StepOutput } from "./Failures.ts"
 import {
@@ -105,7 +113,9 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
  * never prepared: it is what a fresh clone is. `stepTimeout` is how long one
  * baseline step may run; without it the limit is the one generated targets
  * have (`Inventory.stepTimeoutHours`). `confine` says whether this machine can
- * hold a step in a file-system jail; without it the machine is asked.
+ * hold a step in a file-system jail; without it the machine is asked. `cores`
+ * is how many baseline jobs run at once when the request sets no limit; without
+ * it, the machine's core count.
  *
  * @category services
  * @since 0.1.0
@@ -116,6 +126,7 @@ export service Options {
   readonly prepare: (directory: string) => void!Failure
   readonly stepTimeout?: Duration.Input | undefined
   readonly confine?: (() => Probe) | undefined
+  readonly cores?: number | undefined
   static readonly defaultValue = () => ({
     smthrs: ["smthrs"] as const,
     reruns: maxReruns,
@@ -368,9 +379,10 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * after `parts.decompose` split its steps, when the part is given, and a split
  * step's verdict is the combined verdict of its targets.
  *
- * Each baseline job gets a fresh checkout, as each gets its own machine in CI,
- * and jobs run at once unless `request.jobs` limits them. The jobs of one
- * shared tree (`Inventory.treeOf`: the recipes of a Justfile, the scripts of a
+ * Each baseline job gets a fresh checkout, as each gets its own machine in CI.
+ * At most as many jobs run at once as normal mode runs targets: `request.jobs`,
+ * never above the target map's `maxJobs`, and the machine's core count when
+ * neither says. The jobs of one shared tree (`Inventory.treeOf`: the recipes of a Justfile, the scripts of a
  * `package.json`) run one after another in one checkout, and the first failure
  * stops them. A baseline step gets a target's environment and time limit, and
  * its checkout holds nothing a fresh clone does not. Every step, baseline or
@@ -645,8 +657,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const baseline = (commit: string, own: Prepared): Execute<Host> => (targets) => effect {
       const wanted = targets === undefined ? undefined : new Set(targets)
       const chosen = stationsOf(own.units, wanted)
-      const atOnce = chosen.reduce((total, station) => total + station.runs.length, 0)
-      const limit = try Semaphore.make(Math.max(1, request.jobs ?? atOnce))
+      const limit = try Semaphore.make(own.jobs ?? options.cores ?? coreCount())
       const plan: Array<Station & { readonly gate: Deferred.Deferred<boolean> }> = []
       for (const station of chosen) plan.push({ ...station, gate: try Deferred.make<boolean>() })
       const collected: Array<TargetResult> = []

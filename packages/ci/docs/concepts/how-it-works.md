@@ -204,7 +204,9 @@ none that can be run on this machine, is not replayed and the report lists it.
 | Fast     | Normal mode, minus the targets the scorer judged safe to skip. Only with `--mode fast` or `--mode both`. |
 
 Every run happens in a copy. The replay never changes the repository it reads.
-`--jobs` caps how many targets run at once; the default is the machine's.
+`--jobs` caps how many jobs run at once, the same in the baseline and in each
+mode, so the times compare like with like. The default is this machine's core
+count.
 
 ### What a step can reach
 

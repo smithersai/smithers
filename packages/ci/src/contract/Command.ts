@@ -41,7 +41,11 @@ export const commands = {
 export const flags = {
   commits: { on: ["", "replay"], default: "20", help: "How many past commits to replay." },
   mode: { on: ["", "replay"], default: "normal", help: "normal, fast, or both." },
-  jobs: { on: ["", "replay"], default: "", help: "Most targets to run at once; the default is the machine's." },
+  jobs: {
+    on: ["", "replay"],
+    default: "",
+    help: "Most jobs to run at once, in the baseline and in each mode; the default is this machine's core count."
+  },
   cache: {
     on: ["", "replay", "apply"],
     default: "",

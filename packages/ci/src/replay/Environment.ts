@@ -7,6 +7,7 @@
  */
 
 import { toolEnvironment } from "@smthrs/targets/Exec"
+import { availableParallelism } from "node:os"
 import { delimiter } from "node:path"
 
 /**
@@ -188,3 +189,13 @@ export const noPushUrl = "/dev/null/smithers-ci-replay-copies-do-not-push"
  * @since 0.1.0
  */
 export const thisHost = (): string => process.platform
+
+/**
+ * How many steps this machine runs at once when nobody says: its cores, as
+ * Smithers build counts them for a run with no `--jobs`.
+ *
+ * @category accessors
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const coreCount = (): number => Math.max(1, availableParallelism())
