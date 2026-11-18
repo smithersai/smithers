@@ -20,6 +20,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -45,12 +46,15 @@ import { Options, Progress, run } from "../../src/replay/index.ts"
 import {
   credentials,
   daemonSockets,
+  elsewhere,
+  installOf,
   jailed,
   keyringFilter,
   type Probe,
   probe,
   temporaryOf,
   temporaryRoots,
+  toolsOn,
   unjailed
 } from "../../src/replay/Jail.ts"
 import { inventoryWith, job, linkTargets, smthrs } from "./fixture.ts"
@@ -147,11 +151,30 @@ const person = () => {
   writeFileSync(join(cloud, "credentials"), "a cloud credential\n")
   symlinkSync(cloud, join(home, ".aws"))
   writeFileSync(join(home, "notes.txt"), "hello\n")
+  // A credential file that is a link to another disk.
+  const vault = directory("vault")
+  writeFileSync(join(vault, "netrc"), "machine example login me password secret\n")
+  symlinkSync(join(vault, "netrc"), join(home, ".netrc"))
+  // A file no list of credentials could name: a directory of settings with a name of its own.
+  const unlisted = `.${basename(directory("name"))}`
+  mkdirSync(join(home, unlisted))
+  writeFileSync(join(home, unlisted, "token"), "a token of a program nobody heard of\n")
+  // A tool installed under the home, and a link a program is reached through.
+  mkdirSync(join(home, ".local", "tool", "bin"), { recursive: true })
+  writeFileSync(join(home, ".local", "tool", "bin", "tool"), "#!/bin/sh\necho a tool ran\n", { mode: 0o755 })
+  symlinkSync("/usr/bin", join(home, "system"))
   // Where a session's key agent listens.
   const runtime = directory("runtime")
   writeFileSync(join(runtime, "agent"), "a socket\n")
-  return { home, cloud, runtime }
+  return { home, cloud, runtime, vault, unlisted, tool: join(home, ".local", "tool") }
 }
+
+/** The tools of a person: the one installed under the home, a link to reach programs through, and a home to link. */
+const toolsOf = (owner: ReturnType<typeof person>) => ({
+  reads: [owner.tool],
+  links: [{ path: join(owner.home, "system"), target: "/usr/bin" }],
+  homes: [{ path: ".versions/tool", target: owner.tool }]
+})
 
 describe.skipIf(!jailable)("a step in the jail", () => {
   it("has a home of its own, kept between commits, and cannot read a credential, write outside, or push", async () => {
@@ -177,7 +200,10 @@ describe.skipIf(!jailable)("a step in the jail", () => {
           `: > made-here`
         ].join(" && ")
       ),
-      job("rest", `grep -q hello ${owner.home}/notes.txt`),
+      // What is put back of the person's home: a tool installed there, read and run, and the link it is reached through.
+      job("tool", `test "$(${owner.tool}/bin/tool)" = "a tool ran" && test -x ${owner.home}/system/env`),
+      // A version manager finds its versions under the step's own home.
+      job("versions", `test "$(readlink "$HOME/.versions/tool")" = ${owner.tool}`),
       job("npm", `test "$(npm config get cache)" = "$HOME/.npm"`),
       // The first commit leaves a file in the cache, and the second finds it.
       job("cache", "sh cache.sh"),
@@ -191,6 +217,13 @@ describe.skipIf(!jailable)("a step in the jail", () => {
       job("key", `cat ${owner.home}/.ssh/id_test`),
       job("token", `grep -q authToken ${owner.home}/.npmrc`),
       job("linked", `cat ${owner.cloud}/credentials`),
+      job("linkedfile", `grep -q password ${owner.vault}/netrc`),
+      // No list names these: a plain file of the home, and a file in a directory with a name of its own.
+      job("plain", `cat ${owner.home}/notes.txt`),
+      job("unlisted", `cat ${owner.home}/${owner.unlisted}/token`),
+      job("listing", `test -n "$(ls -A ${owner.home} | grep -v -e '^.local$' -e '^system$')"`),
+      // A tool is read, never written.
+      job("tooledit", `: > ${owner.tool}/bin/other`),
       job("agent", `cat ${owner.runtime}/agent`),
       job("outside", `: > ${outside}/written`),
       job("persons", `: > ${owner.home}/written`),
@@ -212,7 +245,7 @@ describe.skipIf(!jailable)("a step in the jail", () => {
     const refs = [git(other, "for-each-ref"), git(origin, "for-each-ref")]
 
     process.env["SSH_AUTH_SOCK"] = join(outside, "agent")
-    const asked = () => ({ ...found, home: owner.home, hidden: [owner.runtime] })
+    const asked = () => ({ ...found, home: owner.home, hidden: [owner.runtime], tools: toolsOf(owner) })
     const { report, said } = await replay(root, 2, asked).finally(() => {
       delete process.env["SSH_AUTH_SOCK"]
     })
@@ -416,10 +449,32 @@ describe("confine", () => {
   const scoped = <A>(work: Effect.Effect<A, unknown, unknown>) =>
     Effect.runPromise(Effect.scoped(work).pipe(Effect.provide(NodeServices.layer)) as Effect.Effect<A>)
 
-  it("makes each way a home with the hook, and hides each credential of the person's home where it really is", async () => {
+  it("makes each way a home with the hook, hides the person's home, and puts back only what a step has a use for", async () => {
     const owner = person()
     const work = directory("work")
-    const programs = ["node", "/tmp/bunx-1000-smithers-ci@latest/node_modules/@smthrs/cli/bin/smithers.mjs"]
+    // The replay's own programs: one in a project under the home, one in a checkout of its source there, one the
+    // machine does not have, one named without a directory, and a directory of `PATH`.
+    const project = join(owner.home, "project")
+    const installed = join(project, "node_modules", "@smthrs", "cli", "bin", "smithers.mjs")
+    const source = join(owner.home, "source")
+    const built = join(source, "packages", "tool", "bin", "starter.mjs")
+    for (const file of [installed, built]) {
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, "")
+    }
+    writeFileSync(join(source, "pnpm-workspace.yaml"), "packages: []\n")
+    const alone = join(owner.home, "alone.mjs")
+    writeFileSync(alone, "")
+    const programs = [
+      "node",
+      "/tmp/bunx-1000-smithers-ci@latest/node_modules/@smthrs/cli/bin/smithers.mjs",
+      installed,
+      built,
+      alone,
+      join(owner.tool, "bin")
+    ]
+    const checkout = join(owner.home, "code", "repository")
+    mkdirSync(checkout, { recursive: true })
     const cache = directory("cache")
     const asked = () => ({
       bwrap: "/usr/bin/bwrap",
@@ -427,9 +482,10 @@ describe("confine", () => {
       hidden: [owner.runtime, "/run/user/none"],
       daemons: [],
       tmp: "/tmp/of-the-machine",
-      caches: [cache, join(cache, "none")]
+      caches: [cache, join(cache, "none")],
+      tools: toolsOf(owner)
     })
-    const places = await scoped(confine(work, asked, () => Effect.void, programs, false))
+    const places = await scoped(confine(work, asked, () => Effect.void, programs, false, undefined, checkout))
 
     expect(Object.keys(places)).toEqual(["baseline", "normal", "fast", "trial"])
     for (const way of ["baseline", "normal", "fast", "trial"] as const) {
@@ -445,14 +501,24 @@ describe("confine", () => {
       expect(readFileSync(join(place.hooks, "pre-push"), "utf8")).toBe(prePush)
       accessSync(join(place.hooks, "pre-push"), constants.X_OK)
       expect(readFileSync(join(place.home, ".gitconfig"), "utf8")).toBe(gitConfig)
-      expect(readdirSync(place.home).sort()).toEqual([".gitconfig", ".smithers-ci"])
+      // Where a version manager looks for its versions, under the step's own home.
+      expect(readdirSync(place.home).sort()).toEqual([".gitconfig", ".smithers-ci", ".versions"])
+      expect(readlinkSync(join(place.home, ".versions", "tool"))).toBe(owner.tool)
       expect(readdirSync(place.tmp)).toEqual([])
       expect(place.jail).toEqual({
         bwrap: "/usr/bin/bwrap",
         masks: [
-          { path: join(owner.home, ".ssh"), directory: true },
+          // The whole home, with the tool, the installs of the replay's programs and the repository put back. A
+          // program alone in the home is put back alone: its directory is the home.
+          {
+            path: owner.home,
+            directory: true,
+            readable: [owner.tool, project, source, alone, checkout],
+            links: [{ path: join(owner.home, "system"), target: "/usr/bin" }]
+          },
+          // A credential that is a link out of the home is hidden where it leads: a directory, and a file.
           { path: owner.cloud, directory: true },
-          { path: join(owner.home, ".npmrc"), directory: false },
+          { path: join(owner.vault, "netrc"), directory: false },
           { path: owner.runtime, directory: true }
         ],
         tmp: join(work, "tmp", way),
@@ -463,6 +529,45 @@ describe("confine", () => {
     }
     // The filter that refuses a step the keys of the person's session is written once, beside the homes.
     expect(new Uint8Array(readFileSync(join(work, "keyring-filter")))).toEqual(keyringFilter())
+  })
+
+  it("hides the home with nothing put back when no tool, program or repository is in it", async () => {
+    const owner = person()
+    const asked = () => ({
+      bwrap: "/usr/bin/bwrap",
+      home: owner.home,
+      hidden: [],
+      daemons: [],
+      tmp: "/tmp",
+      caches: [],
+      tools: { reads: [], links: [], homes: [] }
+    })
+    const places = await scoped(confine(directory("work"), asked, () => Effect.void, [], false, undefined, "/nowhere"))
+    expect(places.normal.jail?.masks).toEqual([
+      { path: owner.home, directory: true },
+      { path: owner.cloud, directory: true },
+      { path: join(owner.vault, "netrc"), directory: false }
+    ])
+    expect(readdirSync(places.normal.home).sort()).toEqual([".gitconfig", ".smithers-ci"])
+  })
+
+  it("hides a home that lies in another hidden directory once, with that directory", async () => {
+    // A home inside the home of another user, as a program started with its own `HOME` has.
+    const others = directory("others")
+    const home = join(others, "nested")
+    const tool = join(home, ".local", "tool")
+    mkdirSync(join(tool, "bin"), { recursive: true })
+    const asked = () => ({
+      bwrap: "/usr/bin/bwrap",
+      home,
+      hidden: [others],
+      daemons: [],
+      tmp: "/tmp",
+      caches: [],
+      tools: { reads: [tool], links: [], homes: [] }
+    })
+    const places = await scoped(confine(directory("work"), asked, () => Effect.void, [], false))
+    expect(places.normal.jail?.masks).toEqual([{ path: others, directory: true, readable: [tool] }])
   })
 
   it("says once why there is no jail", async () => {
@@ -483,6 +588,61 @@ describe("confine", () => {
   })
 })
 
+describe("what a step has no use for", () => {
+  const facts = ExecSandbox.host()
+
+  it("is every other home of the machine, and where it keeps mail, schedules, mounted secrets and containers", () => {
+    const machine = { ...facts, home: "/home/me", entries: (path: string) => path === "/home" ? ["me", "you"] : [] }
+    expect(elsewhere(machine)).toEqual([
+      "/home/you",
+      "/root",
+      "/var/mail",
+      "/var/spool/mail",
+      "/var/spool/cron",
+      "/run/secrets",
+      "/var/run/secrets",
+      "/var/lib/docker",
+      "/var/lib/containers"
+    ])
+    // The person's own home is hidden as the home, with the tools put back, wherever it is.
+    const root = { ...facts, home: "/root", entries: undefined }
+    expect(elsewhere(root)).not.toContain("/root")
+    expect(elsewhere(root)).toContain("/var/mail")
+  })
+
+  it("names the install a program's files are in", () => {
+    const none = () => false
+    // The directory that holds the first `node_modules` on the way to the program.
+    expect(installOf("/home/me/.npm/_npx/1a2b/node_modules/@smthrs/cli/bin/smithers.mjs", none)).toBe(
+      "/home/me/.npm/_npx/1a2b"
+    )
+    // A checkout of the program's source, where one is marked.
+    const marked = (directory: string) => directory === "/home/me/code/smithers"
+    expect(installOf("/home/me/code/smithers/packages/smithers/bin/smithers.mjs", marked)).toBe(
+      "/home/me/code/smithers"
+    )
+    // Else the directory the program is in.
+    expect(installOf("/home/me/bin/tool", none)).toBe("/home/me/bin")
+  })
+})
+
+describe("the tools on a search path", () => {
+  it("are the installs of its programs, with the home a version manager looks for under the step's own", () => {
+    const home = directory("person")
+    // A version manager: its shims on the search path, its versions beside them.
+    const manager = join(home, ".local", "share", "mise")
+    mkdirSync(join(manager, "shims"), { recursive: true })
+    mkdirSync(join(manager, "installs"))
+    writeFileSync(join(manager, "shims", "tool"), "#!/bin/sh\n", { mode: 0o755 })
+    const tools = toolsOn(join(manager, "shims"), { ...ExecSandbox.host(), home })
+    expect(tools.reads).toEqual([manager])
+    expect(tools.links).toEqual([])
+    // Smithers build also names where its own private directories would hold the manager; a step has a home only.
+    expect(tools.homes).toEqual([{ path: ".local/share/mise", target: manager }])
+    expect(toolsOn(undefined, { ...ExecSandbox.host(), home })).toEqual({ reads: [], links: [], homes: [] })
+  })
+})
+
 describe("the jail", () => {
   const argv = ["bash", "-e", "-c", "true"] as const
   const place = { home: "/h", tmp: "/t", guard: "/g", hooks: "/h/hooks", daemon: {} }
@@ -500,19 +660,21 @@ describe("the jail", () => {
     expect(probe(starts, () => undefined)).toEqual({
       bwrap: "/usr/bin/bwrap",
       home: "/home/person",
-      hidden: ["/run/user/1234"],
+      hidden: ["/run/user/1234", ...elsewhere(starts)],
       daemons: daemonSockets(1234, process.env),
       tmp: tmpdir(),
-      caches: [join(tmpdir(), "tsx-1234"), join(tmpdir(), "vibelang-cache-1234")]
+      caches: [join(tmpdir(), "tsx-1234"), join(tmpdir(), "vibelang-cache-1234")],
+      tools: toolsOn(process.env["PATH"], starts)
     })
     if (jailable) {
       expect(found).toEqual({
         bwrap: facts.executable("bwrap"),
         home: homedir(),
-        hidden: [`/run/user/${facts.uid}`],
+        hidden: [`/run/user/${facts.uid}`, ...elsewhere(facts)],
         daemons: daemonSockets(facts.uid, process.env),
         tmp: tmpdir(),
-        caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)]
+        caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)],
+        tools: toolsOn(process.env["PATH"], facts)
       })
     }
   })
@@ -536,7 +698,15 @@ describe("the jail", () => {
   it("leaves the machine read-only but the places given, hides the masks, and keeps the hook read-only", () => {
     const jail = {
       bwrap: "/usr/bin/bwrap",
-      masks: [{ path: "/person/.ssh", directory: true }, { path: "/person/.npmrc", directory: false }],
+      masks: [
+        {
+          path: "/person",
+          directory: true,
+          readable: ["/person/.local/tool"],
+          links: [{ path: "/person/bin/system", target: "/usr/bin" }]
+        },
+        { path: "/vault/netrc", directory: false }
+      ],
       tmp: "/work/tmp",
       temporary: ["/tmp", "/var/tmp/mine"],
       visible: ["/tmp/bunx", "/work"],
@@ -559,13 +729,22 @@ describe("the jail", () => {
       "--unshare-pid",
       "--proc",
       "/proc",
+      // The home is empty, then the tool is put back to read and the link to follow, and the home is sealed.
       "--tmpfs",
-      "/person/.ssh",
+      "/person",
+      "--ro-bind",
+      "/person/.local/tool",
+      "/person/.local/tool",
+      "--dir",
+      "/person/bin",
+      "--symlink",
+      "/usr/bin",
+      "/person/bin/system",
       "--remount-ro",
-      "/person/.ssh",
+      "/person",
       "--ro-bind",
       "/dev/null",
-      "/person/.npmrc",
+      "/vault/netrc",
       "--bind",
       "/work/tmp",
       "/tmp",

@@ -8,12 +8,14 @@
 
 import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 
 /**
  * The files and directories of a home directory that hold a credential: the
  * keys, the tokens of the package registries, the clouds and the hosts, and
- * what a git credential helper stores. A jailed step cannot read them.
+ * what a git credential helper stores. A jailed step finds the whole home
+ * empty, so it reads none of them there. One that is a link out of the home is
+ * hidden where it leads as well.
  *
  * @category constants
  * @since 0.1.0
@@ -75,8 +77,8 @@ export const daemonSockets = (
 /**
  * What a machine answers when asked whether it can jail a step: why it
  * cannot, or the bubblewrap program with what the jail is built around. `home`
- * is the person's home directory, and `hidden` the other paths a step must
- * find empty. `daemons` are the sockets of the container daemons, which a
+ * is the person's home directory, which a step finds empty but for `tools`,
+ * and `hidden` the other paths a step must find empty. `daemons` are the sockets of the container daemons, which a
  * step finds empty too unless the person allows Docker. `tmp` is the
  * machine's temporary directory, which a step finds replaced, and `caches`
  * the directories in it a step still reads.
@@ -92,8 +94,80 @@ export type Probe =
     readonly daemons: ReadonlyArray<string>
     readonly tmp: string
     readonly caches: ReadonlyArray<string>
+    readonly tools: Tools
   }
   | { readonly refusal: string }
+
+/**
+ * A link: where it is and what it names.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Link {
+  readonly path: string
+  readonly target: string
+}
+
+/**
+ * The tools a step finds by name on a machine whose home it cannot read, as
+ * Smithers build finds them for a confined run: `reads` are the installs the
+ * programs on `PATH` live in, `links` the links a program is reached through
+ * that no install holds, and `homes` the links a step's own home needs so a
+ * version manager finds its versions there, such as `.rustup`, each from the
+ * step's home.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Tools {
+  readonly reads: ReadonlyArray<string>
+  readonly links: ReadonlyArray<Link>
+  readonly homes: ReadonlyArray<Link>
+}
+
+/** A directory no tool is in: Smithers build's search leaves out what lies in the workspace it is told. */
+const nowhere = "/nonexistent/smithers-ci"
+
+/**
+ * The tools on a search path, for a machine described by `facts`.
+ *
+ * @throws {never}
+ * @category resolution
+ * @since 0.1.0
+ */
+export const toolsOn = (searchPath: string | undefined, facts: ExecSandbox.Host): Tools => {
+  const found = ExecSandbox.toolchain(searchPath, nowhere, facts)
+  return {
+    reads: found.reads,
+    links: found.links,
+    homes: found.privateLinks.flatMap((link) =>
+      link.path.startsWith("home/") ? [{ path: link.path.slice("home/".length), target: link.target }] : []
+    )
+  }
+}
+
+/**
+ * The places outside the person's home where a machine keeps what a step has
+ * no use for and must not read: the home of every other user and of root,
+ * the mail and the scheduled commands of its users, the secrets a container
+ * platform mounts, and the stores of the container daemons.
+ *
+ * @throws {never}
+ * @category resolution
+ * @since 0.1.0
+ */
+export const elsewhere = (facts: ExecSandbox.Host): ReadonlyArray<string> => [
+  ...(facts.entries?.("/home") ?? []).map((name) => `/home/${name}`).filter((home) => home !== facts.home),
+  ...["/root"].filter((home) => home !== facts.home),
+  "/var/mail",
+  "/var/spool/mail",
+  "/var/spool/cron",
+  "/run/secrets",
+  "/var/run/secrets",
+  "/var/lib/docker",
+  "/var/lib/containers"
+]
 
 /**
  * A machine's answer for a person whose variables are `environment`: they say
@@ -109,10 +183,11 @@ const answer = (
     ? {
       bwrap: facts.executable("bwrap") as string,
       home: facts.home as string,
-      hidden: [`/run/user/${facts.uid}`],
+      hidden: [`/run/user/${facts.uid}`, ...elsewhere(facts)],
       daemons: daemonSockets(facts.uid, environment),
       tmp: tmpdir(),
-      caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)]
+      caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)],
+      tools: toolsOn(environment["PATH"], facts)
     }
     : { refusal }
 }
@@ -120,9 +195,9 @@ const answer = (
 /**
  * Asks a machine, this one unless `facts` describes another. It can jail a
  * step when it runs Linux and bubblewrap starts; `refuses` starts bubblewrap
- * once to know, and says why when it cannot. Beside the credentials of the home, a step must not reach the
- * person's runtime directory: the key agents and the secret service of a
- * session listen there. Nor may it reach a container daemon's socket
+ * once to know, and says why when it cannot. Beside the home, a step must not reach the
+ * person's runtime directory, where the key agents and the secret service of a
+ * session listen, nor what {@link elsewhere} names. Nor may it reach a container daemon's socket
  * ({@link daemonSockets}). The caches kept in sight are where a `smthrs`
  * started from source keeps its compiled code, TypeScript's and VibeLang's:
  * without them every replay would compile `smthrs` again. An installed
@@ -149,10 +224,11 @@ export const probeWith = (environment: Readonly<Record<string, string | undefine
   answer(ExecSandbox.host(), ExecSandbox.writeProtectionRefusal, environment)
 
 /**
- * A path a jailed step finds empty: a credential of the person's, or the
- * socket of a container daemon. `kept` are the paths inside a hidden
- * directory a step still reaches: a daemon's socket in the session's runtime
- * directory, when the person allows Docker.
+ * A path a jailed step finds empty: the person's home, a credential a link
+ * leads to, or the socket of a container daemon. Inside a hidden directory a
+ * step still reaches `kept`, a daemon's socket when the person allows Docker;
+ * reads `readable`, the tools installed there and the replay's own programs;
+ * and finds `links`, the links a tool is reached through.
  *
  * @category models
  * @since 0.1.0
@@ -161,6 +237,29 @@ export interface Mask {
   readonly path: string
   readonly directory: boolean
   readonly kept?: ReadonlyArray<string> | undefined
+  readonly readable?: ReadonlyArray<string> | undefined
+  readonly links?: ReadonlyArray<Link> | undefined
+}
+
+/**
+ * The directory a program's files are installed in, so a step that starts the
+ * program reads all of it: the directory that holds the first `node_modules`
+ * on the program's path, else the nearest directory above it that `marks` a
+ * checkout of its source, else the directory the program is in.
+ *
+ * @throws {never}
+ * @category resolution
+ * @since 0.1.0
+ */
+export const installOf = (program: string, marks: (directory: string) => boolean): string => {
+  const parts = program.split("/")
+  const modules = parts.indexOf("node_modules")
+  if (modules > 0) return parts.slice(0, modules).join("/")
+  for (let depth = parts.length - 1; depth > 1; depth--) {
+    const directory = parts.slice(0, depth).join("/")
+    if (marks(directory)) return directory
+  }
+  return parts.slice(0, -1).join("/")
 }
 
 /**
@@ -322,7 +421,7 @@ export const unjailed = (refusal: string, allowDocker: boolean = false): string 
  * error.
  *
  * In the jail every file of the machine is read-only, the masks are empty
- * but for what each keeps, and only `writable` can be written; `sealed` names paths under a writable
+ * but for what each keeps and lets be read, and only `writable` can be written; `sealed` names paths under a writable
  * one that stay read-only. The machine's temporary directories are the
  * replay's own, so a step that writes `/tmp` writes nothing of the machine's
  * and finds nothing another program left there. The step has its own device
@@ -361,6 +460,8 @@ export const jailed = (
         ? [
           "--tmpfs",
           mask.path,
+          ...(mask.readable ?? []).flatMap((path) => ["--ro-bind", path, path]),
+          ...(mask.links ?? []).flatMap((link) => ["--dir", dirname(link.path), "--symlink", link.target, link.path]),
           ...(mask.kept ?? []).flatMap((path) => ["--bind", path, path]),
           "--remount-ro",
           mask.path

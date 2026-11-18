@@ -378,9 +378,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         work,
         options.confine ?? probeWith,
         progress.say,
-        [...options.smthrs, ...searchPath()],
+        [...options.smthrs, ...(options.smthrsWithToken ?? []), ...searchPath()],
         allowDocker,
-        person
+        person,
+        root
       ),
       "could not make the steps' homes"
     )

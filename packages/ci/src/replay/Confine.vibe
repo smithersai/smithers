@@ -21,6 +21,7 @@ import {
 } from "./Environment.ts"
 import {
   credentials,
+  installOf,
   type Jail,
   jailed,
   keyringFilter,
@@ -75,6 +76,14 @@ export type Places = Readonly<Record<Way, Confined>>
  * machine's temporary directories replaced by its way's own, and still reads
  * there the programs, the caches the machine names, and `work`.
  *
+ * A jailed step finds the person's home directory empty. What is put back,
+ * read-only, is what it has a use for: the tools on `PATH` that are installed
+ * there, the installs of `programs`, and `checkout`, the person's repository.
+ * A version manager looks for its versions under `HOME`, so each step's home
+ * holds a link to where they are. Nothing else of the home is there: no
+ * directory of settings, no history, no file a program keeps a token in,
+ * whatever its name.
+ *
  * A step never reaches a container daemon: whoever talks to one can have it
  * mount any file of the machine. A step that starts `docker`,
  * `docker-compose`, `podman` or `nerdctl` by name starts a stand-in that
@@ -101,7 +110,8 @@ export effect function confine(
   say: (line: string) => void!!,
   programs: ReadonlyArray<string>,
   allowDocker: boolean,
-  person?: Readonly<Record<string, string | undefined>>
+  person?: Readonly<Record<string, string | undefined>>,
+  checkout?: string
 ) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
@@ -128,6 +138,7 @@ export effect function confine(
       try (try spawner.spawn(unlock)).exitCode
     }))
   )
+  const found = probe(environment)
   effect function make(way: Way) {
     const home = path.join(homes, way)
     const tmp = path.join(tmps, way)
@@ -138,6 +149,11 @@ export effect function confine(
     try fs.writeFileString(hook, prePush)
     try fs.chmod(hook, 0o755)
     try fs.writeFileString(path.join(home, ".gitconfig"), gitConfig)
+    // Where a version manager looks for its versions: under the home, which is the step's own.
+    for (const link of "refusal" in found ? [] : found.tools.homes) {
+      try fs.makeDirectory(path.dirname(path.join(home, link.path)), { recursive: true })
+      try fs.symlink(link.target, path.join(home, link.path))
+    }
     return { home, tmp, guard, hooks, daemon: daemonEnvironment(allowDocker, environment) }
   }
   const made = {
@@ -146,7 +162,6 @@ export effect function confine(
     fast: try make("fast"),
     trial: try make("trial")
   }
-  const found = probe(environment)
   if ("refusal" in found) {
     try say(unjailed(found.refusal, allowDocker))
     return {
@@ -162,8 +177,29 @@ export effect function confine(
     const real = fs.realPath(socket) catch () => undefined
     if (real !== undefined && !daemons.includes(real)) daemons.push(real)
   }
+  // What a step still reads inside a hidden directory: the tools, the installs of the replay's own programs, and
+  // the person's repository. Each is named where it really is.
+  const within = (directory: string, each: string): boolean => each.startsWith(`${directory}/`)
+  const readable: Array<string> = [...found.tools.reads]
+  for (const program of programs) {
+    // A program named without its directory is found on `PATH`, among the tools.
+    if (!path.isAbsolute(program)) continue
+    const real = fs.realPath(program) catch () => undefined
+    if (real === undefined || (try fs.stat(real)).type === "Directory") continue
+    const marked: Array<string> = []
+    for (let directory = path.dirname(real); directory !== path.dirname(directory); directory = path.dirname(directory)) {
+      if (try fs.exists(path.join(directory, "pnpm-workspace.yaml"))) marked.push(directory)
+    }
+    // The install, or what of it lies in a hidden directory: the program's own directory, or the program alone.
+    readable.push(installOf(real, (directory) => marked.includes(directory)), path.dirname(real), real)
+  }
+  if (checkout !== undefined) {
+    const repository = fs.realPath(checkout) catch () => undefined
+    if (repository !== undefined) readable.push(repository)
+  }
   const masks: Array<Mask> = []
   const hidden = [
+    found.home,
     ...credentials.map((name) => path.join(found.home, name)),
     ...found.hidden,
     ...(allowDocker ? [] : daemons)
@@ -173,11 +209,29 @@ export effect function confine(
     const real = fs.realPath(each) catch () => undefined
     if (real === undefined) continue
     // What is hidden already, by another name or with the directory it lies in, is hidden once.
-    if (masks.some((mask) => mask.path === real || (mask.directory && real.startsWith(`${mask.path}/`)))) continue
+    if (masks.some((mask) => mask.path === real || (mask.directory && within(mask.path, real)))) continue
     const directory = (try fs.stat(real)).type === "Directory"
+    if (!directory) {
+      masks.push({ path: real, directory })
+      continue
+    }
+    // A directory that holds one hidden already takes its place: what is put back there is put back here.
+    for (let index = masks.length - 1; index >= 0; index--) {
+      if (within(real, (masks[index] as Mask).path)) masks.splice(index, 1)
+    }
     // With Docker allowed, a daemon's socket in a hidden directory stays.
-    const kept = daemons.filter((socket) => socket.startsWith(`${real}/`))
-    masks.push(directory && allowDocker ? { path: real, directory, kept } : { path: real, directory })
+    const kept = daemons.filter((socket) => within(real, socket))
+    // A path put back inside another that is put back is there already.
+    const inside = [...new Set(readable.filter((each) => within(real, each)))]
+    const reads = inside.filter((each) => !inside.some((other) => within(other, each)))
+    const links = found.tools.links.filter((link) => within(real, link.path) && !reads.some((read) => within(read, link.path)))
+    masks.push({
+      path: real,
+      directory,
+      ...(allowDocker ? { kept } : {}),
+      ...(reads.length === 0 ? {} : { readable: reads }),
+      ...(links.length === 0 ? {} : { links })
+    })
   }
   const temporary = temporaryOf(found.tmp)
   const caches: Array<string> = []

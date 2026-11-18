@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { layer, replayOptions } from "../../src/cli/Host.vibe"
+import { layer, modelEnvironment, replayOptions } from "../../src/cli/Host.vibe"
 import { nodeProgram, smthrsCommand, smthrsWithToken } from "../../src/cli/Install.ts"
 import { Options, Progress } from "../../src/replay/index.ts"
 import { recorder } from "./repo.ts"
@@ -57,6 +57,30 @@ describe("this install", () => {
         ? smthrsCommand()[1]!.replace(/bin\/smithers\.mjs$/, "package.json")
         : missing()
     expect(smthrsWithToken(onlySmthrs)).toBeUndefined()
+  })
+})
+
+describe("what fast mode's model is given", () => {
+  it("is the variables the program reads for it and the short list, and no other variable of the person's", () => {
+    expect(modelEnvironment({
+      PATH: "/bin",
+      HOME: "/home/me",
+      TERM: "xterm",
+      AI_GATEWAY_API_KEY: "a key",
+      CLAUDE_CONFIG_DIR: "/home/me/.claude-work",
+      https_proxy: "http://proxy.example",
+      SMITHERS_CACHE_TOKEN: "the cache's",
+      GITHUB_TOKEN: "another program's",
+      SSH_AUTH_SOCK: "/tmp/agent",
+      UNSET: undefined
+    })).toEqual({
+      PATH: "/bin",
+      HOME: "/home/me",
+      TERM: "xterm",
+      AI_GATEWAY_API_KEY: "a key",
+      CLAUDE_CONFIG_DIR: "/home/me/.claude-work",
+      https_proxy: "http://proxy.example"
+    })
   })
 })
 

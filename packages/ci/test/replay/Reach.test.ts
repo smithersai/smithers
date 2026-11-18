@@ -7,14 +7,17 @@
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { spawn, spawnSync, type SpawnSyncReturns } from "node:child_process"
-import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { randomUUID } from "node:crypto"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
 import { smthrsWithToken } from "../../src/cli/Install.ts"
-import { confine, held } from "../../src/replay/Confine.vibe"
+import { confine, held, reading } from "../../src/replay/Confine.vibe"
 import { stepEnvironment } from "../../src/replay/Environment.ts"
 import { keyringFilter, probe } from "../../src/replay/Jail.ts"
 
@@ -23,6 +26,25 @@ afterAll(() => made.forEach((path) => rmSync(path, { recursive: true, force: tru
 
 const found = probe()
 const jailable = !("refusal" in found)
+
+/** The repository these tests run from. */
+const repository = fileURLToPath(new URL("../../../../", import.meta.url))
+
+/**
+ * Two files in the real home of whoever runs the tests, at paths no list of credentials could name: one in a
+ * directory of settings with a name of its own, one directly in the home. Removed when the tests end.
+ */
+const unlisted = (() => {
+  const name = `.smithers-ci-test-${randomUUID()}`
+  const directory = join(homedir(), name)
+  const inside = join(directory, "token")
+  const beside = join(homedir(), `${name}.txt`)
+  mkdirSync(directory)
+  writeFileSync(inside, "a token of a program nobody heard of\n")
+  writeFileSync(beside, "a note with a password in it\n")
+  made.push(directory, beside)
+  return { inside, beside }
+})()
 
 /** Plants a key in the session's keyring, looks for it, or removes it. It prints what it found, never the key. */
 const keyring = fileURLToPath(new URL("keyring.py", import.meta.url))
@@ -50,7 +72,8 @@ const asStep = (argv: readonly [string, ...Array<string>], jailed: boolean) => {
   return Effect.runPromise(
     Effect.scoped(Effect.gen(function*() {
       const asked = jailed ? () => found : () => ({ refusal: "no bubblewrap" })
-      const places = yield* confine(work, asked, () => Effect.void, [], false)
+      // The tests' own files are in the repository the tests run from, which a replay puts back as the checkout.
+      const places = yield* confine(work, asked, () => Effect.void, [], false, undefined, repository)
       const [command, ...args] = held(places.normal, [], argv)
       return spawnSync(command, args, {
         env: stepEnvironment({}, places.normal),
@@ -94,6 +117,66 @@ describe.skipIf(!jailable)("a command in the jail", () => {
     } finally {
       outside.kill()
     }
+  })
+})
+
+describe.skipIf(!jailable)("the person's home, in the jail", () => {
+  it("is empty of everything but the tools: a file no list could name is not there", async () => {
+    const seen = await inJail([
+      "sh",
+      "-c",
+      "for file in \"$@\"; do if [ -e \"$file\" ] || cat \"$file\" 2>/dev/null; then echo \"reads $file\"; fi; done; ls -A \"$HOME/..\" > /dev/null",
+      "sh",
+      unlisted.inside,
+      unlisted.beside,
+      join(homedir(), ".bash_history"),
+      join(homedir(), ".ssh"),
+      join(homedir(), ".config")
+    ])
+    expect(seen.stdout).toBe("")
+    // Outside the jail both are there.
+    expect(spawnSync("cat", [unlisted.inside, unlisted.beside], { encoding: "utf8" }).stdout).toBe(
+      "a token of a program nobody heard of\na note with a password in it\n"
+    )
+  })
+
+  /** The tools of this machine's search path that are installed under the home, each with how it says its version. */
+  const tools = ([
+    ["node", ["--version"]],
+    ["bun", ["--version"]],
+    ["pnpm", ["--version"]],
+    ["zig", ["version"]],
+    ["go", ["version"]],
+    ["cargo", ["--version"]],
+    ["uv", ["--version"]]
+  ] as const).filter(([tool]) => {
+    const where = spawnSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).stdout.trim()
+    return where.startsWith(`${homedir()}/`)
+  })
+
+  it.each(tools)("still runs %s, which is installed under the home", async (tool, version) => {
+    const seen = await inJail([tool, ...version])
+    expect(seen.status, seen.stderr).toBe(0)
+    expect(seen.stdout).toMatch(/\d+\.\d+/)
+  }, 300_000)
+
+  it("is as empty for the git the program runs in a copy a step wrote, as fast mode does", async () => {
+    const copy = mkdtempSync(join("/var/tmp", "smithers-ci-reach-copy-"))
+    made.push(copy)
+    spawnSync("git", ["init", "--quiet", copy])
+    const work = mkdtempSync(join(tmpdir(), "smithers-ci-reach-"))
+    made.push(work)
+    // What a step can leave in its copy: a command git runs. Here it tries to read the two files.
+    const peek = `!cat ${unlisted.inside} ${unlisted.beside}; echo done`
+    const printed = await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const real = yield* ChildProcessSpawner
+        const places = yield* confine(work, () => found, () => Effect.void, [], false)
+        const git = reading(real, places.fast, copy)
+        return yield* git.string(ChildProcess.make("git", ["-c", `alias.peek=${peek}`, "peek"], { stderr: "ignore" }))
+      })).pipe(Effect.provide(NodeServices.layer)) as Effect.Effect<string>
+    )
+    expect(printed).toBe("done\n")
   })
 })
 

@@ -237,15 +237,17 @@ export const own = <R>(
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-own-" }), "could not make a directory")
     const source = path.join(work, "source")
     const root = path.resolve(request.root)
-    // Each mode has a home of its own: none finds a cache another mode filled.
+    // Each mode has a home of its own: none finds a cache another mode filled. The files this program runs from
+    // stay in sight where the person's home is hidden.
     const places = try orFail(
       confine(
         work,
         options.confine ?? probeWith,
         progress.say,
-        searchPath(),
+        [...options.smthrs, ...searchPath()],
         request.allowDocker === true,
-        options.environment
+        options.environment,
+        root
       ),
       "could not make the homes of the runs"
     )

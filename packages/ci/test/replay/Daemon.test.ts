@@ -291,13 +291,14 @@ describe("confine", () => {
       hidden: [runtime],
       daemons: [linked, socket, session, join(run, "podman.sock")],
       tmp: "/tmp",
-      caches: []
+      caches: [],
+      tools: { reads: [], links: [], homes: [] }
     })
-    return { asked, runtime, session, socket }
+    return { asked, home, runtime, session, socket }
   }
 
   it("hides each daemon's socket where it really is, once, and puts a stand-in for each container program", async () => {
-    const { asked, runtime, socket } = await machine()
+    const { asked, home, runtime, socket } = await machine()
     const work = directory("work")
     const places = await withPerson(
       { DOCKER_HOST: `unix://${socket}` },
@@ -306,7 +307,11 @@ describe("confine", () => {
 
     for (const place of Object.values(places)) {
       // The session's socket is out of sight with the runtime directory it lies in.
-      expect(place.jail?.masks).toEqual([{ path: runtime, directory: true }, { path: socket, directory: false }])
+      expect(place.jail?.masks).toEqual([
+        { path: home, directory: true },
+        { path: runtime, directory: true },
+        { path: socket, directory: false }
+      ])
       expect(place.daemon).toEqual({})
       expect(readdirSync(place.guard).sort()).toEqual([...guardedPrograms, ...containerPrograms].sort())
       for (const program of containerPrograms) {
@@ -319,7 +324,7 @@ describe("confine", () => {
   })
 
   it("hides no socket, keeps the session's, and puts no stand-in when the person allows Docker", async () => {
-    const { asked, runtime, session, socket } = await machine()
+    const { asked, home, runtime, session, socket } = await machine()
     const work = directory("work")
     const places = await withPerson(
       { DOCKER_HOST: `unix://${socket}` },
@@ -327,7 +332,10 @@ describe("confine", () => {
     )
 
     for (const place of Object.values(places)) {
-      expect(place.jail?.masks).toEqual([{ path: runtime, directory: true, kept: [session] }])
+      expect(place.jail?.masks).toEqual([
+        { path: home, directory: true, kept: [] },
+        { path: runtime, directory: true, kept: [session] }
+      ])
       expect(place.daemon).toEqual({ DOCKER_HOST: `unix://${socket}` })
       expect(readdirSync(place.guard).sort()).toEqual([...guardedPrograms].sort())
     }

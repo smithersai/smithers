@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto"
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
+import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
 import { cli } from "../../src/cli/Cli.vibe"
@@ -92,6 +93,22 @@ const look = [
   "if [ -n \"$held\" ]; then echo \"a token is in the file $held\" >&2; exit 1; fi",
   ""
 ].join("\n")
+
+/**
+ * Two files in the real home of whoever runs the tests, at paths no list of credentials could name: one in a
+ * directory of settings with a name of its own, one directly in the home. A jailed step finds neither.
+ */
+const unlisted = (() => {
+  const name = `.smithers-ci-test-${randomUUID()}`
+  const inside = join(homedir(), name, "token")
+  const beside = join(homedir(), `${name}.txt`)
+  mkdirSync(join(homedir(), name))
+  writeFileSync(inside, "a token of a program nobody heard of\n")
+  writeFileSync(beside, "a note with a password in it\n")
+  keep(join(homedir(), name))
+  keep(beside)
+  return [inside, beside] as const
+})()
 
 /** Where the person's container daemon is, in the test that allows Docker. No daemon listens there. */
 const daemon = "unix:///nowhere/docker.sock"
@@ -208,7 +225,9 @@ const startedWith = (pid: number): string => {
 describe("smithers-ci started with tokens in its environment", () => {
   it.skipIf(!jailable)("shows a step none of them, and sends the cache its token", async () => {
     const shared = await cache()
-    const outcome = await program(fixture(), shared.url)
+    // In the jail the home of whoever runs the program is empty: the two files are not there, in the baseline or as
+    // a target.
+    const outcome = await program(fixture(unlisted.map((file) => `test ! -e ${file}`)), shared.url)
 
     expect(told(outcome)).toEqual({ code: 0, ways: [bothPassed] })
     // Smithers build was given the token, on a pipe: the cache was sent it.

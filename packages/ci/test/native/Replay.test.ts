@@ -56,7 +56,7 @@ const partsFor = (first: string): Parts => ({
 const said: Array<string> = []
 const hostWith = (confine: { readonly confine?: () => Probe }) =>
   Layer.mergeAll(
-    Layer.succeed(Options, { smthrs: ["never-used"], reruns: 1, prepare: () => Effect.void, ...confine }),
+    Layer.succeed(Options, { smthrs: [smthrs], reruns: 1, prepare: () => Effect.void, ...confine }),
     Layer.succeed(Progress, { say: (line) => Effect.sync(() => void said.push(line)) })
   )
 const host = hostWith({})

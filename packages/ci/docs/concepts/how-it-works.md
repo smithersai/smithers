@@ -309,6 +309,21 @@ such as `PATH`, then the step's own `env`, end of file on standard input, and
 a limit of six hours. It gets no other variable of yours: no token, no
 `SSH_AUTH_SOCK` and no `DOCKER_HOST`.
 
+Nor can it read one from the program. A step runs beside `smithers-ci` as you,
+and a process can read what another process of yours was started with. So
+`smithers-ci` starts again with only that short list before it does anything
+else, and what it starts gets the short list too. The two tokens the program
+uses itself, the cache's and the model's, stay in its memory. The cache's
+token goes to the part that talks to the cache through a pipe, never through a
+variable or a command line, and it is in no file the replay writes. When fast
+mode asks a model that is a program of its own, as Claude Code is on a machine
+signed in to it, that program also gets the
+[variables that choose and reach the model](../reference/cli.md#environment),
+and no other variable of yours.
+
+A step also starts with no open file of the program's: only its standard
+input, output and error.
+
 **No push.** Every `git` a step starts refuses to push. A `pre-push` hook,
 set through git's environment and in the step's home, stops the push before
 anything is sent, so `git remote add`, `git remote set-url` and a hooks
@@ -354,35 +369,50 @@ stands for them, so the job stays in your CI as it is.
 write three places: its copy of the repository, its home and a temporary
 directory of its own, which it finds at `/tmp` and at `TMPDIR`. Every other
 file of the machine is read-only, so a push to a repository on the same disk
-fails. These files and directories of your home are empty for it: `.ssh`,
-`.gnupg`, `.aws`, `.azure`, `.config/gcloud`, `.kube`, `.docker`, `.netrc`,
-`.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.pypirc`, `.gem/credentials`,
-`.cargo/credentials`, `.cargo/credentials.toml`, `.m2/settings.xml`,
-`.gradle/gradle.properties`, `.gitconfig`, `.git-credentials`,
-`.git-credential-cache`, `.cache/git/credential`, `.config/git` and
-`.config/gh`. So are the machine's own temporary files and your session's
-runtime directory under `/run/user`, where key agents listen. The step's
-processes end when the step does. The network stays open, as it is in your CI.
+fails.
+
+Your home directory is empty for it. What a step finds there is what it has a
+use for, each read-only: the tools on your `PATH` that are installed under it,
+such as Node under nvm or Rust under rustup; the files `smithers-ci` itself
+runs from; and your repository. Nothing else is there: no directory of
+settings, no shell history, no file a program keeps a token in, whatever its
+name. A tool that looks for its versions under `HOME`, as rustup, asdf and
+mise do, finds them under the step's own.
+
+Also empty are the homes of the machine's other users and of root, the mail
+and the scheduled commands of its users, the secrets a container platform
+mounts under `/run/secrets`, the stores of the container daemons, the
+machine's own temporary files, and your session's runtime directory under
+`/run/user`, where key agents listen. A credential of your home that is a link
+to another place is empty there too.
+
+A step sees no
+process but its own, and the kernel gives it none of the keys it holds for
+your session, such as a Kerberos ticket. The step's processes end when the
+step does. The network stays open, as it is in your CI.
 
 What a step can do depends on the machine:
 
-| A step                                                | Linux with bubblewrap | Linux without it | macOS |
-| ----------------------------------------------------- | --------------------- | ---------------- | ----- |
-| sees your home directory as its `HOME`                | no                    | no               | no    |
-| gets a token, an SSH agent or `DOCKER_HOST` from you  | no                    | no               | no    |
-| pushes with `git push`                                | no                    | no               | no    |
-| starts `docker` or `podman` by name                   | no                    | no               | no    |
-| starts `sudo`, `su` or `doas` by name                 | no                    | no               | no    |
-| writes its copy, its home and its temporary directory | yes                   | yes              | yes   |
-| reaches the network                                   | yes                   | yes              | yes   |
-| reads the other files of the machine                  | yes                   | yes              | yes   |
-| writes any other file, such as a repository beside it | no                    | yes              | yes   |
-| reads a credential listed above by its path           | no                    | yes              | yes   |
-| talks to a container daemon's socket by its path      | no                    | yes              | yes   |
-| leaves a process running after it ends                | no                    | yes              | yes   |
+| A step                                                   | Linux with bubblewrap | Linux without it | macOS |
+| -------------------------------------------------------- | --------------------- | ---------------- | ----- |
+| sees your home directory as its `HOME`                   | no                    | no               | no    |
+| gets a token, an SSH agent or `DOCKER_HOST` from you     | no                    | no               | no    |
+| reads a variable of yours from `smithers-ci`             | no                    | no               | no    |
+| pushes with `git push`                                   | no                    | no               | no    |
+| starts `docker` or `podman` by name                      | no                    | no               | no    |
+| starts `sudo`, `su` or `doas` by name                    | no                    | no               | no    |
+| writes its copy, its home and its temporary directory    | yes                   | yes              | yes   |
+| reaches the network                                      | yes                   | yes              | yes   |
+| reads the other files of the machine                     | yes                   | yes              | yes   |
+| writes any other file, such as a repository beside it    | no                    | yes              | yes   |
+| reads a file of your home that is not a tool             | no                    | yes              | yes   |
+| talks to a container daemon's socket by its path         | no                    | yes              | yes   |
+| leaves a process running after it ends                   | no                    | yes              | yes   |
+| sees your other programs and what they were started with | no                    | yes              | yes   |
+| reads the keys the Linux kernel holds for your session   | no                    | yes              | no    |
 
 On macOS, and on Linux without bubblewrap, there is no jail. `smithers-ci`
-says so once on standard error and names what to install. The first five lines of the table
+says so once on standard error and names what to install. The first six lines of the table
 still hold there. They stop a step that does what CI steps ordinarily do; they
 do not stop one written to get around them. Replay there only a history you
 trust.
@@ -394,7 +424,10 @@ those is the home and the jail: the step finds no credential of yours to push
 or publish with, no daemon socket to talk to, and cannot write a repository on
 your disk. A token committed to the repository is the repository's own, and a
 step can use it. A daemon that listens on a network port is reached over the
-network, which stays open.
+network, which stays open. So is the metadata service of a cloud machine, at
+`169.254.169.254`, which gives the machine's own credentials to any program on
+it. And so is a program of yours that listens on a socket with no file, as an
+X11 display does: such a socket belongs to the network, not to a directory.
 
 A refused push fails its step in the baseline and as a target alike, so it is
 never a mismatch. The report lists the step as failed, with the line git

@@ -67,7 +67,7 @@ interface Machine {
 
 const hostWith = (machine: Machine) =>
   Layer.mergeAll(
-    Layer.succeed(Options, { smthrs: ["never-used"], reruns: 1, prepare: () => Effect.void, ...machine }),
+    Layer.succeed(Options, { smthrs: [smthrs], reruns: 1, prepare: () => Effect.void, ...machine }),
     Layer.succeed(Progress, { say: (line) => Effect.sync(() => void said.push(line)) })
   )
 
