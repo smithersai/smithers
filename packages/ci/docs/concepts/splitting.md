@@ -181,8 +181,9 @@ build fails a target that leaves a declared directory missing or empty, so an
 output is declared only when the step is known to write it.
 
 Jobs of a GitHub Actions workflow run on separate machines, so a job's first
-step follows nothing, whatever the job needs. Recipes of one Justfile share a
-working tree, so a recipe follows the recipes it needs.
+step follows nothing, whatever the job needs. Recipes of one Justfile run one
+after another in one working tree, in the order `just ci` runs them: each
+recipe follows the one before it, and a recipe that fails skips the rest.
 
 ## One cost
 
