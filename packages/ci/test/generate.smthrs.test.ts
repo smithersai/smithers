@@ -341,6 +341,66 @@ describe("generated files under the real smthrs", () => {
     }
   }, slow)
 
+  it("keeps a package step narrowed after a step that names what it reads and writes", () => {
+    const step = (
+      id: string,
+      command: string,
+      extra: { inputs: Array<string>; outputs?: Array<string>; from: string }
+    ) => ({
+      id,
+      command,
+      cwd: "",
+      env: {},
+      secrets: [],
+      ...extra
+    })
+    const steps = [
+      // The build names the file it reads and the directory it writes, which git ignores.
+      step("ci:1", "mkdir -p packages/a/dist && cp config/value packages/a/dist/out", {
+        inputs: ["config/**"],
+        outputs: ["packages/a/dist/**"],
+        from: "ci:1"
+      }),
+      step("ci:2:a", "grep -q good packages/a/dist/out && grep -q source packages/a/src.txt", {
+        inputs: ["packages/a/**"],
+        from: "ci:2"
+      }),
+      step("ci:2:b", "grep -q source packages/b/src.txt", { inputs: ["packages/b/**"], from: "ci:2" })
+    ]
+    const root = repository(document([{ ...job("ci", []), steps }]), {
+      "config/value": "good\n",
+      "docs/guide.md": "x\n",
+      "packages/a/.gitignore": "dist\n",
+      "packages/a/src.txt": "source\n",
+      "packages/b/src.txt": "source\n"
+    })
+    try {
+      expect(plan(root).map((target) => [target.label, target.cacheable, target.dependencies])).toEqual([
+        [`${prefix}ci-1`, false, []],
+        [`${prefix}ci-2-a`, true, [`${prefix}ci-1`]],
+        [`${prefix}ci-2-b`, true, [`${prefix}ci-1`]]
+      ])
+      // Running needs a machine that can confine a target to its declared reads.
+      if (!confines) return
+      const statuses = (name: string) => Object.fromEntries(execute(root, name).statuses)
+      // Held to `packages/a/**`, the step still reads `dist/out`: it is an output of the target it depends on.
+      expect(statuses("first")).toEqual({ "ci-1": "ran", "ci-2-a": "ran", "ci-2-b": "ran" })
+      expect(statuses("second")).toEqual({ "ci-1": "ran", "ci-2-a": "hit", "ci-2-b": "hit" })
+      // A file no step names: the package steps stay narrowed, so neither runs again.
+      writeFileSync(join(root, "docs/guide.md"), "changed\n")
+      expect(statuses("third")).toEqual({ "ci-1": "ran", "ci-2-a": "hit", "ci-2-b": "hit" })
+      // A file one package step reads: only that step runs again.
+      writeFileSync(join(root, "packages/b/src.txt"), "source again\n")
+      expect(statuses("fourth")).toEqual({ "ci-1": "ran", "ci-2-a": "hit", "ci-2-b": "ran" })
+      // The file the build reads: its key is in the key of both package steps, so both run again, and the one
+      // that reads what the build wrote fails. Neither replays its old pass.
+      writeFileSync(join(root, "config/value"), "bad\n")
+      expect(statuses("fifth")).toEqual({ "ci-1": "ran", "ci-2-a": "failed", "ci-2-b": "ran" })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 2 * slow)
+
   it("installs the read sandbox in the workflow, without which a Linux runner fails every confined target", () => {
     const held = {
       id: "ci:1:a",

@@ -492,6 +492,100 @@ describe("a step that names what it reads", () => {
   })
 })
 
+describe("a step that says what it writes", () => {
+  const build = (extra: Partial<Step>): Step =>
+    step("a:1", "make dist", { inputs: ["config/**", "Makefile"], from: "a:1", ...extra })
+  const test = step("a:2", "make test", { inputs: ["packages/a/**"], from: "a:2" })
+
+  it("declares a setup step's inputs and outputs, and keeps the step after it narrowed", () => {
+    const source = targetsOf(inventory([job("a", [
+      build({ outputs: ["packages/a/dist/**", "./build/info.txt", "packages/b/dist/**"] }),
+      test
+    ])]))
+    // The setup target still always runs, in the open. Its key now holds what it reads.
+    expect(declaration(source, "a-1")).toContain("S.Shell.Build(")
+    expect(declaration(source, "a-1")).toContain(`data: [S.glob("//Makefile"), S.glob("//config/**")]`)
+    expect(declaration(source, "a-1")).toContain(`outFiles: ["//.flows/ci/a-1", "//build/info.txt"]`)
+    expect(declaration(source, "a-1")).toContain(`outDirs: ["//packages/a/dist", "//packages/b/dist"]`)
+    expect(declaration(source, "a-1")).toContain("cache: false")
+    expect(declaration(source, "a-1")).toContain(`sandbox: "none"`)
+    // The step after it reads those outputs through the dependency, and its key holds the setup target's key.
+    expect(declaration(source, "a-2")).toContain(`data: [S.glob("//packages/a/**"), step0]`)
+    expect(declaration(source, "a-2")).toContain("sandbox: { network: true }")
+  })
+
+  it("keeps a chain narrowed only while every earlier step names both", () => {
+    const middle = (extra: Partial<Step>): Step =>
+      step("a:2", "make more", { inputs: ["more/**"], from: "a:2", ...extra })
+    const last = step("a:3", "make test", { inputs: ["packages/a/**"], from: "a:3" })
+    const all = targetsOf(inventory([job("a", [build({ outputs: [] }), middle({ outputs: ["out/**"] }), last])]))
+    // A step that says it writes nothing declares only its marker.
+    expect(declaration(all, "a-1")).toContain(`outFiles: ["//.flows/ci/a-1"]`)
+    expect(declaration(all, "a-1")).not.toContain("outDirs")
+    expect(declaration(all, "a-2")).toContain(`data: [S.glob("//more/**"), step0]`)
+    expect(declaration(all, "a-2")).toContain(`outDirs: ["//out"]`)
+    expect(declaration(all, "a-3")).toContain(`data: [S.glob("//packages/a/**"), step1]`)
+    // The middle step does not say what it writes: it declares no files, and the step after it reads everything.
+    const gap = targetsOf(inventory([job("a", [build({ outputs: [] }), middle({}), last])]))
+    expect(declaration(gap, "a-1")).toContain(`data: [S.glob("//Makefile"), S.glob("//config/**")]`)
+    expect(declaration(gap, "a-2")).toContain("data: [step0]")
+    expect(declaration(gap, "a-2")).not.toContain("outDirs")
+    expect(declaration(gap, "a-3")).toContain("data: [repository, step1]")
+    expect(declaration(gap, "a-3")).toContain(`sandbox: "none"`)
+    // The first step names what it writes and not what it reads: nothing after it can stand on its own inputs.
+    const blind = targetsOf(inventory([job("a", [
+      step("a:1", "make dist", { outputs: ["dist/**"] }),
+      middle({ outputs: ["out/**"] }),
+      last
+    ])]))
+    expect(declaration(blind, "a-1")).toContain("data: []")
+    expect(declaration(blind, "a-1")).not.toContain("outDirs")
+    expect(declaration(blind, "a-2")).toContain("data: [step0]")
+    expect(declaration(blind, "a-2")).not.toContain("outDirs")
+    expect(declaration(blind, "a-3")).toContain("data: [repository, step1]")
+  })
+
+  it("treats outputs it cannot declare as one directory or one file as unknown", () => {
+    for (const output of ["dist/*.js", "**", "../other/**", "/tmp/out", "./**", "packages/[ab]/dist/**"]) {
+      const source = targetsOf(inventory([job("a", [build({ outputs: ["packages/a/dist/**", output] }), test])]))
+      expect(declaration(source, "a-1"), output).toContain("data: []")
+      expect(declaration(source, "a-1"), output).not.toContain("outDirs")
+      expect(declaration(source, "a-2"), output).toContain("data: [repository, step0]")
+    }
+  })
+
+  it("follows a recipe that names both across one working tree, and declares no outputs for a last step", () => {
+    const source = targetsOf(inventory([
+      job("build", [build({ id: "build:1", outputs: ["dist/**"] })], { source: "justfile", triggers: [] }),
+      job("test", [step("test:1", "make test", { inputs: ["src/**"], outputs: ["report/**"], from: "test:1" })], {
+        source: "justfile",
+        triggers: [],
+        needs: ["build"]
+      })
+    ]))
+    expect(declaration(source, "build-1")).toContain(`outDirs: ["//dist"]`)
+    expect(declaration(source, "test-1")).toContain(`data: [S.glob("//src/**"), step0]`)
+    expect(declaration(source, "test-1")).toContain("sandbox: { network: true }")
+    // Nothing relies on the last step, so what it writes is not declared.
+    expect(declaration(source, "test-1")).not.toContain("outDirs")
+  })
+
+  it("declares no inputs or outputs on a setup target when the inputs do not fit in one PACKAGE.ts", () => {
+    const inputs = Array.from({ length: 4000 }, (_, index) => `packages/${"p".repeat(300)}-${index}/**`)
+    const source = content(
+      generate(inventory([job("a", [
+        step("a:1", "make dist", { inputs, outputs: ["dist/**"], from: "a:1" }),
+        step("a:2", "make test", { inputs, from: "a:2" })
+      ])])),
+      packagePath
+    )
+    expect(declaration(source, "a-1")).toContain("data: []")
+    expect(source).not.toContain("outDirs")
+    expect(declaration(source, "a-2")).toContain("data: [repository, step0]")
+    expect(source).not.toContain("sandbox: {")
+  })
+})
+
 describe("the size limit", () => {
   it("refuses targets too large for one PACKAGE.ts", () => {
     const failure = failureOf(inventory([job("a", [step("a:1", `echo ${"x".repeat(1024 * 1024)}`)])]))

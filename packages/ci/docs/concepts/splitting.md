@@ -139,9 +139,11 @@ which a generated target cannot ask for yet.
 Three kinds of target run in the open, as an unsplit step does:
 
 - A step with no inputs. Its target declares the whole repository.
-- A step a later step follows. Its target always runs, its result is never
-  reused, and it declares no files.
-- A step that follows another step. Its target declares the whole repository.
+- A step a later step follows. Its target always runs and its result is never
+  reused. It declares no files, unless it names what it reads and what it
+  writes.
+- A step that follows a step that does not name what it reads and writes. Its
+  target declares the whole repository.
 
 When the targets' inputs would make `PACKAGE.ts` larger than the 1 MiB Smithers
 build reads, every target declares the whole repository and runs in the open.
@@ -149,13 +151,7 @@ build reads, every target declares the whole repository and runs in the open.
 ## A step after another step
 
 Steps of one job run in one working tree, so a step can read what an earlier
-step wrote: installed packages, a `dist` directory, a build cache. Nothing in a
-CI file says what a step writes, or which files it read to write it.
-
-So only a step that nothing precedes is split or held to its inputs. A step
-that follows another keeps its command, declares the whole repository and runs
-in the open. It reruns on every change, and it never passes on a result from
-before a file changed.
+step wrote: installed packages, a `dist` directory, a build cache.
 
 ```text
 step 1   cp config/value packages/a/dist/out
@@ -165,8 +161,24 @@ step 2   grep -q good packages/a/dist/out        would read packages/a/**
 Held to `packages/a/**`, step 2 could not read `dist/out`, which git ignores.
 Allowed to read it, step 2 would still have a key made of `packages/a/**`: a
 change to `config/value` rebuilds `dist/out`, the key stays the same, and the
-old pass is replayed. Declaring the whole repository puts `config/value` in the
-key.
+old pass is replayed.
+
+So a step that follows another is held to its inputs only when every earlier
+step in its working tree names both what it reads and what it writes:
+
+| The earlier steps                              | The step after them                                                           |
+| ---------------------------------------------- | ----------------------------------------------------------------------------- |
+| Each names what it reads and what it writes    | Stays narrowed. It can read what they wrote, and its key holds what they read |
+| One does not name what it reads, or its writes | Declares the whole repository and runs in the open. It reruns on every change |
+
+An earlier step that names both becomes a target that declares both. Smithers
+build lets a target read the outputs of the targets it depends on, and puts
+their keys in its key. A change to `config/value` then changes the key of
+step 2, and step 2 runs again.
+
+A step's outputs are a directory (`packages/a/dist/**`) or a file. Smithers
+build fails a target that leaves a declared directory missing or empty, so an
+output is declared only when the step is known to write it.
 
 Jobs of a GitHub Actions workflow run on separate machines, so a job's first
 step follows nothing, whatever the job needs. Recipes of one Justfile share a

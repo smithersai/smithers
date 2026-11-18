@@ -10,10 +10,15 @@
  * for all of them.
  *
  * A step that follows another in one working tree can read what that step
- * wrote, and nothing says what a step writes. Such a step's target therefore
- * never declares the step's inputs: its key would not hold the files the
- * earlier step read, so it would pass stale when one of them changed. It
- * declares the whole repository, as a step with no inputs does.
+ * wrote. Its target declares the step's inputs only when every earlier step
+ * in the tree names both what it reads and what it writes (`Step.inputs` and
+ * `Step.outputs`). Each of those is then a setup target that declares its
+ * inputs and its outputs: Smithers build lets a target read what the targets
+ * it depends on declare as outputs, and a target's key holds the keys of
+ * those targets, so a change to a file a setup step read reruns every target
+ * after it. Without that, the later target declares the whole repository, as
+ * a step with no inputs does: its own inputs would not hold the files the
+ * earlier step read, and it would pass stale when one of them changed.
  * GitHub jobs run on separate machines, so `needs` only orders them; the other
  * sources run in one working tree, so what they need is `setup` too.
  *
@@ -61,10 +66,26 @@ export interface StepTarget {
   readonly step: string
   readonly variant: Variant
   /**
-   * The paths and globs the target declares, from the repository root; `undefined` when it declares the whole
-   * repository: its step names no inputs, or follows a step in its working tree and may read what that step wrote.
+   * The paths and globs the target declares, from the repository root. `undefined` for a `check` target that
+   * declares the whole repository: its step names no inputs, or follows a step that does not say what it reads and
+   * writes. `undefined` for a `setup` target that declares no files.
    */
   readonly inputs: ReadonlyArray<string> | undefined
+  /** What a `setup` target declares it writes, beside its marker; `undefined` when it declares only the marker. */
+  readonly outputs: Outputs | undefined
+}
+
+/**
+ * The directories and files a setup target declares as outputs, from the
+ * repository root. Smithers build fails a target that leaves a declared
+ * directory missing or empty, or a declared file missing.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Outputs {
+  readonly directories: ReadonlyArray<string>
+  readonly files: ReadonlyArray<string>
 }
 
 /**
@@ -111,6 +132,8 @@ export const repositoryLabel = "_repository"
 interface Tail {
   readonly host: Host | undefined
   readonly labels: ReadonlyArray<string>
+  /** True when every step that ran in the working tree up to here names what it reads and what it writes. */
+  readonly known: boolean
 }
 
 interface Draft extends Omit<StepTarget, "rule" | "script" | "job"> {
@@ -167,6 +190,24 @@ const variantSuffix = (variant: Variant): string =>
 const directoryOf = (cwd: string): string | undefined => {
   const parts = cwd.split("/").filter((part) => part !== "" && part !== ".")
   return cwd.startsWith("/") || parts.includes("..") ? undefined : parts.join("/")
+}
+
+// Characters a glob reader gives a meaning to. Smithers build declares an output as one directory or one file.
+const globbed = /[*?[\]{}!]/
+
+// What a step writes, as directories (`dir/**`) and files. `undefined` when the step does not say, or says it in
+// a form that is not one directory or one file inside the repository: what it writes is then unknown.
+const outputsOf = (step: Step): Outputs | undefined => {
+  if (step.outputs === undefined) return undefined
+  const directories: Array<string> = []
+  const files: Array<string> = []
+  for (const output of step.outputs) {
+    const whole = output.endsWith("/**")
+    const path = directoryOf(whole ? output.slice(0, -3) : output)
+    if (path === undefined || path === "" || globbed.test(path)) return undefined
+    ;(whole ? directories : files).push(path)
+  }
+  return { directories: sorted(directories), files: sorted(files) }
 }
 
 // Smithers build starts a target's text with `/bin/sh`. The step itself runs
@@ -253,14 +294,15 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     return label
   }
 
-  const upstreamOf = (job: Job, host: Host | undefined): ReadonlyArray<string> =>
-    sorted(job.needs.flatMap((need) =>
-      (tails.get(need) as ReadonlyArray<Tail>).flatMap((tail) => {
-        if (tail.host === undefined || tail.host === host) return tail.labels
+  // The tails of the jobs a job needs that run on its system.
+  const upstreamOf = (job: Job, host: Host | undefined): ReadonlyArray<Tail> =>
+    job.needs.flatMap((need) =>
+      (tails.get(need) as ReadonlyArray<Tail>).filter((tail) => {
+        if (tail.host === undefined || tail.host === host) return true
         if (host === undefined) notes.add(`${job.id}: runs on every system, so it does not wait for ${need}.`)
-        return []
+        return false
       })
-    ))
+    )
 
   const draftOf = (
     job: Job,
@@ -268,7 +310,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     variant: Variant,
     host: Host | undefined,
     dependencies: ReadonlyArray<string>,
-    follows: boolean
+    scoped: boolean
   ): Draft | undefined => {
     const command = forShell(step.command, variant)
     const cwd = forText(step.cwd, variant)
@@ -296,9 +338,10 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       title: `${job.name} / ${step.name ?? step.id}`,
       step: step.from ?? step.id,
       variant,
-      inputs: follows || step.inputs === undefined || step.inputs.includes(everything)
-        ? undefined
-        : sorted(step.inputs),
+      // Kept only for a step whose reads its inputs can stand for: see `scoped` where the steps are walked.
+      ...(scoped && step.inputs !== undefined && !step.inputs.includes(everything)
+        ? { inputs: sorted(step.inputs), outputs: outputsOf(step) }
+        : { inputs: undefined, outputs: undefined }),
       job,
       command,
       directory
@@ -314,26 +357,31 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       const host = hostOf(runsOn)
       if (host === "win32") notes.add(`${job.id}: runs only on Windows, which generated targets do not support.`)
       else if (runsOn !== undefined) runners.add(runsOn)
-      let previous = upstreamOf(job, host)
+      const upstream = upstreamOf(job, host)
+      let previous = sorted(upstream.flatMap((tail) => tail.labels))
       let sharesTree = job.source !== "github-actions"
+      // True while every step that ran before in this working tree names what it reads and what it writes.
+      let known = upstream.every((tail) => tail.known)
       for (const group of groupsOf(job.steps)) {
         // Steps split from one step each follow the step before them, never each other.
-        const made: Array<string> = []
-        // What an earlier step left in this working tree, these steps can read.
-        const follows = sharesTree && previous.length > 0
+        const made: Array<Draft> = []
+        // What an earlier step left in this working tree, these steps can read. Their own inputs stand for all
+        // they read only when nothing ran before them, or when all of it is declared.
+        const scoped = !(sharesTree && previous.length > 0) || known
         for (const step of group) {
-          const draft = draftOf(job, step, variant, host, previous, follows)
+          const draft = draftOf(job, step, variant, host, previous, scoped)
           if (draft === undefined) continue
           drafts.set(draft.label, draft)
-          made.push(draft.label)
+          made.push(draft)
         }
         if (made.length === 0) continue
         if (sharesTree) { for (const label of previous) reliedOn.add(label) }
         // Steps of one job always share a machine.
         sharesTree = true
-        previous = made
+        previous = made.map((draft) => draft.label)
+        known = made.every((draft) => draft.inputs !== undefined && draft.outputs !== undefined)
       }
-      jobTails.push({ host, labels: previous })
+      jobTails.push({ host, labels: previous, known })
     }
   }
 
@@ -351,8 +399,13 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
 
   const targets = [...drafts.values()].map(({ command, directory, job, ...draft }): StepTarget => {
     const setup = reliedOn.has(draft.label)
+    // A setup target declares what it reads only together with what it writes: the two let a later target stay
+    // narrowed. A target nothing relies on has no use for its outputs.
+    const declares = setup && draft.outputs !== undefined
     return {
       ...draft,
+      inputs: setup && !declares ? undefined : draft.inputs,
+      outputs: declares ? draft.outputs : undefined,
       job: job.id,
       rule: setup ? "setup" : "check",
       script: scriptOf(command, directory, setup ? `${markerDirectory}/${draft.label}` : undefined)

@@ -87,22 +87,36 @@ const renderWorkspace = (inventory: Inventory): string =>
     ``
   ].join("\n")
 
-// True for a target that declares its step's inputs in place of the whole repository.
+// True for a target held to its step's inputs by the read sandbox.
 const narrows = (target: StepTarget, narrowed: boolean): boolean =>
   narrowed && target.rule === "check" && target.inputs !== undefined
 
-// The files a target declares. A setup target always runs, so it declares
-// none: a dependency's key is part of a target's key, and a setup target that
-// declared the repository would rerun every target after it on any change.
-// A target after a setup step reads that step's work, so it declares the
-// whole repository (`inputs` is `undefined` for it): every file the setup
-// step could have read is then in its key. Any other target declares its
-// step's inputs, or the whole repository when the step names none.
+// The files a target declares.
+//
+// A setup target always runs. One that names what it reads and what it writes
+// declares both: its inputs enter the key of every target after it, and its
+// outputs enter their read set. Any other setup target declares no files: a
+// setup target that declared the repository would rerun every target after it
+// on any change, and a target after it declares the whole repository itself.
+//
+// Any other target declares its step's inputs, or the whole repository when
+// `inputs` is `undefined`.
 const filesOf = (target: StepTarget, narrowed: boolean): ReadonlyArray<string> => {
-  if (target.rule === "setup") return []
-  return narrows(target, narrowed)
-    ? (target.inputs as ReadonlyArray<string>).map((input) => `S.glob(${text(`//${input}`)})`)
-    : ["repository"]
+  if (narrowed && target.inputs !== undefined) return target.inputs.map((input) => `S.glob(${text(`//${input}`)})`)
+  return target.rule === "setup" ? [] : ["repository"]
+}
+
+// What a setup target declares it writes: its marker, and the step's own outputs when it names them.
+const outputsOf = (target: StepTarget, narrowed: boolean): ReadonlyArray<string> => {
+  const own = narrowed && target.outputs !== undefined ? target.outputs : { directories: [], files: [] }
+  const files = [`${markerDirectory}/${target.label}`, ...own.files]
+  return [
+    `outFiles: [${files.map((file) => text(`//${file}`)).join(", ")}]`,
+    ...(own.directories.length === 0
+      ? []
+      : [`outDirs: [${own.directories.map((directory) => text(`//${directory}`)).join(", ")}]`]),
+    `cache: false`
+  ]
 }
 
 const renderTarget = (
@@ -114,9 +128,7 @@ const renderTarget = (
   const data = [...filesOf(target, narrowed), ...target.dependencies.map((label) => variables.get(label) as string)]
   const fields = [
     `shell: ${text(target.script)}`,
-    ...(target.rule === "setup"
-      ? [`outFiles: [${text(`//${markerDirectory}/${target.label}`)}]`, `cache: false`]
-      : []),
+    ...(target.rule === "setup" ? outputsOf(target, narrowed) : []),
     ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(target.env)}`]),
     ...(target.inheritEnv.length === 0 ? [] : [`inheritEnv: ${JSON.stringify(target.inheritEnv)}`]),
     ...(target.host === undefined ? [] : [`hosts: [${text(target.host)}]`]),
@@ -145,7 +157,7 @@ const renderPackage = (plan: StepPlan, narrowed: boolean): string => {
     `import { Smithers as S } from "@smthrs/targets"`,
     ``,
     comment("A step can read any file, so a target declares the whole repository unless its step names what it reads."),
-    comment("A setup target always runs and declares no files."),
+    comment("A setup target always runs. It declares files only when its step names what it reads and writes."),
     `const repository = ${shared ? `S.Filegroup({ srcs: [S.glob("//**")] })` : `S.glob("//**")`}`,
     ``,
     ...plan.targets.map((target, index) => renderTarget(target, index, variables, narrowed)),
