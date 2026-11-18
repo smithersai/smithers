@@ -374,11 +374,11 @@ const shellWord = (value: string): string => `'${value.replaceAll("'", "'\\''")}
 
 // The first step after Node: it fails, naming each file and the command to run, when the files in the commit are not
 // what `apply` writes for it, as when a pull request adds a package or a test file the generated files do not list.
-// `apply` is given the cache it was given, so it compares like with like.
-const upToDate = (cache: string | undefined): ReadonlyArray<string> => {
+// `apply` is given the cache it was given, and `--allow-docker` when it was, so it compares like with like.
+const upToDate = (cache: string | undefined, allowDocker: boolean): ReadonlyArray<string> => {
   const command = `npx --yes --package=smithers-ci@${release} smithers-ci apply --check${
     cache === undefined ? "" : ` --cache ${shellWord(cache)}`
-  }`
+  }${allowDocker ? " --allow-docker" : ""}`
   return [
     `      - name: Generated files are up to date`,
     `        run: ${cache === undefined ? command : text(command)}`
@@ -390,7 +390,8 @@ const renderWorkflow = (
   cache: string | undefined,
   confined: boolean,
   serial: boolean,
-  observed: boolean
+  observed: boolean,
+  allowDocker: boolean
 ): string => {
   // A step that keeps a tool's own cache names a directory under the tool cache in its environment.
   const keepsTools = plan.targets.some((target) =>
@@ -434,7 +435,7 @@ const renderWorkflow = (
     `      - uses: actions/setup-node@v4`,
     `        with:`,
     `          node-version: "24"`,
-    ...upToDate(cache),
+    ...upToDate(cache, allowDocker),
     ...plan.toolchains.flatMap((toolchain) => renderSetup(toolchain, varying)),
     ...(confined ? sandboxSetup : []),
     ...(observed ? tracerSetup : []),
@@ -548,7 +549,8 @@ export const renderFiles = (
         // The runner needs the sandbox only when a target runs under it, and the tracer only when one is observed.
         plan.targets.some((target) => narrows(target, held)),
         serial,
-        plan.targets.some((target) => observes(target, held))
+        plan.targets.some((target) => observes(target, held)),
+        options?.allowDocker === true
       )
     },
     { path: workspacePath, content: targets },

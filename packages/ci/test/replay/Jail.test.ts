@@ -33,9 +33,25 @@ import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import type { Mode } from "../../src/contract/RunRecord.ts"
 import { files } from "../../src/generate/index.ts"
 import { confine, held, reading } from "../../src/replay/Confine.vibe"
-import { gitConfig, hooksDirectory, prePush, pushRefused } from "../../src/replay/Environment.ts"
+import {
+  containerPrograms,
+  gitConfig,
+  guardedPrograms,
+  hooksDirectory,
+  prePush,
+  pushRefused
+} from "../../src/replay/Environment.ts"
 import { Options, Progress, run } from "../../src/replay/index.ts"
-import { credentials, jailed, type Probe, probe, temporaryOf, temporaryRoots, unjailed } from "../../src/replay/Jail.ts"
+import {
+  credentials,
+  daemonSockets,
+  jailed,
+  type Probe,
+  probe,
+  temporaryOf,
+  temporaryRoots,
+  unjailed
+} from "../../src/replay/Jail.ts"
 import { inventoryWith, job, linkTargets, smthrs } from "./fixture.ts"
 import { placeIn } from "./place.ts"
 import { parts } from "./TestParts.vibe"
@@ -360,7 +376,7 @@ describe("git a part starts in a copy a step wrote", () => {
       const unheld = { inside: linesOf(inside), outside: linesOf(outside) }
       rmSync(inside)
       rmSync(outside)
-      const places = yield* confine(work, confined, () => Effect.void, [])
+      const places = yield* confine(work, confined, () => Effect.void, [], false)
       const held = reading(real, places.normal, copy)
       const printed: Array<string> = []
       for (const command of asked(copy)) printed.push(yield* held.string(command))
@@ -383,7 +399,7 @@ describe("git a part starts in a copy a step wrote", () => {
     const work = directory("work")
     const printed = await live(Effect.gen(function*() {
       const real = yield* ChildProcessSpawner
-      const places = yield* confine(work, () => ({ refusal: "no bubblewrap" }), () => Effect.void, [])
+      const places = yield* confine(work, () => ({ refusal: "no bubblewrap" }), () => Effect.void, [], false)
       const held = reading(real, places.normal, copy)
       const plain = yield* held.string(ChildProcess.make("sh", ["-c", "echo $HOME"]))
       const piped = yield* held.string(
@@ -408,10 +424,11 @@ describe("confine", () => {
       bwrap: "/usr/bin/bwrap",
       home: owner.home,
       hidden: [owner.runtime, "/run/user/none"],
+      daemons: [],
       tmp: "/tmp/of-the-machine",
       caches: [cache, join(cache, "none")]
     })
-    const places = await scoped(confine(work, asked, () => Effect.void, programs))
+    const places = await scoped(confine(work, asked, () => Effect.void, programs, false))
 
     expect(Object.keys(places)).toEqual(["baseline", "normal", "fast"])
     for (const way of ["baseline", "normal", "fast"] as const) {
@@ -420,6 +437,10 @@ describe("confine", () => {
       expect(place.home).toBe(join(work, "home", way))
       expect(place.tmp).toBe(join(work, "tmp", way))
       expect(place.hooks).toBe(join(work, "home", way, hooksDirectory))
+      // The stand-ins a step finds first on its `PATH`, and nothing of a container daemon in its variables.
+      expect(place.guard).toBe(join(work, "guard"))
+      expect(readdirSync(place.guard).sort()).toEqual([...guardedPrograms, ...containerPrograms].sort())
+      expect(place.daemon).toEqual({})
       expect(readFileSync(join(place.hooks, "pre-push"), "utf8")).toBe(prePush)
       accessSync(join(place.hooks, "pre-push"), constants.X_OK)
       expect(readFileSync(join(place.home, ".gitconfig"), "utf8")).toBe(gitConfig)
@@ -444,7 +465,7 @@ describe("confine", () => {
     const said: Array<string> = []
     const say = (line: string) => Effect.sync(() => void said.push(line))
     const work = directory("work")
-    const places = await scoped(confine(work, () => ({ refusal: "no bubblewrap" }), say, []))
+    const places = await scoped(confine(work, () => ({ refusal: "no bubblewrap" }), say, [], false))
     expect(places).toEqual({
       baseline: placeIn(work, "baseline"),
       normal: placeIn(work, "normal"),
@@ -452,13 +473,14 @@ describe("confine", () => {
     })
     expect(said).toEqual([
       "steps run without a file-system jail: no bubblewrap. Each step still gets a home directory of its own and " +
-      "cannot push with git"
+      "cannot push with git or start docker or podman by name"
     ])
   })
 })
 
 describe("the jail", () => {
   const argv = ["bash", "-e", "-c", "true"] as const
+  const place = { home: "/h", tmp: "/t", guard: "/g", hooks: "/h/hooks", daemon: {} }
 
   it("is asked of the machine: Linux with a bubblewrap that starts, or the reason", () => {
     const facts = ExecSandbox.host()
@@ -474,6 +496,7 @@ describe("the jail", () => {
       bwrap: "/usr/bin/bwrap",
       home: "/home/person",
       hidden: ["/run/user/1234"],
+      daemons: daemonSockets(1234, process.env),
       tmp: tmpdir(),
       caches: [join(tmpdir(), "tsx-1234"), join(tmpdir(), "vibelang-cache-1234")]
     })
@@ -482,6 +505,7 @@ describe("the jail", () => {
         bwrap: facts.executable("bwrap"),
         home: homedir(),
         hidden: [`/run/user/${facts.uid}`],
+        daemons: daemonSockets(facts.uid, process.env),
         tmp: tmpdir(),
         caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)]
       })
@@ -490,7 +514,7 @@ describe("the jail", () => {
 
   it("runs a command as it is when there is none", () => {
     expect(jailed(undefined, ["/copy"], ["/home/hooks"], argv)).toBe(argv)
-    expect(held({ home: "/h", tmp: "/t", guard: "/g", hooks: "/h/hooks", jail: undefined }, ["/copy"], argv)).toBe(argv)
+    expect(held({ ...place, jail: undefined }, ["/copy"], argv)).toBe(argv)
   })
 
   it("leaves the machine read-only but the places given, hides the masks, and keeps the hook read-only", () => {
@@ -501,7 +525,7 @@ describe("the jail", () => {
       temporary: ["/tmp", "/var/tmp/mine"],
       visible: ["/tmp/bunx", "/work"]
     }
-    expect(held({ home: "/h", tmp: "/t", guard: "/g", hooks: "/h/hooks", jail }, ["/copy"], argv)).toEqual([
+    expect(held({ ...place, jail }, ["/copy"], argv)).toEqual([
       "/usr/bin/bwrap",
       "--ro-bind",
       "/",

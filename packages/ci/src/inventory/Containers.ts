@@ -1,0 +1,76 @@
+/**
+ * Which CI steps start a program that talks to a container daemon, read from
+ * their commands.
+ *
+ * Whoever talks to a Docker or Podman daemon can have it mount any file of
+ * the machine it runs on. A replay runs a repository's past commits on a
+ * person's own computer, so a job with such a step is not replayed unless the
+ * person says so with `--allow-docker`. Nothing here runs anything. A command
+ * is read as `MachineChanges` reads it: through quotes, `$( )`, `sudo`, `env`,
+ * `xargs`, `bash -c` and the rest. What cannot be seen, such as a script that
+ * calls `docker` inside, the replay stops at run time.
+ *
+ * @since 0.1.0
+ */
+
+import { docker, type Job } from "../contract/Inventory.ts"
+import { listed, startedIn } from "./MachineChanges.ts"
+
+/** The programs that talk to a container daemon. */
+const programs: ReadonlySet<string> = new Set(["docker", "docker-compose", "podman", "nerdctl"])
+
+/** The flags of `docker` itself that take a value. They come before its command. */
+const dockerValueFlags: ReadonlySet<string> = new Set([
+  ...["--config", "-c", "--context", "-H", "--host", "-l", "--log-level", "--tlscacert", "--tlscert", "--tlskey"]
+])
+
+/** The command `docker` is given, past its own flags: `compose` in `docker --context ci compose up`. */
+const dockerCommand = (args: ReadonlyArray<string>): string | undefined => {
+  let at = 0
+  while (args[at]?.startsWith("-") === true) at += dockerValueFlags.has(args[at] as string) ? 2 : 1
+  return args[at]
+}
+
+/**
+ * The container programs a step's command starts, as a person names them,
+ * each once in the order met: `docker compose` is told from `docker`.
+ *
+ * @category reading
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const containersIn = (command: string, env: Readonly<Record<string, string>> = {}): ReadonlyArray<string> => [
+  ...new Set(
+    startedIn(command, env).flatMap(({ args, name }) =>
+      !programs.has(name)
+        ? []
+        : [name === "docker" && dockerCommand(args) === "compose" ? "docker compose" : name]
+    )
+  )
+]
+
+/**
+ * What is recorded of a job that runs `started`: `runs docker compose and
+ * podman`. The report's sentence names them and the flag that replays the
+ * job.
+ *
+ * @category rendering
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const detailOf = (started: ReadonlyArray<string>): string => `runs ${listed(started)}`
+
+/**
+ * A job with one `docker` entry when a step of it starts a container
+ * program. A job with no such step is returned as it is.
+ *
+ * @category reading
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const markContainers = <J extends Job>(job: J): J => {
+  const started = [...new Set(job.steps.flatMap((step) => containersIn(step.command, step.env)))]
+  return started.length === 0
+    ? job
+    : { ...job, unsupported: [...job.unsupported, { feature: docker, detail: detailOf(started) }] }
+}

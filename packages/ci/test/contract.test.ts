@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema"
 import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
+import * as Reasons from "../src/contract/Reasons.ts"
 import {
   Closure,
   Command,
@@ -116,6 +117,34 @@ describe("contract 4: inventory", () => {
       { feature: Inventory.missingTool, detail: "go 1.23" }
     ])).toBe("condition, missing-tool (go 1.23, ruby 3.4.6)")
     expect(Inventory.reasonsText([])).toBe("")
+  })
+
+  it("leaves out a job that starts a container program until the person allows Docker", () => {
+    const decode = Schema.decodeUnknownSync(Inventory.Inventory)
+    const base = fixture("inventory.github-actions-bun.json") as {
+      readonly jobs: ReadonlyArray<Record<string, unknown>>
+    }
+    const runs = { feature: Inventory.docker, detail: "runs docker compose" }
+    const hosted = { feature: "services", detail: "test runs service containers" }
+    const first = base.jobs[0] as { readonly unsupported: ReadonlyArray<unknown> }
+    const read = decode({ ...base, jobs: [{ ...first, unsupported: [...first.unsupported, runs, hosted] }] })
+    expect(Inventory.docker).toBe("docker")
+    // The feature words name what the job runs; the sentence adds what a person does to have it replayed.
+    const reasons = (read.jobs[0]?.unsupported ?? []).filter((entry) => ["docker", "services"].includes(entry.feature))
+    expect(Inventory.reasonsText(reasons)).toBe("docker (runs docker compose), services")
+    expect(Reasons.reasonsSentence(reasons)).toBe(
+      "runs docker compose, and a container daemon can reach every file of this machine; " +
+        "pass --allow-docker to replay it; starts service containers, which Smithers CI does not start"
+    )
+    expect(Inventory.blockers(read.jobs[0] as Inventory.Job).map((entry) => entry.feature)).toContain("docker")
+    // Allowing Docker takes that one reason away, from a copy: every other reason stays, and the reading is as it was.
+    const allowed = Inventory.allowingDocker(read)
+    const left = (allowed.jobs[0]?.unsupported ?? []).map((entry) => entry.feature)
+    expect(left).not.toContain("docker")
+    expect(left).toContain("services")
+    expect(left).toHaveLength((read.jobs[0]?.unsupported ?? []).length - 1)
+    expect((read.jobs[0]?.unsupported ?? []).map((entry) => entry.feature)).toContain("docker")
+    expect(Inventory.allowingDocker(allowed)).toEqual(allowed)
   })
 
   it("names the cache credentials a kept job runs without, for the report", () => {
@@ -417,6 +446,11 @@ describe("contract 7: command surface", () => {
     expect(Object.keys(Command.documents).sort()).toEqual([...Command.flags.json.on].sort())
     expect(Command.syntax.help).toContain("--help")
     expect(Command.syntax.value).toContain("--commits 5")
+    // A person allows Docker for a replay, and for the files `apply` writes from what the replay measured.
+    expect(Command.flags["allow-docker"].on).toEqual(["", "replay", "apply"])
+    expect(Command.flags["allow-docker"].default).toBe("false")
+    expect(Command.flags["allow-docker"].help).toContain("every file of this machine")
+    expect(Command.syntax.value).toContain("`--json` and `--allow-docker` take no value")
     expect(Object.keys(Command.environment)).toEqual(
       expect.arrayContaining([
         "PATH",

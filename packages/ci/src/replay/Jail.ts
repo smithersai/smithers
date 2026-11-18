@@ -45,11 +45,41 @@ export const credentials: ReadonlyArray<string> = [
 ]
 
 /**
+ * Where a container daemon listens on a machine: Docker's socket under its
+ * two names, the sockets of a rootless Docker and of Podman in the session's
+ * runtime directory, and the socket `DOCKER_HOST` names. Whoever talks to one
+ * can have the daemon mount any file of the machine, so a jailed step finds
+ * none of them.
+ *
+ * @throws {never}
+ * @category resolution
+ * @since 0.1.0
+ */
+export const daemonSockets = (
+  uid: number | undefined,
+  environment: Readonly<Record<string, string | undefined>>
+): ReadonlyArray<string> => {
+  const runtime = environment["XDG_RUNTIME_DIR"] ?? `/run/user/${uid}`
+  const named = /^unix:\/\/(\/.+)$/.exec(environment["DOCKER_HOST"] ?? "")?.[1]
+  return [
+    ...new Set([
+      "/var/run/docker.sock",
+      "/run/docker.sock",
+      `${runtime}/docker.sock`,
+      `${runtime}/podman/podman.sock`,
+      ...(named === undefined ? [] : [named])
+    ])
+  ]
+}
+
+/**
  * What a machine answers when asked whether it can jail a step: why it
  * cannot, or the bubblewrap program with what the jail is built around. `home`
  * is the person's home directory, and `hidden` the other paths a step must
- * find empty. `tmp` is the machine's temporary directory, which a step finds
- * replaced, and `caches` the directories in it a step still reads.
+ * find empty. `daemons` are the sockets of the container daemons, which a
+ * step finds empty too unless the person allows Docker. `tmp` is the
+ * machine's temporary directory, which a step finds replaced, and `caches`
+ * the directories in it a step still reads.
  *
  * @category models
  * @since 0.1.0
@@ -59,6 +89,7 @@ export type Probe =
     readonly bwrap: string
     readonly home: string
     readonly hidden: ReadonlyArray<string>
+    readonly daemons: ReadonlyArray<string>
     readonly tmp: string
     readonly caches: ReadonlyArray<string>
   }
@@ -69,7 +100,8 @@ export type Probe =
  * step when it runs Linux and bubblewrap starts; `refuses` starts bubblewrap
  * once to know, and says why when it cannot. Beside the credentials of the home, a step must not reach the
  * person's runtime directory: the key agents and the secret service of a
- * session listen there. The caches kept in sight are where a `smthrs`
+ * session listen there. Nor may it reach a container daemon's socket
+ * ({@link daemonSockets}). The caches kept in sight are where a `smthrs`
  * started from source keeps its compiled code, TypeScript's and VibeLang's:
  * without them every replay would compile `smthrs` again. An installed
  * `smthrs` has neither.
@@ -88,6 +120,7 @@ export const probe = (
       bwrap: facts.executable("bwrap") as string,
       home: facts.home as string,
       hidden: [`/run/user/${facts.uid}`],
+      daemons: daemonSockets(facts.uid, process.env),
       tmp: tmpdir(),
       caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)]
     }
@@ -95,7 +128,10 @@ export const probe = (
 }
 
 /**
- * A path a jailed step finds empty: a credential of the person's.
+ * A path a jailed step finds empty: a credential of the person's, or the
+ * socket of a container daemon. `kept` are the paths inside a hidden
+ * directory a step still reaches: a daemon's socket in the session's runtime
+ * directory, when the person allows Docker.
  *
  * @category models
  * @since 0.1.0
@@ -103,6 +139,7 @@ export const probe = (
 export interface Mask {
   readonly path: string
   readonly directory: boolean
+  readonly kept?: ReadonlyArray<string> | undefined
 }
 
 /**
@@ -157,21 +194,23 @@ export const temporaryRoots = (
 }
 
 /**
- * What the program says, once, on a machine that cannot jail a step.
+ * What the program says, once, on a machine that cannot jail a step. With
+ * `allowDocker` a step starts the machine's container programs, so the line
+ * does not say it cannot.
  *
  * @throws {never}
  * @category rendering
  * @since 0.1.0
  */
-export const unjailed = (refusal: string): string =>
+export const unjailed = (refusal: string, allowDocker: boolean = false): string =>
   `steps run without a file-system jail: ${refusal}. Each step still gets a home directory of its own and cannot ` +
-  `push with git`
+  `push with git${allowDocker ? "" : " or start docker or podman by name"}`
 
 /**
  * The command that runs `argv` in the jail, or `argv` itself with no jail.
  *
- * In the jail every file of the machine is read-only, the masks are empty,
- * and only `writable` can be written; `sealed` names paths under a writable
+ * In the jail every file of the machine is read-only, the masks are empty
+ * but for what each keeps, and only `writable` can be written; `sealed` names paths under a writable
  * one that stay read-only. The machine's temporary directories are the
  * replay's own, so a step that writes `/tmp` writes nothing of the machine's
  * and finds nothing another program left there. The step has its own device
@@ -199,7 +238,15 @@ export const jailed = (
     "--proc",
     "/proc",
     ...jail.masks.flatMap((mask) =>
-      mask.directory ? ["--tmpfs", mask.path, "--remount-ro", mask.path] : ["--ro-bind", "/dev/null", mask.path]
+      mask.directory
+        ? [
+          "--tmpfs",
+          mask.path,
+          ...(mask.kept ?? []).flatMap((path) => ["--bind", path, path]),
+          "--remount-ro",
+          mask.path
+        ]
+        : ["--ro-bind", "/dev/null", mask.path]
     ),
     ...jail.temporary.flatMap((directory) => ["--bind", jail.tmp, directory]),
     ...jail.visible.flatMap((path) => ["--ro-bind", path, path]),

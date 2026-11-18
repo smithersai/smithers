@@ -161,7 +161,8 @@ export effect function install(checkout: string, workspaceFile: string, place: C
     const manager = names.includes("package.json") ? managerFor(names) : undefined
     if (manager === undefined) continue
     const [command, ...args] = held(place, [checkout], manager.command)
-    const ran = exec(command, args, path.join(checkout, directory), stepEnvironment({}, place), outputLimit, "all", true)
+    const environment = stepEnvironment(place.daemon, place)
+    const ran = exec(command, args, path.join(checkout, directory), environment, outputLimit, "all", true)
       catch (): Output => ({ exitCode: 127, text: "" })
     if (ran.exitCode !== 0) return { ok: false, reason: commandFailed(manager.command, directory, ran.exitCode) }
   }
@@ -238,7 +239,7 @@ export const own = <R>(
     const root = path.resolve(request.root)
     // Each mode has a home of its own: none finds a cache another mode filled.
     const places = try orFail(
-      confine(work, options.confine ?? probe, progress.say, searchPath()),
+      confine(work, options.confine ?? probe, progress.say, searchPath(), request.allowDocker === true),
       "could not make the homes of the runs"
     )
     // Where `smthrs` writes its run records: the one place it can write that an install cannot.
@@ -341,7 +342,7 @@ export const own = <R>(
         ...jobs
       ])
       // The cache's address is the one thing the copy's own `smthrs` gets beyond what a target gets.
-      const environment = { ...stepEnvironment({}, place), ...printsNotes, ...(cached ? cacheEnv : {}) }
+      const environment = { ...stepEnvironment(place.daemon, place), ...printsNotes, ...(cached ? cacheEnv : {}) }
       const output = try exec(command, args, copy, environment, printedLimit, "all", true, heard)
       // A run with no record is a commit `smthrs` could not plan: a failed commit, not a failed replay.
       const text = fs.readFileString(file) catch () => undefined
@@ -354,7 +355,7 @@ export const own = <R>(
     effect function planOf(smthrs: string) {
       const plan = ["ci", ...chosen.patterns, "--plan", "--format", "json", "--workspace", normalCopy]
       const [command, ...args] = held(places.normal, [normalCopy], [smthrs, ...plan])
-      const environment = { ...stepEnvironment({}, places.normal), ...cacheEnv }
+      const environment = { ...stepEnvironment(places.normal.daemon, places.normal), ...cacheEnv }
       const planned = try exec(command, args, normalCopy, environment, Number.POSITIVE_INFINITY, "stdout", true)
       const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
         throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)

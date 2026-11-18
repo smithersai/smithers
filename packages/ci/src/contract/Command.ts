@@ -68,6 +68,12 @@ export const flags = {
     on: ["apply"],
     default: "false",
     help: "Write nothing; name each file apply would change, and exit 1 if there is one."
+  },
+  "allow-docker": {
+    on: ["", "replay", "apply"],
+    default: "false",
+    help:
+      "Take the jobs that run docker or podman too, and let a replayed step reach a container daemon, which can read and write every file of this machine."
   }
 } as const
 
@@ -124,7 +130,7 @@ export const failureExitCodes = {
  * @since 0.1.0
  */
 export const syntax = {
-  value: "A flag's value is the next argument, as in `--commits 5`. `--json` takes no value.",
+  value: "A flag's value is the next argument, as in `--commits 5`. `--json` and `--allow-docker` take no value.",
   help: "`--help` and `-h` are accepted on every command and print its commands and flags."
 } as const
 

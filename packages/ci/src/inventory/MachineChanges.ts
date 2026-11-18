@@ -23,6 +23,7 @@ import {
   blockers,
   changesMachine,
   ciJobs,
+  docker,
   hostAction,
   type Inventory,
   type Job,
@@ -367,11 +368,26 @@ const findCommands = (args: ReadonlyArray<string>): ReadonlyArray<ReadonlyArray<
     return [end < 0 ? rest : rest.slice(0, end)]
   })
 
-/** What one command, given as its words, does to the machine. */
+/**
+ * A program a command starts, with its arguments.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Started {
+  readonly name: string
+  readonly args: ReadonlyArray<string>
+}
+
+/** Told each program a command starts, as it is met. */
+type Seen = (started: Started) => void
+
+/** What one command, given as its words, does to the machine. `seen` is told each program it starts. */
 const classify = (
   words: ReadonlyArray<string>,
   env: Readonly<Record<string, string>>,
-  depth: number
+  depth: number,
+  seen: Seen
 ): ReadonlyArray<Change> => {
   let at = 0
   let scope = env
@@ -386,7 +402,8 @@ const classify = (
   const name = first === undefined ? undefined : programOf(first)
   if (name === undefined || depth > maxDepth) return []
   const args = words.slice(at + 1)
-  const inner = (next: ReadonlyArray<string>) => classify(next, scope, depth + 1)
+  seen({ name, args })
+  const inner = (next: ReadonlyArray<string>) => classify(next, scope, depth + 1, seen)
   const options = privilege.get(name)
   if (options !== undefined) {
     const rest = commandAfter(args, options)
@@ -397,10 +414,10 @@ const classify = (
   if (name === "su") return [run("su")]
   if (name === "command" && args.some((word) => word === "-v" || word === "-V")) return []
   if (runners.has(name)) return inner(commandAfter(args, runnerValueFlags))
-  if (name === "eval") return scan(args.join(" "), scope, depth + 1)
+  if (name === "eval") return scan(args.join(" "), scope, depth + 1, seen)
   if (shells.has(name)) {
     const flag = args.findIndex((word) => /^-[A-Za-z]*c[A-Za-z]*$/.test(word))
-    return flag < 0 || args[flag + 1] === undefined ? [] : scan(args[flag + 1] as string, scope, depth + 1)
+    return flag < 0 || args[flag + 1] === undefined ? [] : scan(args[flag + 1] as string, scope, depth + 1, seen)
   }
   if (name === "find") return findCommands(args).flatMap(inner)
   if (/^python[\d.]*$/.test(name) && args[0] === "-m" && args[1] === "pip") {
@@ -441,7 +458,12 @@ const closingOf = (text: string, start: number, open: string, close: string): nu
 }
 
 /** Every simple command of a script, as its words with quotes removed, and what the commands inside it do. */
-const scan = (script: string, env: Readonly<Record<string, string>>, depth: number): ReadonlyArray<Change> => {
+const scan = (
+  script: string,
+  env: Readonly<Record<string, string>>,
+  depth: number,
+  seen: Seen
+): ReadonlyArray<Change> => {
   const found: Array<Change> = []
   let words: Array<string> = []
   let word: string | undefined
@@ -457,11 +479,11 @@ const scan = (script: string, env: Readonly<Record<string, string>>, depth: numb
   const endCommand = () => {
     endWord()
     redirected = false
-    found.push(...classify(words, env, depth))
+    found.push(...classify(words, env, depth, seen))
     words = []
   }
   const nested = (inner: string) => {
-    if (depth < maxDepth) found.push(...scan(inner, env, depth + 1))
+    if (depth < maxDepth) found.push(...scan(inner, env, depth + 1, seen))
   }
   /** Reads what starts with `$` at `at` into the word and returns where it ends. */
   const dollar = (at: number): number => {
@@ -547,6 +569,8 @@ const scan = (script: string, env: Readonly<Record<string, string>>, depth: numb
   return found
 }
 
+const unseen: Seen = () => undefined
+
 /**
  * What a step's command does to the machine, in the order it does it.
  *
@@ -555,9 +579,32 @@ const scan = (script: string, env: Readonly<Record<string, string>>, depth: numb
  * @throws {never}
  */
 export const changesIn = (command: string, env: Readonly<Record<string, string>> = {}): ReadonlyArray<Change> =>
-  scan(command, env, 0)
+  scan(command, env, 0, unseen)
 
-const listed = (names: ReadonlyArray<string>): string =>
+/**
+ * Every program a step's command starts that this reader sees, in the order
+ * met: through `sudo`, `env`, `xargs`, `bash -c`, `eval`, `$( )` and the rest,
+ * as {@link changesIn} reads them. `sudo docker run` starts `sudo`, then
+ * `docker`.
+ *
+ * @category reading
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const startedIn = (command: string, env: Readonly<Record<string, string>> = {}): ReadonlyArray<Started> => {
+  const started: Array<Started> = []
+  scan(command, env, 0, (each) => void started.push(each))
+  return started
+}
+
+/**
+ * Names as a person lists them: `a`, `a and b`, `a, b and c`.
+ *
+ * @category rendering
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const listed = (names: ReadonlyArray<string>): string =>
   names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
 
 /** The lines that say what a job's changes are: what it runs, then what it installs with each manager. */
@@ -682,7 +729,7 @@ export const installsOf = (command: string): ReadonlyArray<Install> | undefined 
     const words = textsOf(item.words)
     if (!isBare(item)) return undefined
     if (words[0] === "set") continue
-    const changes = classify(words, {}, 0)
+    const changes = classify(words, {}, 0, unseen)
     const change = changes[0]
     if (changes.length !== 1 || change === undefined || change.kind === "other") return undefined
     if (change.kind === "refresh") continue
@@ -694,9 +741,12 @@ export const installsOf = (command: string): ReadonlyArray<Install> | undefined 
   return installs
 }
 
-/** What `withInstalled` needs of a job: each step with what it installs, when installing is all the job's changes. */
+/**
+ * What `withInstalled` needs of a job: each step with what it installs, when installing is all the job's changes.
+ * A job that also starts a container program is read the same way: whether it is replayed is the person's to say.
+ */
 const installSteps = (job: Job) => {
-  const blocks = blockers(job)
+  const blocks = blockers(job).filter((entry) => entry.feature !== docker)
   if (blocks.length === 0 || blocks.some((entry) => entry.feature !== changesMachine)) return undefined
   const steps = job.steps.map((step) => {
     const changes = changesOfStep(step).length > 0

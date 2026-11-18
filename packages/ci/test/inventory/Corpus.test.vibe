@@ -468,12 +468,16 @@ it.layer(NodeServices.layer)("a first run on the shape of a public repository", 
       })
     })
 
-  it.effect("cobra: a job for Windows is listed as that, and the Docker job runs", () =>
+  it.effect("cobra: a job for Windows is listed as that, and the Docker job waits for --allow-docker", () =>
     effect {
       const linux = try firstRun(cobra, "linux")
       try Effect.try(() => {
-        expect(linux.replayed).toContain("test.yml:lic-headers")
         const reasons = new Map(linux.listed)
+        // Its one step is `docker run`: a container daemon can mount the whole machine, so the person decides.
+        expect(linux.replayed).not.toContain("test.yml:lic-headers")
+        expect(reasons.get("test.yml:lic-headers")).toBe(
+          "docker (runs docker)"
+        )
         // Its linter action stops it; Go is not asked about for a job that would not run with it.
         expect(reasons.get("test.yml:golangci-lint")).toBe("uses")
         // MSYS2 is an environment its action starts, not a tool, so the action still has no command.

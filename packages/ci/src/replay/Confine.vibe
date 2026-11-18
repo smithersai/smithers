@@ -10,12 +10,13 @@
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import {
+  ambientEnvironment,
+  daemonEnvironment,
   gitConfig,
-  guardedPrograms,
-  guardScript,
   hooksDirectory,
   type Place,
   prePush,
+  standIns,
   stepEnvironment
 } from "./Environment.ts"
 import {
@@ -40,14 +41,15 @@ export type Way = "baseline" | "normal" | "fast"
 
 /**
  * Where the steps of one way of a replay run: their home and temporary
- * directory, the directory of the hook that refuses a push, and the jail,
- * when this machine can hold one.
+ * directory, the directory of the hook that refuses a push, what they are
+ * told of a container daemon, and the jail, when this machine can hold one.
  *
  * @category models
  * @since 0.1.0
  */
 export interface Confined extends Place {
   readonly hooks: string
+  readonly daemon: Readonly<Record<string, string>>
   readonly jail: Jail | undefined
 }
 
@@ -72,6 +74,15 @@ export type Places = Readonly<Record<Way, Confined>>
  * machine's temporary directories replaced by its way's own, and still reads
  * there the programs, the caches the machine names, and `work`.
  *
+ * A step never reaches a container daemon: whoever talks to one can have it
+ * mount any file of the machine. A step that starts `docker`,
+ * `docker-compose`, `podman` or `nerdctl` by name starts a stand-in that
+ * refuses with one line, the person's `DOCKER_HOST` is not passed on, and in
+ * the jail the daemons' sockets are empty. With `allowDocker` none of the
+ * three holds: those programs have no stand-in, the variable is passed, and
+ * the sockets stay, also those in the session's runtime directory, which is
+ * otherwise hidden whole.
+ *
  * A step can leave a directory nothing can be removed from, as Go leaves its
  * module cache, so before `work` is removed everything under the homes and
  * the temporary directories is made writable again.
@@ -83,7 +94,8 @@ export effect function confine(
   work: string,
   probe: () => Probe,
   say: (line: string) => void!!,
-  programs: ReadonlyArray<string>
+  programs: ReadonlyArray<string>,
+  allowDocker: boolean
 ) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
@@ -94,9 +106,9 @@ export effect function confine(
   try fs.makeDirectory(homes)
   try fs.makeDirectory(tmps)
   try fs.makeDirectory(guard)
-  for (const program of guardedPrograms) {
+  for (const [program, script] of standIns(allowDocker)) {
     const standIn = path.join(guard, program)
-    try fs.writeFileString(standIn, guardScript(program))
+    try fs.writeFileString(standIn, script)
     try fs.chmod(standIn, 0o755)
   }
   try addFinalizer(() =>
@@ -119,24 +131,40 @@ export effect function confine(
     try fs.writeFileString(hook, prePush)
     try fs.chmod(hook, 0o755)
     try fs.writeFileString(path.join(home, ".gitconfig"), gitConfig)
-    return { home, tmp, guard, hooks }
+    return { home, tmp, guard, hooks, daemon: daemonEnvironment(allowDocker, ambientEnvironment()) }
   }
   const made = { baseline: try make("baseline"), normal: try make("normal"), fast: try make("fast") }
   const found = probe()
   if ("refusal" in found) {
-    try say(unjailed(found.refusal))
+    try say(unjailed(found.refusal, allowDocker))
     return {
       baseline: { ...made.baseline, jail: undefined },
       normal: { ...made.normal, jail: undefined },
       fast: { ...made.fast, jail: undefined }
     } satisfies Places
   }
+  // A socket is hidden where it really is: `/var/run` is a link to `/run` on most machines.
+  const daemons: Array<string> = []
+  for (const socket of found.daemons) {
+    const real = fs.realPath(socket) catch () => undefined
+    if (real !== undefined && !daemons.includes(real)) daemons.push(real)
+  }
   const masks: Array<Mask> = []
-  for (const hidden of [...credentials.map((name) => path.join(found.home, name)), ...found.hidden]) {
+  const hidden = [
+    ...credentials.map((name) => path.join(found.home, name)),
+    ...found.hidden,
+    ...(allowDocker ? [] : daemons)
+  ]
+  for (const each of hidden) {
     // A link is hidden where it leads, so the credential is out of sight by every name it has.
-    const real = fs.realPath(hidden) catch () => undefined
+    const real = fs.realPath(each) catch () => undefined
     if (real === undefined) continue
-    masks.push({ path: real, directory: (try fs.stat(real)).type === "Directory" })
+    // What is hidden already, by another name or with the directory it lies in, is hidden once.
+    if (masks.some((mask) => mask.path === real || (mask.directory && real.startsWith(`${mask.path}/`)))) continue
+    const directory = (try fs.stat(real)).type === "Directory"
+    // With Docker allowed, a daemon's socket in a hidden directory stays.
+    const kept = daemons.filter((socket) => socket.startsWith(`${real}/`))
+    masks.push(directory && allowDocker ? { path: real, directory, kept } : { path: real, directory })
   }
   const temporary = temporaryOf(found.tmp)
   const caches: Array<string> = []

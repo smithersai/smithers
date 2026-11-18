@@ -92,6 +92,17 @@ a generated file as one of theirs):
   changes the machine. `reasonsText` shows its details.
 - Contract 7: the flag `allow-root`. `exitCodeHelp.usage` also names a replay as root without it.
 
+**2026-11-18, no container daemon** (additive, by the second jail lane):
+
+- `Inventory.docker` is the feature of a job with a step that starts `docker`, `docker compose`, `docker-compose`,
+  `podman` or `nerdctl`. The reader writes it, so such a job is in no `Ci`. `Inventory.allowingDocker(inventory)`
+  returns the inventory without that reason. `reasonsText` shows its detail, as in `docker (runs docker compose)`,
+  and `Reasons.reasons.docker` is its sentence, which names the programs and the flag that replays the job.
+- `ReplayRequest.allowDocker` (optional): the replay reads with `allowingDocker`, and its steps may reach a container
+  daemon. Without it no step does: a stand-in refuses where `docker` is, `DOCKER_HOST` is not passed, and a jailed
+  step finds the daemons' sockets empty.
+- `Command.flags["allow-docker"]`, on `smithers-ci`, `replay` and `apply`.
+
 **2026-11-18, failures have names** (additive, by the replay's failure lane):
 
 - `TargetResult.exitCode` and `TargetResult.command` say how a failed target's command ended.

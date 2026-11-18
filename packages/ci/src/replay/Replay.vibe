@@ -10,6 +10,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import type * as PlatformError from "effect/PlatformError"
 import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import {
+  allowingDocker,
   ci,
   type Inventory,
   type NotReplayed,
@@ -453,9 +454,11 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-replay-" }), "could not make a directory")
     const source = path.join(work, "source")
     const root = path.resolve(request.root)
+    // Without the person's word, no step reaches a container daemon and no job that starts one is replayed.
+    const allowDocker = request.allowDocker === true
     // Each way has a home of its own: none finds a cache another way filled.
     const places = try orFail(
-      confine(work, options.confine ?? probe, progress.say, [...options.smthrs, ...searchPath()]),
+      confine(work, options.confine ?? probe, progress.say, [...options.smthrs, ...searchPath()], allowDocker),
       "could not make the steps' homes"
     )
     // Where `smthrs` writes its run records: the one place it can write that a step run on its own cannot.
@@ -505,15 +508,18 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * commit's own tree. It fails `unsupported` when nothing of that CI can be replayed on this machine.
      */
     effect function prepared(): Prepared!Failure!(R | Host) {
-      const inventory: Inventory = try onNormalCopy(parts.read(normalCopy))
+      const read: Inventory = try onNormalCopy(parts.read(normalCopy))
+      const inventory = allowDocker ? allowingDocker(read) : read
       const why = ownWorkspace(inventory) ?? refusal(inventory)
       if (why !== undefined) throw failure("unsupported", why)
       const narrowed = ci(inventory)
       const split = parts.decompose === undefined
         ? narrowed
         : try onNormalCopy(parts.decompose(normalCopy, narrowed))
-      // A target passes on what tells git to refuse a push, as the baseline's step is told.
-      const generated = try parts.files(split, { cache: request.cache, inheritEnv: Object.keys(pushRefusal) })
+      // A target passes on what tells git to refuse a push, as the baseline's step is told, and with Docker allowed
+      // where the person's container daemon is.
+      const inheritEnv = [...Object.keys(pushRefusal), ...Object.keys(places.normal.daemon)]
+      const generated = try parts.files(split, { cache: request.cache, inheritEnv })
       // A commit can hold a link, or a file its owner wrote, where a generated file goes: nothing is written then.
       const checked = check(normalCopy, generated) catch effect (cause) => {
         throw failure("unsupported", cause.message)
@@ -598,12 +604,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     let runs = 0
     /**
      * What a start of `smthrs` in `copy` adds to this process's environment, and so hands on to a target: the
-     * home of the way's steps, and the push refusal.
+     * home of the way's steps, the stand-ins first on `PATH`, and the push refusal.
      */
     const startEnv = (copy: string, place: Confined) => ({
       ...(request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }),
       NODE_COMPILE_CACHE: path.join(copy, compiledCode),
       ...placeEnvironment(place),
+      ...place.daemon,
       ...pushRefusal
     })
 
@@ -687,7 +694,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           }
           const start = try Clock.currentTimeMillis
           const [program, ...argv] = held(place, [copy], [...shell, step.command])
-          const environment = stepEnvironment(step.env, place)
+          const environment = stepEnvironment({ ...place.daemon, ...step.env }, place)
           // A step that cannot start, for example because its directory does not exist at this commit, has failed.
           const output = runStep(program, argv, path.join(copy, step.cwd), environment, stepLimit)
             catch (cause) => ({ timedOut: false, exitCode: undefined, stderr: `could not start: ${describe(cause)}`, stdout: "" } satisfies StepRun)

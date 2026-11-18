@@ -398,15 +398,29 @@ export const missingTool = "missing-tool"
  */
 export const changesMachine = "changes-machine"
 
+/**
+ * The feature of a job with a step that starts a program that talks to a
+ * container daemon: `docker`, `docker compose`, `docker-compose`, `podman` or
+ * `nerdctl`. Whoever talks to a daemon can have it mount any file of the
+ * machine, so such a job is not replayed unless the person allows Docker
+ * ({@link allowingDocker}). The `detail` says what the job runs, as in
+ * `runs docker compose`.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const docker = "docker"
+
 /** The features whose reasons are shown with their details, and what separates the details. */
-const detailed: ReadonlyMap<string, string> = new Map([[missingTool, ", "], [changesMachine, "; "]])
+const detailed: ReadonlyMap<string, string> = new Map([[missingTool, ", "], [changesMachine, "; "], [docker, "; "]])
 
 /**
  * The reasons a job is left out as feature words, for comparing them; the
  * program prints `Reasons.reasonsSentence`. Each feature once, in the order
  * found, a missing tool with what to install, as in
- * `missing-tool (go 1.23, ruby 3.4.6)`, and a change to the machine with what
- * the job does, as in `changes-machine (installs zsh with apt-get)`.
+ * `missing-tool (go 1.23, ruby 3.4.6)`, a change to the machine with what
+ * the job does, as in `changes-machine (installs zsh with apt-get)`, and a
+ * container program with its name, as in `docker (runs docker compose)`.
  *
  * @throws {never}
  * @category accessors
@@ -855,6 +869,22 @@ export const notReplayed = (inventory: Inventory): ReadonlyArray<NotReplayed> =>
  */
 export const withheldOf = (inventory: Inventory): ReadonlyArray<string> =>
   [...new Set(sort(inventory).kept.flatMap((job) => job.steps.flatMap((step) => step.withheld ?? [])))].sort()
+
+/**
+ * The inventory as a person who allows Docker has it replayed: no job is
+ * left out for starting a container program. Every other reason stays.
+ *
+ * @throws {never}
+ * @category constructors
+ * @since 0.1.0
+ */
+export const allowingDocker = (inventory: Inventory): Inventory => ({
+  ...inventory,
+  jobs: inventory.jobs.map((job) => ({
+    ...job,
+    unsupported: job.unsupported.filter((entry) => entry.feature !== docker)
+  }))
+})
 
 /**
  * What an inventory could not read and belongs to no job, such as a

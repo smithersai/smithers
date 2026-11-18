@@ -70,7 +70,8 @@ const sample = (flag: keyof typeof flags, out: string): ReadonlyArray<string> =>
     out: ["--out", out],
     json: ["--json"],
     "allow-root": ["--allow-root"],
-    check: ["--check"]
+    check: ["--check"],
+    "allow-docker": ["--allow-docker"]
   })[flag]
 
 const requestOf = (stderr: string): unknown => JSON.parse(/replay request: (.*)/.exec(stderr)?.[1] ?? "null")
@@ -192,7 +193,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       const cache = "https://cache.example.invalid"
       const patterns = "//packages/ci/..., //apps/site:check,"
       const args = ["--commits", "2", "--mode", "both", "--jobs", "3", "--cache", cache, "--targets", patterns]
-      const outcome = await exec([...args, "--out", page, "--json"], root)
+      const outcome = await exec([...args, "--out", page, "--json", "--allow-docker"], root)
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
       expect(requestOf(outcome.stderr)).toEqual({
         root,
@@ -200,7 +201,8 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
         modes: ["normal", "fast"],
         jobs: 3,
         cache,
-        targets: ["//packages/ci/...", "//apps/site:check"]
+        targets: ["//packages/ci/...", "//apps/site:check"],
+        allowDocker: true
       })
       const report = decode(ReplayReport, outcome.stdout)
       expect(report.commits).toHaveLength(2)

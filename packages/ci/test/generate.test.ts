@@ -7,7 +7,13 @@ import { describe, expect, it } from "vitest"
 import { parse as parseYaml } from "yaml"
 import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
 import { ci, commitNote, Inventory, runnerEntry, script, shell } from "../src/contract/Inventory.ts"
-import { type Failure, type GeneratedFile, type GenerateFiles, writtenFiles } from "../src/contract/Parts.ts"
+import {
+  type Failure,
+  type GeneratedFile,
+  type GenerateFiles,
+  type GenerateOptions,
+  writtenFiles
+} from "../src/contract/Parts.ts"
 import { shardOf } from "../src/contract/Shard.ts"
 import { labelsOf, path as targetMapPath, TargetMap } from "../src/contract/TargetMap.ts"
 import { forShell, forText } from "../src/generate/Expressions.ts"
@@ -63,7 +69,8 @@ const inventory = (jobs: ReadonlyArray<Job>, extra: Partial<InventoryDocument> =
 /** The document exactly as given, as the CI: what the generator makes of these jobs and no others. */
 const given = (document: InventoryDocument): Ci => document as Ci
 
-const generate = (document: InventoryDocument): ReadonlyArray<GeneratedFile> => Effect.runSync(files(given(document)))
+const generate = (document: InventoryDocument, options?: GenerateOptions): ReadonlyArray<GeneratedFile> =>
+  Effect.runSync(files(given(document), options))
 
 const content = (generated: ReadonlyArray<GeneratedFile>, path: string): string =>
   generated.find((file) => file.path === path)?.content ?? ""
@@ -206,6 +213,11 @@ describe("files", () => {
     const stepsOf = (workflow: string) =>
       (parseYaml(workflow) as { jobs: { ci: { steps: ReadonlyArray<Record<string, unknown>> } } }).jobs.ci.steps
     const check = `npx --yes --package=smithers-ci@${releaseVersion} smithers-ci apply --check`
+    // An `apply` that took the jobs that run Docker is checked the same way.
+    expect(stepsOf(content(generate(document, { allowDocker: true }), workflowPath))[2]).toEqual({
+      name: "Generated files are up to date",
+      run: `${check} --allow-docker`
+    })
     // After the checkout and the Node smithers-ci runs on, and before the repository's tools, the sandbox and the
     // cache: a pull request that changes the repository's shape fails here, before anything else runs.
     expect(stepsOf(content(generate(document), workflowPath)).slice(0, 4)).toEqual([

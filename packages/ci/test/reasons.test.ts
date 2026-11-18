@@ -39,6 +39,7 @@ const named = [
   Inventory.selfHosted,
   Inventory.missingTool,
   Inventory.changesMachine,
+  Inventory.docker,
   Inventory.noCommand,
   Inventory.noTarget,
   Inventory.longRunning,

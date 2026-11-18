@@ -12,7 +12,15 @@
 import { CliConfig, CliError, CliOutput, Command, Flag, GlobalFlag } from "effect/cli"
 import { type Change, check } from "../apply/index.ts"
 import * as Surface from "../contract/Command.ts"
-import { changesMachine, ci, Inventory, notReplayed, ownWorkspace, refusal } from "../contract/Inventory.ts"
+import {
+  allowingDocker,
+  changesMachine,
+  ci,
+  Inventory,
+  notReplayed,
+  ownWorkspace,
+  refusal
+} from "../contract/Inventory.ts"
 import {
   type BuildRows,
   type Decompose,
@@ -161,7 +169,12 @@ const allowRoot = Flag.Boolean("allow-root").pipe(
   Flag.withDescription(helpOf("allow-root"))
 )
 
-const replayFlags = { commits, mode, jobs, cache, targets, out, json, allowRoot }
+const allowDocker = Flag.Boolean("allow-docker").pipe(
+  Flag.withDefault(false),
+  Flag.withDescription(helpOf("allow-docker"))
+)
+
+const replayFlags = { commits, mode, jobs, cache, targets, out, json, allowRoot, allowDocker }
 
 const checkOnly = Flag.Boolean("check").pipe(
   Flag.withDefault(false),
@@ -195,6 +208,7 @@ interface ReplayInput {
   readonly out: Option.Option<string>
   readonly json: boolean
   readonly allowRoot: boolean
+  readonly allowDocker: boolean
 }
 
 /**
@@ -218,8 +232,13 @@ const requestOf = (root: string, input: ReplayInput): ReplayRequest => ({
   modes: modes[input.mode],
   jobs: Option.getOrUndefined(input.jobs),
   cache: Option.getOrUndefined(input.cache),
-  targets: Option.getOrUndefined(input.targets)
+  targets: Option.getOrUndefined(input.targets),
+  ...(input.allowDocker ? { allowDocker: true } : {})
 })
+
+/** The inventory as the person has it replayed and applied: with `--allow-docker`, the jobs that run Docker too. */
+const allowed = (inventory: Inventory, allow: boolean): Inventory => allow ? allowingDocker(inventory) : inventory
+
 
 /** A document as indented JSON, checked against its schema on the way out. */
 effect function documentOf<S extends Schema.Top>(schema: S, value: S["Type"], part: Failure["part"]) {
@@ -330,12 +349,14 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     rows: parts.rows,
     score: parts.score
   }
-  const generate = (inventory: Inventory, cache: Option.Option<string>) =>
+  const generate = (inventory: Inventory, cache: Option.Option<string>, allowDocker: boolean) =>
     effect {
       const why = Native.refusal(inventory) ?? refusal(inventory)
       if (why !== undefined) throw { code: "unsupported", message: why, part: "inventory" } satisfies Failure
       const split = try parts.decompose(root, ci(inventory))
-      const all = try checkPaths(try parts.files(split, { cache: Option.getOrUndefined(cache) }))
+      // The workflow's own check runs `apply` as it was run here.
+      const options = { cache: Option.getOrUndefined(cache), ...(allowDocker ? { allowDocker } : {}) }
+      const all = try checkPaths(try parts.files(split, options))
       // The target map is the program's own document: it is not written into the repository.
       return { files: writtenFiles(all), ignores: try check(root, all) }
     }
@@ -386,9 +407,10 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     try settle(report.mismatches > 0 ? Surface.exitCodes.mismatch : Surface.exitCodes.ok)
   }
 
-  const apply = Command.make("apply", { cache, check: checkOnly }, effect (input) => {
+  const apply = Command.make("apply", { cache, check: checkOnly, allowDocker }, effect (input) => {
     // Every path was checked before the first is written, so a refusal leaves nothing written.
-    const { files, ignores } = try generate(try parts.read(root), input.cache)
+    const read = allowed(try parts.read(root), input.allowDocker)
+    const { files, ignores } = try generate(read, input.cache, input.allowDocker)
     if (input.check) {
       // What the writes below would change, from the same files: nothing is written.
       for (const change of ignores.changes) try Console.log(changeLine(change, ignores.added))
@@ -420,12 +442,12 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
 
   const replay = Command.make("replay", replayFlags, effect (input) => {
     if (try refusesRoot(input)) return
-    try replayAndPrint(input, try parts.read(root), () => "")
+    try replayAndPrint(input, allowed(try parts.read(root), input.allowDocker), () => "")
   }).pipe(Command.withDescription(Surface.commands.replay))
 
   return Command.make(Surface.name, replayFlags, effect (input) => {
     if (try refusesRoot(input)) return
-    const read = try parts.read(root)
+    const read = allowed(try parts.read(root), input.allowDocker)
     // The footer says what the replay did, which the report holds: it ran the newest commit, and the inventory
     // was read from the working tree. A report with `targets` is a replay of the repository's own targets.
     const own = ownWorkspace(read)
@@ -438,7 +460,8 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     // on every machine, leaves it out. When that is every job, the replay still runs and `apply` has nothing to write.
     const applies = refusal(read) === undefined
     const installs = notReplayed(read).some((entry) => entry.reasons.some((reason) => reason.feature === changesMachine))
-    const { files, ignores } = try generate(applies || !installs ? read : try replayParts.read(root), input.cache)
+    const here = applies || !installs ? read : allowed(try replayParts.read(root), input.allowDocker)
+    const { files, ignores } = try generate(here, input.cache, input.allowDocker)
     const adds = ignores.added.length === 0 ? "" : ` and add ${ignores.added.join(", ")} to .gitignore`
     const wouldApply = applies
       ? `${Surface.name} apply would write ${files.length} files${adds}.`

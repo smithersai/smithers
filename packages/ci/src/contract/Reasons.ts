@@ -59,6 +59,13 @@ export const reasons: Readonly<Record<string, Reason>> = {
   "default-rule": { sentence: "relies on the Makefile's default rule" },
   define: { sentence: "uses a Make `define` block" },
   "dependency-arguments": { sentence: "passes arguments to a recipe it depends on" },
+  docker: {
+    sentence: "runs {}, and a container daemon can reach every file of this machine",
+    next: "pass --allow-docker to replay it",
+    slot: "PROGRAM",
+    none: "a container program",
+    subject: (detail) => /^runs (.+)$/.exec(detail)?.[1]
+  },
   "double-colon": { sentence: "has a Make double-colon rule" },
   "duplicate-recipe": { sentence: "is defined more than once in the Justfile" },
   "empty-command": { sentence: "has a step with no command" },

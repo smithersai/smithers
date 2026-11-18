@@ -90,7 +90,9 @@ export const writtenFiles = (files: ReadonlyArray<GeneratedFile>): ReadonlyArray
  * the generated workspace and workflow name. `inheritEnv` names variables of
  * the machine every target passes to its step, beside the ones the step
  * names; a variable the step sets keeps the step's value. The replay names
- * the ones that tell git to refuse a push.
+ * the ones that tell git to refuse a push. `allowDocker` says the inventory
+ * holds the jobs that start a container program (`Inventory.allowingDocker`):
+ * the workflow's check that the files are up to date then allows them too.
  *
  * @category models
  * @since 0.1.0
@@ -98,6 +100,7 @@ export const writtenFiles = (files: ReadonlyArray<GeneratedFile>): ReadonlyArray
 export interface GenerateOptions {
   readonly cache?: string | undefined
   readonly inheritEnv?: ReadonlyArray<string> | undefined
+  readonly allowDocker?: boolean | undefined
 }
 
 /**
@@ -115,7 +118,10 @@ export type GenerateFiles<R = never> = (
 
 /**
  * What to replay. `settings` are fast mode's two settings;
- * `Selection.defaultSettings` applies without them.
+ * `Selection.defaultSettings` applies without them. With `allowDocker`, a
+ * job that starts a container program is replayed
+ * (`Inventory.allowingDocker`) and a step may reach a container daemon;
+ * without it no step does.
  *
  * @category models
  * @since 0.1.0
@@ -129,6 +135,7 @@ export interface ReplayRequest {
   /** Smithers build patterns to replay, on a repository that already builds with Smithers build. */
   readonly targets?: ReadonlyArray<string> | undefined
   readonly settings?: Settings | undefined
+  readonly allowDocker?: boolean | undefined
 }
 
 /**

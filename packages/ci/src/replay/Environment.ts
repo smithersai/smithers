@@ -39,25 +39,61 @@ export interface Place {
 export const guardedPrograms = ["sudo", "su", "doas"] as const
 
 /**
+ * The programs that talk to a container daemon. Whoever talks to one can have
+ * it mount any file of the machine, so a step that starts one by name finds a
+ * stand-in that refuses, unless the person allows Docker.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const containerPrograms = ["docker", "docker-compose", "podman", "nerdctl"] as const
+
+/**
  * The stand-in for `program`. It prints one line on standard error, with what
- * it was asked to run on that one line, and exits 1. It uses nothing but the
- * shell, so it works where a step sees few programs.
+ * it was asked to run on that one line, and exits 1. `unless` names what
+ * would let the program run, as in `smithers-ci does not run docker without
+ * --allow-docker: run alpine`. It uses nothing but the shell, so it works
+ * where a step sees few programs.
  *
  * @category environment
  * @throws {never}
  * @since 0.1.0
  */
-export const guardScript = (program: string): string =>
+export const guardScript = (program: string, unless: string = ""): string =>
   [
     "#!/bin/sh",
     "set -f",
     "IFS=$(printf ' \\t\\n_')",
     "IFS=${IFS%_}",
     "set -- $*",
-    `printf '%s\\n' "smithers-ci does not run ${program}: $*" >&2`,
+    `printf '%s\\n' "smithers-ci does not run ${program}${unless}: $*" >&2`,
     "exit 1",
     ""
   ].join("\n")
+
+/**
+ * What a container program's stand-in adds after the program's name.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const withoutAllowDocker = " without --allow-docker"
+
+/**
+ * The stand-ins a replay puts first on its steps' `PATH`, each as a program
+ * name and its script: one for each of {@link guardedPrograms}, and one for
+ * each of {@link containerPrograms} unless the person allows Docker.
+ *
+ * @category environment
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const standIns = (allowDocker: boolean): ReadonlyArray<readonly [program: string, script: string]> => [
+  ...guardedPrograms.map((program) => [program, guardScript(program)] as const),
+  ...(allowDocker
+    ? []
+    : containerPrograms.map((program) => [program, guardScript(program, withoutAllowDocker)] as const))
+]
 
 /**
  * A `PATH` that finds the stand-ins in `guard` first. With no `PATH` to add
@@ -139,6 +175,34 @@ export const placeEnvironment = (place: Place): Readonly<Record<string, string>>
 })
 
 /**
+ * The variables of the person's that tell a step where a container daemon
+ * is. A step gets them only when the person allows Docker.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const daemonVariables: ReadonlyArray<string> = ["DOCKER_HOST"]
+
+/**
+ * What a step is told of the container daemon: nothing, or with
+ * `allowDocker` the person's own {@link daemonVariables} that are set.
+ *
+ * @category environment
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const daemonEnvironment = (
+  allowDocker: boolean,
+  environment: Readonly<Record<string, string | undefined>>
+): Readonly<Record<string, string>> =>
+  Object.fromEntries(
+    daemonVariables.flatMap((name) => {
+      const value = environment[name]
+      return allowDocker && value !== undefined ? [[name, value]] : []
+    })
+  )
+
+/**
  * The whole environment of a baseline step: what Smithers build gives a
  * target (a short list of host variables such as `PATH`, and fixed locale and
  * color settings), the replay's own home, the push refusal, then the step's
@@ -162,6 +226,15 @@ export const stepEnvironment = (
     ...(declared["PATH"] === undefined ? {} : { PATH: guardedPath(place.guard, declared["PATH"]) })
   }, [])
 })
+
+/**
+ * The variables of the person who runs the replay, as this process has them.
+ *
+ * @category environment
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const ambientEnvironment = (): Readonly<Record<string, string | undefined>> => process.env
 
 /**
  * The directories this machine looks for a program in.
