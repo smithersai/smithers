@@ -7,11 +7,9 @@ import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgain
  *   standard targets. This PACKAGE.ts suppresses default-target synthesis, so
  *   they must be declared here explicitly.
  * - `template` is the inert shared manifest every package merges under.
- * - `packageDefaults` synthesizes a standard package's targets, and its
- *   manifest targets, for any `packages/*` directory without a PACKAGE.ts.
- *   Its glob anchors at this package, so in the Smithers monorepo it matches
- *   nothing; the workspace-wide declaration lives in the root PACKAGE.ts.
- * - `newPackage` is the `run` target that creates such a directory.
+ * - `newPackage` is the `run` target behind `smthrs generate package`. It
+ *   writes `package-template/` into each new package, so the package carries
+ *   a `PACKAGE.ts` and the files its standard targets need.
  */
 import { Smithers } from "@smthrs/targets"
 import { Package as infraPackage } from "./infra/PACKAGE.ts"
@@ -262,37 +260,10 @@ export const template = Smithers.PackageJsonTemplate.make({
 })
 
 /**
- * Standard package defaults.
- *
- * A directory under `packages/`, at any of the three nesting depths, with a
- * `package.json` and no `PACKAGE.ts` gets
- * the six conventional targets plus `packageJsonCheck`, `packageJsonWrite`,
- * and `packageJsonRefresh`. `packageJsonCheck` runs under `lint` and `ci`; the
- * two writing targets run under `run` alone.
- */
-export const packageDefaults = Smithers.PackageDefaults({
-  directories: "packages/{*,*/*,*/*/*}",
-  marker: "package.json",
-  macro: (attrs: { readonly cwd: string }) => {
-    const standard = BuildAndCheckTypeScriptPackage({ deps: [], cwd: attrs.cwd })
-    return {
-      ...standard,
-      packageJson: Smithers.PackageJson({
-        name: `@smthrs/${attrs.cwd.split("/").at(-1) ?? attrs.cwd}`,
-        version: "0.1.0",
-        template,
-        scripts: { build: standard.lib, lint: standard.lint },
-        publish: { entry: standard.lib }
-      })
-    }
-  }
-})
-
-/**
  * Scaffolds a new workspace package.
  *
  * ```sh
- * smithers-build run //:newPackage --name @smthrs/widget
+ * smthrs generate package @smthrs/widget
  * ```
  */
 const newPackage = Smithers.NewPackage({
@@ -300,7 +271,7 @@ const newPackage = Smithers.NewPackage({
   version: "0.1.0",
   license: "MIT",
   fields: template.fields,
-  tsconfigExtends: "../../../tsconfig.json"
+  template: "packages/smithers/build/package-template"
 })
 
 /**

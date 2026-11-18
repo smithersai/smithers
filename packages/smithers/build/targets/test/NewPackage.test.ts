@@ -51,7 +51,7 @@ const temporaryEntries = async (): Promise<ReadonlyArray<string>> =>
     .filter((entry) => entry.startsWith(".smthrs-scaffold-"))
 
 describe("scaffold", () => {
-  it("creates a package a default target can pick up, with no PACKAGE.ts", async () => {
+  it("creates a package with a PACKAGE.ts declaring a test target in its own directory", async () => {
     const report = await run("@smthrs/widget")
     expect(report.directory).toBe("packages/widget")
     expect(report.files).toEqual([
@@ -59,12 +59,23 @@ describe("scaffold", () => {
       "packages/widget/tsconfig.json",
       "packages/widget/src/index.ts",
       "packages/widget/test/index.test.ts",
-      "packages/widget/README.md"
+      "packages/widget/README.md",
+      "packages/widget/PACKAGE.ts"
     ])
-    expect(await Fs.readdir(NodePath.join(root, "packages/widget"))).not.toContain("PACKAGE.ts")
+    const declaration = await Fs.readFile(NodePath.join(root, "packages/widget/PACKAGE.ts"), "utf8")
+    expect(declaration).toContain("test: Smithers.Vitest({")
+    expect(declaration).toContain("cwd: \"packages/widget\"")
     const readme = await Fs.readFile(NodePath.join(root, "packages/widget/README.md"), "utf8")
     expect(readme).toContain("Created by `smthrs generate package @smthrs/widget`")
-    expect(readme).toContain("This package has no `PACKAGE.ts`")
+    expect(readme).toContain("`PACKAGE.ts` declares this package's targets")
+    expect(readme).not.toContain("default target")
+  })
+
+  it("names a package created at the workspace root by its own directory", async () => {
+    await Effect.runPromise(
+      scaffold({ workspaceRoot: root, packageName: "@smthrs/widget" }, { ...payload, directory: "." })
+    )
+    expect(await Fs.readFile(NodePath.join(root, "widget/PACKAGE.ts"), "utf8")).toContain("cwd: \"widget\"")
   })
 
   it("reclaims a temporary directory a crashed scaffold left behind", async () => {
@@ -235,6 +246,7 @@ describe("scaffold", () => {
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1)
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1)
     expect((await Fs.readdir(NodePath.join(root, "packages/widget"))).sort()).toEqual([
+      "PACKAGE.ts",
       "README.md",
       "package.json",
       "src",
@@ -356,4 +368,115 @@ it("uses a generic path when a payload directory is an accessor", async () => {
   const result = await Effect.runPromise(Effect.flip(scaffold({ workspaceRoot: root, packageName: "widget" }, input)))
   expect(result.path).toBe("package")
   expect(result.message).toBe("no directory")
+})
+
+describe("scaffold template", () => {
+  const templated = (template = "templates/package"): ScaffoldPayload => ({ ...payload, template })
+  const writeTemplate = async (files: Readonly<Record<string, string>>, directory = "templates/package") => {
+    for (const [relative, contents] of Object.entries(files)) {
+      const path = NodePath.join(root, directory, relative)
+      await Fs.mkdir(NodePath.dirname(path), { recursive: true })
+      await Fs.writeFile(path, contents, "utf8")
+    }
+  }
+  const scaffoldWith = (input: ScaffoldPayload, packageName = "@smthrs/my-widget") =>
+    Effect.runPromise(scaffold({ workspaceRoot: root, packageName }, input))
+  const templateFailure = (input: ScaffoldPayload) =>
+    Effect.runPromise(Effect.flip(scaffold({ workspaceRoot: root, packageName: "@smthrs/my-widget" }, input)))
+  const read = (relative: string) => Fs.readFile(NodePath.join(root, "packages/my-widget", relative), "utf8")
+
+  it("writes template files with the package's name and paths filled in", async () => {
+    await writeTemplate({
+      "PACKAGE.ts.template": "// {{name}} at {{directory}} exports {{identifier}}\n",
+      "scripts/build.mjs.template": "import \"../{{root}}/tools/build.mjs\"\n",
+      "notes.md": "{{unknown}} stays; {{root}}\n"
+    })
+    const report = await scaffoldWith(templated())
+    expect(await read("PACKAGE.ts")).toBe("// @smthrs/my-widget at packages/my-widget exports myWidget\n")
+    expect(await read("scripts/build.mjs")).toBe("import \"../../../tools/build.mjs\"\n")
+    expect(await read("notes.md")).toBe("{{unknown}} stays; ../..\n")
+    expect(report.files).toEqual([
+      "packages/my-widget/package.json",
+      "packages/my-widget/tsconfig.json",
+      "packages/my-widget/src/index.ts",
+      "packages/my-widget/test/index.test.ts",
+      "packages/my-widget/README.md",
+      "packages/my-widget/PACKAGE.ts",
+      "packages/my-widget/notes.md",
+      "packages/my-widget/scripts/build.mjs"
+    ])
+    // The template's root resolves to the workspace root from the package.
+    expect(NodePath.resolve(root, "packages/my-widget", "../..")).toBe(root)
+  })
+
+  it("replaces a boilerplate file the template also holds", async () => {
+    await writeTemplate({ "tsconfig.json.template": "{ \"files\": [] }\n" })
+    await scaffoldWith(templated())
+    expect(await read("tsconfig.json")).toBe("{ \"files\": [] }\n")
+  })
+
+  it("merges a template manifest over the generated one and keeps the scaffold's identity", async () => {
+    await writeTemplate({
+      "package.json.template": JSON.stringify({
+        name: "ignored",
+        version: "9.9.9",
+        private: true,
+        scripts: { build: "node {{root}}/build.mjs" },
+        devDependencies: { vitest: "5.0.0" },
+        repository: { directory: "{{directory}}" }
+      })
+    })
+    await scaffoldWith(templated())
+    const manifest = JSON.parse(await read("package.json")) as Record<string, unknown>
+    expect(manifest["name"]).toBe("@smthrs/my-widget")
+    expect(manifest["version"]).toBe("0.1.0")
+    expect(manifest["license"]).toBe("MIT")
+    expect(manifest["private"]).toBe(true)
+    expect(manifest["author"]).toBe("flows")
+    expect(manifest["exports"]).toEqual({ "./package.json": "./package.json", ".": "./src/index.ts" })
+    expect(manifest["scripts"]).toEqual({ ...PackageJsonTemplate.standardScripts, build: "node ../../build.mjs" })
+    expect(manifest["devDependencies"]).toEqual({ vitest: "5.0.0" })
+    expect(manifest["repository"]).toEqual({ directory: "packages/my-widget" })
+  })
+
+  it("refuses a template manifest that is not a JSON object, and publishes nothing", async () => {
+    await writeTemplate({ "package.json": "{ not json" })
+    expect((await templateFailure(templated())).message).toContain("template package.json is not JSON")
+    await Fs.writeFile(NodePath.join(root, "templates/package/package.json"), "[]\n", "utf8")
+    expect((await templateFailure(templated())).message).toContain("must hold a JSON object")
+    await Fs.writeFile(NodePath.join(root, "templates/package/package.json"), "null\n", "utf8")
+    expect((await templateFailure(templated())).message).toContain("must hold a JSON object")
+    await expect(Fs.lstat(NodePath.join(root, "packages/my-widget"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  it("refuses a missing template directory instead of scaffolding without it", async () => {
+    expect((await templateFailure(templated("templates/absent"))).message)
+      .toContain("template templates/absent has no directory")
+    await expect(Fs.lstat(NodePath.join(root, "packages"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  it("refuses a template that holds a symbolic link", async () => {
+    await writeTemplate({ "README.md": "readme\n" })
+    await Fs.writeFile(NodePath.join(root, "secret.txt"), "secret\n", "utf8")
+    await Fs.symlink(NodePath.join(root, "secret.txt"), NodePath.join(root, "templates/package/secret.txt"))
+    expect((await templateFailure(templated())).message).toContain("secret.txt, which is not a regular file")
+    await expect(Fs.lstat(NodePath.join(root, "packages/my-widget"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  it("refuses a template directory that leaves the workspace", async () => {
+    const outside = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "scaffold-template-outside-"))
+    try {
+      await Fs.writeFile(NodePath.join(outside, "PACKAGE.ts"), "outside\n", "utf8")
+      await Fs.mkdir(NodePath.join(root, "templates"))
+      await Fs.symlink(outside, NodePath.join(root, "templates/package"), "dir")
+      expect((await templateFailure(templated())).message).toContain("has no directory")
+    } finally {
+      await Fs.rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it("plans the declared template into the scaffold payload", () => {
+    const calls = plannedCalls(NewPackage({ license: "MIT", template: "templates/package" }))
+    expect(calls[0]?.payload).toMatchObject({ template: "templates/package" })
+  })
 })

@@ -1,12 +1,12 @@
 /**
  * Workspace package scaffolding.
  *
- * `//:newPackage` writes the smallest tree a workspace default target can pick
- * up: a manifest, a tsconfig, one source file, one test, and a README. It
- * deliberately writes NO `PACKAGE.ts`. A standard package needs none — the root
- * default target synthesizes its `lib`, `test`, `lint`, and manifest targets from
- * the directory alone — and scaffolding one would opt the new package out of
- * exactly the defaults it was created to follow.
+ * `smthrs generate package <name>` writes a manifest, a tsconfig, one source
+ * file, one test, a README, and a `PACKAGE.ts` declaring the package's targets.
+ * The CLI does not synthesize targets from `PackageDefaults` exports, so a
+ * directory without a `PACKAGE.ts` would contribute no labels. A workspace that
+ * needs more than the generic files names a template directory; its files are
+ * written into every new package with the package's name and paths filled in.
  *
  * @since 0.1.0
  */
@@ -49,7 +49,12 @@ export const ScaffoldPayload = Schema.Struct({
    * The tsconfig the generated package extends, relative to the new package.
    * Absent, it is the workspace-root `tsconfig.base.json`.
    */
-  tsconfigExtends: Schema.optional(Schema.NonEmptyString)
+  tsconfigExtends: Schema.optional(Schema.NonEmptyString),
+  /**
+   * A workspace-relative directory whose files are written into the new
+   * package. See {@link withTemplate}.
+   */
+  template: Schema.optional(Schema.NonEmptyString)
 })
 
 /**
@@ -163,6 +168,18 @@ const sourceIdentifier = (name: string): string => {
 const workspaceBaseTsconfig = (directory: string): string =>
   `${"../".repeat(directory === "." ? 1 : directory.split("/").length + 1)}tsconfig.base.json`
 
+/** The generated manifest fields, before any template is laid over them. */
+const manifest = (name: string, payload: ScaffoldPayload): Record<string, unknown> =>
+  merge(payload.fields, {
+    name,
+    version: payload.version,
+    license: payload.license,
+    type: "module",
+    sideEffects: [],
+    exports: { "./package.json": "./package.json", ".": "./src/index.ts" },
+    files: ["src/**/*.ts", "README.md"]
+  })
+
 /**
  * The static boilerplate a scaffolded package starts from.
  *
@@ -178,18 +195,9 @@ export const boilerplate = (
   name: string,
   payload: ScaffoldPayload
 ): ReadonlyArray<readonly [string, string]> => {
-  const manifest = merge(payload.fields, {
-    name,
-    version: payload.version,
-    license: payload.license,
-    type: "module",
-    sideEffects: [],
-    exports: { "./package.json": "./package.json", ".": "./src/index.ts" },
-    files: ["src/**/*.ts", "README.md"]
-  })
   const identifier = sourceIdentifier(name)
   return [
-    ["package.json", render(manifest)],
+    ["package.json", render(manifest(name, payload))],
     [
       "tsconfig.json",
       `${
@@ -219,9 +227,89 @@ export const boilerplate = (
     ],
     [
       "README.md",
-      `# ${name}\n\nCreated by \`smthrs generate package ${name}\`.\n\nThis package has no \`PACKAGE.ts\`: the workspace default target synthesizes its\ntargets from this directory.\n`
+      `# ${name}\n\nCreated by \`smthrs generate package ${name}\`.\n\n\`PACKAGE.ts\` declares this package's targets. \`smthrs targets\` lists them.\n`
+    ],
+    [
+      "PACKAGE.ts",
+      `import { Smithers } from "@smthrs/targets"\n\n/** This package's targets. */\nexport const Package = Smithers.Package({\n  targets: {\n    test: Smithers.Vitest({\n      tests: [Smithers.glob("test/**/*.test.ts")],\n      sources: [Smithers.glob("src/**/*.ts")],\n      deps: [],\n      config: null,\n      environment: "node",\n      passWithNoTests: false,\n      coverage: false,\n      cwd: ${
+        JSON.stringify(packagePath(name, payload))
+      }\n    })\n  }\n})\n`
     ]
   ]
+}
+
+/** The workspace-relative directory a package named `name` is created in. */
+const packagePath = (name: string, payload: ScaffoldPayload): string => {
+  const directory = Input.resolvePath("", payload.directory)
+  return directory === "." ? directoryName(name) : `${directory}/${directoryName(name)}`
+}
+
+/** The suffix that keeps a template file inert until it is written. */
+const templateSuffix = ".template"
+
+/**
+ * Lays a template's files over the boilerplate.
+ *
+ * `template` holds `[relative path, contents]` pairs read from the template
+ * directory. A trailing `.template` is dropped from each path, so a template
+ * can hold `PACKAGE.ts.template` or `package.json.template` without the
+ * workspace reading it as a package. Four placeholders are filled in every
+ * file: `{{name}}` is the package name, `{{identifier}}` the JavaScript
+ * binding of `src/index.ts`, `{{directory}}` the package's workspace-relative
+ * path, and `{{root}}` the relative path from the package to the workspace
+ * root. A template `package.json` is a JSON object merged over the generated
+ * manifest; the name, version, and license still come from the scaffold. Any
+ * other template file replaces the boilerplate file at its path or adds a new
+ * one.
+ *
+ * @category rendering
+ * @since 0.1.0
+ */
+export const withTemplate = (
+  name: string,
+  payload: ScaffoldPayload,
+  template: ReadonlyArray<readonly [string, string]>
+): ReadonlyArray<readonly [string, string]> => {
+  const directory = packagePath(name, payload)
+  const values: Readonly<Record<string, string>> = {
+    name,
+    identifier: sourceIdentifier(name),
+    directory,
+    root: directory.split("/").map(() => "..").join("/")
+  }
+  const fill = (contents: string): string =>
+    contents.replace(/\{\{(name|identifier|directory|root)\}\}/g, (_match, key: string) => values[key]!)
+  const files = new Map(boilerplate(name, payload))
+  for (const [templatePath, contents] of template) {
+    const relative = templatePath.endsWith(templateSuffix)
+      ? templatePath.slice(0, -templateSuffix.length)
+      : templatePath
+    if (relative !== "package.json") {
+      files.set(relative, fill(contents))
+      continue
+    }
+    let fields: unknown
+    try {
+      fields = JSON.parse(fill(contents))
+    } catch (cause) {
+      throw new WriteFileError({
+        path: templatePath,
+        message: `template ${templatePath} is not JSON: ${failureMessage(cause)}`
+      })
+    }
+    if (typeof fields !== "object" || fields === null || Array.isArray(fields)) {
+      throw new WriteFileError({ path: templatePath, message: `template ${templatePath} must hold a JSON object` })
+    }
+    files.set(
+      "package.json",
+      render(merge(merge(manifest(name, payload), fields as Record<string, unknown>), {
+        name,
+        version: payload.version,
+        license: payload.license
+      }))
+    )
+  }
+  return [...files]
 }
 
 /**
@@ -261,6 +349,39 @@ const directoryIo = {
   errorCode: SafeFs.errorCode
 }
 
+/**
+ * Reads every file under a workspace template directory, sorted by path.
+ *
+ * The read is confined like a declared input: a symbolic link, a path leaving
+ * the workspace, or a missing directory is refused rather than skipped, so a
+ * template typo never produces a package that silently lacks its files.
+ */
+const readTemplate = async (root: string, template: string): Promise<ReadonlyArray<readonly [string, string]>> => {
+  const relative = Input.resolvePath("", template)
+  const options = { root, symlinks: "reject" as const, what: `template ${relative}` }
+  const files: Array<readonly [string, string]> = []
+  const walk = async (path: string, prefix: string): Promise<void> => {
+    const entry = await SafeFs.resolveDirectory(path, options)
+    if (entry === undefined) {
+      throw new WriteFileError({ path: relative, message: `template ${relative} has no directory at ${path}` })
+    }
+    for (const child of await SafeFs.listDirectory(path, entry, options)) {
+      const childPath = NodePath.join(path, child.name)
+      const childRelative = prefix === "" ? child.name : `${prefix}/${child.name}`
+      if (child.isDirectory()) await walk(childPath, childRelative)
+      else if (child.isFile()) files.push([childRelative, (await SafeFs.readText(childPath, options))!])
+      else {
+        throw new WriteFileError({
+          path: relative,
+          message: `template ${relative} holds ${childRelative}, which is not a regular file`
+        })
+      }
+    }
+  }
+  await walk(NodePath.join(root, relative), "")
+  return files.sort(([left], [right]) => Number(left > right) - Number(left < right))
+}
+
 const absent = async (path: string): Promise<boolean> => {
   try {
     await Fs.lstat(path)
@@ -294,8 +415,11 @@ export const scaffold = (
         throw new Error("no package name was supplied; run `smthrs generate package <package-name>`")
       }
       const name = assertPackageName(packageName)
-      const created = directory === "." ? directoryName(name) : `${directory}/${directoryName(name)}`
+      const created = packagePath(name, payload)
       const root = await SafeFs.canonicalRoot(options.workspaceRoot)
+      const tree = payload.template === undefined
+        ? boilerplate(name, payload)
+        : withTemplate(name, payload, await readTemplate(root, payload.template))
       const parent = await ensureDirectory(root, directory, directoryIo)
       const destination = NodePath.join(parent, directoryName(name))
       if (!await absent(destination)) throw new Error(`${created} already exists; scaffolding never overwrites`)
@@ -315,7 +439,7 @@ export const scaffold = (
       try {
         await Fs.mkdir(temporary)
         temporaryCreated = true
-        for (const [relative, contents] of boilerplate(name, payload)) {
+        for (const [relative, contents] of tree) {
           signal.throwIfAborted()
           await write(root, { path: `${temporaryRelative}/${relative}`, contents }, signal)
           files.push(`${created}/${relative}`)
@@ -386,7 +510,9 @@ export const Attrs = Schema.Struct({
     Schema.withConstructorDefault(Effect.succeed<Record<string, unknown>>({}))
   ),
   /** Relative to the new package. Absent, the workspace-root `tsconfig.base.json`. */
-  tsconfigExtends: Schema.optional(Schema.NonEmptyString)
+  tsconfigExtends: Schema.optional(Schema.NonEmptyString),
+  /** Workspace-relative directory of files written into every new package. Absent, none. */
+  template: Schema.optional(Schema.NonEmptyString)
 })
 
 /**
@@ -410,8 +536,9 @@ export type Attrs = typeof Attrs.Type
  * ```
  *
  * A scoped name maps to an unscoped directory, so `@smthrs/widget` creates
- * `packages/widget`. Nothing in the created tree is a `PACKAGE.ts`; the workspace
- * default target takes it from there.
+ * `packages/widget`. The created tree holds a `PACKAGE.ts`, so the package's
+ * targets are listed as soon as it exists. With a `template`, the template's
+ * files are laid over the generic ones; see {@link withTemplate}.
  *
  * @category targets
  * @since 0.1.0
@@ -430,6 +557,7 @@ export const NewPackage = Target.make("NewPackage", {
       version: attrs.version,
       license: attrs.license,
       fields: attrs.fields,
-      ...(attrs.tsconfigExtends === undefined ? {} : { tsconfigExtends: attrs.tsconfigExtends })
+      ...(attrs.tsconfigExtends === undefined ? {} : { tsconfigExtends: attrs.tsconfigExtends }),
+      ...(attrs.template === undefined ? {} : { template: attrs.template })
     })
 })

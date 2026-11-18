@@ -1,0 +1,11 @@
+# {{name}}
+
+Created by `smthrs generate package {{name}}`.
+
+`PACKAGE.ts` declares the standard targets. Install the dependencies, then list and run them:
+
+```sh
+pnpm install
+smthrs targets
+smthrs ci //{{directory}}:check
+```
