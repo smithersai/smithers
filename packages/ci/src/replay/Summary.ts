@@ -21,6 +21,7 @@ import {
   reasonsText,
   treeOf,
   type Unsupported,
+  withheldOf,
   withVariant
 } from "../contract/Inventory.ts"
 import type { Failure } from "../contract/Parts.ts"
@@ -644,7 +645,8 @@ export interface Findings {
  * The replay report of `inventory`'s repository. `speedup` is baseline wall
  * time over normal-mode wall time, and 0 when nothing ran in normal mode.
  * What the inventory could not read is listed as `notRead`, and each tool this
- * machine has at another version than a job asks for as `toolVersions`.
+ * machine has at another version than a job asks for as `toolVersions`. The
+ * cache credentials a kept job ran without are named in `withheld`.
  *
  * @category report
  * @throws {never}
@@ -660,6 +662,7 @@ export const reportOf = (
   const baselineWallMs = sum((commit) => commit.baseline.wallMs)
   const normalWallMs = sum((commit) => commit.normal.wallMs)
   const unread = notRead(inventory)
+  const empty = withheldOf(inventory)
   return {
     version: 1,
     repository: inventory.repository,
@@ -677,6 +680,7 @@ export const reportOf = (
       ? {}
       : { notReplayedCommits: found.commitsLeft }),
     ...(unread.length === 0 ? {} : { notRead: unread }),
-    ...(inventory.toolVersions === undefined ? {} : { toolVersions: inventory.toolVersions })
+    ...(inventory.toolVersions === undefined ? {} : { toolVersions: inventory.toolVersions }),
+    ...(empty.length === 0 ? {} : { withheld: empty })
   }
 }

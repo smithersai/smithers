@@ -28,6 +28,7 @@ import {
   duration,
   firstLine,
   flaky,
+  leftEmpty,
   leftOut,
   mismatches,
   ownTargets,
@@ -161,5 +162,7 @@ export const text: RenderReport = (report) => {
       ...tools.map((entry) => `${clean(entry.job).padEnd(jobWidth)}  ${clean(toolVersion(entry))}`)
     ])
   }
+  const empty = report.withheld ?? []
+  if (empty.length > 0) sections.push([clean(leftEmpty(empty))])
   return sections.map(paragraph).join("\n\n")
 }

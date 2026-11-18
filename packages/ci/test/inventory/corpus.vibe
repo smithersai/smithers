@@ -6,7 +6,14 @@
 import { expect } from "@effect/vitest"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { ci, type NotReplayed, notReplayed, reasonsText, refusal } from "../../src/contract/Inventory.ts"
+import {
+  ci,
+  type NotReplayed,
+  notReplayed,
+  reasonsText,
+  refusal,
+  withheldOf
+} from "../../src/contract/Inventory.ts"
 import { path as targetMapPath, TargetMap } from "../../src/contract/TargetMap.ts"
 import { files } from "../../src/generate/index.ts"
 import { read } from "../../src/inventory/index.ts"
@@ -79,6 +86,8 @@ export interface FirstRun {
   readonly details: ReadonlyArray<string>
   /** Each tool the machine has at another version than a job asks for: the job, then both versions. */
   readonly versions: ReadonlyArray<string>
+  /** The cache credentials the jobs that run are left without. */
+  readonly withheld: ReadonlyArray<string>
 }
 
 const listedOf = (left: ReadonlyArray<NotReplayed>) => ({
@@ -102,7 +111,7 @@ export effect function firstRun(
   )
   const why = refusal(inventory)
   if (why !== undefined) {
-    const run: FirstRun = { refusal: why, replayed: [], versions, ...listedOf(notReplayed(inventory)) }
+    const run: FirstRun = { refusal: why, replayed: [], versions, withheld: [], ...listedOf(notReplayed(inventory)) }
     return run
   }
   const narrowed = ci(inventory)
@@ -115,6 +124,7 @@ export effect function firstRun(
     refusal: undefined,
     replayed: sorted.units.map((unit) => unit.job),
     versions,
+    withheld: withheldOf(inventory),
     ...listedOf([...notReplayed(inventory), ...sorted.left])
   }
   return run

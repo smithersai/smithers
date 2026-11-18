@@ -247,7 +247,10 @@ jobs:
 `
 }
 
-/** t3-oss/create-t3-app: every job starts with the repository's own setup action, which sets up pnpm and Node. */
+/**
+ * t3-oss/create-t3-app: every job starts with the repository's own setup action, which sets up pnpm and Node, and
+ * the workflow fills Turborepo's remote cache credentials from secrets.
+ */
 const createT3App = {
   ".github/actions/setup/action.yml": `
 name: "Setup and install"
@@ -269,6 +272,9 @@ on:
   pull_request:
     branches: ["*"]
   merge_group:
+env:
+  TURBO_TOKEN: \${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: \${{ secrets.TURBO_TEAM }}
 jobs:
   prettier:
     runs-on: ubuntu-latest
@@ -446,12 +452,15 @@ it.layer(NodeServices.layer)("a first run on the shape of a public repository", 
       })
     })
 
-  it.effect("create-t3-app: pnpm, Node and Bun set up in a job are tools the machine has", () =>
+  it.effect("create-t3-app: a job runs without its remote cache, on the pnpm, Node and Bun the machine has", () =>
     effect {
       const linux = try firstRun(createT3App, "linux")
       const noBun = try firstRun(createT3App, "linux", { node: "v20.18.0", pnpm: "9.15.0" })
       try Effect.try(() => {
         expect(linux.replayed).toContain("ci.yml:bun")
+        // The workflow's secrets open Turborepo's remote cache and nothing else: the job runs with them empty.
+        expect(linux.withheld).toEqual(["TURBO_TEAM", "TURBO_TOKEN"])
+        expect(new Map(linux.listed).get("ci.yml:bun")).toBeUndefined()
         expect(linux.versions).toContain("ci.yml:bun asks for node 20; this machine has node 26.5.0")
         expect(noBun.replayed).not.toContain("ci.yml:bun")
         expect(noBun.listed).toContainEqual(["ci.yml:bun", "missing-tool (bun latest)"])

@@ -117,6 +117,19 @@ A job with one of these is never run and never becomes a target:
 A workflow limited to some branches or paths (`trigger-filter`) is run for
 every change: more often than its CI runs it, never less.
 
+One kind of secret does not stop a job: the credentials of a remote build
+cache, in `TURBO_TOKEN`, `TURBO_TEAM`, `NX_CLOUD_ACCESS_TOKEN`,
+`GRADLE_ENTERPRISE_ACCESS_KEY`, `DEVELOCITY_ACCESS_KEY` or
+`CACHIX_AUTH_TOKEN`. GitHub gives a pull request from a fork no secret, so
+there the variable is empty and the job runs without that cache. Smithers CI
+reads the job as that run: the variable is empty and no secret is passed. The
+report says so, because your CI with its remote cache is faster than the
+baseline measured without it:
+
+```text
+TURBO_TEAM, TURBO_TOKEN left empty: the baseline ran without the remote cache they open
+```
+
 ## 2. Targets
 
 Smithers CI turns the inventory into a Smithers build workspace: target files

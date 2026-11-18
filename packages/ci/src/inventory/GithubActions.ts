@@ -22,6 +22,7 @@ import {
   triggerFilter,
   writePermission
 } from "../contract/Inventory.ts"
+import { leaveCacheEmpty } from "./CacheCredentials.ts"
 import { addStep, type Draft, draft, fileProblem, note, type Parsed } from "./Draft.ts"
 import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
 import { isLiteralSecret, isSecretName } from "./Secrets.ts"
@@ -429,7 +430,8 @@ const parseYaml = (text: string): { readonly value: unknown } | { readonly probl
   const error = document.errors[0]
   if (error !== undefined) return { problem: `${error.code} at line ${error.linePos?.[0].line}` }
   try {
-    return { value: document.toJS() }
+    // A remote build cache's credentials are left empty, as they are for a pull request from a fork.
+    return { value: leaveCacheEmpty(document.toJS()) }
   } catch {
     return { problem: "its aliases cannot be expanded" }
   }

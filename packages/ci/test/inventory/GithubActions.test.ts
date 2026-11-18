@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Job } from "../../src/contract/Inventory.ts"
+import { assemble } from "../../src/inventory/Draft.ts"
 import { readWorkflow } from "../../src/inventory/GithubActions.ts"
 
 const file = ".github/workflows/ci.yml"
@@ -845,6 +846,57 @@ jobs:
       { feature: "secret", detail: `${file}: plan step 1: hashicorp/setup-terraform@v3 receives TF_API_TOKEN` }
     ])
     expect(features(jobs[1] as Job)).toEqual(["host-action", "host-action"])
+  })
+})
+
+describe("readWorkflow remote cache credentials", () => {
+  it("runs a job without its remote cache, as a pull request from a fork does, and still stops at any other secret", () => {
+    // The variables left empty are named on each step where the files' jobs are joined into an inventory.
+    const jobsOf = (text: string) => assemble("r", "c", [read(text)]).jobs
+    const jobs = jobsOf(`
+on: pull_request
+env:
+  TURBO_TOKEN: \${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: \${{ secrets.TURBO_TEAM }}
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: pnpm turbo run lint
+      - run: pnpm turbo run build
+        env: { TURBO_TEAM: acme }
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - run: pnpm publish
+        env: { NPM_TOKEN: "\${{ secrets.NPM_TOKEN }}" }
+`)
+    expect(jobs[0]?.unsupported).toEqual([])
+    expect(jobs[0]?.steps).toEqual([
+      {
+        id: "ci.yml:lint:1",
+        command: "pnpm turbo run lint",
+        cwd: "",
+        env: { TURBO_TOKEN: "", TURBO_TEAM: "" },
+        secrets: [],
+        withheld: ["TURBO_TEAM", "TURBO_TOKEN"]
+      },
+      {
+        id: "ci.yml:lint:2",
+        command: "pnpm turbo run build",
+        cwd: "",
+        env: { TURBO_TOKEN: "", TURBO_TEAM: "acme" },
+        secrets: [],
+        withheld: ["TURBO_TOKEN"]
+      }
+    ])
+    // No secret is passed, and none is named as received.
+    expect(JSON.stringify(jobs[0])).not.toContain("secrets.")
+    expect(jobs[1]?.steps[0]).toMatchObject({
+      secrets: ["NPM_TOKEN"],
+      secretEnv: { NPM_TOKEN: "NPM_TOKEN" },
+      withheld: ["TURBO_TEAM", "TURBO_TOKEN"]
+    })
   })
 })
 

@@ -33,6 +33,20 @@ run takes a while. `--commits` sets how many commits to replay:
 bunx smithers-ci --commits 5
 ```
 
+## What it needs on your machine
+
+The replay runs your CI's commands here, with the tools you have. It downloads
+no toolchain.
+
+- A job that sets up a tool you do not have is left out, and the report names
+  the tool to install.
+- A tool you have at another version than a job asks for is used, and the
+  report gives both versions.
+- A job for another operating system is left out. When every job is, the
+  command names the system in one line and exits with code 3.
+
+[Setup actions](../concepts/how-it-works.md#setup-actions) has the rules.
+
 ## What it prints
 
 The text report gives the totals: the baseline wall time, the normal-mode wall
@@ -46,7 +60,8 @@ whether each way passed, with its wall time. Under them it lists:
 - every mismatch: a target whose pass or fail in normal mode differs from the
   baseline, with its commit;
 - every CI job it did not replay, with the reason, and every file it could not
-  read.
+  read;
+- every tool your machine has at another version than a job asks for.
 
 `--json` also gives, for each commit and each way, its work time (the sum of
 every target's own time) and how many targets were cache hits, ran, failed or

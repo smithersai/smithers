@@ -600,6 +600,30 @@ describe("reportOf", () => {
     expect(reportOf(read, [entry], nothing).toolVersions).toBeUndefined()
   })
 
+  it("names the cache credentials a kept job ran without", () => {
+    const step = {
+      id: "j1",
+      command: "true",
+      cwd: "",
+      env: { TURBO_TOKEN: "" },
+      secrets: [],
+      withheld: ["TURBO_TOKEN"]
+    }
+    const kept: Job = {
+      id: "j",
+      source: "github-actions",
+      file: ".github/workflows/ci.yml",
+      name: "j",
+      needs: [],
+      triggers: ["push"],
+      matrix: [],
+      steps: [step],
+      unsupported: []
+    }
+    expect(reportOf({ ...read, jobs: [kept] }, [entry], nothing).withheld).toEqual(["TURBO_TOKEN"])
+    expect(reportOf(read, [entry], nothing).withheld).toBeUndefined()
+  })
+
   it("lists the commits whose own CI could not be replayed", () => {
     const commitsLeft = [{ commit: "0123456789abcdef", reason: "no job runs on a push" }]
     expect(reportOf(read, [entry], { ...nothing, commitsLeft }).notReplayedCommits).toEqual(commitsLeft)

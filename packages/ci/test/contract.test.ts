@@ -117,6 +117,54 @@ describe("contract 4: inventory", () => {
     expect(Inventory.reasonsText([])).toBe("")
   })
 
+  it("names the cache credentials a kept job runs without, for the report", () => {
+    const decode = Schema.decodeUnknownSync(Inventory.Inventory)
+    const job = (
+      id: string,
+      withheld: ReadonlyArray<string> | undefined,
+      unsupported: ReadonlyArray<unknown> = []
+    ) => ({
+      id,
+      source: "github-actions",
+      file: ".github/workflows/ci.yml",
+      name: id,
+      needs: [],
+      triggers: ["pull_request"],
+      matrix: [],
+      steps: [{
+        id: `${id}:1`,
+        command: "pnpm turbo run lint",
+        cwd: "",
+        env: {},
+        secrets: [],
+        ...(withheld === undefined ? {} : { withheld })
+      }],
+      unsupported
+    })
+    const read = decode({
+      version: 1,
+      repository: "r",
+      commit: "c",
+      toolchains: [],
+      jobs: [
+        job("lint", ["TURBO_TOKEN", "TURBO_TEAM"]),
+        job("tsc", ["TURBO_TOKEN"]),
+        job("plain", undefined),
+        // A job that is not run names nothing: no time of it is in the report.
+        job("deploy", ["NX_CLOUD_ACCESS_TOKEN"], [{ feature: "environment", detail: "deploys" }])
+      ]
+    })
+    expect(read.jobs[0]?.steps[0]?.withheld).toEqual(["TURBO_TOKEN", "TURBO_TEAM"])
+    expect(Inventory.withheldOf(read)).toEqual(["TURBO_TEAM", "TURBO_TOKEN"])
+    expect(Inventory.withheldOf({ ...read, jobs: [read.jobs[2]!] })).toEqual([])
+    expect(() => decode({ ...read, jobs: [job("bad", [""])] })).toThrow()
+    const report = Schema.decodeUnknownSync(ReplayReport.ReplayReport)({
+      ...(fixture("replay-report.example.json") as object),
+      withheld: ["TURBO_TEAM", "TURBO_TOKEN"]
+    })
+    expect(report.withheld).toEqual(["TURBO_TEAM", "TURBO_TOKEN"])
+  })
+
   it("says in one line that every CI job runs on another system, and where to run instead", () => {
     const decode = Schema.decodeUnknownSync(Inventory.Inventory)
     const elsewhere = (runsOn: string, matrix: ReadonlyArray<Record<string, string>> = []) => (id: string) => ({

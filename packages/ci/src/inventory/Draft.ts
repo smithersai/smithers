@@ -5,6 +5,7 @@
  */
 
 import type { Inventory, Job, Step, Toolchain, Unsupported } from "../contract/Inventory.ts"
+import { markWithheld } from "./CacheCredentials.ts"
 import { hasSecretValue, isLiteralSecret, scrub } from "./Secrets.ts"
 
 /**
@@ -141,7 +142,7 @@ export const assemble = (repository: string, commit: string, parts: ReadonlyArra
     repository,
     commit,
     toolchains: [...toolchains.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, tool]) => tool),
-    jobs: parts.flatMap((part) => part.jobs),
+    jobs: parts.flatMap((part) => part.jobs).map(markWithheld),
     ...(unsupported.length === 0 ? {} : { unsupported })
   })
 }

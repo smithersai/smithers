@@ -172,6 +172,18 @@ export const reasons = (entry: NotReplayed): string => reasonsText(entry.reasons
 export const toolVersion = (entry: ToolVersion): string =>
   `asks for ${entry.tool} ${entry.asked}; this machine has ${entry.tool} ${entry.found}`
 
+/**
+ * The variables a replayed job ran with empty, and what that means for the
+ * baseline's time, as one line.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const leftEmpty = (names: ReadonlyArray<string>): string =>
+  `${names.join(", ")} left empty: the baseline ran without the remote cache ${
+    names.length === 1 ? "it opens" : "they open"
+  }`
+
 const shownTargets = 3
 
 /**

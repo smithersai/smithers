@@ -62,6 +62,12 @@ export type Source = typeof Source.Type
  * tree must then leave those inputs as it found them, and its target fails
  * when it does not: the sealed step's key was made from them.
  *
+ * `withheld` names the variables of `env` that the step's CI fills from a
+ * secret and that are empty here: the credentials of a remote build cache,
+ * which GitHub also leaves empty for a pull request from a fork. The step
+ * receives no secret and runs the same commands without that cache, so it is
+ * run; `withheldOf` lists the names for the report.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -77,7 +83,8 @@ export const Step = Schema.Struct({
   outputs: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   from: Schema.optionalKey(Schema.NonEmptyString),
   tools: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
-  sealed: Schema.optionalKey(Schema.Boolean)
+  sealed: Schema.optionalKey(Schema.Boolean),
+  withheld: Schema.optionalKey(Schema.Array(Schema.NonEmptyString))
 })
 
 /**
@@ -727,6 +734,20 @@ export const ci = (inventory: Inventory): Ci => asCi({ ...inventory, jobs: sort(
  * @since 0.1.0
  */
 export const notReplayed = (inventory: Inventory): ReadonlyArray<NotReplayed> => sort(inventory).left
+
+/**
+ * The variables left empty in the jobs `ci` keeps (`Step.withheld`), each
+ * once, in name order: the credentials of a remote build cache. A baseline
+ * measured with one of them empty ran without that cache, which the
+ * repository's own CI has on a push by a maintainer, so the report names
+ * them beside the times.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const withheldOf = (inventory: Inventory): ReadonlyArray<string> =>
+  [...new Set(sort(inventory).kept.flatMap((job) => job.steps.flatMap((step) => step.withheld ?? [])))].sort()
 
 /**
  * What an inventory could not read and belongs to no job, such as a

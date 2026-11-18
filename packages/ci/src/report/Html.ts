@@ -19,6 +19,7 @@ import {
   duration,
   firstLine,
   flaky,
+  leftEmpty,
   leftOut,
   mismatches,
   ownTargets,
@@ -262,6 +263,8 @@ export const html: RenderReport = (report) => {
     if (notRead.length > 0) body.push(notReadTable(notRead))
     const tools = report.toolVersions ?? []
     if (tools.length > 0) body.push(toolVersionsTable(tools))
+    const empty = report.withheld ?? []
+    if (empty.length > 0) body.push(`<p class="summary">${escape(leftEmpty(empty))}</p>`)
   }
   return `${head(`${report.repository} · Smithers CI`)}\n<body>\n<main>\n${
     body.join("\n")

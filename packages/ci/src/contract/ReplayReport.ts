@@ -115,7 +115,10 @@ export type NotReplayedCommit = typeof NotReplayedCommit.Type
  * were not run, and `notRead` what the inventory could not read at all, both
  * at the newest commit, so a speedup is never read as covering them.
  * `toolVersions` lists each tool this machine has at another version than a
- * replayed job's CI sets up, with both versions.
+ * replayed job's CI sets up, with both versions. `withheld` names the
+ * variables a replayed job ran with empty where its CI fills them from a
+ * secret (`Inventory.withheldOf`): the baseline ran without the remote
+ * build cache they open.
  *
  * @category models
  * @since 0.1.0
@@ -135,6 +138,7 @@ export const ReplayReport = Schema.Struct({
   notRead: Schema.optionalKey(Schema.Array(Unsupported)),
   notReplayedCommits: Schema.optionalKey(Schema.Array(NotReplayedCommit)),
   toolVersions: Schema.optionalKey(Schema.Array(ToolVersion)),
+  withheld: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   targets: Schema.optionalKey(Schema.Array(Schema.NonEmptyString))
 })
 

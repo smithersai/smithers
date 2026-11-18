@@ -361,6 +361,25 @@ describe("flaky verdicts and what was not read", () => {
     }
   })
 
+  it("says which cache credentials were left empty, and that the baseline ran without that cache", () => {
+    const two: ReplayReport = { ...clean, withheld: ["TURBO_TEAM", "TURBO_TOKEN"] }
+    expect(text(two).split("\n").at(-1)).toBe(
+      "TURBO_TEAM, TURBO_TOKEN left empty: the baseline ran without the remote cache they open"
+    )
+    expect(html(two)).toContain(
+      "<p class=\"summary\">TURBO_TEAM, TURBO_TOKEN left empty: the baseline ran without the remote cache they open</p>"
+    )
+    const one: ReplayReport = { ...clean, withheld: ["NX_CLOUD_<ACCESS>\u001b[2J"] }
+    expect(text(one).split("\n").at(-1)).toBe(
+      "NX_CLOUD_<ACCESS>\uFFFD[2J left empty: the baseline ran without the remote cache it opens"
+    )
+    expect(html(one)).toContain("NX_CLOUD_&lt;ACCESS&gt;")
+    for (const report of [clean, { ...clean, withheld: [] }]) {
+      expect(text(report)).not.toContain("left empty")
+      expect(html(report)).not.toContain("left empty")
+    }
+  })
+
   it("names the tool to install beside a job that was left out for it", () => {
     const missing: ReplayReport = {
       ...clean,
