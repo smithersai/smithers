@@ -379,7 +379,9 @@ const library = (job: JobFacts): string =>
     `  set -m`,
     `  ( trap '' TTIN TTOU; exec "$@" -c "$__script" ) < /dev/null &`,
     `  __pid=$!`,
-    `  { sleep "$__limit" && : > "$__late" && kill -TERM -- "-$__pid" && sleep 10 && kill -KILL -- "-$__pid"; } < /dev/null > /dev/null 2>&1 &`,
+    // The mark says the limit ran out. It is written only while the script is still there, and the script is
+    // stopped whether or not the mark could be written.
+    `  { sleep "$__limit" && kill -0 -- "-$__pid" && { : > "$__late"; kill -TERM -- "-$__pid" && sleep 10 && kill -KILL -- "-$__pid"; }; } < /dev/null > /dev/null 2>&1 &`,
     `  __watch=$!`,
     `  set +m`,
     `  trap __ci_stop TERM INT HUP`,
@@ -389,6 +391,8 @@ const library = (job: JobFacts): string =>
     `    __status=$?`,
     `    kill -0 "$__pid" 2>/dev/null || break`,
     `  done`,
+    // From here a signal starts nothing new: the script is gone, and what is left is stopped below.
+    `  trap '' TERM INT HUP`,
     // The script was told to stop and is gone. What it started has the rest of its ten seconds.
     `  if [ -e "$__late" ] || [ -n "$__signal" ]; then`,
     `    __n=0`,

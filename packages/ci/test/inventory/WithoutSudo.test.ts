@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest"
+import { spawnSync } from "node:child_process"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterAll, describe, expect, it } from "vitest"
 import { changesIn } from "../../src/inventory/MachineChanges.ts"
 import { withoutSudo } from "../../src/inventory/WithoutSudo.ts"
 
@@ -7,6 +11,33 @@ const changes = (script: string): ReadonlyArray<string> =>
   changesIn(withoutSudo(script)).map((change) => change.kind === "install" ? `install ${change.packages}` : change.what)
 
 const lines = (...text: ReadonlyArray<string>): string => text.join("\n")
+
+/** The guard, and the part of a script it keeps from running. */
+const guard = "if ! sudo -n true; then\n  exit 0\nfi\n"
+const answered = "if ! false; then\n  exit 0\nfi\n"
+const rest = "sudo tee /etc/x\n"
+
+const home = mkdtempSync(join(tmpdir(), "smithers-ci-without-sudo-"))
+afterAll(() => rmSync(home, { recursive: true, force: true }))
+
+/**
+ * Runs a script in real bash where the first `sudo` on PATH refuses, as a replay's stand-in does, and gives every
+ * call it got.
+ */
+const calls = (script: string, shell: ReadonlyArray<string> = ["bash", "-c"]): ReadonlyArray<string> => {
+  const bin = join(home, "bin")
+  const log = join(home, "sudo.log")
+  mkdirSync(bin, { recursive: true })
+  rmSync(log, { force: true })
+  writeFileSync(join(bin, "sudo"), `#!/bin/sh\necho "$*" >> ${log}\nexit 1\n`)
+  chmodSync(join(bin, "sudo"), 0o755)
+  spawnSync(shell[0] as string, [...shell.slice(1), script], {
+    cwd: home,
+    env: { PATH: `${bin}:${process.env["PATH"] ?? "/usr/bin:/bin"}`, HOME: home },
+    encoding: "utf8"
+  })
+  return existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []
+}
 
 // The stand-in a replay puts first on PATH answers every `sudo` with a refusal, so `sudo -n true` is false there.
 describe("a script that asks before it uses sudo", () => {
@@ -30,7 +61,7 @@ describe("a script that asks before it uses sudo", () => {
     `fi`
   )
 
-  it("leaves out what follows an if that ends the script when sudo refuses", () => {
+  it("is the guard alone: bash ends there and never reads the rest", () => {
     expect(changesIn(dpkgLock).map((change) => change.kind === "other" && change.what)).toEqual([
       "sudo true",
       "sudo tee"
@@ -43,248 +74,154 @@ describe("a script that asks before it uses sudo", () => {
       `fi`,
       ``
     ))
-  })
-
-  // The same action, "Install native dependencies": the branch for a machine without sudo, then the other.
-  it("leaves out the branch that runs only when sudo works", () => {
-    const script = lines(
-      `if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null; then`,
-      `  echo "::warning::passwordless sudo unavailable; skipping native apt deps"`,
-      `else`,
-      `  while IFS= read -r source_file; do`,
-      `    sudo mv "\${source_file}" "\${source_file}.disabled"`,
-      `  done < <(grep -RIl "packages.microsoft.com" /etc/apt/sources.list.d 2>/dev/null || true)`,
-      `  APT_ARGS=(-o Acquire::ForceIPv4=true -o DPkg::Lock::Timeout=600)`,
-      `  for attempt in 1 2 3; do`,
-      `    if sudo apt-get "\${APT_ARGS[@]}" update && sudo apt-get install -y --fix-missing libcairo2-dev; then`,
-      `      break`,
-      `    fi`,
-      `    sleep $((attempt * 10))`,
-      `  done`,
-      `fi`,
-      `echo done`
-    )
-    expect(changes(script)).toEqual([])
-    expect(withoutSudo(script)).toContain("echo done")
-  })
-
-  // The same action, "Install protoc": the question is the test of an `elif`.
-  it("leaves out an elif branch whose test needs sudo to work", () => {
-    const script = lines(
-      `apt_ok=""`,
-      `if [ "\${FORCE_PROTOC_GITHUB_FALLBACK}" = "true" ]; then`,
-      `  echo "forcing protoc GitHub fallback"`,
-      `elif [ "\${RUNNER_ENVIRONMENT}" != "self-hosted" ]; then`,
-      `  echo "using pinned protoc release on GitHub-hosted runner"`,
-      `elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then`,
-      `  for attempt in 1 2 3; do`,
-      `    if sudo apt-get update && sudo apt-get install -y protobuf-compiler; then apt_ok=1; break; fi`,
-      `  done`,
-      `fi`,
-      `if [ -z "$apt_ok" ]; then curl -fsSL "$URL" -o protoc.zip; fi`
-    )
-    expect(changes(script)).toEqual([])
-    expect(withoutSudo(script)).toContain(`curl -fsSL "$URL" -o protoc.zip`)
-  })
-
-  it("leaves out every later branch of an if whose test is true where sudo refuses", () => {
-    const script = lines(
-      `if ! sudo -n true; then echo plain`,
-      `elif [ -f /etc/debian_version ]; then sudo apt-get install -y zsh`,
-      `else sudo dnf install -y zsh`,
-      `fi`,
-      `make`
-    )
-    expect(changes(script)).toEqual([])
-    expect(withoutSudo(script)).toBe(lines(`if ! false; then echo plain`, ``, `fi`, `make`))
-  })
-
-  it.each([
-    "sudo -n true",
-    "sudo -n -v",
-    "sudo -nv",
-    "sudo -v -n",
-    "sudo -n /bin/true",
-    "sudo -n /usr/bin/true",
-    "sudo -n --validate",
-    "sudo --non-interactive true",
-    "sudo --non-interactive -v",
-    "sudo --non-interactive --validate"
-  ])("reads %s as the question, which changes nothing", (question) => {
-    expect(changes(`if ${question} >/dev/null 2>&1; then sudo systemctl restart docker; fi`)).toEqual([])
-    expect(changes(`${question} && echo yes`)).toEqual([])
+    // In real bash, with a sudo that refuses, the only call is the question.
+    expect(calls(dpkgLock)).toEqual(["-n true"])
   })
 
   it.each<[string, string]>([
-    ["sudo with a command", "sudo -n apt-get update"],
-    ["sudo that may ask for a password", "sudo true"],
-    ["sudo as another user", "sudo -n -u postgres true"],
-    ["a question built from a variable", "sudo -n \"$probe\""],
-    ["sudo by its path", "/usr/bin/sudo -n true"]
-  ])("does not read %s as the question", (_name, command) => {
-    expect(changes(`if ${command}; then echo yes; fi`)).not.toEqual([])
-  })
-})
-
-describe("what decides a test", () => {
-  const guarded = (test: string): ReadonlyArray<string> => changes(`if ${test}; then sudo tee /etc/x; fi`)
-  const kept = ["sudo tee"]
-
-  it.each<[string, string, ReadonlyArray<string>]>([
-    ["the question alone", "sudo -n true", []],
-    ["the question and something else", `[ -n "$CI" ] && sudo -n true`, []],
-    ["something else and the question, in that order", `sudo -n true && [ -n "$CI" ]`, []],
-    ["the question denied twice", "! ! sudo -n true", []],
-    ["the question or something else", `sudo -n true || [ -n "$CI" ]`, kept],
-    ["something else or the question", `[ -n "$CI" ] || sudo -n true`, kept],
-    ["a denied question and something else", `! sudo -n true && [ -n "$CI" ]`, kept],
-    ["something else alone", `[ -n "$CI" ]`, kept],
-    ["the question piped on", "sudo -n true | cat", kept],
-    ["two statements", "true; sudo -n true", kept],
-    ["the question left running", "sudo -n true & wait", kept]
-  ])("%s", (_name, test, expected) => {
-    expect(guarded(test)).toEqual(expected)
-  })
-
-  it("keeps the then branch of a test that is true where sudo refuses", () => {
-    expect(changes(`if ! sudo -n true || [ -n "$CI" ]; then npm install -g x; else sudo tee /etc/x; fi`)).toEqual([
-      "npm install -g"
-    ])
-    expect(changes(`if [ -n "$CI" ] || ! sudo -n true; then echo plain; else sudo tee /etc/x; fi`)).toEqual([])
-  })
-
-  it("keeps every branch of a test that something else decides", () => {
-    expect(changes(`if [ -n "$CI" ]; then sudo -n true && echo yes; else sudo tee /etc/x; fi`)).toEqual(["sudo tee"])
-    expect(changes(`if [ -n "$CI" ]; then sudo rm -rf /opt/x; elif [ -n "$Y" ]; then sudo tee /etc/x; fi`)).toEqual([
-      "sudo rm",
-      "sudo tee"
-    ])
-  })
-})
-
-describe("what follows the if", () => {
-  const after = "\nsudo tee /etc/x"
-  const kept = ["sudo tee"]
-
-  it.each<[string, string]>([
-    ["does not end the script", `if ! sudo -n true; then echo no; fi`],
-    ["has nothing in its branch", `if ! sudo -n true; then\nfi`],
-    ["ends the script before its last command", `if ! sudo -n true; then exit 0; echo no; fi`],
-    ["ends the script only in a branch of its own", `if ! sudo -n true; then if [ -n "$X" ]; then exit 0; fi; fi`],
-    ["ends the script unless that fails", `if ! sudo -n true; then exit 0 || true; fi`],
-    ["leaves its exit running", `if ! sudo -n true; then exit 0 & fi`],
-    ["denies its exit", `if ! sudo -n true; then ! exit 0; fi`],
-    ["pipes its exit", `if ! sudo -n true; then exit 0 | cat; fi`],
-    ["ends the script from a word a variable gives", `if ! sudo -n true; then "$stop" 0; fi`],
-    ["is true only after another test", `if [ -n "$X" ]; then echo x; elif ! sudo -n true; then exit 0; fi`],
-    ["may be false", `if ! sudo -n true || [ -n "$X" ] && [ -n "$Y" ]; then exit 0; fi`],
-    ["is in a function", `skip() { if ! sudo -n true; then exit 0; fi; }`],
-    ["is in a function written with the keyword", `function skip { if ! sudo -n true; then exit 0; fi; }`],
-    ["is in a function written both ways", `function skip() {\n if ! sudo -n true; then exit 0; fi\n}`],
-    ["is the whole body of a function", `skip()\nif ! sudo -n true; then exit 0; fi`],
-    ["is in a loop", `for x in 1 2; do if ! sudo -n true; then exit 0; fi; done`],
-    ["is in a while loop", `while read -r x; do if ! sudo -n true; then exit 0; fi; done`],
-    ["is in a subshell", `( if ! sudo -n true; then exit 0; fi )`],
-    ["is in a group", `{ if ! sudo -n true; then exit 0; fi; }`],
-    ["is one side of a list", `[ -n "$X" ] && if ! sudo -n true; then exit 0; fi`],
-    ["is piped on", `if ! sudo -n true; then exit 0; fi | cat`],
-    ["is left running", `if ! sudo -n true; then exit 0; fi &`]
-  ])("stays when the if %s", (_name, script) => {
-    expect(changes(`${script}${after}`)).toEqual(kept)
-  })
-
-  it("is left out after an if with nothing after it but line ends", () => {
-    expect(withoutSudo(`if ! sudo -n true; then exit 0; fi\n\n`)).toBe(`if ! false; then exit 0; fi\n`)
-    expect(withoutSudo(`if ! sudo -n true; then exit 0; fi`)).toBe(`if ! false; then exit 0; fi`)
-  })
-
-  it("is left out when the if comes after other commands", () => {
-    expect(changes(`set -euo pipefail\necho start\nif ! sudo -n true; then echo no; exit 0; fi${after}`)).toEqual([])
-  })
-})
-
-describe("the shell a script is written in", () => {
-  // Everything here stands between the reader and the `if`, or inside a branch it leaves out.
-  it("reads past comments, quotes, expansions, redirections and here-documents", () => {
-    const script = lines(
-      `# if this then that; fi`,
-      `echo "then fi 'else' \\"fi\\" \\\\" 'if "x" then' $(echo ')' \\) "(" x) \\`,
-      `  continued \\"word $(echo "a)b" | tr a b) \${HOME:-"}"} \`echo fi\` $# $HOME`,
-      `echo text >&2 2>&1 >>log 2>/dev/null &>all &>>all >&- <<<"here string" < input <(echo in) >(cat)`,
-      `cat <<EOF | tee out |& cat`,
-      `if then else fi sudo tee /etc/x`,
-      `EOF`,
-      `cat <<-'TABS' > file`,
-      `\tfi`,
-      `\tTABS`,
-      `list=(a b "c d") && more+=(e)`,
-      `[[ -n $x && ( $y == a || $y > b ) ]] || echo no`,
-      `case $1 in`,
-      `  if) echo "a pattern named if";;`,
-      `  *) case $2 in fi) echo inner;; esac`,
-      `esac`,
-      `for ((i = 0; i < 3; i++)); do echo "$i"; done`,
-      `select x in a b; do echo "$x"; done`,
-      `until [ -f ready ]; do sleep 1; done`,
-      `time ((count += 1))`,
-      `if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null`,
-      `then`,
-      `  echo "no sudo"`,
-      `  exit 0`,
-      `fi`,
-      `sudo tee /etc/x`
+    ["the question alone", `if ! sudo -n true; then\nexit 0\nfi\n`],
+    ["the question with its output sent nowhere", `if ! sudo -n true >/dev/null 2>&1; then\n  exit 0\nfi\n`],
+    ["the question asked the long way", `if ! sudo --non-interactive true &> /dev/null; then\n  exit\nfi\n`],
+    ["the question asked for a ticket", `if ! sudo -n -v 2> /dev/null; then\n  exit 1\nfi\n`],
+    [
+      "then on a line of its own",
+      `if ! command -v sudo > /dev/null || ! sudo -n true 1>/dev/null\nthen\n\texit 0\nfi\n`
+    ],
+    [
+      "lines that say why, a comment and a blank line",
+      `if ! sudo -n true; then\n  # no sudo\n\n  echo "no sudo: skipped" 'as is' plain-words 1,2 >&2\n  echo\n  exit 0\nfi\n`
+    ],
+    ["flags and comments before it", `#!/bin/bash\n# setup\n\nset -euo pipefail\nset -x +u -o errexit\n${guard}`],
+    ["nothing after it, not even a line end", `if ! sudo -n true; then\n  exit 0\nfi`]
+  ])("reads %s", (_name, script) => {
+    const whole = `${script}${script.endsWith("\n") ? "" : "\n"}${rest}`
+    expect(changes(whole)).toEqual([])
+    expect(withoutSudo(whole)).toBe(
+      script.replace(/sudo (-n true|-n -v|--non-interactive true)/, "false") + (script.endsWith("\n") ? "" : "\n")
     )
-    expect(changes(script)).toEqual([])
-    expect(withoutSudo(script).endsWith(`  exit 0\nfi\n`)).toBe(true)
+    expect(calls(whole).filter((call) => call.startsWith("tee"))).toEqual([])
+    // `sh` reads the shape as bash does.
+    expect(calls(whole, ["sh", "-c"]).filter((call) => call.startsWith("tee"))).toEqual([])
   })
 
-  it("reads a here-document that ends with the script, and a number that is a word", () => {
-    expect(changes(`if ! sudo -n true; then echo 2 ; exit 0; fi\nsudo python3 - <<'PY'\nprint(1)`)).toEqual([])
-    expect(changes(`sudo python3 - <<'PY'\nprint(1)`)).toEqual(["sudo python3"])
+  it("leaves out whatever follows, without reading it", () => {
+    for (
+      const after of [
+        rest,
+        "case x in\n",
+        "echo \"open\n",
+        "fi; done }\n",
+        "cat <<EOF\n",
+        "exit() { :; }\nsudo tee /etc/x\n"
+      ]
+    ) {
+      expect(withoutSudo(`${guard}${after}`)).toBe(answered)
+      expect(calls(`${guard}${after}`)).toEqual(["-n true"])
+    }
   })
+})
+
+describe("a script that is not that shape", () => {
+  const kept = ["sudo true", "sudo tee"]
 
   it.each<[string, string]>([
-    ["an if with no fi", `if ! sudo -n true; then exit 0\nsudo tee /etc/x`],
-    ["an if with no then", `if ! sudo -n true; exit 0; fi\nsudo tee /etc/x`],
-    ["a bracket that closes nothing", `echo a )\nif ! sudo -n true; then exit 0; fi\nsudo tee /etc/x`],
-    ["a subshell that never closes", `( echo a\nif ! sudo -n true; then exit 0; fi\nsudo tee /etc/x`],
-    ["a list with nothing after its joint", `if ! sudo -n true; then exit 0; fi\nsudo tee /etc/x &&`],
-    ["a loop with no body", `for x in 1 2\nsudo tee /etc/x`],
-    ["a case with no end", `case $x in a) sudo tee /etc/x;;`],
-    ["a test with no end", `[[ -n $x\nsudo tee /etc/x`]
-  ])("returns a script with %s as written", (_name, script) => {
+    // What comes before the guard could give a word of it another meaning.
+    ["a command before it", `echo start\n${guard}`],
+    ["PATH set before it", `PATH=/usr/bin:$PATH\n${guard}`],
+    ["a function named exit before it", `exit() { :; }\n${guard}`],
+    ["an alias before it", `shopt -s expand_aliases\nalias exit=:\n${guard}`],
+    ["a sourced file before it", `. ./env.sh\n${guard}`],
+    ["a trap before it", `trap 'exit() { :; }' USR1\n${guard}`],
+    ["another set flag before it", `set -o posix\n${guard}`],
+    ["a set flag that changes what words mean", `set -ek\n${guard}`],
+    ["an if around it", `if true; then\n${guard}fi\n`],
+    ["a time before it", `time ${guard}`],
+    ["a denial before it", `! ${guard}`],
+    // The test must be the question and nothing else.
+    ["a test that something else decides", `if ! sudo -n true || [ -n "$CI" ]; then\n  exit 0\nfi\n`],
+    ["a test that asks without denying", `if sudo -n true; then\n  exit 0\nfi\n`],
+    ["a test for sudo with no question", `if ! command -v sudo >/dev/null; then\n  exit 0\nfi\n`],
+    ["a test joined the other way", `if ! command -v sudo >/dev/null && ! sudo -n true; then\n  exit 0\nfi\n`],
+    ["a question that runs a command", `if ! sudo -n apt-get update; then\n  exit 0\nfi\n`],
+    ["a question that may ask for a password", `if ! sudo true; then\n  exit 0\nfi\n`],
+    ["a question as another user", `if ! sudo -n -u postgres true; then\n  exit 0\nfi\n`],
+    ["a sudo by its path", `if ! /usr/bin/sudo -n true; then\n  exit 0\nfi\n`],
+    ["a question whose output goes to a file", `if ! sudo -n true > "$LOG"; then\n  exit 0\nfi\n`],
+    ["a question with a word after it", `if ! sudo -n true extra; then\n  exit 0\nfi\n`],
+    // The branch must say and exit, and nothing else.
+    ["a branch that does not exit", `if ! sudo -n true; then\n  echo no\nfi\n`],
+    ["a branch that runs a command", `if ! sudo -n true; then\n  touch skipped\n  exit 0\nfi\n`],
+    ["a branch that says a variable", `if ! sudo -n true; then\n  echo "no sudo for $USER"\n  exit 0\nfi\n`],
+    ["a branch that says a substitution", "if ! sudo -n true; then\n  echo \"`date`\"\n  exit 0\nfi\n"],
+    ["a branch that says an escape", `if ! sudo -n true; then\n  echo "a\\"b"\n  exit 0\nfi\n`],
+    ["a branch that writes a file", `if ! sudo -n true; then\n  echo no > /nonexistent/x\n  exit 0\nfi\n`],
+    ["an exit with a word that is no number", `if ! sudo -n true; then\n  exit "$code"\nfi\n`],
+    ["an exit with two numbers", `if ! sudo -n true; then\n  exit 0 0\nfi\n`],
+    ["an exit sent somewhere", `if ! sudo -n true; then\n  exit 0 >&9\nfi\n`],
+    ["an exit that is one side of a list", `if ! sudo -n true; then\n  exit 0 || true\nfi\n`],
+    ["an exit on the line of then", `if ! sudo -n true; then exit 0; fi\n`],
+    ["an else", `if ! sudo -n true; then\n  exit 0\nelse\n  echo yes\nfi\n`],
+    ["an elif", `if ! sudo -n true; then\n  exit 0\nelif true; then\n  echo yes\nfi\n`],
+    // The `fi` must end the statement.
+    ["a redirection on fi", `if ! sudo -n true; then\n  exit 0\nfi >/nonexistent/x\n`],
+    ["a pipe after fi", `if ! sudo -n true; then\n  exit 0\nfi | cat\n`],
+    ["a fi left running", `if ! sudo -n true; then\n  exit 0\nfi &\n`],
+    ["a command after fi on its line", `if ! sudo -n true; then\n  exit 0\nfi; true\n`],
+    // No line of the shape may go on at the next, and its spaces are spaces.
+    ["a line that goes on at the next", `if ! sudo -n true; then\n  exit 0\nf\\\ni\n`],
+    ["a test that goes on at the next line", `if ! sudo -n \\\ntrue; then\n  exit 0\nfi\n`],
+    ["lines that end in a carriage return", `if ! sudo -n true; then\r\n  exit 0\r\nfi\r\n`],
+    ["a space that is none to bash", `if ! sudo -n true; then\n  exit 0\nfi\n`],
+    ["two spaces where the shape has one", `if !  sudo -n true; then\n  exit 0\nfi\n`]
+  ])("is read as written: %s", (_name, script) => {
+    const whole = `${script}${rest}`
+    expect(withoutSudo(whole)).toBe(whole)
+    expect(changes(whole)).toContain("sudo tee")
+  })
+
+  it("is read as written when it asks in the middle", () => {
+    const script = `make\n${guard}${rest}`
     expect(withoutSudo(script)).toBe(script)
-    expect(changes(script)).toContain("sudo tee")
+    expect(changes(script)).toEqual(kept)
   })
+})
 
-  // Each could make `sudo -n true` or `exit` do something other than what this reader takes it to do.
+// An independent review ran these in bash with a `sudo` that refuses. bash reached `sudo echo M1` in each, and
+// two readers of general shell had left it out. None is the shape, so each is read as written.
+describe("scripts that fooled a reader of shell", () => {
+  const short = "if ! sudo -n true; then exit 0; fi"
+  const branch = "if sudo -n true; then sudo echo M1; fi"
+
   it.each<[string, string]>([
-    ["sets PATH", `PATH=/usr/bin:$PATH`],
-    ["exports PATH", `export PATH="/opt/tools/bin:$PATH"`],
-    ["adds to PATH", `PATH+=:/usr/local/sbin`],
-    ["defines an alias", `shopt -s expand_aliases; alias sudo=/usr/bin/sudo`],
-    ["defines a function named sudo", `sudo() { /usr/bin/sudo "$@"; }`],
-    ["defines a function named exit", `exit() { echo staying; }`],
-    ["defines a function named exit with the keyword", `function exit { echo staying; }`]
-  ])("returns a script that %s as written", (_name, line) => {
-    const script = `${line}\nif ! sudo -n true; then exit 0; fi\nsudo tee /etc/x`
-    expect(withoutSudo(script)).toBe(script)
-    expect(changes(script)).toContain("sudo tee")
-  })
-
-  it("reads a script that only names PATH, or a function of another name", () => {
-    expect(changes(`echo "$PATH"\nskip() { echo no; }\nif ! sudo -n true; then skip; exit 0; fi\nsudo tee /etc/x`))
-      .toEqual([])
-  })
-
-  it("reads a script that ends inside an escape or an expansion", () => {
-    expect(withoutSudo("echo a\\")).toBe("echo a\\")
-    expect(withoutSudo("echo $(date")).toBe("echo $(date")
-    expect(withoutSudo("")).toBe("")
-  })
-
-  it("returns a script that nests deeper than it reads as written", () => {
-    const script = `${"(".repeat(50_000)} sudo tee /etc/x`
+    ["a quote inside a command substitution inside a quote", `x="$(printf '%s' "a; ${short}; b")"\nsudo echo M1\n`],
+    [
+      "a comment with an apostrophe in an array",
+      `PK=(\n  curl # don't drop\n)\necho 'x )\n${short}\n: '\nsudo echo M1\n`
+    ],
+    ["nested back quotes", "x=`echo \\`echo a\\``; y=`\n" + short + "\n: `\nsudo echo M1\n"],
+    ["a timed if", `time if false; then\n${guard}fi\nsudo echo M1\n`],
+    [
+      "a case inside a case",
+      `case "$1" in\n  a) if true; then case x in y) ;; esac; fi ;;\n  (b) ${short} ;;\nesac\nsudo echo M1\n`
+    ],
+    ["a here-document tag with a quote in it", `cat <<'E"OF'\nEOF\n${guard}E"OF\nsudo echo M1 #"\n`],
+    ["a process substitution after fi", `if ! sudo -n true; then\n  exit 0\nfi < <(sudo echo M1)\n`],
+    ["a function named exit", `exit() { echo "not leaving"; }\n${guard}sudo echo M1\n`],
+    ["another sudo first on PATH", `PATH="$FAKE2:$PATH"\n${branch}\n`],
+    ["a space that is no space to bash", `if false; then\n fi\n${guard}fi\nsudo echo M1\n`],
+    ["a redirection before fi", `if false; then\n  :\n2>/dev/null fi\n${guard}fi\nsudo echo M1\n`],
+    ["a line continued inside a word", `if sudo -n true; then\n  :\nf\\\ni\nsudo echo M1\nfi\n`],
+    ["the old arithmetic", `if false; then\n  : $[ 0\nfi\n${guard}if false; then\n  : ]\nfi\nsudo echo M1\n`],
+    ["a comment sign in arithmetic", `if sudo -n true; then (( x # )); fi\nsudo echo M1\n) ); fi\n`],
+    ["a bracket in a pattern", `[[ x =~ ( ]]\n${guard}[[ a == ) ]]\nsudo echo M1\n`],
+    ["a redirection on fi that fails", `if ! sudo -n true; then\n  exit 0\nfi >/nonexistent-dir/x\nsudo echo M1\n`],
+    ["arithmetic that fails before exit", `if ! sudo -n true; then\n  echo $((1/0))\n  exit 0\nfi\nsudo echo M1\n`],
+    ["a variable that cannot be set, before exit", `if ! sudo -n true; then\n  UID=0\n  exit 0\nfi\nsudo echo M1\n`],
+    ["PATH set through a quoted word", `export "PATH=$FAKE2:$PATH"\n${branch}\n`],
+    ["a trap and a signal", `trap 'exit() { :; }' USR1\nkill -USR1 $$\n${guard}sudo echo M1\n`],
+    ["an eval behind command", `e=eval\ncommand $e 'exit() { :; }'\n${guard}sudo echo M1\n`],
+    ["an eval out of braces", `{eval,'exit() { :; }'}\n${guard}sudo echo M1\n`]
+  ])("keeps the sudo after %s", (_name, script) => {
     expect(withoutSudo(script)).toBe(script)
   })
 })

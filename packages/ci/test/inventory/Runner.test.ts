@@ -1319,6 +1319,18 @@ describe("a step with a time limit", () => {
     expect(alive(Number(readFileSync(pids, "utf8")))).toBe(false)
   })
 
+  it("stops the step at its limit when it cannot write down that the limit ran out", () => {
+    pass({ first: true }, "true")
+    const began = Date.now()
+    // The step takes away the right to write where the job keeps its state, and gives it back as it ends.
+    const ran = run(
+      { limit: 2 },
+      `state=$(dirname "$(dirname "$GITHUB_OUTPUT")"); chmod u-w "$state"; trap 'chmod u+w "$state"' EXIT; sleep 300`
+    )
+    expect(ran.status).not.toBe(0)
+    expect(Date.now() - began).toBeLessThan(60_000)
+  })
+
   // macOS `sleep` refuses a number of seconds past 2,147,483,647. Here a `sleep` that refuses one number stands in.
   it("runs the step with no limit when the limit cannot be waited for", () => {
     pass({ first: true }, "true")

@@ -12,9 +12,9 @@
  * text of a here-document as commands. What it cannot see, such as a script
  * that calls `sudo` inside, the replay's stand-ins for `sudo` stop at run time.
  *
- * A step is read as it runs in a replay, where `sudo` refuses: what a script
- * keeps for a machine whose `sudo` works, behind `sudo -n true`, is no change
- * (`WithoutSudo.ts`).
+ * A step is read as it runs in a replay, where `sudo` refuses: a script that
+ * starts by asking `sudo -n true`, and ends when the answer is no, is that
+ * question and nothing after it (`WithoutSudo.ts`).
  *
  * @since 0.1.0
  */
@@ -624,7 +624,22 @@ const linesFor = (changes: ReadonlyArray<Change>): ReadonlyArray<string> => {
   ]
 }
 
-const changesOfStep = (step: Step): ReadonlyArray<Change> => changesIn(withoutSudo(step.command), step.env)
+/** What names the directories a step's programs are found in, or a file its shell reads before the script. */
+const findsPrograms = /(?<![A-Za-z0-9_])PATH(?![A-Za-z0-9_])|GITHUB_PATH|BASH_ENV/
+const findsProgramsByEnv = ["PATH", "BASH_ENV", "ENV"]
+
+/**
+ * What each step of a job does to the machine, read as it runs where `sudo` refuses. A job with a step that names
+ * `PATH`, in its script or among its variables, may find another `sudo` than the stand-in a replay puts first, so
+ * its steps are read as written.
+ */
+const changesOfStep = (job: Job): (step: Step) => ReadonlyArray<Change> => {
+  const asWritten = job.steps.some((step) =>
+    findsPrograms.test(step.command) || findsProgramsByEnv.some((name) => Object.hasOwn(step.env, name))
+    || findsProgramsByEnv.some((name) => step.runner?.includes(`\nexport ${name}=`) === true)
+  )
+  return (step) => changesIn(asWritten ? step.command : withoutSudo(step.command), step.env)
+}
 
 /**
  * A job with one `changes-machine` entry for each thing its steps do to the
@@ -635,7 +650,7 @@ const changesOfStep = (step: Step): ReadonlyArray<Change> => changesIn(withoutSu
  * @throws {never}
  */
 export const markChanges = <J extends Job>(job: J): J => {
-  const lines = linesFor(job.steps.flatMap(changesOfStep))
+  const lines = linesFor(job.steps.flatMap(changesOfStep(job)))
   return lines.length === 0
     ? job
     : { ...job, unsupported: [...job.unsupported, ...lines.map((detail) => ({ feature: changesMachine, detail }))] }
@@ -748,8 +763,9 @@ export const installsOf = (command: string): ReadonlyArray<Install> | undefined 
 const installSteps = (job: Job) => {
   const blocks = blockers(job).filter((entry) => entry.feature !== docker)
   if (blocks.length === 0 || blocks.some((entry) => entry.feature !== changesMachine)) return undefined
+  const changesOf = changesOfStep(job)
   const steps = job.steps.map((step) => {
-    const changes = changesOfStep(step).length > 0
+    const changes = changesOf(step).length > 0
     return { step, changes, installs: changes ? installsOf(step.command) : undefined }
   })
   return steps.some((entry) => entry.changes && entry.installs === undefined) ? undefined : steps

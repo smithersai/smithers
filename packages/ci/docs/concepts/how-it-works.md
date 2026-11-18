@@ -442,7 +442,7 @@ ci.yml:build  changes-machine (install fish with apt-get to replay this job)
 ```
 
 **A script that asks first.** A script written for machines with and without
-`sudo` asks before it uses it, and does without when the answer is no:
+`sudo` asks before it uses it, and ends when the answer is no:
 
 ```sh
 if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null; then
@@ -452,15 +452,25 @@ fi
 printf 'DPkg::Lock::Timeout "600";\n' | sudo tee /etc/apt/apt.conf.d/99-lock-timeout
 ```
 
-In a replay the answer is always no. The question changes nothing, and what the
-script keeps for a yes never runs: the branch of an `if` that needs
-`sudo -n true` to succeed, and whatever follows an `if` that ends the script
-when it fails. The step is replayed and does what it does on a machine with no
-`sudo`. `sudo -n -v` and `sudo --non-interactive true` ask the same question.
+In a replay the answer is always no, so the script ends at its `exit` and the
+rest never runs. The step is replayed, and does what it does on a machine with
+no `sudo`.
 
-A script that sets `PATH`, defines an alias, or defines a function named
-`sudo` or `exit` could give those words another meaning. It is read as
-written, and its `sudo` leaves the job out.
+Smithers CI reads this one shape and nothing looser, so no script is taken for
+safe that is not:
+
+- The script starts with the `if`. Only comments and `set` with the flags
+  `e`, `u`, `x` and `o pipefail` come before it.
+- The test is `! sudo -n true`, alone or after `! command -v sudo ||`, with
+  its output sent to `/dev/null` or not. `sudo -n -v` and
+  `sudo --non-interactive true` ask the same.
+- The branch prints with `echo` and ends with `exit`, each on a line of its
+  own, and the `fi` ends its line.
+- No line of it holds a variable, a substitution or a backslash.
+
+A script that asks in any other way is read as written, and its `sudo` leaves
+the job out. So are all steps of a job when one of them names `PATH`,
+`GITHUB_PATH` or `BASH_ENV`: it could find another `sudo` than the stand-in.
 
 Any other use of `sudo` leaves the job out, whatever is installed.
 `smithers-ci apply` leaves these jobs in your CI as they are: what a job

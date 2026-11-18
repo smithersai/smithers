@@ -210,6 +210,25 @@ describe("a step that asks before it uses sudo", () => {
     expect(isRunnable(marked)).toBe(true)
   })
 
+  // A directory first on PATH could hold a `sudo` of its own, and a file bash reads first could define one.
+  it.each<[string, ReadonlyArray<string>, Partial<Job["steps"][number]>]>([
+    ["adds to PATH for the steps after it", ["echo \"$PWD/tools\" >> \"$GITHUB_PATH\"", asked], {}],
+    ["sets PATH", [`export PATH="$PWD/tools:$PATH"\n${asked}`], {}],
+    ["is given a PATH of its own", [asked], { env: { PATH: "/opt/tools/bin:/usr/bin" } }],
+    ["is given a file its shell reads first", [asked], { env: { BASH_ENV: "./env.sh" } }],
+    ["is given a PATH worked out while the job runs", [asked], { runner: "__ci_step() {\nexport PATH=\"$__v1\"\n}" }]
+  ])("keeps its job out when a step of the job %s", (_name, commands, fields) => {
+    const made = job(commands)
+    const marked = markChanges({ ...made, steps: made.steps.map((step) => ({ ...step, ...fields })) })
+    expect(marked.unsupported).toEqual([{ feature: changesMachine, detail: "runs sudo true and sudo tee" }])
+    expect(isRunnable(marked)).toBe(false)
+  })
+
+  it("reads a job whose steps name other variables that end in PATH", () => {
+    const marked = markChanges(job([`echo "$NODE_PATH $GOPATH"`, asked]))
+    expect(marked.unsupported).toEqual([])
+  })
+
   it("keeps its job out when another step uses sudo without asking", () => {
     const marked = markChanges(job([asked, "sudo systemctl restart docker"]))
     expect(marked.unsupported).toEqual([{ feature: changesMachine, detail: "runs systemctl restart" }])
