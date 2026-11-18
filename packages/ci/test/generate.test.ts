@@ -1,8 +1,10 @@
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
+import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
+import { parse as parseYaml } from "yaml"
 import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
 import { ci, Inventory, shell } from "../src/contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateFiles } from "../src/contract/Parts.ts"
@@ -10,7 +12,7 @@ import { shardOf } from "../src/contract/Shard.ts"
 import { labelsOf, path as targetMapPath, TargetMap } from "../src/contract/TargetMap.ts"
 import { forShell, forText } from "../src/generate/Expressions.ts"
 import { files } from "../src/generate/index.ts"
-import { notesPath, packagePath, workflowPath, workspacePath } from "../src/generate/Render.ts"
+import { noSharedCache, notesPath, packagePath, workflowPath, workspacePath } from "../src/generate/Render.ts"
 
 const fixture = (name: string): InventoryDocument =>
   Schema.decodeUnknownSync(Inventory)(JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8")))
@@ -134,14 +136,44 @@ describe("files", () => {
     expect(labelsOf(map, "a", "a:2", { shard: "3" })).toEqual([])
   })
 
-  it("sends results to the shared cache only when one is named, and never writes its token", () => {
+  it("reads the shared cache from the repository's variable and secrets, and never writes a token", () => {
     const document = inventory([job("a", [step("a:1", "x")])])
+    const stepsOf = (workflow: string) =>
+      (parseYaml(workflow) as { jobs: { ci: { steps: ReadonlyArray<Record<string, unknown>> } } }).jobs.ci.steps
+    const runOf = (workflow: string) =>
+      stepsOf(workflow).find((entry) => String(entry["run"]).includes("smthrs ci")) as { env: Record<string, string> }
+    const token =
+      "${{ github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || secrets.SMITHERS_CACHE_TOKEN }}"
+
+    // No URL given: the variable alone names the cache, and a run without it says so before the targets run.
     const plain = content(generate(document), workflowPath)
-    expect(plain).not.toContain("SMITHERS_CACHE")
-    const cached = content(Effect.runSync(files(given(document), { cache: "https://cache.example.com" })), workflowPath)
-    expect(cached).toContain(`          SMITHERS_CACHE_URL: "https://cache.example.com"\n`)
-    expect(cached).toContain("          SMITHERS_CACHE_TOKEN: ${{ secrets.SMITHERS_CACHE_TOKEN }}\n")
-    expect(cached.replace(/ {8}env:\n.*\n.*\n/, "")).toBe(plain)
+    expect(runOf(plain).env).toEqual({
+      SMITHERS_CACHE_URL: "${{ vars.SMITHERS_CACHE_URL }}",
+      SMITHERS_CACHE_TOKEN: token
+    })
+    const notice = stepsOf(plain).findIndex((entry) => entry["name"] === "Shared cache")
+    expect(stepsOf(plain)[notice]).toEqual({
+      name: "Shared cache",
+      if: "${{ vars.SMITHERS_CACHE_URL == '' }}",
+      run: `echo ${JSON.stringify(noSharedCache)}`
+    })
+    expect(stepsOf(plain)[notice + 1]?.["run"]).toContain("smthrs ci")
+    const said = spawnSync("bash", ["-c", String(stepsOf(plain)[notice]?.["run"])], { encoding: "utf8" })
+    expect(said.stdout).toBe(`${noSharedCache}\n`)
+    expect(noSharedCache).toContain("SMITHERS_CACHE_URL variable")
+    expect(noSharedCache).toContain("SMITHERS_CACHE_TOKEN secret")
+
+    // A URL given: it is used until the variable is set, so the run always has a cache and says nothing.
+    const cached = content(
+      Effect.runSync(files(given(document), { cache: "https://cache.example.com/it's" })),
+      workflowPath
+    )
+    expect(runOf(cached).env).toEqual({
+      SMITHERS_CACHE_URL: "${{ vars.SMITHERS_CACHE_URL || 'https://cache.example.com/it''s' }}",
+      SMITHERS_CACHE_TOKEN: token
+    })
+    expect(stepsOf(cached).map((entry) => entry["name"])).not.toContain("Shared cache")
+    for (const workflow of [plain, cached]) expect(workflow).not.toMatch(/TOKEN: (?!\$\{\{ )/)
   })
 
   it("gives identical bytes for the same inventory, in any job order", () => {

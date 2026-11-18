@@ -51,7 +51,7 @@ refuses, and names the path, when:
 
 `--mode fast` and `--mode both` add fast mode to the replay; see
 [Normal mode and fast mode](../concepts/modes.md). `--cache` is described in
-[The shared cache](../concepts/shared-cache.md); a URL with a user name or a
+[The cache](../concepts/cache.md); a URL with a user name or a
 password in it is a usage error (exit `2`), because `apply` writes the URL into
 the workflow. With `--json`, `inventory` prints the inventory and the other two
 commands print the replay report.

@@ -158,5 +158,5 @@ holds work time and the target counts.
 ## See also
 
 - [Quickstart](../getting-started/quickstart.md)
-- [The shared cache](shared-cache.md)
+- [The cache](cache.md)
 - [Command reference](../reference/cli.md)

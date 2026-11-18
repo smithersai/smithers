@@ -204,6 +204,26 @@ const sandboxSetup: ReadonlyArray<string> = [
   `          fi`
 ]
 
+// The shared cache's settings in a GitHub repository, as `docs/concepts/cache.md` names them: a variable for the URL
+// and secrets for the tokens. The URL given to `apply --cache` is used until the variable is set. A pull request
+// reads with the read token when the repository has one, so it reuses results and stores none.
+const cacheUrl = (cache: string | undefined): string =>
+  cache === undefined
+    ? "${{ vars.SMITHERS_CACHE_URL }}"
+    : text(`\${{ vars.SMITHERS_CACHE_URL || '${cache.replaceAll("'", "''")}' }}`)
+
+const cacheToken =
+  "${{ github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || secrets.SMITHERS_CACHE_TOKEN }}"
+
+/**
+ * What a run prints when its repository names no shared cache.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const noSharedCache =
+  "No shared cache, so results stay on this runner. To share them, set the SMITHERS_CACHE_URL variable and the SMITHERS_CACHE_TOKEN secret."
+
 const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boolean): string => {
   const hasNode = plan.toolchains.some((toolchain) => toolchain.name === "node")
   return [
@@ -231,13 +251,16 @@ const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boo
     `          path: .flows/cache`,
     `          key: smithers-ci-\${{ matrix.os }}-\${{ github.sha }}`,
     `          restore-keys: smithers-ci-\${{ matrix.os }}-`,
+    ...(cache !== undefined ? [] : [
+      `      - name: Shared cache`,
+      `        if: \${{ vars.SMITHERS_CACHE_URL == '' }}`,
+      `        run: ${text(`echo ${text(noSharedCache)}`)}`
+    ]),
     `      ${yamlComment("Targets share one working tree, so they run one at a time.")}`,
     `      - run: npx --yes --package=@smthrs/cli@next smthrs ci '//...' --jobs 1`,
-    ...(cache === undefined ? [] : [
-      `        env:`,
-      `          SMITHERS_CACHE_URL: ${text(cache)}`,
-      `          SMITHERS_CACHE_TOKEN: \${{ secrets.SMITHERS_CACHE_TOKEN }}`
-    ]),
+    `        env:`,
+    `          SMITHERS_CACHE_URL: ${cacheUrl(cache)}`,
+    `          SMITHERS_CACHE_TOKEN: ${cacheToken}`,
     ``
   ].join("\n")
 }
@@ -271,8 +294,9 @@ const renderNotes = (plan: StepPlan): string =>
   ].join("\n")
 
 /**
- * Renders the workspace, the targets, the target map and the workflow. With
- * `options.cache`, the workflow sends results to that shared cache.
+ * Renders the workspace, the targets, the target map and the workflow. The
+ * workflow shares results through the cache its repository names in the
+ * `SMITHERS_CACHE_URL` variable, or else through `options.cache`.
  *
  * A target declares its step's inputs and runs confined to them. When that
  * makes the targets too large for one `PACKAGE.ts`, every target declares the

@@ -5167,15 +5167,15 @@
       },
       {
         "kind": "file",
+        "path": "packages/ci/docs/concepts/cache.md"
+      },
+      {
+        "kind": "file",
         "path": "packages/ci/docs/concepts/how-it-works.md"
       },
       {
         "kind": "file",
         "path": "packages/ci/docs/concepts/modes.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/ci/docs/concepts/shared-cache.md"
       },
       {
         "kind": "file",

@@ -35,7 +35,7 @@ See [Normal mode and fast mode](concepts/modes.md).
 | [Splitting a step](concepts/splitting.md)      | How one step over a whole workspace becomes one step per package.      |
 | [Fast mode](fast-mode.md)                      | What fast mode skips, what its three numbers mean, and their limits.   |
 | [Its own targets](concepts/own-targets.md)     | What happens on a repository that already builds with Smithers build.  |
-| [The shared cache](concepts/shared-cache.md)   | Reusing results across machines and runs.                              |
+| [The cache](concepts/cache.md)                 | What is cached, when it is reused, hosting it, and pointing CI at it.  |
 | [Repositories](about/repositories.md)          | What Smithers CI reads, and what it does not run.                      |
 | [Command reference](reference/cli.md)          | Every command, flag and exit code.                                     |
 | [The Zig strategy](strategies/zig.md)          | Which files a Zig build step reads, as the Zig toolchain reports it.   |
