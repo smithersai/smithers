@@ -150,6 +150,16 @@ export const pushRefusal: Readonly<Record<string, string>> = {
 }
 
 /**
+ * The push URL of every copy the replay makes. Nothing is there, so a step
+ * that pushes to its remote fails. The fetch URL stays the repository's: it
+ * names the repository to what reads the copy.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const noPushUrl = "/dev/null/smithers-ci-replay-copies-do-not-push"
+
+/**
  * The `.gitconfig` of a step's home. It says what {@link pushRefusal} says to
  * a `git` whose environment a tool has emptied on the way.
  *
@@ -157,6 +167,18 @@ export const pushRefusal: Readonly<Record<string, string>> = {
  * @since 0.1.0
  */
 export const gitConfig = `[core]\n\thooksPath = ~/${hooksDirectory}\n[credential]\n\thelper =\n`
+
+/**
+ * What the `.gitconfig` adds when a repository's own targets run. Smithers
+ * build passes such a target the home and not {@link pushRefusal}, and a
+ * repository's configuration can name another hooks directory over this file.
+ * So every address is rewritten, for a push alone, to one where nothing is:
+ * the push fails before anything is sent.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const pushesGoNowhere = `[url "${noPushUrl}"]\n\tpushInsteadOf =\n`
 
 /**
  * Where a step's home and cache are: in the replay's own directory, never
@@ -244,17 +266,6 @@ export const ambientEnvironment = (): Readonly<Record<string, string | undefined
  * @since 0.1.0
  */
 export const searchPath = (): ReadonlyArray<string> => (process.env["PATH"] as string).split(":")
-
-/**
- * The push URL of every copy the replay makes. Nothing is there, so a step
- * that pushes to its remote fails. The fetch URL stays the repository's: it
- * names the repository to what reads the copy.
- *
- * @category environment
- * @throws {never}
- * @since 0.1.0
- */
-export const noPushUrl = "/dev/null/smithers-ci-replay-copies-do-not-push"
 
 /**
  * This machine's operating system, in Node's names. A matrix variant for

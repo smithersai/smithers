@@ -47,8 +47,15 @@ export const firstLine = (text: string): string => {
   return (line ?? "").slice(0, lineLimit)
 }
 
-/** Output without its terminal colors and without anything shaped like a credential. */
-const readable = (text: string): string => scrub(text.replace(/\p{Cc}\[[0-9;?]*[ -/]*[@-~]/gu, ""))
+/**
+ * Output without its terminal colors and without anything shaped like a
+ * credential.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const readable = (text: string): string => scrub(text.replace(/\p{Cc}\[[0-9;?]*[ -/]*[@-~]/gu, ""))
 
 const lastLine = (text: string): string => text.split("\n").findLast((line) => line.trim() !== "") ?? ""
 

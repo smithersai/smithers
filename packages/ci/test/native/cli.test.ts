@@ -5,9 +5,11 @@ import { parts } from "../../src/cli/parts.ts"
 import { exitCodes } from "../../src/contract/Command.ts"
 import { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { footer } from "../../src/native/index.ts"
-import { inProcess } from "../cli/inProcess.vibe"
+import { unavailable } from "../../src/select/Failure.ts"
+import { inProcess, modelLostFor } from "../cli/inProcess.vibe"
 import { bin, changed, type Outcome, recorder, snapshot, spawn, temporary } from "../cli/repo.ts"
 import { makeOwnWith, smthrs } from "./own.ts"
+import { commit } from "./repo.ts"
 
 const made: Array<string> = []
 const keep = (path: string): string => {
@@ -18,9 +20,13 @@ afterAll(() => made.forEach((root) => rmSync(root, { recursive: true, force: tru
 
 const environment = { HOME: keep(temporary("home")), PATH: process.env["PATH"] }
 
-const run = async (args: ReadonlyArray<string>, root: string): Promise<Outcome> => {
+const run = async (
+  args: ReadonlyArray<string>,
+  root: string,
+  model?: Parameters<typeof inProcess>[7]
+): Promise<Outcome> => {
   const sink = recorder()
-  const code = await inProcess(args, root, parts, sink.service as never, environment)
+  const code = await inProcess(args, root, parts, sink.service as never, environment, undefined, undefined, model)
   return { code, stdout: sink.stdout(), stderr: sink.stderr() }
 }
 
@@ -52,6 +58,30 @@ describe("smithers-ci on a repository that builds with Smithers build", { timeou
     // The CI's third pattern was not asked for, so its job is left out with the job that runs no target.
     expect(report.notReplayed?.map((entry) => entry.job)).toEqual(["ci.yml:targets", "ci.yml:docs"])
   })
+
+  it("asks the model before it copies or runs anything, and exits 4 when it cannot answer", async () => {
+    const root = keep(makeOwnWith(smthrs))
+    const before = snapshot(root)
+    const outcome = await run(["--mode", "both", "--commits", "1"], root)
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.failed)
+    expect(outcome.stdout).toBe("")
+    expect(outcome.stderr).toContain("Or run with --mode normal")
+    expect(outcome.stderr).not.toContain("replaying the repository's own targets")
+    expect(changed(before, snapshot(root))).toEqual([])
+  })
+
+  it("prints the whole normal-mode report and exits 4 when the model is lost midway", async () => {
+    const root = keep(makeOwnWith(smthrs))
+    commit(root, "a change the model cannot be asked about", { "b.sh": "# two\nexit 0\n", "notes.md": "two\n" })
+    const lost = modelLostFor((items) => items.some((item) => item.changedFileExtensions.includes(".md")))
+    const outcome = await run(["--mode", "both", "--commits", "2"], root, lost)
+    const why = unavailable({ _tag: "flows/model/ClassifierError", code: "unreachable" } as never)
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.failed)
+    expect(outcome.stdout).toContain("2 commits · 0 mismatches")
+    expect(outcome.stdout).toContain(`Fast mode was not measured. ${why}`)
+    expect(outcome.stdout).not.toMatch(/^fast/m)
+    expect(outcome.stderr.endsWith(`smithers-ci: fast mode was not measured. ${why}\n`)).toBe(true)
+  }, 900_000)
 
   it("words the footer once", () => {
     expect(footer(".smithers/WORKSPACE.ts")).toBe(

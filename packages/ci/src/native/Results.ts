@@ -6,7 +6,7 @@
  */
 
 import { type TargetResult, verdictOf } from "../contract/RunRecord.ts"
-import { failuresOf, firstLine, printedFailure, sentenceOf } from "../replay/Failures.ts"
+import { failuresOf, firstLine, printedFailure, readable, sentenceOf } from "../replay/Failures.ts"
 
 /**
  * What `smthrs` printed for each failed target, by label. Its plain output
@@ -68,7 +68,9 @@ export const noRecordLabel = "(smthrs)"
  * @category accessors
  * @since 0.1.0
  */
-export const whyNoRecord = (output: string): string => {
+export const whyNoRecord = (printed: string): string => {
+  // A value shaped like a credential is withheld before any line is chosen or cut.
+  const output = readable(printed)
   const message = /^message: (.+)$/m.exec(output)?.[1]
   const last = output.split("\n").findLast((line) => line.trim() !== "")
   return firstLine(message ?? last ?? "") || "smthrs ci wrote no run record"

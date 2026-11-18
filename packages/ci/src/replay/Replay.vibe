@@ -6,9 +6,7 @@
  * @since 0.1.0
  */
 
-import * as ChildProcess from "effect/process/ChildProcess"
-import type * as PlatformError from "effect/PlatformError"
-import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import {
   allowingDocker,
   ci,
@@ -28,7 +26,7 @@ import {
   writtenFiles
 } from "../contract/Parts.ts"
 import type { NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
-import { type Mode, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
+import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
 import { check } from "../apply/index.ts"
@@ -37,14 +35,29 @@ import { withReasons } from "../native/Results.ts"
 import { type Confined, confine, held, reading, type Way } from "./Confine.vibe"
 import {
   coreCount,
-  noPushUrl,
   pushRefusal,
   searchPath,
   stepEnvironment,
   thisHost
 } from "./Environment.ts"
 import { probe, type Probe } from "./Jail.ts"
-import { commandLine, nothingPassed, printedLimit, reasonOf, type StepOutput } from "./Failures.ts"
+import { commandLine, nothingPassed, printedLimit, reasonOf } from "./Failures.ts"
+import {
+  cacheDirectory,
+  checkoutAt,
+  cloneCopy,
+  describe,
+  exec,
+  git,
+  lines,
+  orFail,
+  originOf,
+  outputLimit,
+  pastLimit,
+  runStep,
+  type StepRun,
+  stdoutOf
+} from "./Process.vibe"
 import { printsNotes, readsListener } from "./Reads.ts"
 import {
   addRerun,
@@ -54,6 +67,8 @@ import {
   excludeLines,
   failure,
   failureTexts,
+  fastRunOf,
+  finishedReport,
   firstAttempt,
   flakyOf,
   isBlocked,
@@ -63,14 +78,11 @@ import {
   mismatchesOf,
   nothingToReplay,
   planOfPrinted,
-  predictedSafe,
   PrintedPlan,
   recordOf,
   recovered,
   replayable,
-  reportOf,
   seenIn,
-  selectionOf,
   splitOf,
   type Station,
   stationsOf,
@@ -78,13 +90,8 @@ import {
   stepsThrough,
   targetsOf,
   totalsOf,
-  type Unit,
-  withoutCredentials,
-  withoutFast
+  type Unit
 } from "./Summary.ts"
-
-/** The cache directory, kept between commits. Smithers build never reads it as a source. */
-const cacheDirectory = ".flows"
 
 /**
  * Where Node keeps the compiled code of `smthrs` between runs, from a copy's
@@ -96,7 +103,6 @@ const cacheDirectory = ".flows"
  * @since 0.1.0
  */
 export const compiledCode = `${cacheDirectory}/node-compile-cache`
-const outputLimit = 4000
 
 /**
  * The host services a replay uses.
@@ -157,11 +163,6 @@ export service Progress {
  */
 export type Execute<R> = (targets: ReadonlyArray<string> | undefined) => ReadonlyArray<TargetResult>!Failure!R
 
-interface Output {
-  readonly exitCode: number
-  readonly text: string
-}
-
 interface Measured {
   readonly results: ReadonlyArray<TargetResult>
   readonly wallMs: number
@@ -183,142 +184,6 @@ interface Prepared {
   readonly left: ReadonlyArray<NotReplayed>
   /** How many generated targets may run at once. */
   readonly jobs: number | undefined
-}
-
-/** What a CI step left behind. `timedOut` says it was stopped at the time limit. */
-interface StepRun extends StepOutput {
-  readonly timedOut: boolean
-}
-
-/** The exit code of a step stopped at its time limit, as `timeout` reports it. */
-const timedOut = 124
-
-const describe = (cause: { readonly message: string }): string => cause.message
-
-/**
- * Runs a command to its end, with end of file on its standard input. `env` is added to this process's environment.
- * With `whole`, the command is a past commit's: `env` is its whole environment.
- */
-effect function exec(
-  command: string,
-  args: ReadonlyArray<string>,
-  cwd: string,
-  env: Readonly<Record<string, string | undefined>>,
-  limit: number,
-  output: (handle: ChildProcessHandle) => Stream.Stream<Uint8Array, PlatformError.PlatformError> = (handle) => handle.all,
-  whole = false,
-  heard: (chunk: string) => void!! = () => Effect.void
-) {
-  const spawner = try ChildProcessSpawner
-  return scoped(effect {
-    const handle = try spawner.spawn(
-      ChildProcess.make(command, [...args], {
-        cwd,
-        env: { ...env },
-        extendEnv: !whole,
-        stdin: "ignore",
-        forceKillAfter: "5 seconds"
-      })
-    )
-    const kept = try Ref.make("")
-    const reader = fork keep(output(handle), kept, (text, chunk) => (text + chunk).slice(-limit), heard)
-    const exitCode = try handle.exitCode
-    // A process a step left running keeps the pipe open, so only complete output is waited for without a limit.
-    if (limit === Number.POSITIVE_INFINITY) try Fiber.join(reader)
-    else try timeoutOption(Fiber.await(reader), "1 second")
-    return { exitCode: Number(exitCode), text: try Ref.get(kept) } satisfies Output
-  }) catch effect (cause) => {
-    throw failure("command-failed", `could not run ${command}: ${describe(cause)}`)
-  }
-}
-
-/** Reads a process's output into `kept`. */
-const keep = (
-  stream: Stream.Stream<Uint8Array, PlatformError.PlatformError>,
-  kept: Ref.Ref<string>,
-  update: (text: string, chunk: string) => string,
-  heard: (chunk: string) => void!! = () => Effect.void
-) =>
-  stream |> Stream.decodeText(%) |> Stream.runForEach(%, effect (chunk: string) => {
-    try Ref.update(kept, (text) => update(text, chunk))
-    try heard(chunk)
-  })
-
-/**
- * Runs a CI step in the shell CI runs it in. `env` is its whole environment, and it is stopped, and has failed, when
- * it runs longer than `limit`. The start of its error output and the end of what it printed are kept: the first says
- * why it failed, and the second does when it wrote no error.
- */
-effect function runStep(
-  program: string,
-  args: ReadonlyArray<string>,
-  cwd: string,
-  env: Readonly<Record<string, string | undefined>>,
-  limit: Duration.Input
-) {
-  const spawner = try ChildProcessSpawner
-  return try scoped(effect {
-    const handle = try spawner.spawn(
-      ChildProcess.make(program, [...args], {
-        cwd,
-        env: { ...env },
-        extendEnv: false,
-        stdin: "ignore",
-        forceKillAfter: "5 seconds"
-      })
-    )
-    const stderr = try Ref.make("")
-    const stdout = try Ref.make("")
-    const readers = fork all([
-      keep(handle.stderr, stderr, (text, chunk) => text.length < outputLimit ? (text + chunk).slice(0, outputLimit) : text),
-      keep(handle.stdout, stdout, (text, chunk) => (text + chunk).slice(-outputLimit))
-    ], { concurrency: "unbounded" })
-    const waited = try timeoutOption(handle.exitCode, limit)
-    // Leaving the scope stops a step that is still running.
-    if (Option.isNone(waited)) {
-      return { timedOut: true, exitCode: timedOut, stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun
-    }
-    // A process a step left running keeps the pipes open, so its output is waited for only briefly.
-    try timeoutOption(Fiber.await(readers), "1 second")
-    return { timedOut: false, exitCode: Number(waited.value), stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun
-  })
-}
-
-/**
- * What git answered: its standard output alone, with what it said on standard error kept in `errors`. git warns
- * there, for example of a file-system monitor a step left in its copy's configuration, and a warning is no part of
- * an answer.
- */
-const answered = (errors: Ref.Ref<string>) => (handle: ChildProcessHandle) =>
-  Stream.merge(
-    handle.stdout,
-    handle.stderr
-      |> Stream.decodeText(%)
-      |> Stream.tap(%, (chunk: string) => Ref.update(errors, (text) => (text + chunk).slice(-outputLimit)))
-      |> Stream.drain(%)
-  )
-
-/**
- * Runs git and returns what it printed on standard output. With `place`, `cwd` is a copy a step may have written,
- * hooks and configuration included, so git runs there as a step does: in the jail, with a step's environment.
- */
-effect function git(cwd: string, args: ReadonlyArray<string>, place: Confined | undefined = undefined) {
-  const [command, ...rest] = place === undefined ? ["git", ...args] : held(place, [cwd], ["git", ...args])
-  const errors = try Ref.make("")
-  const output = place === undefined
-    ? try exec(command, rest, cwd, {}, Number.POSITIVE_INFINITY, answered(errors))
-    : try exec(command, rest, cwd, stepEnvironment({}, place), Number.POSITIVE_INFINITY, answered(errors), true)
-  if (output.exitCode !== 0) {
-    throw failure("command-failed", `git ${args[0]} failed: ${try Ref.get(errors)}`)
-  }
-  return output.text
-}
-
-const lines = (text: string): ReadonlyArray<string> => text.split("\n").filter((line) => line !== "")
-
-effect function checkout(copy: string, commit: string, place: Confined) {
-  try git(copy, ["checkout", "--quiet", "--force", "--detach", commit], place)
-  try git(copy, ["clean", "-ffdxq", "-e", cacheDirectory], place)
 }
 
 /**
@@ -445,11 +310,6 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const path = try Path.Path
     const options = try Options
     const progress = try Progress
-    effect function orFail<A, E extends { readonly message: string }, S>(work: A!E!S, what: string) {
-      return work catch effect (cause) => {
-        throw failure("command-failed", `${what}: ${describe(cause)}`)
-      }
-    }
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-replay-" }), "could not make a directory")
     const source = path.join(work, "source")
     const root = path.resolve(request.root)
@@ -471,17 +331,15 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const commits = [...history].reverse()
 
     // A copy has the repository's directory name and remote, so a reader names it as it does in place.
-    const origin = try exec("git", ["config", "--get", "remote.origin.url"], root, {}, outputLimit, (handle) => handle.stdout)
+    const origin = try originOf(root)
 
     /**
      * A checkout of `commit` at `copy`, for the steps of `place`. It fetches from the repository's remote and can
      * push nowhere.
      */
     effect function cloneAt(copy: string, commit: string, place: Confined) {
-      const noPush = ["--config", `remote.origin.pushurl=${noPushUrl}`]
-      try git(work, ["clone", "--quiet", "--shared", "--no-checkout", ...noPush, source, copy])
-      if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", withoutCredentials(origin.text)])
-      try checkout(copy, commit, place)
+      try cloneCopy(work, source, copy, origin)
+      try checkoutAt(copy, commit, place)
     }
 
     effect function copyAt(way: Way, commit: string) {
@@ -553,7 +411,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     /** Checks `commit` out in a copy that generated targets ran in: its `.gitignore` is the commit's again. */
     effect function checkoutCopy(copy: string, commit: string, held: Confined) {
       if (ignoring.delete(copy)) try git(copy, ["update-index", "--no-skip-worktree", "--", ".gitignore"], held)
-      try checkout(copy, commit, held)
+      try checkoutAt(copy, commit, held)
     }
 
     // The newest commit's CI must be replayable: it is what the repository runs today.
@@ -617,7 +475,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const plan = ["ci", ...own.labels, "--plan", "--format", "json", "--workspace", copy]
       const [command, ...args] = held(places.normal, [copy], [...options.smthrs, ...plan])
       const env = startEnv(copy, places.normal)
-      const planned = try exec(command, args, copy, env, Number.POSITIVE_INFINITY, (handle) => handle.stdout, true)
+      const planned = try exec(command, args, copy, env, Number.POSITIVE_INFINITY, stdoutOf, true)
       const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
         throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
       }
@@ -707,7 +565,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             status: "failed",
             key: "",
             durationMs,
-            error: output.timedOut ? `it ran past the limit of ${Duration.format(Duration.fromInputUnsafe(stepLimit))} for one step` : reasonOf(output),
+            error: output.timedOut ? pastLimit(stepLimit) : reasonOf(output),
             command: commandLine(step.written),
             ...(output.exitCode === undefined ? {} : { exitCode: output.exitCode })
           })
@@ -813,12 +671,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             labels,
             options.reruns
           )
-          const byLabel = new Map(fast.results.map((result) => [result.label, result]))
-          const merged = normal.results.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
-          const fastRecord = recordOf(merged, commit, fast.wallMs, "fast" satisfies Mode)
-          fastPart = { fast: totalsOf(fastRecord, names) }
-          fastMismatches = mismatchesOf("fast", baseRecord, fastRecord, own.splits, fastCauses)
-          fastFlaky += flakyOf([fastRecord])
+          const run = fastRunOf(normal.results, fast.results, commit, fast.wallMs, baseRecord, names, own.splits, fastCauses)
+          fastPart = run.part
+          fastMismatches = run.mismatches
+          fastFlaky += run.flaky
           allRows.push(...rows)
           selected.set(commit, choice.selected)
         }
@@ -835,11 +691,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // One commit where nothing passes is a failed commit. When nothing passes at any, the CI does not run here.
     const nothing = nothingPassed(baselines, stepNames(newest.units))
     if (nothing !== undefined) throw failure("unsupported", nothing)
-    const measured = fastNotMeasured === undefined
-    return reportOf(newest.inventory, measured ? commitsDone : commitsDone.map(withoutFast), {
-      selection: fastCopy === undefined || !measured ? undefined : selectionOf(allRows, selected),
+    return finishedReport(newest.inventory, commitsDone, {
+      fastAsked: fastCopy !== undefined,
+      rows: allRows,
+      selected,
       left: newest.left,
-      flaky: measured ? flaky + fastFlaky : flaky,
+      flaky,
+      fastFlaky,
       commitsLeft,
       fastNotMeasured
     })

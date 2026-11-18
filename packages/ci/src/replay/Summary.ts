@@ -888,3 +888,79 @@ export const reportOf = (
     ...(empty.length === 0 ? {} : { withheld: empty })
   }
 }
+
+/**
+ * What fast mode's run of one commit adds to the report. `fast` is what it
+ * ran, and a target of `normal` it did not run was skipped as predicted safe.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const fastRunOf = (
+  normal: ReadonlyArray<TargetResult>,
+  fast: ReadonlyArray<TargetResult>,
+  commit: string,
+  wallMs: number,
+  baseline: RunRecord,
+  names: StepNames = new Map(),
+  split: ReadonlyMap<string, ReadonlyArray<string>> = new Map(),
+  causes: ReadonlyMap<string, string> = new Map()
+): {
+  readonly part: Pick<ReplayCommit, "fast">
+  readonly mismatches: ReadonlyArray<Mismatch>
+  readonly flaky: number
+} => {
+  const byLabel = new Map(fast.map((result) => [result.label, result]))
+  const merged = normal.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
+  const record = recordOf(merged, commit, wallMs, "fast")
+  return {
+    part: { fast: totalsOf(record, names) },
+    mismatches: mismatchesOf("fast", baseline, record, split, causes),
+    flaky: flakyOf([record])
+  }
+}
+
+/**
+ * What a replay gathered over its commits, for its report.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Gathered {
+  /** Whether the replay was asked for fast mode. */
+  readonly fastAsked: boolean
+  readonly rows: ReadonlyArray<Row>
+  readonly selected: ReadonlyMap<string, ReadonlyArray<string>>
+  readonly left: ReadonlyArray<NotReplayed>
+  /** Flaky verdicts in the baseline and in normal mode. */
+  readonly flaky: number
+  /** Flaky verdicts in fast mode. */
+  readonly fastFlaky: number
+  readonly commitsLeft?: ReadonlyArray<NotReplayedCommit> | undefined
+  readonly fastNotMeasured: string | undefined
+}
+
+/**
+ * The report of a finished replay. When the model stopped answering, part of
+ * a measurement is not one: every fast-mode number is left out and the report
+ * says why.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const finishedReport = (
+  inventory: Inventory,
+  commits: ReadonlyArray<ReplayCommit>,
+  gathered: Gathered
+): ReplayReport => {
+  const measured = gathered.fastNotMeasured === undefined
+  return reportOf(inventory, measured ? commits : commits.map(withoutFast), {
+    selection: gathered.fastAsked && measured ? selectionOf(gathered.rows, gathered.selected) : undefined,
+    left: gathered.left,
+    flaky: measured ? gathered.flaky + gathered.fastFlaky : gathered.flaky,
+    commitsLeft: gathered.commitsLeft,
+    fastNotMeasured: gathered.fastNotMeasured
+  })
+}

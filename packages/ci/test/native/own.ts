@@ -12,7 +12,7 @@ import { commit, repository, temporary } from "./repo.ts"
 export const smthrs = fileURLToPath(new URL("../../../../node_modules/.bin/smthrs", import.meta.url))
 const targetsPackage = fileURLToPath(new URL("../../../../node_modules/@smthrs/targets", import.meta.url))
 
-const workspace = `import { Smithers as S } from "@smthrs/targets"
+export const workspace = `import { Smithers as S } from "@smthrs/targets"
 export const Workspace = S.Workspace("own", {
   repository: "git+https://example.invalid/own.git",
   cache: S.Cache({ directory: ".flows" })
@@ -40,6 +40,28 @@ const packageFile = [
   ""
 ].join("\n")
 
+/** A package file with one target per name, none depending on another. */
+export const packageOf = (names: ReadonlyArray<string>): string =>
+  [
+    `import { Smithers as S } from "@smthrs/targets"`,
+    ...names.map((name) => target(name, [])),
+    `export const Package = S.Package({ targets: { ${names.join(", ")} } })`,
+    ""
+  ].join("\n")
+
+/**
+ * A package file whose target `a` runs outside Smithers build's own sandbox, as a target that asks for
+ * `sandbox: "none"` does, so what it can reach is what the replay leaves it.
+ */
+export const packageWithOpenTarget = [
+  `import { Smithers as S } from "@smthrs/targets"`,
+  `const a = S.Shell.Test({ shell: "sh a.sh", sandbox: "none", timeout: "1h", data: [S.file("//a.sh")] })`,
+  target("b", []),
+  target("c", []),
+  `export const Package = S.Package({ targets: { a, b, c } })`,
+  ""
+].join("\n")
+
 /** The package file with a fourth target, `u`, that Smithers build is told not to cache. */
 export const packageWithUncached = [
   `import { Smithers as S } from "@smthrs/targets"`,
@@ -51,19 +73,25 @@ export const packageWithUncached = [
   ""
 ].join("\n")
 
-const workflow = `on: [push]
+/** A workflow that gives Smithers build `patterns`, after `before`, and has a job that runs no target. */
+export const workflowFor = (patterns: ReadonlyArray<string>, before: ReadonlyArray<string> = []): string =>
+  `on: [push]
 jobs:
   targets:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: npm ci
-      - run: node_modules/.bin/smthrs ci '//:a' '//:b' '//:c' --ui plain
+${before.map((command) => `      - run: ${command}\n`).join("")}      - run: node_modules/.bin/smthrs ci ${
+    patterns.map((pattern) => `'${pattern}'`).join(" ")
+  } --ui plain
   docs:
     runs-on: ubuntu-latest
     steps:
       - run: sh docs.sh
 `
+
+const workflow = workflowFor(["//:a", "//:b", "//:c"])
 
 /**
  * What `npm ci` runs after it installs: it gives the checkout the `smthrs` at
@@ -81,8 +109,17 @@ symlinkSync(${JSON.stringify(targetsPackage)}, "node_modules/@smthrs/targets")
 /** An install script that fails, as a broken dependency does. */
 export const brokenInstall = "process.exit(1)\n"
 
-const manifest = JSON.stringify({ name: "own", private: true, scripts: { postinstall: "node tools/install.mjs" } })
-const lockfile = JSON.stringify({ name: "own", lockfileVersion: 3, requires: true, packages: { "": { name: "own" } } })
+export const manifest = JSON.stringify({
+  name: "own",
+  private: true,
+  scripts: { postinstall: "node tools/install.mjs" }
+})
+export const lockfile = JSON.stringify({
+  name: "own",
+  lockfileVersion: 3,
+  requires: true,
+  packages: { "": { name: "own" } }
+})
 
 const pass = "exit 0\n"
 const fail = "exit 1\n"

@@ -8,6 +8,7 @@ export { firstLine, nothingPassed } from "../replay/Failures.ts"
 export { workspace } from "./Detect.vibe"
 export {
   commandFailed,
+  commandStopped,
   installDirectories,
   type Installed,
   installLabel,

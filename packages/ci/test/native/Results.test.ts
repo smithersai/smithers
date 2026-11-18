@@ -128,6 +128,13 @@ describe("a run with no run record", () => {
     expect(whyNoRecord(" \n ")).toBe("smthrs ci wrote no run record")
   })
 
+  it("withholds a credential before it cuts the line, so no part of one is left", () => {
+    const token = `ghp_${"a".repeat(36)}`
+    const why = whyNoRecord(`message: ${"x".repeat(190)} ${token}\n`)
+    expect(why).not.toContain("ghp_")
+    expect(whyNoRecord(`could not reach ${token}\n`)).toBe("could not reach [withheld]")
+  })
+
   it("is one failed result with a label no target has", () => {
     expect(noRecord("message: broken PACKAGE.ts")).toEqual({
       label: noRecordLabel,

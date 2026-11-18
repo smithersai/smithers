@@ -1,0 +1,286 @@
+/**
+ * How a replay runs commands and handles its copies of a repository. Both
+ * replays use it, the one that generates targets and the one of a repository's
+ * own targets, so a command is run, stopped and held the same way in each.
+ *
+ * @since 0.1.0
+ */
+
+import * as ChildProcess from "effect/process/ChildProcess"
+import type * as PlatformError from "effect/PlatformError"
+import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { type Confined, held } from "./Confine.vibe"
+import { noPushUrl, stepEnvironment } from "./Environment.ts"
+import type { StepOutput } from "./Failures.ts"
+import { failure, withoutCredentials } from "./Summary.ts"
+
+/**
+ * The cache directory, kept between commits. Smithers build never reads it as
+ * a source.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const cacheDirectory = ".flows"
+
+/**
+ * How much of a command's output a failure quotes.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const outputLimit = 4000
+
+/**
+ * What a finished command left: its exit code and the end of its output.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Output {
+  readonly exitCode: number
+  readonly text: string
+}
+
+/**
+ * What a CI step or an install left behind. `timedOut` says it was stopped at
+ * the time limit.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface StepRun extends StepOutput {
+  readonly timedOut: boolean
+}
+
+/** The exit code of a step stopped at its time limit, as `timeout` reports it. */
+const timedOut = 124
+
+/**
+ * The words for a cause a person reads.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const describe = (cause: { readonly message: string }): string => cause.message
+
+/**
+ * Reads what a process wrote to standard output alone.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const stdoutOf = (handle: ChildProcessHandle) => handle.stdout
+
+/**
+ * Why a command was stopped at the time limit.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const pastLimit = (limit: Duration.Input): string =>
+  `it ran past the limit of ${Duration.format(Duration.fromInputUnsafe(limit))} for one step`
+
+/**
+ * The lines of a text that say something.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const lines = (text: string): ReadonlyArray<string> => text.split("\n").filter((line) => line !== "")
+
+/**
+ * Any failure of `work` as the replay's own, led by `what`.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export effect function orFail<A, E extends { readonly message: string }, S>(work: A!E!S, what: string) {
+  return work catch effect (cause) => {
+    throw failure("command-failed", `${what}: ${describe(cause)}`)
+  }
+}
+
+/** Reads a process's output into `kept`. */
+const keep = (
+  stream: Stream.Stream<Uint8Array, PlatformError.PlatformError>,
+  kept: Ref.Ref<string>,
+  update: (text: string, chunk: string) => string,
+  heard: (chunk: string) => void!! = () => Effect.void
+) =>
+  stream |> Stream.decodeText(%) |> Stream.runForEach(%, effect (chunk: string) => {
+    try Ref.update(kept, (text) => update(text, chunk))
+    try heard(chunk)
+  })
+
+/**
+ * Runs a command to its end, with end of file on its standard input, and keeps
+ * the last `limit` characters of what it printed. `env` is added to this
+ * process's environment. With `whole`, the command is a past commit's: `env`
+ * is its whole environment. `heard` is given the output as it comes. A command
+ * that outlives its stop signal is killed.
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export effect function exec(
+  command: string,
+  args: ReadonlyArray<string>,
+  cwd: string,
+  env: Readonly<Record<string, string | undefined>>,
+  limit: number,
+  output: (handle: ChildProcessHandle) => Stream.Stream<Uint8Array, PlatformError.PlatformError> = (handle) => handle.all,
+  whole = false,
+  heard: (chunk: string) => void!! = () => Effect.void
+) {
+  const spawner = try ChildProcessSpawner
+  return scoped(effect {
+    const handle = try spawner.spawn(
+      ChildProcess.make(command, [...args], {
+        cwd,
+        env: { ...env },
+        extendEnv: !whole,
+        stdin: "ignore",
+        forceKillAfter: "5 seconds"
+      })
+    )
+    const kept = try Ref.make("")
+    const reader = fork keep(output(handle), kept, (text, chunk) => (text + chunk).slice(-limit), heard)
+    const exitCode = try handle.exitCode
+    // A process a step left running keeps the pipe open, so only complete output is waited for without a limit.
+    if (limit === Number.POSITIVE_INFINITY) try Fiber.join(reader)
+    else try timeoutOption(Fiber.await(reader), "1 second")
+    return { exitCode: Number(exitCode), text: try Ref.get(kept) } satisfies Output
+  }) catch effect (cause) => {
+    throw failure("command-failed", `could not run ${command}: ${describe(cause)}`)
+  }
+}
+
+/**
+ * Runs a past commit's command, a CI step or an install, in the shell's place.
+ * `env` is its whole environment, and it is stopped, and has failed, when it
+ * runs longer than `limit`. The start of its error output and the end of what
+ * it printed are kept: the first says why it failed, and the second does when
+ * it wrote no error.
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export effect function runStep(
+  program: string,
+  args: ReadonlyArray<string>,
+  cwd: string,
+  env: Readonly<Record<string, string | undefined>>,
+  limit: Duration.Input
+) {
+  const spawner = try ChildProcessSpawner
+  return try scoped(effect {
+    const handle = try spawner.spawn(
+      ChildProcess.make(program, [...args], {
+        cwd,
+        env: { ...env },
+        extendEnv: false,
+        stdin: "ignore",
+        forceKillAfter: "5 seconds"
+      })
+    )
+    const stderr = try Ref.make("")
+    const stdout = try Ref.make("")
+    const readers = fork all([
+      keep(handle.stderr, stderr, (text, chunk) => text.length < outputLimit ? (text + chunk).slice(0, outputLimit) : text),
+      keep(handle.stdout, stdout, (text, chunk) => (text + chunk).slice(-outputLimit))
+    ], { concurrency: "unbounded" })
+    const waited = try timeoutOption(handle.exitCode, limit)
+    // Leaving the scope stops a step that is still running.
+    if (Option.isNone(waited)) {
+      return { timedOut: true, exitCode: timedOut, stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun
+    }
+    // A process a step left running keeps the pipes open, so its output is waited for only briefly.
+    try timeoutOption(Fiber.await(readers), "1 second")
+    return { timedOut: false, exitCode: Number(waited.value), stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun
+  })
+}
+
+/**
+ * What git answered: its standard output alone, with what it said on standard
+ * error kept in `errors`. git warns there, for example of a file-system
+ * monitor a step left in its copy's configuration, and a warning is no part of
+ * an answer.
+ */
+const answered = (errors: Ref.Ref<string>) => (handle: ChildProcessHandle) =>
+  Stream.merge(
+    handle.stdout,
+    handle.stderr
+      |> Stream.decodeText(%)
+      |> Stream.tap(%, (chunk: string) => Ref.update(errors, (text) => (text + chunk).slice(-outputLimit)))
+      |> Stream.drain(%)
+  )
+
+/**
+ * Runs git and returns what it printed on standard output. With `place`, `cwd`
+ * is a copy a step may have written, hooks and configuration included, so git
+ * runs there as a step does: in the jail, with a step's environment.
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export effect function git(cwd: string, args: ReadonlyArray<string>, place: Confined | undefined = undefined) {
+  const [command, ...rest] = place === undefined ? ["git", ...args] : held(place, [cwd], ["git", ...args])
+  const errors = try Ref.make("")
+  const output = place === undefined
+    ? try exec(command, rest, cwd, {}, Number.POSITIVE_INFINITY, answered(errors))
+    : try exec(command, rest, cwd, stepEnvironment({}, place), Number.POSITIVE_INFINITY, answered(errors), true)
+  if (output.exitCode !== 0) {
+    throw failure("command-failed", `git ${args[0]} failed: ${try Ref.get(errors)}`)
+  }
+  return output.text
+}
+
+/**
+ * The repository's `origin`, as its configuration writes it. A copy fetches
+ * from it, so what reads the copy names the repository.
+ *
+ * @category copies
+ * @since 0.1.0
+ */
+export const originOf = (root: string) =>
+  exec("git", ["config", "--get", "remote.origin.url"], root, {}, outputLimit, stdoutOf)
+
+/**
+ * Makes `copy` from `source` with nothing checked out. It fetches from the
+ * repository's remote, with no credential in the address, and can push
+ * nowhere.
+ *
+ * @category copies
+ * @since 0.1.0
+ */
+export effect function cloneCopy(work: string, source: string, copy: string, origin: Output) {
+  const noPush = ["--config", `remote.origin.pushurl=${noPushUrl}`]
+  try git(work, ["clone", "--quiet", "--shared", "--no-checkout", ...noPush, source, copy])
+  if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", withoutCredentials(origin.text)])
+}
+
+/**
+ * Removes every untracked and ignored file from `copy` but what `kept` names.
+ *
+ * @category copies
+ * @since 0.1.0
+ */
+export const cleanCopy = (copy: string, kept: ReadonlyArray<string>, place: Confined) =>
+  git(copy, ["clean", "-ffdxq", ...kept.flatMap((name) => ["-e", name])], place)
+
+/**
+ * Puts `copy` at `commit`, with nothing untracked but what `kept` names.
+ *
+ * @category copies
+ * @since 0.1.0
+ */
+export effect function checkoutAt(
+  copy: string,
+  commit: string,
+  place: Confined,
+  kept: ReadonlyArray<string> = [cacheDirectory]
+) {
+  try git(copy, ["checkout", "--quiet", "--force", "--detach", commit], place)
+  try cleanCopy(copy, kept, place)
+}

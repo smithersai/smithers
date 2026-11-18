@@ -80,6 +80,9 @@ export type Installed =
   | { readonly ok: true; readonly smthrs: string }
   | { readonly ok: false; readonly reason: string }
 
+/** A directory of the repository, as a sentence names it. */
+const placeOf = (directory: string): string => directory === "" ? "the repository root" : directory
+
 /**
  * Why an install command failed. Its output is left out: it may hold a
  * registry credential.
@@ -89,7 +92,17 @@ export type Installed =
  * @since 0.1.0
  */
 export const commandFailed = (command: ReadonlyArray<string>, directory: string, exitCode: number): string =>
-  `${command.join(" ")} exited ${exitCode} in ${directory === "" ? "the repository root" : directory}`
+  `${command.join(" ")} exited ${exitCode} in ${placeOf(directory)}`
+
+/**
+ * Why an install command was stopped: `why` says at what limit.
+ *
+ * @throws {never}
+ * @category constructors
+ * @since 0.1.0
+ */
+export const commandStopped = (command: ReadonlyArray<string>, directory: string, why: string): string =>
+  `${command.join(" ")} in ${placeOf(directory)}: ${why}`
 
 /**
  * Why a checkout has no `smthrs` after its installs.
@@ -100,5 +113,5 @@ export const commandFailed = (command: ReadonlyArray<string>, directory: string,
  */
 export const noSmthrs = (directories: ReadonlyArray<string>): string =>
   `no ${smthrsBin} in ${
-    directories.map((directory) => (directory === "" ? "the repository root" : directory)).join(" or ")
+    directories.map(placeOf).join(" or ")
   } after the install; the repository must depend on @smthrs/cli`
