@@ -15,6 +15,7 @@ import {
   expand,
   hostAction,
   hostActions,
+  hostOf,
   releaseTrigger,
   type Toolchain,
   triggerFilter,
@@ -23,6 +24,7 @@ import {
 import { addStep, type Draft, draft, fileProblem, note, type Parsed } from "./Draft.ts"
 import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
 import { isLiteralSecret, isSecretName } from "./Secrets.ts"
+import { readSetup, type Setup } from "./Setup.ts"
 import { asScalar, asStrings, isRecord, normalizeDirectory, shellQuote } from "./Values.ts"
 
 const source = "github-actions"
@@ -135,30 +137,18 @@ const shellStart = (shell: string): string | undefined => {
   return template === null ? undefined : `${template[1]}${template[2]} -c`
 }
 
-/** Actions that install a tool, and the input that pins its version. */
-const setupActions: ReadonlyMap<string, readonly [tool: string, input: string]> = new Map([
-  ["actions/setup-node", ["node", "node-version"]],
-  ["actions/setup-go", ["go", "go-version"]],
-  ["actions/setup-python", ["python", "python-version"]],
-  ["actions/setup-java", ["java", "java-version"]],
-  ["oven-sh/setup-bun", ["bun", "bun-version"]],
-  ["pnpm/action-setup", ["pnpm", "version"]],
-  ["mlugg/setup-zig", ["zig", "version"]],
-  ["goto-bus-stop/setup-zig", ["zig", "version"]],
-  ["dtolnay/rust-toolchain", ["rust", "toolchain"]],
-  ["extractions/setup-just", ["just", "just-version"]]
-])
-
-const readSetup = (uses: string, inputs: unknown, scope: Scope, file: string): Toolchain | undefined => {
-  const setup = setupActions.get(uses.split("@")[0] as string)
-  if (setup === undefined) return undefined
-  const [name, input] = setup
-  const raw = isRecord(inputs) ? asScalar(inputs[input]) : undefined
-  const version = raw === undefined ? undefined : resolve(raw, { ...scope, matrix: noMatrix })
-  return version === undefined || version.text === "" || version.text.includes("${{")
-    ? { name, source: file }
-    : { name, source: file, version: version.text }
-}
+/**
+ * The tools a setup action stands for, as the inventory lists them: with the job that needs them, and the version
+ * when it is written out or is a matrix value, which each variant fills in.
+ */
+const toolchainsOf = (setup: Setup, uses: string, scope: Scope, job: Draft): ReadonlyArray<Toolchain> =>
+  setup.tools.map((tool) => {
+    const entry = { name: tool.name, source: job.file, job: job.id, action: uses }
+    const version = tool.version === undefined ? undefined : resolve(tool.version, scope)
+    return version === undefined || version.text === "" || version.unresolved.length > 0 || version.secrets.length > 0
+      ? entry
+      : { ...entry, version: version.text }
+  })
 
 /** Job keys that change what runs and cannot be reproduced from a command. */
 const jobFeatures: ReadonlyMap<string, string> = new Map([
@@ -216,7 +206,6 @@ const readDefaults = (owner: Record<string, unknown>, parent: RunDefaults): RunD
 }
 
 interface JobContext {
-  readonly file: string
   readonly job: Draft
   readonly scope: Scope
   readonly defaults: RunDefaults
@@ -225,7 +214,7 @@ interface JobContext {
 }
 
 const readStep = (context: JobContext, raw: unknown, index: number): void => {
-  const { defaults, file, job, windowsOnly } = context
+  const { defaults, job, windowsOnly } = context
   const number = index + 1
   if (!isRecord(raw)) return note(job, "malformed-step", `step ${number} of ${job.name} is not a mapping`)
   const stepName = typeof raw["name"] === "string" ? raw["name"] : undefined
@@ -239,10 +228,23 @@ const readStep = (context: JobContext, raw: unknown, index: number): void => {
 
   const uses = raw["uses"]
   if (typeof uses === "string") {
-    const tool = readSetup(uses, raw["with"], scope, file)
-    if (tool !== undefined) context.toolchains.push(tool)
-    const prepares = tool !== undefined || hostActions.includes(uses.split("@")[0] as string)
-    return note(job, prepares ? hostAction : "uses", `${uses} has no command to run`)
+    const setup = readSetup(uses, raw["with"])
+    if (setup === undefined) {
+      const prepares = hostActions.includes(uses.split("@")[0] as string)
+      return note(job, prepares ? hostAction : "uses", `${uses} has no command to run`)
+    }
+    context.toolchains.push(...toolchainsOf(setup, uses, scope, job))
+    note(job, hostAction, `${uses} has no command to run`)
+    if (setup.problem !== undefined) note(job, "uses", `${where}: ${uses} ${setup.problem}`)
+    if (setup.command === undefined) return
+    return addStep(job, {
+      where,
+      command: setup.command,
+      env: scope.env,
+      secrets: scope.secrets,
+      secretEnv: scope.secretEnv,
+      name: stepName ?? uses
+    })
   }
   const run = raw["run"]
   if (typeof run !== "string") return note(job, "malformed-step", `${where} has neither run nor uses`)
@@ -286,13 +288,15 @@ const readStep = (context: JobContext, raw: unknown, index: number): void => {
   })
 }
 
-/** How many runs of the job are on Windows, once each variant fills in its runner. */
-const windowsRuns = (runsOn: string | undefined, matrix: Matrix): "all" | "some" | "none" => {
-  if (runsOn === undefined) return "none"
+/**
+ * True when every run of the job is on Windows, once each variant fills in its runner. A step of such a job that
+ * names no shell is PowerShell text. A job with a variant on another system is read as that variant runs it: its
+ * Windows variants are left out one by one where the job is replayed (`Inventory.otherSystem`), never the job.
+ */
+const windowsOnly = (runsOn: string | undefined, matrix: Matrix): boolean => {
+  if (runsOn === undefined) return false
   const names = matrix.variants.length === 0 ? [runsOn] : matrix.variants.map((variant) => expand(runsOn, variant))
-  const windows = names.filter((name) => /windows/i.test(name)).length
-  if (windows === 0) return "none"
-  return windows === names.length ? "all" : "some"
+  return names.every((name) => hostOf(name) === "win32")
 }
 
 const readRunsOn = (raw: unknown, job: { readonly name: string }, problems: Array<[string, string]>) => {
@@ -352,20 +356,16 @@ const readJobBody = (workflow: WorkflowContext, job: Draft, raw: Record<string, 
     const unknown = resolve(job.runsOn, jobScope).unresolved
     if (unknown.length > 0) note(job, "runner", `${name} picks its runner from ${unknown.join(", ")}`)
   }
-  const windows = windowsRuns(job.runsOn, matrix)
-  if (windows === "some") note(job, "shell", `some variants of ${name} run in PowerShell on Windows`)
-
   if (typeof raw["uses"] === "string") {
     return note(job, "uses", `${raw["uses"]} is a reusable workflow; its jobs were not read`)
   }
   const steps: unknown = raw["steps"]
   if (!Array.isArray(steps)) return note(job, "malformed-job", `${name} has no list of steps`)
   const context: JobContext = {
-    file: workflow.file,
     job,
     scope: withEnv(jobScope, raw["env"], job, name, false),
     defaults: readDefaults(raw, workflow.defaults),
-    windowsOnly: windows === "all",
+    windowsOnly: windowsOnly(job.runsOn, matrix),
     toolchains: workflow.toolchains
   }
   steps.forEach((step: unknown, index) => readStep(context, step, index))

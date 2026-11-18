@@ -74,6 +74,19 @@ describe("contract 4: inventory", () => {
     expect(Inventory.shell).toEqual(["bash", "-e", "-c"])
   })
 
+  it("names the job a workflow step sets a tool up for, and the action that does it", () => {
+    const bun = Schema.decodeUnknownSync(Inventory.Inventory)(fixture("inventory.github-actions-bun.json"))
+    // A file that pins a tool belongs to no job.
+    expect(bun.toolchains[0]).toEqual({ name: "bun", source: "package.json", version: "1.3.0" })
+    expect(bun.toolchains[1]).toEqual({
+      name: "bun",
+      source: ".github/workflows/ci.yml",
+      version: "1.3.0",
+      job: "ci.yml:test",
+      action: "oven-sh/setup-bun@v2"
+    })
+  })
+
   it("fills one matrix variant into a step's command, directory and environment values", () => {
     const step: Inventory.Step = {
       id: "ci.yml:test:1",

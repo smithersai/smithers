@@ -111,7 +111,9 @@ it.layer(NodeServices.layer)("read", (it) => {
         expect(decoded.toolchains).toContainEqual({
           name: "bun",
           source: ".github/workflows/ci.yml",
-          version: "1.3.0"
+          version: "1.3.0",
+          job: "ci.yml:build",
+          action: "oven-sh/setup-bun@v2"
         })
         expect(decoded.toolchains).toContainEqual({ name: "just", source: "Justfile" })
         expect(JSON.stringify(decoded)).not.toContain("hunter2")

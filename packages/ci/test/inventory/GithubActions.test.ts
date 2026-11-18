@@ -522,8 +522,10 @@ jobs:
     steps:
       - run: ls
 `)
+    // The Windows variant is left out where the job is replayed, so the job keeps its command and has no blocker.
     expect(some.steps).toHaveLength(1)
-    expect(details(some)).toEqual([`${file}: some variants of test run in PowerShell on Windows`])
+    expect(some.unsupported).toEqual([])
+    expect(some.matrix).toEqual([{ os: "ubuntu-latest" }, { os: "windows-latest" }])
     const partial = jobOf(`
 on: push
 jobs:
@@ -721,8 +723,8 @@ jobs:
 })
 
 describe("readWorkflow toolchains", () => {
-  it("records the tools setup actions pin, by version when it is known", () => {
-    const { toolchains } = read(`
+  it("records the tools setup actions stand for, with their job, and their version when it is known", () => {
+    const { jobs, toolchains } = read(`
 on: push
 env: { BUN: 1.3.0 }
 jobs:
@@ -735,21 +737,76 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - uses: actions/setup-go@v5
-        with: { go-version: "\${{ matrix.go }}" }
+        with: { go-version: "1.\${{ matrix.go }}.x" }
       - uses: pnpm/action-setup@v4
       - uses: mlugg/setup-zig@v2
         with: { version: "" }
       - uses: actions/setup-python@v5
         with: { python-version: [a] }
+      - uses: astral-sh/setup-uv@v9
+        with: { version: "\${{ vars.UV }}" }
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "\${{ secrets.PIN }}" }
       - uses: actions/checkout@v4
 `)
+    const tool = (name: string, action: string) => ({ name, source: file, job: "ci.yml:test", action })
     expect(toolchains).toEqual([
-      { name: "bun", source: file, version: "1.3.0" },
-      { name: "node", source: file, version: "22" },
-      { name: "go", source: file },
-      { name: "pnpm", source: file },
-      { name: "zig", source: file },
-      { name: "python", source: file }
+      { ...tool("bun", "oven-sh/setup-bun@v2"), version: "1.3.0" },
+      { ...tool("node", "actions/setup-node@v4"), version: "22" },
+      // A matrix value stays as written: each variant of the job fills it in.
+      { ...tool("go", "actions/setup-go@v5"), version: "1.${{ matrix.go }}.x" },
+      tool("pnpm", "pnpm/action-setup@v4"),
+      tool("zig", "mlugg/setup-zig@v2"),
+      tool("python", "actions/setup-python@v5"),
+      // A version from a value this file does not hold, or from a secret, is not a version.
+      tool("uv", "astral-sh/setup-uv@v9"),
+      tool("terraform", "hashicorp/setup-terraform@v3")
+    ])
+    expect(features(jobs[0] as Job)).toEqual(Array.from({ length: 9 }, () => "host-action"))
+    expect(jobs[0]?.steps).toEqual([])
+  })
+
+  it("reads a setup action outside any list by its name, and runs what it also runs", () => {
+    const { jobs, toolchains } = read(`
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env: { RAILS_ENV: test }
+    steps:
+      - uses: ruby/setup-ruby@v1
+        with: { ruby-version: 3.4.6, bundler-cache: true }
+      - name: Install with pnpm
+        uses: pnpm/action-setup@v4
+        with: { run_install: true }
+      - run: bundle exec rake
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ruby/setup-ruby@v1
+        with: { bundler-cache: true, working-directory: docs }
+      - run: bundle exec jekyll build
+`)
+    expect(toolchains.map((tool) => [tool.name, tool.job, tool.version])).toEqual([
+      ["ruby", "ci.yml:test", "3.4.6"],
+      ["pnpm", "ci.yml:test", undefined],
+      ["ruby", "ci.yml:docs", undefined]
+    ])
+    expect(jobs[0]?.steps.map((step) => [step.name, step.command, step.env])).toEqual([
+      ["ruby/setup-ruby@v1", "bundle config set --local path vendor/bundle\nbundle install --jobs 4", {
+        RAILS_ENV: "test"
+      }],
+      ["Install with pnpm", "pnpm install", { RAILS_ENV: "test" }],
+      [undefined, "bundle exec rake", { RAILS_ENV: "test" }]
+    ])
+    expect(features(jobs[0] as Job)).toEqual(["host-action", "host-action"])
+    // What the action runs was not read, so the job is not run.
+    expect(jobs[1]?.unsupported).toEqual([
+      { feature: "host-action", detail: `${file}: ruby/setup-ruby@v1 has no command to run` },
+      {
+        feature: "uses",
+        detail: `${file}: docs step 1: ruby/setup-ruby@v1 installs gems in a way that was not read (bundler-cache)`
+      }
     ])
   })
 })

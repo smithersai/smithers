@@ -1,0 +1,88 @@
+/**
+ * The shapes of six public repositories whose first run ended with nothing measured, each as a real repository in
+ * a temporary directory. `packages/ci/scripts/corpus.mjs` runs the real clones.
+ */
+
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { firstRun } from "./corpus.vibe"
+
+/** tj/commander.js: one test job over three Node versions and three systems, and a CodeQL job. */
+const commander = {
+  ".github/workflows/tests.yml": `
+name: build
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    name: Test on node \${{ matrix.node-version }} and \${{ matrix.os }}
+    runs-on: \${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22.x, 24.x, 26.x]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+    - uses: actions/checkout@v7
+    - name: Use Node.js \${{ matrix.node-version }}
+      uses: actions/setup-node@v7
+      with:
+        cache: 'npm'
+        node-version: \${{ matrix.node-version }}
+    - name: npm install
+      run: npm ci
+    - name: npm test
+      run: npm test
+    - name: npm run check
+      run: npm run check
+`,
+  ".github/workflows/codeql-analysis.yml": `
+name: "CodeQL"
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop ]
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      matrix:
+        language: [ 'javascript' ]
+    steps:
+    - uses: actions/checkout@v7
+    - uses: github/codeql-action/init@v4
+      with:
+        languages: \${{ matrix.language }}
+    - uses: github/codeql-action/analyze@v4
+`
+}
+
+it.layer(NodeServices.layer)("a first run on the shape of a public repository", (it) => {
+  it.effect("commander.js: a matrix entry for another system removes only itself", () =>
+    effect {
+      const linux = try firstRun(commander, "linux")
+      const mac = try firstRun(commander, "darwin")
+      try Effect.try(() => {
+        // Three Node versions on Ubuntu run; the Windows and macOS variants are listed, the job is not.
+        expect(linux.refusal).toBeUndefined()
+        expect(linux.replayed).toEqual(["tests.yml:test", "tests.yml:test", "tests.yml:test"])
+        expect(linux.listed).toEqual([
+          ["codeql-analysis.yml:analyze", "write-permission, uses"],
+          ["tests.yml:test", "other-system"]
+        ])
+        const elsewhere = linux.details.filter((detail) => detail.includes("this machine is linux"))
+        expect(elsewhere).toHaveLength(6)
+        expect(elsewhere.filter((detail) => detail.includes("runs on win32"))).toHaveLength(3)
+        expect(elsewhere.filter((detail) => detail.includes("runs on darwin"))).toHaveLength(3)
+        // On a Mac the macOS variants run and the other six are listed.
+        expect(mac.replayed).toHaveLength(3)
+        expect(mac.details.filter((detail) => detail.includes("this machine is darwin"))).toHaveLength(6)
+      })
+    })
+})

@@ -1,0 +1,74 @@
+/**
+ * A first run, up to the point where commands would start: a real repository in a temporary directory is read,
+ * narrowed to its CI, turned into targets, and sorted into what this machine replays and what it lists.
+ */
+
+import { expect } from "@effect/vitest"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { ci, type NotReplayed, notReplayed, refusal } from "../../src/contract/Inventory.ts"
+import { path as targetMapPath, TargetMap } from "../../src/contract/TargetMap.ts"
+import { files } from "../../src/generate/index.ts"
+import { read } from "../../src/inventory/index.ts"
+import { replayable } from "../../src/replay/Summary.ts"
+
+effect function git(root: string, args: ReadonlyArray<string>) {
+  const spawner = try ChildProcessSpawner
+  const code = try spawner.exitCode(ChildProcess.make("git", ["-C", root, ...args]))
+  try Effect.try(() => expect(Number(code)).toBe(0))
+}
+
+/** Writes files into a new directory and commits them, so the directory is a real repository. */
+export effect function repository(written: Readonly<Record<string, string>>) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try fs.makeTempDirectoryScoped()
+  for (const [name, text] of Object.entries(written)) {
+    try fs.makeDirectory(path.dirname(path.join(root, name)), { recursive: true })
+    try fs.writeFileString(path.join(root, name), text)
+  }
+  try git(root, ["init", "--quiet"])
+  try git(root, ["add", "--all"])
+  try git(root, ["-c", "user.name=t", "-c", "user.email=t@example.test", "commit", "--quiet", "-m", "c"])
+  return root
+}
+
+/** What a first run decides: the units it would run, by job, and each job it lists with its reasons. */
+export interface FirstRun {
+  /** Why nothing can be run, when that is the answer. */
+  readonly refusal: string | undefined
+  /** One entry per job and matrix variant that runs, naming the job. */
+  readonly replayed: ReadonlyArray<string>
+  /** Each job listed as not replayed: its id, then its reasons, each once. */
+  readonly listed: ReadonlyArray<readonly [job: string, reasons: string]>
+  /** Every reason's detail, for a test that reads what the report says. */
+  readonly details: ReadonlyArray<string>
+}
+
+const listedOf = (left: ReadonlyArray<NotReplayed>) => ({
+  listed: left.map((entry) => [entry.job, [...new Set(entry.reasons.map((reason) => reason.feature))].join(", ")] as const),
+  details: left.flatMap((entry) => entry.reasons.map((reason) => reason.detail))
+})
+
+/** Reads the repository made of `written` and sorts its CI as a replay on `host` does. */
+export effect function firstRun(written: Readonly<Record<string, string>>, host: string = "linux") {
+  const root = try repository(written)
+  const inventory = try read(root)
+  const why = refusal(inventory)
+  if (why !== undefined) {
+    const run: FirstRun = { refusal: why, replayed: [], ...listedOf(notReplayed(inventory)) }
+    return run
+  }
+  const narrowed = ci(inventory)
+  const generated = try files(narrowed)
+  const map = try Schema.decodeUnknownEffect(Schema.fromJsonString(TargetMap))(
+    generated.find((file) => file.path === targetMapPath)?.content
+  )
+  const sorted = replayable(narrowed, map, host)
+  const run: FirstRun = {
+    refusal: undefined,
+    replayed: sorted.units.map((unit) => unit.job),
+    ...listedOf([...notReplayed(inventory), ...sorted.left])
+  }
+  return run
+}

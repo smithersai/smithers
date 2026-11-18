@@ -125,7 +125,13 @@ export const Job = Schema.Struct({
 export type Job = typeof Job.Type
 
 /**
- * A tool the repository pins, and the file that pins it.
+ * A tool the repository's CI needs, and the file that says so: a file that
+ * pins it, such as `.nvmrc`, or a workflow whose step sets it up.
+ *
+ * A tool a workflow step sets up has `job`, the id of the job with that
+ * step, and `action`, the step's `uses` value as written. Its `version` may
+ * hold `${{ matrix.<key> }}`, which `expand` fills in with a variant of that
+ * job. Without `job` the tool is the repository's.
  *
  * @category models
  * @since 0.1.0
@@ -133,7 +139,9 @@ export type Job = typeof Job.Type
 export const Toolchain = Schema.Struct({
   name: Schema.NonEmptyString,
   source: Schema.NonEmptyString,
-  version: Schema.optionalKey(Schema.String)
+  version: Schema.optionalKey(Schema.String),
+  job: Schema.optionalKey(Schema.NonEmptyString),
+  action: Schema.optionalKey(Schema.NonEmptyString)
 })
 
 /**
@@ -305,10 +313,10 @@ export const longRunning = "long-running"
 
 /**
  * The `Unsupported.feature` of an action step that only prepares the CI
- * host: it checks the repository out, installs a toolchain the inventory
- * lists, restores or saves a cache, or uploads a file. The replay makes the
- * checkout itself and expects the toolchains on the machine, so leaving the
- * step out cannot change a verdict.
+ * host: it checks the repository out, sets up a tool the inventory lists
+ * (`Toolchain.job`), restores or saves a cache, or uploads a file. The
+ * replay makes the checkout itself and runs the job only on a machine that
+ * has its tools, so leaving the step out cannot change a verdict.
  *
  * @category constants
  * @since 0.1.0
@@ -316,8 +324,8 @@ export const longRunning = "long-running"
 export const hostAction = "host-action"
 
 /**
- * The actions that are host actions besides those the importer turns into a
- * toolchain, named without their version.
+ * The actions that are host actions besides those that set a tool up, named
+ * without their version.
  *
  * @category constants
  * @since 0.1.0

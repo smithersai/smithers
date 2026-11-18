@@ -133,7 +133,7 @@ export const fileProblem = (file: string, feature: string, reason: string): Pars
 export const assemble = (repository: string, commit: string, parts: ReadonlyArray<Parsed>): Inventory => {
   const toolchains = new Map<string, Toolchain>()
   for (const tool of parts.flatMap((part) => part.toolchains)) {
-    toolchains.set(JSON.stringify([tool.name, tool.source, tool.version]), tool)
+    toolchains.set(JSON.stringify([tool.name, tool.source, tool.version, tool.job, tool.action]), tool)
   }
   const unsupported = parts.flatMap((part) => part.unsupported)
   return scrub({
