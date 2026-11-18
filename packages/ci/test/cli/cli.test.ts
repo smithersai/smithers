@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import { basename } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { layer } from "../../src/cli/Host.vibe"
 import { main } from "../../src/cli/main.vibe"
@@ -326,6 +327,7 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     const at = `smithers-ci: 1/1 ${head(root).slice(0, 7)}`
     expect(outcome.stderr.trim().split("\n")).toEqual([`${at} baseline`, `${at} normal`])
     const report = decode(ReplayReport, outcome.stdout)
+    expect(report.repository).toBe(basename(root))
     expect(report.commits).toHaveLength(1)
     expect(report.commits[0]!.commit).toBe(head(root))
     expect(report.commits[0]!.baseline.ok).toBe(false)

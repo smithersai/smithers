@@ -1,7 +1,9 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import { execFileSync } from "node:child_process"
 import { rmSync } from "node:fs"
+import { basename } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { type Step, withSteps } from "../../src/contract/Inventory.ts"
 import type { Decompose, Failure, ReplayParts } from "../../src/contract/Parts.ts"
@@ -49,6 +51,39 @@ const replay = (decompose: Decompose<never>): Promise<ReplayReport> => {
     ) as Effect.Effect<ReplayReport, Failure>
   )
 }
+
+describe("the copies a replay reads and runs in", () => {
+  /** The test reader, which also reports the directory name and the remote of the copy it was given. */
+  const seen = (base: Parts): Parts["read"] => (root) =>
+    Effect.map(base.read(root), (inventory) => {
+      const remote = execFileSync("git", ["-C", root, "config", "--get", "remote.origin.url"], { encoding: "utf8" })
+      return { ...inventory, repository: `${basename(root)} ${remote.trim()}` }
+    })
+
+  const named = async (remote: string | undefined): Promise<readonly [string, string]> => {
+    const root = makeSmallRepository([job("a", "sh a.sh")])
+    created.push(root)
+    if (remote !== undefined) execFileSync("git", ["-C", root, "remote", "add", "origin", remote])
+    const base = parts("none") as unknown as Parts
+    const report = await Effect.runPromise(
+      run({ root, commits: 1, modes: ["normal"] }, { ...base, read: seen(base) }).pipe(
+        Effect.provide(Layer.provideMerge(options as never, NodeServices.layer))
+      ) as Effect.Effect<ReplayReport, Failure>
+    )
+    return [basename(root), report.repository]
+  }
+
+  it("have the repository's directory name and its remote, without the remote's credentials", async () => {
+    const [directory, repository] = await named("https://will:ghp_secret@example.com/acme/widgets.git")
+    expect(repository).toBe(`${directory} https://example.com/acme/widgets.git`)
+  }, 120_000)
+
+  it("keep the directory name when the repository has no remote", async () => {
+    const [directory, repository] = await named(undefined)
+    expect(repository.startsWith(`${directory} `)).toBe(true)
+    expect(repository).not.toContain("example.com")
+  }, 120_000)
+})
 
 describe("a replay whose steps were split", () => {
   it("runs the step once in the baseline and its two targets in normal mode, and they agree", async () => {

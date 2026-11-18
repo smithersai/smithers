@@ -23,7 +23,8 @@ import {
   splitOf,
   targetsOf,
   totalsOf,
-  unitsOf
+  unitsOf,
+  withoutCredentials
 } from "../../src/replay/Summary.ts"
 
 const step = (id: string, command: string, env: Readonly<Record<string, string>> = {}) => ({
@@ -245,6 +246,19 @@ describe("records and totals", () => {
     expect(totalsOf(record([ran("a", 2), ran("b", 3)]))).toMatchObject({ ok: true, wallMs: 10, workMs: 5 })
     const { durationMs: _durationMs, ...timeless } = record([])
     expect(totalsOf(timeless).wallMs).toBe(0)
+  })
+})
+
+describe("withoutCredentials", () => {
+  it("drops a user name and password, and keeps every other remote as it is", () => {
+    expect(withoutCredentials("https://will:ghp_secret@github.com/acme/widgets.git\n")).toBe(
+      "https://github.com/acme/widgets.git"
+    )
+    expect(withoutCredentials("https://token@github.com/acme/widgets")).toBe("https://github.com/acme/widgets")
+    expect(withoutCredentials("ssh://git@github.com/acme/widgets.git")).toBe("ssh://github.com/acme/widgets.git")
+    expect(withoutCredentials("git@github.com:acme/widgets.git")).toBe("git@github.com:acme/widgets.git")
+    expect(withoutCredentials("/srv/git/widgets")).toBe("/srv/git/widgets")
+    expect(withoutCredentials("https://github.com/acme/w@x")).toBe("https://github.com/acme/w@x")
   })
 })
 

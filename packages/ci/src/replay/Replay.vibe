@@ -42,7 +42,8 @@ import {
   targetsOf,
   totalsOf,
   type Unit,
-  unitsOf
+  unitsOf,
+  withoutCredentials
 } from "./Summary.ts"
 
 /** The cache directory, kept between commits. Smithers build never reads it as a source. */
@@ -231,9 +232,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const history = lines(try git(source, ["rev-list", "--first-parent", `--max-count=${request.commits}`, "HEAD"]))
     const commits = [...history].reverse()
 
+    // A copy has the repository's directory name and remote, so a reader names it as it does in place.
+    const origin = try exec("git", ["config", "--get", "remote.origin.url"], root, {}, outputLimit, (handle) => handle.stdout)
+
     effect function copyAt(name: string, commit: string) {
-      const copy = path.join(work, name)
+      const copy = path.join(work, name, path.basename(root))
       try git(work, ["clone", "--quiet", "--shared", "--no-checkout", source, copy])
+      if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", withoutCredentials(origin.text)])
       try checkout(copy, commit)
       return copy
     }

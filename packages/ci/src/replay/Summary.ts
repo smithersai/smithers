@@ -113,6 +113,18 @@ export const labelsOf = (unit: Unit, wanted: ReadonlySet<string> | undefined): R
   )
 
 /**
+ * A remote URL without the user name and password it may hold. The replay
+ * gives its copies the repository's remote, so a reader names the repository
+ * as it does in place, and CI steps run in those copies: they get no secret.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const withoutCredentials = (remote: string): string =>
+  remote.trim().replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, "$1")
+
+/**
  * Every target the units' steps became.
  *
  * @category baseline
