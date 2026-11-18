@@ -7,7 +7,7 @@ description: "Every smithers-build command, argument, option, exit code, and err
 smithers-build <command> [arguments] [options]
 ```
 
-`makeCli` registers 23 commands, including the alias for `git-hooks` and grouped
+`makeCli` registers 24 commands, including the alias for `git-hooks` and grouped
 `cache` and `show` surfaces. `normalizeArgv` adds another spelling: an argv
 whose first token starts with `//` or `:` is rewritten to `target <label>`, so
 `smithers-build //packages/api:lint` runs the bare-label form.
@@ -638,6 +638,7 @@ state.
 | `info`           |                        | `--workspace`, `--cache-dir`                                                                                                                                                                                       |
 | `explain`        | `<label>`              | `--verb`, `--workspace`, `--cache-dir`                                                                                                                                                                             |
 | `affected`       | `<verb> [patterns...]` | `--base`, `--head`, `--files`, `--list`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard` |
+| `units`          | `<label>`              | `--base`, `--head`, `--files`, `--all`, `--list`, `--closures`, `--jobs`, `--results-file`, `--workspace`, `--cache-dir`                                                                                           |
 | `clean`          | `[patterns...]`        | `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`                                                                    |
 | `watch`          | `<verb> [patterns...]` | `--debounce-ms`, `--once`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`                                         |
 
@@ -803,6 +804,17 @@ the watch parent itself is killed is outside this contract. Windows uses the
 Node spawner's process-tree termination and does not provide the POSIX group
 absence check.
 
+`units <label>` runs the test files of one `Vitest` target that declares
+`units: "file"`, each as its own unit. It reads the change as `affected` does
+and runs only the units that read a changed file. `--all` runs every unit.
+`--list` prints every unit and why it is selected, with each unit's dependency
+closure under `--closures`, and runs nothing. A run prints a run record with
+one result per unit and, when every unit has stored coverage, one for the
+target, which merges them and judges the coverage thresholds.
+`--results-file` writes the record as JSON. `--jobs` defaults to 4. `units`
+does not build the target's dependencies. See
+[test units](/pkg/build/concepts/test-units).
+
 ## Exit codes
 
 The CLI exits `0` or `1`. There is no third code.
@@ -838,6 +850,7 @@ A structured failure carries a code alongside its message.
 | `build_failed`, `test_failed`, `lint_failed`, `docs_failed`, `review_failed`, `run_failed`, `ci_failed`, `target_failed` | The command threw before or during execution.                      |
 | `install_failed`                                                                                                         | Install planning or execution failed.                              |
 | `query_failed`, `index_failed`, `graph_failed`, `owners_failed`                                                          | The workspace could not be read, or the expression was rejected.   |
+| `units_failed`                                                                                                           | A unit failed, or the label names no target split into units.      |
 | `git_hooks_failed`                                                                                                       | Rendering or installing the hooks failed.                          |
 | `git_hooks_drift`                                                                                                        | Checked hooks differ from the declaration.                         |
 | `UNEXPECTED_ARGUMENT`                                                                                                    | A positional argument that no command argument consumes.           |

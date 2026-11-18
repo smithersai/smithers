@@ -67,6 +67,15 @@ export const Attrs = Schema.Struct({
    * does not declare.
    */
   cache: Schema.optional(Schema.Literal(false)),
+  /**
+   * The unit of work. `"target"` runs every test file in one run. `"file"`
+   * makes each test file a unit that `smithers-build units` runs on its own:
+   * a change reruns only the test files that reach a changed file. See the
+   * test units concept page.
+   *
+   * @default "target"
+   */
+  units: Schema.Literals(["target", "file"]).pipe(Schema.withConstructorDefault(Effect.succeed("target" as const))),
   cwd: Schema.NonEmptyString.pipe(
     Schema.withConstructorDefault(Effect.succeed("."))
   ),
@@ -109,6 +118,64 @@ export const Attrs = Schema.Struct({
 export type Attrs = typeof Attrs.Type
 
 /**
+ * The `vitest run` arguments of one target, after the tool's name.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const runArguments = (
+  attrs: Pick<Attrs, "bail" | "config" | "cwd" | "environment" | "coverage" | "passWithNoTests">
+): Array<string> => [
+  "run",
+  ...(attrs.config === null ? [] : ["--config", Input.rootRelative(attrs.cwd, attrs.config.path)]),
+  "--environment",
+  attrs.environment,
+  ...(attrs.coverage ? [] : ["--coverage.enabled=false"]),
+  ...(attrs.bail === undefined ? [] : [`--bail=${attrs.bail}`]),
+  ...(attrs.passWithNoTests ? ["--passWithNoTests"] : [])
+]
+
+/**
+ * The arguments that run one test file as a unit and write its results and
+ * coverage to `blob`. The default reporter stays on, so a failed unit's
+ * output names the test that failed. Thresholds are not judged here: one
+ * file cannot meet a threshold set for the whole target, and its coverage
+ * report is cut to a summary. {@link mergeArguments} judges the thresholds.
+ *
+ * `file`, `blob` and `reports` are paths the runner can open from `cwd`.
+ * `reports` is a directory this run alone writes its coverage report into,
+ * so units running side by side never share one.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const unitArguments = (
+  attrs: Parameters<typeof runArguments>[0],
+  unit: { readonly file: string; readonly blob: string; readonly reports: string }
+): Array<string> => [
+  ...runArguments(attrs),
+  unit.file,
+  "--reporter=default",
+  "--reporter=blob",
+  `--outputFile=${unit.blob}`,
+  ...(attrs.coverage
+    ? ["--coverage.thresholds=false", "--coverage.reporter=text-summary", `--coverage.reportsDirectory=${unit.reports}`]
+    : [])
+]
+
+/**
+ * The arguments that merge every unit's blob in `blobs` into one report and
+ * judge the target's coverage thresholds over all of them.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const mergeArguments = (
+  attrs: Parameters<typeof runArguments>[0],
+  blobs: string
+): Array<string> => [...runArguments(attrs), `--merge-reports=${blobs}`]
+
+/**
  * Plans a non-watch `vitest run` test target.
  *
  * The body records one {@link Exec.Exec} node that runs
@@ -138,13 +205,7 @@ export const Vitest = Target.make("Vitest", {
       env: Runtime.environment(attrs.runtime, attrs.env),
       argv: PackageManager.exec(PackageManager.under(attrs.packageManager, attrs.runtime), [
         "vitest",
-        "run",
-        ...(attrs.config === null ? [] : ["--config", Input.rootRelative(attrs.cwd, attrs.config.path)]),
-        "--environment",
-        attrs.environment,
-        ...(attrs.coverage ? [] : ["--coverage.enabled=false"]),
-        ...(attrs.bail === undefined ? [] : [`--bail=${attrs.bail}`]),
-        ...(attrs.passWithNoTests ? ["--passWithNoTests"] : [])
+        ...runArguments(attrs)
       ])
     })
 })

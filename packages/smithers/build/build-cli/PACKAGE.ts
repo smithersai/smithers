@@ -108,6 +108,9 @@ const test = Smithers.Vitest({
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
   passWithNoTests: false,
+  // One unit per test file: `smithers-build units` reruns only the files a
+  // change reaches. See docs/concepts/test-units.md in @smthrs/build.
+  units: "file",
   // The serial suite reached 93 completed files before the default 20 minute
   // target bound on the release runner. On a loaded 16-core macOS host
   // (2026-09-30, #2593) it took 1304 s without coverage and 2063 s with this

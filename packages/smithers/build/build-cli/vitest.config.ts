@@ -56,6 +56,7 @@ const complete = [
   "src/StampExec.ts",
   "src/TargetExecution.ts",
   "src/TargetIndex.ts",
+  "src/TestUnits.ts",
   "src/TrustedReview.ts",
   "src/Watch.ts",
   "src/Workspace.ts",

@@ -57,6 +57,7 @@ import * as Query from "./Query.ts"
 import * as RepoResolution from "./RepoResolution.ts"
 import * as Reporter from "./Reporter.ts"
 import * as TargetIndex from "./TargetIndex.ts"
+import * as TestUnits from "./TestUnits.ts"
 import * as TrustedReview from "./TrustedReview.ts"
 import * as Watch from "./Watch.ts"
 import { type RemoteCacheAccess, remoteCacheOf, type ResolvedRemoteCache } from "./Workspace.ts"
@@ -1873,6 +1874,45 @@ const makeCommands = (config: RuntimeConfig) =>
           }
         } catch (cause) {
           return context.error({ code: "affected_failed", message: failureText(context, cause) })
+        }
+      }
+    })
+    .command("units", {
+      description: "Run the test files of one target that a change reaches, each as its own unit",
+      mcp: { annotations: { readOnlyHint: false } },
+      args: z.object({ label: z.string().describe("A Vitest target that declares units: \"file\"") }),
+      options: workspaceOption.extend({
+        base: z.string().default("HEAD").describe("Git base revision"),
+        head: z.string().optional().describe(
+          "Git head revision; defaults to the working tree including untracked files"
+        ),
+        files: z.array(z.string()).optional().describe("Explicit changed paths instead of Git discovery"),
+        all: z.boolean().default(false).describe("Run every unit, whatever changed"),
+        list: z.boolean().default(false).describe("List every unit and why it is selected, without running"),
+        closures: z.boolean().default(false).describe("With --list, include the dependency closure of each unit"),
+        jobs: z.number().int().min(1).optional().describe("Maximum concurrent units; defaults to 4"),
+        resultsFile: z.string().optional().describe("Write the run record to this file as JSON")
+      }),
+      alias: { workspace: "w", jobs: "j" },
+      async run(context) {
+        try {
+          const index = await openPackageIndex(context.options, config)
+          const outcome = await TestUnits.command({
+            ...context.options,
+            index,
+            label: context.args.label,
+            cacheDirectory: cacheDirectoryOf(index, context.options),
+            signal: config.signal,
+            environment: environmentOf(config),
+            log: (line) => terminalsOf(config).stderr.write(`${line}\n`)
+          })
+          if ("ok" in outcome && !outcome.ok) {
+            const failed = outcome.results.filter((row) => row.status === "failed").map((row) => row.label)
+            return context.error({ code: "units_failed", exitCode: 1, message: `failed: ${failed.join(", ")}` })
+          }
+          return outcome
+        } catch (cause) {
+          return context.error({ code: "units_failed", exitCode: 1, message: failureText(context, cause) })
         }
       }
     })

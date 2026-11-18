@@ -111,16 +111,17 @@ build system, start at [`@smthrs/cli`](/api/cli).
 
 ### Concepts
 
-| Page                                                         | Description                                                               |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| [Labels](concepts/labels.md)                                 | The `//pkg:target` grammar, package defaults, and `//...` patterns.       |
-| [Target definitions and targets](concepts/targets.md)        | A target is a flow with planner metadata.                                 |
-| [Inputs](concepts/inputs.md)                                 | `file()`, `glob()`, `gitDiff()`, and when they are digested.              |
-| [Dependencies](concepts/dependencies.md)                     | Import edges, `deps` attributes, and transitive planning.                 |
-| [Actions and boundaries](concepts/actions-and-boundaries.md) | Sealed actions, `TreeArtifact` writes, host state, and confinement.       |
-| [Install](concepts/install.md)                               | The measure round, fetch key material, and manager-as-layer.              |
-| [Environments](concepts/environments.md)                     | The declared Nix closure tools resolve from, and what it makes cacheable. |
-| [Ownership](concepts/ownership.md)                           | `owners` on a package, and the generated CODEOWNERS and OWNERS files.     |
+| Page                                                         | Description                                                                            |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| [Labels](concepts/labels.md)                                 | The `//pkg:target` grammar, package defaults, and `//...` patterns.                    |
+| [Target definitions and targets](concepts/targets.md)        | A target is a flow with planner metadata.                                              |
+| [Inputs](concepts/inputs.md)                                 | `file()`, `glob()`, `gitDiff()`, and when they are digested.                           |
+| [Test units](concepts/test-units.md)                         | One test file as the unit of work: what it depends on and which units a change reruns. |
+| [Dependencies](concepts/dependencies.md)                     | Import edges, `deps` attributes, and transitive planning.                              |
+| [Actions and boundaries](concepts/actions-and-boundaries.md) | Sealed actions, `TreeArtifact` writes, host state, and confinement.                    |
+| [Install](concepts/install.md)                               | The measure round, fetch key material, and manager-as-layer.                           |
+| [Environments](concepts/environments.md)                     | The declared Nix closure tools resolve from, and what it makes cacheable.              |
+| [Ownership](concepts/ownership.md)                           | `owners` on a package, and the generated CODEOWNERS and OWNERS files.                  |
 
 ### Extending
 

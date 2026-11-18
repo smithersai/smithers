@@ -389,13 +389,14 @@ export const importDeclarationModule = async (url, parentURL) => {
 const installVibeLang = () => {
   for (const base of [cliParentUrl, pathToFileURL(NodePath.join(process.cwd(), "package.json")).href]) {
     const require = createRequire(base)
-    let hooks
     try {
-      hooks = require.resolve("vibelang/register")
+      require.resolve("vibelang/register")
     } catch {
       continue
     }
-    require(hooks)
+    // The specifier is spelled again, not passed as a variable, so a syntax-only
+    // dependency closure follows this import instead of calling it dynamic.
+    require("vibelang/register")
     return
   }
 }

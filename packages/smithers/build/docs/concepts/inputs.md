@@ -443,5 +443,6 @@ the window this closes and the one syscall-level race that remains.
 ## Next
 
 - [Dependencies](dependencies.md)
+- [Test units](test-units.md)
 - [Caching](../workspace/caching.md)
 - [Writing target definitions](../extending/writing-targets.md)

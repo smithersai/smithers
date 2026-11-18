@@ -211,6 +211,13 @@ export interface ExplainedSelection {
 export interface SelectOptions {
   readonly explain?: boolean
   readonly cacheDirectory?: string
+  /**
+   * Whether a change to the build tool's own sources selects every target.
+   * It does by default, because the tool that produces a result is part of
+   * the result. `false` reads those sources as ordinary files, for a caller
+   * that attributes them itself, as test units do for the files a test reads.
+   */
+  readonly toolSources?: boolean
 }
 
 const compileInput = (
@@ -438,10 +445,10 @@ export function select(
     entries.set(target, value)
     return value
   }
-  const implementationRoots = productionSourceRoots().map((source) =>
-    Path.relative(index.root, source.directory).replaceAll("\\", "/")
-  )
-    .filter((path) => path !== ".." && !path.startsWith("../") && !Path.isAbsolute(path))
+  const implementationRoots = options.toolSources === false ?
+    [] :
+    productionSourceRoots().map((source) => Path.relative(index.root, source.directory).replaceAll("\\", "/"))
+      .filter((path) => path !== ".." && !path.startsWith("../") && !Path.isAbsolute(path))
   const workspaceInputs = managerFilesOf(index.workspace)
   const indirectWorkspace = workspaceInputs.some(indirectFile)
   // A declaration helper builds other packages' targets as a PACKAGE.ts does:

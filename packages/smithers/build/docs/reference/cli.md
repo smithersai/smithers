@@ -16,7 +16,7 @@ form; for the behavior behind each command, see the
 [`@smthrs/build-cli` documentation](/pkg/build-cli/cli).
 
 Commands: [`cache`](#cache), [`show`](#show), [`targets`](#targets),
-[`info`](#show), [`explain`](#show), [`affected`](#affected),
+[`info`](#show), [`explain`](#show), [`affected`](#affected), [`units`](#units),
 [`clean`](#clean), [`watch`](#watch), [`install`](#install),
 [`build`](#build), [`test`](#test),
 [`lint`](#lint), [`docs`](#docs), [`review`](#review), [`run`](#run),
@@ -155,6 +155,39 @@ Unconfined targets retain package selection and incomplete cache contracts retai
 the any-change fallback.
 
 Failure code: `affected_failed`.
+
+---
+
+## units
+
+Runs the test files of one `Vitest` target that declares `units: "file"`, each
+as its own unit. A change reruns only the units that read a changed file. See
+[test units](../concepts/test-units.md).
+
+```sh
+smithers-build units //packages/greeter:test --base main
+smithers-build units //packages/greeter:test --files src/Label.ts --list
+smithers-build units //packages/greeter:test --all --results-file units.json
+```
+
+| Option           | Alias | Type        | Default | Description                                                        |
+| ---------------- | ----- | ----------- | ------- | ------------------------------------------------------------------ |
+| `--base`         |       | string      | `HEAD`  | Git base revision                                                  |
+| `--head`         |       | string      | unset   | Git head revision; without it the working tree and untracked files |
+| `--files`        |       | string list | unset   | Changed paths, instead of Git discovery                            |
+| `--all`          |       | boolean     | `false` | Run every unit, whatever changed                                   |
+| `--list`         |       | boolean     | `false` | Print every unit and why it is selected, and run nothing           |
+| `--closures`     |       | boolean     | `false` | With `--list`, include each unit's dependency closure              |
+| `--jobs`         | `-j`  | integer ≥ 1 | `4`     | Maximum concurrent units                                           |
+| `--results-file` |       | string      | unset   | Write the run record to this file as JSON                          |
+
+A run prints a run record: one result per unit that ran, labeled
+`<target>#<test file>`, and one for the target itself when every unit has
+stored coverage. That result merges every unit's coverage and judges the
+thresholds. `units` does not build the target's dependencies; build them first.
+
+Failure code: `units_failed`, when a unit or the coverage verdict failed, or
+the label does not name one target split into units.
 
 ---
 

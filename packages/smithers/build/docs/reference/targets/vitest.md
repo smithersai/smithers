@@ -39,6 +39,7 @@ export const Package = Smithers.Package({
 | `passWithNoTests` | `boolean`                       | required | Succeed when the suite matches no files.                                                                                                                        |
 | `bail`            | `number`                        | none     | Stop once this many cases have failed, as `--bail`. The executor sets 1 on a confined attempt whose failure it discards.                                        |
 | `cache`           | `false`                         | none     | `false` never reuses the result and runs the target as the workspace declares, with no confined attempt. Set it when the run must leave a report behind.                                                                                                              |
+| `units` | `"target" \| "file"` | `"target"` | The unit of work. `"file"` makes each test file a unit that `smithers-build units` runs on its own. See [test units](../../concepts/test-units.md). |
 | `cwd`             | `string`                        | `"."`    | Workspace-relative directory the runner starts in.                                                                                                              |
 
 ## Command
@@ -52,6 +53,16 @@ pnpm exec vitest run [--config <config.path>] --environment <environment> [--cov
 
 The target passes no file arguments. Vitest discovers test files itself; the
 declared `tests` control the cache key.
+
+With `units: "file"`, `smithers-build units` runs one test file per process and
+adds to the same arguments:
+
+```text
+<test file> --reporter=default --reporter=blob --outputFile=<blob> [--coverage.thresholds=false --coverage.reporter=text-summary --coverage.reportsDirectory=<directory>]
+```
+
+and merges every unit with `--merge-reports=<blobs>`, which judges the coverage
+thresholds. `test` and `ci` still run the target whole.
 
 ## Inputs
 

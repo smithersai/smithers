@@ -44,6 +44,8 @@ export * as RspackRunner from "./RspackRunner.ts"
 export * as ServiceSupervisor from "./ServiceSupervisor.ts"
 /** @category namespace exports @since 0.1.0 */
 export * as TargetIndex from "./TargetIndex.ts"
+/** @category namespace exports @since 1.0.0 */
+export * as TestUnits from "./TestUnits.ts"
 /** @category namespace exports @since 0.1.0 */
 export * as Workspace from "./Workspace.ts"
 /** @category constructors @since 0.1.0 */

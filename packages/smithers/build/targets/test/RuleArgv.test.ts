@@ -23,6 +23,7 @@ import { ToolRun } from "../src/ToolRun.ts"
 import { TsBuild } from "../src/TsBuild.ts"
 import { TypedocDocs } from "../src/TypedocDocumentation.ts"
 import { Vitest } from "../src/Vitest.ts"
+import * as VitestRule from "../src/Vitest.ts"
 import { VitestCoverage } from "../src/VitestCoverage.ts"
 import { VitestWatch } from "../src/VitestWatch.ts"
 import { plannedArgv, plannedCalls } from "./plan.ts"
@@ -246,6 +247,54 @@ describe("Vitest rules", () => {
   it("Vitest bounds the run at twenty minutes when the declaration names no timeout", () => {
     const call = plannedCalls(Vitest({ ...base, coverage: true, passWithNoTests: false }))[0]
     expect(call?.payload["timeoutMs"]).toBe(1_200_000)
+  })
+
+  it("defaults to one unit for the whole target and accepts one unit per file", () => {
+    const whole = Target.metadata(Vitest({ ...base, passWithNoTests: false })).attrs as VitestRule.Attrs
+    expect(whole.units).toBe("target")
+    const split = Target.metadata(Vitest({ ...base, passWithNoTests: false, units: "file" }))
+      .attrs as VitestRule.Attrs
+    expect(split.units).toBe("file")
+    // The unit of work changes who runs the target, not what the target itself runs.
+    expect(plannedArgv(Vitest({ ...base, passWithNoTests: false, units: "file" })))
+      .toEqual(plannedArgv(Vitest({ ...base, passWithNoTests: false })))
+  })
+
+  it("spells the run of one test file as a unit and the merge of every unit", () => {
+    const attrs = { config: { _tag: "File", path: "//pkg/vitest.config.ts" }, cwd: "pkg", environment: "node" } as const
+    const unit = { file: "test/a.test.ts", blob: "/store/a.blob", reports: "/store/a.reports" }
+    expect(VitestRule.runArguments({ ...attrs, coverage: true, passWithNoTests: false }))
+      .toEqual(["run", "--config", "vitest.config.ts", "--environment", "node"])
+    // Thresholds are judged by the merge, never by one file's run.
+    expect(VitestRule.unitArguments({ ...attrs, coverage: true, passWithNoTests: true }, unit)).toEqual([
+      "run",
+      "--config",
+      "vitest.config.ts",
+      "--environment",
+      "node",
+      "--passWithNoTests",
+      "test/a.test.ts",
+      "--reporter=default",
+      "--reporter=blob",
+      "--outputFile=/store/a.blob",
+      "--coverage.thresholds=false",
+      "--coverage.reporter=text-summary",
+      "--coverage.reportsDirectory=/store/a.reports"
+    ])
+    // A target that computes no coverage has no thresholds to switch off.
+    expect(VitestRule.unitArguments({ ...attrs, config: null, coverage: false, passWithNoTests: false }, unit))
+      .toEqual([
+        "run",
+        "--environment",
+        "node",
+        "--coverage.enabled=false",
+        "test/a.test.ts",
+        "--reporter=default",
+        "--reporter=blob",
+        "--outputFile=/store/a.blob"
+      ])
+    expect(VitestRule.mergeArguments({ ...attrs, coverage: true, passWithNoTests: false }, "/store"))
+      .toEqual(["run", "--config", "vitest.config.ts", "--environment", "node", "--merge-reports=/store"])
   })
 
   it("VitestWatch spells the watch command", () => {

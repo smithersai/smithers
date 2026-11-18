@@ -66,7 +66,7 @@ import { posix, sha256Hex as sha256 } from "./internal/Text.ts"
  * @category constants
  * @since 0.1.0
  */
-export const implementationFingerprint = "smthrs-resolver/4"
+export const implementationFingerprint = "smthrs-resolver/5"
 
 /**
  * Maximum files one closure may reach before it refuses loudly.
@@ -132,8 +132,12 @@ export interface RowEdge {
 export interface ExtractedImport {
   readonly specifier: string
   readonly dynamic: boolean
-  /** Require sites select CommonJS imports-map conditions. */
-  readonly mode?: "require" | undefined
+  /**
+   * Require sites select CommonJS imports-map conditions. A reference site is
+   * `new URL(path, import.meta.url)`: the module names a file beside itself
+   * without importing it. A closure follows reference sites only when asked.
+   */
+  readonly mode?: "require" | "reference" | undefined
 }
 
 /**
@@ -397,6 +401,11 @@ const boundedText = (node: ts.Node, source: ts.SourceFile): string => {
   return text.length > dynamicTextLimit ? `${text.slice(0, dynamicTextLimit - 3)}...` : text
 }
 
+/** Whether an expression is exactly `import.meta.url`. */
+const isImportMetaUrl = (node: ts.Expression): boolean =>
+  ts.isPropertyAccessExpression(node) && node.name.text === "url" && ts.isMetaProperty(node.expression) &&
+  node.expression.keywordToken === ts.SyntaxKind.ImportKeyword && node.expression.name.text === "meta"
+
 /**
  * Extracts every import site from one module, without resolving anything.
  *
@@ -406,6 +415,9 @@ const boundedText = (node: ts.Node, source: ts.SourceFile): string => {
  * untemplated template literal is a static site; any other argument is a
  * dynamic site carrying the bounded expression text. Type-only imports are
  * included: for reachability a type-only edge still makes a file live.
+ *
+ * `new URL(path, import.meta.url)` is a reference site, marked
+ * `mode: "reference"`: static when `path` is a literal, dynamic otherwise.
  *
  * The parse is syntax only. A file the parser cannot make sense of still
  * yields the sites the parser recovered, exactly as the compiler's own
@@ -426,6 +438,17 @@ export const extractSpecifiers = (path: string, text: string): ReadonlyArray<Ext
     } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
       const specifier = literalText(node.moduleReference.expression)
       if (specifier !== undefined) found.push({ specifier, dynamic: false, mode: "require" })
+    } else if (
+      ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "URL" &&
+      node.arguments?.length === 2 && isImportMetaUrl(node.arguments[1]!)
+    ) {
+      const argument = node.arguments[0]!
+      const specifier = literalText(argument)
+      found.push(
+        specifier === undefined
+          ? { specifier: boundedText(argument, source), dynamic: true, mode: "reference" }
+          : { specifier, dynamic: false, mode: "reference" }
+      )
     } else if (ts.isCallExpression(node)) {
       const callee = node.expression
       const isImportCall = callee.kind === ts.SyntaxKind.ImportKeyword
@@ -814,6 +837,45 @@ const stripQuery = (specifier: string): string => {
 }
 
 /**
+ * Resolves one `new URL(path, import.meta.url)` site by URL rules: the path is
+ * relative to the referencing file's directory, with or without a leading
+ * `./`. A file is a followed edge. A path inside an installed package is that
+ * package. A directory names everything under it, so it is dynamic. Anything
+ * else, such as an absolute path, another scheme, or a path outside the
+ * workspace, is unresolved.
+ */
+const resolveReference = async (
+  reader: TreeView,
+  fromDirectory: string,
+  site: ExtractedImport
+): Promise<RowEdge> => {
+  if (site.dynamic) return { specifier: site.specifier, status: "dynamic" }
+  const fragment = site.specifier.indexOf("#")
+  const path = stripQuery(fragment === -1 ? site.specifier : site.specifier.slice(0, fragment))
+  const unresolved: RowEdge = { specifier: site.specifier, status: "unresolved" }
+  if (path.startsWith("/") || path.includes(":") || path.includes("\\")) return unresolved
+  const joined = containedJoin(fromDirectory, path)
+  if (joined === null) return unresolved
+  // A trailing separator names a directory; the workspace root normalizes to "./".
+  const trimmed = joined.endsWith("/") ? joined.slice(0, -1) : joined
+  const raw = trimmed === "." ? "" : trimmed
+  // A file inside an install is its package: the lockfile keys it, and a
+  // closure never walks into one.
+  const segments = raw.split("/")
+  const name = segments.slice(segments.lastIndexOf("node_modules") + 1)
+  if (name.length < segments.length && name.length > (name[0]?.startsWith("@") ? 1 : 0)) {
+    return {
+      specifier: site.specifier,
+      status: "package",
+      packageName: name[0]!.startsWith("@") ? `${name[0]}/${name[1]}` : name[0]!
+    }
+  }
+  const kind = await reader.kind(raw)
+  if (kind === "file") return { specifier: site.specifier, status: "resolved-file", resolved: raw }
+  return kind === "dir" ? { specifier: site.specifier, status: "dynamic" } : unresolved
+}
+
+/**
  * Resolves one extracted import from one file into an explicit row edge.
  *
  * @category resolution
@@ -825,6 +887,10 @@ export const resolveSpecifier = async (
   fromFile: string,
   site: ExtractedImport
 ): Promise<RowEdge> => {
+  if (site.mode === "reference") {
+    const slash = fromFile.lastIndexOf("/")
+    return resolveReference(reader, slash === -1 ? "" : fromFile.slice(0, slash), site)
+  }
   if (site.dynamic) return { specifier: site.specifier, status: "dynamic" }
   const specifier = stripQuery(site.specifier)
   if (specifier === "") return { specifier: site.specifier, status: "unresolved" }
@@ -852,7 +918,7 @@ export const resolveSpecifier = async (
       ? await reader.importsManifest(fromDirectory)
       : await readImportsManifest(reader, fromDirectory)
     if (manifest === null) return unresolved
-    const target = matchImportsTarget(manifest.imports, specifier, site.mode ?? "import")
+    const target = matchImportsTarget(manifest.imports, specifier, site.mode === "require" ? "require" : "import")
     if (target === null) return unresolved
     if (target.startsWith("./")) {
       const local = containedJoin(target)
@@ -904,7 +970,7 @@ const StoredRow = Schema.Struct({
   specifiers: Schema.Array(Schema.Struct({
     specifier: Schema.String,
     dynamic: Schema.Boolean,
-    mode: Schema.optional(Schema.Literal("require"))
+    mode: Schema.optional(Schema.Literals(["require", "reference"]))
   }))
 })
 
@@ -987,6 +1053,10 @@ const sortedIssues = (issues: ReadonlyMap<string, Compose.ClosureIssue>): Array<
  * rows are carried explicitly. The result is fully sorted, so two runs over
  * one tree are byte-identical regardless of traversal order or cache state.
  *
+ * `references` also follows `new URL(path, import.meta.url)` sites; without
+ * it they are ignored. `rows` receives one {@link FileRow} per reached file,
+ * so a caller can derive the closure of each entry from one walk.
+ *
  * @category closure
  * @since 0.1.0
  */
@@ -996,6 +1066,8 @@ export const computeClosure = async (options: {
   readonly entries: ReadonlyArray<string>
   readonly cache?: CacheStore | undefined
   readonly maximumFiles?: number | undefined
+  readonly references?: boolean | undefined
+  readonly rows?: Map<string, FileRow> | undefined
 }): Promise<ClosureOutcome> => {
   const { cache, config } = options
   const maximumFiles = options.maximumFiles ?? maximumClosureFiles
@@ -1050,6 +1122,8 @@ export const computeClosure = async (options: {
       )
     }
     files.set(path, digest)
+    const edges: Array<RowEdge> = []
+    options.rows?.set(path, { path, digest, edges })
     if (text === undefined) continue
     const slash = path.lastIndexOf("/")
     const manifest = await reader.importsManifest(slash === -1 ? "" : path.slice(0, slash))
@@ -1089,9 +1163,15 @@ export const computeClosure = async (options: {
         throw new ClosureError("too_many_files", `import closure exceeds ${maximumFiles} files`)
       }
       files.set(manifest.path, manifest.digest)
+      edges.push({ specifier: "#", status: "resolved-file", resolved: manifest.path })
+      if (options.rows?.has(manifest.path) === false) {
+        options.rows.set(manifest.path, { path: manifest.path, digest: manifest.digest, edges: [] })
+      }
     }
     for (const site of specifiers) {
+      if (site.mode === "reference" && options.references !== true) continue
       const edge = await resolveSpecifier(config, reader, path, site)
+      edges.push(edge)
       switch (edge.status) {
         case "resolved-file": {
           if (!queued.has(edge.resolved!)) {
