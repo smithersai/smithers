@@ -624,10 +624,13 @@ describe("Install", () => {
     expect(metadata.kinds).toEqual(["run"])
     expect(metadata.cacheable).toBe(false)
     expect(metadata.outputs).toBeUndefined()
-    expect(metadata.inputs.map((input) => (input as Input.File).path))
-      .toEqual(["bun.lock", ".npmrc", "package.json", ".pnpmfile.mjs"])
-    expect(inputsFor(metadata.attrs as Parameters<typeof inputsFor>[0]).map((input) => (input as Input.File).path))
-      .toEqual(["bun.lock", ".npmrc", "package.json", ".pnpmfile.mjs"])
+    expect(metadata.inputs.slice(0, 4).map((input) => (input as Input.File).path))
+      .toEqual(["bun.lock", ".npmrc", "package.json", "bunfig.toml"])
+    expect(
+      inputsFor(metadata.attrs as Parameters<typeof inputsFor>[0]).slice(0, 4).map((input) =>
+        (input as Input.File).path
+      )
+    ).toEqual(["bun.lock", ".npmrc", "package.json", "bunfig.toml"])
   })
 
   it("prefers the declared lockfilePath over the manager's conventional file", () => {

@@ -56,13 +56,7 @@ describe("npmrc parser boundaries", () => {
   })
 })
 
-describe("unsupported manager and filesystem-root options", () => {
-  it("reports the documented Bun refusal", () => {
-    const error = PackageManager.bunInstallUnsupported()
-    expect(error.code).toBe("unsupported")
-    expect(error.message).toBe(PackageManager.bunInstallUnsupportedMessage)
-  })
-
+describe("filesystem-root options", () => {
   it("refuses a shared store contained by a filesystem root", () => {
     expect(() =>
       PackageManager.makeNoop("pnpm", {

@@ -32,7 +32,8 @@
  * ## What measure is, and what it is not
  *
  * Measure reports **content**: the lockfile, credential-free `.npmrc`,
- * and pnpm hook and workspace digests. It used to report an `Environment` struct that
+ * pnpm's hook and workspace digests, and Bun's `bunfig.toml` and patch-file
+ * digests. It used to report an `Environment` struct that
  * also carried the manager name, the manager version, and the host platform,
  * and the flow ran in two trampoline rounds so a later round could select a
  * manager-specific fetch from a measured manager name.
@@ -90,7 +91,15 @@ export const Content = Schema.Struct({
   /** The project pnpm hook, or `null` when absent or not using pnpm. */
   pnpmfile: Schema.NullOr(FileInput),
   /** The pnpm workspace manifest, or `null` when absent or not using pnpm. */
-  workspace: Schema.NullOr(FileInput)
+  workspace: Schema.NullOr(FileInput),
+  /** Bun's `bunfig.toml`, or `null` when absent; omitted when not using Bun. */
+  bunfig: Schema.optional(Schema.NullOr(FileInput)),
+  /**
+   * The patch files `bun.lock` names, in path order; omitted when not using
+   * Bun. The text lockfile records a patch by path alone, so the file's
+   * content is measured here.
+   */
+  patches: Schema.optional(Schema.Array(FileInput))
 })
 
 /**
@@ -141,17 +150,39 @@ export type LinkManifest = typeof LinkManifest.Type
  * The lockfiles and configuration the measure action may read.
  *
  * One entry per manager {@link PackageManager.Name} admits, plus the project
- * `.npmrc` and pnpm hook and workspace files. `package-lock.json` and `yarn.lock` were declared here too, for
+ * `.npmrc`, pnpm's hook and workspace files, and Bun's `bunfig.toml`.
+ * `package-lock.json` and `yarn.lock` were declared here too, for
  * managers no declaration can select and no implementation can drive, which
  * inflated a sealed action's read set with paths no code path opens.
  */
 const measureInputPatterns: ReadonlyArray<string> = [
   ".npmrc",
   "bun.lock",
+  PackageManager.bunfigName,
   "pnpm-lock.yaml",
   ...PackageManager.pnpmfileNames,
   "pnpm-workspace.yaml"
 ]
+
+/**
+ * The patch files a Bun lockfile can name.
+ *
+ * A patch path comes from `bun.lock`, so it is not known when the action is
+ * declared. The lockfile reader refuses a patch file that does not end in
+ * `.patch`, which is what makes this pattern the complete set.
+ */
+const bunPatchFiles = {
+  _tag: "Glob",
+  include: ["**/*.patch"],
+  exclude: ["**/node_modules/**", ".flows/**"]
+} as const
+
+/** Every workspace member's manifest. */
+const memberManifests = {
+  _tag: "Glob",
+  include: ["**/package.json"],
+  exclude: ["**/node_modules/**", ".flows/**"]
+} as const
 
 /**
  * Measures the content every later step keys on.
@@ -179,16 +210,17 @@ export const Measure = Action.make("smithers-build/install/measure", {
   tier: "sealed"
 })
   .annotate(Flow.EffectsDeclaration, {
-    reads: measureInputPatterns,
+    reads: [...measureInputPatterns, bunPatchFiles],
     writes: [],
     boundaryMode: "expected"
   })
 
 /**
  * Populates the package-manager store. pnpm stages its virtual store and
- * modules metadata beneath `.flows/store/pnpm/fetch/node_modules`, inside
- * the declared store tree. Fetch leaves the project's linked `node_modules`
- * unchanged; Link materializes that tree.
+ * modules metadata beneath `.flows/store/pnpm/fetch/node_modules`, and Bun
+ * stages a copy of the manifests it installs from beneath
+ * `.flows/store/bun/fetch`, both inside the declared store tree. Fetch leaves
+ * the project's linked `node_modules` unchanged; Link materializes that tree.
  *
  * Its key material is the measured lockfile and configuration digests,
  * reaching the key as a settled upstream
@@ -214,8 +246,8 @@ export const Measure = Action.make("smithers-build/install/measure", {
  */
 const makeFetch = <Tag extends string>(
   name: Tag,
-  lockfile: string,
-  manager: "pnpm"
+  manager: PackageManager.Name,
+  reads: ReadonlyArray<string | typeof memberManifests | typeof bunPatchFiles>
 ) =>
   Action.make(name, {
     payload: {
@@ -226,7 +258,7 @@ const makeFetch = <Tag extends string>(
     tier: "sealed"
   })
     .annotate(Flow.EffectsDeclaration, {
-      reads: [lockfile, ".npmrc", ...PackageManager.pnpmfileNames, "pnpm-workspace.yaml"],
+      reads,
       writes: [
         { _tag: "TreeArtifact", path: `${PackageManager.storeRoot}/${manager}` }
       ],
@@ -239,7 +271,33 @@ const makeFetch = <Tag extends string>(
  * @category actions
  * @since 0.1.0
  */
-export const FetchPnpm = makeFetch("smithers-build/install/fetch/pnpm", "pnpm-lock.yaml", "pnpm")
+export const FetchPnpm = makeFetch("smithers-build/install/fetch/pnpm", "pnpm", [
+  "pnpm-lock.yaml",
+  ".npmrc",
+  ...PackageManager.pnpmfileNames,
+  "pnpm-workspace.yaml"
+])
+
+/**
+ * Fetches Bun packages from `bun.lock`.
+ *
+ * Bun has no fetch-only command, so the implementation copies the lockfile,
+ * `bunfig.toml`, `.npmrc`, every workspace manifest, and every patch file into
+ * `.flows/store/bun/fetch` and runs a frozen, script-free install there. Those
+ * copies are why this action reads manifests and patches that
+ * {@link FetchPnpm} does not.
+ *
+ * @category actions
+ * @since 1.0.0
+ */
+export const FetchBun = makeFetch("smithers-build/install/fetch/bun", "bun", [
+  "bun.lock",
+  ".npmrc",
+  PackageManager.bunfigName,
+  "package.json",
+  memberManifests,
+  bunPatchFiles
+])
 
 /**
  * Materializes `node_modules` from the already-populated store.
@@ -266,11 +324,11 @@ export const Link = Action.make("smithers-build/install/link", {
   tier: "irreversible"
 })
   .annotate(Flow.EffectsDeclaration, {
-    reads: [...measureInputPatterns, "package.json", {
-      _tag: "Glob",
-      include: ["**/package.json"],
-      exclude: ["**/node_modules/**", ".flows/**"]
-    }],
+    // Bun loads the project's `.env` files on every command, and the install
+    // scans them for variable names. They are left out of this declaration on
+    // purpose: a scheduler digests what an action declares it reads, and
+    // these files hold secrets.
+    reads: [...measureInputPatterns, "package.json", memberManifests, bunPatchFiles],
     writes: [{ _tag: "Glob", include: ["**/node_modules", "**/node_modules/**"] }],
     boundaryMode: "expected"
   })
@@ -284,16 +342,11 @@ export const Link = Action.make("smithers-build/install/link", {
  * a second round to do the same job. The project root is the engine's working
  * directory, so it does not enter a content key.
  *
- * Only pnpm is admitted. A Bun payload used to plan a `FetchBun` action whose
- * manager refused every operation, so the install always failed at run time;
- * the payload now refuses it when the flow is called (see
- * {@link PackageManager.bunInstallUnsupportedMessage}).
- *
  * @category models
  * @since 0.1.0
  */
 export const payloadFields = {
-  manager: Schema.Literal("pnpm")
+  manager: PackageManager.Name
 }
 
 /**
@@ -305,6 +358,7 @@ export const payloadFields = {
 export type Requires =
   | Action.Requirement<"smithers-build/install/measure">
   | Action.Requirement<"smithers-build/install/fetch/pnpm">
+  | Action.Requirement<"smithers-build/install/fetch/bun">
   | Action.Requirement<"smithers-build/install/link">
 
 /**
@@ -325,8 +379,8 @@ export type InstallFlow = Flow.Flow<
  * Records measure, one fetch, and link.
  *
  * The fetch callback preserves its action requirement in `R`. The Install
- * body supplies `FetchPnpm.call`; the helper adds the measure and link
- * requirements to the recorded composition.
+ * body supplies `FetchPnpm.call` or `FetchBun.call`; the helper adds the
+ * measure and link requirements to the recorded composition.
  *
  * @private
  */
@@ -373,7 +427,10 @@ export const Install: InstallFlow = Flow.make("smithers-build/install", {
     Flow.BodySuccess<typeof LinkManifest.Type>,
     PackageManager.PackageManagerError,
     Requires
-  > => measureFetchLink(manager, (content) => FetchPnpm.call({ content }))
+  > =>
+    manager === "pnpm"
+      ? measureFetchLink(manager, (content) => FetchPnpm.call({ content }))
+      : measureFetchLink(manager, (content) => FetchBun.call({ content }))
 }).annotate(Flow.Capabilities, ["fs:read", "fs:write", "net:get", "net:post", "proc:spawn"])
 
 /** @private */
@@ -490,13 +547,21 @@ const verifyContent = (manager: PackageManager.Service, content: Content) =>
       Effect.provideService(PackageManager.PackageManager, manager),
       Effect.mapError((error) => inputDrift(error.message))
     )
-    for (const field of ["lockfile", "npmrc", "pnpmfile", "workspace"] as const) {
-      const expected = content[field]
-      const actual = current[field]
+    for (const field of ["lockfile", "npmrc", "pnpmfile", "workspace", "bunfig"] as const) {
+      // Every manager but Bun omits `bunfig`, so an absent one means none.
+      const expected = field === "bunfig" ? content.bunfig ?? null : content[field]
+      const actual = field === "bunfig" ? current.bunfig ?? null : current[field]
       if (expected === null && actual === null) continue
       if (expected?.path !== actual?.path || expected?.digest !== actual?.digest || expected === undefined) {
         const path = actual?.path ?? expected?.path ?? field
         return yield* Effect.fail(inputDrift(path))
+      }
+    }
+    const expected = content.patches ?? []
+    const actual = current.patches ?? []
+    for (let index = 0; index < Math.max(expected.length, actual.length); index += 1) {
+      if (expected[index]?.path !== actual[index]?.path || expected[index]?.digest !== actual[index]?.digest) {
+        return yield* Effect.fail(inputDrift(actual[index]?.path ?? expected[index]!.path))
       }
     }
     return current
@@ -519,6 +584,10 @@ const verifyContent = (manager: PackageManager.Service, content: Content) =>
  * `lockfile_unreadable` or `manifest_unreadable` when an input cannot be read
  * as a regular file inside the project, and `unsafe_configuration` when the
  * project `.npmrc` embeds a credential or a misplaced environment placeholder.
+ * Under Bun it also fails with `lockfile_unreadable` when `bun.lock` is not a
+ * text lockfile or names an unusable path, `unsupported` when the lockfile
+ * resolves a dependency from a local path, and `unsafe_configuration` when
+ * `bunfig.toml` holds a setting the install cannot keep its boundaries under.
  *
  * @category layers
  * @since 0.1.0
@@ -531,13 +600,23 @@ export const executeMeasure = (): Effect.Effect<
   Effect.gen(function*() {
     const manager = yield* PackageManager.PackageManager
     yield* verifyManagerContract(manager)
+    // Read first under Bun: it parses the lockfile, so a missing or binary
+    // lockfile is reported with what to do about it.
+    const patches = manager.name === "bun" ? yield* PackageManager.bunPatchDigests(manager.projectRoot) : undefined
     const lockfile = yield* PackageManager.lockfileDigest(manager.projectRoot, manager.lockfileName)
     const npmrc = yield* PackageManager.npmrcDigest(manager.projectRoot)
-    return {
+    const content = {
       lockfile: { path: manager.lockfileName, digest: lockfile },
       npmrc: npmrc === null ? null : { path: ".npmrc", digest: npmrc },
       pnpmfile: manager.name === "pnpm" ? yield* pnpmfileInput(manager.projectRoot) : null,
       workspace: manager.name === "pnpm" ? yield* optionalInput(manager.projectRoot, "pnpm-workspace.yaml") : null
+    }
+    if (patches === undefined) return content
+    const bunfig = yield* PackageManager.bunfigDigest(manager.projectRoot)
+    return {
+      ...content,
+      bunfig: bunfig === null ? null : { path: PackageManager.bunfigName, digest: bunfig },
+      patches
     }
   })
 
@@ -548,6 +627,24 @@ export const executeMeasure = (): Effect.Effect<
  * @since 0.1.0
  */
 export const MeasureLive = Measure.toLayer(executeMeasure)
+
+/** The store manifest inputs a manager, a host, and measured content produce. */
+const storeIdentity = (
+  manager: PackageManager.Service,
+  managerVersion: string,
+  platform: PackageManager.Platform | null,
+  content: Content
+): PackageManager.StoreManifestInput => ({
+  manager: manager.name,
+  managerVersion,
+  platform,
+  lockfileDigest: content.lockfile.digest,
+  npmrcDigest: content.npmrc === null ? null : content.npmrc.digest,
+  pnpmfileDigest: content.pnpmfile?.digest ?? null,
+  workspaceDigest: content.workspace?.digest ?? null,
+  bunfigDigest: content.bunfig?.digest ?? null,
+  patches: content.patches ?? []
+})
 
 /**
  * The implementation shared by the manager-specific fetch declarations.
@@ -572,15 +669,9 @@ export const executeFetch = ({ content }: { readonly content: Content }) =>
     yield* verifyContent(manager, content)
     yield* manager.fetch
     const verified = yield* verifyContent(manager, content)
-    return yield* PackageManager.storeManifest({
-      manager: manager.name,
-      managerVersion,
-      platform: manager.platformSensitive ? runtime.platform : null,
-      lockfileDigest: verified.lockfile.digest,
-      npmrcDigest: verified.npmrc === null ? null : verified.npmrc.digest,
-      pnpmfileDigest: verified.pnpmfile?.digest ?? null,
-      workspaceDigest: verified.workspace?.digest ?? null
-    })
+    return yield* PackageManager.storeManifest(
+      storeIdentity(manager, managerVersion, manager.platformSensitive ? runtime.platform : null, verified)
+    )
   })
 
 /**
@@ -590,6 +681,14 @@ export const executeFetch = ({ content }: { readonly content: Content }) =>
  * @since 0.1.0
  */
 export const FetchPnpmLive = FetchPnpm.toLayer(executeFetch)
+
+/**
+ * Implements {@link FetchBun}.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const FetchBunLive = FetchBun.toLayer(executeFetch)
 
 /**
  * Refuses to link a store that was fetched for different content.
@@ -613,15 +712,7 @@ const verifyStoreContent = (
   store: PackageManager.StoreManifest
 ): Effect.Effect<void, PackageManager.PackageManagerError, EffectDigest.Digest> =>
   Effect.flatMap(
-    PackageManager.storeManifest({
-      manager: manager.name,
-      managerVersion,
-      platform,
-      lockfileDigest: content.lockfile.digest,
-      npmrcDigest: content.npmrc === null ? null : content.npmrc.digest,
-      pnpmfileDigest: content.pnpmfile?.digest ?? null,
-      workspaceDigest: content.workspace?.digest ?? null
-    }),
+    PackageManager.storeManifest(storeIdentity(manager, managerVersion, platform, content)),
     (expected) =>
       expected.digest === store.digest ? Effect.void : Effect.fail(
         environmentMismatch(
@@ -698,5 +789,6 @@ export const LinkLive = Link.toLayer(executeLink)
 export const layer = Layer.mergeAll(
   MeasureLive,
   FetchPnpmLive,
+  FetchBunLive,
   LinkLive
 )

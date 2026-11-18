@@ -58,9 +58,9 @@ smthrs generate flow hello --vibe
 
 This preserves `packageManager` and adds the flow without inventing an npm
 workspace executor. `init` refuses an unsupported package manager before
-writing project files and points to this command. A `bun@` manager is refused
-the same way, because Smithers cannot install `node_modules` with Bun; write
-`WORKSPACE.ts` by hand to run tools under Bun.
+writing project files and points to this command. A `bun@<version>` manager
+gets a Bun workspace: `S.Runtime.Bun` at that version and
+`S.PackageManager.BunPackages`.
 
 The starter default-exports `Flow.make("hello", { ... })` from `@smthrs/flow`:
 its tag matches the directory name. Its body plans one `AgentAction`, and its

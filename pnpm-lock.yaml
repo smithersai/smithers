@@ -3498,6 +3498,12 @@ importers:
       '@smthrs/plan':
         specifier: 1.0.0-rc.18
         version: link:../flows/plan
+      jsonc-parser:
+        specifier: 3.3.1
+        version: 3.3.1
+      smol-toml:
+        specifier: 1.8.0
+        version: 1.8.0
       yaml:
         specifier: 2.9.0
         version: 2.9.0

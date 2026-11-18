@@ -27,11 +27,26 @@ describe("Install declared inputs", () => {
     expect(metadata.cacheable).toBe(false)
   })
 
-  it("refuses the Bun package manager as unsupported when the target is declared", () => {
+  it("declares Bun's lockfile, npmrc, root manifest, bunfig.toml, and patch files", () => {
     const bun = PackageManager.BunPackages({ runtime: Runtime.Bun({ version: ">=1.4.0" }) })
-    expect(() => Install.Install({ packageManager: bun })).toThrow(
-      /unsupported: Install cannot use the Bun package manager/
-    )
+    const inputs = [
+      { _tag: "File", path: "bun.lock" },
+      { _tag: "File", path: ".npmrc" },
+      { _tag: "File", path: "package.json" },
+      { _tag: "File", path: "bunfig.toml" },
+      // bun.lock records a patch by path alone, so the files are inputs.
+      { _tag: "Glob", pattern: "**/*.patch", exclude: ["**/node_modules/**"] }
+    ]
+    expect(Target.metadata(Install.Install({ packageManager: bun })).inputs).toEqual(inputs)
+    // A declaration that leaves the manager to the workspace is read by its lockfile.
+    expect(Target.metadata(Install.Install({ lockfilePath: "bun.lock" })).inputs).toEqual(inputs)
+    expect(Target.metadata(Install.Install({ lockfilePath: "apps/web/bun.lock" })).inputs[3])
+      .toEqual({ _tag: "File", path: "bunfig.toml" })
+    expect(Target.metadata(Install.Install({ lockfilePath: "not-bun.lock" })).inputs[3])
+      .toEqual({ _tag: "File", path: ".pnpmfile.mjs" })
+    // A declared manager outranks the lockfile's name.
+    expect(Target.metadata(Install.Install({ packageManager, lockfilePath: "bun.lock" })).inputs[3])
+      .toEqual({ _tag: "File", path: ".pnpmfile.mjs" })
   })
 
   it("rejects a bare string where the manager declaration belongs", () => {

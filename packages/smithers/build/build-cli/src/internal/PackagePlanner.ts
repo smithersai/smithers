@@ -3118,12 +3118,6 @@ const visit = async (
       )
     }
   }
-  if (rule === "Install") {
-    // The workspace fills the manager in after the target was constructed, so
-    // the constructor's Bun refusal cannot see it; refuse here, before any spawn.
-    const manager = attrMember(attrs, "packageManager") as { readonly name?: unknown } | undefined
-    if (manager?.name === "bun") noteRefusal(`unsupported: ${PackageManager.bunInstallUnsupportedMessage}`)
-  }
   for (const gate of attrTargets(attrs, "gates")) {
     const gateRule = Target.metadata(gate).target
     if ((RulePolicy.of(gateRule).outward === true)) {

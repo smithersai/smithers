@@ -803,7 +803,7 @@ export const Package = S.Package({ targets: { child, alias: S.Alias(child), empt
     expect(emptyAlias.data.targets).toEqual([expect.objectContaining({ label: "//:emptyAlias" })])
   }, 120_000)
 
-  it("preserves install overrides while refusing an unsupported package manager", async () => {
+  it("preserves install overrides while refusing a cache directory the store boundary does not name", async () => {
     const root = await packageFixture()
     const workspace = await Fs.readFile(NodePath.join(root, "WORKSPACE.ts"), "utf8")
     await write(
@@ -831,7 +831,9 @@ export const Package = S.Package({ targets: { install: S.Install({ lockfilePath:
       environment: { ...config.environment, SMITHERS_CACHE_TOKEN: "fixture-default-read-token" }
     }))
     expect(result.exitCode).toBe(1)
-    expect(`${result.envelope}${result.stderr}`, result.envelope + result.stderr).toContain("unsupported")
+    // The override reached the install, which refuses it: the store is fixed below `.flows`.
+    expect(`${result.envelope}${result.stderr}`, result.envelope + result.stderr)
+      .toContain("install requires cacheDirectory \".flows\"")
     expect(`${result.envelope}${result.stderr}`).not.toContain("fixture-default-read-token")
   })
 

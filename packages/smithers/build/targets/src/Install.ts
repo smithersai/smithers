@@ -95,48 +95,35 @@ export type Attrs = typeof Attrs.Type
  *
  * The lockfile pins every resolved version, `.npmrc` decides which registry and
  * which credentials the manager talks to, and the root manifest decides what the
- * workspace asked for. A change in any of the three changes what an install
- * produces, so all three are declared inputs.
+ * workspace asked for. Each manager adds its own configuration: pnpm loads
+ * `.pnpmfile.mjs`, and Bun reads `bunfig.toml` and the patch files its
+ * lockfile names by path alone. A change in any of them changes what an
+ * install produces, so all are declared inputs.
+ *
+ * The manager is the declared one, or the one whose lockfile `lockfilePath`
+ * names when the declaration leaves the manager to the workspace.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const inputsFor = (attrs: Attrs): ReadonlyArray<Input.Declared> => [
-  Input.file(attrs.lockfilePath ?? PackageManager.lockfileName(attrs.packageManager)),
-  Input.file(".npmrc"),
-  Input.file("package.json"),
-  Input.file(".pnpmfile.mjs"),
-  ...(attrs.workspaceManifest === null ? [] : [attrs.workspaceManifest])
-]
-
-/**
- * The refusal text for an install under the Bun package manager.
- *
- * Re-exported from `@smthrs/build` so declaration-side tooling, such as
- * workspace generation, can refuse with the same words without depending on
- * the install implementation package.
- *
- * @category constants
- * @since 1.0.0
- */
-export const bunInstallUnsupportedMessage: string = PackageManagerService.bunInstallUnsupportedMessage
-
-const definition = Target.make("Install", {
-  attrs: Attrs,
-  workspaceAttrs: ["packageManager"],
-  kinds: ["run"],
-  success: InstallFlow.LinkManifest,
-  error: PackageManagerService.PackageManagerError,
-  cache: false,
-  inputs: inputsFor,
-  implementation: (attrs) => {
-    const manager = PackageManager.required(attrs.packageManager).name
-    // The planner refuses a workspace-filled Bun manager before this runs;
-    // this is the second lock.
-    if (manager !== "pnpm") throw PackageManagerService.bunInstallUnsupported()
-    return InstallFlow.Install.call({ manager })
-  }
-})
+export const inputsFor = (attrs: Attrs): ReadonlyArray<Input.Declared> => {
+  const lockfile = attrs.lockfilePath ?? PackageManager.lockfileName(attrs.packageManager)
+  const bun = attrs.packageManager === undefined
+    ? /(?:^|\/)bun\.lock$/.test(lockfile)
+    : attrs.packageManager.name === "bun"
+  return [
+    Input.file(lockfile),
+    Input.file(".npmrc"),
+    Input.file("package.json"),
+    ...(bun
+      ? [
+        Input.file(PackageManagerService.bunfigName),
+        Input.glob("**/*.patch", { exclude: ["**/node_modules/**"] })
+      ]
+      : [Input.file(".pnpmfile.mjs")]),
+    ...(attrs.workspaceManifest === null ? [] : [attrs.workspaceManifest])
+  ]
+}
 
 /**
  * Plans an install for the declared package manager.
@@ -145,11 +132,6 @@ const definition = Target.make("Install", {
  * without restoring either the manager store or the `node_modules` tree it
  * describes. The nested flow's own steps are keyed for local freshness, which is
  * where skipping unchanged work belongs.
- *
- * Only pnpm installs. A declaration that names the Bun package manager is
- * refused here, when the target is constructed, with
- * `PackageManager.bunInstallUnsupportedMessage`; a Bun manager filled in from
- * `WORKSPACE.ts` is refused by the planner before anything spawns.
  *
  * @example
  * ```ts
@@ -163,13 +145,13 @@ const definition = Target.make("Install", {
  * @category targets
  * @since 0.1.0
  */
-export const Install = Object.assign(
-  (attrs: Parameters<typeof definition>[0]) => {
-    const manager = (attrs as { readonly packageManager?: unknown }).packageManager
-    if (PackageManager.isPackageManager(manager) && manager.name === "bun") {
-      throw new Error(`unsupported: ${bunInstallUnsupportedMessage}`)
-    }
-    return definition(attrs)
-  },
-  definition
-)
+export const Install = Target.make("Install", {
+  attrs: Attrs,
+  workspaceAttrs: ["packageManager"],
+  kinds: ["run"],
+  success: InstallFlow.LinkManifest,
+  error: PackageManagerService.PackageManagerError,
+  cache: false,
+  inputs: inputsFor,
+  implementation: (attrs) => InstallFlow.Install.call({ manager: PackageManager.required(attrs.packageManager).name })
+})

@@ -113,10 +113,20 @@ const packageJsonDigest = (root: string) =>
     )
   )
 
+/** A Bun text lockfile, in the trailing-comma form Bun writes, naming the given patch files. */
+const bunLock = (patches: ReadonlyArray<string> = []): string =>
+  `{\n  "lockfileVersion": 1,\n  "workspaces": {\n    "": { "name": "fixture", },\n  },\n` +
+  (patches.length === 0
+    ? ""
+    : `  "patchedDependencies": {\n${
+      patches.map((path, index) => `    "dep${index}@1.0.0": ${JSON.stringify(path)},\n`).join("")
+    }  },\n`) +
+  `  "packages": {},\n}\n`
+
 describe("Install", () => {
   it("measures a Bun manager's own lockfile without pnpm-only configuration", async () => {
     await withFixture(async (root) => {
-      await Fs.writeFile(NodePath.join(root, "bun.lock"), "bun lockfile")
+      await Fs.writeFile(NodePath.join(root, "bun.lock"), bunLock())
       await Fs.writeFile(NodePath.join(root, ".pnpmfile.cjs"), "throw new Error()")
       await Fs.writeFile(NodePath.join(root, "pnpm-workspace.yaml"), "packages: []")
       const content = await Effect.runPromise(
@@ -136,6 +146,8 @@ describe("Install", () => {
       expect(content.lockfile.digest).toMatch(/^[0-9a-f]{64}$/)
       expect(content.pnpmfile).toBeNull()
       expect(content.workspace).toBeNull()
+      expect(content.bunfig).toBeNull()
+      expect(content.patches).toEqual([])
     })
   })
 
@@ -442,16 +454,16 @@ describe("Install", () => {
   })
 
   it("keeps every absolute-root package-manager action out of the shared cache", () => {
-    for (const action of [Install.FetchPnpm]) {
+    for (const action of [Install.FetchPnpm, Install.FetchBun]) {
       expect(Context.getUnsafe(action.annotations, Flow.EffectsDeclaration).boundaryMode).toBe("expected")
     }
   })
 
-  it("refuses a Bun install in the payload, before any action is planned", () => {
+  it("admits pnpm and Bun in the payload, and no other manager", () => {
     const payload = Schema.Struct(Install.payloadFields)
     expect(Schema.decodeUnknownSync(payload)({ manager: "pnpm" })).toEqual({ manager: "pnpm" })
-    expect(() => Schema.decodeUnknownSync(payload)({ manager: "bun" })).toThrow()
-    expect("FetchBun" in Install).toBe(false)
+    expect(Schema.decodeUnknownSync(payload)({ manager: "bun" })).toEqual({ manager: "bun" })
+    expect(() => Schema.decodeUnknownSync(payload)({ manager: "npm" })).toThrow()
   })
 
   it("runs one round: the declared manager selects the fetch without a handoff", () => {
@@ -950,41 +962,39 @@ describe("Install", () => {
    * lockfile and that manager's store directory, and nothing else changes.
    */
   it("records measure, one manager-specific fetch, and link in one round", () => {
-    for (
-      const [manager, lockfile] of [["pnpm", "pnpm-lock.yaml"]] as const
-    ) {
+    const manifests = { _tag: "Glob", include: ["**/package.json"], exclude: ["**/node_modules/**", ".flows/**"] }
+    const patches = { _tag: "Glob", include: ["**/*.patch"], exclude: ["**/node_modules/**", ".flows/**"] }
+    const measured = [
+      ".npmrc",
+      "bun.lock",
+      "bunfig.toml",
+      "pnpm-lock.yaml",
+      ".pnpmfile.mjs",
+      ".pnpmfile.cjs",
+      "pnpm-workspace.yaml"
+    ]
+    for (const manager of ["pnpm", "bun"] as const) {
       const graph = Graph.build(Install.Install, { manager })
       const actions = graph.nodes.filter((node) => node.kind === "ActionCall")
       expect(actions).toHaveLength(3)
       const [measure, fetch, link] = actions
-      expect(measure!.draft.effects.reads).toEqual([
-        ".npmrc",
-        "bun.lock",
-        "pnpm-lock.yaml",
-        ".pnpmfile.mjs",
-        ".pnpmfile.cjs",
-        "pnpm-workspace.yaml"
-      ])
+      expect(measure!.draft.effects.reads).toEqual([...measured, patches])
+      expect(fetch!.draft.material.body).toMatchObject({ action: `smithers-build/install/fetch/${manager}` })
+      // The Bun fetch installs from copies of the manifests and patch files,
+      // so it reads them; pnpm's fetch reads the lockfile alone.
       expect(fetch!.draft.effects.reads).toEqual(
         manager === "pnpm"
-          ? [lockfile, ".npmrc", ".pnpmfile.mjs", ".pnpmfile.cjs", "pnpm-workspace.yaml"]
-          : [lockfile, ".npmrc"]
+          ? ["pnpm-lock.yaml", ".npmrc", ".pnpmfile.mjs", ".pnpmfile.cjs", "pnpm-workspace.yaml"]
+          : ["bun.lock", ".npmrc", "bunfig.toml", "package.json", manifests, patches]
       )
-      // Fetch stages pnpm's virtual store beneath its declared store.
+      // Fetch stages beneath its declared store.
       // Only Link writes the project's `node_modules`.
       expect(fetch!.draft.effects.writes).toEqual([
         { _tag: "TreeArtifact", path: `.flows/store/${manager}` }
       ])
-      expect(link!.draft.effects.reads).toEqual([
-        ".npmrc",
-        "bun.lock",
-        "pnpm-lock.yaml",
-        ".pnpmfile.mjs",
-        ".pnpmfile.cjs",
-        "pnpm-workspace.yaml",
-        "package.json",
-        { _tag: "Glob", include: ["**/package.json"], exclude: ["**/node_modules/**", ".flows/**"] }
-      ])
+      // The `.env` files Bun loads are scanned for names and never declared:
+      // a declared read is digested, and they hold secrets.
+      expect(link!.draft.effects.reads).toEqual([...measured, "package.json", manifests, patches])
       for (const action of actions) expect(action.draft.effects.boundaryMode).toBe("expected")
     }
   })
@@ -997,8 +1007,6 @@ describe("Install", () => {
    * would turn it into a hit on the other manager's measurement.
    */
   it("keys measure on the declared manager so two managers cannot share one measurement", () => {
-    // The flow admits only pnpm now; the measure action still takes any
-    // manager name, so it is built directly to keep the key distinction pinned.
     const measureOf = (manager: PackageManager.Name) => {
       const graph = Graph.build(Install.Measure.call({ manager }))
       const node = graph.nodes.filter((node) => node.kind === "ActionCall")[0]!
@@ -1022,7 +1030,7 @@ describe("Install", () => {
   it("runs the flow through Install.layer and journals JSON-encodable outcomes", async () => {
     await withFixture(async (root) => {
       const evidence = await packageJsonDigest(root)
-      const run = async (service: PackageManager.Service) => {
+      const run = async (service: PackageManager.Service, manager: PackageManager.Name = "pnpm") => {
         const journal: Array<JournalEntry> = []
         const runtime = Layer.mergeAll(Install.layer, Interpreter.layer(Install.Install)).pipe(
           Layer.provideMerge(Action.layerImplementations),
@@ -1036,7 +1044,7 @@ describe("Install", () => {
           )
         )
         const exit = await Effect.runPromise(
-          Install.Install.execute({ manager: "pnpm" }, { executionId: `install-layer-${journal.length}` }).pipe(
+          Install.Install.execute({ manager }, { executionId: `install-layer-${manager}-${journal.length}` }).pipe(
             Effect.exit,
             Effect.provide(runtime)
           )
@@ -1067,6 +1075,16 @@ describe("Install", () => {
       )
         .toEqual(manifest)
 
+      // The declared manager selects the fetch: a Bun payload runs the Bun action.
+      await Fs.writeFile(NodePath.join(root, "bun.lock"), bunLock())
+      const bun = await run(managerService({ root, evidence, name: "bun" }), "bun")
+      expect(bun.journal.map((entry) => entry.action)).toEqual([
+        "smithers-build/install/measure",
+        "smithers-build/install/fetch/bun",
+        "smithers-build/install/link"
+      ])
+      expect(Exit.isSuccess(bun.exit)).toBe(true)
+
       await Fs.rm(NodePath.join(root, "pnpm-lock.yaml"))
       const refused = await run(managerService({ root, evidence }))
       expect(refused.journal.map((entry) => entry.action)).toEqual(["smithers-build/install/measure"])
@@ -1083,6 +1101,167 @@ describe("Install", () => {
       const surfaced = Exit.isFailure(refused.exit) ? Cause.findFail(refused.exit.cause) : undefined
       expect(surfaced !== undefined && Result.isSuccess(surfaced) ? surfaced.success.error : undefined)
         .toMatchObject({ _tag: "smithers-build/PackageManagerError", code: decoded.code, message: decoded.message })
+    })
+  })
+})
+
+describe("Install under Bun", () => {
+  const patch = "patches/dep0@1.0.0.patch"
+  const services = Layer.mergeAll(NodeServices.layer, NativeCrypto.layer)
+  const bunFixture = <A>(use: (root: string, manager: PackageManager.Service) => Promise<A>) =>
+    withFixture(async (root) => {
+      await Fs.writeFile(NodePath.join(root, "bun.lock"), bunLock([patch]))
+      await Fs.writeFile(NodePath.join(root, "bunfig.toml"), "[install]\nlinker = \"isolated\"\n")
+      await Fs.mkdir(NodePath.join(root, "patches"))
+      await Fs.writeFile(NodePath.join(root, patch), "--- a/index.js\n+++ b/index.js\n")
+      return use(root, managerService({ root, evidence: await packageJsonDigest(root), name: "bun" }))
+    })
+  const provide = <A, E>(
+    effect: Effect.Effect<
+      A,
+      E,
+      PackageManager.PackageManager | Runtime.Runtime | FileSystem.FileSystem | EffectDigest.Digest
+    >,
+    manager: PackageManager.Service
+  ) =>
+    Effect.runPromise(effect.pipe(
+      Effect.provide(services),
+      Effect.provideService(PackageManager.PackageManager, manager),
+      Effect.provideService(Runtime.Runtime, runtimeService())
+    ))
+
+  it("measures bunfig.toml and every patch file the lockfile names", async () => {
+    await bunFixture(async (root, manager) => {
+      const content = await provide(Install.executeMeasure(), manager)
+      expect(content.lockfile.path).toBe("bun.lock")
+      expect(content.bunfig?.path).toBe("bunfig.toml")
+      expect(content.patches?.map((entry) => entry.path)).toEqual([patch])
+      const before = content.patches![0]!.digest
+      // The lockfile records the patch by path alone, so only this
+      // measurement tells two patch contents apart.
+      await Fs.writeFile(NodePath.join(root, patch), "--- a/other.js\n+++ b/other.js\n")
+      const changed = await provide(Install.executeMeasure(), manager)
+      expect(changed.lockfile.digest).toBe(content.lockfile.digest)
+      expect(changed.patches![0]!.digest).not.toBe(before)
+    })
+  })
+
+  it("binds bunfig.toml and the patch files to the store identity", async () => {
+    await bunFixture(async (root, manager) => {
+      const content = await provide(Install.executeMeasure(), manager)
+      const store = await provide(Install.executeFetch({ content }), manager)
+      const identity = {
+        manager: "bun" as const,
+        managerVersion: "11.21.0",
+        platform,
+        lockfileDigest: content.lockfile.digest,
+        npmrcDigest: null
+      }
+      const expected = await Effect.runPromise(
+        PackageManager.storeManifest({
+          ...identity,
+          bunfigDigest: content.bunfig!.digest,
+          patches: content.patches!
+        }).pipe(Effect.provide(services))
+      )
+      expect(store.digest).toBe(expected.digest)
+      const withoutBun = await Effect.runPromise(PackageManager.storeManifest(identity).pipe(Effect.provide(services)))
+      expect(store.digest).not.toBe(withoutBun.digest)
+      const linked = await provide(Install.executeLink({ content, store }), manager)
+      expect(linked.store).toBe(store.digest)
+
+      // A store fetched under another patch is not this project's store.
+      await Fs.writeFile(NodePath.join(root, patch), "--- a/other.js\n+++ b/other.js\n")
+      const repatched = await provide(Install.executeMeasure(), manager)
+      const refused = await provide(Effect.flip(Install.executeLink({ content: repatched, store })), manager)
+      expect(refused.code).toBe("environment_mismatch")
+      expect(refused.message).toContain("the fetched store attests")
+    })
+  })
+
+  for (const path of ["bun.lock", "bunfig.toml", patch]) {
+    for (const phase of ["fetch", "link"] as const) {
+      for (const timing of ["before", "during"] as const) {
+        it(`refuses ${path} drift ${timing} ${phase}`, async () => {
+          await bunFixture(async (root, initial) => {
+            const content = await provide(Install.executeMeasure(), initial)
+            const store = await provide(Install.executeFetch({ content }), initial)
+            // Each change is one the measurement accepts, so the refusal is
+            // the digest comparison and not a file that no longer parses.
+            const mutate = () =>
+              Fs.writeFile(
+                NodePath.join(root, path),
+                path === "bun.lock"
+                  ? bunLock([patch]).replace(`"name": "fixture"`, `"name": "renamed"`)
+                  : path === "bunfig.toml"
+                  ? "[install]\nlinker = \"hoisted\"\n"
+                  : "--- a/changed.js\n+++ b/changed.js\n"
+              )
+            let calls = 0
+            const operation = Effect.promise(async () => {
+              calls++
+              if (timing === "during") await mutate()
+            })
+            if (timing === "before") await mutate()
+            const error = await provide(
+              (phase === "fetch"
+                ? Install.executeFetch({ content }).pipe(Effect.asVoid)
+                : Install.executeLink({ content, store }).pipe(Effect.asVoid)).pipe(Effect.flip),
+              { ...initial, [phase]: operation }
+            )
+            expect(error).toMatchObject({ _tag: "smithers-build/PackageManagerError", code: "input_drift" })
+            expect(error.message).toContain(path)
+            expect(calls).toBe(timing === "before" ? 0 : 1)
+          })
+        })
+      }
+    }
+  }
+
+  it("refuses a recorded patch set that differs from the measured one", async () => {
+    await bunFixture(async (_root, manager) => {
+      const content = await provide(Install.executeMeasure(), manager)
+      const digest = content.patches![0]!.digest
+      // A recorded patch the project no longer has, and a measured patch the
+      // record never held: either way the record describes other content.
+      const extra = await provide(
+        Effect.flip(Install.executeFetch({
+          content: { ...content, patches: [...content.patches!, { path: "patches/gone.patch", digest }] }
+        })),
+        manager
+      )
+      expect(extra.code).toBe("input_drift")
+      expect(extra.message).toContain("patches/gone.patch")
+      const missing = await provide(
+        Effect.flip(Install.executeFetch({ content: { ...content, patches: [] } })),
+        manager
+      )
+      expect(missing.code).toBe("input_drift")
+      expect(missing.message).toContain(patch)
+      const absent = await provide(
+        Effect.flip(Install.executeFetch({ content: { ...content, bunfig: undefined } })),
+        manager
+      )
+      expect(absent.code).toBe("input_drift")
+      expect(absent.message).toContain("bunfig.toml")
+    })
+  })
+
+  it("refuses to measure a lockfile, a setting, or a dependency the install cannot keep its boundaries under", async () => {
+    await bunFixture(async (root, manager) => {
+      const measure = () => provide(Effect.flip(Install.executeMeasure()), manager)
+      await Fs.writeFile(NodePath.join(root, "bunfig.toml"), "[install]\ndryRun = true\n")
+      expect(await measure()).toMatchObject({ code: "unsafe_configuration" })
+      await Fs.rm(NodePath.join(root, "bunfig.toml"))
+      await Fs.writeFile(
+        NodePath.join(root, "bun.lock"),
+        bunLock().replace(`"packages": {}`, `"packages": { "local": ["local@file:../local", {}], }`)
+      )
+      expect(await measure()).toMatchObject({ code: "unsupported" })
+      await Fs.rm(NodePath.join(root, "bun.lock"))
+      const missing = await measure()
+      expect(missing.code).toBe("lockfile_unreadable")
+      expect(missing.message).toContain("a Bun install needs a committed bun.lock")
     })
   })
 })

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Bun workspaces install. `S.Install` with `S.PackageManager.BunPackages`,
+  `runInstall`, and the install Flow payload accept Bun, and `smthrs init`
+  writes a Bun workspace for a `bun@` manifest. The fetch runs a frozen,
+  script-free `bun install` in a staging copy under `.flows/store/bun`; the
+  link runs `bun install --offline`. It needs Bun 1.4.1 or newer and a text
+  `bun.lock`, and refuses `file:` and `link:` dependencies, unknown
+  `bunfig.toml` install settings, and a root `.env` file that sets a `BUN_` or
+  `NPM_CONFIG_` variable. `Install.Content` gains optional `bunfig` and
+  `patches`, the store manifest gains a v3 tuple for them, and
+  `PackageManager.bunInstallUnsupported` and `bunInstallUnsupportedMessage`
+  are removed.
 - With a forwarded `.npmrc` credential, `fetch` and `link` no longer put the
   operator's proxy URL, password included, on the pnpm command line, where every
   local user could read it. The proxy travels in the child environment, and

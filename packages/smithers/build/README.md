@@ -45,8 +45,9 @@ engine cache.
 Installation is one round of three actions:
 
 1. `measure` records the content an install is keyed on: the lockfile digest,
-   the credential-free project `.npmrc` digest, and the pnpm hook and workspace
-   manifest digests when present. The manager version and the
+   the credential-free project `.npmrc` digest, the pnpm hook and workspace
+   manifest digests when present, and under Bun the `bunfig.toml` and
+   patch-file digests. The manager version and the
    host platform are not content; they come from the `PackageManager` and
    `Runtime` services, which hold the host to what the workspace declared.
 2. A manager-specific `fetch` populates `.flows/store/<manager>`. The manager
@@ -60,7 +61,7 @@ cannot freeze its lockfile and `.npmrc` across the child's own opens, and the
 linked tree is host-local. `link` always runs; manager metadata cannot prove
 that every installed package file is still present and intact.
 
-Only pnpm has a live implementation. It runs:
+pnpm runs:
 
 ```text
 pnpm fetch --frozen-lockfile --ignore-scripts --reporter=append-only \
@@ -74,18 +75,35 @@ pnpm install --offline --frozen-lockfile --ignore-scripts \
 hook file is `.pnpmfile.mjs`, else `.pnpmfile.cjs`, and `--ignore-pnpmfile` when
 neither exists.
 
-Bun installs are unsupported. The `Install` target, the planner, `runInstall`,
-and the install Flow payload refuse a Bun manager at configuration time with
-`code: "unsupported"`, and `smthrs init` no longer writes a Bun workspace.
-The Bun layer remains for targets that run tools under Bun.
+Bun has no fetch-only command. Its fetch copies the lockfile, `bunfig.toml`,
+`.npmrc`, the workspace manifests, and the patch files into
+`.flows/store/bun/fetch` and runs a frozen install there, which fills the
+cache without touching the workspace's `node_modules`. Its link installs
+offline from that cache:
 
-Run the supported flow with:
+```text
+# in <workspace>/.flows/store/bun/fetch
+bun install --frozen-lockfile --ignore-scripts --no-progress \
+  --cache-dir <workspace>/.flows/store/bun/cache
+
+# in <workspace>
+bun install --offline --frozen-lockfile --ignore-scripts --no-progress \
+  --cache-dir <workspace>/.flows/store/bun/cache
+```
+
+A Bun install needs Bun 1.4.1 or newer and a text `bun.lock`. It refuses
+`file:` and `link:` dependencies, `bunfig.toml` install settings it does not
+know, and a root `.env` file that sets a `BUN_` or `NPM_CONFIG_` variable.
+`smthrs init` writes a Bun workspace for a `bun@` manifest. See
+[Bun](docs/concepts/install.md#bun) for the reasons and the limits.
+
+Run the flow with:
 
 ```sh
 smithers-build install --workspace /path/to/workspace
 ```
 
-The install store is fixed at `.flows/store/pnpm`, so `install` requires the
+The install store is fixed at `.flows/store/<manager>`, so `install` requires the
 default `.flows` cache-directory configuration. Other CLI verbs may use a
 custom workspace-relative cache directory.
 

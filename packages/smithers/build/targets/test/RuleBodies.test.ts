@@ -266,6 +266,10 @@ describe("Install", () => {
     expect(plannedCalls(target)).toEqual([
       { action: "smithers-build/install", payload: { manager: "pnpm" } }
     ])
+    const bun = S.PackageManager.BunPackages({ runtime: S.Runtime.Bun({ version: ">=1.4.0" }) })
+    expect(plannedCalls(Install.Install({ packageManager: bun }))).toEqual([
+      { action: "smithers-build/install", payload: { manager: "bun" } }
+    ])
   })
 
   it("keys on the lockfile, npmrc, and manifest, and on a declared workspace definition", () => {

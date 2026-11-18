@@ -41,14 +41,18 @@ a non-sealed tier or an `expected` boundary prevents shared-cache admission.
 
 ## The install boundaries
 
-| Action                              | Tier           | Boundary   | Reads                                                                                                                                                                                  | Writes                                          | Cache-admissible |
-| ----------------------------------- | -------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------- |
-| `smithers-build/install/measure`    | `sealed`       | `expected` | `.npmrc`; `bun.lock`; `pnpm-lock.yaml`; `.pnpmfile.mjs`; `.pnpmfile.cjs`; `pnpm-workspace.yaml`                                                                                        | none                                            | No               |
-| `smithers-build/install/fetch/pnpm` | `sealed`       | `expected` | `pnpm-lock.yaml`; `.npmrc`; `.pnpmfile.mjs`; `.pnpmfile.cjs`; `pnpm-workspace.yaml`                                                                                                    | `TreeArtifact` at `.flows/store/pnpm`           | No               |
-| `smithers-build/install/link`       | `irreversible` | `expected` | `.npmrc`; `bun.lock`; `pnpm-lock.yaml`; `.pnpmfile.mjs`; `.pnpmfile.cjs`; `pnpm-workspace.yaml`; `package.json`; `Glob`: `**/package.json` (exclude `**/node_modules/**`, `.flows/**`) | `Glob`: `**/node_modules`, `**/node_modules/**` | No               |
+| Action                              | Tier           | Boundary   | Reads                                                                                                                                                                                                                                                                   | Writes                                          | Cache-admissible |
+| ----------------------------------- | -------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------- |
+| `smithers-build/install/measure`    | `sealed`       | `expected` | `.npmrc`; `bun.lock`; `bunfig.toml`; `pnpm-lock.yaml`; `.pnpmfile.mjs`; `.pnpmfile.cjs`; `pnpm-workspace.yaml`; `Glob`: `**/*.patch` (exclude `**/node_modules/**`, `.flows/**`)                                                                                        | none                                            | No               |
+| `smithers-build/install/fetch/pnpm` | `sealed`       | `expected` | `pnpm-lock.yaml`; `.npmrc`; `.pnpmfile.mjs`; `.pnpmfile.cjs`; `pnpm-workspace.yaml`                                                                                                                                                                                     | `TreeArtifact` at `.flows/store/pnpm`           | No               |
+| `smithers-build/install/fetch/bun`  | `sealed`       | `expected` | `bun.lock`; `.npmrc`; `bunfig.toml`; `package.json`; `Glob`: `**/package.json` (exclude `**/node_modules/**`, `.flows/**`); `Glob`: `**/*.patch` (exclude `**/node_modules/**`, `.flows/**`)                                                                            | `TreeArtifact` at `.flows/store/bun`            | No               |
+| `smithers-build/install/link`       | `irreversible` | `expected` | `.npmrc`; `bun.lock`; `bunfig.toml`; `pnpm-lock.yaml`; `.pnpmfile.mjs`; `.pnpmfile.cjs`; `pnpm-workspace.yaml`; `package.json`; `Glob`: `**/package.json` (exclude `**/node_modules/**`, `.flows/**`); `Glob`: `**/*.patch` (exclude `**/node_modules/**`, `.flows/**`) | `Glob`: `**/node_modules`, `**/node_modules/**` | No               |
 
 Measure reports content: the lockfile digest, the credential-free project
-`.npmrc` digest, and the pnpm hook and workspace manifest digests when present.
+`.npmrc` digest, the pnpm hook and workspace manifest digests when present, and
+under Bun the `bunfig.toml` and patch-file digests. Under Bun the install also
+scans the project's `.env` files for variable names. They are not declared
+reads: a declared read is digested, and they hold secrets.
 Manager version and host platform belong to the `PackageManager` and `Runtime`
 services. Measure uses an `expected` boundary and remeasures each run, so a
 cross-run cache cannot substitute another checkout's measurement.
@@ -57,7 +61,8 @@ Fetch is shaped as the potentially shareable half, but it is not shared today.
 The absolute-root package-manager process can open the lockfile and configuration
 after the parent verifies them, and the current observer cannot freeze those
 paths or prove there were no undeclared effects. Its `expected` boundary prevents
-shared-cache admission. Only pnpm installs; a Bun manager is refused when it is configured.
+shared-cache admission. Bun's fetch installs from copies the parent wrote under
+`.flows/store/bun/fetch`, so the first reason does not apply to it; the second does.
 
 Link declares writes to root and nested `node_modules` trees for conflict
 ordering. Its `irreversible` tier prevents shared-cache admission regardless of
@@ -120,8 +125,8 @@ at once and the engine refuses with `ConcurrentKeylessDispatch`.
 | `write-file`, `check-file`, `sync-package-json` | `sealed`       | Yes                          |
 | `check-workflow`, `check-docs`, `llm-review`    | `sealed`       | Yes                          |
 | `scaffold-package`, `not-implemented`           | `sealed`       | Yes                          |
-| `smithers-build/install/measure`, `fetch/*`     | `sealed`       | Yes, under pnpm              |
-| `smithers-build/install/link`                   | `irreversible` | Yes, under pnpm              |
+| `smithers-build/install/measure`, `fetch/*`     | `sealed`       | Yes                          |
+| `smithers-build/install/link`                   | `irreversible` | Yes                          |
 | `smithers-build/exec-irreversible`              | `irreversible` | Yes                          |
 
 The ordinary implementations are re-exported from the `@smthrs/targets` package

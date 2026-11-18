@@ -1,6 +1,5 @@
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
-import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import { execFileSync } from "node:child_process"
@@ -84,38 +83,10 @@ describe("PackageManager.storeRoot", () => {
     }
   })
 
-  it("keeps unsupported manager metadata truthful", async () => {
-    const bun = await Effect.runPromise(
-      PackageManager.makeBun({ requirement: "11.21.0", projectRoot: "/workspace" }).pipe(Effect.provide(runtimeLayer))
-    )
-    expect(bun.lockfileName).toBe("bun.lock")
-    await expect(Effect.runPromise(bun.fetch)).rejects.toThrow(/no bun implementation/)
-    expect(
-      PackageManager.makeNoop("pnpm", { requirement: "11.21.0", projectRoot: "/workspace" }, platform).lockfileName
-    ).toBe(
-      "pnpm-lock.yaml"
-    )
-  })
-
-  /**
-   * `layerBun` advertised `ChildProcessSpawner` and `FileSystem` alongside
-   * `Runtime`, the pnpm layer's requirements, while `makeBun` only ever reads
-   * the runtime and returns the refusing service. A composition that selected
-   * the unsupported manager had to plumb two host services nothing consumed.
-   */
-  it("builds the Bun layer over the runtime alone", async () => {
-    const layer: Layer.Layer<PackageManager.PackageManager, never, Runtime.Runtime> = PackageManager.layerBun({
-      requirement: "1.2.0",
-      projectRoot: "/workspace"
-    })
-    const bun = await Effect.runPromise(
-      Effect.gen(function*() {
-        return yield* PackageManager.PackageManager
-      }).pipe(Effect.provide(layer.pipe(Layer.provide(runtimeLayer))))
-    )
-    expect(bun.name).toBe("bun")
-    expect(bun.platformSensitive).toBe(true)
-    await expect(Effect.runPromise(bun.fetch)).rejects.toThrow(/no bun implementation/)
+  it("names the lockfile each manager reads", () => {
+    const options = { requirement: "11.21.0", projectRoot: "/workspace" }
+    expect(PackageManager.makeNoop("bun", options, platform).lockfileName).toBe("bun.lock")
+    expect(PackageManager.makeNoop("pnpm", options, platform).lockfileName).toBe("pnpm-lock.yaml")
   })
 
   /**

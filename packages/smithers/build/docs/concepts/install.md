@@ -4,9 +4,8 @@ description: "The install flow: the measure round, the fetch and link split, and
 ---
 
 `smithers-build` expresses dependency installation as one flow with one round and
-three actions: measure, fetch, and link. Only pnpm installs. A Bun manager is
-refused when it is configured, with a typed `unsupported` error, rather than
-accepted and failed when the manager is first called.
+three actions: measure, fetch, and link. pnpm and Bun install. Each manager has
+its own fetch; measure and link are shared.
 
 `node_modules` is a target. A PACKAGE.ts file declares the toolchain once and
 asks the `Install` target for the tree:
@@ -24,6 +23,23 @@ export const Package = Smithers.Package({ targets: { nodeModules } })
 The `Package.targets` key gives the install target its label, `//:nodeModules`
 in a root `PACKAGE.ts`. Exporting the target directly is rejected with
 `naked_target_export`.
+
+A Bun workspace declares Bun as both. Bun is its own runtime, so the manager
+version is the runtime version:
+
+```ts
+import { Smithers } from "@smthrs/targets"
+
+const runtime = Smithers.Runtime.Bun({ version: "1.4.2" })
+const packageManager = Smithers.PackageManager.BunPackages({ runtime })
+const nodeModules = Smithers.Install({ packageManager })
+
+export const Package = Smithers.Package({ targets: { nodeModules } })
+```
+
+`smthrs init` writes this declaration for a `package.json` whose
+`packageManager` is `bun@<version>`. See [Bun](#bun) for how a Bun install
+runs and what it refuses.
 
 The CLI also runs the flow directly:
 
@@ -75,7 +91,9 @@ declaration, and measure feeds it as an ordinary settled upstream reference.
 
 `Measure` digests the manager lockfile and the project `.npmrc` when present.
 For pnpm it also digests `pnpm-workspace.yaml` and the hook file pnpm loads
-(`.pnpmfile.mjs`, else `.pnpmfile.cjs`) when present.
+(`.pnpmfile.mjs`, else `.pnpmfile.cjs`) when present. For Bun it also digests
+`bunfig.toml` when present and every patch file `bun.lock` names, because
+Bun's text lockfile records a patch by path alone.
 
 ```ts
 Content = {
@@ -83,6 +101,8 @@ Content = {
   npmrc: { path, digest } | null
   pnpmfile: { path, digest } | null
   workspace: { path, digest } | null
+  bunfig?: { path, digest } | null   // Bun only
+  patches?: Array<{ path, digest }>  // Bun only, in path order
 }
 ```
 
@@ -106,8 +126,9 @@ payload, a pnpm install and a Bun install of one workspace shared a single
 measure key, which the `expected` boundary made inert and a `hard` boundary
 would make a hit on another manager's measurement.
 
-`.npmrc` is limited to 256 KiB, `package.json` to 4 MiB, and lockfiles to
-64 MiB. The pnpm hook and workspace files use the same 64 MiB bound. Reads use
+`.npmrc` and `bunfig.toml` are limited to 256 KiB, `package.json` to 4 MiB, and
+lockfiles to 64 MiB. The pnpm hook and workspace files and Bun's patch files
+use the same 64 MiB bound. Reads use
 stable regular-file descriptors, exact UTF-8, and canonical-path checks inside
 the project root.
 
@@ -117,7 +138,9 @@ The fetch payload includes:
 
 1. the lockfile path and SHA-256 digest;
 2. the project `.npmrc` digest or `null`;
-3. the pnpm hook and workspace manifest paths and digests, or `null`.
+3. the pnpm hook and workspace manifest paths and digests, or `null`;
+4. under Bun, the `bunfig.toml` digest or `null`, and each patch file's path
+   and digest.
 
 The scheduler also folds declaration identity, layers, capabilities, effects,
 and settled dependencies into its step key. The manager name and version reach
@@ -158,8 +181,9 @@ Fetch returns a `StoreManifest`:
 Its digest is SHA-256 over a versioned canonical tuple of the verified manager,
 platform, and input digests. It describes what populated the store; it is not
 the store bytes.
-The tuple uses v2 when either pnpm configuration file is present. With both
-absent it preserves the v1 digest.
+The tuple uses v2 when either pnpm configuration file is present, and v3 when
+`bunfig.toml` or a Bun patch file is. With none of them it preserves the v1
+digest.
 
 ## Why fetch is not cache-admissible
 
@@ -173,6 +197,10 @@ observer also cannot attest that no undeclared path was read or written.
 Consequently no fetch result or store tree is replayed from a cross-run engine
 cache today. A sandbox lane that supplies hermetic-read and whole-tree evidence
 is required before changing this policy.
+
+Bun's fetch is closer: Bun opens copies this process wrote, not the checkout's
+files (see [Bun](#bun)). It stays `expected` for the second reason. Nothing
+observes what else the child read or wrote.
 
 ## Link
 
@@ -208,23 +236,7 @@ as an install manager at all, and a PACKAGE.ts naming one fails to decode.
 | Manager | Status      | Behavior                                                                             |
 | ------- | ----------- | ------------------------------------------------------------------------------------ |
 | pnpm    | Implemented | Frozen fetch into `.flows/store/pnpm`, then frozen offline link with scripts ignored |
-| Bun     | Unsupported | No documented fetch-only and offline-link pair satisfying the contract               |
-
-Bun has no fetch-only or offline install command, so it cannot meet the
-fetch-then-link contract. Every install entry point refuses it at configuration
-time with `PackageManager.bunInstallUnsupportedMessage`:
-
-| Entry point                           | Refusal                                                        |
-| ------------------------------------- | -------------------------------------------------------------- |
-| `S.Install({ packageManager: bun })`  | The constructor throws `unsupported: ...`.                     |
-| `S.Install` with a Bun `WORKSPACE.ts` | The planner refuses the node before anything spawns.           |
-| `runInstall` with a Bun toolchain     | `PackageManagerError { code: "unsupported" }` before any read. |
-| The install Flow payload              | `manager` admits only `"pnpm"`; there is no Bun fetch action.  |
-| `smthrs init` on a `bun@` manifest    | Refuses before writing `WORKSPACE.ts`.                         |
-
-Bun remains a valid runtime and tool runner: a hand-written `WORKSPACE.ts` may
-declare `PackageManager.BunPackages`, and targets run their tools through it,
-but `node_modules` must then be installed with Bun outside Smithers.
+| Bun     | Implemented | Frozen install in a staging copy inside `.flows/store/bun`, then frozen offline link |
 
 The pnpm commands are:
 
@@ -244,12 +256,153 @@ when neither exists. See
 `<store>` is `<projectRoot>/.flows/store/pnpm` unless the composition passed
 `storeDirectory`.
 
-`layerBun` and `layerNoop("bun", options, platform)` still provide the service
-shape for targets that run tools under Bun and never install. Version, fetch,
-link, and manifest operations fail with `PackageManagerError { code:
-"unsupported" }`.
+`layerNoop(name, options, platform)` provides the service shape with no host
+access. Its version, fetch, link, and manifest operations fail with
+`PackageManagerError { code: "unsupported" }`.
+
+## Bun
+
+Bun has one install command and no fetch-only mode. `--dry-run`,
+`--lockfile-only`, and `BUN_CONFIG_SKIP_INSTALL_PACKAGES` each skip the
+downloads as well as the linking. Fetch and link are therefore both
+`bun install`, run in two directories against one cache:
+
+```text
+# fetch, with <store>/fetch as the working directory
+bun install --frozen-lockfile --ignore-scripts --no-progress --cache-dir <store>/cache
+
+# link, with the project root as the working directory
+bun install --offline --frozen-lockfile --ignore-scripts --no-progress --cache-dir <store>/cache
+```
+
+`<store>` is `<projectRoot>/.flows/store/bun` unless the composition passed
+`storeDirectory`.
+
+**Fetch** first copies into `<store>/fetch` the files a frozen install reads:
+`bun.lock`, the root `package.json`, `bunfig.toml`, `.npmrc`, every workspace
+member's `package.json`, and every patch file. The member and patch paths come
+from `bun.lock`. The staging directory is emptied first, so every fetch
+installs its tree again from the cache, and a cache that lost a package is
+refilled. Bun installs into `<store>/fetch/node_modules`, which fills the
+cache. The project's `node_modules` is not touched, and Bun opens the copies,
+so a file that changes in the checkout during the fetch does not reach it.
+
+**Link** passes `--offline`. A package the fetch did not store fails the link;
+it is never downloaded.
+
+### What a Bun install is keyed on
+
+| Input                 | Why                                                                     |
+| --------------------- | ----------------------------------------------------------------------- |
+| `bun.lock`            | Every resolved version, tarball URL, and integrity hash                 |
+| `.npmrc`              | The registry, and credentials by variable name                          |
+| `bunfig.toml`         | The linker, registries, scopes, and which dependency kinds install      |
+| Patch files           | The lockfile records a patch by path alone                              |
+| Bun version, platform | From the `PackageManager` and `Runtime` services, in the store manifest |
+
+Workspace member manifests are not measured. A frozen install fails when one
+disagrees with the lockfile. Link digests the root `package.json` before and
+after it runs, as it does for pnpm.
+
+### What Bun cannot freeze
+
+Each row is something Bun does that no flag turns off, and what the install
+does about it. Every refusal happens before `bun install` runs.
+
+| Bun                                                                                              | The install                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Has no fetch-only command                                                                        | Runs the frozen install in a staging copy inside the store                                                                                                                                                         |
+| Installs from a parent directory whose `package.json` names its working directory as a workspace | Refuses a `package.json` in `.flows`, `.flows/store`, or `.flows/store/bun`. `bun.lock` cannot name a workspace inside `.flows`, so a root manifest that names the staging copy fails the frozen install           |
+| Ignores flags it does not know, so a Bun before 1.4.1 would drop `--offline`                     | Refuses a Bun older than 1.4.1 with `environment_mismatch`                                                                                                                                                         |
+| Lets `BUN_INSTALL_CACHE_DIR` outrank `--cache-dir`                                               | Sets the variable to `<store>/cache` in the child environment                                                                                                                                                      |
+| Reads `bunfig.toml`, `.npmrc`, and a cache under the user's home                                 | Sets `HOME`, `USERPROFILE`, `BUN_INSTALL`, and the `XDG_` directories to `<store>/home`; the fetch empties it and the link refuses it when it holds anything                                                       |
+| Loads `.env`, `.env.local`, and the `.env.<mode>` files on every command                         | Refuses a file that assigns any `BUN_` or `NPM_CONFIG_` name with `unsafe_configuration`, at fetch and at link. A process variable outranks a file, which covers the pins, and the staging copy holds no such file |
+| Reads `[install]` settings that skip the install, move the cache, or run code                    | Holds `bunfig.toml` to a known list; see below                                                                                                                                                                     |
+| Expands `$NAME` in `bunfig.toml`                                                                 | Refuses a `$` anywhere in `[install]`; credentials go in `.npmrc`                                                                                                                                                  |
+| Records a patch in `bun.lock` by path alone                                                      | Measures each patch file                                                                                                                                                                                           |
+| Writes no manifest of the tree it linked                                                         | Digests the names of the package directories in the root `node_modules`, its scopes, and `.bun`; a link that linked nothing leaves no `node_modules` and fails with `manifest_unreadable`                          |
+| Still reads a binary `bun.lockb`                                                                 | Requires the text `bun.lock` and names the command that writes one                                                                                                                                                 |
+| Installs `file:`, `link:`, and local tarball dependencies from outside the store                 | Refuses the lockfile with `unsupported`; the staging copy holds only manifests and patches                                                                                                                         |
+
+The store is inside the checkout, so a repository can commit a symlink at
+`.flows`, `.flows/store`, `.flows/store/bun`, or its `cache`, `fetch`, or
+`home`. Fetch deletes and writes files there. It creates the store one level
+at a time and refuses, with `unsafe_configuration`, a level that resolves
+anywhere else, before it creates or deletes anything below it. Link refuses a
+`cache` or `home` that moved since.
+
+A workspace manifest, a patch file, or `bunfig.toml` that is a symbolic link
+is refused with `manifest_unreadable`. These files are copied into the store
+and digested, and a link could point at `.env` or `.git/config`.
+
+The environment files are read for variable names only. A value is never
+digested, logged, or put in an error, and the files are not among the link's
+declared reads, so no scheduler digests them either.
+
+### bunfig.toml
+
+Only the `[install]` table is checked; `bun install` does not read the others.
+These settings are accepted: `auto`, `ca`, `cache`, `cafile`,
+`concurrentScripts`, `dev`, `dryRun`, `exact`, `frozenLockfile`,
+`globalBinDir`, `globalDir`, `globalStore`, `hoist`, `hoistPattern`,
+`ignoreScripts`, `linkWorkspacePackages`, `linker`, `lockfile`, `logLevel`,
+`minimumReleaseAge`, `minimumReleaseAgeExcludes`, `offline`, `optional`,
+`peer`, `prefer`, `production`, `publicHoistPattern`, `registry`,
+`saveTextLockfile`, and `scopes`. That is Bun 1.4's documented set.
+
+These are refused with `unsafe_configuration`:
+
+| Setting                                                             | Why                                                       |
+| ------------------------------------------------------------------- | --------------------------------------------------------- |
+| Any setting outside the list                                        | Its effect on the store, lockfile, or network is unknown  |
+| `dryRun = true`, `offline = true`                                   | The fetch would store nothing                             |
+| `cache = false`, `cache.disable = true`                             | The offline link installs from the cache                  |
+| `lockfile.print`                                                    | Bun writes a `yarn.lock` into the project, frozen or not  |
+| `security`                                                          | It runs a scanner package during the install              |
+| `token`, `username`, `password`, or a URL with a user and password  | The file is digested; credentials go in `.npmrc`, by name |
+| A `$` in any setting name or value                                  | Bun would expand it from the child environment            |
+| With a forwarded credential: `ca`, `cafile`, a non-`https` registry | The repository would choose how the credential travels    |
+
+`cache.dir` is accepted and has no effect: the pinned variable outranks it.
+The flags outrank `frozenLockfile` and `ignoreScripts`.
+
+### Limits
+
+- **Bun 1.4.1 or newer.** It is the first release with `bun install --offline`.
+  A declared `>=1.4.0` is still held to it: Bun 1.4.0 is refused.
+- **Text lockfile only.** Write one with
+  `bun install --save-text-lockfile --frozen-lockfile --lockfile-only`.
+- **No local-path dependencies.** `file:`, `link:`, and local tarballs are
+  refused. Workspace members, registry versions, `http(s)` tarballs, and
+  `github:`, `git+https:` and `git+ssh:` sources install; any other source is
+  refused.
+- **No symbolic links** for workspace manifests, patch files, or
+  `bunfig.toml`.
+- **Patch files end in `.patch`.** The declared read set names them by suffix.
+- **No lifecycle scripts.** `--ignore-scripts` skips the root `postinstall`
+  and every `trustedDependencies` script. Run what a workspace needs as its
+  own target.
+- **No security scanner.**
+- **An environment file can stop the install.** A root `.env` file that sets a
+  `BUN_` or `NPM_CONFIG_` variable is refused; move the setting out of it.
+- **A new `bunfig.toml` install setting is refused** until the list learns it.
+- **The checks parse, they do not run Bun.** `bunfig.toml` is read with a TOML
+  parser and the environment files with a pattern. A file those read one way
+  and Bun reads another is not caught.
+- **The fetch links a second tree, every time.** `<store>/fetch/node_modules`
+  is hardlinked from the cache on each fetch. It costs one link pass and its
+  directory entries, not a second copy of the packages.
+- **One store per checkout,** as for pnpm. Nothing is restored across runs.
+- **The cache is trusted.** Bun checks a package's integrity when it downloads
+  it, not when it installs it from the cache. A checkout that carries its own
+  `.flows/store/bun/cache` supplies those packages; do not commit `.flows`.
+- **Measured on Linux x64 with Bun 1.4.2.**
 
 ## Environment and credentials
+
+The `.npmrc` rules here hold for both managers: each reads the file and each
+expands `${NAME}` in it. The `pnpm-workspace.yaml` rules are pnpm's; Bun's
+second file is `bunfig.toml`, covered under [Bun](#bun).
 
 Package-manager children use `extendEnv: false`. They receive deterministic
 locale/color settings, selected bootstrap and network variables, and variables
@@ -353,6 +506,7 @@ declaring another is not allowed.
 
 Every supported command passes `--ignore-scripts`. Arbitrary package lifecycle
 code needs a separate non-sealed execution model and is not part of this flow.
+Under Bun the flag also skips the scripts of `trustedDependencies`.
 
 `--ignore-scripts` does not disable pnpm hooks. A project `.pnpmfile.mjs` or
 `.pnpmfile.cjs` is repository JavaScript that pnpm executes during fetch and

@@ -348,16 +348,9 @@ describe("runInstall option normalization", () => {
     await expect(runInstall("/path/need/not/exist", { toolchain: pnpm })).rejects.toThrow(/ENOENT/)
   })
 
-  it("refuses a Bun toolchain as unsupported before touching the workspace", async () => {
-    const refusal = await runInstall("/path/need/not/exist", { toolchain }).then(
-      () => undefined,
-      (cause: unknown) => cause
-    )
-    expect(refusal).toBeInstanceOf(PackageManager.PackageManagerError)
-    expect((refusal as PackageManager.PackageManagerError).code).toBe("unsupported")
-    expect((refusal as PackageManager.PackageManagerError).message).toContain(
-      "Install cannot use the Bun package manager"
-    )
+  it("accepts a Bun toolchain", async () => {
+    // As above: it fails on the workspace path, past the manager check.
+    await expect(runInstall("/path/need/not/exist", { toolchain })).rejects.toThrow(/ENOENT/)
   })
 
   /**

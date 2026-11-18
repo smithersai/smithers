@@ -39,6 +39,7 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Yaml from "yaml"
 import * as BoundedOutput from "./internal/boundedOutput.ts"
+import * as Bun from "./internal/bun.ts"
 import * as Diagnostics from "./internal/diagnostic.ts"
 import { normalizePlatform } from "./internal/platform.ts"
 import * as Validate from "./internal/validate.ts"
@@ -270,6 +271,42 @@ export const maximumPackageJsonBytes = 4 * 1024 * 1024
  */
 export const maximumLockfileBytes = 64 * 1024 * 1024
 /**
+ * Bun's project configuration file, read from the project root.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const bunfigName = "bunfig.toml"
+/**
+ * Maximum bytes admitted from one project `bunfig.toml`.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maximumBunfigBytes = 256 * 1024
+/**
+ * Maximum bytes admitted from one environment file Bun loads.
+ *
+ * The file is scanned for variable names and nothing else; a larger file is
+ * refused instead of scanned in part.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maximumEnvFileBytes = 1024 * 1024
+/**
+ * The oldest Bun the install runs.
+ *
+ * The link depends on `bun install --offline`, which Bun 1.4.1 added. An older
+ * Bun does not fail on the flag: `bun install` ignores flags it does not know,
+ * so the link would reach the network and report success. The manager is
+ * therefore held to this floor as well as to the declared version.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const minimumBunVersion = "1.4.1"
+/**
  * Maximum stdout bytes accepted from a package-manager version probe.
  *
  * The same constant the runtime probe applies, re-exported rather than
@@ -338,9 +375,10 @@ export interface Service {
    */
   readonly verify: Effect.Effect<string, PackageManagerError>
   /**
-   * Populates the content-addressed store from the lockfile alone. pnpm's
-   * staging virtual store and metadata stay beneath the store directory;
-   * fetch never rewrites the project's linked `node_modules`.
+   * Populates the store from the lockfile. Each manager stages what it needs
+   * beneath the store directory (pnpm its virtual store and metadata, Bun a
+   * copy of the manifests it installs from); fetch never rewrites the
+   * project's linked `node_modules`.
    */
   readonly fetch: Effect.Effect<void, PackageManagerError>
   /**
@@ -900,10 +938,18 @@ const workspacePlaceholder = (text: string): boolean =>
 const workspaceTransportSetting =
   /^(?:proxy|https?[-_]?proxy|no[-_]?proxy|strict[-_]?ssl|ca|cafile|cert|local[-_]?address)$/i
 
-/** Selects only bootstrap, network, and project-declared credential variables. */
+/**
+ * Selects only bootstrap, network, and project-declared credential variables.
+ *
+ * The `.npmrc` rules are the same for both managers, because both read the
+ * file and both expand `${NAME}` in it. The second configuration file differs:
+ * pnpm reads `pnpm-workspace.yaml`, Bun reads `bunfig.toml`, and each is held
+ * to its own rules here before any child starts.
+ */
 const managerEnvironment = (
   fs: FileSystem.FileSystem,
-  options: NormalizedOptions
+  options: NormalizedOptions,
+  manager: Name
 ): Effect.Effect<ManagerEnvironment, PackageManagerError> =>
   Effect.gen(function*() {
     const source = options.environment
@@ -918,9 +964,9 @@ const managerEnvironment = (
     )
     yield* refuseUnsafeNpmrc(path, npmrc)
     const workspacePath = `${options.projectRoot}/pnpm-workspace.yaml`
-    const workspacePresent = yield* fs.exists(workspacePath).pipe(
+    const workspacePresent = manager === "pnpm" && (yield* fs.exists(workspacePath).pipe(
       Effect.mapError((cause) => unreadable("manifest_unreadable", workspacePath, cause))
-    )
+    ))
     const workspace = workspacePresent
       ? yield* boundedText(fs, "manifest_unreadable", options.projectRoot, workspacePath, maximumLockfileBytes)
       : ""
@@ -951,6 +997,10 @@ const managerEnvironment = (
         )
       }
       referenced.add(match[1]!)
+    }
+    if (manager === "bun") {
+      const bunfig = yield* bunfigText(fs, options.projectRoot)
+      if (bunfig !== null) yield* admitted(Bun.checkBunfig(bunfig, referenced.size > 0))
     }
     if (referenced.size > 0) {
       for (const [name, value] of npmrc) {
@@ -1036,7 +1086,41 @@ const managerEnvironment = (
       if (search === "") delete env.PATH
       else env.PATH = search
     }
-    return { env, transportArgs: referenced.size === 0 ? [] : ["--config.strict-ssl=true", "--config.ca="] }
+    // The pins are pnpm flags. Bun has no flag for either; its transport
+    // settings are refused in `bunfig.toml` and `.npmrc` instead.
+    return {
+      env,
+      transportArgs: referenced.size === 0 || manager === "bun" ? [] : ["--config.strict-ssl=true", "--config.ca="]
+    }
+  })
+
+/** Turns what a reader of one of Bun's files answered into a value or the typed error. */
+const admitted = <A>(answer: A | Bun.Refusal): Effect.Effect<A, PackageManagerError> =>
+  Bun.isRefusal(answer)
+    ? Effect.fail(new PackageManagerError({ code: answer.code, message: answer.message }))
+    : Effect.succeed(answer)
+
+/** Whether a project file exists, as a typed failure when it cannot be inspected. */
+const isPresent = (
+  fs: FileSystem.FileSystem,
+  code: ErrorCode,
+  path: string
+): Effect.Effect<boolean, PackageManagerError> =>
+  fs.exists(path).pipe(Effect.mapError((cause) => unreadable(code, path, cause)))
+
+/** Reads the project `bunfig.toml`, or `null` when there is none. */
+const bunfigText = (
+  fs: FileSystem.FileSystem,
+  projectRoot: string
+): Effect.Effect<string | null, PackageManagerError> =>
+  Effect.gen(function*() {
+    const path = `${projectRoot}/${bunfigName}`
+    if (!(yield* isPresent(fs, "manifest_unreadable", path))) return null
+    const bytes = yield* ownFile(fs, "manifest_unreadable", projectRoot, bunfigName, maximumBunfigBytes)
+    return yield* Effect.try({
+      try: () => BoundedOutput.decodedText(bytes, path),
+      catch: (cause) => unreadable("manifest_unreadable", path, cause)
+    })
   })
 
 /** Constructs a child that receives only explicitly selected capabilities. */
@@ -1272,7 +1356,7 @@ export const makePnpm = (options: Options): Effect.Effect<
     const fs = yield* FileSystem.FileSystem
     const normalized = normalizeOptions(options, runtime.platform)
     const invocation = yield* Effect.cached(pnpmInvocation(fs, normalized, runtime.executable))
-    const environment = yield* Effect.cached(managerEnvironment(fs, normalized))
+    const environment = yield* Effect.cached(managerEnvironment(fs, normalized, "pnpm"))
     const projectRoot = normalized.projectRoot
     const timeoutMs = normalized.timeoutMs
     // A named host store is passed through as it stands; the default resolves
@@ -1379,43 +1463,107 @@ export const layerPnpm = (
 > => Layer.effect(PackageManager)(makePnpm(options))
 
 /**
- * Why no install runs under the Bun package manager.
+ * Reads a project file as a regular file at its own path.
  *
- * Bun exposes neither a fetch-only command with a documented store result nor
- * an offline install command, so it cannot meet the fetch-then-link contract
- * pnpm meets. Every install entry point (the `Install` target, the planner,
- * `runInstall`, the install Flow payload, and workspace generation) refuses a
- * Bun manager with this text when it is configured, instead of accepting it
- * and failing when the manager is first called.
- *
- * @category constants
- * @since 1.0.0
+ * `boundedBytes` admits a symbolic link whose target is inside the project.
+ * A workspace manifest, a patch file, or `bunfig.toml` is copied into the
+ * store and digested, so a link from one of them to `.env` or `.git/config`
+ * would copy and digest that file. The canonical path must be the lexical
+ * one, which also refuses a path spelled in another case.
  */
-export const bunInstallUnsupportedMessage =
-  "Install cannot use the Bun package manager: Bun has no fetch-only or offline install command, " +
-  "so it cannot meet the fetch-then-link contract; declare pnpm, or install node_modules with Bun outside Smithers"
+const ownFile = (
+  fs: FileSystem.FileSystem,
+  code: ErrorCode,
+  projectRoot: string,
+  file: string,
+  limit: number
+): Effect.Effect<Uint8Array, PackageManagerError> =>
+  Effect.gen(function*() {
+    const path = `${projectRoot}/${file}`
+    const resolve = (target: string) =>
+      fs.realPath(target).pipe(Effect.mapError((cause) => unreadable(code, target, cause)))
+    if (comparablePath(yield* resolve(path)) !== comparablePath(`${yield* resolve(projectRoot)}/${file}`)) {
+      return yield* Effect.fail(
+        unreadable(code, path, "expected a regular file at its own path, not a symbolic link")
+      )
+    }
+    return yield* boundedBytes(fs, code, projectRoot, path, limit)
+  })
+
+/** Reads `bun.lock` once: its exact bytes, and the paths it names. */
+const bunLockfile = (
+  fs: FileSystem.FileSystem,
+  projectRoot: string
+): Effect.Effect<{ readonly bytes: Uint8Array; readonly lockfile: Bun.Lockfile }, PackageManagerError> =>
+  Effect.gen(function*() {
+    const path = `${projectRoot}/${lockfileNames.bun}`
+    if (!(yield* isPresent(fs, "lockfile_unreadable", path))) {
+      const binary = yield* isPresent(fs, "lockfile_unreadable", `${projectRoot}/bun.lockb`)
+      return yield* Effect.fail(
+        new PackageManagerError({
+          code: "lockfile_unreadable",
+          message: binary
+            ? `${path} is missing and bun.lockb is present; the install keys on the text lockfile, so write one ` +
+              "with: bun install --save-text-lockfile --frozen-lockfile --lockfile-only"
+            : `${path} is missing; a Bun install needs a committed bun.lock`
+        })
+      )
+    }
+    const bytes = yield* boundedBytes(fs, "lockfile_unreadable", projectRoot, path, maximumLockfileBytes)
+    const text = yield* Effect.try({
+      try: () => BoundedOutput.decodedText(bytes, path),
+      catch: (cause) => unreadable("lockfile_unreadable", path, cause)
+    })
+    return { bytes, lockfile: yield* admitted(Bun.readLockfile(text)) }
+  })
 
 /**
- * The typed refusal every install entry point returns for a Bun manager.
+ * Builds the Bun implementation.
  *
- * @category constructors
- * @since 1.0.0
- */
-export const bunInstallUnsupported = (): PackageManagerError =>
-  new PackageManagerError({ code: "unsupported", message: bunInstallUnsupportedMessage })
-
-/**
- * Builds the explicit unsupported Bun implementation.
+ * Bun has no fetch-only command, so the two verbs are built from the one it
+ * has, `bun install`, run in two places:
  *
- * Bun currently exposes neither a fetch-only command with a documented store
- * result nor an offline install command. Treating `install --dry-run` as a
- * successful hard-boundary fetch would publish a cache entry without proof
- * that its declared store contains everything link needs. Refusing the three
- * operations is safer than presenting that best-effort behavior as sealed.
- * The layer still exists because Bun remains a valid tool runner: a target
- * that runs tools under Bun composes it and never asks it to install. Every
- * install entry point refuses Bun earlier with
- * {@link bunInstallUnsupportedMessage}.
+ * - `fetch` empties `<store>/fetch`, copies the lockfile, `bunfig.toml`,
+ *   `.npmrc`, every workspace manifest, and every patch file the lockfile
+ *   names into it, and runs `bun install --frozen-lockfile --ignore-scripts`
+ *   there with the cache at `<store>/cache`. The staging tree is inside the
+ *   store, so the project's `node_modules` is never touched, and Bun opens
+ *   the bytes this process wrote, not the checkout's files.
+ * - `link` runs `bun install --offline --frozen-lockfile --ignore-scripts` in
+ *   the project root against the same cache, so a package the fetch did not
+ *   store fails the link instead of reaching the network.
+ *
+ * Three things Bun reads cannot be turned off by a flag, and each is pinned
+ * or refused here. `BUN_INSTALL_CACHE_DIR` outranks `--cache-dir`, so the
+ * child environment sets it, and a home directory inside the store, so no
+ * user-level `bunfig.toml`, `.npmrc`, or cache is read. The fetch empties that
+ * home and the link refuses one that holds anything. `bunfig.toml` is held
+ * to the settings `internal/bun.ts` knows. Bun loads the project's `.env`
+ * files on every command; a process variable outranks a file, which covers
+ * the pins, and `fetch` and `link` refuse a file that assigns any other
+ * `BUN_` or `NPM_CONFIG_` name. Bun also installs from a parent directory
+ * whose `package.json` names its working directory as a workspace, so `fetch`
+ * refuses a `package.json` between the project root and the staging tree.
+ *
+ * `bun install` ignores flags it does not know, so a Bun older than
+ * {@link minimumBunVersion} would drop `--offline` and link from the network.
+ * `verify` refuses it with `environment_mismatch`.
+ *
+ * Invalid options are a defect (`TypeError`) when the effect runs. Every
+ * child, `bun --version` included, first reads the project configuration, so
+ * any operation can fail with `manifest_unreadable` for an unreadable
+ * `.npmrc` or `bunfig.toml` and `unsafe_configuration` when either could leak
+ * a host credential or defeat the install. `fetch` also fails with
+ * `lockfile_unreadable` for a missing or malformed `bun.lock`, `unsupported`
+ * for a dependency resolved from a local path, `manifest_unreadable` for a
+ * workspace manifest or patch file reached through a symbolic link, and
+ * `unsafe_configuration` when a store directory resolves outside the store or
+ * a `package.json` sits above the staging tree. `link` fails with
+ * `unsafe_configuration` for a store directory that resolves elsewhere, a
+ * home that is not empty, or an environment file that configures the
+ * installer, and with `command_failed` when the fetch has not made the store.
+ * A child that cannot start, times out, or exits non-zero fails with
+ * `command_failed`.
  *
  * @category constructors
  * @since 0.1.0
@@ -1423,23 +1571,330 @@ export const bunInstallUnsupported = (): PackageManagerError =>
 export const makeBun = (options: Options): Effect.Effect<
   Service,
   never,
-  Runtime.Runtime
+  ChildProcessSpawner | FileSystem.FileSystem | Runtime.Runtime
 > =>
   Effect.gen(function*() {
     const runtime = yield* Runtime.Runtime
-    return makeNoop("bun", options, runtime.platform)
+    const spawner = yield* ChildProcessSpawner
+    const fs = yield* FileSystem.FileSystem
+    const normalized = normalizeOptions(options, runtime.platform)
+    const environment = yield* Effect.cached(managerEnvironment(fs, normalized, "bun"))
+    const projectRoot = normalized.projectRoot
+    const timeoutMs = normalized.timeoutMs
+    const executable = normalized.executable ?? "bun"
+    const storeDirectory = normalized.storeDirectory ?? `${storeRoot}/bun`
+    const store = normalized.storeDirectory ?? `${projectRoot}/${storeDirectory}`
+    const cache = `${store}/cache`
+    const stage = `${store}/fetch`
+    const home = `${store}/home`
+    // A process variable outranks the same name in a `.env` file, and
+    // BUN_INSTALL_CACHE_DIR outranks --cache-dir. The home is an empty
+    // directory of the store, so Bun finds no user-level configuration.
+    const pins = {
+      BUN_INSTALL: `${home}/.bun`,
+      BUN_INSTALL_CACHE_DIR: cache,
+      HOME: home,
+      USERPROFILE: home,
+      XDG_CACHE_HOME: `${home}/.cache`,
+      XDG_CONFIG_HOME: `${home}/.config`,
+      XDG_DATA_HOME: `${home}/.local/share`
+    }
+    const command = (args: ReadonlyArray<string>, cwd: string, output: "capture" | "inherit") =>
+      Effect.map(environment, ({ env }) => managerCommand(executable, args, cwd, { ...env, ...pins }, output))
+    const version = yield* Effect.cached(
+      Effect.flatMap(
+        command(["--version"], projectRoot, "capture"),
+        (child) => capture(spawner, "bun --version", child, timeoutMs)
+      )
+    )
+    const verify = Effect.flatMap(
+      verified("bun", normalized.requirement, version),
+      (measured) =>
+        Runtime.satisfies(`>=${minimumBunVersion}`, measured) === true
+          ? Effect.succeed(measured)
+          : Effect.fail(
+            new PackageManagerError({
+              code: "environment_mismatch",
+              message: `this host runs bun ${measured}; the install needs bun ${minimumBunVersion} or newer, ` +
+                "the first release with bun install --offline"
+            })
+          )
+    )
+    const staging = (action: string) => (cause: unknown) =>
+      new PackageManagerError({
+        code: "command_failed",
+        message: `could not ${action}: ${failureMessage(cause)}`,
+        cause: Diagnostics.diagnostic(cause)
+      })
+    const canonical = (path: string) => fs.realPath(path).pipe(Effect.mapError(staging(`resolve ${path}`)))
+    const create = (directory: string) =>
+      fs.makeDirectory(directory, { recursive: true }).pipe(Effect.mapError(staging(`create ${directory}`)))
+    const outside = (directory: string) =>
+      new PackageManagerError({
+        code: "unsafe_configuration",
+        message: `${directory} resolves outside the install store`
+      })
+    /**
+     * Creates one directory below a canonical parent and refuses it when it
+     * resolves anywhere else.
+     *
+     * The default store is inside the checkout, so a repository can commit a
+     * symlink at any level of it. Going down one level at a time means
+     * nothing is ever created through one.
+     */
+    const descend = (parent: string, name: string) =>
+      Effect.gen(function*() {
+        const path = `${parent}/${name}`
+        yield* create(path)
+        return comparablePath(yield* canonical(path)) === comparablePath(path)
+          ? path
+          : yield* Effect.fail(outside(path))
+      })
+    /**
+     * Creates the store, with an empty staging copy and an empty home.
+     *
+     * Staging deletes and writes files here, Bun writes the cache, and Bun
+     * reads its user-level `.bunfig.toml` and `.npmrc` from the home, so each
+     * directory must be the one it is named, and a checkout can carry files
+     * at any of these paths. The staging copy and the home are therefore
+     * emptied before every fetch. Emptying the staging copy also means a
+     * fetch reinstalls it from the cache, so a cache that lost a package is
+     * refilled instead of trusted.
+     *
+     * Bun installs from the nearest parent directory whose `package.json`
+     * names the working directory as a workspace. A `package.json` between
+     * the project root and the staging copy would take the fetch over with a
+     * lockfile and configuration nothing here checked, so one is refused.
+     */
+    const prepareStore = Effect.gen(function*() {
+      let base: string
+      const parents: Array<string> = []
+      if (normalized.storeDirectory === undefined) {
+        base = yield* canonical(projectRoot)
+        for (const segment of storeDirectory.split("/")) {
+          base = yield* descend(base, segment)
+          parents.push(base)
+        }
+      } else {
+        yield* create(store)
+        base = yield* canonical(store)
+        parents.push(base)
+      }
+      for (const name of ["cache", "fetch", "home"]) yield* descend(base, name)
+      for (const parent of parents) {
+        if (yield* isPresent(fs, "manifest_unreadable", `${parent}/package.json`)) {
+          return yield* Effect.fail(
+            new PackageManagerError({
+              code: "unsafe_configuration",
+              message: `${parent}/package.json is above the staging copy; Bun would install from it instead`
+            })
+          )
+        }
+      }
+      for (const directory of [stage, home]) {
+        yield* fs.remove(directory, { recursive: true }).pipe(Effect.mapError(staging(`clear ${directory}`)))
+        yield* create(directory)
+      }
+    })
+    /** Refuses to link from a store directory that resolves anywhere but where it is named. */
+    const checkStore = Effect.gen(function*() {
+      const base = normalized.storeDirectory === undefined
+        ? `${yield* canonical(projectRoot)}/${storeDirectory}`
+        : yield* canonical(store)
+      for (const [directory, name] of [[cache, "cache"], [home, "home"]] as const) {
+        if (comparablePath(yield* canonical(directory)) !== comparablePath(`${base}/${name}`)) {
+          return yield* Effect.fail(outside(directory))
+        }
+      }
+    })
+    /** Copies one project file into the staging tree, byte for byte. */
+    const stageFile = (file: string, code: ErrorCode, limit: number, known?: Uint8Array) =>
+      Effect.gen(function*() {
+        const bytes = known ?? (yield* ownFile(fs, code, projectRoot, file, limit))
+        const target = `${stage}/${file}`
+        yield* fs.makeDirectory(target.slice(0, target.lastIndexOf("/")), { recursive: true }).pipe(
+          Effect.mapError(staging(`stage ${file}`))
+        )
+        yield* fs.writeFile(target, bytes).pipe(Effect.mapError(staging(`stage ${file}`)))
+      })
+    /**
+     * Refuses a `.env` file that configures Bun's installer.
+     *
+     * The link runs in the project root, where Bun loads these files. The
+     * fetch runs in the staging copy, which holds none, but it checks too:
+     * a root `package.json` that names the staging copy as a workspace would
+     * move the fetch to the project root.
+     */
+    const refuseEnvironmentFiles = Effect.forEach(Bun.envFileNames, (name) =>
+      Effect.gen(function*() {
+        const path = `${projectRoot}/${name}`
+        if (!(yield* isPresent(fs, "manifest_unreadable", path))) return
+        const info = yield* fs.stat(path).pipe(
+          Effect.mapError((cause) => unreadable("manifest_unreadable", path, cause))
+        )
+        // Bun loads files; a directory of this name, such as a Python
+        // environment, configures nothing.
+        if (info.type === "Directory") return
+        const text = yield* boundedText(fs, "manifest_unreadable", projectRoot, path, maximumEnvFileBytes)
+        const reserved = Bun.reservedAssignment(text)
+        if (reserved !== undefined) {
+          return yield* Effect.fail(
+            new PackageManagerError({
+              code: "unsafe_configuration",
+              message: `${path} sets ${reserved}; bun install loads this file and cannot be told not to, ` +
+                "so it may not set a BUN_ or NPM_CONFIG_ variable"
+            })
+          )
+        }
+      }), { discard: true })
+    const fetch = Effect.gen(function*() {
+      yield* verify
+      yield* refuseEnvironmentFiles
+      const { bytes, lockfile } = yield* bunLockfile(fs, projectRoot)
+      yield* prepareStore
+      yield* stageFile(lockfileNames.bun, "lockfile_unreadable", maximumLockfileBytes, bytes)
+      yield* stageFile("package.json", "manifest_unreadable", maximumPackageJsonBytes)
+      for (const [file, limit] of [[bunfigName, maximumBunfigBytes], [".npmrc", maximumNpmrcBytes]] as const) {
+        if (yield* isPresent(fs, "manifest_unreadable", `${projectRoot}/${file}`)) {
+          yield* stageFile(file, "manifest_unreadable", limit)
+        }
+      }
+      for (const member of lockfile.members) {
+        yield* stageFile(`${member}/package.json`, "manifest_unreadable", maximumPackageJsonBytes)
+      }
+      for (const patch of lockfile.patches) yield* stageFile(patch, "manifest_unreadable", maximumLockfileBytes)
+      const child = yield* command(
+        ["install", "--frozen-lockfile", "--ignore-scripts", "--no-progress", "--cache-dir", cache],
+        stage,
+        "inherit"
+      )
+      yield* run(spawner, "bun install", child, timeoutMs)
+    })
+    const link = Effect.gen(function*() {
+      yield* verify
+      yield* refuseEnvironmentFiles
+      // The fetch made these directories and emptied the home. A home that
+      // holds anything now holds configuration Bun would read unchecked.
+      yield* checkStore
+      const configuration = yield* fs.readDirectory(home).pipe(Effect.mapError(staging(`read ${home}`)))
+      if (configuration.length > 0) {
+        return yield* Effect.fail(
+          new PackageManagerError({
+            code: "unsafe_configuration",
+            message: `${home} is not empty; Bun reads user-level configuration from it, so the fetch empties it ` +
+              "and the link refuses anything put there since"
+          })
+        )
+      }
+      const child = yield* command(
+        ["install", "--offline", "--frozen-lockfile", "--ignore-scripts", "--no-progress", "--cache-dir", cache],
+        projectRoot,
+        "inherit"
+      )
+      yield* run(spawner, "bun install --offline", child, timeoutMs)
+    })
+    const names = (directory: string) =>
+      fs.readDirectory(directory).pipe(Effect.mapError((cause) => unreadable("manifest_unreadable", directory, cause)))
+    // Bun writes no manifest of the tree it linked. The evidence is the tree's
+    // own package directory names: the root entries, the scoped packages, and
+    // the isolated linker's `.bun` store. A link that linked nothing leaves no
+    // `node_modules`, and reading it fails.
+    const linkManifest = Effect.gen(function*() {
+      const root = `${projectRoot}/node_modules`
+      const entries: Array<string> = []
+      for (const name of yield* names(root)) {
+        if (name === ".bun" || name.startsWith("@")) {
+          for (const child of yield* names(`${root}/${name}`)) entries.push(`${name}/${child}`)
+        } else entries.push(name)
+      }
+      return yield* digestText(JSON.stringify(["smithers-build/bun-tree/v1", entries.sort()]))
+    })
+    return Object.freeze(
+      {
+        name: "bun",
+        projectRoot,
+        storeDirectory,
+        lockfileName: lockfileNames.bun,
+        platformSensitive: true,
+        requirement: normalized.requirement,
+        version,
+        verify,
+        fetch,
+        link,
+        linkManifest
+      } satisfies Service
+    )
   })
 
 /**
- * Provides the Bun implementation built by {@link makeBun}: every operation
- * fails with `unsupported`.
+ * Provides the Bun implementation built by {@link makeBun}.
  *
  * @category layers
  * @since 0.1.0
  */
 export const layerBun = (
   options: Options
-): Layer.Layer<PackageManager, never, Runtime.Runtime> => Layer.effect(PackageManager)(makeBun(options))
+): Layer.Layer<
+  PackageManager,
+  never,
+  ChildProcessSpawner | FileSystem.FileSystem | Runtime.Runtime
+> => Layer.effect(PackageManager)(makeBun(options))
+
+/**
+ * Digests the project `bunfig.toml`, if there is one.
+ *
+ * The file is held to the same rules every Bun child is started under, with
+ * no credential forwarded, so a `bunfig.toml` that holds a credential, a
+ * placeholder, or a setting the install does not know is refused here and
+ * never digested.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const bunfigDigest = (
+  projectRoot: string
+): Effect.Effect<Digest | null, PackageManagerError, FileSystem.FileSystem | EffectDigest.Digest> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const text = yield* bunfigText(fs, projectRoot)
+    if (text === null) return null
+    yield* admitted(Bun.checkBunfig(text, false))
+    return yield* digestText(text)
+  })
+
+/**
+ * Digests every patch file `bun.lock` names, in path order.
+ *
+ * Bun's text lockfile records a patch by path alone, so a patch can change
+ * what an install produces without changing the lockfile. Measuring the files
+ * puts their content into the install's key material.
+ *
+ * Fails with `lockfile_unreadable` when `bun.lock` is missing, malformed, or
+ * names an unusable path; with `unsupported` for a dependency resolved from a
+ * local path; and with `manifest_unreadable` for a patch file that is not a
+ * regular file at its own path inside the project. A symbolic link is refused,
+ * so the digest never covers a file the lockfile did not name.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const bunPatchDigests = (
+  projectRoot: string
+): Effect.Effect<
+  ReadonlyArray<{ readonly path: string; readonly digest: Digest }>,
+  PackageManagerError,
+  FileSystem.FileSystem | EffectDigest.Digest
+> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const { lockfile } = yield* bunLockfile(fs, projectRoot)
+    const patches: Array<{ readonly path: string; readonly digest: Digest }> = []
+    for (const path of lockfile.patches) {
+      const bytes = yield* ownFile(fs, "manifest_unreadable", projectRoot, path, maximumLockfileBytes)
+      patches.push({ path, digest: yield* Effect.orDie(Schema.decodeUnknownEffect(Sha256)(bytes)) })
+    }
+    return patches
+  })
 
 /** The lockfile each supported manager writes. */
 const lockfileNames: Readonly<Record<Name, string>> = {
@@ -1452,8 +1907,7 @@ const lockfileNames: Readonly<Record<Name, string>> = {
  *
  * This is what an unconfigured composition gets, and what a browser bundle
  * gets: the seam still resolves, and each call answers with a typed
- * `unsupported` failure naming the manager instead of vanishing. It is also
- * the explicit stand-in for Bun until a Bun implementation lands.
+ * `unsupported` failure naming the manager instead of vanishing.
  *
  * Throws `TypeError` when `name` is not a supported manager or the options
  * are invalid.
@@ -1508,11 +1962,22 @@ interface NormalizedStoreManifestInput {
   readonly npmrcDigest: string | null
   readonly pnpmfileDigest: string | null
   readonly workspaceDigest: string | null
+  readonly bunfigDigest: string | null
+  readonly patches: ReadonlyArray<readonly [path: string, digest: string]>
 }
 
-const digestPattern = /^[0-9a-f]{64}$/
-
-const normalizeStoreManifestInput = (value: {
+/**
+ * The inputs a store manifest digest is taken over.
+ *
+ * `pnpmfileDigest` and `workspaceDigest` are pnpm's configuration;
+ * `bunfigDigest` and `patches` are Bun's `bunfig.toml` and the patch files its
+ * lockfile names. Each is omitted or `null` (empty, for `patches`) when the
+ * manager has none.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface StoreManifestInput {
   readonly manager: Name
   readonly managerVersion: string
   readonly platform: Platform | null
@@ -1520,7 +1985,13 @@ const normalizeStoreManifestInput = (value: {
   readonly npmrcDigest: string | null
   readonly pnpmfileDigest?: string | null
   readonly workspaceDigest?: string | null
-}): NormalizedStoreManifestInput => {
+  readonly bunfigDigest?: string | null
+  readonly patches?: ReadonlyArray<{ readonly path: string; readonly digest: string }>
+}
+
+const digestPattern = /^[0-9a-f]{64}$/
+
+const normalizeStoreManifestInput = (value: StoreManifestInput): NormalizedStoreManifestInput => {
   const record = Validate.plainRecord(value, "store manifest input")
   Validate.exactKeys(
     record,
@@ -1531,7 +2002,9 @@ const normalizeStoreManifestInput = (value: {
       "lockfileDigest",
       "npmrcDigest",
       "pnpmfileDigest",
-      "workspaceDigest"
+      "workspaceDigest",
+      "bunfigDigest",
+      "patches"
     ]),
     "store manifest input"
   )
@@ -1557,7 +2030,7 @@ const normalizeStoreManifestInput = (value: {
   if (npmrcDigest !== null && (typeof npmrcDigest !== "string" || !digestPattern.test(npmrcDigest))) {
     throw new TypeError("store manifest npmrcDigest must be a lowercase SHA-256 digest or null")
   }
-  const optionalDigest = (key: "pnpmfileDigest" | "workspaceDigest"): string | null => {
+  const optionalDigest = (key: "pnpmfileDigest" | "workspaceDigest" | "bunfigDigest"): string | null => {
     if (!Object.hasOwn(record, key)) return null
     const digest = Validate.ownData(record, key, "store manifest input")
     if (digest !== null && (typeof digest !== "string" || !digestPattern.test(digest))) {
@@ -1565,6 +2038,19 @@ const normalizeStoreManifestInput = (value: {
     }
     return digest
   }
+  const patchList = Object.hasOwn(record, "patches") ? Validate.ownData(record, "patches", "store manifest input") : []
+  if (!Array.isArray(patchList)) throw new TypeError("store manifest patches must be an array")
+  const patches = patchList.map((member: unknown): readonly [string, string] => {
+    const patch = Validate.plainRecord(member, "store manifest patch")
+    Validate.exactKeys(patch, new Set(["path", "digest"]), "store manifest patch")
+    const path = Validate.ownData(patch, "path", "store manifest patch")
+    const digest = Validate.ownData(patch, "digest", "store manifest patch")
+    if (
+      typeof path !== "string" || path.length === 0 || !Validate.isWellFormedText(path) ||
+      typeof digest !== "string" || !digestPattern.test(digest)
+    ) throw new TypeError("store manifest patches must each hold a path and a lowercase SHA-256 digest")
+    return [path, digest]
+  })
   const platformValue = Validate.ownData(record, "platform", "store manifest input")
   return Object.freeze({
     manager,
@@ -1573,15 +2059,21 @@ const normalizeStoreManifestInput = (value: {
     lockfileDigest,
     npmrcDigest,
     pnpmfileDigest: optionalDigest("pnpmfileDigest"),
-    workspaceDigest: optionalDigest("workspaceDigest")
+    workspaceDigest: optionalDigest("workspaceDigest"),
+    bunfigDigest: optionalDigest("bunfigDigest"),
+    patches: Object.freeze(patches)
   })
 }
 
-const renderStoreManifestText = (input: NormalizedStoreManifestInput): string =>
-  JSON.stringify([
-    input.pnpmfileDigest === null && input.workspaceDigest === null
-      ? "smithers-build/store-manifest/v1"
-      : "smithers-build/store-manifest/v2",
+const renderStoreManifestText = (input: NormalizedStoreManifestInput): string => {
+  const pnpm = input.pnpmfileDigest !== null || input.workspaceDigest !== null
+  const bun = input.bunfigDigest !== null || input.patches.length > 0
+  return JSON.stringify([
+    bun
+      ? "smithers-build/store-manifest/v3"
+      : pnpm
+      ? "smithers-build/store-manifest/v2"
+      : "smithers-build/store-manifest/v1",
     input.manager,
     input.managerVersion,
     input.platform === null
@@ -1589,10 +2081,10 @@ const renderStoreManifestText = (input: NormalizedStoreManifestInput): string =>
       : [input.platform.os, input.platform.arch, input.platform.libc],
     input.lockfileDigest,
     input.npmrcDigest,
-    ...(input.pnpmfileDigest === null && input.workspaceDigest === null
-      ? []
-      : [input.pnpmfileDigest, input.workspaceDigest])
+    ...(pnpm || bun ? [input.pnpmfileDigest, input.workspaceDigest] : []),
+    ...(bun ? [input.bunfigDigest, input.patches] : [])
   ])
+}
 
 /**
  * The canonical text a store manifest digest is taken over.
@@ -1600,20 +2092,14 @@ const renderStoreManifestText = (input: NormalizedStoreManifestInput): string =>
  * It is represented as a fixed JSON tuple, so field order is independent of
  * object construction order. The version prefix is hashed with everything
  * else, so a change to this shape cannot collide with a digest minted under
- * the old one.
+ * the old one. The tuple is v1 with no manager configuration, v2 with pnpm's
+ * hook or workspace file, and v3 with Bun's `bunfig.toml` or patch files.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const storeManifestText = (input: {
-  readonly manager: Name
-  readonly managerVersion: string
-  readonly platform: Platform | null
-  readonly lockfileDigest: string
-  readonly npmrcDigest: string | null
-  readonly pnpmfileDigest?: string | null
-  readonly workspaceDigest?: string | null
-}): string => renderStoreManifestText(normalizeStoreManifestInput(input))
+export const storeManifestText = (input: StoreManifestInput): string =>
+  renderStoreManifestText(normalizeStoreManifestInput(input))
 
 /**
  * Computes the store manifest a fetch reports.
@@ -1621,15 +2107,7 @@ export const storeManifestText = (input: {
  * @category constructors
  * @since 0.1.0
  */
-export const storeManifest = (input: {
-  readonly manager: Name
-  readonly managerVersion: string
-  readonly platform: Platform | null
-  readonly lockfileDigest: string
-  readonly npmrcDigest: string | null
-  readonly pnpmfileDigest?: string | null
-  readonly workspaceDigest?: string | null
-}): Effect.Effect<StoreManifest, never, EffectDigest.Digest> =>
+export const storeManifest = (input: StoreManifestInput): Effect.Effect<StoreManifest, never, EffectDigest.Digest> =>
   Effect.sync(() => normalizeStoreManifestInput(input)).pipe(
     Effect.flatMap((normalized) =>
       Effect.map(digestText(renderStoreManifestText(normalized)), (digest) =>

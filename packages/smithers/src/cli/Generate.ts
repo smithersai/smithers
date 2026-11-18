@@ -6,7 +6,6 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { openPackageIndex, runPackageVerb, type RuntimeConfig } from "@smthrs/build-cli/Cli"
 import * as Reporter from "@smthrs/build-cli/Reporter"
-import * as TargetInstall from "@smthrs/targets/Install"
 import * as Target from "@smthrs/targets/Target"
 import { Effect, FileSystem } from "effect"
 import { Cli, z } from "incur"
@@ -95,22 +94,17 @@ export const initialize = async (
           `Cannot infer a supported workspace toolchain from ${manager}; declare WORKSPACE.ts explicitly or use smthrs generate flow`
       })
     }
-    // A generated workspace declares nodeModules, which only an install can
-    // produce, and no install runs under Bun. Refuse before writing anything.
-    if (manager.startsWith("bun@")) {
-      throw new CliError.Refused({
-        fault: "user",
-        code: "unsupported_toolchain",
-        message:
-          `unsupported: ${TargetInstall.bunInstallUnsupportedMessage}; declare WORKSPACE.ts explicitly to run tools under Bun, or use smthrs generate flow`
-      })
-    }
     await create(
       "package.json",
       `${JSON.stringify({ name, private: true, type: "module", packageManager: manager }, null, 2)}\n`
     )
-    const runtime = "S.Runtime.Node({ version: \">=22.19.0\" })"
-    const packageManager = manager.startsWith("yarn@") ?
+    // Bun is its own runtime, so its declared version is the manifest's.
+    const runtime = manager.startsWith("bun@")
+      ? `S.Runtime.Bun({ version: ${JSON.stringify(manager.slice(4))} })`
+      : "S.Runtime.Node({ version: \">=22.19.0\" })"
+    const packageManager = manager.startsWith("bun@") ?
+      "S.PackageManager.BunPackages({ runtime })"
+      : manager.startsWith("yarn@") ?
       `S.PackageManager.Yarn({ manifest: packageJson, lockfile: S.file("//yarn.lock"), version: ${
         JSON.stringify(manager.slice(5))
       } })`

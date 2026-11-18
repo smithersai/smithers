@@ -61,9 +61,7 @@ pnpm exec smithers-build install
 ```
 
 That command plans the `install` flow under the declared manager's layer and
-runs measure, fetch, and link. Only pnpm performs work today; a Bun declaration
-resolves the service and refuses every operation with a typed `unsupported`
-error rather than approximating a verified fetch.
+runs measure, fetch, and link, under pnpm or Bun.
 
 ## Where this package sits
 

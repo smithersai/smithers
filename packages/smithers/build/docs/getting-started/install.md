@@ -15,8 +15,7 @@ import; and [`@smthrs/build-cli`](https://github.com/smithersai/smithers/tree/ma
 - Node.js 22.19.0 or newer, which is what the packages declare in `engines`.
 - An npm-compatible package manager. Your workspace declaration names the one
   targets run their tools through: pnpm or Bun. The install flow
-  has a live implementation only for pnpm, and a Bun declaration fails with a
-  typed `unsupported` error.
+  runs under either; a Bun install needs Bun 1.4.1 or newer.
 - Git, for the parts of a run that read the tree. Discovery prefers
   `git ls-files`; outside a worktree it falls back to a `.gitignore` walker.
 

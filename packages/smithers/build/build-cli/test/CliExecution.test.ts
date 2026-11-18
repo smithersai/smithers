@@ -87,7 +87,7 @@ describe("PACKAGE.ts CLI", () => {
     expect(output).toContain("ok: true")
   })
 
-  it("refuses an Install under a Bun workspace as unsupported before anything spawns", async () => {
+  it("refuses a Bun workspace whose lockfile is not a text lockfile before anything spawns", async () => {
     const root = await temporaryWorkspace()
     await write(
       root,
@@ -115,7 +115,8 @@ export const Package = S.Package({ targets: { install: S.Install({ lockfilePath:
     await write(root, "bun.lock", "{}\n")
     const { exitCode, output, logs } = await serve(root, ["install"])
     expect(exitCode).toBe(1)
-    expect(`${output}${logs}`).toContain("unsupported: Install cannot use the Bun package manager")
+    // Measure reads the lockfile before any manager runs, so this needs no Bun on the host.
+    expect(`${output}${logs}`).toContain("bun.lock is not a Bun text lockfile")
     expect(await Fs.access(NodePath.join(root, ".flows/store")).then(() => true, () => false)).toBe(false)
   })
 

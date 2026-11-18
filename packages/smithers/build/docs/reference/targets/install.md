@@ -30,7 +30,7 @@ declaration the caller passes in.
 
 | Name             | Type             | Default  | Description                                                                                 |
 | ---------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------- |
-| `packageManager` | `PackageManager` | required | The declared manager, from `PackageManager.Pnpm`. A Bun manager is refused as `unsupported` |
+| `packageManager` | `PackageManager` | required | The declared manager, from `PackageManager.Pnpm` or `PackageManager.BunPackages`            |
 | `lockfile`       | `Target \| null` | `null`   | The `Lockfile` target, when the lockfile is generated                                       |
 | `manifest`       | `Target \| null` | `null`   | The root-manifest target, when it is generated                                              |
 | `workspace`      | `Target \| null` | `null`   | The workspace-definition target, when it is generated                                       |
@@ -45,13 +45,18 @@ package-manager service.
 
 ## Declared inputs
 
-The target declares three files, whoever produced them:
+The target declares these files, whoever produced them:
 
-1. the lockfile the declared manager writes, for example `pnpm-lock.yaml`;
+1. the lockfile the declared manager writes, `pnpm-lock.yaml` or `bun.lock`;
 2. `.npmrc`, which decides the registry and the credentials;
-3. `package.json`, which decides what the workspace asked for.
+3. `package.json`, which decides what the workspace asked for;
+4. the manager's own configuration: `.pnpmfile.mjs` for pnpm, and for Bun
+   `bunfig.toml` and every `*.patch` file outside `node_modules`, because
+   `bun.lock` records a patch by path alone.
 
-A change in any of the three changes what an install produces.
+A change in any of them changes what an install produces. A declaration that
+leaves the manager to the workspace is treated as Bun when its `lockfilePath`
+names a `bun.lock`.
 
 ## What it plans
 
@@ -63,9 +68,10 @@ implementation: ;
 ```
 
 The manager is a plan-time value, so the flow selects one manager-specific
-fetch action in a single round. It measures the lockfile and `.npmrc` digests,
-verifies the host against the declared manager and runtime versions, fetches
-into `.flows/store/<manager>`, and always reconciles `node_modules` offline.
+fetch action in a single round. It measures the lockfile and configuration
+digests, verifies the host against the declared manager and runtime versions,
+fetches into `.flows/store/<manager>`, and always reconciles `node_modules`
+offline.
 Measure, fetch, and link all use `expected` boundaries and are not admitted to
 the cross-run engine cache.
 
@@ -76,10 +82,12 @@ the cross-run engine cache.
 | Success | `Install.LinkManifest`, `{store, manifest, linked}`             |
 | Error   | `PackageManager.PackageManagerError`, `{code, message, cause?}` |
 
-Error `code` is one of `command_failed`, `environment_mismatch`,
+Error `code` is one of `command_failed`, `environment_mismatch`, `input_drift`,
 `lockfile_unreadable`, `manifest_unreadable`, `unsafe_configuration`, or
 `unsupported`. A host whose manager or runtime does not satisfy the declared
-version fails with `environment_mismatch` before anything is written.
+version fails with `environment_mismatch` before anything is written. Under
+Bun that includes a Bun older than 1.4.1, and `unsupported` is a lockfile that
+resolves a dependency from a local path.
 
 ## Status
 

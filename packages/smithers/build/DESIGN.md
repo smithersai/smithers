@@ -189,16 +189,28 @@ diagnostics; it is not a freshness marker that skips reconciliation.
 
 ### 5.3 Manager support
 
-| Manager | Status      | Fetch/link behavior                                                             |
-| ------- | ----------- | ------------------------------------------------------------------------------- |
-| pnpm    | Implemented | `pnpm fetch`, then offline frozen `pnpm install`, both with scripts disabled    |
-| Bun     | Unsupported | No documented fetch-only plus offline-link pair strong enough for this contract |
+| Manager | Status      | Fetch/link behavior                                                          |
+| ------- | ----------- | ---------------------------------------------------------------------------- |
+| pnpm    | Implemented | `pnpm fetch`, then offline frozen `pnpm install`, both with scripts disabled |
+| Bun     | Implemented | Frozen `bun install` in a staging copy inside the store, then `--offline`    |
 
 `PackageManager.Name` is `pnpm | bun` and nothing else, so npm and Yarn are not
-unsupported selections: no declaration can name one. The Bun row is the only
-unsupported selection, and it is a deliberate typed service rather than a
-missing provider. It answers every operation with
-`PackageManagerError { code: "unsupported" }`.
+unsupported selections: no declaration can name one.
+
+Bun has no fetch-only command, so its fetch is `bun install --frozen-lockfile
+--ignore-scripts` run in a copy of the lockfile, configuration, workspace
+manifests, and patch files under `.flows/store/bun/fetch`. That fills the cache
+at `.flows/store/bun/cache` and leaves the project's `node_modules` alone, and
+the child opens bytes the parent wrote. Bun reads three things no flag turns
+off: `BUN_INSTALL_CACHE_DIR` and the home directory, which the child
+environment pins inside the store; `bunfig.toml`, which is held to a known list
+of `[install]` settings; and the project's `.env` files, which the staging copy
+does not contain and the install refuses when one sets a `BUN_` or
+`NPM_CONFIG_` variable. Bun installs from a parent directory whose
+`package.json` names its working directory as a workspace, so a `package.json`
+between the project root and the staging copy is refused. `bun install`
+ignores flags it does not know, so a Bun older than 1.4.1, the first with
+`--offline`, is refused.
 
 The store path is fixed at `.flows/store/<manager>`. Consequently the direct
 `install` command requires the default `.flows` cache-directory setting.
@@ -305,8 +317,9 @@ barriers.
 
 1. **No general sandbox.** Effects declarations do not confine arbitrary tools.
 2. **No shared install replay.** All install boundaries remain `expected`.
-3. **Only pnpm installation.** Bun, the one other manager a declaration can
-   name, is refused when an install is configured with it.
+3. **pnpm and Bun installation only.** A Bun install needs Bun 1.4.1 and a
+   text lockfile, and refuses local-path dependencies; see
+   `docs/concepts/install.md`.
 4. **Whole-lockfile granularity.** There is no rules_js-style per-package fetch
    graph yet.
 5. **Lifecycle scripts disabled.** Arbitrary dependency code needs a separate,

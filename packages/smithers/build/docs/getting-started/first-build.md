@@ -181,8 +181,7 @@ smithers-build install --workspace .
 
 This runs the `Install` flow under the declared package manager's layer:
 measure, fetch into `.flows/store/<manager>`, then reconcile `node_modules`.
-Only pnpm has a live implementation today; the other managers fail with a typed
-`unsupported` error. Install requires the default `.flows` cache-directory
+pnpm and Bun both install. Install requires the default `.flows` cache-directory
 setting and is not answered from the cross-run engine cache. See
 [Install](../concepts/install.md).
 

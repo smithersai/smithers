@@ -25,11 +25,13 @@ describe("public authoring boundary defaults", () => {
     expect(metadata.forKind("lint").attrs).toMatchObject({ mode: "check" })
   })
 
-  it("keeps the implementation-side Bun refusal when attrs are supplied at planning time", () => {
-    const target = Install.Install({ packageManager })
+  it("plans the install for the manager supplied at planning time", () => {
+    // The workspace fills the manager in after the target is declared, so the
+    // body reads it from the planning attrs, not from the declaration.
+    const target = Install.Install({ lockfilePath: "bun.lock" })
     const bun = PackageManager.BunPackages({ runtime: Runtime.Bun({ version: ">=1.4.0" }) })
-    expect(() => Target.plan(target, { packageManager: bun }))
-      .toThrow(Install.bunInstallUnsupportedMessage)
+    expect(() => Target.plan(target, { packageManager: bun })).not.toThrow()
+    expect(() => Target.plan(target, {})).toThrow()
   })
 
   it("renders the empty component identifier fallback through the boilerplate boundary", () => {

@@ -132,19 +132,19 @@ describe("workspace initialization behavior", () => {
     })
   })
 
-  it("refuses to generate a Bun workspace, whose install is unsupported", async () => {
+  it("generates a Bun workspace whose runtime and manager are the manifest's Bun", async () => {
     const root = await directory()
     const original = JSON.stringify({ name: "authored", packageManager: "bun@1.4.2" })
     await writeFile(join(root, "package.json"), original)
-    await expect(initialize(root, "example", {})).rejects.toMatchObject({
-      _tag: "/cli/Refused",
-      fault: "user",
-      code: "unsupported_toolchain",
-      message: expect.stringMatching(/unsupported: Install cannot use the Bun package manager/)
-    })
-    expect(existsSync(join(root, "WORKSPACE.ts"))).toBe(false)
-    expect(existsSync(join(root, "PACKAGE.ts"))).toBe(false)
+    const result = await initialize(root, "example", {})
+    expect(result.created).toEqual(expect.arrayContaining(["WORKSPACE.ts", "PACKAGE.ts"]))
+    expect(result.retained).toEqual(["package.json"])
     expect(await readFile(join(root, "package.json"), "utf8")).toBe(original)
+    const workspace = await readFile(join(root, "WORKSPACE.ts"), "utf8")
+    // Bun is its own runtime: the manager takes its version from the runtime.
+    expect(workspace).toContain(`const runtime = S.Runtime.Bun({ version: "1.4.2" })`)
+    expect(workspace).toContain("packageManager: S.PackageManager.BunPackages({ runtime })")
+    expect(workspace).not.toContain("S.Runtime.Node")
   })
 
   it.each(["WORKSPACE.ts", ".smithers/WORKSPACE.ts"])(
