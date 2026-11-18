@@ -757,7 +757,8 @@ describe("the jail", () => {
         { path: "/vault/netrc", directory: false }
       ],
       tmp: "/work/tmp",
-      temporary: ["/tmp", "/var/tmp/mine"],
+      // The machine's temporary directory lies in the directory the replay's program is installed in.
+      temporary: ["/tmp", "/tmp/bunx/tmp"],
       visible: ["/tmp/bunx", "/work"],
       filter: "/work/keyring-filter"
     }
@@ -794,18 +795,20 @@ describe("the jail", () => {
       "--ro-bind",
       "/dev/null",
       "/vault/netrc",
+      // A directory before what lies in it: the temporary directory inside the program's is the replay's own
+      // again, and can be written.
       "--bind",
       "/work/tmp",
       "/tmp",
+      "--ro-bind",
+      "/work",
+      "/work",
+      "--ro-bind",
+      "/tmp/bunx",
+      "/tmp/bunx",
       "--bind",
       "/work/tmp",
-      "/var/tmp/mine",
-      "--ro-bind",
-      "/tmp/bunx",
-      "/tmp/bunx",
-      "--ro-bind",
-      "/work",
-      "/work",
+      "/tmp/bunx/tmp",
       "--bind",
       "/h",
       "/h",

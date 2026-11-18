@@ -121,6 +121,40 @@ describe.skipIf(!jailable)("a command in the jail", () => {
   })
 })
 
+describe.skipIf(!jailable)("the machine's temporary directory, in the jail", () => {
+  it("is the step's own to write when the replay's program is installed in the directory that holds it", async () => {
+    // As `TMPDIR=/tmp/x/tmp` with the program under `/tmp/x/consumer`: `/tmp/x` stays in sight, read-only, for the
+    // program, and the temporary directory inside it is still the replay's own.
+    const holder = mkdtempSync("/tmp/smithers-ci-reach-")
+    made.push(holder)
+    const machines = join(holder, "tmp")
+    const program = join(holder, "consumer", "program")
+    mkdirSync(machines)
+    mkdirSync(dirname(program))
+    writeFileSync(program, "echo ran\n")
+    writeFileSync(join(machines, "left-by-another-program"), "")
+    const work = mkdtempSync(join(machines, "smithers-ci-replay-"))
+    const seen = await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const asked = () => ({ ...found, tmp: machines })
+        const places = yield* confine(work, asked, () => Effect.void, [program], false, undefined, repository)
+        const writes =
+          "sh \"$2\" && touch \"$1/made\" && test ! -e \"$1/left-by-another-program\" && ! touch \"$2\" 2> /dev/null"
+        const [command, ...args] = held(places.normal, [], ["sh", "-c", writes, "sh", machines, program])
+        const ran = spawnSync(command, args, { env: stepEnvironment({}, places.normal), encoding: "utf8" })
+        return { ran, own: existsSync(join(places.normal.tmp, "made")) }
+      })).pipe(Effect.provide(NodeServices.layer)) as Effect.Effect<
+        { readonly ran: SpawnSyncReturns<string>; readonly own: boolean }
+      >
+    )
+    expect(seen.ran.stderr).toBe("")
+    expect([seen.ran.status, seen.ran.stdout]).toEqual([0, "ran\n"])
+    // What the step wrote is in the replay's directory, not in the machine's.
+    expect(seen.own).toBe(true)
+    expect(existsSync(join(machines, "made"))).toBe(false)
+  })
+})
+
 describe.skipIf(!jailable)("the person's home, in the jail", () => {
   it("is empty of everything but the tools: a file no list could name is not there", async () => {
     const seen = await inJail([

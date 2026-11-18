@@ -475,7 +475,10 @@ export const unjailed = (refusal: string, allowDocker: boolean = false): string 
  * but for what each keeps and lets be read, and only `writable` can be written; `sealed` names paths under a writable
  * one that stay read-only. The machine's temporary directories are the
  * replay's own, so a step that writes `/tmp` writes nothing of the machine's
- * and finds nothing another program left there. The step has its own device
+ * and finds nothing another program left there. A directory is put in place
+ * before what lies in it, so a temporary directory inside one that stays in
+ * sight, as `TMPDIR=/tmp/x/tmp` beside a program in `/tmp/x`, is still the
+ * replay's own and can be written. The step has its own device
  * and process trees, the kernel refuses it the keys of the person's session
  * ({@link keyringFilter}) and, where it can, the abstract sockets of the
  * machine ({@link scopeProgram}), and it ends, with everything it started,
@@ -520,8 +523,10 @@ export const jailed = (
         ]
         : ["--ro-bind", "/dev/null", mask.path]
     ),
-    ...jail.temporary.flatMap((directory) => ["--bind", jail.tmp, directory]),
-    ...jail.visible.flatMap((path) => ["--ro-bind", path, path]),
+    ...[
+      ...jail.temporary.map((directory) => ["--bind", jail.tmp, directory] as const),
+      ...jail.visible.map((path) => ["--ro-bind", path, path] as const)
+    ].sort(([, , left], [, , right]) => left.length - right.length).flat(),
     ...writable.flatMap((path) => ["--bind", path, path]),
     ...sealed.flatMap((path) => ["--ro-bind", path, path]),
     "--new-session",
