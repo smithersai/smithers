@@ -12,7 +12,7 @@
 import { execFileSync } from "node:child_process"
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { bin, commit, git, observes, remove, spawn, temporary } from "./repo.ts"
+import { bin, commit, git, observes, pathWithout, remove, spawn, spawnWith, temporary } from "./repo.ts"
 
 const made: Array<string> = []
 afterAll(() => made.forEach(remove))
@@ -134,6 +134,23 @@ describe("a repository whose CI is npm ci, then npm run lint and npm test", () =
         mismatches: []
       })
       expect(report.mismatches).toBe(0)
+      expect(outcome.code).toBe(0)
+    },
+    540_000
+  )
+
+  it.skipIf(process.platform !== "linux")(
+    "says once, on standard error, when this machine cannot record what a step reads",
+    async () => {
+      const root = repository()
+      commit(root, "docs only", { "docs/readme.md": "# Fixture\n\nMore words.\n" })
+      const tools = temporary("no-strace")
+      made.push(tools)
+      const outcome = await spawnWith(bin, ["--commits", "2", "--json"], root, { PATH: pathWithout("strace", tools) })
+      const sentence = "smithers-ci: this machine cannot record what a step reads (strace is not installed). "
+        + "A step that names no inputs runs on every commit. On Linux, install strace."
+      expect(outcome.stderr.split("\n").filter((line) => line === sentence)).toHaveLength(1)
+      expect(outcome.stdout).not.toContain("cannot record")
       expect(outcome.code).toBe(0)
     },
     540_000

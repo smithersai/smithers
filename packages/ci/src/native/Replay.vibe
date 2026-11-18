@@ -21,6 +21,7 @@ import { type Confined, confine, held } from "../replay/Confine.vibe"
 import { noPushUrl, searchPath, stepEnvironment } from "../replay/Environment.ts"
 import { probe } from "../replay/Jail.ts"
 import { nothingPassed, printedLimit } from "../replay/Failures.ts"
+import { printsNotes, readsListener } from "../replay/Reads.ts"
 import { type Execute, Options, Progress, settle } from "../replay/Replay.vibe"
 import {
   choose,
@@ -82,7 +83,8 @@ effect function exec(
   env: Readonly<Record<string, string | undefined>>,
   limit: number,
   stream: "all" | "stdout" = "all",
-  whole = false
+  whole = false,
+  heard: (chunk: string) => void!! = () => Effect.void
 ) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
@@ -92,7 +94,10 @@ effect function exec(
     const kept = try Ref.make("")
     const reader = fork ((stream === "all" ? handle.all : handle.stdout)
       |> Stream.decodeText(%)
-      |> Stream.runForEach(%, (chunk: string) => Ref.update(kept, (text) => (text + chunk).slice(-limit))))
+      |> Stream.runForEach(%, effect (chunk: string) => {
+        try Ref.update(kept, (text) => (text + chunk).slice(-limit))
+        try heard(chunk)
+      }))
     const exitCode = try handle.exitCode
     // A process a target left running keeps the pipe open, so only complete output is waited for without a limit.
     if (limit === Number.POSITIVE_INFINITY) try Fiber.join(reader)
@@ -273,6 +278,13 @@ export const own = <R>(
     const baselineCopy = try copyOf("baseline")
     const fastCopy = request.modes.includes("fast") ? try copyOf("fast") : undefined
 
+    const reads = readsListener()
+    /** Says once in a replay that this machine cannot record what a step reads, when `smthrs` reports that. */
+    const heard = effect (chunk: string) => {
+      const sentence = reads(chunk)
+      if (sentence !== undefined) try progress.say(sentence)
+    }
+
     let runs = 0
     const jobs = request.jobs === undefined ? [] : ["--jobs", String(request.jobs)]
 
@@ -310,8 +322,8 @@ export const own = <R>(
         ...jobs
       ])
       // The cache's address is the one thing the copy's own `smthrs` gets beyond what a target gets.
-      const environment = { ...stepEnvironment({}, place), ...(cached ? cacheEnv : {}) }
-      const output = try exec(command, args, copy, environment, printedLimit, "all", true)
+      const environment = { ...stepEnvironment({}, place), ...printsNotes, ...(cached ? cacheEnv : {}) }
+      const output = try exec(command, args, copy, environment, printedLimit, "all", true, heard)
       // A run with no record is a commit `smthrs` could not plan: a failed commit, not a failed replay.
       const text = fs.readFileString(file) catch () => undefined
       if (text === undefined) return [noRecord(output.text)]

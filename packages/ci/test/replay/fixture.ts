@@ -159,12 +159,13 @@ export { job }
  * A real `smthrs` behind a script that records every command line. With
  * `brokenPlan`, `--plan` prints no plan.
  */
-export const recordingSmthrs = (brokenPlan: boolean) => {
+export const recordingSmthrs = (brokenPlan: boolean, prints = "") => {
   const directory = makeEmptyDirectory()
   const log = join(directory, "commands")
   const command = join(directory, "smthrs")
   const planCase = brokenPlan ? `case "$*" in *--plan*) echo "no plan here"; exit 0;; esac\n` : ""
-  writeFileSync(command, `#!/bin/sh\necho "$*" >> ${log}\n${planCase}exec ${smthrs} "$@"\n`)
+  const printed = prints === "" ? "" : `echo '${prints}'\n`
+  writeFileSync(command, `#!/bin/sh\necho "$*" >> ${log}\n${printed}${planCase}exec ${smthrs} "$@"\n`)
   chmodSync(command, 0o755)
   return { directory, command, commands: () => readFileSync(log, "utf8").split("\n") }
 }

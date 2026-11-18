@@ -26,7 +26,7 @@ export const reasonsIn = (output: string): ReadonlyMap<string, string> => {
     if (header !== null) {
       open = [header[2] as string]
       found.set(header[1] as string, open)
-    } else if (/^(?:\/\/\S+ {2}|code: )/.test(line)) open = undefined
+    } else if (/^(?:\/\/\S+ {2}|code: |[│┌└◇●◆▲■])/.test(line)) open = undefined
     else open?.push(line)
   }
   return new Map([...found].map(([label, lines]) => [label, lines.join("\n").trimEnd()]))

@@ -19,6 +19,7 @@ import {
 } from "../../src/native/index.ts"
 import { noPushUrl } from "../../src/replay/Environment.ts"
 import { Options, type Probe, Progress } from "../../src/replay/index.ts"
+import { cannotRecord } from "../../src/replay/Reads.ts"
 import { unconfined } from "../replay/place.ts"
 import {
   fakeSmthrs,
@@ -224,6 +225,16 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     const report = await onNode(own(request(root, { targets: ["//:a"] }), partsFor("none"), "WORKSPACE.ts"))
     expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
     expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+  })
+
+  it("says once when a run reports that reads cannot be recorded", async () => {
+    const reporting = fakeSmthrs(
+      `echo "smthrs: reads are not observed on this host: no tracer; a target that asks for it is keyed by its declared inputs"\nexec $real "$@"`
+    )
+    const root = keep(makeOwnWith(reporting))
+    said.length = 0
+    await onNode(own(request(root, { commits: 2 }), partsFor("none"), "WORKSPACE.ts"))
+    expect(said.filter((line) => line.startsWith("this machine cannot record"))).toEqual([cannotRecord("no tracer")])
   })
 
   it("replays the patterns asked for, and gives the shared cache --cache names to normal mode only", async () => {

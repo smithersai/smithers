@@ -8,7 +8,8 @@ import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { path as targetMapPath, type TargetMap } from "../../src/contract/TargetMap.ts"
-import { Options, run } from "../../src/replay/index.ts"
+import { Options, Progress, run } from "../../src/replay/index.ts"
+import { cannotRecord } from "../../src/replay/Reads.ts"
 import {
   job,
   linkTargets,
@@ -330,6 +331,26 @@ describe("a replay that runs", () => {
     expect(report.commits[0]?.fast?.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
     expect(report.selection).toMatchObject({ rows: 1, selected: 1 })
     expect(planned).toEqual([["//:a0_0"]])
+  }, 600_000)
+
+  it("says once when Smithers build reports that it cannot record what a step reads", async () => {
+    const recording = recordingSmthrs(
+      false,
+      "smthrs: reads are not observed on this host: no tracer; a target that asks for it is keyed by its declared inputs"
+    )
+    track(recording.directory)
+    const said: Array<string> = []
+    const progress = Layer.succeed(Progress, { say: (line) => Effect.sync(() => void said.push(line)) })
+    await replay(
+      track(makeSmallRepository(passing)),
+      {},
+      { commits: 1 },
+      Layer.merge(
+        withCommand(recording.command),
+        progress
+      ) as never
+    )
+    expect(said.filter((line) => line.startsWith("this machine cannot record"))).toEqual([cannotRecord("no tracer")])
   }, 600_000)
 
   it("never runs more targets at once than the target map allows", async () => {

@@ -46,6 +46,12 @@ describe("firstLine", () => {
 })
 
 describe("the reasons smthrs prints", () => {
+  it("ends a reason at the frame of the display a person gets", () => {
+    const output =
+      "◇  Running //:a\n//:a  failed  2ms  it broke\n│\n└  1 targets: 0 hit, 0 ran, 1 failed, 0 skipped (3ms)\n"
+    expect(reasonsIn(output).get("//:a")).toBe("it broke")
+  })
+
   it("are read from its plain output, one per failed target", () => {
     expect([...reasonsIn(plain)]).toEqual([
       ["//typescript:compiler", `host binary "go" is declared in S.Host({ bins }) but is not present on PATH`],

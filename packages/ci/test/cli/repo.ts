@@ -13,6 +13,7 @@ import {
   readlinkSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync
 } from "node:fs"
 import { tmpdir } from "node:os"
@@ -185,6 +186,40 @@ export const spawn = (
       [entry, ...args],
       // A real replay runs the repository's commands and the generated targets.
       { cwd, env, encoding: "utf8", timeout: 540_000 },
+      (error, stdout, stderr) => {
+        if (error !== null && typeof error.code !== "number") reject(error)
+        else resolve({ code: error === null ? 0 : Number(error.code), stdout, stderr })
+      }
+    )
+  })
+
+/**
+ * A `PATH` with the same programs as this one but `program`: each directory
+ * that holds it is replaced by a directory of links to everything else in it.
+ */
+export const pathWithout = (program: string, parent: string): string =>
+  (process.env["PATH"] ?? "").split(":").map((directory, index) => {
+    if (!existsSync(join(directory, program))) return directory
+    const links = join(parent, `path-${index}`)
+    mkdirSync(links, { recursive: true })
+    for (const name of readdirSync(directory)) {
+      if (name !== program) symlinkSync(join(directory, name), join(links, name))
+    }
+    return links
+  }).join(":")
+
+/** Runs a Node entry as {@link spawn} does, with `env` added to this process's environment. */
+export const spawnWith = (
+  entry: string,
+  args: ReadonlyArray<string>,
+  cwd: string,
+  env: Readonly<Record<string, string>>
+): Promise<Outcome> =>
+  new Promise((resolve, reject) => {
+    execFile(
+      process.execPath,
+      [entry, ...args],
+      { cwd, encoding: "utf8", timeout: 540_000, env: { ...process.env, ...env } },
       (error, stdout, stderr) => {
         if (error !== null && typeof error.code !== "number") reject(error)
         else resolve({ code: error === null ? 0 : Number(error.code), stdout, stderr })
