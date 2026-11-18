@@ -69,6 +69,59 @@ What the numbers say:
 - A 40-minute target reruns whole when any file in its package changes. The
   five large `test` targets must be split before a cache helps them.
 
+## Census of cache reuse, 2026-11-17
+
+Finish line 1 is not met. On an unchanged tree, the third run of CI's workspace
+graph took 63.5 minutes against the 2-minute goal, and 327 of 734 targets hit.
+
+Commit `a700ffcfc5ff`, the 77 patterns of CI's "Workspace targets" step with no
+shard, `--jobs 15`, an empty cache at the start. nyc-01 was shared with other
+work (load 20 to 270) and has no Docker.
+
+| Run | Tree | Wall | Hit | Ran | Failed | Skipped |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | Fresh install, empty cache | 43.6 min | 0 | 670 | 49 | 15 |
+| 2 | Unchanged after run 1 | 50.0 min | 182 | 475 | 61 | 16 |
+| 3 | Unchanged after run 2 | 63.5 min | 327 | 316 | 68 | 23 |
+
+Run 2 is not a fair second run. The first `dprint` start links its binary into
+`node_modules/.pnpm/dprint@0.57.1`. That changes the root `node_modules` digest
+and 548 of 734 keys. Run 3 is the second run on a settled tree.
+
+Run 3 by reason. Minutes are each target's own time, taken from a fourth run
+without the two exclusive `Shell.Diff` targets, because the run record's time
+includes queueing behind them.
+
+| Reason | Targets | Minutes |
+| --- | ---: | ---: |
+| Hit | 327 | 0.8 |
+| Ran: the confined run needed an undeclared read | 150 | 94.0 |
+| Ran: the confined run failed, no path named | 34 | 23.2 |
+| Ran: the rule or declaration is never cached | 130 | 21.8 |
+| Ran: other | 2 | 4.3 |
+| Failed: never passed in four runs | 38 | 193.0 |
+| Failed: passed in another run | 15 | 74.3 |
+| Failed: lint reads `*.d.vibe.ts` files run 1 left | 9 | 5.9 |
+| Failed: needs Docker, did not start | 6 | 0 |
+| Skipped: a dependency failed | 23 | 0 |
+
+Undeclared reads that block the most minutes. A target counts under every read
+its failure names, and only 52 of the 150 name a single read, so declaring one
+read rarely frees a target.
+
+| Read | Targets | Minutes |
+| --- | ---: | ---: |
+| `packages/smithers/flows/flow` | 46 | 29.3 |
+| `packages/smithers/flows/journal` | 29 | 23.2 |
+| `packages/smithers/flows/database` | 31 | 20.5 |
+| `packages/smithers/flows/canonical` | 26 | 16.8 |
+| `packages/smithers/flows/plan` | 28 | 16.2 |
+| `packages/smithers/flows/kernel` | 19 | 15.5 |
+| `packages/smithers/flows/crypto` | 21 | 13.3 |
+| `packages/smithers/flows/engine` | 13 | 12.5 |
+| `packages/smithers/agent/model` | 15 | 12.2 |
+| `packages/smithers/control` | 11 | 10.4 |
+
 ## Order of work
 
 Superseded on 2026-11-17 by the one-wave build below; kept as the order the join is checked in.
