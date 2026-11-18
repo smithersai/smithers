@@ -10,9 +10,8 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import type { Closure } from "../contract/Closure.ts"
 import { type Ci, type Step, withSteps } from "../contract/Inventory.ts"
-import type { CloseEntries, Decompose, Failure } from "../contract/Parts.ts"
+import type { Decompose, Failure } from "../contract/Parts.ts"
 import { withoutAliases } from "./Aliases.ts"
 import { decide, type Facts, followed, keepCommand, preceded, understand, type Understood } from "./Plan.ts"
 import { readConfig } from "./Turbo.ts"
@@ -138,31 +137,22 @@ effect function readFacts(tree: Tree, workspace: Workspace): Facts!Failure!Child
   }
 }
 
-/** What the Zig strategy said of the build steps a CI names. */
-interface Built {
-  readonly closures: ReadonlyMap<string, Closure>
-  readonly groups: ReadonlyMap<string, ReadonlyArray<string>>
-}
-
 const replaced = (
   step: Step,
   understood: Understood | undefined,
   facts: Facts | undefined,
-  zig: Built,
+  groups: ReadonlyMap<string, ReadonlyArray<string>>,
   relied: boolean
 ): ReadonlyArray<Step> => {
-  // A step a later step relies on keeps its command and its place: where Zig writes is what that step may read.
-  const builds = understood !== undefined && understood.zig.length > 0 && !relied
-  const onlyBuilds = builds && understood.runs.length === 0
-  const parts = onlyBuilds ? Zig.split(step, zig.groups, zig.closures) : undefined
-  if (parts !== undefined) return parts
-  const decision = understood === undefined ? { kind: "whole" as const } : decide(step, understood, facts, zig.closures)
-  if (decision.kind === "whole") return [step]
-  if (decision.kind === "scope") {
-    const scoped = { ...step, inputs: decision.inputs, from: step.id }
-    // A closure is all a Zig build reads, whatever ran before it; a script run's inputs are not.
-    return [builds ? Zig.dress(scoped, onlyBuilds) : scoped]
+  if (understood !== undefined && understood.zig.length > 0) {
+    // A step a later step relies on keeps its command and its place: where Zig writes is what that step may read.
+    if (relied) return [step]
+    // A Zig step names no inputs: its tests write where they start, so it runs in the open and is observed.
+    return Zig.split(step, groups) ?? [Zig.dress(step)]
   }
+  const decision = understood === undefined ? { kind: "whole" as const } : decide(step, understood, facts)
+  if (decision.kind === "whole") return [step]
+  if (decision.kind === "scope") return [{ ...step, inputs: decision.inputs, from: step.id }]
   return decision.parts.map((part) => ({
     ...step,
     id: `${step.id}:${part.name}`,
@@ -176,8 +166,6 @@ const replaced = (
 /**
  * What the decompose part is made with.
  *
- * - `zig`: the Zig closure strategy. Without it, or when it fails, a step
- *   that runs `zig build` stays whole.
  * - `zigGroups`: the named steps each Zig build step only groups. With it, a
  *   step that is nothing but `zig build <step>` becomes one step per named
  *   step. Without it, or when it fails, the step keeps its command.
@@ -189,7 +177,6 @@ const replaced = (
  * @since 0.1.0
  */
 export interface Options<R = never> {
-  readonly zig?: CloseEntries<R> | undefined
   readonly zigGroups?:
     | ((root: string, steps: ReadonlyArray<string>) => ReadonlyArray<ReadonlyArray<string>>!Failure!R)
     | undefined
@@ -217,8 +204,8 @@ export const splitWith = <R = never>(
     const understood = new Map(steps.map((step) => {
       const known = understand(step, workspace, options.turboWrappers)
       // A step after another may read what that one wrote, which no input names: it stays as it was. A step that
-      // only runs Zig builds is the exception: the compiler reports every file such a build reads.
-      const read = after.has(step) && known !== undefined && known.runs.length > 0 ? undefined : known
+      // runs a Zig build is still read: it gains no inputs, only where Zig keeps its caches.
+      const read = after.has(step) && known !== undefined && known.zig.length === 0 ? undefined : known
       // A step a later step relies on always runs: it keeps its command.
       return [step, read !== undefined && relied.has(step) ? keepCommand(read) : read]
     }))
@@ -226,22 +213,19 @@ export const splitWith = <R = never>(
     const facts = workspace !== undefined && found.some((entry) => entry.runs.length > 0)
       ? try readFacts(tree, workspace)
       : undefined
-    const builds = [...new Set(found.flatMap((entry) => entry.zig))].sort()
-    const grouped = options.zig === undefined || options.zigGroups === undefined || builds.length === 0
+    // Only a step that is nothing but one build can be split by the named steps its build step groups.
+    const builds = [...new Set(steps.flatMap((step) => {
+      const read = understood.get(step)
+      const sole = read === undefined || read.zig.length === 0 || relied.has(step)
+        ? undefined
+        : Zig.soleBuild(step.command)
+      return sole === undefined ? [] : [sole]
+    }))].sort()
+    const grouped = options.zigGroups === undefined || builds.length === 0
       ? []
       : options.zigGroups(root, builds) catch (): ReadonlyArray<ReadonlyArray<string>> => []
     const groups = new Map(builds.map((name, index) => [name, grouped[index] ?? []]))
-    // A build step and each named step it groups are closed in one call.
-    const entries = [...new Set([...builds, ...grouped.flat()])].sort()
-    const closures = options.zig === undefined || entries.length === 0
-      ? []
-      : options.zig(root, entries) catch (): ReadonlyArray<Closure> => []
-    const closed = new Map(entries.flatMap((name) => {
-      const closure = closures.find((candidate) => candidate.entries.includes(name))
-      return closure === undefined ? [] : [[name, closure] as const]
-    }))
-    const built: Built = { closures: closed, groups }
     // The same jobs with their steps replaced are still the repository's CI: `withSteps` keeps every job and its needs.
     return withSteps(inventory, (job) =>
-      job.steps.flatMap((step) => replaced(step, understood.get(step), facts, built, relied.has(step))))
+      job.steps.flatMap((step) => replaced(step, understood.get(step), facts, groups, relied.has(step))))
   }

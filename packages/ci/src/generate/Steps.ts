@@ -19,11 +19,6 @@
  * after it. Without that, the later target declares the whole repository, as
  * a step with no inputs does: its own inputs would not hold the files the
  * earlier step read, and it would pass stale when one of them changed.
- * A sealed step (`Step.sealed`) is the exception: its inputs are all it reads
- * whatever ran before it, so its target declares them after any step. Its key
- * is made from those files as they are before anything runs, so each target
- * that runs before it checks that it left them as it found them, and fails
- * when it did not.
  * GitHub jobs run on separate machines, so `needs` only orders them. Two of
  * their steps that run the same command, in the same directory and
  * environment, after the same targets, do the same work in the same tree: one
@@ -97,14 +92,6 @@ export interface StepTarget {
   readonly inputs: ReadonlyArray<string> | undefined
   /** What a `setup` target declares it writes, beside its marker; `undefined` when it declares only the marker. */
   readonly outputs: Outputs | undefined
-  /** The programs the step starts that the machine provides (`Step.tools`), each once, in order. */
-  readonly tools: ReadonlyArray<string>
-  /**
-   * The script of a target that runs before a sealed step's target: the same step, then a check that it left
-   * every file that target declares as it found it. `undefined` for a target no sealed step's target follows, and
-   * for one held to its own inputs, which cannot write.
-   */
-  readonly guarded: string | undefined
   /** The other steps this target runs too: the same work at the same point of another job or variant. */
   readonly also: ReadonlyArray<SameStep>
 }
@@ -203,7 +190,7 @@ interface Tail {
   readonly versions: string
 }
 
-interface Draft extends Omit<StepTarget, "rule" | "script" | "job" | "also" | "guarded"> {
+interface Draft extends Omit<StepTarget, "rule" | "script" | "job" | "also"> {
   readonly job: Job
   readonly command: string
   readonly directory: string
@@ -287,54 +274,6 @@ const scriptOf = (command: string, directory: string, marker: string | undefined
     `${shell.join(" ")} ${quote(command)}`
   ].join("\n")
 
-// The line that ends the list of held files inside a guarded script.
-const heldEnd = "SMITHERS_CI_HELD"
-
-/**
- * The words a failed check prints: what happened and why the build stops.
- *
- * @category constants
- * @since 0.1.0
- */
-export const heldChanged =
-  "smithers-ci: this step changed a file a later step is tested from. That step reruns only when its files change, so no step before it may rewrite them."
-
-// A path or glob as git reads it: a glob with git's own glob rules, anything else letter for letter.
-const pathspec = (input: string): string => `${globbed.test(input) ? ":(glob)" : ":(literal)"}${input}`
-
-// The same step, then a check that every file in `held` is as it was. The files are listed and read by git, which
-// the workspace requires: a name and a content hash for each one that exists, before the step and after it. The
-// step runs in a subshell, so the check starts where the script did whatever directory the step entered.
-const guardedScriptOf = (
-  command: string,
-  directory: string,
-  marker: string | undefined,
-  held: ReadonlyArray<string>
-): string =>
-  [
-    ...(marker === undefined ? [] : [`mkdir -p ${markerDirectory} || exit`, `: > ${marker} || exit`]),
-    `smithers_ci_files() {`,
-    `  tr '\\n' '\\0' <<'${heldEnd}' | xargs -0 git -c core.quotePath=false ls-files --cached --others --exclude-standard -- | while IFS= read -r smithers_ci_file; do if [ -f "$smithers_ci_file" ]; then printf '%s\\n' "$smithers_ci_file"; fi; done`,
-    ...held.map(pathspec),
-    heldEnd,
-    `}`,
-    `smithers_ci_held() {`,
-    `  smithers_ci_files`,
-    `  smithers_ci_files | git hash-object --no-filters --stdin-paths`,
-    `}`,
-    `smithers_ci_before=$(smithers_ci_held)`,
-    `(`,
-    ...(directory === "" ? [] : [`cd -- ${quote(directory)} || exit`]),
-    `${shell.join(" ")} ${quote(command)}`,
-    `)`,
-    `smithers_ci_status=$?`,
-    `if [ "$smithers_ci_before" != "$(smithers_ci_held)" ]; then`,
-    `  echo ${quote(heldChanged)} >&2`,
-    `  exit 1`,
-    `fi`,
-    `exit "$smithers_ci_status"`
-  ].join("\n")
-
 const validate = (inventory: Inventory): Failure | undefined => {
   const fail = (message: string): Failure => ({ code: "invalid-document", message, part: "generate" })
   const jobs = new Set<string>()
@@ -408,8 +347,6 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
   const runners = new Set<string>()
   // Targets a later target needs on disk: these can never be replayed.
   const reliedOn = new Set<string>()
-  // Targets of sealed steps that declare their inputs though other steps ran before them.
-  const sealedLabels = new Set<string>()
   // The steps of jobs with a machine of their own, by the work they do: what runs, where, with which values, and
   // after which targets. A second step with the same work joins the first one's target.
   const sameWork = new Map<string, Draft>()
@@ -485,32 +422,24 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       : sorted([...command.matchAll(runnerVariable)].map((match) => match[1] as string))
         .filter((name) => name !== "GITHUB_TOKEN" && !Object.hasOwn(env, name))
     const title = `${job.name} / ${step.name ?? step.id}`
-    const inputs = step.inputs !== undefined && !step.inputs.includes(everything) ? step.inputs : undefined
-    // A sealed step reads nothing an earlier step wrote, so its inputs stand for all it reads after any step. A
-    // name with a line break in it cannot be listed for the targets before it to check.
-    const sealed = !scoped && inputs !== undefined && step.sealed === true &&
-      !inputs.some((input) => input.includes("\n"))
     // A step with runner text reads what the steps before it in its job left for it, which no input names, so it
     // is held to its inputs only as the first step of its tree. One that reads the commit is never held to them:
     // its verdict is that commit's.
     const free = step.runner === undefined || (alone && !readsCommit(step))
     // Kept only for a step whose reads its inputs can stand for: see `scoped` where the steps are walked.
-    const files = free && (scoped || sealed) && inputs !== undefined
-      ? { inputs: sorted(inputs), outputs: outputsOf(step) }
+    const files = free && scoped && step.inputs !== undefined && !step.inputs.includes(everything)
+      ? { inputs: sorted(step.inputs), outputs: outputsOf(step) }
       : { inputs: undefined, outputs: undefined }
-    const tools = sorted(step.tools ?? [])
     // Steps under different tool versions are different work, whatever their text.
     const versions = versionsText(installs)
-    const work = JSON.stringify([host, command, directory, env, inheritEnv, dependencies, files, tools, versions])
+    const work = JSON.stringify([host, command, directory, env, inheritEnv, dependencies, files, versions])
     const same = own ? sameWork.get(work) : undefined
     if (same !== undefined) {
       same.also.push({ title, job: job.id, step: step.id, variant })
       return same
     }
-    const label = uniqueLabel(step, variant)
-    if (sealed && free) sealedLabels.add(label)
     const draft: Draft = {
-      label,
+      label: uniqueLabel(step, variant),
       env,
       inheritEnv,
       host,
@@ -519,7 +448,6 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       step: step.from ?? step.id,
       variant,
       ...files,
-      tools,
       also: [],
       job,
       command,
@@ -586,26 +514,6 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     return Result.fail({ code: "unsupported", message: "Every job runs only on Windows.", part: "generate" })
   }
 
-  // What each target must leave as it found it: the inputs of every sealed target that runs after it. A target
-  // held to its own inputs cannot write, so only the others check. A sealed step a later step relies on always
-  // runs and its result is never reused, so nothing is checked for it.
-  const held = new Map<string, Set<string>>()
-  for (const draft of drafts.values()) {
-    if (!sealedLabels.has(draft.label) || reliedOn.has(draft.label)) continue
-    const seen = new Set<string>()
-    const pending = [...draft.dependencies]
-    for (let label = pending.pop(); label !== undefined; label = pending.pop()) {
-      if (seen.has(label)) continue
-      seen.add(label)
-      const before = drafts.get(label) as Draft
-      pending.push(...before.dependencies)
-      if (before.inputs !== undefined && !reliedOn.has(label)) continue
-      const files = held.get(label) ?? new Set<string>()
-      for (const input of draft.inputs as ReadonlyArray<string>) files.add(input)
-      held.set(label, files)
-    }
-  }
-
   // Targets for Windows are generated and never run, so their versions make no leg.
   const running = [...drafts.values()].filter((draft) => draft.host !== "win32")
   const sets = new Map(running.map((draft) => [draft.versions, draft.installs]))
@@ -617,8 +525,6 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
   const targets = [...drafts.values()].map(
     ({ command, directory, installs: _installs, job, versions, ...draft }): StepTarget => {
       const setup = reliedOn.has(draft.label)
-      const marker = setup ? `${markerDirectory}/${draft.label}` : undefined
-      const files = held.get(draft.label)
       // A setup target declares what it reads only together with what it writes: the two let a later target stay
       // narrowed. A target nothing relies on has no use for its outputs.
       const declares = setup && draft.outputs !== undefined
@@ -628,10 +534,10 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
         outputs: declares ? draft.outputs : undefined,
         job: job.id,
         rule: setup ? "setup" : "check",
-        script: underVersions(versions, scriptOf(command, directory, marker)),
-        guarded: files === undefined
-          ? undefined
-          : underVersions(versions, guardedScriptOf(command, directory, marker, sorted(files)))
+        script: underVersions(
+          versions,
+          scriptOf(command, directory, setup ? `${markerDirectory}/${draft.label}` : undefined)
+        )
       }
     }
   )

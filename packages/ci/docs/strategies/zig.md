@@ -113,7 +113,8 @@ rest. The other functions fail with `ZigClosureError`, which says which.
 
 ## A CI step that runs `zig build`
 
-The splitter (`src/decompose/Zig.ts`) turns the closures into CI steps.
+The splitter (`src/decompose/Zig.ts`) reads the step graph and leaves the
+closures to the run itself.
 
 ```
 just ci:  tidy, then  zig build test
@@ -121,40 +122,86 @@ just ci:  tidy, then  zig build test
           Zig.groups      │  test = test-core + test-cli + test-util ?
                           ▼
    yes: one step per named step        no: the step as it was
-   zig build test-core   reads 41 files    zig build test   reads its closure
-   zig build test-cli    reads 58 files
-   zig build test-util   reads  9 files
+   zig build test-core
+   zig build test-cli                  zig build test
+   zig build test-util
+                          │
+                          ▼
+   each runs in the open, with what it reads recorded:
+   it runs again only when one of those files changes
 ```
 
 1. **One step per named step.** `b.step("test", …)` that only depends on other
    named steps does no work of its own: `zig build test` runs what
    `zig build test-core` and the others run. When a CI step is nothing but
-   `zig build test`, it becomes one step per named step, each with its own
-   closure. A change to a file only `test-cli` imports reruns `test-cli`. A
-   group inside a group is opened too. A step that depends on a step with no
-   name, as `test` does in a build that adds its test binaries straight to it,
-   keeps its command and reads the closure of the whole step.
+   `zig build test`, it becomes one step per named step. A change to a file
+   only `test-cli` compiles runs `test-cli` again and no other. A group inside
+   a group is opened too. A step that depends on a step with no name, as
+   `test` does in a build that adds its test binaries straight to it, keeps
+   its command.
 2. **Nothing but the build.** The split replaces the command, so the command
    must be only `zig build <step>`: alone, after `set` lines, or as the whole
    script of a `bash -c`. `zig build test || true` passes where a build fails,
-   so it keeps its command and gains its closure.
-3. **Held after any step.** A closure is everything the build reads, so a Zig
-   step stays held to it when other steps ran before it in the same working
-   tree (`Step.sealed`). Each step before it checks that it left those files
-   as it found them. See
-   [Splitting a step](../concepts/splitting.md#a-zig-build-after-another-step).
-4. **The toolchain is in the key.** The step names `zig` (`Step.tools`). Its
-   target declares the executable, so the executable's bytes are part of the
-   key and a new Zig release reruns every Zig step. The build mode
-   (`-Doptimize=…`) is part of the command, which is in the key too.
-5. **Zig keeps its own cache.** A held step cannot write beside its inputs, so
-   the step sets `ZIG_LOCAL_CACHE_DIR` and `ZIG_GLOBAL_CACHE_DIR` to
-   `.flows/tools/zig`. The directory lasts between runs. When a step does run
-   again, Zig rebuilds only the compile steps whose files changed and reruns
-   only the test binaries that came out different.
+   so it keeps its command.
+3. **No list of inputs.** A step held to a list of files gets a tree it cannot
+   write, and Zig's tests write where they start: `std.testing.tmpDir` makes
+   `.zig-cache/tmp` beside `build.zig` and stops the test when it cannot. So a
+   Zig step names no inputs. It runs in the open and what it reads is recorded
+   (see [How it works](../concepts/how-it-works.md#2-targets)): the files the
+   compiler read, the files its tests opened, and Zig itself. It runs again
+   when one of them changes, which is what a closure promises, taken from the
+   run and not from a list written beforehand. A new file an old one starts to
+   import needs no list to be brought up to date.
+4. **The toolchain counts.** The Zig executable and the library files a build
+   reads are among the recorded files, so another Zig release runs every Zig
+   step again. The build mode (`-Doptimize=…`) is part of the command.
+5. **Zig keeps its own cache.** The step sets `ZIG_LOCAL_CACHE_DIR` and
+   `ZIG_GLOBAL_CACHE_DIR` to `.flows/tools/zig`. The directory lasts between
+   runs, and nothing in it is part of the record. When a step does run again,
+   Zig rebuilds only the compile steps whose files changed and reruns only the
+   test binaries that came out different.
 
 A Zig step that a later step follows keeps its command, its place and Zig's
 usual cache directory: the later step may read what it built.
+
+### One test binary or several
+
+A build that gives every test to one `b.addTest` has one step for them. Zig
+runs a test binary whole, so a change to any file that binary compiles runs
+every test in it again. A root file per directory gives each directory a
+binary and a step name of its own:
+
+```zig
+// src/test_common.zig
+test {
+    @import("std").testing.refAllDecls(@import("common/root.zig"));
+}
+```
+
+```zig
+// build.zig
+const test_step = b.step("test", "Run every test");
+for ([_][]const u8{ "common", "execution", "infra" }) |group| {
+    const tests = b.addTest(.{
+        .name = b.fmt("test-{s}", .{group}),
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(b.fmt("src/test_{s}.zig", .{group})),
+            .target = target,
+            .optimize = optimize,
+        }),
+        // A file two directories import is compiled into both binaries; its tests run in its own.
+        .filters = &.{b.fmt("{s}.", .{group})},
+    });
+    const step = b.step(b.fmt("test-{s}", .{group}), "Run one directory's tests");
+    step.dependOn(&b.addRunArtifact(tests).step);
+    test_step.dependOn(step);
+}
+```
+
+The root files sit in `src/`, so a file can still import across directories.
+`test` now only groups named steps: `zig build test` runs what it ran, each
+binary compiles only what its directory reaches, and Smithers CI makes one
+step per name.
 
 ## Measured on needlefish
 
@@ -213,16 +260,12 @@ because another edit to it can change any step.
   and that edit is itself a change to the closure.
 - **Fetched packages, file by file.** A fetched package is one name. Its
   content is pinned by the hash in `build.zig.zon`.
-- **A file an earlier CI step writes that `build.zig` uses only when it is
-  there.** A closure is read from a clean checkout. A build that looks for an
-  optional file, and finds it only after an earlier step fetched it, reads
-  more than its closure names. Held to its closure, it runs as it does in a
-  clean checkout.
 - **Part of a test binary.** Zig runs a test binary whole. `--test-filter` is
   given when the binary is compiled and takes one substring, and the filtered
   compile still reads every file the unfiltered one reads, so a filter gives
   neither a smaller closure nor a cheaper build. A build that puts all its
-  tests in one binary has one step for them.
+  tests in one binary has one step for them: see
+  [One test binary or several](#one-test-binary-or-several).
 
 ## Costs and limits
 

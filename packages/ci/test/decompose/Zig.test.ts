@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest"
-import type { Closure } from "../../src/contract/Closure.ts"
 import { type Step, toolCache } from "../../src/contract/Inventory.ts"
 import * as Zig from "../../src/decompose/Zig.ts"
 
@@ -9,16 +8,6 @@ const step = (command: string, extra: Partial<Step> = {}): Step => ({
   cwd: "",
   env: {},
   secrets: [],
-  ...extra
-})
-
-const closure = (entry: string, files: ReadonlyArray<string>, extra: Partial<Closure> = {}): Closure => ({
-  strategy: "zig",
-  entries: [entry],
-  files: files.map((path) => ({ path, digest: "d" })),
-  packages: ["zig@0.17.1"],
-  unresolved: [],
-  dynamic: [],
   ...extra
 })
 
@@ -66,41 +55,29 @@ describe("Zig.soleBuild", () => {
 })
 
 describe("Zig.dress", () => {
-  it("names the program and keeps both of Zig's caches in the tool cache", () => {
-    const dressed = Zig.dress(step("zig build test"), false)
-    expect(dressed.tools).toEqual(["zig"])
-    expect(dressed.env).toEqual({
-      ZIG_GLOBAL_CACHE_DIR: `${toolCache}/zig/global`,
-      ZIG_LOCAL_CACHE_DIR: `${toolCache}/zig/local`
+  it("keeps both of Zig's caches in the tool cache, and names no inputs", () => {
+    const dressed = Zig.dress(step("zig build test"))
+    expect(dressed).toEqual({
+      ...step("zig build test"),
+      env: { ZIG_GLOBAL_CACHE_DIR: `${toolCache}/zig/global`, ZIG_LOCAL_CACHE_DIR: `${toolCache}/zig/local` }
     })
-    expect("sealed" in dressed).toBe(false)
   })
 
-  it("keeps what the step already sets, and seals a step that reads nothing but its closure", () => {
-    const dressed = Zig.dress(
-      step("zig build test", { env: { ZIG_LOCAL_CACHE_DIR: "mine", CI: "1" }, tools: ["zig", "git"] }),
-      true
-    )
+  it("keeps what the step already sets", () => {
+    const dressed = Zig.dress(step("zig build test", { env: { ZIG_LOCAL_CACHE_DIR: "mine", CI: "1" } }))
     expect(dressed.env).toEqual({
       CI: "1",
       ZIG_GLOBAL_CACHE_DIR: `${toolCache}/zig/global`,
       ZIG_LOCAL_CACHE_DIR: "mine"
     })
-    expect(dressed.tools).toEqual(["git", "zig"])
-    expect(dressed.sealed).toBe(true)
   })
 })
 
 describe("Zig.split", () => {
   const groups = new Map([["test", ["test-core", "test cli"]], ["check", ["check-a"]], ["docs", []]])
-  const closures = new Map([
-    ["test-core", closure("test-core", ["src/core.zig", "build.zig", "build.zig"])],
-    ["test cli", closure("test cli", ["build.zig", "src/cli.zig"], { directories: ["data/"] })],
-    ["check-a", closure("check-a", ["build.zig"])]
-  ])
 
-  it("makes one sealed step per named step, each with its own closure", () => {
-    const parts = Zig.split(step("set -e\nzig build test", { name: "Test", env: { CI: "1" } }), groups, closures)
+  it("makes one step per named step, each with Zig's caches and no inputs", () => {
+    const parts = Zig.split(step("set -e\nzig build test", { name: "Test", env: { CI: "1" } }), groups)
     expect(parts).toEqual([
       {
         id: "justfile:test:1:test-core",
@@ -109,10 +86,7 @@ describe("Zig.split", () => {
         cwd: "",
         env: { CI: "1", ...Zig.environment },
         secrets: [],
-        inputs: ["build.zig", "src/core.zig"],
-        from: "justfile:test:1",
-        tools: ["zig"],
-        sealed: true
+        from: "justfile:test:1"
       },
       {
         id: "justfile:test:1:test cli",
@@ -122,31 +96,18 @@ describe("Zig.split", () => {
         cwd: "",
         env: { CI: "1", ...Zig.environment },
         secrets: [],
-        inputs: ["build.zig", "data/**", "src/cli.zig"],
-        from: "justfile:test:1",
-        tools: ["zig"],
-        sealed: true
+        from: "justfile:test:1"
       }
     ])
     // A step with no name of its own gets none.
-    expect(Zig.split(step("zig build test"), groups, closures)?.map((part) => "name" in part)).toEqual([false, false])
+    expect(Zig.split(step("zig build test"), groups)?.map((part) => "name" in part)).toEqual([false, false])
   })
 
-  it("leaves the step alone when it is more than one build, or its build step groups nothing", () => {
-    expect(Zig.split(step("zig build test || true"), groups, closures)).toBeUndefined()
-    expect(Zig.split(step("zig build docs"), groups, closures)).toBeUndefined()
-    expect(Zig.split(step("zig build bench"), groups, closures)).toBeUndefined()
+  it("leaves the step alone when it is more than one build, or its build step groups fewer than two", () => {
+    expect(Zig.split(step("zig build test || true"), groups)).toBeUndefined()
+    expect(Zig.split(step("zig build docs"), groups)).toBeUndefined()
+    expect(Zig.split(step("zig build bench"), groups)).toBeUndefined()
     // One named step is the same work under another name.
-    expect(Zig.split(step("zig build check"), groups, closures)).toBeUndefined()
-  })
-
-  it("leaves the step alone when a named step's closure is missing or incomplete", () => {
-    const missing = new Map([["test-core", closures.get("test-core") as Closure]])
-    expect(Zig.split(step("zig build test"), groups, missing)).toBeUndefined()
-    const open = new Map([
-      ...closures,
-      ["test cli", closure("test cli", ["build.zig"], { unresolved: [{ from: "src/cli.zig", specifier: "gone.zig" }] })]
-    ])
-    expect(Zig.split(step("zig build test"), groups, open)).toBeUndefined()
+    expect(Zig.split(step("zig build check"), groups)).toBeUndefined()
   })
 })

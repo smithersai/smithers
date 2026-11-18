@@ -51,23 +51,12 @@ export type Source = typeof Source.Type
  * stays narrowed: its target reads those outputs and its key holds those
  * inputs.
  *
- * `tools` names the programs the step starts that the machine provides, as
- * `PATH` finds them, such as `zig`. A target generated from the step names
- * them: their bytes are in its key, so another toolchain reruns it, and a
- * target held to its inputs can start them.
- *
  * `runner` is shell text that runs `command` the way the CI's own runner
  * does: it sets the variables a runner gives a step, loads what earlier
  * steps of the job wrote for later steps, decides whether the step runs,
  * and fills in what `${{ }}` in `command` stands for. It defines the shell
  * function `runnerEntry`, which takes `command`. A step with a `runner` is
  * run as `script` gives it, by the baseline and by its target alike.
- *
- * `sealed` is true when `inputs` name every file the step reads whatever ran
- * before it in its working tree: it reads no file an earlier step wrote. Its
- * target stays held to its inputs after any step. Each step before it in its
- * tree must then leave those inputs as it found them, and its target fails
- * when it does not: the sealed step's key was made from them.
  *
  * `withheld` names the variables of `env` that the step's CI fills from a
  * secret and that are empty here: the credentials of a remote build cache,
@@ -89,8 +78,6 @@ export const Step = Schema.Struct({
   inputs: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   outputs: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   from: Schema.optionalKey(Schema.NonEmptyString),
-  tools: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
-  sealed: Schema.optionalKey(Schema.Boolean),
   withheld: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   runner: Schema.optionalKey(Schema.NonEmptyString)
 })
@@ -246,10 +233,12 @@ export const shell = ["bash", "-e", "-c"] as const
 
 /**
  * Where a tool a step starts keeps its own cache between runs, from the
- * repository root: a directory inside Smithers build's cache directory,
- * which a target held to its inputs may write. A step names a directory
- * under it in its `env`, such as `ZIG_LOCAL_CACHE_DIR`. The generated
- * workflow saves it with the results, and a replay keeps it between commits.
+ * repository root: a directory inside Smithers build's cache directory. A
+ * step names a directory under it in its `env`, such as
+ * `ZIG_LOCAL_CACHE_DIR`. The generated workflow saves it with the results
+ * and a replay keeps it between commits. What a step reads and writes there
+ * is left out of what an observed step read, so the tool's own cache never
+ * makes the step run again.
  *
  * @category constants
  * @since 0.1.0

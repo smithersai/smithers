@@ -11,8 +11,6 @@
  * @since 0.1.0
  */
 
-import type { Closure } from "../contract/Closure.ts"
-import { isComplete } from "../contract/Closure.ts"
 import { type Job, type Step, treeOrder } from "../contract/Inventory.ts"
 import { executorOf, type Invocation, type Known, type Pattern, recognize, turbo } from "./Runners.ts"
 import { type Command, commands, quote } from "./Shell.ts"
@@ -457,23 +455,6 @@ export const inputsOf = (
   return [...new Set([...outside, ...whole, ...files, ...globs])].filter((path) => !covered(path)).sort()
 }
 
-/**
- * The inputs of a Zig build step's closure: its files, and each directory it
- * reads whole. `undefined` when the closure is incomplete, so the step may
- * read anything.
- *
- * @throws {never}
- * @category planning
- * @since 0.1.0
- */
-export const closureInputs = (closure: Closure | undefined): ReadonlyArray<string> | undefined =>
-  closure === undefined || !isComplete(closure)
-    ? undefined
-    : [
-      ...closure.files.map((file) => file.path),
-      ...(closure.directories ?? []).map((directory) => `${directory.replace(/\/$/, "")}/**`)
-    ]
-
 // Where each job stands in the run of its working tree. The jobs of one Justfile, and of any source but GitHub
 // Actions, run one after another in one directory, in `Inventory.treeOrder`. A GitHub job has a checkout of its
 // own: it is the first and the last job in it.
@@ -551,12 +532,12 @@ export const keepCommand = (understood: Understood): Understood => ({
  * - One script run over several packages, alone in the step, splits into
  *   one part per package that has work.
  * - Any other understood step keeps its command and gains the union of what
- *   its runs and Zig build steps read.
- * - A step with a run that cannot be resolved, or a Zig step whose closure
- *   is missing or incomplete, stays whole.
+ *   its runs read.
+ * - A step with a run that cannot be resolved stays whole. So does a step
+ *   that runs a Zig build: its tests write where they start, so it is never
+ *   held to a list of files.
  *
- * `facts` is `undefined` when the repository has no JavaScript workspace;
- * `zig` holds the closure of each Zig build step by name.
+ * `facts` is `undefined` when the repository has no JavaScript workspace.
  *
  * @throws {never}
  * @category planning
@@ -565,26 +546,25 @@ export const keepCommand = (understood: Understood): Understood => ({
 export const decide = (
   step: Step,
   understood: Understood,
-  facts: Facts | undefined,
-  zig: ReadonlyMap<string, Closure>
+  facts: Facts | undefined
 ): Decision => {
+  // No run would mean the step reads nothing, which no step does.
+  if (facts === undefined || understood.zig.length > 0 || understood.runs.length === 0) return { kind: "whole" }
   const resolved: Array<ReadonlyArray<Entry>> = []
   for (const run of understood.runs) {
-    const entries = facts === undefined ? undefined : entriesOf(facts, run.invocation)
+    const entries = entriesOf(facts, run.invocation)
     if (entries === undefined || entries.length === 0) return { kind: "whole" }
     resolved.push(entries)
   }
-  const outside = facts?.graph.outside ?? []
+  const outside = facts.graph.outside
   const inputs = (entries: ReadonlyArray<Entry>): ReadonlyArray<string> =>
     entries.some((entry) => entry.everything)
       ? [everything]
       : inputsOf(outside, entries.flatMap((entry) => entry.reaches), entries.flatMap((entry) => entry.globs))
-  const run = understood.runs[0]
-  const entries = resolved[0]
-  if (
-    understood.runs.length === 1 && understood.zig.length === 0 && run?.replace !== undefined &&
-    entries !== undefined && entries.length > 1
-  ) {
+  // The step has a run, and each run resolved to its packages.
+  const run = understood.runs[0] as Run
+  const entries = resolved[0] as ReadonlyArray<Entry>
+  if (understood.runs.length === 1 && run.replace !== undefined && entries.length > 1) {
     const [start, end] = run.replace
     return {
       kind: "split",
@@ -597,13 +577,6 @@ export const decide = (
       }))
     }
   }
-  const read: Array<string> = resolved.length === 0 ? [] : [...inputs(resolved.flat())]
-  for (const name of understood.zig) {
-    const closed = closureInputs(zig.get(name))
-    if (closed === undefined) return { kind: "whole" }
-    read.push(...closed)
-  }
-  // No inputs would mean the step reads nothing, which no step does.
-  if (read.length === 0) return { kind: "whole" }
+  const read = inputs(resolved.flat())
   return { kind: "scope", inputs: read.includes(everything) ? [everything] : [...new Set(read)].sort() }
 }

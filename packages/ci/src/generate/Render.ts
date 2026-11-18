@@ -118,23 +118,11 @@ const workspaceName = (repository: string): string => {
   return name === "" ? "repository" : name
 }
 
-// The programs the machine must provide: the two shells every target starts, each program a step names, and git
-// for a target that checks the files a sealed step's target declares.
-const hostBins = (plan: StepPlan, narrowed: boolean): ReadonlyArray<string> =>
-  [
-    ...new Set([
-      "bash",
-      "sh",
-      ...plan.targets.flatMap((target) => target.tools),
-      ...(narrowed && plan.targets.some((target) => target.guarded !== undefined) ? ["git"] : [])
-    ])
-  ].sort()
-
-const renderWorkspace = (inventory: Inventory, plan: StepPlan, narrowed: boolean): ReadonlyArray<string> => [
+const renderWorkspace = (inventory: Inventory): ReadonlyArray<string> => [
   `export const Workspace = S.Workspace(${text(workspaceName(inventory.repository))}, {`,
   `  repository: ${text(inventory.repository)},`,
   `  cache: S.Cache({ directory: ".flows" }),`,
-  `  host: S.Host({ bins: [${hostBins(plan, narrowed).map(text).join(", ")}] })`,
+  `  host: S.Host({ bins: ["bash", "sh"] })`,
   `})`,
   ``
 ]
@@ -197,14 +185,7 @@ const renderTarget = (
   const data = [...filesOf(target, narrowed), ...target.dependencies.map((label) => variables.get(label) as string)]
   const inheritEnv = inheritedBy(target, passed)
   const fields = [
-    // Before a sealed step's target, the step also checks that it left that target's files alone. When no target
-    // declares its inputs, none is sealed and nothing is checked.
-    `shell: ${text(narrowed && target.guarded !== undefined ? target.guarded : target.script)}`,
-    // A program the machine provides is named: its bytes are in the key, and a target held to its inputs can
-    // start it.
-    ...(target.tools.length === 0
-      ? []
-      : [`tools: [${target.tools.map((tool) => `S.Host.bin(${text(tool)})`).join(", ")}]`]),
+    `shell: ${text(target.script)}`,
     ...(target.rule === "setup" ? outputsOf(target, narrowed) : []),
     ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(target.env)}`]),
     ...(inheritEnv.length === 0 ? [] : [`inheritEnv: ${JSON.stringify(inheritEnv)}`]),
@@ -244,7 +225,7 @@ const renderDeclaration = (
     ),
     `import { Smithers as S } from "@smthrs/targets"`,
     ``,
-    ...renderWorkspace(inventory, plan, narrowed),
+    ...renderWorkspace(inventory),
     comment("A step can read any file, so a target declares the whole repository unless its step names what it reads."),
     comment("Such a target is observed: it runs again only when a file its last run read has changed."),
     comment("A setup target always runs. It declares files only when its step names what it reads and writes."),

@@ -104,15 +104,15 @@ and none removes):
   text replaces it when the step runs. The generator writes only matrix values into a step that has runner text,
   and passes it no runner variable of the machine: the runner text sets them all.
 
-**2026-11-18, eleventh round** (optional additions by the needlefish lane, for a step that runs `zig build`):
+**2026-11-18, eleventh round** (the needlefish lane, for a step that runs `zig build`):
 
-- `Step.tools` (optional): the programs the step starts that the machine provides, by name. The generator names them
-  in the step's target (`S.Host.bin`) and in the workspace's `S.Host`: their bytes are in the target's key, and a
-  target held to its inputs can start them.
-- `Step.sealed` (optional): the step's `inputs` are all it reads, whatever ran before it in its working tree. Its
-  target stays held to them after any step, and each target that runs before it fails when it changed one of them.
 - `Inventory.toolCache` (`.flows/tools`): where a tool a step starts keeps its own cache between runs. A step names
-  a directory under it in its `env`; the generated workflow then saves it with the results.
+  a directory under it in its `env`; the generated workflow then saves it with the results. What a step reads and
+  writes there is no part of what an observed step read.
+- `Step.tools` and `Step.sealed`, added earlier the same day, are gone. They held a Zig build to its closure; Zig's
+  tests write where they start, so a Zig step names no inputs and is observed.
+- `Parts.Decompose` no longer takes the Zig closures: `splitWith({ zigGroups })` reads only the named steps a build
+  step groups (`Zig.groups` of `src/closure/zig`).
 
 **2026-11-18, tenth round** (the independent review's 31 findings, fixed by the replay, apply and generate lanes):
 

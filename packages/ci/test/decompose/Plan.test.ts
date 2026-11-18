@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest"
-import type { Closure } from "../../src/contract/Closure.ts"
 import type { Job, Step } from "../../src/contract/Inventory.ts"
 import {
-  closureInputs,
   decide,
   type Decision,
   everything,
@@ -87,13 +85,12 @@ const factsOf = (repository: Repository): Facts => {
 const plan = (
   repository: Repository,
   command: string,
-  extra: Partial<Step> = {},
-  zig = new Map<string, Closure>()
+  extra: Partial<Step> = {}
 ): Decision => {
   const facts = factsOf(repository)
   const subject = step(command, extra)
   const understood = understand(subject, facts.workspace, repository.wrappers)
-  return understood === undefined ? { kind: "whole" } : decide(subject, understood, facts, zig)
+  return understood === undefined ? { kind: "whole" } : decide(subject, understood, facts)
 }
 
 /** The parts of a split decision, by package name. */
@@ -602,69 +599,33 @@ describe("decide: Turborepo", () => {
 })
 
 describe("decide: Zig", () => {
-  const closure = (extra: Partial<Closure> = {}): Closure => ({
-    strategy: "zig",
-    entries: ["test"],
-    files: [{ path: "build.zig", digest: "d1" }, { path: "src/main.zig", digest: "d2" }],
-    packages: ["std"],
-    unresolved: [],
-    dynamic: [],
-    ...extra
-  })
   const none: Repository = { files: {} }
 
-  it("gives a Zig build step the files of its closure", () => {
-    const zig = new Map([["test", closure({ directories: ["testdata/", "vendor"] })]])
-    expect(scoped(plan(none, `if [ -n "" ]; then zig build test -Dtest-filter=""; else zig build test; fi`, {}, zig)))
-      .toEqual(["build.zig", "src/main.zig", "testdata/**", "vendor/**"])
+  it("never holds a step that runs a Zig build to a list of files", () => {
+    // Zig's tests write where they start, so the step runs in the open: the splitter gives it Zig's caches instead.
+    expect(plan(none, `if [ -n "" ]; then zig build test -Dtest-filter=""; else zig build test; fi`)).toEqual(whole)
+    expect(plan(none, "zig build test && zig build bench")).toEqual(whole)
+    expect(plan(plain, "zig build test && pnpm --filter lone run test")).toEqual(whole)
+    expect(decide(step("zig build test"), { runs: [], zig: ["test"] }, undefined)).toEqual(whole)
+    expect(decide(step("zig build test"), { runs: [], zig: ["test"] }, factsOf(plain))).toEqual(whole)
+    // A step nothing was read from reads nothing anyone knows of.
+    expect(decide(step("true"), { runs: [], zig: [] }, factsOf(plain))).toEqual(whole)
   })
 
-  it("leaves the step whole without a closure, or with an incomplete or empty one", () => {
-    expect(plan(none, "zig build test")).toEqual(whole)
-    expect(
-      plan(
-        none,
-        "zig build test",
-        {},
-        new Map([["test", closure({ unresolved: [{ from: "a.zig", specifier: "b" }] })]])
-      )
-    )
-      .toEqual(whole)
-    expect(
-      plan(none, "zig build test", {}, new Map([["test", closure({ dynamic: [{ from: "a.zig", specifier: "" }] })]]))
-    )
-      .toEqual(whole)
-    expect(plan(none, "zig build test", {}, new Map([["test", closure({ files: [] })]]))).toEqual(whole)
-    expect(plan(none, "zig build test && zig build bench", {}, new Map([["test", closure()]]))).toEqual(whole)
-  })
-
-  it("joins a Zig step's files to a script run's inputs in one step", () => {
-    const zig = new Map([["test", closure()]])
-    expect(scoped(plan(plain, "zig build test && pnpm --filter lone run test", {}, zig))).toEqual(
-      [...outside, "build.zig", "packages/lone/**", "src/main.zig"].sort()
-    )
+  it("reads everything when a step's one package does", () => {
     const wide = {
       ...plain,
       files: { ...plain.files, "packages/lone/package.json": manifest("lone", { test: "git log" }) }
     }
-    expect(scoped(plan(wide, "zig build test && pnpm --filter lone run test", {}, zig))).toEqual([everything])
+    expect(scoped(plan(wide, "pnpm --filter lone run test"))).toEqual([everything])
+    expect(scoped(plan(plain, "pnpm --filter lone run test"))).toEqual([...outside, "packages/lone/**"].sort())
   })
 
-  it("decides without a workspace: a Zig step is scoped, a script run stays whole", () => {
-    const zig = new Map([["test", closure()]])
-    expect(decide(step("zig build test"), { runs: [], zig: ["test"] }, undefined, zig)).toEqual({
-      kind: "scope",
-      inputs: ["build.zig", "src/main.zig"]
-    })
+  it("decides without a workspace: a script run stays whole", () => {
     const understood = understand(step("pnpm -r run test"), factsOf(plain).workspace)
-    expect(understood === undefined ? undefined : decide(step("pnpm -r run test"), understood, undefined, zig)).toEqual(
+    expect(understood === undefined ? undefined : decide(step("pnpm -r run test"), understood, undefined)).toEqual(
       whole
     )
-  })
-
-  it("reads closure inputs only from a complete closure", () => {
-    expect(closureInputs(undefined)).toBeUndefined()
-    expect(closureInputs(closure())).toEqual(["build.zig", "src/main.zig"])
   })
 })
 
@@ -737,8 +698,8 @@ describe("followed, preceded and keepCommand", () => {
     expect(understood.runs[0]?.replace).toEqual([0, 16])
     const kept = keepCommand(understood)
     expect(kept.runs[0]?.replace).toBeUndefined()
-    expect(decide(subject, understood, facts, new Map()).kind).toBe("split")
-    expect(scoped(decide(subject, kept, facts, new Map()))).toEqual(
+    expect(decide(subject, understood, facts).kind).toBe("split")
+    expect(scoped(decide(subject, kept, facts))).toEqual(
       [...outside, "packages/app/**", "packages/lib/**", "packages/lone/**"].sort()
     )
   })

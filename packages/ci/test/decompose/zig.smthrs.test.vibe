@@ -1,18 +1,20 @@
 import { WebCrypto } from "@smthrs/crypto"
 import { NodeHost } from "@smthrs/platform-node"
-import { expect, layer } from "@effect/vitest"
+import { describe, expect, it } from "@effect/vitest"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { ci, type Step } from "../../src/contract/Inventory.ts"
 import { split } from "../../src/decompose/index.ts"
 import * as ZigSteps from "../../src/decompose/Zig.ts"
 import { files } from "../../src/generate/index.ts"
-import { heldChanged } from "../../src/generate/Steps.ts"
 import { read } from "../../src/inventory/index.ts"
+import { observes } from "../cli/repo.ts"
 
 /**
  * The whole path on a real Zig repository: its Justfile is read, its `zig build test` is split by the real Zig
- * strategy, the targets are generated and the real `smthrs` runs them. Needs Zig 0.17, git and bubblewrap.
+ * strategy, the targets are generated and the real `smthrs` runs them. Needs Zig 0.17 and git, and a host that
+ * can record what a step reads (Linux with `strace`): on any other host a step that names no inputs runs on every
+ * change, so there is nothing to see.
  */
 
 const host = Layer.mergeAll(NodeHost.layer, WebCrypto.layer)
@@ -27,16 +29,24 @@ const prefix = "//:"
 const justfile = "tidy:\n    ./tidy.sh\n\ntest:\n    zig build test\n\nci: tidy test\n"
 const tidy = "#!/usr/bin/env bash\nset -euo pipefail\nzig fmt --check build.zig >/dev/null\n"
 
+/** A test that makes a directory where it starts, as `std.testing.tmpDir` does for every Zig test that needs one. */
+const writes = `
+test "gamma writes where it starts" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+}
+`
+
 interface Ran {
   readonly code: number
   readonly out: string
 }
 
 /** Runs a command to its end and keeps what it printed. */
-effect function run(cwd: string, command: string, args: ReadonlyArray<string>, env: Readonly<Record<string, string>> = {}) {
+effect function run(cwd: string, command: string, args: ReadonlyArray<string>) {
   const spawner = try ChildProcessSpawner
   return try scoped(effect {
-    const handle = try spawner.spawn(ChildProcess.make(command, [...args], { cwd, env: { ...env }, extendEnv: true, stdin: "ignore" }))
+    const handle = try spawner.spawn(ChildProcess.make(command, [...args], { cwd, stdin: "ignore" }))
     const out = try Stream.mkString(Stream.decodeText(handle.all))
     return { code: Number(try handle.exitCode), out } satisfies Ran
   })
@@ -50,6 +60,12 @@ effect function write(root: string, file: string, text: string, mode?: number) {
   if (mode !== undefined) try fs.chmod(path.join(root, file), mode)
 }
 
+effect function append(root: string, file: string, text: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  try write(root, file, `${try fs.readFileString(path.join(root, file))}${text}`)
+}
+
 /** The fixture project as a repository whose CI is `just ci`: `tidy`, then `test`. */
 effect function repository() {
   const fs = try FileSystem.FileSystem
@@ -59,6 +75,7 @@ effect function repository() {
   try write(root, "Justfile", justfile)
   try write(root, "tidy.sh", tidy, 0o755)
   try write(root, ".gitignore", ".flows\n.zig-cache\nzig-out\n")
+  try append(root, "src/gamma.zig", writes)
   // This machine's Zig has already compiled its own build runner; a new repository's tool cache starts from that.
   const environment = try run(root, "zig", ["env"])
   const warm = /\.global_cache_dir = "([^"]+)"/.exec(environment.out)?.[1]
@@ -85,16 +102,18 @@ const Record = Schema.fromJsonString(Schema.Struct({
   results: Schema.Array(Schema.Struct({ label: Schema.String, status: Schema.String }))
 }))
 
-const Plan = Schema.fromJsonString(Schema.Struct({
-  targets: Schema.Array(Schema.Struct({ label: Schema.String, keyPreview: Schema.Unknown }))
-}))
-
-/** Runs every target and gives each one's status. */
-effect function statuses(root: string, name: string) {
+/** Runs every target, with the programs in `first` before the others on `PATH`, and gives each one's status. */
+effect function statuses(root: string, name: string, first: string) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
   const results = path.join(root, ".flows", `${name}.json`)
-  const ran = try run(root, "node", [smthrs, "ci", "//...", "--jobs", "1", "--results-file", results, "--ui", "plain"])
+  const ran = try run(root, "sh", [
+    "-c",
+    `PATH="$1:$PATH" exec node "$0" ci //... --jobs 1 --results-file "$2" --ui plain`,
+    smthrs,
+    first,
+    results
+  ])
   const record = try Schema.decodeUnknownEffect(Record)(try fs.readFileString(results))
   return {
     out: ran.out,
@@ -102,90 +121,56 @@ effect function statuses(root: string, name: string) {
   }
 }
 
-/** Each target's key, as `smthrs` plans it when the programs in `first` come before the others on `PATH`. */
-effect function keys(root: string, first?: string) {
-  const plan = `exec node "$0" ci //... --plan --format json`
-  const planned = try run(root, "sh", ["-c", first === undefined ? plan : `PATH="$1:$PATH" ${plan}`, smthrs, first ?? ""])
-  const read = try Schema.decodeUnknownEffect(Plan)(planned.out.slice(planned.out.indexOf("{")))
-  return Object.fromEntries(read.targets.map((target) => [target.label.slice(prefix.length), JSON.stringify(target.keyPreview)]))
-}
-
-const built = ["build.zig", "build.zig.zon", "deps/greet/build.zig", "deps/greet/build.zig.zon"]
 const alpha = "justfile-test-1-test-alpha"
 const beta = "justfile-test-1-test-beta"
 const gamma = "justfile-test-1-test-gamma"
 const tidied = "justfile-tidy-1"
 
-layer(host, { timeout: limit, excludeTestServices: true })("zig build test on a real repository", (it) => {
-  it.effect("becomes one held target per test root, and a change reruns only the roots that read it", effect () => {
-    const fs = try FileSystem.FileSystem
-    const path = try Path.Path
-    const root = try repository()
-    const steps = try generate(root)
-    const brief = (step: Step) => [step.id, step.command, step.inputs, step.from, step.tools, step.sealed]
-    expect(steps.map(brief)).toEqual([
-      ["justfile:tidy:1", "./tidy.sh", undefined, undefined, undefined, undefined],
-      [
-        "justfile:test:1:test-alpha",
-        "zig build test-alpha",
-        [...built, "deps/greet/src/greet.zig", "deps/greet/src/tone.zig", "src/alpha.txt", "src/alpha.zig", "src/shared.zig"],
-        "justfile:test:1",
-        ["zig"],
-        true
-      ],
-      ["justfile:test:1:test-beta", "zig build test-beta", [...built, "src/beta.zig", "src/shared.zig"], "justfile:test:1", ["zig"], true],
-      [
-        "justfile:test:1:test-gamma",
-        "zig build test-gamma",
-        [built[0], built[1], "data/words.zig.in", built[2], built[3], "src/gamma.zig"],
-        "justfile:test:1",
-        ["zig"],
-        true
-      ]
-    ])
+describe.skipIf(!observes)("zig build test on a real repository", () => {
+  it.live("becomes one step per test root, and a change reruns only the roots that read it", effect () => {
+    provide host {
+      try scoped(effect {
+        const fs = try FileSystem.FileSystem
+        const path = try Path.Path
+        const root = try repository()
+        const steps = try generate(root)
+        const brief = (step: Step) => [step.id, step.command, step.inputs, step.from, step.env]
+        expect(steps.map(brief)).toEqual([
+          ["justfile:tidy:1", "./tidy.sh", undefined, undefined, {}],
+          ["justfile:test:1:test-alpha", "zig build test-alpha", undefined, "justfile:test:1", ZigSteps.environment],
+          ["justfile:test:1:test-beta", "zig build test-beta", undefined, "justfile:test:1", ZigSteps.environment],
+          ["justfile:test:1:test-gamma", "zig build test-gamma", undefined, "justfile:test:1", ZigSteps.environment]
+        ])
 
-    // Reading the closures built in `.zig-cache`, as any `zig build` does. The targets must not.
-    try fs.remove(path.join(root, ".zig-cache"), { recursive: true })
-    // `tidy` always runs. Each test root runs held to its closure, though `tidy` ran before it in the same tree.
-    const first = try statuses(root, "first")
-    expect([first.statuses, first.out]).toEqual([{ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "ran" }, first.out])
-    expect((try statuses(root, "second")).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
-    // Zig kept its caches in the tool cache, and wrote nothing beside the sources.
-    expect(try fs.exists(path.join(root, ZigSteps.environment["ZIG_LOCAL_CACHE_DIR"] as string))).toBe(true)
-    expect(try fs.exists(path.join(root, ".zig-cache"))).toBe(false)
+        // The Zig every step starts: a program of two lines that starts this machine's Zig.
+        const tools = path.join(try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-zig-" }), "bin")
+        const real = (try run(root, "sh", ["-c", "command -v zig"])).out.trim()
+        try write(tools, "zig", `#!/bin/sh\nexec ${real} "$@"\n`, 0o755)
 
-    // A file one root reads reruns that root.
-    try write(root, "src/gamma.zig", `${try fs.readFileString(path.join(root, "src/gamma.zig"))}\n// edited\n`)
-    expect((try statuses(root, "gamma")).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "ran" })
-    // A file two roots import reruns those two.
-    try write(root, "src/shared.zig", `${try fs.readFileString(path.join(root, "src/shared.zig"))}\n// edited\n`)
-    expect((try statuses(root, "shared")).statuses).toEqual({ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "hit" })
-    // A file no root reads reruns none.
-    try write(root, "NOTES.md", "changed\n")
-    expect((try statuses(root, "notes")).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
+        // `tidy` always runs: `test` follows it. Each test root runs in the open, and its run is recorded.
+        const first = try statuses(root, "first", tools)
+        expect([first.statuses, first.out]).toEqual([{ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "ran" }, first.out])
+        // Nothing changed, so no test root runs again, though `tidy` ran before each of them.
+        expect((try statuses(root, "second", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
+        // Zig kept its caches in the tool cache. A test made its directory where it started, as Zig's tests do.
+        expect(try fs.exists(path.join(root, ZigSteps.environment["ZIG_LOCAL_CACHE_DIR"] as string, "o"))).toBe(true)
+        expect(try fs.exists(path.join(root, ".zig-cache", "tmp"))).toBe(true)
 
-    // The Zig executable is part of each test root's key: another Zig first on PATH changes all three.
-    const other = path.join(try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-other-zig-" }), "bin")
-    const real = (try run(root, "sh", ["-c", "command -v zig"])).out.trim()
-    try write(other, "zig", `#!/bin/sh\nexec ${real} "$@"\n`, 0o755)
-    const here = try keys(root)
-    const there = try keys(root, other)
-    for (const label of [alpha, beta, gamma]) expect([label, there[label] === here[label]]).toEqual([label, false])
-    expect(there[tidied]).toBe(here[tidied])
+        // A file one root reads reruns that root.
+        try append(root, "src/gamma.zig", "\n// edited\n")
+        expect((try statuses(root, "gamma", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "ran" })
+        // A file two roots import reruns those two.
+        try append(root, "src/shared.zig", "\n// edited\n")
+        expect((try statuses(root, "shared", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "hit" })
+        // A file no root reads reruns none.
+        try write(root, "NOTES.md", "changed\n")
+        expect((try statuses(root, "notes", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
 
-    // A step that rewrites a file a later root is tested from is refused: that root's key was made before it ran.
-    try write(root, "tidy.sh", `#!/usr/bin/env bash\necho "// rewritten" >> src/gamma.zig\n`, 0o755)
-    const rewritten = try statuses(root, "rewritten")
-    expect(rewritten.statuses).toEqual({ [tidied]: "failed", [alpha]: "skipped", [beta]: "skipped", [gamma]: "skipped" })
-    // The run prints the script it started, which holds the sentence; the step's own word of it is a line by itself.
-    const said = (out: string): boolean => out.split("\n").includes(heldChanged)
-    expect(said(rewritten.out)).toBe(true)
-    expect(rewritten.out).toContain("exit 1")
-    // A step that fails for its own reason keeps its own exit code and says nothing of files.
-    try write(root, "tidy.sh", `#!/usr/bin/env bash\nexit 3\n`, 0o755)
-    const failing = try statuses(root, "failing")
-    expect(failing.statuses[tidied]).toBe("failed")
-    expect(said(failing.out)).toBe(false)
-    expect(failing.out).toContain("exit 3")
+        // The Zig a root started is among the files it read: another Zig at the same place reruns all three.
+        try write(tools, "zig", `#!/bin/sh\n# another release\nexec ${real} "$@"\n`, 0o755)
+        expect((try statuses(root, "zig", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "ran" })
+        expect((try statuses(root, "again", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
+      })
+    }
   }, limit)
 })

@@ -28,8 +28,8 @@ the step whole.
 | `npm run <script> --workspaces`, `--workspace <name>`                  | One `npm run <script> --workspace=<package>…` per package                |
 | A root script that is one of the commands above, as `pnpm test`        | The same, from the root script's own command and the words the step adds |
 | One package's script, as `bun run --cwd packages/core test`            | The same command, with its inputs named                                  |
-| `zig build <step>`                                                     | The same command, with the files of the step's closure as inputs         |
-| `zig build <step>` alone, where the build step only groups named steps | One `zig build <name>` per named step, each with its own closure         |
+| `zig build <step>`                                                     | The same command, told to keep Zig's cache between runs                  |
+| `zig build <step>` alone, where the build step only groups named steps | One `zig build <name>` per named step                                    |
 
 The packages come from the workspace the package manager reads:
 `pnpm-workspace.yaml`, or `workspaces` in the root `package.json` for npm, Yarn
@@ -94,21 +94,20 @@ task graph removes the repeat.
 
 ## What is never split
 
-| Left whole                                                                   | Why                                                                                                                                                                  |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A step with a command Smithers CI does not recognize                         | It can read any file                                                                                                                                                 |
-| A step with shell it does not read: `$(…)`, globs, loops, subshells, `<`     | The commands it runs are not known                                                                                                                                   |
-| A flag it does not know, or `--affected`, `--only`, `...`, `[ref]` selectors | The set of packages depends on more than the files                                                                                                                   |
-| A script run through a wrapper, such as `bun scripts/run-turbo.ts run build` | The wrapper may do anything with its arguments                                                                                                                       |
-| A root script with a `pre` or `post` hook, or more than one command          | The hook reads files no package owns                                                                                                                                 |
-| A workspace pattern with braces, classes or `?`; a package with no name      | The package manager may see packages Smithers CI does not                                                                                                            |
-| pnpm with `tasks` in `pnpm-workspace.yaml`                                   | pnpm orders tasks from a configuration Smithers CI does not run                                                                                                      |
-| A selector that matches the root package, when the root has the script       | The root package's script reads the whole repository                                                                                                                 |
-| A `turbo` task nothing defines, or a task of the root package (`//#task`)    | Turborepo refuses the first; the second reads everything                                                                                                             |
-| A step that a later step of its job follows                                  | Its target always runs, so one command over every package is cheaper than one per package. It keeps its command and gains inputs                                     |
-| A step that follows another step in its working tree                         | It can read what that step wrote. A step that only runs `zig build` is held to its closure all the same. See [A step after another step](#a-step-after-another-step) |
-| A step still holding a `${{ matrix.… }}` expression                          | Its command differs per variant                                                                                                                                      |
-| A Zig build step whose closure has an import it could not follow             | An incomplete closure is affected by every change                                                                                                                    |
+| Left whole                                                                   | Why                                                                                                                              |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| A step with a command Smithers CI does not recognize                         | It can read any file                                                                                                             |
+| A step with shell it does not read: `$(…)`, globs, loops, subshells, `<`     | The commands it runs are not known                                                                                               |
+| A flag it does not know, or `--affected`, `--only`, `...`, `[ref]` selectors | The set of packages depends on more than the files                                                                               |
+| A script run through a wrapper, such as `bun scripts/run-turbo.ts run build` | The wrapper may do anything with its arguments                                                                                   |
+| A root script with a `pre` or `post` hook, or more than one command          | The hook reads files no package owns                                                                                             |
+| A workspace pattern with braces, classes or `?`; a package with no name      | The package manager may see packages Smithers CI does not                                                                        |
+| pnpm with `tasks` in `pnpm-workspace.yaml`                                   | pnpm orders tasks from a configuration Smithers CI does not run                                                                  |
+| A selector that matches the root package, when the root has the script       | The root package's script reads the whole repository                                                                             |
+| A `turbo` task nothing defines, or a task of the root package (`//#task`)    | Turborepo refuses the first; the second reads everything                                                                         |
+| A step that a later step of its job follows                                  | Its target always runs, so one command over every package is cheaper than one per package. It keeps its command and gains inputs |
+| A step that follows another step in its working tree                         | It can read what that step wrote. See [A step after another step](#a-step-after-another-step)                                    |
+| A step still holding a `${{ matrix.… }}` expression                          | Its command differs per variant                                                                                                  |
 
 A step that runs several recognized commands, or pipes one into `tee`, keeps
 its command and reads what all of them read. It is split only when the run is
@@ -188,34 +187,32 @@ step follows nothing, whatever the job needs. Recipes of one Justfile run one
 after another in one working tree, in the order `just ci` runs them: each
 recipe follows the one before it, and a recipe that fails skips the rest.
 
-### A Zig build after another step
+## A step that runs Zig
 
-A step that only runs `zig build` stays held to its inputs after any step.
-The Zig compiler reports every file a build reads, so nothing an earlier step
-wrote is among them.
-
-```text
-just ci        tidy                etc/scripts/tidy.sh      always runs
-               test                zig build test           held to the 1,147 files it reads
-```
-
-One thing an earlier step can still do is rewrite a file the build reads. The
-build's key is made from those files as they are before any step runs, so its
-result would be kept under the wrong key. Each step that runs before the build
-therefore checks that it left those files as it found them:
+A step that runs `zig build` names no inputs, so it is never held to a list
+of files. Zig's tests write where they start: `std.testing.tmpDir` makes
+`.zig-cache/tmp` beside `build.zig` and stops the test when it cannot. The
+step runs in the open and what it reads is recorded: it runs again only when
+one of those files changes. For a build those are the files the compiler
+read, Zig's own among them, so another Zig release runs it again.
 
 ```text
-smithers-ci: this step changed a file a later step is tested from. That step reruns only when its files change, so no step before it may rewrite them.
+just ci        tidy     etc/scripts/tidy.sh     always runs: test follows it
+               test     zig build test          runs again when a file it read changed
 ```
 
-The step fails with that line, and the build after it does not run. A step
-that only reads, such as a formatter in check mode or a linter, never meets it.
+When the step is nothing but `zig build <step>` and that build step only
+groups named steps, it becomes one step per named step. Each has a record of
+its own, so a change runs again only the steps whose own run read it.
 
-A Zig step names `zig` as the program it starts. The executable's bytes are
-part of the step's key, so another Zig release reruns it. Zig keeps its cache
-in `.flows/tools/zig`, the one place a held step may write, and the generated
-workflow saves that directory with the results: after a change, Zig compiles
-and runs again only the binaries the change reaches.
+A Zig step keeps Zig's two caches in `.flows/tools/zig`. They last from one
+run to the next, and the generated workflow saves them with the results: a
+step that does run again compiles and reruns only the binaries the change
+reaches, by Zig's own rules. What Zig reads and writes in its cache is left
+out of the step's record.
+
+A Zig step that a later step follows keeps its command as it is, and Zig
+keeps its cache where it always does: the later step may read what it built.
 
 ## One cost
 

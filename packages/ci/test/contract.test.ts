@@ -744,16 +744,6 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
     expect(Schema.decodeUnknownSync(Inventory.Step)({ ...split, outputs: ["packages/core/dist/**"] }).outputs)
       .toEqual(["packages/core/dist/**"])
     expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, outputs: [""] })).toThrow()
-    // The programs a step starts are named, never empty; a sealed step says so with a boolean.
-    const sealed = {
-      ...split,
-      tools: ["zig"],
-      sealed: true,
-      env: { ZIG_LOCAL_CACHE_DIR: `${Inventory.toolCache}/zig` }
-    }
-    expect(Schema.decodeUnknownSync(Inventory.Step)(sealed)).toEqual(sealed)
-    expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, tools: [""] })).toThrow()
-    expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, sealed: "yes" })).toThrow()
     // A tool's cache is kept inside the directory `apply` keeps out of git.
     expect(Inventory.toolCache.startsWith(`${Command.applyIgnores[0]}/`)).toBe(true)
     const failure = { code: "command-failed", message: "bun pm ls exited 1", part: "decompose" }
