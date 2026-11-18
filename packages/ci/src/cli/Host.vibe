@@ -1,0 +1,46 @@
+/**
+ * The host `smithers-ci` provides to itself and to every part on Node.
+ *
+ * - `NodeHost.layer` from `@smthrs/platform-node`: file system, paths,
+ *   processes, jj and HTTP; plus the standard streams and terminal the
+ *   command line needs.
+ * - Fast mode's services, for the select part: an in-memory ledger for this
+ *   run, git history, an in-memory flow engine for the judge's durable steps,
+ *   and Web Crypto. Contract 7 names no judge model, so the judge is
+ *   `Evaluator.layerUnavailable()` and a score fails `model-unavailable`.
+ *
+ * @since 0.1.0
+ */
+
+import { NodeStdio, NodeTerminal } from "@effect/platform-node"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Evaluator } from "@smthrs/model"
+import { NodeHost } from "@smthrs/platform-node"
+import { Ledger, Repository } from "../select/index.ts"
+
+const node = Layer.mergeAll(NodeHost.layer, NodeStdio.layer, NodeTerminal.layer)
+
+const select = Layer.mergeAll(
+  Ledger.layerMemory(),
+  Repository.layerGit,
+  FlowEngine.layerMemory,
+  WebCrypto.layer,
+  Evaluator.layerUnavailable()
+)
+
+/**
+ * Every service the program and its parts may ask for.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layer = Layer.provideMerge(select, node)
+
+/**
+ * The services {@link layer} provides.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Host = Layer.Success<typeof layer>

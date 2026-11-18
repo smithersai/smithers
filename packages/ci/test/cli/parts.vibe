@@ -6,11 +6,11 @@
  * mismatch. It prints the request it got on standard error.
  */
 
-import type { NodeHost } from "@smthrs/platform-node"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
 import type { ReplayCommit, ReplayReport, RunTotals } from "../../src/contract/ReplayReport.ts"
 import type { Parts } from "../../src/cli/Cli.vibe"
+import type { Host } from "../../src/cli/Host.vibe"
 import { parts as onMain } from "../../src/cli/parts.ts"
 
 effect function git(root: string, args: ReadonlyArray<string>) {
@@ -61,4 +61,4 @@ export effect function run<R>(request: ReplayRequest, _parts: ReplayParts<R>) {
 /**
  * Every part on `main`, with this replay.
  */
-export const parts: Parts<NodeHost.NodeHost> = { ...onMain, run }
+export const parts: Parts<Host> = { ...onMain, run }

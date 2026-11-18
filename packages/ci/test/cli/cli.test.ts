@@ -12,6 +12,7 @@ import { parts } from "./parts.vibe"
 import {
   bin,
   changed,
+  head,
   type Outcome,
   program,
   read,
@@ -306,16 +307,22 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     expect(changed(before, snapshot(root))).toEqual([])
   })
 
-  it("has the select part waiting", async () => {
-    const record = { ok: true, counts: { hit: 0, ran: 0, failed: 0, skipped: 0 }, results: [] }
-    const failures = await Promise.all([
-      Effect.runPromise(Effect.provide(Effect.flip(onMain.rows("/r", record)), layer)),
-      Effect.runPromise(Effect.provide(Effect.flip(onMain.score([])), layer))
-    ])
-    expect(failures.map((failure) => [failure.code, failure.part])).toEqual([
-      ["unsupported", "select"],
-      ["unsupported", "select"]
-    ])
+  it("provides the select part's services, with no judge configured", async () => {
+    const root = repo()
+    const record = { ok: true, counts: { hit: 0, ran: 0, failed: 0, skipped: 0 }, results: [], commit: head(root) }
+    expect(await Effect.runPromise(Effect.provide(onMain.rows(root, record), layer))).toEqual([])
+    expect(await Effect.runPromise(Effect.provide(onMain.score([]), layer))).toEqual([])
+    const features = {
+      extensions: [".zig"],
+      fileChanges: { d3: 1, d14: 1, d56: 1 },
+      failureRates: { d7: 0, d14: 0, d28: 0, d56: 0 },
+      project: "ci",
+      testCount: 1,
+      graphDistance: 1
+    }
+    const row = { commit: "c", target: "//ci:test", features, attempts: [true], failed: false, flaky: false }
+    const failure = await Effect.runPromise(Effect.provide(Effect.flip(onMain.score([row])), layer))
+    expect([failure.code, failure.part]).toEqual(["model-unavailable", "select"])
   })
 })
 

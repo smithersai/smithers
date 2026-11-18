@@ -30,6 +30,9 @@ const git = (root: string, ...args: ReadonlyArray<string>): string =>
     }
   })
 
+/** The commit `HEAD` names in a repository. */
+export const head = (root: string): string => git(root, "rev-parse", "HEAD").trim()
+
 /** A fresh directory under the system temp directory. */
 export const temporary = (prefix: string): string => mkdtempSync(join(tmpdir(), `smithers-ci-${prefix}-`))
 

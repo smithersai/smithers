@@ -4,10 +4,9 @@
  * unhappy path.
  */
 
-import type { NodeHost } from "@smthrs/platform-node"
 import type { GeneratedFile } from "../../src/contract/Parts.ts"
 import { cli, type Parts } from "../../src/cli/Cli.vibe"
-import { layer } from "../../src/cli/main.vibe"
+import { type Host, layer } from "../../src/cli/Host.vibe"
 
 /**
  * Runs the program and resolves to its exit code.
@@ -15,7 +14,7 @@ import { layer } from "../../src/cli/main.vibe"
 export async function inProcess(
   args: ReadonlyArray<string>,
   root: string,
-  chosen: Parts<NodeHost.NodeHost>,
+  chosen: Parts<Host>,
   sink: Console.Console,
   faulty?: Layer.Layer<FileSystem.FileSystem, never, FileSystem.FileSystem>
 ): Promise<number> {
@@ -42,6 +41,6 @@ export const fullDisk = Layer.effect(FileSystem.FileSystem, effect {
 /**
  * What the parts on `main` generate for the repository at `root`.
  */
-export async function generated(root: string, chosen: Parts<NodeHost.NodeHost>): Promise<ReadonlyArray<GeneratedFile>> {
+export async function generated(root: string, chosen: Parts<Host>): Promise<ReadonlyArray<GeneratedFile>> {
   return await runPromise(Effect.provide(effect { return try chosen.files(try chosen.read(root)) }, layer))
 }

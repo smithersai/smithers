@@ -1,14 +1,11 @@
 /**
- * Runs `smithers-ci` on Node: the host services every part may ask for,
- * `NodeHost.layer` from `@smthrs/platform-node`, plus the standard streams
- * and terminal the command line needs.
+ * Runs `smithers-ci` on Node over the host in `Host.vibe`.
  *
  * @since 0.1.0
  */
 
-import { NodeStdio, NodeTerminal } from "@effect/platform-node"
-import { NodeHost } from "@smthrs/platform-node"
 import { cli, type Parts } from "./Cli.vibe"
+import { type Host, layer } from "./Host.vibe"
 import { parts } from "./parts.ts"
 
 /**
@@ -17,7 +14,7 @@ import { parts } from "./parts.ts"
  * @category layers
  * @since 0.1.0
  */
-export const layer = Layer.mergeAll(NodeHost.layer, NodeStdio.layer, NodeTerminal.layer)
+export { layer }
 
 /**
  * Runs the program with `args` in the repository at `root` over the given
@@ -26,7 +23,7 @@ export const layer = Layer.mergeAll(NodeHost.layer, NodeStdio.layer, NodeTermina
  * @category running
  * @since 0.1.0
  */
-export async function run(args: ReadonlyArray<string>, root: string, chosen: Parts<NodeHost.NodeHost>): Promise<number> {
+export async function run(args: ReadonlyArray<string>, root: string, chosen: Parts<Host>): Promise<number> {
   return await runPromise(Effect.provide(cli(args, root, chosen), layer))
 }
 

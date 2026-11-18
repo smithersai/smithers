@@ -6,12 +6,13 @@
  * @since 0.1.0
  */
 
-import type { NodeHost } from "@smthrs/platform-node"
 import { files } from "../generate/index.ts"
 import { read } from "../inventory/index.ts"
 import { html, text } from "../report/index.ts"
+import { rows, score } from "../select/index.ts"
 import type { Parts } from "./Cli.vibe"
-import { rows, run, score } from "./Waiting.vibe"
+import type { Host } from "./Host.vibe"
+import { run } from "./Waiting.vibe"
 
 /**
  * Every part, as the program calls them.
@@ -19,4 +20,4 @@ import { rows, run, score } from "./Waiting.vibe"
  * @category parts
  * @since 0.1.0
  */
-export const parts: Parts<NodeHost.NodeHost> = { read, files, run, text, html, rows, score }
+export const parts: Parts<Host> = { read, files, run, text, html, rows, score }
