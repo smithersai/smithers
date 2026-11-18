@@ -1,4 +1,4 @@
-/** The one run at the newest commit that finds what can pass here, in real repositories, with the real `smthrs`. */
+/** The run that finds what can pass here when no way runs first, in real repositories, with the real `smthrs`. */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -46,6 +46,10 @@ const git = (root: string, ...args: ReadonlyArray<string>): string =>
     encoding: "utf8"
   }).trim()
 
+/** How a reason names the commits a job failed at: `(at 3f2a1c9 and 8d1e0b2)`. */
+const at = (root: string, ...revisions: ReadonlyArray<string>): string =>
+  `(at ${revisions.map((revision) => git(root, "rev-parse", revision).slice(0, 7)).join(" and ")})`
+
 /** A new commit that changes `a.sh`, so each commit is its own. */
 const another = (root: string, content = "# again\nexit 0\n"): void => {
   writeFileSync(join(root, "a.sh"), content)
@@ -65,7 +69,7 @@ describe("a job that cannot pass on this machine", () => {
     another(root)
     const report = await start(root, 2)
     expect(report.notReplayed).toEqual([
-      { job: "docker", reasons: [{ feature: failsHere, detail: "no docker here" }] }
+      { job: "docker", reasons: [{ feature: failsHere, detail: `no docker here ${at(root, "HEAD^", "HEAD")}` }] }
     ])
     expect(report.jobs).toEqual({ replayed: 1, total: 2 })
     expect(report.speedupCommits).toBe(2)
@@ -76,7 +80,7 @@ describe("a job that cannot pass on this machine", () => {
       expect(commit.normal.ok).toBe(true)
       expect(commit.baseline.counts.ran).toBe(1)
     }
-    // Run in the trial and once more to rule out a flake, and at no commit.
+    // Run once at the oldest commit and once more at the newest, and at no counted commit.
     expect(readFileSync(log, "utf8").trim().split("\n")).toHaveLength(2)
   }, 600_000)
 
@@ -88,7 +92,7 @@ describe("a job that cannot pass on this machine", () => {
     ]))
     const report = await start(root, 1)
     expect(report.notReplayed).toEqual([
-      { job: "first", reasons: [{ feature: failsHere, detail: "broken" }] },
+      { job: "first", reasons: [{ feature: failsHere, detail: `broken ${at(root, "HEAD")}` }] },
       { job: "after", reasons: [{ feature: needsLeftOut, detail: "after needs first, which is not replayed" }] }
     ])
     expect(report.jobs).toEqual({ replayed: 1, total: 3 })
@@ -104,7 +108,7 @@ describe("a job that cannot pass on this machine", () => {
     ]))
     const report = await start(root, 1)
     expect(report.notReplayed).toEqual([
-      { job: "m", reasons: [{ feature: failsHere, detail: "(size=2) too big" }] }
+      { job: "m", reasons: [{ feature: failsHere, detail: `(size=2) too big ${at(root, "HEAD")}` }] }
     ])
     expect(report.jobs).toEqual({ replayed: 2, total: 2 })
     expect(report.commits[0]?.baseline.counts.ran).toBe(2)
@@ -119,7 +123,9 @@ describe("a job that cannot pass on this machine", () => {
     })
     const root = track(makeSmallRepository([inTree("broken", "echo broken >&2; exit 1"), inTree("later", "sh a.sh")]))
     const report = await start(root, 1)
-    expect(report.notReplayed).toEqual([{ job: "broken", reasons: [{ feature: failsHere, detail: "broken" }] }])
+    expect(report.notReplayed).toEqual([
+      { job: "broken", reasons: [{ feature: failsHere, detail: `broken ${at(root, "HEAD")}` }] }
+    ])
     expect(report.commits[0]?.baseline.ok).toBe(true)
     expect(report.commits[0]?.baseline.counts.ran).toBe(1)
   }, 600_000)
@@ -183,7 +189,7 @@ describe("a CI whose only job that could pass needs one that cannot", () => {
   }, 600_000)
 })
 
-describe("the run at the newest commit", () => {
+describe("the run that finds what passes", () => {
   it("runs in the jail, where the machine has one", async () => {
     const jailed = Layer.succeed(Options, {
       smthrs: [smthrs] as const,
@@ -196,7 +202,9 @@ describe("the run at the newest commit", () => {
         Effect.provide(Layer.provideMerge(jailed as never, NodeServices.layer))
       ) as Effect.Effect<ReplayReport, Failure>
     )
-    expect(report.notReplayed).toEqual([{ job: "bad", reasons: [{ feature: failsHere, detail: "broken" }] }])
+    expect(report.notReplayed).toEqual([
+      { job: "bad", reasons: [{ feature: failsHere, detail: `broken ${at(root, "HEAD")}` }] }
+    ])
   }, 600_000)
 
   it("gives up with the reason when the CI can no longer be read", async () => {

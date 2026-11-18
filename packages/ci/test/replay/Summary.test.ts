@@ -8,6 +8,8 @@ import {
   choose,
   cycleIn,
   excludeLines,
+  failedAt,
+  failedTwice,
   failureTexts,
   firstAttempt,
   flakyOf,
@@ -16,9 +18,12 @@ import {
   labelsOf,
   maxReruns,
   mismatchesOf,
+  noCiBefore,
+  noCommitBefore,
   nothingToReplay,
   planOfPrinted,
   predictedSafe,
+  ranAgainAt,
   recordOf,
   recovered,
   replayable,
@@ -878,5 +883,40 @@ describe("withoutFast", () => {
       normal: totals,
       mismatches: [normal]
     })
+  })
+})
+
+describe("what failed the first run", () => {
+  it("names the commits a job failed at after its reason, each once", () => {
+    const entry = { job: "docker", variant: { os: "linux" }, reason: "no docker here" }
+    const first = "3f2a1c9aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    const newest = "8d1e0b2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    expect(failedAt(entry, [first, newest])).toEqual({ ...entry, reason: "no docker here (at 3f2a1c9 and 8d1e0b2)" })
+    expect(failedAt(entry, [first, first]).reason).toBe("no docker here (at 3f2a1c9)")
+    expect(failedAt(entry, [first]).reason).toBe("no docker here (at 3f2a1c9)")
+  })
+
+  it("counts as failed twice only a result that ran again and failed again", () => {
+    const failed = { status: "failed", key: "", durationMs: 1 } as const
+    const once = { passed: false, durationMs: 1 }
+    const twice = failedTwice([
+      { ...failed, label: "//:again", attempts: [once, once] },
+      { ...failed, label: "//:once", attempts: [once] },
+      // A result no attempt was recorded for was never run again.
+      { ...failed, label: "//:unrecorded" },
+      { label: "//:flaky", status: "ran", key: "", durationMs: 1, attempts: [once, { passed: true, durationMs: 1 }] }
+    ])
+    expect([...twice]).toEqual(["//:again"])
+  })
+
+  it("names the newest commit as where a job ran once more, unless nothing runs again", () => {
+    expect(ranAgainAt(1, "first", "newest")).toBe("newest")
+    expect(ranAgainAt(0, "first", "newest")).toBe("first")
+  })
+
+  it("says why a replay that was to start warm starts with an empty cache", () => {
+    const oldest = "3f2a1c9aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    expect(noCommitBefore(oldest)).toBe("no commit comes before 3f2a1c9 in this repository")
+    expect(noCiBefore(oldest)).toBe("the commit before 3f2a1c9 has no CI that runs on this machine")
   })
 })

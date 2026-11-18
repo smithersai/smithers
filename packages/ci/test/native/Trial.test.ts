@@ -50,6 +50,10 @@ const refusal = (root: string, extra: Partial<ReplayRequest> = {}): Promise<Fail
     (cause: { readonly message: string }) => JSON.parse(JSON.stringify(cause)) as Failure
   )
 
+/** How a reason names the commits a target failed at: `(at 3f2a1c9 and 8d1e0b2)`. */
+const at = (root: string, ...revisions: ReadonlyArray<string>): string =>
+  `(at ${revisions.map((revision) => git(root, "rev-parse", revision).trim().slice(0, 7)).join(" and ")})`
+
 const broken = "echo broken >&2\nexit 1\n"
 const blocked = "d=$(mktemp -d)\nmkfifo $d/pipe\ncat $d/pipe\n"
 
@@ -60,7 +64,7 @@ describe("a target that cannot pass on this machine", { timeout: 600_000 }, () =
     const report = await replay(root, { commits: 2 })
     expect(report.notReplayed).toContainEqual({
       job: "//:c",
-      reasons: [{ feature: failsHere, detail: "broken" }]
+      reasons: [{ feature: failsHere, detail: `broken ${at(root, "HEAD^", "HEAD")}` }]
     })
     expect(report.jobs).toEqual({ replayed: 2, total: 3 })
     expect(report.trialMs).toBeGreaterThan(0)
@@ -73,9 +77,10 @@ describe("a target that cannot pass on this machine", { timeout: 600_000 }, () =
   })
 
   it("takes the targets that wait on it with it", async () => {
-    const report = await replay(keep(repository({ ...ownFiles(), "a.sh": broken })))
+    const root = keep(repository({ ...ownFiles(), "a.sh": broken }))
+    const report = await replay(root)
     expect(report.notReplayed).toEqual(expect.arrayContaining([
-      { job: "//:a", reasons: [{ feature: failsHere, detail: "broken" }] },
+      { job: "//:a", reasons: [{ feature: failsHere, detail: `broken ${at(root, "HEAD")}` }] },
       {
         job: "//:b",
         reasons: [{ feature: needsLeftOut, detail: "//:b needs a target that fails here, which is not replayed" }]
@@ -83,6 +88,16 @@ describe("a target that cannot pass on this machine", { timeout: 600_000 }, () =
     ]))
     expect(report.jobs).toEqual({ replayed: 1, total: 3 })
     expect(report.commits[0]?.baseline.counts.ran).toBe(1)
+  })
+
+  it("is left out without a second run when it stopped making progress, with the one commit it ran at", async () => {
+    const root = keep(repository({ ...ownFiles(), "c.sh": blocked }))
+    const report = await replay(root, { stallMinutes: 0.1 })
+    expect(report.notReplayed).toContainEqual({
+      job: "//:c",
+      reasons: [{ feature: failsHere, detail: `${noProgress(0.1)} ${at(root, "HEAD")}` }]
+    })
+    expect(report.jobs).toEqual({ replayed: 2, total: 3 })
   })
 
   it("still lets a commit that cannot be planned fail as it would", async () => {

@@ -200,13 +200,16 @@ goes on to the next commit.
 
 ## A build that does not run on this machine
 
-Before the replay, the patterns run once at the newest commit, as they do for
-[any repository](how-it-works.md#jobs-that-cannot-pass-here). A target that fails
-there is left out at every commit and listed as failing on this machine, with every
-target that waits on it. The speedup covers the targets that passed, and says how many.
+Each way runs once before the first counted commit, as for
+[any repository](how-it-works.md#the-first-run), and the baseline's first run
+finds the targets that cannot pass here. A target that fails it runs once more,
+at the newest commit. One that fails again is left out at every commit and listed
+as failing on this machine, with every target that waits on it. The speedup covers
+the targets that passed, and says how many. A first run at a commit that cannot be
+installed says nothing of the targets, so they run once at the newest commit instead.
 
 When no target passes, there is nothing to measure: `smithers-ci` exits 3 with
-the first failure of the newest commit.
+the first failure.
 That is what a missing tool looks like, for example a workspace that names
 `go` as a host program on a machine without it, and what an install that never
 works or patterns that name no package look like. A repository whose install brings no

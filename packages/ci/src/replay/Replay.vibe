@@ -30,7 +30,7 @@ import {
   type ScoreRows,
   writtenFiles
 } from "../contract/Parts.ts"
-import type { NotReplayedCommit, ReplayCommit, ReplayReport, StepFailure } from "../contract/ReplayReport.ts"
+import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport, StepFailure } from "../contract/ReplayReport.ts"
 import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
@@ -50,6 +50,7 @@ import {
 import { probe, type Probe } from "./Jail.ts"
 import {
   commandLine,
+  firstLine,
   madeNoProgress,
   noJobPassed,
   noProgress,
@@ -82,6 +83,8 @@ import {
   choose,
   cycleIn,
   excludeLines,
+  failedAt,
+  failedTwice,
   failure,
   failureTexts,
   fastRunOf,
@@ -94,9 +97,12 @@ import {
   labelsOf,
   maxReruns,
   mismatchesOf,
+  noCiBefore,
+  noCommitBefore,
   nothingToReplay,
   planOfPrinted,
   PrintedPlan,
+  ranAgainAt,
   recordOf,
   recovered,
   replayable,
@@ -301,8 +307,25 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * jail: it can write its checkout, that home and that directory, and cannot
  * read the person's credentials. Generated targets also
  * stay within the target map's `maxJobs`. Commits run oldest
- * first and the normal and fast copies keep their caches between commits, so
- * the first commit starts cold.
+ * first and the normal and fast copies keep their caches between commits.
+ *
+ * With `request.warm`, every way first runs once at the parent of the oldest
+ * commit, in its own home, and fills what it keeps from one commit to the
+ * next: its cache, the caches its tools keep in its home, and what its steps
+ * save for a later run. A CI run has what the run before it left, so the
+ * first counted commit starts as one does. That run is in no time but
+ * `ReplayReport.firstRun`, and a mode's failure in it is no failure of the
+ * replay. When the oldest commit has no commit before it, or that commit has
+ * no CI that runs here, the first counted commit starts with an empty cache
+ * and the report says why (`ReplayReport.cold`).
+ *
+ * With `request.trial`, the baseline's first run finds the jobs that cannot
+ * pass on this machine: the warm run at the parent, or, when there is none, a
+ * run at the oldest commit in a home and a store of its own, which warms
+ * nothing a counted run reads. A job that fails it runs once more, at the
+ * newest commit. One that fails again is left out at every commit and listed
+ * (`Inventory.failsHere`) with both commits; one that passes was flaky or
+ * broken at that one commit, and stays.
  *
  * The baseline, normal mode and fast mode each have a home and a temporary
  * directory of their own, empty at the start and kept until the replay ends.
@@ -352,6 +375,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // them in the cache directory of its own copy, so each way of running a commit has a store of its own.
     const kept = path.join(work, "kept")
     try orFail(fs.makeDirectory(kept), "could not make a directory")
+    // The run that only finds what passes here has a store of its own: it saves nothing a counted run restores.
+    const keptTrial = path.join(work, "kept-trial")
+    try orFail(fs.makeDirectory(keptTrial), "could not make a directory")
     const cloned = try exec("git", ["clone", "--quiet", "--no-checkout", root, source], work, {}, outputLimit)
     if (cloned.exitCode !== 0) throw failure("not-a-repository", `${root} is not a git repository`)
     const head = try exec("git", ["rev-parse", "--verify", "--quiet", "HEAD"], source, {}, outputLimit)
@@ -389,7 +415,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       }
     }
 
-    // What the one run at the newest commit found does not pass on this machine.
+    // What the first run found does not pass on this machine.
     const failedHere: Array<FailedHere> = []
 
     /**
@@ -583,7 +609,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       sequence: ReadonlyArray<Unit>,
       commit: string,
       wanted: ReadonlySet<string> | undefined,
-      place: Confined
+      place: Confined,
+      store: string
     ) {
       return try scoped(effect {
         const directory = try orFail(fs.makeTempDirectoryScoped({ directory: work }), "could not make a directory")
@@ -597,10 +624,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             continue
           }
           const start = try Clock.currentTimeMillis
-          const [program, ...argv] = held(place, [copy, kept], [...shell, step.command])
+          const [program, ...argv] = held(place, [copy, store], [...shell, step.command])
           // Only a step whose text names the variable is given it: the text takes it away before the step's own
           // script starts, and a step with no such text would hand it on.
-          const told = step.command.includes(stateVariable) ? { [stateVariable]: kept } : {}
+          const told = step.command.includes(stateVariable) ? { [stateVariable]: store } : {}
           const given = step.command.includes(runnerEntry) ? software : {}
           const environment = stepEnvironment({ ...given, ...place.daemon, ...step.env, ...told }, place)
           // A step that cannot start, for example because its directory does not exist at this commit, has failed.
@@ -629,6 +656,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const baseline = (commit: string, own: Prepared, place: Confined = places.baseline): Execute<Host> => (targets) => effect {
       const wanted = targets === undefined ? undefined : new Set(targets)
       const chosen = stationsOf(own.units, wanted)
+      const store = place === places.trial ? keptTrial : kept
       const limit = try Semaphore.make(own.jobs ?? options.cores ?? coreCount())
       const plan: Array<Station & { readonly gate: Deferred.Deferred<boolean> }> = []
       for (const station of chosen) plan.push({ ...station, gate: try Deferred.make<boolean>() })
@@ -641,7 +669,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const results: Array<TargetResult> = []
         for concurrent (const sequence of station.runs) {
           if (needsPassed) {
-            results.push(...(try limit.withPermits(1)(runSequence(sequence, commit, wanted, place))))
+            results.push(...(try limit.withPermits(1)(runSequence(sequence, commit, wanted, place, store))))
           } else {
             const waiting = sequence.flatMap((unit) => labelsOf(unit, wanted))
             results.push(...waiting.map((label) => blocked(label, station.needs.join(", "))))
@@ -656,48 +684,6 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     /**
-     * Runs the baseline once at the newest commit, in a home of its own so it warms nothing a measured run reads,
-     * and leaves out what fails. A unit that was kept from running by a failure before it runs again without that
-     * failure, as it will in the replay. Gives the time it took.
-     */
-    effect function trial() {
-      const head = commits.at(-1) as string
-      const start = try Clock.currentTimeMillis
-      try progress.say(`checking which jobs pass on this machine at ${head.slice(0, 7)}`)
-      const passed = new Set<string>()
-      let firstFailure: StepFailure | undefined = undefined
-      while (true) {
-        const waiting = newest.units.filter((unit) => !passed.has(unitKey(unit)))
-        const wanted = waiting.flatMap((unit) => labelsOf(unit, undefined))
-        const execute = baseline(head, newest, places.trial)
-        const results = try settle(execute, try execute(wanted), Math.min(1, options.reruns), wanted.length)
-        const found = trialOf(waiting, results, stepNames(newest.units))
-        for (const key of found.passed) passed.add(key)
-        if (found.first === undefined) break
-        const first: StepFailure = firstFailure ?? found.first
-        firstFailure = first
-        for (const entry of found.failed) try progress.say(`fails here: ${entry.job}: ${entry.reason}`)
-        failedHere.push(...found.failed)
-        // With what failed left out, nothing may be left to replay: then no job can pass here.
-        newest = prepared() catch effect (cause) => {
-          throw cause.code === "unsupported" ? failure("unsupported", noJobPassed(head, first)) : cause
-        }
-      }
-      return (try Clock.currentTimeMillis) - start
-    }
-
-    const trialMs = request.trial === true ? try trial() : undefined
-
-    const commitsDone: Array<ReplayCommit> = []
-    const commitsLeft: Array<NotReplayedCommit> = []
-    const baselines: Array<RunRecord> = []
-    const allRows: Array<Row> = []
-    let flaky = 0
-    let fastFlaky = 0
-    let fastNotMeasured: string | undefined = undefined
-    const selected = new Map<string, ReadonlyArray<string>>()
-
-    /**
      * An older commit's own CI, read from its own tree. A commit whose CI cannot be replayed, because it had none or
      * because none of it runs here, is not a failed replay: the reason is kept and the commit is listed.
      */
@@ -708,6 +694,136 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         return { reason: cause.message }
       }
     }
+
+    const tip = commits.at(-1) as string
+    const oldest = commits[0] as string
+    // How often a job that fails the first run runs again before it is left out.
+    const again = Math.min(1, options.reruns)
+
+    /**
+     * Runs the baseline once at `at`, in `place`, and leaves out what cannot pass on this machine. A unit that fails
+     * runs once more, at the newest commit and in the home of the run that only judges: a commit that was broken
+     * and fixed since so leaves nothing out, and neither does one flaky failure. A unit that fails again is left
+     * out at every commit, with the commits it failed at. A unit that was kept from running by a failure before it
+     * runs again without that failure, as it will in the replay. Gives the time of the first pass, and what is
+     * left of the CI at `at`: nothing, when all of it is left out and the newest commit still has a job.
+     */
+    effect function judge(at: string, whole: Prepared, place: Confined) {
+      const passed = new Set<string>()
+      let firstFailure: StepFailure | undefined = undefined
+      let wallMs: number | undefined = undefined
+      let own: Prepared | undefined = whole
+      while (own !== undefined) {
+        const waiting = own.units.filter((unit) => !passed.has(unitKey(unit)))
+        const wanted = waiting.flatMap((unit) => labelsOf(unit, undefined))
+        const start = try Clock.currentTimeMillis
+        const ran = try baseline(at, own, place)(wanted)
+        wallMs ??= (try Clock.currentTimeMillis) - start
+        const results = try settle(baseline(tip, newest, places.trial), ran, again, wanted.length)
+        const found = trialOf(waiting, results, stepNames(own.units))
+        for (const key of found.passed) passed.add(key)
+        if (found.first === undefined) break
+        const first: StepFailure = firstFailure ?? found.first
+        firstFailure = first
+        // A job that ran once more failed at the newest commit too.
+        const twice = failedTwice(results)
+        const ranAgain = (entry: FailedHere): boolean =>
+          waiting.some((unit) => unitKey(unit) === unitKey(entry) && unit.steps.some((step) => twice.has(step.label)))
+        const named = found.failed.map((entry) => failedAt(entry, ranAgain(entry) ? [at, tip] : [at]))
+        for (const entry of named) try progress.say(`fails here: ${entry.job}: ${entry.reason}`)
+        failedHere.push(...named)
+        // With what failed left out, nothing may be left to replay: then no job can pass here.
+        try checkoutCopy(normalCopy, tip, places.normal)
+        newest = prepared() catch effect (cause) => {
+          throw cause.code === "unsupported" ? failure("unsupported", noJobPassed(at, first, ranAgainAt(again, at, tip))) : cause
+        }
+        const left: Prepared | { readonly reason: string } = at === tip ? newest : try preparedAt(at)
+        own = "reason" in left ? undefined : left
+      }
+      return { wallMs: wallMs as number, own }
+    }
+
+    /**
+     * The run of every way at `at`, the commit before the oldest replayed one, which fills what each keeps from one
+     * commit to the next. With `request.trial` the baseline's is also the run that finds what passes here. A mode
+     * runs what the baseline's run left, and its failure is not the replay's: the cache holds what passed.
+     */
+    effect function warmed(at: string, first: Prepared) {
+      const short = at.slice(0, 7)
+      try progress.say(`first run ${short} baseline`)
+      const judged = request.trial === true
+        ? try judge(at, first, places.baseline)
+        : { wallMs: (try measure(Effect.void, Effect.void, baseline(at, first), undefined, 0)).wallMs, own: first }
+      const own = judged.own
+      effect function mode(way: "normal" | "fast", copy: string | undefined) {
+        if (own === undefined || copy === undefined) return undefined
+        try progress.say(`first run ${short} ${way}`)
+        const place = places[way]
+        const run = measure(
+          checkoutCopy(copy, at, place),
+          equip(copy, own, place),
+          smithers(copy, own, place, new Map()),
+          undefined,
+          0
+        ) catch effect (cause) => {
+          try progress.say(`the first run in ${way} mode did not finish: ${firstLine(cause.message)}`)
+          return undefined
+        }
+        return run?.wallMs
+      }
+      const normalMs = try mode("normal", normalCopy)
+      const fastMs = try mode("fast", fastCopy)
+      return {
+        commit: at,
+        baselineMs: judged.wallMs,
+        ...(normalMs === undefined ? {} : { normalMs }),
+        ...(fastMs === undefined ? {} : { fastMs })
+      } satisfies FirstRun
+    }
+
+    /**
+     * Finds what passes here when no way runs before the first counted commit: the baseline runs once at the oldest
+     * commit whose CI can be replayed, in a home and a store of its own, so it warms nothing a counted run reads.
+     * Gives the time it took.
+     */
+    effect function trial() {
+      const start = try Clock.currentTimeMillis
+      let at = tip
+      let own = newest
+      for (const commit of commits.slice(0, -1)) {
+        const found = try preparedAt(commit)
+        if ("reason" in found) continue
+        at = commit
+        own = found
+        break
+      }
+      try progress.say(`checking which jobs pass on this machine at ${at.slice(0, 7)}`)
+      try judge(at, own, places.trial)
+      return (try Clock.currentTimeMillis) - start
+    }
+
+    /** The first run of every way, or why there is none though one was asked for. */
+    effect function start() {
+      if (request.warm !== true) return {}
+      const parent = try exec("git", ["rev-parse", "--verify", "--quiet", `${oldest}^`], source, {}, outputLimit, stdoutOf)
+      if (parent.exitCode !== 0) return { cold: noCommitBefore(oldest) }
+      const before = parent.text.trim()
+      const own = try preparedAt(before)
+      if ("reason" in own) return { cold: noCiBefore(oldest) }
+      return { firstRun: try warmed(before, own) }
+    }
+
+    const started: { readonly firstRun?: FirstRun; readonly cold?: string } = try start()
+    const trialMs = started.firstRun === undefined && request.trial === true ? try trial() : undefined
+
+    const commitsDone: Array<ReplayCommit> = []
+    const commitsLeft: Array<NotReplayedCommit> = []
+    const baselines: Array<RunRecord> = []
+    const allRows: Array<Row> = []
+    let flaky = 0
+    let fastFlaky = 0
+    let fastNotMeasured: string | undefined = undefined
+    const selected = new Map<string, ReadonlyArray<string>>()
 
     for (const [index, commit] of commits.entries()) {
       const at = `${index + 1}/${commits.length} ${commit.slice(0, 7)}`
@@ -785,6 +901,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       commitsLeft,
       fastNotMeasured,
       jobs: jobsCovered(newest.units, newest.left),
-      trialMs
+      trialMs,
+      firstRun: started.firstRun,
+      cold: started.cold
     })
   })

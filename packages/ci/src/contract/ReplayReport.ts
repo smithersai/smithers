@@ -139,6 +139,31 @@ export const NotReplayedCommit = Schema.Struct({
 export type NotReplayedCommit = typeof NotReplayedCommit.Type
 
 /**
+ * The run of each way before the first counted commit, at `commit`: the
+ * parent of the oldest replayed commit. It starts with an empty cache and
+ * fills what the way keeps from one commit to the next, as the CI run before
+ * a change has. Each time is the wall time of that run in one way, and is in
+ * no other time of the report. A mode whose run did not finish has no time.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const FirstRun = Schema.Struct({
+  commit: Schema.NonEmptyString,
+  baselineMs: Schema.Finite,
+  normalMs: Schema.optionalKey(Schema.Finite),
+  fastMs: Schema.optionalKey(Schema.Finite)
+})
+
+/**
+ * A decoded `FirstRun`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type FirstRun = typeof FirstRun.Type
+
+/**
  * The whole replay. Each commit in `commits` ran its own CI, read from its
  * own tree; a commit whose CI could not be replayed is in
  * `notReplayedCommits` and in no time. `speedup` is baseline wall time
@@ -167,6 +192,11 @@ export type NotReplayedCommit = typeof NotReplayedCommit.Type
  * that found the jobs that pass on this machine took, when there was one. It
  * is in no other time.
  *
+ * `firstRun` is present when every way ran once before the first counted
+ * commit (`FirstRun`), so that commit started with the caches a CI run finds.
+ * Without it the first counted commit started with an empty cache. `cold`
+ * says why when that was not asked for: there was no commit before it to run.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -180,6 +210,8 @@ export const ReplayReport = Schema.Struct({
   speedupCommits: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   jobs: Schema.optionalKey(Schema.Struct({ replayed: Schema.Int, total: Schema.Int })),
   trialMs: Schema.optionalKey(Schema.Finite),
+  firstRun: Schema.optionalKey(FirstRun),
+  cold: Schema.optionalKey(Schema.NonEmptyString),
   mismatches: Schema.Int,
   fastWallMs: Schema.optionalKey(Schema.Finite),
   selection: Schema.optionalKey(Metrics),

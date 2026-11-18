@@ -14,7 +14,9 @@
  * speedup. When fast mode was asked for and could not be measured, a line says
  * so and why. The speedup covers the commits whose baseline passed and says so
  * when that is not all of them, and every step that failed is listed with its
- * exit code and the first line of its error output.
+ * exit code and the first line of its error output. The run of each way
+ * before the first counted commit has one line with its times, or a line
+ * that says why that commit started with an empty cache.
  *
  * Labels, reasons and commit ids come from the repository being replayed, so control
  * characters in them are replaced before they reach a terminal.
@@ -26,6 +28,7 @@ import type { RenderReport } from "../contract/Parts.ts"
 import type { ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
 import {
   bar,
+  coldStart,
   commitsLeftOut,
   count,
   coverage,
@@ -34,6 +37,7 @@ import {
   failureText,
   fastNotMeasured,
   firstLine,
+  firstRunTime,
   flaky,
   jobsCount,
   jobsLeftOut,
@@ -145,6 +149,8 @@ export const text: RenderReport = (report) => {
     }${leftOut(jobsLeftOut(report))}${unread(notRead.length)}`
   ])
   if (report.trialMs !== undefined) sections.push([trialTime(report.trialMs)])
+  if (report.firstRun !== undefined) sections.push([firstRunTime(report.firstRun)])
+  if (report.cold !== undefined) sections.push([clean(coldStart(report.cold))])
   sections.push([...commitLines(report.commits)])
   const failed = report.commits.flatMap((commit) => failedSteps(commit).map((entry) => ({ ...entry, commit })))
   if (failed.length > 0) {

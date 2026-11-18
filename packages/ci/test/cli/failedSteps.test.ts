@@ -47,7 +47,7 @@ describe("smithers-ci on a repository where one job cannot pass here", { timeout
     expect(outcome.stdout).toMatch(/× (faster|slower) over 1 of 2 jobs\n/)
     expect(outcome.stdout).toContain("2 commits · 1 of 2 jobs · 0 mismatches · 1 job not replayed")
     expect(outcome.stdout).toContain("found the jobs that pass on this machine in ")
-    expect(outcome.stdout).toMatch(/ci\.yml:job1 +fails on this machine: no docker here\n/)
+    expect(outcome.stdout).toMatch(/ci\.yml:job1 +fails on this machine: no docker here \(at \w{7} and \w{7}\)\n/)
   })
 
   it("exits 3 when no job passes", async () => {
@@ -72,7 +72,9 @@ describe("smithers-ci on a repository where one job cannot pass here", { timeout
     const root = repositoryOf({ [file]: workflow("sh check.sh", blocked), "check.sh": "exit 0\n" })
     const outcome = await spawn(bin, ["--commits", "1", "--stall-minutes", "0.1"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
-    expect(outcome.stdout).toMatch(/ci\.yml:job1 +fails on this machine: it made no progress for 0\.1 minutes\n/)
+    expect(outcome.stdout).toMatch(
+      /ci\.yml:job1 +fails on this machine: it made no progress for 0\.1 minutes \(at \w{7}\)\n/
+    )
   })
 
   it("refuses a stall limit that is not above 0", async () => {
@@ -92,7 +94,10 @@ describe("smithers-ci on a repository whose CI fails here", { timeout: 600_000 }
     expect(outcome.stdout).toBe("")
     expect(outcome.stderr).not.toContain("faster")
     expect(outcome.stderr).toContain("this repository's CI does not pass on this machine")
-    expect(outcome.stderr).toContain(`First failure at ${head(root).slice(0, 7)}:`)
+    // The first run is at the oldest commit, and what failed there ran once more at the newest.
+    const oldest = git(root, "rev-parse", "HEAD^").trim().slice(0, 7)
+    expect(outcome.stderr).toContain(`No job passed at ${oldest} or at ${head(root).slice(0, 7)}.`)
+    expect(outcome.stderr).toContain(`First failure at ${oldest}:`)
     expect(outcome.stderr).toContain(`  command  ${missing} --version\n`)
     expect(outcome.stderr).toContain("  exit     127\n")
     expect(outcome.stderr).toContain(`  error    \`${missing}\` is not installed on this machine\n`)

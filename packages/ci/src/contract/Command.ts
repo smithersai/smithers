@@ -62,6 +62,12 @@ export const flags = {
     default: "false",
     help: "Replay every job, without first running the CI once to leave out the jobs that fail on this machine."
   },
+  cold: {
+    on: ["", "replay"],
+    default: "false",
+    help:
+      "Count from an empty cache: skip the run before the first counted commit that fills the caches a CI run finds."
+  },
   "stall-minutes": {
     on: ["", "replay"],
     default: "10",

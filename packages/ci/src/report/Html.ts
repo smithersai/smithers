@@ -14,6 +14,7 @@ import type { RenderReport } from "../contract/Parts.ts"
 import type { Mismatch, NotReplayedCommit, ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
 import type { Metrics } from "../contract/Selection.ts"
 import {
+  coldStart,
   commitsLeftOut,
   count,
   coverage,
@@ -23,6 +24,7 @@ import {
   failureText,
   fastNotMeasured,
   firstLine,
+  firstRunTime,
   flaky,
   jobsCount,
   jobsLeftOut,
@@ -283,6 +285,8 @@ export const html: RenderReport = (report) => {
       }${commitsLeftOut(commitsLeft.length)}${leftOut(jobsLeftOut(report))}${unread(notRead.length)}</p>`
     )
     if (report.trialMs !== undefined) body.push(`<p class="summary">${trialTime(report.trialMs)}</p>`)
+    if (report.firstRun !== undefined) body.push(`<p class="summary">${firstRunTime(report.firstRun)}</p>`)
+    if (report.cold !== undefined) body.push(`<p class="summary">${escape(coldStart(report.cold))}</p>`)
     if (report.selection !== undefined) body.push(selection(report.selection))
     body.push(commitTable(report.commits))
     if (commitsLeft.length > 0) body.push(commitsLeftTable(commitsLeft))

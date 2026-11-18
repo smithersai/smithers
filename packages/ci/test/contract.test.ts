@@ -1161,6 +1161,30 @@ describe("what a report says about a failure", () => {
     expect(decoded.commits[0]?.baseline.failures).toBeUndefined()
   })
 
+  it("holds the first run of each way, or why the first commit started with an empty cache", () => {
+    const decoded = Schema.decodeUnknownSync(ReplayReport.ReplayReport)(report)
+    expect(decoded.firstRun).toEqual({
+      commit: "0000000000000000000000000000000000000001",
+      baselineMs: 1_390_000,
+      normalMs: 1_470_000,
+      fastMs: 1_480_000
+    })
+    expect(decoded.cold).toBeUndefined()
+    const decode = Schema.decodeUnknownSync(ReplayReport.FirstRun)
+    // A mode whose first run did not finish has no time; the baseline always has one.
+    expect(decode({ commit: "abc", baselineMs: 1 })).toEqual({ commit: "abc", baselineMs: 1 })
+    expect(() => decode({ commit: "abc", normalMs: 1 })).toThrow()
+    expect(() => decode({ commit: "", baselineMs: 1 })).toThrow()
+    const { firstRun: _firstRun, ...without } = report as unknown as { readonly firstRun: unknown }
+    const cold = "no commit comes before 0000000 in this repository"
+    expect(Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...without, cold })).toMatchObject({ cold })
+    expect(() => Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...without, cold: "" })).toThrow()
+    // A person asks for the count from an empty cache; a replay is asked for the first run.
+    expect(Command.flags.cold).toMatchObject({ on: ["", "replay"], default: "false" })
+    const request: Parts.ReplayRequest = { root: ".", commits: 1, modes: ["normal"], warm: true }
+    expect(request.warm).toBe(true)
+  })
+
   it("refuses a failure with no step or no reason, and a negative count of commits", () => {
     const decode = Schema.decodeUnknownSync(ReplayReport.StepFailure)
     expect(decode({ step: "a", reason: "b" })).toEqual({ step: "a", reason: "b" })

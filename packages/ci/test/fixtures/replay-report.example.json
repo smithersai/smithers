@@ -70,6 +70,12 @@
   "fastWallMs": 90000,
   "speedup": 5.5,
   "speedupCommits": 1,
+  "firstRun": {
+    "commit": "0000000000000000000000000000000000000001",
+    "baselineMs": 1390000,
+    "normalMs": 1470000,
+    "fastMs": 1480000
+  },
   "mismatches": 1,
   "flaky": 0,
   "selection": {

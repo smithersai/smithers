@@ -286,17 +286,19 @@ const detailsOf = (failure: StepFailure): ReadonlyArray<string> => [
 ]
 
 /**
- * Why there is nothing to measure when no job passed in the one run at the
- * newest commit: that commit and its first failure.
+ * Why there is nothing to measure when no job passed the first run: the
+ * commit it ran at, the commit its failed jobs ran once more at when that is
+ * another, and the first failure.
  *
  * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
-export const noJobPassed = (commit: string, first: StepFailure): string => {
+export const noJobPassed = (commit: string, first: StepFailure, again: string = commit): string => {
   const at = commit.slice(0, 7)
+  const where = again === commit ? at : `${at} or at ${again.slice(0, 7)}`
   return [
-    `this repository's CI does not pass on this machine, so there is no speedup to measure. No job passed at ${at}.`,
+    `this repository's CI does not pass on this machine, so there is no speedup to measure. No job passed at ${where}.`,
     `First failure at ${at}:`,
     ...detailsOf(first)
   ].join("\n")

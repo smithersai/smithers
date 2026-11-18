@@ -14,7 +14,7 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { applyRefuses } from "../contract/Command.ts"
 import { failsHere, needsLeftOut, type NotReplayed, stepTimeoutHours } from "../contract/Inventory.ts"
 import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract/Parts.ts"
-import type { NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
+import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { type Confined, confine, held, reading, type Way } from "../replay/Confine.vibe"
@@ -42,13 +42,18 @@ import { type Execute, Options, Progress, scoresOrReason, settle } from "../repl
 import { defaultStall, defaultStallMinutes, type StallLimit, tableFor, watchFor } from "../replay/Stall.vibe"
 import {
   choose,
+  failedAt,
+  failedTwice,
   failure,
   fastRunOf,
   finishedReport,
   flakyOf,
   mismatchesOf,
+  noCiBefore,
+  noCommitBefore,
   planOfPrinted,
   PrintedPlan,
+  ranAgainAt,
   recordOf,
   rootsWithout,
   totalsOf
@@ -194,10 +199,22 @@ interface CommitCi {
  * still run for every commit, fast mode runs for no further commit, and the
  * report holds no fast-mode number and says why (`fastNotMeasured`).
  *
- * With `request.trial` the patterns run once at the newest commit first, in
- * a home of their own. A target that fails there, and every target that waits
- * on it, is left out at every commit and listed. When none passes, the replay
- * fails `unsupported`.
+ * With `request.warm`, every way first runs once at the parent of the oldest
+ * commit, in its own copy and home, and fills what it keeps from one commit
+ * to the next: the caches its tools keep in its home, and for a mode its
+ * cache. That run is in no time but `ReplayReport.firstRun`. When the oldest
+ * commit has no commit before it, or the CI of that commit cannot be read,
+ * the first counted commit starts with an empty cache and the report says
+ * why (`ReplayReport.cold`).
+ *
+ * With `request.trial` the baseline's first run finds the targets that cannot
+ * pass on this machine: the warm run at the parent, or, when there is none, a
+ * run at the oldest commit in a copy and a home of its own. A target that
+ * fails it runs once more, at the newest commit. One that fails again, and
+ * every target that waits on it, is left out at every commit and listed. When
+ * none passes, the replay fails `unsupported`. A first run at a commit that
+ * cannot be installed or planned says nothing of the targets, so they run
+ * once at the newest commit instead.
  *
  * @category parts
  * @since 0.1.0
@@ -379,28 +396,56 @@ export const own = <R>(
       return planOfPrinted(printed)
     }
 
-    // What the one run at the newest commit left out: it failed there, or waits on what did.
+    // What the first run left out: it failed there and again at the newest commit, or waits on what did.
     const leftHere = new Set<string>()
     const left: Array<NotReplayed> = [...chosen.left]
     let covered: { readonly replayed: number; readonly total: number } | undefined = undefined
-    let trialMs: number | undefined = undefined
+    const head = commits.at(-1) as string
+    const oldest = commits[0] as string
+    const newestCi = { patterns: chosen.patterns, workspaceFile } satisfies CommitCi
+    // How often a target that fails the first run runs again before it is left out.
+    const again = Math.min(1, options.reruns)
 
-    if (request.trial === true) {
-      const head = commits.at(-1) as string
-      const start = try Clock.currentTimeMillis
-      try progress.say(`checking which targets pass on this machine at ${head.slice(0, 7)}`)
-      const copy = try copyOf("trial")
-      const state = try install(copy, workspaceFile, places.trial, stepLimit, stall)
-      const execute = smthrs(copy, false, state, places.trial, chosen.patterns)
-      const first = try execute(undefined)
-      const results = try settle(execute, first, Math.min(1, options.reruns), first.length)
+    // The copy of the run that only judges, made when it is first needed, and what it is installed for.
+    let judging: { readonly copy: string; readonly at: string; readonly state: Installed } | undefined = undefined
+    /** That copy at `commit`, installed for `ci`: a home and a copy no counted run reads. */
+    effect function judgingAt(commit: string, ci: CommitCi) {
+      if (judging?.at === commit) return judging
+      const copy = judging?.copy ?? try copyOf("trial")
+      const made = { copy, at: commit, state: try ready(copy, commit, [], places.trial, ci.workspaceFile) }
+      judging = made
+      return made
+    }
+
+    /** Runs targets, or the newest commit's patterns, at the newest commit in the copy that only judges. */
+    const atNewest: Execute<Host> = (targets) => effect {
+      const { copy, state } = try judgingAt(head, newestCi)
+      return try smthrs(copy, false, state, places.trial, newestCi.patterns)(targets)
+    }
+
+    /**
+     * Leaves out what cannot pass on this machine, from the first run's results at `at`. A target that failed runs
+     * once more, at the newest commit: a commit that was broken and fixed since so leaves nothing out, and neither
+     * does one flaky failure. One that fails again is left out at every commit, with every target that waits on it.
+     */
+    effect function judge(at: string, ran: ReadonlyArray<TargetResult>) {
+      // A commit that could not be installed or planned has no target results to judge.
+      const unplanned = at !== head && ran.some((result) => result.label === installLabel || result.label === noRecordLabel)
+      const first = unplanned ? try atNewest(undefined) : ran
+      const judged = unplanned ? head : at
+      const results = try settle(atNewest, first, again, first.length)
       const failures = failuresOf(results)
       const passed = results.filter((result) => result.status === "ran" || result.status === "hit")
-      if (passed.length === 0 && failures[0] !== undefined) throw failure("unsupported", noJobPassed(head, failures[0]))
+      if (passed.length === 0 && failures[0] !== undefined) {
+        throw failure("unsupported", noJobPassed(judged, failures[0], ranAgainAt(again, judged, head)))
+      }
+      const twice = failedTwice(results)
       for (const failed of failures) {
-        try progress.say(`fails here: ${failed.step}: ${failed.reason}`)
+        const where = twice.has(failed.step) ? [judged, head] : [judged]
+        const { reason } = failedAt({ job: failed.step, reason: failed.reason }, where)
+        try progress.say(`fails here: ${failed.step}: ${reason}`)
         leftHere.add(failed.step)
-        left.push({ job: failed.step, reasons: [{ feature: failsHere, detail: failed.reason }] })
+        left.push({ job: failed.step, reasons: [{ feature: failsHere, detail: reason }] })
       }
       for (const result of results.filter((entry) => entry.status === "skipped")) {
         leftHere.add(result.label)
@@ -410,11 +455,10 @@ export const own = <R>(
         })
       }
       covered = { replayed: passed.length, total: results.length }
-      trialMs = (try Clock.currentTimeMillis) - start
     }
 
     /**
-     * What the first pass runs in a copy when the run at the newest commit left targets out: the commit's patterns'
+     * What the first pass runs in a copy when the first run left targets out: the commit's patterns'
      * targets without those and what waits on them. A commit that cannot be planned runs its patterns and fails as
      * it would.
      */
@@ -432,7 +476,8 @@ export const own = <R>(
       cached: boolean,
       targets: ReadonlyArray<string> | undefined,
       place: Confined,
-      ci: CommitCi
+      ci: CommitCi,
+      reruns: number = options.reruns
     ) {
       try progress.say(at)
       const start = try Clock.currentTimeMillis
@@ -444,10 +489,63 @@ export const own = <R>(
       const execute = smthrs(copy, cached, state, place, patterns)
       const first = try execute(targets)
       const wallMs = (try Clock.currentTimeMillis) - start - planned
-      const results = try settle(execute, first, options.reruns, first.length)
+      const results = try settle(execute, first, reruns, first.length)
       for (const line of linesOf(at, results, wallMs)) try progress.say(line)
       return { results, wallMs, state } satisfies Measured
     }
+
+    /**
+     * The run of every way at `at`, the commit before the oldest replayed one, which fills what each keeps from one
+     * commit to the next. With `request.trial` the baseline's is also the run that finds what passes here, and the
+     * modes run what it left. A failure in it is not the replay's: the cache holds what passed.
+     */
+    effect function warmed(at: string, ci: CommitCi) {
+      const named = `first run ${at.slice(0, 7)}`
+      const base = try measure(`${named} baseline`, baselineCopy, at, false, undefined, places.baseline, ci, 0)
+      try cleanCopy(baselineCopy, [], places.baseline)
+      if (request.trial === true) try judge(at, base.results)
+      const normal = try measure(`${named} normal`, normalCopy, at, true, undefined, places.normal, ci, 0)
+      try cleanCopy(normalCopy, [cacheDirectory], places.normal)
+      if (fastCopy === undefined) return { commit: at, baselineMs: base.wallMs, normalMs: normal.wallMs } satisfies FirstRun
+      const fast = try measure(`${named} fast`, fastCopy, at, true, undefined, places.fast, ci, 0)
+      try cleanCopy(fastCopy, [cacheDirectory], places.fast)
+      return { commit: at, baselineMs: base.wallMs, normalMs: normal.wallMs, fastMs: fast.wallMs } satisfies FirstRun
+    }
+
+    /**
+     * Finds what passes here when no way runs before the first counted commit: the patterns run once at the oldest
+     * commit whose CI can be read, in a copy and a home of their own. Gives the time it took.
+     */
+    effect function trial() {
+      const start = try Clock.currentTimeMillis
+      let at = head
+      let ci: CommitCi = newestCi
+      for (const commit of commits.slice(0, -1)) {
+        const found = try ciAt(commit)
+        if ("reason" in found) continue
+        at = commit
+        ci = found
+        break
+      }
+      try progress.say(`checking which targets pass on this machine at ${at.slice(0, 7)}`)
+      const { copy, state } = try judgingAt(at, ci)
+      try judge(at, try smthrs(copy, false, state, places.trial, ci.patterns)(undefined))
+      return (try Clock.currentTimeMillis) - start
+    }
+
+    /** The first run of every way, or why there is none though one was asked for. */
+    effect function start() {
+      if (request.warm !== true) return {}
+      const parent = try exec("git", ["rev-parse", "--verify", "--quiet", `${oldest}^`], source, {}, outputLimit, stdoutOf)
+      if (parent.exitCode !== 0) return { cold: noCommitBefore(oldest) }
+      const before = parent.text.trim()
+      const ci = try ciAt(before)
+      if ("reason" in ci) return { cold: noCiBefore(oldest) }
+      return { firstRun: try warmed(before, ci) }
+    }
+
+    const started: { readonly firstRun?: FirstRun; readonly cold?: string } = try start()
+    const trialMs = started.firstRun === undefined && request.trial === true ? try trial() : undefined
 
     const replayed: Array<ReplayCommit> = []
     const commitsLeft: Array<NotReplayedCommit> = []
@@ -462,9 +560,7 @@ export const own = <R>(
 
     for (const [index, commit] of commits.entries()) {
       const at = `${index + 1}/${commits.length} ${commit.slice(0, 7)}`
-      const ci = index === commits.length - 1
-        ? { patterns: chosen.patterns, workspaceFile } satisfies CommitCi
-        : try ciAt(commit)
+      const ci = index === commits.length - 1 ? newestCi : try ciAt(commit)
       if ("reason" in ci) {
         try progress.say(`${at} not replayed`)
         commitsLeft.push({ commit, reason: ci.reason })
@@ -542,7 +638,9 @@ export const own = <R>(
       commitsLeft,
       fastNotMeasured,
       jobs: covered,
-      trialMs
+      trialMs,
+      firstRun: started.firstRun,
+      cold: started.cold
     })
     return { ...report, targets: chosen.patterns }
   })

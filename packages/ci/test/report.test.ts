@@ -89,6 +89,8 @@ describe("text", () => {
       "",
       "2 commits · 1 mismatch",
       "",
+      "the first run, with an empty cache, took 23m 10s as the baseline, 24m 30s in normal mode and 24m 40s in fast mode; it happens once and is in none of these times",
+      "",
       "commit   files  baseline      normal       fast",
       "0000000      3  pass 22m 00s  pass 4m 00s  pass 1m 30s",
       "0000000      1  fail 21m 40s  fail 3m 20s  pass 1m 00s",
@@ -690,6 +692,36 @@ describe("failed steps", () => {
     expect(page).toContain("<p class=\"summary\">over 3 of 5 jobs</p>")
     expect(page).toContain("1 commit · 3 of 5 jobs · 0 mismatches")
     expect(page).toContain("found the jobs that pass on this machine in 1m 02s")
+  })
+
+  it("gives the time of each way's first run on one line, in the text and on the page", () => {
+    const firstRun = { commit: "f0f0f0f0f0f0", baselineMs: 250_000, normalMs: 302_000 }
+    const line =
+      "the first run, with an empty cache, took 4m 10s as the baseline and 5m 02s in normal mode; it happens once and is in none of these times"
+    expect(text({ ...normalOnly(), firstRun }).split("\n")).toContain(line)
+    expect(body(html({ ...normalOnly(), firstRun }))).toContain(`<p class="summary">${line}</p>`)
+    // A mode whose first run did not finish has no time.
+    expect(text({ ...normalOnly(), firstRun: { commit: "f0f0f0f0f0f0", baselineMs: 250_000 } }).split("\n")).toContain(
+      "the first run, with an empty cache, took 4m 10s as the baseline; it happens once and is in none of these times"
+    )
+    expect(body(html(example))).toContain(
+      "took 23m 10s as the baseline, 24m 30s in normal mode and 24m 40s in fast mode; it happens once"
+    )
+    expect(text(normalOnly())).not.toContain("the first run")
+    expect(html(normalOnly())).not.toContain("the first run")
+  })
+
+  it("says why the first commit started with an empty cache, in the text and on the page", () => {
+    const cold = "no commit comes before <a1b2c3d>\u001b[31m in this repository"
+    const shown = text({ ...normalOnly(), cold })
+    expect(shown.split("\n")).toContain(
+      "started with an empty cache: no commit comes before <a1b2c3d>\uFFFD[31m in this repository"
+    )
+    expect(body(html({ ...normalOnly(), cold }))).toContain(
+      "<p class=\"summary\">started with an empty cache: no commit comes before &lt;a1b2c3d&gt;"
+    )
+    expect(text(normalOnly())).not.toContain("started with an empty cache")
+    expect(html(normalOnly())).not.toContain("started with an empty cache")
   })
 
   it("names commits and jobs together when the speedup leaves out both", () => {

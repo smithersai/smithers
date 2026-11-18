@@ -212,28 +212,63 @@ Every run happens in a copy. The replay never changes the repository it reads.
 mode, so the times compare like with like. The default is this machine's core
 count.
 
+### The first run
+
+A CI run starts with what the run before it left: the cache, the caches its
+tools keep in the runner's home, and what its jobs saved with `actions/cache`.
+A replay that counted its first commit from nothing would measure the one run
+that fills them. So before the first counted commit, each way runs once at the
+commit before the oldest replayed one, in a home of its own.
+
+- The baseline's first run fills the caches its tools keep and what its jobs
+  save for a later run.
+- Normal mode's and fast mode's first runs fill the same, and the cache of
+  results a later commit reuses.
+- A step that fails in a mode's first run stops nothing: the cache holds what
+  passed.
+
+No first run is in a commit's time or in the speedup. The report gives the time
+of each on one line:
+
+```text
+the first run, with an empty cache, took 4m 10s as the baseline and 5m 02s in normal mode; it happens once and is in none of these times
+```
+
+`--cold` skips the first run and counts from an empty cache. When the oldest
+replayed commit is the repository's first, or the commit before it has no CI
+that runs on this machine, there is nothing to run first: the replay starts
+with an empty cache and the report says so.
+
 ### Jobs that cannot pass here
 
 A repository often has a job that cannot pass on the machine you measure on: it
 needs Docker, a service, a credential or another system. One such job must not
-cost you the whole measurement. So the replay starts by running the baseline
-once at the newest commit, in a home of its own, which warms no cache that a
-measured run reads.
+cost you the whole measurement. The baseline's first run finds them.
 
 - A job that passes is replayed.
-- A job that fails is run once more, so a flaky failure leaves nothing out. If
-  it fails again, it runs at no commit, in no way. The report lists it as
-  failing on this machine, with the first line of its error, and every job that
-  needs it as left out with it. In a matrix job, this holds for each variant.
+- A job that fails is run once more, at the newest commit, in a home no counted
+  run reads. If it passes there, it was flaky or broken at that one commit, and
+  it is replayed. If it fails again, it runs at no commit, in no way. The report
+  lists it as failing on this machine, with the first line of its error and the
+  commits it failed at, and every job that needs it as left out with it. In a
+  matrix job, this holds for each variant.
 - In a Justfile, Makefile or `package.json`, where jobs share one working tree,
   the jobs after a failed one run again without it, as they will in the replay.
 - When no job passes, there is nothing to measure: the command prints the first
   failure and exits `3`.
 
-The report gives the time this run took, and that time is in no other number. A
-job that passes here and fails at an older commit is an ordinary failed baseline
-at that commit. `apply` still writes every job, because a job that cannot pass
-on your machine passes on your runners. `--no-trial` skips this run.
+A job is tried at the first commit the replay runs, with what a CI has there.
+So a job that needs what an earlier commit's run saved with `actions/cache`
+passes when the replay ran that commit.
+
+With `--cold`, or when there is nothing to run first, the baseline runs once more
+to find these jobs: at the oldest replayed commit, in a home and a store of its
+own, which warm nothing a counted run reads. The report gives the time this run
+took, and that time is in no other number.
+
+A job that passes the first run and fails at a later commit is an ordinary failed
+baseline at that commit. `apply` still writes every job, because a job that cannot
+pass on your machine passes on your runners. `--no-trial` leaves no job out.
 
 ### Steps that stop making progress
 
@@ -546,8 +581,8 @@ and the report says how many commits they cover, and how many jobs:
 `over 4 of 5 commits and 3 of 5 jobs`. It also gives the number of mismatches and
 the number of flaky verdicts over every commit.
 
-When no job passes at the newest commit, or, with `--no-trial`, no step passes in
-the baseline of any commit, your CI does not pass on this machine and there is
+When no job passes the first run or the run after it, or, with `--no-trial`, no
+step passes in the baseline of any commit, your CI does not pass on this machine and there is
 nothing to measure. The command prints the first failure, prints no speedup and
 exits with code 3.
 

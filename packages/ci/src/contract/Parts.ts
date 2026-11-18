@@ -143,11 +143,21 @@ export interface ReplayRequest {
    */
   readonly stallMinutes?: number | undefined
   /**
-   * Runs the baseline once at the newest commit before anything else, and
-   * replays only the jobs that pass there. The others are listed with the
-   * reason `Inventory.failsHere`.
+   * Runs the baseline once before any counted commit, at the first commit the
+   * replay runs, and replays only the jobs that pass there. A job that fails
+   * runs once more, at the newest commit; one that fails again is listed with
+   * the reason `Inventory.failsHere`.
    */
   readonly trial?: boolean | undefined
+  /**
+   * Runs every way once at the parent of the oldest replayed commit before
+   * the first counted commit, so each starts with the caches a CI run finds.
+   * That run is in no time but `ReplayReport.firstRun`. With `trial`, the
+   * baseline's run there is the one that finds the jobs that pass. Without
+   * `warm`, or when there is no such commit to run, the first counted commit
+   * starts with an empty cache and `ReplayReport.cold` says why.
+   */
+  readonly warm?: boolean | undefined
 }
 
 /**

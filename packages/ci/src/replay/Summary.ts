@@ -32,6 +32,7 @@ import type { Failure } from "../contract/Parts.ts"
 import type { Plan } from "../contract/Plan.ts"
 import { reasonsSentence } from "../contract/Reasons.ts"
 import type {
+  FirstRun,
   Mismatch,
   NotReplayedCommit,
   ReplayCommit,
@@ -453,6 +454,67 @@ export const trialOf = (
   }
   return { passed, failed, first }
 }
+
+/**
+ * A job that failed the first run, with the commits it failed at after its
+ * reason: `no docker here (at 3f2a1c9 and 8d1e0b2)`. A commit named twice is
+ * named once.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const failedAt = (entry: FailedHere, commits: ReadonlyArray<string>): FailedHere => ({
+  ...entry,
+  reason: `${entry.reason} (at ${[...new Set(commits.map((commit) => commit.slice(0, 7)))].join(" and ")})`
+})
+
+/**
+ * The commit a job that failed the first run ran once more at: the newest,
+ * or, when nothing runs again, the commit of the first run itself.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const ranAgainAt = (again: number, first: string, newest: string): string => again === 0 ? first : newest
+
+/**
+ * The results that failed and failed again when they ran once more, by label.
+ * A result that was not run again, such as one stopped for making no
+ * progress, is not among them.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const failedTwice = (results: ReadonlyArray<TargetResult>): ReadonlySet<string> =>
+  new Set(
+    results.filter((result) => result.status === "failed" && (result.attempts ?? []).length > 1)
+      .map((result) => result.label)
+  )
+
+/**
+ * Why a replay that was asked to start warm starts with an empty cache when
+ * its oldest commit has no commit before it in the repository.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const noCommitBefore = (oldest: string): string =>
+  `no commit comes before ${oldest.slice(0, 7)} in this repository`
+
+/**
+ * Why a replay that was asked to start warm starts with an empty cache when
+ * the commit before its oldest has no CI that can be run here.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const noCiBefore = (oldest: string): string =>
+  `the commit before ${oldest.slice(0, 7)} has no CI that runs on this machine`
 
 /**
  * How many of the CI's jobs a replay covers: the jobs of `units`, of those and
@@ -937,6 +999,10 @@ export interface Findings {
   readonly jobs?: { readonly replayed: number; readonly total: number } | undefined
   /** How long the run that found the jobs that pass here took, when there was one. */
   readonly trialMs?: number | undefined
+  /** The run of each way before the first counted commit, when there was one. */
+  readonly firstRun?: FirstRun | undefined
+  /** Why the first counted commit started with an empty cache, when a run before it was asked for. */
+  readonly cold?: string | undefined
 }
 
 /**
@@ -988,6 +1054,8 @@ export const reportOf = (
     speedupCommits: measured.length,
     ...(found.jobs === undefined ? {} : { jobs: found.jobs }),
     ...(found.trialMs === undefined ? {} : { trialMs: found.trialMs }),
+    ...(found.firstRun === undefined ? {} : { firstRun: found.firstRun }),
+    ...(found.cold === undefined ? {} : { cold: found.cold }),
     mismatches: commits.reduce((total, commit) => total + commit.mismatches.length, 0),
     flaky: found.flaky,
     ...(found.selection === undefined
@@ -1058,6 +1126,10 @@ export interface Gathered {
   readonly jobs?: { readonly replayed: number; readonly total: number } | undefined
   /** How long the run that found the jobs that pass here took, when there was one. */
   readonly trialMs?: number | undefined
+  /** The run of each way before the first counted commit, when there was one. */
+  readonly firstRun?: FirstRun | undefined
+  /** Why the first counted commit started with an empty cache, when a run before it was asked for. */
+  readonly cold?: string | undefined
 }
 
 /**
@@ -1082,6 +1154,8 @@ export const finishedReport = (
     commitsLeft: gathered.commitsLeft,
     fastNotMeasured: gathered.fastNotMeasured,
     jobs: gathered.jobs,
-    trialMs: gathered.trialMs
+    trialMs: gathered.trialMs,
+    firstRun: gathered.firstRun,
+    cold: gathered.cold
   })
 }

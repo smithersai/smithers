@@ -213,7 +213,14 @@ describe("a run stopped for making no progress", () => {
 
 describe("no job passing", () => {
   it("says at which commit, with the first failure", () => {
-    expect(noJobPassed("abcdef0123", { step: "s", reason: "r", exitCode: 3, command: "c" })).toBe(
+    const failed = { step: "s", reason: "r", exitCode: 3, command: "c" }
+    // The jobs that failed ran once more at another commit, and none passed there either.
+    expect(noJobPassed("abcdef0123", failed, "1234567890").split("\n").slice(0, 2)).toEqual([
+      "this repository's CI does not pass on this machine, so there is no speedup to measure. No job passed at abcdef0 or at 1234567.",
+      "First failure at abcdef0:"
+    ])
+    expect(noJobPassed("abcdef0123", failed, "abcdef0123")).toBe(noJobPassed("abcdef0123", failed))
+    expect(noJobPassed("abcdef0123", failed)).toBe(
       [
         "this repository's CI does not pass on this machine, so there is no speedup to measure. No job passed at abcdef0.",
         "First failure at abcdef0:",

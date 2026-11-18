@@ -179,13 +179,18 @@ const noTrial = Flag.Boolean("no-trial").pipe(
   Flag.withDescription(helpOf("no-trial"))
 )
 
+const cold = Flag.Boolean("cold").pipe(
+  Flag.withDefault(false),
+  Flag.withDescription(helpOf("cold"))
+)
+
 const stallMinutes = Flag.Finite("stall-minutes").pipe(
   Flag.filter((value) => value > 0, () => "a number of minutes above 0"),
   Flag.withDefault(Number(Surface.flags["stall-minutes"].default)),
   Flag.withDescription(helpOf("stall-minutes"))
 )
 
-const replayFlags = { commits, mode, jobs, cache, targets, noTrial, stallMinutes, out, json, allowRoot, allowDocker }
+const replayFlags = { commits, mode, jobs, cache, targets, noTrial, cold, stallMinutes, out, json, allowRoot, allowDocker }
 
 const checkOnly = Flag.Boolean("check").pipe(
   Flag.withDefault(false),
@@ -221,6 +226,7 @@ interface ReplayInput {
   readonly allowRoot: boolean
   readonly allowDocker: boolean
   readonly noTrial: boolean
+  readonly cold: boolean
   readonly stallMinutes: number
 }
 
@@ -247,6 +253,7 @@ const requestOf = (root: string, input: ReplayInput): ReplayRequest => ({
   cache: Option.getOrUndefined(input.cache),
   targets: Option.getOrUndefined(input.targets),
   trial: !input.noTrial,
+  warm: !input.cold,
   stallMinutes: input.stallMinutes,
   ...(input.allowDocker ? { allowDocker: true } : {})
 })

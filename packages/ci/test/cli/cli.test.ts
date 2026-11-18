@@ -59,7 +59,7 @@ const ways = {
 }
 
 /** What a replay is asked for unless the flags say otherwise. */
-const measuring = { trial: true, stallMinutes: 10 }
+const measuring = { trial: true, warm: true, stallMinutes: 10 }
 
 const commandNames = ["", "apply", "inventory", "replay"] as const
 const flagNames = Object.keys(flags) as ReadonlyArray<keyof typeof flags>
@@ -76,6 +76,7 @@ const sample = (flag: keyof typeof flags, out: string): ReadonlyArray<string> =>
     check: ["--check"],
     "allow-docker": ["--allow-docker"],
     "no-trial": ["--no-trial"],
+    cold: ["--cold"],
     "stall-minutes": ["--stall-minutes", "5"]
   })[flag]
 
@@ -202,6 +203,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       const outcome = await exec([
         ...args,
         "--no-trial",
+        "--cold",
         "--stall-minutes",
         "2.5",
         "--out",
@@ -213,6 +215,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       expect(requestOf(outcome.stderr)).toEqual({
         root,
         trial: false,
+        warm: false,
         stallMinutes: 2.5,
         commits: 2,
         modes: ["normal", "fast"],
@@ -358,7 +361,8 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     const root = repo()
     commit(root, "a CI that passes here", { justfile: passingJustfile })
     const before = snapshot(root)
-    const outcome = await spawn(bin, ["--commits", "1", "--json"], root)
+    // The commit before this one has a CI that passes on no machine without Zig: the count starts from nothing.
+    const outcome = await spawn(bin, ["--commits", "1", "--json", "--cold"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     const at = `smithers-ci: 1/1 ${head(root).slice(0, 7)}`
     expect(outcome.stderr.trim().split("\n")).toEqual([

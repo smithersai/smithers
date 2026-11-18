@@ -7,7 +7,7 @@
 
 import type { NotReplayed, ToolVersion, Unsupported } from "../contract/Inventory.ts"
 import { reasonsSentence } from "../contract/Reasons.ts"
-import type { ReplayCommit, ReplayReport, StepFailure } from "../contract/ReplayReport.ts"
+import type { FirstRun, ReplayCommit, ReplayReport, StepFailure } from "../contract/ReplayReport.ts"
 
 /**
  * Elapsed time in the largest units that keep it short: `850ms`, `12.3s`,
@@ -289,6 +289,32 @@ export const jobsLeftOut = (report: ReplayReport): number =>
  */
 export const trialTime = (ms: number): string =>
   `found the jobs that pass on this machine in ${duration(ms)}, which is in none of these times`
+
+/**
+ * What the run before the first counted commit took in each way, as one
+ * line: `the first run, with an empty cache, took 4m 10s as the baseline and
+ * 5m 02s in normal mode; it happens once and is in none of these times`.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const firstRunTime = (run: FirstRun): string => {
+  const ways = [
+    `${duration(run.baselineMs)} as the baseline`,
+    ...(run.normalMs === undefined ? [] : [`${duration(run.normalMs)} in normal mode`]),
+    ...(run.fastMs === undefined ? [] : [`${duration(run.fastMs)} in fast mode`])
+  ]
+  const listed = ways.length === 1 ? ways[0] : `${ways.slice(0, -1).join(", ")} and ${ways.at(-1)}`
+  return `the first run, with an empty cache, took ${listed}; it happens once and is in none of these times`
+}
+
+/**
+ * Why the first counted commit started with an empty cache, as one line.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const coldStart = (reason: string): string => `started with an empty cache: ${reason}`
 
 /**
  * One failed step of a commit, with the ways of running it that it failed in.

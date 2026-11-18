@@ -26,8 +26,13 @@ uses it to record the files each CI command reads, so a command runs again
 only when one of them changes. Without it, a command that names no inputs runs
 on every commit, and the replay says so on standard error.
 
-The baseline runs your CI's commands once per replayed commit, so the first
-run takes a while. `--commits` sets how many commits to replay:
+Your CI starts each run with the caches the run before it left, and so does the
+replay. Before the first commit it counts, each way runs once at the commit
+before it. That first run is in no number; the report gives its time. `--cold`
+skips it and counts from an empty cache.
+
+The baseline runs your CI's commands once per replayed commit, so the command
+takes a while. `--commits` sets how many commits to replay:
 
 ```sh
 bunx smithers-ci --commits 5
@@ -45,11 +50,11 @@ no toolchain.
 - A job for another operating system is left out. When every job is, the
   command names the system in one line and exits with code 3.
 - A job that cannot pass here, because it needs Docker, a service or a
-  credential, is left out too. Before the replay, the command runs your CI once
-  at the newest commit. A job that fails in that run is listed as failing on this
-  machine, with the first line of its error, and runs at no commit. The numbers cover the
-  jobs that passed. `smithers-ci apply` still writes every job: it passes on your
-  runners. `--no-trial` skips that run.
+  credential, is left out too. A job that fails the first run, and fails again
+  at the newest commit, is listed as failing on this machine, with the first
+  line of its error and the commits, and runs at no commit. The numbers cover
+  the jobs that passed. `smithers-ci apply` still writes every job: it passes on
+  your runners. `--no-trial` leaves no job out.
 
 [Setup actions](../concepts/how-it-works.md#setup-actions) has the rules.
 
@@ -66,8 +71,10 @@ many commits were replayed, and the number of mismatches. The times and the
 speedup cover the commits where your CI passed and the jobs that can pass here.
 When they leave some out, the speedup says what it covers:
 `6.0× faster over 4 of 5 commits and 3 of 5 jobs`. When your CI failed at every
-commit, the report prints no speedup. A line says how long finding the jobs that
-pass took; that time is in no other number. Then it gives one line for each
+commit, the report prints no speedup. A line gives the time of each way's first
+run, which is in no other number:
+`the first run, with an empty cache, took 4m 10s as the baseline and 5m 02s in normal mode; it happens once and is in none of these times`.
+Then it gives one line for each
 commit: the files it changed, and whether each way passed, with its wall
 time. Under them it lists:
 
@@ -145,8 +152,8 @@ says fast mode was not measured and why, and the command exits `4`.
 | `3`  | The directory is not a Git repository with a commit, its CI cannot be replayed here, or its CI does not pass on this machine. |
 | `4`  | A step of the command could not finish.                                                                                       |
 
-Code `3` also means your CI does not pass on this machine: no job passed when
-the command ran it at the newest commit, so there is nothing to measure. The
+Code `3` also means your CI does not pass on this machine: no job passed the
+first run or the run after it, so there is nothing to measure. The
 program prints no speedup. It prints the first failure, with the step, its
 command, its exit code and the first line of its error:
 

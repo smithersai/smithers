@@ -76,6 +76,7 @@ it. The workflow `apply` writes runs this check as its first step; see
 | `--cache`         | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | none     | URL of a shared cache, with no user name or password; its token is read from SMITHERS_CACHE_TOKEN.                                                  |
 | `--targets`       | `smithers-ci`, `smithers-ci replay`                          | none     | Smithers build patterns to replay, separated by commas, on a repository that already builds with Smithers build; the default is what its CI runs.   |
 | `--no-trial`      | `smithers-ci`, `smithers-ci replay`                          | `false`  | Replay every job, without first running the CI once to leave out the jobs that fail on this machine.                                                |
+| `--cold`          | `smithers-ci`, `smithers-ci replay`                          | `false`  | Count from an empty cache: skip the run before the first counted commit that fills the caches a CI run finds.                                       |
 | `--stall-minutes` | `smithers-ci`, `smithers-ci replay`                          | `10`     | Stop a step whose processes use no CPU and print nothing for this many minutes; it counts as failed.                                                |
 | `--out`           | `smithers-ci`, `smithers-ci replay`                          | none     | Also write the report as an HTML file here.                                                                                                         |
 | `--json`          | `smithers-ci`, `smithers-ci inventory`, `smithers-ci replay` | `false`  | Print the document as JSON.                                                                                                                         |
@@ -102,21 +103,46 @@ daemon does what it is asked with every file of this machine, whatever else a
 step is kept from, so give the flag only for a history you trust. See
 [What a step can reach](../concepts/how-it-works.md#what-a-step-can-reach).
 
+### The first run
+
+A CI run starts with what the run before it left. So before the first counted
+commit, the baseline, normal mode and fast mode each run once at the commit
+before the oldest replayed one, each in a home of its own. That run fills what
+the way keeps from one commit to the next: its cache, the caches its tools keep
+in its home, and what its jobs save with `actions/cache`. It is in no commit's
+time and not in the speedup. The report gives its time in each way on one line
+(`firstRun` under `--json`):
+
+```text
+the first run, with an empty cache, took 4m 10s as the baseline and 5m 02s in normal mode; it happens once and is in none of these times
+```
+
+A step that fails in a mode's first run stops nothing: the cache holds what
+passed. `--cold` skips the first run and counts from an empty cache. When no
+commit comes before the oldest replayed one, or that commit has no CI that runs
+on this machine, the replay starts with an empty cache and the report says so
+(`cold` under `--json`). On a repository with
+[its own targets](../concepts/own-targets.md), the same holds.
+
 ### Jobs that cannot pass here
 
-Before the replay, the program runs the CI once at the newest commit, in a home
-of its own. A step that fails runs once more, so one flaky failure leaves
-nothing out. A job that still fails is not replayed at any commit: the report
-lists it as failing on this machine with the first line of its error
-(`fails-here` under `--json`), and says the same of every job that needs it. For
-a matrix job this holds per variant. The speedup says how many jobs it covers,
-such as `over 3 of 5 jobs`. A line gives the time this run took, which is in no
-other number. On a repository with [its own targets](../concepts/own-targets.md),
-the same holds for each target.
+The baseline's first run finds the jobs that cannot pass on this machine. A job
+that fails it runs once more, at the newest commit, in a home no counted run
+reads. One that passes there was flaky, or broken at that one commit, and is
+replayed. One that fails again is not replayed at any commit: the report lists it
+as failing on this machine with the first line of its error and the commits it
+failed at (`fails-here` under `--json`), and says the same of every job that
+needs it. For a matrix job this holds per variant. The speedup says how many
+jobs it covers, such as `over 3 of 5 jobs`. On a repository with
+[its own targets](../concepts/own-targets.md), the same holds for each target.
 
-A job that passes in this run and fails at an older commit is a failed baseline
+With `--cold`, or when there is no commit to run first, the baseline runs once
+more for this, at the oldest replayed commit, in a home of its own. A line gives
+the time that run took, which is in no other number.
+
+A job that passes the first run and fails at a later commit is a failed baseline
 at that commit. `smithers-ci apply` writes every job, those left out here too:
-they pass on your runners. `--no-trial` skips this run and replays every job.
+they pass on your runners. `--no-trial` leaves no job out and replays every one.
 
 ### Steps that stop making progress
 
@@ -180,7 +206,7 @@ A workflow that does not parse is listed there and nowhere else.
 | `4`  | `failed`      | A step of the command could not finish.                                                                                                                                                                                       |
 
 Exit `3` also means the repository's CI does not pass on this machine: no job
-passed when the program ran it at the newest commit, or, with `--no-trial`, no
+passed the first run or the run after it, or, with `--no-trial`, no
 step passed in the baseline of any replayed commit. The program then prints no
 report and no speedup. Standard error gives the first failure: the step, its
 command, its exit code and the first line of its error. When only some jobs
