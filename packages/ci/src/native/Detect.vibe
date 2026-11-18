@@ -1,0 +1,48 @@
+/**
+ * Finds a repository's own Smithers build files on disk.
+ *
+ * @since 0.1.0
+ */
+
+import type { GeneratedFile } from "../contract/Parts.ts"
+import { isBuildFile, isGenerated, workspaceFiles } from "./Workspace.ts"
+
+/** A file's text; `undefined` when it does not exist, and empty when it exists and cannot be read. */
+effect function textOf(file: string) {
+  const fs = try FileSystem.FileSystem
+  return fs.readFileString(file) catch (error) => error.reason._tag === "NotFound" ? undefined : ""
+}
+
+/**
+ * The workspace file of the repository at `root` that its owner wrote, or
+ * `undefined`. A workspace `smithers-ci` generated is not one, and a file
+ * that cannot be read is.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export effect function workspace(root: string) {
+  const path = try Path.Path
+  for (const file of workspaceFiles) {
+    const text = try textOf(path.join(root, file))
+    if (text !== undefined && !isGenerated(text)) return file
+  }
+  return undefined
+}
+
+/**
+ * The generated build files that would replace a file `smithers-ci` did not
+ * write, in the repository at `root`.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export effect function replaced(root: string, files: ReadonlyArray<GeneratedFile>) {
+  const path = try Path.Path
+  const paths: Array<string> = []
+  for (const file of files.filter(isBuildFile)) {
+    const text = try textOf(path.join(root, file.path))
+    if (text !== undefined && !isGenerated(text)) paths.push(file.path)
+  }
+  return paths
+}

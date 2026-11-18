@@ -1,0 +1,11 @@
+/** Faulty host services for the unhappy paths. */
+import * as PlatformError from "effect/PlatformError"
+
+const denied = (method: string) =>
+  PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method })
+
+/** The real file system, except that no file can be read. */
+export const unreadable = Layer.effect(FileSystem.FileSystem, effect {
+  const real = try FileSystem.FileSystem
+  return { ...real, readFileString: () => Effect.fail(denied("readFileString")) }
+})

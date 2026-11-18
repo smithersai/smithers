@@ -26,6 +26,7 @@ import type {
 } from "../contract/Parts.ts"
 import { ReplayReport } from "../contract/ReplayReport.ts"
 import type { Mode } from "../contract/RunRecord.ts"
+import * as Native from "../native/index.ts"
 
 /**
  * The parts the program calls, one function each, as contract 10 names them.
@@ -224,10 +225,15 @@ function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
   const generate = (cache: Option.Option<string>) =>
     effect {
       const inventory = try parts.read(root)
-      const why = refusal(inventory)
+      const why = Native.refusal(inventory) ?? refusal(inventory)
       if (why !== undefined) throw { code: "unsupported", message: why, part: "inventory" } satisfies Failure
       const split = try parts.decompose(root, ci(inventory))
-      return try checkPaths(try parts.files(split, { cache: Option.getOrUndefined(cache) }))
+      const files = try checkPaths(try parts.files(split, { cache: Option.getOrUndefined(cache) }))
+      const kept = try Native.replaced(root, files)
+      if (kept.length > 0) {
+        throw { code: "unsupported", message: Native.overwriteRefusal(kept), part: "generate" } satisfies Failure
+      }
+      return files
     }
 
   effect function replayAndPrint(input: ReplayInput, footer: string) {
