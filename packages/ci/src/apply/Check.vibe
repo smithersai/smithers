@@ -1,9 +1,11 @@
 /**
- * What `apply` checks before it writes, and what it adds to `.gitignore`.
+ * What is checked before generated files are written into a directory: by
+ * `apply` into the repository, and by a replay into its copy. Also what
+ * `apply` adds to `.gitignore`.
  *
  * Every generated path is checked before any is written, so a refusal leaves
- * the repository as it was. A path is refused when its real location is
- * outside the repository (a link in the path), when a file is where a
+ * the directory as it was. A path is refused when its real location is
+ * outside the directory (a link in the path), when a file is where a
  * directory must go or a directory where the file must go, and when the file
  * there is one `smithers-ci` did not write.
  *
@@ -102,9 +104,10 @@ effect function textOf(path: string) {
 }
 
 /**
- * Checks every path `apply` would write in the repository at `root`, and
- * writes nothing. It fails with one refusal that names every path that
- * cannot be written; otherwise it gives what `.gitignore` gains.
+ * Checks every path of `files` in the repository, or the copy of one, at
+ * `root`, and writes nothing. It fails `unsupported` with one refusal that
+ * names every path that cannot be written; otherwise it gives what
+ * `.gitignore` gains, which only `apply` writes.
  *
  * @category accessors
  * @since 0.1.0

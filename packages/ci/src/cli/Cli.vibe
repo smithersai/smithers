@@ -10,6 +10,7 @@
  */
 
 import { CliConfig, CliError, CliOutput, Command, Flag, GlobalFlag } from "effect/cli"
+import { check } from "../apply/index.ts"
 import * as Surface from "../contract/Command.ts"
 import { ci, Inventory, ownWorkspace, refusal } from "../contract/Inventory.ts"
 import type {
@@ -28,7 +29,6 @@ import { ReplayReport } from "../contract/ReplayReport.ts"
 import type { Mode } from "../contract/RunRecord.ts"
 import * as Native from "../native/index.ts"
 import { uncommittedFooter } from "../native/Workspace.ts"
-import { check } from "./Apply.vibe"
 
 /**
  * The parts the program calls, one function each, as contract 10 names them.
