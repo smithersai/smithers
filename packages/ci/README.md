@@ -22,6 +22,22 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Eleventh round, 2026-11-18 (open).** Decisions from the ship review. Each is built by the lane named.
+
+- **No speedup over a commit whose results differ** (`sci-fail-reason`). A commit enters the speedup only when the
+  baseline passed and the mode's result equals the baseline's for every step. The report says how many commits the
+  number covers, and prints no speedup when it covers none. `ReplayReport.speedup` becomes optional. Measured cause:
+  on refcell/needlefish the baseline passed at five commits, normal mode failed at all five in 20 seconds, and the
+  report said `speedup 130`.
+- **A failure has a name and a reason** (`sci-fail-reason`): step, exit code and first error line in every report;
+  a baseline that never passes prints no speedup and exits 3.
+- **A step never sees the person's home, cannot write outside the copy, and cannot push** (`sci-step-jail`).
+- **Fast mode checks its model before any work, and a model failure mid-run keeps the normal-mode report**
+  (`sci-fast-preflight`).
+- **A called workflow is CI when a push or pull-request workflow calls it**, and a job whose unreplayed need gives
+  it no outputs is replayed (`sci-eliza`).
+- **A variant whose needs are in another leg runs in the needed job's leg** (`sci-leftovers`).
+
 Newest first. A part built before a change adopts it before it lands again.
 
 **2026-11-18, eleventh round** (optional additions by the needlefish lane, for a step that runs `zig build`):
