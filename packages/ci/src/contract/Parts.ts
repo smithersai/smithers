@@ -30,7 +30,8 @@ import type { Row, Score, Settings } from "./Selection.ts"
 
 /**
  * Why a part could not finish. `unsupported` means the repository uses
- * something Smithers CI cannot run; the command-line program exits 3.
+ * something Smithers CI cannot run and `not-a-repository` that the directory
+ * has no Git commit to read; the command-line program exits 3 for both.
  *
  * @category models
  * @since 0.1.0

@@ -94,7 +94,8 @@ export const exitCodeHelp = {
     "A replayed target's verdict in a mode differs from its baseline verdict, or `apply --check` found a file `apply` would change. A flaky target, which passed on a rerun, agrees with a pass and does not make the exit code 1.",
   usage:
     "The command line was wrong: an unknown command or flag, a bad value, or a replay as root without --allow-root.",
-  unsupported: "The repository uses something Smithers CI cannot run, or its CI does not pass on this machine.",
+  unsupported:
+    "The repository cannot be replayed: it is not a Git repository with a commit, it uses something Smithers CI cannot run, or its CI does not pass on this machine.",
   failed: "A step of the command could not finish."
 } as const satisfies Record<keyof typeof exitCodes, string>
 
@@ -106,7 +107,7 @@ export const exitCodeHelp = {
  */
 export const failureExitCodes = {
   unsupported: 3,
-  "not-a-repository": 2,
+  "not-a-repository": 3,
   "command-failed": 4,
   "invalid-document": 4,
   "model-unavailable": 4

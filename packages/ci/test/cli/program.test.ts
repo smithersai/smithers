@@ -102,12 +102,13 @@ describe.concurrent("smithers-ci from a directory of the repository", () => {
   it("still says in one line that a directory is in no repository", async () => {
     const directory = scratch()
     expect(await spawn(bin, ["inventory"], directory)).toEqual({
-      code: exitCodes.usage,
+      code: exitCodes.unsupported,
       stdout: "",
       stderr: `smithers-ci: inventory: ${directory} is not a git repository with a commit\n`
     })
-    expect(await main(["inventory"], directory, environment)).toBe(exitCodes.usage)
-    expect(await main(["replay", "--commits", "1"], directory, environment)).toBe(exitCodes.usage)
+    expect(await main(["inventory"], directory, environment)).toBe(exitCodes.unsupported)
+    expect(await main(["replay", "--commits", "1"], directory, environment)).toBe(exitCodes.unsupported)
+    expect(await main(["--bogus"], directory, environment)).toBe(exitCodes.usage)
   })
 })
 

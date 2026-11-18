@@ -519,7 +519,7 @@ describe("contract 10: the parts a replay is handed", () => {
       })
     const request = { root: "/tmp/x", commits: 1, modes: ["normal" as const], cache: "https://cache.example" }
     const failure = await Effect.runPromise(Effect.flip(run(request, parts)))
-    expect(failure.message).toBe("exit 2")
+    expect(failure.message).toBe("exit 3")
     expect(calls).toEqual(["5", ".smithers/ci-targets.json", "https://cache.example"])
   })
 })

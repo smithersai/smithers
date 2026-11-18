@@ -276,11 +276,11 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       ])
     })
 
-    it("exits 2 outside a repository", async () => {
+    it("exits 3 with one line outside a repository", async () => {
       const directory = scratch()
       const outcome = await exec(["inventory"], directory)
       expect(outcome).toEqual({
-        code: exitCodes.usage,
+        code: exitCodes.unsupported,
         stdout: "",
         stderr: `smithers-ci: inventory: ${directory} is not a git repository with a commit\n`
       })
