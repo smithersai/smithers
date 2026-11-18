@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest"
 import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.ts"
-import { firstLine, linesOf, nothingPassed, reasonsIn, withReasons } from "../../src/native/index.ts"
+import {
+  firstLine,
+  linesOf,
+  noRecord,
+  noRecordLabel,
+  nothingPassed,
+  ranAgain,
+  ranAgainLines,
+  reasonsIn,
+  whyNoRecord,
+  withReasons
+} from "../../src/native/index.ts"
 
 const result = (label: string, status: TargetResult["status"], error?: string): TargetResult => ({
   label,
@@ -62,6 +73,28 @@ describe("the reasons smthrs prints", () => {
   })
 })
 
+describe("a run with no run record", () => {
+  it("gives the message of the error smthrs printed, else its last line", () => {
+    const error =
+      "smthrs: remote cache off: no credentials\ncode: no_package\nmessage: no package at //packages/ci\nretryable: false\n"
+    expect(whyNoRecord(error)).toBe("no package at //packages/ci")
+    expect(whyNoRecord("first\nhost binary go is not on the PATH\n\n")).toBe("host binary go is not on the PATH")
+    expect(whyNoRecord("")).toBe("smthrs ci wrote no run record")
+    expect(whyNoRecord(" \n ")).toBe("smthrs ci wrote no run record")
+  })
+
+  it("is one failed result with a label no target has", () => {
+    expect(noRecord("message: broken PACKAGE.ts")).toEqual({
+      label: noRecordLabel,
+      status: "failed",
+      key: "",
+      durationMs: 0,
+      error: "broken PACKAGE.ts"
+    })
+    expect(noRecordLabel).toBe("(smthrs)")
+  })
+})
+
 describe("linesOf", () => {
   it("says what one run did, then why its first targets failed", () => {
     const results = [
@@ -97,6 +130,38 @@ describe("linesOf", () => {
     expect(lines[0]).toBe("1/1 abc1234 baseline: 0 ran, 0 from the cache, 7 failed, 0 skipped in 0 s")
     expect(lines[5]).toBe("1/1 abc1234 baseline: //:e failed: exit 1")
     expect(lines[6]).toBe("1/1 abc1234 baseline: and 2 more failed")
+  })
+})
+
+describe("a target that ran again with an unchanged key", () => {
+  const keyed = (label: string, status: TargetResult["status"], key: string): TargetResult => ({
+    ...result(label, status),
+    key
+  })
+  const passedWith = new Map([["//:a", "k1"], ["//:b", "k2"], ["//:c", "k3"], ["//:d", "k4"], ["//:e", ""]])
+
+  it("is one that ran and passed with the key it passed with before", () => {
+    const results = [
+      keyed("//:a", "ran", "k1"),
+      keyed("//:b", "hit", "k2"),
+      keyed("//:c", "ran", "changed"),
+      keyed("//:d", "failed", "k4"),
+      keyed("//:e", "ran", ""),
+      keyed("//:new", "ran", "k9")
+    ]
+    expect(ranAgain(passedWith, results)).toEqual(["//:a"])
+    expect(ranAgain(new Map(), results)).toEqual([])
+  })
+
+  it("is named on one line, the first five and how many more", () => {
+    expect(ranAgainLines("2/3 abc1234 normal", [])).toEqual([])
+    expect(ranAgainLines("2/3 abc1234 normal", ["//:a"])).toEqual([
+      "2/3 abc1234 normal: 1 ran again with an unchanged key, so Smithers build does not cache it: //:a"
+    ])
+    const many = ["a", "b", "c", "d", "e", "f", "g"].map((name) => `//:${name}`)
+    expect(ranAgainLines("2/3 abc1234 normal", many)).toEqual([
+      "2/3 abc1234 normal: 7 ran again with an unchanged key, so Smithers build does not cache them: //:a //:b //:c //:d //:e +2"
+    ])
   })
 })
 

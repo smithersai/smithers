@@ -53,37 +53,82 @@ const programs: ReadonlyArray<string> = ["smthrs", "smithers-build"]
 /** The verbs that run targets. `smthrs ci` runs what each of the others selects. */
 const verbs: ReadonlyArray<string> = ["ci", "test", "lint", "build"]
 
-interface Word {
-  readonly text: string
-  readonly operator: boolean
-}
+/** The shells whose `-c` argument is a script. */
+const shells: ReadonlyArray<string> = ["bash", "sh", "zsh", "dash"]
 
 /**
- * The words of a shell command, unquoted as a shell does it: quoted and bare
- * pieces that touch are one word, `'\''` is a quote inside single quotes, and
- * a backslash before a line end joins two lines. `;`, `&`, `|` and a line end
- * close a command and are words of their own.
+ * Words that may stand before the program a command runs: package manager
+ * launchers, command wrappers and the shell's own keywords.
  */
-const wordsOf = (command: string): ReadonlyArray<Word> => {
-  const words: Array<Word> = []
+const prefixes: ReadonlyArray<string> = [
+  "pnpm",
+  "npm",
+  "npx",
+  "bunx",
+  "bun",
+  "yarn",
+  "exec",
+  "x",
+  "dlx",
+  "run",
+  "--",
+  "env",
+  "time",
+  "command",
+  "nice",
+  "if",
+  "then",
+  "elif",
+  "else",
+  "do",
+  "while",
+  "until",
+  "!",
+  "{"
+]
+
+/** A variable set for one command, as in `CI=1 smthrs ci //...`. */
+const assignment = /^[A-Za-z_][A-Za-z0-9_]*=/
+
+/** The characters that end a command or its arguments: separators, grouping and redirections. */
+const operators = ";&|\n()<>"
+
+/**
+ * The commands of a shell script, each as its words, unquoted as a shell
+ * does it: quoted and bare pieces that touch are one word, a backslash keeps
+ * the next character, and a backslash before a line end joins two lines. A
+ * `#` that starts a word starts a comment. An operator ends a command.
+ */
+const commandsOf = (script: string): ReadonlyArray<ReadonlyArray<string>> => {
+  const commands: Array<Array<string>> = [[]]
   let text: string | undefined = undefined
   const close = (): void => {
-    if (text !== undefined) words.push({ text, operator: false })
+    if (text !== undefined) (commands.at(-1) as Array<string>).push(text)
     text = undefined
   }
-  for (let at = 0; at < command.length; at++) {
-    const char = command.charAt(at)
-    if (char === "'" || char === "\"") {
-      const end = command.indexOf(char, at + 1)
-      const stop = end === -1 ? command.length : end
-      text = (text ?? "") + command.slice(at + 1, stop)
+  for (let at = 0; at < script.length; at++) {
+    const char = script.charAt(at)
+    if (char === "'") {
+      const end = script.indexOf("'", at + 1)
+      const stop = end === -1 ? script.length : end
+      text = (text ?? "") + script.slice(at + 1, stop)
       at = stop
+    } else if (char === "\"") {
+      text = text ?? ""
+      for (at += 1; at < script.length && script.charAt(at) !== "\""; at++) {
+        // Inside double quotes a backslash keeps a quote, a backslash, a dollar or a backtick.
+        if (script.charAt(at) === "\\" && /["\\$`]/.test(script.charAt(at + 1))) at += 1
+        text += script.charAt(at)
+      }
     } else if (char === "\\") {
       at += 1
-      if (command.charAt(at) !== "\n") text = (text ?? "") + command.charAt(at)
-    } else if (";&|\n".includes(char)) {
+      if (script.charAt(at) !== "\n") text = (text ?? "") + script.charAt(at)
+    } else if (char === "#" && text === undefined) {
+      const end = script.indexOf("\n", at)
+      at = (end === -1 ? script.length : end) - 1
+    } else if (operators.includes(char)) {
       close()
-      words.push({ text: char, operator: true })
+      commands.push([])
     } else if (char === " " || char === "\t") {
       close()
     } else {
@@ -91,38 +136,43 @@ const wordsOf = (command: string): ReadonlyArray<Word> => {
     }
   }
   close()
-  return words
+  return commands
 }
 
-const isProgram = (word: Word): boolean => !word.operator && programs.includes(word.text.replace(/^.*\//, ""))
+const nameOf = (word: string | undefined): string => (word ?? "").replace(/^.*\//, "")
 
 /** A label or a pattern as written, with nothing left for the shell or the CI host to fill in. */
-const isPattern = (word: Word): boolean => word.text.startsWith("//") && !word.text.includes("$")
+const isPattern = (word: string): boolean => word.startsWith("//") && !word.includes("$")
 
-/** A word that is itself a script, as the argument of `bash -c` is. */
-const isScript = (word: Word): boolean => !word.operator && /\s/.test(word.text)
+/** The patterns one command gives Smithers build, or the patterns of the script it hands a shell. */
+const patternsOfCommand = (words: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const start = words.findIndex((word) => !assignment.test(word) && !prefixes.includes(word))
+  const rest = start === -1 ? [] : words.slice(start)
+  if (shells.includes(nameOf(rest[0]))) {
+    const flag = rest.findIndex((word) => /^-[A-Za-z]*c$/.test(word))
+    return flag === -1 ? [] : patternsIn(rest[flag + 1] ?? "")
+  }
+  if (!programs.includes(nameOf(rest[0]))) return []
+  // Options, each with or without a value, may stand between the program and its verb.
+  const verb = rest.findIndex((word, index) =>
+    index > 0 && (verbs.includes(word) || !(word.startsWith("-") || (rest[index - 1] as string).startsWith("-")))
+  )
+  return verb === -1 || !verbs.includes(rest[verb] as string) ? [] : rest.slice(verb + 1).filter(isPattern)
+}
 
 /**
- * The target patterns a shell command gives Smithers build: every argument
- * that starts with `//` after `smthrs ci`, `test`, `lint` or `build`, in the
- * command or in a script it quotes, such as the argument of `bash -c`. A
- * pattern a variable holds is not one.
+ * The target patterns a shell script gives Smithers build: every argument
+ * that starts with `//` after `smthrs ci`, `test`, `lint` or `build`, where
+ * `smthrs` is the program a command runs, alone or through a package manager,
+ * and in the script a command hands a shell with `-c`. A pattern a variable
+ * holds is not one, and neither is anything in a comment or in the arguments
+ * of another program.
  *
  * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
-export const patternsIn = (command: string): ReadonlyArray<string> => {
-  const words = wordsOf(command)
-  return words.flatMap((word, index) => {
-    if (isScript(word)) return patternsIn(word.text)
-    const verb = words[index + 1]
-    if (!isProgram(word) || verb === undefined || !verbs.includes(verb.text)) return []
-    const rest = words.slice(index + 2)
-    const end = rest.findIndex((next) => next.operator)
-    return (end === -1 ? rest : rest.slice(0, end)).filter(isPattern).map((next) => next.text)
-  })
-}
+export const patternsIn = (script: string): ReadonlyArray<string> => commandsOf(script).flatMap(patternsOfCommand)
 
 const patternsOf = (job: Job): ReadonlyArray<string> => {
   const variants: ReadonlyArray<Readonly<Record<string, string>>> = job.matrix.length === 0 ? [{}] : job.matrix

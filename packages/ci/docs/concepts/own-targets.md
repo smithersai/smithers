@@ -87,20 +87,30 @@ directories that has it.
 Commits run oldest first. Each mode has its own copy of the repository; the
 repository itself is never touched.
 
-|                      | Baseline                            | Normal mode                         |
-| -------------------- | ----------------------------------- | ----------------------------------- |
-| Untracked files kept | none                                | the cache directory, `.flows`       |
-| Dependencies         | installed again                     | installed again                     |
-| Command              | `smthrs ci <patterns> --no-cache`   | `smthrs ci <patterns>`              |
-| Shared cache         | not read                            | read when `--cache` names one       |
-| A target's verdict   | from the run record `smthrs` writes | from the run record `smthrs` writes |
+|                                        | Baseline                            | Normal mode                         |
+| -------------------------------------- | ----------------------------------- | ----------------------------------- |
+| Untracked files when the commit starts | none                                | the cache directory, `.flows`       |
+| Dependencies                           | installed again                     | installed again                     |
+| Command                                | `smthrs ci <patterns> --no-cache`   | `smthrs ci <patterns>`              |
+| A shared cache the workspace declares  | off                                 | off                                 |
+| The shared cache `--cache` names       | not given                           | read and written                    |
+| A target's verdict                     | from the run record `smthrs` writes | from the run record `smthrs` writes |
 
-Both copies are cleaned of every other untracked and ignored file before each
-commit. A build output left in the tree can change a target's key, so a copy
-that was not cleaned would miss its own cache.
+Each copy is cleaned of every other untracked and ignored file after its run.
+A build output left in the tree can change a target's key, so a copy that was
+not cleaned would miss its own cache.
 
-Fast mode runs in a third copy, as on any repository: the targets normal mode
-ran, less the ones the scorer judges safe to skip.
+A shared cache the workspace declares is off in every mode. `--no-cache` stops
+`smthrs` reading a cache, not writing one, so a baseline with the cache's
+credentials would store its results where the repository's CI reads them, and
+normal mode would then find them at the same commit. The replay gives a copy's
+install and its `smthrs` what a target gets of your environment (`PATH`, `HOME`
+and a few more) and no credential. `--cache` gives normal and fast mode the
+address of a shared cache, and only the address.
+
+Fast mode runs in a third copy, as on any repository: the targets the patterns
+select, less the ones the scorer judges safe to skip. What a target depends on
+runs with it.
 
 ## What is timed
 
@@ -111,7 +121,17 @@ lower than the ratio of the two `smthrs ci` runs alone; `workMs` in the report
 is the sum of the targets' own time in each mode, with no install in it.
 
 A failed target is run again, up to twice, to tell a failure from a flake.
-Those reruns are not timed.
+Those reruns are not timed, and neither is the cleaning of a copy after its run.
+
+Two things are outside what the replay controls:
+
+- **Caches outside the checkout.** A package manager's store, Go's build
+  cache and the like serve both modes. The baseline runs first at each commit,
+  so it pays for whatever they lack: a dependency a commit adds is downloaded
+  in the baseline's time and linked in normal mode's. This raises the speedup.
+- **The machine's load.** The two modes of a commit run one after the other.
+  On a machine that others use, the same work can take several times longer
+  in one mode than in the other. Compare the counts beside the times.
 
 ## How verdicts compare
 
@@ -132,16 +152,28 @@ for each target that failed and then passed when run again:
 
 ```text
 smithers-ci: 2/3 3f2a1c9 normal
-smithers-ci: 2/3 3f2a1c9 normal: 1 ran, 6 from the cache, 0 failed, 0 skipped in 41 s
+smithers-ci: 2/3 3f2a1c9 normal: 3 ran, 4 from the cache, 0 failed, 0 skipped in 41 s
+smithers-ci: 2/3 3f2a1c9 normal: 2 ran again with an unchanged key, so Smithers build does not cache them: //packages/ci:fmt //packages/ci:lib
 ```
 
-## A commit that cannot be installed
+The last line names targets that ran in normal mode with the key they passed
+with at an earlier commit. Their inputs did not change and the cache was there,
+so the target's rule is one Smithers build does not cache. No cache makes such
+a target faster; `smthrs ci --plan --format json` shows it as
+`"cacheable": false`.
 
-It is reported, never dropped: one failed result, labelled `(install)`, in
-every mode, and the replay goes on to the next commit. The line on standard
-error names the install command, its directory and its exit code. The command's
-output is not shown, because it may hold a registry credential; run the command
-in a checkout of that commit to read it.
+## A commit that cannot be installed or planned
+
+It is reported, never dropped: one failed result in every mode, and the replay
+goes on to the next commit.
+
+- A commit whose install fails has the result `(install)`. The line on
+  standard error names the install command, its directory and its exit code.
+  The command's output is not shown, because it may hold a registry credential;
+  run the command in a checkout of that commit to read it.
+- A commit where `smthrs ci` writes no run record has the result `(smthrs)`,
+  with the message `smthrs` printed. This is a commit from before the workspace
+  or a named package existed, or one with a target file that does not load.
 
 ## A build that does not run on this machine
 
@@ -149,7 +181,7 @@ When no target passes in the baseline of any replayed commit, there is nothing
 to measure: `smithers-ci` exits 3 with the first failure of the newest commit.
 That is what a missing tool looks like, for example a workspace that names
 `go` as a host program on a machine without it, and what an install that never
-works looks like. A repository whose install brings no
+works or patterns that name no package look like. A repository whose install brings no
 `node_modules/.bin/smthrs` gets this exit with a line that says it must depend
 on `@smthrs/cli`.
 
@@ -160,9 +192,6 @@ targets and their reasons.
 `smithers-ci` installs what the lockfiles name and nothing else. A repository
 whose CI prepares more before it runs its targets, such as other installs a
 script makes, has the targets that need them fail here.
-
-When `smthrs ci` starts and writes no run record, `smithers-ci` exits 4 with
-what `smthrs` printed.
 
 ## Reproduce a number by hand
 

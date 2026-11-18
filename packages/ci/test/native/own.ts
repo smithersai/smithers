@@ -19,7 +19,7 @@ export const Workspace = S.Workspace("own", {
 })
 `
 
-const target = (name: string, deps: ReadonlyArray<string>): string =>
+const target = (name: string, deps: ReadonlyArray<string>, cache = true): string =>
   `const ${name} = S.ToolBuild({
   tool: "bash",
   command: "bash",
@@ -28,7 +28,7 @@ const target = (name: string, deps: ReadonlyArray<string>): string =>
   outputs: [],
   deps: [${deps.join(", ")}],
   env: {},
-  cache: true
+  cache: ${cache}
 })`
 
 const packageFile = [
@@ -37,6 +37,17 @@ const packageFile = [
   target("b", ["a"]),
   target("c", []),
   `export const Package = S.Package({ targets: { a, b, c } })`,
+  ""
+].join("\n")
+
+/** The package file with a fourth target, `u`, that Smithers build is told not to cache. */
+export const packageWithUncached = [
+  `import { Smithers as S } from "@smthrs/targets"`,
+  target("a", []),
+  target("b", ["a"]),
+  target("c", []),
+  target("u", [], false),
+  `export const Package = S.Package({ targets: { a, b, c, u } })`,
   ""
 ].join("\n")
 

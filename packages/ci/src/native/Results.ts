@@ -54,6 +54,44 @@ export const withReasons = (results: ReadonlyArray<TargetResult>, output: string
   })
 }
 
+/**
+ * The label of the result that stands for a run `smthrs ci` could not plan:
+ * it wrote no run record, so no target has a verdict.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const noRecordLabel = "(smthrs)"
+
+/**
+ * Why `smthrs ci` wrote no run record, from what it printed: the `message`
+ * of its error, else its last line.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const whyNoRecord = (output: string): string => {
+  const message = /^message: (.+)$/m.exec(output)?.[1]
+  const last = output.split("\n").findLast((line) => line.trim() !== "")
+  return firstLine(message ?? last ?? "") || "smthrs ci wrote no run record"
+}
+
+/**
+ * The one result of a run that has no run record.
+ *
+ * @throws {never}
+ * @category constructors
+ * @since 0.1.0
+ */
+export const noRecord = (output: string): TargetResult => ({
+  label: noRecordLabel,
+  status: "failed",
+  key: "",
+  durationMs: 0,
+  error: whyNoRecord(output)
+})
+
 const failedLimit = 5
 
 const whyOf = (result: TargetResult): string =>
@@ -84,6 +122,41 @@ export const linesOf = (
     ...failed.slice(0, failedLimit).map((result) => `${at}: ${whyOf(result)}`),
     ...(more > 0 ? [`${at}: and ${more} more failed`] : []),
     ...flaky.slice(0, failedLimit).map((result) => `${at}: ${result.label} failed, then passed when run again`)
+  ]
+}
+
+/**
+ * The targets that ran although the cache should have held them: each ran
+ * and passed with the key it passed with at an earlier commit, kept in
+ * `passedWith` by label. Smithers build does not cache such a target, so no
+ * cache makes it faster.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const ranAgain = (
+  passedWith: ReadonlyMap<string, string>,
+  results: ReadonlyArray<TargetResult>
+): ReadonlyArray<string> =>
+  results
+    .filter((result) => result.status === "ran" && result.key !== "" && passedWith.get(result.label) === result.key)
+    .map((result) => result.label)
+
+/**
+ * The line for {@link ranAgain}'s targets, or none when there is none.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const ranAgainLines = (at: string, labels: ReadonlyArray<string>): ReadonlyArray<string> => {
+  if (labels.length === 0) return []
+  const more = labels.length - failedLimit
+  return [
+    `${at}: ${labels.length} ran again with an unchanged key, so Smithers build does not cache ${
+      labels.length === 1 ? "it" : "them"
+    }: ${labels.slice(0, failedLimit).join(" ")}${more > 0 ? ` +${more}` : ""}`
   ]
 }
 

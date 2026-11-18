@@ -4,7 +4,7 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { execFileSync } from "node:child_process"
 import { rmSync } from "node:fs"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../../src/contract/Parts.ts"
 import { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { read } from "../../src/inventory/index.ts"
@@ -19,8 +19,17 @@ import {
 } from "../../src/native/index.ts"
 import { noPushUrl } from "../../src/replay/Environment.ts"
 import { Options, Progress } from "../../src/replay/index.ts"
-import { fakeSmthrs, installScript, makeOwn, makeOwnWith, type Own, ownFiles, smthrs } from "./own.ts"
-import { git, repository, temporary } from "./repo.ts"
+import {
+  fakeSmthrs,
+  installScript,
+  makeOwn,
+  makeOwnWith,
+  type Own,
+  ownFiles,
+  packageWithUncached,
+  smthrs
+} from "./own.ts"
+import { commit, git, repository, temporary } from "./repo.ts"
 
 const head = (root: string): string => git(root, "rev-parse", "HEAD").trim()
 import { cannotStart, noTemporaryDirectories, rows, scoreKeeping } from "./support.vibe"
@@ -175,29 +184,52 @@ describe("replaying six real commits of a repository's own targets", () => {
 
 // Each test runs real processes; a loaded machine must not turn that into a failure.
 describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
-  it("replays the patterns asked for instead of the ones its CI runs, with the jobs and the cache named", async () => {
+  /** A `smthrs` that records the shared-cache variables it was given and its command line, then runs the real one. */
+  const recordingSmthrs = () => {
     const calls = keep(temporary("calls"))
-    const recording = fakeSmthrs(`echo "cache=$SMITHERS_CACHE_URL $*" >> ${calls}/log\nexec $real "$@"`)
-    const root = keep(makeOwnWith(recording))
-    const report = await onNode(
-      own(
-        request(root, { jobs: 2, cache: "https://cache.example.invalid", targets: ["//:c"] }),
-        partsFor("none"),
-        "WORKSPACE.ts"
+    const command = fakeSmthrs(
+      `echo "url=$SMITHERS_CACHE_URL tokens=[$SMITHERS_CACHE_TOKEN][$SMITHERS_CACHE_READ_TOKEN][$SMITHERS_CACHE_WRITE_TOKEN] $*" >> ${calls}/log\nexec $real "$@"`
+    )
+    return { command, log: () => execFileSync("cat", [`${calls}/log`], { encoding: "utf8" }).trim().split("\n") }
+  }
+
+  /** Runs `work` with the credentials of a shared cache in this process's environment. */
+  const withSecrets = async <A>(work: () => Promise<A>): Promise<A> => {
+    vi.stubEnv("SMITHERS_CACHE_TOKEN", "t0")
+    vi.stubEnv("SMITHERS_CACHE_READ_TOKEN", "r0")
+    vi.stubEnv("SMITHERS_CACHE_WRITE_TOKEN", "w0")
+    try {
+      return await work()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  }
+
+  it("replays the patterns asked for, and gives the shared cache --cache names to normal mode only", async () => {
+    const recording = recordingSmthrs()
+    const root = keep(makeOwnWith(recording.command))
+    const report = await withSecrets(() =>
+      onNode(
+        own(
+          request(root, { jobs: 2, cache: "https://cache.example.invalid", targets: ["//:c"] }),
+          partsFor("none"),
+          "WORKSPACE.ts"
+        )
       )
     )
     expect(report.targets).toEqual(["//:c"])
     expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
     expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
     expect(report.mismatches).toBe(0)
-    const log = execFileSync("cat", [`${calls}/log`], { encoding: "utf8" }).trim().split("\n")
+    const log = recording.log()
     expect(log).toHaveLength(2)
-    // The baseline reads no cache, here or shared; normal mode reads both.
+    // No run gets a credential, so the baseline neither reads a shared cache nor stores into one. Normal mode
+    // alone is told where the cache --cache names is.
     expect(log[0]).toMatch(
-      /^cache= ci \/\/:c --workspace \S+ --cache-dir \.flows --no-cache --results-file \S+ --ui plain --jobs 2$/
+      /^url= tokens=\[\]\[\]\[\] ci \/\/:c --workspace \S+ --cache-dir \.flows --no-cache --results-file \S+ --ui plain --jobs 2$/
     )
     expect(log[1]).toMatch(
-      /^cache=https:\/\/cache\.example\.invalid ci \/\/:c --workspace \S+ --cache-dir \.flows --results-file \S+ --ui plain --jobs 2$/
+      /^url=https:\/\/cache\.example\.invalid tokens=\[\]\[\]\[\] ci \/\/:c --workspace \S+ --cache-dir \.flows --results-file \S+ --ui plain --jobs 2$/
     )
     expect(said).toContain("replaying the repository's own targets (WORKSPACE.ts): //:c")
   })
@@ -241,6 +273,58 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     expect(text("smthrs")).toContain("SMITHERS_CACHE_URL=https://cache.example.invalid\n")
     expect(text("fetch").trim()).toBe("https://example.invalid/acme/own.git")
     expect(text("push").trim()).toBe(noPushUrl)
+  })
+
+  it("gives no run the credentials of a shared cache the workspace declares, so it is off in every mode", async () => {
+    const recording = recordingSmthrs()
+    const root = keep(makeOwnWith(recording.command))
+    await withSecrets(() => onNode(own(request(root, { targets: ["//:c"] }), partsFor("none"), "WORKSPACE.ts")))
+    const log = recording.log()
+    expect(log).toHaveLength(2)
+    for (const line of log) expect(line.startsWith("url= tokens=[][][] ci //:c ")).toBe(true)
+  })
+
+  it("reads no cache in the baseline's first pass only: its reruns reuse what that pass built", async () => {
+    const recording = recordingSmthrs()
+    const root = keep(makeOwnWith(recording.command, { "a.sh": "exit 1\n" }))
+    const report = await onNode(own(request(root, { targets: ["//:a", "//:c"] }), partsFor("none"), "WORKSPACE.ts"))
+    expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 0 })
+    expect(report.commits[0]?.mismatches).toEqual([])
+    const commands = recording.log().map((line) => line.slice(line.indexOf(" ci ") + 1))
+    expect(commands).toHaveLength(4)
+    expect(commands[0]).toMatch(/^ci \/\/:a \/\/:c --workspace \S+ --cache-dir \.flows --no-cache --results-file/)
+    expect(commands[1]).toMatch(/^ci \/\/:a --workspace \S+ --cache-dir \.flows --results-file/)
+    expect(commands[2]).toMatch(/^ci \/\/:a \/\/:c --workspace \S+ --cache-dir \.flows --results-file/)
+    expect(commands[3]).toMatch(/^ci \/\/:a --workspace \S+ --cache-dir \.flows --results-file/)
+  })
+
+  it("names a target that runs again though its key did not change", async () => {
+    const root = keep(makeOwnWith(smthrs, { "PACKAGE.ts": packageWithUncached, "u.sh": "exit 0\n" }))
+    const second = commit(root, "change the docs", { "docs.sh": "# changed\nexit 0\n" })
+    const report = await onNode(
+      own(request(root, { commits: 2, targets: ["//..."] }), partsFor("none"), "WORKSPACE.ts")
+    )
+    // Nothing a target reads changed, yet the target Smithers build does not cache runs at the second commit too.
+    expect(report.commits[1]?.normal.counts).toEqual({ hit: 3, ran: 1, failed: 0, skipped: 0 })
+    expect(report.mismatches).toBe(0)
+    expect(said).toContain(
+      `2/2 ${second.slice(0, 7)} normal: 1 ran again with an unchanged key, so Smithers build does not cache it: //:u`
+    )
+  })
+
+  it("names to smthrs only targets the patterns select, in fast mode: what they depend on runs with them", async () => {
+    const recording = recordingSmthrs()
+    const root = keep(makeOwnWith(recording.command))
+    // The scorer keeps a, which b depends on and no pattern selects, and judges b safe to skip.
+    const parts = { ...partsFor("none"), score: scoreKeeping("//:a", "none") }
+    const asked = request(root, { modes: ["fast"], targets: ["//:b"], settings: { scoreCutoff: 0.5, countCutoff: 0 } })
+    const report = await onNode(own(asked, parts, "WORKSPACE.ts"))
+    expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
+    expect(report.commits[0]?.fast?.counts).toEqual({ hit: 0, ran: 0, failed: 0, skipped: 2 })
+    // The baseline, normal mode and the plan: fast mode had nothing to name.
+    const commands = recording.log()
+    expect(commands).toHaveLength(3)
+    expect(commands.some((line) => line.includes(" ci //:a "))).toBe(false)
   })
 
   it("names the repository by its remote, and runs fast mode with the default settings", async () => {
@@ -294,18 +378,38 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     expect(failure.message).toContain("the patterns selected no target that ran")
   })
 
-  it("fails with what smthrs printed when it writes no run record", async () => {
-    const root = keep(makeOwnWith(fakeSmthrs(`echo "host binary go is not on the PATH"; exit 1`)))
+  it("is unsupported, with what smthrs printed, when it writes no run record at any commit", async () => {
+    const root = keep(makeOwnWith(fakeSmthrs(`echo "code: no_package"; echo "message: no package at //:c"; exit 1`)))
     const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
-    expect(failure).toMatchObject({ code: "command-failed", part: "replay" })
-    expect(failure.message).toBe("smthrs ci wrote no run record: host binary go is not on the PATH\n")
+    expect(failure).toEqual({
+      code: "unsupported",
+      part: "replay",
+      message: `no target passed at any of the 1 replayed commit. At ${
+        head(root).slice(0, 7)
+      }, (smthrs) failed: no package at //:c`
+    })
   })
 
-  it("fails when the run record is not one", async () => {
+  it("counts a run record that is not one as no run record", async () => {
     const root = keep(makeOwnWith(fakeSmthrs(`echo '{"ok":' > "$results"`)))
     const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
-    expect(failure.code).toBe("command-failed")
-    expect(failure.message).toContain("smthrs ci wrote no run record")
+    expect(failure.code).toBe("unsupported")
+    expect(failure.message).toContain("(smthrs) failed: smthrs ci wrote no run record")
+  })
+
+  it("reports a commit smthrs cannot plan as failed in both modes, and goes on", async () => {
+    // The first commit has the install and no workspace yet; the second adds the workspace and its targets.
+    const { "WORKSPACE.ts": workspaceText, "PACKAGE.ts": packageText, ...before } = ownFiles()
+    const root = keep(repository(before))
+    commit(root, "add the workspace", { "WORKSPACE.ts": workspaceText ?? "", "PACKAGE.ts": packageText ?? "" })
+    const report = await onNode(own(request(root, { commits: 2 }), partsFor("none"), "WORKSPACE.ts"))
+    for (const totals of [report.commits[0]?.baseline, report.commits[0]?.normal]) {
+      expect(totals).toMatchObject({ ok: false, counts: { hit: 0, ran: 0, failed: 1, skipped: 0 } })
+    }
+    expect(report.commits[1]?.baseline.counts).toEqual({ hit: 0, ran: 3, failed: 0, skipped: 0 })
+    expect(report.commits[1]?.normal.counts).toEqual({ hit: 0, ran: 3, failed: 0, skipped: 0 })
+    expect(report.mismatches).toBe(0)
+    expect(said.some((line) => /^1\/2 \w{7} baseline: \(smthrs\) failed: \S/.test(line))).toBe(true)
   })
 
   it("fails in fast mode when smthrs prints no plan", async () => {
@@ -365,6 +469,7 @@ describe("the replay part for any repository", { timeout: 120_000 }, () => {
     const converted = keep(repository({ ".smithers/WORKSPACE.ts": `${generatedMark} Do not edit.\n` }))
     const uncommitted = keep(repository({ "README.md": "plain\n" }))
     execFileSync("cp", [`${keep(makeOwnWith("true"))}/WORKSPACE.ts`, `${uncommitted}/WORKSPACE.ts`])
+    // A workspace file no commit holds does not count: a replay runs commits.
     for (const root of [plain, converted, uncommitted, keep(temporary("empty"))]) {
       expect(await onNode(committedWorkspace(root))).toBeUndefined()
       expect((await onNode(run(generic)(request(root, { commits: 4 }), partsFor("none")))).repository).toBe("generic 4")

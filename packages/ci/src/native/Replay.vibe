@@ -42,7 +42,7 @@ import {
   noSmthrs,
   smthrsBin
 } from "./Install.ts"
-import { linesOf, nothingPassed, withReasons } from "./Results.ts"
+import { linesOf, noRecord, noRecordLabel, nothingPassed, ranAgain, ranAgainLines, withReasons } from "./Results.ts"
 import { chosenFor } from "./Targets.ts"
 import { isGenerated } from "./Workspace.ts"
 
@@ -178,16 +178,22 @@ interface Measured {
  * Replays the last `request.commits` commits of a repository whose own
  * workspace file is `workspaceFile`.
  *
- * Commits run oldest first in three checkouts: the baseline's is emptied of
- * every untracked file before each commit, and the normal and fast ones keep
- * only their cache. Each is then installed, and its own `smthrs` runs the
- * patterns. Wall time covers the checkout, the install and the first pass, the
- * same in every mode; the reruns that label flaky targets are not counted.
+ * Commits run oldest first in three copies: the baseline's has no untracked
+ * file when a commit starts, and the normal and fast ones only their cache.
+ * Each is then installed, and its own `smthrs` runs the patterns. Wall time
+ * covers the checkout, the install and the first pass, the same in every
+ * mode; the reruns that label flaky targets, and the cleaning of a copy after
+ * its run, are not counted.
  *
- * A commit that cannot be installed is one failed result in every mode. When
- * no target passes in the baseline of any commit, the replay fails
- * `unsupported` with the newest commit's first failure: the build does not
- * run on this machine.
+ * The copy's install and its `smthrs` get what a target gets of the
+ * environment and no credential, so no run reads or writes a shared cache
+ * the workspace declares. `request.cache` names one for normal and fast
+ * mode. The baseline's first pass reads no cache at all.
+ *
+ * A commit that cannot be installed, or that `smthrs ci` cannot plan, is one
+ * failed result in every mode. When no target passes in the baseline of any
+ * commit, the replay fails `unsupported` with the newest commit's first
+ * failure: the build does not run on this machine.
  *
  * @category parts
  * @since 0.1.0
@@ -225,18 +231,23 @@ export const own = <R>(
       const noPush = ["--config", `remote.origin.pushurl=${noPushUrl}`]
       try git(work, ["clone", "--quiet", "--shared", "--no-checkout", ...noPush, source, copy])
       if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", withoutCredentials(origin.text)])
+      // Every copy starts with a whole tree, so the first timed checkout is the same work in each mode.
+      try git(copy, ["checkout", "--quiet", "--force", "--detach", "HEAD"])
       return copy
     }
+
+    /** Removes every untracked and ignored file from `copy` but what `kept` names. */
+    const clean = (copy: string, kept: ReadonlyArray<string>) =>
+      git(copy, ["clean", "-ffdxq", ...kept.flatMap((name) => ["-e", name])])
 
     /** Puts `copy` at `commit` with nothing untracked but what `kept` names, and installs it. */
     effect function ready(copy: string, commit: string, kept: ReadonlyArray<string>) {
       try git(copy, ["checkout", "--quiet", "--force", "--detach", commit])
-      try git(copy, ["clean", "-ffdxq", ...kept.flatMap((name) => ["-e", name])])
+      try clean(copy, kept)
       return try install(copy, workspaceFile)
     }
 
     const normalCopy = try copyOf("normal")
-    try git(normalCopy, ["checkout", "--quiet", "--force", "--detach", "HEAD"])
     const inventory = try parts.read(normalCopy)
     const chosen = chosenFor(inventory, request.targets)
     try progress.say(`replaying the repository's own targets (${workspaceFile}): ${chosen.patterns.join(" ")}`)
@@ -245,12 +256,22 @@ export const own = <R>(
 
     let runs = 0
     const jobs = request.jobs === undefined ? [] : ["--jobs", String(request.jobs)]
+
+    /**
+     * Where the shared cache `--cache` names is, for normal and fast mode. No run gets a credential: the copy's
+     * `smthrs` is given what a target gets of the environment, so a shared cache the workspace declares is off in
+     * every mode, and the baseline neither reads one nor stores into one.
+     */
     const cacheEnv = request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }
 
-    /** Runs the copy's own `smthrs` on targets, or on the patterns, and reads the run record it writes. */
+    /**
+     * Runs the copy's own `smthrs` on targets, or on the patterns, and reads the run record it writes. Only the
+     * baseline's first pass, the one that is timed, reads no cache: its reruns reuse what that pass built, as the
+     * reruns of the other modes do.
+     */
     const smthrs = (copy: string, cached: boolean, state: Installed): Execute<Host> => (targets) => effect {
       if (!state.ok) return [notInstalled(state.reason)]
-      const selected = (targets ?? chosen.patterns).filter((label) => label !== installLabel)
+      const selected = (targets ?? chosen.patterns).filter((label) => label !== installLabel && label !== noRecordLabel)
       if (selected.length === 0) return []
       runs += 1
       const file = path.join(work, `run-${runs}.json`)
@@ -261,7 +282,7 @@ export const own = <R>(
         copy,
         "--cache-dir",
         cacheDirectory,
-        ...(cached ? [] : ["--no-cache"]),
+        ...(cached || targets !== undefined ? [] : ["--no-cache"]),
         "--results-file",
         file,
         "--ui",
@@ -271,15 +292,11 @@ export const own = <R>(
       // The cache's address is the one thing the copy's own `smthrs` gets beyond what a target gets.
       const environment = { ...stepEnvironment({}), ...(cached ? cacheEnv : {}) }
       const output = try exec(state.smthrs, args, copy, environment, reasonsLimit, "all", true)
-      const unreadable = () =>
-        failure("command-failed", `smthrs ci wrote no run record: ${output.text.slice(-outputLimit)}`)
-      const text = fs.readFileString(file) catch effect () => {
-        throw unreadable()
-      }
-      const record = Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text) catch effect () => {
-        throw unreadable()
-      }
-      return withReasons(record.results, output.text)
+      // A run with no record is a commit `smthrs` could not plan: a failed commit, not a failed replay.
+      const text = fs.readFileString(file) catch () => undefined
+      if (text === undefined) return [noRecord(output.text)]
+      const record = Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text) catch () => undefined
+      return record === undefined ? [noRecord(output.text)] : withReasons(record.results, output.text)
     }
 
     /** The plan of the patterns in the normal copy, which fast mode's rows are measured against. */
@@ -314,6 +331,8 @@ export const own = <R>(
 
     const replayed: Array<ReplayCommit> = []
     const baselines: Array<RunRecord> = []
+    /** The key each target last passed with in normal mode, by label. */
+    const passedWith = new Map<string, string>()
     const allRows: Array<Row> = []
     const selected = new Map<string, ReadonlyArray<string>>()
     let flaky = 0
@@ -322,19 +341,35 @@ export const own = <R>(
       const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
       const at = `${replayed.length + 1}/${commits.length} ${commit.slice(0, 7)}`
       const base = try measure(`${at} baseline`, baselineCopy, commit, false, undefined)
+      // Each copy is cleaned after its run, untimed, so the next commit's timed setup starts from the same clean
+      // tree in every mode.
+      try clean(baselineCopy, [])
       const baseRecord = recordOf(base.results, commit, base.wallMs)
       baselines.push(baseRecord)
       const normal = try measure(`${at} normal`, normalCopy, commit, true, undefined)
+      for (const line of ranAgainLines(`${at} normal`, ranAgain(passedWith, normal.results))) try progress.say(line)
+      for (const result of normal.results) {
+        if (result.status === "ran" || result.status === "hit") passedWith.set(result.label, result.key)
+        else passedWith.delete(result.label)
+      }
       const normalRecord = recordOf(normal.results, commit, normal.wallMs, "normal")
       let fastPart: Pick<ReplayCommit, "fast"> = {}
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
       flaky += flakyOf([baseRecord, normalRecord])
-      if (fastCopy !== undefined) {
-        const rows = normal.state.ok ? try parts.rows(normalCopy, normalRecord, try planOf(normal.state.smthrs)) : []
+      if (fastCopy === undefined) try clean(normalCopy, [cacheDirectory])
+      else {
+        const plan = normal.state.ok ? try planOf(normal.state.smthrs) : undefined
+        const rows = plan === undefined ? [] : try parts.rows(normalCopy, normalRecord, plan)
+        try clean(normalCopy, [cacheDirectory])
         const scores = try parts.score(rows)
         const choice = choose(scores, request.settings ?? defaultSettings)
-        const labels = normal.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
+        // Only a target the patterns select can be named to `smthrs ci`; what it depends on runs with it.
+        const named = plan === undefined ? undefined : new Set(plan.roots)
+        const labels = normal.results.map((result) => result.label).filter((label) =>
+          (named === undefined || named.has(label)) && !choice.skipped.has(label)
+        )
         const fast = try measure(`${at} fast`, fastCopy, commit, true, labels)
+        try clean(fastCopy, [cacheDirectory])
         const byLabel = new Map(fast.results.map((result) => [result.label, result]))
         const merged = normal.results.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
         const fastRecord = recordOf(merged, commit, fast.wallMs, "fast" satisfies Mode)
@@ -369,7 +404,8 @@ export const own = <R>(
  * its owner wrote has its own targets replayed, and every other repository
  * goes to `generic`, the replay that generates targets. `request.targets`
  * names patterns of a repository's own workspace, so a repository without
- * one is refused when it is given.
+ * one is refused when it is given. A workspace file that is in the working
+ * tree and in no commit does not count: a replay runs commits.
  *
  * @category parts
  * @since 0.1.0

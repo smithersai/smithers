@@ -32,9 +32,12 @@ describe("patternsIn", () => {
     expect(patternsIn(".smithers/node_modules/.bin/smthrs build --jobs 2 //a:lib")).toEqual(["//a:lib"])
   })
 
-  it("stops at the end of the command and reads every command of a script", () => {
+  it("reads every command of a script, and stops at what ends a command", () => {
     const script = "smthrs ci //a:x && echo //not:this\nsmthrs test //b:y | tee log; smthrs lint \\\n  //c:z"
     expect(patternsIn(script)).toEqual(["//a:x", "//b:y", "//c:z"])
+    expect(patternsIn("(cd tools && smthrs ci //a/...)")).toEqual(["//a/..."])
+    expect(patternsIn("smthrs ci //a/...>log.txt 2>&1")).toEqual(["//a/..."])
+    expect(patternsIn("if smthrs lint //a/...; then echo ok; fi")).toEqual(["//a/..."])
   })
 
   it("reads the script a step is wrapped in, as the importer writes a workflow step", () => {
@@ -43,23 +46,46 @@ describe("patternsIn", () => {
     expect(patternsIn(wrapped)).toEqual(["//packages/ci:*", "//packages/rpc:*"])
     expect(patternsIn(`sh -c "cd x && smthrs test //a:test"`)).toEqual(["//a:test"])
     expect(patternsIn(`bash -c 'bash -c "smthrs lint //deep/..."'`)).toEqual(["//deep/..."])
+    expect(patternsIn(`bash -c "smthrs ci \\"//a/...\\" \\"//b/...\\""`)).toEqual(["//a/...", "//b/..."])
+    expect(patternsIn("sh -c")).toEqual([])
+    expect(patternsIn("bash scripts/ci.sh //...")).toEqual([])
+  })
+
+  it("finds smthrs behind a package manager, a variable and its own options", () => {
+    expect(patternsIn("CI=1 env FOO=2 npx smthrs test //a:test")).toEqual(["//a:test"])
+    expect(patternsIn("pnpm exec -- smthrs lint //a/...")).toEqual(["//a/..."])
+    expect(patternsIn("smthrs --silent ci //a/...")).toEqual(["//a/..."])
+    expect(patternsIn("pnpm exec smthrs --ui plain ci //a/...")).toEqual(["//a/..."])
   })
 
   it("unquotes as a shell does", () => {
     expect(patternsIn(`smthrs ci //a'/b':c "//d"/... \\/\\/e:f`)).toEqual(["//a/b:c", "//d/...", "//e:f"])
     expect(patternsIn(`smthrs ci '//unclosed:quote`)).toEqual(["//unclosed:quote"])
+    expect(patternsIn(`smthrs ci "//unclosed:double`)).toEqual(["//unclosed:double"])
+    expect(patternsIn(`smthrs ci "//a\\b:c" "//d\\`)).toEqual(["//a\\b:c", "//d\\"])
     expect(patternsIn("smthrs ci\t//tab:separated")).toEqual(["//tab:separated"])
     expect(patternsIn("smthrs ci //a:x \\")).toEqual(["//a:x"])
+    expect(patternsIn("smthrs ci //a#b:c")).toEqual(["//a#b:c"])
   })
 
-  it("reads no pattern from another program, another verb, or a variable", () => {
-    expect(patternsIn("echo smthrs")).toEqual([])
+  it("reads nothing from a comment or from the arguments of another program", () => {
+    expect(patternsIn("# was: smthrs ci //legacy/...\nsmthrs ci //packages/...")).toEqual(["//packages/..."])
+    expect(patternsIn("smthrs ci //a/... # TODO add //b/... once green")).toEqual(["//a/..."])
+    expect(patternsIn("# smthrs ci //only/a/comment")).toEqual([])
+    expect(patternsIn(`echo "reproduce with: smthrs ci //docs/..."`)).toEqual([])
+    expect(patternsIn("echo smthrs test //x:y")).toEqual([])
+    expect(patternsIn("mysmthrs ci //a:x")).toEqual([])
+  })
+
+  it("reads no pattern without a verb that runs targets, or from a variable", () => {
     expect(patternsIn("smthrs")).toEqual([])
+    expect(patternsIn("smthrs --silent")).toEqual([])
     expect(patternsIn("smthrs && ci //a:x")).toEqual([])
     expect(patternsIn("smthrs explain //a:x")).toEqual([])
-    expect(patternsIn("mysmthrs ci //a:x")).toEqual([])
+    expect(patternsIn("FOO=1")).toEqual([])
+    expect(patternsIn("pnpm exec")).toEqual([])
+    expect(patternsIn("")).toEqual([])
     expect(patternsIn("smthrs ci $TARGETS //$PACKAGE:test '//${{ matrix.package }}:test'")).toEqual([])
-    expect(patternsIn("sh scripts/ci.sh //...")).toEqual([])
   })
 })
 
