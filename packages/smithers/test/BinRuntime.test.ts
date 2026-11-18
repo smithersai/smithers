@@ -1,13 +1,16 @@
 /** Real executable contracts, scheduled in the bounded CLI worker pool. */
 import { spawn, spawnSync } from "node:child_process"
 import {
+  chmodSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync
 } from "node:fs"
@@ -463,6 +466,73 @@ describe("the smithers bin shim", processBudget, () => {
       expect(result.stdout).toBe("one file ran with the importer's own inner, compile cache on\n")
       expect(filesIn(ownCompiledCode(root)).length).toBeGreaterThan(0)
       expect(existsSync(join(root, "compile-cache"))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  // The temporary directory is shared by every account on the machine, and
+  // Node runs the compiled code it finds, so the launcher's directory is one
+  // only this account can write. Accounts and modes are POSIX.
+  it.skipIf(process.platform === "win32")("makes its own directory of compiled code private to the account", () => {
+    const root = mkdtempSync(temporaryDirectoryPrefix)
+    try {
+      stageInstallation(root)
+      expect(startStaged(root, {}).status).toBe(0)
+      expect(statSync(ownCompiledCode(root)).mode & 0o777).toBe(0o700)
+      // The next start reads what this one kept.
+      const kept = filesIn(ownCompiledCode(root))
+      const result = startStaged(root, {})
+      expect(result.stdout).toBe("one file ran with the importer's own inner, compile cache on\n")
+      expect(filesIn(ownCompiledCode(root))).toEqual(kept)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(process.platform === "win32")(
+    "empties a directory of its own that other accounts could write, and makes it private",
+    () => {
+      const root = mkdtempSync(temporaryDirectoryPrefix)
+      try {
+        stageInstallation(root)
+        const planted = join(ownCompiledCode(root), "left-by-anyone")
+        mkdirSync(ownCompiledCode(root), { recursive: true })
+        writeFileSync(planted, "compiled")
+        // `chmod`, not the mode `mkdir` takes: the umask clears bits from that one.
+        chmodSync(ownCompiledCode(root), 0o777)
+        const result = startStaged(root, {})
+        expect(result.status, result.stderr).toBe(0)
+        expect(result.stdout).toBe("one file ran with the importer's own inner, compile cache on\n")
+        expect(existsSync(planted)).toBe(false)
+        expect(statSync(ownCompiledCode(root)).mode & 0o777).toBe(0o700)
+        expect(filesIn(ownCompiledCode(root)).length).toBeGreaterThan(0)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }
+  )
+
+  it("keeps no compiled code where a link or a file holds its directory's name, and leaves both alone", () => {
+    const root = mkdtempSync(temporaryDirectoryPrefix)
+    try {
+      stageInstallation(root)
+      mkdirSync(join(root, "tmp"), { recursive: true })
+      const elsewhere = join(root, "someone-elses")
+      mkdirSync(elsewhere)
+      symlinkSync(elsewhere, ownCompiledCode(root))
+      const linked = startStaged(root, {})
+      expect(linked.status, linked.stderr).toBe(0)
+      expect(linked.stdout).toBe("one file ran with the importer's own inner, compile cache off\n")
+      expect(lstatSync(ownCompiledCode(root)).isSymbolicLink()).toBe(true)
+      expect(readdirSync(elsewhere)).toEqual([])
+
+      rmSync(ownCompiledCode(root))
+      writeFileSync(ownCompiledCode(root), "not a directory")
+      const file = startStaged(root, {})
+      expect(file.status, file.stderr).toBe(0)
+      expect(file.stdout).toBe("one file ran with the importer's own inner, compile cache off\n")
+      expect(readFileSync(ownCompiledCode(root), "utf8")).toBe("not a directory")
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

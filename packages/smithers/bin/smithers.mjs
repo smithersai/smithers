@@ -21,7 +21,7 @@
  * is what makes `pnpm exec smthrs` run the working tree during development
  * with no build step, which `packages/smithers/test/support/check-local-smithers.mjs` requires.
  */
-import { existsSync, readdirSync, rmSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import * as Module from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -68,6 +68,46 @@ const bundled = async () => {
 /** How many files the launcher's own directory of compiled code holds before the launcher empties it. */
 const compiledFilesLimit = 512
 
+/** Makes a directory only this account can read or write. False when the name is taken. */
+const makePrivate = (directory) => {
+  try {
+    mkdirSync(directory, { mode: 0o700 })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The launcher's own directory of compiled code, or `undefined` when this
+ * start keeps none.
+ *
+ * Node runs the compiled code it finds there, and the temporary directory is
+ * shared by every account on the machine, so the directory is used only when
+ * it is a real directory this account owns and no other account can write.
+ * The launcher makes it that way. A link or another account's directory under
+ * its name is left as it is, and this start compiles as it runs. One this
+ * account owns that others could write (Node makes it so under a permissive
+ * umask) is emptied and made again, as is one holding more than
+ * {@link compiledFilesLimit} files.
+ */
+const ownCompiledCode = () => {
+  const account = process.getuid?.()
+  const directory = join(tmpdir(), `smthrs-compile-cache-${account ?? "user"}`)
+  if (makePrivate(directory)) return directory
+  try {
+    const status = lstatSync(directory)
+    if (!status.isDirectory() || (account !== undefined && status.uid !== account)) return undefined
+    const open = account !== undefined && (status.mode & 0o022) !== 0
+    if (!open && readdirSync(directory, { recursive: true }).length <= compiledFilesLimit) return directory
+    rmSync(directory, { recursive: true, force: true })
+    return makePrivate(directory) ? directory : undefined
+  } catch {
+    // Another start is emptying it.
+    return undefined
+  }
+}
+
 /**
  * Has Node keep the code it compiles between starts, which takes about 0.4 s
  * off each one. `NODE_DISABLE_COMPILE_CACHE=1` turns it off.
@@ -78,9 +118,8 @@ const compiledFilesLimit = 512
  * every start leaves about four small files that no later start reads. In a
  * directory the person names with `NODE_COMPILE_CACHE` those are theirs to
  * keep or clear. Otherwise the launcher uses a directory of its own under the
- * temporary directory and empties it once it holds more than
- * {@link compiledFilesLimit} files: about one start in a hundred then
- * compiles the bundle again.
+ * temporary directory (see {@link ownCompiledCode}): about one start in a
+ * hundred empties it and compiles the bundle again.
  */
 const keepCompiledCode = () => {
   if (process.env.NODE_DISABLE_COMPILE_CACHE) return
@@ -88,15 +127,8 @@ const keepCompiledCode = () => {
     Module.enableCompileCache()
     return
   }
-  const directory = join(tmpdir(), `smthrs-compile-cache-${process.getuid?.() ?? "user"}`)
-  try {
-    if (readdirSync(directory, { recursive: true }).length > compiledFilesLimit) {
-      rmSync(directory, { recursive: true, force: true })
-    }
-  } catch {
-    // Not there yet, or another start is emptying it: Node makes it again.
-  }
-  Module.enableCompileCache(directory)
+  const directory = ownCompiledCode()
+  if (directory !== undefined) Module.enableCompileCache(directory)
 }
 
 if (await bundled()) {
