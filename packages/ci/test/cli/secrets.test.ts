@@ -8,16 +8,17 @@
 import * as Console from "effect/Console"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import { execFileSync, spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { dirname, join } from "node:path"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
 import { cli } from "../../src/cli/Cli.vibe"
 import { layer } from "../../src/cli/Host.vibe"
 import { parts } from "../../src/cli/parts.ts"
 import { Options } from "../../src/replay/index.ts"
 import { probe } from "../../src/replay/Jail.ts"
-import { git, recorder, remove, temporary } from "./repo.ts"
+import { bin, git, recorder, remove, temporary, until } from "./repo.ts"
 
 const made: Array<string> = []
 const keep = (path: string): string => {
@@ -59,7 +60,11 @@ const look = [
   ""
 ].join("\n")
 
-const fixture = (): string => {
+/** Where the person's container daemon is, in the test that allows Docker. No daemon listens there. */
+const daemon = "unix:///nowhere/docker.sock"
+
+/** A repository whose CI is the step, then `more`. */
+const fixture = (more: ReadonlyArray<string> = []): string => {
   const root = keep(temporary("secrets"))
   const workflow = [
     "name: CI",
@@ -70,6 +75,7 @@ const fixture = (): string => {
     "    steps:",
     "      - uses: actions/checkout@v4",
     "      - run: ./look.sh",
+    ...more.map((step) => `      - run: ${step}`),
     ""
   ].join("\n")
   git(root, "init", "--quiet", "--initial-branch=main")
@@ -121,6 +127,17 @@ const ways = (stdout: string) => {
 const jailable = !("refusal" in probe())
 const passed = { ok: true, reasons: [] }
 
+/** What the system says a process was started with: every process of this user can read it. */
+const startedWith = (pid: number): string => {
+  try {
+    return process.platform === "linux"
+      ? readFileSync(`/proc/${pid}/environ`, "utf8")
+      : execFileSync("ps", ["eww", "-p", String(pid)], { encoding: "utf8" })
+  } catch {
+    return ""
+  }
+}
+
 describe("smithers-ci started with tokens in its environment", () => {
   it.skipIf(!jailable)("shows a step none of them, in its environment or any process it can read", async () => {
     const outcome = await program(fixture())
@@ -134,5 +151,38 @@ describe("smithers-ci started with tokens in its environment", () => {
 
     expect(ways(outcome.stdout)).toEqual({ baseline: passed, normal: passed })
     expect(outcome.code).toBe(0)
+  }, 1_800_000)
+
+  it("holds none of them in its own process while a step runs", async () => {
+    // The published program, as a process started with the tokens. Its PATH has the system's directories and this
+    // Node: on a machine that keeps bubblewrap elsewhere there is no jail, and the step sees the program itself.
+    // What the program reads of the person's variables it still reads, from memory: with Docker allowed, a step
+    // is told where the person's daemon is.
+    const child = spawn(process.execPath, [bin, "--commits", "1", "--json", "--allow-docker"], {
+      cwd: fixture([`test "$DOCKER_HOST" = ${daemon}`]),
+      env: {
+        ...process.env,
+        ...environment,
+        PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
+        DOCKER_HOST: daemon,
+        ...Object.fromEntries(tokens.map((name, index) => [name, `${canary}-${index}`]))
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    })
+    let stdout = ""
+    let stderr = ""
+    child.stdout?.setEncoding("utf8").on("data", (chunk: string) => void (stdout += chunk))
+    child.stderr?.setEncoding("utf8").on("data", (chunk: string) => void (stderr += chunk))
+    const code = new Promise<number | null>((resolve) => child.on("close", resolve))
+    const pid = child.pid as number
+
+    // Before any step runs, the process is one that was started without the tokens. It is the same process.
+    expect(startedWith(pid)).toContain(canary)
+    await until(() => child.exitCode !== null || !startedWith(pid).includes(canary), "the program to start again")
+    expect(child.exitCode).toBeNull()
+    expect(startedWith(pid)).not.toBe("")
+
+    expect(await code, stderr).toBe(0)
+    expect(ways(stdout)).toEqual({ baseline: passed, normal: passed })
   }, 1_800_000)
 })

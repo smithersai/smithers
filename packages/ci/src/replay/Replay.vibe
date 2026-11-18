@@ -47,7 +47,7 @@ import {
   stepEnvironment,
   thisHost
 } from "./Environment.ts"
-import { probe, type Probe } from "./Jail.ts"
+import { type Probe, probeWith } from "./Jail.ts"
 import {
   commandLine,
   firstLine,
@@ -150,7 +150,9 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
  * hold a step in a file-system jail; without it the machine is asked. `cores`
  * is how many baseline jobs run at once when the request sets no limit; without
  * it, the machine's core count. `processes` is where a step's processes are
- * read and stopped.
+ * read and stopped. `environment` holds the variables of the person who runs
+ * the replay, which the program keeps out of its own process; without it they
+ * are read from the process.
  *
  * @category services
  * @since 0.1.0
@@ -163,6 +165,7 @@ export service Options {
   readonly confine?: (() => Probe) | undefined
   readonly cores?: number | undefined
   readonly processes?: Table | undefined
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   static readonly defaultValue = () => ({
     smthrs: ["smthrs"] as const,
     reruns: maxReruns,
@@ -364,7 +367,14 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const allowDocker = request.allowDocker === true
     // Each way has a home of its own: none finds a cache another way filled.
     const places = try orFail(
-      confine(work, options.confine ?? probe, progress.say, [...options.smthrs, ...searchPath()], allowDocker),
+      confine(
+        work,
+        options.confine ?? probeWith,
+        progress.say,
+        [...options.smthrs, ...searchPath()],
+        allowDocker,
+        options.environment
+      ),
       "could not make the steps' homes"
     )
     // Where `smthrs` writes its run records: the one place it can write that a step run on its own cannot.
@@ -518,7 +528,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     let runs = 0
     // Where this machine has the software a GitHub runner comes with. A step with runner text is told.
-    const software = softwareEnvironment(ambientEnvironment())
+    const software = softwareEnvironment(person)
     /**
      * The whole environment of a `smthrs` started in `copy`: what a step of the way gets of the machine, with its
      * home, the stand-ins first on `PATH` and the push refusal, then where the shared cache and the compiled code

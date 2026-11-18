@@ -69,15 +69,21 @@ const noNode: Failure = {
  * finds the package the generated files import by itself, so nothing is put
  * into a checkout for it: a step that installs would find it under
  * `node_modules`, and remove it. `hasNode` says whether `smthrs` has a Node
- * to run on.
+ * to run on. `environment` holds the variables the program was started with,
+ * which it keeps out of its own process.
  *
  * @category layers
  * @since 0.1.0
  */
-export const replayOptions = (smthrs: readonly [string, ...Array<string>], hasNode: boolean = true) =>
+export const replayOptions = (
+  smthrs: readonly [string, ...Array<string>],
+  hasNode: boolean = true,
+  environment: Environment | undefined = undefined
+) =>
   Layer.succeed(Options, {
     smthrs,
     reruns,
+    environment,
     prepare: effect (_checkout: string) => {
       if (!hasNode) throw noNode
     }
@@ -108,7 +114,7 @@ export const layer = (environment: Environment) => {
       FlowEngine.layerMemory,
       WebCrypto.layer,
       judge(environment),
-      replayOptions(smthrsCommand(undefined, runtime), runtime !== undefined),
+      replayOptions(smthrsCommand(undefined, runtime), runtime !== undefined, environment),
       replayProgress
     ),
     node

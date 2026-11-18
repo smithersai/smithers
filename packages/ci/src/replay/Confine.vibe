@@ -87,15 +87,20 @@ export type Places = Readonly<Record<Way, Confined>>
  * module cache, so before `work` is removed everything under the homes and
  * the temporary directories is made writable again.
  *
+ * `person` holds the variables of the person who runs the replay. The program
+ * keeps them out of its own process, so without `person` they are read from
+ * the process.
+ *
  * @category constructors
  * @since 0.1.0
  */
 export effect function confine(
   work: string,
-  probe: () => Probe,
+  probe: (environment: Readonly<Record<string, string | undefined>>) => Probe,
   say: (line: string) => void!!,
   programs: ReadonlyArray<string>,
-  allowDocker: boolean
+  allowDocker: boolean,
+  person?: Readonly<Record<string, string | undefined>>
 ) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
@@ -103,6 +108,7 @@ export effect function confine(
   const homes = path.join(work, "home")
   const tmps = path.join(work, "tmp")
   const guard = path.join(work, "guard")
+  const environment = person ?? ambientEnvironment()
   try fs.makeDirectory(homes)
   try fs.makeDirectory(tmps)
   try fs.makeDirectory(guard)
@@ -131,7 +137,7 @@ export effect function confine(
     try fs.writeFileString(hook, prePush)
     try fs.chmod(hook, 0o755)
     try fs.writeFileString(path.join(home, ".gitconfig"), gitConfig)
-    return { home, tmp, guard, hooks, daemon: daemonEnvironment(allowDocker, ambientEnvironment()) }
+    return { home, tmp, guard, hooks, daemon: daemonEnvironment(allowDocker, environment) }
   }
   const made = {
     baseline: try make("baseline"),
@@ -139,7 +145,7 @@ export effect function confine(
     fast: try make("fast"),
     trial: try make("trial")
   }
-  const found = probe()
+  const found = probe(environment)
   if ("refusal" in found) {
     try say(unjailed(found.refusal, allowDocker))
     return {

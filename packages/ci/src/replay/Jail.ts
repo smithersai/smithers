@@ -96,6 +96,28 @@ export type Probe =
   | { readonly refusal: string }
 
 /**
+ * A machine's answer for a person whose variables are `environment`: they say
+ * where the person's session and container daemon are.
+ */
+const answer = (
+  facts: ExecSandbox.Host,
+  refuses: (facts: ExecSandbox.Host) => string | undefined,
+  environment: Readonly<Record<string, string | undefined>>
+): Probe => {
+  const refusal = refuses(facts)
+  return refusal === undefined
+    ? {
+      bwrap: facts.executable("bwrap") as string,
+      home: facts.home as string,
+      hidden: [`/run/user/${facts.uid}`],
+      daemons: daemonSockets(facts.uid, environment),
+      tmp: tmpdir(),
+      caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)]
+    }
+    : { refusal }
+}
+
+/**
  * Asks a machine, this one unless `facts` describes another. It can jail a
  * step when it runs Linux and bubblewrap starts; `refuses` starts bubblewrap
  * once to know, and says why when it cannot. Beside the credentials of the home, a step must not reach the
@@ -104,7 +126,8 @@ export type Probe =
  * ({@link daemonSockets}). The caches kept in sight are where a `smthrs`
  * started from source keeps its compiled code, TypeScript's and VibeLang's:
  * without them every replay would compile `smthrs` again. An installed
- * `smthrs` has neither.
+ * `smthrs` has neither. The person's variables are read from this process;
+ * {@link probeWith} asks for a person whose variables are held elsewhere.
  *
  * @throws {never}
  * @category resolution
@@ -113,19 +136,17 @@ export type Probe =
 export const probe = (
   facts: ExecSandbox.Host = ExecSandbox.host(),
   refuses: (facts: ExecSandbox.Host) => string | undefined = ExecSandbox.writeProtectionRefusal
-): Probe => {
-  const refusal = refuses(facts)
-  return refusal === undefined
-    ? {
-      bwrap: facts.executable("bwrap") as string,
-      home: facts.home as string,
-      hidden: [`/run/user/${facts.uid}`],
-      daemons: daemonSockets(facts.uid, process.env),
-      tmp: tmpdir(),
-      caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)]
-    }
-    : { refusal }
-}
+): Probe => answer(facts, refuses, process.env)
+
+/**
+ * Asks this machine, for a person whose variables are `environment`.
+ *
+ * @throws {never}
+ * @category resolution
+ * @since 0.1.0
+ */
+export const probeWith = (environment: Readonly<Record<string, string | undefined>>): Probe =>
+  answer(ExecSandbox.host(), ExecSandbox.writeProtectionRefusal, environment)
 
 /**
  * A path a jailed step finds empty: a credential of the person's, or the

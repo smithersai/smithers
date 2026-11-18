@@ -19,7 +19,7 @@ import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { type Confined, confine, held, reading, type Way } from "../replay/Confine.vibe"
 import { gitConfig, pushesGoNowhere, searchPath, stepEnvironment } from "../replay/Environment.ts"
-import { probe } from "../replay/Jail.ts"
+import { probeWith } from "../replay/Jail.ts"
 import { failuresOf, noJobPassed, noProgress, nothingPassed, printedLimit, stoppedResults } from "../replay/Failures.ts"
 import {
   cacheDirectory,
@@ -239,7 +239,14 @@ export const own = <R>(
     const root = path.resolve(request.root)
     // Each mode has a home of its own: none finds a cache another mode filled.
     const places = try orFail(
-      confine(work, options.confine ?? probe, progress.say, searchPath(), request.allowDocker === true),
+      confine(
+        work,
+        options.confine ?? probeWith,
+        progress.say,
+        searchPath(),
+        request.allowDocker === true,
+        options.environment
+      ),
       "could not make the homes of the runs"
     )
     // A target of the repository's own gets its way's home and none of the variables that refuse a push.

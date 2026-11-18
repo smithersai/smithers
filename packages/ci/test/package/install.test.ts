@@ -35,6 +35,8 @@ describe("the executable in an install", () => {
       "export const main = async (args) => { console.log('built', args[0]); return 7 }\n"
     )
     writeFileSync(join(cli, "Signals.js"), "export const listenTo = () => undefined\n")
+    // The program asks this module for its environment before it runs anything.
+    writeFileSync(join(cli, "Restart.js"), "export const own = async (program) => ({ ...program.env })\n")
     const result = spawnSync(process.execPath, [join(installed, "bin", "smithers-ci.mjs"), "inventory"], {
       cwd: root,
       encoding: "utf8"
