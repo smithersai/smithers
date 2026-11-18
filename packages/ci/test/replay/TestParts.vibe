@@ -33,6 +33,9 @@ export effect function read(root: string) {
   }
 }
 
+/** Where the generator writes the workspace and its targets. */
+export const workspacePath = ".smithers/WORKSPACE.smithers"
+
 const workspace = `import { Smithers as S } from "@smthrs/targets"
 export const Workspace = S.Workspace("replay", {
   repository: "git+https://example.com/replay.git",
@@ -91,16 +94,17 @@ export const generated = (
     step: entry.step,
     variant: entry.variant
   }))
-  const packageFile = [
-    `import { Smithers as S } from "@smthrs/targets"`,
+  // The layout the generator writes: the workspace and its root package in the one plain workspace file.
+  const declaration = [
+    workspace,
     ...planned.map((entry) => entry.text),
     `export const Package = S.Package({ targets: { ${planned.map((entry) => entry.id).join(", ")} } })`,
     ""
   ].join("\n")
   return [
-    { path: ".smithers/WORKSPACE.ts", content: workspace },
-    { path: "PACKAGE.ts", content: packageFile },
-    { path: targetMapPath, content: JSON.stringify({ version: 1, targets }) }
+    { path: workspacePath, content: declaration },
+    // The target map is for the replay alone, as the generator marks it: no copy holds it.
+    { path: targetMapPath, content: JSON.stringify({ version: 1, targets }), written: false }
   ]
 }
 
@@ -221,6 +225,6 @@ export const noGeneratedWrites = Layer.effect(FileSystem.FileSystem, effect {
   return {
     ...real,
     writeFileString: (path: string, data: string) =>
-      path.endsWith("WORKSPACE.ts") ? Effect.fail(denied("writeFileString")) : real.writeFileString(path, data)
+      path.endsWith(workspacePath) ? Effect.fail(denied("writeFileString")) : real.writeFileString(path, data)
   }
 })

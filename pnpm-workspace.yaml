@@ -33,6 +33,7 @@ packages:
 allowBuilds:
   "@journeyapps/wa-sqlite": false
   "@mongodb-js/zstd": false
+  "@parcel/watcher": false
   core-js: false
   dprint: false
   es5-ext: false

@@ -141,7 +141,9 @@ TURBO_TEAM, TURBO_TOKEN left empty: the baseline ran without the remote cache th
 
 Smithers CI turns the inventory into a Smithers build workspace: target files
 and a CI workflow. It builds these as text and writes nothing; only
-`smithers-ci apply` writes them.
+`smithers-ci apply` writes them. Everything but the workflow goes under
+`.smithers/`, in files your own type checker, linter and formatter do not read
+as theirs: see [Make it your CI](../getting-started/quickstart.md#make-it-your-ci).
 
 A target has a content key. The key changes when anything the target reads
 changes, so an unchanged target is a cache hit instead of a rerun. For one

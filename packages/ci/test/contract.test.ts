@@ -1110,3 +1110,27 @@ describe("what a report says about a failure", () => {
     expect(() => Schema.decodeUnknownSync(RunRecord.TargetResult)({ ...result, exitCode: 1.5 })).toThrow()
   })
 })
+
+describe("contract changes, twelfth round: files a repository's own tools never read", () => {
+  it("marks a generated file the program alone reads, and gives the files that are written", () => {
+    const files: ReadonlyArray<Parts.GeneratedFile> = [
+      { path: ".smithers/WORKSPACE.smithers", content: "x" },
+      { path: TargetMap.path, content: "{}", written: false },
+      { path: ".smithers/ci/legs.txt", content: "y", written: undefined }
+    ]
+    expect(Parts.writtenFiles(files).map((file) => file.path)).toEqual([
+      ".smithers/WORKSPACE.smithers",
+      ".smithers/ci/legs.txt"
+    ])
+    expect(Parts.writtenFiles([])).toEqual([])
+  })
+
+  it("lets a mismatch say which tool read a file Smithers CI wrote", () => {
+    const decode = Schema.decodeUnknownSync(ReplayReport.Mismatch)
+    const plain = { label: "//:check", mode: "normal", baseline: "pass", got: "fail" }
+    expect(decode(plain)).toEqual(plain)
+    const cause = "tsc read .smithers/WORKSPACE.smithers, which Smithers CI wrote. Add .smithers to \"exclude\"."
+    expect(decode({ ...plain, cause })).toEqual({ ...plain, cause })
+    expect(() => decode({ ...plain, cause: "" })).toThrow()
+  })
+})

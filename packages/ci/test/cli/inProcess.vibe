@@ -73,6 +73,19 @@ export const fullDisk = Layer.effect(FileSystem.FileSystem, effect {
 })
 
 /**
+ * The real file system, except that no file can be removed, as in a directory that cannot be written.
+ */
+export const noRemove = Layer.effect(FileSystem.FileSystem, effect {
+  const fs = try FileSystem.FileSystem
+  const kept: FileSystem.FileSystem = {
+    ...fs,
+    remove: (path: string) =>
+      Effect.fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "remove", pathOrDescriptor: path }))
+  }
+  return kept
+})
+
+/**
  * The real file system, except that it cannot say what kind of file a path holds.
  */
 export const noStat = Layer.effect(FileSystem.FileSystem, effect {

@@ -528,7 +528,7 @@ jobs:
       const command = generated.jobs.ci.steps.flatMap((step) =>
         step.run?.startsWith("npx") ? [step.run] : []
       )[0] as string
-      const selection = /\$\(awk .*\)/.exec(command)?.[0] as string
+      const selection = /\$\(sed .*\)/.exec(command)?.[0] as string
       const runLeg = (leg: Record<string, string>, name: string) => {
         const script = `set -- ${selection.replace("${{ matrix.leg }}", leg["leg"] as string)}; printf '%s\n' "$@"`
         const labels = run(root, "bash", ["-c", script]).stdout.trim().split("\n")

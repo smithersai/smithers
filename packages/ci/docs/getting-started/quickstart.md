@@ -160,10 +160,40 @@ When the report shows what you want:
 bunx smithers-ci apply
 ```
 
-`apply` writes the Smithers workspace, the target files and the CI workflow the
-report was measured with, and adds the cache directory `.flows` to
-`.gitignore`. It never replaces a file it did not generate: it names the file
-and writes nothing. Review the files as you would any change, and commit them.
+`apply` writes the CI the report was measured with:
+
+| File                                | What it holds                                                          |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| `.github/workflows/smithers-ci.yml` | The workflow GitHub runs                                               |
+| `.smithers/WORKSPACE.smithers`      | Every step of your CI, as Smithers build reads it                      |
+| `.smithers/.npmignore`              | One line that keeps `.smithers/` out of the package `npm pack` builds  |
+| `.smithers/ci/legs.txt`             | Which machine runs which step, when steps need different tool versions |
+| `.smithers/ci/NOT-REPRODUCED.txt`   | What your CI does that the new workflow does not, when there is any    |
+
+It also adds the cache directory `.flows` to `.gitignore`.
+
+Nothing is written at the repository's root or beside your sources, and no
+file is one your own tools read as theirs. `tsc`, ESLint, Prettier, Biome,
+dprint, Vitest, Jest, Mocha, `node --test`, knip, cspell and `npm pack` give
+the same result after `apply` as before it. The workflow is the one file whose
+place GitHub fixes; it tells Prettier and Biome to leave it as written.
+
+`apply` never replaces a file it did not generate: it names the file and writes
+nothing. Review the files as you would any change, and commit them.
+
+### When one of your tools reads a generated file
+
+A tool told to read every file, dot directories included, reads these too:
+`cspell --dot` is one. The replay finds that before `apply` does. A step that
+passes in your CI and fails beside the generated files is a mismatch, and the
+report says why under it:
+
+```text
+3f2a1c9  normal  //:ci.yml-lint-1  pass → fail
+  cspell read .smithers/WORKSPACE.smithers, which Smithers CI wrote. Add .smithers to "ignorePaths" in the cspell configuration.
+```
+
+Add the path to that tool's ignore list and run the report again.
 
 ## Next
 

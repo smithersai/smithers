@@ -147,8 +147,9 @@ Three kinds of target run in the open, as an unsplit step does:
 - A step that follows a step that does not name what it reads and writes. Its
   reads are recorded in the same way.
 
-When the targets' inputs would make `PACKAGE.ts` larger than the 1 MiB Smithers
-build reads, every target runs in the open with its reads recorded.
+When the targets' inputs would make the generated workspace larger than the
+1 MiB Smithers build reads, every target runs in the open with its reads
+recorded.
 
 ## A step after another step
 

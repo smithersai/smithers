@@ -6,6 +6,7 @@
  * @since 0.1.0
  */
 
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import {
   type Ci,
@@ -40,6 +41,138 @@ import {
 import { type Metrics, metrics, type Row, type Score, select, type Settings } from "../contract/Selection.ts"
 import { labelsOf as targetsOfStep, type TargetMap } from "../contract/TargetMap.ts"
 import { failuresOf, type StepNames } from "./Failures.ts"
+
+/**
+ * A tool that walks a repository's tree, how its output is told from another
+ * tool's, and where it is told to leave a path alone.
+ */
+interface TreeTool {
+  readonly name: string
+  readonly says: RegExp
+  readonly ignore: (path: string) => string
+}
+
+// The first that matches names the tool. `tsc` prints `error TS2307`, typed ESLint a parsing error, Prettier
+// `[warn] <file>`, and each of the others its own name or section heading.
+const treeTools: ReadonlyArray<TreeTool> = [
+  { name: "tsc", says: /\berror TS\d+/, ignore: (path) => `Add ${path} to "exclude" in the tsconfig.json it reads` },
+  {
+    name: "ESLint",
+    says: /Parsing error|@typescript-eslint|\beslint\b|\d+ problems? \(/i,
+    ignore: (path) => `Add ${path} to "ignores" in eslint.config.js, or to .eslintignore`
+  },
+  {
+    name: "Prettier",
+    says: /^\[warn\] |Code style issues|\bprettier\b/im,
+    ignore: (path) => `Add ${path} to .prettierignore`
+  },
+  {
+    name: "Biome",
+    says: /\bbiome\b|━━━━/i,
+    ignore: (path) => `Add "!${path}" to "files.includes" in biome.json`
+  },
+  {
+    name: "dprint",
+    says: /\bdprint\b|not formatted files?/i,
+    ignore: (path) => `Add ${path} to "excludes" in dprint.json`
+  },
+  {
+    name: "cspell",
+    says: /Unknown word|\bcspell\b/i,
+    ignore: (path) => `Add ${path} to "ignorePaths" in the cspell configuration`
+  },
+  {
+    name: "knip",
+    says: /Unused files|Unlisted binaries|\bknip\b/i,
+    ignore: (path) => `Add ${path} to "ignore" in the knip configuration`
+  },
+  {
+    name: "Jest",
+    says: /\bjest\b|Failed to collect coverage/i,
+    ignore: (path) =>
+      `Add ${path} to "coveragePathIgnorePatterns" and "testPathIgnorePatterns" in the Jest configuration`
+  },
+  { name: "Vitest", says: /\bvitest\b/i, ignore: (path) => `Add ${path} to "exclude" in the Vitest configuration` },
+  { name: "Mocha", says: /\bmocha\b/i, ignore: (path) => `Add ${path} to "ignore" in .mocharc` },
+  { name: "npm", says: /npm notice|\bnpm pack\b|\bpublint\b/i, ignore: (path) => `Add ${path} to .npmignore` }
+]
+
+// A tool target's failure is one JSON document on its line, holding what the tool printed.
+const toolFailureOf = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({ stdout: Schema.optionalKey(Schema.String), stderr: Schema.optionalKey(Schema.String) })
+  )
+)
+
+/**
+ * What a run of Smithers build printed for each target that failed: the
+ * lines after `<label>  failed  ...`, up to the next target's line. The
+ * line itself holds the step's command and is left out, unless it is a tool
+ * failure, which holds the tool's output.
+ *
+ * @category results
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const failureTexts = (output: string): ReadonlyMap<string, string> => {
+  const texts = new Map<string, Array<string>>()
+  let current: Array<string> | undefined
+  for (const line of output.split("\n")) {
+    const status = /^(\/\/\S*:\S+) {2}(hit|ran|failed|skipped|cancelled)\b(?: {2}\S+ {2}(.*))?/.exec(line)
+    if (status !== null) {
+      current = status[2] === "failed" ? [] : undefined
+      if (current !== undefined) {
+        const tool = Option.getOrUndefined(toolFailureOf(status[3] ?? ""))
+        current.push(
+          ...[tool?.stdout, tool?.stderr].flatMap((text) => text === undefined || text === "" ? [] : [text.trimEnd()])
+        )
+        texts.set(status[1] as string, current)
+      }
+      continue
+    }
+    // The summary that ends a run starts with one of these keys.
+    if (/^(code|verb|pattern|counts|ok): /.test(line)) current = undefined
+    current?.push(line)
+  }
+  return new Map([...texts].map(([label, lines]) => [label, lines.join("\n")]))
+}
+
+// The path of `written` that the output names: the entry itself, or for a directory (an entry that ends in `/`)
+// the first path under it. A directory is named at the start of a path, never inside another name.
+const namedIn = (error: string, entry: string): string | undefined => {
+  if (!entry.endsWith("/")) return error.includes(entry) ? entry : undefined
+  const under = new RegExp(`(?:^|[\\s"'(/])(${entry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^\\s:"'()]+)`, "m").exec(
+    error
+  )
+  return under === null ? undefined : under[1]
+}
+
+/**
+ * One line for a step that failed over a file Smithers CI wrote: the tool
+ * that read it, the file, and what to add to that tool's ignore list.
+ * `written` holds the files, and each directory Smithers CI fills, such as
+ * its cache, as a path that ends in `/`. A file under `.smithers` or under
+ * such a directory is left alone by naming the directory. `undefined` when
+ * the failed step's output names nothing of `written`.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const seenIn = (error: string | undefined, written: ReadonlyArray<string>): string | undefined => {
+  if (error === undefined) return undefined
+  const found = written.flatMap((entry) => {
+    const file = namedIn(error, entry)
+    return file === undefined ? [] : [{ entry, file }]
+  })[0]
+  if (found === undefined) return undefined
+  const { entry, file } = found
+  const ignored = entry.endsWith("/") ? entry.slice(0, -1) : file.startsWith(".smithers/") ? ".smithers" : file
+  const tool = treeTools.find((entry) => entry.says.test(error))
+  return tool === undefined
+    ? `A tool of this repository read ${file}, which Smithers CI wrote. Add ${ignored} to that tool's ignore list.`
+    : `${tool.name} read ${file}, which Smithers CI wrote. ${tool.ignore(ignored)}.`
+}
 
 /**
  * How many times a failed target reruns after its first run.
@@ -593,9 +726,18 @@ export const mismatchesOf = (
   mode: Mode,
   baseline: RunRecord,
   got: RunRecord,
-  split: ReadonlyMap<string, ReadonlyArray<string>> = new Map()
+  split: ReadonlyMap<string, ReadonlyArray<string>> = new Map(),
+  causes: ReadonlyMap<string, string> = new Map()
 ): ReadonlyArray<Mismatch> => {
   const byLabel = new Map(got.results.map((result) => [result.label, result]))
+  // A step that failed only in the mode, over a file Smithers CI wrote: the first of its targets that says so.
+  // `causes` holds that line by target label (`seenIn` of what the target printed).
+  const causeOf = (expected: Verdict, verdict: Verdict, others: ReadonlyArray<TargetResult | undefined>) => {
+    if (expected === "fail" || verdict !== "fail") return {}
+    const cause = others.flatMap((other) => other?.status === "failed" ? [causes.get(other.label)] : [])
+      .find((found) => found !== undefined)
+    return cause === undefined ? {} : { cause }
+  }
   return baseline.results.flatMap((result) => {
     const expected = verdictOf(result)
     const others = (split.get(result.label) ?? [result.label]).map((label) => byLabel.get(label))
@@ -611,7 +753,9 @@ export const mismatchesOf = (
       : expected === "fail"
       ? verdictOfAll(judged) === "fail"
       : judged.length === 0 || agree(verdictOfAll(judged), expected)
-    return same ? [] : [{ label: result.label, mode, baseline: expected, got: verdict }]
+    return same
+      ? []
+      : [{ label: result.label, mode, baseline: expected, got: verdict, ...causeOf(expected, verdict, others) }]
   })
 }
 

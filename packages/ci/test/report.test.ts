@@ -100,6 +100,28 @@ describe("text", () => {
     ].join("\n"))
   })
 
+  it("says under a mismatch which tool read a file Smithers CI wrote", () => {
+    const cause =
+      "tsc read .smithers/WORKSPACE.smithers, which Smithers CI wrote. Add .smithers to \"exclude\" in the tsconfig.json it reads."
+    const seen: ReplayReport = {
+      ...example,
+      commits: [green, {
+        ...red,
+        mismatches: [{ label: "//:check", mode: "normal", baseline: "pass", got: "fail", cause: `${cause}\nmore` }]
+      }]
+    }
+    const lines = text(seen).split("\n")
+    expect(lines.slice(-2)).toEqual(["0000000  normal  //:check  pass → fail", `  ${cause}`])
+    // The mismatch still leads the report.
+    expect(lines[0]).toBe("✗ 1 mismatch")
+    const page = html({
+      ...seen,
+      commits: [green, { ...red, mismatches: [{ ...seen.commits[1]!.mismatches[0]!, cause: "<b>tsc</b> read x" }] }]
+    })
+    expect(page).toContain("normal: pass → fail</span><br>&lt;b&gt;tsc&lt;/b&gt; read x</li>")
+    expect(html(example)).not.toContain("<br>")
+  })
+
   it("says for each commit whether the CI passed or failed, in the baseline and in each mode", () => {
     // Review finding 24: a replay whose baseline failed at every commit printed the same block as a passing one.
     const failing = {

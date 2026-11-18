@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest"
 import { parse as parseYaml } from "yaml"
 import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
 import { ci, commitNote, Inventory, runnerEntry, script, shell } from "../src/contract/Inventory.ts"
-import type { Failure, GeneratedFile, GenerateFiles } from "../src/contract/Parts.ts"
+import { type Failure, type GeneratedFile, type GenerateFiles, writtenFiles } from "../src/contract/Parts.ts"
 import { shardOf } from "../src/contract/Shard.ts"
 import { labelsOf, path as targetMapPath, TargetMap } from "../src/contract/TargetMap.ts"
 import { forShell, forText } from "../src/generate/Expressions.ts"
@@ -18,6 +18,7 @@ import {
   noSharedCache,
   notesPath,
   packagePath,
+  packIgnorePath,
   workflowPath,
   workspacePath
 } from "../src/generate/Render.ts"
@@ -118,9 +119,14 @@ describe("files", () => {
     expect(typed).toBe(files)
     const generated = Effect.runSync(typed(given(fixture("inventory.justfile-zig.json"))))
     expect(generated.map((file) => file.path).sort()).toEqual(
-      [workflowPath, packagePath, workspacePath, targetMapPath].sort()
+      [workflowPath, workspacePath, packIgnorePath, targetMapPath].sort()
     )
     expect(generated.map((file) => file.path)).not.toContain(notesPath)
+    // The target map is the program's own document: it is in the list and is not written into a repository.
+    expect(writtenFiles(generated).map((file) => file.path).sort()).toEqual(
+      [workflowPath, workspacePath, packIgnorePath].sort()
+    )
+    expect(generated.find((file) => file.path === targetMapPath)?.written).toBe(false)
   })
 
   it("writes the target map: the label of every step, in every variant, one target at a time", () => {
@@ -423,7 +429,9 @@ describe("what counts as CI", () => {
     ])
     expect(labels(document)).toEqual(["ci-1"])
     expect(targetsOf(ci(document))).not.toContain("publish")
-    expect(content(generate(ci(document)), workflowPath)).toContain("on:\n  pull_request:\npermissions:")
+    expect(content(generate(ci(document)), workflowPath)).toContain(
+      "on:\n  pull_request:\n# prettier-ignore\npermissions:"
+    )
   })
 
   it("keeps a needed job that no change triggers", () => {
@@ -730,7 +738,7 @@ describe("a step that names what it reads", () => {
     expect(declaration(source, "a-4")).toMatch(/data: \[repository, step1\]/)
   })
 
-  it("declares the whole repository for every target when the inputs do not fit in one PACKAGE.ts", () => {
+  it("declares the whole repository for every target when the inputs do not fit in the one file", () => {
     const inputs = Array.from({ length: 4000 }, (_, index) => `packages/${"p".repeat(200)}-${index}/**`)
     const steps = Array.from(
       { length: 3 },
@@ -837,7 +845,7 @@ describe("a step that says what it writes", () => {
     expect(declaration(source, "test-1")).not.toContain("outDirs")
   })
 
-  it("declares no inputs or outputs on a setup target when the inputs do not fit in one PACKAGE.ts", () => {
+  it("declares no inputs or outputs on a setup target when the inputs do not fit in the one file", () => {
     const inputs = Array.from({ length: 4000 }, (_, index) => `packages/${"p".repeat(300)}-${index}/**`)
     const source = content(
       generate(inventory([job("a", [
@@ -854,7 +862,7 @@ describe("a step that says what it writes", () => {
 })
 
 describe("the size limit", () => {
-  it("refuses targets too large for one PACKAGE.ts", () => {
+  it("refuses targets too large for the one file", () => {
     const failure = failureOf(inventory([job("a", [step("a:1", `echo ${"x".repeat(1024 * 1024)}`)])]))
     expect(failure).toMatchObject({ code: "unsupported", part: "generate" })
     expect(failure.message).toContain("1048576 bytes")
@@ -1011,7 +1019,7 @@ describe("the workspace and workflow", () => {
       })),
       workflowPath
     )
-    expect(workflow).toContain("on:\n  push:\npermissions:")
+    expect(workflow).toContain("on:\n  push:\n# prettier-ignore\npermissions:")
     expect(workflow).toContain(`os: ["ubuntu-24.04"]`)
     expect(workflow).toContain(`mlugg/setup-zig@v2\n        with:\n          version: "0.14.0"`)
     expect(workflow.indexOf("oven-sh/setup-bun@v2")).toBeLessThan(workflow.indexOf("mlugg/setup-zig@v2"))
@@ -1106,7 +1114,7 @@ describe("the workspace and workflow", () => {
     expect(open).toContain("      - name: Install the tracer\n        if: runner.os == 'Linux'\n")
     expect(open).toContain("apt-get install -y -qq --no-install-recommends strace")
     expect(open.indexOf("strace\n")).toBeLessThan(open.indexOf("smthrs ci"))
-    // Inputs too large for one PACKAGE.ts: every target runs in the open, so the step is left out.
+    // Inputs too large for the one file: every target runs in the open, so the step is left out.
     const inputs = Array.from({ length: 4000 }, (_, index) => `packages/${"p".repeat(300)}-${index}/**`)
     const large = generate(inventory([job("a", [step("a:1", "x", { inputs, from: "a:1" })])]))
     expect(content(large, packagePath)).not.toContain("sandbox: {")
@@ -1151,7 +1159,7 @@ describe("tool versions", () => {
     ])
     const workflow = content(generated, workflowPath)
     expect(workflow).toContain("          node-version: ${{ matrix.version-node }}\n")
-    expect(workflow).toContain(`$(awk -v leg='\${{ matrix.leg }}' '$1 == leg { print $2 }' ${legsPath}) --jobs 1`)
+    expect(workflow).toContain(`$(sed -n 's/^\${{ matrix.leg }} //p' ${legsPath}) --jobs 1`)
     expect(workflow).not.toContain("'//...'")
     // Each machine restores only results made under its own versions.
     expect(workflow).toContain("key: smithers-ci-${{ matrix.os }}-${{ matrix.leg }}-${{ github.sha }}")

@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import { existsSync } from "node:fs"
 import { basename } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { layer } from "../../src/cli/Host.vibe"
@@ -7,7 +8,7 @@ import { main } from "../../src/cli/main.vibe"
 import { parts as onMain } from "../../src/cli/parts.ts"
 import { exitCodes, failureExitCodes, flags } from "../../src/contract/Command.ts"
 import { changesMachine, ci as ciOf, Inventory } from "../../src/contract/Inventory.ts"
-import type { Failure, GeneratedFile } from "../../src/contract/Parts.ts"
+import { type Failure, type GeneratedFile, writtenFiles } from "../../src/contract/Parts.ts"
 import { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import * as TargetMap from "../../src/contract/TargetMap.ts"
 import { fullDisk, generated, inProcess } from "./inProcess.vibe"
@@ -153,7 +154,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
   describe.concurrent("the default command", () => {
     it("prints the report and leaves the repository byte-identical", async () => {
       const root = repo()
-      const files = await generated(root, parts, environment)
+      const files = writtenFiles(await generated(root, parts, environment))
       const before = snapshot(root)
       const outcome = await exec([], root)
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
@@ -282,7 +283,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
   describe.concurrent("apply", () => {
     it("writes exactly the generated files", async () => {
       const root = repo()
-      const files = await generated(root, parts, environment, "https://cache.example.invalid")
+      const files = writtenFiles(await generated(root, parts, environment, "https://cache.example.invalid"))
       expect(files.find((file) => file.path.endsWith("smithers-ci.yml"))?.content).toContain("cache.example.invalid")
       const before = snapshot(root)
       const outcome = await exec(["apply", "--cache", "https://cache.example.invalid"], root)
@@ -320,7 +321,7 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     const inventory = await spawn(bin, ["inventory", "--json"], root)
     expect(inventory.code, inventory.stderr).toBe(exitCodes.ok)
     expect(decode(Inventory, inventory.stdout).jobs).toHaveLength(3)
-    const files = await generated(root, onMain, environment)
+    const files = writtenFiles(await generated(root, onMain, environment))
     const before = snapshot(root)
     const apply = await spawn(bin, ["apply"], root)
     expect(apply.code, apply.stderr).toBe(exitCodes.ok)
@@ -374,14 +375,18 @@ describe.concurrent("smithers-ci on a workspace", () => {
     const root = keep(workspace())
     const outcome = await runIn(["apply"], root, parts)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
-    const map = decode(TargetMap.TargetMap, read(`${root}/${TargetMap.path}`))
+    // The target map is the program's own document: it is among the generated files and not in the repository.
+    const mapFile = (await generated(root, parts, environment)).find((file) => file.path === TargetMap.path)
+    expect(mapFile?.written).toBe(false)
+    expect(existsSync(`${root}/${TargetMap.path}`)).toBe(false)
+    const map = decode(TargetMap.TargetMap, mapFile?.content as string)
     // One step of the workflow became two targets, and the map names the step for both.
     expect(map.targets.map((target) => [target.label, target.step])).toEqual([
       ["//:ci.yml-test-1-a", "ci.yml:test:1"],
       ["//:ci.yml-test-1-b", "ci.yml:test:1"]
     ])
     expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:1", {})).toHaveLength(2)
-    const targets = read(`${root}/PACKAGE.ts`)
+    const targets = read(`${root}/.smithers/WORKSPACE.smithers`)
     // Package a's target reads a; package b depends on a, so its target reads both and runs both. Each is run as
     // a runner runs a step, so its command is the one word the step's runner text is given.
     expect(targets).toContain(`__smithers_ci_step '\\\\''npm run test --workspace=a --if-present'\\\\'''",`)

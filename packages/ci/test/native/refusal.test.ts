@@ -117,7 +117,7 @@ describe("smithers-ci on a repository it converted", { timeout: 300_000 }, () =>
   it("is not refused: the workspace it generated is its own to write again", async () => {
     const root = keep(repository(ciFiles))
     expect((await run(["apply"], root)).code).toBe(exitCodes.ok)
-    for (const file of [".smithers/WORKSPACE.ts", "PACKAGE.ts"]) {
+    for (const file of [".smithers/WORKSPACE.smithers"]) {
       expect(read(`${root}/${file}`).startsWith(generatedMark), file).toBe(true)
     }
     const inventory = Schema.decodeUnknownSync(Inventory)(JSON.parse((await run(["inventory", "--json"], root)).stdout))
@@ -131,7 +131,8 @@ describe("smithers-ci on a repository with a build file it did not write", { tim
   it("never writes a generated file over it, in the repository or in a replay's copy", async () => {
     const root = keep(repository({ ...ciFiles, "PACKAGE.ts": ownPackage }))
     const before = snapshot(root)
-    const kept = "PACKAGE.ts was not written by smithers-ci and would be replaced\n"
+    const kept =
+      "PACKAGE.ts was not written by smithers-ci and Smithers build would read it beside the generated files\n"
     for (const args of [["apply"], ["--commits", "1"]]) {
       expect(await run(args, root)).toEqual({
         code: exitCodes.unsupported,

@@ -13,17 +13,18 @@ import { CliConfig, CliError, CliOutput, Command, Flag, GlobalFlag } from "effec
 import { check } from "../apply/index.ts"
 import * as Surface from "../contract/Command.ts"
 import { changesMachine, ci, Inventory, notReplayed, ownWorkspace, refusal } from "../contract/Inventory.ts"
-import type {
-  BuildRows,
-  Decompose,
-  Failure,
-  GeneratedFile,
-  GenerateFiles,
-  ReadInventory,
-  RenderReport,
-  ReplayRequest,
-  RunReplay,
-  ScoreRows
+import {
+  type BuildRows,
+  type Decompose,
+  type Failure,
+  type GeneratedFile,
+  type GenerateFiles,
+  type ReadInventory,
+  type RenderReport,
+  type ReplayRequest,
+  type RunReplay,
+  type ScoreRows,
+  writtenFiles
 } from "../contract/Parts.ts"
 import { ReplayReport } from "../contract/ReplayReport.ts"
 import type { Mode } from "../contract/RunRecord.ts"
@@ -251,6 +252,14 @@ effect function write(path: string, content: string) {
   }
 }
 
+/** Removes one file an earlier smithers-ci wrote. A host error becomes a `cli` failure. */
+effect function remove(path: string) {
+  const fs = try FileSystem.FileSystem
+  fs.remove(path) catch effect (error) => {
+    throw failed(`could not remove ${path}: ${error.message}`)
+  }
+}
+
 /** The feature the inventory records when the working tree differs from the commit it names. */
 const uncommitted = "uncommitted-changes"
 
@@ -278,8 +287,9 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
       const why = Native.refusal(inventory) ?? refusal(inventory)
       if (why !== undefined) throw { code: "unsupported", message: why, part: "inventory" } satisfies Failure
       const split = try parts.decompose(root, ci(inventory))
-      const files = try checkPaths(try parts.files(split, { cache: Option.getOrUndefined(cache) }))
-      return { files, ignores: try check(root, files) }
+      const all = try checkPaths(try parts.files(split, { cache: Option.getOrUndefined(cache) }))
+      // The target map is the program's own document: it is not written into the repository.
+      return { files: writtenFiles(all), ignores: try check(root, all) }
     }
 
   /**
@@ -335,6 +345,11 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     for (const file of files) {
       try write(paths.join(root, file.path), file.content)
       try Console.log(`wrote ${file.path}`)
+    }
+    // What an earlier smithers-ci wrote where the repository's own tools read it: its content is in the files above.
+    for (const former of ignores.former) {
+      try remove(paths.join(root, former))
+      try Console.log(`removed ${former}`)
     }
     if (ignores.added.length > 0) {
       try write(paths.join(root, ".gitignore"), ignores.text)

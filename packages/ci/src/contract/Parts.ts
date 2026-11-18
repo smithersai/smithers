@@ -58,7 +58,11 @@ export type Failure = typeof Failure.Type
 export type ReadInventory<R = never> = (root: string) => Effect.Effect<Inventory, Failure, R>
 
 /**
- * One file to write, by path relative to the repository root.
+ * One generated file, by path relative to the repository root. `written` is
+ * `false` for a document the program reads from this list and no run of the
+ * generated CI needs, such as the target map: `apply` and a replay write
+ * every file but those, so the repository holds nothing a tool of its own
+ * would read and nothing the CI does not use.
  *
  * @category models
  * @since 0.1.0
@@ -66,7 +70,19 @@ export type ReadInventory<R = never> = (root: string) => Effect.Effect<Inventory
 export interface GeneratedFile {
   readonly path: string
   readonly content: string
+  readonly written?: false | undefined
 }
+
+/**
+ * The generated files that are written into a repository: every file but
+ * those marked `written: false`.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const writtenFiles = (files: ReadonlyArray<GeneratedFile>): ReadonlyArray<GeneratedFile> =>
+  files.filter((file) => file.written !== false)
 
 /**
  * Choices the generated files carry. `cache` is the URL of the shared cache

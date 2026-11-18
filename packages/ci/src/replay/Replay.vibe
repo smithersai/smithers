@@ -18,7 +18,14 @@ import {
   shell,
   stepTimeoutHours
 } from "../contract/Inventory.ts"
-import type { Failure, GeneratedFile, ReplayParts, ReplayRequest, ScoreRows } from "../contract/Parts.ts"
+import {
+  type Failure,
+  type GeneratedFile,
+  type ReplayParts,
+  type ReplayRequest,
+  type ScoreRows,
+  writtenFiles
+} from "../contract/Parts.ts"
 import type { NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { type Mode, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
@@ -37,6 +44,7 @@ import {
   cycleIn,
   excludeLines,
   failure,
+  failureTexts,
   firstAttempt,
   flakyOf,
   isBlocked,
@@ -52,6 +60,7 @@ import {
   recovered,
   replayable,
   reportOf,
+  seenIn,
   selectionOf,
   splitOf,
   type Station,
@@ -149,7 +158,12 @@ interface Measured {
 /** What one commit's own CI gives the replay: the files to write, the units to run, and what is left out. */
 interface Prepared {
   readonly inventory: Inventory
+  /** The generated files a copy holds: those that are written. */
   readonly generated: ReadonlyArray<GeneratedFile>
+  /** Files an earlier smithers-ci wrote, which this commit holds where Smithers build would read them too. */
+  readonly former: ReadonlyArray<string>
+  /** The text of `.gitignore` as `apply` leaves it, when `apply` adds the cache directory to it. */
+  readonly ignore: string | undefined
   readonly units: ReadonlyArray<Unit>
   /** Every target of the units, each once. */
   readonly labels: ReadonlyArray<string>
@@ -446,7 +460,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       // A target passes on what tells git to refuse a push, as the baseline's step is told.
       const generated = try parts.files(split, { cache: request.cache, inheritEnv: Object.keys(pushRefusal) })
       // A commit can hold a link, or a file its owner wrote, where a generated file goes: nothing is written then.
-      check(normalCopy, generated) catch effect (cause) => {
+      const checked = check(normalCopy, generated) catch effect (cause) => {
         throw failure("unsupported", cause.message)
       }
       const mapFile = generated.find((file) => file.path === targetMapPath)
@@ -462,13 +476,24 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       if (cycle !== undefined) throw failure("invalid-document", `job ${cycle} needs itself`)
       return {
         inventory,
-        generated,
+        generated: writtenFiles(generated),
+        former: checked.former,
+        ignore: checked.added.length === 0 ? undefined : checked.text,
         units: replayed.units,
         labels,
         splits: splitOf(replayed.units),
         left: [...notReplayed(inventory), ...replayed.left],
         jobs: jobsFor(request.jobs, targetMap.maxJobs)
       }
+    }
+
+    // The copies whose `.gitignore` holds what `apply` adds, which git is told to leave out of what changed.
+    const ignoring = new Set<string>()
+
+    /** Checks `commit` out in a copy that generated targets ran in: its `.gitignore` is the commit's again. */
+    effect function checkoutCopy(copy: string, commit: string, held: Confined) {
+      if (ignoring.delete(copy)) try git(copy, ["update-index", "--no-skip-worktree", "--", ".gitignore"], held)
+      try checkout(copy, commit, held)
     }
 
     // The newest commit's CI must be replayable: it is what the repository runs today.
@@ -481,6 +506,22 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const target = path.resolve(copy, file.path)
         try orFail(fs.makeDirectory(path.dirname(target), { recursive: true }), `could not write ${file.path}`)
         try orFail(fs.writeFileString(target, file.content), `could not write ${file.path}`)
+      }
+      // A commit made after an earlier `apply` holds that layout's files; `apply` removes them as it writes these.
+      for (const former of own.former) {
+        try orFail(fs.remove(path.resolve(copy, former)), `could not remove ${former}`)
+      }
+      // `apply` adds the cache directory to `.gitignore`, which the repository's own tools read to know what is not
+      // theirs: without the line a formatter run over the root reads the cache. The line is committed with `apply`,
+      // so git is told that the file does not differ from the commit.
+      if (own.ignore !== undefined) {
+        try orFail(fs.writeFileString(path.join(copy, ".gitignore"), own.ignore), "could not write .gitignore")
+        // A commit with no `.gitignore` has none to hide: the new file is listed below with the generated ones.
+        const tracked = try git(copy, ["ls-files", "--", ".gitignore"], place)
+        if (tracked !== "") {
+          try git(copy, ["update-index", "--skip-worktree", "--", ".gitignore"], place)
+          ignoring.add(copy)
+        }
       }
       try options.prepare(copy)
       // Everything untracked now is the replay's own: the generated files, the cache, what `prepare` linked. Listed in
@@ -514,7 +555,12 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return planOfPrinted(printed)
     }
 
-    const smithers = (copy: string, own: Prepared): Execute<Host> => (targets) => effect {
+    /**
+     * Runs targets in a copy. `causes` gains, by label, why a target failed over a file this replay wrote into the
+     * copy: the generated files, and what fills the cache directory.
+     */
+    const smithers = (copy: string, own: Prepared, causes: Map<string, string>): Execute<Host> => (targets) => effect {
+      const written = [...own.generated.map((file) => file.path), `${cacheDirectory}/`]
       const selected = targets ?? own.labels
       if (selected.length === 0) return []
       runs += 1
@@ -541,7 +587,15 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const record = Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text) catch effect () => {
         throw unreadable()
       }
-      return withReasons(record.results, output.text)
+      const results = withReasons(record.results, output.text)
+      // What a failed target printed may name a file this replay wrote into the copy: a tool of the repository read
+      // it as one of its own. A mismatch of that target then says so.
+      const said = failureTexts(output.text)
+      for (const result of results) {
+        const cause = result.status === "failed" ? seenIn(said.get(result.label), written) : undefined
+        if (cause !== undefined) causes.set(result.label, cause)
+      }
+      return results
     }
 
     const stepLimit = options.stepTimeout ?? Duration.hours(stepTimeoutHours)
@@ -632,7 +686,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * because none of it runs here, is not a failed replay: the reason is kept and the commit is listed.
      */
     effect function preparedAt(commit: string) {
-      try checkout(normalCopy, commit, place)
+      try checkoutCopy(normalCopy, commit, place)
       return prepared() catch effect (cause) => {
         if (cause.code !== "unsupported" && cause.code !== "invalid-document") throw cause
         return { reason: cause.message }
@@ -648,6 +702,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         continue
       }
       const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
+      // A step that fails only beside the files written into the copy, and names one, is explained in the report.
+      const normalCauses = new Map<string, string>()
+      const fastCauses = new Map<string, string>()
       try progress.say(`${at} baseline`)
       const base = try measure(Effect.void, Effect.void, baseline(commit, own), undefined, options.reruns)
       const baseRecord = recordOf(base.results, commit, base.wallMs)
@@ -655,9 +712,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const names = stepNames(own.units)
       try progress.say(`${at} normal`)
       const normal = try measure(
-        checkout(normalCopy, commit, place),
+        checkoutCopy(normalCopy, commit, place),
         equip(normalCopy, own),
-        smithers(normalCopy, own),
+        smithers(normalCopy, own, normalCauses),
         undefined,
         options.reruns
       )
@@ -676,9 +733,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           const labels = normal.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
           try progress.say(`${at} fast`)
           const fast = try measure(
-            checkout(fastCopy, commit, place),
+            checkoutCopy(fastCopy, commit, place),
             equip(fastCopy, own),
-            smithers(fastCopy, own),
+            smithers(fastCopy, own, fastCauses),
             labels,
             options.reruns
           )
@@ -686,7 +743,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           const merged = normal.results.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
           const fastRecord = recordOf(merged, commit, fast.wallMs, "fast" satisfies Mode)
           fastPart = { fast: totalsOf(fastRecord, names) }
-          fastMismatches = mismatchesOf("fast", baseRecord, fastRecord, own.splits)
+          fastMismatches = mismatchesOf("fast", baseRecord, fastRecord, own.splits, fastCauses)
           fastFlaky += flakyOf([fastRecord])
           allRows.push(...rows)
           selected.set(commit, choice.selected)
@@ -697,7 +754,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         changedFiles: changed.length,
         baseline: totalsOf(baseRecord, names),
         normal: totalsOf(normalRecord, names),
-        mismatches: [...mismatchesOf("normal", baseRecord, normalRecord, own.splits), ...fastMismatches],
+        mismatches: [...mismatchesOf("normal", baseRecord, normalRecord, own.splits, normalCauses), ...fastMismatches],
         ...fastPart
       })
     }

@@ -1,0 +1,55 @@
+/**
+ * What an earlier `smithers-ci` wrote where the generated files no longer
+ * go, and what Smithers build reads beside the generated files.
+ *
+ * The generated workspace declares the repository's root package. Smithers
+ * build also reads a root `PACKAGE.ts` or `PACKAGE.vibe` as that package and
+ * `.smithers/WORKSPACE.ts` as the workspace, and refuses a repository that
+ * declares either twice.
+ *
+ * @since 0.1.0
+ */
+
+import { path as targetMapPath } from "../contract/TargetMap.ts"
+
+/**
+ * Where an earlier `smithers-ci` wrote its files: the targets and the
+ * workspace as TypeScript, which the repository's own type check, lint and
+ * format read as theirs; the target map as JSON and the notes as Markdown,
+ * which its formatter read. One of them that `smithers-ci` wrote is removed
+ * when the files are written again: its content is in the files written now.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const formerPaths: ReadonlyArray<string> = [
+  "PACKAGE.ts",
+  ".smithers/WORKSPACE.ts",
+  targetMapPath,
+  ".smithers/ci/NOT-REPRODUCED.md"
+]
+
+/**
+ * The paths Smithers build reads beside the generated workspace. A file the
+ * repository's owner wrote at one of them stops the write.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const besidePaths: ReadonlyArray<string> = ["PACKAGE.ts", ".smithers/WORKSPACE.ts", "PACKAGE.vibe"]
+
+/**
+ * Why generated files cannot be written: `paths` are build files the
+ * repository's owner wrote, which Smithers build would read as a second
+ * declaration of what the generated workspace declares.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const besideRefusal = (paths: ReadonlyArray<string>): string =>
+  `${paths.join(", ")} ${
+    paths.length === 1 ? "was" : "were"
+  } not written by smithers-ci and Smithers build would read ${
+    paths.length === 1 ? "it" : "them"
+  } beside the generated files`

@@ -1,20 +1,24 @@
 /**
  * What is checked before generated files are written into a directory: by
  * `apply` into the repository, and by a replay into its copy. Also what
- * `apply` adds to `.gitignore`.
+ * `apply` adds to `.gitignore`, and which files of an earlier `smithers-ci`
+ * are removed.
  *
  * Every generated path is checked before any is written, so a refusal leaves
  * the directory as it was. A path is refused when its real location is
  * outside the directory (a link in the path), when a file is where a
  * directory must go or a directory where the file must go, and when the file
- * there is one `smithers-ci` did not write.
+ * there is one `smithers-ci` did not write. A build file of the repository's
+ * own that Smithers build would read beside the generated ones is refused
+ * the same way.
  *
  * @since 0.1.0
  */
 
 import { applyIgnores } from "../contract/Command.ts"
-import type { Failure, GeneratedFile } from "../contract/Parts.ts"
+import { type Failure, type GeneratedFile, writtenFiles } from "../contract/Parts.ts"
 import { overwriteRefusal, wrote } from "../native/Workspace.ts"
+import { besidePaths, besideRefusal, formerPaths } from "./Former.ts"
 
 const ignoreFile = ".gitignore"
 
@@ -28,6 +32,19 @@ const ignoreFile = ".gitignore"
 export interface Ignores {
   readonly added: ReadonlyArray<string>
   readonly text: string
+}
+
+/**
+ * What a check of the generated paths gives: what `.gitignore` gains, which
+ * only `apply` writes, and `former`, the files an earlier `smithers-ci` wrote
+ * where the generated files no longer go. Whoever writes the generated files
+ * removes those.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Checked extends Ignores {
+  readonly former: ReadonlyArray<string>
 }
 
 /** What is at a path `apply` would write: nothing, a file, or something that stops the write. */
@@ -104,10 +121,11 @@ effect function textOf(path: string) {
 }
 
 /**
- * Checks every path of `files` in the repository, or the copy of one, at
- * `root`, and writes nothing. It fails `unsupported` with one refusal that
+ * Checks every path of `files` that is written, in the repository or the
+ * copy of one at `root`, and writes nothing. It fails `unsupported` with one refusal that
  * names every path that cannot be written; otherwise it gives what
- * `.gitignore` gains, which only `apply` writes.
+ * `.gitignore` gains, which only `apply` writes, and the files of an earlier
+ * `smithers-ci` to remove.
  *
  * @category accessors
  * @since 0.1.0
@@ -118,7 +136,8 @@ export effect function check(root: string, files: ReadonlyArray<GeneratedFile>) 
   const realRoot = fs.realPath(root) catch () => root
   const problems: Array<string> = []
   const kept: Array<string> = []
-  for (const file of files) {
+  const placed = writtenFiles(files)
+  for (const file of placed) {
     const place = try placeOf(root, realRoot, file.path)
     if (place._tag === "Refused") problems.push(place.why)
     if (place._tag !== "Present") continue
@@ -127,6 +146,26 @@ export effect function check(root: string, files: ReadonlyArray<GeneratedFile>) 
     if (text === undefined || !wrote(file.path, text)) kept.push(file.path)
   }
   if (kept.length > 0) problems.push(overwriteRefusal(kept))
+  // What an earlier smithers-ci left where the files no longer go is removed. What Smithers build would read
+  // beside the generated files, and the owner wrote, stops the write.
+  const written = new Set(placed.map((file) => file.path))
+  const former: Array<string> = []
+  const beside: Array<string> = []
+  for (const path of new Set([...formerPaths, ...besidePaths])) {
+    if (written.has(path)) continue
+    const read = besidePaths.includes(path)
+    const place = try placeOf(root, realRoot, path)
+    // A link or a directory where Smithers build reads is refused as it is for a generated path. A parent that is
+    // in the way is already refused for the generated file that goes under it.
+    if (read && place._tag === "Refused" && !problems.includes(place.why) && !place.why.endsWith("cannot be written")) {
+      problems.push(place.why)
+    }
+    if (place._tag !== "Present") continue
+    const text = try textOf(paths.join(root, path))
+    if (text !== undefined && formerPaths.includes(path) && wrote(path, text)) former.push(path)
+    else if (read) beside.push(path)
+  }
+  if (beside.length > 0) problems.push(besideRefusal(beside))
   const place = try placeOf(root, realRoot, ignoreFile)
   let ignore = ""
   if (place._tag === "Refused") problems.push(place.why)
@@ -136,5 +175,5 @@ export effect function check(root: string, files: ReadonlyArray<GeneratedFile>) 
     else ignore = text
   }
   if (problems.length > 0) throw refuse(problems)
-  return ignoresFor(ignore)
+  return { ...ignoresFor(ignore), former } satisfies Checked
 }

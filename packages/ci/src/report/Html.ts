@@ -150,7 +150,9 @@ const time = (totals: RunTotals | undefined): string =>
 const mismatchItem = (mismatch: Mismatch): string =>
   `<li><code>${
     escape(mismatch.label)
-  }</code> <span class="sub">${mismatch.mode}: ${mismatch.baseline} → ${mismatch.got}</span></li>`
+  }</code> <span class="sub">${mismatch.mode}: ${mismatch.baseline} → ${mismatch.got}</span>${
+    mismatch.cause === undefined ? "" : `<br>${escape(mismatch.cause)}`
+  }</li>`
 
 const failureItem = ({ failure, ways }: FailedStep): string =>
   `<li><code>${escape(failure.step)}</code> <span class="sub">${ways.join(", ")}: ${

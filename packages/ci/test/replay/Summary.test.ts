@@ -8,6 +8,7 @@ import {
   choose,
   cycleIn,
   excludeLines,
+  failureTexts,
   firstAttempt,
   flakyOf,
   isBlocked,
@@ -22,6 +23,7 @@ import {
   recovered,
   replayable,
   reportOf,
+  seenIn,
   selectionOf,
   splitOf,
   stationsOf,
@@ -468,7 +470,149 @@ describe("withoutCredentials", () => {
   })
 })
 
+describe("failureTexts", () => {
+  it("gives each failed target the lines Smithers build printed under it", () => {
+    const output = [
+      "//:a  ran  12ms",
+      "//:b  failed  375ms  command failed (exit 2): /bin/sh -c tsc -p .",
+      "PACKAGE.ts(3,31): error TS2307: Cannot find module",
+      "more",
+      "//:c  failed  3ms  command failed (exit 1): sh -c y",
+      "//:d  hit  1ms",
+      "printed by nothing that failed",
+      "//packages/a:e  failed  9ms  command failed (exit 1): sh -c z",
+      "last words",
+      // A tool target's failure holds the tool's output on the line itself.
+      `//:f  failed  2ms  ${JSON.stringify({ _tag: "ExecError", argv: ["x"], stdout: "said\n", stderr: "" })}`,
+      `//:g  failed  2ms  ${JSON.stringify({ stderr: "wrong\n" })}`,
+      "//:h  failed  2ms  {not a document",
+      "//:i  failed",
+      "code: targets_failed",
+      "message: 7 of 9 targets failed"
+    ].join("\n")
+    expect([...failureTexts(output)]).toEqual([
+      ["//:b", "PACKAGE.ts(3,31): error TS2307: Cannot find module\nmore"],
+      ["//:c", ""],
+      ["//packages/a:e", "last words"],
+      ["//:f", "said"],
+      ["//:g", "wrong"],
+      ["//:h", ""],
+      ["//:i", ""]
+    ])
+    expect([...failureTexts("")]).toEqual([])
+  })
+})
+
+describe("seenIn", () => {
+  const plain = ".smithers/WORKSPACE.smithers"
+  const workflow = ".github/workflows/smithers-ci.yml"
+  const legs = ".smithers/ci/legs.txt"
+  const written = [workflow, plain, legs]
+
+  it("names the tool that read a file Smithers CI wrote, the file, and what to add to its ignore list", () => {
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      [
+        `${plain}(3,31): error TS2307: Cannot find module '@smthrs/targets'`,
+        `tsc read ${plain}, which Smithers CI wrote. Add .smithers to "exclude" in the tsconfig.json it reads.`
+      ],
+      [
+        `/tmp/r/${plain}\n  0:0  error  Parsing error: "parserOptions.project" has been provided\n\n✖ 1 problem (1 error, 0 warnings)`,
+        `ESLint read ${plain}, which Smithers CI wrote. Add .smithers to "ignores" in eslint.config.js, or to .eslintignore.`
+      ],
+      [
+        `Checking formatting...\n[warn] ${workflow}\n[warn] Code style issues found in the above file.`,
+        `Prettier read ${workflow}, which Smithers CI wrote. Add ${workflow} to .prettierignore.`
+      ],
+      [
+        `${workflow} format ━━━━━━━━━━━━━━\n  × Formatter would have printed the following content:`,
+        `Biome read ${workflow}, which Smithers CI wrote. Add "!${workflow}" to "files.includes" in biome.json.`
+      ],
+      [
+        `from /r/${legs}:\nFound 1 not formatted file.`,
+        `dprint read ${legs}, which Smithers CI wrote. Add .smithers to "excludes" in dprint.json.`
+      ],
+      [
+        `${plain}:2:19 - Unknown word (smthrs)`,
+        `cspell read ${plain}, which Smithers CI wrote. Add .smithers to "ignorePaths" in the cspell configuration.`
+      ],
+      [
+        `Unlisted binaries (1)\nawk  ${workflow}`,
+        `knip read ${workflow}, which Smithers CI wrote. Add ${workflow} to "ignore" in the knip configuration.`
+      ],
+      [
+        `Failed to collect coverage from /r/${plain}`,
+        `Jest read ${plain}, which Smithers CI wrote. Add .smithers to "coveragePathIgnorePatterns" and "testPathIgnorePatterns" in the Jest configuration.`
+      ],
+      [
+        ` FAIL  ${plain} [ vitest ]`,
+        `Vitest read ${plain}, which Smithers CI wrote. Add .smithers to "exclude" in the Vitest configuration.`
+      ],
+      [
+        `mocha: cannot load ${plain}`,
+        `Mocha read ${plain}, which Smithers CI wrote. Add .smithers to "ignore" in .mocharc.`
+      ],
+      [
+        `npm notice 1.2kB ${legs}`,
+        `npm read ${legs}, which Smithers CI wrote. Add .smithers to .npmignore.`
+      ],
+      [
+        `licence check: no header in ${legs}`,
+        `A tool of this repository read ${legs}, which Smithers CI wrote. Add .smithers to that tool's ignore list.`
+      ]
+    ]
+    for (const [error, line] of cases) expect(seenIn(error, written), error).toBe(line)
+  })
+
+  it("names a file under a directory Smithers CI fills, and the directory to leave alone", () => {
+    const filled = [...written, ".flows/"]
+    expect(seenIn("./.flows/cache/ab/k.json format ━━━━━━━━", filled)).toBe(
+      `Biome read .flows/cache/ab/k.json, which Smithers CI wrote. Add "!.flows" to "files.includes" in biome.json.`
+    )
+    expect(seenIn("[warn] .flows/cache/ab/k.json\n[warn] Code style issues found in the above file.", filled)).toBe(
+      "Prettier read .flows/cache/ab/k.json, which Smithers CI wrote. Add .flows to .prettierignore."
+    )
+    // The directory's name inside another name, or alone, is not a file under it.
+    expect(seenIn("src/x.flows/a.ts(1,1): error TS1: x", filled)).toBeUndefined()
+    expect(seenIn("no .flows/ here", filled)).toBeUndefined()
+  })
+
+  it("says nothing for a failure that names no file Smithers CI wrote", () => {
+    expect(seenIn(undefined, written)).toBeUndefined()
+    expect(seenIn("src/index.ts(1,1): error TS2322: wrong type", written)).toBeUndefined()
+    expect(seenIn(`${plain}: error TS1`, [])).toBeUndefined()
+  })
+})
+
 describe("mismatchesOf", () => {
+  it("says why a step failed only beside the files Smithers CI wrote", () => {
+    const plain = ".smithers/WORKSPACE.smithers"
+    const cause = seenIn(`${plain}:2:19 - Unknown word (smthrs)`, [plain]) as string
+    expect(cause).toBe(
+      `cspell read ${plain}, which Smithers CI wrote. Add .smithers to "ignorePaths" in the cspell configuration.`
+    )
+    const one = new Map([["a", cause]])
+    // It is still a mismatch.
+    expect(mismatchesOf("normal", record([ran("a")]), record([failed("a")]), new Map(), one)).toEqual([
+      { label: "a", mode: "normal", baseline: "pass", got: "fail", cause }
+    ])
+    // A split step: the target that failed says so.
+    const split = new Map([["s", ["a-1", "a-2"]]])
+    const second = new Map([["a-2", cause]])
+    expect(mismatchesOf("fast", record([ran("s")]), record([ran("a-1"), failed("a-2")]), split, second)).toEqual([
+      { label: "s", mode: "fast", baseline: "pass", got: "fail", cause }
+    ])
+    // No line for a target whose output named no such file, and none when the step did not fail in the mode.
+    expect(mismatchesOf("normal", record([ran("a")]), record([failed("a")]), new Map(), second)).toEqual([
+      { label: "a", mode: "normal", baseline: "pass", got: "fail" }
+    ])
+    expect(mismatchesOf("normal", record([ran("a")]), record([failed("a")]))).toEqual([
+      { label: "a", mode: "normal", baseline: "pass", got: "fail" }
+    ])
+    expect(mismatchesOf("normal", record([failed("a")]), record([ran("a")]), new Map(), one)).toEqual([
+      { label: "a", mode: "normal", baseline: "fail", got: "pass" }
+    ])
+  })
+
   it("reports a differing verdict", () => {
     expect(mismatchesOf("normal", record([failed("a")]), record([ran("a")]))).toEqual([
       { label: "a", mode: "normal", baseline: "fail", got: "pass" }

@@ -5,4 +5,5 @@
  * @since 0.1.0
  */
 
-export { check, type Ignores, ignoresFor } from "./Check.vibe"
+export { check, type Checked, type Ignores, ignoresFor } from "./Check.vibe"
+export { besidePaths, besideRefusal, formerPaths } from "./Former.ts"

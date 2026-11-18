@@ -159,14 +159,16 @@ export const text: RenderReport = (report) => {
     ])
   }
   if (listed.length > 0) {
-    sections.push(listed.map((mismatch) =>
+    // A mismatch over a file Smithers CI wrote says so on its own line, under the mismatch.
+    sections.push(listed.flatMap((mismatch) => [
       [
         clean(shortCommit(mismatch.commit.commit)),
         mismatch.mode.padEnd(6),
         clean(mismatch.label),
         `${mismatch.baseline} → ${mismatch.got}`
-      ].join("  ")
-    ))
+      ].join("  "),
+      ...(mismatch.cause === undefined ? [] : [`  ${clean(firstLine(mismatch.cause))}`])
+    ]))
   }
   if (left.length > 0) {
     const jobWidth = Math.max(...left.map((entry) => clean(entry.job).length))

@@ -4,11 +4,10 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { path as targetMapPath } from "../src/contract/TargetMap.ts"
-import { packagePath, workflowPath, workspacePath } from "../src/generate/Render.ts"
+import { workflowPath, workspacePath } from "../src/generate/Render.ts"
 
 const program = fileURLToPath(new URL("../bin/smithers-ci.mjs", import.meta.url))
-const generated = [workflowPath, workspacePath, packagePath, targetMapPath]
+const generated = [workflowPath, workspacePath]
 
 const run = (cwd: string, command: string, args: ReadonlyArray<string>) => {
   const result = spawnSync(command, args, { cwd, encoding: "utf8" })
@@ -41,7 +40,7 @@ describe("the real program, with a file where its directory goes", () => {
       }
       const outcome = run(root, process.execPath, [program, "apply"])
       expect(outcome.status, outcome.output).toBe(3)
-      expect(outcome.output).toContain(".smithers is not a directory, so .smithers/WORKSPACE.ts cannot be written")
+      expect(outcome.output).toContain(`.smithers is not a directory, so ${workspacePath} cannot be written`)
       expect(outcome.output).not.toContain("already builds with Smithers build")
       expect(run(root, "git", ["status", "--porcelain"]).output).toBe("")
     } finally {

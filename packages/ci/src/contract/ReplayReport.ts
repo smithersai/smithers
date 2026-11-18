@@ -70,6 +70,12 @@ export type RunTotals = typeof RunTotals.Type
  * mismatch; a skip of one that passed is not. A step that was split is a
  * mismatch when the mode never reported one of its targets.
  *
+ * `cause` is present when the step passed in the baseline, failed in the
+ * mode, and its output names a file Smithers CI wrote: a tool of the
+ * repository read that file as one of its own. It is one line that names the
+ * tool, the file, and what to add to the tool's ignore list. The mismatch
+ * still counts.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -77,7 +83,8 @@ export const Mismatch = Schema.Struct({
   label: Schema.NonEmptyString,
   mode: Mode,
   baseline: Verdict,
-  got: Verdict
+  got: Verdict,
+  cause: Schema.optionalKey(Schema.NonEmptyString)
 })
 
 /**

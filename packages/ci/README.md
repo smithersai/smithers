@@ -40,6 +40,19 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-18, thirteenth round** (optional additions by the generated-files lane, so a repository's own tools never read
+a generated file as one of theirs):
+
+- `GeneratedFile.written` (optional) and `Parts.writtenFiles(files)`: `written: false` marks a document the program
+  reads from the generated list and no run of the generated CI needs. The target map is one. `apply` and a replay
+  write every file but those, so `.smithers/ci-targets.json` is no longer in a repository.
+- `Mismatch.cause` (optional): one line for a step that passed in the baseline and failed in a mode over a file
+  Smithers CI wrote. It names the tool that read the file, the file, and what to add to that tool's ignore list. The
+  mismatch still counts. The replay fills it from what the failed target printed; the report prints it under the
+  mismatch.
+- Not contracts, and changed with them: the generator writes the workspace and every target as one file,
+  `.smithers/WORKSPACE.smithers`, and nothing at the repository's root. `Render.packagePath` is that file.
+
 **2026-11-18, failures have names** (additive, by the replay's failure lane):
 
 - `TargetResult.exitCode` and `TargetResult.command` say how a failed target's command ended.
