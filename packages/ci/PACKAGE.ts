@@ -16,6 +16,8 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
     "test/fixtures/*.json",
     "test/fixtures/closure-zig/**"
   ],
+  // The suite starts real builds. On a build server at load 100 to 220 it passed the default 20 minutes every time.
+  testTimeoutMs: 2_400_000,
   cwd
 })
 
