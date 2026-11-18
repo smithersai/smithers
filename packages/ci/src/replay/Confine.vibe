@@ -1,14 +1,14 @@
 /**
  * What a replay sets up before it runs a step of a past commit: the home and
- * temporary directory its steps get, the hook that refuses a push, and the
- * jail it holds its steps in.
+ * temporary directory its steps get, the hook that refuses a push, the
+ * stand-ins for `sudo`, `su` and `doas`, and the jail it holds its steps in.
  *
  * @since 0.1.0
  */
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { gitConfig, hooksDirectory, type Place, prePush } from "./Environment.ts"
+import { gitConfig, guardedPrograms, guardScript, hooksDirectory, type Place, prePush } from "./Environment.ts"
 import {
   credentials,
   type Jail,
@@ -34,8 +34,10 @@ export interface Confined extends Place {
 }
 
 /**
- * Makes the steps' home and temporary directory under `work`, and asks the
- * machine for a jail. The home holds the hook and nothing of the person's.
+ * Makes the steps' home and temporary directory under `work`, writes the
+ * stand-ins beside them, where a jailed step can run them and not change them,
+ * and asks the machine for a jail. The home holds the hook and nothing of the
+ * person's.
  * On a machine that cannot jail a step, `say` is told once. `programs` are
  * the paths the replay runs its own programs from. A jailed step finds the
  * machine's temporary directories replaced by the replay's own, and still
@@ -60,8 +62,15 @@ export effect function confine(
   const home = path.join(work, "home")
   const tmp = path.join(work, "tmp")
   const hooks = path.join(home, hooksDirectory)
+  const guard = path.join(work, "guard")
   try fs.makeDirectory(hooks, { recursive: true })
   try fs.makeDirectory(tmp)
+  try fs.makeDirectory(guard)
+  for (const program of guardedPrograms) {
+    const standIn = path.join(guard, program)
+    try fs.writeFileString(standIn, guardScript(program))
+    try fs.chmod(standIn, 0o755)
+  }
   try addFinalizer(() =>
     ignore(scoped(effect {
       const unlock = ChildProcess.make("chmod", ["-R", "u+rwX", home, tmp], {
@@ -79,7 +88,7 @@ export effect function confine(
   const found = probe()
   if ("refusal" in found) {
     try say(unjailed(found.refusal))
-    return { home, tmp, hooks, jail: undefined } satisfies Confined
+    return { home, tmp, guard, hooks, jail: undefined } satisfies Confined
   }
   const masks: Array<Mask> = []
   for (const hidden of [...credentials.map((name) => path.join(found.home, name)), ...found.hidden]) {
@@ -94,7 +103,7 @@ export effect function confine(
     if (try fs.exists(cache)) caches.push(cache)
   }
   const visible = [...temporaryRoots(programs, temporary), ...caches, work]
-  return { home, tmp, hooks, jail: { bwrap: found.bwrap, masks, tmp, temporary, visible } } satisfies Confined
+  return { home, tmp, guard, hooks, jail: { bwrap: found.bwrap, masks, tmp, temporary, visible } } satisfies Confined
 }
 
 /**

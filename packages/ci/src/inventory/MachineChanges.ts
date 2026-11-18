@@ -291,18 +291,9 @@ const ofServiceCommand = (args: ReadonlyArray<string>): Change | undefined =>
 const isGlobal = (args: ReadonlyArray<string>): boolean =>
   args.some((word) => ["-g", "--global", "--global=true", "--location=global"].includes(word))
 
-const installWords = ["install", "i", "in", "add", "uninstall", "un", "remove", "rm", "r", "update", "up", "upgrade"]
-
-/** A checkout-relative directory, or one built from the checkout's own path, keeps an install inside the checkout. */
-const insideCheckout = (value: string): boolean =>
-  /^(?:\.|\$PWD|\$\{PWD\}|\$\(pwd\)|\$\{\{\s*github\.workspace|[^/$~])/.test(value)
+const npmInstallWords = ["install", "i", "in", "add", "uninstall", "un", "remove", "rm", "r", "update", "up", "upgrade"]
 
 type Rule = (args: ReadonlyArray<string>, env: Readonly<Record<string, string>>) => string | undefined
-
-const globalWith = (name: string): Rule => (args) => {
-  const verb = verbOf(args, [])?.verb
-  return verb !== undefined && installWords.includes(verb) && isGlobal(args) ? `${name} ${verb} -g` : undefined
-}
 
 /** `pip install` writes outside a virtual environment only when told to pass the system's own protection. */
 const ofPip = (
@@ -316,29 +307,23 @@ const ofPip = (
 }
 
 /**
- * What each language's tool writes outside the checkout.
+ * The language tools that write outside a step's home. A step's home is the
+ * replay's own, so `cargo install`, `go install`, `pnpm add -g`, `bun add -g`,
+ * `deno install -g` and `yarn global add` change nothing of the machine.
  *
- * - `npm -g` writes beside Node. `pnpm -g`, `bun -g`, `deno -g` and `yarn
- *   global` write the tool's directory in the home directory. `npm link` with
- *   no package links the checkout into npm's global directory.
+ * - `npm -g` writes beside Node, and `npm link` with no package links the
+ *   checkout there.
  * - `corepack enable` writes `pnpm` and `yarn` beside Node.
  * - `gem install` writes Ruby's own directory, unless `--user-install`,
  *   `--install-dir` or `GEM_HOME` says where.
- * - `cargo install` writes `~/.cargo/bin` unless `--root` or
- *   `CARGO_INSTALL_ROOT` says where.
- * - `go install` writes `~/go/bin` unless `GOBIN` or `GOPATH` points into the
- *   checkout.
  * - `uv pip --system` writes the system's Python.
  */
 const languageRules: ReadonlyMap<string, Rule> = new Map<string, Rule>([
-  ["npm", (args, env) => args.length === 1 && args[0] === "link" ? "npm link" : globalWith("npm")(args, env)],
-  ["pnpm", globalWith("pnpm")],
-  ["bun", globalWith("bun")],
-  ["deno", globalWith("deno")],
-  ["yarn", (args) =>
-    args[0] === "global" && ["add", "remove", "upgrade"].includes(args[1] as string)
-      ? `yarn global ${args[1]}`
-      : undefined],
+  ["npm", (args) => {
+    const verb = verbOf(args, [])?.verb
+    if (args.length === 1 && verb === "link") return "npm link"
+    return verb !== undefined && npmInstallWords.includes(verb) && isGlobal(args) ? `npm ${verb} -g` : undefined
+  }],
   ["corepack", (args) => ["enable", "disable"].includes(args[0] as string) ? `corepack ${args[0]}` : undefined],
   ["gem", (args, env) => {
     const verb = verbOf(args, [])?.verb
@@ -346,16 +331,6 @@ const languageRules: ReadonlyMap<string, Rule> = new Map<string, Rule>([
     return ["install", "uninstall", "update"].includes(verb as string) && !elsewhere && env["GEM_HOME"] === undefined
       ? `gem ${verb}`
       : undefined
-  }],
-  ["cargo", (args, env) => {
-    const verb = verbOf(args.filter((word) => !word.startsWith("+")), ["--config", "-Z", "-C"])?.verb
-    const elsewhere = ["--list", "--root"].some((flag) => args.includes(flag)) ||
-      env["CARGO_INSTALL_ROOT"] !== undefined
-    return (verb === "install" || verb === "uninstall") && !elsewhere ? `cargo ${verb}` : undefined
-  }],
-  ["go", (args, env) => {
-    const directory = env["GOBIN"] ?? env["GOPATH"]
-    return args[0] === "install" && (directory === undefined || !insideCheckout(directory)) ? "go install" : undefined
   }],
   ["uv", (args) => args[0] === "pip" && args.includes("--system") ? "uv pip --system" : undefined]
 ])

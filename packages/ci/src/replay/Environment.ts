@@ -7,13 +7,14 @@
  */
 
 import { toolEnvironment } from "@smthrs/targets/Exec"
+import { delimiter } from "node:path"
 
 /**
  * The directories a replay makes for its steps and removes when it ends: the
- * home every step gets in place of the person's, and the temporary directory
- * a jailed step finds in place of the machine's. Both are kept for the whole
- * replay, so what a package manager caches at one commit is there at the
- * next.
+ * home every step gets in place of the person's, the temporary directory a
+ * jailed step finds in place of the machine's, and `guard`, which holds the
+ * stand-ins first on every step's `PATH`. The first two are kept for the whole
+ * replay, so what a package manager caches at one commit is there at the next.
  *
  * @category models
  * @since 0.1.0
@@ -21,7 +22,49 @@ import { toolEnvironment } from "@smthrs/targets/Exec"
 export interface Place {
   readonly home: string
   readonly tmp: string
+  readonly guard: string
 }
+
+/**
+ * The programs no step of a replay can start by name: each has a stand-in
+ * that refuses, first on the step's `PATH`.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const guardedPrograms = ["sudo", "su", "doas"] as const
+
+/**
+ * The stand-in for `program`. It prints one line on standard error, with what
+ * it was asked to run on that one line, and exits 1. It uses nothing but the
+ * shell, so it works where a step sees few programs.
+ *
+ * @category environment
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const guardScript = (program: string): string =>
+  [
+    "#!/bin/sh",
+    "set -f",
+    "IFS=$(printf ' \\t\\n_')",
+    "IFS=${IFS%_}",
+    "set -- $*",
+    `printf '%s\\n' "smithers-ci does not run ${program}: $*" >&2`,
+    "exit 1",
+    ""
+  ].join("\n")
+
+/**
+ * A `PATH` that finds the stand-ins in `guard` first. With no `PATH` to add
+ * to it is `guard` alone: an empty entry would mean the working directory.
+ *
+ * @category environment
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const guardedPath = (guard: string, path: string | undefined): string =>
+  path === undefined || path === "" ? guard : `${guard}${delimiter}${path}`
 
 /**
  * Where the hook that refuses a push is, from a step's home.
@@ -78,7 +121,8 @@ export const gitConfig = `[core]\n\thooksPath = ~/${hooksDirectory}\n[credential
 /**
  * Where a step's home and cache are: in the replay's own directory, never
  * the person's. The temporary directory keeps the machine's name; the jail
- * puts the replay's own behind it.
+ * puts the replay's own behind it. Its `PATH` is the machine's, after the
+ * stand-ins, and it reaches a target through the `smthrs` that starts it.
  *
  * @category environment
  * @throws {never}
@@ -86,7 +130,8 @@ export const gitConfig = `[core]\n\thooksPath = ~/${hooksDirectory}\n[credential
  */
 export const placeEnvironment = (place: Place): Readonly<Record<string, string>> => ({
   HOME: place.home,
-  XDG_CACHE_HOME: `${place.home}/.cache`
+  XDG_CACHE_HOME: `${place.home}/.cache`,
+  PATH: guardedPath(place.guard, process.env["PATH"])
 })
 
 /**
@@ -95,7 +140,8 @@ export const placeEnvironment = (place: Place): Readonly<Record<string, string>>
  * color settings), the replay's own home, the push refusal, then the step's
  * own `env`. A step is a past commit's command, so
  * it gets no other variable of the person running the replay, and the
- * baseline and the target see the same environment.
+ * baseline and the target see the same environment. A `PATH` of the step's
+ * own still starts with the stand-ins.
  *
  * @category environment
  * @throws {never}
@@ -105,7 +151,12 @@ export const stepEnvironment = (
   declared: Readonly<Record<string, string>>,
   place: Place
 ): Readonly<Record<string, string | undefined>> => ({
-  ...toolEnvironment({ ...placeEnvironment(place), ...pushRefusal, ...declared }, [])
+  ...toolEnvironment({
+    ...placeEnvironment(place),
+    ...pushRefusal,
+    ...declared,
+    ...(declared["PATH"] === undefined ? {} : { PATH: guardedPath(place.guard, declared["PATH"]) })
+  }, [])
 })
 
 /**

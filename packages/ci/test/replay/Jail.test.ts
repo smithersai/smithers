@@ -342,7 +342,7 @@ describe("the jail", () => {
 
   it("runs a command as it is when there is none", () => {
     expect(jailed(undefined, ["/copy"], ["/home/hooks"], argv)).toBe(argv)
-    expect(held({ home: "/h", tmp: "/t", hooks: "/h/hooks", jail: undefined }, ["/copy"], argv)).toBe(argv)
+    expect(held({ home: "/h", tmp: "/t", guard: "/g", hooks: "/h/hooks", jail: undefined }, ["/copy"], argv)).toBe(argv)
   })
 
   it("leaves the machine read-only but the places given, hides the masks, and keeps the hook read-only", () => {
@@ -353,7 +353,7 @@ describe("the jail", () => {
       temporary: ["/tmp", "/var/tmp/mine"],
       visible: ["/tmp/bunx", "/work"]
     }
-    expect(held({ home: "/h", tmp: "/t", hooks: "/h/hooks", jail }, ["/copy"], argv)).toEqual([
+    expect(held({ home: "/h", tmp: "/t", guard: "/g", hooks: "/h/hooks", jail }, ["/copy"], argv)).toEqual([
       "/usr/bin/bwrap",
       "--ro-bind",
       "/",

@@ -218,6 +218,14 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     }
   }
 
+  it("puts the stand-ins first on the PATH of what a commit's targets start", async () => {
+    const first = "first=${PATH%%:*}\n[ \"${first##*/}\" = guard ]\n"
+    const root = keep(makeOwnWith(smthrs, { "a.sh": first }))
+    const report = await onNode(own(request(root, { targets: ["//:a"] }), partsFor("none"), "WORKSPACE.ts"))
+    expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+    expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+  })
+
   it("replays the patterns asked for, and gives the shared cache --cache names to normal mode only", async () => {
     const recording = recordingSmthrs()
     const root = keep(makeOwnWith(recording.command))

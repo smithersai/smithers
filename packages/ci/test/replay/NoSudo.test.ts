@@ -25,6 +25,9 @@ const repository = (files: Readonly<Record<string, string>>): string => {
   return root
 }
 
+/** A real replay runs each commit up to three ways, and a failed step again; a busy machine takes minutes. */
+const replayLimit = 540_000
+
 const runner = process.platform === "darwin" ? "macos-latest" : "ubuntu-latest"
 
 const workflow = (build: ReadonlyArray<string>): string => `
@@ -78,7 +81,7 @@ describe.concurrent("a replay on a machine with sudo", () => {
     }])
     expect(report.commits[0]?.mismatches).toEqual([])
     expect(existsSync(log)).toBe(false)
-  })
+  }, replayLimit)
 
   it("replays a job whose packages are all there, without the install", async () => {
     const { env, log } = machine(["zsh", "fish"])
@@ -96,7 +99,39 @@ describe.concurrent("a replay on a machine with sudo", () => {
     expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
     expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
     expect(existsSync(log)).toBe(false)
-  })
+  }, replayLimit)
+
+  it("stops a script that calls sudo with the same failure in the baseline and as a target", async () => {
+    const { env, log } = machine([])
+    const root = repository({
+      ".github/workflows/ci.yml": `
+on: push
+jobs:
+  refused:
+    runs-on: ${runner}
+    steps:
+      - run: sh refused.sh
+  told:
+    runs-on: ${runner}
+    steps:
+      - run: sh told.sh
+`,
+      "refused.sh": "sudo apt-get update\n",
+      // It passes only when what it started printed the stand-in's line and failed.
+      "told.sh": [
+        "out=$(sudo apt-get install zsh 2>&1) && exit 1",
+        "[ \"$out\" = \"smithers-ci does not run sudo: apt-get install zsh\" ]",
+        ""
+      ].join("\n")
+    })
+    const report = await replay(root, env)
+    const commit = report.commits[0]
+    expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 0 })
+    expect(commit?.normal.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 0 })
+    expect(commit?.mismatches).toEqual([])
+    expect(report.notReplayed ?? []).toEqual([])
+    expect(existsSync(log)).toBe(false)
+  }, replayLimit)
 
   it("replays when every job installs what is there, and says apply has nothing to write", async () => {
     const { env, log } = machine(["zsh"])
@@ -119,5 +154,5 @@ jobs:
     const applied = await spawn(bin, ["apply"], root, env)
     expect(applied.code).toBe(3)
     expect(applied.stderr).toContain("changes-machine (installs zsh with apt-get)")
-  })
+  }, replayLimit)
 })

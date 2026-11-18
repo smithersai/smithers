@@ -3,14 +3,22 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import { toolEnvironment } from "@smthrs/targets/Exec"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { execFileSync } from "node:child_process"
-import { readFileSync, rmSync } from "node:fs"
+import { execFileSync, spawnSync } from "node:child_process"
+import { readFileSync, rmSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { noPushUrl, placeEnvironment, pushRefusal, stepEnvironment } from "../../src/replay/Environment.ts"
+import {
+  guardedPath,
+  guardedPrograms,
+  guardScript,
+  noPushUrl,
+  placeEnvironment,
+  pushRefusal,
+  stepEnvironment
+} from "../../src/replay/Environment.ts"
 import { run } from "../../src/replay/index.ts"
 import { job, makeEmptyDirectory, makeSmallRepository } from "./fixture.ts"
 import { options, parts } from "./TestParts.vibe"
@@ -109,7 +117,7 @@ describe("a baseline step", () => {
     // sets for every step: its home and temporary directory, and what tells git to refuse a push.
     const target = new Set([
       ...Object.keys(toolEnvironment({ SEEN: seen, MINE: "from the step" }, [])),
-      ...Object.keys(placeEnvironment({ home: "", tmp: "" })),
+      ...Object.keys(placeEnvironment({ home: "", tmp: "", guard: "" })),
       ...Object.keys(pushRefusal)
     ])
     expect(names.filter((name) => !["PWD", "SHLVL", "_", "OLDPWD"].includes(name)).sort()).toEqual([...target].sort())
@@ -127,7 +135,7 @@ describe("a baseline step", () => {
 })
 
 describe("stepEnvironment", () => {
-  const place = { home: "/replay/home", tmp: "/replay/tmp" }
+  const place = { home: "/replay/home", tmp: "/replay/tmp", guard: "/replay/guard" }
 
   it("gives the replay's home in place of the person's, and keeps the machine's temporary directory", () => {
     const environment = stepEnvironment({}, place)
@@ -136,6 +144,30 @@ describe("stepEnvironment", () => {
     expect(environment["TMPDIR"]).toBe(process.env["TMPDIR"])
     expect(environment).toMatchObject(pushRefusal)
     expect(Object.values(environment)).not.toContain(homedir())
+  })
+
+  it("finds the stand-ins first, even with a PATH of the step's own", () => {
+    expect(stepEnvironment({}, place)["PATH"]).toBe(`/replay/guard:${process.env["PATH"]}`)
+    expect(stepEnvironment({ PATH: "/mine" }, place)["PATH"]).toBe("/replay/guard:/mine")
+  })
+
+  it("never makes the working directory part of a PATH", () => {
+    expect(guardedPath("/g", undefined)).toBe("/g")
+    expect(guardedPath("/g", "")).toBe("/g")
+    expect(guardedPath("/g", "/bin")).toBe("/g:/bin")
+  })
+
+  it("has a stand-in for each program, which refuses in one line", () => {
+    const directory = track(makeEmptyDirectory())
+    expect(guardedPrograms).toEqual(["sudo", "su", "doas"])
+    for (const program of guardedPrograms) {
+      const file = join(directory, program)
+      writeFileSync(file, guardScript(program), { mode: 0o755 })
+      const ran = spawnSync(file, ["apt-get", "install", "a\nb", "*"], { encoding: "utf8", cwd: directory })
+      expect(ran.status).toBe(1)
+      expect(ran.stdout).toBe("")
+      expect(ran.stderr).toBe(`smithers-ci does not run ${program}: apt-get install a b *\n`)
+    }
   })
 
   it("lets a step's own value win", () => {
