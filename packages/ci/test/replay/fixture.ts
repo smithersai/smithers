@@ -1,6 +1,6 @@
 /** A real git repository for the replay tests, with real commits and real scripts. */
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -153,3 +153,17 @@ export const makeSmallRepository = (jobs: ReadonlyArray<unknown>): string => {
 }
 
 export { job }
+
+/**
+ * A real `smthrs` behind a script that records every command line. With
+ * `brokenPlan`, `--plan` prints no plan.
+ */
+export const recordingSmthrs = (brokenPlan: boolean) => {
+  const directory = makeEmptyDirectory()
+  const log = join(directory, "commands")
+  const command = join(directory, "smthrs")
+  const planCase = brokenPlan ? `case "$*" in *--plan*) echo "no plan here"; exit 0;; esac\n` : ""
+  writeFileSync(command, `#!/bin/sh\necho "$*" >> ${log}\n${planCase}exec ${smthrs} "$@"\n`)
+  chmodSync(command, 0o755)
+  return { directory, command, commands: () => readFileSync(log, "utf8").split("\n") }
+}

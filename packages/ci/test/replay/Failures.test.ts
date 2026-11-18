@@ -8,7 +8,14 @@ import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Par
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { path as targetMapPath } from "../../src/contract/TargetMap.ts"
 import { Options, run } from "../../src/replay/index.ts"
-import { job, makeEmptyDirectory, makeEmptyRepository, makeSmallRepository } from "./fixture.ts"
+import {
+  job,
+  linkTargets,
+  makeEmptyDirectory,
+  makeEmptyRepository,
+  makeSmallRepository,
+  recordingSmthrs
+} from "./fixture.ts"
 import { generated, noTemporaryDirectories, noWrites, options, parts } from "./TestParts.vibe"
 
 const created: Array<string> = []
@@ -29,6 +36,13 @@ const request = (root: string, extra: Partial<ReplayRequest> = {}): ReplayReques
   modes: ["normal"],
   ...extra
 })
+
+const withCommand = (command: string) =>
+  Layer.succeed(Options, {
+    smthrs: [command],
+    reruns: 1,
+    prepare: (directory) => Effect.sync(() => linkTargets(directory))
+  })
 
 const withSmthrs = (command: string) =>
   Layer.succeed(Options, { smthrs: [command], reruns: 1, prepare: () => Effect.void })
@@ -161,12 +175,44 @@ describe("a replay that runs", () => {
     expect(report.commits[0]?.baseline.ok).toBe(true)
   }, 200_000)
 
-  it("uses the default fast-mode settings when the request gives none", async () => {
+  it("uses the default fast-mode settings when the request gives none, and gives rows the commit's plan", async () => {
     const root = track(makeSmallRepository(passing))
+    const planned: Array<ReadonlyArray<string>> = []
+    const rows: Parts["rows"] = (repository, record, plan) => {
+      planned.push(plan?.targets.map((target) => target.label) ?? [])
+      return base.rows(repository, record)
+    }
     // A score of 0 is under every cutoff, but the default keeps the five highest-scoring targets.
-    const report = await replay(root, {}, { modes: ["normal", "fast"] })
+    const report = await replay(root, { rows }, { modes: ["normal", "fast"] })
     expect(report.commits[0]?.fast?.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
     expect(report.selection).toMatchObject({ rows: 1, selected: 1 })
+    expect(planned).toEqual([["//:a0_0"]])
+  }, 120_000)
+
+  it("never runs more targets at once than the target map allows", async () => {
+    const root = track(makeSmallRepository(passing))
+    const recording = recordingSmthrs(false)
+    track(recording.directory)
+    const files: Parts["files"] = (inventory) =>
+      Effect.succeed(
+        generated(inventory).map((file) =>
+          file.path === targetMapPath ? { ...file, content: file.content.replace("{", `{"maxJobs":1,`) } : file
+        )
+      )
+    await replay(root, { files }, { jobs: 8 }, withCommand(recording.command) as never)
+    expect(recording.commands().filter((line) => line.startsWith("ci ")).every((line) => line.endsWith("--jobs 1")))
+      .toBe(true)
+  }, 120_000)
+
+  it("reports a plan Smithers build did not print", async () => {
+    const root = track(makeSmallRepository(passing))
+    const recording = recordingSmthrs(true)
+    track(recording.directory)
+    const failure = await failureOf(
+      replay(root, {}, { modes: ["normal", "fast"] }, withCommand(recording.command) as never)
+    )
+    expect(failure.code).toBe("command-failed")
+    expect(failure.message).toContain("printed no plan")
   }, 120_000)
 
   it("runs a step with no target but gives it no verdict, and it still stops its job", async () => {

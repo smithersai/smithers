@@ -6,8 +6,10 @@
  * @since 0.1.0
  */
 
+import * as Schema from "effect/Schema"
 import { type Ci, type NotReplayed, withVariant } from "../contract/Inventory.ts"
 import type { Failure } from "../contract/Parts.ts"
+import type { Plan } from "../contract/Plan.ts"
 import type { Mismatch, ReplayCommit, ReplayReport, RunTotals } from "../contract/ReplayReport.ts"
 import { type Mode, type RunRecord, type StatusCounts, type TargetResult, verdictOf } from "../contract/RunRecord.ts"
 import { type Metrics, metrics, type Row, type Score, select, type Settings } from "../contract/Selection.ts"
@@ -160,6 +162,57 @@ export const cycleIn = (units: ReadonlyArray<Unit>): string | undefined => {
   }
   return undefined
 }
+
+/**
+ * What `smthrs ci --plan --format json` prints, as far as the replay reads it.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const PrintedPlan = Schema.Struct({
+  verb: Schema.String,
+  pattern: Schema.String,
+  roots: Schema.Array(Schema.String),
+  targets: Schema.Array(Schema.Struct({
+    label: Schema.NonEmptyString,
+    target: Schema.NonEmptyString,
+    keyPreview: Schema.optionalKey(Schema.String),
+    cacheable: Schema.Boolean,
+    dependencies: Schema.Array(Schema.String)
+  }))
+})
+
+/**
+ * The plan (contract 2) in a printed plan. A target with no key yet has the
+ * empty key.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const planOfPrinted = (printed: typeof PrintedPlan.Type): Plan => ({
+  verb: printed.verb,
+  pattern: printed.pattern,
+  roots: printed.roots,
+  targets: printed.targets.map((target) => ({
+    label: target.label,
+    rule: target.target,
+    key: target.keyPreview ?? "",
+    cacheable: target.cacheable,
+    dependencies: target.dependencies
+  }))
+})
+
+/**
+ * How many generated targets may run at once: the request's limit, never above
+ * the target map's. `undefined` leaves the choice to Smithers build.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const jobsFor = (requested: number | undefined, maxJobs: number | undefined): number | undefined =>
+  requested === undefined ? maxJobs : maxJobs === undefined ? requested : Math.min(requested, maxJobs)
 
 /**
  * A target that never ran because something before it failed.

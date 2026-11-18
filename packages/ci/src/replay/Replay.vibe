@@ -7,7 +7,8 @@
  */
 
 import * as ChildProcess from "effect/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type * as PlatformError from "effect/PlatformError"
+import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { ci, type Inventory, notReplayed, shell } from "../contract/Inventory.ts"
 import type { Failure, ReplayParts, ReplayRequest } from "../contract/Parts.ts"
 import type { ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
@@ -24,11 +25,14 @@ import {
   groupByJob,
   isBlocked,
   type JobGroup,
+  jobsFor,
   labelsOf,
   maxReruns,
   mismatchesOf,
+  planOfPrinted,
   nothingToReplay,
   predictedSafe,
+  PrintedPlan,
   recordOf,
   recovered,
   reportOf,
@@ -97,13 +101,14 @@ effect function exec(
   args: ReadonlyArray<string>,
   cwd: string,
   env: Readonly<Record<string, string>>,
-  limit: number
+  limit: number,
+  output: (handle: ChildProcessHandle) => Stream.Stream<Uint8Array, PlatformError.PlatformError> = (handle) => handle.all
 ) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
     const handle = try spawner.spawn(ChildProcess.make(command, [...args], { cwd, env: { ...env }, extendEnv: true }))
     const kept = try Ref.make("")
-    const reader = fork (handle.all
+    const reader = fork (output(handle)
       |> Stream.decodeText(%)
       |> Stream.runForEach(%, (chunk: string) => Ref.update(kept, (text) => (text + chunk).slice(-limit))))
     const exitCode = try handle.exitCode
@@ -177,7 +182,8 @@ effect function measure<R>(
  * Replays the last `request.commits` commits and reports.
  *
  * Each baseline job gets a fresh checkout, as each gets its own machine in CI,
- * and jobs run at once unless `request.jobs` limits them. Commits run oldest
+ * and jobs run at once unless `request.jobs` limits them; generated targets also
+ * stay within the target map's `maxJobs`. Commits run oldest
  * first and the normal and fast copies keep their caches between commits, so
  * the first commit starts cold. Wall time covers each mode's checkout, setup and
  * first pass; the reruns that label flaky targets are not counted.
@@ -242,6 +248,19 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     let runs = 0
+    const jobs = jobsFor(request.jobs, targetMap.maxJobs)
+    const cacheEnv = request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }
+
+    effect function planOf(copy: string) {
+      const [command, ...prefix] = options.smthrs
+      const args = [...prefix, "ci", ...allLabels, "--plan", "--format", "json", "--workspace", copy]
+      const planned = try exec(command, args, copy, cacheEnv, Number.POSITIVE_INFINITY, (handle) => handle.stdout)
+      const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
+        throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
+      }
+      return planOfPrinted(printed)
+    }
+
     const smithers = (copy: string): Execute<Host> => (targets) => effect {
       const selected = targets ?? allLabels
       if (selected.length === 0) return []
@@ -260,10 +279,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         file,
         "--ui",
         "plain",
-        ...(request.jobs === undefined ? [] : ["--jobs", String(request.jobs)])
+        ...(jobs === undefined ? [] : ["--jobs", String(jobs)])
       ]
-      const env = request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }
-      const output = try exec(command, args, copy, env, outputLimit)
+      const output = try exec(command, args, copy, cacheEnv, outputLimit)
       const unreadable = () => failure("command-failed", `smthrs ci wrote no run record: ${output.text}`)
       const text = fs.readFileString(file) catch effect () => {
         throw unreadable()
@@ -341,7 +359,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       let fastPart: Pick<ReplayCommit, "fast"> = {}
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
       if (fastCopy !== undefined) {
-        const rows = try parts.rows(normalCopy, normalRecord)
+        const rows = try parts.rows(normalCopy, normalRecord, try planOf(normalCopy))
         const scores = try parts.score(rows)
         const choice = choose(scores, request.settings ?? defaultSettings)
         const labels = normal.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))

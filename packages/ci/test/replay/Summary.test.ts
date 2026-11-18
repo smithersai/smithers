@@ -10,10 +10,12 @@ import {
   firstAttempt,
   groupByJob,
   isBlocked,
+  jobsFor,
   labelsOf,
   maxReruns,
   mismatchesOf,
   nothingToReplay,
+  planOfPrinted,
   predictedSafe,
   recordOf,
   recovered,
@@ -119,6 +121,32 @@ describe("unitsOf", () => {
     )
     expect(labelsOf(unit!, undefined)).toEqual(["//:a", "//:b"])
     expect(labelsOf(unit!, new Set(["//:b"]))).toEqual(["//:b"])
+  })
+})
+
+describe("planOfPrinted", () => {
+  it("reads the rule and key from what smthrs prints, and leaves a missing key empty", () => {
+    const target = { label: "//:a", target: "ToolBuild", cacheable: true, dependencies: ["//:b"] }
+    const plan = planOfPrinted({
+      verb: "ci",
+      pattern: "//:a",
+      roots: ["//:a"],
+      targets: [{ ...target, keyPreview: "k" }, target]
+    })
+    expect(plan.targets).toEqual([
+      { label: "//:a", rule: "ToolBuild", key: "k", cacheable: true, dependencies: ["//:b"] },
+      { label: "//:a", rule: "ToolBuild", key: "", cacheable: true, dependencies: ["//:b"] }
+    ])
+  })
+})
+
+describe("jobsFor", () => {
+  it("takes the lower of the request and the target map, whichever are given", () => {
+    expect(jobsFor(undefined, undefined)).toBeUndefined()
+    expect(jobsFor(4, undefined)).toBe(4)
+    expect(jobsFor(undefined, 1)).toBe(1)
+    expect(jobsFor(4, 1)).toBe(1)
+    expect(jobsFor(1, 4)).toBe(1)
   })
 })
 
