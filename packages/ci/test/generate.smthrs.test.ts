@@ -67,7 +67,7 @@ const job = (id: string, commands: ReadonlyArray<string>, extra: Partial<Job> = 
   file: ".github/workflows/ci.yml",
   name: id,
   needs: [],
-  triggers: [],
+  triggers: ["push"],
   matrix: [],
   steps: commands.map((command, index) => ({ id: `${id}:${index + 1}`, command, cwd: "", env: {}, secrets: [] })),
   unsupported: [],
@@ -113,8 +113,7 @@ describe("generated files under the real smthrs", () => {
     const inventory = document([
       job("good", ["mkdir -p made && echo built > made/file", "test -f made/file", "grep -q source input.txt"]),
       job("bad", ["echo fail-first; false\necho unreachable"]),
-      job("blocked", ["true"], { needs: ["bad"] }),
-      job("recipe", ["#!/usr/bin/env bash\n[[ -f input.txt ]]"], { source: "justfile" })
+      job("blocked", ["true"], { needs: ["bad"] })
     ])
     const root = repository(inventory, { "input.txt": "source\n" })
     try {
@@ -125,8 +124,7 @@ describe("generated files under the real smthrs", () => {
         "good-2": "ran",
         "good-3": "ran",
         "bad-1": "failed",
-        "blocked-1": "skipped",
-        "recipe-1": "ran"
+        "blocked-1": "skipped"
       })
 
       // A clean checkout: what setup steps left behind is gone.
@@ -139,6 +137,34 @@ describe("generated files under the real smthrs", () => {
       writeFileSync(join(root, "input.txt"), "changed\n")
       const third = execute(root, "third")
       expect(third.statuses.get("good-3")).toBe("failed")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, slow)
+
+  it("runs a recipe under the interpreter it names", () => {
+    const recipe = job("recipe", ["#!/usr/bin/env bash\n[[ -f input.txt ]]"], {
+      source: "justfile",
+      name: "test",
+      triggers: []
+    })
+    const root = repository(document([recipe]), { "input.txt": "source\n" })
+    try {
+      expect(Object.fromEntries(execute(root, "only").statuses)).toEqual({ "recipe-1": "ran" })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, slow)
+
+  it("sees a changed file through the shared file group of a large graph", () => {
+    const commands = Array.from({ length: 33 }, (_, index) => index === 32 ? "grep -q source input.txt" : "true")
+    const root = repository(document([job("many", commands)]), { "input.txt": "source\n" })
+    try {
+      expect(plan(root).map((target) => target.label)).toContain(`${prefix}_repository`)
+      expect(execute(root, "first").statuses.get("many-33")).toBe("ran")
+      expect(execute(root, "second").statuses.get("many-33")).toBe("hit")
+      writeFileSync(join(root, "input.txt"), "changed\n")
+      expect(execute(root, "third").statuses.get("many-33")).toBe("failed")
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

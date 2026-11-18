@@ -17,5 +17,6 @@ import { planSteps } from "./Steps.ts"
  * @since 0.1.0
  */
 export effect function files(inventory: Inventory): ReadonlyArray<GeneratedFile>!Failure {
-  return renderFiles(inventory, try fromResult(planSteps(inventory)))
+  const plan = try fromResult(planSteps(inventory))
+  return try fromResult(renderFiles(inventory, plan))
 }

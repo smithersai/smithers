@@ -8,6 +8,10 @@
  * GitHub jobs run on separate machines, so `needs` only orders them; the other
  * sources run in one working tree, so what they need is `setup` too.
  *
+ * An inventory also lists work CI never runs on a change: release workflows,
+ * and every recipe and script, such as `clean` or `start`. Only what runs on a
+ * change becomes a target.
+ *
  * @since 0.1.0
  */
 
@@ -64,6 +68,23 @@ export interface StepPlan {
  */
 export const markerDirectory = ".flows/ci"
 
+/**
+ * The generated GitHub Actions workflow. Reading a repository again finds it,
+ * and it is never part of the CI being imported.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const workflowPath = ".github/workflows/smithers-ci.yml"
+
+/**
+ * The label of the file group large graphs share.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const repositoryLabel = "_repository"
+
 interface Tail {
   readonly host: Host | undefined
   readonly labels: ReadonlyArray<string>
@@ -79,6 +100,18 @@ const runnerVariable = /\$\{?((?:GITHUB|RUNNER)_[A-Z0-9_]+)/g
 const secretReference = /\$\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const plainCommand = /^[A-Za-z0-9_./:=@%+,-]+(?: +[A-Za-z0-9_./:=@%+,-]+)*$/
 const workflowTriggers: ReadonlySet<string> = new Set(["merge_group", "pull_request", "push", "workflow_dispatch"])
+
+const changeTriggers: ReadonlySet<string> = new Set(["merge_group", "pull_request", "push"])
+const checkNames: ReadonlySet<string> = new Set([
+  "build",
+  "check",
+  "lint",
+  "test",
+  "tests",
+  "type-check",
+  "typecheck",
+  "verify"
+])
 
 const invalid = (message: string): Result.Result<never, Failure> =>
   Result.fail({ code: "invalid-document", message, part: "generate" })
@@ -189,6 +222,33 @@ const inDependencyOrder = (jobs: ReadonlyArray<Job>): ReadonlyArray<Job> | undef
 }
 
 /**
+ * The jobs CI runs on a change, with what they need: GitHub jobs a change
+ * triggers; without those, a job named `ci`; without one, the conventional
+ * check names.
+ */
+const jobsRunOnChange = (all: ReadonlyArray<Job>): ReadonlyArray<Job> => {
+  const jobs = all.filter((job) => job.file !== workflowPath)
+  const triggered = jobs.filter((job) =>
+    job.source === "github-actions" && job.triggers.some((trigger) => changeTriggers.has(trigger))
+  )
+  const named = jobs.filter((job) => job.name === "ci")
+  const roots = triggered.length > 0
+    ? triggered
+    : named.length > 0
+    ? named
+    : jobs.filter((job) => checkNames.has(job.name))
+  const byId = new Map(jobs.map((job) => [job.id, job]))
+  const chosen = new Map<string, Job>()
+  const pending = [...roots]
+  for (let job = pending.pop(); job !== undefined; job = pending.pop()) {
+    if (chosen.has(job.id)) continue
+    chosen.set(job.id, job)
+    pending.push(...job.needs.map((need) => byId.get(need) as Job))
+  }
+  return [...chosen.values()]
+}
+
+/**
  * Plans the targets for an inventory. Fails when the document contradicts
  * itself or holds nothing to run.
  *
@@ -199,19 +259,26 @@ const inDependencyOrder = (jobs: ReadonlyArray<Job>): ReadonlyArray<Job> | undef
 export const planSteps = (inventory: Inventory): Result.Result<StepPlan, Failure> => {
   const problem = validate(inventory)
   if (problem !== undefined) return Result.fail(problem)
-  const jobs = inDependencyOrder(inventory.jobs)
-  if (jobs === undefined) return invalid("The jobs' needs form a cycle.")
+  if (inDependencyOrder(inventory.jobs) === undefined) return invalid("The jobs' needs form a cycle.")
+  const selected = jobsRunOnChange(inventory.jobs)
+  const jobs = inDependencyOrder(selected) as ReadonlyArray<Job>
 
   const drafts = new Map<string, Draft>()
   const tails = new Map<string, Array<Tail>>()
   const notes = new Set<string>()
   const runners = new Set<string>()
+  const selectedIds = new Set(selected.map((job) => job.id))
+  for (const job of inventory.jobs) {
+    if (!selectedIds.has(job.id) && job.file !== workflowPath) {
+      notes.add(`${job.id}: not generated, it does not run on a change.`)
+    }
+  }
   // Targets a later target needs on disk: these can never be replayed.
   const reliedOn = new Set<string>()
 
   const uniqueLabel = (step: Step, variant: Variant): string => {
     const label = `${slug(step.id)}${variantSuffix(variant)}`
-    if (!drafts.has(label)) return label
+    if (label !== repositoryLabel && !drafts.has(label)) return label
     return `${label}-${shardOf(`${step.id}\n${variantKey(variant)}`, 0x1_0000_0000).toString(16)}`
   }
 
@@ -275,14 +342,14 @@ export const planSteps = (inventory: Inventory): Result.Result<StepPlan, Failure
       if (host === "win32") notes.add(`${job.id}: runs only on Windows, which generated targets do not support.`)
       else if (runsOn !== undefined) runners.add(runsOn)
       let previous = upstreamOf(job, host)
-      if (job.source !== "github-actions") { for (const label of previous) reliedOn.add(label) }
-      let last: Draft | undefined
+      let sharesTree = job.source !== "github-actions"
       for (const step of job.steps) {
         const draft = draftOf(job, step, variant, host, previous)
         if (draft === undefined) continue
         drafts.set(draft.label, draft)
-        if (last !== undefined) reliedOn.add(last.label)
-        last = draft
+        if (sharesTree) { for (const label of previous) reliedOn.add(label) }
+        // Steps of one job always share a machine.
+        sharesTree = true
         previous = [draft.label]
       }
       jobTails.push({ host, labels: previous })
@@ -290,7 +357,11 @@ export const planSteps = (inventory: Inventory): Result.Result<StepPlan, Failure
   }
 
   if (drafts.size === 0) {
-    return Result.fail({ code: "unsupported", message: "No job has a command to run.", part: "generate" })
+    return Result.fail({
+      code: "unsupported",
+      message: "No job that runs on a change has a command.",
+      part: "generate"
+    })
   }
 
   if ([...drafts.values()].every((draft) => draft.host === "win32")) {
@@ -311,7 +382,7 @@ export const planSteps = (inventory: Inventory): Result.Result<StepPlan, Failure
     notes: sorted(notes),
     runners: runners.size === 0 ? ["ubuntu-latest"] : sorted(runners),
     triggers: ((found) => found.length === 0 ? ["pull_request", "push"] : found)(
-      sorted(inventory.jobs.flatMap((job) => job.triggers).filter((trigger) => workflowTriggers.has(trigger)))
+      sorted(selected.flatMap((job) => job.triggers).filter((trigger) => workflowTriggers.has(trigger)))
     )
   })
 }

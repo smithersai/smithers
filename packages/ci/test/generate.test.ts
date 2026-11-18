@@ -8,7 +8,7 @@ import { Inventory } from "../src/contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateFiles } from "../src/contract/Parts.ts"
 import { forShell, forText } from "../src/generate/Expressions.ts"
 import { files } from "../src/generate/index.ts"
-import { packagePath, workflowPath, workspacePath } from "../src/generate/Render.ts"
+import { notesPath, packagePath, workflowPath, workspacePath } from "../src/generate/Render.ts"
 
 const fixture = (name: string): InventoryDocument =>
   Schema.decodeUnknownSync(Inventory)(JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8")))
@@ -28,7 +28,7 @@ const job = (id: string, steps: ReadonlyArray<Step>, extra: Partial<Job> = {}): 
   file: ".github/workflows/ci.yml",
   name: id,
   needs: [],
-  triggers: [],
+  triggers: ["push"],
   matrix: [],
   steps,
   unsupported: [],
@@ -49,7 +49,11 @@ const generate = (document: InventoryDocument): ReadonlyArray<GeneratedFile> => 
 const content = (generated: ReadonlyArray<GeneratedFile>, path: string): string =>
   generated.find((file) => file.path === path)?.content ?? ""
 
-const targetsOf = (document: InventoryDocument): string => content(generate(document), packagePath)
+/** The targets, followed by the notes written as the comments the tests look for. */
+const targetsOf = (document: InventoryDocument): string => {
+  const generated = generate(document)
+  return `${content(generated, packagePath)}\n${content(generated, notesPath).replaceAll("\n- ", "\n// ")}`
+}
 
 /** Reads one generated target's source text by its label. */
 const declaration = (source: string, label: string): string => {
@@ -93,6 +97,7 @@ describe("files", () => {
     const typed: GenerateFiles = files
     const generated = Effect.runSync(typed(fixture("inventory.justfile-zig.json")))
     expect(generated.map((file) => file.path).sort()).toEqual([workflowPath, packagePath, workspacePath].sort())
+    expect(generated.map((file) => file.path)).not.toContain(notesPath)
   })
 
   it("gives identical bytes for the same inventory, in any job order", () => {
@@ -128,8 +133,8 @@ describe("what a step becomes", () => {
 
   it("treats a needed job as setup only when the jobs share a working tree", () => {
     const shared = targetsOf(inventory([
-      job("build", [step("build:1", "make")], { source: "justfile" }),
-      job("test", [step("test:1", "make test")], { source: "justfile", needs: ["build"] })
+      job("build", [step("build:1", "make")], { source: "justfile", triggers: [] }),
+      job("test", [step("test:1", "make test")], { source: "justfile", triggers: [], needs: ["build"] })
     ]))
     expect(declaration(shared, "build-1")).toContain("S.Shell.Build(")
     const separate = targetsOf(inventory([
@@ -154,13 +159,14 @@ describe("what a step becomes", () => {
   })
 
   it("stops a multi-line recipe at its first failure", () => {
-    const source = targetsOf(inventory([job("a", [step("a:1", "false\ntrue")], { source: "makefile" })]))
+    const source = targetsOf(inventory([job("a", [step("a:1", "false\ntrue")], { source: "makefile", name: "test" })]))
     expect(declaration(source, "a-1")).toContain(JSON.stringify("set -e\nfalse\ntrue"))
   })
 
   it("runs a recipe with an interpreter line as a file", () => {
     const source = targetsOf(inventory([job("a", [step("a:1", "#!/usr/bin/env bash\n[[ -f x ]]")], {
-      source: "justfile"
+      source: "justfile",
+      name: "test"
     })]))
     expect(declaration(source, "a-1")).toContain("script=$(mktemp) || exit")
     expect(declaration(source, "a-1")).not.toContain("set -e")
@@ -207,6 +213,105 @@ describe("what a step becomes", () => {
     ])]))
     expect(source).toContain("// a:2: not generated")
     expect(declaration(source, "a-3")).toMatch(/data: \[repository, step0\]/)
+  })
+})
+
+describe("what counts as CI", () => {
+  const labels = (document: InventoryDocument): ReadonlyArray<string> =>
+    [...content(generate(document), packagePath).matchAll(/^ {4}"([^"]+)": step/gm)].map((match) => match[1] as string)
+  const recipe = (name: string, extra: Partial<Job> = {}): Job =>
+    job(`justfile:${name}`, [step(`${name}:1`, `run ${name}`)], { source: "justfile", name, triggers: [], ...extra })
+
+  it("takes GitHub jobs a change triggers, and never a release workflow or a script", () => {
+    const document = inventory([
+      job("ci", [step("ci:1", "t")], { triggers: ["pull_request"] }),
+      job("publish", [step("publish:1", "npm publish")], { triggers: ["release"] }),
+      job("nightly", [step("nightly:1", "n")], { triggers: ["schedule", "workflow_dispatch"] }),
+      recipe("test")
+    ])
+    expect(labels(document)).toEqual(["ci-1"])
+    expect(targetsOf(document)).toContain("// publish: not generated, it does not run on a change.")
+    expect(content(generate(document), workflowPath)).toContain("on:\n  pull_request:\npermissions:")
+  })
+
+  it("keeps a needed job that no change triggers", () => {
+    const document = inventory([
+      job("setup", [step("setup:1", "s")], { triggers: ["workflow_call"] }),
+      job("ci", [step("ci:1", "t")], { needs: ["setup"] })
+    ])
+    expect(labels(document)).toEqual(["setup-1", "ci-1"])
+  })
+
+  it("follows a recipe named ci, and leaves destructive and endless recipes out", () => {
+    const document = inventory([
+      recipe("tidy"),
+      recipe("test"),
+      recipe("clean"),
+      recipe("fuzz"),
+      job("justfile:ci", [], {
+        source: "justfile",
+        name: "ci",
+        triggers: [],
+        needs: ["justfile:test", "justfile:tidy"]
+      })
+    ])
+    expect(labels(document)).toEqual(["test-1", "tidy-1"])
+  })
+
+  it("ignores the workflow it generated itself", () => {
+    const own = job("smithers-ci.yml:ci", [step("own:1", "smthrs ci")], { file: workflowPath })
+    const document = inventory([own, job("ci", [step("ci:1", "t")])])
+    expect(labels(document)).toEqual(["ci-1"])
+    expect(targetsOf(document)).not.toContain("smithers-ci.yml:ci")
+  })
+
+  it("still replays what a recipe with no commands of its own groups", () => {
+    const source = targetsOf(inventory([
+      recipe("test"),
+      job("justfile:ci", [], { source: "justfile", name: "ci", triggers: [], needs: ["justfile:test"] })
+    ]))
+    expect(declaration(source, "test-1")).toContain("S.Shell.Test(")
+  })
+
+  it("falls back to the conventional check names", () => {
+    expect(labels(inventory([recipe("build"), recipe("lint"), recipe("start"), recipe("clean")]))).toEqual([
+      "build-1",
+      "lint-1"
+    ])
+  })
+
+  it("refuses when nothing runs on a change", () => {
+    expect(failureOf(inventory([recipe("start")]))).toMatchObject({ code: "unsupported" })
+  })
+})
+
+describe("large graphs", () => {
+  const many = (count: number): InventoryDocument =>
+    inventory([job("a", Array.from({ length: count }, (_, index) => step(`a:${index}`, "x")))])
+
+  it("lets a small graph declare the repository on each target", () => {
+    const source = content(generate(many(32)), packagePath)
+    expect(source).toContain(`const repository = S.glob("//**")`)
+    expect(source).not.toContain("_repository")
+  })
+
+  it("shares one file group above that, so a plan stays small", () => {
+    const source = content(generate(many(33)), packagePath)
+    expect(source).toContain(`const repository = S.Filegroup({ srcs: [S.glob("//**")] })`)
+    expect(source).toContain(`"_repository": repository`)
+  })
+
+  it("keeps a step from taking the file group's label", () => {
+    const source = content(generate(inventory([job("a", [step("_repository", "x")])])), packagePath)
+    expect(source).toMatch(/"_repository-[0-9a-f]+": step0/)
+  })
+})
+
+describe("the size limit", () => {
+  it("refuses targets too large for one PACKAGE.ts", () => {
+    const failure = failureOf(inventory([job("a", [step("a:1", `echo ${"x".repeat(1024 * 1024)}`)])]))
+    expect(failure).toMatchObject({ code: "unsupported", part: "generate" })
+    expect(failure.message).toContain("1048576 bytes")
   })
 })
 
@@ -324,7 +429,7 @@ describe("the workspace and workflow", () => {
 
   it("uses the repository's Node and defaults its triggers and runner", () => {
     const workflow = content(
-      generate(inventory([job("a", [step("a:1", "x")])], {
+      generate(inventory([job("a", [step("a:1", "x")], { source: "justfile", name: "test", triggers: [] })], {
         toolchains: [{ name: "node", source: ".nvmrc", version: "22.20.0" }]
       })),
       workflowPath
