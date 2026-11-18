@@ -4,14 +4,22 @@
  * @since 0.1.0
  */
 
-import type { GeneratedFile } from "../contract/Parts.ts"
 import { applyRefuses } from "../contract/Command.ts"
-import { isBuildFile, isGenerated } from "./Workspace.ts"
+import { isGenerated } from "./Workspace.ts"
 
-/** A file's text; `undefined` when it does not exist, and empty when it exists and cannot be read. */
+/**
+ * A file's text. `undefined` when it does not exist, which includes a file
+ * standing where its directory would be, and empty when it exists and cannot
+ * be read.
+ */
 effect function textOf(file: string) {
   const fs = try FileSystem.FileSystem
-  return fs.readFileString(file) catch (error) => error.reason._tag === "NotFound" ? undefined : ""
+  const path = try Path.Path
+  return fs.readFileString(file) catch effect (error) => {
+    if (error.reason._tag === "NotFound") return undefined
+    const directory = fs.stat(path.dirname(file)) catch () => undefined
+    return directory === undefined || directory.type === "Directory" ? "" : undefined
+  }
 }
 
 /**
@@ -29,21 +37,4 @@ export effect function workspace(root: string) {
     if (text !== undefined && !isGenerated(text)) return file
   }
   return undefined
-}
-
-/**
- * The generated build files that would replace a file `smithers-ci` did not
- * write, in the repository at `root`.
- *
- * @category accessors
- * @since 0.1.0
- */
-export effect function replaced(root: string, files: ReadonlyArray<GeneratedFile>) {
-  const path = try Path.Path
-  const paths: Array<string> = []
-  for (const file of files.filter(isBuildFile)) {
-    const text = try textOf(path.join(root, file.path))
-    if (text !== undefined && !isGenerated(text)) paths.push(file.path)
-  }
-  return paths
 }

@@ -29,6 +29,27 @@ const repository = (): string => {
   return root
 }
 
+describe("the real program, with a file where its directory goes", () => {
+  it("says that .smithers is not a directory, and writes nothing", () => {
+    const root = repository()
+    try {
+      writeFileSync(join(root, ".smithers"), "a file\n")
+      for (
+        const args of [["add", "--all"], ["-c", "user.name=t", "-c", "user.email=t@example.test", "commit", "-qm", "f"]]
+      ) {
+        expect(run(root, "git", args).status).toBe(0)
+      }
+      const outcome = run(root, process.execPath, [program, "apply"])
+      expect(outcome.status, outcome.output).toBe(3)
+      expect(outcome.output).toContain(".smithers is not a directory, so .smithers/WORKSPACE.ts cannot be written")
+      expect(outcome.output).not.toContain("already builds with Smithers build")
+      expect(run(root, "git", ["status", "--porcelain"]).output).toBe("")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 180_000)
+})
+
 describe("the real program, applied twice", () => {
   it("writes byte-equal files the second time, with its own workflow in the tree", () => {
     const root = repository()

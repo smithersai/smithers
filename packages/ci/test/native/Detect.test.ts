@@ -4,7 +4,7 @@ import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
 import { rmSync } from "node:fs"
 import { afterAll, describe, expect, it } from "vitest"
-import { generatedMark, replaced, workspace } from "../../src/native/index.ts"
+import { generatedMark, workspace } from "../../src/native/index.ts"
 import { ownPackage, ownWorkspace, repository } from "./repo.ts"
 import { unreadable } from "./support.vibe"
 
@@ -20,11 +20,6 @@ const onNode = <A>(work: Effect.Effect<A, never, FileSystem.FileSystem | Path.Pa
   Effect.runPromise(Effect.provide(work, NodeServices.layer))
 
 const generatedText = `${generatedMark} Do not edit.\n`
-const generatedFiles = [
-  { path: ".smithers/WORKSPACE.ts", content: generatedText },
-  { path: "PACKAGE.ts", content: generatedText },
-  { path: ".github/workflows/smithers-ci.yml", content: "# generated\n" }
-]
 
 describe("workspace", { timeout: 300_000 }, () => {
   it("finds the workspace an owner wrote, at the root or under .smithers", async () => {
@@ -41,30 +36,21 @@ describe("workspace", { timeout: 300_000 }, () => {
     expect(await onNode(workspace(mixed))).toBe("WORKSPACE.ts")
   })
 
+  it("finds none where a file stands in place of the directory, and still finds one at the root", async () => {
+    expect(await onNode(workspace(repo({ ".smithers": "a file\n" })))).toBeUndefined()
+    expect(await onNode(workspace(repo({ ".smithers": "a file\n", "WORKSPACE.ts": ownWorkspace })))).toBe(
+      "WORKSPACE.ts"
+    )
+  })
+
+  it("counts a directory at the workspace file's path as the owner's", async () => {
+    const root = repo({ ".smithers/WORKSPACE.ts/kept": "x\n" })
+    expect(await onNode(workspace(root))).toBe(".smithers/WORKSPACE.ts")
+  })
+
   it("counts a workspace file it cannot read as the owner's", async () => {
     const root = repo({ "README.md": "plain\n" })
     const found = await onNode(Effect.provide(workspace(root), unreadable))
     expect(found).toBe(".smithers/WORKSPACE.ts")
-  })
-})
-
-describe("replaced", { timeout: 300_000 }, () => {
-  it("lists the generated build files that would replace an owner's file", async () => {
-    const root = repo({ "PACKAGE.ts": ownPackage, ".github/workflows/smithers-ci.yml": "on: [push]\n" })
-    expect(await onNode(replaced(root, generatedFiles))).toEqual(["PACKAGE.ts"])
-  })
-
-  it("lists nothing when the files are absent or were generated", async () => {
-    expect(await onNode(replaced(repo({ "README.md": "plain\n" }), generatedFiles))).toEqual([])
-    const applied = repo({ "PACKAGE.ts": generatedText, ".smithers/WORKSPACE.ts": generatedText })
-    expect(await onNode(replaced(applied, generatedFiles))).toEqual([])
-  })
-
-  it("counts a build file it cannot read as the owner's", async () => {
-    const root = repo({ "README.md": "plain\n" })
-    expect(await onNode(Effect.provide(replaced(root, generatedFiles), unreadable))).toEqual([
-      ".smithers/WORKSPACE.ts",
-      "PACKAGE.ts"
-    ])
   })
 })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { applyRefuses } from "../../src/contract/Command.ts"
 import { type Inventory, ownWorkspace, smithersBuild } from "../../src/contract/Inventory.ts"
-import { found, generatedMark, isBuildFile, isGenerated, overwriteRefusal, refusal } from "../../src/native/index.ts"
+import { found, generatedMark, isGenerated, overwriteRefusal, refusal } from "../../src/native/index.ts"
 import { wrote } from "../../src/native/Workspace.ts"
 
 const inventory = (unsupported?: Inventory["unsupported"]): Inventory => ({
@@ -54,19 +54,6 @@ describe("a repository that already builds with Smithers build", () => {
     // Only the file at the target map's path is read as one.
     expect(wrote("other.json", JSON.stringify({ version: 1, targets: [] }))).toBe(false)
     expect(wrote("PACKAGE.ts", "export {}\n")).toBe(false)
-  })
-
-  it("counts a workspace or a package file in any directory as a build file", () => {
-    const paths = [
-      "PACKAGE.ts",
-      "WORKSPACE.ts",
-      ".smithers/WORKSPACE.ts",
-      "packages/a/PACKAGE.vibe",
-      "packages/a/PACKAGE.ts.md",
-      "MYPACKAGE.ts",
-      ".github/workflows/smithers-ci.yml"
-    ]
-    expect(paths.filter((path) => isBuildFile({ path, content: "" }))).toEqual(paths.slice(0, 4))
   })
 
   it("names every file that would be replaced", () => {
