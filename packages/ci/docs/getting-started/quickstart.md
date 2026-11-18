@@ -30,20 +30,21 @@ bunx smithers-ci --commits 5
 
 ## What it prints
 
-The report has one entry per replayed commit and a total.
+The text report gives the totals: the baseline wall time, the normal-mode wall
+time, the speedup (baseline wall time divided by normal-mode wall time, summed
+over every commit), how many commits were replayed, and the number of
+mismatches. Under them it lists:
 
-For each commit:
-
-- how many files it changed;
-- for the baseline and for normal mode: whether the run passed, its wall time
-  (elapsed), its work time (the sum of every target's own time), and how many
-  targets were cache hits, ran, failed or were skipped;
 - every mismatch: a target whose pass or fail in normal mode differs from the
-  baseline.
+  baseline, with its commit;
+- every CI job it did not replay, with the reason, and every file it could not
+  read.
 
-The total gives the baseline wall time, the normal-mode wall time, the speedup
-(baseline wall time divided by normal-mode wall time, summed over every
-commit), and the number of mismatches.
+`--json` also gives one entry for each commit: how many files it changed and,
+for the baseline and for normal mode, whether the run passed, its wall time
+(elapsed), its work time (the sum of every target's own time), and how many
+targets were cache hits, ran, failed or were skipped. The HTML page has a row
+for each commit with its times and its mismatches.
 
 To keep a copy or feed it to another program:
 
@@ -88,9 +89,11 @@ wall time, and the report adds how well the skipping did. See
 | `1`  | A target's pass or fail in a mode differs from the baseline. |
 | `2`  | The command line was wrong.                                  |
 | `3`  | The repository uses something Smithers CI cannot run yet.    |
+| `4`  | A step of the command could not finish.                      |
 
 A mismatch is the result to look at first: it means a mode would have changed
-what your CI reports.
+what your CI reports. A target that failed and then passed when run again is
+flaky: it counts as a pass, is counted apart, and is no mismatch.
 
 ## Make it your CI
 

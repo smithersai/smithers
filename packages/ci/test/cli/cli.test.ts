@@ -291,12 +291,13 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       for (const file of files) expect(outcome.stdout).toContain(`wrote ${file.path}\n`)
       expect(outcome.stdout).toContain("added .flows to .gitignore\n")
       expect(outcome.stdout).toContain(`smithers-ci: wrote ${files.length} files`)
-      // A second apply writes over the files of the first and has nothing to add to .gitignore.
+      // A second apply writes the same files over its own and has nothing to add to .gitignore.
+      const applied = snapshot(root)
       const again = await exec(["apply", "--cache", "https://cache.example.invalid"], root)
       expect(again.code, again.stderr).toBe(exitCodes.ok)
       expect(again.stdout).not.toContain(".gitignore")
       expect(again.stdout).toContain(`smithers-ci: wrote ${files.length} files`)
-      expect(read(`${root}/.gitignore`)).toBe(".flows\n")
+      expect(changed(applied, snapshot(root))).toEqual([])
     })
   })
 })

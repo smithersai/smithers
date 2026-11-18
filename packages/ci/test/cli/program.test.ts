@@ -297,16 +297,22 @@ describe("a signal", () => {
     expect(listeners.size).toBe(0)
   })
 
-  for (const signal of ["SIGTERM", "SIGINT"] as const) {
-    it(`${signal} sent to the real program during a replay leaves no directory and no child`, async () => {
+  // The baseline runs the step first, then normal mode runs it again as a generated target under smthrs.
+  const during = [["SIGTERM", "the baseline"], ["SIGINT", "the baseline"], ["SIGTERM", "normal mode"]] as const
+  for (const [signal, phase] of during) {
+    it(`${signal} sent to the real program during ${phase} leaves no directory and no child`, async () => {
       const work = scratch()
       const temp = join(work, "tmp")
       mkdirSync(temp)
       const root = keep(temporary("slow"))
       git(root, "init", "--quiet", "--initial-branch=main")
+      const hang = `echo $$ > ${join(work, "step.pid")}\nsleep 600 &\necho $! > ${join(work, "sleep.pid")}\nwait\n`
+      const once = join(work, "ran-once")
       commit(root, "first", {
         "package.json": JSON.stringify({ name: "slow", scripts: { ci: "sh ./slow.sh" } }),
-        "slow.sh": `echo $$ > ${join(work, "step.pid")}\nsleep 600 &\necho $! > ${join(work, "sleep.pid")}\nwait\n`
+        "slow.sh": phase === "the baseline"
+          ? hang
+          : `if [ ! -f ${once} ]; then touch ${once}; exit 0; fi\n${hang}`
       })
       const running = start(bin, ["replay", "--commits", "1"], root, { TMPDIR: temp })
       const step = Number(await awaited(join(work, "step.pid")))
@@ -317,6 +323,7 @@ describe("a signal", () => {
       const outcome = await running.done
       expect(outcome.code, outcome.stderr).toBe(signalExitCodes[signal])
       expect(outcome.stdout).toBe("")
+      expect(outcome.stderr.trim().split("\n").at(-1)).toMatch(phase === "the baseline" ? / baseline$/ : / normal$/)
       expect(readdirSync(temp).filter((name) => name.startsWith("smithers-ci-"))).toEqual([])
       await until(() => !alive(step) && !alive(sleeper), "the step and its child to stop")
     }, 300_000)

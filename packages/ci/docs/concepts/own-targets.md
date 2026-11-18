@@ -139,9 +139,11 @@ Each target's verdict in normal mode is compared with its verdict in the
 baseline, by label. A cache hit is a pass. A target skipped because a target it
 depends on failed is skipped in both, so it is no mismatch. A mismatch means a
 cached result disagrees with a fresh one: a target that reads something its key
-does not cover, or a flaky target. A target that fails once and passes when run
-again is `flaky`, which is not `pass`: on a busy machine a test that times out
-shows up this way.
+does not cover.
+
+A target that fails once and passes when run again is `flaky`. `flaky` agrees
+with `pass`, so it is no mismatch; the report counts flaky verdicts apart. On a
+busy machine a test that times out shows up this way.
 
 ## What it prints while it runs
 

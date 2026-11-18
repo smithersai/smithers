@@ -83,6 +83,14 @@ describe("command reference", () => {
     expect(documented(reference)).toEqual(contract)
   })
 
+  it("gives each exit code the meaning contract 7 gives it", () => {
+    const meanings = Object.fromEntries(
+      table(reference, "Exit codes").map(([_value, name, meaning]) => [code(name!), meaning])
+    )
+    expect(meanings).toEqual(Command.exitCodeHelp)
+    expect(meanings["mismatch"]).toContain("flaky")
+  })
+
   it("disagrees with contract 7 when a default, a help text, a command or an exit code drifts", () => {
     const drifts = [
       reference.replace(/(\| `--commits` +\|[^|]+\| +)`20`/, "$1`50`"),

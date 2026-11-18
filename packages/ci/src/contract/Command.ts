@@ -80,7 +80,8 @@ export const exitCodes = {
  */
 export const exitCodeHelp = {
   ok: "The command finished.",
-  mismatch: "A replayed target's verdict in a mode differs from its baseline verdict.",
+  mismatch:
+    "A replayed target's verdict in a mode differs from its baseline verdict. A flaky target, which passed on a rerun, agrees with a pass and does not make the exit code 1.",
   usage: "The command line was wrong: an unknown command or flag, or a bad value.",
   unsupported: "The repository uses something Smithers CI cannot run yet.",
   failed: "A step of the command could not finish."

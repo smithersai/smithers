@@ -81,15 +81,17 @@ A workflow that does not parse is listed there and nowhere else.
 
 ## Exit codes
 
-| Code | Name          | Meaning                                                                  |
-| ---- | ------------- | ------------------------------------------------------------------------ |
-| `0`  | `ok`          | The command finished.                                                    |
-| `1`  | `mismatch`    | A replayed target's verdict in a mode differs from its baseline verdict. |
-| `2`  | `usage`       | The command line was wrong: an unknown command or flag, or a bad value.  |
-| `3`  | `unsupported` | The repository uses something Smithers CI cannot run yet.                |
-| `4`  | `failed`      | A step of the command could not finish.                                  |
+| Code | Name          | Meaning                                                                                                                                                                 |
+| ---- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | `ok`          | The command finished.                                                                                                                                                   |
+| `1`  | `mismatch`    | A replayed target's verdict in a mode differs from its baseline verdict. A flaky target, which passed on a rerun, agrees with a pass and does not make the exit code 1. |
+| `2`  | `usage`       | The command line was wrong: an unknown command or flag, or a bad value.                                                                                                 |
+| `3`  | `unsupported` | The repository uses something Smithers CI cannot run yet.                                                                                                               |
+| `4`  | `failed`      | A step of the command could not finish.                                                                                                                                 |
 
 A mismatch is defined in [How it works](../concepts/how-it-works.md#3-replay).
+A target that failed and then passed on a rerun is `flaky`. The report counts
+flaky verdicts apart from mismatches, and they never make the exit code `1`.
 
 Ctrl-C (`SIGINT`) and `SIGTERM` stop the program: the step it is running is
 stopped, its temporary copies are removed, and it exits `130` or `143`, as a
