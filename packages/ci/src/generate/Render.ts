@@ -277,8 +277,11 @@ const varyingTools = (legs: ReadonlyArray<Leg>): ReadonlySet<string> => {
   )
 }
 
+/** A runner as `runs-on` takes it: one label, or the list of labels a job names together. */
+const runnerValue = (runner: string): string => runner.includes(",") ? JSON.stringify(runner.split(",")) : text(runner)
+
 const renderLeg = (leg: Leg, varying: ReadonlySet<string>): ReadonlyArray<string> => [
-  `          - os: ${text(leg.runner)}`,
+  `          - os: ${runnerValue(leg.runner)}`,
   `            leg: ${text(leg.id)}`,
   `            tools: ${text(leg.name)}`,
   ...leg.toolchains
@@ -396,7 +399,9 @@ const renderWorkflow = (
   const apart = plan.legs.length > 0
   const varying = varyingTools(plan.legs)
   // Each machine keeps its own results: they were made under its versions.
-  const cacheKey = `smithers-ci-\${{ matrix.os }}-${apart ? "${{ matrix.leg }}-" : ""}`
+  // A runner can be a list of labels, which an expression prints only through `join`.
+  const machine = plan.runners.some((runner) => runner.includes(",")) ? "join(matrix.os, '-')" : "matrix.os"
+  const cacheKey = `smithers-ci-\${{ ${machine} }}-${apart ? "${{ matrix.leg }}-" : ""}`
   // `sed` and not `awk`: a dependency checker that reads workflows (knip) reports `awk` as a program the
   // repository does not declare.
   const selection = apart
@@ -421,7 +426,7 @@ const renderWorkflow = (
     `      matrix:`,
     ...(apart
       ? [`        include:`, ...plan.legs.flatMap((leg) => renderLeg(leg, varying))]
-      : [`        os: [${plan.runners.map(text).join(", ")}]`]),
+      : [`        os: [${plan.runners.map(runnerValue).join(", ")}]`]),
     `    runs-on: \${{ matrix.os }}`,
     `    steps:`,
     `      - uses: actions/checkout@v4`,

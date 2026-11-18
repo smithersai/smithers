@@ -885,6 +885,12 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     expect(["ubuntu-latest", "self-hosted,linux,x64", "macos-15", "macOS-latest", "windows-2022"].map(Inventory.hostOf))
       .toEqual(["linux", "linux", "darwin", "darwin", "win32"])
     expect(Inventory.hostOf("self-hosted")).toBeUndefined()
+    expect(["self-hosted", "Self-Hosted,linux", "linux, self-hosted"].map(Inventory.isSelfHosted)).toEqual([
+      true,
+      true,
+      true
+    ])
+    expect(["ubuntu-latest", "my-self-hosted", undefined].map(Inventory.isSelfHosted)).toEqual([false, false, false])
     expect(Inventory.hostOf(undefined)).toBeUndefined()
     expect(Schema.decodeUnknownSync(Inventory.Host)("darwin")).toBe("darwin")
     expect([Inventory.otherSystem, Inventory.noTarget]).toEqual(["other-system", "no-target"])

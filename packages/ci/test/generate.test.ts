@@ -964,6 +964,18 @@ describe("matrix and systems", () => {
     expect(content(generated, workflowPath)).toContain(`os: ["self-hosted"]`)
   })
 
+  it("keeps every label of a self-hosted runner, as the job names them", () => {
+    const workflow = content(
+      generate(inventory([
+        job("a", [step("a:1", "t")], { runsOn: "self-hosted,linux,gpu" }),
+        job("b", [step("b:1", "u")], { runsOn: "ubuntu-latest" })
+      ])),
+      workflowPath
+    )
+    expect(parseYaml(workflow).jobs.ci.strategy.matrix.os).toEqual([["self-hosted", "linux", "gpu"], "ubuntu-latest"])
+    expect(workflow).toContain("key: smithers-ci-${{ join(matrix.os, '-') }}-${{ github.sha }}")
+  })
+
   it("waits only for needed work on the same system", () => {
     const build = job("build", [step("build:1", "b")], {
       runsOn: "${{ matrix.os }}",

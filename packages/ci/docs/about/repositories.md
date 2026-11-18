@@ -41,6 +41,9 @@ Smithers CI slower, never wrong.
   [GitHub Actions workflows](../concepts/github-actions.md).
 - **What only GitHub knows.** A job that reads a secret, a pull request's
   title, or what another job gave is left out, and the report says which.
+- **Jobs for a self-hosted runner.** That machine has things this one does not,
+  so the replay leaves the job out and says why. `smithers-ci apply` keeps the
+  job on the labels it names in `runs-on`.
 - **Jobs for another operating system.** A job, or a matrix variant, that runs
   on another system than your machine is listed and not run. When every job
   is for another system, the command names the system and exits with code 3.

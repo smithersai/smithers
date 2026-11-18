@@ -312,8 +312,7 @@ describe("replayable", () => {
     const on = (host: string) => replayable(narrowed, mapAll(narrowed), host)
     expect(on("linux").units.map((unit) => [unit.job, unit.steps[0]!.label])).toEqual([
       ["both", "//:both1-ubuntu-latest"],
-      ["after-both", "//:after-both1"],
-      ["self", "//:self1"]
+      ["after-both", "//:after-both1"]
     ])
     expect(on("linux").left).toEqual([
       {
@@ -322,10 +321,11 @@ describe("replayable", () => {
       },
       { job: "mac", reasons: [{ feature: "other-system", detail: "mac runs on darwin; this machine is linux" }] },
       { job: "after-mac", reasons: [{ feature: "needs", detail: "after-mac needs mac, which is not replayed" }] },
+      { job: "self", reasons: [{ feature: "self-hosted", detail: "self runs on a self-hosted runner" }] },
       { job: "windows", reasons: [{ feature: "other-system", detail: "windows runs on win32; this machine is linux" }] }
     ])
-    expect(on("darwin").units.map((unit) => unit.job)).toEqual(["both", "mac", "after-mac", "after-both", "self"])
-    expect(on("darwin").left.map((entry) => entry.job)).toEqual(["both", "windows"])
+    expect(on("darwin").units.map((unit) => unit.job)).toEqual(["both", "mac", "after-mac", "after-both"])
+    expect(on("darwin").left.map((entry) => entry.job)).toEqual(["both", "self", "windows"])
     // A variant for another system needs no target to be left out as that, not as `no-target`.
     const none = replayable(narrowed, map([]), "linux")
     expect(none.units).toEqual([])
@@ -333,6 +333,18 @@ describe("replayable", () => {
     expect(none.left.find((entry) => entry.job === "both")?.reasons.map((reason) => reason.feature)).toEqual([
       "no-target"
     ])
+  })
+
+  it("leaves out only the self-hosted variant of a job that also runs here", () => {
+    const narrowed = inventory([
+      job("both", { runsOn: "${{ matrix.os }}", matrix: [{ os: "self-hosted" }, { os: "ubuntu-latest" }] })
+    ])
+    const { left, units } = replayable(narrowed, mapAll(narrowed), "linux")
+    expect(units.map((unit) => unit.steps[0]!.label)).toEqual(["//:both1-ubuntu-latest"])
+    expect(left).toEqual([{
+      job: "both",
+      reasons: [{ feature: "self-hosted", detail: "both (os=self-hosted) runs on a self-hosted runner" }]
+    }])
   })
 
   it("puts the jobs of one Justfile in the order they run, in one tree, after the jobs with a checkout of their own", () => {

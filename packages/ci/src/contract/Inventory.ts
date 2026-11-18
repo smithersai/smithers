@@ -344,6 +344,27 @@ export const hostOf = (runsOn: string | undefined): Host | undefined => {
 }
 
 /**
+ * The `NotReplayed` feature of a matrix variant, or a whole job, that runs on
+ * a self-hosted runner. That machine has things this one does not, so the
+ * replay leaves it out. The generated workflow keeps it, on its own labels.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const selfHosted = "self-hosted"
+
+/**
+ * Whether a runner (`Job.runsOn`, with its matrix values filled in) names the
+ * `self-hosted` label. GitHub reads labels without regard to case.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const isSelfHosted = (runsOn: string | undefined): boolean =>
+  runsOn !== undefined && runsOn.split(",").some((label) => label.trim().toLowerCase() === selfHosted)
+
+/**
  * The `NotReplayed` feature of a matrix variant, or a whole job, that runs
  * on another operating system than this machine's.
  *

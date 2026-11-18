@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { type Inventory, type Job, missingTool, otherSystem, type Toolchain } from "../../src/contract/Inventory.ts"
+import {
+  type Inventory,
+  type Job,
+  missingTool,
+  otherSystem,
+  selfHosted,
+  type Toolchain
+} from "../../src/contract/Inventory.ts"
 import {
   differs,
   type Found,
@@ -136,12 +143,31 @@ describe("neededTools", () => {
       ]
     )
     // A job that is not CI, one something else stops, and one that needs it, are not asked about.
-    expect(neededTools(read, "linux")).toEqual(["node", "go", "zig", "just"])
-    expect(neededTools(read, "darwin")).toEqual(["swift", "go", "zig", "just"])
+    // A job for a self-hosted runner is not run here, so its tools are not asked about either.
+    expect(neededTools(read, "linux")).toEqual(["node", "go", "just"])
+    expect(neededTools(read, "darwin")).toEqual(["swift", "go", "just"])
   })
 })
 
 describe("onMachine", () => {
+  it("leaves out a job for a self-hosted runner and says which runner", () => {
+    const read = inventory([job("self", { runsOn: "self-hosted,gpu" }), job("test")], [])
+    const [self, test] = onMachine(read, "linux", new Map()).jobs
+    expect(self?.unsupported).toEqual([{
+      feature: selfHosted,
+      detail: `${self?.file}: ${self?.name} runs on the self-hosted runner self-hosted,gpu`
+    }])
+    expect(test?.unsupported).toEqual([])
+  })
+
+  it("keeps a job with a variant here and leaves its self-hosted variant to the replay", () => {
+    const read = inventory([job("both", {
+      runsOn: "${{ matrix.os }}",
+      matrix: [{ os: "self-hosted" }, { os: "ubuntu-latest" }]
+    })], [])
+    expect(onMachine(read, "linux", new Map()).jobs[0]?.unsupported).toEqual([])
+  })
+
   it("leaves an inventory as it is when the machine has every tool at the version asked for", () => {
     const read = inventory([job("test")], [tool("node", "test", "26.x"), tool("uv", "test")])
     expect(onMachine(read, "linux", have({ node: "26.5.0", uv: "0.9.7" }))).toEqual(read)

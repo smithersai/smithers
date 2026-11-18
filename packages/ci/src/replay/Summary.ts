@@ -13,6 +13,7 @@ import {
   expand,
   hostOf,
   type Inventory,
+  isSelfHosted,
   type Job,
   needsLeftOut,
   noTarget,
@@ -21,6 +22,7 @@ import {
   otherSystem,
   reasonsText,
   script,
+  selfHosted,
   treeOf,
   type Unsupported,
   withheldOf,
@@ -283,12 +285,17 @@ export interface Replayable {
 export const replayable = (inventory: Ci, map: TargetMap, host: string): Replayable => {
   const byId = new Map(inventory.jobs.map((job) => [job.id, job]))
   const variantsOf = (job: Job): ReadonlyArray<Variant> => job.matrix.length === 0 ? [{}] : job.matrix
-  const systemOf = (job: Job, variant: Variant) =>
-    hostOf(job.runsOn === undefined ? undefined : expand(job.runsOn, variant))
+  const runnerOf = (job: Job, variant: Variant) => job.runsOn === undefined ? undefined : expand(job.runsOn, variant)
+  const systemOf = (job: Job, variant: Variant) => hostOf(runnerOf(job, variant))
   const here = (job: Job): ReadonlyArray<Variant> =>
-    variantsOf(job).filter((variant) => (systemOf(job, variant) ?? host) === host)
+    variantsOf(job).filter((variant) =>
+      !isSelfHosted(runnerOf(job, variant)) && (systemOf(job, variant) ?? host) === host
+    )
   const elsewhere = (job: Job): ReadonlyArray<Unsupported> =>
     variantsOf(job).flatMap((variant) => {
+      if (isSelfHosted(runnerOf(job, variant))) {
+        return [{ feature: selfHosted, detail: `${job.id}${variantText(variant)} runs on a self-hosted runner` }]
+      }
       const system = systemOf(job, variant) ?? host
       return system === host
         ? []

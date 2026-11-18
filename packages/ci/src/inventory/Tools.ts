@@ -14,9 +14,11 @@ import {
   expand,
   hostOf,
   type Inventory,
+  isSelfHosted,
   type Job,
   missingTool,
   otherSystem,
+  selfHosted,
   type Toolchain,
   type ToolVersion,
   type Unsupported
@@ -139,13 +141,19 @@ export const systemName = (host: string): string => systemNames[host] ?? host
 const variantsOf = (job: Job): ReadonlyArray<Readonly<Record<string, string>>> =>
   job.matrix.length === 0 ? [{}] : job.matrix
 
-/** The systems a job's variants run on, and the variants that run on `host`. A runner that names no system is here. */
+/**
+ * Where a job's variants run: the systems of those on a machine anyone can have, the variants of them that run on
+ * `host`, and the self-hosted runners of the rest. A runner that names no system is here.
+ */
 const placesOf = (job: Job, host: string) => {
-  const systemOf = (variant: Readonly<Record<string, string>>): string =>
-    hostOf(job.runsOn === undefined ? undefined : expand(job.runsOn, variant)) ?? host
+  const runnerOf = (variant: Readonly<Record<string, string>>): string | undefined =>
+    job.runsOn === undefined ? undefined : expand(job.runsOn, variant)
+  const systemOf = (variant: Readonly<Record<string, string>>): string => hostOf(runnerOf(variant)) ?? host
+  const hosted = variantsOf(job).filter((variant) => !isSelfHosted(runnerOf(variant)))
   return {
-    systems: [...new Set(variantsOf(job).map(systemOf))],
-    here: variantsOf(job).filter((variant) => systemOf(variant) === host)
+    systems: [...new Set(hosted.map(systemOf))],
+    here: hosted.filter((variant) => systemOf(variant) === host),
+    ownRunners: [...new Set(variantsOf(job).map(runnerOf).filter(isSelfHosted))]
   }
 }
 
@@ -218,13 +226,17 @@ export const onMachine = (inventory: Inventory, host: string, found: ReadonlyMap
   const versions: Array<ToolVersion> = []
   const jobs = inventory.jobs.map((job): Job => {
     if (!inCi.has(job.id)) return job
-    const { here, systems } = placesOf(job, host)
+    const { here, ownRunners, systems } = placesOf(job, host)
     if (here.length === 0) {
       const elsewhere = systems.map((system): Unsupported => ({
         feature: otherSystem,
         detail: `${job.file}: ${job.name} runs on ${systemName(system)}; this machine is ${systemName(host)}`
       }))
-      return { ...job, unsupported: [...job.unsupported, ...elsewhere] }
+      const own = ownRunners.map((runner): Unsupported => ({
+        feature: selfHosted,
+        detail: `${job.file}: ${job.name} runs on the self-hosted runner ${runner}`
+      }))
+      return { ...job, unsupported: [...job.unsupported, ...elsewhere, ...own] }
     }
     if (!runs.has(job.id)) return job
     const tools = inventory.toolchains.filter((tool) => tool.job === job.id)
