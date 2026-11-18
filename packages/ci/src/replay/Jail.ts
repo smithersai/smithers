@@ -66,8 +66,8 @@ export type Probe =
 
 /**
  * Asks a machine, this one unless `facts` describes another. It can jail a
- * step when it runs Linux and bubblewrap starts; bubblewrap is started once
- * to know. Beside the credentials of the home, a step must not reach the
+ * step when it runs Linux and bubblewrap starts; `refuses` starts bubblewrap
+ * once to know, and says why when it cannot. Beside the credentials of the home, a step must not reach the
  * person's runtime directory: the key agents and the secret service of a
  * session listen there. The caches kept in sight are where a `smthrs`
  * started from source keeps its compiled code, TypeScript's and VibeLang's:
@@ -78,8 +78,11 @@ export type Probe =
  * @category resolution
  * @since 0.1.0
  */
-export const probe = (facts: ExecSandbox.Host = ExecSandbox.host()): Probe => {
-  const refusal = ExecSandbox.writeProtectionRefusal(facts)
+export const probe = (
+  facts: ExecSandbox.Host = ExecSandbox.host(),
+  refuses: (facts: ExecSandbox.Host) => string | undefined = ExecSandbox.writeProtectionRefusal
+): Probe => {
+  const refusal = refuses(facts)
   return refusal === undefined
     ? {
       bwrap: facts.executable("bwrap") as string,

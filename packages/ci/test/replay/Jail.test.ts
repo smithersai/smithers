@@ -320,6 +320,15 @@ describe("the jail", () => {
     expect(probe({ ...facts, platform: "linux", executable: () => undefined })).toEqual({
       refusal: "write protection needs bubblewrap, and bwrap is not on PATH (install the bubblewrap package)"
     })
+    // A machine whose bubblewrap starts, whatever machine the test runs on.
+    const starts = { ...facts, executable: () => "/usr/bin/bwrap", home: "/home/person", uid: 1234 }
+    expect(probe(starts, () => undefined)).toEqual({
+      bwrap: "/usr/bin/bwrap",
+      home: "/home/person",
+      hidden: ["/run/user/1234"],
+      tmp: tmpdir(),
+      caches: [join(tmpdir(), "tsx-1234"), join(tmpdir(), "vibelang-cache-1234")]
+    })
     if (jailable) {
       expect(found).toEqual({
         bwrap: facts.executable("bwrap"),
