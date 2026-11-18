@@ -1,0 +1,105 @@
+// Real things the fast-mode tests run on: the host's file system and git, in temporary directories.
+import { NodeHost } from "@smthrs/platform-node"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type { Plan } from "../../src/contract/Plan.ts"
+import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.ts"
+import type { Row } from "../../src/contract/Selection.ts"
+import type { Observation } from "../../src/select/Features.ts"
+
+/** Runs a test body on the real host, in a scope that removes its temporary directories. */
+export const live = <A, E>(body: A!E!(FileSystem.FileSystem | Path.Path | ChildProcessSpawner | Scope.Scope)) =>
+  Effect.provide(Effect.scoped(body), NodeHost.layer)
+
+/** A fresh temporary directory. */
+export effect function directory() {
+  return try (try FileSystem.FileSystem).makeTempDirectoryScoped({ prefix: "smithers-ci-select-" })
+}
+
+/** Runs git in `root` as a fixed author, at `at` when given, and answers what it printed. */
+export effect function git(root: string, args: ReadonlyArray<string>, at?: number) {
+  const spawner = try ChildProcessSpawner
+  const date = at === undefined ? {} : { GIT_AUTHOR_DATE: `@${at / 1000} +0000`, GIT_COMMITTER_DATE: `@${at / 1000} +0000` }
+  const identity = ["-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false"]
+  return (try spawner.string(ChildProcess.make("git", [...identity, ...args], { cwd: root, env: date, extendEnv: true }))).trim()
+}
+
+/** One commit to make: its time, and each file's new text, or null to delete it. */
+export interface Step {
+  readonly at: number
+  readonly files: Readonly<Record<string, string | null>>
+}
+
+/** A real git repository with one commit per step. Answers its directory and the commit ids, oldest first. */
+export effect function repository(steps: ReadonlyArray<Step>) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try directory()
+  try git(root, ["init", "--quiet", "--initial-branch=main"])
+  const commits: Array<string> = []
+  for (const step of steps) {
+    for (const [name, text] of Object.entries(step.files)) {
+      const file = path.join(root, name)
+      if (text === null) {
+        try fs.remove(file)
+      } else {
+        try fs.makeDirectory(path.dirname(file), { recursive: true })
+        try fs.writeFileString(file, text)
+      }
+    }
+    try git(root, ["add", "--all"])
+    try git(root, ["commit", "--quiet", "--allow-empty", "-m", `commit ${commits.length + 1}`], step.at)
+    commits.push(try git(root, ["rev-parse", "HEAD"]))
+  }
+  return { root, commits }
+}
+
+/** One target's result. */
+export const result = (label: string, status: TargetResult["status"], attempts?: ReadonlyArray<boolean>): TargetResult => ({
+  label,
+  status,
+  key: "k",
+  durationMs: 1,
+  ...(attempts === undefined ? {} : { attempts: attempts.map((passed) => ({ passed, durationMs: 1 })) })
+})
+
+/** A normal-mode run record of `commit`. */
+export const record = (commit: string | undefined, results: ReadonlyArray<TargetResult>, mode?: RunRecord["mode"]): RunRecord => ({
+  ok: results.every((each) => each.status !== "failed"),
+  counts: { hit: 0, ran: 0, failed: 0, skipped: 0 },
+  results,
+  ...(commit === undefined ? {} : { commit }),
+  ...(mode === undefined ? {} : { mode })
+})
+
+/** A row of `commit` and `target` with plain features. */
+export const row = (commit: string, target: string, failed = false, features: Partial<Row["features"]> = {}): Row => ({
+  commit,
+  target,
+  features: {
+    extensions: [".ts"],
+    fileChanges: { d3: 0, d14: 0, d56: 0 },
+    failureRates: { d7: 0, d14: 0, d28: 0, d56: 0 },
+    project: "packages/a",
+    testCount: 1,
+    graphDistance: 0,
+    ...features
+  },
+  attempts: [!failed],
+  failed,
+  flaky: false
+})
+
+/** A row seen at `at`. */
+export const seen = (at: number, commit: string, target: string, failed = false, features: Partial<Row["features"]> = {}): Observation => ({
+  at,
+  row: row(commit, target, failed, features)
+})
+
+/** A plan whose targets depend on the labels given. */
+export const plan = (targets: Readonly<Record<string, ReadonlyArray<string>>>): Plan => ({
+  verb: "ci",
+  pattern: "//...",
+  roots: [],
+  targets: Object.entries(targets).map(([label, dependencies]) => ({ label, rule: "test", key: "k", cacheable: true, dependencies }))
+})

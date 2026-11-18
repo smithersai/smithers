@@ -1,0 +1,154 @@
+// The ledger in memory and on the real file system.
+import { describe, expect, it } from "@effect/vitest"
+import { Ledger, layerFile, layerMemory } from "../../src/select/Ledger.vibe"
+import { directory, live, plan, seen } from "./support.vibe"
+
+const now = Date.UTC(2026, 10, 14)
+
+describe("Ledger.layerMemory", () => {
+  it.effect("starts empty, keeps what is recorded, and replaces a row recorded again", () => effect {
+    provide layerMemory() {
+      const ledger = try Ledger
+      const empty = try ledger.observations()
+      try ledger.record([seen(now, "c1", "//a:test"), seen(now, "c1", "//b:test")])
+      try ledger.record([seen(now, "c1", "//a:test", true), seen(now + 1, "c2", "//a:test")])
+      const held = try ledger.observations()
+      try Effect.try(() => {
+        expect(empty).toEqual([])
+        expect(held).toEqual([seen(now, "c1", "//b:test"), seen(now, "c1", "//a:test", true), seen(now + 1, "c2", "//a:test")])
+      })
+    }
+  })
+
+  it.effect("starts from its seed and answers a seeded plan", () => effect {
+    const graph = plan({ "//a:test": [] })
+    provide layerMemory({ observations: [seen(now, "c1", "//a:test")], plans: { c1: graph } }) {
+      const ledger = try Ledger
+      const held = try ledger.observations()
+      const found = try ledger.plan("c1")
+      const absent = try ledger.plan("c2")
+      const inherited = try ledger.plan("constructor")
+      try Effect.try(() => {
+        expect(held).toEqual([seen(now, "c1", "//a:test")])
+        expect(found).toEqual(graph)
+        expect(absent).toBeUndefined()
+        expect(inherited).toBeUndefined()
+      })
+    }
+  })
+})
+
+describe("Ledger.layerFile", () => {
+  it.live("is empty before anything is recorded, and writes nothing for no rows", () => live(effect {
+    const fs = try FileSystem.FileSystem
+    const root = `${try directory()}/ledger`
+    provide layerFile(root) {
+      const ledger = try Ledger
+      try ledger.record([])
+      const held = try ledger.observations()
+      const planned = try ledger.plan("c1")
+      const made = try fs.exists(root)
+      try Effect.try(() => {
+        expect(held).toEqual([])
+        expect(planned).toBeUndefined()
+        expect(made).toBe(false)
+      })
+    }
+  }))
+
+  it.live("keeps rows across layers, one JSON line each, a later record replacing an earlier one", () => live(effect {
+    const fs = try FileSystem.FileSystem
+    const root = `${try directory()}/ledger`
+    provide layerFile(root) {
+      const ledger = try Ledger
+      try ledger.record([seen(now, "c1", "//a:test"), seen(now, "c1", "//b:test")])
+      try ledger.record([seen(now, "c1", "//a:test", true)])
+    }
+    const text = try fs.readFileString(`${root}/rows.jsonl`)
+    provide layerFile(root) {
+      const held = try (try Ledger).observations()
+      try Effect.try(() => {
+        expect(text.trimEnd().split("\n")).toHaveLength(3)
+        expect(held).toEqual([seen(now, "c1", "//b:test"), seen(now, "c1", "//a:test", true)])
+      })
+    }
+  }))
+
+  it.live("reads a commit's saved plan, by a file name that cannot leave the directory", () => live(effect {
+    const fs = try FileSystem.FileSystem
+    const root = try directory()
+    const graph = plan({ "//a:test": [], "//b:test": ["//a:test"] })
+    try fs.makeDirectory(`${root}/plans`)
+    try fs.writeFileString(`${root}/plans/c1.json`, JSON.stringify(graph))
+    try fs.writeFileString(`${root}/plans/..%2Fescape.json`, JSON.stringify(plan({ "//escaped:test": [] })))
+    provide layerFile(root) {
+      const ledger = try Ledger
+      const found = try ledger.plan("c1")
+      const escaped = try ledger.plan("../escape")
+      try Effect.try(() => {
+        expect(found).toEqual(graph)
+        expect(escaped?.targets.map((target) => target.label)).toEqual(["//escaped:test"])
+      })
+    }
+  }))
+
+  it.live("fails invalid-document for a line that is not a ledger row, naming the line", () => live(effect {
+    const fs = try FileSystem.FileSystem
+    const root = try directory()
+    try fs.writeFileString(`${root}/rows.jsonl`, `${JSON.stringify(seen(now, "c1", "//a:test"))}\n\n{"at":1,"row":{"commit":""}}\n`)
+    provide layerFile(root) {
+      const failed = try flip((try Ledger).observations())
+      try Effect.try(() => {
+        expect(failed).toEqual({ code: "invalid-document", message: `Line 3 of ${root}/rows.jsonl is not a ledger row`, part: "select" })
+      })
+    }
+  }))
+
+  it.live("fails invalid-document for a saved plan that is not a plan", () => live(effect {
+    const fs = try FileSystem.FileSystem
+    const root = try directory()
+    try fs.makeDirectory(`${root}/plans`)
+    try fs.writeFileString(`${root}/plans/c1.json`, `{"verb":"ci"}`)
+    provide layerFile(root) {
+      const failed = try flip((try Ledger).plan("c1"))
+      try Effect.try(() => {
+        expect(failed).toEqual({ code: "invalid-document", message: `${root}/plans/c1.json is not a plan`, part: "select" })
+      })
+    }
+  }))
+
+  it.live("fails command-failed when the ledger cannot be read or written", () => live(effect {
+    const fs = try FileSystem.FileSystem
+    const root = try directory()
+    // rows.jsonl is a directory, so it can be neither read as text nor appended to.
+    try fs.makeDirectory(`${root}/rows.jsonl`)
+    provide layerFile(root) {
+      const ledger = try Ledger
+      const unread = try flip(ledger.observations())
+      const unwritten = try flip(ledger.record([seen(now, "c1", "//a:test")]))
+      try Effect.try(() => {
+        expect(unread.code).toBe("command-failed")
+        expect(unread.message).toContain(`The ledger file ${root}/rows.jsonl could not be used`)
+        expect(unwritten.code).toBe("command-failed")
+      })
+    }
+  }))
+
+  it.live("fails command-failed when the file system cannot say whether the ledger exists", () => live(effect {
+    const real = try FileSystem.FileSystem
+    // A faulty file system: it cannot check for any file.
+    const faulty = { ...real, exists: () => fail(new Error("disk unplugged")) } as unknown as FileSystem.FileSystem
+    const failed = try flip(Effect.provideService(effect {
+      provide layerFile("/ledger") {
+        return try (try Ledger).observations()
+      }
+    }, FileSystem.FileSystem, faulty))
+    try Effect.try(() => {
+      expect(failed).toEqual({
+        code: "command-failed",
+        message: "The ledger file /ledger/rows.jsonl could not be used: disk unplugged",
+        part: "select"
+      })
+    })
+  }))
+})

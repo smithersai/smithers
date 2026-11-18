@@ -1,0 +1,133 @@
+/**
+ * Fast mode's memory of one repository: every row built so far with the
+ * time of its change, and the plans saved for its commits.
+ *
+ * @since 0.1.0
+ */
+
+import type { Failure } from "../contract/Parts.ts"
+import { Plan } from "../contract/Plan.ts"
+import { Row } from "../contract/Selection.ts"
+import { failure } from "./Failure.ts"
+import type { Observation } from "./Features.ts"
+
+/**
+ * One line of the ledger's `rows.jsonl`: a row and the time of its change,
+ * in milliseconds since the epoch.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Entry = Schema.Struct({ at: Schema.Finite, row: Row })
+
+/**
+ * The rows and plans fast mode keeps.
+ *
+ * `observations` answers every row recorded so far, oldest record first, one
+ * per commit and target. `record` adds rows; a row recorded again replaces
+ * the earlier one. `plan` answers the plan saved for a commit, if any.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export service Ledger {
+  observations(): ReadonlyArray<Observation>!Failure
+  record(observations: ReadonlyArray<Observation>): void!Failure
+  plan(commit: string): (Plan | undefined)!Failure
+}
+
+/** The observations with a later record of the same commit and target replacing an earlier one. */
+const latest = (observations: ReadonlyArray<Observation>): ReadonlyArray<Observation> => {
+  const kept = new Map<string, Observation>()
+  for (const observation of observations) {
+    const key = JSON.stringify([observation.row.commit, observation.row.target])
+    kept.delete(key)
+    kept.set(key, observation)
+  }
+  return [...kept.values()]
+}
+
+/**
+ * A ledger held in memory, for one process.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerMemory = (seed: {
+  readonly observations?: ReadonlyArray<Observation>
+  readonly plans?: Readonly<Record<string, Plan>>
+} = {}) =>
+  Layer.sync(Ledger, () => {
+    let held = latest(seed.observations ?? [])
+    return {
+      observations: () => succeed(held),
+      record: (observations: ReadonlyArray<Observation>) =>
+        sync(() => {
+          held = latest([...held, ...observations])
+        }),
+      plan: (commit: string) => succeed(Object.hasOwn(seed.plans ?? {}, commit) ? seed.plans![commit] : undefined)
+    }
+  })
+
+const decodeEntry = Schema.decodeUnknownEffect(Schema.fromJsonString(Entry))
+const decodePlan = Schema.decodeUnknownEffect(Schema.fromJsonString(Plan))
+
+/**
+ * A ledger in `directory`: rows in `rows.jsonl`, one JSON object per line,
+ * and a commit's plan in `plans/<commit>.json`.
+ *
+ * A file that cannot be read or written fails `command-failed`. A line or a
+ * plan that is not the contract's shape fails `invalid-document`.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerFile = (directory: string) =>
+  Layer.effect(Ledger, effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const rowsFile = path.join(directory, "rows.jsonl")
+    const unreadable = (file: string) => (error: { readonly message: string }) =>
+      failure("command-failed", `The ledger file ${file} could not be used: ${error.message}`)
+
+    /** The text of `file`, or nothing when it does not exist. */
+    const text = effect (file: string) => {
+      if (!(try Effect.mapError(fs.exists(file), unreadable(file)))) return undefined
+      return try Effect.mapError(fs.readFileString(file), unreadable(file))
+    }
+
+    const observations = effect () => {
+      const held = (try text(rowsFile)) ?? ""
+      const entries: Array<Observation> = []
+      for (const [index, line] of held.split("\n").entries()) {
+        if (line.trim() === "") continue
+        entries.push(decodeEntry(line) catch effect () => {
+          throw failure("invalid-document", `Line ${index + 1} of ${rowsFile} is not a ledger row`)
+        })
+      }
+      return latest(entries)
+    }
+
+    return {
+      observations,
+      record: effect (added: ReadonlyArray<Observation>) => {
+        if (added.length === 0) return
+        const lines = added.map((observation) => `${JSON.stringify(observation)}\n`).join("")
+        try Effect.mapError(
+          effect {
+            try fs.makeDirectory(directory, { recursive: true })
+            try fs.writeFileString(rowsFile, lines, { flag: "a" })
+          },
+          unreadable(rowsFile)
+        )
+      },
+      plan: effect (commit: string) => {
+        const file = path.join(directory, "plans", `${encodeURIComponent(commit)}.json`)
+        const held = try text(file)
+        if (held === undefined) return undefined
+        return decodePlan(held) catch effect () => {
+          throw failure("invalid-document", `${file} is not a plan`)
+        }
+      }
+    }
+  })

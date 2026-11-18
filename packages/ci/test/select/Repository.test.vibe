@@ -1,0 +1,112 @@
+// The git reader on real repositories made in temporary directories.
+import { describe, expect, it } from "@effect/vitest"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { day } from "../../src/select/Features.ts"
+import { layerGit, Repository } from "../../src/select/Repository.vibe"
+import { directory, git, live, repository } from "./support.vibe"
+
+const now = Date.UTC(2026, 10, 14)
+
+/** Reads `commit` of the repository at `root` with real git. */
+const change = (root: string, commit: string) => effect {
+  provide layerGit {
+    return try (try Repository).change(root, commit)
+  }
+}
+
+describe("Repository.layerGit", () => {
+  it.live("reads a change's time, its files, the commits of the 56 days before it, and its tree", () => live(effect {
+    const { root, commits } = try repository([
+      { at: now - 60 * day, files: { "packages/a/src/old.ts": "0", "docs/guide with space.md": "0" } },
+      { at: now - 20 * day, files: { "packages/a/src/x.ts": "1", "packages/a/test/x.test.ts": "1" } },
+      { at: now - 2 * day, files: { "packages/a/src/x.ts": "2", "packages/a/src/old.ts": null } },
+      { at: now, files: { "packages/a/src/x.ts": "3", "packages/b/Justfile": "build:" } }
+    ])
+    const read = try change(root, commits[3]!)
+    try Effect.try(() => {
+      expect(read.at).toBe(now)
+      expect([...read.files].sort()).toEqual(["packages/a/src/x.ts", "packages/b/Justfile"])
+      expect(read.history).toEqual([
+        { at: now - 2 * day, files: ["packages/a/src/old.ts", "packages/a/src/x.ts"] },
+        { at: now - 20 * day, files: ["packages/a/src/x.ts", "packages/a/test/x.test.ts"] }
+      ])
+      expect([...read.tree].sort()).toEqual([
+        "docs/guide with space.md",
+        "packages/a/src/x.ts",
+        "packages/a/test/x.test.ts",
+        "packages/b/Justfile"
+      ])
+    })
+  }))
+
+  it.live("reads a repository's first commit as a change of every file, with no history", () => live(effect {
+    const { root, commits } = try repository([{ at: now, files: { "a.ts": "1", "b/c.zig": "2" } }])
+    const read = try change(root, commits[0]!)
+    try Effect.try(() => {
+      expect(read).toEqual({ at: now, files: ["a.ts", "b/c.zig"], history: [], tree: ["a.ts", "b/c.zig"] })
+    })
+  }))
+
+  it.live("reads a merge against its first parent", () => live(effect {
+    const { root, commits } = try repository([
+      { at: now - 3 * day, files: { "a.ts": "1" } },
+      { at: now - 2 * day, files: { "b.ts": "1" } }
+    ])
+    try git(root, ["checkout", "--quiet", "-b", "side", commits[0]!])
+    const fs = try FileSystem.FileSystem
+    try fs.writeFileString(`${root}/side.ts`, "1")
+    try git(root, ["add", "--all"])
+    try git(root, ["commit", "--quiet", "-m", "side"], now - day)
+    try git(root, ["checkout", "--quiet", "main"])
+    try git(root, ["merge", "--quiet", "--no-ff", "-m", "merge", "side"], now)
+    const read = try change(root, try git(root, ["rev-parse", "HEAD"]))
+    try Effect.try(() => {
+      expect(read.files).toEqual(["side.ts"])
+      expect(read.history.map((commit) => commit.files)).toEqual([["b.ts"], ["a.ts"]])
+    })
+  }))
+
+  it.live("fails not-a-repository for a directory git does not know", () => live(effect {
+    const root = try directory()
+    const failed = try flip(change(root, "HEAD"))
+    try Effect.try(() => {
+      expect(failed).toEqual({ code: "not-a-repository", message: `${root} is not a git repository`, part: "select" })
+    })
+  }))
+
+  it.live("fails invalid-document for a commit the repository does not hold", () => live(effect {
+    const { root } = try repository([{ at: now, files: { "a.ts": "1" } }])
+    const failed = try flip(change(root, "0123456789abcdef0123456789abcdef01234567"))
+    try Effect.try(() => {
+      expect(failed.code).toBe("invalid-document")
+      expect(failed.message).toContain("holds no commit 0123456789abcdef0123456789abcdef01234567")
+    })
+  }))
+
+  it.live("fails command-failed when git cannot be started", () => live(effect {
+    const root = `${try directory()}/missing`
+    const failed = try flip(change(root, "HEAD"))
+    try Effect.try(() => {
+      expect(failed.code).toBe("command-failed")
+      expect(failed.message).toContain(`git rev-parse could not run in ${root}`)
+    })
+  }))
+
+  it.live("fails command-failed when a git command it needs exits nonzero", () => live(effect {
+    const { root, commits } = try repository([{ at: now - day, files: { "a.ts": "1" } }, { at: now, files: { "a.ts": "2" } }])
+    const real = try ChildProcessSpawner
+    // A faulty spawner: every `git log` exits 3; every other command is the real one.
+    const faulty = ChildProcessSpawner.of({
+      ...real,
+      spawn: (command) =>
+        command._tag === "StandardCommand" && command.args.includes("log")
+          ? real.spawn(ChildProcess.make("sh", ["-c", "exit 3"]))
+          : real.spawn(command)
+    })
+    const failed = try flip(Effect.provideService(change(root, commits[1]!), ChildProcessSpawner, faulty))
+    try Effect.try(() => {
+      expect(failed).toEqual({ code: "command-failed", message: `git log exited 3 in ${root}`, part: "select" })
+    })
+  }))
+})

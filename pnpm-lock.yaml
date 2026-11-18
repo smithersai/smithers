@@ -1230,6 +1230,15 @@ importers:
 
   packages/ci:
     dependencies:
+      '@smthrs/flow':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/flows/flow
+      '@smthrs/model':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/agent/model
+      '@smthrs/plan':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/flows/plan
       effect:
         specifier: 4.1.1
         version: 4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c)
@@ -1255,6 +1264,15 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/crypto':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/flows/crypto
+      '@smthrs/engine':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/flows/engine
+      '@smthrs/platform-node':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/flows/platform-node
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

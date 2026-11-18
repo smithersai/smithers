@@ -1,0 +1,79 @@
+/**
+ * Scores rows: for each, the chance its target fails on its change.
+ *
+ * @since 0.1.0
+ */
+
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Classifier } from "@smthrs/model"
+import { Node } from "@smthrs/plan"
+import { Features, type Row } from "../contract/Selection.ts"
+import { failure } from "./Failure.ts"
+import * as Scoring from "./Scoring.ts"
+
+/**
+ * The durable step: one request to the judge for one batch of feature sets.
+ * Its recorded answer replays, so a run that resumes pays for no batch twice.
+ *
+ * @category flows
+ * @since 0.1.0
+ */
+export const ScoreBatch = Action.make("ci/select/ScoreBatch", {
+  payload: { items: Schema.Array(Features) },
+  success: Schema.Array(Scoring.Reading),
+  error: Classifier.ClassifierError,
+  nondeterministic: true
+})
+
+/**
+ * The flow that scores one batch. Equal batches are one execution.
+ *
+ * @category flows
+ * @since 0.1.0
+ */
+export const ScoreFlow = Flow.make("ci/select/Score", {
+  payload: { items: Schema.Array(Features) },
+  success: Schema.Array(Scoring.Reading),
+  error: Classifier.ClassifierError,
+  body: Node.capture({}, (payload) => ScoreBatch.call(payload))
+})
+
+/**
+ * Asks the host's judge about one batch.
+ *
+ * @category flows
+ * @since 0.1.0
+ */
+export effect function judge(items: ReadonlyArray<Features>) {
+  const answers = try Scoring.classifier(items.length).evaluate(Scoring.stateOf(items))
+  return Scoring.readingsOf(items.length, answers)
+}
+
+/**
+ * Registers {@link ScoreFlow} and its step with the host's flow engine.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layer = Interpreter.layerWithImplementations(ScoreFlow, ScoreBatch.toLayer(({ items }) => judge(items)))
+
+/**
+ * One score per row, from 0 to 1, with a one-line reason.
+ *
+ * Rows with equal features share one question. The questions go to the
+ * host's judge in batches, each batch one durable flow step on the host's
+ * flow engine. A judge that cannot answer fails `model-unavailable`; nothing
+ * is scored by guess.
+ *
+ * @category scores
+ * @since 0.1.0
+ */
+export effect function score(rows: ReadonlyArray<Row>) {
+  const asked = Scoring.batches(rows)
+  provide layer, Flow.layerExecutionIds(Flow.derived) {
+    const answered = Effect.forEach(asked, (items) => ScoreFlow.execute({ items }), { concurrency: Scoring.concurrency }) catch effect (error) => {
+      throw failure("model-unavailable", `The judge did not score the rows: ${error.message}`)
+    }
+    return Scoring.scoresOf(rows, asked, answered)
+  }
+}

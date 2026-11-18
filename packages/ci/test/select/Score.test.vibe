@@ -1,0 +1,104 @@
+// `score` on the real in-memory flow engine. The judge is @smthrs/model's own scripted Evaluator;
+// the live judge is the eval's (evals/fast-mode.eval.vibe).
+import { describe, expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Evaluator } from "@smthrs/model"
+import * as Selection from "../../src/contract/Selection.ts"
+import { score } from "../../src/select/Score.vibe"
+import * as Scoring from "../../src/select/Scoring.ts"
+import { row } from "./support.vibe"
+
+/** Every request the scripted judge answered. */
+interface Asked { requests: number; questions: number }
+
+/** A judge that answers each item's recent failure rate as its chance of failure. */
+const judge = (asked: Asked) => Evaluator.layerScripted((request) => {
+  const state = request.state as typeof Scoring.State.Type
+  asked.requests += 1
+  asked.questions += Object.keys(request.questions).length
+  return Object.fromEntries(state.items.flatMap(({ item, targetFailureRate }) => [
+    [`fails${item}`, { probability: targetFailureRate.last7Days }],
+    [`why${item}`, { choice: targetFailureRate.last7Days > 0 ? "history" : "none" }]
+  ]))
+})
+
+const host = (evaluator: Layer.Layer<Evaluator.Evaluator>) => Layer.mergeAll(FlowEngine.layerMemory, WebCrypto.layer, evaluator)
+
+const rate = (d7: number) => ({ failureRates: { d7, d14: 0, d28: 0, d56: 0 } })
+
+describe("score", () => {
+  it.live("scores every row from 0 to 1 with a reason, asking once per distinct feature set", () => effect {
+    const asked: Asked = { requests: 0, questions: 0 }
+    const rows = [
+      row("c1", "//a:test", false, rate(0.8)),
+      row("c1", "//a:lint", false, rate(0)),
+      row("c1", "//a:check", false, rate(0)),
+      row("c2", "//a:test", false, rate(0.8))
+    ]
+    provide host(judge(asked)) {
+      const scores = try score(rows)
+      try Effect.try(() => {
+        expect(scores).toEqual([
+          { commit: "c1", target: "//a:test", score: 0.8, reason: Scoring.reasons.history },
+          { commit: "c1", target: "//a:lint", score: 0, reason: Scoring.reasons.none },
+          { commit: "c1", target: "//a:check", score: 0, reason: Scoring.reasons.none },
+          { commit: "c2", target: "//a:test", score: 0.8, reason: Scoring.reasons.history }
+        ])
+        expect(asked).toEqual({ requests: 1, questions: 4 })
+        expect(Selection.select(scores.filter((each) => each.commit === "c1"), { scoreCutoff: 0.5, countCutoff: 0 })).toEqual(["//a:test"])
+      })
+    }
+  })
+
+  it.live("asks in batches, and never asks again for a batch it already scored", () => effect {
+    const asked: Asked = { requests: 0, questions: 0 }
+    const rows = Array.from({ length: Scoring.batchSize * 2 + 1 }, (_, index) => row("c1", `//t${index}:test`, false, { testCount: index }))
+    provide host(judge(asked)) {
+      const first = try score(rows)
+      const requests = asked.requests
+      const again = try score(rows)
+      try Effect.try(() => {
+        expect(first).toHaveLength(rows.length)
+        expect(requests).toBe(3)
+        expect(again).toEqual(first)
+        expect(asked.requests).toBe(3)
+      })
+    }
+  })
+
+  it.live("scores no rows without asking", () => effect {
+    const asked: Asked = { requests: 0, questions: 0 }
+    provide host(judge(asked)) {
+      const scores = try score([])
+      try Effect.try(() => {
+        expect(scores).toEqual([])
+        expect(asked.requests).toBe(0)
+      })
+    }
+  })
+
+  it.live("fails model-unavailable when the judge cannot answer, and scores nothing by guess", () => effect {
+    // A faulty judge: it is configured with no key.
+    const unconfigured = Layer.succeed(Evaluator.Evaluator, Evaluator.Evaluator.of({
+      evaluate: () => fail(new Evaluator.EvaluatorError({ code: "unconfigured", message: "No judge is configured" }))
+    }))
+    provide host(unconfigured) {
+      const failed = try flip(score([row("c1", "//a:test")]))
+      try Effect.try(() => {
+        expect(failed).toEqual({ code: "model-unavailable", message: "The judge did not score the rows: No judge is configured", part: "select" })
+      })
+    }
+  })
+
+  it.live("fails model-unavailable when the judge answers something that is not a score", () => effect {
+    const malformed = Evaluator.layerScripted(() => ({ fails0: { probability: 0.5 }, why0: { choice: "weather" } }))
+    provide host(malformed) {
+      const failed = try flip(score([row("c1", "//a:test")]))
+      try Effect.try(() => {
+        expect(failed.code).toBe("model-unavailable")
+        expect(failed.message).toContain("\"weather\" is not an option")
+      })
+    }
+  })
+})

@@ -1,0 +1,47 @@
+// The two functions contract 10 names, called as the command-line program calls them.
+import { describe, expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Evaluator } from "@smthrs/model"
+import * as Selection from "../../src/contract/Selection.ts"
+import * as Select from "../../src/select/index.ts"
+import { live, record, repository, result } from "./support.vibe"
+
+const now = Date.UTC(2026, 10, 14)
+
+describe("select", () => {
+  it.live("rows then score: a commit's run record becomes rows, and each row gets a score", () => live(effect {
+    const { root, commits } = try repository([
+      { at: now - Select.Features.day, files: { "packages/a/src/x.ts": "1", "packages/b/src/y.ts": "1" } },
+      { at: now, files: { "packages/a/src/x.ts": "2" } }
+    ])
+    // The judge scores a target in the changed file's own project as likely to fail, and any other as safe.
+    const judge = Evaluator.layerScripted((request) => {
+      const state = request.state as typeof Select.Scoring.State.Type
+      return Object.fromEntries(state.items.flatMap(({ item, dependencyDistance }) => [
+        [`fails${item}`, { probability: dependencyDistance === 0 ? 0.6 : 0.01 }],
+        [`why${item}`, { choice: dependencyDistance === 0 ? "distance" : "none" }]
+      ]))
+    })
+    provide Select.Repository.layerGit, Select.Ledger.layerMemory(), FlowEngine.layerMemory, WebCrypto.layer, judge {
+      const built = try Select.rows(root, record(commits[1], [result("//packages/a:test", "failed"), result("//packages/b:test", "ran")]))
+      const scores = try Select.score(built)
+      try Effect.try(() => {
+        const selected = new Map([[commits[1]!, Selection.select(scores, { scoreCutoff: 0.5, countCutoff: 0 })]])
+        expect(scores).toEqual([
+          { commit: commits[1], target: "//packages/a:test", score: 0.6, reason: Select.Scoring.reasons.distance },
+          { commit: commits[1], target: "//packages/b:test", score: 0.01, reason: Select.Scoring.reasons.none }
+        ])
+        expect(Selection.metrics(built, selected)).toEqual({
+          rows: 2,
+          selected: 1,
+          failures: 1,
+          failedChanges: 1,
+          selectionRate: 0.5,
+          testRecall: 1,
+          changeRecall: 1
+        })
+      })
+    }
+  }))
+})

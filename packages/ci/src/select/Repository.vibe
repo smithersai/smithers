@@ -1,0 +1,99 @@
+/**
+ * What a repository's history says about one change, read with git.
+ *
+ * @since 0.1.0
+ */
+
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type { Failure } from "../contract/Parts.ts"
+import { failure } from "./Failure.ts"
+import { type Commit, day, horizonDays } from "./Features.ts"
+
+/**
+ * One change as its repository records it: when it was made, the files it
+ * touched, the commits of the 56 days before it, and every file at it.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Change {
+  readonly at: number
+  readonly files: ReadonlyArray<string>
+  readonly history: ReadonlyArray<Commit>
+  readonly tree: ReadonlyArray<string>
+}
+
+/**
+ * Reads a change from the repository at `root`.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export service Repository {
+  change(root: string, commit: string): Change!Failure
+}
+
+/** The nonblank lines of git's output. */
+const lines = (text: string): ReadonlyArray<string> => text.split("\n").filter((line) => line !== "")
+
+/**
+ * The commits `git log --format=%x01%ct --name-only` printed: each starts
+ * with a marker and its time in seconds, then lists its files.
+ */
+const commitsOf = (text: string): ReadonlyArray<Commit> =>
+  text.split("\u0001").slice(1).map((block) => {
+    const [seconds, ...files] = lines(block)
+    return { at: Number(seconds) * 1000, files }
+  })
+
+/**
+ * Reads changes with the `git` on the host's path.
+ *
+ * A directory that is no git repository fails `not-a-repository`, a commit
+ * the repository does not hold fails `invalid-document`, and a git command
+ * that cannot run or exits nonzero fails `command-failed`.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerGit = Layer.effect(Repository, effect {
+  const spawner = try ChildProcessSpawner
+
+  /** Runs one git command in `root`: its exit code and what it printed. */
+  const run = effect (root: string, args: ReadonlyArray<string>) => {
+    return scoped(effect {
+      const handle = try spawner.spawn(ChildProcess.make("git", ["-c", "core.quotePath=false", ...args], { cwd: root }))
+      const [text, code] = try all([Stream.mkString(Stream.decodeText(handle.stdout)), handle.exitCode], { concurrency: 2 })
+      return { code: Number(code), text }
+    }) catch effect (error) => {
+      throw failure("command-failed", `git ${args[0]} could not run in ${root}: ${error.message}`)
+    }
+  }
+
+  /** What one git command printed, or `command-failed` when it exits nonzero. */
+  const read = effect (root: string, args: ReadonlyArray<string>) => {
+    const { code, text } = try run(root, args)
+    if (code !== 0) throw failure("command-failed", `git ${args[0]} exited ${code} in ${root}`)
+    return text
+  }
+
+  return {
+    change: effect (root: string, commit: string) => {
+      if ((try run(root, ["rev-parse", "--git-dir"])).code !== 0) {
+        throw failure("not-a-repository", `${root} is not a git repository`)
+      }
+      const shown = try run(root, ["show", "--no-patch", "--format=%ct%n%P", `${commit}^{commit}`])
+      if (shown.code !== 0) throw failure("invalid-document", `The repository at ${root} holds no commit ${commit}`)
+      const [seconds, parents = ""] = shown.text.split("\n")
+      const at = Number(seconds) * 1000
+      const parent = parents.split(" ")[0]!
+      const tree = lines(try read(root, ["ls-tree", "-r", "--name-only", commit]))
+      if (parent === "") return { at, files: tree, history: [], tree }
+      const files = lines(try read(root, ["diff", "--name-only", parent, commit]))
+      const since = Math.floor((at - horizonDays * day) / 1000)
+      const history = commitsOf(try read(root, ["log", `--since=${since}`, "--format=%x01%ct", "--name-only", parent]))
+      return { at, files, history, tree }
+    }
+  }
+})

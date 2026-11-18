@@ -1,0 +1,41 @@
+/**
+ * Builds the rows fast mode scores for one commit.
+ *
+ * @since 0.1.0
+ */
+
+import type { RunRecord } from "../contract/RunRecord.ts"
+import { failure } from "./Failure.ts"
+import { build } from "./Features.ts"
+import { Ledger } from "./Ledger.vibe"
+import { Repository } from "./Repository.vibe"
+
+/**
+ * One row per target that ran in `record`, the normal-mode run of one
+ * commit of the repository at `root`.
+ *
+ * The change's files, time and earlier commits come from {@link Repository},
+ * each target's earlier outcomes and the commit's plan from {@link Ledger}.
+ * The new rows are recorded in the ledger, so a later commit's failure rates
+ * count them. A fast-mode record, or one that names no commit, fails
+ * `invalid-document`: a target fast mode skipped has no outcome to learn
+ * from.
+ *
+ * @category rows
+ * @since 0.1.0
+ */
+export effect function rows(root: string, record: RunRecord) {
+  if (record.mode === "fast") {
+    throw failure("invalid-document", "Rows are built from a normal-mode run record; this one is fast mode's")
+  }
+  const commit = record.commit ?? ""
+  if (commit === "") throw failure("invalid-document", "The run record names no commit")
+  const repository = try Repository
+  const ledger = try Ledger
+  const change = try repository.change(root, commit)
+  const past = try ledger.observations()
+  const plan = try ledger.plan(commit)
+  const built = build(record, { commit, ...change, past, plan })
+  try ledger.record(built.map((row) => ({ at: change.at, row })))
+  return built
+}

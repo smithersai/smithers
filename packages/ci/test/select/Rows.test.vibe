@@ -1,0 +1,147 @@
+// `rows` over a real git repository and a real ledger directory.
+import { describe, expect, it } from "@effect/vitest"
+import { failure } from "../../src/select/Failure.ts"
+import { day } from "../../src/select/Features.ts"
+import { Ledger, layerFile, layerMemory } from "../../src/select/Ledger.vibe"
+import { layerGit, Repository } from "../../src/select/Repository.vibe"
+import { rows } from "../../src/select/Rows.vibe"
+import { directory, live, plan, record, repository, result } from "./support.vibe"
+
+const now = Date.UTC(2026, 10, 14)
+
+describe("rows", () => {
+  it.live("builds a commit's rows from its run record, the repository and the ledger, and records them", () => live(effect {
+    const fs = try FileSystem.FileSystem
+    const { root, commits } = try repository([
+      { at: now - 2 * day, files: { "packages/a/src/x.ts": "1", "packages/a/test/x.test.ts": "1", "packages/b/test/y.test.ts": "1" } },
+      { at: now - day, files: { "packages/a/src/x.ts": "2" } },
+      { at: now, files: { "packages/a/src/x.ts": "3", "packages/a/README.md": "hi" } }
+    ])
+    const ledger = try directory()
+    try fs.makeDirectory(`${ledger}/plans`)
+    try fs.writeFileString(`${ledger}/plans/${commits[2]}.json`, JSON.stringify(plan({ "//packages/a:test": [], "//packages/b:test": ["//packages/a:test"] })))
+    provide Layer.merge(layerGit, layerFile(ledger)) {
+      // The second commit failed b:test on every attempt; the third commit's rows see that in b's failure rates.
+      const second = try rows(root, record(commits[1], [result("//packages/a:test", "ran"), result("//packages/b:test", "failed", [false, false])]))
+      const third = try rows(root, record(commits[2], [
+        result("//packages/a:test", "ran", [false, true]),
+        result("//packages/b:test", "ran"),
+        result("//packages/a:lint", "hit")
+      ], "normal"))
+      const held = try (try Ledger).observations()
+      try Effect.try(() => {
+        expect(second.map((row) => [row.target, row.failed, row.features.graphDistance])).toEqual([
+          ["//packages/a:test", false, 0],
+          ["//packages/b:test", true, -1]
+        ])
+        expect(third).toEqual([
+          {
+            commit: commits[2],
+            target: "//packages/a:test",
+            features: {
+              extensions: [".md", ".ts"],
+              fileChanges: { d3: 2, d14: 2, d56: 2 },
+              failureRates: { d7: 0, d14: 0, d28: 0, d56: 0 },
+              project: "packages/a",
+              testCount: 1,
+              graphDistance: 0
+            },
+            attempts: [false, true],
+            failed: false,
+            flaky: true
+          },
+          {
+            commit: commits[2],
+            target: "//packages/b:test",
+            features: {
+              extensions: [".md", ".ts"],
+              fileChanges: { d3: 2, d14: 2, d56: 2 },
+              failureRates: { d7: 1, d14: 1, d28: 1, d56: 1 },
+              project: "packages/b",
+              testCount: 1,
+              graphDistance: 1
+            },
+            attempts: [true],
+            failed: false,
+            flaky: false
+          }
+        ])
+        expect(held.map((observation) => [observation.at, observation.row.commit, observation.row.target])).toEqual([
+          [now - day, commits[1], "//packages/a:test"],
+          [now - day, commits[1], "//packages/b:test"],
+          [now, commits[2], "//packages/a:test"],
+          [now, commits[2], "//packages/b:test"]
+        ])
+      })
+    }
+  }))
+
+  it.live("builds the same rows when a commit's record is read again", () => live(effect {
+    const { root, commits } = try repository([
+      { at: now - day, files: { "packages/a/src/x.ts": "1" } },
+      { at: now, files: { "packages/a/src/x.ts": "2" } }
+    ])
+    provide Layer.merge(layerGit, layerMemory()) {
+      const run = record(commits[1], [result("//packages/a:test", "failed")])
+      const first = try rows(root, run)
+      const again = try rows(root, run)
+      const held = try (try Ledger).observations()
+      try Effect.try(() => {
+        expect(again).toEqual(first)
+        expect(first[0]!.features.failureRates).toEqual({ d7: 0, d14: 0, d28: 0, d56: 0 })
+        expect(held).toHaveLength(1)
+      })
+    }
+  }))
+
+  it.effect("refuses a fast-mode record: a skipped target has no outcome", () => effect {
+    provide Layer.merge(layerMemory(), Layer.succeed(Repository, { change: () => die("never read") })) {
+      const failed = try flip(rows("/repo", record("c1", [result("//a:test", "ran")], "fast")))
+      try Effect.try(() => {
+        expect(failed).toEqual(failure("invalid-document", "Rows are built from a normal-mode run record; this one is fast mode's"))
+      })
+    }
+  })
+
+  it.effect("refuses a record that names no commit", () => effect {
+    provide Layer.merge(layerMemory(), Layer.succeed(Repository, { change: () => die("never read") })) {
+      const absent = try flip(rows("/repo", record(undefined, [result("//a:test", "ran")])))
+      const blank = try flip(rows("/repo", record("", [result("//a:test", "ran")])))
+      try Effect.try(() => {
+        expect(absent).toEqual(failure("invalid-document", "The run record names no commit"))
+        expect(blank).toEqual(absent)
+      })
+    }
+  })
+
+  it.effect("fails as the repository fails, and records nothing", () => effect {
+    const broken = failure("not-a-repository", "/repo is not a git repository")
+    provide Layer.merge(layerMemory(), Layer.succeed(Repository, { change: () => fail(broken) })) {
+      const failed = try flip(rows("/repo", record("c1", [result("//a:test", "ran")])))
+      const held = try (try Ledger).observations()
+      try Effect.try(() => {
+        expect(failed).toEqual(broken)
+        expect(held).toEqual([])
+      })
+    }
+  })
+
+  it.effect("fails as the ledger fails", () => effect {
+    const broken = failure("command-failed", "The ledger file rows.jsonl could not be used: full disk")
+    const change = { at: now, files: ["a.ts"], history: [], tree: ["a.ts"] }
+    const faulty = (part: "observations" | "plan" | "record") => Layer.succeed(Ledger, {
+      observations: () => part === "observations" ? fail(broken) : succeed([]),
+      plan: () => part === "plan" ? fail(broken) : succeed(undefined),
+      record: () => part === "record" ? fail(broken) : Effect.void
+    })
+    const outcomes: Array<unknown> = []
+    for (const part of ["observations", "plan", "record"] as const) {
+      provide Layer.merge(faulty(part), Layer.succeed(Repository, { change: () => succeed(change) })) {
+        outcomes.push(try flip(rows("/repo", record("c1", [result("//a:test", "ran")]))))
+      }
+    }
+    try Effect.try(() => {
+      expect(outcomes).toEqual([broken, broken, broken])
+    })
+  })
+})
