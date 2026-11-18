@@ -74,9 +74,12 @@ and none removes):
   runner's variables, loads what earlier steps wrote to `GITHUB_ENV` and `GITHUB_PATH`, decides the step's `if:`,
   and fills in what `${{ }}` in the command stands for while the job runs. It defines the function
   `Inventory.runnerEntry`. The importer writes it for every GitHub Actions step.
-- `Inventory.script(step)` is the text `Inventory.shell` runs for a step: its command, or its runner text followed
-  by `runnerEntry` with the command as one quoted word. The baseline and the generator both run it, so a step with
-  runner text does the same thing on each side. A part that copies a step, as the splitter does, keeps `runner`.
+- `Inventory.script(step, unit?)` is the text `Inventory.shell` runs for a step: its command, or its runner text
+  followed by `runnerEntry` with the command as one quoted word. The baseline and the generator both run it, so a
+  step with runner text does the same thing on each side. A part that copies a step, as the splitter does, keeps
+  `runner`. Two lines before the runner text tell it what only its caller knows: `unit`, the job a step is run
+  for, which a caller gives where jobs run at once in one checkout, as the baseline does; and whether the step was
+  split from another (`Step.from`).
 - `Inventory.withVariant` also fills matrix values into `runner`.
 - `Inventory.conditionFalse` (`condition-false`) joins `harmless`: a step whose `if:` is false for the event a
   replay stands for is left out and listed, and its job still runs.
@@ -84,17 +87,25 @@ and none removes):
   commit it runs at, or that commit's parent. The generator holds a step with runner text to its inputs only when
   it is the first step of its job and does not read the commit: a later step reads what earlier steps left for
   the job, which no input names, and a step that reads the commit has a verdict of that commit only.
-- The runner text of a job's first step names no job unless its script reads `GITHUB_JOB`. Two jobs that start
-  with the same step so have the same first step, and the generator still runs it once for both.
+- The runner text of a job's first step names no job unless the step asks for `GITHUB_JOB`, `RUNNER_TEMP` or
+  `RUNNER_TOOL_CACHE`. Two jobs that start with the same step so have the same first step, and the generator
+  still runs it once for both: each job's second step starts the job's own state from a copy of what it left. A
+  first step that asks for one of the three is its job's alone, and every step of the job has one `RUNNER_TEMP`.
+  A step that names none of them and still uses `RUNNER_TEMP`, through a program it starts, writes into a
+  directory the job's later steps find a copy of, not the directory itself.
 - Only a step that reads the commit is given `GITHUB_SHA` and `GITHUB_EVENT_PATH`, and only it asks git. Every
   other step reads the files it opens and what earlier steps of its job left, and nothing that differs from one
   run to the next. So a step the generator has observed (`observe` of `Shell.Test`) is reused until one of those
   changes: `test/cli/observedRunner.test.ts` replays that under `strace`. The only step of a job leaves no state.
 - Steps split from one step each carry that step's runner text. The ones split from a job's second step share the
-  job's state: each finds what the ones before it wrote to `GITHUB_ENV`, `GITHUB_OUTPUT` and `RUNNER_TEMP`. The
-  ones split from a job's first step each start the state anew, as a first step does, so a later step finds what
-  the last of them wrote and not what the others did. The splitter should leave whole a first step whose script
-  names `GITHUB_ENV`, `GITHUB_OUTPUT`, `GITHUB_PATH` or `RUNNER_TEMP`.
+  job's state: each finds what the ones before it wrote to `GITHUB_ENV`, `GITHUB_OUTPUT` and `RUNNER_TEMP`, as long
+  as they run one after another, which the generator sees to. The ones split from a job's first step each start
+  the state anew, as a first step does, so a later step finds what the last of them wrote and not what the others
+  did. The splitter should leave whole a first step whose script names `GITHUB_ENV`, `GITHUB_OUTPUT`,
+  `GITHUB_PATH` or `RUNNER_TEMP`.
+- A job's state is under `/tmp/smithers-ci-runner-<uid>`, one directory for what a shared first step left and one
+  for each job. A step never removes a state but its own and those of checkouts that are gone, and it reads
+  nothing there that differs from one run to the next.
 - `MachineChanges.withInstalled` removes from a job the steps that only install packages the machine has. The
   runner text of the other steps does not count them: each is the job's first, second or later step with those
   steps or without. Such a step runs on a copy of what the steps before it left and leaves nothing; nothing may

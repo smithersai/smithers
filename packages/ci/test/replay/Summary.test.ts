@@ -113,8 +113,14 @@ describe("replayable", () => {
     const runner = `__smithers_ci_step() { echo '\${{ matrix.size }}'; bash -e -c "$1"; }`
     const sized = { id: "s", command: "echo ${{ matrix.size }}", cwd: "", env: {}, secrets: [], runner }
     const units = unitsOf(inventory([job("a", { steps: [sized], matrix: [{ size: "big" }] })]))
+    // The jobs of a baseline run at once in one checkout, so each step is told its job.
     expect(units[0]?.steps[0]?.command).toBe(
-      `__smithers_ci_step() { echo 'big'; bash -e -c "$1"; }\n__smithers_ci_step 'echo big'`
+      [
+        `__smithers_ci_unit='a'`,
+        `__smithers_ci_part=`,
+        `__smithers_ci_step() { echo 'big'; bash -e -c "$1"; }`,
+        `__smithers_ci_step 'echo big'`
+      ].join("\n")
     )
   })
 

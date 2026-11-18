@@ -258,14 +258,26 @@ export const runnerEntry = "__smithers_ci_step"
  * `runner`, the runner text and then `runnerEntry` with the command as its
  * one argument, in single quotes.
  *
+ * Two lines before the runner text tell it what only its caller knows.
+ * `unit` names the job a step is run for, where jobs run at once in one
+ * checkout, as in a baseline: each job then keeps what its first step left
+ * to itself. The other line says whether the step was split from another
+ * (`Step.from`): the steps split from one step share what they leave.
+ *
  * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
-export const script = (step: Pick<Step, "command" | "runner">): string =>
-  step.runner === undefined
-    ? step.command
-    : `${step.runner}\n${runnerEntry} '${step.command.replaceAll("'", `'\\''`)}'`
+export const script = (step: Pick<Step, "command" | "runner"> & Partial<Pick<Step, "from">>, unit = ""): string => {
+  if (step.runner === undefined) return step.command
+  const quoted = (word: string): string => `'${word.replaceAll("'", `'\\''`)}'`
+  return [
+    `__smithers_ci_unit=${quoted(unit)}`,
+    `__smithers_ci_part=${step.from === undefined ? "" : "1"}`,
+    step.runner,
+    `${runnerEntry} ${quoted(step.command)}`
+  ].join("\n")
+}
 
 /**
  * The line a step's `runner` text holds when the step reads the commit it

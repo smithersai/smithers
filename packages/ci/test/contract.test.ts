@@ -263,10 +263,21 @@ describe("contract 4: inventory", () => {
     // A matrix value is filled into the runner text as it is into the command.
     const filled = Inventory.withVariant(step, { n: "2" })
     expect(filled.runner).toBe(`${Inventory.runnerEntry}() { echo '2'; bash -e -c "$1"; }`)
-    expect(Inventory.script(filled)).toBe(`${filled.runner}\n${Inventory.runnerEntry} 'echo "it'\\''s" 2'`)
+    const run = `${filled.runner}\n${Inventory.runnerEntry} 'echo "it'\\''s" 2'`
+    // Two lines tell the runner text what only its caller knows: no job, and a step that is whole.
+    expect(Inventory.script(filled)).toBe(`__smithers_ci_unit=''\n__smithers_ci_part=\n${run}`)
     const [program, ...flags] = Inventory.shell
     const ran = spawnSync(program, [...flags, Inventory.script(filled)], { encoding: "utf8" })
     expect(ran.stdout).toBe("2\nit's 2\n")
+    // A baseline names the job, and a step split from another says so.
+    expect(Inventory.script({ ...filled, from: "ci:0" }, "ci.yml:it's")).toBe(
+      `__smithers_ci_unit='ci.yml:it'\\''s'\n__smithers_ci_part=1\n${run}`
+    )
+    const told = { ...filled, runner: `${Inventory.runnerEntry}() { echo "$__smithers_ci_unit $__smithers_ci_part"; }` }
+    const heard = spawnSync(program, [...flags, Inventory.script({ ...told, from: "ci:0" }, "ci.yml:it's")], {
+      encoding: "utf8"
+    })
+    expect(heard.stdout).toBe("ci.yml:it's 1\n")
   })
 
   it("knows a step that reads the commit by the note in its runner text", () => {

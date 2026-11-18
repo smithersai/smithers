@@ -1245,6 +1245,16 @@ jobs:
         run: sudo apt-get install -y zsh
       - if: steps.tools.outcome == 'success'
         run: echo never
+  tail:
+    runs-on: ubuntu-latest
+    steps:
+      - run: sudo apt-get install -y git
+      - run: echo checked
+  head:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "A=1" >> "$GITHUB_ENV"
+      - run: sudo apt-get install -y git
 `)
     const build = jobOf(repo, "ci.yml:build")
     // A sudo that does nothing stands for the machine's.
@@ -1262,11 +1272,68 @@ jobs:
     const without = { ...build, steps: build.steps.filter((step) => installsOf(step.command) === undefined) }
     expect(without.steps).toHaveLength(3)
     expect(outputs(runJob(repo, without))).toEqual(["", "built yes", "tested yes 1"])
+    // A job's only other step is written as a job's only step is: it keeps no state for a step after it.
+    const tail = jobOf(repo, "ci.yml:tail")
+    expect(tail.steps.map((step) => step.runner?.includes("only.XXXXXX"))).toEqual([true, true])
+    expect(outputs(runJob(repo, tail, {}, path))).toEqual(["sudo apt-get install -y git", "checked"])
+    // With an install step after it, it is read by that step and keeps its state.
+    const head = jobOf(repo, "ci.yml:head")
+    expect(head.steps.map((step) => step.runner?.includes("only.XXXXXX"))).toEqual([false, true])
+    expect(outputs(runJob(repo, head, {}, path))).toEqual(["", "sudo apt-get install -y git"])
     // What such a step gave is not there when it is left out, so nothing may read it.
     expect(details(jobOf(repo, "ci.yml:reads"))).toEqual([
       "reads step 2 runs only if steps.tools.outcome == 'success': what reads step 1 gave: a step that only "
       + "installs packages is left out when they are there"
     ])
+  })
+})
+
+describe("a first step that asks for the job's temporary directory", () => {
+  // "Default environment variables: RUNNER_TEMP". The directory is the job's: every step finds the same one, and
+  // no other job does, whether the script names it or an expression reads `runner.temp`.
+  it("is its job's alone, and every step of the job has the same directory", () => {
+    const repo = withWorkflow(`
+on: pull_request
+jobs:
+  named:
+    runs-on: ubuntu-latest
+    steps:
+      - run: mkdir -p "$RUNNER_TEMP/work" && echo "WORK=$RUNNER_TEMP/work" >> "$GITHUB_ENV"
+      - run: echo built > "$WORK/artifact"
+      - run: cat "$RUNNER_TEMP/work/artifact"
+  other:
+    runs-on: ubuntu-latest
+    steps:
+      - run: mkdir -p "$RUNNER_TEMP/work" && echo "WORK=$RUNNER_TEMP/work" >> "$GITHUB_ENV"
+      - run: ls "$WORK" | wc -l | tr -d ' '
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - run: mkdir -p "\${{ runner.temp }}/work"
+      - run: ls "$RUNNER_TEMP"
+  plain:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo plain
+      - run: echo after
+  same:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo plain
+      - run: echo other
+`)
+    const [named, other, read, plain, same] = ["named", "other", "read", "plain", "same"].map((id) =>
+      jobOf(repo, `ci.yml:${id}`)
+    ) as [Job, Job, Job, Job, Job]
+    // The same script, and still each job's own step.
+    expect(named.steps[0]?.command).toBe(other.steps[0]?.command)
+    expect(named.steps[0]?.runner).not.toBe(other.steps[0]?.runner)
+    expect(outputs(runJob(repo, named))).toEqual(["", "", "built"])
+    // `other` finds nothing of what `named` built.
+    expect(outputs(runJob(repo, other))).toEqual(["", "0"])
+    expect(outputs(runJob(repo, read))).toEqual(["", "work"])
+    // A first step that asks for neither is still shared.
+    expect(plain.steps[0]?.runner).toBe(same.steps[0]?.runner)
   })
 })
 

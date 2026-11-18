@@ -59,7 +59,7 @@ import {
 } from "./Expression.ts"
 import { installsOf } from "./MachineChanges.ts"
 import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
-import { type JobFacts, settled, write } from "./Runner.ts"
+import { type JobFacts, settled, type StepFacts, write } from "./Runner.ts"
 import { isLiteralSecret, isSecretName } from "./Secrets.ts"
 import { readSetup, type Setup } from "./Setup.ts"
 import { asScalar, asStrings, isRecord, normalizeDirectory } from "./Values.ts"
@@ -152,8 +152,10 @@ interface JobState extends Shape {
   apart: boolean
   /** The mark of the job's first command, by which the commands after it find what it left. */
   mark: string | undefined
-  /** The runner text the job's first command takes when no command follows it. */
-  only: string | undefined
+  /** True when the job's first command leaves a state of its own, which the job's second command copies. */
+  shared: boolean
+  /** Where the job's first command is among its steps, and the runner text it takes when no command follows it. */
+  only: { readonly at: number; readonly text: string } | undefined
   /** Values to work out once, when the next command starts, and keep for later steps under a name. */
   readonly keeps: Array<readonly [name: string, parts: Entry]>
   /** How many local actions the job has had read, which a job that nests them without end would not stop. */
@@ -594,24 +596,32 @@ const addRun = (
   // second and the rest with it or without it.
   const apart = installsOf(command) !== undefined
   const first = state.placed === 0
-  const written = write(state.runner, {
+  // Two jobs that start with the same step run it once, so a first step is told its job only when it asks for
+  // it, or for a directory a runner gives a job: that step is then this job's alone.
+  const asks = (reads: boolean): boolean => reads || /\b(?:GITHUB_JOB|RUNNER_TEMP|RUNNER_TOOL_CACHE)\b/.test(command)
+  const keeps = state.keeps.splice(0)
+  const facts = (reads: boolean): StepFacts => ({
     key: context.key,
     after: first ? undefined : state.mark,
-    second: state.placed === 1,
+    second: state.placed === 1 && state.shared,
     apart,
-    // Two jobs that start with the same step run it once, so a first step is told its job only when it asks.
-    job: first && !/\bGITHUB_JOB\b/.test(command) ? undefined : state.key,
+    job: first && !asks(reads) ? undefined : state.key,
     cwd,
     directory,
     start,
     own: [...env.own].filter((name) => identifier.test(name)),
-    keeps: state.keeps.splice(0),
+    keeps,
     condition: context.ran.kind === "when" ? context.ran.residual : undefined,
     outer: decided.filter(([, , own]) => !own).map(([name, entry]) => [name, entry] as const),
     env: decided.filter(([, , own]) => own).map(([name, entry]) => [name, entry] as const),
     fills: [...fills],
     commit: /\bGITHUB_(?:SHA|EVENT_PATH)\b/.test(command)
-  }, command)
+  })
+  const told = facts(false)
+  const tried = write(state.runner, told, command)
+  // An expression of the step may read such a directory with the script never naming it.
+  const reads = "text" in tried && tried.temp && told.job === undefined
+  const written = reads ? write(state.runner, facts(true), command) : tried
   if ("problem" in written) return note(job, "expression", `${where}: ${written.problem}`)
   const before = job.steps.length
   addStep(job, {
@@ -630,7 +640,8 @@ const addRun = (
     if (apart) return
     if (first) {
       state.mark = written.mark
-      state.only = written.alone
+      state.shared = !asks(reads)
+      state.only = { at: before, text: written.alone }
     }
     state.placed += 1
   }
@@ -892,7 +903,7 @@ const fillReferencedKeys = (job: Draft, matrix: Matrix): Draft => {
       step.command,
       step.cwd,
       // Every step read from a workflow has runner text.
-      String(step.runner).replace(/^__sum=.*$/m, ""),
+      String(step.runner).replace(/^__m=.*$/gm, ""),
       ...Object.values(step.env)
     ])
   ]
@@ -1099,6 +1110,7 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     placed: 0,
     apart: false,
     mark: undefined,
+    shared: false,
     only: undefined,
     setupNames: new Set(),
     keeps: [],
@@ -1115,10 +1127,11 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     where: name
   }
   steps.forEach((step: unknown, index) => readStep(state, scope, step, index))
-  // A job's only command is told so: no later step reads what it leaves.
-  const [only] = job.steps
-  if (job.steps.length === 1 && only !== undefined && state.only !== undefined) {
-    job.steps[0] = { ...only, runner: state.only }
+  // A command no other command follows is told so: no later step reads what it leaves. A step a replay may
+  // leave out, before it, is no reader of it.
+  const only = state.only === undefined ? undefined : job.steps[state.only.at]
+  if (state.placed === 1 && only !== undefined && state.only?.at === job.steps.length - 1) {
+    job.steps[state.only.at] = { ...only, runner: state.only.text }
   }
   // A step's runner text holds its command, and each matrix value it names, in quotes, which a matrix value with a
   // quote would end. The line that names the job's state names every key.

@@ -129,7 +129,8 @@ does read the commit runs again at every commit.
 
 Two jobs that start with the same step run it once and share its result. So a
 job's first step is given `GITHUB_JOB` only when its script names it; every
-later step is given it always.
+later step is given it always. A first step that names `GITHUB_JOB`,
+`RUNNER_TEMP` or `RUNNER_TOOL_CACHE` is run for each job that starts with it.
 
 A step that only installs system packages, such as `sudo apt-get install -y zsh`,
 is left out when your machine already has them. So it takes no part in what the

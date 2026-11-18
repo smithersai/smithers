@@ -338,7 +338,8 @@ export const replayable = (inventory: Ci, map: TargetMap, host: string): Replaya
           name: stepKey(step.name === undefined ? step.id : `${job.id}: ${step.name}`, variant),
           label: targets.length > 1 ? stepKey(step.id, variant) : (targets[0] as string),
           targets,
-          command: script(filled),
+          // The jobs of a baseline run at once in one checkout, so each step is told its job.
+          command: script(filled, job.id),
           written: filled.command,
           cwd: filled.cwd,
           env: filled.env

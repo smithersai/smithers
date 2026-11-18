@@ -52,10 +52,12 @@ export interface JobFacts {
  * - `key`: the step's name in the job's state, in upper case.
  * - `after`: the mark of the job's first step, whose state a later step takes over; `undefined` for the first
  *   step itself, which starts the state.
- * - `job`: the job's key, given as `GITHUB_JOB`. A first step is given none unless its script names the variable,
- *   so two jobs that start with the same step share it.
- * - `second`: the step is the second of its job, so it starts the job's own state from what the first step left,
- *   unless a step split from the same step has started it since the first step ran.
+ * - `job`: the job's key, given as `GITHUB_JOB`. A first step is given none unless it asks for the variable or for
+ *   a directory a runner gives a job (`RUNNER_TEMP`, `RUNNER_TOOL_CACHE`), so two jobs that start with the same
+ *   step share it. A first step that is given its job starts the job's own state, and every step of the job has
+ *   the same `RUNNER_TEMP`.
+ * - `second`: the step is the second of its job and the first was given no job, so it starts the job's own state
+ *   from what the first step left. A step split from another keeps the state the ones split with it started.
  * - `apart`: the step takes no place among the job's steps, because a replay may leave it out: it only installs
  *   packages, and the machine may have them. It starts from a copy of what the steps before it left (`after` and
  *   `second` say which), leaves nothing, and stops when it wrote a value for later steps. The steps around it are
@@ -98,12 +100,15 @@ export interface StepFacts {
  * its expressions cannot be finished in a shell. `alone` is the text of a
  * first step that turns out to be the only step of its job: nothing reads
  * what it leaves, so it leaves nothing and looks at no state but its own.
+ * `temp` is true when an expression of the step reads `runner.temp` or
+ * `runner.tool_cache`: a first step that does is its job's alone, and its
+ * caller names the job to it.
  *
  * @category models
  * @since 0.1.0
  */
 export type Written =
-  | { readonly text: string; readonly mark: string; readonly alone: string }
+  | { readonly text: string; readonly mark: string; readonly alone: string; readonly temp: boolean }
   | { readonly problem: string }
 
 /** Ends a compilation that cannot go on. Caught where it started. */
@@ -214,7 +219,6 @@ const library = (job: JobFacts): string =>
     `  GITHUB_SHA=$(git -C "$__root" rev-parse --verify --quiet HEAD) ||`,
     `    __ci_fail "this step reads the commit, and git cannot be read in $__root"`,
     `  export GITHUB_SHA GITHUB_EVENT_PATH="$__state/event.json"`,
-    `  [ ! -f "$GITHUB_EVENT_PATH" ] || return 0`,
     `  __parent=$(git -C "$__root" rev-parse --verify --quiet 'HEAD^') || __parent=0000000000000000000000000000000000000000`,
     `  printf '%s\\n' ${eventText(job.event)} > "$GITHUB_EVENT_PATH"`,
     `}`,
@@ -538,8 +542,10 @@ const compile = (node: Residual, emitter: Emitter): number => {
  */
 export const write = (job: JobFacts, step: StepFacts, command: string): Written => {
   const emitter: Emitter = { lines: [], count: 0 }
-  // Each matrix value under its key, so two variants never share a state.
-  const variant = job.matrixKeys.map((key) => `|${key}=\${{ matrix.${key} }}`).join("")
+  // Each matrix value under its key, with its length, so two variants never share a state whatever they hold.
+  const variant = job.matrixKeys.map((key) =>
+    `__m='\${{ matrix.${key} }}'; __variant="$__variant|${key}=\${#__m}:$__m"`
+  )
   /** The shell words that give a value made of pieces. */
   const words = (parts: ReadonlyArray<Part>): string =>
     parts.length === 0
@@ -590,11 +596,34 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
   ])
   const mark = step.after ??
     `${shardOf(work, 0x1_0000_0000).toString(36)}-${shardOf(`${work}\n`, 0x1_0000_0000).toString(36)}`
-  /** The lines that name a directory of the state after the repository's place and `name`. */
+  /** The lines that name a directory of the state after the repository's place and `name`, shell words. */
   const named = (target: string, name: string): ReadonlyArray<string> => [
-    `__sum=$(printf %s "$__root|"${quote(`${name}${variant}`)} | cksum)`,
+    `__sum=$(printf %s "$__root|"${name}"$__variant" | cksum)`,
     `case \${__sum// /} in ''|*[!0-9]*) ${fail("cksum gave no checksum to name the job's state with")};; esac`,
     `${target}=$__base/\${__sum%% *}-\${__sum##* }`
+  ]
+  // The state a first step leaves for the jobs that start with it. Where jobs run at once in one checkout, as in
+  // a baseline, `Inventory.script` names the job and each keeps its own.
+  const shared_ = `${quote(`first|${mark}|`)}"\${__smithers_ci_unit-}"`
+  /** The lines that copy what a state holds into a directory, but the event file. */
+  const copied = (from: string, to: string): ReadonlyArray<string> => [
+    `for __e in "$${from}"/*; do`,
+    `  case \${__e##*/} in event.json) ;; *) cp -R "$__e" "$${to}/" || { __ci_gone "$${to}"; exit 1; };; esac`,
+    `done`
+  ]
+  /** The lines that stop a step whose job's state was not started by this job's first step. */
+  const started = (state: string): ReadonlyArray<string> => [
+    `__o=; [ ! -f "$${state}/first" ] || IFS= read -r __o < "$${state}/first"`,
+    `[ "$__o" = ${quote(mark)} ] || ${fail("the steps before this one have not run in $__root")}`
+  ]
+  /** A state of this run alone, removed as the step ends. */
+  const own = [`__state=$(mktemp -d "$__base/only.XXXXXX") || exit 1`, `trap '__ci_gone "$__state"' EXIT`]
+  /** The lines that say where the state's checkout is and write the functions every step of the job reads. */
+  const library_ = [
+    `printf %s "$__root" > "$__state/root.$$" && mv -f -- "$__state/root.$$" "$__state/root" || exit 1`,
+    `cat > "$__state/lib.sh" <<'${marker}'`,
+    shared,
+    marker
   ]
   const textOf = (alone: boolean): string =>
     [
@@ -606,11 +635,26 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       `if [ -n "$__cwd" ]; then`,
       `  case $PWD in`,
       `    */"$__cwd") __root=\${PWD%"/$__cwd"};;`,
-      `    *) __root=$(git rev-parse --show-toplevel 2>/dev/null) || ${fail("$PWD is not $__cwd in a repository")};;`,
+      // The directory was reached through a link: the root is the nearest one above from which it is this one.
+      `    *)`,
+      `      until [ "$__root/$__cwd" -ef "$PWD" ]; do`,
+      `        [ "$__root" != / ] || ${fail("$PWD is not $__cwd in a repository")}`,
+      `        __root=\${__root%/*}; __root=\${__root:-/}`,
+      `      done;;`,
       `  esac`,
       `fi`,
       // The state is under /tmp whatever the step's own TMPDIR is, in a directory only this user can enter. Where
       // /tmp cannot be written, as inside a step held to its inputs, it is under the TMPDIR that step is given.
+      // Removes a state, read-only directories and all, as a tool's own cache has them. False when it is still
+      // there.
+      `__ci_gone() {`,
+      `  [ -e "$1" ] || [ -L "$1" ] || return 0`,
+      `  [ -L "$1" ] || chmod -R u+w -- "$1" 2>/dev/null`,
+      `  rm -rf -- "$1" 2>/dev/null`,
+      `  [ ! -e "$1" ] && [ ! -L "$1" ]`,
+      `}`,
+      `__variant=`,
+      ...variant,
       `__base=/tmp; [ -w /tmp ] || __base=\${TMPDIR:-/tmp}`,
       `__base=$__base/smithers-ci-runner-$(id -u)`,
       `mkdir -p -m 700 -- "$__base" 2>/dev/null; [ -d "$__base" ] && [ -O "$__base" ] || ${
@@ -620,21 +664,13 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
         // A step that may be left out keeps its state in a directory of this run alone, a copy of what the steps
         // before it left, and removes it as it ends.
         ? [
-          `__state=$(mktemp -d "$__base/only.XXXXXX") || exit 1`,
-          `trap 'rm -rf -- "$__state"' EXIT`,
+          ...own,
           ...(step.after === undefined
-            ? [
-              `printf %s "$__root" > "$__state/root" || exit 1`,
-              `cat > "$__state/lib.sh" <<'${marker}'`,
-              shared,
-              marker
-            ]
+            ? library_
             : [
-              ...named("__from", step.second ? `first|${mark}` : job.id),
+              ...(step.second ? named("__from", shared_) : [...named("__from", quote(job.id)), ...started("__from")]),
               `[ -f "$__from/lib.sh" ] || ${fail("the steps before this one have not run in $__root")}`,
-              `for __e in "$__from"/*; do`,
-              `  case \${__e##*/} in event.json) ;; *) cp -R "$__e" "$__state/" || exit 1;; esac`,
-              `done`
+              ...copied("__from", "__state")
             ]),
           `__apart=1`
         ]
@@ -644,48 +680,45 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
             // The only step of a job keeps its state in a directory of this run alone and removes it as it ends:
             // nothing reads what it leaves. It looks at no state but its own, so what it reads is the same from
             // one run to the next, whatever other jobs, or steps split from this one, leave beside it.
-            ? [
-              `__state=$(mktemp -d "$__base/only.XXXXXX") || exit 1`,
-              `trap 'rm -rf -- "$__state"' EXIT`
-            ]
+            ? own
             : [
-              ...named("__state", `first|${mark}`),
-              // A first step that runs starts every job after it anew: the state of each job that started from
-              // what this step left is removed. So is the state of a checkout that is gone, such as a replay's
-              // copy.
+              // A first step that names its job, or the directories a runner gives a job, starts the job's own
+              // state: every step of the job then has the same RUNNER_TEMP. Any other first step leaves a state
+              // of its own, which each job that starts with it copies.
+              ...named("__state", step.job === undefined ? shared_ : quote(job.id)),
+              // The state of a checkout that is gone, such as a replay's copy, is removed with the first step of a
+              // job. A state whose place cannot be read is being written by another step and is left alone.
               `for __d in "$__base"/*; do`,
               `  [ -f "$__d/root" ] || continue`,
-              `  IFS= read -r -d '' __r < "$__d/root"; __o=; [ ! -f "$__d/first" ] || IFS= read -r __o < "$__d/first"`,
-              `  [ -d "$__r" ] && [ "$__o" != "\${__state##*/}" ] || rm -rf -- "$__d"`,
+              `  __r=; { IFS= read -r -d '' __r < "$__d/root"; } 2>/dev/null`,
+              `  [ -z "$__r" ] || [ -d "$__r" ] || __ci_gone "$__d"`,
               `done`,
-              `rm -rf -- "$__state"`
+              `__ci_gone "$__state" || ${fail("could not remove $__state")}`,
+              `mkdir -p -- "$__state" || exit 1`,
+              ...(step.job === undefined ? [] : [`printf %s ${quote(mark)} > "$__state/first" || exit 1`])
             ]),
-          `mkdir -p -- "$__state" && printf %s "$__root" > "$__state/root" || exit 1`,
-          `cat > "$__state/lib.sh" <<'${marker}'`,
-          shared,
-          marker
+          ...library_
         ]
         : [
-          ...named("__state", job.id),
+          ...named("__state", quote(job.id)),
           ...(step.second
             ? [
-              ...named("__first", `first|${mark}`),
+              ...named("__first", shared_),
               `[ -f "$__first/lib.sh" ] || ${fail("the first step of this job has not run in $__root")}`,
               // The job's own state starts as a copy of what its first step left: that step may have run for
               // another job that starts the same way. The event file is the first step's own and stays there.
-              // The copy is made once for each run of the first step, which removes it: steps split from this
-              // one each find what the ones before them left. A state that started from another first step, as
-              // the job had before its workflow changed, is not this job's. The copy is moved into place whole.
-              `__o=; [ ! -f "$__state/first" ] || IFS= read -r __o < "$__state/first"`,
-              `if [ "$__o" != "\${__first##*/}" ]; then`,
-              `  rm -rf -- "$__state" "$__state.$$"; mkdir -- "$__state.$$" || exit 1`,
-              `  for __e in "$__first"/*; do`,
-              `    case \${__e##*/} in event.json) ;; *) cp -R "$__e" "$__state.$$/" || exit 1;; esac`,
-              `  done`,
-              `  printf %s "\${__first##*/}" > "$__state.$$/first" && mv -- "$__state.$$" "$__state" || exit 1`,
+              // A step split from this one keeps the state the ones before it wrote to, as long as it started
+              // from this run of the first step: it holds a link to that run's file, which a new run replaces.
+              // The copy is moved into place whole.
+              `if [ -z "\${__smithers_ci_part-}" ] || ! [ "$__state/origin" -ef "$__first/lib.sh" ]; then`,
+              `  __ci_gone "$__state" && __ci_gone "$__state.$$" || ${fail("could not remove $__state")}`,
+              `  mkdir -- "$__state.$$" || exit 1`,
+              ...copied("__first", "__state.$$").map((line) => `  ${line}`),
+              `  printf %s ${quote(mark)} > "$__state.$$/first" && ln -- "$__first/lib.sh" "$__state.$$/origin" &&`,
+              `    mv -- "$__state.$$" "$__state" || { __ci_gone "$__state.$$"; exit 1; }`,
               `fi`
             ]
-            : [])
+            : started("__state"))
         ]),
       `[ -f "$__state/lib.sh" ] || ${fail("the steps before this one have not run in $__root")}`,
       `. "$__state/lib.sh" || exit 1`,
@@ -696,5 +729,6 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       `__ci_run ${quote(step.key)} "$__script" ${step.start.map(quote).join(" ")}`,
       `}`
     ].join("\n")
-  return { mark, text: textOf(false), alone: textOf(true) }
+  const temp = emitter.lines.some((line) => /\$RUNNER_(?:TEMP|TOOL_CACHE)\b/.test(line))
+  return { mark, text: textOf(false), alone: textOf(true), temp }
 }

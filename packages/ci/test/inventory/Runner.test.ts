@@ -9,6 +9,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync
 } from "node:fs"
 import { tmpdir } from "node:os"
@@ -45,6 +46,10 @@ interface Options {
   readonly env?: Readonly<Record<string, string>>
   readonly job?: JobFacts
   readonly variant?: Readonly<Record<string, string>>
+  /** The step was split from another, as `Step.from` says. */
+  readonly part?: boolean
+  /** The job the step is run for, as a baseline tells it. */
+  readonly unit?: string
 }
 
 const roots: Array<string> = []
@@ -79,6 +84,7 @@ let at: Place
 
 beforeEach(() => {
   mark = undefined
+  shared = true
   begun.clear()
   at = place(2)
 })
@@ -125,6 +131,9 @@ let mark: string | undefined
 /** The jobs that have run a step after the first step the test last ran: their next step is not their second. */
 const begun = new Set<string>()
 
+/** True when the first step the test last ran was given no job, so the job's second step copies what it left. */
+let shared = true
+
 /** Writes the runner text of a step, composes it as `Inventory.script` does and runs it with `Inventory.shell`. */
 const run = ({ alone, first: started, ...facts }: Facts, command: string, options: Options = {}): Ran => {
   // A step a replay may leave out has no place: it neither starts the steps nor counts as one of them.
@@ -133,14 +142,22 @@ const run = ({ alone, first: started, ...facts }: Facts, command: string, option
   const after = first ? undefined : apart ? mark : mark ?? "none"
   const facts_ = options.job ?? job()
   const state = `${facts_.id} ${JSON.stringify(options.variant ?? {})}`
-  const second = !first && after !== undefined && !begun.has(state)
-  const written = write(facts_, { ...defaults, after, second, ...facts }, command)
+  const second = !first && after !== undefined && shared && !begun.has(state)
+  // A first step is given no job unless the test gives it one, as a step that asks for none is.
+  const told = first && !("job" in facts) ? { job: undefined } : {}
+  const step = { ...defaults, after, second, ...told, ...facts }
+  const written = write(facts_, step, command)
   if (!("text" in written)) throw new Error(written.problem)
   if (first) {
     mark = written.mark
+    shared = step.job === undefined
     begun.clear()
   } else if (!apart) begun.add(state)
-  const text = expand(script({ command, runner: alone === true ? written.alone : written.text }), options.variant ?? {})
+  const runner = alone === true ? written.alone : written.text
+  const text = expand(
+    script({ command, runner, ...(options.part === true ? { from: "whole" } : {}) }, options.unit),
+    options.variant ?? {}
+  )
   const [program, ...flags] = shell
   const ran = spawnSync(program, [...flags, text], {
     cwd: options.cwd ?? at.repo,
@@ -669,6 +686,59 @@ describe("write", () => {
       const first = pass({ first: true }, `echo "$RUNNER_TEMP"`, { job: pair, variant: { a: "x y", b: "z" } })
       const second = pass({ first: true }, `echo "$RUNNER_TEMP"`, { job: pair, variant: { a: "x", b: "y z" } })
       expect(first).not.toBe(second)
+      // A value may hold the very text that parts two values.
+      const temp = (variant: Readonly<Record<string, string>>): string =>
+        pass({ first: true }, `echo "$RUNNER_TEMP"`, { job: pair, variant })
+      expect(temp({ a: "1", b: "2|b=3" })).not.toBe(temp({ a: "1|b=2", b: "3" }))
+      expect(temp({ a: "1", b: "2|b=1:3" })).not.toBe(temp({ a: "1|b=1:2", b: "3" }))
+    })
+
+    // Two first steps that start together: one reads the other's `root` before it is written. A state whose
+    // place cannot be read is being written, and is not the state of a checkout that is gone.
+    it("leaves alone a state whose place is not written yet", () => {
+      const half = join(stateRoot, `half-${process.pid}`)
+      mkdirSync(half, { recursive: true })
+      writeFileSync(join(half, "root"), "")
+      // Every checkout of this user keeps its states in the one directory, and a step of an older smithers-ci
+      // may remove this one. So the test reads what this step asked `rm` to remove, not what is left.
+      const real = spawnSync("sh", ["-c", "command -v rm"], { encoding: "utf8" }).stdout.trim()
+      const removed = join(at.tmp, "removed")
+      const bin = join(at.tmp, "bin")
+      mkdirSync(bin)
+      writeFileSync(join(bin, "rm"), `#!/bin/sh\necho "$@" >> ${quote(removed)}\nexec ${quote(real)} "$@"\n`, {
+        mode: 0o755
+      })
+      try {
+        pass({ first: true }, "true", { env: { PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}` } })
+        expect(existsSync(removed) ? readFileSync(removed, "utf8") : "").not.toContain(half)
+      } finally {
+        rmSync(half, { recursive: true, force: true })
+      }
+    })
+
+    // `go mod download` leaves directories nothing can be written into.
+    it("empties RUNNER_TEMP when a step left a read-only directory in it", () => {
+      const cache =
+        `mkdir -p "$RUNNER_TEMP/mod/pkg"; echo x > "$RUNNER_TEMP/mod/pkg/file"; chmod 555 "$RUNNER_TEMP/mod/pkg"`
+      for (const _ of [1, 2]) {
+        expect(pass({ first: true }, `ls "$RUNNER_TEMP"; ${cache}`)).toBe("")
+        expect(pass({}, `ls "$RUNNER_TEMP"; echo "LATER=1" >> "$GITHUB_ENV"`)).toBe("mod\n")
+        expect(pass({}, `echo "$LATER"`)).toBe("1\n")
+      }
+    })
+
+    // A file of the first step that cannot be read stops the copy. Nothing half-made is left.
+    it("leaves no half-made state when the job's state cannot be started", () => {
+      const mine = (): ReadonlyArray<string> =>
+        readdirSync(stateRoot).filter((name) => {
+          const place = join(stateRoot, name, "root")
+          return existsSync(place) && readFileSync(place, "utf8") === at.repo
+        })
+      pass({ first: true }, `echo x > "$RUNNER_TEMP/secret"; chmod 000 "$RUNNER_TEMP/secret"`)
+      const ran = run({}, "echo ran")
+      expect(ran.status).toBe(1)
+      expect(ran.stdout).toBe("")
+      expect(mine()).toHaveLength(1)
     })
   })
 
@@ -698,11 +768,23 @@ describe("write", () => {
       .toBe(`${app}\n${at.repo}\n1\n`)
   })
 
-  it("finds the repository with git when the directory is not the step's", () => {
-    const other = join(at.repo, "other")
-    mkdirSync(other)
-    pass({ first: true }, "true")
-    expect(pass({ cwd: "packages/app" }, `printf '%s\\n' "$GITHUB_WORKSPACE"`, { cwd: other })).toBe(`${at.repo}\n`)
+  // A `working-directory` that is a symbolic link: the step is started in the directory the link names, whose
+  // path does not end with the link's. The root is found without git, so also in a tree that has no `.git`.
+  it("finds the repository when the step's directory is reached through a link, without asking git", () => {
+    const plain = mkdtempSync(join(tmpdir(), "smithers-runner-export-"))
+    roots.push(plain)
+    const tree = realpathSync(plain)
+    mkdirSync(join(tree, "real", "deep"), { recursive: true })
+    symlinkSync("real/deep", join(tree, "link"))
+    const asked = join(at.tmp, "asked")
+    const bin = join(at.tmp, "bin")
+    mkdirSync(bin)
+    writeFileSync(join(bin, "git"), `#!/bin/sh\necho "$@" >> ${quote(asked)}\nexit 1\n`, { mode: 0o755 })
+    const options = { cwd: join(tree, "real", "deep"), env: { PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}` } }
+    expect(pass({ first: true, cwd: "link" }, `printf '%s\\n' "$GITHUB_WORKSPACE" "$PWD"`, options)).toBe(
+      `${tree}\n${join(tree, "real", "deep")}\n`
+    )
+    expect(existsSync(asked)).toBe(false)
     const outside = run({ first: true, cwd: "packages/app" }, "echo ran", { cwd: at.tmp })
     expect(outside.status).toBe(1)
     expect(outside.stdout).toBe("")
@@ -805,7 +887,7 @@ describe("write", () => {
     // second step all start from what the first step left, and each keeps what the ones before it wrote.
     it("is copied once for the steps split from the job's second step", () => {
       pass({ key: "INSTALL", first: true }, `echo "FROM=first" >> "$GITHUB_ENV"`)
-      const part = (command: string): string => pass({ key: "TEST", second: true }, command)
+      const part = (command: string): string => pass({ key: "TEST", second: true }, command, { part: true })
       expect(part(`echo "$FROM"; echo a > "$RUNNER_TEMP/a.log"; echo "A=done" >> "$GITHUB_ENV"`)).toBe("first\n")
       expect(part(`echo "$FROM $A"; echo b > "$RUNNER_TEMP/b.log"`)).toBe("first done\n")
       expect(pass({}, `ls "$RUNNER_TEMP"`)).toBe("a.log\nb.log\n")
@@ -817,16 +899,56 @@ describe("write", () => {
       expect(part(`echo "$FROM [\${A-}]"`)).toBe("changed []\n")
     })
 
-    // Another first step in the same checkout, of another job, leaves this job's state alone.
-    it("removes the state of the jobs that started from it, and of no other job", () => {
-      const other = job({ id: "other" })
+    // Three jobs start with the same step and one of them needs another, so the step runs twice in one run: once
+    // for two of the jobs, and later for the third. The second run takes nothing from a job that is mid-way.
+    it("leaves a job that is mid-way its state when it runs again for another job", () => {
+      const lint = { job: job({ id: "lint" }) }
+      const install = `echo "FROM=first" >> "$GITHUB_ENV"`
+      pass({ key: "INSTALL", first: true }, install)
+      pass({}, `echo "KEPT=yes" >> "$GITHUB_ENV"; echo x > "$RUNNER_TEMP/made"`, lint)
+      pass({ key: "INSTALL", first: true }, install)
+      expect(pass({ second: false }, `echo "$FROM $KEPT $(ls "$RUNNER_TEMP")"`, lint)).toBe("first yes made\n")
+    })
+
+    // A second step that fails is run again alone. It starts from what the first step left, as it did before.
+    it("starts a second step that runs again from what the first step left, with nothing a later step wrote", () => {
       pass({ key: "INSTALL", first: true }, `echo "FROM=first" >> "$GITHUB_ENV"`)
-      pass({}, `echo "KEPT=yes" >> "$GITHUB_ENV"`)
-      const kept = mark
-      pass({ key: "OTHER", first: true }, "true", { job: other })
-      pass({}, "true", { job: other })
-      mark = kept
-      expect(pass({ second: false }, `echo "$FROM $KEPT"`)).toBe("first yes\n")
+      const second = `echo "$FROM [\${SELF-}] [\${LATER-}] $(ls "$RUNNER_TEMP")"; echo "SELF=1" >> "$GITHUB_ENV"`
+      expect(pass({ key: "TWO" }, second)).toBe("first [] [] \n")
+      pass({ key: "THREE" }, `echo "LATER=1" >> "$GITHUB_ENV"; echo x > "$RUNNER_TEMP/later"`)
+      expect(pass({ key: "TWO", second: true }, second)).toBe("first [] [] \n")
+    })
+
+    // The jobs of a baseline run at once in one checkout. `Inventory.script` tells each step its job, and each job
+    // keeps what its first step left to itself.
+    it("is each job's own where the caller names the job", () => {
+      const install = `echo "N=$(cat n.txt)" >> "$GITHUB_ENV"`
+      const a = { job: job({ id: "a" }), unit: "a" }
+      const b = { job: job({ id: "b" }), unit: "b" }
+      writeFileSync(join(at.repo, "n.txt"), "1\n")
+      pass({ key: "INSTALL", first: true }, install, a)
+      writeFileSync(join(at.repo, "n.txt"), "2\n")
+      pass({ key: "INSTALL", first: true }, install, b)
+      expect(pass({ second: true }, `echo "$N"`, a)).toBe("1\n")
+      expect(pass({ second: true }, `echo "$N"`, b)).toBe("2\n")
+    })
+
+    // "Default environment variables: RUNNER_TEMP: the path to a temporary directory on the runner", one for the
+    // job. A first step that asks for it is its job's alone, and every step of the job has that one directory.
+    it("starts the job's own state when it is given its job, so every step has the same RUNNER_TEMP", () => {
+      const temp = pass({ first: true, job: "build" }, `echo "$RUNNER_TEMP"; mkdir "$RUNNER_TEMP/work"`).trim()
+      expect(pass({}, `echo "$RUNNER_TEMP"; echo built > "$RUNNER_TEMP/work/artifact"`)).toBe(`${temp}\n`)
+      expect(pass({}, `cat "${temp}/work/artifact"`)).toBe("built\n")
+      // Run again, it starts the job from nothing.
+      expect(pass({ first: true, job: "build" }, `echo "$RUNNER_TEMP"; ls "$RUNNER_TEMP"`)).toBe(`${temp}\n`)
+      // The caller is told when an expression of the step reads the directory with its script never naming it.
+      const reads = (fills: StepFacts["fills"]): boolean => {
+        const written = write(job(), { ...defaults, after: undefined, job: undefined, fills }, "echo @T@")
+        return "text" in written && written.temp
+      }
+      expect(reads([["@T@", named("temp")]])).toBe(true)
+      expect(reads([["@T@", named("toolcache")]])).toBe(true)
+      expect(reads([["@T@", named("workspace")]])).toBe(false)
     })
 
     // "Default environment variables: GITHUB_JOB". A first step is told its job only when it asks.
@@ -935,6 +1057,17 @@ describe("write", () => {
       expect(pass({ commit: true }, `cat "$GITHUB_EVENT_PATH"; echo "$GITHUB_SHA"`, options)).toBe(
         `{"after":"${head}"}\n${head}\n`
       )
+    })
+
+    // A later step run alone at a new commit, as a step that failed is: the event file is that commit's.
+    it("writes the event file anew each time, for the commit it runs at", () => {
+      const options = { job: job({ event: JSON.stringify({ after: commitMark }) }) }
+      const show = `cat "$GITHUB_EVENT_PATH"`
+      pass({ first: true }, "true", options)
+      expect(pass({ commit: true }, show, options)).toBe(`{"after":"${at.git("rev-parse", "HEAD")}"}\n`)
+      writeFileSync(join(at.repo, "a.txt"), "another commit\n")
+      at.git("commit", "-qam", "another")
+      expect(pass({ commit: true }, show, options)).toBe(`{"after":"${at.git("rev-parse", "HEAD")}"}\n`)
     })
 
     it("fails where git cannot be read, and any other step runs with no commit set", () => {
