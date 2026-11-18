@@ -34,6 +34,10 @@ export type Source = typeof Source.Type
  * secret name. `command`, `cwd` and `env` values may hold
  * `${{ matrix.<key> }}`, which `withVariant` fills in.
  *
+ * `inputs` lists every file the step reads, as paths or globs from the
+ * repository root; without it the step reads the whole repository, so every
+ * change reruns it. `from` is the id of the step this one was split from.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -44,7 +48,9 @@ export const Step = Schema.Struct({
   env: Schema.Record(Schema.String, Schema.String),
   secrets: Schema.Array(Schema.String),
   name: Schema.optionalKey(Schema.String),
-  secretEnv: Schema.optionalKey(Schema.Record(Schema.String, Schema.String))
+  secretEnv: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+  inputs: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+  from: Schema.optionalKey(Schema.NonEmptyString)
 })
 
 /**
@@ -206,3 +212,67 @@ export const withVariant = (step: Step, variant: Readonly<Record<string, string>
   cwd: expand(step.cwd, variant),
   env: Object.fromEntries(Object.entries(step.env).map(([name, value]) => [name, expand(value, variant)]))
 })
+
+/**
+ * The events that mean "a change arrived". A job one of them triggers is CI.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const changeTriggers: ReadonlyArray<string> = ["push", "pull_request", "merge_group"]
+
+/**
+ * The name of the recipe or script that is a repository's CI when no
+ * workflow is.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const ciEntry = "ci"
+
+/**
+ * The jobs that are the repository's CI, each with every job it needs.
+ *
+ * An inventory lists everything a repository can run: deploys, migrations,
+ * cleaners and dev servers among it. Only these jobs are ever run or turned
+ * into targets:
+ *
+ * 1. every job a change triggers (`changeTriggers`); or, when there is none,
+ * 2. the recipe or script named `ci` in a file at the repository root.
+ *
+ * The answer is empty when the repository has neither, and the program then
+ * exits `unsupported` instead of guessing.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const ciJobs = (inventory: Inventory): ReadonlyArray<Job> => {
+  const byId = new Map(inventory.jobs.map((job) => [job.id, job]))
+  const triggered = inventory.jobs.filter((job) => job.triggers.some((trigger) => changeTriggers.includes(trigger)))
+  const entries = inventory.jobs.filter((job) =>
+    job.triggers.length === 0 && !job.file.includes("/") && job.id.slice(job.id.indexOf(":") + 1) === ciEntry
+  )
+  const kept = new Set<string>()
+  const keep = (job: Job): void => {
+    if (kept.has(job.id)) return
+    kept.add(job.id)
+    for (const id of job.needs) {
+      const needed = byId.get(id)
+      if (needed !== undefined) keep(needed)
+    }
+  }
+  for (const job of triggered.length > 0 ? triggered : entries) keep(job)
+  return inventory.jobs.filter((job) => kept.has(job.id))
+}
+
+/**
+ * The inventory narrowed to its CI: `ciJobs` that pass `isRunnable`. The
+ * baseline, the generator and the replay work from this, never from the
+ * whole inventory.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const ci = (inventory: Inventory): Inventory => ({ ...inventory, jobs: ciJobs(inventory).filter(isRunnable) })

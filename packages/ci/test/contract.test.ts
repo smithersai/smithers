@@ -436,3 +436,127 @@ describe("contract changes, third round", () => {
     expect(Command.applyIgnores).toEqual([".flows"])
   })
 })
+
+describe("contract changes, fourth round: what is CI, and splitting a step", () => {
+  const decode = Schema.decodeUnknownSync(Inventory.Inventory)
+  const step = (id: string, command: string): Inventory.Step => ({ id, command, cwd: "", env: {}, secrets: [] })
+  const job = (
+    id: string,
+    file: string,
+    source: Inventory.Source,
+    triggers: ReadonlyArray<string>,
+    needs: ReadonlyArray<string> = [],
+    commands: ReadonlyArray<string> = ["true"]
+  ): Inventory.Job => ({
+    id,
+    source,
+    file,
+    name: id,
+    needs,
+    triggers,
+    matrix: [],
+    steps: commands.map((command, index) => step(`${id}:${index + 1}`, command)),
+    unsupported: []
+  })
+  const inventory = (jobs: ReadonlyArray<Inventory.Job>): Inventory.Inventory =>
+    decode({ version: 1, repository: "r", commit: "c", toolchains: [], jobs })
+
+  it("runs only what a change triggers, never a deploy, a migration or a script nothing calls", () => {
+    const all = inventory([
+      job("ci.yml:test", ".github/workflows/ci.yml", "github-actions", ["pull_request", "merge_group"], [
+        "ci.yml:build"
+      ]),
+      job("ci.yml:build", ".github/workflows/ci.yml", "github-actions", ["workflow_call"]),
+      job("ci.yml:missing-need", ".github/workflows/ci.yml", "github-actions", ["push"], ["ci.yml:gone"]),
+      job("release.yml:publish", ".github/workflows/release.yml", "github-actions", ["workflow_dispatch"]),
+      job("nightly.yml:soak", ".github/workflows/nightly.yml", "github-actions", ["schedule"]),
+      job("package.json:db:cloud:migrate", "package.json", "package-json", []),
+      job("package.json:ci", "package.json", "package-json", []),
+      job("packages/app/package.json:ios:device:deploy", "packages/app/package.json", "package-json", [])
+    ])
+    expect(Inventory.ciJobs(all).map((entry) => entry.id)).toEqual([
+      "ci.yml:test",
+      "ci.yml:build",
+      "ci.yml:missing-need"
+    ])
+  })
+
+  it("falls back to the root `ci` recipe and what it needs when no workflow runs on a change", () => {
+    const zig = inventory([
+      job("justfile:build", "justfile", "justfile", []),
+      job("justfile:test", "justfile", "justfile", [], [], ["zig build test"]),
+      job("justfile:tidy", "justfile", "justfile", [], ["justfile:fmt"]),
+      job("justfile:fmt", "justfile", "justfile", [], ["justfile:tidy"]),
+      job("justfile:clean", "justfile", "justfile", [], [], ["rm -rf zig-out .zig-cache"]),
+      job("justfile:ci", "justfile", "justfile", [], ["justfile:tidy", "justfile:test"], []),
+      job("tools/justfile:ci", "tools/justfile", "justfile", []),
+      job("release.yml:publish", ".github/workflows/release.yml", "github-actions", ["workflow_dispatch"])
+    ])
+    expect(Inventory.ciJobs(zig).map((entry) => entry.id)).toEqual([
+      "justfile:test",
+      "justfile:tidy",
+      "justfile:fmt",
+      "justfile:ci"
+    ])
+    expect(Inventory.ci(zig).jobs.map((entry) => entry.id)).toEqual(["justfile:test", "justfile:tidy", "justfile:fmt"])
+  })
+
+  it("finds no CI in a repository with only scripts, and never runs a job that does not exit", () => {
+    const scripts = inventory([
+      job("package.json:test", "package.json", "package-json", []),
+      job("package.json:deploy", "package.json", "package-json", [])
+    ])
+    expect(Inventory.ciJobs(scripts)).toEqual([])
+    expect(Inventory.ci(scripts).jobs).toEqual([])
+    const server = {
+      ...job("ci.yml:dev", ".github/workflows/ci.yml", "github-actions", ["push"]),
+      unsupported: [{ feature: Inventory.longRunning, detail: "bun run dev" }]
+    }
+    expect(Inventory.ciJobs(inventory([server]))).toHaveLength(1)
+    expect(Inventory.ci(inventory([server])).jobs).toEqual([])
+  })
+
+  it("hands a replay a splitter, or none", async () => {
+    const empty: Inventory.Inventory = inventory([])
+    const split: Parts.Decompose = (_root, given) => Effect.succeed({ ...given, commit: "split" })
+    const base = {
+      read: () => Effect.succeed(empty),
+      files: () => Effect.succeed([]),
+      rows: () => Effect.succeed([]),
+      score: () => Effect.succeed([])
+    }
+    const commitOf = (parts: Parts.ReplayParts) =>
+      Effect.runPromise((parts.decompose ?? ((_root, given) => Effect.succeed(given)))("/repo", empty)).then((result) =>
+        result.commit
+      )
+    expect(await commitOf({ ...base, decompose: split })).toBe("split")
+    expect(await commitOf(base)).toBe("c")
+  })
+
+  it("lets a split step name what it reads and the step it came from", () => {
+    const split = {
+      ...step("ci.yml:test:1:packages/core", "bun test"),
+      inputs: ["packages/core/**"],
+      from: "ci.yml:test:1"
+    }
+    expect(Schema.decodeUnknownSync(Inventory.Step)(split)).toEqual(split)
+    expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, inputs: [""] })).toThrow()
+    const failure = { code: "command-failed", message: "bun pm ls exited 1", part: "decompose" }
+    expect(Schema.decodeUnknownSync(Parts.Failure)(failure)).toEqual(failure)
+  })
+
+  it("compares a step with all the targets it was split into", () => {
+    const entry = (label: string) => ({ label, job: "ci.yml:test", step: "ci.yml:test:1", variant: {} })
+    const map = Schema.decodeUnknownSync(TargetMap.TargetMap)({
+      version: 1,
+      targets: [entry("//:test-core"), entry("//:test-ui"), { ...entry("//:lint"), step: "ci.yml:test:2" }]
+    })
+    expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:1", {})).toEqual(["//:test-core", "//:test-ui"])
+    expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:9", {})).toEqual([])
+    expect(RunRecord.combine(["pass", "fail", "flaky"])).toBe("fail")
+    expect(RunRecord.combine(["pass", "flaky", "skipped"])).toBe("flaky")
+    expect(RunRecord.combine(["skipped", "pass"])).toBe("pass")
+    expect(RunRecord.combine(["skipped"])).toBe("skipped")
+    expect(RunRecord.combine([])).toBe("skipped")
+  })
+})

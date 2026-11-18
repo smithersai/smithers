@@ -38,7 +38,7 @@ import type { Row, Score, Settings } from "./Selection.ts"
 export const Failure = Schema.Struct({
   code: Schema.Literals(["unsupported", "not-a-repository", "command-failed", "invalid-document", "model-unavailable"]),
   message: Schema.NonEmptyString,
-  part: Schema.Literals(["inventory", "generate", "replay", "report", "select", "cli", "closure"])
+  part: Schema.Literals(["inventory", "generate", "replay", "report", "select", "cli", "closure", "decompose"])
 })
 
 /**
@@ -139,14 +139,28 @@ export type BuildRows<R = never> = (
 export type ScoreRows<R = never> = (rows: ReadonlyArray<Row>) => Effect.Effect<ReadonlyArray<Score>, Failure, R>
 
 /**
+ * Splits coarse CI steps into finer ones that name what they read, so a
+ * change reruns only the steps it reaches: a step that runs a task over a
+ * whole workspace becomes one step per package. It is given the CI
+ * (`Inventory.ci`) and returns it with those steps replaced; each new step
+ * has `inputs` and `from`. A step it cannot split is returned as it was.
+ * Exported as `split` from `src/decompose`.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export type Decompose<R = never> = (root: string, inventory: Inventory) => Effect.Effect<Inventory, Failure, R>
+
+/**
  * The parts a replay calls. The command-line program passes them, so the
- * replay imports no other part.
+ * replay imports no other part. Without `decompose` the CI is run unsplit.
  *
  * @category models
  * @since 0.1.0
  */
 export interface ReplayParts<R = never> {
   readonly read: ReadInventory<R>
+  readonly decompose?: Decompose<R> | undefined
   readonly files: GenerateFiles<R>
   readonly rows: BuildRows<R>
   readonly score: ScoreRows<R>
@@ -154,8 +168,13 @@ export interface ReplayParts<R = never> {
 
 /**
  * Replays past commits and reports. It never changes the repository at
- * `root`; every run happens in a copy. It finds the target each inventory
- * step became in the target map among the generated files (contract 11).
+ * `root`; every run happens in a copy.
+ *
+ * For each commit it reads the inventory, narrows it with `Inventory.ci`,
+ * runs that as the baseline, then generates targets from the decomposed CI
+ * and runs them. It compares each baseline step's verdict with
+ * `RunRecord.combine` of the verdicts of the step's targets, found with
+ * `TargetMap.labelsOf` in the target map among the generated files.
  *
  * @category parts
  * @since 0.1.0

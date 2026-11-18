@@ -24,6 +24,18 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-17, fourth round** (found by the lead running the parts together on needlefish and eliza):
+
+- **What is CI.** An inventory lists everything a repository can run; eliza's holds 1,897 jobs, among them
+  `db:cloud:migrate` and `ios:device:deploy`. `Inventory.ci(inventory)` is the only thing the baseline, the generator
+  and the replay run or turn into targets: jobs a push, pull request or merge group triggers, or else the root `ci`
+  recipe, each with what it needs. Empty means the program exits `unsupported`.
+- **Splitting a step.** New part `src/decompose` exports `split` (`Parts.Decompose`): a step that runs a task over a
+  whole workspace becomes one step per package, with `Step.inputs` and `Step.from`. `ReplayParts` gains an optional
+  `decompose`; without it the CI is run unsplit.
+- The generator declares `Step.inputs` as a target's inputs when present, and writes one target map entry per split
+  step, naming `Step.from`. The replay compares a step with `RunRecord.combine` of `TargetMap.labelsOf`.
+
 **2026-11-17, third round** (asked for by the Zig, fast-mode and generator lanes):
 
 - Every pure function in a contract is marked `@throws {never}`, so VibeLang code calls it directly.
@@ -71,4 +83,6 @@ Newest first. A part built before a change adopts it before it lands again.
 | `src/replay`    | Runs past commits and writes contract 5                  |
 | `src/report`    | Renders contract 5 for a terminal and as HTML            |
 | `src/select`    | Fast mode: builds rows, scores them, measures the result |
+| `src/decompose` | Splits a coarse CI step into per-package steps           |
+| `src/closure`   | Contract 9, one strategy per language                    |
 | `src/cli`       | The `smithers-ci` program                                |

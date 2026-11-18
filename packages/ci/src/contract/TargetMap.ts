@@ -19,9 +19,10 @@ import * as Schema from "effect/Schema"
 export const path = ".smithers/ci-targets.json"
 
 /**
- * One step of one job, in one matrix variant, and the label of the target
+ * One step of one job, in one matrix variant, and the label of a target
  * that runs it. `label` is the label a run record reports. A job with no
- * matrix has the empty variant.
+ * matrix has the empty variant. A step that was split has one entry per
+ * target, each naming the original step.
  *
  * @category models
  * @since 0.1.0
@@ -90,4 +91,24 @@ export const labelOf = (
   const key = variantKey(variant)
   return map.targets.find((entry) => entry.job === job && entry.step === step && variantKey(entry.variant) === key)
     ?.label
+}
+
+/**
+ * The labels of every target that runs a step: one, or several when the
+ * step was split. Empty when the generator made none for it.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const labelsOf = (
+  map: TargetMap,
+  job: string,
+  step: string,
+  variant: Readonly<Record<string, string>>
+): ReadonlyArray<string> => {
+  const key = variantKey(variant)
+  return map.targets
+    .filter((entry) => entry.job === job && entry.step === step && variantKey(entry.variant) === key)
+    .map((entry) => entry.label)
 }

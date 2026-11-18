@@ -199,3 +199,17 @@ export const verdictOf = (result: TargetResult): Verdict => {
   if (passes === attempts.length) return "pass"
   return passes === 0 ? "fail" : "flaky"
 }
+
+/**
+ * One verdict for several: `fail` if any failed, else `flaky` if any was
+ * flaky, else `pass` if any passed, else `skipped`. It is how the verdicts
+ * of the targets a step was split into compare with the step's own.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const combine = (verdicts: ReadonlyArray<Verdict>): Verdict => {
+  for (const verdict of ["fail", "flaky", "pass"] as const) if (verdicts.includes(verdict)) return verdict
+  return "skipped"
+}
