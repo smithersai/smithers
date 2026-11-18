@@ -379,8 +379,8 @@ describe.concurrent("smithers-ci on a workspace", () => {
     expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:1", {})).toHaveLength(2)
     const targets = read(`${root}/PACKAGE.ts`)
     // Package a's target reads a; package b depends on a, so its target reads both and runs both.
-    expect(targets).toContain(`shell: "npm run test --workspace=a --if-present"`)
-    expect(targets).toContain(`shell: "npm run test --workspace=a --workspace=b --if-present"`)
+    expect(targets).toContain(`shell: "bash -e -c 'npm run test --workspace=a --if-present'"`)
+    expect(targets).toContain(`shell: "bash -e -c 'npm run test --workspace=a --workspace=b --if-present'"`)
     expect(targets).toContain(
       `data: [S.glob("//*"), S.glob("//.github/**"), S.glob("//packages/*"), S.glob("//packages/a/**")]`
     )

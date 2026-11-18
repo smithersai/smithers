@@ -19,7 +19,7 @@
  */
 
 import * as Result from "effect/Result"
-import { type Ci, generatedWorkflow, type Inventory, type Job, type Step } from "../contract/Inventory.ts"
+import { type Ci, generatedWorkflow, type Inventory, type Job, shell, type Step } from "../contract/Inventory.ts"
 import type { Failure } from "../contract/Parts.ts"
 import { shardOf } from "../contract/Shard.ts"
 import { forShell, forText, type Variant } from "./Expressions.ts"
@@ -107,7 +107,6 @@ interface Draft extends Omit<StepTarget, "rule" | "script" | "job"> {
 
 const runnerVariable = /\$\{?((?:GITHUB|RUNNER)_[A-Z0-9_]+)/g
 const secretReference = /\$\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
-const plainCommand = /^[A-Za-z0-9_./:=@%+,-]+(?: +[A-Za-z0-9_./:=@%+,-]+)*$/
 const workflowTriggers: ReadonlySet<string> = new Set(["merge_group", "pull_request", "push", "workflow_dispatch"])
 
 const invalid = (message: string): Result.Result<never, Failure> =>
@@ -164,39 +163,15 @@ const directoryOf = (cwd: string): string | undefined => {
   return cwd.startsWith("/") || parts.includes("..") ? undefined : parts.join("/")
 }
 
-// A recipe with its own interpreter line runs as a file, as Just runs it.
-const interpreterScript = (command: string): string =>
-  [
-    `script=$(mktemp) || exit`,
-    `printf '%s\\n' ${quote(command)} > "$script" || exit`,
-    `chmod +x "$script" || exit`,
-    `"$script"`,
-    `status=$?`,
-    `rm -f "$script"`,
-    `exit "$status"`
-  ].join("\n")
-
-const bodyOf = (job: Job, command: string): ReadonlyArray<string> => {
-  if (job.source === "github-actions") {
-    // GitHub runs each `run` block with `bash -e`. A command of plain words
-    // means the same in any shell and keeps its program visible to the key.
-    return [plainCommand.test(command) ? command : `bash --noprofile --norc -e -c ${quote(command)}`]
-  }
-  if (command.startsWith("#!")) return [interpreterScript(command)]
-  // Just and Make stop at the first failing line of a recipe.
-  return command.includes("\n") ? ["set -e", command] : [command]
-}
-
-const scriptOf = (
-  job: Job,
-  command: string,
-  directory: string,
-  marker: string | undefined
-): string =>
+// Smithers build starts a target's text with `/bin/sh`. The step itself runs
+// under the contract's shell, as the baseline runs it: `source`, `time`, `[[`
+// and `pipefail` mean in the target what they mean in the repository's CI.
+// The lines before it are read the same way by every shell.
+const scriptOf = (command: string, directory: string, marker: string | undefined): string =>
   [
     ...(marker === undefined ? [] : [`mkdir -p ${markerDirectory} || exit`, `: > ${marker} || exit`]),
     ...(directory === "" ? [] : [`cd -- ${quote(directory)} || exit`]),
-    ...bodyOf(job, command)
+    `${shell.join(" ")} ${quote(command)}`
   ].join("\n")
 
 const validate = (inventory: Inventory): Failure | undefined => {
@@ -361,7 +336,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       ...draft,
       job: job.id,
       rule: setup ? "setup" : "check",
-      script: scriptOf(job, command, directory, setup ? `${markerDirectory}/${draft.label}` : undefined)
+      script: scriptOf(command, directory, setup ? `${markerDirectory}/${draft.label}` : undefined)
     }
   })
 

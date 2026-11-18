@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
-import { ci, Inventory } from "../src/contract/Inventory.ts"
+import { ci, Inventory, shell } from "../src/contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateFiles } from "../src/contract/Parts.ts"
 import { labelsOf, path as targetMapPath, TargetMap } from "../src/contract/TargetMap.ts"
 import { forShell, forText } from "../src/generate/Expressions.ts"
@@ -168,7 +168,7 @@ describe("what a step becomes", () => {
     expect(declaration(source, "a-1")).toContain("cache: false")
     expect(declaration(source, "a-1")).toContain(`outFiles: ["//.flows/ci/a-1"]`)
     expect(declaration(source, "a-2")).toContain("S.Shell.Test(")
-    expect(declaration(source, "a-2")).toContain(`shell: "bun test"`)
+    expect(declaration(source, "a-2")).toContain(`shell: "bash -e -c 'bun test'"`)
     expect(declaration(source, "a-2")).toMatch(/data: \[repository, step\d+\]/)
   })
 
@@ -186,31 +186,22 @@ describe("what a step becomes", () => {
     expect(declaration(separate, "test-1")).toMatch(/data: \[repository, step0\]/)
   })
 
-  it("runs GitHub scripts as GitHub does and leaves plain commands alone", () => {
-    const source = targetsOf(inventory([job("a", [
-      step("a:1", "echo 'hi' && false\necho next"),
-      step("a:2", "cargo test --locked")
-    ])]))
+  it("runs every step under the shell the baseline runs it under, whatever its source", () => {
+    const source = targetsOf(inventory([
+      job("a", [step("a:1", "echo 'hi' && false\necho next"), step("a:2", "source scripts/check.sh")]),
+      job("b", [step("b:1", "false\ntrue")], { source: "makefile", name: "test" }),
+      job("c", [step("c:1", "#!/usr/bin/env bash\n[[ -f x ]]")], { source: "justfile", name: "test" })
+    ]))
     expect(declaration(source, "a-1")).toContain(
       JSON.stringify(
-        `mkdir -p .flows/ci || exit\n: > .flows/ci/a-1 || exit\nbash --noprofile --norc -e -c 'echo '\\''hi'\\'' && false\necho next'`
+        `mkdir -p .flows/ci || exit\n: > .flows/ci/a-1 || exit\nbash -e -c 'echo '\\''hi'\\'' && false\necho next'`
       )
     )
-    expect(declaration(source, "a-2")).toContain(`shell: "cargo test --locked"`)
-  })
-
-  it("stops a multi-line recipe at its first failure", () => {
-    const source = targetsOf(inventory([job("a", [step("a:1", "false\ntrue")], { source: "makefile", name: "test" })]))
-    expect(declaration(source, "a-1")).toContain(JSON.stringify("set -e\nfalse\ntrue"))
-  })
-
-  it("runs a recipe with an interpreter line as a file", () => {
-    const source = targetsOf(inventory([job("a", [step("a:1", "#!/usr/bin/env bash\n[[ -f x ]]")], {
-      source: "justfile",
-      name: "test"
-    })]))
-    expect(declaration(source, "a-1")).toContain("script=$(mktemp) || exit")
-    expect(declaration(source, "a-1")).not.toContain("set -e")
+    // A command of plain words is no exception: `source` and `time` are not `/bin/sh` words.
+    expect(declaration(source, "a-2")).toContain(`shell: "${shell.join(" ")} 'source scripts/check.sh'"`)
+    expect(declaration(source, "b-1")).toContain(JSON.stringify("bash -e -c 'false\ntrue'"))
+    expect(declaration(source, "c-1")).toContain(JSON.stringify("bash -e -c '#!/usr/bin/env bash\n[[ -f x ]]'"))
+    expect(source).not.toContain("mktemp")
   })
 
   it("passes the runner's variables a command names, and never its token", () => {
@@ -232,7 +223,7 @@ describe("what a step becomes", () => {
       step("a:5", "ls", { cwd: "${{ github.workspace }}/x" })
     ])]))
     expect(declaration(source, "a-1")).toContain(JSON.stringify(`cd -- 'packages/it'\\''s' || exit`).slice(1, -1))
-    expect(declaration(source, "a-2")).toContain(`shell: "ls"`)
+    expect(declaration(source, "a-2")).toContain(`shell: "bash -e -c 'ls'"`)
     expect(source).toContain("// a:3: not generated")
     expect(source).toContain("// a:4: not generated")
     expect(source).toContain("// a:5: not generated")

@@ -7,7 +7,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import type { Ci, Inventory as InventoryDocument, Job } from "../src/contract/Inventory.ts"
-import { Inventory } from "../src/contract/Inventory.ts"
+import { Inventory, shell } from "../src/contract/Inventory.ts"
 import { files } from "../src/generate/index.ts"
 
 const cli = fileURLToPath(new URL("../../smithers/bin/smithers.mjs", import.meta.url))
@@ -146,15 +146,25 @@ describe("generated files under the real smthrs", () => {
     }
   }, slow)
 
-  it("runs a recipe under the interpreter it names", () => {
-    const recipe = job("recipe", ["#!/usr/bin/env bash\n[[ -f input.txt ]]"], {
-      source: "justfile",
-      name: "test",
-      triggers: []
-    })
-    const root = repository(document([recipe]), { "input.txt": "source\n" })
+  it("runs a step under the shell the baseline runs it under, never /bin/sh", () => {
+    // `source`, `time` and `[[` are bash words: dash, which is /bin/sh on Ubuntu, refuses each of them.
+    const commands = ["source scripts/check.sh", "time true", "#!/usr/bin/env bash\n[[ -f input.txt ]]"]
+    const sources = { "input.txt": "source\n", "scripts/check.sh": "echo checked\n" }
+    const root = repository(
+      document([
+        job("github", commands.slice(0, 2)),
+        job("recipe", commands.slice(2), { source: "justfile", name: "test", triggers: [] })
+      ]),
+      sources
+    )
     try {
-      expect(Object.fromEntries(execute(root, "only").statuses)).toEqual({ "recipe-1": "ran" })
+      // The baseline runs each command as `Inventory.shell` then the command, and each passes.
+      for (const command of commands) expect(run(root, shell[0], [...shell.slice(1), command]).status).toBe(0)
+      expect(Object.fromEntries(execute(root, "only").statuses)).toEqual({
+        "github-1": "ran",
+        "github-2": "ran",
+        "recipe-1": "ran"
+      })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

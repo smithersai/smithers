@@ -82,7 +82,7 @@ const renderWorkspace = (inventory: Inventory): string =>
     `export const Workspace = S.Workspace(${text(workspaceName(inventory.repository))}, {`,
     `  repository: ${text(inventory.repository)},`,
     `  cache: S.Cache({ directory: ".flows" }),`,
-    `  host: S.Host({ bins: ["sh"] })`,
+    `  host: S.Host({ bins: ["bash", "sh"] })`,
     `})`,
     ``
   ].join("\n")
