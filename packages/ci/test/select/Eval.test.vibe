@@ -8,7 +8,7 @@ import { failure } from "../../src/select/Failure.ts"
 import { day } from "../../src/select/Features.ts"
 import * as Eval from "../../src/select/Eval.vibe"
 import * as Measure from "../../src/select/Measure.ts"
-import { type Host, layer, score } from "../../src/select/Score.vibe"
+import { type Host, score } from "../../src/select/Score.vibe"
 import type * as Scoring from "../../src/select/Scoring.ts"
 import { seen } from "./support.vibe"
 
@@ -38,7 +38,7 @@ const judge = Evaluator.layerScripted((request) => {
   ]))
 })
 
-const host = Layer.provideMerge(layer, Layer.mergeAll(FlowEngine.layerMemory, WebCrypto.layer, judge))
+const host = Layer.mergeAll(FlowEngine.layerMemory, WebCrypto.layer, judge)
 
 describe("Eval.run", () => {
   it.live("scores each change of the newest week, grades it, and measures the whole test set", () => effect {

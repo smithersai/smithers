@@ -7,7 +7,7 @@
 import { Action, Flow, type FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import type { Digest } from "effect/crypto/Digest"
 import type { SecureRandom } from "effect/crypto/SecureRandom"
-import { Classifier } from "@smthrs/model"
+import { Classifier, type Evaluator } from "@smthrs/model"
 import { Node } from "@smthrs/plan"
 import { Features, type Row } from "../contract/Selection.ts"
 import { failure } from "./Failure.ts"
@@ -56,9 +56,8 @@ export effect function judge(items: ReadonlyArray<Features>) {
 }
 
 /**
- * Registers {@link ScoreFlow} and its step with the host's flow engine. A
- * host provides it once, beneath every call of {@link score}: the
- * registration lives as long as the host, so calls that overlap share it.
+ * Registers {@link ScoreFlow} and its step with the host's flow engine.
+ * {@link score} provides it for each call.
  *
  * @category layers
  * @since 0.1.0
@@ -66,28 +65,28 @@ export effect function judge(items: ReadonlyArray<Features>) {
 export const layer = Interpreter.layerWithImplementations(ScoreFlow, ScoreBatch.toLayer(({ items }) => judge(items)))
 
 /**
- * What {@link score} needs from its host: {@link layer}, a flow engine, and
+ * What {@link score} needs from its host: the judge, a flow engine, and
  * Effect's `Digest` and `SecureRandom`.
  *
  * @category models
  * @since 0.1.0
  */
-export type Host = Action.Requirement<"ci/select/ScoreBatch"> | FlowRuntime.FlowRuntime | Digest | SecureRandom
+export type Host = Evaluator.Evaluator | FlowRuntime.FlowRuntime | Digest | SecureRandom
 
 /**
  * One score per row, from 0 to 1, with a one-line reason.
  *
  * Rows with equal features share one question. The questions go to the
  * host's judge in batches, each batch one durable flow step on the host's
- * flow engine, where {@link layer} registered the flow. A judge that cannot
- * answer fails `model-unavailable`; nothing is scored by guess.
+ * flow engine. A judge that cannot answer fails `model-unavailable`; nothing
+ * is scored by guess.
  *
  * @category scores
  * @since 0.1.0
  */
 export effect function score(rows: ReadonlyArray<Row>) {
   const asked = Scoring.batches(rows)
-  provide Flow.layerExecutionIds(Flow.derived) {
+  provide layer, Flow.layerExecutionIds(Flow.derived) {
     // Every batch settles before any failure is reported, so one failed batch never cuts another off mid-request.
     const settled = try Effect.forEach(
       asked,

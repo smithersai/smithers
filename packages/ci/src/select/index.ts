@@ -2,10 +2,9 @@
  * Fast mode: builds rows, scores them, measures the result.
  *
  * `rows` and `score` are this part's two functions under contract 10. A host
- * gives `rows` a {@link Repository} and a {@link Ledger}. It gives `score`
- * `Score.layer`, provided once over a flow engine (`FlowRuntime` from
- * `@smthrs/flow`) and the judge (`Evaluator` from `@smthrs/model`), and
- * Effect's `Digest` and `SecureRandom`.
+ * gives `rows` a {@link Repository} and a {@link Ledger}, and gives `score`
+ * the judge (`Evaluator` from `@smthrs/model`), a flow engine (`FlowRuntime`
+ * from `@smthrs/flow`) and Effect's `Digest` and `SecureRandom`.
  *
  * @since 0.1.0
  */

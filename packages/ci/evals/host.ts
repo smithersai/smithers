@@ -5,7 +5,6 @@
 import type { Evaluator } from "@smthrs/model"
 import { NodeHost, TestNodeRuntime } from "@smthrs/platform-node"
 import * as Layer from "effect/Layer"
-import * as Score from "../src/select/Score.vibe"
 
 /** The variables the judge may read. A value is passed on, never printed. */
 const inherited = [
@@ -42,16 +41,9 @@ export const judge: Layer.Layer<Evaluator.Evaluator> = NodeControl.layerSeatEval
   Layer.provide(NodeControl.layerRebuildableRequestExecutor(NodeControl.environmentDispatcher(environment)))
 )
 
-/**
- * The file system, a durable flow engine journaling in `eval.sqlite`, the judge, and the scorer's flow registered
- * once on that engine.
- */
-export const layer = Score.layer.pipe(
-  Layer.provideMerge(
-    Layer.mergeAll(
-      NodeHost.layer,
-      TestNodeRuntime.durableEngine(`${directory}/eval.sqlite`, "smithers-ci-eval"),
-      judge
-    )
-  )
+/** The file system, a durable flow engine journaling in `eval.sqlite`, and the judge. */
+export const layer = Layer.mergeAll(
+  NodeHost.layer,
+  TestNodeRuntime.durableEngine(`${directory}/eval.sqlite`, "smithers-ci-eval"),
+  judge
 )

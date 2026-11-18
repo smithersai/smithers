@@ -23,9 +23,7 @@ describe("select", () => {
         [`why${item}`, { choice: dependencyDistance === 0 ? "distance" : "none" }]
       ]))
     })
-    // The host: git, a ledger, and the scorer's flow registered once on a flow engine with a judge.
-    const scoring = Layer.provideMerge(Select.Score.layer, Layer.mergeAll(FlowEngine.layerMemory, WebCrypto.layer, judge))
-    provide Select.Repository.layerGit, Select.Ledger.layerMemory(), scoring {
+    provide Select.Repository.layerGit, Select.Ledger.layerMemory(), FlowEngine.layerMemory, WebCrypto.layer, judge {
       const built = try Select.rows(root, record(commits[1], [result("//packages/a:test", "failed"), result("//packages/b:test", "ran")]))
       const scores = try Select.score(built)
       try Effect.try(() => {
