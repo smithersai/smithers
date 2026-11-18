@@ -21,7 +21,7 @@ import type * as NodeArtifact from "@smthrs/targets/NodeArtifact"
 import type * as NpmTarget from "@smthrs/targets/NpmTarget"
 import * as RepoTarget from "@smthrs/targets/RepoTarget"
 import * as RustToolchain from "@smthrs/targets/RustToolchain"
-import type * as SafeFs from "@smthrs/targets/SafeFs"
+import * as SafeFs from "@smthrs/targets/SafeFs"
 import * as Secret from "@smthrs/targets/Secret"
 import * as Shell from "@smthrs/targets/Shell"
 import * as Target from "@smthrs/targets/Target"
@@ -4052,6 +4052,125 @@ export const attended = (target: Target.AnyTarget): boolean =>
   RulePolicy.of(Target.metadata(target).target).attended === true
 
 /**
+ * What one plan knows before it walks a target: the host, the declared
+ * toolchain, the ambient key material, and its empty memos.
+ */
+const planContext = async (
+  options: RunOptions,
+  services: PlanningServices,
+  plan: {
+    readonly completedInstallations: ReadonlySet<string>
+    readonly rootModes: ReadonlyMap<string, Mode>
+    readonly planningKinds: ReadonlyMap<string, Target.Kind | undefined>
+    readonly repoResolutions: RepoResolution.Resolver
+    /** Installed trees already measured, by real path: none of them is measured again. */
+    readonly installedTrees?: ReadonlyMap<string, InstalledTree.Identity> | undefined
+  }
+): Promise<PlanContext> => {
+  const index = options.index
+  const reporter = Reporter.of(options)
+  const log = reporter.note
+  const verb = options.verb
+  const platform = options.platform ?? process.platform
+  const workspace = index.workspace
+  const lockfilePath = (workspace.packageManager as
+    | { readonly lockfile?: { readonly path?: unknown } }
+    | undefined)?.lockfile?.path
+  const lockfileDigest = typeof lockfilePath === "string"
+    ? await Input.digestFile(NodePath.join(index.root, Input.resolvePath("", lockfilePath)), {
+      workspaceRoot: index.root,
+      signal: options.signal
+    })
+    : undefined
+  // A declared environment resolves once per plan and fails closed: the
+  // host's PATH is never consulted for a tool the workspace said comes from
+  // the closure.
+  const hostEnvironment = Workspace.withheldEnvironment(
+    options.environment ?? process.env,
+    options.remoteCache?.credentials
+  )
+  const nixDeclaration = WorkspaceDeclaration.nixEnvironment(workspace)
+  const nixEnvironment = nixDeclaration === undefined
+    ? undefined
+    : await Effect.runPromise(services.resolveNixEnvironment({
+      root: index.root,
+      declaration: nixDeclaration,
+      cacheDirectory: options.cacheDirectory,
+      environment: hostEnvironment,
+      signal: options.signal,
+      log
+    }))
+  const workspaceToolchain = await WorkspaceToolchain.resolve(workspace, {
+    root: index.root,
+    signal: options.signal,
+    ...(nixEnvironment === undefined ? {} : {
+      verifyTool: (tool) =>
+        NixExec.assertToolVersion(nixEnvironment, tool, { root: index.root, signal: options.signal })
+    })
+  })
+  // An invocation that plans several verbs passes one index to all of them
+  // and saves it itself; a lone plan loads and saves its own.
+  const digests = options.digests ?? await DigestIndexFile.load(index.root, options.cacheDirectory, log)
+  return {
+    root: index.root,
+    cacheDirectory: options.cacheDirectory,
+    index,
+    signal: options.signal,
+    log,
+    services,
+    flags: workspace.flags === undefined ? {} : workspace.flags.flags,
+    managerBinary: managerBinaryOf(workspace),
+    workspaceToolchain,
+    completedInstallations: plan.completedInstallations,
+    planningKinds: plan.planningKinds,
+    tools: new Map(),
+    toolBytes: new Map(),
+    executableIdentities: new Map(),
+    pathLookups: new Map(),
+    hostTools: new Map(),
+    probes: new Map(),
+    hostProbes: HostProbes.make(),
+    nodes: new Map(),
+    privateLabels: declarationLabels(index, (target) => packagePathOf({ root: index.root, index }, target)),
+    visiting: new Set(),
+    rootModes: plan.rootModes,
+    inputs: options.inputs ?? {},
+    environment: nixEnvironment === undefined
+      ? hostEnvironment
+      : NixExec.hostEnvironmentWith(nixEnvironment, hostEnvironment),
+    nixEnvironment,
+    ambient: {
+      node: process.version,
+      platform,
+      arch: process.arch,
+      lockfile: lockfileDigest ?? null,
+      ...(workspaceToolchain.manifestDigests.length === 0
+        ? {}
+        : { toolchainManifests: workspaceToolchain.manifestDigests }),
+      implementation: await Planner.implementationFingerprint(options.signal)
+    },
+    store: undefined,
+    storeWarned: false,
+    remoteCache: options.remoteCache,
+    digests,
+    installedTrees: new Map(plan.installedTrees),
+    installedMemory: await InstalledTree.load(InstalledTree.path(index.root, options.cacheDirectory)),
+    treeInputs: options.treeInputs ?? new Map(),
+    walks: options.walks ?? Input.makeWalkCache(),
+    crateSets: new Map(),
+    closureDigests: new Map(),
+    closureResults: new Map(),
+    graphDigests: new Map(),
+    repoResolutions: plan.repoResolutions,
+    childPlan: options.plan === true,
+    reporter,
+    write: options.write === true,
+    kind: verb === "auto" ? undefined : verb,
+    approvals: options.approvals
+  }
+}
+
+/**
  * Plans one PACKAGE.ts invocation: resolves roots, walks the graph,
  * resolves tools, and keys every node.
  *
@@ -4062,7 +4181,11 @@ const planWithServices = async (
   options: RunOptions,
   services: PlanningServices,
   completedInstallations: ReadonlySet<string> = new Set(),
-  refresh?: { readonly node: PackageNode; readonly nodes: ReadonlyMap<string, PackageNode> }
+  refresh?: {
+    readonly node: PackageNode
+    readonly nodes: ReadonlyMap<string, PackageNode>
+    readonly installedTrees?: ReadonlyMap<string, InstalledTree.Identity> | undefined
+  }
 ): Promise<PackagePlan> => {
   const index = options.index
   const reporter = Reporter.of(options)
@@ -4141,107 +4264,19 @@ const planWithServices = async (
   for (const row of selected) {
     if (!rootModes.has(row.label)) rootModes.set(row.label, rootMode(Target.metadata(row.target).target, options))
   }
-  const workspace = index.workspace
-  const lockfilePath = (workspace.packageManager as
-    | { readonly lockfile?: { readonly path?: unknown } }
-    | undefined)?.lockfile?.path
-  const lockfileDigest = typeof lockfilePath === "string"
-    ? await Input.digestFile(NodePath.join(index.root, Input.resolvePath("", lockfilePath)), {
-      workspaceRoot: index.root,
-      signal: options.signal
-    })
-    : undefined
-  // A declared environment resolves once per plan and fails closed: the
-  // host's PATH is never consulted for a tool the workspace said comes from
-  // the closure.
-  const hostEnvironment = Workspace.withheldEnvironment(
-    options.environment ?? process.env,
-    options.remoteCache?.credentials
-  )
-  const nixDeclaration = WorkspaceDeclaration.nixEnvironment(workspace)
-  const nixEnvironment = nixDeclaration === undefined
-    ? undefined
-    : await Effect.runPromise(services.resolveNixEnvironment({
-      root: index.root,
-      declaration: nixDeclaration,
-      cacheDirectory: options.cacheDirectory,
-      environment: hostEnvironment,
-      signal: options.signal,
-      log
-    }))
-  const workspaceToolchain = await WorkspaceToolchain.resolve(workspace, {
-    root: index.root,
-    signal: options.signal,
-    ...(nixEnvironment === undefined ? {} : {
-      verifyTool: (tool) =>
-        NixExec.assertToolVersion(nixEnvironment, tool, { root: index.root, signal: options.signal })
-    })
-  })
-  // An invocation that plans several verbs passes one index to all of them
-  // and saves it itself; a lone plan loads and saves its own.
-  const digests = options.digests ?? await DigestIndexFile.load(index.root, options.cacheDirectory, log)
-  const context: PlanContext = {
-    root: index.root,
-    cacheDirectory: options.cacheDirectory,
-    index,
-    signal: options.signal,
-    log,
-    services,
-    flags: workspace.flags === undefined ? {} : workspace.flags.flags,
-    managerBinary: managerBinaryOf(workspace),
-    workspaceToolchain,
+  const context = await planContext(options, services, {
     completedInstallations,
+    rootModes,
     planningKinds: new Map(
       refresh === undefined ? [] : [...refresh.nodes.values()].map((node) => [
         node.label,
         (node as PlannedKindNode).planningKind
       ])
     ),
-    tools: new Map(),
-    toolBytes: new Map(),
-    executableIdentities: new Map(),
-    pathLookups: new Map(),
-    hostTools: new Map(),
-    probes: new Map(),
-    hostProbes: HostProbes.make(),
-    nodes: new Map(),
-    privateLabels: declarationLabels(index, (target) => packagePathOf({ root: index.root, index }, target)),
-    visiting: new Set(),
-    rootModes,
-    inputs: options.inputs ?? {},
-    environment: nixEnvironment === undefined
-      ? hostEnvironment
-      : NixExec.hostEnvironmentWith(nixEnvironment, hostEnvironment),
-    nixEnvironment,
-    ambient: {
-      node: process.version,
-      platform,
-      arch: process.arch,
-      lockfile: lockfileDigest ?? null,
-      ...(workspaceToolchain.manifestDigests.length === 0
-        ? {}
-        : { toolchainManifests: workspaceToolchain.manifestDigests }),
-      implementation: await Planner.implementationFingerprint(options.signal)
-    },
-    store: undefined,
-    storeWarned: false,
-    remoteCache: options.remoteCache,
-    digests,
-    installedTrees: new Map(),
-    installedMemory: await InstalledTree.load(InstalledTree.path(index.root, options.cacheDirectory)),
-    treeInputs: options.treeInputs ?? new Map(),
-    walks: options.walks ?? Input.makeWalkCache(),
-    crateSets: new Map(),
-    closureDigests: new Map(),
-    closureResults: new Map(),
-    graphDigests: new Map(),
     repoResolutions,
-    childPlan: options.plan === true,
-    reporter,
-    write: options.write === true,
-    kind: verb === "auto" ? undefined : verb,
-    approvals: options.approvals
-  }
+    installedTrees: refresh?.installedTrees
+  })
+  const digests = context.digests
   const roots: Array<string> = []
   try {
     for (const row of selected) {
@@ -4322,5 +4357,151 @@ export const planAfterInstall = (
   options: RunOptions,
   completedInstallations: ReadonlySet<string>,
   node: PackageNode,
-  nodes: ReadonlyMap<string, PackageNode>
-): Promise<PackagePlan> => planWithServices(options, planningServicesLive, completedInstallations, { node, nodes })
+  nodes: ReadonlyMap<string, PackageNode>,
+  installedTrees?: ReadonlyMap<string, InstalledTree.Identity>
+): Promise<PackagePlan> =>
+  planWithServices(options, planningServicesLive, completedInstallations, { node, nodes, installedTrees })
+
+/**
+ * Digest rows a run keeps while targets write to the tree.
+ *
+ * A row read from a file that had not settled is good only until the next
+ * target finishes: a write in the same clock tick as the read can leave the
+ * file's status equal and its bytes different.
+ */
+class RunRows extends Map<string, SafeFs.DigestRow> {
+  private readonly unsettled = new Set<string>()
+  override set(file: string, row: SafeFs.DigestRow): this {
+    if (row.settled) this.unsettled.delete(file)
+    else this.unsettled.add(file)
+    return super.set(file, row)
+  }
+  /** Forgets every digest read from a file that had not settled. */
+  forget(): void {
+    for (const file of this.unsettled) super.delete(file)
+    this.unsettled.clear()
+  }
+}
+
+/**
+ * Plans single targets again while their run is under way.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Replanner {
+  /**
+   * Plans `node` again from the tree as it is now and answers the node a plan
+   * made at this moment would hold: its inputs expanded and measured again,
+   * and everything a rule derives from them.
+   *
+   * `settled` holds the targets `node` waits for that ran or were answered in
+   * this run, as they ran: the new plan keys `node` on the keys they ran
+   * under. A dependency missing from it, such as a group of files, is planned
+   * again too.
+   *
+   * `when` says how much of what earlier calls measured still stands.
+   * `"shared"`: all of it. `"after"`: no file or directory listing, but each
+   * installed tree as it was last measured. `"afresh"`: nothing.
+   *
+   * `place` is the tree the target runs in: the workspace, or its machine's
+   * copy of it. Every file is measured there.
+   */
+  readonly plan: (
+    node: PackageNode,
+    settled: Iterable<PackageNode>,
+    when: "afresh" | "shared" | "after",
+    place: string
+  ) => Promise<PackageNode>
+  /** Releases what the plans opened. */
+  readonly close: () => Promise<void>
+}
+
+/**
+ * Makes the replanner of one run over the nodes its plan made and the
+ * installed trees that plan measured.
+ *
+ * A target's key is planned before anything runs. A target that starts after
+ * another has written to the tree is keyed on bytes that may be gone, so the
+ * runner asks for its plan again at that moment. Calls are answered one at a
+ * time. The calls that share a measurement read a file many targets declare
+ * once, as the targets of one plan do. Walking an installed tree costs more
+ * than everything else a plan measures, so a tree is walked again only for a
+ * target about to start after another wrote. Tool identities are resolved
+ * once for the run: a tool replaced while the run is under way fails the
+ * target that names it, as it does after a first plan.
+ *
+ * @category planning
+ * @since 1.0.0
+ */
+export const replanner = (
+  options: RunOptions,
+  nodes: ReadonlyMap<string, PackageNode>,
+  installedTrees: ReadonlyMap<string, InstalledTree.Identity>
+): Replanner => {
+  const index = options.index
+  const rows = new RunRows()
+  const trees = new Map<string, InstalledTree.Identity | string>(installedTrees)
+  let base: Promise<PlanContext> | undefined
+  /** The measurement calls share, for each tree targets run in. */
+  const contexts = new Map<string, PlanContext>()
+  let queue: Promise<unknown> = Promise.resolve()
+  const started = async (): Promise<PlanContext> => {
+    // The first plan's settled rows: a file whose status is unchanged since is not read again.
+    const remembered = options.digests ?? await DigestIndexFile.load(index.root, options.cacheDirectory)
+    for (const [file, row] of remembered.rows) {
+      if (row.settled) rows.set(file, row)
+    }
+    return planContext({ ...options, digests: SafeFs.makeDigestIndex() }, planningServicesLive, {
+      completedInstallations: new Set(),
+      rootModes: new Map([...nodes.values()].map((node) => [node.label, node.mode])),
+      planningKinds: new Map([...nodes.values()].map((node) => [node.label, (node as PlannedKindNode).planningKind])),
+      repoResolutions: RepoResolution.resolver(index, options.environment ?? process.env)
+    })
+  }
+  const retire = async (place: string): Promise<void> => {
+    const store = contexts.get(place)?.store
+    contexts.delete(place)
+    if (store !== undefined) await store.close()
+  }
+  return {
+    plan: (node, settled, when, place) => {
+      const planned = queue.then(async () => {
+        const host = await (base ??= started())
+        let context = contexts.get(place)
+        if (context === undefined || when !== "shared") {
+          await retire(place)
+          rows.forget()
+          if (when === "afresh") trees.clear()
+          context = {
+            ...host,
+            root: place,
+            store: undefined,
+            nodes: new Map(),
+            visiting: new Set(),
+            digests: { ...SafeFs.makeDigestIndex(), rows },
+            installedTrees: trees,
+            treeInputs: new Map(),
+            walks: Input.makeWalkCache(),
+            crateSets: new Map(),
+            closureDigests: new Map(),
+            closureResults: new Map(),
+            graphDigests: new Map()
+          }
+          contexts.set(place, context)
+        }
+        for (const ran of settled) context.nodes.set(ran.label, ran)
+        context.nodes.delete(node.label)
+        // A plan that failed part way left the targets it was walking marked.
+        context.visiting.clear()
+        return visit(context, node.declaration, { mode: node.mode })
+      })
+      queue = planned.catch(() => undefined)
+      return planned
+    },
+    close: () =>
+      queue.then(async () => {
+        for (const place of [...contexts.keys()]) await retire(place)
+      })
+  }
+}

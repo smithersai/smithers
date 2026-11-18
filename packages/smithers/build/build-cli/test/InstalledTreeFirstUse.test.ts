@@ -253,6 +253,8 @@ const withoutMechanism: Partial<ExecutionServices> = {
 }
 
 const changed = "an installed tree changed after it was planned"
+/** Why a target that waits for one whose tree changed stores nothing: that one's key names a tree its run did not read. */
+const waited = "the inputs of a target it waits for changed while that one ran"
 /** What a line adds on a host with no mechanism to hold a tree. */
 const unheld = "; installed trees are not held read-only on this host: " +
   "write protection needs bubblewrap, and bwrap is not on PATH (install the bubblewrap package)"
@@ -289,9 +291,13 @@ describe("a tool that links its binary into its installed directory on first use
         "the first run failed on the protection that holds them read-only"
     )
     const reason = `not cached: ${changed}: pkg/node_modules unit formatter: native was written`
-    expect(notCached()).toEqual([`//pkg:one  ${reason}`, `//pkg:two  ${reason}`])
-    expect(first.notStored).toEqual([{ reason: changed, count: 2 }])
-    expect(first.results.map((result) => result.notStored)).toEqual([changed, changed])
+    // The second target started after the write and is keyed on the tree as it found it; the first one's key is not.
+    expect(notCached()).toEqual([`//pkg:one  ${reason}`, `//pkg:two  not cached: ${waited}`])
+    expect(first.notStored).toEqual([{ reason: changed, count: 1 }, { reason: waited, count: 1 }])
+    expect(Object.fromEntries(first.results.map((result) => [result.label, result.notStored]))).toEqual({
+      "//pkg:one": changed,
+      "//pkg:two": waited
+    })
     // The tree is settled now: this run stores, and the one after it hits.
     const second = await summarize(["one", "two"])
     expect(statuses(second)).toEqual({ one: "ran", two: "ran" })
@@ -418,8 +424,8 @@ describe("a host that cannot protect an installed tree", () => {
     expect(statuses(first)).toEqual({ one: "ran", two: "ran" })
     expect(linked()).toBe(true)
     const reason = `not cached: ${changed}: pkg/node_modules unit formatter: native was written${unheld}`
-    expect(notCached()).toEqual([`//pkg:one  ${reason}`, `//pkg:two  ${reason}`])
-    expect(first.notStored).toEqual([{ reason: changed, count: 2 }])
+    expect(notCached()).toEqual([`//pkg:one  ${reason}`, `//pkg:two  not cached: ${waited}`])
+    expect(first.notStored).toEqual([{ reason: changed, count: 1 }, { reason: waited, count: 1 }])
     // The second run plans the settled tree and stores; the third hits.
     const second = await summarize(["one", "two"], withoutMechanism)
     expect(statuses(second)).toEqual({ one: "ran", two: "ran" })
@@ -437,6 +443,7 @@ describe("a host that cannot protect an installed tree", () => {
     expect(notCached()[0]).toContain(
       "native was written; installed trees are not held read-only on this host: user namespaces are not permitted"
     )
-    expect(first.notStored).toEqual([{ reason: changed, count: 2 }])
+    expect(notCached()[1]).toBe(`//pkg:two  not cached: ${waited}`)
+    expect(first.notStored).toEqual([{ reason: changed, count: 1 }, { reason: waited, count: 1 }])
   })
 })

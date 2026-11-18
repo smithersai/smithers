@@ -631,19 +631,28 @@ describe("a confined run", () => {
     expect(await attempts()).toEqual([])
   })
 
-  confinedIt("stores nothing when an installed tree changed after the plan measured it", async () => {
+  confinedIt("keys a run on the installed tree a dependency left, not on the one the plan measured", async () => {
     // The dependency runs after the plan and patches a package the test can read.
-    const { root, run, logs } = await fixture({ unstableDependency: true, patchesInstalledTree: true })
+    const { root, run, logs, node, environment } = await fixture({
+      unstableDependency: true,
+      patchesInstalledTree: true
+    })
+    // Planned under the search path the run plans under.
+    const key = () => withPath(environment.PATH, async () => (await node("test")).keyPreview)
+    const planned = await key()
     expect(await run("test")).toEqual({ unstable: "ran", test: "ran" })
+    // The test started after the patch: it was measured again and ran on the patched tree.
     expect(logs).toContain(
-      "//pkg:test  not cached: an installed tree changed after it was planned: " +
-        "pkg/node_modules unit runner: lib.txt was written"
+      "//pkg:test  planned again: what the workspace pins or installs changed since the plan"
     )
-    expect(
-      NodeFs.existsSync(Path.join(root, ".flows", "cache")) &&
-        NodeFs.readdirSync(Path.join(root, ".flows", "cache"), { recursive: true })
-          .some((name) => String(name).endsWith(".json"))
-    ).toBe(false)
+    expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+    // Its one result is stored under the key of the patched tree, which is what a plan measures now.
+    const stored = NodeFs.readdirSync(Path.join(root, ".flows", "cache"), { recursive: true })
+      .filter((name) => String(name).endsWith(".json"))
+    expect(stored.length).toBe(1)
+    const entry = JSON.parse(await Fs.readFile(Path.join(root, ".flows", "cache", String(stored[0])), "utf8"))
+    expect(entry.key).not.toBe(planned)
+    expect(entry.key).toBe(await key())
   })
 
   confinedIt("grants a tree entry by entry, placing each link as a link", async () => {

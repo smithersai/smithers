@@ -1,7 +1,7 @@
 import { Smithers as S } from "@smthrs/targets"
 import * as Exec from "@smthrs/targets/Exec"
 import * as Stamp from "@smthrs/targets/Stamp"
-import { Effect } from "effect"
+import { Cause, Effect, Exit } from "effect"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
@@ -31,6 +31,22 @@ const bounded = async (waiting: Promise<void>): Promise<void> => {
 const pushResult = (
   summary: { readonly results: ReadonlyArray<{ readonly label: string; readonly error?: string | undefined }> }
 ) => summary.results.find((result) => result.label === "//:push")
+/**
+ * The plan here is written by hand, so no plan made from a declaration gives
+ * its nodes back. A run that measures a target again gets the node as it is.
+ */
+const asWritten: ExecutionServices = {
+  ...executionServicesLive,
+  replanner: () => ({ plan: (node) => Promise.resolve(node), close: () => Promise.resolve() })
+}
+const execute = (planned: PackageExec.PackagePlan, options: PackageExec.ExecuteOptions) =>
+  Effect.runPromiseExit(
+    executeEffect(planned, options).pipe(Effect.provideService(ExecutionServices, asWritten)),
+    { signal: options.signal }
+  ).then((exit) => {
+    if (Exit.isFailure(exit)) throw Cause.squash(exit.cause)
+    return exit.value
+  })
 afterAll(async () => {
   await Promise.all(directories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
 })
@@ -201,7 +217,7 @@ if (image.endsWith(":two")) {
 describe("Docker push executor unit boundary", () => {
   it("refuses a reference outside the declared registry and name before spawning", async () => {
     const host = await fixture("failure", ["one"], "other.invalid/unit:")
-    const summary = await PackageExec.execute(host.planned, { ...host.options, log: () => {} })
+    const summary = await execute(host.planned, { ...host.options, log: () => {} })
     expect(summary.ok).toBe(false)
     expect(pushResult(summary)?.error).toContain("declared registry and name")
     expect(await host.childPids()).toEqual([])
@@ -222,7 +238,7 @@ describe("Docker push executor unit boundary", () => {
     it(`refuses an invalid resolved stamp before spawning ${JSON.stringify(value)}`, async () => {
       // The empty literal models versionMeta's empty result without Git writes.
       const host = await fixture("failure", [StampExec.token(value === "" ? "versionMeta" : "docker-tag", value)])
-      const summary = await PackageExec.execute(host.planned, { ...host.options, log: () => {} })
+      const summary = await execute(host.planned, { ...host.options, log: () => {} })
       expect.soft(summary.ok).toBe(false)
       expect.soft(pushResult(summary)).toMatchObject({ status: "failed" })
       expect.soft(pushResult(summary)?.error).toContain("Docker.Push")
@@ -232,14 +248,14 @@ describe("Docker push executor unit boundary", () => {
   }
   it("pushes a valid resolved stamp", async () => {
     const host = await fixture("failure", [StampExec.token("docker-tag", "release_1.0-rc")])
-    const summary = await PackageExec.execute(host.planned, { ...host.options, log: () => {} })
+    const summary = await execute(host.planned, { ...host.options, log: () => {} })
     expect(summary.ok).toBe(true)
     expect(await host.observed()).toEqual([["push", "registry.invalid/unit:release_1.0-rc"]])
   })
   const loadInput = (loads: ReadonlyArray<unknown>): string => (loads[0] as ReadonlyArray<string>)[2]!
   it("loads the build's archive, pushes that exact image under each tag, and checks the registry", async () => {
     const host = await fixture("failure", ["one", "three"])
-    const summary = await PackageExec.execute(host.planned, { ...host.options, log: () => {} })
+    const summary = await execute(host.planned, { ...host.options, log: () => {} })
     expect(summary.ok, pushResult(summary)?.error).toBe(true)
     const loads = await host.loads()
     // The OCI archive has no manifest.json, so a loadable copy is loaded and removed.
@@ -261,13 +277,13 @@ describe("Docker push executor unit boundary", () => {
   })
   it("loads an archive that already carries manifest.json in place", async () => {
     const host = await fixture("failure", ["one"], undefined, undefined, { dockerManifest: true })
-    const summary = await PackageExec.execute(host.planned, { ...host.options, log: () => {} })
+    const summary = await execute(host.planned, { ...host.options, log: () => {} })
     expect(summary.ok, pushResult(summary)?.error).toBe(true)
     expect(loadInput(await host.loads())).toBe(Path.join(host.root, "docker-image", "image.tar"))
   })
   it("tags the manifest digest a containerd image store reports", async () => {
     const host = await fixture("failure", ["one"], undefined, undefined, {}, { loads: "manifest" })
-    const summary = await PackageExec.execute(host.planned, { ...host.options, log: () => {} })
+    const summary = await execute(host.planned, { ...host.options, log: () => {} })
     expect(summary.ok, pushResult(summary)?.error).toBe(true)
     expect((await host.loads())[1]).toEqual(["tag", host.built!.manifest, "registry.invalid/unit:one"])
   })
@@ -307,7 +323,7 @@ describe("Docker push executor unit boundary", () => {
   for (const [name, archive, daemon, tags, message, pushes] of refusals) {
     it(`fails on ${name} and pushes no later tag`, async () => {
       const host = await fixture("failure", [...tags], undefined, undefined, archive, daemon)
-      const summary = await PackageExec.execute(host.planned, { ...host.options, log: () => {} })
+      const summary = await execute(host.planned, { ...host.options, log: () => {} })
       expect(summary.ok).toBe(false)
       expect(pushResult(summary)?.error).toContain(message)
       if (archive === "missing") {
@@ -319,7 +335,7 @@ describe("Docker push executor unit boundary", () => {
   }
   it("refuses a push whose image dependency is not a build", async () => {
     const host = await fixture("failure", ["one"], undefined, "Shell.Run")
-    const summary = await PackageExec.execute(host.planned, { ...host.options, log: () => {} })
+    const summary = await execute(host.planned, { ...host.options, log: () => {} })
     expect(summary.ok).toBe(false)
     expect(pushResult(summary)?.error).toContain("not a planned Docker.Build or Docker.Bake")
     expect(await host.observed()).toEqual([])
@@ -328,7 +344,7 @@ describe("Docker push executor unit boundary", () => {
     const host = await fixture("hold")
     const controller = new AbortController()
     let settled = false
-    const running = PackageExec.execute(host.planned, { ...host.options, signal: controller.signal, log: host.log })
+    const running = execute(host.planned, { ...host.options, signal: controller.signal, log: host.log })
       .then((summary) => {
         settled = true
         return summary
@@ -363,7 +379,7 @@ describe("Docker push executor unit boundary", () => {
 
   it("fails a later push and never starts subsequent tags", async () => {
     const host = await fixture("failure")
-    const summary = await PackageExec.execute(host.planned, { ...host.options, log: () => {} })
+    const summary = await execute(host.planned, { ...host.options, log: () => {} })
     expect(summary.ok).toBe(false)
     expect(summary.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 0 })
     expect(pushResult(summary)).toMatchObject({ label: "//:push", status: "failed" })
@@ -377,7 +393,7 @@ describe("Docker push executor unit boundary", () => {
   it("cancels the current push before subsequent tags can start", async () => {
     const host = await fixture("hold")
     const controller = new AbortController()
-    const running = PackageExec.execute(host.planned, { ...host.options, signal: controller.signal, log: host.log })
+    const running = execute(host.planned, { ...host.options, signal: controller.signal, log: host.log })
     // Install the rejection handler before aborting the running child.
     const outcome = running.then((summary) => ({ summary }), (error: unknown) => ({ error }))
     try {
@@ -411,7 +427,7 @@ describe("Docker push executor unit boundary", () => {
 describe("Docker publication fault services", () => {
   it("refuses a commandless push after its real image dependency settles", async () => {
     const host = await fixture("failure", [])
-    const result = await PackageExec.execute(host.planned, host.options)
+    const result = await execute(host.planned, host.options)
     expect(pushResult(result)).toMatchObject({ status: "failed", error: "docker push planned no commands" })
     expect(await host.observed()).toEqual([])
   })
@@ -420,7 +436,7 @@ describe("Docker publication fault services", () => {
     const host = await fixture("failure", ["one"])
     const result = await Effect.runPromise(
       executeEffect(host.planned, host.options).pipe(Effect.provideService(ExecutionServices, {
-        ...executionServicesLive,
+        ...asWritten,
         exec: (settings, payload) =>
           payload.argv.includes("load")
             ? Effect.fail(
@@ -446,7 +462,7 @@ describe("Docker publication fault services", () => {
     const host = await fixture("failure", ["one"])
     const result = await Effect.runPromise(
       executeEffect(host.planned, host.options).pipe(Effect.provideService(ExecutionServices, {
-        ...executionServicesLive,
+        ...asWritten,
         exec: (settings, payload) =>
           executionServicesLive.exec(settings, payload).pipe(
             Effect.map((result) =>

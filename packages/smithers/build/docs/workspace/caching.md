@@ -656,8 +656,9 @@ differ in it:
 - A tool a signal kills is reported by its exit status, 128 plus the signal.
 
 A target that cannot run that way declares `sandbox: "none"`. Its results are
-then never reused, and what it writes into a tree keeps other targets' results
-out of the cache for that run.
+then never reused. A target that waits for it starts after the write and is
+keyed on the tree as it finds it; any other target whose run read the tree
+before the write stores nothing in that run.
 
 - The entries held are the ones a key measures and a bind can hold: `.bin`,
   `.pnpm`, and each other entry that is not a link and whose name does not start
@@ -685,6 +686,85 @@ binary on first use, in a real workspace under real bubblewrap: the tree is
 unchanged after the first run and the second run hits. It also covers the tool
 that cannot fall back and the host that cannot protect.
 
+### A target is keyed on what it reads when it starts
+
+A plan measures every target's inputs before anything runs. A target that waits
+for another can then start over other bytes: the target before it rewrote a
+file, added one to a directory, removed one, or pointed a link somewhere else.
+A target declares its outputs; what else it wrote is not known. A result stored
+under the planned key would answer a later run for bytes its run never read.
+
+So the inputs are measured again, twice:
+
+- **When a target starts**, if a target it waits for ran in this run. Its
+  files, globs, links, groups of files, import closures and installed trees are
+  measured as they are then, and the lookup and the stored result use that key.
+  When the key differs from the plan, the run says what moved:
+
+  ```text
+  //packages/app:test  planned again: packages/app/src/version.ts changed since the plan
+  ```
+
+- **After a target's run**, before its result is stored. A result whose inputs
+  no longer measure as they did when the run started is not stored, and neither
+  is the result of a target that waits for it: its key would name that target's
+  key. The same holds for a target that waits for one whose installed tree
+  changed while it ran.
+
+A target answered from the cache puts back the outputs it declares and nothing
+else. A target that waits for it is measured again at its start only when one
+of its inputs can name such an output, as a glob over a directory the build
+writes into does. In a fresh checkout that target is then keyed on the files
+put back, and is answered too.
+
+A file the target declares that it writes, an `outFiles` entry or a file under
+an `outDirs` entry, is what it made, not what it read: a build that writes into
+a directory it also reads still stores its result.
+
+A target that names a [machine](#a-machine-for-the-steps-of-a-job) reads its
+machine's copy of the workspace, so its inputs are measured there: a step that
+rewrites a file in the copy re-keys the step after it, and the workspace's own
+file does not. The steps of a machine run one at a time in a copy nothing else
+writes, so a step there is not measured after its run: a file that changed
+while it ran, it changed itself.
+
+A target that cannot be measured again when it starts fails with
+`its inputs could not be measured again before it ran` and the error. One that
+cannot be measured after its run keeps its verdict and stores nothing.
+
+A target that waits for an installation was already planned again when the
+installation finished; the measurement after its run is made the same way.
+
+A target that is [reused from what its run read](#results-reused-from-what-a-run-read)
+is answered from its record, held against the tree as it is when the target
+starts. No key names its inputs, so it is not planned again; a target that
+waits for it measures its own files when it starts.
+
+What this costs follows the targets that run, not the graph:
+
+| Target                                                         | Measured again                   |
+| -------------------------------------------------------------- | -------------------------------- |
+| Answered from the cache, nothing it waits for ran              | Never                            |
+| Answered from the cache after a build put back a file it reads | At its start                     |
+| Runs, nothing it waits for ran                                 | Once, after its run              |
+| Starts after a target it waits for ran                         | At its start, and after its run  |
+| Fails                                                          | At its start at most             |
+| Starts beside others after the same targets ran                | They share one walk of each glob |
+
+A file whose size and times are unchanged since the plan is not read again. An
+installed tree is walked again only at a target's start, never after its run:
+the check that holds a tree for a run already measures it then.
+
+Two targets with no dependency between them have no order. One that reads what
+the other writes waits for it, through `deps` or `data`.
+
+`build-cli/test/RemeasuredInputs.test.ts` runs real processes in a real
+workspace: a build that rewrites a file a test declares, adds one, deletes one
+and retargets a link; a file behind a group of files and behind an import
+closure; two steps of one machine; a build answered from the cache whose output
+a test reads; a target that changes its own inputs; a build that writes its
+outputs into a directory it reads; and how many measurements each run makes.
+
 ### Why a result was not stored
 
 A green target that stores nothing runs again next time. Each one has a reason.
@@ -695,15 +775,18 @@ A reason the run found is printed on the target's own line:
 //packages/app:lint  not cached: an installed tree changed after it was planned: node_modules unit .pnpm/formatter@1.2.0: node_modules/formatter/native was written
 ```
 
-| Reason                                                       | What the line adds                                             | What to do                                                                                   |
-| ------------------------------------------------------------ | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `an installed tree changed after it was planned`             | The tree, the unit, and up to three paths written in it        | Find what wrote there. Run it before `smthrs`, or run again: the next run plans the new tree |
-| `it passed, but failed when confined to its declared inputs` | The paths the confinement closed, and the file with its output | Declare the missing inputs                                                                   |
-| `an installed tree is a link or links out of the workspace`  | The tree                                                       | Install into the workspace                                                                   |
-| `its run's search path is not the one it was planned under`  |                                                                | Plan and execute under one `PATH`                                                            |
-| `this host cannot confine a run to its declared inputs`      | One line for the run names what the host lacks                 | Install `bubblewrap` on Linux. Hits stored elsewhere still answer                            |
-| `the cache could not store it`                               | The store's error, on a `smthrs:` line                         | Fix the cache directory or the remote                                                        |
-| `its result cannot be written as a cache entry`              | Why, on a `smthrs:` line                                       | Return a plain value from the target                                                         |
+| Reason                                                           | What the line adds                                             | What to do                                                                                   |
+| ---------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `an installed tree changed after it was planned`                 | The tree, the unit, and up to three paths written in it        | Find what wrote there. Run it before `smthrs`, or run again: the next run plans the new tree |
+| `it passed, but failed when confined to its declared inputs`     | The paths the confinement closed, and the file with its output | Declare the missing inputs                                                                   |
+| `an installed tree is a link or links out of the workspace`      | The tree                                                       | Install into the workspace                                                                   |
+| `its inputs changed while it ran`                                | The first file that changed                                    | Find what wrote it. A target that writes a file it reads declares it as an output            |
+| `the inputs of a target it waits for changed while that one ran` |                                                                | Fix that target, whose own line says what changed; this one is stored again when it is       |
+| `its inputs could not be measured again after it ran`            | The error                                                      | Fix what the error names                                                                     |
+| `its run's search path is not the one it was planned under`      |                                                                | Plan and execute under one `PATH`                                                            |
+| `this host cannot confine a run to its declared inputs`          | One line for the run names what the host lacks                 | Install `bubblewrap` on Linux. Hits stored elsewhere still answer                            |
+| `the cache could not store it`                                   | The store's error, on a `smthrs:` line                         | Fix the cache directory or the remote                                                        |
+| `its result cannot be written as a cache entry`                  | Why, on a `smthrs:` line                                       | Return a plain value from the target                                                         |
 
 A changed unit reads `was added` or `was removed` when the unit itself appeared
 or disappeared, and `changed` when no entry in it is newer than the plan's

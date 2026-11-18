@@ -67,7 +67,7 @@ import * as Machine from "./Machine.ts"
 import * as MissingTool from "./MissingTool.ts"
 import * as ObservedReads from "./ObservedReads.ts"
 import type { ExecuteOptions, PackageNode, PackagePlan, TestOperandPlan } from "./PackageOptions.ts"
-import type { StoredResolve } from "./PackagePlanner.ts"
+import type { Replanner, StoredResolve } from "./PackagePlanner.ts"
 import {
   binaryIdentity,
   bundlerScratchDirectory,
@@ -79,6 +79,7 @@ import {
   nodeModulesDirectories,
   plan,
   planAfterInstall,
+  replanner,
   staticPrefixOf,
   takesExclusiveTreePermit,
   workspaceRootToken
@@ -132,6 +133,8 @@ export interface ExecutionServices {
   readonly writeProtection: (host: ExecSandbox.Host) => string | undefined
   /** The tracer that records what a run reads on this host, or why there is none. */
   readonly observer: (host: ExecSandbox.Host) => ObservedReads.Observer
+  /** Plans single targets again while the run is under way. */
+  readonly replanner: typeof replanner
 }
 
 /**
@@ -156,7 +159,8 @@ export const executionServicesLive: ExecutionServices = {
   cache: (options) => joined(() => openCache(options)),
   sandboxHost: () => ExecSandbox.host(),
   writeProtection: (host) => ExecSandbox.writeProtectionRefusal(host),
-  observer: (host) => ObservedReads.observer(host)
+  observer: (host) => ObservedReads.observer(host),
+  replanner
 }
 
 /**
@@ -221,6 +225,95 @@ export const currentExecutableDigest = async (
     Number(before.mtimeNs / 1_000_000n) < started - racyIdentityMarginMs
   if (after !== undefined && statIdentity(after) === identity && settled) memo.set(path, { identity, digest })
   return digest
+}
+
+/**
+ * Rules whose target is what the tree holds when it is asked: a group of
+ * files, a set of crates or Go packages, an import closure. Nothing runs, so
+ * a target that reads through one reads the tree as it is at that moment.
+ */
+const treeValues: ReadonlySet<string> = new Set(["Filegroup", "Cargo.AppSet", "Go.Packages", "ImportClosure"])
+
+/** Rules whose green target ran no process and wrote nothing: the tree values, and the groups of other targets. */
+const writesNothing: ReadonlySet<string> = new Set([...treeValues, "Suite", "Alias"])
+
+/** Whether `path` is `directory` or a path under it; the workspace root holds every path. */
+const within = (path: string, directory: string): boolean =>
+  directory === "" || path === directory || path.startsWith(`${directory}/`)
+
+/** The files and directories `node` declares as its outputs, from the workspace root: what a cache hit puts back. */
+const outputsOf = (node: PackageNode): ReadonlyArray<string> => [
+  ...node.outFiles,
+  ...node.outDirs,
+  ...(node.declaredOutputs === undefined
+    ? []
+    : node.declaredOutputs.paths.map((path) => Input.resolvePath(node.declaredOutputs!.cwd, path)))
+]
+
+/**
+ * Whether `path` is one `node` declares that it writes: an output file, or a
+ * path under an output directory or an entry of its write set.
+ */
+const writesItself = (node: PackageNode, path: string): boolean =>
+  [...outputsOf(node), ...node.writeSet].some((entry) => within(path, entry))
+
+/**
+ * Whether a declared input of the package at `packagePath` can name `path`
+ * or a file under it. A glob is read by its leading directories alone, and
+ * an input that is neither a file, a link nor a glob is taken to name it: a
+ * wrong yes costs one measurement, a wrong no a result that is not reused.
+ */
+const canName = (declaration: Input.Declared, packagePath: string, path: string): boolean => {
+  if (declaration._tag === "File" || declaration._tag === "Link") {
+    return within(Input.resolvePath(packagePath, declaration.path), path)
+  }
+  if (declaration._tag !== "Glob") return true
+  const leading = staticPrefixOf(Input.resolvePath(packagePath, declaration.pattern))
+  return within(leading, path) || within(path, leading)
+}
+
+/**
+ * What two plans of one target measured differently, in words, or nothing
+ * when they measured the same.
+ *
+ * Compared: each declared file, the key of each target it waits for (a group
+ * of files or an import closure it reads through among them), and what the
+ * workspace pins and installs (the lockfile, each installed tree, overlays,
+ * submodules, a child repository's state). A file the target declares that
+ * it writes is what it made, not what it read, so it is left out: a build
+ * that writes into a directory it also reads measures the same before and
+ * after. Not compared: a tool's identity, which is checked where the tool
+ * starts, and what a key holds that no file decides, such as a bundler graph
+ * settled while the run is under way.
+ *
+ * @category internal
+ * @since 1.0.0
+ */
+export const movedInput = (before: PackageNode, after: PackageNode): string | undefined => {
+  const files = (node: PackageNode): Map<string, string> =>
+    new Map(
+      node.declaredInputs.flatMap((input) => input.files.map((file) => [file.path, JSON.stringify(file)] as const))
+    )
+  const was = files(before)
+  const now = files(after)
+  const moved = [...new Set([...was.keys(), ...now.keys()])]
+    .filter((path) => was.get(path) !== now.get(path) && !writesItself(before, path))
+    .sort(byCodeUnit)
+  if (moved.length > 0) return `${moved[0]} changed`
+  const part = (node: PackageNode, name: string): string =>
+    JSON.stringify((node.keyMaterial.inputs as Readonly<Record<string, unknown>>)[name])
+  if (part(before, "dependencies") !== part(after, "dependencies")) {
+    return "what it reads through a target it waits for changed"
+  }
+  const trees = (node: PackageNode): string => {
+    const rows: Array<Record<string, unknown>> = []
+    collectTagged(node.keyMaterial.inputs, "InstalledTree", rows, new Set())
+    return JSON.stringify(rows)
+  }
+  return trees(before) === trees(after) &&
+      ["ambient", "overlays", "submodules", "repository"].every((name) => part(before, name) === part(after, name))
+    ? undefined
+    : "what the workspace pins or installs changed"
 }
 
 /** Wall-clock cap on one `smithers memory` backend invocation. */
@@ -750,6 +843,22 @@ export const executeEffect = (
     const notStoredReasons: Array<string> = []
     /** Label → the node as it ran, where an installation it waited for replaced the planned one. */
     const refreshedNodes = new Map<string, PackageNode>()
+    /** How many times this run has written to the tree: a target that ran, or the files of an answered one put back. */
+    let writes = 0
+    /** Label → `writes` when that target last finished a run or had its files put back; absent when neither happened. */
+    const wroteBy = new Map<string, number>()
+    /** Label → `writes` when that target was answered from the cache and the outputs it declares were put back. */
+    const restoredBy = new Map<string, number>()
+    /** Tree → `writes` when the replanner last forgot what it had measured there; the plan measured the workspace. */
+    const measuredAt = new Map<string, number>()
+    /** Label → the installed trees the plan made after its installations measured, for the measurement after its run. */
+    const installedAt = new Map<string, PackagePlan["installedTrees"]>()
+    /** Targets whose green run no key names: their inputs or an installed tree they read changed while they ran. */
+    const unkeyed = new Set<string>()
+    let replanning: Replanner | undefined
+    yield* Effect.addFinalizer(() =>
+      replanning === undefined ? Effect.void : Effect.promise(() => replanning!.close().catch(() => undefined))
+    )
     /** Says why `node`'s result is not stored, on its own line and in the run's summary. */
     const unstored = (node: PackageNode, reason: string, detail = ""): void => {
       unstoredReasons.set(node.label, reason)
@@ -1250,6 +1359,126 @@ export const executeEffect = (
       return false
     }
 
+    /**
+     * Plans `node` again from the tree as it is now. The targets it waits for
+     * that ran here enter as they ran, so the new key names the keys they ran
+     * under; a group of files it reads through is measured again with it.
+     *
+     * `when` says what the measurement is for. `"afresh"`: the target is about
+     * to start and a target it waits for has written since the last
+     * measurement, so nothing measured before is trusted. `"shared"`: it is
+     * about to start and nothing it waits for has written since. `"after"`:
+     * its run is over; files are measured again, and an installed tree is
+     * taken as the target's start found it, because a tree that changed under
+     * a run is found by the check that holds it.
+     *
+     * A target that waits for an installation is planned as it is when that
+     * installation has finished: with the tools it installed.
+     */
+    const plannedAgain = (
+      node: PackageNode,
+      when: "afresh" | "shared" | "after"
+    ): Effect.Effect<PackageNode, unknown> =>
+      Effect.suspend(() => {
+        const again = {
+          ...options,
+          verb: "auto" as const,
+          patterns: [node.label],
+          rootLabels: undefined,
+          plan: false,
+          readCache: false,
+          reporter: undefined,
+          log: () => {}
+        }
+        const installations = installationDependencies(node.dependencies, planned.nodes)
+        if (installations.length > 0) {
+          return Effect.map(
+            joined((signal) =>
+              planAfterInstall(
+                { ...again, signal },
+                new Set(installations),
+                node,
+                planned.nodes,
+                installedAt.get(node.label)
+              )
+            ),
+            (refreshed) => refreshed.nodes.get(node.label)!
+          )
+        }
+        replanning ??= services.replanner(again, planned.nodes, planned.installedTrees)
+        // A target on a machine reads its machine's copy of the workspace, so that is the tree measured.
+        const place = placeOf(node)
+        if (when === "afresh") measuredAt.set(place, writes)
+        const settled = [...dependenciesOf(node.label)]
+          .map((label) => byLabel.get(label)!)
+          .filter((dependency) => !treeValues.has(dependency.rule))
+        return joined(() => replanning!.plan(node, settled, when, place))
+      })
+
+    /**
+     * Why the green result of `node` must not be stored, or nothing: its
+     * inputs no longer measure as they did when it started, or those of a
+     * target it waits for did not hold while that one ran. The key it would
+     * go under then names bytes the run may not have read. A shard answers
+     * for the target it was cut from.
+     */
+    const movedWhileRunning = (
+      node: PackageNode
+    ): Effect.Effect<{ readonly label: string; readonly reason: string; readonly detail: string } | undefined> =>
+      Effect.gen(function*() {
+        const started = byLabel.get(node.label) ?? byLabel.get(node.label.slice(0, node.label.lastIndexOf("#")))!
+        const label = started.label
+        // A group of files is planned again with each target that reads through it: its own result, stored or
+        // not, decides nothing for them.
+        const unkey = (): void => {
+          if (!treeValues.has(started.rule)) unkeyed.add(label)
+        }
+        if ([...dependenciesOf(label)].some((dependency) => unkeyed.has(dependency))) {
+          unkey()
+          return { label, reason: "the inputs of a target it waits for changed while that one ran", detail: "" }
+        }
+        // The targets of a machine run one at a time in a copy nothing else writes: what changed there while
+        // this one ran, it changed itself, after it read the files it is keyed on.
+        if (machineOf(started) !== undefined) return undefined
+        const again = yield* Effect.exit(plannedAgain(started, "after"))
+        const moved = Exit.isSuccess(again) ? movedInput(started, again.value) : undefined
+        if (Exit.isSuccess(again) && moved === undefined) return undefined
+        unkey()
+        return Exit.isSuccess(again)
+          ? { label, reason: "its inputs changed while it ran", detail: `: ${moved}` }
+          : {
+            label,
+            reason: "its inputs could not be measured again after it ran",
+            detail: `: ${Diagnostic.describe(Cause.squash(again.cause))}`
+          }
+      })
+
+    /**
+     * `writes` when a target `node` waits for last changed what `node` is
+     * keyed on, or 0. A target that ran may have written anything. One
+     * answered from the cache put back the outputs it declares and nothing
+     * else, so it counts only where `node`, or a group of files it reads
+     * through, can name one of them.
+     */
+    const wroteBefore = (node: PackageNode): number => {
+      const waited = [...dependenciesOf(node.label)]
+      const through = waited.map((label) => byLabel.get(label)!).filter((dependency) => treeValues.has(dependency.rule))
+      const reads = (path: string): boolean =>
+        [node, ...through].some((reader) =>
+          (reader !== node && reader.rule !== "Filegroup") ||
+          reader.declaredInputs.some((input) => canName(input.declaration, reader.packagePath, path))
+        )
+      return Math.max(
+        0,
+        ...waited.map((label) =>
+          Math.max(
+            wroteBy.get(label) ?? 0,
+            restoredBy.has(label) && outputsOf(byLabel.get(label)!).some(reads) ? restoredBy.get(label)! : 0
+          )
+        )
+      )
+    }
+
     const cachePut = (
       node: PackageNode,
       output: unknown,
@@ -1265,6 +1494,15 @@ export const executeEffect = (
         // A tool that replaces itself while running must not publish a result
         // under the identity observed before it ran.
         yield* verifyExecutables(node)
+        // An observed test stores each path its run read as the run left it; no key names its inputs.
+        if (key !== node.observed?.key) {
+          const moved = yield* movedWhileRunning(node)
+          if (moved !== undefined) {
+            unstoredReasons.set(moved.label, moved.reason)
+            log(`${moved.label}  not cached: ${moved.reason}${moved.detail}`)
+            return
+          }
+        }
         yield* joined(() =>
           store.put(key, {
             key,
@@ -2558,6 +2796,8 @@ export const executeEffect = (
         ])
         if (!unpacked.ok) return false
         wroteHere.set(node.label, { label: node.label, id: stored.id!, ...wrote })
+        // The tree holds other files than the plan measured: a target that waits for this one is measured again.
+        wroteBy.set(node.label, ++writes)
         return true
       })
     /**
@@ -2585,6 +2825,7 @@ export const executeEffect = (
           log(`${producer.label}  what it left could not be put back; it runs for ${node.label}`)
           const ran = yield* spawnConsumer(producer)
           if (!ran.ok) return `${producer.label}, which this target waits for, failed when it ran again: ${ran.error}`
+          wroteBy.set(producer.label, ++writes)
         }
         return undefined
       })
@@ -4575,6 +4816,8 @@ export const executeEffect = (
                         ? ""
                         : `; installed trees are not held read-only on this host: ${protection.refusal}`
                       unstored(node, "an installed tree changed after it was planned", `: ${changed}${unheld}`)
+                      // Its key names a tree its run did not read whole: no target that waits for it is keyed by it.
+                      unkeyed.add(node.label)
                     } else {
                       yield* cachePut(
                         node,
@@ -4690,6 +4933,7 @@ export const executeEffect = (
         }
         byLabel.set(node.label, current)
         effectiveKeys.set(node.label, current.keyPreview)
+        installedAt.set(node.label, refreshed.installedTrees)
         return current
       }).pipe(Effect.catchCause((cause) => Effect.succeed(Diagnostic.describe(Cause.squash(cause)))))
 
@@ -4718,13 +4962,43 @@ export const executeEffect = (
             return { status: "skipped", error: `dependency ${blocked} did not succeed`, blockedBy: blocked }
           }
         }
+        const unready = yield* putBackFor(node)
+        if (unready !== undefined) return fail(unready)
         const current = yield* refreshInstalledNode(node)
         if (typeof current === "string") return fail(current)
         if (current !== node) refreshedNodes.set(node.label, current)
-        node = current
+        // A target was planned before the targets it waits for ran here, or
+        // put back a file it reads: what it declares may hold other bytes
+        // now, so it is planned again from the tree as it is. A plan made
+        // after an installation is already of this moment. An observed
+        // target is answered from what its run read, never from the files it
+        // declares, and keeps the key it was planned with: a target that
+        // waits for it is keyed on that key whether the observed one ran or
+        // was answered, and measures its own files when it starts.
+        const wrote = writes === 0 ? 0 : wroteBefore(node)
+        const observedHere = node.observed !== undefined &&
+          "tracer" in (observing ??= services.observer(services.sandboxHost()))
+        if (current === node && wrote > 0 && !observedHere) {
+          const again = yield* Effect.exit(
+            plannedAgain(node, (measuredAt.get(placeOf(node)) ?? 0) < wrote ? "afresh" : "shared")
+          )
+          if (Exit.isFailure(again)) {
+            return fail(
+              `its inputs could not be measured again before it ran: ${Diagnostic.describe(Cause.squash(again.cause))}`
+            )
+          }
+          const moved = movedInput(node, again.value)
+          if (moved !== undefined) {
+            log(`${node.label}  planned again: ${moved} since the plan`)
+            byLabel.set(node.label, again.value)
+            effectiveKeys.set(node.label, again.value.keyPreview)
+            refreshedNodes.set(node.label, again.value)
+            node = again.value
+          }
+        } else {
+          node = current
+        }
         if (node.refusal !== undefined) return fail(node.refusal)
-        const unready = yield* putBackFor(node)
-        if (unready !== undefined) return fail(unready)
         if (node.approval !== undefined) {
           const stale = yield* approvalRecheck({ ...node, approval: node.approval })
           if (stale !== undefined) return fail(stale)
@@ -4763,6 +5037,15 @@ export const executeEffect = (
           )
         )
         if (outcome.status === "failed" || outcome.status === "skipped") notGreen.add(label)
+        // What a run wrote is known only for the outputs it declares, so every
+        // target that waits for one that ran is measured again when it starts.
+        // A target answered from the cache put back the outputs it declares:
+        // only a target that can read one of them is measured again.
+        if ((outcome.status === "ran" || outcome.status === "failed") && !writesNothing.has(node.rule)) {
+          wroteBy.set(label, ++writes)
+        } else if (outcome.status === "hit" && outputsOf(node).length > 0) {
+          restoredBy.set(label, ++writes)
+        }
         // A green run whose result is not stored is counted under why: the
         // reason its run found, or the one its plan gave. Only a reason the
         // run found is news about this target, so only that one is put on
