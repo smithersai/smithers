@@ -10,7 +10,7 @@ import type { Inventory } from "../../src/contract/Inventory.ts"
 import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { path as targetMapPath } from "../../src/contract/TargetMap.ts"
-import { Options, run } from "../../src/replay/index.ts"
+import { maxReruns, Options, run } from "../../src/replay/index.ts"
 import { installDependencies } from "./install.ts"
 
 const jobId = (target: string): string => `ci-${target}`
@@ -72,7 +72,7 @@ export effect function main() {
   provide Options = {
     // Smithers build refuses a CLI from outside the checkout it runs in.
     smthrs: ["node_modules/.bin/smthrs"],
-    reruns: 1,
+    reruns: maxReruns,
     prepare: (directory) => install(directory)
   } {
     const report = try run({ root, commits, modes: ["normal"] }, parts)
