@@ -152,8 +152,8 @@ gives fast mode's selection metrics; see
 
 The report prints as text: the totals, then one line for each commit that
 says whether each way passed, with its wall time. `--out` also writes it as an
-HTML file, and `--json` prints it as JSON; both also hold work time and the
-target counts.
+HTML file with a row for each commit. `--json` prints it as JSON, which also
+holds work time and the target counts.
 
 ## See also
 

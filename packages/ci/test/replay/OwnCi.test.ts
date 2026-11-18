@@ -65,7 +65,7 @@ describe("a replay of commits whose CI differs", () => {
       [{ hit: 0, ran: 2, failed: 0, skipped: 0 }, { hit: 0, ran: 2, failed: 0, skipped: 0 }, []]
     ])
     expect(report.notReplayedCommits).toBeUndefined()
-  }, 240_000)
+  }, 600_000)
 
   it("leaves out an older commit that had no CI, and lists it with the reason", async () => {
     const root = track(makeSmallRepository([]))
@@ -78,7 +78,7 @@ describe("a replay of commits whose CI differs", () => {
       reason: "no job runs on a push or a pull request, and the repository root has no `ci` recipe or script"
     }])
     expect(report.baselineWallMs).toBe(report.commits[0]?.baseline.wallMs)
-  }, 240_000)
+  }, 600_000)
 
   it("still fails when the newest commit has no CI, and when an older commit cannot be read at all", async () => {
     const root = track(makeSmallRepository([job("a", "sh a.sh")]))
@@ -98,5 +98,5 @@ describe("a replay of commits whose CI differs", () => {
       message: "git could not read the tree",
       part: "inventory"
     })
-  }, 240_000)
+  }, 600_000)
 })

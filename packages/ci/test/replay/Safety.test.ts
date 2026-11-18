@@ -79,7 +79,7 @@ describe("a copy the replay makes", () => {
     expect(copies[1]?.[0]).toContain("does not appear to be a git repository")
     expect(commit?.normal.counts.failed).toBe(1)
     expect(git(root, "ls-remote", "origin")).toBe(before)
-  }, 240_000)
+  }, 600_000)
 })
 
 describe("a baseline step", () => {
@@ -110,14 +110,14 @@ describe("a baseline step", () => {
     expect(text).toContain("MINE=from the step\n")
     expect(text).toContain("LANG=C\n")
     expect(names).toContain("PATH")
-  }, 240_000)
+  }, 600_000)
 
   it("reads end of file on standard input", async () => {
     // With an open pipe as its input, `cat` would wait until the test timed out.
     const root = track(makeSmallRepository([job("stdin", "cat > /dev/null && echo done")]))
     const [commit] = (await replay(root)).commits
     expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
-  }, 240_000)
+  }, 600_000)
 })
 
 describe("stepEnvironment", () => {

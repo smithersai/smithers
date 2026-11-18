@@ -33,18 +33,20 @@ bunx smithers-ci --commits 5
 The text report gives the totals: the baseline wall time, the normal-mode wall
 time, the speedup (baseline wall time divided by normal-mode wall time, summed
 over every commit), how many commits were replayed, and the number of
-mismatches. Under them it lists:
+mismatches. Then it gives one line for each commit: the files it changed, and
+whether each way passed, with its wall time. Under them it lists:
 
+- every commit it did not replay because that commit had no CI it can run,
+  with the reason;
 - every mismatch: a target whose pass or fail in normal mode differs from the
   baseline, with its commit;
 - every CI job it did not replay, with the reason, and every file it could not
   read.
 
-`--json` also gives one entry for each commit: how many files it changed and,
-for the baseline and for normal mode, whether the run passed, its wall time
-(elapsed), its work time (the sum of every target's own time), and how many
-targets were cache hits, ran, failed or were skipped. The HTML page has a row
-for each commit with its times and its mismatches.
+`--json` also gives, for each commit and each way, its work time (the sum of
+every target's own time) and how many targets were cache hits, ran, failed or
+were skipped. The HTML page has a row for each commit with its times, `fail`
+beside the time of a run that failed, and its mismatches.
 
 To keep a copy or feed it to another program:
 

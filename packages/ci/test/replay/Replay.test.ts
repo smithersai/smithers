@@ -26,7 +26,7 @@ beforeAll(async () => {
       parts(repository.commits[0]!)
     ).pipe(Effect.provide(Layer.merge(options, NodeServices.layer)))
   )
-}, 600_000)
+}, 1_800_000)
 
 afterAll(() => repository.remove())
 

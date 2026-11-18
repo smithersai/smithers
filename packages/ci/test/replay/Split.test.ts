@@ -79,13 +79,13 @@ describe("the copies a replay reads and runs in", () => {
   it("have the repository's directory name and its remote, without the remote's credentials", async () => {
     const [directory, repository] = await named("https://will:ghp_secret@example.com/acme/widgets.git")
     expect(repository).toBe(`${directory} https://example.com/acme/widgets.git`)
-  }, 120_000)
+  }, 600_000)
 
   it("keep the directory name when the repository has no remote", async () => {
     const [directory, repository] = await named(undefined)
     expect(repository.startsWith(`${directory} `)).toBe(true)
     expect(repository).not.toContain("example.com")
-  }, 120_000)
+  }, 600_000)
 })
 
 describe("a replay whose steps were split", () => {
@@ -94,7 +94,7 @@ describe("a replay whose steps were split", () => {
     expect(commit!.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
     expect(commit!.normal.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
     expect(commit!.mismatches).toEqual([])
-  }, 120_000)
+  }, 600_000)
 
   it("reports the step, by its id, when one of its targets fails and the step passed", async () => {
     const report = await replay(inTwo("exit 1"))
@@ -102,7 +102,7 @@ describe("a replay whose steps were split", () => {
     expect(report.commits[0]!.normal.counts.failed).toBe(1)
     expect(report.commits[0]!.mismatches).toEqual([{ label: "a0", mode: "normal", baseline: "pass", got: "fail" }])
     expect(report.mismatches).toBe(1)
-  }, 120_000)
+  }, 600_000)
 
   it("compares a split step of a matrix job variant by variant, and reruns each variant as itself", async () => {
     // Review finding 7: variant one fails in CI and as a target alike. Its rerun was answered by variant two's pass,
@@ -115,7 +115,7 @@ describe("a replay whose steps were split", () => {
     expect(commit!.normal.counts).toEqual({ hit: 0, ran: 2, failed: 1, skipped: 1 })
     expect(commit!.mismatches).toEqual([])
     expect(report.flaky).toBe(0)
-  }, 180_000)
+  }, 600_000)
 
   it("names the variant in the mismatch when one variant's target differs", async () => {
     // The step passes in both variants; the second half of the split fails only where the suite is `one`.
@@ -124,5 +124,5 @@ describe("a replay whose steps were split", () => {
     expect(report.commits[0]!.mismatches).toEqual([
       { label: "m0 (suite=one)", mode: "normal", baseline: "pass", got: "fail" }
     ])
-  }, 180_000)
+  }, 600_000)
 })

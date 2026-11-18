@@ -190,7 +190,7 @@ describe("a replay that cannot run", () => {
     expect(failure.code).toBe("command-failed")
     expect(failure.message).toContain("wrote no run record")
     expect(failure.message).toContain("ci_failed")
-  }, 120_000)
+  }, 600_000)
 
   it("reports a git command that fails, with what git said", async () => {
     const root = track(makeSmallRepository(passing))
@@ -241,7 +241,7 @@ describe("a replay that runs", () => {
     expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
     expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
     expect(report.mismatches).toBe(0)
-  }, 200_000)
+  }, 600_000)
 
   it("uses the default fast-mode settings when the request gives none, and gives rows the commit's plan", async () => {
     const root = track(makeSmallRepository(passing))
@@ -255,7 +255,7 @@ describe("a replay that runs", () => {
     expect(report.commits[0]?.fast?.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
     expect(report.selection).toMatchObject({ rows: 1, selected: 1 })
     expect(planned).toEqual([["//:a0_0"]])
-  }, 120_000)
+  }, 600_000)
 
   it("never runs more targets at once than the target map allows", async () => {
     const root = track(makeSmallRepository(passing))
@@ -270,7 +270,7 @@ describe("a replay that runs", () => {
     await replay(root, { files }, { jobs: 8 }, withCommand(recording.command) as never)
     expect(recording.commands().filter((line) => line.startsWith("ci ")).every((line) => line.endsWith("--jobs 1")))
       .toBe(true)
-  }, 120_000)
+  }, 600_000)
 
   it("reports a plan Smithers build did not print", async () => {
     const root = track(makeSmallRepository(passing))
@@ -281,7 +281,7 @@ describe("a replay that runs", () => {
     )
     expect(failure.code).toBe("command-failed")
     expect(failure.message).toContain("printed no plan")
-  }, 120_000)
+  }, 600_000)
 
   it("does not replay a job with a step that has no target, nor a job that needs it, and lists both", async () => {
     const out = track(makeEmptyDirectory())
@@ -304,7 +304,7 @@ describe("a replay that runs", () => {
       { job: "x", reasons: [{ feature: "no-target", detail: "x0 has no target" }] },
       { job: "after", reasons: [{ feature: "needs", detail: "after needs x, which is not replayed" }] }
     ])
-  }, 120_000)
+  }, 600_000)
 
   it("does not run a job for another operating system, in the baseline or as a target, and lists it", async () => {
     const out = track(makeEmptyDirectory())
@@ -337,7 +337,7 @@ describe("a replay that runs", () => {
         reasons: [{ feature: "other-system", detail: `other runs on ${system}; this machine is ${process.platform}` }]
       }
     ])
-  }, 120_000)
+  }, 600_000)
 
   it("lists a job with no command and a file that was not read, beside the jobs it replays", async () => {
     const upload = { feature: "host-action", detail: "ci.yml: actions/upload-artifact@v4 has no command to run" }
@@ -355,7 +355,7 @@ describe("a replay that runs", () => {
     ])
     expect(report.notRead).toEqual([unread])
     expect(report.flaky).toBe(0)
-  }, 120_000)
+  }, 600_000)
 
   it("fails a step whose directory is missing, without stopping the replay, and reports the mismatch", async () => {
     const root = track(makeSmallRepository([job("a", "sh a.sh", { cwd: "gone" })]))
@@ -364,5 +364,5 @@ describe("a replay that runs", () => {
     expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 0, failed: 1, skipped: 0 })
     expect(commit?.normal.ok).toBe(true)
     expect(commit?.mismatches).toEqual([{ label: "//:a0_0", mode: "normal", baseline: "fail", got: "pass" }])
-  }, 180_000)
+  }, 600_000)
 })

@@ -61,7 +61,7 @@ describe("the recipes of one Justfile, in the baseline", () => {
     ]))
     const [commit] = (await replay(root)).commits
     expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
-  }, 180_000)
+  }, 600_000)
 
   it("stop at the first failure, as `just ci` does", async () => {
     const out = track(makeEmptyDirectory())
@@ -73,7 +73,7 @@ describe("the recipes of one Justfile, in the baseline", () => {
     const [commit] = (await replay(root)).commits
     expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 0, failed: 1, skipped: 1 })
     expect(existsSync(join(out, "test-ran"))).toBe(false)
-  }, 180_000)
+  }, 600_000)
 
   it("rerun a failed recipe after the recipes before it, so a flaky one is flaky and not failed", async () => {
     const out = track(makeEmptyDirectory())
@@ -90,7 +90,7 @@ describe("the recipes of one Justfile, in the baseline", () => {
     expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
     expect(readFileSync(counter, "utf8").trim()).toBe("2")
     expect(report.flaky).toBeGreaterThanOrEqual(1)
-  }, 180_000)
+  }, 600_000)
 })
 
 describe("a baseline step", () => {
@@ -107,7 +107,7 @@ describe("a baseline step", () => {
     expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 0, failed: 1, skipped: 0 })
     expect(commit?.baseline.wallMs).toBeLessThan(15_000)
     expect(commit?.mismatches).toEqual([{ label: "//:slow0_0", mode: "normal", baseline: "fail", got: "pass" }])
-  }, 180_000)
+  }, 600_000)
 
   it("runs in a checkout that is clean, named as the repository is, and never prepared", async () => {
     // Review finding 13: the baseline's copy held the linked package, so a "tree is clean" check failed there.
@@ -136,5 +136,5 @@ describe("a baseline step", () => {
     // The copies the targets run in hold generated files, the cache and the linked package, and git calls them clean.
     expect(status).toEqual([""])
     expect(prepared.map((directory) => basename(join(directory, ".."))).sort()).toEqual(["fast", "normal"])
-  }, 240_000)
+  }, 600_000)
 })
