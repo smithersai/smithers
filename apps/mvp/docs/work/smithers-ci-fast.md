@@ -3,7 +3,7 @@ title: Fast Smithers CI (customer zero for smithers-ci)
 status: in-progress
 area: build
 owner: Claude Fable, Will's chat session 20474551, since 2026-11-17 16:50 PST
-updated: 2026-11-17 17:40 PST
+updated: 2026-11-17 17:50 PST
 links: [ci-cd-parity.md, ci-parity-cache.md, second-build-machine.md, release-burn-down.md, ../../../../packages/smithers/build/docs/workspace/caching.md, ../../../../packages/smithers/build/docs/workspace/adoption.md]
 ---
 
@@ -106,6 +106,15 @@ A second mode beside the normal one.
   judges safe to skip even when the dependency graph says the target is
   affected. Will: Facebook "use agents to guess what needs to run. We will
   build a similar workflow."
+
+Will's plan for it, 2026-11-17: a Jev classifier makes the skip decision, and
+we eval it. Later, not in the MVP, the recorded data becomes the eval and
+training set for our own model, as Facebook trained theirs.
+
+So the MVP records one row per commit and target from its first run: the
+change, the target, and whether it failed. Failures are the rare label; most
+targets pass on most `main` commits, so the record must include failed runs
+from before a merge, not only `main` history.
 
 Not designed yet. Three constraints the design must meet, the agent's reading
 and not Will's words:
