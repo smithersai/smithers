@@ -91,6 +91,7 @@
 
 ## Package documentation
 
+- [smithers-ci](https://github.com/smithersai/smithers/tree/main/packages/ci/docs): Smart CI that only runs what changed
 - [@smthrs/errors](https://github.com/smithersai/smithers/tree/main/packages/errors/docs): SmithersError and the error codes the integration adapters raise
 - [@smthrs/fuzz](https://github.com/smithersai/smithers/tree/main/packages/fuzz/docs): Feedback-guided fuzzing and deterministic fiber simulation over Effect Arbitrary
 - [@smthrs/cli](https://github.com/smithersai/smithers/tree/main/packages/smithers/docs): Node command-line interface for Smithers control

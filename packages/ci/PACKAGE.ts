@@ -8,6 +8,8 @@ const cwd = "packages/ci"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
   sources: Input.glob("src/**/*.ts"),
+  // test/docs.test.ts reads the docs pages and the splash page.
+  testData: ["docs/**/*.md", "docs/splash/index.html"],
   cwd
 })
 

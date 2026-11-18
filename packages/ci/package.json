@@ -12,6 +12,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "docs/**/*.md",
     "README.md"
   ],
   "scripts": {
