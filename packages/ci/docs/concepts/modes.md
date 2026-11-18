@@ -22,6 +22,19 @@ because a dependency failed is reported as skipped for that reason.
 Normal mode reuses a result only when the target's key matches, and an equal
 key means an equal verdict.
 
+### A first run
+
+With nothing to reuse, normal mode runs every command your CI runs. Three
+things differ from your CI:
+
+- A step two jobs both start with, such as an install, runs once.
+- Jobs that can write the same files run one after another, where your CI
+  runs them on separate machines.
+- Starting Smithers build takes a few seconds, once per run.
+
+So the first run of a short CI can take longer than the baseline. The runs
+after it reuse every result whose inputs did not change.
+
 ## Fast mode
 
 Fast mode starts from the targets normal mode selects, then skips the ones a

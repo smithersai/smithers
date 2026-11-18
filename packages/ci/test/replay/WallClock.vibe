@@ -1,0 +1,44 @@
+/** A clock a test moves ahead, to see which parts of a replay a wall time holds. */
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import { Options } from "../../src/replay/index.ts"
+import { linkTargets, smthrs } from "./fixture.ts"
+
+/** One hour in milliseconds: far longer than any step of a test runs. */
+export const hour = 3_600_000
+
+/**
+ * Runs `work` on the machine's clock, moved ahead by an hour at each
+ * `moment`: each time the replay prepares a copy for the generated targets
+ * (`prepare`), or each time it starts `git checkout` (`checkout`). A wall
+ * time that holds the moment is an hour longer for each one.
+ */
+export const jumping = <A, E, R>(moment: "prepare" | "checkout", work: A!E!R) => effect {
+  const live = try Clock.Clock
+  const real = try ChildProcessSpawner
+  let ahead = 0
+  const clock: Clock.Clock = {
+    currentTimeMillisUnsafe: () => live.currentTimeMillisUnsafe() + ahead,
+    currentTimeMillis: sync(() => live.currentTimeMillisUnsafe() + ahead),
+    currentTimeNanosUnsafe: () => live.currentTimeNanosUnsafe(),
+    currentTimeNanos: live.currentTimeNanos,
+    monotonicTimeNanosUnsafe: () => live.monotonicTimeNanosUnsafe(),
+    monotonicTimeNanos: live.monotonicTimeNanos,
+    sleep: (duration) => live.sleep(duration)
+  }
+  const processes = makeSpawner((process) => {
+    const checkout = process._tag === "StandardCommand" && process.command === "git" && process.args[0] === "checkout"
+    if (moment === "checkout" && checkout) ahead += hour
+    return real.spawn(process)
+  })
+  provide Clock.Clock = clock, ChildProcessSpawner = processes, Options = {
+    smthrs: [smthrs],
+    reruns: 1,
+    prepare: (directory) =>
+      sync(() => {
+        linkTargets(directory)
+        if (moment === "prepare") ahead += hour
+      })
+  } {
+    return try work
+  }
+}

@@ -235,16 +235,26 @@ export effect function settle<R>(
   return settled.map((result) => next.get(result.label) ?? result)
 }
 
+/**
+ * Runs one way of running a commit and times it. The time holds `checkout`
+ * and the first pass, which a CI machine spends too. It leaves out `equip`,
+ * what only a replay does between the two, and the reruns that label flaky
+ * targets.
+ */
 effect function measure<R>(
-  setup: void!Failure!R,
+  checkout: void!Failure!R,
+  equip: void!Failure!R,
   execute: Execute<R>,
   targets: ReadonlyArray<string> | undefined,
   reruns: number
 ) {
   const start = try Clock.currentTimeMillis
-  try setup
+  try checkout
+  const checkedOut = try Clock.currentTimeMillis
+  try equip
+  const equipped = try Clock.currentTimeMillis
   const first = try execute(targets)
-  const wallMs = (try Clock.currentTimeMillis) - start
+  const wallMs = (try Clock.currentTimeMillis) - equipped + (checkedOut - start)
   const results = try settle(execute, first, reruns, first.length)
   return { results, wallMs } satisfies Measured
 }
@@ -270,8 +280,13 @@ effect function measure<R>(
  * its checkout holds nothing a fresh clone does not. Generated targets also
  * stay within the target map's `maxJobs`. Commits run oldest
  * first and the normal and fast copies keep their caches between commits, so
- * the first commit starts cold. Wall time covers each mode's checkout, setup and
- * first pass; the reruns that label flaky targets are not counted.
+ * the first commit starts cold.
+ *
+ * Wall time is what a CI machine spends on the commit once it is ready: the
+ * checkout, and the first pass, which for a mode holds the start of Smithers
+ * build and its planning. What only a replay does is not counted: writing the
+ * generated files into the copy, which `apply` commits once, and linking the
+ * package they import. Neither are the reruns that label flaky targets.
  *
  * @category parts
  * @since 0.1.0
@@ -357,8 +372,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const newest = try prepared()
     const fastCopy = request.modes.includes("fast") ? try copyAt("fast", "HEAD") : undefined
 
-    effect function ready(copy: string, commit: string, own: Prepared) {
-      try checkout(copy, commit)
+    /** Makes a checked-out copy one the generated targets run in. A repository that ran `apply` holds all of it. */
+    effect function equip(copy: string, own: Prepared) {
       for (const file of own.generated) {
         const target = path.resolve(copy, file.path)
         try orFail(fs.makeDirectory(path.dirname(target), { recursive: true }), `could not write ${file.path}`)
@@ -506,10 +521,16 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       }
       const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
       try progress.say(`${at} baseline`)
-      const base = try measure(Effect.void, baseline(commit, own), undefined, options.reruns)
+      const base = try measure(Effect.void, Effect.void, baseline(commit, own), undefined, options.reruns)
       const baseRecord = recordOf(base.results, commit, base.wallMs)
       try progress.say(`${at} normal`)
-      const normal = try measure(ready(normalCopy, commit, own), smithers(normalCopy, own), undefined, options.reruns)
+      const normal = try measure(
+        checkout(normalCopy, commit),
+        equip(normalCopy, own),
+        smithers(normalCopy, own),
+        undefined,
+        options.reruns
+      )
       const normalRecord = recordOf(normal.results, commit, normal.wallMs, "normal")
       let fastPart: Pick<ReplayCommit, "fast"> = {}
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
@@ -520,7 +541,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const choice = choose(scores, request.settings ?? defaultSettings)
         const labels = normal.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
         try progress.say(`${at} fast`)
-        const fast = try measure(ready(fastCopy, commit, own), smithers(fastCopy, own), labels, options.reruns)
+        const fast = try measure(
+          checkout(fastCopy, commit),
+          equip(fastCopy, own),
+          smithers(fastCopy, own),
+          labels,
+          options.reruns
+        )
         const byLabel = new Map(fast.results.map((result) => [result.label, result]))
         const merged = normal.results.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
         const fastRecord = recordOf(merged, commit, fast.wallMs, "fast" satisfies Mode)

@@ -152,6 +152,14 @@ work time and its target counts:
 
 Wall time is elapsed time. Work time is the sum of every target's own time.
 
+Wall time holds what a CI machine spends on a commit once it is ready:
+checking the commit out and running the commands. In normal and fast mode
+that includes starting Smithers build and deciding what to run, once per
+commit. It leaves out what only a replay does to its copy, such as writing
+the target files there, which `apply` commits once. For every way it leaves
+out what happens before a CI machine is ready: starting the machine, fetching
+the repository over the network, installing tools and moving the cache.
+
 Over all commits it gives the total wall time of each way, the speedup, the
 number of mismatches and the number of flaky verdicts. The speedup is the
 baseline wall time divided by the normal-mode wall time, both summed over
