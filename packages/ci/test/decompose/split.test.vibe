@@ -103,7 +103,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
   it.effect("splits a pnpm run into one step per package that has the task, and leaves the rest whole", () =>
     effect {
       const root = try repository(pnpmWorkspace)
-      const before = ci([
+      // Each step is alone in its job: no earlier step wrote a file it could read.
+      const before = separately([
         step("ci.yml:test:1", "pnpm install --frozen-lockfile"),
         step("ci.yml:test:3", "node scripts/check.mjs"),
         step("ci.yml:test:2", "pnpm -r run test", { name: "Test", env: { CI: "true" } })
@@ -123,7 +124,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         ])
         // Steps that cannot be split are returned as they were.
         expect(steps["ci.yml:test:1"]).toEqual(before.jobs[0]?.steps[0])
-        expect(steps["ci.yml:test:3"]).toEqual(before.jobs[0]?.steps[1])
+        expect(steps["ci.yml:test:3"]).toEqual(before.jobs[1]?.steps[0])
         expect(steps["ci.yml:test:2:web"]).toEqual({
           id: "ci.yml:test:2:web",
           name: "Test (web)",
@@ -140,7 +141,59 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         expect(steps["ci.yml:test:2:x"]?.inputs).toEqual([...pnpmOutside, "packages/x/**", "packages/y/**"].sort())
         expect(steps["ci.yml:test:2:y"]?.inputs).toEqual(steps["ci.yml:test:2:x"]?.inputs)
         // The job is otherwise unchanged.
-        expect({ ...decoded.jobs[0], steps: [] }).toEqual({ ...before.jobs[0], steps: [] })
+        expect({ ...decoded.jobs[2], steps: [] }).toEqual({ ...before.jobs[2], steps: [] })
+      })
+    })
+
+  it.effect("leaves a step as it was when it follows another step in its working tree", () =>
+    effect {
+      const root = try repository(pnpmWorkspace)
+      // The install and the check wrote files the test may read, and no input names what a step writes.
+      const job = ci([
+        step("ci.yml:test:1", "pnpm install --frozen-lockfile"),
+        step("ci.yml:test:2", "node scripts/check.mjs"),
+        step("ci.yml:test:3", "pnpm -r run test")
+      ])
+      const recipe = (name: string, command: string, needs: ReadonlyArray<string>): Job => ({
+        ...(job.jobs[0] as Job),
+        id: `justfile:${name}`,
+        source: "justfile",
+        file: "Justfile",
+        name,
+        needs,
+        triggers: [],
+        steps: [step(`justfile:${name}:1`, command)]
+      })
+      // Recipes of one Justfile share a working tree, so a recipe that needs another follows it.
+      const recipes = ciOf({
+        ...job,
+        jobs: [
+          recipe("build", "pnpm -r run build", []),
+          recipe("test", "pnpm -r run test", ["justfile:build"]),
+          // The recipe that makes the others the CI: it has no command of its own.
+          { ...recipe("ci", "true", ["justfile:test"]), steps: [] }
+        ]
+      })
+      // GitHub jobs run on separate machines: a job that needs another starts from a clean checkout.
+      const hosted = ciOf({
+        ...job,
+        jobs: [
+          { ...(job.jobs[0] as Job), id: "ci.yml:build", steps: [step("b", "node scripts/check.mjs")] },
+          { ...(job.jobs[0] as Job), id: "ci.yml:test", needs: ["ci.yml:build"], steps: [step("t", "pnpm -r run test")] }
+        ]
+      })
+      const afterJob = try split(root, job)
+      const afterRecipes = try split(root, recipes)
+      const afterHosted = try split(root, hosted)
+      try Effect.try(() => {
+        expect(afterJob).toEqual(job)
+        // The first recipe is followed: it keeps its command and names what it reads. The second is as it was.
+        expect(stepsOf(afterRecipes).map((found) => [found.id, found.command, found.inputs !== undefined])).toEqual([
+          ["justfile:build:1", "pnpm -r run build", true],
+          ["justfile:test:1", "pnpm -r run test", false]
+        ])
+        expect(stepsOf(afterRecipes)[1]).toEqual(recipes.jobs[1]?.steps[0])
+        expect(stepsOf(afterHosted).map((found) => found.id)).toEqual(["b", "t:ui", "t:web", "t:x", "t:y"])
       })
     })
 
@@ -181,7 +234,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
     effect {
       const root = try repository(pnpmWorkspace)
       const command = "set -euo pipefail\npnpm --filter web run test 2>&1 | tee \"$RUNNER_TEMP/web.log\""
-      const after = try split(root, ci([step("ci.yml:test:1", command), step("ci.yml:test:2", "pnpm run test", { cwd: "packages/ui" })]))
+      const after = try split(root, separately([step("ci.yml:test:1", command), step("ci.yml:test:2", "pnpm run test", { cwd: "packages/ui" })]))
       try Effect.try(() => {
         expect(stepsOf(after)).toEqual([
           step("ci.yml:test:1", command, {
@@ -386,7 +439,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
 
   it.effect("keeps every job of a CI that is the root ci recipe", () =>
     effect {
-      const root = try repository({ ...pnpmWorkspace, "Justfile": "build:\n  pnpm install\ntest: build\n  pnpm -r run test\nci: test\n" })
+      const root = try repository({ ...pnpmWorkspace, "Justfile": "build:\n  pnpm install\ntest:\n  pnpm -r run test\nci: build test\n" })
       const recipe = (name: string, steps: ReadonlyArray<Step>, needs: ReadonlyArray<string>): Job => ({
         id: `justfile:${name}`,
         source: "justfile",
@@ -403,8 +456,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         ...ci([]),
         jobs: [
           recipe("build", [step("justfile:build:1", "pnpm install")], []),
-          recipe("test", [step("justfile:test:1", "pnpm -r run test")], ["justfile:build"]),
-          recipe("ci", [], ["justfile:test"])
+          recipe("test", [step("justfile:test:1", "pnpm -r run test")], []),
+          recipe("ci", [], ["justfile:build", "justfile:test"])
         ]
       })
       const after = try split(root, before)
@@ -412,7 +465,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         expect(before.jobs.map((job) => job.id)).toEqual(["justfile:build", "justfile:test"])
         expect(after.jobs.map((job) => [job.id, job.needs])).toEqual([
           ["justfile:build", []],
-          ["justfile:test", ["justfile:build"]]
+          ["justfile:test", []]
         ])
         expect(stepsOf(after).map((found) => found.id)).toEqual([
           "justfile:build:1",
@@ -460,7 +513,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         asked.push(entries)
         return [closure(["test"]), closure(["bench"], { unresolved: [{ from: "bench.zig", specifier: "gone" }] })]
       }
-      const before = ci([
+      // Each recipe is its own job, so none follows another.
+      const before = separately([
         step("justfile:test:1", `bash -c 'set -euo pipefail\nif [ -n "" ]; then zig build test -Dtest-filter=""; else zig build test; fi'`),
         step("justfile:bench:1", "zig build bench"),
         step("justfile:docs:1", "zig build docs"),
@@ -471,11 +525,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         // One call names every build step, once.
         expect(asked).toEqual([["bench", "docs", "test"]])
         expect(stepsOf(after)).toEqual([
-          { ...before.jobs[0]?.steps[0], inputs: ["build.zig", "src/main.zig"], from: "justfile:test:1" },
+          { ...stepsOf(before)[0], inputs: ["build.zig", "src/main.zig"], from: "justfile:test:1" },
           // An incomplete closure, a step the strategy did not answer for, and an unknown program stay whole.
-          before.jobs[0]?.steps[1],
-          before.jobs[0]?.steps[2],
-          before.jobs[0]?.steps[3]
+          stepsOf(before)[1],
+          stepsOf(before)[2],
+          stepsOf(before)[3]
         ])
       })
       // Without a strategy, or with one that fails, a Zig step stays whole.

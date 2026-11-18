@@ -194,8 +194,8 @@ describe("generated files under the real smthrs", () => {
       inputs: ["*", `packages/${name}/**`],
       from: "ci:2"
     })
+    // The split step is its job's only step: no earlier step wrote a file its targets could read.
     const steps = [
-      { id: "ci:1", command: "true", cwd: "", env: {}, secrets: [] },
       part("a", "grep -q source packages/a/input.txt"),
       part("b", "grep -q source packages/b/input.txt")
     ]
@@ -206,12 +206,11 @@ describe("generated files under the real smthrs", () => {
       "docs/guide.md": "x\n"
     })
     try {
-      // Both package steps follow the setup step, and neither follows the other.
+      // Neither package step follows the other.
       const before = plan(root)
       expect(before.map((target) => [target.label, target.cacheable, target.dependencies])).toEqual([
-        [`${prefix}ci-1`, false, []],
-        [`${prefix}ci-2-a`, true, [`${prefix}ci-1`]],
-        [`${prefix}ci-2-b`, true, [`${prefix}ci-1`]]
+        [`${prefix}ci-2-a`, true, []],
+        [`${prefix}ci-2-b`, true, []]
       ])
       const keys = () =>
         Object.fromEntries(plan(root).map((target) => [target.label, JSON.stringify(target.keyPreview)]))
@@ -231,10 +230,10 @@ describe("generated files under the real smthrs", () => {
       // Running needs a machine that can confine a target to its declared reads.
       if (!confines) return
       const statuses = (name: string) => Object.fromEntries(execute(root, name).statuses)
-      expect(statuses("first")).toEqual({ "ci-1": "ran", "ci-2-a": "ran", "ci-2-b": "ran" })
-      expect(statuses("second")).toEqual({ "ci-1": "ran", "ci-2-a": "hit", "ci-2-b": "hit" })
+      expect(statuses("first")).toEqual({ "ci-2-a": "ran", "ci-2-b": "ran" })
+      expect(statuses("second")).toEqual({ "ci-2-a": "hit", "ci-2-b": "hit" })
       writeFileSync(join(root, "packages/b/input.txt"), "changed\n")
-      expect(statuses("third")).toEqual({ "ci-1": "ran", "ci-2-a": "hit", "ci-2-b": "failed" })
+      expect(statuses("third")).toEqual({ "ci-2-a": "hit", "ci-2-b": "failed" })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -259,6 +258,56 @@ describe("generated files under the real smthrs", () => {
       // The command would pass in the open: the file is there and holds the word.
       expect(run(root, "sh", ["-c", leak.command]).status).toBe(0)
       expect(Object.fromEntries(execute(root, "only").statuses)).toEqual({ "ci-1-a": "failed" })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, slow)
+
+  it("lets a package step read what an earlier step built, and reruns it when that step's source changes", () => {
+    const steps = [
+      // The build copies a file no package step names into a directory git ignores.
+      {
+        id: "ci:1",
+        command: "mkdir -p packages/a/dist && cp config/value packages/a/dist/out",
+        cwd: "",
+        env: {},
+        secrets: [],
+        inputs: ["config/**"],
+        from: "ci:1"
+      },
+      {
+        id: "ci:2:a",
+        command: "grep -q good packages/a/dist/out && grep -q source packages/a/src.txt",
+        cwd: "",
+        env: {},
+        secrets: [],
+        inputs: ["packages/a/**"],
+        from: "ci:2"
+      },
+      {
+        id: "ci:2:b",
+        command: "grep -q source packages/b/src.txt",
+        cwd: "",
+        env: {},
+        secrets: [],
+        inputs: ["packages/b/**"],
+        from: "ci:2"
+      }
+    ]
+    const root = repository(document([{ ...job("ci", []), steps }]), {
+      "config/value": "good\n",
+      "packages/a/.gitignore": "dist\n",
+      "packages/a/src.txt": "source\n",
+      "packages/b/src.txt": "source\n"
+    })
+    try {
+      const statuses = (name: string) => Object.fromEntries(execute(root, name).statuses)
+      // Held to `packages/a/**`, the step could not read `dist/out`: git ignores it, so no input names it.
+      expect(statuses("first")).toEqual({ "ci-1": "ran", "ci-2-a": "ran", "ci-2-b": "ran" })
+      expect(statuses("second")).toEqual({ "ci-1": "ran", "ci-2-a": "hit", "ci-2-b": "hit" })
+      // The file the build read changes. A key made of `packages/a/**` would not: the step would hit, and pass stale.
+      writeFileSync(join(root, "config/value"), "bad\n")
+      expect(statuses("third")).toEqual({ "ci-1": "ran", "ci-2-a": "failed", "ci-2-b": "ran" })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

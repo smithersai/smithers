@@ -11,10 +11,10 @@
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Closure } from "../contract/Closure.ts"
-import type { Ci, Inventory, Step } from "../contract/Inventory.ts"
+import { type Ci, type Step, withSteps } from "../contract/Inventory.ts"
 import type { CloseEntries, Decompose, Failure } from "../contract/Parts.ts"
 import { withoutAliases } from "./Aliases.ts"
-import { decide, type Facts, followed, keepCommand, understand, type Understood } from "./Plan.ts"
+import { decide, type Facts, followed, keepCommand, preceded, understand, type Understood } from "./Plan.ts"
 import { readConfig } from "./Turbo.ts"
 import {
   assemble,
@@ -185,8 +185,10 @@ export const splitWith = <R = never>(
     const tree: Tree = { fs, path, root, files: new Set(listed.split("\0").filter((file) => file !== "")) }
     const workspace = try readWorkspace(tree)
     const relied = followed(inventory.jobs)
+    const after = preceded(inventory.jobs)
     const understood = new Map(steps.map((step) => {
-      const read = understand(step, workspace, options.turboWrappers)
+      // A step after another may read what that one wrote, which no input names: it stays as it was.
+      const read = after.has(step) ? undefined : understand(step, workspace, options.turboWrappers)
       // A step a later step relies on always runs: it keeps its command.
       return [step, read !== undefined && relied.has(step) ? keepCommand(read) : read]
     }))
@@ -202,14 +204,6 @@ export const splitWith = <R = never>(
       const closure = closures.find((candidate) => candidate.entries.includes(name))
       return closure === undefined ? [] : [[name, closure] as const]
     }))
-    // The same jobs with their steps replaced are still the repository's CI: every job keeps a step and its needs.
-    // `Inventory.ci` cannot be asked again: a root `ci` recipe that only groups jobs is gone from its own answer.
-    const split: Inventory = {
-      ...inventory,
-      jobs: inventory.jobs.map((job) => ({
-        ...job,
-        steps: job.steps.flatMap((step) => replaced(step, understood.get(step), facts, closed))
-      }))
-    }
-    return split as Ci
+    // The same jobs with their steps replaced are still the repository's CI: `withSteps` keeps every job and its needs.
+    return withSteps(inventory, (job) => job.steps.flatMap((step) => replaced(step, understood.get(step), facts, closed)))
   }

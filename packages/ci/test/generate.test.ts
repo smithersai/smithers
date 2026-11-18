@@ -357,33 +357,61 @@ describe("large graphs", () => {
 })
 
 describe("a step that names what it reads", () => {
+  const parts: ReadonlyArray<Step> = [
+    step("a:2:ui", "pnpm --filter=ui run test", { inputs: ["packages/ui/**", "*"], from: "a:2" }),
+    step("a:2:web", "pnpm --filter=ui --filter=web run test", {
+      inputs: ["*", "packages/ui/**", "packages/web/**"],
+      from: "a:2"
+    })
+  ]
   const split = (tail: ReadonlyArray<Step> = []) =>
-    inventory([job("a", [
-      step("a:1", "pnpm install"),
-      step("a:2:ui", "pnpm --filter=ui run test", { inputs: ["packages/ui/**", "*"], from: "a:2" }),
-      step("a:2:web", "pnpm --filter=ui --filter=web run test", {
-        inputs: ["*", "packages/ui/**", "packages/web/**"],
-        from: "a:2"
-      }),
-      ...tail
-    ])])
+    inventory([job("a", [step("a:1", "pnpm install"), ...parts, ...tail])])
 
   it("declares the step's inputs in place of the whole repository, and holds the target to them", () => {
-    const source = targetsOf(split())
+    const source = targetsOf(inventory([job("a", parts)]))
     expect(declaration(source, "a-2-ui")).toContain("S.Shell.Test(")
-    expect(declaration(source, "a-2-ui")).toContain(`data: [S.glob("//*"), S.glob("//packages/ui/**"), step0]`)
+    expect(declaration(source, "a-2-ui")).toContain(`data: [S.glob("//*"), S.glob("//packages/ui/**")]`)
     expect(declaration(source, "a-2-web")).toContain(
-      `data: [S.glob("//*"), S.glob("//packages/ui/**"), S.glob("//packages/web/**"), step0]`
+      `data: [S.glob("//*"), S.glob("//packages/ui/**"), S.glob("//packages/web/**")]`
     )
     // A read outside the inputs must fail the target, so it runs confined to them.
     expect(declaration(source, "a-2-ui")).toContain("sandbox: { network: true }")
-    // The setup step always runs and declares no files, so no change to a file re-keys the steps after it.
-    expect(declaration(source, "a-1")).toMatch(/data: \[\]/)
-    expect(declaration(source, "a-1")).toContain(`sandbox: "none"`)
     // A step with no inputs still reads everything, unconfined.
     const whole = declaration(targetsOf(inventory([job("b", [step("b:1", "make test")])])), "b-1")
     expect(whole).toMatch(/data: \[repository\]/)
     expect(whole).toContain(`sandbox: "none"`)
+  })
+
+  it("keeps the whole repository for a step that follows another in its working tree", () => {
+    // The install wrote files the package steps read, and nothing says which files it read to write them.
+    const source = targetsOf(split())
+    // The setup step always runs and declares no files.
+    expect(declaration(source, "a-1")).toMatch(/data: \[\]/)
+    expect(declaration(source, "a-1")).toContain(`sandbox: "none"`)
+    for (const label of ["a-2-ui", "a-2-web"]) {
+      expect(declaration(source, label)).toContain("S.Shell.Test(")
+      expect(declaration(source, label)).toContain("data: [repository, step0]")
+      expect(declaration(source, label)).toContain(`sandbox: "none"`)
+    }
+    expect(source).not.toContain("S.glob(\"//packages/")
+    // Recipes share one working tree, so a recipe follows the recipe it needs.
+    const recipes = targetsOf(inventory([
+      job("build", [step("build:1", "make")], { source: "justfile", triggers: [] }),
+      job("test", [step("test:1", "make test", { inputs: ["src/**"], from: "test:1" })], {
+        source: "justfile",
+        triggers: [],
+        needs: ["build"]
+      })
+    ]))
+    expect(declaration(recipes, "test-1")).toContain("data: [repository, step0]")
+    expect(declaration(recipes, "test-1")).toContain(`sandbox: "none"`)
+    // GitHub jobs run on separate machines: a needed job left nothing in this job's checkout.
+    const hosted = targetsOf(inventory([
+      job("build", [step("build:1", "make")]),
+      job("test", [step("test:1", "make test", { inputs: ["src/**"], from: "test:1" })], { needs: ["build"] })
+    ]))
+    expect(declaration(hosted, "test-1")).toContain(`data: [S.glob("//src/**"), step0]`)
+    expect(declaration(hosted, "test-1")).toContain("sandbox: { network: true }")
   })
 
   it("places steps split from one step side by side, and the next step after all of them", () => {
@@ -408,7 +436,8 @@ describe("a step that names what it reads", () => {
       step("a:3:x", "z", { inputs: ["x/**"], from: "a:1" })
     ])]))
     expect(declaration(source, "a-2")).toMatch(/data: \[step0\]/)
-    expect(declaration(source, "a-3-x")).toContain(`data: [S.glob("//x/**"), step1]`)
+    // The last step follows only the step before it, and reads what both earlier steps wrote.
+    expect(declaration(source, "a-3-x")).toContain("data: [repository, step1]")
   })
 
   it("reads the whole repository when an input is every file", () => {

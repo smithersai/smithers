@@ -483,6 +483,28 @@ export const followed = (jobs: ReadonlyArray<Job>): ReadonlySet<Step> => {
 }
 
 /**
+ * The steps that follow another step in one working tree: every step but a
+ * job's first, and every step of a job that needs another when its source
+ * shares one tree. Such a step can read what the earlier step wrote, and no
+ * input names that, so it is never split or scoped.
+ *
+ * @throws {never}
+ * @category planning
+ * @since 0.1.0
+ */
+export const preceded = (jobs: ReadonlyArray<Job>): ReadonlySet<Step> => {
+  const found = new Set<Step>()
+  for (const job of jobs) {
+    // GitHub jobs run on separate machines; every other source shares one tree.
+    const after = job.source !== "github-actions" && job.needs.length > 0
+    for (const [index, step] of job.steps.entries()) {
+      if (after || index > 0) found.add(step)
+    }
+  }
+  return found
+}
+
+/**
  * The same understanding with no run to replace, so the step keeps its
  * command and only gains inputs.
  *

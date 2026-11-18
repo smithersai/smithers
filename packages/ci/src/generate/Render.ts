@@ -94,9 +94,10 @@ const narrows = (target: StepTarget, narrowed: boolean): boolean =>
 // The files a target declares. A setup target always runs, so it declares
 // none: a dependency's key is part of a target's key, and a setup target that
 // declared the repository would rerun every target after it on any change.
-// What a later target reads of a setup step's work is in that target's own
-// inputs. Any other target declares its step's inputs, or the whole
-// repository when the step names none.
+// A target after a setup step reads that step's work, so it declares the
+// whole repository (`inputs` is `undefined` for it): every file the setup
+// step could have read is then in its key. Any other target declares its
+// step's inputs, or the whole repository when the step names none.
 const filesOf = (target: StepTarget, narrowed: boolean): ReadonlyArray<string> => {
   if (target.rule === "setup") return []
   return narrows(target, narrowed)

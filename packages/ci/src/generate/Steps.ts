@@ -8,6 +8,12 @@
  * and declares no files of its own. Steps split from one step (`Step.from`)
  * stand side by side: none relies on another, and the step after them waits
  * for all of them.
+ *
+ * A step that follows another in one working tree can read what that step
+ * wrote, and nothing says what a step writes. Such a step's target therefore
+ * never declares the step's inputs: its key would not hold the files the
+ * earlier step read, so it would pass stale when one of them changed. It
+ * declares the whole repository, as a step with no inputs does.
  * GitHub jobs run on separate machines, so `needs` only orders them; the other
  * sources run in one working tree, so what they need is `setup` too.
  *
@@ -51,7 +57,10 @@ export interface StepTarget {
   /** The step of the original CI: a step that was split names the step it was split from. */
   readonly step: string
   readonly variant: Variant
-  /** The paths and globs the step reads, from the repository root; `undefined` when it may read any file. */
+  /**
+   * The paths and globs the target declares, from the repository root; `undefined` when it declares the whole
+   * repository: its step names no inputs, or follows a step in its working tree and may read what that step wrote.
+   */
   readonly inputs: ReadonlyArray<string> | undefined
 }
 
@@ -249,7 +258,8 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     step: Step,
     variant: Variant,
     host: Host | undefined,
-    dependencies: ReadonlyArray<string>
+    dependencies: ReadonlyArray<string>,
+    follows: boolean
   ): Draft | undefined => {
     const command = forShell(step.command, variant)
     const cwd = forText(step.cwd, variant)
@@ -281,7 +291,9 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       title: `${job.name} / ${step.name ?? step.id}`,
       step: step.from ?? step.id,
       variant,
-      inputs: step.inputs === undefined || step.inputs.includes(everything) ? undefined : sorted(step.inputs),
+      inputs: follows || step.inputs === undefined || step.inputs.includes(everything)
+        ? undefined
+        : sorted(step.inputs),
       job,
       command,
       directory
@@ -302,8 +314,10 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       for (const group of groupsOf(job.steps)) {
         // Steps split from one step each follow the step before them, never each other.
         const made: Array<string> = []
+        // What an earlier step left in this working tree, these steps can read.
+        const follows = sharesTree && previous.length > 0
         for (const step of group) {
-          const draft = draftOf(job, step, variant, host, previous)
+          const draft = draftOf(job, step, variant, host, previous, follows)
           if (draft === undefined) continue
           drafts.set(draft.label, draft)
           made.push(draft.label)

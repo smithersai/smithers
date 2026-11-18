@@ -10,6 +10,7 @@ import {
   followed,
   inputsOf,
   keepCommand,
+  preceded,
   understand
 } from "../../src/decompose/Plan.ts"
 import { readConfig } from "../../src/decompose/Turbo.ts"
@@ -667,7 +668,7 @@ describe("decide: Zig", () => {
   })
 })
 
-describe("followed and keepCommand", () => {
+describe("followed, preceded and keepCommand", () => {
   const job = (id: string, steps: ReadonlyArray<Step>, extra: Partial<Job> = {}): Job => ({
     id,
     source: "github-actions",
@@ -699,6 +700,24 @@ describe("followed and keepCommand", () => {
     expect([...recipes].map((each) => each.id)).toEqual(["build"])
     // GitHub jobs run on separate machines: a need only orders them.
     const hosted = followed([job("build", [named("build")]), job("lint", [named("lint")], { needs: ["build"] })])
+    expect([...hosted]).toEqual([])
+  })
+
+  it("finds every step that follows another in one working tree", () => {
+    const found = preceded([
+      job("one", [named("a"), named("b"), named("c")]),
+      job("two", [named("only")]),
+      job("empty", [])
+    ])
+    expect([...found].map((each) => each.id)).toEqual(["b", "c"])
+    // Recipes share a tree: every step of a recipe that needs another follows it.
+    const recipes = preceded([
+      job("build", [named("build")], { source: "justfile" }),
+      job("test", [named("test"), named("report")], { source: "justfile", needs: ["build"] })
+    ])
+    expect([...recipes].map((each) => each.id)).toEqual(["test", "report"])
+    // GitHub jobs run on separate machines: a needed job leaves no file behind.
+    const hosted = preceded([job("build", [named("build")]), job("lint", [named("lint")], { needs: ["build"] })])
     expect([...hosted]).toEqual([])
   })
 

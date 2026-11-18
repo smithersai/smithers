@@ -105,6 +105,7 @@ task graph removes the repeat.
 | A selector that matches the root package, when the root has the script       | The root package's script reads the whole repository                                                                             |
 | A `turbo` task nothing defines, or a task of the root package (`//#task`)    | Turborepo refuses the first; the second reads everything                                                                         |
 | A step that a later step of its job follows                                  | Its target always runs, so one command over every package is cheaper than one per package. It keeps its command and gains inputs |
+| A step that follows another step in its working tree                         | It can read what that step wrote. See [A step after another step](#a-step-after-another-step)                                    |
 | A step still holding a `${{ matrix.… }}` expression                          | Its command differs per variant                                                                                                  |
 | A Zig build step whose closure has an import it could not follow             | An incomplete closure is affected by every change                                                                                |
 
@@ -135,8 +136,41 @@ runner keeps a cache. Such a package step fails under the sandbox today. It
 needs the discarded write layer Smithers build gives its own test targets,
 which a generated target cannot ask for yet.
 
-A step with no inputs, and a step a later step follows, run in the open as
-before and declare the whole repository.
+Three kinds of target run in the open, as an unsplit step does:
+
+- A step with no inputs. Its target declares the whole repository.
+- A step a later step follows. Its target always runs, its result is never
+  reused, and it declares no files.
+- A step that follows another step. Its target declares the whole repository.
+
+When the targets' inputs would make `PACKAGE.ts` larger than the 1 MiB Smithers
+build reads, every target declares the whole repository and runs in the open.
+
+## A step after another step
+
+Steps of one job run in one working tree, so a step can read what an earlier
+step wrote: installed packages, a `dist` directory, a build cache. Nothing in a
+CI file says what a step writes, or which files it read to write it.
+
+So only a step that nothing precedes is split or held to its inputs. A step
+that follows another keeps its command, declares the whole repository and runs
+in the open. It reruns on every change, and it never passes on a result from
+before a file changed.
+
+```text
+step 1   cp config/value packages/a/dist/out
+step 2   grep -q good packages/a/dist/out        would read packages/a/**
+```
+
+Held to `packages/a/**`, step 2 could not read `dist/out`, which git ignores.
+Allowed to read it, step 2 would still have a key made of `packages/a/**`: a
+change to `config/value` rebuilds `dist/out`, the key stays the same, and the
+old pass is replayed. Declaring the whole repository puts `config/value` in the
+key.
+
+Jobs of a GitHub Actions workflow run on separate machines, so a job's first
+step follows nothing, whatever the job needs. Recipes of one Justfile share a
+working tree, so a recipe follows the recipes it needs.
 
 ## One cost
 
