@@ -3,7 +3,7 @@ title: Fast Smithers CI (customer zero for smithers-ci)
 status: in-progress
 area: build
 owner: Claude Fable, Will's chat session 20474551, since 2026-11-17 16:50 PST
-updated: 2026-11-18 00:25 PST
+updated: 2026-11-18 07:20 PST
 links: [ci-cd-parity.md, ci-parity-cache.md, second-build-machine.md, release-burn-down.md, ../../../../packages/smithers/build/docs/workspace/caching.md, ../../../../packages/smithers/build/docs/workspace/adoption.md]
 ---
 
@@ -274,10 +274,70 @@ What the numbers say so far: no repository shows a gain yet. Three causes are kn
 - The generated workflow runs `@smthrs/cli@next`, which is rc.16 and refuses the generated workspace. An outside
   repository needs a published build newer than rc.16.
 - nyc-01 has no `AI_GATEWAY_API_KEY`, so the fast-mode eval ran on the signed-in subscription model, not Jev.
+- Publishing `smithers-ci` and a `@smthrs/cli` newer than rc.16 to npm, through the release workflow. The lane
+  `sci-publish` dry-runs the workflow and writes the steps; a person runs them.
 
 The lead (Will's chat session) owns the contracts and the join: one end-to-end
 run of `smithers-ci` on a fixture repository, then on the four repositories
 above. The dashboard file is `~/.vibe-orch/workstreams/smithers-ci.json`.
+
+## The ship goal and the review loop (Will, 2026-11-18)
+
+Will set the finish line for the product on 2026-11-18 at about 03:28 PST: the engineering is done when an
+independent Opus agent reviews Smithers CI and says it is ready to ship and production ready. The loop:
+
+1. An independent Opus reviewer holds the product to what a person reads (the splash page and the docs) by
+   running the real program on real repositories. Each blocker carries a clearing condition: one command and
+   the result that withdraws it. The conditions are a script, `recheck.sh`, in the reviewer's scratch folder.
+2. One lane per blocker clears it on `main`.
+3. A new Opus reviewer re-runs the clearing conditions and keeps reviewing. Repeat until the verdict is
+   `READY TO SHIP`.
+
+The docs are the specification (documentation-driven development): they are written as the shipped product, and a
+gap between a page and the build is work for the build.
+
+### What Will decided about the splash page and the launch (2026-11-18)
+
+- Subtitle: "Fast CI for agents". Tagline: "Give your agent a faster CI feedback loop with incremental, cached
+  runs." No draft labels, no jargon, the fewest words that say what the product does.
+- The pain: running agents in parallel multiplies how much CI a team runs, and CI becomes the bottleneck.
+- What sets it apart: durable, self-hostable, type-safe, Effect as code, with Bazel-like guarantees. The feature
+  set is larger than Turborepo's; the page does not say "better than Turborepo".
+- The cache: self-hosted first. We also host the default cache and charge for it.
+- Rollout: Will asked on Twitter who wants faster CI and makes each person's CI faster himself, one at a time,
+  starting with elizaOS/eliza. The case studies that come back are the launch material.
+
+### First ship review (2026-11-18, 03:38 to 06:27 PST): NOT READY
+
+| Blocker | State on 2026-11-18 07:20 PST |
+| --- | --- |
+| `bunx smithers-ci` cannot run (not on npm) | Runs from its tarball under `npx` and `bunx` (`8f351c51f257`); publishing is a person's step |
+| A replay runs `sudo` and changes the machine (fzf) | Lane `sci-no-sudo` |
+| The generated `PACKAGE.ts` breaks a repository's own type check (commander.js) | Lane `sci-generated-files` |
+| elizaOS/eliza exits 3 with nothing measured | Lane `sci-eliza` |
+| The workflow `apply` writes fails on its first run (`@smthrs/cli@next` is rc.16) | Needs a published CLI |
+| No outside repository shows a gain (click: 0.51 times, 0 hits in 6 commits) | Lanes `sci-observed-inputs`, `sci-overhead`, `sci-outside-gain` |
+| A split step cannot find `npm` | Fix on `main` (`72dccbe3258a`), waits for the re-check |
+| A replayed step can push, and sees the real home directory | Lane `sci-step-jail` |
+| A run where every step fails locally exits 0 with no reason | Lane `sci-fail-reason` |
+| `--mode both` with no model does the work, then drops it | Lane `sci-fast-preflight` |
+| Makefiles are not read | Cleared by the reviewer (`2829214d341b`) |
+| Ordinary public repositories end with nothing measured | Cleared by the reviewer (`a33f08777d34`, `7cf69db974a2`) |
+
+### What the review loop showed about our own process
+
+- **A report printed "130 times faster" over a failed run.** A five-commit replay of refcell/needlefish on build
+  `997d76999db6`: the baseline passed at every commit in about 50 minutes; normal mode failed at every commit in
+  about 20 seconds. Rule since (contract round 11): a commit counts toward the speedup only when the baseline
+  passed and the mode's results equal it, and the report says how many commits the number covers.
+- **Needlefish's ceiling on its newest five commits is 1.67 times.** Three of the five must run every test: the
+  first is cold, and two change a module that all 3,180 unit tests compile into one binary.
+- **Our own CI was the bottleneck, as the product says it will be.** Fourteen lanes shared two check slots on
+  nyc-01; one run waited 114 minutes. A second check host (nyc-02, three more slots, reached through the same
+  `checks.sh`) brought a run back to about six minutes. `//packages/ci:test` is one target for the whole package,
+  so every lane reruns every test: splitting it per file with the product's own splitter is the real fix.
+- **Reuse for a step with no declared inputs is Linux only.** It records reads with `strace`. macOS has no
+  unprivileged way to observe a process's reads, so there such a step runs on every change.
 
 ## Fast mode (Will, 2026-11-17)
 
