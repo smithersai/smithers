@@ -38,7 +38,6 @@ import { type Confined, confine, held, reading, type Way } from "./Confine.vibe"
 import {
   coreCount,
   noPushUrl,
-  placeEnvironment,
   pushRefusal,
   searchPath,
   stepEnvironment,
@@ -603,22 +602,22 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     let runs = 0
     /**
-     * What a start of `smthrs` in `copy` adds to this process's environment, and so hands on to a target: the
-     * home of the way's steps, the stand-ins first on `PATH`, and the push refusal.
+     * The whole environment of a `smthrs` started in `copy`: what a step of the way gets of the machine, with its
+     * home, the stand-ins first on `PATH` and the push refusal, then where the shared cache and the compiled code
+     * are. Nothing else of the person's reaches it, the jail around it, or what it starts: a step can read the
+     * environment of every process it runs beside.
      */
     const startEnv = (copy: string, place: Confined) => ({
+      ...stepEnvironment(place.daemon, place),
       ...(request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }),
-      NODE_COMPILE_CACHE: path.join(copy, compiledCode),
-      ...placeEnvironment(place),
-      ...place.daemon,
-      ...pushRefusal
+      NODE_COMPILE_CACHE: path.join(copy, compiledCode)
     })
 
     effect function planOf(copy: string, own: Prepared) {
       const plan = ["ci", ...own.labels, "--plan", "--format", "json", "--workspace", copy]
       const [command, ...args] = held(places.normal, [copy], [...options.smthrs, ...plan])
       const env = startEnv(copy, places.normal)
-      const planned = try exec(command, args, copy, env, Number.POSITIVE_INFINITY, (handle) => handle.stdout)
+      const planned = try exec(command, args, copy, env, Number.POSITIVE_INFINITY, (handle) => handle.stdout, true)
       const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
         throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
       }
@@ -654,7 +653,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         "plain",
         ...(own.jobs === undefined ? [] : ["--jobs", String(own.jobs)])
       ])
-      const output = try exec(command, args, copy, { ...startEnv(copy, place), ...printsNotes }, printedLimit, undefined, undefined, heard)
+      const output = try exec(command, args, copy, { ...startEnv(copy, place), ...printsNotes }, printedLimit, undefined, true, heard)
       const unreadable = () => failure("command-failed", `smthrs ci wrote no run record: ${output.text.slice(-outputLimit)}`)
       const text = fs.readFileString(file) catch effect () => {
         throw unreadable()
