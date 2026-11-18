@@ -34,48 +34,34 @@ Newest first. A part built before a change adopts it before it lands again.
 - `Inventory.toolCache` (`.flows/tools`): where a tool a step starts keeps its own cache between runs. A step names
   a directory under it in its `env`; the generated workflow then saves it with the results.
 
-**2026-11-18, tenth round, open** (the independent review's 31 findings; three lanes fix them. The lead's
-decisions are in each lane's brief. This list holds what one lane asked of another; each is done by the lane named):
+**2026-11-18, tenth round** (the independent review's 31 findings, fixed by the replay, apply and generate lanes):
 
-- **Replay lane.** Before the replay writes generated files into a copy, at each commit, it calls the apply lane's
-  path check and drops its own `replaced` call. The check refuses a path whose real location is outside the copy, a
-  path with a file or directory in the way, and a file `smithers-ci` did not generate. Import it from where the
-  apply lane puts it (next item); until that lands, keep `replaced`.
-- **Apply lane.** The path check is used by `apply` and by the replay, so it lives in `src/apply/` (a new
-  directory, yours), not in `src/cli/`: the replay never imports the program.
-- **Replay lane.** The comment on `RunRecord.Attempt` and `docs/concepts/how-it-works.md` say: "A failed target
-  reruns up to the limit the program sets (two) or until it passes."
-- **Replay lane.** `Inventory.uncommittedChanges = "uncommitted-changes"` beside `Inventory.smithersBuild`; the
-  importer writes it. The apply lane then reads the constant in place of its literal.
-- **Decided, no change.** `apply` treats `.smithers/ci/NOT-REPRODUCED.md` as generated when the mark is the first
-  line under its heading, and the file at `TargetMap.path` as generated when it decodes as a target map. The
-  generator and contract 11 stay as they are.
-- **Lead, after the native lane exits.** `src/native/Detect.vibe` reads a path whose directory is a regular file as
-  "no workspace file", so `apply` gives its own message.
-- **`Step.outputs`** (optional, asked for by the generate lane): the paths and globs a step writes. Without it the
-  step may write any file, so a step after it in the same working tree keeps the whole repository. **Generate lane,
-  after your findings:** build what item 1 of your `CONTRACT.md` describes. The splitter fills `outputs` for the
-  commands it reads; a setup step's `outputs` become `outDirs` of its target and its `inputs` become `data`; a later
-  target stays narrowed only when every earlier step in its tree has both. Test under the real `smthrs` that a
-  change to a file the setup step reads reruns the later target.
-- **Generate lane.** `smithers-ci apply` twice writes two different workflows in a repository whose CI is a
-  justfile (`setup-just` changes place; proof in item 6 of `sci-fix-apply.CONTRACT.md`). Find the cause and hold it
-  with a test: a second `apply` writes byte-equal files.
-- **Generate lane** (asked for by the replay lane, items 1 to 3 of `sci-fix-replay.CONTRACT.md`). The first target
-  of a job in a shared tree depends on the last target of the job before it in
-  `Inventory.treeOrder(jobs).get(Inventory.treeOf(job))`, so `ci: build test` runs `build`, then `test`, as the
-  baseline does. `stepTimeout` in `src/generate/Render.ts` comes from `Inventory.stepTimeoutHours`. A `Ci` never
-  holds a step with a secret, so delete the generator's "secret is not passed to the target" note and its test if
-  no real `Ci` reaches them.
-- **Apply lane** (asked for by the replay lane, items 4 and 5). `docs/getting-started/quickstart.md` says: "The text
-  report gives one line for each commit: the files it changed, and whether each way passed, with its wall time.
-  `--json` and the HTML page also give work time and the target counts." `docs/reference/cli.md` and
-  `Command.exitCodeHelp` say a flaky step does not make the exit code 1.
-- **Confirmed for the replay lane.** `release-trigger` is written only when a workflow's sole change trigger is a
-  push limited to `tags`. A workflow that also runs on branches or pull requests is CI; its publishing jobs are
-  kept out by `secret`, `write-permission` and `condition`.
-- **Lead, after the replay lane exits.** `Toolchain.version` may hold `${{ matrix.<key> }}` and `Toolchain.job`
-  names the job that installs the tool (item 2 of `sci-fix-generate.CONTRACT.md`); the importer writes both.
+- **Contract 4, which jobs run.** `blockers` adds a `secret` entry for each step that receives a secret, so a `Ci`
+  never holds such a step. New features `releaseTrigger` and `writePermission`, neither in `harmless`. The importer
+  writes `release-trigger` only when a push limited to `tags` is the workflow's one change trigger.
+- **Contract 4, what a replay leaves out.** `Host` and `hostOf` moved here from the generator, with the feature
+  `otherSystem`. `noTarget` names a job with a step that has no target. `noCommand`: `notReplayed` lists a CI job whose
+  every step was a host action. `notRead(inventory)` is `unsupported` without the `smithersBuild` entry.
+  `uncommittedChanges` is the feature of a working tree that differs from its commit.
+- **Contract 4, how steps run.** `stepTimeoutHours` (6) limits a baseline step and a generated target. `treeOf(job)`
+  and `treeOrder(jobs)` name a shared working tree and its order, and **`Inventory.ci` returns the jobs of one shared
+  tree in the order they run**: `ci: build test` gives `build`, then `test`. A part that relied on a `Ci` keeping
+  inventory order for Justfile recipes or `package.json` scripts sees a different order.
+- **Contract 4, what steps and tools declare.** `Step.outputs` (optional): the paths and globs a step writes. A step
+  after it in one working tree stays narrowed only when every earlier step has `inputs` and `outputs`.
+  `Toolchain.version` may hold `${{ matrix.<key> }}`, which `expand` fills per variant. `Toolchain.job` (optional)
+  is the id of the job whose step sets the tool up, and `Toolchain.action` (optional) is that step's `uses` value;
+  without `job` the tool is the repository's.
+- **Contract 5.** `flaky`, `notRead` and `notReplayedCommits` are optional keys of the report. In a `Mismatch`, `pass`
+  and `flaky` agree, and a split step is a mismatch when the mode never reported one of its targets.
+- **Contract 1.** `Attempt`: a failed target reruns up to the limit the program sets (two) or until it passes.
+- **Contract 7.** `flags.cache.help` says a cache URL holds no user name or password. `exitCodeHelp.mismatch` says a
+  flaky target does not make the exit code 1. The comment on `applyRefuses` says `apply` checks every path before it
+  writes any; the one on `applyIgnores` says `apply` prints what it adds.
+- **Contract 10.** `RunReplay` reads each commit's inventory from that commit's tree. The newest commit's CI must be
+  replayable; an older commit whose CI is not is listed in `notReplayedCommits`.
+- **Open (owner: `src/decompose`).** The splitter fills no `Step.outputs` until a Smithers build target can declare an
+  installed tree as an output and a confined step can write.
 
 **2026-11-17, ninth round** (asked for by the native lane):
 
@@ -199,4 +185,6 @@ decisions are in each lane's brief. This list holds what one lane asked of anoth
 | `src/select`    | Fast mode: builds rows, scores them, measures the result |
 | `src/decompose` | Splits a coarse CI step into per-package steps           |
 | `src/closure`   | Contract 9, one strategy per language                    |
+| `src/apply`     | Checks every generated path before anything is written   |
+| `src/native`    | Replays a repository that already builds with Smithers   |
 | `src/cli`       | The `smithers-ci` program                                |
