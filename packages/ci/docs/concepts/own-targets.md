@@ -160,7 +160,7 @@ smithers-ci: 2/3 3f2a1c9 normal: 2 ran again though their keys did not change: /
 
 The last line names targets that ran in normal mode with the key they passed
 with at an earlier commit. Nothing they read changed and the cache was there,
-yet it did not serve them, so no cache makes them faster as the build stands.
+but it did not serve them, so a cache does not make them faster.
 There are two causes to look for:
 
 - The target's rule is one Smithers build does not cache.

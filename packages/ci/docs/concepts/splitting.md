@@ -131,11 +131,10 @@ program runs. `join(root, "packages", name)` names no package in the text; a
 path written whole, such as `join(root, "packages/ui")`, is found. Under the
 sandbox such a read fails where it would have passed stale.
 
-The sandbox also refuses a write outside a target's declared outputs, and a
-step in a real repository writes: Turborepo creates `.turbo/cache`, a test
-runner keeps a cache. Such a package step fails under the sandbox today. It
-needs the discarded write layer Smithers build gives its own test targets,
-which a generated target cannot ask for yet.
+The sandbox also refuses a write outside a target's declared outputs. A package
+step that writes anywhere else, as Turborepo does to `.turbo/cache` and a test
+runner does to its own cache, fails under the sandbox, and the replay reports
+the difference from your CI.
 
 Three kinds of target run in the open, as an unsplit step does:
 
