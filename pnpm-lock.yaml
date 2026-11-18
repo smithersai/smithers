@@ -1263,6 +1263,9 @@ importers:
       '@smthrs/scorers':
         specifier: 1.0.0-rc.18
         version: link:../smithers/agent/scorers
+      '@smthrs/targets':
+        specifier: 1.0.0-rc.18
+        version: link:../smithers/build/targets
       effect:
         specifier: 4.1.1
         version: 4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c)

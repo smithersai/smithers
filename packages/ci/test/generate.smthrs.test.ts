@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import type { Inventory as InventoryDocument, Job } from "../src/contract/Inventory.ts"
+import type { Ci, Inventory as InventoryDocument, Job } from "../src/contract/Inventory.ts"
 import { Inventory } from "../src/contract/Inventory.ts"
 import { files } from "../src/generate/index.ts"
 
@@ -26,7 +26,7 @@ const run = (cwd: string, command: string, args: ReadonlyArray<string>) => {
 const repository = (document: InventoryDocument, sources: Readonly<Record<string, string>> = {}): string => {
   const root = mkdtempSync(join(tmpdir(), "smithers-ci-generate-"))
   expect(run(root, "git", ["init", "-q", "."]).status).toBe(0)
-  const generated = Effect.runSync(files(document))
+  const generated = Effect.runSync(files(document as Ci))
   const all = [...Object.entries(sources), ...generated.map((file) => [file.path, file.content] as const)]
   for (const [path, content] of [[".gitignore", ".flows\n"] as const, ...all]) {
     mkdirSync(dirname(join(root, path)), { recursive: true })

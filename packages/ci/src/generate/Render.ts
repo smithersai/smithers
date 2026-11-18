@@ -7,7 +7,8 @@
 
 import * as Result from "effect/Result"
 import type { Inventory, Toolchain } from "../contract/Inventory.ts"
-import type { Failure, GeneratedFile } from "../contract/Parts.ts"
+import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.ts"
+import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.ts"
 import { markerDirectory, repositoryLabel, type StepPlan, type StepTarget, workflowPath } from "./Steps.ts"
 
 export { workflowPath }
@@ -149,7 +150,7 @@ const renderSetup = (toolchain: Toolchain): ReadonlyArray<string> => {
   ]
 }
 
-const renderWorkflow = (inventory: Inventory, plan: StepPlan): string => {
+const renderWorkflow = (inventory: Inventory, plan: StepPlan, cache: string | undefined): string => {
   const toolchains = new Map<string, Toolchain>()
   for (const toolchain of [...inventory.toolchains].sort(byNameThenSource)) {
     if (!toolchains.has(toolchain.name)) toolchains.set(toolchain.name, toolchain)
@@ -181,8 +182,31 @@ const renderWorkflow = (inventory: Inventory, plan: StepPlan): string => {
     `          restore-keys: smithers-ci-\${{ matrix.os }}-`,
     `      ${yamlComment("Targets share one working tree, so they run one at a time.")}`,
     `      - run: npx --yes --package=@smthrs/cli@next smthrs ci '//...' --jobs 1`,
+    ...(cache === undefined ? [] : [
+      `        env:`,
+      `          SMITHERS_CACHE_URL: ${text(cache)}`,
+      `          SMITHERS_CACHE_TOKEN: \${{ secrets.SMITHERS_CACHE_TOKEN }}`
+    ]),
     ``
   ].join("\n")
+}
+
+/**
+ * The target map (contract 11): the label a run record reports for each
+ * step. Targets share one working tree, so at most one runs at a time.
+ */
+const renderTargetMap = (plan: StepPlan): string => {
+  const map: TargetMap = {
+    version: 1,
+    targets: plan.targets.map((target) => ({
+      label: `//:${target.label}`,
+      job: target.job,
+      step: target.step,
+      variant: target.variant
+    })),
+    maxJobs: 1
+  }
+  return `${JSON.stringify(map, undefined, 2)}\n`
 }
 
 const renderNotes = (plan: StepPlan): string =>
@@ -196,8 +220,9 @@ const renderNotes = (plan: StepPlan): string =>
   ].join("\n")
 
 /**
- * Renders the workspace, the targets and the workflow. Fails when the targets
- * do not fit in one `PACKAGE.ts`.
+ * Renders the workspace, the targets, the target map and the workflow. With
+ * `options.cache`, the workflow sends results to that shared cache. Fails
+ * when the targets do not fit in one `PACKAGE.ts`.
  *
  * @throws {never}
  * @category rendering
@@ -205,7 +230,8 @@ const renderNotes = (plan: StepPlan): string =>
  */
 export const renderFiles = (
   inventory: Inventory,
-  plan: StepPlan
+  plan: StepPlan,
+  options?: GenerateOptions
 ): Result.Result<ReadonlyArray<GeneratedFile>, Failure> => {
   const targets = renderPackage(plan)
   if (new TextEncoder().encode(targets).length > maximumPackageBytes) {
@@ -216,9 +242,10 @@ export const renderFiles = (
     })
   }
   return Result.succeed([
-    { path: workflowPath, content: renderWorkflow(inventory, plan) },
+    { path: workflowPath, content: renderWorkflow(inventory, plan, options?.cache) },
     { path: workspacePath, content: renderWorkspace(inventory) },
     { path: packagePath, content: targets },
+    { path: targetMapPath, content: renderTargetMap(plan) },
     ...(plan.notes.length === 0 ? [] : [{ path: notesPath, content: renderNotes(plan) }])
   ])
 }

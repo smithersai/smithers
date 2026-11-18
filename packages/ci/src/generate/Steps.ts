@@ -16,7 +16,7 @@
  */
 
 import * as Result from "effect/Result"
-import type { Inventory, Job, Step } from "../contract/Inventory.ts"
+import { type Ci, generatedWorkflow, type Inventory, type Job, type Step } from "../contract/Inventory.ts"
 import type { Failure } from "../contract/Parts.ts"
 import { shardOf } from "../contract/Shard.ts"
 import { forShell, forText, type Variant } from "./Expressions.ts"
@@ -44,6 +44,9 @@ export interface StepTarget {
   readonly host: Host | undefined
   readonly dependencies: ReadonlyArray<string>
   readonly title: string
+  readonly job: string
+  readonly step: string
+  readonly variant: Variant
 }
 
 /**
@@ -75,7 +78,7 @@ export const markerDirectory = ".flows/ci"
  * @category constants
  * @since 0.1.0
  */
-export const workflowPath = ".github/workflows/smithers-ci.yml"
+export const workflowPath = generatedWorkflow
 
 /**
  * The label of the file group large graphs share.
@@ -90,7 +93,7 @@ interface Tail {
   readonly labels: ReadonlyArray<string>
 }
 
-interface Draft extends Omit<StepTarget, "rule" | "script"> {
+interface Draft extends Omit<StepTarget, "rule" | "script" | "job"> {
   readonly job: Job
   readonly command: string
   readonly directory: string
@@ -100,18 +103,6 @@ const runnerVariable = /\$\{?((?:GITHUB|RUNNER)_[A-Z0-9_]+)/g
 const secretReference = /\$\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const plainCommand = /^[A-Za-z0-9_./:=@%+,-]+(?: +[A-Za-z0-9_./:=@%+,-]+)*$/
 const workflowTriggers: ReadonlySet<string> = new Set(["merge_group", "pull_request", "push", "workflow_dispatch"])
-
-const changeTriggers: ReadonlySet<string> = new Set(["merge_group", "pull_request", "push"])
-const checkNames: ReadonlySet<string> = new Set([
-  "build",
-  "check",
-  "lint",
-  "test",
-  "tests",
-  "type-check",
-  "typecheck",
-  "verify"
-])
 
 const invalid = (message: string): Result.Result<never, Failure> =>
   Result.fail({ code: "invalid-document", message, part: "generate" })
@@ -222,57 +213,24 @@ const inDependencyOrder = (jobs: ReadonlyArray<Job>): ReadonlyArray<Job> | undef
 }
 
 /**
- * The jobs CI runs on a change, with what they need: GitHub jobs a change
- * triggers; without those, a job named `ci`; without one, the conventional
- * check names.
- */
-const jobsRunOnChange = (all: ReadonlyArray<Job>): ReadonlyArray<Job> => {
-  const jobs = all.filter((job) => job.file !== workflowPath)
-  const triggered = jobs.filter((job) =>
-    job.source === "github-actions" && job.triggers.some((trigger) => changeTriggers.has(trigger))
-  )
-  const named = jobs.filter((job) => job.name === "ci")
-  const roots = triggered.length > 0
-    ? triggered
-    : named.length > 0
-    ? named
-    : jobs.filter((job) => checkNames.has(job.name))
-  const byId = new Map(jobs.map((job) => [job.id, job]))
-  const chosen = new Map<string, Job>()
-  const pending = [...roots]
-  for (let job = pending.pop(); job !== undefined; job = pending.pop()) {
-    if (chosen.has(job.id)) continue
-    chosen.set(job.id, job)
-    pending.push(...job.needs.map((need) => byId.get(need) as Job))
-  }
-  return [...chosen.values()]
-}
-
-/**
- * Plans the targets for an inventory. Fails when the document contradicts
- * itself or holds nothing to run.
+ * Plans one target for every step of every job of the CI. Which jobs are the
+ * CI is `Inventory.ci`'s rule and no longer decided here. Fails when the
+ * document contradicts itself or holds nothing to run.
  *
  * @throws {never}
  * @category planning
  * @since 0.1.0
  */
-export const planSteps = (inventory: Inventory): Result.Result<StepPlan, Failure> => {
+export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
   const problem = validate(inventory)
   if (problem !== undefined) return Result.fail(problem)
-  if (inDependencyOrder(inventory.jobs) === undefined) return invalid("The jobs' needs form a cycle.")
-  const selected = jobsRunOnChange(inventory.jobs)
-  const jobs = inDependencyOrder(selected) as ReadonlyArray<Job>
+  const jobs = inDependencyOrder(inventory.jobs)
+  if (jobs === undefined) return invalid("The jobs' needs form a cycle.")
 
   const drafts = new Map<string, Draft>()
   const tails = new Map<string, Array<Tail>>()
   const notes = new Set<string>()
   const runners = new Set<string>()
-  const selectedIds = new Set(selected.map((job) => job.id))
-  for (const job of inventory.jobs) {
-    if (!selectedIds.has(job.id) && job.file !== workflowPath) {
-      notes.add(`${job.id}: not generated, it does not run on a change.`)
-    }
-  }
   // Targets a later target needs on disk: these can never be replayed.
   const reliedOn = new Set<string>()
 
@@ -326,6 +284,8 @@ export const planSteps = (inventory: Inventory): Result.Result<StepPlan, Failure
       host,
       dependencies,
       title: `${job.name} / ${step.name ?? step.id}`,
+      step: step.id,
+      variant,
       job,
       command,
       directory
@@ -359,7 +319,7 @@ export const planSteps = (inventory: Inventory): Result.Result<StepPlan, Failure
   if (drafts.size === 0) {
     return Result.fail({
       code: "unsupported",
-      message: "No job that runs on a change has a command.",
+      message: "No job of the CI has a command.",
       part: "generate"
     })
   }
@@ -372,6 +332,7 @@ export const planSteps = (inventory: Inventory): Result.Result<StepPlan, Failure
     const setup = reliedOn.has(draft.label)
     return {
       ...draft,
+      job: job.id,
       rule: setup ? "setup" : "check",
       script: scriptOf(job, command, directory, setup ? `${markerDirectory}/${draft.label}` : undefined)
     }
@@ -382,7 +343,7 @@ export const planSteps = (inventory: Inventory): Result.Result<StepPlan, Failure
     notes: sorted(notes),
     runners: runners.size === 0 ? ["ubuntu-latest"] : sorted(runners),
     triggers: ((found) => found.length === 0 ? ["pull_request", "push"] : found)(
-      sorted(selected.flatMap((job) => job.triggers).filter((trigger) => workflowTriggers.has(trigger)))
+      sorted(jobs.flatMap((job) => job.triggers).filter((trigger) => workflowTriggers.has(trigger)))
     )
   })
 }

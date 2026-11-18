@@ -293,7 +293,18 @@ export const changeTriggers: ReadonlyArray<string> = ["push", "pull_request", "m
 export const ciEntry = "ci"
 
 /**
+ * The GitHub Actions workflow `apply` writes. A repository that has it is
+ * read again with it in place, and its job is never part of the CI being
+ * imported.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const generatedWorkflow = ".github/workflows/smithers-ci.yml"
+
+/**
  * The jobs that are the repository's CI, each with every job it needs.
+ * A job of `generatedWorkflow` is never one.
  *
  * An inventory lists everything a repository can run: deploys, migrations,
  * cleaners and dev servers among it. Only these jobs are ever run or turned
@@ -310,9 +321,10 @@ export const ciEntry = "ci"
  * @since 0.1.0
  */
 export const ciJobs = (inventory: Inventory): ReadonlyArray<Job> => {
-  const byId = new Map(inventory.jobs.map((job) => [job.id, job]))
-  const triggered = inventory.jobs.filter((job) => job.triggers.some((trigger) => changeTriggers.includes(trigger)))
-  const entries = inventory.jobs.filter((job) =>
+  const jobs = inventory.jobs.filter((job) => job.file !== generatedWorkflow)
+  const byId = new Map(jobs.map((job) => [job.id, job]))
+  const triggered = jobs.filter((job) => job.triggers.some((trigger) => changeTriggers.includes(trigger)))
+  const entries = jobs.filter((job) =>
     job.triggers.length === 0 && !job.file.includes("/") && job.id.slice(job.id.indexOf(":") + 1) === ciEntry
   )
   const kept = new Set<string>()
@@ -325,7 +337,7 @@ export const ciJobs = (inventory: Inventory): ReadonlyArray<Job> => {
     }
   }
   for (const job of triggered.length > 0 ? triggered : entries) keep(job)
-  return inventory.jobs.filter((job) => kept.has(job.id))
+  return jobs.filter((job) => kept.has(job.id))
 }
 
 /**

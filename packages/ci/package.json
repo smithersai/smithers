@@ -40,6 +40,7 @@
     "@smthrs/plan": "1.0.0-rc.18",
     "@smthrs/platform-node": "1.0.0-rc.18",
     "@smthrs/scorers": "1.0.0-rc.18",
+    "@smthrs/targets": "1.0.0-rc.18",
     "effect": "4.1.1",
     "jsonc-parser": "3.3.1",
     "vibelang-runtime": "0.0.13",

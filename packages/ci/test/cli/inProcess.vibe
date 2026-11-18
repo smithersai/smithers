@@ -41,14 +41,15 @@ export const fullDisk = Layer.effect(FileSystem.FileSystem, effect {
 })
 
 /**
- * What the parts on `main` generate for the repository at `root`.
+ * What the parts on `main` generate for the repository at `root`, for the shared cache named.
  */
 export async function generated(
   root: string,
   chosen: Parts<Host>,
-  environment: Environment
+  environment: Environment,
+  cache?: string
 ): Promise<ReadonlyArray<GeneratedFile>> {
   return await runPromise(
-    Effect.provide(effect { return try chosen.files(ci(try chosen.read(root))) }, layer(environment))
+    Effect.provide(effect { return try chosen.files(ci(try chosen.read(root)), { cache }) }, layer(environment))
   )
 }

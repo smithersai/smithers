@@ -8,6 +8,8 @@
  *   run, git history, an in-memory flow engine for the judge's durable steps,
  *   Web Crypto, and the judge `smthrs` binds: Jev with `AI_GATEWAY_API_KEY`,
  *   else the model this machine is signed in to.
+ * - How a replay runs in a stranger's checkout: this install's `smthrs`, and
+ *   its targets package linked into the checkout.
  *
  * @since 0.1.0
  */
@@ -17,7 +19,10 @@ import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Evaluator } from "@smthrs/model"
 import { NodeHost } from "@smthrs/platform-node"
+import type { Failure } from "../contract/Parts.ts"
+import { Options } from "../replay/index.ts"
 import { Ledger, Repository } from "../select/index.ts"
+import { smthrsCommand, targetsDirectory } from "./Install.ts"
 
 /** An environment, read once at the composition root and never printed. */
 export type Environment = Readonly<Record<string, string | undefined>>
@@ -47,6 +52,42 @@ const judge = (environment: Environment) => {
   }))
 }
 
+/** How often a failed target runs again before its verdict is `fail`; a pass on a rerun is `flaky`. */
+const reruns = 2
+
+const cannot = (message: string): Failure => ({ code: "command-failed", message, part: "cli" })
+
+/**
+ * How a replay runs on this machine. `smthrs` starts Smithers build. `targets`
+ * is the directory of the `@smthrs/targets` package, linked into each checkout
+ * because the generated `PACKAGE.ts` imports it and a stranger's repository
+ * does not have it.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const replayOptions = (smthrs: readonly [string, ...Array<string>], targets: string | undefined) =>
+  Layer.effect(Options, effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    return {
+      smthrs,
+      reruns,
+      prepare: effect (checkout: string) => {
+        if (targets === undefined) {
+          throw cannot("this install of smithers-ci has no @smthrs/targets package to give the checkout")
+        }
+        const scope = path.join(checkout, "node_modules", "@smthrs")
+        const link = path.join(scope, "targets")
+        const linked = fs.exists(link) catch () => false
+        if (linked) return
+        all([fs.makeDirectory(scope, { recursive: true }), fs.symlink(targets, link)]) catch effect (cause) => {
+          throw cannot(`could not link @smthrs/targets into ${checkout}: ${cause.message}`)
+        }
+      }
+    }
+  })
+
 /**
  * Every service the program and its parts may ask for, with the judge read
  * from `environment`.
@@ -61,7 +102,8 @@ export const layer = (environment: Environment) =>
       Repository.layerGit,
       FlowEngine.layerMemory,
       WebCrypto.layer,
-      judge(environment)
+      judge(environment),
+      replayOptions(smthrsCommand(), targetsDirectory())
     ),
     node
   )

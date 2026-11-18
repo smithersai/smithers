@@ -267,7 +267,8 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
   describe.concurrent("apply", () => {
     it("writes exactly the generated files", async () => {
       const root = repo()
-      const files = await generated(root, parts, environment)
+      const files = await generated(root, parts, environment, "https://cache.example.invalid")
+      expect(files.find((file) => file.path.endsWith("smithers-ci.yml"))?.content).toContain("cache.example.invalid")
       const before = snapshot(root)
       const outcome = await exec(["apply", "--cache", "https://cache.example.invalid"], root)
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
@@ -303,25 +304,24 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     expect(changed(before, snapshot(root))).toEqual(pathsOf(files))
   })
 
-  it("replays with main's replay part and writes nothing to the repository", async () => {
+  it("replays a commit end to end with every part on main, and writes nothing to the repository", async () => {
+    // The fixture's recipes call `zig build` with no build file, so each step fails the same way in the
+    // baseline and as a target, on a machine with Zig and on one without: the verdicts agree.
     const root = repo()
     const before = snapshot(root)
-    const outcomes = [
-      await spawn(bin, ["replay", "--commits", "1", "--json"], root),
-      await spawn(bin, ["--commits", "1", "--json"], root)
-    ]
-    for (const outcome of outcomes) {
-      if (outcome.code === exitCodes.ok || outcome.code === exitCodes.mismatch) {
-        expect(decode(ReplayReport, outcome.stdout).commits).toHaveLength(1)
-      } else {
-        expect([exitCodes.unsupported, exitCodes.failed]).toContain(outcome.code)
-        expect(outcome.stdout).toBe("")
-        expect(outcome.stderr).toMatch(/^smithers-ci: replay: [^\n]+\n$/)
-      }
-    }
-    expect(await main(["replay", "--commits", "1"], root, environment)).toBe(outcomes[0]!.code)
+    const outcome = await spawn(bin, ["--commits", "1", "--json"], root)
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+    const report = decode(ReplayReport, outcome.stdout)
+    expect(report.commits).toHaveLength(1)
+    expect(report.commits[0]!.commit).toBe(head(root))
+    expect(report.commits[0]!.baseline.ok).toBe(false)
+    expect(report.commits[0]!.normal.ok).toBe(false)
+    expect(report.commits[0]!.normal.counts.failed).toBeGreaterThan(0)
+    expect(report.mismatches).toBe(0)
+    expect(report.notReplayed).toBeUndefined()
+    expect(await main(["apply", "--commits", "1"], root, environment)).toBe(exitCodes.usage)
     expect(changed(before, snapshot(root))).toEqual([])
-  })
+  }, 240_000)
 
   it("provides the select part's services, with no judge configured", async () => {
     const root = repo()

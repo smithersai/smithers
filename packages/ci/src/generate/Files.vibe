@@ -4,19 +4,20 @@
  * @since 0.1.0
  */
 
-import type { Inventory } from "../contract/Inventory.ts"
-import type { Failure, GeneratedFile } from "../contract/Parts.ts"
+import type { Ci } from "../contract/Inventory.ts"
+import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.ts"
 import { renderFiles } from "./Render.ts"
 import { planSteps } from "./Steps.ts"
 
 /**
- * The Smithers workspace, target files and CI workflow for an inventory. The
- * same inventory always gives the same bytes, and nothing is written.
+ * The Smithers workspace, targets, target map and CI workflow for a
+ * repository's CI. The same CI always gives the same bytes, and nothing is
+ * written.
  *
  * @category parts
  * @since 0.1.0
  */
-export effect function files(inventory: Inventory): ReadonlyArray<GeneratedFile>!Failure {
+export effect function files(inventory: Ci, options?: GenerateOptions): ReadonlyArray<GeneratedFile>!Failure {
   const plan = try fromResult(planSteps(inventory))
-  return try fromResult(renderFiles(inventory, plan))
+  return try fromResult(renderFiles(inventory, plan, options))
 }

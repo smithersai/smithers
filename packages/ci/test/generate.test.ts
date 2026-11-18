@@ -3,9 +3,10 @@ import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import type { Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
-import { Inventory } from "../src/contract/Inventory.ts"
+import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
+import { ci, Inventory } from "../src/contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateFiles } from "../src/contract/Parts.ts"
+import { labelsOf, path as targetMapPath, TargetMap } from "../src/contract/TargetMap.ts"
 import { forShell, forText } from "../src/generate/Expressions.ts"
 import { files } from "../src/generate/index.ts"
 import { notesPath, packagePath, workflowPath, workspacePath } from "../src/generate/Render.ts"
@@ -44,7 +45,10 @@ const inventory = (jobs: ReadonlyArray<Job>, extra: Partial<InventoryDocument> =
   ...extra
 })
 
-const generate = (document: InventoryDocument): ReadonlyArray<GeneratedFile> => Effect.runSync(files(document))
+/** The document exactly as given, as the CI: what the generator makes of these jobs and no others. */
+const given = (document: InventoryDocument): Ci => document as Ci
+
+const generate = (document: InventoryDocument): ReadonlyArray<GeneratedFile> => Effect.runSync(files(given(document)))
 
 const content = (generated: ReadonlyArray<GeneratedFile>, path: string): string =>
   generated.find((file) => file.path === path)?.content ?? ""
@@ -62,7 +66,7 @@ const declaration = (source: string, label: string): string => {
 }
 
 const failureOf = (document: InventoryDocument): Failure => {
-  const exit = Effect.runSyncExit(files(document))
+  const exit = Effect.runSyncExit(files(given(document)))
   if (!Exit.isFailure(exit)) throw new Error("expected a failure")
   return exit.cause.reasons.flatMap((reason) => reason._tag === "Fail" ? [reason.error] : [])[0] as Failure
 }
@@ -96,9 +100,45 @@ describe("files", () => {
   it("has the contract 10 type and returns the workspace, targets and workflow", () => {
     const typed: GenerateFiles = files
     expect(typed).toBe(files)
-    const generated = Effect.runSync(files(fixture("inventory.justfile-zig.json")))
-    expect(generated.map((file) => file.path).sort()).toEqual([workflowPath, packagePath, workspacePath].sort())
+    const generated = Effect.runSync(typed(given(fixture("inventory.justfile-zig.json"))))
+    expect(generated.map((file) => file.path).sort()).toEqual(
+      [workflowPath, packagePath, workspacePath, targetMapPath].sort()
+    )
     expect(generated.map((file) => file.path)).not.toContain(notesPath)
+  })
+
+  it("writes the target map: the label of every step, in every variant, one target at a time", () => {
+    const document = inventory([
+      job("a", [step("a:1", "bun install"), step("a:2", "bun test ${{ matrix.shard }}")], {
+        matrix: [{ shard: "1" }, { shard: "2" }]
+      }),
+      job("b", [step("b:1", "bun lint")], { needs: ["a"] })
+    ])
+    const generated = generate(document)
+    const map = Schema.decodeUnknownSync(Schema.fromJsonString(TargetMap))(content(generated, targetMapPath))
+    expect(map.maxJobs).toBe(1)
+    expect(map.targets).toHaveLength(5)
+    const declared = [...content(generated, packagePath).matchAll(/^ {4}"([^"]+)": step/gm)].map((match) =>
+      `//:${match[1]}`
+    )
+    expect(map.targets.map((entry) => entry.label).sort()).toEqual([...declared].sort())
+    expect(labelsOf(map, "b", "b:1", {})).toEqual(["//:b-1"])
+    const first = labelsOf(map, "a", "a:2", { shard: "1" })
+    const second = labelsOf(map, "a", "a:2", { shard: "2" })
+    expect(first).toHaveLength(1)
+    expect(second).toHaveLength(1)
+    expect(first).not.toEqual(second)
+    expect(labelsOf(map, "a", "a:2", { shard: "3" })).toEqual([])
+  })
+
+  it("sends results to the shared cache only when one is named, and never writes its token", () => {
+    const document = inventory([job("a", [step("a:1", "x")])])
+    const plain = content(generate(document), workflowPath)
+    expect(plain).not.toContain("SMITHERS_CACHE")
+    const cached = content(Effect.runSync(files(given(document), { cache: "https://cache.example.com" })), workflowPath)
+    expect(cached).toContain(`          SMITHERS_CACHE_URL: "https://cache.example.com"\n`)
+    expect(cached).toContain("          SMITHERS_CACHE_TOKEN: ${{ secrets.SMITHERS_CACHE_TOKEN }}\n")
+    expect(cached.replace(/ {8}env:\n.*\n.*\n/, "")).toBe(plain)
   })
 
   it("gives identical bytes for the same inventory, in any job order", () => {
@@ -218,10 +258,19 @@ describe("what a step becomes", () => {
 })
 
 describe("what counts as CI", () => {
+  /** These tests give the generator what `Inventory.ci` makes of a whole inventory, as the program does. */
   const labels = (document: InventoryDocument): ReadonlyArray<string> =>
-    [...content(generate(document), packagePath).matchAll(/^ {4}"([^"]+)": step/gm)].map((match) => match[1] as string)
+    [...content(generate(ci(document)), packagePath).matchAll(/^ {4}"([^"]+)": step/gm)].map((match) =>
+      match[1] as string
+    )
   const recipe = (name: string, extra: Partial<Job> = {}): Job =>
-    job(`justfile:${name}`, [step(`${name}:1`, `run ${name}`)], { source: "justfile", name, triggers: [], ...extra })
+    job(`justfile:${name}`, [step(`${name}:1`, `run ${name}`)], {
+      source: "justfile",
+      file: "justfile",
+      name,
+      triggers: [],
+      ...extra
+    })
 
   it("takes GitHub jobs a change triggers, and never a release workflow or a script", () => {
     const document = inventory([
@@ -231,8 +280,8 @@ describe("what counts as CI", () => {
       recipe("test")
     ])
     expect(labels(document)).toEqual(["ci-1"])
-    expect(targetsOf(document)).toContain("// publish: not generated, it does not run on a change.")
-    expect(content(generate(document), workflowPath)).toContain("on:\n  pull_request:\npermissions:")
+    expect(targetsOf(ci(document))).not.toContain("publish")
+    expect(content(generate(ci(document)), workflowPath)).toContain("on:\n  pull_request:\npermissions:")
   })
 
   it("keeps a needed job that no change triggers", () => {
@@ -251,6 +300,7 @@ describe("what counts as CI", () => {
       recipe("fuzz"),
       job("justfile:ci", [], {
         source: "justfile",
+        file: "justfile",
         name: "ci",
         triggers: [],
         needs: ["justfile:test", "justfile:tidy"]
@@ -263,26 +313,33 @@ describe("what counts as CI", () => {
     const own = job("smithers-ci.yml:ci", [step("own:1", "smthrs ci")], { file: workflowPath })
     const document = inventory([own, job("ci", [step("ci:1", "t")])])
     expect(labels(document)).toEqual(["ci-1"])
-    expect(targetsOf(document)).not.toContain("smithers-ci.yml:ci")
+    expect(targetsOf(ci(document))).not.toContain("smithers-ci.yml:ci")
   })
 
   it("still replays what a recipe with no commands of its own groups", () => {
-    const source = targetsOf(inventory([
+    const source = targetsOf(ci(inventory([
       recipe("test"),
-      job("justfile:ci", [], { source: "justfile", name: "ci", triggers: [], needs: ["justfile:test"] })
-    ]))
+      job("justfile:ci", [], {
+        source: "justfile",
+        file: "justfile",
+        name: "ci",
+        triggers: [],
+        needs: ["justfile:test"]
+      })
+    ])))
     expect(declaration(source, "test-1")).toContain("S.Shell.Test(")
   })
 
-  it("falls back to the conventional check names", () => {
-    expect(labels(inventory([recipe("build"), recipe("lint"), recipe("start"), recipe("clean")]))).toEqual([
-      "build-1",
-      "lint-1"
-    ])
+  it("refuses recipes with conventional names when no `ci` recipe says they are the CI", () => {
+    const document = inventory([recipe("build"), recipe("lint"), recipe("start"), recipe("clean")])
+    expect(failureOf(ci(document))).toMatchObject({ code: "unsupported", message: "No job of the CI has a command." })
   })
 
-  it("refuses when nothing runs on a change", () => {
-    expect(failureOf(inventory([recipe("start")]))).toMatchObject({ code: "unsupported" })
+  it("generates every job it is given, whatever its name or triggers", () => {
+    expect(labels(inventory([recipe("ci", { needs: ["justfile:fuzz"] }), recipe("fuzz")]))).toEqual(["fuzz-1", "ci-1"])
+    const asGiven = content(generate(inventory([recipe("start"), recipe("clean")])), packagePath)
+    expect(asGiven).toContain(`"start-1": step`)
+    expect(asGiven).toContain(`"clean-1": step`)
   })
 })
 

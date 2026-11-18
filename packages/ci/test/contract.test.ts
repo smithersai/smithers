@@ -611,6 +611,13 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     }
   })
 
+  it("never counts the workflow it generated as the repository's CI", () => {
+    const own = { ...job("smithers-ci.yml:ci", []), file: Inventory.generatedWorkflow }
+    const both = decode({ ...inventory, jobs: [own, inventory.jobs[4]!] })
+    expect(Inventory.ciJobs(both).map((entry) => entry.id)).toEqual(["ci.yml:plain"])
+    expect(Inventory.ciJobs(decode({ ...inventory, jobs: [own] }))).toEqual([])
+  })
+
   it("lists every CI job it leaves out, with the reasons", () => {
     const left = Inventory.notReplayed(inventory)
     expect(left).toEqual([
