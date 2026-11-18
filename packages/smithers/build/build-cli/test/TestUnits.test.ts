@@ -529,7 +529,9 @@ describe("select", () => {
 
 describe("the build tool's own sources", () => {
   // An index over this repository, so the CLI's source directory is inside it.
-  const repository = fileURLToPath(new URL("../../../../../", import.meta.url))
+  // The root is named through a file in it. A reference to the directory would
+  // be an open import, and this test file would then run on every change.
+  const repository = NodePath.dirname(fileURLToPath(new URL("../../../../../package.json", import.meta.url)))
   const cli = "packages/smithers/build/build-cli"
   const index = () =>
     PackageIndex.make({
