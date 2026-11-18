@@ -5134,7 +5134,13 @@ them is unchanged, whatever else in `data` changed. `ignore` names paths left
 out of the record. It requires `sandbox: "none"` and cannot be combined with
 `shards` or `services`. It needs Linux with `strace`; on any other host the
 target is keyed by its `data`. The build's caching page describes the record,
-what stores nothing, and the hosts.
+what stores nothing, and the hosts. An observed test may
+name another observed test in `data`, as a job's steps follow each other: a
+step that left files behind is run again only when a step that waits for it
+runs, and a job whose every step would read what it read before runs no step.
+A package manager told to install exactly what a lockfile pins (`npm ci`,
+`pnpm install --frozen-lockfile`, `uv sync --locked`) may open a connection
+and still be stored.
 
 `Shell.Build` command forms key the shell and the leading literal executable.
 List executables a shell target spawns by itself in `tools`: their bytes join

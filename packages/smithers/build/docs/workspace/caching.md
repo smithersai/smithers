@@ -344,13 +344,68 @@ are kept for one declaration, so a fresh checkout and a tree a run has already
 been through each find their own.
 
 **What the run wrote.** A path the run made before it looked at it is its own
-product and never an input. So is what the run wrote in a directory it then
+product and never an input. Two threads' calls can overlap in a trace: a call
+that found a name the run made where nothing was (a directory, a link, a new
+file) and that ended after the making began came after the making. So is what the run wrote in a directory it then
 moved into place, as a package manager fills a directory under a temporary name
-and renames it into its cache. A path it found missing and then made matches when
+and renames it into its cache. A path it found missing and then made, or opened to write, matches when
 it is missing again or still as the run left it. A file the run read and then
 rewrote is compared with what the run wrote, because what it held before is
 gone. A new mode or time the run gave a file counts as such a write. A step is therefore taken to give the same verdict when it runs again on
 files exactly as it left them.
+
+**Steps that leave files for the next step.** A CI job installs, builds and
+then tests in one checkout, and each step reads what the one before it wrote.
+Declare each step as an observed test that depends on the step before it:
+
+```ts
+const install = S.Shell.Test({ shell: "npm ci", sandbox: "none", observe: true, data: [files] })
+const build = S.Shell.Test({ shell: "npm run build", sandbox: "none", observe: true, data: [files, install] })
+const test = S.Shell.Test({ shell: "npm test", sandbox: "none", observe: true, data: [files, build] })
+```
+
+A cache hit restores no file, so a step that left files behind can only be
+left out when no target that waits for it runs. The build decides that for all
+of them at once, before the first target starts:
+
+| Tree                                                      | What runs                                                     |
+| --------------------------------------------------------- | ------------------------------------------------------------- |
+| Every step would read what it read before                 | Nothing. No install, no build, in a fresh checkout too        |
+| Only `test` reads a changed file                          | `install`, `build` and `test`                                 |
+| Only `install` reads a changed file, and writes as before | `install` and `build`; `test` finds what it read and is a hit |
+
+A path a step read that an earlier step wrote is recorded with that step. It
+matches when it holds what the run read there. In a fresh checkout it is
+missing, and it matches while the step that wrote it is itself answered from the
+record this run read it under: that step would write it again as it was. A step
+that left nothing behind, as a lint does, is answered on its own.
+
+A step that runs because a later step needs its files says so:
+
+```text
+//:install  runs again: a step after it runs, and may read what this one leaves
+```
+
+On a host that cannot record reads, an observed step another target waits for
+runs every time, and only the last step of a chain is reused, from its `data`.
+
+**A locked install may use the network.** A run that opens a network
+connection stores nothing, with one exception: a package manager told to
+install exactly what a lockfile pins, and the processes it starts. What it
+fetches is fixed by the lockfile, which the run reads, so its result does not
+depend on what the network answers.
+
+| Command                                                            | Counts as locked                                                    |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `npm ci`                                                           | Always                                                              |
+| `pnpm install`, `bun install`                                      | With `--frozen-lockfile`; `pnpm ci`, `bun ci`                       |
+| `yarn install`                                                     | With `--frozen-lockfile` or `--immutable`                           |
+| `uv sync`, `uv run`                                                | With `--locked` or `--frozen`; `uv run` until it starts the command |
+| `pip install`                                                      | With `--require-hashes`                                             |
+| `go mod download`, `cargo fetch --locked`, `deno install --frozen` | Always                                                              |
+
+`npm install`, `pip install -r requirements.txt` and every other command that
+may resolve a version at run time still store nothing when they connect.
 
 **What is left out.** `/proc`, `/sys` and `/dev` are the machine, not files. The
 workspace cache directory is the build's own. `observe: { ignore: [...] }` names
@@ -361,15 +416,16 @@ on every run and never reads to decide its result, such as a log directory.
 **When nothing is stored.** A green run stores nothing when what it read cannot
 all be known, and says why on its own line:
 
-| Reason                                                          | What happened                                                                                |
-| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `it opened a network connection (uv to 151.101.0.223 port 443)` | What a network answers is in no record. The line names the program and the first address     |
-| `it reached a program outside the run ...`                      | A daemon reads files this run's trace does not show. A server the run starts itself is in it |
-| `it changed its view of the file system`                        | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says          |
-| `<path> changed while it ran`, `was removed while it ran`       | Something else wrote a file the run read, so what the run saw can no longer be measured      |
-| `its trace ...`                                                 | A line of the trace could not be read in full                                                |
-| `it read more paths than one record holds`                      | The record passed 12 MiB                                                                     |
-| `it passed, but failed while its reads were recorded`           | See below                                                                                    |
+| Reason                                                                    | What happened                                                                                |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `it opened a network connection (uv to 151.101.0.223 port 443)`           | What a network answers is in no record. The line names the program and the first address     |
+| `it reached a program outside the run ...`                                | A daemon reads files this run's trace does not show. A server the run starts itself is in it |
+| `it changed its view of the file system`                                  | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says          |
+| `<path> changed while it ran`, `was removed while it ran`                 | Something else wrote a file the run read, so what the run saw can no longer be measured      |
+| `its trace ...`                                                           | A line of the trace could not be read in full                                                |
+| `it read more paths than one record holds`                                | The record passed 12 MiB                                                                     |
+| `it passed, but failed while its reads were recorded`                     | See below                                                                                    |
+| `a step after it may read what it leaves, and its reads are not recorded` | The host cannot record reads, and another target waits for this one                          |
 
 A tracer changes what a few programs can do: one that gains privileges, as
 `sudo` does, or one that traces another program. A traced run that fails is

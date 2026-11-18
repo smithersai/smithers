@@ -422,6 +422,62 @@ describe("reading a trace", () => {
     expect(paths(trace.made)).not.toContain("/w/elsewhere")
   })
 
+  it("places a call that found a name the run made where nothing was after the making", () => {
+    const stat = "{st_mode=S_IFDIR|0755, st_size=4096, ...}"
+    const trace = read([
+      // Two threads: one makes the directory while the other asks about it, and the answer says it is there.
+      "100 mkdir(\"/w/made\", 0777 <unfinished ...>",
+      "101 stat(\"/w/made\",  <unfinished ...>",
+      "100 <... mkdir resumed>)              = 0",
+      `101 <... stat resumed>${stat})        = 0`,
+      // Two threads make the same directory: the one that loses learns it is there.
+      "100 mkdir(\"/w/raced\", 0777 <unfinished ...>",
+      "101 mkdir(\"/w/raced\", 0777 <unfinished ...>",
+      "100 <... mkdir resumed>)              = 0",
+      "101 <... mkdir resumed>)              = -1 EEXIST (File exists)",
+      // Found before the making began: it was there, and something else took it away.
+      `100 stat("/w/before", ${stat})        = 0`,
+      "100 mkdir(\"/w/before\", 0777)        = 0",
+      // Found, removed by the run and made again: what was found was not the run's.
+      "100 mkdir(\"/w/again\", 0777 <unfinished ...>",
+      "101 stat(\"/w/again\",  <unfinished ...>",
+      "100 <... mkdir resumed>)              = 0",
+      `101 <... stat resumed>${stat})        = 0`,
+      "100 rmdir(\"/w/again\")               = 0",
+      // A move replaces what was there, so it says nothing about what was.
+      "100 rename(\"/w/from\", \"/w/moved\" <unfinished ...>",
+      "101 stat(\"/w/moved\",  <unfinished ...>",
+      "100 <... rename resumed>)             = 0",
+      `101 <... stat resumed>${stat})        = 0`,
+      // A link to a file only succeeds where nothing was.
+      "100 link(\"/w/from\", \"/w/linked\" <unfinished ...>",
+      "101 stat(\"/w/linked\",  <unfinished ...>",
+      "100 <... link resumed>)               = 0",
+      `101 <... stat resumed>${stat})        = 0`
+    ].join("\n"))
+    expect(trace.refusals).toEqual([])
+    expect(paths(trace.found)).toEqual(["/w/again", "/w/before", "/w/from", "/w/moved"])
+    expect(paths(trace.made)).toEqual(["/w/again", "/w/before", "/w/linked", "/w/made", "/w/moved", "/w/raced"])
+  })
+
+  it("counts a name the run found missing and then opened to write as one it made", () => {
+    const trace = read([
+      "100 openat(AT_FDCWD</w>, \"index\", O_RDONLY) = -1 ENOENT (No such file or directory)",
+      "100 openat(AT_FDCWD</w>, \"index\", O_WRONLY|O_CREAT|O_APPEND, 0666) = 3",
+      "100 openat(AT_FDCWD</w>, \"index\", O_RDONLY) = 3",
+      // Opened the same way with nothing known about it before: it may have been there.
+      "100 openat(AT_FDCWD</w>, \"log\", O_WRONLY|O_CREAT|O_APPEND, 0666) = 3",
+      // Found missing and opened to write without making it: the call says it was there by then.
+      "100 openat(AT_FDCWD</w>, \"other\", O_RDONLY) = -1 ENOENT (No such file or directory)",
+      "100 openat(AT_FDCWD</w>, \"other\", O_WRONLY) = 3",
+      "100 openat(AT_FDCWD</w>, \"both\", O_RDONLY) = -1 ENOENT (No such file or directory)",
+      "100 openat(AT_FDCWD</w>, \"both\", O_RDWR|O_CREAT, 0666) = 3"
+    ].join("\n"))
+    expect(paths(trace.made)).toEqual(["/w/both", "/w/index"])
+    expect(paths(trace.missing)).toEqual(["/w/both", "/w/index", "/w/other"])
+    expect([...trace.changed].sort()).toEqual(["/w/both", "/w/index", "/w/log", "/w/other"])
+  })
+
   it("stores nothing for a run that changed its view of the file system", () => {
     expect(read("100 chroot(\"/w/jail\")                = 0").refusals).toEqual(["it changed its root directory"])
     expect(read("100 mount(\"none\", \"/mnt\", \"tmpfs\", 0, NULL) = 0").refusals)
@@ -613,11 +669,19 @@ describe("recording what a run read", () => {
     const outside = Path.join(base, "outside.txt")
     await Fs.writeFile(outside, "outside")
     /** A record of a run that began after everything in the fixture was written. */
+    /** The record without its id, which is a digest of the rest. */
     const record = (
       lines: ReadonlyArray<string>,
       ignore: ReadonlyArray<string> = [],
-      startedMs = Date.now() + 60_000
-    ) => ObservedReads.record(ObservedReads.read(() => lines, root), { root, ignore, startedMs })
+      startedMs = Date.now() + 60_000,
+      producers: ReadonlyArray<ObservedReads.Producer> = []
+    ) => {
+      const value = ObservedReads.record(ObservedReads.read(() => lines, root), { root, ignore, startedMs, producers })
+      if ("refusal" in value) return value
+      const { id, ...rest } = value
+      expect(id).toBe(ObservedReads.idOf(rest))
+      return rest
+    }
     const rows = (value: ReturnType<typeof record>) => {
       if ("refusal" in value) throw new Error(value.refusal)
       return value
@@ -642,11 +706,28 @@ describe("recording what a run read", () => {
       open(root, "cache/pkg/RECORD")
     ]
     // The run began before the file was written, and the run wrote it: it is the run's product, not something it read.
-    expect(rows(record(filled, [], 0))).toEqual({ reads: [], lists: [] })
+    expect(rows(record(filled, [], 0))).toEqual({ reads: [], lists: [], left: true })
     // The same file read with no move before it is somebody else's, changed during the run.
     expect(record([open(root, "cache/pkg/RECORD")], [], 0)).toEqual({
       refusal: "cache/pkg/RECORD changed while it ran"
     })
+  })
+
+  it("keeps a name the run found missing and then made a link apart from where the link leads", async () => {
+    const { record, root, rows } = await setup()
+    // What an install does for each program of a package: asks whether the link is there, then makes it.
+    await Fs.mkdir(Path.join(root, "bin"))
+    await Fs.symlink("../src/a.txt", Path.join(root, "bin", "tool"))
+    const stored = rows(record([
+      `100 mkdir("${root}/bin", 0777) = 0`,
+      `100 lstat("${root}/bin/tool", 0x7ffd) = -1 ENOENT (No such file or directory)`,
+      `100 symlink("../src/a.txt", "${root}/bin/tool") = 0`,
+      `100 openat(AT_FDCWD<${root}>, "index", O_RDONLY) = -1 ENOENT (No such file or directory)`
+    ]))
+    // The link is the run's own, missing before and as the run left it now; the file it leads to was never looked at.
+    expect(stored).toEqual({ reads: [["bin/tool", "l:../src/a.txt", "-"], ["index", "-"]], lists: [], left: true })
+    await Fs.rm(Path.join(root, "bin"), { recursive: true })
+    expect(ObservedReads.changed(stored, root)).toBeUndefined()
   })
 
   it("holds each path the run found, each it found missing, and each listing", async () => {
@@ -816,7 +897,11 @@ describe("recording what a run read", () => {
     expect(record([`100 getdents64(3<${root}/src>, 0x55 /* 4 entries */, 32768) = 100`], [], Date.now() - 60_000))
       .toEqual({ refusal: "src changed while it ran" })
     expect(record([open(root, "src/a.txt"), open(root, "src/a.txt", "O_RDWR")], [], Date.now() - 60_000))
-      .toEqual({ reads: [["src/a.txt", ObservedReads.measure(Path.join(root, "src", "a.txt"))]], lists: [] })
+      .toEqual({
+        reads: [["src/a.txt", ObservedReads.measure(Path.join(root, "src", "a.txt"))]],
+        lists: [],
+        left: true
+      })
     await Fs.rm(Path.join(root, "src", "b.txt"))
     expect(record([open(root, "src/b.txt")])).toEqual({ refusal: "src/b.txt was removed while it ran" })
     // A path the run itself removed is compared as the run left it: gone.
@@ -890,23 +975,455 @@ describe("recording what a run read", () => {
   })
 })
 
+describe("what a run read that an earlier step wrote", () => {
+  /** A workspace after an install step: a tree it made, a file it wrote beside the sources, and one it rewrote. */
+  const installed = async () => {
+    const root = Path.join(await directory(), "ws")
+    const write = async (name: string, text: string): Promise<void> => {
+      await Fs.mkdir(Path.dirname(Path.join(root, name)), { recursive: true })
+      await Fs.writeFile(Path.join(root, name), text)
+    }
+    await write("src/a.txt", "a")
+    await write("src/generated.js", "generated")
+    await write("node_modules/pkg/index.js", "package")
+    await write("lock.json", "lock")
+    await write("stamp.txt", "stamp")
+    const install: ObservedReads.Producer = {
+      label: "//:install",
+      id: "install-1",
+      made: new Set([Path.join(root, "node_modules")]),
+      touched: new Set([Path.join(root, "node_modules"), Path.join(root, "stamp.txt")])
+    }
+    const build: ObservedReads.Producer = {
+      label: "//:build",
+      id: "build-1",
+      made: new Set(),
+      touched: new Set([Path.join(root, "src/generated.js"), Path.join(root, "stamp.txt")])
+    }
+    const unused: ObservedReads.Producer = { label: "//:unused", id: "unused-1", made: new Set(), touched: new Set() }
+    const open = (name: string): string => `100 openat(AT_FDCWD<${root}>, ${JSON.stringify(name)}, O_RDONLY) = 3`
+    const list = (name: string): string =>
+      `100 getdents64(3<${Path.join(root, name)}>, 0x55 /* 4 entries */, 32768) = 100`
+    const observe = (lines: ReadonlyArray<string>, producers: ReadonlyArray<ObservedReads.Producer>) => {
+      const observed = ObservedReads.observe(ObservedReads.read(() => lines, root), {
+        root,
+        ignore: [],
+        startedMs: Date.now() + 60_000,
+        producers
+      })
+      if ("refusal" in observed) throw new Error(observed.refusal)
+      return observed
+    }
+    const state = (name: string): string => ObservedReads.measure(Path.join(root, name))
+    return { root, write, install, build, unused, open, list, observe, state }
+  }
+
+  it("records each such path with the step it came from", async () => {
+    const { build, install, list, observe, open, root, state, unused } = await installed()
+    const { record } = observe([
+      open("src/a.txt"),
+      open("lock.json"),
+      open("node_modules/pkg/index.js"),
+      `100 openat(AT_FDCWD<${root}>, "node_modules/pkg/missing.js", O_RDONLY) = -1 ENOENT (No such file or directory)`,
+      open("src/generated.js"),
+      // Both steps wrote it: the last one to write it is the one it came from.
+      open("stamp.txt"),
+      list("."),
+      list("src"),
+      list("node_modules")
+    ], [install, unused, build])
+    expect(record.from).toEqual([["//:install", "install-1"], ["//:build", "build-1"]])
+    expect(record.given).toEqual([
+      ["node_modules", "d", 0],
+      ["node_modules/pkg/index.js", state("node_modules/pkg/index.js"), 0],
+      ["src/generated.js", state("src/generated.js"), 1],
+      ["stamp.txt", state("stamp.txt"), 1]
+    ])
+    expect(record.reads).toEqual([
+      [".", "d"],
+      ["lock.json", state("lock.json")],
+      ["node_modules/pkg/missing.js", "-"],
+      ["src", "d"],
+      ["src/a.txt", state("src/a.txt")]
+    ])
+    // A directory a step made is compared whole; in any other, the names a step added are checked one by one.
+    expect(record.lists).toEqual([
+      [".", ObservedReads.listing(root, ["node_modules", "stamp.txt"]), [], [["node_modules", 0], ["stamp.txt", 1]]],
+      ["node_modules", ObservedReads.listing(Path.join(root, "node_modules"), []), []],
+      ["src", ObservedReads.listing(Path.join(root, "src"), ["generated.js"]), [], [["generated.js", 1]]]
+    ])
+    expect(record.left).toBeUndefined()
+    const { id, ...body } = record
+    expect(id).toBe(ObservedReads.idOf(body))
+    expect(ObservedReads.decode(ObservedReads.store(record, []))).toEqual([record])
+  })
+
+  it("records a run that depends on no step, or read nothing of one, as before", async () => {
+    const { install, list, observe, open, state } = await installed()
+    const plain = { reads: [["lock.json", state("lock.json")], ["src", "d"]], lists: [["src", expect.any(String), []]] }
+    expect(observe([open("lock.json"), list("src")], []).record).toEqual({ ...plain, id: expect.any(String) })
+    expect(observe([open("lock.json"), list("src")], [install]).record).toEqual({ ...plain, id: expect.any(String) })
+    // The root directory is listed like any other.
+    expect(observe(["100 getdents64(3</>, 0x55 /* 20 entries */, 32768) = 600"], [install]).record).toEqual({
+      reads: [["/", "d"]],
+      lists: [["/", ObservedReads.listing("/", []), []]],
+      id: expect.any(String)
+    })
+    // A path the trace says was listed that is no directory has no listing to compare.
+    expect(observe([list("lock.json")], [install]).record).toEqual({
+      reads: [["lock.json", state("lock.json")]],
+      lists: [],
+      id: expect.any(String)
+    })
+  })
+
+  it("says what the run wrote, and whether any of it is still there", async () => {
+    const { observe, open, root, write } = await installed()
+    await write("out/built.txt", "built")
+    await write("out/sub/deep.txt", "deep")
+    const wrote = observe([
+      open("src/a.txt"),
+      `100 mkdir("${root}/out", 0777) = 0`,
+      `100 openat(AT_FDCWD<${root}>, "out/built.txt", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3`,
+      `100 openat(AT_FDCWD<${root}>, "src/a.txt", O_WRONLY|O_APPEND) = 3`,
+      "100 openat(AT_FDCWD</dev>, \"/dev/null\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3",
+      "100 mkdir(\"/dev/shm/smithers-observed\", 0777) = 0",
+      `100 unlink("${root}/out/removed.txt") = 0`
+    ], [])
+    expect([...wrote.made]).toEqual([Path.join(root, "out")])
+    expect([...wrote.touched].sort()).toEqual([
+      Path.join(root, "out"),
+      Path.join(root, "out/built.txt"),
+      Path.join(root, "out/removed.txt"),
+      Path.join(root, "src/a.txt")
+    ])
+    expect(wrote.record.left).toBe(true)
+    // A run whose every written path is gone again, or is the build's own, left nothing.
+    const cleaned = observe([
+      `100 openat(AT_FDCWD<${root}>, "out/temporary.txt", O_WRONLY|O_CREAT|O_EXCL, 0666) = 3`,
+      `100 unlink("${root}/out/temporary.txt") = 0`
+    ], [])
+    expect(cleaned.record.left).toBeUndefined()
+    const ignoring = ObservedReads.observe(
+      ObservedReads.read(
+        () => [`100 openat(AT_FDCWD<${root}>, "out/built.txt", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3`],
+        root
+      ),
+      { root, ignore: [Path.join(root, "out")], startedMs: Date.now() + 60_000 }
+    )
+    expect(ignoring).toEqual({
+      record: { reads: [], lists: [], id: expect.any(String) },
+      made: new Set(),
+      touched: new Set()
+    })
+  })
+
+  it("holds while each such path is as the run read it", async () => {
+    const { build, install, list, observe, open, root, write } = await installed()
+    const { record } = observe(
+      [open("node_modules/pkg/index.js"), open("src/generated.js"), list("."), list("src"), list("node_modules")],
+      [install, build]
+    )
+    expect(ObservedReads.changed(record, root)).toBeUndefined()
+    await write("node_modules/pkg/index.js", "another package")
+    expect(ObservedReads.changed(record, root)).toBe("node_modules/pkg/index.js changed")
+    // A step answered from the record this run read it under does not make a changed file its own.
+    const all = (label: string): ReadonlySet<string> => new Set([label === "//:install" ? "install-1" : "build-1"])
+    expect(ObservedReads.changed(record, root, undefined, undefined, all)).toBe("node_modules/pkg/index.js changed")
+    await write("node_modules/pkg/index.js", "package")
+    await write("node_modules/other.js", "new")
+    expect(ObservedReads.changed(record, root)).toBe("node_modules gained or lost an entry")
+    await Fs.rm(Path.join(root, "node_modules/other.js"))
+    await write("unrelated.txt", "new")
+    expect(ObservedReads.changed(record, root)).toBe(". gained or lost an entry")
+  })
+
+  it("holds while such a path is missing and its step is answered from the record the run read it under", async () => {
+    const { build, install, list, observe, open, root, write } = await installed()
+    const { record } = observe(
+      [open("node_modules/pkg/index.js"), open("src/generated.js"), list("."), list("src"), list("node_modules")],
+      [install, build]
+    )
+    const answered = (ids: { readonly [label: string]: string }) => (label: string): ReadonlySet<string> | undefined =>
+      ids[label] === undefined ? undefined : new Set([ids[label]])
+    const both = answered({ "//:install": "install-1", "//:build": "build-1" })
+    // A fresh checkout: nothing a step wrote is there.
+    await Fs.rm(Path.join(root, "node_modules"), { recursive: true })
+    await Fs.rm(Path.join(root, "src/generated.js"))
+    await Fs.rm(Path.join(root, "stamp.txt"))
+    expect(ObservedReads.changed(record, root, undefined, undefined, both)).toBeUndefined()
+    // No step is answered, one is, or one is answered from another record: the path is gone.
+    expect(ObservedReads.changed(record, root)).toBe("node_modules is gone")
+    expect(ObservedReads.changed(record, root, undefined, undefined, answered({ "//:install": "install-1" })))
+      .toBe("src/generated.js is gone")
+    expect(
+      ObservedReads.changed(
+        record,
+        root,
+        undefined,
+        undefined,
+        answered({ "//:install": "install-2", "//:build": "build-1" })
+      )
+    ).toBe("node_modules is gone")
+    // A name a step added that the run listed and never opened is checked the same way.
+    await write("src/generated.js", "generated")
+    await Fs.mkdir(Path.join(root, "node_modules/pkg"), { recursive: true })
+    await write("node_modules/pkg/index.js", "package")
+    expect(ObservedReads.changed(record, root)).toBe("stamp.txt is gone")
+    expect(ObservedReads.changed(record, root, undefined, undefined, both)).toBeUndefined()
+    const nested = observe([list("src")], [build]).record
+    await Fs.rm(Path.join(root, "src/generated.js"))
+    expect(ObservedReads.changed(nested, root)).toBe("src/generated.js is gone")
+    expect(ObservedReads.changed(nested, root, undefined, undefined, both)).toBeUndefined()
+    // A path the run found missing below a tree a step made is missing in a fresh checkout too.
+    const probing = observe([
+      `100 openat(AT_FDCWD<${root}>, "node_modules/pkg/missing.js", O_RDONLY) = -1 ENOENT (No such file or directory)`
+    ], [install]).record
+    await Fs.rm(Path.join(root, "node_modules"), { recursive: true })
+    expect(ObservedReads.changed(probing, root)).toBeUndefined()
+    // What a step wrote where something already was is still an input when it changes.
+    await write("src/generated.js", "written by hand")
+    expect(ObservedReads.changed(record, root, undefined, undefined, both)).toBe("src/generated.js changed")
+  })
+
+  it("keeps the names the run itself added apart from the names a step added", async () => {
+    const { build, list, observe, open, root, state, write } = await installed()
+    await write("src/own.txt", "written by the run")
+    // The run read a file the build wrote, then removed it; and it added a file of its own beside the sources.
+    const { record } = observe([
+      open("src/generated.js"),
+      list("src"),
+      `100 openat(AT_FDCWD<${root}>, "src/own.txt", O_WRONLY|O_CREAT|O_EXCL, 0666) = 3`,
+      `100 unlink("${root}/stamp.txt") = 0`,
+      open("stamp.txt")
+    ], [build])
+    await Fs.rm(Path.join(root, "stamp.txt"))
+    const again = observe([
+      open("stamp.txt"),
+      `100 unlink("${root}/stamp.txt") = 0`,
+      list("src"),
+      `100 openat(AT_FDCWD<${root}>, "src/own.txt", O_WRONLY|O_CREAT|O_EXCL, 0666) = 3`
+    ], [build]).record
+    expect(record.lists).toEqual([
+      ["src", ObservedReads.listing(Path.join(root, "src"), ["own.txt", "generated.js"]), ["own.txt"], [[
+        "generated.js",
+        0
+      ]]]
+    ])
+    expect(again.given).toEqual([["stamp.txt", "-", 0]])
+    expect(again.reads).toEqual([["src", "d"]])
+    expect(ObservedReads.changed(again, root)).toBeUndefined()
+    // The build ran again and wrote the file the run had removed: the run would find it again.
+    await write("stamp.txt", "stamp")
+    expect(ObservedReads.changed(again, root)).toBe("stamp.txt now exists")
+    expect(state("src/own.txt")).toMatch(/^f:/)
+  })
+})
+
+describe("a package manager that installs what a lockfile pins", () => {
+  it("is known by its command line", () => {
+    const locked = [
+      "npm ci",
+      "npm clean-install --ignore-scripts",
+      "npm install-clean",
+      "npm ic",
+      "/usr/local/bin/node /usr/local/lib/node_modules/npm/bin/npm-cli.js ci",
+      "env node /opt/npm.js ci",
+      "pnpm install --frozen-lockfile",
+      "pnpm i --frozen-lockfile --ignore-scripts",
+      "pnpm ci",
+      "node /home/u/.cache/corepack/pnpm/9.0.0/bin/pnpm.cjs install --frozen-lockfile",
+      "corepack pnpm install --frozen-lockfile",
+      "yarn install --frozen-lockfile",
+      "yarn --immutable",
+      "yarnpkg install --immutable",
+      "bun install --frozen-lockfile",
+      "bun ci",
+      "uv sync --locked",
+      "uv sync --frozen --no-default-groups",
+      "uv run --locked --group dev tox run",
+      "uv run --frozen pytest",
+      "pip install --require-hashes -r requirements.txt",
+      "python3 -m pip install --require-hashes -r requirements.txt",
+      "pip3 install -r requirements.txt --require-hashes",
+      "go mod download",
+      "cargo fetch --locked",
+      "deno install --frozen"
+    ]
+    const open = [
+      "npm install",
+      "npm run ci",
+      "npm",
+      "node ci",
+      "node",
+      "pnpm install",
+      "pnpm exec --frozen-lockfile tsc",
+      "yarn install",
+      "yarn run --immutable",
+      "bun install",
+      "bun x --frozen-lockfile cowsay",
+      "uv sync",
+      "uv run pytest --locked",
+      "uv run --group dev --locked pytest",
+      "uv pip install --locked x",
+      "pip install -r requirements.txt",
+      "python3 -m venv --require-hashes install",
+      "go test ./...",
+      "go mod tidy",
+      "cargo test --locked",
+      "deno install",
+      "curl --frozen-lockfile https://example.com",
+      ""
+    ]
+    for (const line of locked) expect([line, ObservedReads.lockedInstall(line.split(" "))]).toEqual([line, true])
+    for (const line of open) expect([line, ObservedReads.lockedInstall(line.split(" "))]).toEqual([line, false])
+    expect(ObservedReads.lockedInstall([])).toBe(false)
+  })
+
+  const remote = (pid: number): string =>
+    `${pid} connect(3<socket:[9]>, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.4.34")}, 16) = 0`
+  const start = (pid: number, ...argv: ReadonlyArray<string>): string =>
+    `${pid} execve(${JSON.stringify(`/usr/bin/${argv[0]}`)}, [${
+      argv.map((word) => JSON.stringify(word)).join(", ")
+    }], 0x7ffc /* 9 vars */) = 0`
+
+  it("may open a connection, and so may the processes it starts", () => {
+    expect(read([start(100, "npm", "ci"), remote(100)].join("\n")).refusals).toEqual([])
+    // The kernel starts `node` for the script, and the install goes on under the same process.
+    expect(
+      read([start(100, "npm", "ci"), start(100, "node", "/usr/lib/node_modules/npm/bin/npm-cli.js", "ci"), remote(100)]
+        .join("\n")).refusals
+    ).toEqual([])
+    // A thread that resolves a name, a script of a package, and what that script starts.
+    expect(
+      read([
+        start(100, "npm", "ci"),
+        "100 clone(child_stack=0x7f, flags=CLONE_VM|CLONE_FS|CLONE_THREAD) = 101",
+        "101 connect(3<socket:[9]>, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr(\"127.0.0.53\")}, 16) = 0",
+        "101 connect(4<socket:[10]>, {sa_family=AF_UNIX, sun_path=\"/var/run/nscd/socket\"}, 110) = 0",
+        "100 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 102",
+        start(102, "sh", "-c", "node install.js"),
+        "102 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 103",
+        start(103, "node", "install.js"),
+        remote(103)
+      ].join("\n")).refusals
+    ).toEqual([])
+    expect(read([start(100, "/usr/bin/env", "FOO=1", "npm", "ci"), remote(100)].join("\n")).refusals).toEqual([
+      "it opened a network connection (env to 104.16.4.34 port 443)"
+    ])
+  })
+
+  it("stops being one when it goes on to run another program", () => {
+    // `uv run` installs, then becomes the command it was given.
+    const running = [start(100, "uv", "run", "--locked", "tox", "run"), remote(100), start(100, "tox", "run")]
+    expect(read(running.join("\n")).refusals).toEqual([])
+    expect(read([...running, remote(100)].join("\n")).refusals).toEqual([
+      "it opened a network connection (tox to 104.16.4.34 port 443)"
+    ])
+    // What the command starts is the command's, not the install's.
+    expect(
+      read([
+        ...running,
+        "100 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 104",
+        start(104, "pip", "install", "mypy"),
+        remote(104)
+      ].join("\n")).refusals
+    ).toEqual(["it opened a network connection (pip to 104.16.4.34 port 443)"])
+    // A process the install started before that stays the install's.
+    expect(
+      read([
+        start(100, "uv", "run", "--locked", "tox"),
+        "100 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 105",
+        start(100, "tox"),
+        start(105, "git", "fetch"),
+        remote(105)
+      ].join("\n")).refusals
+    ).toEqual([])
+  })
+
+  it("is not known from a command line the trace cut short, or from a start that failed", () => {
+    expect(
+      read([
+        "100 execve(\"/usr/bin/npm\", [\"npm\", \"ci\"...], 0x7ffc /* 9 vars */) = 0",
+        remote(100)
+      ].join("\n")).refusals
+    ).toEqual(["it opened a network connection (npm to 104.16.4.34 port 443)"])
+    expect(
+      read(["100 execve(\"/usr/bin/npm\", 0x55d0, 0x7ffc /* 9 vars */) = 0", remote(100)].join("\n")).refusals
+    ).toEqual(["it opened a network connection (npm to 104.16.4.34 port 443)"])
+    expect(
+      read([
+        "100 execve(\"/usr/local/bin/npm\", [\"npm\", \"ci\"], 0x7ffc /* 9 vars */) = -1 ENOENT (No such file or directory)",
+        remote(100)
+      ].join("\n")).refusals
+    ).toEqual(["it opened a network connection (to 104.16.4.34 port 443)"])
+    expect(
+      read([
+        "100 execveat(AT_FDCWD</w>, \"/usr/bin/npm\", [\"npm\", \"ci\"], 0x7ffc /* 9 vars */, 0) = 0",
+        remote(100)
+      ].join("\n")).refusals
+    ).toEqual([])
+  })
+})
+
 describe("the stored records", () => {
-  const one: ObservedReads.Record = { reads: [["a", "-"], ["b", "f:00", "-"]], lists: [["d", "00", ["x"]]] }
+  const one: ObservedReads.Record = { reads: [["a", "-"], ["b", "f:00", "-"]], lists: [["d", "00", ["x"]]], id: "1" }
+  const full: ObservedReads.Record = {
+    reads: [],
+    lists: [["d", "00", [], [["made-by-a-step", 0]]]],
+    from: [["//:install", "i1"]],
+    given: [["node_modules/a.js", "f:00", 0]],
+    left: true,
+    id: "2"
+  }
 
   it("keeps the newest records that fit", () => {
     const stored = ObservedReads.store(one, [])
     expect(stored).toEqual({ kind: "observed", format: ObservedReads.format, records: [one] })
     expect(ObservedReads.decode(stored)).toEqual([one])
-    const many = ObservedReads.store(one, Array.from({ length: 6 }, () => one))
+    expect(ObservedReads.decode(ObservedReads.store(full, [one]))).toEqual([full, one])
+    const many = ObservedReads.store(one, Array.from({ length: 6 }, (_, index) => ({ ...one, id: `other-${index}` })))
     expect(many?.records.length).toBe(ObservedReads.maximumRecords)
+    // A run that read what an earlier run read takes that record's place.
+    expect(ObservedReads.store(one, [full, { ...one }])?.records).toEqual([one, full])
     const large: ObservedReads.Record = {
       reads: Array.from({ length: 150_000 }, (_, index) => [`${"long-directory-name/".repeat(4)}${index}`, "-"]),
-      lists: []
+      lists: [],
+      id: "large"
     }
     expect(Buffer.byteLength(JSON.stringify(large))).toBeGreaterThan(ObservedReads.maximumBytes)
     expect(ObservedReads.store(large, [one])).toBeUndefined()
-    const half: ObservedReads.Record = { reads: large.reads.slice(0, 90_000), lists: [] }
-    expect(ObservedReads.store(half, [half, one])?.records).toEqual([half])
+    const half: ObservedReads.Record = { reads: large.reads.slice(0, 90_000), lists: [], id: "half" }
+    expect(ObservedReads.store(half, [{ ...half, id: "half-again" }, one])?.records).toEqual([half])
+  })
+
+  it("names a record by a digest of what it holds", () => {
+    const { id: _, ...body } = full
+    const id = ObservedReads.idOf(body)
+    expect(id).toMatch(/^[0-9a-f]{64}$/)
+    expect(ObservedReads.idOf({ ...body })).toBe(id)
+    expect(ObservedReads.idOf({ ...body, from: [["//:install", "i2"]] })).not.toBe(id)
+    expect(ObservedReads.idOf({ reads: body.reads, lists: body.lists })).not.toBe(id)
+    const { left: __, ...kept } = body
+    expect(ObservedReads.idOf(kept)).not.toBe(id)
+  })
+
+  it("moves a record to the new records of the steps it read from", () => {
+    // No step it read from stored a new record.
+    expect(ObservedReads.anchored(full, () => undefined)).toBeUndefined()
+    expect(ObservedReads.anchored(full, () => "i1")).toBeUndefined()
+    expect(ObservedReads.anchored(one, () => "i9")).toBeUndefined()
+    const moved = ObservedReads.anchored(full, (label) => label === "//:install" ? "i2" : undefined)!
+    const { id, ...body } = moved
+    expect(body).toEqual({ reads: [], lists: full.lists, from: [["//:install", "i2"]], given: full.given, left: true })
+    expect(id).toBe(ObservedReads.idOf(body))
+    expect(ObservedReads.decode(ObservedReads.store(moved, []))).toEqual([moved])
+    // A record of a run that left nothing stays one.
+    const { left: _, ...plain } = full
+    expect(ObservedReads.anchored(plain, () => "i2")?.left).toBeUndefined()
+    // A record that names a step and read no file of it holds none after the move either.
+    const { given: __, ...bare } = full
+    expect(ObservedReads.anchored(bare, () => "i2")?.given).toEqual([])
   })
 
   it("reads nothing from another shape", () => {
@@ -931,7 +1448,25 @@ describe("the stored records", () => {
         { ...stored, records: [{ reads: [], lists: [[1, "00", []]] }] },
         { ...stored, records: [{ reads: [], lists: [["d", 0, []]] }] },
         { ...stored, records: [{ reads: [], lists: [["d", "00", "x"]] }] },
-        { ...stored, records: [{ reads: [], lists: [["d", "00", [1]]] }] }
+        { ...stored, records: [{ reads: [], lists: [["d", "00", [1]]] }] },
+        { ...stored, records: [{ reads: [], lists: [] }] },
+        { ...stored, records: [{ reads: [], lists: [], id: 1 }] },
+        { ...stored, records: [{ ...full, left: false }] },
+        { ...stored, records: [{ ...full, from: "none" }] },
+        { ...stored, records: [{ ...full, from: [["//:install"]] }] },
+        { ...stored, records: [{ ...full, from: [["//:install", 1]] }] },
+        { ...stored, records: [{ ...full, given: "none" }] },
+        { ...stored, records: [{ ...full, given: [["node_modules/a.js", "f:00"]] }] },
+        { ...stored, records: [{ ...full, given: [["node_modules/a.js", "f:00", 1]] }] },
+        { ...stored, records: [{ ...full, given: [["node_modules/a.js", "f:00", -1]] }] },
+        { ...stored, records: [{ ...full, given: [["node_modules/a.js", "f:00", 0.5]] }] },
+        { ...stored, records: [{ ...full, given: [[1, "f:00", 0]] }] },
+        { ...stored, records: [{ ...full, given: [["node_modules/a.js", 0, 0]] }] },
+        { ...stored, records: [{ ...full, lists: [["d", "00", [], "x"]] }] },
+        { ...stored, records: [{ ...full, lists: [["d", "00", [], [["x"]]]] }] },
+        { ...stored, records: [{ ...full, lists: [["d", "00", [], [[1, 0]]]] }] },
+        { ...stored, records: [{ ...full, lists: [["d", "00", [], [["x", 3]]]] }] },
+        { ...stored, records: [{ ...full, lists: [["d", "00", [], [], "more"]] }] }
       ]
     ) expect(ObservedReads.decode(other)).toEqual([])
   })

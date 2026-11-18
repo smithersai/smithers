@@ -2230,6 +2230,96 @@ export const executeEffect = (
     let traces = 0
     const stateOf = ObservedReads.remembering()
     const failedObserved = "it passed, but failed while its reads were recorded"
+    /** The targets of this run that wait for a target, directly or through another. */
+    const dependentsOf = (() => {
+      const direct = new Map<string, Array<string>>()
+      for (const node of planned.workList) {
+        for (const dependency of node.dependencies) {
+          const waiting = direct.get(dependency)
+          if (waiting === undefined) direct.set(dependency, [node.label])
+          else waiting.push(node.label)
+        }
+      }
+      const known = new Map<string, ReadonlySet<string>>()
+      const all = (label: string): ReadonlySet<string> => {
+        const cached = known.get(label)
+        if (cached !== undefined) return cached
+        const found = new Set<string>()
+        for (const next of direct.get(label) ?? []) {
+          found.add(next)
+          for (const further of all(next)) found.add(further)
+        }
+        known.set(label, found)
+        return found
+      }
+      return all
+    })()
+    /** The targets a target waits for, directly or through another. */
+    const dependenciesOf = (label: string, found = new Set<string>()): ReadonlySet<string> => {
+      for (const dependency of byLabel.get(label)!.dependencies) {
+        if (found.has(dependency)) continue
+        found.add(dependency)
+        dependenciesOf(dependency, found)
+      }
+      return found
+    }
+    /** What each observed target that ran here and stored a record wrote, in the order they ran. */
+    const wroteHere = new Map<string, ObservedReads.Producer>()
+    /** The observed targets answered together before any target ran, each with the ids of the records that answer it. */
+    let answered: ReadonlyMap<string, ReadonlySet<string>> = new Map()
+    /**
+     * Finds the observed targets that are answered without any of them
+     * running. A step that leaves files behind, as an install does, can only
+     * be left out when no target that waits for it runs: nothing restores
+     * what it wrote. So the answer is found for all of them at once, before
+     * the first target starts: the largest set in which every target has a
+     * record that still holds, every target it waits for is in the set, and
+     * every target that waits for one that leaves files is in the set too.
+     * A record holds when each path its run read is unchanged, where a path
+     * an earlier step wrote may also be missing while that step is in the
+     * set under the record this run read it from.
+     */
+    const answerTogether = (): Effect.Effect<ReadonlyMap<string, ReadonlySet<string>>, unknown> =>
+      Effect.gen(function*() {
+        const kept = new Map<string, ReadonlySet<string>>()
+        const candidates = planned.workList.filter((node) => node.observed !== undefined && node.refusal === undefined)
+        if (candidates.length === 0) return kept
+        if ("reason" in (observing ??= services.observer(services.sandboxHost()))) return kept
+        const records = new Map<string, ReadonlyArray<ObservedReads.Record>>()
+        for (const node of candidates) {
+          const stored = ObservedReads.decode((yield* cacheGet(node, node.observed!.key))?.output)
+          if (stored.length === 0) continue
+          records.set(node.label, stored)
+          kept.set(node.label, new Set(stored.map((record) => record.id!)))
+        }
+        const real = yield* joined(async () => NodeFs.realpathSync(root))
+        /** A dependency that runs nothing, as a group of files does, holds nobody back. */
+        const still = (label: string): boolean => kept.has(label) || byLabel.get(label)?.rule === "Filegroup"
+        for (let settled = false; !settled;) {
+          settled = true
+          for (const node of candidates) {
+            const before = kept.get(node.label)
+            if (before === undefined) continue
+            const holding = !node.dependencies.every(still)
+              ? []
+              : yield* joined(async () =>
+                records.get(node.label)!.filter((record) =>
+                  before.has(record.id!) &&
+                  ObservedReads.changed(record, real, stateOf, undefined, (label) => kept.get(label)) === undefined
+                )
+              )
+            const leaves = holding.some((record) => record.left === true)
+            if (holding.length === 0 || (leaves && [...dependentsOf(node.label)].some((label) => !kept.has(label)))) {
+              kept.delete(node.label)
+              settled = false
+            } else if (holding.length !== before.size) {
+              kept.set(node.label, new Set(holding.map((record) => record.id!)))
+              settled = false
+            }
+          }
+        }
+        return kept
+      })
     /**
      * Runs a shell test that asks to be observed, or answers it from what an
      * earlier run read.
@@ -2263,12 +2353,33 @@ export const executeEffect = (
           }
           return undefined
         }
+        if (answered.has(node.label)) return green("hit")
         const earlier = ObservedReads.decode((yield* cacheGet(node, observed.key))?.output)
+        const awaited = dependentsOf(node.label).size > 0
         let why: string | undefined
         for (const stored of earlier) {
           const moved = yield* joined(async () => ObservedReads.changed(stored, NodeFs.realpathSync(root), stateOf))
-          if (moved === undefined) return green("hit")
-          why ??= moved
+          if (moved !== undefined) {
+            why ??= moved
+            continue
+          }
+          // What it left is not restored, and a target that waits for it is about to run or be compared with it.
+          if (stored.left === true && awaited) {
+            why ??= "a step after it runs, and may read what this one leaves"
+            continue
+          }
+          // The steps it read from ran again here and left what it read: its record now holds for their new records.
+          const anchored = ObservedReads.anchored(stored, (label) => wroteHere.get(label)?.id)
+          if (anchored !== undefined) {
+            // The record fit before under ids of the same length, so it fits now.
+            yield* cachePut(
+              node,
+              ObservedReads.store(anchored, earlier.filter((record) => record !== stored)),
+              observed.key,
+              false
+            )
+          }
+          return green("hit")
         }
         if (why !== undefined) {
           unreusedReasons.set(node.label, why)
@@ -2316,13 +2427,16 @@ export const executeEffect = (
             unstored(node, failedObserved, `; the failed run's output is in ${attemptPath}`)
             return green("ran")
           }
+          wroteHere.delete(node.label)
+          const before = dependenciesOf(node.label)
           const read = yield* Effect.exit(joined(async () =>
-            ObservedReads.record(
+            ObservedReads.observe(
               ObservedReads.read(ObservedReads.linesOf(traceFile), NodePath.resolve(root, node.cwd)),
               {
                 root: NodeFs.realpathSync(root),
                 ignore: ObservedReads.ignored(root, NodeOs.homedir(), cacheDirectory, observed.ignore),
-                startedMs
+                startedMs,
+                producers: [...wroteHere.values()].filter((producer) => before.has(producer.label))
               }
             )
           ))
@@ -2334,9 +2448,13 @@ export const executeEffect = (
             unstored(node, read.value.refusal)
             return green("ran")
           }
-          const stored = ObservedReads.store(read.value, earlier)
+          const { made, record, touched } = read.value
+          const stored = ObservedReads.store(record, earlier)
           if (stored === undefined) unstored(node, "it read more paths than one record holds")
-          else yield* cachePut(node, stored, observed.key, false)
+          else {
+            yield* cachePut(node, stored, observed.key, false)
+            wroteHere.set(node.label, { label: node.label, id: record.id!, made, touched })
+          }
           return green("ran")
         }).pipe(
           Effect.ensuring(joined(() => Fs.rm(directory, { force: true, recursive: true })).pipe(Effect.ignore))
@@ -3188,6 +3306,13 @@ export const executeEffect = (
               if (node.observed !== undefined) {
                 const outcome = yield* runObserved(node, node.observed)
                 if (outcome !== undefined) return outcome
+                // Unobserved, nothing says what it leaves for the targets that wait for it: it runs every time.
+                if (dependentsOf(node.label).size > 0) {
+                  const spawned = yield* spawnConsumer(node)
+                  if (!spawned.ok) return fail(spawned.error)
+                  unstored(node, "a step after it may read what it leaves, and its reads are not recorded")
+                  return green("ran")
+                }
               }
               const cached = yield* cacheGet(node)
               if (cached !== undefined) return green("hit")
@@ -4257,6 +4382,7 @@ export const executeEffect = (
           ...(unreusedReasons.has(label) ? { notReused: unreusedReasons.get(label) } : {})
         })
       })
+    answered = yield* answerTogether()
     yield* Executor.scheduleEffect(planned.workList, jobs, runOne, options.signal, {
       stop: () => stoppedBy !== undefined
     })
