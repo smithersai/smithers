@@ -48,5 +48,6 @@ prints the inventory and the other two commands print the replay report.
 | `1`  | `mismatch`    | A replayed target's verdict in a mode differs from its baseline verdict. |
 | `2`  | `usage`       | The command line was wrong: an unknown command or flag, or a bad value.  |
 | `3`  | `unsupported` | The repository uses something Smithers CI cannot run yet.                |
+| `4`  | `failed`      | A step of the command could not finish.                                  |
 
 A mismatch is defined in [How it works](../concepts/how-it-works.md#3-replay).

@@ -75,3 +75,11 @@ export * as Selection from "./contract/Selection.ts"
  * @since 0.1.0
  */
 export * as Shard from "./contract/Shard.ts"
+
+/**
+ * Contract 11: which target each CI step became.
+ *
+ * @category contracts
+ * @since 0.1.0
+ */
+export * as TargetMap from "./contract/TargetMap.ts"

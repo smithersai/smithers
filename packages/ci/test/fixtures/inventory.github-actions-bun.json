@@ -3,8 +3,15 @@
   "repository": "example/bun-turbo-monorepo",
   "commit": "0000000000000000000000000000000000000002",
   "toolchains": [
-    { "name": "bun", "source": "package.json", "version": "1.3.0" },
-    { "name": "turbo", "source": "turbo.json" }
+    {
+      "name": "bun",
+      "source": "package.json",
+      "version": "1.3.0"
+    },
+    {
+      "name": "turbo",
+      "source": "turbo.json"
+    }
   ],
   "jobs": [
     {
@@ -13,8 +20,18 @@
       "file": ".github/workflows/ci.yml",
       "name": "Test",
       "needs": [],
-      "triggers": ["pull_request", "push"],
-      "matrix": [{ "os": "ubuntu-latest" }, { "os": "macos-latest" }],
+      "triggers": [
+        "pull_request",
+        "push"
+      ],
+      "matrix": [
+        {
+          "os": "ubuntu-latest"
+        },
+        {
+          "os": "macos-latest"
+        }
+      ],
       "runsOn": "${{ matrix.os }}",
       "steps": [
         {
@@ -30,11 +47,29 @@
           "name": "Test",
           "command": "bun run test",
           "cwd": "",
-          "env": { "CI": "true" },
-          "secrets": ["CODECOV_TOKEN"]
+          "env": {
+            "CI": "true"
+          },
+          "secrets": [
+            "CODECOV_TOKEN"
+          ],
+          "secretEnv": {
+            "CODECOV_TOKEN": "CODECOV_TOKEN"
+          }
         }
       ],
-      "unsupported": [{ "feature": "uses", "detail": "codecov/codecov-action@v5 has no command to run" }]
+      "unsupported": [
+        {
+          "feature": "uses",
+          "detail": "codecov/codecov-action@v5 has no command to run"
+        }
+      ]
+    }
+  ],
+  "unsupported": [
+    {
+      "feature": "malformed-file",
+      "detail": ".github/workflows/broken.yml does not parse as YAML"
     }
   ]
 }

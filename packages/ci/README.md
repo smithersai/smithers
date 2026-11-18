@@ -18,6 +18,22 @@ directly, so the parts are built at the same time.
 | 8  | Shards             | `Shard`                                                              | Which machine runs which target                                                                |
 | 9  | Dependency closure | `Closure`                                                            | Every file a set of entry files reaches; one strategy per language                             |
 | 10 | Parts              | `Parts`                                                              | The function each part exports, so the command-line program can call it                        |
+| 11 | Target map         | `TargetMap`                                                          | Which target each CI step became, written among the generated files                            |
+
+## Contract changes
+
+Newest first. A part built before a change adopts it before it lands again.
+
+**2026-11-17, second round** (asked for by the inventory, replay, shard, docs and command-line lanes):
+
+- `Parts.RunReplay` takes the parts as a second argument, `ReplayParts`. `ReplayRequest.settings` is optional;
+  `Selection.defaultSettings` applies without it.
+- `Parts.GenerateFiles` takes optional `GenerateOptions` (`cache`). The generator also returns the target map
+  (contract 11) at `TargetMap.path`; the replay finds a step's target with `TargetMap.labelOf`.
+- `Command`: exit code `failed` (4), `failureExitCodes`, `exitCodeHelp`, `syntax`, `documents`, `environment`.
+- `Inventory`: a step runs as `Inventory.shell` then its command; `withVariant` fills `${{ matrix.<key> }}`;
+  `Step.secretEnv` and `Inventory.unsupported` are optional; a job that fails `isRunnable` is never run.
+- `Shard.assign` balances by measured duration. `shardOf` is the rule when nothing is measured.
 
 ## Rules
 

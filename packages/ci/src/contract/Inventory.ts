@@ -28,8 +28,11 @@ export const Source = Schema.Literals(["github-actions", "justfile", "makefile",
 export type Source = typeof Source.Type
 
 /**
- * One shell command. `env` holds plain values; a secret appears only by name
- * in `secrets`, never by value.
+ * One shell command, run as `shell` followed by `command`. `env` holds plain
+ * values; a secret appears only by name in `secrets`, never by value.
+ * `secretEnv` names the variable each secret arrives in: variable name to
+ * secret name. `command`, `cwd` and `env` values may hold
+ * `${{ matrix.<key> }}`, which `withVariant` fills in.
  *
  * @category models
  * @since 0.1.0
@@ -40,7 +43,8 @@ export const Step = Schema.Struct({
   cwd: Schema.String,
   env: Schema.Record(Schema.String, Schema.String),
   secrets: Schema.Array(Schema.String),
-  name: Schema.optionalKey(Schema.String)
+  name: Schema.optionalKey(Schema.String),
+  secretEnv: Schema.optionalKey(Schema.Record(Schema.String, Schema.String))
 })
 
 /**
@@ -121,7 +125,8 @@ export const Toolchain = Schema.Struct({
 export type Toolchain = typeof Toolchain.Type
 
 /**
- * Everything a repository's CI does at one commit.
+ * Everything a repository's CI does at one commit. `unsupported` holds what
+ * belongs to a file and to no job, such as a workflow that does not parse.
  *
  * @category models
  * @since 0.1.0
@@ -131,7 +136,8 @@ export const Inventory = Schema.Struct({
   repository: Schema.NonEmptyString,
   commit: Schema.NonEmptyString,
   toolchains: Schema.Array(Toolchain),
-  jobs: Schema.Array(Job)
+  jobs: Schema.Array(Job),
+  unsupported: Schema.optionalKey(Schema.Array(Unsupported))
 })
 
 /**
@@ -141,3 +147,59 @@ export const Inventory = Schema.Struct({
  * @since 0.1.0
  */
 export type Inventory = typeof Inventory.Type
+
+/**
+ * What runs a step: these arguments, then the step's `command`. A step that
+ * needs another interpreter names it inside its command.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const shell = ["bash", "-e", "-c"] as const
+
+/**
+ * The `Unsupported.feature` of a job that never exits, such as a dev server
+ * or a watcher.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const longRunning = "long-running"
+
+/**
+ * Whether the baseline and the generator run a job: it has a step, and it
+ * exits.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const isRunnable = (job: Job): boolean =>
+  job.steps.length > 0 && !job.unsupported.some((entry) => entry.feature === longRunning)
+
+/**
+ * Replaces each `${{ matrix.<key> }}` with the variant's value. A nested
+ * value uses a dotted key: `matrix.node.version` is the key `node.version`.
+ * A key the variant lacks is left as written.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const expand = (text: string, variant: Readonly<Record<string, string>>): string =>
+  text.replaceAll(
+    /\$\{\{\s*matrix\.([\w.-]+)\s*\}\}/g,
+    (whole, key: string) => Object.hasOwn(variant, key) ? String(variant[key]) : whole
+  )
+
+/**
+ * A step with one matrix variant filled into its command, directory and
+ * environment values.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const withVariant = (step: Step, variant: Readonly<Record<string, string>>): Step => ({
+  ...step,
+  command: expand(step.command, variant),
+  cwd: expand(step.cwd, variant),
+  env: Object.fromEntries(Object.entries(step.env).map(([name, value]) => [name, expand(value, variant)]))
+})

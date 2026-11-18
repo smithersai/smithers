@@ -1,7 +1,19 @@
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { Closure, Command, Inventory, Parts, Plan, ReplayReport, RunRecord, Selection, Shard } from "../src/index.ts"
+import {
+  Closure,
+  Command,
+  Inventory,
+  Parts,
+  Plan,
+  ReplayReport,
+  RunRecord,
+  Selection,
+  Shard,
+  TargetMap
+} from "../src/index.ts"
 
 const fixture = (name: string): unknown =>
   JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"))
@@ -53,6 +65,45 @@ describe("contract 4: inventory", () => {
     expect(JSON.stringify(bun)).not.toContain("secretValue")
   })
 
+  it("names the variable a secret arrives in, and holds what belongs to a file and to no job", () => {
+    const bun = Schema.decodeUnknownSync(Inventory.Inventory)(fixture("inventory.github-actions-bun.json"))
+    expect(bun.jobs[0]?.steps[1]?.secretEnv).toEqual({ CODECOV_TOKEN: "CODECOV_TOKEN" })
+    expect(bun.unsupported?.map((entry) => entry.feature)).toEqual(["malformed-file"])
+    const zig = Schema.decodeUnknownSync(Inventory.Inventory)(fixture("inventory.justfile-zig.json"))
+    expect(zig.unsupported).toBeUndefined()
+    expect(Inventory.shell).toEqual(["bash", "-e", "-c"])
+  })
+
+  it("fills one matrix variant into a step's command, directory and environment values", () => {
+    const step: Inventory.Step = {
+      id: "ci.yml:test:1",
+      command: "bun test --shard=${{ matrix.shard }}/4 # ${{matrix.node.version}} ${{ matrix.absent }}",
+      cwd: "packages/${{ matrix.package }}",
+      env: { NODE: "${{ matrix.node.version }}", PLAIN: "${{ secrets.TOKEN }}" },
+      secrets: []
+    }
+    const variant = { shard: "2", "node.version": "22", package: "core" }
+    expect(Inventory.withVariant(step, variant)).toEqual({
+      ...step,
+      command: "bun test --shard=2/4 # 22 ${{ matrix.absent }}",
+      cwd: "packages/core",
+      env: { NODE: "22", PLAIN: "${{ secrets.TOKEN }}" }
+    })
+    expect(Inventory.expand("${{ matrix.constructor }} ${{ matrix.toString }}", {}))
+      .toBe("${{ matrix.constructor }} ${{ matrix.toString }}")
+    expect(Inventory.withVariant(step, {})).toEqual(step)
+  })
+
+  it("runs a job only when it has a step and exits", () => {
+    const zig = Schema.decodeUnknownSync(Inventory.Inventory)(fixture("inventory.justfile-zig.json"))
+    const job = zig.jobs[0]!
+    expect(Inventory.isRunnable(job)).toBe(true)
+    expect(Inventory.isRunnable({ ...job, steps: [] })).toBe(false)
+    const server = { feature: Inventory.longRunning, detail: "bun run dev never exits" }
+    expect(Inventory.isRunnable({ ...job, unsupported: [server] })).toBe(false)
+    expect(Inventory.isRunnable({ ...job, unsupported: [{ feature: "uses", detail: "actions/cache" }] })).toBe(true)
+  })
+
   it("refuses a source it does not know", () => {
     const zig = fixture("inventory.justfile-zig.json") as { jobs: Array<{ source: string }> }
     zig.jobs[0]!.source = "jenkins"
@@ -77,6 +128,13 @@ describe("contract 5: replay report", () => {
 describe("contract 6: selection", () => {
   const rows = Schema.decodeUnknownSync(Schema.Array(Selection.Row))(fixture("selection-rows.example.json"))
   const score = (commit: string, target: string, value: number): Selection.Score => ({ commit, target, score: value })
+
+  it("has default settings that decode", () => {
+    expect(Schema.decodeUnknownSync(Selection.Settings)(Selection.defaultSettings)).toEqual({
+      scoreCutoff: 0.1,
+      countCutoff: 5
+    })
+  })
 
   it("refuses a score outside 0 to 1", () => {
     expect(() => Schema.decodeUnknownSync(Selection.Score)(score("c1", "//a:test", 1.5))).toThrow()
@@ -135,6 +193,24 @@ describe("contract 7: command surface", () => {
     }
     expect(new Set(Object.values(Command.exitCodes)).size).toBe(Object.keys(Command.exitCodes).length)
   })
+
+  it("gives every exit code a meaning and every part failure an exit code that is never ok or mismatch", () => {
+    expect(Object.keys(Command.exitCodeHelp)).toEqual(Object.keys(Command.exitCodes))
+    const codes = Object.values(Command.exitCodes) as ReadonlyArray<number>
+    for (const code of Parts.Failure.fields.code.literals) {
+      const exit = Command.failureExitCodes[code]
+      expect(codes).toContain(exit)
+      expect(exit).toBeGreaterThan(Command.exitCodes.mismatch)
+    }
+    expect(Command.failureExitCodes["command-failed"]).toBe(Command.exitCodes.failed)
+  })
+
+  it("names the document --json prints for exactly the commands that accept --json", () => {
+    expect(Object.keys(Command.documents).sort()).toEqual([...Command.flags.json.on].sort())
+    expect(Command.syntax.help).toContain("--help")
+    expect(Command.syntax.value).toContain("--commits 5")
+    expect(Object.keys(Command.environment)).toEqual(["SMITHERS_CACHE_TOKEN"])
+  })
 })
 
 describe("contract 8: shards", () => {
@@ -146,6 +222,28 @@ describe("contract 8: shards", () => {
     expect(shards.every((shard) => shard.length > 20)).toBe(true)
     expect(Shard.shardOf("//packages/smithers:test", 4)).toBe(Shard.shardOf("//packages/smithers:test", 4))
     expect(Shard.labelsOf(labels, { index: 0, count: 1 })).toEqual(labels)
+  })
+
+  it("balances measured labels longest first and leaves unmeasured ones where the hash puts them", () => {
+    const durations = { "//a:test": 40, "//b:test": 30, "//c:test": 20, "//d:test": 10, "//e:test": 10 }
+    const labels = [...Object.keys(durations), "//f:lint", "//g:lint", "//a:test"]
+    const assigned = Shard.assign(labels, 2, durations)
+    const load = (index: number): number =>
+      Object.entries(durations).filter(([label]) => assigned.get(label) === index).reduce((sum, [, ms]) => sum + ms, 0)
+    expect([load(0), load(1)]).toEqual([60, 50])
+    expect(assigned.get("//a:test")).toBe(0)
+    expect(assigned.get("//b:test")).toBe(1)
+    expect(assigned.get("//f:lint")).toBe(Shard.shardOf("//f:lint", 2))
+    expect(assigned.get("//g:lint")).toBe(Shard.shardOf("//g:lint", 2))
+    expect(assigned.size).toBe(7)
+    expect([...Shard.assign([...labels].reverse(), 2, durations)].sort()).toEqual([...assigned].sort())
+  })
+
+  it("treats a duration that is missing, negative or not a number as unmeasured", () => {
+    const labels = ["//a:test", "//b:test", "//c:test", "toString"]
+    const durations = { "//a:test": Number.NaN, "//b:test": -5, "//c:test": Number.POSITIVE_INFINITY }
+    const assigned = Shard.assign(labels, 3, durations)
+    for (const label of labels) expect(assigned.get(label)).toBe(Shard.shardOf(label, 3))
   })
 
   it("refuses a shard count below one", () => {
@@ -184,5 +282,64 @@ describe("contract 10: parts", () => {
     expect(Schema.decodeUnknownSync(Parts.Failure)(failure)).toEqual(failure)
     expect(() => Schema.decodeUnknownSync(Parts.Failure)({ ...failure, code: "oops" })).toThrow()
     expect(() => Schema.decodeUnknownSync(Parts.Failure)({ ...failure, part: "billing" })).toThrow()
+  })
+})
+
+describe("contract 10: the parts a replay is handed", () => {
+  it("lets the program pass the reader, generator and scorer to a replay, with a cache for the generator", async () => {
+    const calls: Array<string> = []
+    const fail = (failure: Parts.Failure) => Effect.fail(failure)
+    const parts: Parts.ReplayParts = {
+      read: (root) => fail({ code: "not-a-repository", message: `${root} has no .git`, part: "inventory" }),
+      files: (_inventory, options) => Effect.succeed([{ path: TargetMap.path, content: options?.cache ?? "" }]),
+      rows: () => Effect.succeed([]),
+      score: () => Effect.succeed([])
+    }
+    const run: Parts.RunReplay = (request, given) =>
+      Effect.gen(function*() {
+        calls.push(String(request.settings?.countCutoff ?? Selection.defaultSettings.countCutoff))
+        const files = yield* given.files(
+          { version: 1, repository: "r", commit: "c", toolchains: [], jobs: [] },
+          { cache: request.cache }
+        )
+        for (const file of files) calls.push(file.path, file.content)
+        const exit: number = yield* Effect.match(given.read(request.root), {
+          onFailure: (failure) => Command.failureExitCodes[failure.code],
+          onSuccess: () => Command.exitCodes.ok
+        })
+        return yield* fail({ code: "command-failed", message: `exit ${exit}`, part: "replay" })
+      })
+    const request = { root: "/tmp/x", commits: 1, modes: ["normal" as const], cache: "https://cache.example" }
+    const failure = await Effect.runPromise(Effect.flip(run(request, parts)))
+    expect(failure.message).toBe("exit 2")
+    expect(calls).toEqual(["5", ".smithers/ci-targets.json", "https://cache.example"])
+  })
+})
+
+describe("contract 11: target map", () => {
+  const map = Schema.decodeUnknownSync(TargetMap.TargetMap)(fixture("target-map.example.json"))
+
+  it("finds the target a step became, per matrix variant", () => {
+    expect(TargetMap.labelOf(map, "ci.yml:test", "ci.yml:test:1", { os: "macos-latest" }))
+      .toBe("//:ci-yml-test-1-os-macos-latest")
+    expect(TargetMap.labelOf(map, "justfile:build", "justfile:build:1", {})).toBe("//:justfile-build-1")
+  })
+
+  it("has no target for a step, job or variant the generator did not write", () => {
+    expect(TargetMap.labelOf(map, "ci.yml:test", "ci.yml:test:2", { os: "macos-latest" })).toBeUndefined()
+    expect(TargetMap.labelOf(map, "ci.yml:lint", "ci.yml:test:1", { os: "macos-latest" })).toBeUndefined()
+    expect(TargetMap.labelOf(map, "ci.yml:test", "ci.yml:test:1", { os: "windows-latest" })).toBeUndefined()
+    expect(TargetMap.labelOf(map, "ci.yml:test", "ci.yml:test:1", {})).toBeUndefined()
+  })
+
+  it("reads a variant the same whatever order its keys are in", () => {
+    expect(TargetMap.variantKey({ os: "linux", node: "22" })).toBe(TargetMap.variantKey({ node: "22", os: "linux" }))
+    expect(TargetMap.variantKey({ os: "linux" })).not.toBe(TargetMap.variantKey({ os: "macos" }))
+    expect(TargetMap.path).toBe(".smithers/ci-targets.json")
+  })
+
+  it("refuses an entry with no label", () => {
+    const entry = { label: "", job: "j", step: "s", variant: {} }
+    expect(() => Schema.decodeUnknownSync(TargetMap.Entry)(entry)).toThrow()
   })
 })

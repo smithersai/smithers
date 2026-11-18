@@ -24,7 +24,7 @@ import * as Schema from "effect/Schema"
 import type { Inventory } from "./Inventory.ts"
 import type { ReplayReport } from "./ReplayReport.ts"
 import type { Mode, RunRecord } from "./RunRecord.ts"
-import type { Row, Score } from "./Selection.ts"
+import type { Row, Score, Settings } from "./Selection.ts"
 
 /**
  * Why a part could not finish. `unsupported` means the repository uses
@@ -67,18 +67,32 @@ export interface GeneratedFile {
 }
 
 /**
+ * Choices the generated files carry. `cache` is the URL of the shared cache
+ * the generated workspace and workflow name.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface GenerateOptions {
+  readonly cache?: string | undefined
+}
+
+/**
  * The Smithers workspace, target files and CI workflow for an inventory. It
- * returns text and writes nothing.
+ * returns text and writes nothing. One of the files is the target map
+ * (contract 11), at `TargetMap.path`.
  *
  * @category parts
  * @since 0.1.0
  */
 export type GenerateFiles<R = never> = (
-  inventory: Inventory
+  inventory: Inventory,
+  options?: GenerateOptions
 ) => Effect.Effect<ReadonlyArray<GeneratedFile>, Failure, R>
 
 /**
- * What to replay.
+ * What to replay. `settings` are fast mode's two settings;
+ * `Selection.defaultSettings` applies without them.
  *
  * @category models
  * @since 0.1.0
@@ -89,16 +103,8 @@ export interface ReplayRequest {
   readonly modes: ReadonlyArray<Mode>
   readonly jobs?: number | undefined
   readonly cache?: string | undefined
+  readonly settings?: Settings | undefined
 }
-
-/**
- * Replays past commits and reports. It never changes the repository at
- * `root`; every run happens in a copy.
- *
- * @category parts
- * @since 0.1.0
- */
-export type RunReplay<R = never> = (request: ReplayRequest) => Effect.Effect<ReplayReport, Failure, R>
 
 /**
  * Renders a replay report as text. Pure.
@@ -127,3 +133,30 @@ export type BuildRows<R = never> = (
  * @since 0.1.0
  */
 export type ScoreRows<R = never> = (rows: ReadonlyArray<Row>) => Effect.Effect<ReadonlyArray<Score>, Failure, R>
+
+/**
+ * The parts a replay calls. The command-line program passes them, so the
+ * replay imports no other part.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface ReplayParts<R = never> {
+  readonly read: ReadInventory<R>
+  readonly files: GenerateFiles<R>
+  readonly rows: BuildRows<R>
+  readonly score: ScoreRows<R>
+}
+
+/**
+ * Replays past commits and reports. It never changes the repository at
+ * `root`; every run happens in a copy. It finds the target each inventory
+ * step became in the target map among the generated files (contract 11).
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export type RunReplay<R = never> = (
+  request: ReplayRequest,
+  parts: ReplayParts<R>
+) => Effect.Effect<ReplayReport, Failure, R>

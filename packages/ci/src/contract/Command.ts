@@ -8,6 +8,8 @@
  * @since 0.1.0
  */
 
+import type { Failure } from "./Parts.ts"
+
 /**
  * The program's name on npm and on the command line.
  *
@@ -46,7 +48,8 @@ export const flags = {
 } as const
 
 /**
- * Exit codes.
+ * Exit codes. `failed` is a step that could not finish; it is never reported
+ * as `mismatch`.
  *
  * @category constants
  * @since 0.1.0
@@ -55,5 +58,67 @@ export const exitCodes = {
   ok: 0,
   mismatch: 1,
   usage: 2,
-  unsupported: 3
+  unsupported: 3,
+  failed: 4
+} as const
+
+/**
+ * What each exit code means.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const exitCodeHelp = {
+  ok: "The command finished.",
+  mismatch: "A replayed target's verdict in a mode differs from its baseline verdict.",
+  usage: "The command line was wrong: an unknown command or flag, or a bad value.",
+  unsupported: "The repository uses something Smithers CI cannot run yet.",
+  failed: "A step of the command could not finish."
+} as const satisfies Record<keyof typeof exitCodes, string>
+
+/**
+ * The exit code for each reason a part fails.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const failureExitCodes = {
+  unsupported: 3,
+  "not-a-repository": 2,
+  "command-failed": 4,
+  "invalid-document": 4,
+  "model-unavailable": 4
+} as const satisfies Record<Failure["code"], number>
+
+/**
+ * Rules that hold for every command.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const syntax = {
+  value: "A flag's value is the next argument, as in `--commits 5`. `--json` takes no value.",
+  help: "`--help` and `-h` are accepted on every command and print its commands and flags."
+} as const
+
+/**
+ * The contract document `--json` prints, for each command that accepts it.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const documents = {
+  "": "ReplayReport",
+  inventory: "Inventory",
+  replay: "ReplayReport"
+} as const
+
+/**
+ * Environment variables the program reads. A value is never printed.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const environment = {
+  SMITHERS_CACHE_TOKEN: "The token sent to the shared cache that `--cache` names."
 } as const

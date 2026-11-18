@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "targets": [
+    {
+      "label": "//:ci-yml-test-1-os-ubuntu-latest",
+      "job": "ci.yml:test",
+      "step": "ci.yml:test:1",
+      "variant": {
+        "os": "ubuntu-latest"
+      }
+    },
+    {
+      "label": "//:ci-yml-test-1-os-macos-latest",
+      "job": "ci.yml:test",
+      "step": "ci.yml:test:1",
+      "variant": {
+        "os": "macos-latest"
+      }
+    },
+    {
+      "label": "//:justfile-build-1",
+      "job": "justfile:build",
+      "step": "justfile:build:1",
+      "variant": {}
+    }
+  ]
+}

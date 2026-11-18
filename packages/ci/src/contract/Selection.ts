@@ -183,3 +183,12 @@ export const metrics = (
     })
   }
 }
+
+/**
+ * The settings fast mode uses when none are given. They lean toward running
+ * more: no eval has measured them yet.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const defaultSettings: Settings = { scoreCutoff: 0.1, countCutoff: 5 }
