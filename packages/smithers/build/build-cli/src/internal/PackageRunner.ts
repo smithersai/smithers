@@ -2269,12 +2269,15 @@ export const executeEffect = (
           )
           return undefined
         }
-        const directory = NodePath.join(root, ...cacheDirectory.split("/"), "tmp")
-        yield* joined(() => Fs.mkdir(directory, { recursive: true }))
-        const traceFile = NodePath.join(
-          directory,
-          `reads-${observed.key.slice(0, 16)}-${process.pid}-${traces++}.trace`
+        // One directory for a run's trace, removed with whatever the run left in it.
+        const directory = NodePath.join(
+          root,
+          ...cacheDirectory.split("/"),
+          "tmp",
+          `reads-${observed.key.slice(0, 16)}-${process.pid}-${traces++}`
         )
+        yield* joined(() => Fs.mkdir(directory, { recursive: true }))
+        const traceFile = NodePath.join(directory, "trace")
         return yield* Effect.gen(function*() {
           // The trace file is made first: its time on the file system's clock is when the run began.
           yield* joined(() => Fs.writeFile(traceFile, ""))
@@ -2321,7 +2324,7 @@ export const executeEffect = (
           else yield* cachePut(node, stored, observed.key, false)
           return green("ran")
         }).pipe(
-          Effect.ensuring(joined(() => Fs.rm(traceFile, { force: true, recursive: true })).pipe(Effect.ignore))
+          Effect.ensuring(joined(() => Fs.rm(directory, { force: true, recursive: true })).pipe(Effect.ignore))
         )
       })
 

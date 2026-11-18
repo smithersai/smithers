@@ -153,8 +153,9 @@ const fixture = async (settings: FixtureOptions = {}) => {
     const names = await Fs.readdir(directory).catch(() => [])
     return Promise.all(names.map(async (name) => JSON.parse(await Fs.readFile(Path.join(directory, name), "utf8"))))
   }
+  /** What a run's traces left behind: nothing, once the run is over. */
   const traceFiles = async (): Promise<ReadonlyArray<string>> =>
-    (await Fs.readdir(Path.join(root, ".flows", "tmp")).catch(() => [])).filter((name) => name.endsWith(".trace"))
+    (await Fs.readdir(Path.join(root, ".flows", "tmp")).catch(() => [])).filter((name) => name.startsWith("reads-"))
   return { root, write, run, node, logs, tracer, attempts, traceFiles }
 }
 
@@ -173,6 +174,12 @@ describe("a plan", () => {
     expect(edited.observed?.key).toBe(original.observed?.key)
     // Another command is another declaration.
     expect((await node("second")).observed?.key).not.toBe(original.observed?.key)
+    // So is another search path: it decides which programs and files a run looks for.
+    const elsewhere = await withPath(
+      `${process.env["PATH"]}${Path.delimiter}/nonexistent-smithers-observed-bin`,
+      () => node("check")
+    )
+    expect(elsewhere.observed?.key).not.toBe(original.observed?.key)
     const ignoring = await fixture({ observe: { ignore: ["volatile.txt"] } })
     const declared = await ignoring.node("check")
     expect(declared.observed?.ignore).toEqual(["volatile.txt"])
@@ -282,6 +289,18 @@ describe("an observed test", () => {
     expect(await run()).toEqual({ check: "hit" })
     await write("docs/readme.md", "changed\n")
     expect(await run()).toEqual({ check: "ran" })
+  })
+
+  tracedIt("ends when its command ends, and stops a process the command left running", async () => {
+    const leaving = "sleep 600 > /dev/null 2>&1 &\necho $! > left.pid\n/bin/cat input.txt > /dev/null"
+    const { root, run, traceFiles } = await fixture({ check: leaving })
+    const started = Date.now()
+    expect(await run()).toEqual({ check: "ran" })
+    expect(Date.now() - started).toBeLessThan(110_000)
+    const left = Number(await Fs.readFile(Path.join(root, "left.pid"), "utf8"))
+    expect(() => process.kill(left, 0)).toThrow()
+    expect(await traceFiles()).toEqual([])
+    expect(await run()).toEqual({ check: "hit" })
   })
 
   tracedIt("is traced again when the failed attempt could not be remembered", async () => {

@@ -333,7 +333,9 @@ The line of a target that runs again names the first difference:
 **The declaration's key.** The records are stored under a key of the
 declaration alone: the command, the environment, the executables it names, the
 platform and the labels it depends on. No file is in it. A run sees only its
-declared environment, so no variable outside the key reaches it. Four records
+declared environment and a few host variables (`PATH`, `HOME`, the temporary
+directory), and every one of them is in the key by value, so no variable
+outside the key reaches it. Four records
 are kept for one declaration, so a fresh checkout and a tree a run has already
 been through each find their own.
 
@@ -373,7 +375,9 @@ until then it is keyed by its `data`.
 calls stop the traced process: one lint command that makes 1,000 of them took
 0.1 s longer, and one test file that makes 17,000 took 1.6 s longer, on a
 48-core host at load 50. The run is refused `io_uring`, as it is in a
-container, because a read submitted through a ring is in no trace. On macOS and
+container, because a read submitted through a ring is in no trace. A traced
+run ends when its command ends: a process the command left running is stopped a
+second later, as a sandbox stops it. On macOS and
 Windows, without `strace`, or where the host forbids tracing, the target is
 keyed by its `data` as any other `Shell.Test`, and one line says why:
 

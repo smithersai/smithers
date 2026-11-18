@@ -3421,7 +3421,10 @@ const visit = async (
   // A shell test that asks to be observed is found by its declaration alone.
   // The files it reads are in the records stored under this key, never in
   // the key: a dependency enters by label, a declared input not at all, and
-  // the lockfile is one more file a run may read.
+  // the lockfile is one more file a run may read. Every variable the run
+  // sees enters by value, the search path, the home directory and the
+  // temporary directory included: they decide which files a run looks for,
+  // and a record holds only the paths one run looked at.
   const observe = rule === "Shell.Test" ? attrMember(attrs, "observe") : undefined
   const observed = observe === undefined || observe === false
     ? undefined
@@ -3434,7 +3437,7 @@ const visit = async (
           attrs: Planner.attrsValue(attrs, depLabels, new Map()),
           dependencies: dependencyRows.map((row) => row.label),
           toolchain,
-          execution: { environmentDigest, executable }
+          execution: { environment: spawnEnvironment, executable }
         },
         layers: [],
         capabilities: keyMaterial.capabilities

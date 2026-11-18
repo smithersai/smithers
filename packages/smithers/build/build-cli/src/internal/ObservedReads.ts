@@ -23,7 +23,9 @@
  *
  * The tracer is `strace` with a seccomp filter, so only the file-system calls
  * stop the process. `io_uring` is refused to the run, as it is in a
- * container: a read submitted through a ring is in no trace.
+ * container: a read submitted through a ring is in no trace. A traced run
+ * ends when its command ends, and a process the command left running is
+ * stopped, as a sandbox stops it.
  *
  * @since 1.0.0
  */
@@ -124,9 +126,52 @@ const tracerFlags: ReadonlyArray<string> = [
   "inject=io_uring_setup:error=ENOSYS"
 ]
 
+const quoted = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
+
+/**
+ * Runs a command under the tracer and ends when the command ends. `$1` is
+ * the tracer, `$2` the trace file, and the rest the command.
+ *
+ * The tracer waits for every process it follows, so a command that leaves
+ * one running would hold the run until that process ends. A shell inside the
+ * trace writes the command's exit status beside the trace file the moment
+ * the command ends. A process still followed a second later is killed: one
+ * the tracer let go would keep the tracer's filter and fail every file call.
+ */
+const supervisor = [
+  "tracer=$1",
+  "out=$2",
+  "shift 2",
+  `"$tracer" ${tracerFlags.map(quoted).join(" ")} -o "$out" -- \\`,
+  `  /bin/sh -c '"$@"; status=$?; echo "$status" > "$0"; exit "$status"' "$out.status" "$@" &`,
+  "tracing=$!",
+  `while [ ! -s "$out.status" ] && kill -0 "$tracing" 2>/dev/null; do sleep 0.1; done`,
+  `if [ -s "$out.status" ]; then`,
+  "  rounds=0",
+  `  while kill -0 "$tracing" 2>/dev/null; do`,
+  "    rounds=$((rounds + 1))",
+  `    if [ "$rounds" -gt 10 ]; then`,
+  `      for left in $(grep -l -s "^TracerPid:[[:space:]]*$tracing\\$" /proc/[0-9]*/status); do`,
+  "        left=${left#/proc/}",
+  `        kill -KILL "\${left%/status}" 2>/dev/null`,
+  "      done",
+  "    fi",
+  `    if [ "$rounds" -gt 100 ]; then kill -KILL "$tracing" 2>/dev/null; fi`,
+  "    sleep 0.1",
+  "  done",
+  "fi",
+  `wait "$tracing"`,
+  "code=$?",
+  `if [ -s "$out.status" ]; then read -r code < "$out.status"; fi`,
+  `rm -f "$out.status"`,
+  `exit "$code"`
+].join("\n")
+
 /**
  * The argv that runs `argv` under the tracer and writes its trace to
- * `traceFile`. The tracer exits as the command exits.
+ * `traceFile`. It exits as the command exits, and as soon as it does. The
+ * command's exit status passes through a file named `traceFile` with
+ * `.status` added, which is removed again.
  *
  * @category tracing
  * @since 1.0.0
@@ -135,7 +180,7 @@ export const command = (
   tracer: string,
   traceFile: string,
   argv: ReadonlyArray<string>
-): ReadonlyArray<string> => [tracer, ...tracerFlags, "-o", traceFile, "--", ...argv]
+): ReadonlyArray<string> => ["/bin/sh", "-c", supervisor, "smthrs-observe", tracer, traceFile, ...argv]
 
 /**
  * A host's answer to whether it can observe a run: the tracer's path, or why

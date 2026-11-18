@@ -6,6 +6,7 @@
  * printed it for real commands. Records are measured on real directories.
  * `ObservedReadsExecution.test.ts` runs the real tracer end to end.
  */
+import { spawnSync } from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
@@ -31,12 +32,48 @@ const paths = (map: ReadonlyMap<string, number>): ReadonlyArray<string> => [...m
 describe("the tracer command", () => {
   it("runs the command under the tracer and names the trace file", () => {
     const argv = ObservedReads.command("/usr/bin/strace", "/tmp/t.trace", ["/bin/sh", "-c", "true"])
-    expect(argv[0]).toBe("/usr/bin/strace")
-    expect(argv.slice(-6)).toEqual(["-o", "/tmp/t.trace", "--", "/bin/sh", "-c", "true"])
-    expect(argv).toContain("-f")
-    expect(argv).toContain("--seccomp-bpf")
-    expect(argv).toContain("inject=io_uring_setup:error=ENOSYS")
-    expect(argv.find((part) => part.startsWith("trace="))).toContain("getdents64")
+    expect(argv.slice(0, 2)).toEqual(["/bin/sh", "-c"])
+    expect(argv.slice(3)).toEqual(["smthrs-observe", "/usr/bin/strace", "/tmp/t.trace", "/bin/sh", "-c", "true"])
+    const script = argv[2]!
+    expect(script).toContain("'-f'")
+    expect(script).toContain("'--seccomp-bpf'")
+    expect(script).toContain("'inject=io_uring_setup:error=ENOSYS'")
+    expect(script).toContain("getdents64")
+    expect(script).toContain("-o \"$out\" --")
+  })
+
+  const tracing = async (body: string): Promise<{ readonly tracer: string; readonly trace: string }> => {
+    const root = await directory()
+    const tracer = Path.join(root, "tracer")
+    // Stands where the tracer does: drops the tracer's own flags and runs `body` with the command in `"$@"`.
+    await Fs.writeFile(tracer, `#!/bin/sh\nwhile [ "$1" != "--" ]; do shift; done\nshift\n${body}\n`, { mode: 0o755 })
+    return { tracer, trace: Path.join(root, "trace") }
+  }
+  const run = (argv: ReadonlyArray<string>) =>
+    spawnSync(argv[0]!, argv.slice(1), { encoding: "utf8", timeout: 110_000 })
+
+  it.skipIf(process.platform === "win32")("exits as the command exits and leaves no status file", async () => {
+    const { trace, tracer } = await tracing("exec \"$@\"")
+    const passed = run(ObservedReads.command(tracer, trace, ["/bin/sh", "-c", "echo out; echo err >&2"]))
+    expect([passed.status, passed.stdout, passed.stderr]).toEqual([0, "out\n", "err\n"])
+    expect(run(ObservedReads.command(tracer, trace, ["/bin/sh", "-c", "exit 7"])).status).toBe(7)
+    expect(NodeFs.existsSync(`${trace}.status`)).toBe(false)
+  })
+
+  it.skipIf(process.platform === "win32")("exits as the tracer exits when the command never ran", async () => {
+    const { trace, tracer } = await tracing("exit 9")
+    expect(run(ObservedReads.command(tracer, trace, ["/bin/sh", "-c", "exit 0"])).status).toBe(9)
+    expect(run(ObservedReads.command(Path.join(tracer, "missing"), trace, ["/bin/sh", "-c", "exit 0"])).status)
+      .toBe(127)
+  })
+
+  it.skipIf(process.platform === "win32")("ends when the command ends, even while the tracer goes on", async () => {
+    // A tracer that outlives the command, as one does while a process the command left is still running.
+    const { trace, tracer } = await tracing("\"$@\"\nexec sleep 600")
+    const started = Date.now()
+    expect(run(ObservedReads.command(tracer, trace, ["/bin/sh", "-c", "exit 4"])).status).toBe(4)
+    expect(Date.now() - started).toBeLessThan(120_000)
+    expect(NodeFs.existsSync(`${trace}.status`)).toBe(false)
   })
 })
 

@@ -10,8 +10,9 @@
   longer runs it again. A target that runs again says what differs:
   `runs again: packages/a/value.js changed`. A run that reached the network or
   a program outside it, or whose trace cannot be read in full, stores nothing
-  and says why. A host that cannot trace keys the target by its `data`, as
-  before.
+  and says why. A traced run ends when its command ends, and a process the
+  command left running is stopped. A host that cannot trace keys the target
+  by its `data`, as before.
 
 - A fresh install no longer loses every test, type-check and lint result of
   its first run. A run of `TsBuild`, `Typecheck`, `Vitest`, `EsLint`, `Dprint`
