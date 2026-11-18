@@ -10,6 +10,8 @@
  *   else the model this machine is signed in to.
  * - How a replay runs in a stranger's checkout: this install's `smthrs`, and
  *   its targets package linked into the checkout.
+ * - What a replay is running, one line on standard error as each mode of each
+ *   commit starts.
  *
  * @since 0.1.0
  */
@@ -20,7 +22,8 @@ import { FlowEngine } from "@smthrs/engine"
 import { Evaluator } from "@smthrs/model"
 import { NodeHost } from "@smthrs/platform-node"
 import type { Failure } from "../contract/Parts.ts"
-import { Options } from "../replay/index.ts"
+import { name } from "../contract/Command.ts"
+import { Options, Progress } from "../replay/index.ts"
 import { Ledger, Repository } from "../select/index.ts"
 import { smthrsCommand, targetsDirectory } from "./Install.ts"
 
@@ -89,6 +92,15 @@ export const replayOptions = (smthrs: readonly [string, ...Array<string>], targe
   })
 
 /**
+ * Prints what a replay is running on standard error, which leaves standard
+ * output to the report.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const replayProgress = Layer.succeed(Progress, { say: (line: string) => Console.error(`${name}: ${line}`) })
+
+/**
  * Every service the program and its parts may ask for, with the judge read
  * from `environment`.
  *
@@ -103,7 +115,8 @@ export const layer = (environment: Environment) =>
       FlowEngine.layerMemory,
       WebCrypto.layer,
       judge(environment),
-      replayOptions(smthrsCommand(), targetsDirectory())
+      replayOptions(smthrsCommand(), targetsDirectory()),
+      replayProgress
     ),
     node
   )

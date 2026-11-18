@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as Console from "effect/Console"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
@@ -8,7 +9,8 @@ import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { layer, replayOptions } from "../../src/cli/Host.vibe"
 import { smthrsCommand, targetsDirectory } from "../../src/cli/Install.ts"
-import { Options } from "../../src/replay/index.ts"
+import { Options, Progress } from "../../src/replay/index.ts"
+import { recorder } from "./repo.ts"
 
 const made: Array<string> = []
 const directory = (): string => {
@@ -43,6 +45,30 @@ describe("this install", () => {
   it("falls back to the smthrs on the path, and to no targets package, when they are not installed", () => {
     expect(smthrsCommand(missing)).toEqual(["smthrs"])
     expect(targetsDirectory(missing)).toBeUndefined()
+  })
+})
+
+describe("what a replay is running", () => {
+  const said = async (provided: Layer.Layer<never>) => {
+    const sink = recorder()
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const progress = yield* Progress
+        yield* progress.say("2/5 3f2a1c9 baseline")
+      }).pipe(Effect.provide(provided), Effect.provideService(Console.Console, sink.service as never))
+    )
+    return { stdout: sink.stdout(), stderr: sink.stderr() }
+  }
+
+  it("goes to standard error, one line each, and never to standard output", async () => {
+    expect(await said(layer({}) as Layer.Layer<never>)).toEqual({
+      stdout: "",
+      stderr: "smithers-ci: 2/5 3f2a1c9 baseline\n"
+    })
+  })
+
+  it("is silent when nothing provides it", async () => {
+    expect(await said(Layer.empty)).toEqual({ stdout: "", stderr: "" })
   })
 })
 

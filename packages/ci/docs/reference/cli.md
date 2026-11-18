@@ -40,6 +40,15 @@ exit code or variable that one has and the other lacks fails the package's tests
 [The shared cache](../concepts/shared-cache.md). With `--json`, `inventory`
 prints the inventory and the other two commands print the replay report.
 
+## Output
+
+The report goes to standard output. While a replay runs, standard error gets one line as each mode of each commit starts:
+
+```
+smithers-ci: 2/5 3f2a1c9 baseline
+smithers-ci: 2/5 3f2a1c9 normal
+```
+
 ## Exit codes
 
 | Code | Name          | Meaning                                                                  |

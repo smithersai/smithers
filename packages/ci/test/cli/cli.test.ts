@@ -311,6 +311,8 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     const before = snapshot(root)
     const outcome = await spawn(bin, ["--commits", "1", "--json"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+    const at = `smithers-ci: 1/1 ${head(root).slice(0, 7)}`
+    expect(outcome.stderr.trim().split("\n")).toEqual([`${at} baseline`, `${at} normal`])
     const report = decode(ReplayReport, outcome.stdout)
     expect(report.commits).toHaveLength(1)
     expect(report.commits[0]!.commit).toBe(head(root))
