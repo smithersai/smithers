@@ -7,7 +7,7 @@ import { dirname, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { compiledCode, Options, run } from "../../src/replay/index.ts"
+import { compiledCode, compiledSource, Options, run } from "../../src/replay/index.ts"
 import { job, linkTargets, makeEmptyDirectory, makeSmallRepository, smthrs } from "./fixture.ts"
 import { unconfined } from "./place.ts"
 import { parts } from "./TestParts.vibe"
@@ -30,15 +30,19 @@ const replay = (moment: "prepare" | "checkout"): Promise<ReplayReport> => {
 }
 
 describe("a start of smthrs in a copy", () => {
-  it("keeps Node's compiled code in the copy's cache directory, and no step sees where", async () => {
+  it("keeps the compiled code of smthrs in the copy's cache directory, and no step sees where", async () => {
     const log = join(makeEmptyDirectory(), "seen")
     created.push(dirname(log))
-    // A real smthrs behind a script that writes down where Node was told to keep compiled code.
+    // A real smthrs behind a script that writes down where Node, and a smthrs run from source, were told to keep
+    // compiled code. A mode's temporary directory is empty at every commit, so neither is kept there.
     const command = join(dirname(log), "smthrs")
-    writeFileSync(command, `#!/bin/sh\necho "$NODE_COMPILE_CACHE" >> ${log}\nexec ${smthrs} "$@"\n`)
+    writeFileSync(
+      command,
+      `#!/bin/sh\necho "$NODE_COMPILE_CACHE $VIBELANG_CACHE_DIR" >> ${log}\nexec ${smthrs} "$@"\n`
+    )
     chmodSync(command, 0o755)
     // The step passes only when it is not told: in the baseline, and as a target.
-    const root = makeSmallRepository([job("a", `test -z "$NODE_COMPILE_CACHE"`)])
+    const root = makeSmallRepository([job("a", `test -z "$NODE_COMPILE_CACHE$VIBELANG_CACHE_DIR"`)])
     created.push(root)
     // The script writes outside every copy, so the runs have no jail.
     const host = Layer.succeed(Options, {
@@ -55,7 +59,11 @@ describe("a start of smthrs in a copy", () => {
     const starts = readFileSync(log, "utf8").split("\n").filter((line) => line !== "")
     // Normal mode, the plan fast mode reads, and fast mode: each in its own copy's cache directory.
     expect(starts.length).toBeGreaterThanOrEqual(3)
-    for (const line of starts) expect(line).toMatch(new RegExp(`/(normal|fast)/[^/]+/${compiledCode}$`))
+    for (const line of starts) {
+      const [node, source] = line.split(" ")
+      expect(node).toMatch(new RegExp(`/(normal|fast)/[^/]+/${compiledCode}$`))
+      expect(source).toBe(`${node?.slice(0, -compiledCode.length)}${compiledSource}`)
+    }
     expect(new Set(starts.map((line) => /\/(normal|fast)\//.exec(line)?.[1]))).toEqual(new Set(["normal", "fast"]))
     const commit = report.commits[0]
     expect(commit?.baseline).toMatchObject({ ok: true, counts: { ran: 1 } })

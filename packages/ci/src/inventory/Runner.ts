@@ -11,7 +11,11 @@
  * `/tmp/smithers-ci-runner-<user id>`, named after the repository's place and
  * the job. The job's first step starts the state anew, as a runner empties
  * `RUNNER_TEMP` when a job starts, writes the shared functions there for the
- * steps after it, and removes the state of any checkout that is gone.
+ * steps after it, and removes the state of any checkout that is gone. A job
+ * that is told its own temporary directory (`Inventory.jobTemporaryVariable`),
+ * as a job on a machine of its own is, keeps its state there: no other job's
+ * state is beside it, and it is gone when the job ends, so the job's next
+ * run starts with none.
  *
  * A job's first step does not name its job: its text is the same for two
  * jobs that start alike, so it can run once for both. What it leaves is kept
@@ -27,7 +31,14 @@
  */
 
 import * as Contract from "../contract/Inventory.ts"
-import { commitNote, eventsVariable, noParent, runnerEntry, stateVariable } from "../contract/Inventory.ts"
+import {
+  commitNote,
+  eventsVariable,
+  jobTemporaryVariable,
+  noParent,
+  runnerEntry,
+  stateVariable
+} from "../contract/Inventory.ts"
 import { shardOf } from "../contract/Shard.ts"
 import {
   finish,
@@ -820,7 +831,7 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
     `${shardOf(work, 0x1_0000_0000).toString(36)}-${shardOf(`${work}\n`, 0x1_0000_0000).toString(36)}`
   /** The lines that name a directory of the state after the repository's place and `name`, shell words. */
   const named = (target: string, name: string): ReadonlyArray<string> => [
-    `__sum=$(printf %s "$__root|"${name}"$__variant" | cksum)`,
+    `__sum=$(printf %s "$__place|"${name}"$__variant" | cksum)`,
     `case \${__sum// /} in ''|*[!0-9]*) ${fail("cksum gave no checksum to name the job's state with")};; esac`,
     `${target}=$__base/\${__sum%% *}-\${__sum##* }`
   ]
@@ -842,7 +853,7 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
   const own = [`__state=$(mktemp -d "$__base/only.XXXXXX") || exit 1`, `trap '__ci_gone "$__state"' EXIT`]
   /** The lines that say where the state's checkout is and write the functions every step of the job reads. */
   const library_ = [
-    `printf %s "$__root" > "$__state/root.$$" && mv -f -- "$__state/root.$$" "$__state/root" || exit 1`,
+    `printf %s "$__place" > "$__state/root.$$" && mv -f -- "$__state/root.$$" "$__state/root" || exit 1`,
     `cat > "$__state/lib.sh" <<'${marker}'`,
     shared,
     marker
@@ -877,6 +888,10 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       `fi`,
       // The state is under /tmp whatever the step's own TMPDIR is, in a directory only this user can enter. Where
       // /tmp cannot be written, as inside a step held to its inputs, it is under the TMPDIR that step is given.
+      // On a machine Smithers build made for the job, it is under that machine's temporary directory: a state
+      // left under /tmp would be there when the job next runs, and a step that removes a directory another run
+      // left has read something nobody can name, so its result would never be stored. The step's own script is
+      // not told the variable.
       // Removes a state, read-only directories and all, as a tool's own cache has them. False when it is still
       // there.
       `__ci_gone() {`,
@@ -887,7 +902,13 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       `}`,
       `__variant=`,
       ...variant,
-      `__base=/tmp; [ -w /tmp ] || __base=\${TMPDIR:-/tmp}`,
+      // A state is named after the repository's place and holds it, so two checkouts that share /tmp keep
+      // theirs apart and a checkout that is gone has its state removed. In the job's own directory there is no
+      // other checkout: the name and the state hold no path, so a record of what a step read there answers in
+      // another checkout.
+      `__base=/tmp; __place=$__root`,
+      `if [ -n "\${${jobTemporaryVariable}-}" ] && [ -w "$${jobTemporaryVariable}" ]; then __base=$${jobTemporaryVariable}; __place=; fi`,
+      `unset ${jobTemporaryVariable}; [ -w "$__base" ] || __base=\${TMPDIR:-/tmp}`,
       `__base=$__base/smithers-ci-runner-$(id -u)`,
       `mkdir -p -m 700 -- "$__base" 2>/dev/null; [ -d "$__base" ] && [ -O "$__base" ] || ${
         fail("$__base is not a directory of this user")

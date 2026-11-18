@@ -899,6 +899,8 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
 
   it("names the variable a baseline step is told its store by, which no step's own script is given", () => {
     expect(Inventory.stateVariable).toBe("SMITHERS_CI_STATE")
+    // The name Smithers build gives the temporary directory of a job's machine.
+    expect(Inventory.jobTemporaryVariable).toBe("SMTHRS_MACHINE_TMP")
     // It is the replay's own word to its steps, not one a person sets.
     expect(JSON.stringify(Command.environment)).not.toContain(Inventory.stateVariable)
   })

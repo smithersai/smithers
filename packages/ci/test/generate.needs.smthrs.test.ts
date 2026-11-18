@@ -1,11 +1,11 @@
 /**
- * A step held to its files is keyed on the files as they are when it starts.
+ * A step held to its files never reads what a job it `needs` wrote.
  *
  * GitHub jobs run on separate machines, so the first step of a job is held to
- * the files it names whatever jobs it `needs`. The generated targets run in
- * one working tree, where the steps of those jobs ran before it and may have
- * rewritten one of its files. Smithers build measures a target again when it
- * starts, so the step is answered only by a run that read the same bytes.
+ * the files it names whatever jobs it `needs`: it starts from a fresh
+ * checkout, not from what the needed job left. The needed job's targets run
+ * on a machine of their own, so a file they rewrite is rewritten in their
+ * copy, and the step is tested from the file as the commit has it.
  *
  * Real git repositories, the real `smthrs`, the real read sandbox.
  */
@@ -71,18 +71,18 @@ const job = (id: string, steps: Job["steps"], needs: ReadonlyArray<string> = [])
 })
 
 describe("the first step of a job that needs another job", () => {
-  it.runIf(confines)("is never answered by a result for a file as it was before that job rewrote it", () => {
+  it.runIf(confines)("is tested from the file as the commit has it, whatever that job wrote to it", () => {
     const inventory: InventoryDocument = {
       version: 1,
       repository: "example/needs",
       commit: "0000000000000000000000000000000000000005",
       toolchains: [],
       jobs: [
-        // Its first step writes a file the next job is tested from, out of a file git ignores: no key in the
-        // plan holds what it writes. It always runs and names no outputs, so nobody knows what it wrote.
+        // Its first step rewrites a file the next job is tested from. It always runs and names no outputs, so
+        // nobody knows what it wrote.
         job("generate", [
-          { id: "generate:1", command: "cat local/config.txt > src/a.txt", cwd: "", env: {}, secrets: [] },
-          { id: "generate:2", command: "true", cwd: "", env: {}, secrets: [] }
+          { id: "generate:1", command: "cat config.txt > src/a.txt", cwd: "", env: {}, secrets: [] },
+          { id: "generate:2", command: "grep -q two src/a.txt", cwd: "", env: {}, secrets: [] }
         ]),
         job("check", [{
           id: "check:1",
@@ -94,27 +94,34 @@ describe("the first step of a job that needs another job", () => {
         }], ["generate"])
       ]
     }
-    const root = repository(inventory, { "local/config.txt": "one\n", "src/a.txt": "one\n" })
+    const root = repository(inventory, { "config.txt": "two\n", "src/a.txt": "one\n" })
     try {
+      expect(run(root, "git", ["add", "-A"]).status).toBe(0)
+      expect(
+        run(root, "git", ["-c", "user.name=T", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "one"])
+          .status
+      ).toBe(0)
       // The step is held to the files it names, and waits for the last step of the job it needs.
       const declared = readFileSync(join(root, workspacePath), "utf8")
       expect(declared).toContain(`data: [S.glob("//src/**"), step1]`)
+      // The needed job runs on a machine of its own.
+      expect(declared).toContain(`machine: "generate"`)
       const checked = (name: string) => {
         const { statuses, output } = execute(root, name)
         expect(statuses["generate-1"], output).toBe("ran")
+        expect(statuses["generate-2"], output).not.toBe("failed")
         return statuses["check-1"]
       }
+      // `generate` writes "two" into its own copy of the file, and its second step finds it there. `check` reads
+      // "one", as it does on a runner of its own.
       expect(checked("first")).toBe("ran")
+      expect(readFileSync(join(root, "src/a.txt"), "utf8")).toBe("one\n")
       expect(checked("second")).toBe("hit")
-      // The plan measures src/a.txt holding "one"; `generate` then writes "two" into it.
-      writeFileSync(join(root, "local/config.txt"), "two\n")
+      // The commit's own file changes: the step is tested again, and fails as it would in CI.
+      writeFileSync(join(root, "src/a.txt"), "three\n")
       expect(checked("third")).toBe("failed")
-      // Nothing was stored for the failure.
-      expect(checked("fourth")).toBe("failed")
-      // A fresh checkout, and the job writes "one" again: the first run's result answers for those bytes.
       writeFileSync(join(root, "src/a.txt"), "one\n")
-      writeFileSync(join(root, "local/config.txt"), "one\n")
-      expect(checked("fifth")).toBe("hit")
+      expect(checked("fourth")).toBe("hit")
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

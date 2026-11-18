@@ -21,7 +21,16 @@ export const placeIn = (work: string, way: Way = "normal"): Confined => {
   const tmp = join(work, "tmp", way)
   mkdirSync(home, { recursive: true })
   mkdirSync(tmp, { recursive: true })
-  return { home, tmp, guard: join(work, "guard"), hooks: join(home, hooksDirectory), daemon: {}, jail: undefined }
+  return {
+    home,
+    tmp,
+    guard: join(work, "guard"),
+    template: join(work, "home", "template"),
+    links: [],
+    hooks: join(home, hooksDirectory),
+    daemon: {},
+    jail: undefined
+  }
 }
 
 /** A fresh place under the system temporary directory. */

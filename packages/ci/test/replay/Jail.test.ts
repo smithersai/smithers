@@ -180,7 +180,7 @@ const toolsOf = (owner: ReturnType<typeof person>) => ({
 })
 
 describe.skipIf(!jailable)("a step in the jail", () => {
-  it("has a home of its own, kept between commits, and cannot read a credential, write outside, or push", async () => {
+  it("has a home of its own, and cannot read a credential, write outside, or push", async () => {
     const owner = person()
     const other = neighbour("other")
     const origin = neighbour("origin")
@@ -196,9 +196,8 @@ describe.skipIf(!jailable)("a step in the jail", () => {
           `test "$HOME" != ${owner.home}`,
           `test "$XDG_CACHE_HOME" = "$HOME/.cache"`,
           `: > "$HOME/mine"`,
-          // The temporary directory and `/tmp` are one directory of the step's own, with nothing of the machine's.
+          // The temporary directory is the job's own, and `/tmp` holds nothing of the machine's.
           `: > "\${TMPDIR:-/tmp}/mine"`,
-          `test -f /tmp/mine`,
           `test ! -e ${marker}`,
           `: > made-here`
         ].join(" && ")
@@ -208,8 +207,6 @@ describe.skipIf(!jailable)("a step in the jail", () => {
       // A version manager finds its versions under the step's own home.
       job("versions", `test "$(readlink "$HOME/.versions/tool")" = ${owner.tool}`),
       job("npm", `test "$(npm config get cache)" = "$HOME/.npm"`),
-      // The first commit leaves a file in the cache, and the second finds it.
-      job("cache", "sh cache.sh"),
       job(
         "quiet",
         `test "$GIT_TERMINAL_PROMPT" = 0 && test -z "\${SSH_AUTH_SOCK+set}" && test -z "$(git config --get credential.helper)"`
@@ -241,10 +238,7 @@ describe.skipIf(!jailable)("a step in the jail", () => {
         `git remote set-url --push origin file://${origin} && git push --no-verify origin HEAD:refs/heads/pushed3`
       )
     ]
-    const root = repository([...passing, ...failing], [
-      { "cache.sh": `mkdir -p "$XDG_CACHE_HOME/pm" && : > "$XDG_CACHE_HOME/pm/one"\n` },
-      { "cache.sh": `test -f "$XDG_CACHE_HOME/pm/one"\n` }
-    ], origin)
+    const root = repository([...passing, ...failing], [{ "notes.md": "one\n" }, { "notes.md": "two\n" }], origin)
     const refs = [git(other, "for-each-ref"), git(origin, "for-each-ref")]
 
     process.env["SSH_AUTH_SOCK"] = join(outside, "agent")
@@ -319,12 +313,14 @@ describe("a step on a machine with no jail", () => {
       expect(lines.length).toBeGreaterThanOrEqual(4)
       expect(readFileSync(join(out, name), "utf8")).not.toContain("Everything up-to-date")
     }
-    // The baseline's step saw the baseline's home and the target's saw normal mode's: two homes the replay made
-    // side by side, both gone with the replay.
+    // The baseline's step saw the home of its own job, and the target's saw the home of its job's machine, which
+    // Smithers build keeps under normal mode's home: two homes the replay made, both gone with the replay.
     const homes = [...new Set(readFileSync(join(out, "home"), "utf8").trim().split("\n"))].sort()
-    expect(homes.map((home) => basename(home))).toEqual(["baseline", "normal"])
-    expect(new Set(homes.map((home) => dirname(home))).size).toBe(1)
-    expect(existsSync(dirname(dirname(homes[0] as string)))).toBe(false)
+    const work = /^(.*\/smithers-ci-replay-[^/]+)\/home\//.exec(homes[0] as string)?.[1] as string
+    expect(homes.map((home) => home.slice(work.length + "/home/".length).split("/")[0]?.replace(/-job-.*$/, "-job")))
+      .toEqual(["baseline-job", "normal"])
+    expect(basename(homes[1] as string)).toBe("home")
+    expect(existsSync(work)).toBe(false)
     expect(existsSync(join(out, "written"))).toBe(true)
     expect(said.filter((line) => line.includes("jail"))).toEqual([unjailed(refusal)])
   }, 1_200_000)
@@ -368,28 +364,27 @@ describe.each(
     { where: "with no jail", asked: () => ({ refusal: "no bubblewrap" }), runs: true }
   ] as const
 )("a tool that keeps a cache for its user, $where", ({ asked, runs }) => {
-  it.skipIf(!runs)("is cold once in the baseline, once in normal mode and once in fast mode", async () => {
-    // A tool as Zig or Go is: its first run in a home takes two seconds to fill a cache there, and every later run
-    // finds it. The first commit's step passes only in a home with no cache, and the second's only in one with it.
+  it.skipIf(!runs)("is cold at every commit in the baseline, in normal mode and in fast mode", async () => {
+    // A tool as Zig or Go is: its first run in a home takes two seconds to fill a cache there. A CI runner starts
+    // every job with an empty home, so the step passes only in a home with no cache, at the second commit too.
     const cold = `test ! -e "$HOME/.cache/tool" && sleep 2 && mkdir -p "$HOME/.cache/tool"\n`
-    const warm = `test -d "$HOME/.cache/tool"\n`
     const root = repository(
       [job("tool", "sh tool.sh")],
-      [{ "tool.sh": cold }, { "tool.sh": warm }],
+      [{ "tool.sh": cold }, { "tool.sh": `${cold}# again\n` }],
       neighbour("origin")
     )
 
     const { report } = await replay(root, 2, asked, ["normal", "fast"], runningAll)
 
     const once = { hit: 0, ran: 1, failed: 0, skipped: 0 }
-    const [first, second] = report.commits
-    // At the first commit each way found its home empty and paid the two seconds itself.
-    for (const totals of [first?.baseline, first?.normal, first?.fast]) {
-      expect(totals?.counts).toEqual(once)
-      expect(totals?.workMs).toBeGreaterThanOrEqual(2000)
+    expect(report.commits).toHaveLength(2)
+    // At each commit each way found its home empty and paid the two seconds itself.
+    for (const commit of report.commits) {
+      for (const totals of [commit.baseline, commit.normal, commit.fast]) {
+        expect(totals?.counts).toEqual(once)
+        expect(totals?.workMs).toBeGreaterThanOrEqual(2000)
+      }
     }
-    // At the second commit each way found the cache it filled at the first.
-    for (const totals of [second?.baseline, second?.normal, second?.fast]) expect(totals?.counts).toEqual(once)
     expect(report.commits.flatMap((commit) => commit.mismatches)).toEqual([])
   }, 1_200_000)
 })
@@ -556,6 +551,12 @@ describe("confine", () => {
       expect(readdirSync(place.home).sort()).toEqual([".gitconfig", ".smithers-ci", ".versions"])
       expect(readlinkSync(join(place.home, ".versions", "tool"))).toBe(owner.tool)
       expect(readdirSync(place.tmp)).toEqual([])
+      // What every job's home starts as: the hook, the configuration, and where the version manager looks.
+      expect(place.template).toBe(join(work, "home", "template"))
+      expect(readFileSync(join(place.template, hooksDirectory, "pre-push"), "utf8")).toBe(prePush)
+      expect(readFileSync(join(place.template, ".gitconfig"), "utf8")).toBe(gitConfig)
+      expect(readlinkSync(join(place.template, ".versions", "tool"))).toBe(owner.tool)
+      expect(place.links).toEqual([{ path: ".versions/tool", target: owner.tool }])
       expect(place.jail).toEqual({
         bwrap: "/usr/bin/bwrap",
         masks: [
@@ -732,7 +733,7 @@ describe("the tools on a search path", () => {
 
 describe("the jail", () => {
   const argv = ["bash", "-e", "-c", "true"] as const
-  const place = { home: "/h", tmp: "/t", guard: "/g", hooks: "/h/hooks", daemon: {} }
+  const place = { home: "/h", tmp: "/t", guard: "/g", template: "/h0", links: [], hooks: "/h/hooks", daemon: {} }
 
   it("is asked of the machine: Linux with a bubblewrap that starts, or the reason", () => {
     const facts = ExecSandbox.host()

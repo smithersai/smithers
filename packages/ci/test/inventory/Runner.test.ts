@@ -725,6 +725,36 @@ describe("write", () => {
       expect(statSync(stateRoot).mode & 0o077).toBe(0)
     })
 
+    it("keeps it in the temporary directory of the job's machine, where Smithers build made one", () => {
+      const machine = join(at.tmp, "machine")
+      mkdirSync(machine)
+      const env = { SMTHRS_MACHINE_TMP: machine, TMPDIR: "/var/tmp" }
+      pass({ first: true }, `echo "KEPT=yes" >> "$GITHUB_ENV"`, { env })
+      // The steps of the job find the state there, and the step's own script is not told the variable.
+      expect(pass({}, `echo "$KEPT $RUNNER_TEMP \${SMTHRS_MACHINE_TMP-unset}"`, { env })).toMatch(
+        new RegExp(`^yes ${machine}/smithers-ci-runner-${process.getuid?.()}/\\d+-\\d+/temp unset\n$`)
+      )
+      expect(statSync(join(machine, `smithers-ci-runner-${process.getuid?.()}`)).mode & 0o077).toBe(0)
+      // The name of the state there holds no path of the checkout: the same job in another checkout, in its own
+      // directory, keeps its state under the same name. Under /tmp the two checkouts have two names.
+      const other = place(1)
+      const elsewhere = join(other.tmp, "machine")
+      mkdirSync(elsewhere)
+      const tempIn = (cwd: string, own: string | undefined): string =>
+        pass({ first: true }, `echo "$RUNNER_TEMP"`, {
+          cwd,
+          env: own === undefined ? {} : { SMTHRS_MACHINE_TMP: own }
+        }).trim()
+      expect(tempIn(other.repo, elsewhere).slice(elsewhere.length)).toBe(tempIn(at.repo, machine).slice(machine.length))
+      expect(tempIn(other.repo, undefined)).not.toBe(tempIn(at.repo, undefined))
+      // The state there holds no path either, where one under /tmp holds its checkout's.
+      const rootOf = (temp: string): string => readFileSync(join(temp, "..", "root"), "utf8")
+      expect(rootOf(tempIn(at.repo, machine))).toBe("")
+      expect(rootOf(tempIn(at.repo, undefined))).toBe(at.repo)
+      // A directory that cannot be written is not the job's own: the state goes under /tmp, named after the place.
+      expect(tempIn(at.repo, "/proc")).toBe(tempIn(at.repo, undefined))
+    })
+
     it("removes the state of a checkout that is gone when the next job starts", () => {
       const gone = place(1)
       const temp = pass({ first: true }, `echo "$RUNNER_TEMP"`, { cwd: gone.repo }).trim()

@@ -170,8 +170,8 @@ describe("generated files under the real smthrs", () => {
         "blocked-1": "skipped"
       })
 
-      // A clean checkout: what setup steps left behind is gone.
-      rmSync(join(root, "made"), { recursive: true })
+      // The job's steps ran on its machine: nothing was left in the checkout, as in a clean one.
+      expect(existsSync(join(root, "made"))).toBe(false)
       const second = execute(root, "second")
       expect(second.statuses.get("good-1")).toBe("ran")
       expect(second.statuses.get("good-2")).toBe("ran")

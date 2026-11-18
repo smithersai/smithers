@@ -18,21 +18,22 @@
  * **What it holds.**
  *
  * 1. `smthrs` starts once for the commit.
- * 2. Each job runs its own install, as in the baseline and on GitHub: a
- *    runner tells every step its job, so the two installs are two steps.
+ * 2. Each job runs its own install, as in the baseline and on GitHub: a job
+ *    has a checkout and a home of its own, and a runner tells every step its
+ *    job, so the two installs are two steps.
  * 3. The steps take no longer than in the baseline, give or take one start.
- * 4. Around its steps, normal mode adds at most two starts of `smthrs`:
- *    the start itself, reading the generated files, and deciding what to run.
+ * 4. Around its steps, normal mode adds at most two starts of `smthrs`
+ *    (the start itself, reading the generated files, and deciding what to
+ *    run) and a checkout for each job, timed beside it as the start is: a
+ *    clone that shares the repository's objects, as the baseline makes one
+ *    for each of its jobs, asked once what it holds, and removed.
  *
  * **Limits.** It does not hold a ratio of wall times. On this shape normal
- * mode's wall time is the start of `smthrs`, plus every step one after the
- * other, where the baseline runs its two jobs side by side: `lint` and `test`
- * can both write the checkout, so they never run at once. Measured on the
- * reviewer's fixture of this shape (`npm ci`, then `npm run lint` or
- * `npm test`) on the build server (48 cores, load 32, 2026-11-18): the
- * baseline took 10.1 s and normal mode 16.8 s, of which 4.5 s was the start
- * and the planning and 12.3 s the four steps. A cache hit is not measured
- * here: `test/replay` and `test/generate.smthrs.test.ts` hold reuse.
+ * mode's wall time is the start of `smthrs`, a copy of the checkout for each
+ * job, and every step one after the other, where the baseline runs its two
+ * jobs side by side: two jobs on one machine share its ports and its `/tmp`,
+ * so they never run at once. A cache hit is not measured here: `test/replay`
+ * and `test/generate.smthrs.test.ts` hold reuse.
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
@@ -107,12 +108,26 @@ const startOf = (): number => {
   return performance.now() - from
 }
 
+/**
+ * How long a checkout of `root` for one job takes, in milliseconds: a clone that shares its objects, asked once
+ * what it holds, and removed, as a job's checkout is made, read and removed.
+ */
+const checkoutOf = (root: string): number => {
+  const copy = join(directory(), "copy")
+  const from = performance.now()
+  execFileSync("git", ["clone", "--quiet", "--shared", root, copy], { stdio: "ignore" })
+  execFileSync("git", ["status", "--porcelain"], { cwd: copy, stdio: "ignore" })
+  rmSync(copy, { recursive: true, force: true })
+  return performance.now() - from
+}
+
 interface Measurement {
   readonly report: ReplayReport
   /** The `smthrs ci` command lines of the replay. */
   readonly starts: number
   readonly installs: number
   readonly startMs: number
+  readonly checkoutMs: number
 }
 
 /** The parts the program replays with, each with the services `layer` gives it. */
@@ -138,6 +153,7 @@ const measure = async (root: string, installs: string): Promise<Measurement> => 
   created.push(recording.directory)
   const ran = linesOf(installs)
   const before = startOf()
+  const copied = checkoutOf(root)
   const report = await Effect.runPromise(
     run({ root, commits: 1, modes: ["normal"] }, parts).pipe(
       Effect.provide(Layer.provide(recorded(recording.command), NodeServices.layer)),
@@ -148,33 +164,39 @@ const measure = async (root: string, installs: string): Promise<Measurement> => 
     report,
     starts: recording.commands().filter((line) => line.startsWith("ci ")).length,
     installs: linesOf(installs) - ran,
-    startMs: Math.max(before, startOf())
+    startMs: Math.max(before, startOf()),
+    checkoutMs: Math.max(copied, checkoutOf(root))
   }
 }
 
 describe("a first run, with nothing to reuse", () => {
-  it("starts smthrs once, runs each job's own steps, and adds at most two starts around the steps", async () => {
-    const installs = join(directory(), "installs")
-    const root = repository(installs)
-    const overheads: Array<number> = []
-    const slower: Array<number> = []
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const measured = await measure(root, installs)
-      const commit = measured.report.commits[0]
-      expect(measured.report.mismatches).toBe(0)
-      expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 4, failed: 0, skipped: 0 })
-      // Four targets, as many as the baseline has steps: each job's install is its own.
-      expect(commit?.normal.counts).toEqual({ hit: 0, ran: 4, failed: 0, skipped: 0 })
-      // Two installs in the baseline and two in normal mode, one per job.
-      expect(measured.installs).toBe(4)
-      expect(measured.starts).toBe(1)
-      const normal = commit?.normal as ReplayReport["commits"][number]["normal"]
-      const baseline = commit?.baseline as ReplayReport["commits"][number]["baseline"]
-      overheads.push((normal.wallMs - normal.workMs) / measured.startMs)
-      slower.push((normal.workMs - baseline.workMs) / measured.startMs)
-      if ((overheads.at(-1) as number) <= 2 && (slower.at(-1) as number) <= 1) break
-    }
-    expect(Math.min(...slower)).toBeLessThanOrEqual(1)
-    expect(Math.min(...overheads)).toBeLessThanOrEqual(2)
-  }, 900_000)
+  it(
+    "starts smthrs once, runs each job's own steps, and adds at most two starts and a checkout for each job",
+    async () => {
+      const installs = join(directory(), "installs")
+      const root = repository(installs)
+      const overheads: Array<number> = []
+      const slower: Array<number> = []
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const measured = await measure(root, installs)
+        const commit = measured.report.commits[0]
+        expect(measured.report.mismatches).toBe(0)
+        expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 4, failed: 0, skipped: 0 })
+        // Four targets: each job installs on its own machine, as each does in the baseline.
+        expect(commit?.normal.counts).toEqual({ hit: 0, ran: 4, failed: 0, skipped: 0 })
+        // Two installs in the baseline and two in normal mode, one per job.
+        expect(measured.installs).toBe(4)
+        expect(measured.starts).toBe(1)
+        const normal = commit?.normal as ReplayReport["commits"][number]["normal"]
+        const baseline = commit?.baseline as ReplayReport["commits"][number]["baseline"]
+        // Each of the two jobs runs in a checkout of its own.
+        overheads.push((normal.wallMs - normal.workMs - 2 * measured.checkoutMs) / measured.startMs)
+        slower.push((normal.workMs - baseline.workMs) / measured.startMs)
+        if ((overheads.at(-1) as number) <= 2 && (slower.at(-1) as number) <= 1) break
+      }
+      expect(Math.min(...slower)).toBeLessThanOrEqual(1)
+      expect(Math.min(...overheads)).toBeLessThanOrEqual(2)
+    },
+    900_000
+  )
 })

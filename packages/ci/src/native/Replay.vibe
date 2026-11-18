@@ -17,7 +17,7 @@ import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract
 import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
-import { type Confined, confine, held, reading, type Way } from "../replay/Confine.vibe"
+import { type Confined, confine, held, jobHomes, reading, type Way } from "../replay/Confine.vibe"
 import { addTo, type Count, type CpuBucket, uncounted, usedBy } from "../replay/Cpu.ts"
 import { cpuWatch } from "../replay/CpuWatch.vibe"
 import { gitConfig, pushesGoNowhere, searchPath, stepEnvironment } from "../replay/Environment.ts"
@@ -405,7 +405,12 @@ export const own = <R>(
         ...jobs
       ])
       // The cache's address is the one thing the copy's own `smthrs` gets beyond what a target gets.
-      const environment = { ...stepEnvironment(place.daemon, place), ...printsNotes, ...(cached ? cacheEnv : {}) }
+      const environment = {
+        ...stepEnvironment(place.daemon, place),
+        ...jobHomes(place),
+        ...printsNotes,
+        ...(cached ? cacheEnv : {})
+      }
       const watch = try watchFor(stall.minutes, stall.table)
       const output = try exec(command, args, copy, environment, printedLimit, undefined, true, heard, watch, undefined, count)
       const record = effect {

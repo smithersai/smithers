@@ -125,8 +125,10 @@ const withPerson = async <A>(variables: Readonly<Record<string, string>>, work: 
 
 const found = probe()
 const jailable = !("refusal" in found)
-// The stand-ins are beside the homes of the ways, in the replay's own directory.
-const standIn = (program: string): string => `"$(cd "$HOME/../.." && pwd)/guard/${program}"`
+// The stand-ins are in the replay's own directory, which holds every home a step gets: the home of a baseline job
+// is two directories below it, and the home of a job's machine in a mode is deeper.
+const standIn = (program: string): string =>
+  `"$(d=$HOME; until [ -d "$d/guard" ] || [ "$d" = / ]; do d=$(dirname "$d"); done; echo "$d")/guard/${program}"`
 /** What a container program's stand-in prints when a step starts it with `args`. */
 const refused = (program: string, args: string): string =>
   `smithers-ci does not run ${program} without --allow-docker: ${args}`

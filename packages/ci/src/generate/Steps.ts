@@ -21,10 +21,13 @@
  * after it. Without that, the later target declares the whole repository, as
  * a step with no inputs does: its own inputs would not hold the files the
  * earlier step read, and it would pass stale when one of them changed.
- * GitHub jobs run on separate machines, so `needs` only orders them. Two of
- * their steps that run the same command, in the same directory and
- * environment, after the same targets, do the same work in the same tree: one
- * target runs both, so two jobs that each start with `npm ci` install once.
+ * GitHub jobs run on separate machines, so `needs` only orders them, and the
+ * targets of one job name one machine (`StepTarget.machine`): Smithers build
+ * runs them in a checkout, a home and a temporary directory no other job
+ * sees. A job whose every step is held to the files it names needs none: two
+ * such steps that run the same command, in the same directory and
+ * environment, after the same targets, do the same work, and one target runs
+ * both.
  * The jobs
  * of any other source run one after another in one working tree, in
  * `Inventory.treeOrder`: each waits for the job before it, as `just ci` runs
@@ -115,6 +118,13 @@ export interface StepTarget {
    * one `step`, job and variant may run at once.
    */
   readonly atOnce: boolean
+  /**
+   * The machine the target runs on: one for each GitHub job and matrix variant, as each starts on a runner of its
+   * own. Smithers build gives the targets of one machine a private checkout, home and temporary directory.
+   * `undefined` for a job whose every step is held to the files it names, which reads and writes nothing else, and
+   * for the jobs of a source that shares one working tree.
+   */
+  readonly machine: string | undefined
 }
 
 /**
@@ -263,6 +273,36 @@ const clean = (text: string): string => text.replace(/[^A-Za-z0-9._-]+/g, "-")
 const slug = (text: string): string => {
   const cleaned = clean(text)
   return /^[A-Za-z_]/.test(cleaned) ? cleaned : `s-${cleaned}`
+}
+
+// The machine of a GitHub job's variant: named as the job is, with the variant when the job has a matrix.
+const machineOf = (job: Job, variant: Variant): string =>
+  Object.keys(variant).length === 0 ? job.id : `${job.id} ${variantKey(variant)}`
+
+// How a job that needs a runner job of its own is named beside the tool versions it runs under: `job lint`, or
+// `job test (node 20, os macos-latest)` for a matrix variant.
+const aloneOf = (job: Job, variant: Variant): string => {
+  const values = Object.keys(variant).sort((left, right) => left < right ? -1 : 1).map((name) =>
+    `${name} ${variant[name]}`
+  )
+  return values.length === 0 ? `job ${job.id}` : `job ${job.id} (${values.join(", ")})`
+}
+
+// True when every step of a job with a checkout of its own would be held to the files it names. Such a job reads
+// and writes nothing else, so it needs no machine. The conditions are the ones `draftOf` narrows a step under.
+const heldThroughout = (job: Job): boolean => {
+  let first = true
+  let known = true
+  for (const group of groupsOf(job.steps)) {
+    for (const step of group) {
+      const free = step.runner === undefined || (first && !readsCommit(step))
+      const scoped = first || known
+      if (!free || !scoped || step.inputs === undefined || step.inputs.includes(everything)) return false
+    }
+    known = group.every((step) => outputsOf(step) !== undefined)
+    first = false
+  }
+  return true
 }
 
 // The versions a target runs under, as a person reads them.
@@ -430,7 +470,9 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     scoped: boolean,
     own: boolean,
     installs: ReadonlyArray<Toolchain>,
-    alone: boolean
+    alone: boolean,
+    machine: string | undefined,
+    versions: string
   ): Draft | undefined => {
     // A step with runner text is run as that text. It fills in its own `${{ }}`, so only matrix values are written.
     const command = step.runner === undefined ? forShell(step.command, variant) : expand(script(step), variant)
@@ -469,8 +511,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     const files = free && scoped && step.inputs !== undefined && !step.inputs.includes(everything)
       ? { inputs: sorted(step.inputs), outputs: outputsOf(step) }
       : { inputs: undefined, outputs: undefined }
-    // Steps under different tool versions are different work, whatever their text.
-    const versions = versionsText(installs)
+    // Steps under different tool versions, or of jobs that run apart, are different work, whatever their text.
     const work = JSON.stringify([host, command, directory, env, inheritEnv, runEnv, dependencies, files, versions])
     const same = own ? sameWork.get(work) : undefined
     if (same !== undefined) {
@@ -491,6 +532,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       ...files,
       also: [],
       atOnce: step.atOnce === true,
+      machine,
       job,
       command,
       directory,
@@ -511,7 +553,15 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       if (host === "win32") notes.add(`${job.id}: runs only on Windows, which generated targets do not support.`)
       else if (runsOn !== undefined) runners.add(runsOn)
       const variantTools = choice.toolsOf(job, variant)
-      const versions = versionsText(variantTools)
+      // A GitHub job starts on a runner of its own, so its targets run on a machine of their own.
+      const machine = job.source === "github-actions" && !heldThroughout(job) ? machineOf(job, variant) : undefined
+      // Two jobs never share a `/tmp`. On Linux each machine has its own, by a mount. A macOS runner has no such
+      // mount, so a job with a machine is a runner job of its own there: it is kept apart from every other job,
+      // as targets that need other tool versions are, and waits for no job on another runner.
+      const tools = versionsText(variantTools)
+      const versions = machine !== undefined && host === "darwin"
+        ? [tools, aloneOf(job, variant)].filter((part) => part !== "").join(", ")
+        : tools
       const upstream = upstreamOf(job, host, versions)
       let previous = sorted(upstream.flatMap((tail) => tail.labels))
       let sharesTree = job.source !== "github-actions"
@@ -522,13 +572,16 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
         const made: Array<Draft> = []
         // What an earlier step left in this working tree, these steps can read. Their own inputs stand for all
         // they read only when nothing ran before them, or when all of it is declared.
-        const scoped = !(sharesTree && previous.length > 0) || known
-        // A job with a machine of its own starts from a fresh checkout, so its step can stand for an equal step
-        // of another such job. Steps split from one step are kept apart.
-        const own = job.source === "github-actions" && group.length === 1 && group[0]?.from === undefined
+        // On a machine no step is held to its inputs: a later step reads what an earlier one left there.
+        const scoped = machine === undefined && (!(sharesTree && previous.length > 0) || known)
+        // A job held to the files it names starts from a fresh checkout and writes only what it declares, so its
+        // step can stand for an equal step of another such job. Steps split from one step are kept apart. On a
+        // machine a step is its job's alone, as each job of a workflow installs and builds for itself.
+        const own = machine === undefined && job.source === "github-actions" && group.length === 1 &&
+          group[0]?.from === undefined
         for (const step of group) {
           const alone = !(sharesTree && previous.length > 0)
-          const draft = draftOf(job, step, variant, host, previous, scoped, own, variantTools, alone)
+          const draft = draftOf(job, step, variant, host, previous, scoped, own, variantTools, alone, machine, versions)
           if (draft === undefined) continue
           drafts.set(draft.label, draft)
           made.push(draft)

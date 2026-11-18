@@ -16,10 +16,11 @@ import { runnerSoftware } from "../contract/Inventory.ts"
  * commit and removes when it ends: the home a step gets in place of the
  * person's, the temporary directory a jailed step finds in place of the
  * machine's, and `guard`, which holds the stand-ins first on every step's
- * `PATH`. The first two are kept for the whole replay, so what a package
- * manager caches at one commit is there at the next. The baseline, normal mode
- * and fast mode each have their own home and temporary directory, so each
- * fills its caches itself.
+ * `PATH`. The baseline, normal mode and fast mode each have their own home and
+ * temporary directory, so each fills its caches itself. A baseline job has a
+ * home and a temporary directory of its own beside its way's
+ * (`Confine.machine`), as each job of a workflow starts on a runner of its
+ * own, and a mode's are emptied before each commit (`Confine.renew`).
  *
  * @category models
  * @since 0.1.0
@@ -29,6 +30,16 @@ export interface Place {
   readonly tmp: string
   readonly guard: string
 }
+
+/**
+ * The variable that names, to Smithers build, the directory every job's home
+ * starts as a copy of. In normal and fast mode Smithers build gives the
+ * targets of each job a machine of their own, and makes its home.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const jobHomeVariable = "SMTHRS_MACHINE_HOME"
 
 /**
  * The programs no step of a replay can start by name: each has a stand-in

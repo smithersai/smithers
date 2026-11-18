@@ -176,7 +176,8 @@ In the workflow `smithers-ci apply` writes, GitHub's own runner gives each step
 the commit, the run's id, number and attempt, and the event file. Every other
 value in the table is the same there as in a replay.
 
-Each job runs its own steps, as each has a machine of its own on GitHub. Two
+Each job runs its own steps, in a checkout, a home and a temporary directory of
+its own: see [A job is a machine](how-it-works.md#a-job-is-a-machine). Two
 jobs that start with the same step each run it, and each is told its own
 `GITHUB_JOB`.
 

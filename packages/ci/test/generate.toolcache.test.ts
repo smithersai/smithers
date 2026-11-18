@@ -77,8 +77,10 @@ describe("a step that keeps a tool's cache", () => {
     const source = generated([job("a", [zig])], packagePath)
     // Nobody names what a Zig build reads: it runs again only when a file its last run read has changed.
     expect(source).toContain(`shell: "bash -e -c 'zig build test'"`)
+    // A GitHub job runs in a copy of the checkout, which has no cache directory, so the tool cache is named from
+    // the build's own.
     expect(source).toContain(
-      `env: {"ZIG_GLOBAL_CACHE_DIR":"${toolCache}/zig/global","ZIG_LOCAL_CACHE_DIR":"${toolCache}/zig/local"}`
+      `env: {"ZIG_GLOBAL_CACHE_DIR":"{smthrs:cache-directory}/tools/zig/global","ZIG_LOCAL_CACHE_DIR":"{smthrs:cache-directory}/tools/zig/local"}`
     )
     expect(source).toContain(`sandbox: "none"`)
     expect(source).toMatch(/observe: \{ ignore: \[.*\] \}/)

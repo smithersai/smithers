@@ -12,6 +12,9 @@ import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.ts"
 import { variantKey } from "./Expressions.ts"
 import { type Leg, markerDirectory, repositoryLabel, type StepPlan, type StepTarget, workflowPath } from "./Steps.ts"
 
+// The cache directory of the generated workspace, from the repository root. `toolCache` is a directory inside it.
+const cacheDirectory = ".flows"
+
 export { workflowPath }
 
 /**
@@ -125,7 +128,7 @@ const workspaceName = (repository: string): string => {
 const renderWorkspace = (inventory: Inventory): ReadonlyArray<string> => [
   `export const Workspace = S.Workspace(${text(workspaceName(inventory.repository))}, {`,
   `  repository: ${text(inventory.repository)},`,
-  `  cache: S.Cache({ directory: ".flows" }),`,
+  `  cache: S.Cache({ directory: ${JSON.stringify(cacheDirectory)} }),`,
   `  host: S.Host({ bins: ["bash", "sh"] })`,
   `})`,
   ``
@@ -136,8 +139,11 @@ const narrows = (target: StepTarget, narrowed: boolean): boolean =>
   narrowed && target.rule === "check" && target.inputs !== undefined
 
 // Paths a tool writes each time it starts and never reads to decide its result: npm keeps a log of every command
-// there. Left out of what an observed step read, they cannot make it run again.
-const bookkeeping: ReadonlyArray<string> = ["~/.npm/_logs"]
+// in the first, and Node keeps the code it compiled in the second, which is not the same bytes from one run to the
+// next. Left out of what an observed step read, they cannot make it run again. A job's temporary directory is
+// empty when the job starts, so a step that read the compiled code an earlier step of its job left would never
+// be reused.
+const bookkeeping: ReadonlyArray<string> = ["~/.npm/_logs", "$TMPDIR/node-compile-cache"]
 
 // True for a target whose step names no inputs, so nobody knows what it reads. Smithers build observes it: the run
 // is traced, the result is stored with every path the run looked at, and the target runs again only when one of
@@ -204,6 +210,27 @@ const observation = (target: StepTarget): string =>
     target.runEnv.length === 0 ? "" : `, env: ${JSON.stringify(target.runEnv)}`
   } }`
 
+// The text Smithers build fills in with its cache directory, in a target's command and its variables.
+const cacheDirectoryMark = "{smthrs:cache-directory}"
+
+// The variables a target's step is given. A step that keeps a tool's own cache names a directory under the tool
+// cache, by a path from where it starts (`.flows/tools/zig`, `../.flows/tools/zig`). A target on a machine starts
+// in the machine's copy of the checkout, which has no cache directory: the tool's cache would go with the machine,
+// and the tool would start cold at every run. So the directory is named from the build's own cache directory,
+// which is the workspace's on a machine too.
+const envOf = (target: StepTarget): Readonly<Record<string, string>> =>
+  target.machine === undefined ? target.env : Object.fromEntries(
+    Object.entries(target.env).map(([name, value]) => {
+      const fromRoot = value.replace(/^(?:\.\.\/)+/, "")
+      return [
+        name,
+        fromRoot === toolCache || fromRoot.startsWith(`${toolCache}/`)
+          ? `${cacheDirectoryMark}${fromRoot.slice(cacheDirectory.length)}`
+          : value
+      ]
+    })
+  )
+
 const renderTarget = (
   target: StepTarget,
   index: number,
@@ -218,7 +245,7 @@ const renderTarget = (
   const fields = [
     `shell: ${text(target.script)}`,
     ...(target.rule === "setup" ? outputsOf(target, narrowed) : []),
-    ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(target.env)}`]),
+    ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(envOf(target))}`]),
     ...(inheritEnv.length === 0 ? [] : [`inheritEnv: ${JSON.stringify(inheritEnv)}`]),
     ...(target.host === undefined ? [] : [`hosts: [${text(target.host)}]`]),
     // A target that declares what it reads is held to it: a read outside its
@@ -227,6 +254,8 @@ const renderTarget = (
     `sandbox: ${narrows(target, narrowed) ? "{ network: true }" : text("none")}`,
     ...(observed ? [observation(target)] : []),
     ...(held ? [given(target)] : []),
+    // The steps of one job share a checkout, a home and a temporary directory no other job sees.
+    ...(target.machine === undefined ? [] : [`machine: ${text(target.machine)}`]),
     `timeout: ${text(stepTimeout)}`,
     `data: [${data.join(", ")}]`
   ]
@@ -261,6 +290,9 @@ const renderDeclaration = (
     comment("A step can read any file, so a target declares the whole repository unless its step names what it reads."),
     comment("Such a target is observed: it runs again only when a file its last run read has changed."),
     comment("A setup target always runs. It declares files only when its step names what it reads and writes."),
+    comment(
+      "The targets of one job name the job's machine, with a checkout, a home and a temporary directory of its own."
+    ),
     `const repository = ${shared ? `S.Filegroup({ srcs: [S.glob("//**")] })` : `S.glob("//**")`}`,
     ``,
     ...plan.targets.map((target, index) => renderTarget(target, index, variables, narrowed, passed)),
@@ -365,6 +397,21 @@ const tokenSetup = (cache: string | undefined): ReadonlyArray<string> => [
   `          fi`
 ]
 
+// What a job's own `/tmp` needs on a GitHub runner: the same bubblewrap, and the same restriction lifted. Smithers
+// build runs each job's targets with the job's temporary directory in place of `/tmp`, through a mount of its own.
+// A hosted runner has passwordless `sudo`, and Smithers' own workflow lifts the restriction the same way.
+const ownTmpSetup: ReadonlyArray<string> = [
+  `      ${yamlComment("Each job has a /tmp of its own, as it has a runner of its own in the original CI.")}`,
+  `      - name: Give each job its own /tmp`,
+  ...sandboxSetup.slice(2)
+]
+
+// The variable that tells Smithers build two jobs must never share a `/tmp`. A runner that gives no private
+// `/tmp` runs one job's targets and fails the others with the reason, where it would otherwise let a job find
+// what another left there. A macOS runner has no such mount, so the plan gives each job a runner job of its own
+// there (`Steps.ts`), and the one job that runs has the runner's `/tmp` to itself.
+const ownTmpVariable = "SMTHRS_MACHINE_OWN_TMP"
+
 // What observing a step needs on a GitHub runner: the tracer that records what its run reads, which an Ubuntu
 // runner lacks. Without it the step still runs, and reruns on every change. macOS has no such tracer.
 const tracerSetup: ReadonlyArray<string> = [
@@ -404,6 +451,9 @@ export const noSharedCache =
 // target, and a target that declares the whole repository. Such a target is safe beside another only when one of
 // the two always runs after the other, when they run on different systems, or when both were split from one
 // command that ran them at the same time (`Step.atOnce`). `plan.targets` is in dependency order.
+//
+// Two jobs on machines of their own cannot write the same files, and still run one at a time: they share the
+// runner's ports and its `/tmp`, where two jobs that each start a server on one port pass on two runners.
 const collides = (plan: StepPlan, narrowed: boolean): boolean => {
   const before = new Map<string, ReadonlySet<string>>()
   for (const target of plan.targets) {
@@ -461,6 +511,8 @@ const renderWorkflow = (
       return fromRoot === toolCache || fromRoot.startsWith(`${toolCache}/`)
     })
   )
+  // The jobs that run on a machine of their own: each has a checkout, a home and a temporary directory.
+  const machines = new Set(plan.targets.flatMap((target) => target.machine === undefined ? [] : [target.machine]))
   const apart = plan.legs.length > 0
   const varying = varyingTools(plan.legs)
   // Each machine keeps its own results: they were made under its versions.
@@ -501,8 +553,9 @@ const renderWorkflow = (
     `          node-version: "24"`,
     ...upToDate(cache, allowDocker),
     ...plan.toolchains.flatMap((toolchain) => renderSetup(toolchain, varying)),
-    // The read sandbox's step installs what keeps the token from a step, too.
-    ...(confined ? sandboxSetup : tokenSetup(cache)),
+    // The read sandbox's step installs what keeps the token from a step, and what gives a job its own `/tmp`,
+    // too. With no target held to its inputs, each has a step of its own.
+    ...(confined ? sandboxSetup : [...(machines.size > 0 ? ownTmpSetup : []), ...tokenSetup(cache)]),
     ...(observed ? tracerSetup : []),
     `      ${yamlComment("Unconfined results never reach a remote cache, so the runner keeps its own.")}`,
     `      ${yamlComment("It also keeps the compiled code of smthrs, so the next run starts sooner.")}`,
@@ -524,6 +577,8 @@ const renderWorkflow = (
     `      - run: npx --yes --package=@smthrs/cli@${release} smthrs ci ${selection}${serial ? " --jobs 1" : ""}`,
     `        env:`,
     `          NODE_COMPILE_CACHE: ${compiledCode}`,
+    // Two jobs on one runner: neither finds what the other left in `/tmp`.
+    ...(machines.size > 1 ? [`          ${ownTmpVariable}: required`] : []),
     `          SMITHERS_CACHE_URL: ${cacheUrl(cache)}`,
     `          SMITHERS_CACHE_TOKEN: ${cacheToken}`,
     ``

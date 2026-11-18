@@ -15,6 +15,7 @@ import {
   type FailedHere,
   givenTo,
   type Inventory,
+  jobTemporaryVariable,
   type NotReplayed,
   notReplayed,
   refusal,
@@ -41,7 +42,16 @@ import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
 import { check } from "../apply/index.ts"
 import { refusal as ownWorkspace } from "../native/Workspace.ts"
 import { withReasons } from "../native/Results.ts"
-import { type Confined, confine, held, reading, type Way } from "./Confine.vibe"
+import {
+  type Confined,
+  confine,
+  held,
+  jobHomes,
+  machine,
+  reading,
+  renew,
+  type Way
+} from "./Confine.vibe"
 import { addTo, type Count, type CpuBucket, uncounted, usedBy } from "./Cpu.ts"
 import { cpuWatch } from "./CpuWatch.vibe"
 import {
@@ -140,6 +150,17 @@ import {
  * @since 0.1.0
  */
 export const compiledCode = `${cacheDirectory}/node-compile-cache`
+
+/**
+ * Where a `smthrs` that runs from source keeps what it compiled of itself,
+ * from a copy's root. Without it that is under the temporary directory, which
+ * a mode finds empty at every commit, as a CI run does: every start would
+ * compile `smthrs` again.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const compiledSource = `${cacheDirectory}/vibelang-cache`
 
 /**
  * The host services a replay uses.
@@ -366,8 +387,9 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  *
  * With `request.warm`, every way first runs once at the parent of the oldest
  * commit, in its own home, and fills what it keeps from one commit to the
- * next: its cache, the caches its tools keep in its home, and what its steps
- * save for a later run. A CI run has what the run before it left, so the
+ * next: its cache and what its steps save for a later run. A job's home is
+ * empty at every run, so a tool's own cache there is not carried over. A CI
+ * run has what the run before it kept, so the
  * first counted commit starts as one does. That run is in no time but
  * `ReplayReport.firstRun`, and a mode's failure in it is no failure of the
  * replay. When the oldest commit has no commit before it, or that commit has
@@ -386,10 +408,18 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * its reason: a speedup over the rest would not be this CI's.
  *
  * The baseline, normal mode and fast mode each have a home and a temporary
- * directory of their own, empty at the start and kept until the replay ends.
- * A tool that keeps a cache for its user, as Zig, Go and every package
- * manager do, fills it once in each way, at the first commit that way runs
- * it. No way is timed with a cache another way paid for.
+ * directory of their own. No way is timed with a cache another way paid for.
+ * A baseline job is a machine: beside its fresh checkout it has a home and a
+ * temporary directory nothing else wrote to, empty when its first step starts
+ * and removed when its last step ends, as each job of a workflow starts on a
+ * runner of its own. A mode finds its home and its temporary directory empty
+ * at every commit, as a CI run does, and the targets of each GitHub job name
+ * a machine (`StepTarget.machine`): Smithers build runs them in a copy of the
+ * checkout, a home and a temporary directory of the job's own, made when a
+ * step of the job has to run and removed with the run. A tool that keeps a
+ * cache for its user, as Zig, Go and every package manager do, so fills it
+ * again in every job that runs, in each way, as it does in CI. What a mode
+ * keeps between commits is in its copy's cache directory.
  *
  * Wall time is what a CI machine spends on the commit once it is ready: the
  * checkout, and the first pass, which for a mode holds the start of Smithers
@@ -627,8 +657,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     const startEnv = (copy: string, place: Confined) => ({
       ...stepEnvironment({ ...software, ...place.daemon }, place),
+      ...jobHomes(place),
       ...(request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }),
-      NODE_COMPILE_CACHE: path.join(copy, compiledCode)
+      NODE_COMPILE_CACHE: path.join(copy, compiledCode),
+      VIBELANG_CACHE_DIR: path.join(copy, compiledSource)
     })
 
     effect function planOf(copy: string, own: Prepared) {
@@ -727,11 +759,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       sequence: ReadonlyArray<Unit>,
       commit: string,
       wanted: ReadonlySet<string> | undefined,
-      place: Confined,
+      way: Confined,
       store: string,
       given: Readonly<Record<string, string>>
     ) {
       return try scoped(effect {
+        // A job is a machine: its home and its temporary directory are its own, and gone when it ends.
+        const place = try orFail(machine(way), "could not make the home of a job")
         const directory = try orFail(fs.makeTempDirectoryScoped({ directory: work }), "could not make a directory")
         const copy = path.join(directory, path.basename(root))
         try cloneAt(copy, commit, place)
@@ -747,8 +781,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           // Only a step whose text names the variable is given it: the text takes it away before the step's own
           // script starts, and a step with no such text would hand it on.
           const told = step.command.includes(stateVariable) ? { [stateVariable]: store } : {}
-          // A step with runner text is told where this machine has a runner's software.
-          const found = step.command.includes(runnerEntry) ? software : {}
+          // A step with runner text is told where this machine has a runner's software, and keeps its job's
+          // state in the job's own temporary directory.
+          const found = step.command.includes(runnerEntry) ? { ...software, [jobTemporaryVariable]: place.tmp } : {}
           // A step no runner starts is given the run's variables its script names: what its target passes on.
           const run = givenTo(step.command, given)
           const environment = stepEnvironment({ ...found, ...place.daemon, ...run, ...step.env, ...told }, place)
@@ -997,6 +1032,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       baselines.push(baseRecord)
       const names = stepNames(own.units)
       try progress.say(`${at} normal`)
+      // A mode starts each commit as a CI run starts: with a home and a temporary directory nothing wrote to.
+      try orFail(renew(places.normal), "could not empty the home of normal mode")
       const normal = try measure(
         checkoutCopy(normalCopy, commit, places.normal),
         equip(normalCopy, own, places.normal),
@@ -1021,6 +1058,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           const choice = choose(scores, request.settings ?? defaultSettings)
           const labels = normal.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
           try progress.say(`${at} fast`)
+          try orFail(renew(places.fast), "could not empty the home of fast mode")
           const fast = try measure(
             checkoutCopy(fastCopy, commit, places.fast),
             equip(fastCopy, own, places.fast),

@@ -112,8 +112,8 @@ step is kept from, so give the flag only for a history you trust. See
 A CI run starts with what the run before it left. So before the first counted
 commit, the baseline, normal mode and fast mode each run once at the commit
 before the oldest replayed one, each in a home of its own. That run fills what
-the way keeps from one commit to the next: its cache, the caches its tools keep
-in its home, and what its jobs save with `actions/cache`. It is in no commit's
+the way keeps from one commit to the next: its cache of results and what its
+jobs save with `actions/cache`. It is in no commit's
 time and not in the speedup. The report gives its time in each way on one line
 (`firstRun` under `--json`):
 

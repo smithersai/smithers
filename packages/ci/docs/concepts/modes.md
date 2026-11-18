@@ -24,11 +24,13 @@ key means an equal verdict.
 
 ### A first run
 
-With nothing to reuse, normal mode runs every command your CI runs. Two
+With nothing to reuse, normal mode runs every command your CI runs. Three
 things differ from your CI:
 
-- Jobs that can write the same files run one after another, where your CI
-  runs them on separate machines.
+- Each job gets a checkout, a home and a temporary directory of its own on
+  this one machine, where your CI gives it a machine.
+- Jobs run one after another, where your CI runs them on separate machines at
+  once.
 - Starting Smithers build takes a few seconds, once per run.
 
 So the first run of a short CI can take longer than the baseline. The runs

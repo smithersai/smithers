@@ -14,6 +14,7 @@ import {
   daemonEnvironment,
   gitConfig,
   hooksDirectory,
+  jobHomeVariable,
   type Place,
   prePush,
   softwareEnvironment,
@@ -52,6 +53,10 @@ export type Way = "baseline" | "normal" | "fast" | "trial"
  * @since 0.1.0
  */
 export interface Confined extends Place {
+  /** A home as every job's starts: the hook, the configuration that names it, `links`, and nothing else. Never written. */
+  readonly template: string
+  /** The links every home of a step starts with, from the home: where a version manager looks for its versions. */
+  readonly links: ReadonlyArray<{ readonly path: string; readonly target: string }>
   readonly hooks: string
   readonly daemon: Readonly<Record<string, string>>
   readonly jail: Jail | undefined
@@ -66,13 +71,46 @@ export interface Confined extends Place {
  */
 export type Places = Readonly<Record<Way, Confined>>
 
+/** Makes everything under `directories` writable again: a step can leave a directory nothing can be removed from. */
+const unlock = (spawner: ChildProcessSpawner["Service"], directories: ReadonlyArray<string>) =>
+  ignore(scoped(effect {
+    const command = ChildProcess.make("chmod", ["-R", "u+rwX", ...directories], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore"
+    })
+    try (try spawner.spawn(command)).exitCode
+  }))
+
+/**
+ * Makes `home` a home for steps: the hook that refuses a push, the configuration that names it, `links`, and
+ * nothing else. A version manager looks for its versions under the home, so each link leads to where they are.
+ */
+effect function furnish(home: string, links: Confined["links"]) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const hooks = path.join(home, hooksDirectory)
+  try fs.makeDirectory(hooks, { recursive: true })
+  const hook = path.join(hooks, "pre-push")
+  try fs.writeFileString(hook, prePush)
+  try fs.chmod(hook, 0o755)
+  try fs.writeFileString(path.join(home, ".gitconfig"), gitConfig)
+  for (const link of links) {
+    try fs.makeDirectory(path.dirname(path.join(home, link.path)), { recursive: true })
+    try fs.symlink(link.target, path.join(home, link.path))
+  }
+}
+
 /**
  * Makes a home and a temporary directory for each way under `work`, writes
  * the stand-ins beside them, where a jailed step can run them and not change
  * them, and asks the machine for a jail. Each home starts with the hook and
- * nothing else, and lasts until the replay ends: a tool that keeps a cache
- * for its user fills it once in the baseline, once in normal mode and once in
- * fast mode, so no way is timed with a cache another way paid for. On a
+ * nothing else. A job never runs in a way's own home for long: a baseline job
+ * gets one of its own (`machine`), a mode's is emptied before each commit
+ * (`renew`), and Smithers build gives the targets of each job a machine with a
+ * home that starts as a copy of `template`. So a tool that keeps a cache for
+ * its user fills it again in every job, as on a CI machine, and no way is
+ * timed with a cache another way paid for. On a
  * machine that cannot jail a step, `say` is told once. `programs` are the
  * paths the replay runs its own programs from. A jailed step finds the
  * machine's temporary directories replaced by its way's own, and still reads
@@ -132,33 +170,27 @@ export effect function confine(
     try fs.writeFileString(standIn, script)
     try fs.chmod(standIn, 0o755)
   }
-  try addFinalizer(() =>
-    ignore(scoped(effect {
-      const unlock = ChildProcess.make("chmod", ["-R", "u+rwX", homes, tmps], {
-        stdin: "ignore",
-        stdout: "ignore",
-        stderr: "ignore"
-      })
-      try (try spawner.spawn(unlock)).exitCode
-    }))
-  )
+  try addFinalizer(() => unlock(spawner, [homes, tmps]))
   const found = probe(environment)
+  // Where a version manager looks for its versions: under the home, which is the step's own.
+  const links = "refusal" in found ? [] : found.tools.homes
+  // What Smithers build starts the home of each job's machine from, in normal and fast mode.
+  const template = path.join(homes, "template")
+  try furnish(template, links)
   effect function make(way: Way) {
     const home = path.join(homes, way)
     const tmp = path.join(tmps, way)
-    const hooks = path.join(home, hooksDirectory)
-    try fs.makeDirectory(hooks, { recursive: true })
     try fs.makeDirectory(tmp)
-    const hook = path.join(hooks, "pre-push")
-    try fs.writeFileString(hook, prePush)
-    try fs.chmod(hook, 0o755)
-    try fs.writeFileString(path.join(home, ".gitconfig"), gitConfig)
-    // Where a version manager looks for its versions: under the home, which is the step's own.
-    for (const link of "refusal" in found ? [] : found.tools.homes) {
-      try fs.makeDirectory(path.dirname(path.join(home, link.path)), { recursive: true })
-      try fs.symlink(link.target, path.join(home, link.path))
+    try furnish(home, links)
+    return {
+      home,
+      tmp,
+      guard,
+      template,
+      links,
+      hooks: path.join(home, hooksDirectory),
+      daemon: daemonEnvironment(allowDocker, environment)
     }
-    return { home, tmp, guard, hooks, daemon: daemonEnvironment(allowDocker, environment) }
   }
   const made = {
     baseline: try make("baseline"),
@@ -287,6 +319,71 @@ export const held = (
   writable: ReadonlyArray<string>,
   argv: readonly [string, ...Array<string>]
 ): readonly [string, ...Array<string>] => jailed(place.jail, [place.home, ...writable], [place.hooks], argv)
+
+/**
+ * The place of one job: a home and a temporary directory of its own beside
+ * those of `place`, its way. Both are empty but for the hook, as a CI runner
+ * starts each job, and both are removed when the scope closes: no other job
+ * and no other commit finds what the job wrote there. The stand-ins, the
+ * daemon and what the jail hides are those of the way.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function machine(place: Confined) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const spawner = try ChildProcessSpawner
+  const home = try fs.makeTempDirectory({ directory: path.dirname(place.home), prefix: `${path.basename(place.home)}-job-` })
+  const tmp = try fs.makeTempDirectory({ directory: path.dirname(place.tmp), prefix: `${path.basename(place.tmp)}-job-` })
+  // A step can leave a directory nothing can be removed from, so both are made writable first.
+  try addFinalizer(() =>
+    ignore(effect {
+      try unlock(spawner, [home, tmp])
+      try fs.remove(home, { recursive: true, force: true })
+      try fs.remove(tmp, { recursive: true, force: true })
+    })
+  )
+  try furnish(home, place.links)
+  return {
+    ...place,
+    home,
+    tmp,
+    hooks: path.join(home, hooksDirectory),
+    jail: place.jail === undefined ? undefined : { ...place.jail, tmp }
+  } satisfies Confined
+}
+
+/**
+ * Empties the home and the temporary directory of `place`, the place of a
+ * mode: the home holds the hook again and nothing else. A replay does this
+ * before a mode runs a commit, as a CI runner starts every run with a home
+ * nothing wrote to. What a mode keeps from one commit to the next is in its
+ * copy's cache directory, which the generated workflow carries between runs.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function renew(place: Confined) {
+  const fs = try FileSystem.FileSystem
+  try unlock(try ChildProcessSpawner, [place.home, place.tmp])
+  try fs.remove(place.home, { recursive: true, force: true })
+  try fs.remove(place.tmp, { recursive: true, force: true })
+  try fs.makeDirectory(place.tmp)
+  try furnish(place.home, place.links)
+}
+
+/**
+ * What a `smthrs` of `place` is told beside a step's environment: the home
+ * the machine of every job starts from. Smithers build runs the targets of
+ * one job in a checkout, a home and a temporary directory of the job's own,
+ * made for the run and removed with it, so no job finds what another job or
+ * another commit wrote.
+ *
+ * @category rendering
+ * @since 0.1.0
+ */
+export const jobHomes = (place: Confined): Readonly<Record<string, string>> => ({ [jobHomeVariable]: place.template })
 
 /**
  * The process runner a part is given while it reads `copy`, a checkout of a

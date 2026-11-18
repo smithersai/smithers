@@ -163,16 +163,16 @@ describe("files", () => {
     ])
     const generated = generate(document)
     const map = Schema.decodeUnknownSync(Schema.fromJsonString(TargetMap))(content(generated, targetMapPath))
-    // The two shards run beside each other in one tree and can write the same files.
+    // The shards run on one runner of the generated workflow, where they share its ports and its `/tmp`.
     expect(map.maxJobs).toBe(1)
     expect(map.targets).toHaveLength(5)
     const declared = [...content(generated, packagePath).matchAll(/^ {4}"([^"]+)": step/gm)].map((match) =>
       `//:${match[1]}`
     )
-    // Both shards install the same way, so one target installs for both.
-    expect(declared).toHaveLength(4)
+    // Each shard is a job of its own on GitHub, so each installs for itself, on its own machine.
+    expect(declared).toHaveLength(5)
     expect([...new Set(map.targets.map((entry) => entry.label))].sort()).toEqual([...declared].sort())
-    expect(labelsOf(map, "a", "a:1", { shard: "2" })).toEqual(labelsOf(map, "a", "a:1", { shard: "1" }))
+    expect(labelsOf(map, "a", "a:1", { shard: "2" })).not.toEqual(labelsOf(map, "a", "a:1", { shard: "1" }))
     expect(labelsOf(map, "b", "b:1", {})).toEqual(["//:b-1"])
     const first = labelsOf(map, "a", "a:2", { shard: "1" })
     const second = labelsOf(map, "a", "a:2", { shard: "2" })
@@ -443,11 +443,13 @@ describe("what a step becomes", () => {
       }`
     )
     // A step without runner text is given no runner variable it does not name.
-    expect(declaration(source, "a-4")).toContain(`observe: { ignore: ["~/.npm/_logs"] }`)
+    expect(declaration(source, "a-4")).toContain(`observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache"] }`)
     expect(declaration(source, "a-4")).not.toContain("inheritEnv")
     const last = targetsOf(inventory([job("a", [step("a:1", "npm test", { runner })])]))
     expect(declaration(last, "a-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn())}`)
-    expect(declaration(last, "a-1")).toContain(`observe: { ignore: ["~/.npm/_logs"], env: ${run} }`)
+    expect(declaration(last, "a-1")).toContain(
+      `observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache"], env: ${run} }`
+    )
   })
 
   it("holds a step with runner text to its inputs only as its job's first step, and never when it reads the commit", () => {
@@ -616,44 +618,94 @@ describe("a step two jobs both run", () => {
     [...source.matchAll(/^ {4}"([^"]+)": step/gm)].map((match) => match[1] as string)
   const lint = job("lint", [step("lint:1", "npm ci"), step("lint:2", "npm run lint")])
   const test = job("test", [step("test:1", "npm ci"), step("test:2", "npm test")])
+  // A job whose only step names what it reads is held to those files: it writes nothing another job reads.
+  const held = (id: string, extra: Partial<Step> = {}, more: Partial<Job> = {}): Job =>
+    job(id, [step(`${id}:1`, "node check.js", { inputs: ["src/**"], ...extra })], more)
 
-  it("installs once for two jobs that each start with the same install", () => {
+  it("runs once in each job, on that job's machine, as each job of a workflow starts on a runner of its own", () => {
+    // The second ship review's blocker 2: one install for both jobs meant one tree for both jobs.
     const document = inventory([test, lint])
     const source = targetsOf(document)
-    expect(labels(source)).toEqual(["lint-1", "lint-2", "test-2"])
-    expect(declaration(source, "lint-1")).toContain("S.Shell.Build(")
-    expect(source).toContain("// lint / lint:1\n// test / test:1: the same step, run once\nconst step0 =")
+    expect(labels(source)).toEqual(["lint-1", "lint-2", "test-1", "test-2"])
+    expect(source).not.toContain("the same step, run once")
+    for (const name of ["lint", "test"]) {
+      expect(declaration(source, `${name}-1`)).toContain("S.Shell.Build(")
+      expect(declaration(source, `${name}-1`)).toContain(`machine: "${name}"`)
+      expect(declaration(source, `${name}-2`)).toContain(`machine: "${name}"`)
+    }
     expect(declaration(source, "lint-2")).toMatch(/data: \[repository, step0\]/)
-    expect(declaration(source, "test-2")).toMatch(/data: \[repository, step0\]/)
-    // Each step keeps its own entry in the target map, and the two installs name one target.
+    expect(declaration(source, "test-2")).toMatch(/data: \[repository, step2\]/)
     const map = mapOf(document)
-    expect(map.targets.map((entry) => entry.step)).toEqual(["lint:1", "test:1", "lint:2", "test:2"])
+    expect(map.targets.map((entry) => entry.step)).toEqual(["lint:1", "lint:2", "test:1", "test:2"])
+    expect(labelsOf(map, "test", "test:1", {})).toEqual(["//:test-1"])
+    expect(labelsOf(map, "lint", "lint:1", {})).toEqual(["//:lint-1"])
+  })
+
+  it("gives each matrix variant a machine of its own, named for the variant", () => {
+    const source = targetsOf(inventory([job("a", [step("a:1", "npm ci"), step("a:2", "npm test")], {
+      matrix: [{ node: "18" }, { node: "20" }]
+    })]))
+    expect(declaration(source, "a-1--18")).toContain(`machine: "a [[\\"node\\",\\"18\\"]]"`)
+    expect(declaration(source, "a-2--18")).toContain(`machine: "a [[\\"node\\",\\"18\\"]]"`)
+    expect(declaration(source, "a-1--20")).toContain(`machine: "a [[\\"node\\",\\"20\\"]]"`)
+  })
+
+  it("names no machine for the recipes of one working tree, which share it on purpose", () => {
+    const recipe = (name: string): Job =>
+      job(`justfile:${name}`, [step(`${name}:1`, "make")], { source: "justfile", file: "justfile", triggers: [] })
+    expect(targetsOf(inventory([recipe("build"), recipe("test")]))).not.toContain("machine: \"")
+  })
+
+  it("runs once for two jobs held to the files they name, and names no machine for them", () => {
+    const document = inventory([held("test"), held("lint")])
+    const source = targetsOf(document)
+    expect(labels(source)).toEqual(["lint-1"])
+    expect(source).toContain("// lint / lint:1\n// test / test:1: the same step, run once\nconst step0 =")
+    expect(declaration(source, "lint-1")).toContain("sandbox: { network: true }")
+    expect(source).not.toContain("machine: \"")
+    // Each step keeps its own entry in the target map, and the two name one target.
+    const map = mapOf(document)
+    expect(map.targets.map((entry) => entry.step)).toEqual(["lint:1", "test:1"])
     expect(labelsOf(map, "test", "test:1", {})).toEqual(["//:lint-1"])
     expect(labelsOf(map, "lint", "lint:1", {})).toEqual(["//:lint-1"])
-    expect(labelsOf(map, "test", "test:2", {})).toEqual(["//:test-2"])
   })
 
-  it("keeps sharing while the steps stay equal, and a shared step another job builds on always runs", () => {
-    const build = job("build", [step("build:1", "npm ci"), step("build:2", "npm run build")])
-    const pack = job("pack", [step("pack:1", "npm ci"), step("pack:2", "npm run build"), step("pack:3", "npm pack")])
-    const source = targetsOf(inventory([build, pack]))
-    expect(labels(source)).toEqual(["build-1", "build-2", "pack-3"])
-    // `build:2` ends its own job, and `pack:3` needs what it wrote.
-    expect(declaration(source, "build-2")).toContain("S.Shell.Build(")
-    expect(declaration(source, "pack-3")).toMatch(/data: \[repository, step1\]/)
-    // Two jobs that are equal from start to end are one chain.
-    const again = job("again", [step("again:1", "npm ci"), step("again:2", "npm run lint")])
-    expect(labels(targetsOf(inventory([lint, again])))).toEqual(["again-1", "again-2"])
+  it("keeps apart held steps that differ in directory, environment, system or what ran before them", () => {
+    const apart = (other: Job): ReadonlyArray<string> => labels(targetsOf(inventory([held("lint"), other])))
+    expect(apart(held("test"))).toHaveLength(1)
+    expect(apart(held("test", { cwd: "web" }))).toHaveLength(2)
+    expect(apart(held("test", { env: { CI: "1" } }))).toHaveLength(2)
+    expect(apart(held("test", {}, { runsOn: "macos-latest" }))).toHaveLength(2)
+    expect(apart(held("test", {}, { needs: ["lint"] }))).toHaveLength(2)
   })
 
-  it("keeps apart steps that differ in directory, environment, system or what ran before them", () => {
-    const apart = (other: Job): ReadonlyArray<string> => labels(targetsOf(inventory([lint, other])))
-    expect(apart(job("test", [step("test:1", "npm ci", { cwd: "web" }), step("test:2", "npm test")]))).toHaveLength(4)
-    expect(apart(job("test", [step("test:1", "npm ci", { env: { CI: "1" } }), step("test:2", "npm test")])))
-      .toHaveLength(4)
-    expect(apart({ ...test, runsOn: "macos-latest" })).toHaveLength(4)
-    // After a job it needs, the install starts from that job's tree, not from a fresh checkout.
-    expect(apart({ ...test, needs: ["lint"] })).toHaveLength(4)
+  it("gives a job a machine when one of its steps is not held to the files it names", () => {
+    const all = (steps: ReadonlyArray<Step>): string => targetsOf(inventory([job("a", steps)]))
+    const named = step("a:1", "make dist", { inputs: ["src/**"], outputs: ["dist/**"], from: "a:1" })
+    // Every step names what it reads, and every step before the last what it writes: no machine.
+    expect(all([named, step("a:2", "make test", { inputs: ["dist/**"], from: "a:2" })])).not.toContain("machine: \"")
+    // A step that reads everything, one that names no inputs, and one after a step that does not say what it writes.
+    for (
+      const steps of [
+        [step("a:1", "make", { inputs: ["**"] })],
+        [named, step("a:2", "make test")],
+        [step("a:1", "make dist", { inputs: ["src/**"], from: "a:1" }), step("a:2", "make test", { inputs: ["x"] })]
+      ]
+    ) {
+      const source = all(steps)
+      expect(source.match(/machine: "a"/g)).toHaveLength(steps.length)
+      expect(source).not.toContain("sandbox: { network: true }")
+    }
+    // A step with runner text is held to its inputs only as its job's first step, and never when it reads the commit.
+    const runner = (note: string): string => `${runnerEntry}() {\n${note}bash -e -c "$1"\n}`
+    const first = step("a:1", "make", { inputs: ["src/**"], runner: runner("") })
+    expect(all([first])).not.toContain("machine: \"")
+    expect(all([first, step("a:2", "make test", { inputs: ["src/**"], runner: runner("") })])).toContain(
+      `machine: "a"`
+    )
+    expect(all([step("a:1", "make", { inputs: ["src/**"], runner: runner(`${commitNote}\n`) })])).toContain(
+      `machine: "a"`
+    )
   })
 
   it("keeps apart the recipes of one working tree, and steps split from one step", () => {
@@ -664,6 +716,110 @@ describe("a step two jobs both run", () => {
     const part = (id: string): Step =>
       step(id, "pnpm --filter=ui run test", { inputs: ["packages/ui/**"], from: "t:1" })
     expect(labels(targetsOf(inventory([job("a", [part("a:1:ui")]), job("b", [part("b:1:ui")])])))).toHaveLength(2)
+  })
+})
+
+describe("the /tmp of a job in the workflow", () => {
+  const one = job("lint", [step("lint:1", "npm ci"), step("lint:2", "npm run lint")])
+  const two = job("test", [step("test:1", "npm ci"), step("test:2", "npm test")])
+
+  it("is the job's own on a Linux runner, and two jobs are never let share one", () => {
+    const workflow = content(generate(inventory([one, two])), workflowPath)
+    // Each job's targets run with a mount of their own, by bubblewrap, which an Ubuntu runner lacks.
+    expect(workflow).toContain(
+      "      # Each job has a /tmp of its own, as it has a runner of its own in the original CI.\n" +
+        "      - name: Give each job its own /tmp\n        if: runner.os == 'Linux'\n"
+    )
+    expect(workflow).toContain("apt-get install -y -qq --no-install-recommends bubblewrap")
+    expect(workflow).toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0")
+    expect(workflow.indexOf("bubblewrap\n")).toBeLessThan(workflow.indexOf("smthrs ci"))
+    expect(workflow).toContain("          SMTHRS_MACHINE_OWN_TMP: required\n")
+    // One job has nobody to share with, and still gets its own `/tmp`.
+    const single = content(generate(inventory([one])), workflowPath)
+    expect(single).toContain("      - name: Give each job its own /tmp\n")
+    expect(single).not.toContain("SMTHRS_MACHINE_OWN_TMP")
+    // The recipes of a Justfile run in one working tree, as `just` runs them: no machine, nothing installed for one.
+    const tree = content(
+      generate(inventory([{ ...one, source: "justfile", file: "Justfile" }])),
+      workflowPath
+    )
+    expect(tree).not.toContain("Give each job its own /tmp")
+    expect(tree).not.toContain("SMTHRS_MACHINE_OWN_TMP")
+  })
+
+  it("is the runner's own on macOS, where each job is a runner job of its own", () => {
+    // A macOS runner cannot give a job a mount of its own, so two jobs there never meet on one runner.
+    const mac = (id: string, command: string, extra: Partial<Job> = {}): Job =>
+      job(id, [step(`${id}:1`, "npm ci"), step(`${id}:2`, command)], { runsOn: "macos-latest", ...extra })
+    const linux = (id: string, command: string): Job =>
+      job(id, [step(`${id}:1`, "npm ci"), step(`${id}:2`, command)], { runsOn: "ubuntu-latest" })
+    const generated = generate(inventory([
+      mac("lint", "npm run lint"),
+      mac("test", "npm test", { needs: ["lint"] }),
+      linux("linux-lint", "npm run lint"),
+      linux("linux-test", "npm test")
+    ]))
+    const include = (parseYaml(content(generated, workflowPath)) as {
+      readonly jobs: { readonly ci: { readonly strategy: { readonly matrix: { readonly include: unknown } } } }
+    }).jobs.ci.strategy.matrix.include
+    expect(include).toEqual([
+      { os: "macos-latest", leg: "1", tools: "job lint" },
+      { os: "macos-latest", leg: "2", tools: "job test" },
+      { os: "ubuntu-latest", leg: "3", tools: "" }
+    ])
+    // Each macOS job runs its own targets and no other job's; the Linux jobs share one runner, each with a mount.
+    const legs = content(generated, legsPath).split("\n").slice(1, -1)
+    expect(legs.filter((line) => line.startsWith("1 "))).toEqual(["1 //:lint-1", "1 //:lint-2"])
+    expect(legs.filter((line) => line.startsWith("2 "))).toEqual(["2 //:test-1", "2 //:test-2"])
+    expect(legs.filter((line) => line.startsWith("3 ")).map((line) => line.slice(2)).sort()).toEqual([
+      "//:linux-lint-1",
+      "//:linux-lint-2",
+      "//:linux-test-1",
+      "//:linux-test-2"
+    ])
+    // A job that needs another on macOS does not pull that job's targets onto its own runner, and the notes say so.
+    const source = content(generated, packagePath)
+    expect(declaration(source, "test-1")).toContain("data: []")
+    expect(content(generated, notesPath)).toContain(
+      "test: runs with job test, so it does not wait for lint, which runs with job lint."
+    )
+    // A matrix variant is a job of its own.
+    const variants = generate(inventory([
+      mac("unit", "npm test", { matrix: [{ node: "18" }, { node: "20" }] })
+    ]))
+    expect(content(variants, workflowPath)).toContain(`tools: "job unit (node 18)"`)
+    expect(content(variants, workflowPath)).toContain(`tools: "job unit (node 20)"`)
+  })
+
+  it("is installed once where a target is also held to its inputs", () => {
+    const held = job("held", [step("held:1", "x", { inputs: ["src/**"], from: "held:1" })])
+    const workflow = content(generate(inventory([one, two, held])), workflowPath)
+    expect(workflow).toContain("      - name: Install the read sandbox\n")
+    expect(workflow).not.toContain("Give each job its own /tmp")
+    expect(workflow.match(/--no-install-recommends bubblewrap/g)).toHaveLength(1)
+    expect(workflow).toContain("          SMTHRS_MACHINE_OWN_TMP: ")
+  })
+})
+
+describe("a step that keeps a tool's own cache", () => {
+  const zig = (cwd: string, back: string): Step =>
+    step("z:1", "zig build test", {
+      cwd,
+      env: { ZIG_LOCAL_CACHE_DIR: `${back}.flows/tools/zig/local`, MODE: "../release", OTHER: ".flows/toolsmith" }
+    })
+
+  it("names the cache from the build's cache directory on a machine, where the copy of the checkout has none", () => {
+    // A GitHub job runs in a copy of the checkout that goes when the run ends: a cache named by a path from there
+    // would go with it.
+    const source = targetsOf(inventory([job("z", [zig("project", "../")])]))
+    expect(declaration(source, "z-1")).toContain(`machine: "z"`)
+    expect(declaration(source, "z-1")).toContain(
+      `env: {"MODE":"../release","OTHER":".flows/toolsmith","ZIG_LOCAL_CACHE_DIR":"{smthrs:cache-directory}/tools/zig/local"}`
+    )
+    // A recipe of a Justfile runs in the repository itself, where the path leads to the cache directory.
+    const tree = targetsOf(inventory([job("z", [zig("", "")], { source: "justfile", file: "Justfile" })]))
+    expect(declaration(tree, "z-1")).not.toContain("machine")
+    expect(declaration(tree, "z-1")).toContain(`"ZIG_LOCAL_CACHE_DIR":".flows/tools/zig/local"`)
   })
 })
 
@@ -800,7 +956,9 @@ describe("a step that names what it reads", () => {
   it("observes a step nobody declared inputs for, and no other", () => {
     const source = targetsOf(inventory([job("a", [step("a:1", "npm ci"), step("a:2", "npm test")]), job("b", parts)]))
     // What the step reads is recorded when it runs; npm's own log directory is left out of the record.
-    expect(declaration(source, "a-2")).toContain(`  sandbox: "none",\n  observe: { ignore: ["~/.npm/_logs"] },\n`)
+    expect(declaration(source, "a-2")).toContain(
+      `  sandbox: "none",\n  observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache"] },\n`
+    )
     // A step a later step relies on always runs, and a step held to its inputs is already known.
     expect(declaration(source, "a-1")).not.toContain("observe")
     expect(declaration(source, "a-2-ui")).not.toContain("observe")
@@ -987,9 +1145,11 @@ describe("a step that says what it writes", () => {
     expect(declaration(all, "a-2")).toContain(`data: [S.glob("//more/**"), step0]`)
     expect(declaration(all, "a-2")).toContain(`outDirs: ["//out"]`)
     expect(declaration(all, "a-3")).toContain(`data: [S.glob("//packages/a/**"), step1]`)
-    // The middle step does not say what it writes: it declares no files, and the step after it reads everything.
+    // The middle step does not say what it writes, so the step after it reads everything. The job then runs on a
+    // machine of its own, where no step is held to its inputs.
     const gap = targetsOf(inventory([job("a", [build({ outputs: [] }), middle({}), last])]))
-    expect(declaration(gap, "a-1")).toContain(`data: [S.glob("//Makefile"), S.glob("//config/**")]`)
+    expect(declaration(gap, "a-1")).toContain("data: []")
+    expect(declaration(gap, "a-1")).toContain(`machine: "a"`)
     expect(declaration(gap, "a-2")).toContain("data: [step0]")
     expect(declaration(gap, "a-2")).not.toContain("outDirs")
     expect(declaration(gap, "a-3")).toContain("data: [repository, step1]")
@@ -1309,9 +1469,14 @@ describe("the workspace and workflow", () => {
     expect(workflow).toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0")
     expect(workflow.indexOf("bubblewrap\n")).toBeLessThan(workflow.indexOf("smthrs ci"))
     expect(workflow).not.toContain("strace")
-    // No target is confined: nothing to install for the sandbox. The step is observed, which needs the tracer.
-    const open = content(generate(inventory([job("a", [step("a:1", "x")])])), workflowPath)
+    // No target is confined, and no job has a machine: nothing to install for either. The step is observed, which
+    // needs the tracer.
+    const open = content(
+      generate(inventory([job("a", [step("a:1", "x")], { source: "justfile", file: "Justfile" })])),
+      workflowPath
+    )
     expect(open).not.toContain("Install the read sandbox")
+    expect(open).not.toContain("Give each job its own /tmp")
     expect(open).toContain("      - name: Install the tracer\n        if: runner.os == 'Linux'\n")
     expect(open).toContain("apt-get install -y -qq --no-install-recommends strace")
     expect(open.indexOf("strace\n")).toBeLessThan(open.indexOf("smthrs ci"))
@@ -1488,13 +1653,16 @@ describe("tool versions", () => {
     }))
     expect(content(generated, legsPath).split("\n").slice(1, -1)).toEqual([
       "1 //:ci.yml-test-1--18",
-      // The two variants with no version do the same work, so they share one target.
-      "2 //:ci.yml-test-1--"
+      // The two variants with no version run under the repository's, each on a machine of its own.
+      "2 //:ci.yml-test-1--",
+      "2 //:ci.yml-test-1--x"
     ])
   })
 
   it("runs one step for two jobs only when they run it under the same versions", () => {
-    const install = (id: string) => job(id, [step(`${id}:1`, "npm ci")], { runsOn: "ubuntu-latest" })
+    // Each job is held to the files it names, so an equal step of the two can be one target.
+    const install = (id: string) =>
+      job(id, [step(`${id}:1`, "npm ci", { inputs: ["package.json"] })], { runsOn: "ubuntu-latest" })
     const targetsFor = (second: string) =>
       content(
         generate(inventory([install("ci.yml:a"), install("ci.yml:b")], {
@@ -1519,7 +1687,13 @@ describe("tool versions", () => {
     }, job("ci.yml:any", [step("ci.yml:any:1", "x")])], { toolchains: [matrixNode] }))
     expect(include(generated)).toEqual([
       { os: "macos-latest", leg: "1", tools: "node 18", "version-node": "18" },
-      { os: "macos-latest", leg: "2", tools: "node 20", "version-node": "20" },
+      // A job on macOS is a runner job of its own: a macOS runner gives two jobs one `/tmp`.
+      {
+        os: "macos-latest",
+        leg: "2",
+        tools: "node 20, job ci.yml:test (node 20, os macos-latest)",
+        "version-node": "20"
+      },
       { os: "ubuntu-latest", leg: "3", tools: "node 18", "version-node": "18" }
     ])
     expect(content(generated, legsPath).split("\n").slice(1, -1)).toEqual([

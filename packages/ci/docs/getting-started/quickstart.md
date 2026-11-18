@@ -55,6 +55,9 @@ no toolchain.
   line of its error and the commits, and runs at no commit. The numbers cover
   the jobs that passed. `smithers-ci apply` still writes every job: it passes on
   your runners. `--no-trial` leaves no job out.
+- Each job gets a checkout, a home directory and a temporary directory of its
+  own, empty of anything another job wrote, as it gets a machine of its own in
+  your CI. Your repository and your home are never written.
 
 [Setup actions](../concepts/how-it-works.md#setup-actions) has the rules.
 

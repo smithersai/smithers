@@ -130,8 +130,19 @@ describe("smithers-ci on a repository whose CI pushes", () => {
     expect(refs()).toEqual(before)
     const lines = readFileSync(log, "utf8").trim().split("\n")
     const homes = new Set(lines.map((line) => /home=(.*)$/.exec(line)?.[1]))
-    // Every step ran with a home the replay made: the baseline's steps with one, the targets with another.
-    expect([...homes].map((home) => home?.replace(/^.*\/home\//, "")).sort()).toEqual(["baseline", "normal"])
+    // Every step ran with a home the replay made for its job: beside the baseline's own home for a baseline job,
+    // and under normal mode's home, where Smithers build keeps a job's machine, for a target.
+    const made = new Set(
+      [...homes].map((home) =>
+        home?.replace(/^.*\/smithers-ci-replay-[^/]*\/home\//, "").split("/")[0]?.replace(/-job-.*$/, "-job")
+      )
+    )
+    expect([...made].sort()).toEqual(["baseline-job", "normal"])
+    expect(
+      [...homes].filter((home) => home?.includes("/home/normal/") !== true).every((home) =>
+        /\/home\/baseline-job-[^/]+$/.test(home ?? "")
+      )
+    ).toBe(true)
     expect(homes).not.toContain(homedir())
     expect(homes).not.toContain(environment.HOME)
     expect(homes).not.toContain(undefined)

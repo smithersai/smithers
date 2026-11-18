@@ -293,7 +293,11 @@ build fails a target that leaves a declared directory missing or empty, so an
 output is declared only when the step is known to write it.
 
 Jobs of a GitHub Actions workflow run on separate machines, so a job's first
-step follows nothing, whatever the job needs. Recipes of one Justfile run one
+step follows nothing, whatever the job needs. Its targets run in a checkout, a
+home and a temporary directory of the job's own, and no step of such a job is
+held to its inputs: see
+[A job is a machine](how-it-works.md#a-job-is-a-machine). A job that is one
+step held to its inputs needs none. Recipes of one Justfile run one
 after another in one working tree, in the order `just ci` runs them: each
 recipe follows the one before it, and a recipe that fails skips the rest.
 

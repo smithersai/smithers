@@ -154,14 +154,58 @@ changes, so an unchanged target is a cache hit instead of a rerun. For one
 change, the plan is the set of targets the change selects, each with its key
 and its dependencies.
 
-Each GitHub Actions job runs its own steps, as each has a machine of its own
-on GitHub. Two jobs that start with the same step, such as `npm ci`, each run
-it, and each step is told its own job.
+### A job is a machine
 
-Targets that cannot write the same files run at the same time. A target
-confined to the files it reads cannot write the checkout, so any number of
-them run together. Two targets that can write the checkout run one after the
-other.
+On GitHub every job starts on a machine of its own: a fresh checkout, an empty
+home directory, an empty temporary directory, and nothing another job did. A
+job can rely on that. One job edits a file that another job checks, or two
+jobs each run `mkdir ~/.config/tool` with no `-p`. Both pass in your CI, and
+both would fail in one shared tree with one home.
+
+So the targets of a job run on a machine of that job's own. Smithers build
+makes it when the first of them has to run and removes it when the run ends:
+
+| A job gets            | What it holds when the job's first step starts                                 |
+| --------------------- | ------------------------------------------------------------------------------ |
+| A checkout            | The commit's files and a `.git` of its own. No `node_modules`, no build output |
+| A home directory      | Nothing of yours and nothing another job wrote                                 |
+| A temporary directory | Nothing. It is the job's `/tmp`, and `TMPDIR` names it                         |
+| Your tools            | The ones on `PATH`, as they are installed on the machine                       |
+
+The steps of one job share its checkout, its home and its temporary directory,
+in order, as they share a runner. No other job sees what they write. A matrix
+makes one job for each variant, so each variant has a machine of its own.
+
+It is the same in a replay, in the workflow `apply` writes, and when you run
+`smthrs ci '//...'` yourself: the checkout you run it in is left as it was.
+
+A job whose steps all reuse their results gets no machine: nothing of it runs,
+so nothing is copied. A job with one step to run gets a checkout, what its
+reused steps left is put back there, and the step runs.
+
+Each job runs its own steps, and each step is told its own job. Two jobs that
+both start with `npm ci` each install, as they do in your CI, and each keeps
+its install for its own later steps. A tool that keeps a cache under its user's home, as Zig, Go, npm and
+Cargo do, fills it again in every job that runs, as it does on a new CI
+machine. What your CI keeps from one run to the next it keeps through
+`actions/cache`, and so does a replay: see [Caches](github-actions.md#caches).
+
+A job's `/tmp` is its own on Linux, where the machine has bubblewrap and lets
+a program make a mount of its own: a job that writes `/tmp/build` never meets
+another job's. The workflow `apply` writes never lets two jobs share a
+`/tmp`. On a Linux runner it installs bubblewrap, and each job has its own. A
+macOS runner has no such mount, so each job is a runner job of its own there,
+as in your CI. A runner that still gives no private `/tmp` runs one job and
+fails the others, with the reason, where a job would otherwise find what
+another left. In a replay on macOS, and on a Linux machine with no
+bubblewrap, jobs share the computer's `/tmp`: the baseline and each mode
+alike, so the two still agree. `TMPDIR` is still each job's own.
+
+Jobs run one after another: they share the computer's ports, so two jobs that
+each start a server on the same port both pass. A job that is only one step
+confined to the files it reads cannot write the checkout and needs no machine,
+and any number of such steps run together. Two such jobs that run the same
+step run it once.
 
 What a target reads comes from its dependency closure: every file its entry
 files reach. Each language has its own strategy for finding them, and every
@@ -261,14 +305,16 @@ count.
 
 ### The first run
 
-A CI run starts with what the run before it left: the cache, the caches its
-tools keep in the runner's home, and what its jobs saved with `actions/cache`.
-A replay that counted its first commit from nothing would measure the one run
-that fills them. So before the first counted commit, each way runs once at the
-commit before the oldest replayed one, in a home of its own.
+A CI run starts with what the run before it kept on purpose: what its jobs
+saved with `actions/cache` or a setup action's own cache, and the results a
+later commit reuses. A replay that counted its first commit from nothing would
+measure the one run that fills them. So before the first counted commit, each
+way runs once at the commit before the oldest replayed one, in a home of its
+own. A job's home is empty at every run, as on a new CI machine, so a cache a
+tool keeps there is not carried over: see
+[A job is a machine](#a-job-is-a-machine).
 
-- The baseline's first run fills the caches its tools keep and what its jobs
-  save for a later run.
+- The baseline's first run fills what its jobs save for a later run.
 - Normal mode's and fast mode's first runs fill the same, and the cache of
   results a later commit reuses.
 - A step that fails in a mode's first run stops nothing: the cache holds what
@@ -348,17 +394,17 @@ copy a step has written: a step can leave a command in that copy's
 `.git/config`, and git would run it.
 
 **Its own home.** `HOME` and the cache directory are directories the replay
-makes, keeps until it ends and then removes. Nothing of your home is in them:
-no `.npmrc`, no `.gitconfig`, no token. What a package manager downloads at
-one commit is in its cache at the next. Your tools stay reachable through
-`PATH`.
+makes and removes. Nothing of your home is in them: no `.npmrc`, no
+`.gitconfig`, no token. Your tools stay reachable through `PATH`.
 
-The baseline, normal mode and fast mode each have a home of their own, empty
-when the replay starts. A tool that keeps a cache in its user's home, as Zig,
-Go, npm and Cargo do, fills it once in each: the first time the baseline runs
-the tool, the first time normal mode does, and the first time fast mode does.
-The speedup never compares a baseline that filled a cache with a mode that
-found it full.
+Every job of every commit starts with a checkout, a home and a temporary
+directory nothing wrote to, in the baseline and in each mode: see
+[A job is a machine](#a-job-is-a-machine). The baseline makes them for every
+job. A mode makes them for the jobs it runs. A tool that keeps a cache in its
+user's home, as Zig, Go, npm and Cargo do, so fills it again in every job
+that runs, at every commit, as it does in your CI. The speedup never compares
+a baseline that filled a cache with a mode that found it full: neither finds
+one.
 
 **Its own variables.** A step of a GitHub Actions workflow gets every variable a
 runner sets: see [what a step is given](github-actions.md#what-a-step-is-given).

@@ -282,6 +282,19 @@ export const toolCache = ".flows/tools"
 export const stateVariable = "SMITHERS_CI_STATE"
 
 /**
+ * The variable that tells a step where its job's own temporary directory is,
+ * whatever the step's `TMPDIR` says. A job is a machine: Smithers build names
+ * the temporary directory of a job's machine by it to every target of the
+ * job, and a baseline step is told its job's by the same name. The step's
+ * runner text keeps the job's state there, so the state is no other job's to
+ * read and is gone when the job ends. The step's own script is not given it.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const jobTemporaryVariable = "SMTHRS_MACHINE_TMP"
+
+/**
  * The variables by which a GitHub runner tells a step where the software it
  * comes with is: the Android SDK and NDK, the Java versions, the browser
  * drivers, Conda and vcpkg. A workflow names none of them and its steps count

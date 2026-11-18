@@ -111,14 +111,17 @@ describe("a replay that starts warm", () => {
     expect(text(report)).toMatch(/took .+ as the baseline, .+ in normal mode and .+ in fast mode; it happens once/)
   }, 600_000)
 
-  it("fills the baseline's own home, and a first run that fails is no failure of the replay", async () => {
-    // The step fails the first time it runs in a home, and passes there ever after.
-    const once = "test -e \"$HOME/seen\" || { touch \"$HOME/seen\"; echo first time >&2; exit 1; }"
-    const root = track(makeSmallRepository([job("once", once)]))
-    commit(root, { "README.md": "# docs\n" })
+  it("carries no home over from the first run, and a first run that fails is no failure of the replay", async () => {
+    // A job's home is empty at every run, as on a new CI machine. The step of the first run leaves a mark in its
+    // home and fails; the step of the counted commit passes only in a home with no mark.
+    const root = track(makeSmallRepository([job("once", "sh once.sh")]))
+    commit(root, { "once.sh": "touch \"$HOME/seen\"; echo first time >&2; exit 1\n" })
+    commit(root, { "once.sh": "test ! -e \"$HOME/seen\"\n" })
     const report = await start(root, 1)
     expect(report.firstRun?.normalMs).toBeGreaterThan(0)
     expect(report.commits[0]?.baseline.ok).toBe(true)
+    expect(report.commits[0]?.normal.ok).toBe(true)
+    expect(report.commits[0]?.mismatches).toEqual([])
     expect(report.notReplayed).toBeUndefined()
   }, 600_000)
 })

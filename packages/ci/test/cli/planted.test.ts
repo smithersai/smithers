@@ -9,9 +9,8 @@
 import * as Console from "effect/Console"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
-import { homedir } from "node:os"
-import { basename, join } from "node:path"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { cli, type Parts } from "../../src/cli/Cli.vibe"
 import { type Host, layer } from "../../src/cli/Host.vibe"
@@ -111,21 +110,15 @@ describe("smithers-ci on a repository whose CI plants a command in .git/config",
     expect(existsSync(ran)).toBe(false)
   }, 1_800_000)
 
-  it("runs the planted command only as a step, with a home the replay made, on a machine with no jail", async () => {
+  it("never runs the planted command on a machine with no jail: a job's checkout is the job's own", async () => {
     const { ran, root } = fixture()
     const outcome = await program(root, "bwrap is not on PATH (install the bubblewrap package)")
 
     expect(outcome.code, outcome.stderr).toBe(0)
     expect(outcome.stdout).toContain("2 commits · 0 mismatches")
-    // git did run the monitor: at the second commit the program asked the copy the first commit's step wrote.
-    const lines = readFileSync(ran, "utf8").trim().split("\n")
-    const homes = [...new Set(lines.map((line) => /^fsmonitor home=(.*)$/.exec(line)?.[1]))]
-    expect(homes).not.toContain(undefined)
-    expect(homes).not.toContain(homedir())
-    expect(homes).not.toContain(environment.HOME)
-    // Each time, it was a git started as a step is: with the home of the baseline, of normal mode or of fast mode.
-    const ways = homes.map((home) => basename(home as string))
-    expect(ways).toContain("normal")
-    expect(ways.filter((way) => !["baseline", "normal", "fast"].includes(way))).toEqual([])
+    // The step wrote the configuration of its own job's checkout, which is gone with the job. The copy the program
+    // asks at the second commit never held the command, so nothing started it. A copy that jobs do share, as the
+    // recipes of a Justfile share one, is asked through `reading`: `test/replay/Jail.test.ts`.
+    expect(existsSync(ran)).toBe(false)
   }, 1_800_000)
 })

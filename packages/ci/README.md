@@ -24,6 +24,12 @@ directly, so the parts are built at the same time.
 
 **Twelfth round, 2026-11-18 (open).** Asked for by lanes; made by the lead.
 
+- **A job is a machine** (`sci-job-machine`). `Inventory.jobTemporaryVariable` (`SMTHRS_MACHINE_TMP`) names a job's
+  own temporary directory to its steps: Smithers build names its machine's, the replay a baseline job's. The
+  step runner keeps the job's state there, so no job reads another's and nothing is left when the job ends. The
+  generator's `StepTarget.machine` (not a contract) names the machine of every target of a GitHub job, one for
+  each matrix variant; a job whose every step is held to the files it names has none. Each job runs its own
+  steps: two jobs that start with the same install no longer share one target.
 - **`Command.applyRefuses` has a third path**, `.smithers/WORKSPACE.smithers`, between the two it had: the order
   Smithers build looks. A plain workspace file an owner wrote makes the repository one that already builds with
   Smithers build; one `smithers-ci` generated starts with the generated mark and does not (`sci-generated-files`).
@@ -227,7 +233,10 @@ and none removes):
   `GITHUB_PATH` or `RUNNER_TEMP`.
 - A job's state is under `/tmp/smithers-ci-runner-<uid>`, one directory for what a shared first step left and one
   for each job. A step never removes a state but its own and those of checkouts that are gone, and it reads
-  nothing there that differs from one run to the next.
+  nothing there that differs from one run to the next. A job on a machine of its own (`StepTarget.machine`) keeps
+  its state in the job's own temporary directory, named by `SMTHRS_MACHINE_TMP`
+  (`Inventory.jobTemporaryVariable`): Smithers build names its machine's and removes it with the machine, and
+  the replay names a baseline job's and removes it when the job ends.
 - `MachineChanges.withInstalled` removes from a job the steps that only install packages the machine has. The
   runner text of the other steps does not count them: each is the job's first, second or later step with those
   steps or without. Such a step runs on a copy of what the steps before it left and leaves nothing; nothing may
