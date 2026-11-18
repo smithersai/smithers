@@ -319,9 +319,8 @@ describe("a signal", () => {
         [`${token}.sh`]: phase === "the baseline" ? hang : `${once}${hang}`
       })
       const named = (): ReadonlyArray<string> =>
-        execFileSync("ps", ["-A", "-ww", "-o", "args="], { encoding: "utf8" }).split("\n").filter((line) =>
-          line.includes(token)
-        )
+        execFileSync("ps", ["-A", "-ww", "-o", "args="], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }).split("\n")
+          .filter((line) => line.includes(token))
       const replays = (): ReadonlyArray<string> => readdirSync(temp).filter((name) => name.startsWith("smithers-ci-"))
       const running = start(bin, ["replay", "--commits", "1"], root, { TMPDIR: temp })
       // In a jail the step's temporary directory is the replay's own; with no jail it is the program's.
