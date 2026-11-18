@@ -66,3 +66,15 @@ Read [docs/state.md](docs/state.md) first: the state machine is framework-free T
 - **Observability:** every feature logs, traces and counts what it does, front end and back end, with tests and docs. Logs never carry message content or credentials.
 - **Benchmarks (`pnpm bench`):** run locally and against a live deployment, compared with a baseline. A live run needs a session the bench doesn't carry yet ([docs/benchmarks.md](docs/benchmarks.md)).
 - **Agent evals (`pnpm eval`):** the real agent against the real model through the metered endpoint, scored by checks, a zero-tolerance safety gate and the host's judge, and compared with a committed baseline ([docs/features/agent-evals.md](docs/features/agent-evals.md)). They spend tokens, so `pnpm test` runs only their unit tests.
+
+## Runtime traps
+
+- A read flow returns its data to the model beside any card it renders. A card-only read makes the agent invent the answer.
+- WebKit (Safari, WKWebView, the Electrobun renderer) refuses a `Secure` cookie set over `http://127.0.0.1` or `http://localhost`. Chromium accepts it, so a Playwright tier passes while native sign-in fails.
+- workerd throws on `fetch(…, { redirect: "error" })`; Bun accepts it, so local tests pass while every Worker read fails.
+- Workers cancel a request that awaits I/O another request started. A module-scoped Effect `Cache`, `Deferred` or `Semaphore` shared across requests made 23 of 30 concurrent reads hang and 500; retries hide it.
+- Hyperdrive drops the connection when a client closes a named prepared statement, which `@effect/sql-pg` does after 100 per connection; production migrations failed with `MigrationError`. A Postgres client behind Hyperdrive sets `prepare: false`.
+- `ConfigProvider.fromEnv()` snapshots `process.env` on first read, so setting `DATABASE_URL` in a vitest file afterwards is ignored: an in-process import of `db/migrate.ts` migrated the dev database. Test CLIs in a subprocess with an explicit env, or pass a `ConfigProvider`.
+- e2e "Couldn't answer" with an HTTP 429 is the dev server's `MODEL_DAILY_TOKEN_BUDGET`, not the provider. Killed runs stay charged until UTC midnight; raise the budget in `.env` and restart dev.
+- Local e2e specs share the one home conversation, which answers one question at a time; a run left waiting blocks every later spec with `NotYourTurn`. Cookie-authenticated POSTs carry `x-smithers-device-person: @none`; scripted turn-taking specs run in the `local-turns` project with one worker.
+- `alchemy dev` leaks `workerd` (parent pid 1) when its process group gets SIGKILL, because the RPC sidecar dies on EPIPE before its finalizers run. Stop dev servers by process group with SIGTERM first; 68 orphans filled swap and disk.

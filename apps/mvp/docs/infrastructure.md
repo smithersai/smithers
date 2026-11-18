@@ -285,6 +285,10 @@ https://<APP_DOMAIN>/<path>
 
 **Moving a hostname that other Workers serve.** Alchemy refuses a hostname that another Worker holds as a custom domain. Before the first deploy with a domain, detach the hostname from that Worker (`DELETE /accounts/<account>/workers/domains/<id>`) and delete zone routes that send the whole hostname elsewhere (`DELETE /zones/<zone>/workers/routes/<id>` for a `<host>/*` route), because a route outranks the new custom domain. Deploy right after: the hostname has no DNS record from the detach until the deploy attaches it.
 
+Detaching a custom domain deletes its DNS record, and macOS then caches NXDOMAIN for the zone's SOA minimum (30 minutes). Smoke-test with `curl --resolve host:443:<ip from dig @1.1.1.1>`.
+
+Alchemy offers to "upgrade" the account's shared `alchemy-state-store` whenever its version differs from the one the running Alchemy expects, even when the store is newer, and confirming redeploys it at that version. Production deploys use that store: read its `/version` before confirming, and never bootstrap or migrate it from another stack.
+
 ### Credentials
 
 Set these in the environment of `pnpm plan`, `pnpm run deploy` and `pnpm destroy`. Alchemy also loads `apps/mvp/.env`, which git ignores: keep identifiers such as `CLOUDFLARE_ACCOUNT_ID` and `NEON_ORG_ID` there, and secrets in your shell or a secret manager, never in a file in the repository. ChatApi reads its settings with Effect `Config` while Alchemy plans it, and Alchemy binds each one that is set to the Worker as a secret. A setting read only later, or only on a path the plan doesn't take, is never bound, and production reads it as unset: `worker/ChatApi.bindings.test.ts` plans ChatApi offline with every setting below that ChatApi, `FlowExecution` or `SandboxObject` uses, and fails on one it doesn't bind.

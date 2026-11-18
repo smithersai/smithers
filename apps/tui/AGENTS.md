@@ -10,3 +10,9 @@ Read [README.md](README.md) before changing interaction, session, worker, or flo
 
 - Keep input and status visible in short terminals. Bound help, forms, and toast stacks to the available pane height; keyboard navigation must reveal the focused field.
 - Preserve every key in a terminal input burst. Focus changes must reach the native editor before later bytes arrive; verify focus-key plus text in one PTY write, including panels, worker steering, pickers, and forms.
+
+## Screenshots
+
+- `html()` on the terminal driver in `e2e/tmux.ts` renders the headless-xterm screen as truecolor HTML. Screenshot it with Chrome `--headless=new --screenshot=out.png --window-size=920,640 file://…html`. Headless Chrome writes the PNG in about a second and never exits: spawn it detached, poll until the PNG size is stable, then kill its process group.
+- Drive a replay with `SMITHERS_TUI_REPLAY=test/fixtures/fix-add.jsonl`, `SMITHERS_TUI_REPLAY_SPEED` and `SMITHERS_TUI_SESSION_DIR=<tmp>`. Don't put the scratch directory under version control: the fixture was recorded without one, and the replay loops its last cell forever.
+- For byte-identical shots, freeze `Date.now` with `bun --preload freeze.ts` and capture after the screen text is unchanged for one second. With the clock frozen, approval rows never arm; wait on the row's text, not its key hint.
