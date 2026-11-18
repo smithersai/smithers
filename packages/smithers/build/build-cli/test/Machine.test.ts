@@ -425,6 +425,16 @@ describe("a target on a machine", () => {
     expect(moved("/work/repo/.flowsheet")).toBe("/m/w/repo/.flowsheet")
     expect(moved("/work/repository/x")).toBe("/work/repository/x")
     expect(moved("echo hello")).toBe("echo hello")
+    // The text a declaration writes for the cache directory names the workspace's, where it is given.
+    expect(moved("{cache}/store")).toBe("{cache}/store")
+    expect(Machine.relocated("ls {cache}/store /work/repo/src", "/work/repo", "/m/w/repo", ".flows", "{cache}")).toBe(
+      "ls /work/repo/.flows/store /m/w/repo/src"
+    )
+    expect(Machine.relocated("{cache}/store", "/work/repo", "/m/w/repo", "../kept", "{cache}")).toBe("/work/kept/store")
+    // Also where the mark stands alone on a line of a script.
+    expect(Machine.relocated("read kept <<E\n{cache}\nE", "/work/repo", "/m/w/repo", ".flows", "{cache}")).toBe(
+      "read kept <<E\n/work/repo/.flows\nE"
+    )
   })
 })
 

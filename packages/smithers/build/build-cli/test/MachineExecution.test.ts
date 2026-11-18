@@ -162,6 +162,21 @@ describe("targets on two machines", () => {
   })
 })
 
+describe("what a target on a machine keeps in the cache directory", () => {
+  posixIt("is in the workspace's cache directory, and is there for the next build's machine", async () => {
+    // What a cache step does: it saves under the directory the declaration names, and a later run restores it.
+    const store = "{smthrs:cache-directory}/store"
+    const { root, run } = await fixture(() => ({
+      saves: on("job", `mkdir -p "${store}" && test ! -e "${store}/saved" && echo saved > "${store}/saved"`),
+      restores: on("later", `grep -q saved "${store}/saved"`)
+    }))
+    expect(await run(["saves"], untraced)).toEqual({ saves: "ran" })
+    // The machine is gone, and what it kept is not.
+    expect(await Fs.readFile(Path.join(root, ".flows", "store", "saved"), "utf8")).toBe("saved\n")
+    expect(await run(["restores"], untraced)).toEqual({ restores: "ran" })
+  })
+})
+
 describe("the targets of one machine", () => {
   posixIt("share its tree, its home and its temporary directory, one at a time and in order", async () => {
     const { run } = await fixture(() => {

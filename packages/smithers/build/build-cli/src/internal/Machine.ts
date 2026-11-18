@@ -477,12 +477,22 @@ export const environment = (machine: Machine): Readonly<Record<string, string>> 
  * A command word or a variable's value with the workspace's path replaced
  * by the machine's tree, so a program or a search path named inside the
  * workspace is the copy's. A path in the cache directory stays where it is:
- * the cache is the build's own, and a machine's tree has none.
+ * the cache is the build's own, and a machine's tree has none. So `mark`,
+ * the text a declaration writes for the cache directory, becomes the
+ * workspace's cache directory here: left for later, it would be read from
+ * the machine's tree, and what a target keeps there would go with the
+ * machine.
  *
  * @category rendering
  * @since 1.0.0
  */
-export const relocated = (value: string, root: string, tree: string, cacheDirectory: string): string => {
+export const relocated = (
+  value: string,
+  root: string,
+  tree: string,
+  cacheDirectory: string,
+  mark?: string
+): string => {
   // Joined, not concatenated: a cache directory outside the workspace is a
   // leading run of `..` segments, which only a join resolves.
   const kept = NodePath.join(root, ...cacheDirectory.split("/"))
@@ -496,7 +506,9 @@ export const relocated = (value: string, root: string, tree: string, cacheDirect
     moved += value.slice(from, at) + (whole && !cache ? tree : root)
     from = at + root.length
   }
-  return moved + value.slice(from)
+  const placed = moved + value.slice(from)
+  // After the paths are moved: the mark's directory is under the workspace, and is not the copy's.
+  return mark === undefined ? placed : placed.replaceAll(mark, kept)
 }
 
 /**

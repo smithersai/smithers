@@ -579,6 +579,10 @@ at the same time under `--jobs`.
 | The home                   | Empty, or a copy of the directory `SMTHRS_MACHINE_HOME` names. A version manager on `PATH` is linked where its shims look |
 | The temporary directory    | Empty                                                                                                                     |
 
+The cache directory is the build's own and is not copied: `{smthrs:cache-directory}`
+in a target's command or `env` names the workspace's cache directory on a
+machine too, so what a target keeps there outlives its machine.
+
 An installed `node_modules` and a build's output are in no fresh checkout, so
 a machine has neither until one of its targets makes it. A workspace that is
 not the root of a git checkout is copied whole, apart from the cache

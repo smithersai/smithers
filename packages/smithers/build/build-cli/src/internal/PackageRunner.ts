@@ -1126,8 +1126,9 @@ export const executeEffect = (
         // and temporary directory in place of the host's.
         const machine = machineOf(node)
         const onIts = machine !== undefined && workspaceRoot === machine.tree
+        // The cache directory a declaration names is the build's own, never one under the machine's tree.
         const moved = (value: string): string =>
-          onIts ? Machine.relocated(value, root, machine.tree, cacheDirectory) : value
+          onIts ? Machine.relocated(value, root, machine.tree, cacheDirectory, Exec.cacheDirectoryToken) : value
         const resolved = {
           ...spawn,
           argv: spawn.argv.map(moved) as [string, ...Array<string>],
