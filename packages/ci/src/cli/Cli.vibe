@@ -222,9 +222,8 @@ function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
     rows: parts.rows,
     score: parts.score
   }
-  const generate = (cache: Option.Option<string>) =>
+  const generate = (inventory: Inventory, cache: Option.Option<string>) =>
     effect {
-      const inventory = try parts.read(root)
       const why = Native.refusal(inventory) ?? refusal(inventory)
       if (why !== undefined) throw { code: "unsupported", message: why, part: "inventory" } satisfies Failure
       const split = try parts.decompose(root, ci(inventory))
@@ -250,7 +249,7 @@ function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
   }
 
   const apply = Command.make("apply", { cache }, effect (input) => {
-    const files = try generate(input.cache)
+    const files = try generate(try parts.read(root), input.cache)
     const paths = try Path.Path
     for (const file of files) {
       try write(paths.join(root, file.path), file.content)
@@ -269,7 +268,13 @@ function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
   }).pipe(Command.withDescription(Surface.commands.replay))
 
   return Command.make(Surface.name, replayFlags, effect (input) => {
-    const files = try generate(input.cache)
+    const read = try parts.read(root)
+    const own = Native.workspaceOf(read)
+    if (own !== undefined) {
+      try replayAndPrint(input, `\n\n${Native.footer(own)}`)
+      return
+    }
+    const files = try generate(read, input.cache)
     const footer = `\n\n${Surface.name} apply would write ${files.length} files. This run wrote nothing to the repository.`
     try replayAndPrint(input, footer)
   }).pipe(

@@ -97,3 +97,14 @@ export const isBuildFile = (file: GeneratedFile): boolean => /(^|\/)(WORKSPACE|P
  */
 export const overwriteRefusal = (paths: ReadonlyArray<string>): string =>
   `${paths.join(", ")} ${paths.length === 1 ? "was" : "were"} not written by smithers-ci and would be replaced`
+
+/**
+ * What the text report ends with after a replay of the repository's own
+ * targets.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const footer = (file: string): string =>
+  `This repository already builds with Smithers build (${file}). The replay ran its own targets, cold against cached; there is nothing for apply to convert. This run wrote nothing to the repository.`

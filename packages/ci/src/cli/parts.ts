@@ -8,6 +8,7 @@
 import { split } from "../decompose/index.ts"
 import { files } from "../generate/index.ts"
 import { read } from "../inventory/index.ts"
+import * as Native from "../native/index.ts"
 import { run } from "../replay/index.ts"
 import { html, text } from "../report/index.ts"
 import { rows, score } from "../select/index.ts"
@@ -20,4 +21,4 @@ import type { Host } from "./Host.vibe"
  * @category parts
  * @since 0.1.0
  */
-export const parts: Parts<Host> = { read, decompose: split, files, run, text, html, rows, score }
+export const parts: Parts<Host> = { read, decompose: split, files, run: Native.run<Host>(run), text, html, rows, score }

@@ -15,7 +15,8 @@ import type { ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { type Mode, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
-import * as Native from "../native/index.ts"
+import { replaced } from "../native/Detect.vibe"
+import { overwriteRefusal, refusal as ownWorkspace } from "../native/Workspace.ts"
 import {
   addRerun,
   blocked,
@@ -239,14 +240,14 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     const normalCopy = try copyAt("normal", "HEAD")
     const inventory: Inventory = try parts.read(normalCopy)
-    const why = Native.refusal(inventory) ?? refusal(inventory)
+    const why = ownWorkspace(inventory) ?? refusal(inventory)
     if (why !== undefined) throw failure("unsupported", why)
     const left = notReplayed(inventory)
     const narrowed = ci(inventory)
     const split = parts.decompose === undefined ? narrowed : try parts.decompose(normalCopy, narrowed)
     const generated = try parts.files(split, { cache: request.cache })
-    const kept = try Native.replaced(normalCopy, generated)
-    if (kept.length > 0) throw failure("unsupported", Native.overwriteRefusal(kept))
+    const kept = try replaced(normalCopy, generated)
+    if (kept.length > 0) throw failure("unsupported", overwriteRefusal(kept))
     const mapFile = generated.find((file) => file.path === targetMapPath)
     if (mapFile === undefined) throw failure("invalid-document", `the generated files have no ${targetMapPath}`)
     const targetMap = Schema.decodeUnknownEffect(Schema.fromJsonString(TargetMap))(mapFile.content) catch effect () => {

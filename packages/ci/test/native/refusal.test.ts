@@ -1,10 +1,14 @@
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { rmSync } from "node:fs"
 import { afterAll, describe, expect, it } from "vitest"
+import { layer } from "../../src/cli/Host.vibe"
 import { parts } from "../../src/cli/parts.ts"
 import { exitCodes } from "../../src/contract/Command.ts"
 import { Inventory } from "../../src/contract/Inventory.ts"
+import type { Failure } from "../../src/contract/Parts.ts"
 import { generatedMark, workspaceOf } from "../../src/native/index.ts"
+import { run as generic } from "../../src/replay/index.ts"
 import { inProcess } from "../cli/inProcess.vibe"
 import { bin, changed, type Outcome, read, recorder, snapshot, spawn, temporary } from "../cli/repo.ts"
 import { ciFiles, ownPackage, ownWorkspace, repository } from "./repo.ts"
@@ -41,22 +45,39 @@ describe("smithers-ci on a repository with its own Smithers workspace", () => {
     expect(read(`${root}/PACKAGE.ts`)).toBe(ownPackage)
   })
 
-  it("apply, the default command and replay refuse it, wherever its workspace is", async () => {
+  it("apply refuses it wherever its workspace is, and a replay never generates for it", async () => {
     for (const file of ["WORKSPACE.ts", ".smithers/WORKSPACE.ts"]) {
       const root = keep(repository({ ...ciFiles, [file]: ownWorkspace, "PACKAGE.ts": ownPackage }))
       const before = snapshot(root)
-      for (const [args, part] of [[["apply"], "inventory"], [["--commits", "1"], "inventory"]] as const) {
-        expect(await run(args, root)).toEqual({
-          code: exitCodes.unsupported,
-          stdout: "",
-          stderr: `smithers-ci: ${part}: ${already(file)}`
-        })
+      expect(await run(["apply"], root)).toEqual({
+        code: exitCodes.unsupported,
+        stdout: "",
+        stderr: `smithers-ci: inventory: ${already(file)}`
+      })
+      // The repository depends on no smthrs, so its own targets cannot be replayed either.
+      const where = file === "WORKSPACE.ts" ? "the repository root" : ".smithers or the repository root"
+      for (const args of [["--commits", "1"], ["replay", "--commits", "1"]]) {
+        const outcome = await run(args, root)
+        expect(outcome.code).toBe(exitCodes.unsupported)
+        expect(outcome.stdout).toBe("")
+        expect(outcome.stderr.trimEnd().split("\n").at(-1)).toBe(
+          `smithers-ci: replay: no replayed commit could be installed: no node_modules/.bin/smthrs in ${where} after the install; the repository must depend on @smthrs/cli`
+        )
       }
-      const replay = await run(["replay", "--commits", "1"], root)
-      expect(replay.code).toBe(exitCodes.unsupported)
-      expect(replay.stderr).toBe(`smithers-ci: replay: ${already(file)}`)
       expect(changed(before, snapshot(root))).toEqual([])
     }
+  })
+
+  it("is refused by the replay that generates targets, should it be asked", async () => {
+    const root = keep(repository({ ...ciFiles, "WORKSPACE.ts": ownWorkspace, "PACKAGE.ts": ownPackage }))
+    const attempt = Effect.runPromise(
+      Effect.provide(generic({ root, commits: 1, modes: ["normal"] }, parts), layer(environment))
+    )
+    const failure = await attempt.then(
+      () => undefined,
+      (cause: { readonly message: string }) => JSON.parse(JSON.stringify(cause)) as Failure
+    )
+    expect(failure).toEqual({ code: "unsupported", part: "replay", message: already("WORKSPACE.ts").trimEnd() })
   })
 
   it("says so in the inventory", async () => {

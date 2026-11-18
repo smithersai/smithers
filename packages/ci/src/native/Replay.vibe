@@ -1,0 +1,369 @@
+/**
+ * The replay of a repository that already builds with Smithers build: its
+ * own targets, cold against cached, at each past commit.
+ *
+ * Nothing is generated. The baseline is one `smthrs ci --no-cache` run in a
+ * checkout with no cache, normal mode the same run in a checkout that keeps
+ * its cache between commits, and both read their verdicts from the run
+ * record `smthrs` writes.
+ *
+ * @since 0.1.0
+ */
+
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract/Parts.ts"
+import type { ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
+import { type Mode, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
+import { defaultSettings, type Row } from "../contract/Selection.ts"
+import { type Execute, Options, Progress, settle } from "../replay/Replay.vibe"
+import {
+  choose,
+  failure,
+  mismatchesOf,
+  planOfPrinted,
+  predictedSafe,
+  PrintedPlan,
+  recordOf,
+  reportOf,
+  selectionOf,
+  totalsOf
+} from "../replay/Summary.ts"
+import {
+  commandFailed,
+  type Installed,
+  installDirectories,
+  installLabel,
+  managerFor,
+  noSmthrs,
+  smthrsBin
+} from "./Install.ts"
+import { chosenFor } from "./Targets.ts"
+import { isGenerated, workspaceFiles } from "./Workspace.ts"
+
+/** The cache directory, kept between commits in normal and fast mode. */
+const cacheDirectory = ".flows"
+const outputLimit = 4000
+
+/**
+ * The host services this replay uses.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+
+/**
+ * The patterns to replay instead of the ones the repository's CI runs.
+ * Without `patterns` the CI decides.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export service Targets {
+  readonly patterns: ReadonlyArray<string> | undefined
+  static readonly defaultValue = () => ({
+    patterns: undefined as ReadonlyArray<string> | undefined
+  })
+}
+
+interface Output {
+  readonly exitCode: number
+  readonly text: string
+}
+
+/** Runs a command to its end and keeps the last `limit` characters of what it printed. */
+effect function exec(
+  command: string,
+  args: ReadonlyArray<string>,
+  cwd: string,
+  env: Readonly<Record<string, string>>,
+  limit: number,
+  stream: "all" | "stdout" = "all"
+) {
+  const spawner = try ChildProcessSpawner
+  return scoped(effect {
+    const handle = try spawner.spawn(ChildProcess.make(command, [...args], { cwd, env: { ...env }, extendEnv: true }))
+    const kept = try Ref.make("")
+    const reader = fork ((stream === "all" ? handle.all : handle.stdout)
+      |> Stream.decodeText(%)
+      |> Stream.runForEach(%, (chunk: string) => Ref.update(kept, (text) => (text + chunk).slice(-limit))))
+    const exitCode = try handle.exitCode
+    // A process a target left running keeps the pipe open, so only complete output is waited for without a limit.
+    if (limit === Number.POSITIVE_INFINITY) try Fiber.join(reader)
+    else try timeoutOption(Fiber.await(reader), "1 second")
+    return { exitCode: Number(exitCode), text: try Ref.get(kept) } satisfies Output
+  }) catch effect (cause) => {
+    throw failure("command-failed", `could not run ${command}: ${cause.message}`)
+  }
+}
+
+effect function git(cwd: string, args: ReadonlyArray<string>) {
+  const output = try exec("git", args, cwd, {}, Number.POSITIVE_INFINITY)
+  if (output.exitCode !== 0) {
+    throw failure("command-failed", `git ${args[0]} failed: ${output.text.slice(-outputLimit)}`)
+  }
+  return output.text
+}
+
+const lines = (text: string): ReadonlyArray<string> => text.split("\n").filter((line) => line !== "")
+
+/**
+ * The workspace file the repository at `root` holds at `HEAD` and its owner
+ * wrote, or `undefined`: there is none, `smithers-ci` generated it, or `root`
+ * is not a repository.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export effect function committedWorkspace(root: string) {
+  for (const file of workspaceFiles) {
+    const shown = exec("git", ["show", `HEAD:${file}`], root, {}, Number.POSITIVE_INFINITY, "stdout")
+      catch (): Output => ({ exitCode: 1, text: "" })
+    if (shown.exitCode === 0 && !isGenerated(shown.text)) return file
+  }
+  return undefined
+}
+
+/**
+ * Installs a checkout's dependencies with the package manager each lockfile
+ * names, in the workspace file's directory and at the root, and finds the
+ * `smthrs` they bring. It never fails: a checkout that cannot be installed is
+ * a failed commit, not a failed replay.
+ *
+ * @category internals
+ * @since 0.1.0
+ */
+export effect function install(checkout: string, workspaceFile: string): Installed!!Host {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const directories = installDirectories(workspaceFile)
+  for (const directory of directories) {
+    const names = fs.readDirectory(path.join(checkout, directory)) catch (): ReadonlyArray<string> => []
+    const manager = names.includes("package.json") ? managerFor(names) : undefined
+    if (manager === undefined) continue
+    const [command, ...args] = manager.command
+    const ran = exec(command, args, path.join(checkout, directory), {}, outputLimit)
+      catch (): Output => ({ exitCode: 127, text: "" })
+    if (ran.exitCode !== 0) return { ok: false, reason: commandFailed(manager.command, directory, ran.exitCode) }
+  }
+  for (const directory of directories) {
+    const smthrs = path.join(checkout, directory, smthrsBin)
+    const present = fs.exists(smthrs) catch () => false
+    if (present) return { ok: true, smthrs }
+  }
+  return { ok: false, reason: noSmthrs(directories) }
+}
+
+/** The one result of a commit whose install failed. */
+const notInstalled = (reason: string): TargetResult => ({
+  label: installLabel,
+  status: "failed",
+  key: "",
+  durationMs: 0,
+  error: reason
+})
+
+interface Measured {
+  readonly results: ReadonlyArray<TargetResult>
+  readonly wallMs: number
+  readonly state: Installed
+}
+
+/**
+ * Replays the last `request.commits` commits of a repository whose own
+ * workspace file is `workspaceFile`.
+ *
+ * Commits run oldest first in three checkouts: the baseline's is emptied of
+ * every untracked file before each commit, and the normal and fast ones keep
+ * only their cache. Each is then installed, and its own `smthrs` runs the
+ * patterns. Wall time covers the checkout, the install and the first pass, the
+ * same in every mode; the reruns that label flaky targets are not counted.
+ *
+ * A commit that cannot be installed is one failed result in every mode. When
+ * no commit can be, the replay fails `unsupported` with the reason.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export const own = <R>(
+  request: ReplayRequest,
+  parts: ReplayParts<R>,
+  workspaceFile: string
+): ReplayReport!Failure!(R | Host) =>
+  scoped(effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const options = try Options
+    const progress = try Progress
+    const asked = try Targets
+    effect function orFail<A, E extends { readonly message: string }, S>(work: A!E!S, what: string) {
+      return work catch effect (cause) => {
+        throw failure("command-failed", `${what}: ${cause.message}`)
+      }
+    }
+    const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-own-" }), "could not make a directory")
+    const source = path.join(work, "source")
+    const root = path.resolve(request.root)
+    const origin = exec("git", ["remote", "get-url", "origin"], root, {}, outputLimit, "stdout")
+      catch (): Output => ({ exitCode: 1, text: "" })
+    try git(work, ["clone", "--quiet", "--no-checkout", root, source])
+    const history = lines(try git(source, ["rev-list", "--first-parent", `--max-count=${request.commits}`, "HEAD"]))
+    const commits = [...history].reverse()
+
+    /**
+     * A copy of the repository for one mode. It is named as the repository is and has its remote, so what reads the
+     * copy names the repository, not the copy.
+     */
+    effect function copyOf(mode: string) {
+      const copy = path.join(work, mode, path.basename(root))
+      try git(work, ["clone", "--quiet", "--shared", "--no-checkout", source, copy])
+      if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", origin.text.trim()])
+      return copy
+    }
+
+    /** Puts `copy` at `commit` with nothing untracked but what `kept` names, and installs it. */
+    effect function ready(copy: string, commit: string, kept: ReadonlyArray<string>) {
+      try git(copy, ["checkout", "--quiet", "--force", "--detach", commit])
+      try git(copy, ["clean", "-ffdxq", ...kept.flatMap((name) => ["-e", name])])
+      const state = try install(copy, workspaceFile)
+      if (!state.ok) try progress.say(`${commit.slice(0, 7)} is not installed: ${state.reason}`)
+      return state
+    }
+
+    const normalCopy = try copyOf("normal")
+    try git(normalCopy, ["checkout", "--quiet", "--force", "--detach", "HEAD"])
+    const inventory = try parts.read(normalCopy)
+    const chosen = chosenFor(inventory, asked.patterns)
+    try progress.say(`replaying the repository's own targets (${workspaceFile}): ${chosen.patterns.join(" ")}`)
+    const baselineCopy = try copyOf("baseline")
+    const fastCopy = request.modes.includes("fast") ? try copyOf("fast") : undefined
+
+    let runs = 0
+    const jobs = request.jobs === undefined ? [] : ["--jobs", String(request.jobs)]
+    const cacheEnv = request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }
+
+    /** Runs the copy's own `smthrs` on targets, or on the patterns, and reads the run record it writes. */
+    const smthrs = (copy: string, cached: boolean, state: Installed): Execute<Host> => (targets) => effect {
+      if (!state.ok) return [notInstalled(state.reason)]
+      const selected = (targets ?? chosen.patterns).filter((label) => label !== installLabel)
+      if (selected.length === 0) return []
+      runs += 1
+      const file = path.join(work, `run-${runs}.json`)
+      const args = [
+        "ci",
+        ...selected,
+        "--workspace",
+        copy,
+        "--cache-dir",
+        cacheDirectory,
+        ...(cached ? [] : ["--no-cache"]),
+        "--results-file",
+        file,
+        "--ui",
+        "plain",
+        ...jobs
+      ]
+      const output = try exec(state.smthrs, args, copy, cached ? cacheEnv : {}, outputLimit)
+      const unreadable = () => failure("command-failed", `smthrs ci wrote no run record: ${output.text}`)
+      const text = fs.readFileString(file) catch effect () => {
+        throw unreadable()
+      }
+      const record = Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text) catch effect () => {
+        throw unreadable()
+      }
+      return record.results
+    }
+
+    /** The plan of the patterns in the normal copy, which fast mode's rows are measured against. */
+    effect function planOf(command: string) {
+      const args = ["ci", ...chosen.patterns, "--plan", "--format", "json", "--workspace", normalCopy]
+      const planned = try exec(command, args, normalCopy, cacheEnv, Number.POSITIVE_INFINITY, "stdout")
+      const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
+        throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
+      }
+      return planOfPrinted(printed)
+    }
+
+    /** One mode of one commit: the checkout, the install and the first pass are timed, the reruns are not. */
+    effect function measure(
+      copy: string,
+      commit: string,
+      cached: boolean,
+      targets: ReadonlyArray<string> | undefined
+    ) {
+      const start = try Clock.currentTimeMillis
+      const state = try ready(copy, commit, cached ? [cacheDirectory] : [])
+      const execute = smthrs(copy, cached, state)
+      const first = try execute(targets)
+      const wallMs = (try Clock.currentTimeMillis) - start
+      const results = try settle(execute, first, options.reruns, first.length)
+      return { results, wallMs, state } satisfies Measured
+    }
+
+    const replayed: Array<ReplayCommit> = []
+    const notInstalledWhy: Array<string | undefined> = []
+    const allRows: Array<Row> = []
+    const selected = new Map<string, ReadonlyArray<string>>()
+
+    for (const commit of commits) {
+      const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
+      const at = `${replayed.length + 1}/${commits.length} ${commit.slice(0, 7)}`
+      try progress.say(`${at} baseline`)
+      const base = try measure(baselineCopy, commit, false, undefined)
+      const baseRecord = recordOf(base.results, commit, base.wallMs)
+      notInstalledWhy.push(base.state.ok ? undefined : base.state.reason)
+      try progress.say(`${at} normal`)
+      const normal = try measure(normalCopy, commit, true, undefined)
+      const normalRecord = recordOf(normal.results, commit, normal.wallMs, "normal")
+      let fastPart: Pick<ReplayCommit, "fast"> = {}
+      let fastMismatches: ReturnType<typeof mismatchesOf> = []
+      if (fastCopy !== undefined) {
+        const rows = normal.state.ok ? try parts.rows(normalCopy, normalRecord, try planOf(normal.state.smthrs)) : []
+        const scores = try parts.score(rows)
+        const choice = choose(scores, request.settings ?? defaultSettings)
+        const labels = normal.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
+        try progress.say(`${at} fast`)
+        const fast = try measure(fastCopy, commit, true, labels)
+        const byLabel = new Map(fast.results.map((result) => [result.label, result]))
+        const merged = normal.results.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
+        const fastRecord = recordOf(merged, commit, fast.wallMs, "fast" satisfies Mode)
+        fastPart = { fast: totalsOf(fastRecord) }
+        fastMismatches = mismatchesOf("fast", baseRecord, fastRecord)
+        allRows.push(...rows)
+        selected.set(commit, choice.selected)
+      }
+      replayed.push({
+        commit,
+        changedFiles: changed.length,
+        baseline: totalsOf(baseRecord),
+        normal: totalsOf(normalRecord),
+        mismatches: [...mismatchesOf("normal", baseRecord, normalRecord), ...fastMismatches],
+        ...fastPart
+      })
+    }
+    // One commit that cannot be installed is a failed commit. When none can, there is nothing to report.
+    if (notInstalledWhy.every((why) => why !== undefined)) {
+      throw failure("unsupported", `no replayed commit could be installed: ${notInstalledWhy.at(-1)}`)
+    }
+    return reportOf(
+      inventory.repository,
+      replayed,
+      fastCopy === undefined ? undefined : selectionOf(allRows, selected),
+      chosen.left
+    )
+  })
+
+/**
+ * The replay part for any repository: one whose `HEAD` holds a workspace file
+ * its owner wrote has its own targets replayed, and every other repository
+ * goes to `generic`, the replay that generates targets.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export const run = <R>(generic: RunReplay<R>) =>
+  (request: ReplayRequest, parts: ReplayParts<R>): ReplayReport!Failure!(R | Host) => effect {
+    const file = try committedWorkspace(request.root)
+    return file === undefined ? try generic(request, parts) : try own(request, parts, file)
+  }

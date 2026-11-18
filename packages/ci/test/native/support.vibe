@@ -1,5 +1,8 @@
-/** Faulty host services for the unhappy paths. */
+/** Faulty host services for the unhappy paths, and a fixed scorer for fast mode. */
 import * as PlatformError from "effect/PlatformError"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import type { RunRecord } from "../../src/contract/RunRecord.ts"
+import type { Row, Score } from "../../src/contract/Selection.ts"
 
 const denied = (method: string) =>
   PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method })
@@ -9,3 +12,53 @@ export const unreadable = Layer.effect(FileSystem.FileSystem, effect {
   const real = try FileSystem.FileSystem
   return { ...real, readFileString: () => Effect.fail(denied("readFileString")) }
 })
+
+/** The real file system, except that making a temporary directory is refused. */
+export const noTemporaryDirectories = Layer.effect(FileSystem.FileSystem, effect {
+  const real = try FileSystem.FileSystem
+  return { ...real, makeTempDirectoryScoped: () => Effect.fail(denied("makeTempDirectoryScoped")) }
+})
+
+/** The real file system, except that it cannot say whether a file exists. */
+export const noExists = Layer.effect(FileSystem.FileSystem, effect {
+  const real = try FileSystem.FileSystem
+  return { ...real, exists: () => Effect.fail(denied("exists")) }
+})
+
+/** The real processes, except that `command` cannot be started. */
+export const cannotStart = (command: string) => Layer.effect(ChildProcessSpawner, effect {
+  const real = try ChildProcessSpawner
+  return makeSpawner((process) =>
+    process._tag === "StandardCommand" && process.command === command
+      ? Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "ChildProcess", method: "spawn" }))
+      : real.spawn(process)
+  )
+})
+
+/** One row per target that executed. */
+export effect function rows(_root: string, record: RunRecord) {
+  return record.results.filter((result) => result.status === "ran" || result.status === "failed").map((result) => ({
+    commit: record.commit ?? "",
+    target: result.label,
+    features: {
+      extensions: [".sh"],
+      fileChanges: { d3: 0, d14: 0, d56: 0 },
+      failureRates: { d7: 0, d14: 0, d28: 0, d56: 0 },
+      project: "own",
+      testCount: 1,
+      graphDistance: 0
+    },
+    attempts: (result.attempts ?? []).map((attempt) => attempt.passed),
+    failed: (result.attempts ?? []).every((attempt) => !attempt.passed),
+    flaky: new Set((result.attempts ?? []).map((attempt) => attempt.passed)).size === 2
+  } satisfies Row))
+}
+
+/** Scores `kept` high on every commit but `first`, and every other target low. */
+export const scoreKeeping = (kept: string, first: string) => effect function (input: ReadonlyArray<Row>) {
+  return input.map((row) => ({
+    commit: row.commit,
+    target: row.target,
+    score: row.target === kept && row.commit !== first ? 1 : 0
+  } satisfies Score))
+}
