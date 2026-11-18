@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `Shell.Test` with `observe: true` is reused from what its run read. The run
+  is traced (`strace` on Linux), and the stored result holds every path it
+  looked at: each file, each directory listing and each path it did not find,
+  inside the workspace and outside it. The next run is a cache hit when each
+  of them is unchanged, so a change to a file the command never reads no
+  longer runs it again. A target that runs again says what differs:
+  `runs again: packages/a/value.js changed`. A run that reached the network or
+  a program outside it, or whose trace cannot be read in full, stores nothing
+  and says why. A host that cannot trace keys the target by its `data`, as
+  before.
+
 - A fresh install no longer loses every test, type-check and lint result of
   its first run. A run of `TsBuild`, `Typecheck`, `Vitest`, `EsLint`, `Dprint`
   or `NodeTest` that the workspace does not confine now finds the keyed entries

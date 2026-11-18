@@ -30,6 +30,7 @@ import { minimatch } from "minimatch"
 import { randomUUID } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
+import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import { performance } from "node:perf_hooks"
 import * as AgentFake from "../AgentFake.ts"
@@ -61,6 +62,7 @@ import * as ApprovalBridge from "./ApprovalBridge.ts"
 import * as CacheEvidence from "./CacheEvidence.ts"
 import * as GoCache from "./GoCache.ts"
 import * as InstalledTree from "./InstalledTree.ts"
+import * as ObservedReads from "./ObservedReads.ts"
 import type { ExecuteOptions, PackageNode, PackagePlan, TestOperandPlan } from "./PackageOptions.ts"
 import type { StoredResolve } from "./PackagePlanner.ts"
 import {
@@ -125,6 +127,8 @@ export interface ExecutionServices {
   readonly sandboxHost: () => ExecSandbox.Host
   /** Why this host cannot hold an installed tree read-only under an unconfined run, or nothing when it can. */
   readonly writeProtection: (host: ExecSandbox.Host) => string | undefined
+  /** The tracer that records what a run reads on this host, or why there is none. */
+  readonly observer: (host: ExecSandbox.Host) => ObservedReads.Observer
 }
 
 /**
@@ -148,7 +152,8 @@ export const executionServicesLive: ExecutionServices = {
   anvilService: AnvilExec.serviceSpec,
   cache: (options) => joined(() => openCache(options)),
   sandboxHost: () => ExecSandbox.host(),
-  writeProtection: (host) => ExecSandbox.writeProtectionRefusal(host)
+  writeProtection: (host) => ExecSandbox.writeProtectionRefusal(host),
+  observer: (host) => ObservedReads.observer(host)
 }
 
 /**
@@ -934,7 +939,9 @@ export const executeEffect = (
       workspaceRoot: string,
       override?: ReadonlyArray<string>,
       candidateReads: ReadonlyArray<string> = [],
-      archive = false
+      archive = false,
+      /** Puts the resolved command under a tracer; the command, its environment and its verdict are unchanged. */
+      traced?: (argv: ReadonlyArray<string>) => ReadonlyArray<string>
     ): Effect.Effect<SpawnOutcome, unknown> =>
       Effect.gen(function*() {
         const resolved = yield* resolveSpawn(node, override, archive)
@@ -948,7 +955,7 @@ export const executeEffect = (
         const cacheEnvironment = ExecSandbox.enforceable(sandbox, ExecSandbox.host()) ? {} : ambient
         const payload: Exec.Payload = {
           cwd: node.cwd,
-          argv: resolved.argv,
+          argv: traced === undefined ? resolved.argv : traced(resolved.argv) as [string, ...Array<string>],
           env: GoCache.spawnEnvironment(resolved.env, workspaceRoot, cacheDirectory, cacheEnvironment),
           secrets: resolved.secrets,
           expectedExitCodes: [0],
@@ -2201,8 +2208,122 @@ export const executeEffect = (
     /** Spawns a non-build consumer in its overlay scratch tree when required. */
     const spawnConsumer = (
       node: PackageNode,
-      argv?: ReadonlyArray<string> | undefined
-    ): Effect.Effect<ExecOutcome, unknown> => runWithOverlays(node, (treeRoot) => spawnNode(node, treeRoot, argv))
+      argv?: ReadonlyArray<string> | undefined,
+      traced?: (argv: ReadonlyArray<string>) => ReadonlyArray<string>
+    ): Effect.Effect<ExecOutcome, unknown> =>
+      runWithOverlays(node, (treeRoot) => spawnNode(node, treeRoot, argv, [], false, traced))
+
+    let observing: ObservedReads.Observer | undefined
+    let unobservedNoted = false
+    let traces = 0
+    const stateOf = ObservedReads.remembering()
+    const failedObserved = "it passed, but failed while its reads were recorded"
+    /**
+     * Runs a shell test that asks to be observed, or answers it from what an
+     * earlier run read.
+     *
+     * The stored records are looked up by the declaration's own key. Each
+     * holds the paths one run looked at; the first whose paths all hold what
+     * that run left there answers. Otherwise the test runs under the tracer,
+     * and a green run whose reads are all known stores a new record. A red
+     * traced run proves nothing about the test, because a tracer changes what
+     * a few programs can do: the test runs again untraced, that run is the
+     * verdict, and the declaration is not traced again for a day.
+     *
+     * Nothing is returned where a run cannot be observed: the host has no
+     * tracer, or tracing this declaration failed within the last day. The
+     * caller then runs it as any other shell test, keyed by its declared
+     * inputs.
+     */
+    const runObserved = (
+      node: PackageNode,
+      observed: NonNullable<PackageNode["observed"]>
+    ): Effect.Effect<Outcome | undefined, unknown> =>
+      Effect.gen(function*() {
+        const host = (observing ??= services.observer(services.sandboxHost()))
+        if ("reason" in host) {
+          if (!unobservedNoted) {
+            unobservedNoted = true
+            log(
+              `smthrs: reads are not observed on this host: ${host.reason}; ` +
+                "a target that asks for it is keyed by its declared inputs"
+            )
+          }
+          return undefined
+        }
+        const earlier = ObservedReads.decode((yield* cacheGet(node, observed.key))?.output)
+        let why: string | undefined
+        for (const stored of earlier) {
+          const moved = yield* joined(async () => ObservedReads.changed(stored, NodeFs.realpathSync(root), stateOf))
+          if (moved === undefined) return green("hit")
+          why ??= moved
+        }
+        if (why !== undefined) log(`${node.label}  runs again: ${why}`)
+        const attemptPath = posix(
+          NodePath.relative(root, CacheEvidence.attemptPath(root, cacheDirectory, observed.key))
+        )
+        if (yield* joined(() => CacheEvidence.attemptFailed(root, cacheDirectory, observed.key))) {
+          log(
+            `${node.label}  its reads are not recorded: ${failedObserved}, on an earlier run; ` +
+              `they are recorded again a day after that run. That run's output is in ${attemptPath}`
+          )
+          return undefined
+        }
+        const directory = NodePath.join(root, ...cacheDirectory.split("/"), "tmp")
+        yield* joined(() => Fs.mkdir(directory, { recursive: true }))
+        const traceFile = NodePath.join(
+          directory,
+          `reads-${observed.key.slice(0, 16)}-${process.pid}-${traces++}.trace`
+        )
+        return yield* Effect.gen(function*() {
+          // The trace file is made first: its time on the file system's clock is when the run began.
+          yield* joined(() => Fs.writeFile(traceFile, ""))
+          const startedMs = (yield* joined(() => Fs.stat(traceFile))).ctimeMs
+          const attempt = yield* spawnConsumer(
+            node,
+            undefined,
+            (argv) => ObservedReads.command(host.tracer, traceFile, argv)
+          )
+          if (!attempt.ok) {
+            log(`${node.label}  failed while its reads were recorded; it runs again without the recording`)
+            const plain = yield* spawnConsumer(node)
+            if (!plain.ok) return fail(plain.error)
+            yield* joined(() =>
+              CacheEvidence.rememberFailedAttempt(root, cacheDirectory, observed.key, {
+                label: node.label,
+                denied: [],
+                output: [attempt.error.slice(-attemptOutputCharacters)]
+              }).catch(() => undefined)
+            )
+            unstored(node, failedObserved, `; the failed run's output is in ${attemptPath}`)
+            return green("ran")
+          }
+          const read = yield* Effect.exit(joined(async () =>
+            ObservedReads.record(
+              ObservedReads.read(ObservedReads.linesOf(traceFile), NodePath.resolve(root, node.cwd)),
+              {
+                root: NodeFs.realpathSync(root),
+                ignore: ObservedReads.ignored(root, NodeOs.homedir(), cacheDirectory, observed.ignore),
+                startedMs
+              }
+            )
+          ))
+          if (Exit.isFailure(read)) {
+            unstored(node, "what it read could not be recorded", `: ${Diagnostic.describe(Cause.squash(read.cause))}`)
+            return green("ran")
+          }
+          if ("refusal" in read.value) {
+            unstored(node, read.value.refusal)
+            return green("ran")
+          }
+          const stored = ObservedReads.store(read.value, earlier)
+          if (stored === undefined) unstored(node, "it read more paths than one record holds")
+          else yield* cachePut(node, stored, observed.key, false)
+          return green("ran")
+        }).pipe(
+          Effect.ensuring(joined(() => Fs.rm(traceFile, { force: true, recursive: true })).pipe(Effect.ignore))
+        )
+      })
 
     const runEmit = (
       node: PackageNode,
@@ -3045,6 +3166,10 @@ export const executeEffect = (
                   yield* cachePut(shardNode, { kind: "shell-test-shard", shard, total: node.shards })
                 }
                 return green(allHit ? "hit" : "ran")
+              }
+              if (node.observed !== undefined) {
+                const outcome = yield* runObserved(node, node.observed)
+                if (outcome !== undefined) return outcome
               }
               const cached = yield* cacheGet(node)
               if (cached !== undefined) return green("hit")

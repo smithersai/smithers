@@ -135,8 +135,36 @@ export const TestAttrs = Schema.Struct({
   exclusive: Schema.optional(Schema.Boolean),
   services: Schema.optional(Attr.Services),
   gates: Schema.optional(Attr.Gates),
-  shards: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)))
-}).check(executableCheck)
+  shards: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+  /**
+   * Records every path a run looks at: the files it opens, the directories
+   * it lists and the paths it finds missing. A later run is answered from
+   * the cache when each of them is unchanged, whatever else in `data`
+   * changed. `ignore` names paths left out of the record: a file or a
+   * directory with all it holds, from the workspace root, absolute, or under
+   * the home directory as `~/...`. Use it for what a tool writes on every
+   * run and never reads to decide its result, such as a log directory.
+   *
+   * The run needs `sandbox: "none"` and a host that can trace it: Linux with
+   * `strace`. On any other host the target is keyed by its `data` alone.
+   */
+  observe: Schema.optional(
+    Schema.Union([Schema.Boolean, Schema.Struct({ ignore: Schema.Array(Schema.NonEmptyString) })])
+  )
+}).check(
+  executableCheck,
+  Schema.makeFilter((attrs) => {
+    if (attrs.observe === undefined || attrs.observe === false) return undefined
+    if (attrs.sandbox !== "none") {
+      return "observe requires sandbox: \"none\"; a confined target is already held to its declared inputs"
+    }
+    if ((attrs.shards ?? 1) > 1) return "observe cannot be combined with shards"
+    if ((attrs.services ?? []).length > 0) {
+      return "observe cannot be combined with services, which run outside the observed process"
+    }
+    return undefined
+  })
+)
 
 /**
  * Attrs for {@link Run}.

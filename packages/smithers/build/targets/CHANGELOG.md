@@ -8,6 +8,9 @@ of it.
 
 ### Added
 
+- `Shell.Test` accepts `observe: true` or `observe: { ignore: [...] }`: the
+  build records every path a run looks at and reuses the result while each is
+  unchanged. It requires `sandbox: "none"` and refuses `shards` and `services`.
 - `ExecSandbox.Request.writeProtected` names workspace paths a run nothing
   confines may not write. `Exec.run` starts such a run through
   `ExecSandbox.protect`, which wraps the argv on a host that has the mechanism

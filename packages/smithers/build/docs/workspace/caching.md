@@ -149,16 +149,17 @@ boolean or a function of decoded attrs. This fails safe for custom targets and f
 catalog targets that invoke an external tool whose complete toolchain identity is
 not yet key material.
 
-| Target                                      | Cacheable                                                                               |
-| ------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `DocsParity`, `Filegroup`                   | Always; each is a bounded in-process check over declared content                        |
-| `PackageJsonCheck`                          | Only with no generated fields; generated-field checks consult host-local state          |
-| `GithubCiGen`                               | In `check` mode; never in `write` mode                                                  |
-| `Vitest`, `NodeTest`, `Typecheck`, `EsLint` | After a confined run; see [Results reused with evidence](#results-reused-with-evidence) |
-| `ToolBuild`, `NodeTest`                     | Also when the declaration sets `cache: true`                                            |
-| Rules the executor runs natively            | As their rule policy says; `Shell.Test` caches in `execute` mode                        |
-| `TsBuild`, `Dprint`                         | Never; see [What is not reused yet](#what-is-not-reused-yet)                            |
-| Every other catalog target                  | Never                                                                                   |
+| Target                                      | Cacheable                                                                                               |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `DocsParity`, `Filegroup`                   | Always; each is a bounded in-process check over declared content                                        |
+| `PackageJsonCheck`                          | Only with no generated fields; generated-field checks consult host-local state                          |
+| `GithubCiGen`                               | In `check` mode; never in `write` mode                                                                  |
+| `Vitest`, `NodeTest`, `Typecheck`, `EsLint` | After a confined run; see [Results reused with evidence](#results-reused-with-evidence)                 |
+| `ToolBuild`, `NodeTest`                     | Also when the declaration sets `cache: true`                                                            |
+| Rules the executor runs natively            | As their rule policy says; `Shell.Test` caches in `execute` mode                                        |
+| `Shell.Test` with `observe`                 | From what its run read; see [Results reused from what a run read](#results-reused-from-what-a-run-read) |
+| `TsBuild`, `Dprint`                         | Never; see [What is not reused yet](#what-is-not-reused-yet)                                            |
+| Every other catalog target                  | Never                                                                                                   |
 
 Mutation, long-lived processes, model calls, and external publication are never
 cached. `cache: true` on a `NodeTest` is the declaration's assertion that `srcs`
@@ -293,6 +294,101 @@ network, `services`, `Typecheck` in build or incremental mode, and `EsLint` with
 stored still has to rerun, so a file no declaration names selects every
 tool-backed target in its package, as before
 (`build-cli/test/AffectedEvidence.test.ts`).
+
+### Results reused from what a run read
+
+A shell command can read any file it can reach, and nobody can list those files
+for it. `Shell.Test` with `observe: true` records what a run reads instead:
+
+```ts
+S.Shell.Test({
+  shell: "npm test",
+  sandbox: "none",
+  observe: true,
+  data: [S.glob("//**")]
+})
+```
+
+The run happens under a system-call trace. The trace names every path the run
+looked at, inside the workspace and outside it: each file it opened or asked
+about, each directory it listed, each path it looked for and did not find. The
+stored result holds those paths and what was at each one. The next run is a
+cache hit when every one of them still holds the same thing. A change to any
+other file in `data` does not run the target again.
+
+| What changed                                      | Why the target runs again                                   |
+| ------------------------------------------------- | ----------------------------------------------------------- |
+| A file the run read                               | Its content, or whether it can be executed, differs         |
+| A new file in a directory the run listed          | The directory's names differ; a glob lists where it matches |
+| A path the run looked for and did not find        | It now exists                                               |
+| A symbolic link on the way to a file              | Its target differs                                          |
+| The command, `env`, an `inheritEnv` value, a tool | The declaration's key differs                               |
+
+The line of a target that runs again names the first difference:
+
+```text
+//:test  runs again: packages/a/value.js changed
+```
+
+**The declaration's key.** The records are stored under a key of the
+declaration alone: the command, the environment, the executables it names, the
+platform and the labels it depends on. No file is in it. A run sees only its
+declared environment, so no variable outside the key reaches it. Four records
+are kept for one declaration, so a fresh checkout and a tree a run has already
+been through each find their own.
+
+**What the run wrote.** A path the run made before it looked at it is its own
+product and never an input. A path it found missing and then made matches when
+it is missing again or still as the run left it. A file the run read and then
+rewrote is compared with what the run wrote, because what it held before is
+gone. A step is therefore taken to give the same verdict when it runs again on
+files exactly as it left them.
+
+**What is left out.** `/proc`, `/sys` and `/dev` are the machine, not files. The
+workspace cache directory is the build's own. `observe: { ignore: [...] }` names
+more: a file, or a directory with all it holds, from the workspace root,
+absolute, or under the home directory as `~/...`. Use it for what a tool writes
+on every run and never reads to decide its result, such as a log directory.
+
+**When nothing is stored.** A green run stores nothing when what it read cannot
+all be known, and says why on its own line:
+
+| Reason                                                    | What happened                                                                                |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `it opened a network connection`                          | What a network answers is in no record                                                       |
+| `it reached a program outside the run ...`                | A daemon reads files this run's trace does not show. A server the run starts itself is in it |
+| `it changed its view of the file system`                  | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says          |
+| `<path> changed while it ran`, `was removed while it ran` | Something else wrote a file the run read, so what the run saw can no longer be measured      |
+| `its trace ...`                                           | A line of the trace could not be read in full                                                |
+| `it read more paths than one record holds`                | The record passed 12 MiB                                                                     |
+| `it passed, but failed while its reads were recorded`     | See below                                                                                    |
+
+A tracer changes what a few programs can do: one that gains privileges, as
+`sudo` does, or one that traces another program. A traced run that fails is
+therefore followed by an untraced run, and the untraced run is the verdict. When
+it passes, nothing is stored and the declaration is not traced again for a day;
+until then it is keyed by its `data`.
+
+**Hosts.** Observation needs Linux and `strace` 5.3 or newer. Only file-system
+calls stop the traced process: one lint command that makes 1,000 of them took
+0.1 s longer, and one test file that makes 17,000 took 1.6 s longer, on a
+48-core host at load 50. The run is refused `io_uring`, as it is in a
+container, because a read submitted through a ring is in no trace. On macOS and
+Windows, without `strace`, or where the host forbids tracing, the target is
+keyed by its `data` as any other `Shell.Test`, and one line says why:
+
+```text
+smthrs: reads are not observed on this host: strace is not installed; a target that asks for it is keyed by its declared inputs
+```
+
+`observe` requires `sandbox: "none"`, because a confined target is already held
+to its declared inputs. It cannot be combined with `shards` or `services`. Its
+results stay in the local cache, as every unconfined result does.
+
+`build-cli/test/ObservedReadsExecution.test.ts` runs real commands under the
+real tracer: an unchanged tree, a changed file, a new file in a listed
+directory, a path that was missing and now exists, a command that fails only
+when traced, and a command that reaches a server outside the run.
 
 ### An installed tree stays the tree a plan measured
 

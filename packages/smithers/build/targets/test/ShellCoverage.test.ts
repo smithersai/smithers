@@ -26,3 +26,27 @@ describe("Shell exec payload boundary values", () => {
     expect(payload.env).toEqual({ BUILD_MODE: "release" })
   })
 })
+
+describe("a shell test that asks to be observed", () => {
+  it("is declared with a run nothing confines", () => {
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: true })).not.toThrow()
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: { ignore: ["~/.cache/tool/logs"] } }))
+      .not.toThrow()
+    expect(() => Shell.Test({ shell: "true", observe: false })).not.toThrow()
+    expect(() => Shell.Test({ shell: "true" })).not.toThrow()
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: true, shards: 1, services: [] }))
+      .not.toThrow()
+  })
+
+  it("is refused under a confinement, with shards and with services", () => {
+    expect(() => Shell.Test({ shell: "true", observe: true })).toThrow(/observe requires sandbox: "none"/)
+    expect(() => Shell.Test({ shell: "true", sandbox: { network: true }, observe: true }))
+      .toThrow(/observe requires sandbox: "none"/)
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: true, shards: 2 }))
+      .toThrow(/observe cannot be combined with shards/)
+    const service = Shell.Serve({ shell: "serve" })
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: true, services: [service] }))
+      .toThrow(/observe cannot be combined with services/)
+    expect(() => Shell.Test({ shell: "true", sandbox: "none", observe: { ignore: [""] } })).toThrow()
+  })
+})

@@ -242,6 +242,13 @@ export interface SharedFields extends Planner.PlannedTarget {
    */
   readonly evidence?: CacheEvidence.Evidence
   /**
+   * Set for a shell test that asks to be observed. `key` names its
+   * declaration alone: the command, its environment, its tools and the
+   * labels it depends on. What each run read is stored under it. `ignore`
+   * holds the paths the declaration leaves out of that record.
+   */
+  readonly observed?: { readonly key: string; readonly ignore: ReadonlyArray<string> }
+  /**
    * Why a green run of this node stores nothing, where the plan can say: a
    * test, type-check or lint node whose contract is incomplete, or a tool
    * rule that reuses no result as planned.

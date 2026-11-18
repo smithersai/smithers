@@ -77,6 +77,7 @@ import { gitPathspecBatches } from "./GitPathspecBatches.ts"
 import * as HostProbes from "./HostProbes.ts"
 import { inputPackage } from "./InputPackage.ts"
 import * as InstalledTree from "./InstalledTree.ts"
+import * as ObservedReads from "./ObservedReads.ts"
 import type {
   CrateRow,
   Mode,
@@ -3417,6 +3418,30 @@ const visit = async (
     capabilities: RulePolicy.capabilities(rule, mode, sandbox)
   }
 
+  // A shell test that asks to be observed is found by its declaration alone.
+  // The files it reads are in the records stored under this key, never in
+  // the key: a dependency enters by label, a declared input not at all, and
+  // the lockfile is one more file a run may read.
+  const observe = rule === "Shell.Test" ? attrMember(attrs, "observe") : undefined
+  const observed = observe === undefined || observe === false
+    ? undefined
+    : {
+      key: Planner.keyOf({
+        body: keyMaterial.body,
+        inputs: {
+          observed: ObservedReads.format,
+          ambient: { ...context.ambient, lockfile: null },
+          attrs: Planner.attrsValue(attrs, depLabels, new Map()),
+          dependencies: dependencyRows.map((row) => row.label),
+          toolchain,
+          execution: { environmentDigest, executable }
+        },
+        layers: [],
+        capabilities: keyMaterial.capabilities
+      }),
+      ignore: observe === true ? [] : (observe as { readonly ignore: ReadonlyArray<string> }).ignore
+    }
+
   // A bundler build's preview key substitutes the cached graph digest when
   // the store holds one; the template keeps the sentinel for execution.
   let keyTemplate: Planner.KeyMaterial | undefined
@@ -3498,6 +3523,7 @@ const visit = async (
     ...(dependencyInstallations.size === 0 ? {} : { dependencyInstallations: [...dependencyInstallations] }),
     ...(installedTrees.length === 0 ? {} : { installedTrees }),
     ...(evidence === undefined ? {} : { evidence }),
+    ...(observed === undefined ? {} : { observed }),
     ...(uncachedBecause === undefined ? {} : { uncachedBecause }),
     outDirs,
     outFiles,
