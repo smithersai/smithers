@@ -188,6 +188,31 @@ export effect function steps(
   return read.steps.map((step) => ({ name: step.name, named: named.has(step.index), test: step.test }))
 }
 
+/**
+ * The named steps each build step only groups, as `Graph.grouped` reads
+ * them: `test` that depends on `test-core` and `test-cli` and does nothing
+ * else gives those two names. A step that does work of its own, or that the
+ * build does not have, gives none. Nothing is built.
+ *
+ * @param project - Where the project is.
+ * @param names - Step names, as `zig build` takes them.
+ * @returns One list per name, in order.
+ *
+ * @category strategy
+ * @since 0.1.0
+ */
+export effect function groupsOf(
+  project: Project,
+  names: ReadonlyArray<string>
+): ReadonlyArray<ReadonlyArray<string>>!ZigClosureError!(ChildProcessSpawner | Path.Path) {
+  if (names.length === 0) return []
+  const read = try graph(try open(project))
+  return names.map((name) => {
+    const index = read.named.get(name)
+    return index === undefined ? [] : Graph.grouped(read, index)
+  })
+}
+
 /** Every finished manifest in the cache, by the output directory it belongs to. */
 effect function manifests(session: Session): ReadonlyMap<string, ReadonlyArray<Manifest.Input>>!!(FileSystem.FileSystem | Path.Path) {
   const fs = try FileSystem.FileSystem
@@ -348,4 +373,25 @@ export effect function close(
   }
   const made = [...files, ...steps]
   return entries.flatMap((entry) => made.filter((closure) => closure.entries[0] === entry).slice(0, 1))
+}
+
+/**
+ * The named steps each build step of the repository at `root` only groups,
+ * for the part that splits a CI step: {@link groupsOf} with contract 10's
+ * failure.
+ *
+ * @param root - The repository's absolute path.
+ * @param steps - Step names, as `zig build` takes them.
+ * @returns One list per step, in order; empty for a step that is not a group.
+ *
+ * @category strategy
+ * @since 0.1.0
+ */
+export effect function groups(
+  root: string,
+  steps: ReadonlyArray<string>
+): ReadonlyArray<ReadonlyArray<string>>!Failure!(ChildProcessSpawner | Path.Path) {
+  return groupsOf({ root }, steps) catch effect (error) => {
+    throw failure(error)
+  }
 }

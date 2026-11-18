@@ -167,3 +167,59 @@ describe("Graph.find", () => {
     expect(Graph.find(twins, "twin")).toBeUndefined()
   })
 })
+
+describe("Graph.grouped", () => {
+  const top = (index: number, deps: ReadonlyArray<number>): Graph.Step => ({
+    index,
+    name: `step ${index}`,
+    kind: "top_level",
+    deps,
+    paths: [],
+    open: [],
+    test: false
+  })
+  const run = (index: number): Graph.Step => ({ ...top(index, []), kind: "run", test: true })
+
+  it("gives the named steps a real step only groups", () => {
+    // `test` depends on `test-alpha`, `test-beta` and `test-gamma` and does nothing else.
+    expect(Graph.grouped(real, 5)).toEqual(["test-alpha", "test-beta", "test-gamma"])
+  })
+
+  it("gives nothing for a step that depends on a step with no name", () => {
+    // `test-alpha` depends on the step that runs its test binary, which `zig build` cannot be asked for.
+    expect(Graph.grouped(real, 2)).toEqual([])
+    expect(Graph.grouped(real, 0)).toEqual([])
+  })
+
+  it("gives nothing for a step that is not there, does work itself, has no name or depends on nothing", () => {
+    const graph: Graph.Graph = {
+      steps: [top(0, [1, 2]), top(1, []), top(2, []), run(3), { ...run(4), deps: [1, 2] }, top(5, [1, 2])],
+      named: new Map([["all", 0], ["a", 1], ["b", 2], ["work", 4]])
+    }
+    expect(Graph.grouped(graph, 0)).toEqual(["a", "b"])
+    expect(Graph.grouped(graph, 99)).toEqual([])
+    // A step with a name that runs something is more than a group.
+    expect(Graph.grouped(graph, 4)).toEqual([])
+    // A grouping step nobody can ask for by name.
+    expect(Graph.grouped(graph, 5)).toEqual([])
+    expect(Graph.grouped(graph, 1)).toEqual([])
+  })
+
+  it("opens a group inside a group, and names a step two groups share once", () => {
+    const graph: Graph.Graph = {
+      steps: [top(0, [1, 2, 3]), top(1, [3, 4]), top(2, [5]), top(3, [5]), top(4, [5]), run(5)],
+      named: new Map([["ci", 0], ["test", 1], ["lint", 2], ["unit", 3], ["e2e", 4]])
+    }
+    // `test` groups `unit` and `e2e`; `lint` runs a step with no name, so it is kept as one.
+    expect(Graph.grouped(graph, 0)).toEqual(["unit", "e2e", "lint"])
+    expect(Graph.grouped(graph, 1)).toEqual(["unit", "e2e"])
+  })
+
+  it("gives nothing for a group of one", () => {
+    const graph: Graph.Graph = {
+      steps: [top(0, [1]), top(1, [2]), run(2)],
+      named: new Map([["all", 0], ["only", 1]])
+    }
+    expect(Graph.grouped(graph, 0)).toEqual([])
+  })
+})

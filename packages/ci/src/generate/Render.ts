@@ -6,7 +6,7 @@
  */
 
 import * as Result from "effect/Result"
-import { type Inventory, stepTimeoutHours, type Toolchain } from "../contract/Inventory.ts"
+import { type Inventory, stepTimeoutHours, toolCache, type Toolchain } from "../contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.ts"
 import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.ts"
 import { markerDirectory, repositoryLabel, type StepPlan, type StepTarget, workflowPath } from "./Steps.ts"
@@ -74,7 +74,19 @@ const workspaceName = (repository: string): string => {
   return name === "" ? "repository" : name
 }
 
-const renderWorkspace = (inventory: Inventory): string =>
+// The programs the machine must provide: the two shells every target starts, each program a step names, and git
+// for a target that checks the files a sealed step's target declares.
+const hostBins = (plan: StepPlan, narrowed: boolean): ReadonlyArray<string> =>
+  [
+    ...new Set([
+      "bash",
+      "sh",
+      ...plan.targets.flatMap((target) => target.tools),
+      ...(narrowed && plan.targets.some((target) => target.guarded !== undefined) ? ["git"] : [])
+    ])
+  ].sort()
+
+const renderWorkspace = (inventory: Inventory, plan: StepPlan, narrowed: boolean): string =>
   [
     comment(generated),
     `import { Smithers as S } from "@smthrs/targets"`,
@@ -82,7 +94,7 @@ const renderWorkspace = (inventory: Inventory): string =>
     `export const Workspace = S.Workspace(${text(workspaceName(inventory.repository))}, {`,
     `  repository: ${text(inventory.repository)},`,
     `  cache: S.Cache({ directory: ".flows" }),`,
-    `  host: S.Host({ bins: ["bash", "sh"] })`,
+    `  host: S.Host({ bins: [${hostBins(plan, narrowed).map(text).join(", ")}] })`,
     `})`,
     ``
   ].join("\n")
@@ -127,7 +139,14 @@ const renderTarget = (
 ): string => {
   const data = [...filesOf(target, narrowed), ...target.dependencies.map((label) => variables.get(label) as string)]
   const fields = [
-    `shell: ${text(target.script)}`,
+    // Before a sealed step's target, the step also checks that it left that target's files alone. When no target
+    // declares its inputs, none is sealed and nothing is checked.
+    `shell: ${text(narrowed && target.guarded !== undefined ? target.guarded : target.script)}`,
+    // A program the machine provides is named: its bytes are in the key, and a target held to its inputs can
+    // start it.
+    ...(target.tools.length === 0
+      ? []
+      : [`tools: [${target.tools.map((tool) => `S.Host.bin(${text(tool)})`).join(", ")}]`]),
     ...(target.rule === "setup" ? outputsOf(target, narrowed) : []),
     ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(target.env)}`]),
     ...(target.inheritEnv.length === 0 ? [] : [`inheritEnv: ${JSON.stringify(target.inheritEnv)}`]),
@@ -253,6 +272,10 @@ const collides = (plan: StepPlan, narrowed: boolean): boolean => {
 
 const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boolean, serial: boolean): string => {
   const hasNode = plan.toolchains.some((toolchain) => toolchain.name === "node")
+  // A step that keeps a tool's own cache names a directory under the tool cache in its environment.
+  const keepsTools = plan.targets.some((target) =>
+    Object.values(target.env).some((value) => value === toolCache || value.startsWith(`${toolCache}/`))
+  )
   return [
     yamlComment(generated),
     `name: Smithers CI`,
@@ -275,7 +298,9 @@ const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boo
     `      ${yamlComment("Unconfined results never reach a remote cache, so the runner keeps its own.")}`,
     `      - uses: actions/cache@v4`,
     `        with:`,
-    `          path: .flows/cache`,
+    ...(keepsTools
+      ? [`          path: |`, `            .flows/cache`, `            ${toolCache}`]
+      : [`          path: .flows/cache`]),
     `          key: smithers-ci-\${{ matrix.os }}-\${{ github.sha }}`,
     `          restore-keys: smithers-ci-\${{ matrix.os }}-`,
     ...(cache !== undefined ? [] : [
@@ -366,7 +391,7 @@ export const renderFiles = (
         serial
       )
     },
-    { path: workspacePath, content: renderWorkspace(inventory) },
+    { path: workspacePath, content: renderWorkspace(inventory, plan, held) },
     { path: packagePath, content: targets },
     { path: targetMapPath, content: renderTargetMap(plan, serial) },
     ...(plan.notes.length === 0 ? [] : [{ path: notesPath, content: renderNotes(plan) }])

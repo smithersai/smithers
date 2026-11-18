@@ -190,3 +190,39 @@ export const find = (graph: Graph, name: string): Step | undefined => {
   const matches = graph.steps.filter((candidate) => candidate.name === name)
   return matches.length === 1 ? matches[0] : undefined
 }
+
+/**
+ * The named steps a step only groups, or nothing when it does more than
+ * group. A step groups when `zig build` accepts its name, it does no work of
+ * its own, and each step it depends on is one `zig build` accepts by name.
+ * `zig build <name>` then runs exactly what `zig build` of each of them
+ * runs, so they can be run apart. A group inside a group is opened too.
+ *
+ * @param graph - The step graph.
+ * @param index - The step's index.
+ * @returns The names, each once, in the order the steps list them. Empty for
+ * a step that groups fewer than two.
+ * @throws {never}
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const grouped = (graph: Graph, index: number): ReadonlyArray<string> => {
+  const names = new Map([...graph.named].map(([name, at]) => [at, name]))
+  const seen = new Set<number>()
+  const open = (at: number): ReadonlyArray<string> | undefined => {
+    const found = graph.steps[at]
+    if (found === undefined || found.kind !== "top_level" || !names.has(at) || found.deps.length === 0) return undefined
+    const inside: Array<string> = []
+    for (const dep of found.deps) {
+      const name = names.get(dep)
+      if (name === undefined) return undefined
+      if (seen.has(dep)) continue
+      seen.add(dep)
+      inside.push(...(open(dep) ?? [name]))
+    }
+    return inside
+  }
+  const inside = open(index) ?? []
+  return inside.length < 2 ? [] : inside
+}

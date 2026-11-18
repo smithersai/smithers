@@ -24,6 +24,16 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-18, eleventh round** (optional additions by the needlefish lane, for a step that runs `zig build`):
+
+- `Step.tools` (optional): the programs the step starts that the machine provides, by name. The generator names them
+  in the step's target (`S.Host.bin`) and in the workspace's `S.Host`: their bytes are in the target's key, and a
+  target held to its inputs can start them.
+- `Step.sealed` (optional): the step's `inputs` are all it reads, whatever ran before it in its working tree. Its
+  target stays held to them after any step, and each target that runs before it fails when it changed one of them.
+- `Inventory.toolCache` (`.flows/tools`): where a tool a step starts keeps its own cache between runs. A step names
+  a directory under it in its `env`; the generated workflow then saves it with the results.
+
 **2026-11-18, tenth round, open** (the independent review's 31 findings; three lanes fix them. The lead's
 decisions are in each lane's brief. This list holds what one lane asked of another; each is done by the lane named):
 

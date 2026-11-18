@@ -10,6 +10,7 @@ Code: `src/closure/zig`. Needs Zig 0.17; any other release is refused.
 import * as Zig from "./src/closure/zig/index.ts"
 
 Zig.close(root, ["test", "src/main.zig"]) // contract 10: one closure per entry
+Zig.groups(root, ["test"]) // the named steps each step only groups
 Zig.steps({ root }) // the steps there are, and which run a test binary
 Zig.ofSteps({ root }, ["test"]) // one closure per build step
 Zig.ofFiles({ root }, ["src/main.zig"]) // one closure per entry file
@@ -110,6 +111,51 @@ unknown or the build server stops early. `close` fails with contract 10's
 `Failure`: `unsupported` for another Zig release, `command-failed` for the
 rest. The other functions fail with `ZigClosureError`, which says which.
 
+## A CI step that runs `zig build`
+
+The splitter (`src/decompose/Zig.ts`) turns the closures into CI steps.
+
+```
+just ci:  tidy, then  zig build test
+                          │
+          Zig.groups      │  test = test-core + test-cli + test-util ?
+                          ▼
+   yes: one step per named step        no: the step as it was
+   zig build test-core   reads 41 files    zig build test   reads its closure
+   zig build test-cli    reads 58 files
+   zig build test-util   reads  9 files
+```
+
+1. **One step per named step.** `b.step("test", …)` that only depends on other
+   named steps does no work of its own: `zig build test` runs what
+   `zig build test-core` and the others run. When a CI step is nothing but
+   `zig build test`, it becomes one step per named step, each with its own
+   closure. A change to a file only `test-cli` imports reruns `test-cli`. A
+   group inside a group is opened too. A step that depends on a step with no
+   name, as `test` does in a build that adds its test binaries straight to it,
+   keeps its command and reads the closure of the whole step.
+2. **Nothing but the build.** The split replaces the command, so the command
+   must be only `zig build <step>`: alone, after `set` lines, or as the whole
+   script of a `bash -c`. `zig build test || true` passes where a build fails,
+   so it keeps its command and gains its closure.
+3. **Held after any step.** A closure is everything the build reads, so a Zig
+   step stays held to it when other steps ran before it in the same working
+   tree (`Step.sealed`). Each step before it checks that it left those files
+   as it found them. See
+   [Splitting a step](../concepts/splitting.md#a-zig-build-after-another-step).
+4. **The toolchain is in the key.** The step names `zig` (`Step.tools`). Its
+   target declares the executable, so the executable's bytes are part of the
+   key and a new Zig release reruns every Zig step. The build mode
+   (`-Doptimize=…`) is part of the command, which is in the key too.
+5. **Zig keeps its own cache.** A held step cannot write beside its inputs, so
+   the step sets `ZIG_LOCAL_CACHE_DIR` and `ZIG_GLOBAL_CACHE_DIR` to
+   `.flows/tools/zig`. The directory lasts between runs. When a step does run
+   again, Zig rebuilds only the compile steps whose files changed and reruns
+   only the test binaries that came out different.
+
+A Zig step that a later step follows keeps its command, its place and Zig's
+usual cache directory: the later step may read what it built.
+
 ## Measured on needlefish
 
 `refcell/needlefish` at `bfb4869`: Zig 0.17.1, one `build.zig`, no
@@ -167,6 +213,16 @@ because another edit to it can change any step.
   and that edit is itself a change to the closure.
 - **Fetched packages, file by file.** A fetched package is one name. Its
   content is pinned by the hash in `build.zig.zon`.
+- **A file an earlier CI step writes that `build.zig` uses only when it is
+  there.** A closure is read from a clean checkout. A build that looks for an
+  optional file, and finds it only after an earlier step fetched it, reads
+  more than its closure names. Held to its closure, it runs as it does in a
+  clean checkout.
+- **Part of a test binary.** Zig runs a test binary whole. `--test-filter` is
+  given when the binary is compiled and takes one substring, and the filtered
+  compile still reads every file the unfiltered one reads, so a filter gives
+  neither a smaller closure nor a cheaper build. A build that puts all its
+  tests in one binary has one step for them.
 
 ## Costs and limits
 

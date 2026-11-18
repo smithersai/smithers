@@ -127,8 +127,14 @@ const inert = (command: Command, words: ReadonlyArray<string>): boolean => {
   }
 }
 
-// The inner script of `bash -c '<script>'`, when the command is only that.
-const innerScript = (command: Command): string | undefined => {
+/**
+ * The inner script of `bash -c '<script>'`, when the command is only that.
+ *
+ * @throws {never}
+ * @category reading
+ * @since 0.1.0
+ */
+export const innerScript = (command: Command): string | undefined => {
   const words = command.words
   const flag = words.findIndex((word) => word.text === "-c")
   if (!shells.has((words[0] as { text: string }).text) || flag < 1 || flag !== words.length - 2) return undefined
@@ -137,7 +143,15 @@ const innerScript = (command: Command): string | undefined => {
   return script.literal ? script.text : undefined
 }
 
-const zigStep = (words: ReadonlyArray<string>): string | undefined => {
+/**
+ * The build step `zig build` runs: the one it names, `install` when it names
+ * none, or `undefined` for any other command and for `zig build` with a flag.
+ *
+ * @throws {never}
+ * @category reading
+ * @since 0.1.0
+ */
+export const zigStep = (words: ReadonlyArray<string>): string | undefined => {
   if (words[0] !== "zig" || words[1] !== "build" || words.length > 3) return undefined
   const step = words[2] ?? "install"
   return step.startsWith("-") ? undefined : step

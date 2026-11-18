@@ -226,6 +226,33 @@ layer(shared, { timeout: limit, excludeTestServices: true })("contract 10's clos
   }, limit)
 })
 
+layer(shared, { timeout: limit, excludeTestServices: true })("the steps a Zig build step groups", (it) => {
+  it.effect("names the steps a step only groups, and nothing for a step that does work", effect () => {
+    const { project } = try Shared
+    expect(try Zig.groupsOf(project, ["test", "test-alpha", "no-such-step", "run"])).toEqual([
+      ["test-alpha", "test-beta", "test-gamma"],
+      // `test-alpha` runs a test binary, the build has no `no-such-step`, and `run` runs a program.
+      [],
+      [],
+      []
+    ])
+    expect(try Zig.groupsOf(project, [])).toEqual([])
+  }, limit)
+
+  it.effect("answers for the repository's own build.zig, and fails as contract 10 says", effect () => {
+    const { project } = try Shared
+    const root = (try Path.Path).join(project.root, "project")
+    expect(try Zig.groups(root, ["test", "fmt"])).toEqual([["test-alpha", "test-beta", "test-gamma"], []])
+    provide instead("version", "echo 0.15.2") {
+      expect(try flip(Zig.groups(root, ["test"]))).toEqual({
+        code: "unsupported",
+        message: "Zig 0.17.x is needed and zig is 0.15.2",
+        part: "closure"
+      })
+    }
+  }, limit)
+})
+
 layer(host, { timeout: limit, excludeTestServices: true })("a Zig closure after an edit", (it) => {
   it.effect("follows an import that was added and digests the new content", effect () => {
     const project = try repository()

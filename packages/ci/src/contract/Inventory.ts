@@ -51,6 +51,17 @@ export type Source = typeof Source.Type
  * stays narrowed: its target reads those outputs and its key holds those
  * inputs.
  *
+ * `tools` names the programs the step starts that the machine provides, as
+ * `PATH` finds them, such as `zig`. A target generated from the step names
+ * them: their bytes are in its key, so another toolchain reruns it, and a
+ * target held to its inputs can start them.
+ *
+ * `sealed` is true when `inputs` name every file the step reads whatever ran
+ * before it in its working tree: it reads no file an earlier step wrote. Its
+ * target stays held to its inputs after any step. Each step before it in its
+ * tree must then leave those inputs as it found them, and its target fails
+ * when it does not: the sealed step's key was made from them.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -64,7 +75,9 @@ export const Step = Schema.Struct({
   secretEnv: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
   inputs: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   outputs: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
-  from: Schema.optionalKey(Schema.NonEmptyString)
+  from: Schema.optionalKey(Schema.NonEmptyString),
+  tools: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+  sealed: Schema.optionalKey(Schema.Boolean)
 })
 
 /**
@@ -184,6 +197,18 @@ export type Inventory = typeof Inventory.Type
  * @since 0.1.0
  */
 export const shell = ["bash", "-e", "-c"] as const
+
+/**
+ * Where a tool a step starts keeps its own cache between runs, from the
+ * repository root: a directory inside Smithers build's cache directory,
+ * which a target held to its inputs may write. A step names a directory
+ * under it in its `env`, such as `ZIG_LOCAL_CACHE_DIR`. The generated
+ * workflow saves it with the results, and a replay keeps it between commits.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const toolCache = ".flows/tools"
 
 /**
  * How long one step may run, in hours. The baseline stops a step that runs

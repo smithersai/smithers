@@ -9,6 +9,7 @@ import { type Ci, ci as ciOf, Inventory, type Job, type Step } from "../../src/c
 import type { CloseEntries } from "../../src/contract/Parts.ts"
 import { combine, type Verdict } from "../../src/contract/RunRecord.ts"
 import { split, splitWith } from "../../src/decompose/index.ts"
+import * as ZigSteps from "../../src/decompose/Zig.ts"
 
 effect function run(root: string, command: string, args: ReadonlyArray<string>) {
   const spawner = try ChildProcessSpawner
@@ -525,7 +526,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         // One call names every build step, once.
         expect(asked).toEqual([["bench", "docs", "test"]])
         expect(stepsOf(after)).toEqual([
-          { ...stepsOf(before)[0], inputs: ["build.zig", "src/main.zig"], from: "justfile:test:1" },
+          // It names the program it starts and keeps Zig's caches where a held step may write.
+          {
+            ...stepsOf(before)[0],
+            inputs: ["build.zig", "src/main.zig"],
+            from: "justfile:test:1",
+            env: ZigSteps.environment,
+            tools: ["zig"],
+            sealed: true
+          },
           // An incomplete closure, a step the strategy did not answer for, and an unknown program stay whole.
           stepsOf(before)[1],
           stepsOf(before)[2],
@@ -539,6 +548,114 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       try Effect.try(() => {
         expect(without).toEqual(before)
         expect(failed).toEqual(before)
+      })
+    })
+
+  it.effect("splits a step that is one Zig build into the named steps its build step groups", () =>
+    effect {
+      const root = try repository({ "build.zig": "", "src/core.zig": "", "src/cli.zig": "" })
+      const asked: Array<ReadonlyArray<string>> = []
+      const files: Readonly<Record<string, ReadonlyArray<string>>> = {
+        "test": ["build.zig", "src/cli.zig", "src/core.zig"],
+        "test-core": ["build.zig", "src/core.zig"],
+        "test-cli": ["build.zig", "src/cli.zig", "src/core.zig"],
+        "check": ["build.zig", "src/core.zig"],
+        "check-core": ["build.zig", "src/core.zig"]
+      }
+      const close: CloseEntries = (_root, entries) => effect {
+        asked.push(entries)
+        return entries.flatMap((entry): ReadonlyArray<Closure> => files[entry] === undefined ? [] : [{
+          strategy: "zig",
+          entries: [entry],
+          files: (files[entry] as ReadonlyArray<string>).map((path) => ({ path, digest: "d" })),
+          packages: ["zig@0.17.1"],
+          unresolved: [],
+          dynamic: []
+        }])
+      }
+      const grouped: Readonly<Record<string, ReadonlyArray<string>>> = {
+        "test": ["test-core", "test-cli"],
+        // `check-fmt` has no closure: the strategy did not answer for it.
+        "check": ["check-core", "check-fmt"]
+      }
+      const groups = (_root: string, steps: ReadonlyArray<string>) => succeed(steps.map((name) => grouped[name] ?? []))
+      const before = separately([
+        step("justfile:test:1", "set -euo pipefail\nzig build test", { name: "test" }),
+        step("justfile:check:1", "zig build check"),
+        step("justfile:soft:1", "zig build test || true")
+      ])
+      const after = try splitWith({ zig: close, zigGroups: groups })(root, before)
+      try Effect.try(() => {
+        // The build steps and the named steps they group are closed in one call.
+        expect(asked).toEqual([["check", "check-core", "check-fmt", "test", "test-cli", "test-core"]])
+        expect(stepsOf(after).map((found) => [found.id, found.command, found.inputs, found.from, found.sealed])).toEqual([
+          ["justfile:test:1:test-core", "zig build test-core", ["build.zig", "src/core.zig"], "justfile:test:1", true],
+          ["justfile:test:1:test-cli", "zig build test-cli", ["build.zig", "src/cli.zig", "src/core.zig"], "justfile:test:1", true],
+          // One named step has no closure, so the step keeps its command and reads what the whole build step reads.
+          ["justfile:check:1", "zig build check", ["build.zig", "src/core.zig"], "justfile:check:1", true],
+          // `|| true` passes where a build fails: the command stays as it is.
+          ["justfile:soft:1", "zig build test || true", ["build.zig", "src/cli.zig", "src/core.zig"], "justfile:soft:1", true]
+        ])
+        expect(stepsOf(after)[0]).toMatchObject({ name: "test (test-core)", tools: ["zig"], env: ZigSteps.environment })
+      })
+      // Without the groups, or when reading them fails, the step keeps its command and gains its closure.
+      const whole = [["justfile:test:1", "set -euo pipefail\nzig build test", ["build.zig", "src/cli.zig", "src/core.zig"]]]
+      const failing = () => fail({ code: "command-failed" as const, message: "zig is not installed", part: "closure" as const })
+      const ungrouped = try splitWith({ zig: close })(root, before)
+      const failed = try splitWith({ zig: close, zigGroups: failing })(root, before)
+      // The groups are not read when nothing closes the steps.
+      const unclosed = try splitWith({ zigGroups: failing })(root, before)
+      try Effect.try(() => {
+        expect(stepsOf(ungrouped).slice(0, 1).map((found) => [found.id, found.command, found.inputs])).toEqual(whole)
+        expect(stepsOf(failed).slice(0, 1).map((found) => [found.id, found.command, found.inputs])).toEqual(whole)
+        expect(unclosed).toEqual(before)
+      })
+    })
+
+  it.effect("holds a Zig build to its closure after another step, and leaves one a later step follows as it was", () =>
+    effect {
+      const root = try repository({
+        ...pnpmWorkspace,
+        "build.zig": "",
+        "src/main.zig": ""
+      })
+      const close: CloseEntries = (_root, entries) => succeed(entries.map((entry): Closure => ({
+        strategy: "zig",
+        entries: [entry],
+        files: [{ path: "build.zig", digest: "d1" }, { path: "src/main.zig", digest: "d2" }],
+        packages: ["zig@0.17.1"],
+        unresolved: [],
+        dynamic: []
+      })))
+      const groups = (_root: string, steps: ReadonlyArray<string>) => succeed(steps.map(() => ["test-a", "test-b"]))
+      // One job: each step runs after the one before it in one working tree.
+      const before = ci([
+        step("s:1", "etc/scripts/tidy.sh"),
+        step("s:2", "zig build"),
+        step("s:3", "pnpm -r run test && zig build check"),
+        step("s:4", "zig build test")
+      ])
+      const after = try splitWith({ zig: close, zigGroups: groups })(root, before)
+      try Effect.try(() => {
+        expect(stepsOf(after)).toEqual([
+          stepsOf(before)[0],
+          // A later step follows it and may read what it built: it keeps its command, and Zig keeps its cache
+          // where it always does.
+          { ...stepsOf(before)[1], inputs: ["build.zig", "src/main.zig"], from: "s:2" },
+          // A script run reads what earlier steps wrote, which nothing names.
+          stepsOf(before)[2],
+          // The last step is only a Zig build. The compiler reported all it reads, so it is split and sealed.
+          ...["test-a", "test-b"].map((name) => ({
+            ...stepsOf(before)[3],
+            id: `s:4:${name}`,
+            command: `zig build ${name}`,
+            inputs: ["build.zig", "src/main.zig"],
+            from: "s:4",
+            env: ZigSteps.environment,
+            tools: ["zig"],
+            sealed: true
+          }))
+        ])
       })
     })
 
