@@ -15,8 +15,10 @@ export default defineConfig({
     // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s
     // wall-clock budget so correct suites survive coverage-instrumented load
     // while a genuine hang still fails the run.
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    // The suite starts real processes (git, smthrs, the program itself). On a build server at load 117 a test that
+    // takes 6 s idle passed 30 s; the limit is for a hang, not for speed.
+    testTimeout: 120_000,
+    hookTimeout: 120_000,
     include: [...configDefaults.include, "test/**/*.test.vibe"],
     coverage: {
       enabled: true,
