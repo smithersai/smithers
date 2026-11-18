@@ -61,9 +61,9 @@ time. Under them it lists:
 - every commit it did not replay because that commit had no CI it can run,
   with the reason;
 - every step that failed, with its commit, the ways it failed in, its exit code
-  and the first line of its error output, or `` `docker` is not installed on
-  this machine `` when its program is missing. A value shaped like a credential
-  is withheld;
+  and the first line of its error output, or
+  `` `golangci-lint` is not installed on this machine `` when its program is
+  missing. A value shaped like a credential is withheld;
 - every mismatch: a target whose pass or fail in normal mode differs from the
   baseline, with its commit;
 - every CI job it did not replay, with the reason, and every file it could not
@@ -140,10 +140,10 @@ command, its exit code and the first line of its error:
 ```text
 smithers-ci: replay: this repository's CI does not pass on this machine, so there is no speedup to measure. No step passed at any of the 2 replayed commits.
 First failure at adbc881:
-  step     test.yml:lic-headers:1
-  command  docker run -v $(pwd):/wrk -w /wrk ghcr.io/google/addlicense -check .
+  step     test.yml:lint:1
+  command  golangci-lint run ./...
   exit     127
-  error    `docker` is not installed on this machine
+  error    `golangci-lint` is not installed on this machine
 ```
 
 Install what is missing and run it again.

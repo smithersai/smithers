@@ -107,13 +107,16 @@ Smithers CI cannot run, the command stops with exit code 3.
 
 A job with one of these is never run and never becomes a target:
 
-| Feature            | The job                                                                      |
-| ------------------ | ---------------------------------------------------------------------------- |
-| `secret`           | has a step that receives a secret                                            |
-| `release-trigger`  | is in a workflow that only a pushed tag starts                               |
-| `write-permission` | may write outside its checkout (`permissions: ... write`)                    |
-| `changes-machine`  | changes the machine it runs on; see [Your machine](#your-machine)            |
-| any other feature  | except `host-action`, `trigger-filter` and `condition-false`, which are safe |
+| Feature            | The job                                                                        |
+| ------------------ | ------------------------------------------------------------------------------ |
+| `secret`           | has a step that receives a secret                                              |
+| `release-trigger`  | is in a workflow that only a pushed tag starts                                 |
+| `write-permission` | may write outside its checkout (`permissions: ... write`)                      |
+| `changes-machine`  | changes the machine it runs on; see [Your machine](#your-machine)              |
+| `docker`           | has a step that runs `docker`, `podman` or `nerdctl`; `--allow-docker` runs it |
+| `services`         | starts service containers, which Smithers CI does not start                    |
+| `container`        | runs inside a container, which Smithers CI does not start                      |
+| any other feature  | except `host-action`, `trigger-filter` and `condition-false`, which are safe   |
 
 A GitHub Actions step runs as it does on a runner: its `${{ }}` and `if:` are
 evaluated, it is given the runner's variables, and what it writes to
@@ -211,8 +214,10 @@ count.
 ### What a step can reach
 
 A step is a command from a past commit, and someone else may have written it.
-Every step runs under the same rules, in the baseline and as a target, and so
-does every install the replay runs.
+Every step runs under the same rules, in the baseline and as a target. So does
+every install the replay runs, and every `git` the program itself runs in a
+copy a step has written: a step can leave a command in that copy's
+`.git/config`, and git would run it.
 
 **Its own home.** `HOME` and the cache directory are directories the replay
 makes, keeps until it ends and then removes. Nothing of your home is in them:
@@ -229,8 +234,8 @@ found it full.
 
 **Its own variables.** A step gets a short list of the machine's variables,
 such as `PATH`, then the step's own `env`, end of file on standard input, and
-a limit of six hours. It gets no other variable of yours: no token and no
-`SSH_AUTH_SOCK`.
+a limit of six hours. It gets no other variable of yours: no token, no
+`SSH_AUTH_SOCK` and no `DOCKER_HOST`.
 
 **No push.** Every `git` a step starts refuses to push. A `pre-push` hook,
 set through git's environment and in the step's home, stops the push before
@@ -239,46 +244,91 @@ directory of the repository's own do not undo it. That `git` has no credential
 helper and never asks for a password. A copy fetches from the repository's
 remote and has no remote to push to.
 
+**No container daemon.** Whoever talks to a Docker or Podman daemon can have
+it mount any file of your machine, so a step does not reach one:
+
+- A job with a step that runs `docker`, `docker compose`, `docker-compose`,
+  `podman` or `nerdctl` is not replayed. The report lists it with what it runs
+  and the flag that replays it:
+
+  ```text
+  test.yml:lic-headers  runs docker, and a container daemon can reach every file of this machine; pass --allow-docker to replay it
+  ```
+
+- A step that starts one of those programs by name, for example from a script
+  the job calls, starts a stand-in first on its `PATH`. It prints one line and
+  exits 1:
+
+  > smithers-ci does not run docker without --allow-docker: compose up -d
+
+  The step fails the same way in the baseline and as a target, so it is never
+  a mismatch.
+- In the jail, the daemons' sockets are empty: `/var/run/docker.sock`,
+  `/run/docker.sock`, `docker.sock` and `podman/podman.sock` in your session's
+  runtime directory, and the socket your `DOCKER_HOST` names.
+
+`--allow-docker` turns all three off: the jobs that run those programs are
+replayed, their steps start your `docker`, get your `DOCKER_HOST` and reach
+the sockets. A step that reaches a daemon can do what the daemon can: read
+your home directory, your keys and every repository on the disk, and write
+them, whatever the jail holds. Use it only for a history you trust.
+
+A job with `services` or `container` is never replayed, with or without the
+flag. GitHub starts those containers itself and there is no command that
+stands for them, so the job stays in your CI as it is.
+
 **A jail.** On Linux with
 [bubblewrap](https://github.com/containers/bubblewrap) installed, a step can
 write three places: its copy of the repository, its home and a temporary
 directory of its own, which it finds at `/tmp` and at `TMPDIR`. Every other
 file of the machine is read-only, so a push to a repository on the same disk
-fails. These files and
-directories of your home are empty for it: `.ssh`, `.gnupg`, `.aws`, `.azure`,
-`.config/gcloud`, `.kube`, `.docker`, `.netrc`, `.npmrc`, `.yarnrc`,
-`.yarnrc.yml`, `.pypirc`, `.gem/credentials`, `.cargo/credentials`,
-`.cargo/credentials.toml`, `.m2/settings.xml`, `.gradle/gradle.properties`,
-`.gitconfig`, `.git-credentials`, `.git-credential-cache`,
-`.cache/git/credential`, `.config/git` and `.config/gh`. So are the machine's
-own temporary files and your session's runtime directory under `/run/user`,
-where key agents listen. The step's processes end when the step does. The network stays
-open, as it is in your CI.
+fails. These files and directories of your home are empty for it: `.ssh`,
+`.gnupg`, `.aws`, `.azure`, `.config/gcloud`, `.kube`, `.docker`, `.netrc`,
+`.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.pypirc`, `.gem/credentials`,
+`.cargo/credentials`, `.cargo/credentials.toml`, `.m2/settings.xml`,
+`.gradle/gradle.properties`, `.gitconfig`, `.git-credentials`,
+`.git-credential-cache`, `.cache/git/credential`, `.config/git` and
+`.config/gh`. So are the machine's own temporary files and your session's
+runtime directory under `/run/user`, where key agents listen. The step's
+processes end when the step does. The network stays open, as it is in your CI.
 
-| A step                                                | In the jail | With no jail |
-| ----------------------------------------------------- | ----------- | ------------ |
-| sees your home directory as its `HOME`                | no          | no           |
-| gets a token or an SSH agent from your environment    | no          | no           |
-| pushes with `git push`                                | no          | no           |
-| writes its copy, its home and its temporary directory | yes         | yes          |
-| writes any other file, such as a repository beside it | no          | yes          |
-| reads a credential listed above by its path           | no          | yes          |
-| reads the other files of the machine                  | yes         | yes          |
+What a step can do depends on the machine:
+
+| A step                                                | Linux with bubblewrap | Linux without it | macOS |
+| ----------------------------------------------------- | --------------------- | ---------------- | ----- |
+| sees your home directory as its `HOME`                | no                    | no               | no    |
+| gets a token, an SSH agent or `DOCKER_HOST` from you  | no                    | no               | no    |
+| pushes with `git push`                                | no                    | no               | no    |
+| starts `docker` or `podman` by name                   | no                    | no               | no    |
+| starts `sudo`, `su` or `doas` by name                 | no                    | no               | no    |
+| writes its copy, its home and its temporary directory | yes                   | yes              | yes   |
+| reaches the network                                   | yes                   | yes              | yes   |
+| reads the other files of the machine                  | yes                   | yes              | yes   |
+| writes any other file, such as a repository beside it | no                    | yes              | yes   |
+| reads a credential listed above by its path           | no                    | yes              | yes   |
+| talks to a container daemon's socket by its path      | no                    | yes              | yes   |
+| leaves a process running after it ends                | no                    | yes              | yes   |
 
 On macOS, and on Linux without bubblewrap, there is no jail. `smithers-ci`
-says so once on standard error and names what to install. The first three
-rules still hold. Replay there only a history you trust.
+says so once on standard error and names what to install. The first five rows
+still hold there. They stop a step that does what CI steps ordinarily do; they
+do not stop one written to get around them. Replay there only a history you
+trust.
 
-The hook is not what stops a determined step. `git push --no-verify` skips
-it, and a tool can publish over HTTPS with a token it carries itself. What
-stops those is the home and the jail: the step finds no credential of yours to
-push or publish with, and cannot write a repository on your disk. A token
-committed to the repository is the repository's own, and a step can use it.
-A step that reaches a Docker daemon can do what the daemon can; the jail does
-not hold the daemon.
+The hook and the stand-ins are not what stops a determined step. `git push
+--no-verify` skips the hook, a step can start `/usr/bin/docker` by its path,
+and a tool can publish over HTTPS with a token it carries itself. What stops
+those is the home and the jail: the step finds no credential of yours to push
+or publish with, no daemon socket to talk to, and cannot write a repository on
+your disk. A token committed to the repository is the repository's own, and a
+step can use it. A daemon that listens on a network port is reached over the
+network, which stays open.
 
 A refused push fails its step in the baseline and as a target alike, so it is
-never a mismatch.
+never a mismatch. The report lists the step as failed, with the line git
+printed:
+
+> smithers-ci: a replayed step may not push; nothing was sent
 
 A target runs the tools your CI runs. Every program on your `PATH` is there by
 name, wherever it is installed: Node under nvm, fnm, Volta, asdf or mise, Bun
