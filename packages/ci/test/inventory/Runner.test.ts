@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
   existsSync,
@@ -1128,5 +1128,113 @@ describe("write", () => {
       const written = write(job(), { ...defaults, ...facts }, "true")
       expect("problem" in written ? written.problem : written.text).toContain(problem)
     })
+  })
+})
+
+// "Workflow syntax: jobs.<job_id>.steps[*].timeout-minutes": "The maximum number of minutes to run the step before
+// killing the process."
+describe("a step with a time limit", () => {
+  const alive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Waits until a process is gone, for as long as a loaded machine may take to end one. */
+  const gone = async (pid: number): Promise<boolean> => {
+    for (let waited = 0; waited < 300 && alive(pid); waited += 1) await new Promise((done) => setTimeout(done, 100))
+    return !alive(pid)
+  }
+
+  it("stops a step that runs past it, with the programs the step started, and the step has failed", async () => {
+    pass({ first: true }, "true")
+    const pids = join(at.home, "pids")
+    const ran = run(
+      { key: "SLOW", limit: 1 },
+      `sleep 300 & echo "$! $$" > ${quote(pids)}; echo started; sleep 300; echo LATE=1 >> "$GITHUB_ENV"; echo never`
+    )
+    expect(ran.status).toBe(124)
+    expect(ran.stdout).toBe("started\n")
+    expect(ran.stderr).toContain("smithers-ci: stopped, it ran longer than the 1 second its timeout-minutes allows")
+    const [child, step] = readFileSync(pids, "utf8").trim().split(" ").map(Number) as [number, number]
+    expect(await gone(step)).toBe(true)
+    expect(await gone(child)).toBe(true)
+    // It left nothing for later steps, as a step that failed leaves nothing.
+    expect(valueOf(named("outcome:SLOW"))).toBe("[]")
+    expect(pass({}, `echo "[\${LATE-unset}]"`)).toBe("[unset]\n")
+  })
+
+  // A runner ends a step that does not stop when asked.
+  it("ends a step that refuses to stop", async () => {
+    pass({ first: true }, "true")
+    const pids = join(at.home, "pids")
+    const began = Date.now()
+    const ran = run({ limit: 1 }, `trap '' TERM; echo $$ > ${quote(pids)}; while :; do sleep 1; done`)
+    expect(ran.status).toBe(124)
+    expect(Date.now() - began).toBeGreaterThanOrEqual(11_000)
+    expect(await gone(Number(readFileSync(pids, "utf8")))).toBe(true)
+  })
+
+  it("runs a step that ends within it as any other step, and leaves no program behind", async () => {
+    pass({ first: true }, "true")
+    // What waits to stop the step sleeps for the limit: a number of seconds no other program on the machine sleeps.
+    const limit = 31_337 + (process.pid % 1000)
+    const waiting = (): string => spawnSync("pgrep", ["-fx", `sleep ${limit}`], { encoding: "utf8" }).stdout
+    const stdout = pass(
+      { key: "QUICK", limit },
+      `cat; echo KEPT=1 >> "$GITHUB_ENV"; echo out=x >> "$GITHUB_OUTPUT"; pgrep -fx 'sleep ${limit}' > /dev/null && echo $$`
+    )
+    expect(valueOf(named("outcome:QUICK"))).toBe("[success]")
+    expect(valueOf(named("output:QUICK/OUT", true))).toBe("[x]")
+    expect(pass({}, `echo "$KEPT"`)).toBe("1\n")
+    // It waited while the step ran. The step's shell is gone, and so is what waited.
+    expect(await gone(Number(stdout))).toBe(true)
+    expect(waiting()).toBe("")
+  })
+
+  it("gives the exit status of a step that fails within it", () => {
+    pass({ first: true }, "true")
+    const failed = run({ key: "FAIL", limit: 300 }, "echo before; exit 7")
+    expect(failed.status).toBe(7)
+    expect(failed.stdout).toBe("before\n")
+    expect(failed.stderr).toBe("")
+  })
+
+  it("says the limit in minutes, as timeout-minutes gives it", () => {
+    const text = (limit: number | undefined): string => {
+      const written = write(job(), { ...defaults, limit }, "true")
+      return "text" in written ? written.text : written.problem
+    }
+    expect(text(60)).toContain(`__limit=60; __allowed='1 minute'`)
+    expect(text(600)).toContain(`__limit=600; __allowed='10 minutes'`)
+    expect(text(90)).toContain(`__limit=90; __allowed='90 seconds'`)
+    expect(text(undefined)).not.toContain("__limit=")
+  })
+
+  // A replay that is stopped stops its steps: the signal reaches the script, which runs in a group of its own.
+  it("passes a signal on to the step", async () => {
+    pass({ first: true }, "true")
+    const pids = join(at.home, "pids")
+    const written = write(job(), { ...defaults, after: mark, second: true, limit: 300 }, "")
+    if (!("text" in written)) throw new Error(written.problem)
+    const command = `echo $$ > ${quote(pids)}; sleep 300`
+    const [program, ...flags] = shell
+    const child = spawn(program, [...flags, script({ command, runner: written.text })], {
+      cwd: at.repo,
+      env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: at.home, TMPDIR: at.tmp },
+      stdio: "ignore"
+    })
+    const ended = new Promise<number | null>((done) => child.on("exit", (code) => done(code)))
+    for (let waited = 0; waited < 600 && !existsSync(pids); waited += 1) {
+      await new Promise((done) => setTimeout(done, 100))
+    }
+    const step = Number(readFileSync(pids, "utf8"))
+    expect(alive(step)).toBe(true)
+    child.kill("SIGTERM")
+    expect(await ended).toBe(143)
+    expect(await gone(step)).toBe(true)
   })
 })

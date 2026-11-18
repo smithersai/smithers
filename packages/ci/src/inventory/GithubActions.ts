@@ -62,6 +62,7 @@ import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
 import { type JobFacts, settled, type StepFacts, write } from "./Runner.ts"
 import { isLiteralSecret, isSecretName } from "./Secrets.ts"
 import { readSetup, type Setup } from "./Setup.ts"
+import { readLimit, within as withinLimit } from "./TimeLimit.ts"
 import { asScalar, asStrings, isRecord, normalizeDirectory } from "./Values.ts"
 
 const source = "github-actions"
@@ -111,6 +112,8 @@ interface StepScope {
   readonly actionPath: string | undefined
   readonly depth: number
   readonly where: string
+  /** The most minutes a step here may run: the limit of the job, or of the step that uses the action. */
+  readonly limit: number | undefined
 }
 
 interface RunDefaults {
@@ -538,6 +541,7 @@ interface StepContext {
   readonly env: Env
   readonly reads: Expressions
   readonly ran: Condition & { readonly kind: "always" | "when" }
+  readonly limit: number | undefined
 }
 
 /** Adds a command to the job, with the runner text that runs it as its step. */
@@ -615,7 +619,8 @@ const addRun = (
     outer: decided.filter(([, , own]) => !own).map(([name, entry]) => [name, entry] as const),
     env: decided.filter(([, , own]) => own).map(([name, entry]) => [name, entry] as const),
     fills: [...fills],
-    commit: /\bGITHUB_(?:SHA|EVENT_PATH)\b/.test(command)
+    commit: /\bGITHUB_(?:SHA|EVENT_PATH)\b/.test(command),
+    limit: context.limit === undefined ? undefined : context.limit * 60
   })
   const told = facts(false)
   const tried = write(state.runner, told, command)
@@ -735,7 +740,8 @@ const readComposite = (context: StepContext, raw: Record<string, unknown>, uses:
     condition: context.ran.kind === "when" ? context.ran.residual : undefined,
     actionPath: directory,
     depth: scope.depth + 1,
-    where: `${where} >`
+    where: `${where} >`,
+    limit: context.limit
   }
   action.steps.forEach((step, index) => readStep(state, inner, step, index))
   // An output is read after the action's last step, with the action's own steps in reach.
@@ -850,7 +856,23 @@ const readStep = (state: JobState, scope: StepScope, raw: unknown, index: number
   if (tolerated !== undefined && readCondition(tolerated, own).kind !== "never") {
     note(job, "continue-on-error", `${where} may fail without failing the job`)
   }
-  const context: StepContext = { state, scope, where, key, name: stepName, env, reads: own, ran }
+  // "Workflow syntax: jobs.<job_id>.steps[*].timeout-minutes": the most minutes the step runs before it is stopped.
+  const limit = readLimit(raw["timeout-minutes"], own)
+  if ("problem" in limit) {
+    note(job, "expression", `${where} has a timeout-minutes a replay cannot keep: ${limit.problem}`)
+    return record(unread)
+  }
+  const context: StepContext = {
+    state,
+    scope,
+    where,
+    key,
+    name: stepName,
+    env,
+    reads: own,
+    ran,
+    limit: withinLimit(scope.limit, limit.minutes)
+  }
   if (typeof uses === "string") return record(readUses(context, raw, uses))
   const run = raw["run"]
   if (typeof run !== "string") {
@@ -1091,6 +1113,11 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     note(job, "malformed-job", `${name} has no list of steps`)
     return [job]
   }
+  // "Workflow syntax: jobs.<job_id>.timeout-minutes": the most minutes the job runs before GitHub cancels it.
+  const limit = readLimit(raw["timeout-minutes"], before)
+  if ("problem" in limit) {
+    note(job, "expression", `${name} has a timeout-minutes a replay cannot keep: ${limit.problem}`)
+  }
   const host = hostOfJob(job.runsOn, matrix)
   const state: JobState = {
     ...shape,
@@ -1124,7 +1151,8 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     condition: undefined,
     actionPath: undefined,
     depth: 0,
-    where: name
+    where: name,
+    limit: "problem" in limit ? undefined : limit.minutes
   }
   steps.forEach((step: unknown, index) => readStep(state, scope, step, index))
   // A command no other command follows is told so: no later step reads what it leaves. A step a replay may

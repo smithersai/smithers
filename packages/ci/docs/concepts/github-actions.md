@@ -94,6 +94,20 @@ replay alike. So wherever a step is reached, `success()` and `always()` are true
 and `failure()` and `cancelled()` are false: a step that runs only after a
 failure, such as one that collects logs, is left out.
 
+## Time limits
+
+A step with `timeout-minutes` is stopped when it runs longer, together with
+every program it started, and has failed, as on GitHub. The step prints
+`stopped, it ran longer than the 10 minutes its timeout-minutes allows`.
+
+A job's `timeout-minutes` holds each of its steps: a step that alone runs
+longer than its job may is stopped. A step of a local action is held to the
+limit of the step that uses the action.
+
+The value is a positive whole number, written out or given by an expression
+that is known when the workflow is read. Any other value, such as a fraction
+or a matrix value, leaves the job out: no limit is guessed.
+
 ## What a step is given
 
 | Variable                                                                            | Value                                                                       |

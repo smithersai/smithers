@@ -1,0 +1,61 @@
+/**
+ * The time limit of a workflow step, as `timeout-minutes` gives it.
+ *
+ * GitHub stops a step that runs longer than its own `timeout-minutes` and
+ * cancels a job that runs longer than the job's. A replay runs a job's steps
+ * one at a time, some of them reused from an earlier run, so it does not time
+ * a job. It holds each step to the smaller of the two limits: a step that
+ * alone outlasts its job's limit is stopped on GitHub too.
+ *
+ * @since 0.1.0
+ */
+
+import { evaluate, type Scope, whole } from "./Expression.ts"
+
+/**
+ * What a `timeout-minutes` value gives: the minutes, `undefined` when the
+ * key is absent, or why the value gives no limit a replay can keep.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Limit = { readonly minutes: number | undefined } | { readonly problem: string }
+
+const minutesOf = (held: unknown): Limit =>
+  typeof held === "number" && Number.isSafeInteger(held) && held > 0
+    ? { minutes: held }
+    : { problem: `${typeof held === "number" ? held : "a value that is not a number"} is not a positive whole number` }
+
+/**
+ * Reads a `timeout-minutes` value. GitHub's workflow syntax says it "must be
+ * a positive integer" and that "fractional values are not supported", so any
+ * other value is a problem and never a guess. An expression gives a limit
+ * only when its value is known before the job runs.
+ *
+ * @category reading
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const readLimit = (raw: unknown, scope: Scope): Limit => {
+  if (raw === undefined) return { minutes: undefined }
+  if (typeof raw !== "string") return minutesOf(raw)
+  const expression = whole(raw)
+  if (expression === undefined) return { problem: "text is not a number of minutes" }
+  const evaluated = evaluate(expression, scope)
+  if (evaluated.kind === "secret") return { problem: `it comes from secret ${evaluated.name}` }
+  if (evaluated.kind === "problem") return { problem: `${expression}: ${evaluated.why}` }
+  return evaluated.residual.kind === "literal"
+    ? minutesOf(evaluated.residual.value)
+    : { problem: `${expression} is decided while the job runs` }
+}
+
+/**
+ * The limit of a step inside another limit, such as its job's: the smaller
+ * of the two, or the one that is set.
+ *
+ * @category reading
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const within = (outer: number | undefined, own: number | undefined): number | undefined =>
+  outer === undefined ? own : own === undefined ? outer : Math.min(outer, own)

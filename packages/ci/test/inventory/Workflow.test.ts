@@ -1408,3 +1408,89 @@ jobs:
     expect(outputs(runJob(repo, { ...more, steps: [second] }))).toEqual(["more ready"])
   })
 })
+
+// "Workflow syntax: jobs.<job_id>.steps[*].timeout-minutes": "The maximum number of minutes to run the step before
+// killing the process. Fractional values are not supported. `timeout-minutes` must be a positive integer."
+// "Workflow syntax: jobs.<job_id>.timeout-minutes": "The maximum number of minutes to let a job run before GitHub
+// automatically cancels it."
+describe("a step's time limit", () => {
+  const limits = (job: Job) =>
+    job.steps.map((step) => /__limit=(\d+); __allowed='([^']+)'/.exec(String(step.runner))?.slice(1, 3))
+
+  it("holds a step to its timeout-minutes, and to its job's when that is less", () => {
+    const repo = withWorkflow(
+      `
+on: pull_request
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - run: echo one
+      - timeout-minutes: 3
+        run: echo two
+      - timeout-minutes: \${{ 30 }}
+        run: echo three
+      - uses: ./.github/actions/both
+        timeout-minutes: 2
+      - uses: ./.github/actions/both
+  free:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo free
+      - timeout-minutes: 1
+        run: echo held
+`,
+      {
+        ".github/actions/both/action.yml":
+          "runs:\n  using: composite\n  steps:\n    - run: echo four\n      shell: bash\n    - run: echo five\n      shell: bash\n"
+      }
+    )
+    const job = jobOf(repo, "ci.yml:test")
+    expect(job.unsupported).toEqual([])
+    // A step of an action is held to the limit of the step that uses the action.
+    expect(limits(job)).toEqual([
+      ["1200", "20 minutes"],
+      ["180", "3 minutes"],
+      ["1200", "20 minutes"],
+      ["120", "2 minutes"],
+      ["120", "2 minutes"],
+      ["1200", "20 minutes"],
+      ["1200", "20 minutes"]
+    ])
+    expect(outputs(runJob(repo, job))).toEqual(["one", "two", "three", "four", "five", "four", "five"])
+    const free = jobOf(repo, "ci.yml:free")
+    expect(limits(free)).toEqual([undefined, ["60", "1 minute"]])
+    expect(outputs(runJob(repo, free))).toEqual(["free", "held"])
+  })
+
+  it.each<[string, string, string, string]>([
+    ["a job's fraction", "timeout-minutes: 1.5", "", "test has a timeout-minutes a replay cannot keep: 1.5 is not"],
+    ["a step's zero", "", "timeout-minutes: 0", "step 1 has a timeout-minutes a replay cannot keep: 0 is not"],
+    ["a step's text", "", "timeout-minutes: '10'", "a replay cannot keep: text is not a number of minutes"],
+    [
+      "a step's matrix value",
+      "",
+      "timeout-minutes: ${{ matrix.minutes }}",
+      "a replay cannot keep: matrix.minutes is decided while the job runs"
+    ],
+    ["a job's secret", "timeout-minutes: ${{ secrets.LIMIT }}", "", "a replay cannot keep: it comes from secret LIMIT"]
+  ])("leaves a job out over %s: no limit is guessed", (_name, ofJob, ofStep, reason) => {
+    const repo = withWorkflow(`
+on: pull_request
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    ${ofJob}
+    strategy:
+      matrix:
+        minutes: [5, 10]
+    steps:
+      - run: echo one
+        ${ofStep}
+`)
+    const job = jobOf(repo, "ci.yml:test")
+    expect(features(job)).toEqual(["expression"])
+    expect(job.unsupported[0]?.detail).toContain(reason)
+  })
+})

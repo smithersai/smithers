@@ -73,6 +73,8 @@ export interface JobFacts {
  * - `env`: the step's own variables whose values are decided while the job runs.
  * - `fills`: the `${{ }}` texts left in the script, each with the expression that replaces it.
  * - `commit`: the step's script names the commit, so its verdict belongs to one commit.
+ * - `limit`: the most seconds the step may run, from `timeout-minutes`. A step that runs longer is stopped with
+ *   every program it started, and has failed.
  *
  * @category models
  * @since 0.1.0
@@ -93,6 +95,7 @@ export interface StepFacts {
   readonly env: ReadonlyArray<readonly [name: string, parts: ReadonlyArray<Part>]>
   readonly fills: ReadonlyArray<readonly [written: string, residual: Residual]>
   readonly commit: boolean
+  readonly limit?: number | undefined
 }
 
 /**
@@ -204,7 +207,7 @@ const library = (job: JobFacts): string =>
     `  mkdir -p -- "$__state/temp" "$__state/tool-cache" "$__state/env" "$__state/steps" || exit 1`,
     // The commit, the event file and the job's name are given to the step that names them, by the lines after
     // this. What the machine holds under those names is not the workflow's.
-    `  unset GITHUB_SHA GITHUB_EVENT_PATH GITHUB_JOB`,
+    `  unset GITHUB_SHA GITHUB_EVENT_PATH GITHUB_JOB __limit`,
     `  case $(uname -m) in arm64|aarch64) RUNNER_ARCH=ARM64;; x86_64|amd64) RUNNER_ARCH=X64;; *) RUNNER_ARCH=$(uname -m);; esac`,
     `  case $(uname -s) in Linux) RUNNER_OS=Linux;; Darwin) RUNNER_OS=macOS;; *) RUNNER_OS=Windows;; esac`,
     `  export RUNNER_OS RUNNER_ARCH GITHUB_WORKSPACE="$__root" RUNNER_TEMP="$__state/temp" RUNNER_TOOL_CACHE="$__state/tool-cache"`,
@@ -303,14 +306,33 @@ const library = (job: JobFacts): string =>
     `  esac`,
     `  printf %s "$2" > "$__state/env/$1" || exit 1`,
     `}`,
+    // Runs the step's script and stops it at its limit, as a runner stops a step at its `timeout-minutes`. The
+    // script runs in a process group of its own, so the programs it started stop with it; one that outlives the
+    // first signal gets a second that it cannot refuse. A signal to this shell is passed on to the script.
+    `__ci_limited() {`,
+    `  set -m`,
+    `  "$@" -c "$__script" < /dev/null &`,
+    `  __pid=$!`,
+    `  { sleep "$__limit"; : > "$__files/late"; kill -TERM -- "-$__pid"; sleep 10; kill -KILL -- "-$__pid"; } < /dev/null > /dev/null 2>&1 &`,
+    `  __watch=$!`,
+    `  set +m`,
+    `  trap 'kill -TERM -- "-$__pid" 2>/dev/null' TERM INT HUP`,
+    `  wait "$__pid" 2>/dev/null`,
+    `  __status=$?`,
+    `  trap - TERM INT HUP`,
+    `  kill -KILL -- "-$__watch" 2>/dev/null`,
+    `  wait "$__watch" 2>/dev/null`,
+    `  [ -e "$__files/late" ] || return 0`,
+    `  echo "smithers-ci: stopped, it ran longer than the $__allowed its timeout-minutes allows" >&2`,
+    `  __status=124`,
+    `}`,
     `__ci_run() {`,
     `  __key=$1; __script=$2; shift 2`,
     `  __files=$(mktemp -d "$__state/step.XXXXXX") || exit 1`,
     `  : > "$__files/output"; : > "$__files/env"; : > "$__files/path"; : > "$__files/summary"; : > "$__files/state"`,
     `  export GITHUB_OUTPUT="$__files/output" GITHUB_ENV="$__files/env" GITHUB_PATH="$__files/path"`,
     `  export GITHUB_STEP_SUMMARY="$__files/summary" GITHUB_STATE="$__files/state"`,
-    `  "$@" -c "$__script"`,
-    `  __status=$?`,
+    `  if [ -n "\${__limit-}" ]; then __ci_limited "$@"; else "$@" -c "$__script"; __status=$?; fi`,
     `  [ "$__status" -eq 0 ] || exit "$__status"`,
     // A step a replay may leave out leaves nothing for later steps. One that tried is stopped: without it the
     // steps after it would run on other values.
@@ -574,6 +596,11 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
         emitter.lines.push(`__fk[${index}]=${quote(written)}; __fv[${index}]=$__v${compile(residual, emitter)}`)
       }
       emitter.lines.push(`__ci_fill`)
+    }
+    if (step.limit !== undefined) {
+      const [count, unit] = step.limit % 60 === 0 ? [step.limit / 60, "minute"] : [step.limit, "second"]
+      const allowed = `${count} ${unit}${count === 1 ? "" : "s"}`
+      emitter.lines.push(`__limit=${step.limit}; __allowed=${quote(allowed)}`)
     }
   } catch (refused) {
     // Anything else thrown here is the stack running out on an expression nested thousands deep.
