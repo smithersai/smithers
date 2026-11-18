@@ -1,8 +1,0 @@
-/** The parts on `main`, replaying the patterns named instead of the ones the repository's CI runs. */
-import { parts } from "../../src/cli/parts.ts"
-import { Targets } from "../../src/native/index.ts"
-
-export const withTargets = (patterns: ReadonlyArray<string>): typeof parts => ({
-  ...parts,
-  run: (request, given) => Effect.provideService(parts.run(request, given), Targets, { patterns })
-})

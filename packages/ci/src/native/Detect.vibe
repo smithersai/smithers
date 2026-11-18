@@ -5,7 +5,8 @@
  */
 
 import type { GeneratedFile } from "../contract/Parts.ts"
-import { isBuildFile, isGenerated, workspaceFiles } from "./Workspace.ts"
+import { applyRefuses } from "../contract/Command.ts"
+import { isBuildFile, isGenerated } from "./Workspace.ts"
 
 /** A file's text; `undefined` when it does not exist, and empty when it exists and cannot be read. */
 effect function textOf(file: string) {
@@ -23,7 +24,7 @@ effect function textOf(file: string) {
  */
 export effect function workspace(root: string) {
   const path = try Path.Path
-  for (const file of workspaceFiles) {
+  for (const file of applyRefuses) {
     const text = try textOf(path.join(root, file))
     if (text !== undefined && !isGenerated(text)) return file
   }

@@ -114,3 +114,17 @@ export const leftOut = (jobs: number): string => jobs === 0 ? "" : ` · ${count(
  */
 export const reasons = (entry: NotReplayed): string =>
   [...new Set(entry.reasons.map((reason) => reason.feature))].join(", ")
+
+const shownTargets = 3
+
+/**
+ * The Smithers build patterns a replay ran, on a repository that already
+ * builds with Smithers build: the first three, and how many more.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const ownTargets = (targets: ReadonlyArray<string>): string =>
+  `own targets  ${targets.slice(0, shownTargets).join(" ")}${
+    targets.length > shownTargets ? ` +${targets.length - shownTargets}` : ""
+  }`

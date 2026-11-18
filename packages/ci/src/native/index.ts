@@ -16,18 +16,7 @@ export {
   noSmthrs,
   smthrsBin
 } from "./Install.ts"
-export { committedWorkspace, type Host, install, own, run, Targets } from "./Replay.vibe"
+export { committedWorkspace, type Host, install, own, run } from "./Replay.vibe"
 export { firstLine, linesOf, nothingPassed, reasonsIn, withReasons } from "./Results.ts"
 export { type Chosen, chosenFor, covers, everything, notSelected, notTargets, patternsIn } from "./Targets.ts"
-export {
-  feature,
-  footer,
-  found,
-  generatedMark,
-  isBuildFile,
-  isGenerated,
-  overwriteRefusal,
-  refusal,
-  workspaceFiles,
-  workspaceOf
-} from "./Workspace.ts"
+export { footer, found, generatedMark, isBuildFile, isGenerated, overwriteRefusal, refusal } from "./Workspace.ts"

@@ -5,25 +5,8 @@
  * @since 0.1.0
  */
 
-import type { Inventory, Unsupported } from "../contract/Inventory.ts"
+import { type Inventory, ownWorkspace, smithersBuild, type Unsupported } from "../contract/Inventory.ts"
 import type { GeneratedFile } from "../contract/Parts.ts"
-
-/**
- * The `Unsupported.feature` of an inventory whose repository has its own
- * Smithers workspace. Its `detail` is the workspace file.
- *
- * @category constants
- * @since 0.1.0
- */
-export const feature = "smithers-build"
-
-/**
- * Where Smithers build looks for a workspace, in its order.
- *
- * @category constants
- * @since 0.1.0
- */
-export const workspaceFiles = [".smithers/WORKSPACE.ts", "WORKSPACE.ts"] as const
 
 /**
  * How every Smithers build file `smithers-ci` generates starts.
@@ -50,17 +33,7 @@ export const isGenerated = (text: string): boolean => text.startsWith(generatedM
  * @category constructors
  * @since 0.1.0
  */
-export const found = (file: string): Unsupported => ({ feature, detail: file })
-
-/**
- * The repository's own workspace file, or `undefined` when it has none.
- *
- * @throws {never}
- * @category accessors
- * @since 0.1.0
- */
-export const workspaceOf = (inventory: Inventory): string | undefined =>
-  inventory.unsupported?.find((entry) => entry.feature === feature)?.detail
+export const found = (file: string): Unsupported => ({ feature: smithersBuild, detail: file })
 
 /**
  * Why nothing is generated for this repository, or `undefined` when it has
@@ -71,7 +44,7 @@ export const workspaceOf = (inventory: Inventory): string | undefined =>
  * @since 0.1.0
  */
 export const refusal = (inventory: Inventory): string | undefined => {
-  const file = workspaceOf(inventory)
+  const file = ownWorkspace(inventory)
   return file === undefined
     ? undefined
     : `the repository already builds with Smithers build (${file}); there is nothing to convert`

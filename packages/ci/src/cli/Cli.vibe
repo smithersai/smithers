@@ -11,7 +11,7 @@
 
 import { CliConfig, CliError, CliOutput, Command, Flag, GlobalFlag } from "effect/cli"
 import * as Surface from "../contract/Command.ts"
-import { ci, Inventory, refusal } from "../contract/Inventory.ts"
+import { ci, Inventory, ownWorkspace, refusal } from "../contract/Inventory.ts"
 import type {
   BuildRows,
   Decompose,
@@ -278,7 +278,7 @@ function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
 
   return Command.make(Surface.name, replayFlags, effect (input) => {
     const read = try parts.read(root)
-    const own = Native.workspaceOf(read)
+    const own = ownWorkspace(read)
     if (own !== undefined) {
       try replayAndPrint(input, `\n\n${Native.footer(own)}`)
       return

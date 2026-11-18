@@ -3,7 +3,9 @@
  * sentences. A mismatch is the first line whenever there is one, and every
  * mismatch is listed; nothing about a wrong verdict is summarised away. A CI
  * job that was not replayed is counted beside the commits and listed with its
- * reasons, so the speedup is never read as covering it.
+ * reasons, so the speedup is never read as covering it. On a repository that
+ * already builds with Smithers build, the patterns replayed stand above the
+ * speedup.
  *
  * Labels and commit ids come from the repository being replayed, so control
  * characters in them are replaced before they reach a terminal.
@@ -12,7 +14,19 @@
  */
 
 import type { RenderReport } from "../contract/Parts.ts"
-import { bar, count, duration, leftOut, mismatches, ratio, reasons, shortCommit, speedup, times } from "./Format.ts"
+import {
+  bar,
+  count,
+  duration,
+  leftOut,
+  mismatches,
+  ownTargets,
+  ratio,
+  reasons,
+  shortCommit,
+  speedup,
+  times
+} from "./Format.ts"
 
 const width = 24
 
@@ -53,6 +67,7 @@ export const text: RenderReport = (report) => {
   const max = Math.max(...modes.map((mode) => mode.ms))
   const timeWidth = Math.max(...modes.map((mode) => duration(mode.ms).length))
   const ratioWidth = Math.max(...modes.map((mode) => (mode.ratio === undefined ? "" : times(mode.ratio)).length))
+  if (report.targets !== undefined) sections.push([clean(ownTargets(report.targets))])
   sections.push([speedup(report.speedup)])
   sections.push(modes.map((mode) =>
     [

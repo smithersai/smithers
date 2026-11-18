@@ -15,8 +15,7 @@ import {
   installLabel,
   notTargets,
   own,
-  run,
-  Targets
+  run
 } from "../../src/native/index.ts"
 import { Options, Progress } from "../../src/replay/index.ts"
 import { fakeSmthrs, makeOwn, makeOwnWith, type Own, ownFiles, smthrs } from "./own.ts"
@@ -158,6 +157,7 @@ describe("replaying six real commits of a repository's own targets", () => {
 
   it("says which targets it replays and which CI job it leaves out", () => {
     expect(said).toContain("replaying the repository's own targets (WORKSPACE.ts): //:a //:b //:c")
+    expect(report.targets).toEqual(["//:a", "//:b", "//:c"])
     expect(report.notReplayed).toEqual([{
       job: "ci.yml:docs",
       reasons: [{ feature: notTargets, detail: ".github/workflows/ci.yml: no step runs Smithers build targets" }]
@@ -179,12 +179,13 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     const recording = fakeSmthrs(`echo "cache=$SMITHERS_CACHE_URL $*" >> ${calls}/log\nexec $real "$@"`)
     const root = keep(makeOwnWith(recording))
     const report = await onNode(
-      Effect.provideService(
-        own(request(root, { jobs: 2, cache: "https://cache.example.invalid" }), partsFor("none"), "WORKSPACE.ts"),
-        Targets,
-        { patterns: ["//:c"] }
+      own(
+        request(root, { jobs: 2, cache: "https://cache.example.invalid", targets: ["//:c"] }),
+        partsFor("none"),
+        "WORKSPACE.ts"
       )
     )
+    expect(report.targets).toEqual(["//:c"])
     expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
     expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
     expect(report.mismatches).toBe(0)
@@ -326,6 +327,17 @@ describe("the replay part for any repository", { timeout: 120_000 }, () => {
       expect(await onNode(committedWorkspace(root))).toBeUndefined()
       expect((await onNode(run(generic)(request(root, { commits: 4 }), partsFor("none")))).repository).toBe("generic 4")
     }
+  })
+
+  it("refuses patterns for a repository that has no workspace of its own", async () => {
+    const plain = keep(repository({ "README.md": "plain\n" }))
+    const failure = await failureOf(onNode(run(generic)(request(plain, { targets: ["//:a"] }), partsFor("none"))))
+    expect(failure).toEqual({
+      code: "unsupported",
+      part: "replay",
+      message:
+        "--targets names Smithers build patterns, and this repository has no Smithers workspace of its own (.smithers/WORKSPACE.ts or WORKSPACE.ts)"
+    })
   })
 
   it("sends every repository to the generic replay when git cannot be started", async () => {

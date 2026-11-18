@@ -13,7 +13,19 @@ import type { NotReplayed } from "../contract/Inventory.ts"
 import type { RenderReport } from "../contract/Parts.ts"
 import type { Mismatch, ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
 import type { Metrics } from "../contract/Selection.ts"
-import { count, duration, leftOut, mismatches, percent, ratio, reasons, shortCommit, speedup, times } from "./Format.ts"
+import {
+  count,
+  duration,
+  leftOut,
+  mismatches,
+  ownTargets,
+  percent,
+  ratio,
+  reasons,
+  shortCommit,
+  speedup,
+  times
+} from "./Format.ts"
 
 const entities: Readonly<Record<string, string>> = {
   "&": "&amp;",
@@ -183,6 +195,9 @@ export const html: RenderReport = (report) => {
     ]
     if (report.fastWallMs !== undefined) {
       modes.push({ name: "fast", ms: report.fastWallMs, ratio: ratio(report.baselineWallMs, report.fastWallMs) })
+    }
+    if (report.targets !== undefined) {
+      body.push(`<p class="summary"><code>${escape(ownTargets(report.targets))}</code></p>`)
     }
     body.push(`<p class="hero">${speedup(report.speedup)}</p>`)
     body.push(bars(modes))

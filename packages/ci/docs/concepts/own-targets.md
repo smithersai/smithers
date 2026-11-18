@@ -45,11 +45,19 @@ run here.
 When the CI names no pattern, for example because a script wraps `smthrs`,
 every target is replayed: `//...`.
 
-The replay prints the patterns on standard error as it starts. The report lists
-under "not replayed" each CI job with no step that runs a target: its commands
-are not run.
+The report holds the patterns in `targets`, and shows them above the speedup.
+It lists under "not replayed" each CI job with no step that runs a target: its
+commands are not run.
 
-There is no flag yet to name other patterns.
+`--targets` names other patterns, separated by commas:
+
+```sh
+bunx smithers-ci --commits 3 --targets //packages/ci/...
+```
+
+The report then lists each CI job with a pattern that the named ones do not
+cover. On a repository with no workspace of its own, `--targets` is refused
+with exit 3.
 
 ## Which `smthrs` runs them
 

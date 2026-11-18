@@ -1,16 +1,7 @@
 import { describe, expect, it } from "vitest"
-import type { Inventory } from "../../src/contract/Inventory.ts"
-import {
-  feature,
-  found,
-  generatedMark,
-  isBuildFile,
-  isGenerated,
-  overwriteRefusal,
-  refusal,
-  workspaceFiles,
-  workspaceOf
-} from "../../src/native/index.ts"
+import { applyRefuses } from "../../src/contract/Command.ts"
+import { type Inventory, ownWorkspace, smithersBuild } from "../../src/contract/Inventory.ts"
+import { found, generatedMark, isBuildFile, isGenerated, overwriteRefusal, refusal } from "../../src/native/index.ts"
 
 const inventory = (unsupported?: Inventory["unsupported"]): Inventory => ({
   version: 1,
@@ -24,11 +15,11 @@ const inventory = (unsupported?: Inventory["unsupported"]): Inventory => ({
 describe("a repository that already builds with Smithers build", () => {
   it("is named in the inventory by its workspace file", () => {
     expect(found("WORKSPACE.ts")).toEqual({ feature: "smithers-build", detail: "WORKSPACE.ts" })
-    expect(workspaceOf(inventory([{ feature: "unreadable-file", detail: "x" }, found(".smithers/WORKSPACE.ts")])))
+    expect(ownWorkspace(inventory([{ feature: "unreadable-file", detail: "x" }, found(".smithers/WORKSPACE.ts")])))
       .toBe(".smithers/WORKSPACE.ts")
-    expect(workspaceOf(inventory([{ feature: "unreadable-file", detail: "x" }]))).toBeUndefined()
-    expect(workspaceOf(inventory())).toBeUndefined()
-    expect(feature).toBe("smithers-build")
+    expect(ownWorkspace(inventory([{ feature: "unreadable-file", detail: "x" }]))).toBeUndefined()
+    expect(ownWorkspace(inventory())).toBeUndefined()
+    expect(found("WORKSPACE.ts").feature).toBe(smithersBuild)
   })
 
   it("is refused in one line that names the file", () => {
@@ -38,8 +29,8 @@ describe("a repository that already builds with Smithers build", () => {
     expect(refusal(inventory())).toBeUndefined()
   })
 
-  it("looks where Smithers build looks, in its order", () => {
-    expect(workspaceFiles).toEqual([".smithers/WORKSPACE.ts", "WORKSPACE.ts"])
+  it("is found where the contract says apply refuses", () => {
+    expect(applyRefuses.map((file) => ownWorkspace(inventory([found(file)])))).toEqual([...applyRefuses])
   })
 
   it("tells a file smithers-ci generated from one an owner wrote", () => {

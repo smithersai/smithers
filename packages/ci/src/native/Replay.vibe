@@ -12,6 +12,7 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { applyRefuses } from "../contract/Command.ts"
 import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract/Parts.ts"
 import type { ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { type Mode, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
@@ -27,7 +28,8 @@ import {
   recordOf,
   reportOf,
   selectionOf,
-  totalsOf
+  totalsOf,
+  withoutCredentials
 } from "../replay/Summary.ts"
 import {
   commandFailed,
@@ -40,7 +42,11 @@ import {
 } from "./Install.ts"
 import { linesOf, nothingPassed, withReasons } from "./Results.ts"
 import { chosenFor } from "./Targets.ts"
-import { isGenerated, workspaceFiles } from "./Workspace.ts"
+import { isGenerated } from "./Workspace.ts"
+
+/** Why `--targets` cannot be honoured on a repository that has no targets of its own. */
+const noWorkspace =
+  "--targets names Smithers build patterns, and this repository has no Smithers workspace of its own (.smithers/WORKSPACE.ts or WORKSPACE.ts)"
 
 /** The cache directory, kept between commits in normal and fast mode. */
 const cacheDirectory = ".flows"
@@ -55,20 +61,6 @@ const reasonsLimit = 256_000
  * @since 0.1.0
  */
 export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
-
-/**
- * The patterns to replay instead of the ones the repository's CI runs.
- * Without `patterns` the CI decides.
- *
- * @category services
- * @since 0.1.0
- */
-export service Targets {
-  readonly patterns: ReadonlyArray<string> | undefined
-  static readonly defaultValue = () => ({
-    patterns: undefined as ReadonlyArray<string> | undefined
-  })
-}
 
 interface Output {
   readonly exitCode: number
@@ -120,7 +112,7 @@ const lines = (text: string): ReadonlyArray<string> => text.split("\n").filter((
  * @since 0.1.0
  */
 export effect function committedWorkspace(root: string) {
-  for (const file of workspaceFiles) {
+  for (const file of applyRefuses) {
     const shown = exec("git", ["show", `HEAD:${file}`], root, {}, Number.POSITIVE_INFINITY, "stdout")
       catch (): Output => ({ exitCode: 1, text: "" })
     if (shown.exitCode === 0 && !isGenerated(shown.text)) return file
@@ -201,7 +193,6 @@ export const own = <R>(
     const path = try Path.Path
     const options = try Options
     const progress = try Progress
-    const asked = try Targets
     effect function orFail<A, E extends { readonly message: string }, S>(work: A!E!S, what: string) {
       return work catch effect (cause) => {
         throw failure("command-failed", `${what}: ${cause.message}`)
@@ -223,7 +214,7 @@ export const own = <R>(
     effect function copyOf(mode: string) {
       const copy = path.join(work, mode, path.basename(root))
       try git(work, ["clone", "--quiet", "--shared", "--no-checkout", source, copy])
-      if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", origin.text.trim()])
+      if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", withoutCredentials(origin.text)])
       return copy
     }
 
@@ -237,7 +228,7 @@ export const own = <R>(
     const normalCopy = try copyOf("normal")
     try git(normalCopy, ["checkout", "--quiet", "--force", "--detach", "HEAD"])
     const inventory = try parts.read(normalCopy)
-    const chosen = chosenFor(inventory, asked.patterns)
+    const chosen = chosenFor(inventory, request.targets)
     try progress.say(`replaying the repository's own targets (${workspaceFile}): ${chosen.patterns.join(" ")}`)
     const baselineCopy = try copyOf("baseline")
     const fastCopy = request.modes.includes("fast") ? try copyOf("fast") : undefined
@@ -349,18 +340,21 @@ export const own = <R>(
     // One commit where nothing passes is a failed commit. When nothing passes at any, the build does not run here.
     const nothing = nothingPassed(baselines)
     if (nothing !== undefined) throw failure("unsupported", nothing)
-    return reportOf(
+    const report = reportOf(
       inventory.repository,
       replayed,
       fastCopy === undefined ? undefined : selectionOf(allRows, selected),
       chosen.left
     )
+    return { ...report, targets: chosen.patterns }
   })
 
 /**
  * The replay part for any repository: one whose `HEAD` holds a workspace file
  * its owner wrote has its own targets replayed, and every other repository
- * goes to `generic`, the replay that generates targets.
+ * goes to `generic`, the replay that generates targets. `request.targets`
+ * names patterns of a repository's own workspace, so a repository without
+ * one is refused when it is given.
  *
  * @category parts
  * @since 0.1.0
@@ -368,5 +362,7 @@ export const own = <R>(
 export const run = <R>(generic: RunReplay<R>) =>
   (request: ReplayRequest, parts: ReplayParts<R>): ReplayReport!Failure!(R | Host) => effect {
     const file = try committedWorkspace(request.root)
-    return file === undefined ? try generic(request, parts) : try own(request, parts, file)
+    if (file !== undefined) return try own(request, parts, file)
+    if (request.targets !== undefined) throw failure("unsupported", noWorkspace)
+    return try generic(request, parts)
   }

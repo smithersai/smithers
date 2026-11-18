@@ -148,6 +148,35 @@ describe("text", () => {
   })
 })
 
+describe("a repository's own targets", () => {
+  const own = (targets: ReadonlyArray<string>): ReplayReport => ({ ...normalOnly(), targets })
+
+  it("stand above the speedup in the text and in the page", () => {
+    const lines = text(own(["//packages/ci/..."])).split("\n")
+    expect(lines[0]).toBe("own targets  //packages/ci/...")
+    expect(lines[2]).toBe("5.5× faster")
+    const page = html(own(["//packages/ci/..."]))
+    expect(page).toContain("<p class=\"summary\"><code>own targets  //packages/ci/...</code></p>")
+    expect(page.indexOf("own targets")).toBeLessThan(page.indexOf("class=\"hero\""))
+  })
+
+  it("names the first three patterns and counts the rest", () => {
+    const many = ["//a:*", "//b:*", "//c:*", "//d:*", "//e:*"]
+    expect(text(own(many)).split("\n")[0]).toBe("own targets  //a:* //b:* //c:* +2")
+    expect(text(own(many.slice(0, 3))).split("\n")[0]).toBe("own targets  //a:* //b:* //c:*")
+  })
+
+  it("are escaped in the page and cleaned for a terminal", () => {
+    expect(html(own(["//<b>:x"]))).toContain("own targets  //&lt;b&gt;:x")
+    expect(text(own(["//a\u001b[2J:x"])).split("\n")[0]).toBe("own targets  //a\uFFFD[2J:x")
+  })
+
+  it("are not shown for a repository whose CI was converted", () => {
+    expect(text(normalOnly())).not.toContain("own targets")
+    expect(html(normalOnly())).not.toContain("own targets")
+  })
+})
+
 describe("jobs that were not replayed", () => {
   const partial: ReplayReport = {
     ...clean,

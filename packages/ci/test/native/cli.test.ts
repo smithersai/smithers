@@ -32,22 +32,25 @@ describe("smithers-ci on a repository that builds with Smithers build", { timeou
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(outcome.stdout.trimEnd().endsWith(`\n\n${footer("WORKSPACE.ts")}`)).toBe(true)
     expect(outcome.stdout).not.toContain("apply would write")
+    expect(outcome.stdout.startsWith("own targets  //:a //:b //:c\n\n")).toBe(true)
     expect(outcome.stderr).toContain(
       "smithers-ci: replaying the repository's own targets (WORKSPACE.ts): //:a //:b //:c"
     )
     expect(changed(before, snapshot(root))).toEqual([])
   })
 
-  it("prints the replay report as JSON, as a process", async () => {
+  it("replays the patterns --targets names and prints the report as JSON, as a process", async () => {
     const root = keep(makeOwnWith(smthrs))
-    const outcome = await spawn(bin, ["replay", "--commits", "1", "--json"], root)
+    const outcome = await spawn(bin, ["replay", "--commits", "1", "--json", "--targets", "//:a,//:b"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     const report = Schema.decodeUnknownSync(ReplayReport)(JSON.parse(outcome.stdout))
     expect(report.commits).toHaveLength(1)
-    expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 3, failed: 0, skipped: 0 })
-    expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 3, failed: 0, skipped: 0 })
+    expect(report.targets).toEqual(["//:a", "//:b"])
+    expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
+    expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
     expect(report.mismatches).toBe(0)
-    expect(report.notReplayed?.map((entry) => entry.job)).toEqual(["ci.yml:docs"])
+    // The CI's third pattern was not asked for, so its job is left out with the job that runs no target.
+    expect(report.notReplayed?.map((entry) => entry.job)).toEqual(["ci.yml:targets", "ci.yml:docs"])
   })
 
   it("words the footer once", () => {
