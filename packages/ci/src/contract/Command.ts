@@ -89,7 +89,7 @@ export const exitCodeHelp = {
     "A replayed target's verdict in a mode differs from its baseline verdict. A flaky target, which passed on a rerun, agrees with a pass and does not make the exit code 1.",
   usage:
     "The command line was wrong: an unknown command or flag, a bad value, or a replay as root without --allow-root.",
-  unsupported: "The repository uses something Smithers CI cannot run.",
+  unsupported: "The repository uses something Smithers CI cannot run, or its CI does not pass on this machine.",
   failed: "A step of the command could not finish."
 } as const satisfies Record<keyof typeof exitCodes, string>
 
@@ -149,15 +149,18 @@ export const environment = {
  *
  * `apply` checks every path before it writes any, and a refusal leaves
  * nothing written. It replaces a file only when the file is absent or is one
- * `smithers-ci` generated: it starts with the generated mark, and the target
- * map, which is JSON and holds no mark, is a target map. That holds for every
- * generated path, the workflow and the target map included. It also refuses
- * a path whose real location is outside the repository: a link in the path.
+ * `smithers-ci` generated: it starts with the generated mark. That holds for
+ * every generated path, the workflow included. It removes the files an
+ * earlier version wrote at `PACKAGE.ts`, `.smithers/WORKSPACE.ts`,
+ * `.smithers/ci-targets.json` and `.smithers/ci/NOT-REPRODUCED.md` when it
+ * generated them, and refuses beside a root `PACKAGE.ts`, `PACKAGE.vibe` or
+ * `.smithers/WORKSPACE.ts` the owner wrote. It also refuses a path whose real
+ * location is outside the repository: a link in the path.
  *
  * @category constants
  * @since 0.1.0
  */
-export const applyRefuses = [".smithers/WORKSPACE.ts", "WORKSPACE.ts"] as const
+export const applyRefuses = [".smithers/WORKSPACE.ts", ".smithers/WORKSPACE.smithers", "WORKSPACE.ts"] as const
 
 /**
  * Lines `apply` adds to the repository's root `.gitignore` when they are

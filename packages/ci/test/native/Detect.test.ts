@@ -29,6 +29,18 @@ describe("workspace", { timeout: 300_000 }, () => {
     expect(await onNode(workspace(both))).toBe(".smithers/WORKSPACE.ts")
   })
 
+  it("finds an owner's plain workspace file, after .smithers/WORKSPACE.ts and before the root", async () => {
+    const plain = ".smithers/WORKSPACE.smithers"
+    expect(await onNode(workspace(repo({ [plain]: "an owner wrote this\n" })))).toBe(plain)
+    expect(await onNode(workspace(repo({ [plain]: generatedText })))).toBeUndefined()
+    expect(await onNode(workspace(repo({ [plain]: "an owner wrote this\n", "WORKSPACE.ts": ownWorkspace })))).toBe(
+      plain
+    )
+    const typed = repo({ ".smithers/WORKSPACE.ts": ownWorkspace, [plain]: "an owner wrote this\n" })
+    expect(await onNode(workspace(typed))).toBe(".smithers/WORKSPACE.ts")
+    expect(await onNode(workspace(repo({ [plain]: generatedText, "WORKSPACE.ts": ownWorkspace })))).toBe("WORKSPACE.ts")
+  })
+
   it("finds none in a repository without one, or with one smithers-ci generated", async () => {
     expect(await onNode(workspace(repo({ "README.md": "plain\n" })))).toBeUndefined()
     expect(await onNode(workspace(repo({ ".smithers/WORKSPACE.ts": generatedText })))).toBeUndefined()

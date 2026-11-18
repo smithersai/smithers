@@ -640,7 +640,7 @@ describe("contract changes, third round", () => {
     const map = Schema.decodeUnknownSync(TargetMap.TargetMap)(fixture("target-map.example.json"))
     expect(map.maxJobs).toBe(1)
     expect(() => Schema.decodeUnknownSync(TargetMap.TargetMap)({ ...map, maxJobs: 0 })).toThrow()
-    expect(Command.applyRefuses).toEqual([".smithers/WORKSPACE.ts", "WORKSPACE.ts"])
+    expect(Command.applyRefuses).toEqual([".smithers/WORKSPACE.ts", ".smithers/WORKSPACE.smithers", "WORKSPACE.ts"])
     expect(Command.applyIgnores).toEqual([".flows"])
   })
 })

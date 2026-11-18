@@ -22,6 +22,23 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Twelfth round, 2026-11-18 (open).** Asked for by lanes; made by the lead.
+
+- **`Command.applyRefuses` has a third path**, `.smithers/WORKSPACE.smithers`, between the two it had: the order
+  Smithers build looks. A plain workspace file an owner wrote makes the repository one that already builds with
+  Smithers build; one `smithers-ci` generated starts with the generated mark and does not (`sci-generated-files`).
+- **Exit 3's sentence** (`Command.exitCodeHelp.unsupported`) is now "The repository uses something Smithers CI cannot
+  run, or its CI does not pass on this machine." (`sci-fail-reason`).
+- **The target map is in no repository.** The comments on `TargetMap` and `applyRefuses` say what the build does: the
+  generator returns the map marked `written: false`, and `apply` removes the files an earlier version wrote.
+- **A job that fails here is left out, not the measurement** (`sci-replay-robust`): a trial baseline at the newest
+  commit; a job that fails it is listed `fails-here` with its first error line and run in neither way; the report
+  says how many jobs the number covers. A step that uses no CPU and prints nothing for 10 minutes fails.
+- **One wording for fast mode** (`sci-native-parity`): "the model that predicts which tests a change cannot break".
+  No page or message says judge, scorer, scored or rows.
+- **Never a stale pass** (`sci-never-stale`): Smithers build measures a target's declared inputs again when it starts,
+  and `smithers-ci apply --check` fails when the generated files no longer match the repository.
+
 **Eleventh round, 2026-11-18 (open).** Decisions from the ship review. Each is built by the lane named.
 
 - **No speedup over a commit whose results differ** (`sci-fail-reason`). A commit enters the speedup only when the

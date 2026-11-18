@@ -115,7 +115,7 @@ A workflow that does not parse is listed there and nowhere else.
 | `0`  | `ok`          | The command finished.                                                                                                                                                   |
 | `1`  | `mismatch`    | A replayed target's verdict in a mode differs from its baseline verdict. A flaky target, which passed on a rerun, agrees with a pass and does not make the exit code 1. |
 | `2`  | `usage`       | The command line was wrong: an unknown command or flag, a bad value, or a replay as root without --allow-root.                                                          |
-| `3`  | `unsupported` | The repository uses something Smithers CI cannot run.                                                                                                                   |
+| `3`  | `unsupported` | The repository uses something Smithers CI cannot run, or its CI does not pass on this machine.                                                                          |
 | `4`  | `failed`      | A step of the command could not finish.                                                                                                                                 |
 
 Exit `3` also means the repository's CI does not pass on this machine: no step

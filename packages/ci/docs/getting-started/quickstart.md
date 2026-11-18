@@ -124,13 +124,13 @@ says fast mode was not measured and why, and the command exits `4`.
 
 ## Exit codes
 
-| Code | Meaning                                                      |
-| ---- | ------------------------------------------------------------ |
-| `0`  | The run finished.                                            |
-| `1`  | A target's pass or fail in a mode differs from the baseline. |
-| `2`  | The command line was wrong.                                  |
-| `3`  | The repository uses something Smithers CI cannot run.        |
-| `4`  | A step of the command could not finish.                      |
+| Code | Meaning                                                                                        |
+| ---- | ---------------------------------------------------------------------------------------------- |
+| `0`  | The run finished.                                                                              |
+| `1`  | A target's pass or fail in a mode differs from the baseline.                                   |
+| `2`  | The command line was wrong.                                                                    |
+| `3`  | The repository uses something Smithers CI cannot run, or its CI does not pass on this machine. |
+| `4`  | A step of the command could not finish.                                                        |
 
 Code `3` also means your CI does not pass on this machine: no step passed at
 any replayed commit, so there is nothing to measure. The program prints no

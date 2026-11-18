@@ -1,9 +1,10 @@
 /**
  * Contract 11: which target each CI step became.
  *
- * The generator writes this document among its files, at `path`. The replay
- * reads it there to compare a step's baseline verdict with its target's
- * verdict, and a report can name the step a target came from.
+ * The generator returns this document among its files, at `path`, marked
+ * `written: false`: the replay reads it from that list to compare a step's
+ * baseline verdict with its target's verdict, a report can name the step a
+ * target came from, and no repository holds it.
  *
  * @since 0.1.0
  */

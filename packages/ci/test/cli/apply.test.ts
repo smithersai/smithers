@@ -261,13 +261,27 @@ describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
   describe.concurrent("a path that cannot hold the file", () => {
     it("writes nothing when a directory is where a generated file must go", async () => {
       const root = repo()
+      commit(root, "a directory", { [`${workflow}/README`]: "keep\n" })
+      const before = snapshot(root)
+      const outcome = await exec(["apply"], root)
+      expect(outcome).toEqual({
+        code: exitCodes.unsupported,
+        stdout: "",
+        stderr: `smithers-ci: generate: ${workflow} is not a file\n`
+      })
+      expect(changed(before, snapshot(root))).toEqual([])
+    })
+
+    it("takes a directory at the plain workspace file's path for the owner's workspace, and writes nothing", async () => {
+      const root = repo()
       commit(root, "a directory", { ".smithers/WORKSPACE.smithers/README": "keep\n" })
       const before = snapshot(root)
       const outcome = await exec(["apply"], root)
       expect(outcome).toEqual({
         code: exitCodes.unsupported,
         stdout: "",
-        stderr: "smithers-ci: generate: .smithers/WORKSPACE.smithers is not a file\n"
+        stderr:
+          "smithers-ci: inventory: the repository already builds with Smithers build (.smithers/WORKSPACE.smithers); there is nothing to convert\n"
       })
       expect(changed(before, snapshot(root))).toEqual([])
     })
