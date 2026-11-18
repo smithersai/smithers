@@ -347,6 +347,27 @@ the job. With a package missing, the report says what to install:
 ci.yml:build  changes-machine (install fish with apt-get to replay this job)
 ```
 
+**A script that asks first.** A script written for machines with and without
+`sudo` asks before it uses it, and does without when the answer is no:
+
+```sh
+if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null; then
+  echo "no sudo here; the lock timeout stays as it is"
+  exit 0
+fi
+printf 'DPkg::Lock::Timeout "600";\n' | sudo tee /etc/apt/apt.conf.d/99-lock-timeout
+```
+
+In a replay the answer is always no. The question changes nothing, and what the
+script keeps for a yes never runs: the branch of an `if` that needs
+`sudo -n true` to succeed, and whatever follows an `if` that ends the script
+when it fails. The step is replayed and does what it does on a machine with no
+`sudo`. `sudo -n -v` and `sudo --non-interactive true` ask the same question.
+
+A script that sets `PATH`, defines an alias, or defines a function named
+`sudo` or `exit` could give those words another meaning. It is read as
+written, and its `sudo` leaves the job out.
+
 Any other use of `sudo` leaves the job out, whatever is installed.
 `smithers-ci apply` leaves these jobs in your CI as they are: what a job
 installs on its machine is in no cache.

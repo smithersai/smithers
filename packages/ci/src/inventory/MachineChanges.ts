@@ -12,6 +12,10 @@
  * text of a here-document as commands. What it cannot see, such as a script
  * that calls `sudo` inside, the replay's stand-ins for `sudo` stop at run time.
  *
+ * A step is read as it runs in a replay, where `sudo` refuses: what a script
+ * keeps for a machine whose `sudo` works, behind `sudo -n true`, is no change
+ * (`WithoutSudo.ts`).
+ *
  * @since 0.1.0
  */
 
@@ -26,6 +30,7 @@ import {
   type Unsupported
 } from "../contract/Inventory.ts"
 import { type Command, commands, type Word } from "../decompose/Shell.ts"
+import { withoutSudo } from "./WithoutSudo.ts"
 
 /**
  * What one command does to the machine.
@@ -572,7 +577,7 @@ const linesFor = (changes: ReadonlyArray<Change>): ReadonlyArray<string> => {
   ]
 }
 
-const changesOfStep = (step: Step): ReadonlyArray<Change> => changesIn(step.command, step.env)
+const changesOfStep = (step: Step): ReadonlyArray<Change> => changesIn(withoutSudo(step.command), step.env)
 
 /**
  * A job with one `changes-machine` entry for each thing its steps do to the

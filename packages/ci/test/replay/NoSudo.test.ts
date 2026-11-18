@@ -133,6 +133,34 @@ jobs:
     expect(existsSync(log)).toBe(false)
   }, replayLimit)
 
+  it("replays a job whose step asks before it uses sudo, and takes the path of a machine with none", async () => {
+    const { env, log } = machine([])
+    const root = repository({
+      ".github/workflows/ci.yml": `
+on: push
+jobs:
+  build:
+    runs-on: ${runner}
+    steps:
+      - run: |
+          if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null; then
+            echo "no sudo here"
+            exit 0
+          fi
+          sudo tee /etc/smithers-ci-no-sudo-test < /dev/null
+          exit 1
+`
+    })
+    const report = await replay(root, env)
+    expect(report.notReplayed ?? []).toEqual([])
+    const commit = report.commits[0]
+    expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+    expect(commit?.normal.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+    expect(commit?.mismatches).toEqual([])
+    // The machine's own `sudo` was never started: the question went to the stand-in, which refused.
+    expect(existsSync(log)).toBe(false)
+  }, replayLimit)
+
   it("replays when every job installs what is there, and says apply has nothing to write", async () => {
     const { env, log } = machine(["zsh"])
     const root = repository({

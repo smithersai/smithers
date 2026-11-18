@@ -33,7 +33,9 @@ const workflow = [
   "    runs-on: ubuntu-latest",
   "    steps:",
   "      - uses: actions/checkout@v4",
+  // A step with a time limit waits for it in a process of its own, and is reused like any other.
   "      - run: cat checked.txt",
+  "        timeout-minutes: 5",
   "  sha:",
   "    runs-on: ubuntu-latest",
   "    steps:",

@@ -194,6 +194,29 @@ describe("a command that changes the machine", () => {
   })
 })
 
+// A replay's stand-in for `sudo` refuses, so a step is read as it runs on a machine where `sudo -n true` fails.
+describe("a step that asks before it uses sudo", () => {
+  const asked = [
+    "if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null; then",
+    "  echo 'no sudo here; the lock timeout stays as it is'",
+    "  exit 0",
+    "fi",
+    "printf 'DPkg::Lock::Timeout \"600\";\\n' | sudo tee /etc/apt/apt.conf.d/99-lock-timeout >/dev/null"
+  ].join("\n")
+
+  it("does not keep its job out: what it keeps for a machine whose sudo works never runs", () => {
+    const marked = markChanges(job([asked, "npm test"]))
+    expect(marked.unsupported).toEqual([])
+    expect(isRunnable(marked)).toBe(true)
+  })
+
+  it("keeps its job out when another step uses sudo without asking", () => {
+    const marked = markChanges(job([asked, "sudo systemctl restart docker"]))
+    expect(marked.unsupported).toEqual([{ feature: changesMachine, detail: "runs systemctl restart" }])
+    expect(isRunnable(marked)).toBe(false)
+  })
+})
+
 describe("a command that leaves the machine alone", () => {
   it.each([
     "npm test",
