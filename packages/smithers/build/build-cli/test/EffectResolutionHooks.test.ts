@@ -171,16 +171,26 @@ describe("a CLI that runs as one file", () => {
     delete holder[key]
   })
 
-  it("answers an owned import with the bundle's own module, under the same export names", async () => {
-    const instance = { default: "the default", named: { shared: true }, "not-an-identifier": 2 }
-    let initialized = 0
+  /** A table holding one module, published at a file with other contents. */
+  const holding = async (name: string, instance: Record<string, unknown>, onLoad = () => {}) => {
+    const file = await write(`${name}/installed/Marker.js`, "export const named = \"read from the file\"\n")
     holder[key] = {
       url: import.meta.url,
       modules: new Map([["effect/OneFileMarker", () => {
-        initialized += 1
+        onLoad()
         return instance
-      }]])
+      }]]),
+      addresses: new Map([["effect/OneFileMarker", { url: file }]])
     }
+    return file
+  }
+
+  it("answers an owned import with the bundle's own module, under the same export names", async () => {
+    const instance = { default: "the default", named: { shared: true }, "not-an-identifier": 2 }
+    let initialized = 0
+    await holding("one-file", instance, () => {
+      initialized += 1
+    })
     const url = await write(
       "one-file/PACKAGE.ts",
       [
@@ -200,8 +210,47 @@ describe("a CLI that runs as one file", () => {
     expect(initialized).toBeGreaterThan(0)
   })
 
+  it("resolves an owned import to the file it is published as", async () => {
+    const file = await holding("one-file-address", { named: 1 })
+    const url = await write(
+      "one-file-address/PACKAGE.ts",
+      "export const address: string = import.meta.resolve(\"effect/OneFileMarker\")\n"
+    )
+    expect((await load(url)).address).toBe(file)
+    expect(fileURLToPath(file)).toContain("one-file-address")
+  })
+
+  it("gives the bundle's module to an import that names the file", async () => {
+    const instance = { named: { shared: true } }
+    const file = await holding("one-file-url", instance)
+    const url = await write(
+      "one-file-url/PACKAGE.ts",
+      [
+        `import { named as byUrl } from ${JSON.stringify(file)}`,
+        `import { named as withQuery } from ${JSON.stringify(`${file}?copy=1`)}`,
+        "export const seen = { byUrl, withQuery }"
+      ].join("\n") + "\n"
+    )
+    const seen = (await load(url)).seen as { readonly byUrl: unknown; readonly withQuery: unknown }
+    expect(seen.byUrl).toBe(instance.named)
+    expect(seen.withQuery).toBe(instance.named)
+  })
+
+  it("gives the bundle's module to a require that ordinary resolution leads to the file", async () => {
+    const instance = { named: { shared: true } }
+    const file = await holding("one-file-required", instance)
+    const url = await write(
+      "one-file-required/PACKAGE.ts",
+      [
+        "import { createRequire } from \"node:module\"",
+        `export const required = createRequire(import.meta.url)(${JSON.stringify(fileURLToPath(file))}).named`
+      ].join("\n") + "\n"
+    )
+    expect((await load(url)).required).toBe(instance.named)
+  })
+
   it("leaves an owned import the bundle does not hold to the installation", async () => {
-    holder[key] = { url: import.meta.url, modules: new Map() }
+    holder[key] = { url: import.meta.url, modules: new Map(), addresses: new Map() }
     const url = await write(
       "one-file-absent/PACKAGE.ts",
       "import * as Option from \"effect/Option\"\nexport const some: boolean = Option.isSome(Option.some(1))\n"
@@ -210,7 +259,7 @@ describe("a CLI that runs as one file", () => {
   })
 
   it("leaves a CommonJS require of an owned name to ordinary resolution", async () => {
-    holder[key] = { url: import.meta.url, modules: new Map([["effect/OneFileMarker", () => ({ named: 1 })]]) }
+    await holding("one-file-require", { named: 1 })
     const url = await write(
       "one-file-require/PACKAGE.ts",
       [

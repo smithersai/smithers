@@ -10,7 +10,7 @@
  * bare specifier.
  */
 import { existsSync, realpathSync } from "node:fs"
-import { registerHooks } from "node:module"
+import { createRequire, isBuiltin, registerHooks } from "node:module"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
@@ -52,7 +52,8 @@ const scheme = "smthrs-from:"
 
 /**
  * Resolves `smthrs-from:<chain>!<specifier>`: the specifier, as a module in
- * the package the chain ends at would import it.
+ * the package the chain ends at would import it. Node's `require` resolver
+ * does not read the parent a hook hands it, so a `require` is resolved here.
  *
  * @param {string} bundleUrl `import.meta.url` of `dist/bundle/bin.js`
  */
@@ -62,7 +63,10 @@ export const resolveHooks = (bundleUrl) => ({
     const separator = specifier.indexOf("!")
     const chain = specifier.slice(scheme.length, separator).split(",")
     const parentURL = pathToFileURL(join(packageRoot(bundleUrl, chain), "package.json")).href
-    return nextResolve(specifier.slice(separator + 1), { ...context, parentURL })
+    const inner = specifier.slice(separator + 1)
+    return context.conditions?.includes("require") && !isBuiltin(inner)
+      ? { url: pathToFileURL(createRequire(parentURL).resolve(inner)).href, shortCircuit: true }
+      : nextResolve(inner, { ...context, parentURL })
   }
 })
 

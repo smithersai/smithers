@@ -4,16 +4,21 @@
  */
 import assert from "node:assert/strict"
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
-import { builtinModules, registerHooks } from "node:module"
+import { build } from "esbuild"
+import { builtinModules, createRequire, registerHooks } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import vibelang from "vibelang-unplugin/esbuild"
 import { originFile, packageRoot, resolveFrom, resolveHooks } from "../bin/bundle-origin.mjs"
 import {
   buildBundle,
   dependencyChains,
   externalPackages,
+  inliningRefusal,
+  locating,
+  nodeResolution,
   optionalProbes,
   ownedModules,
   ownedPackages,
@@ -105,6 +110,71 @@ test("a module that asks where it is gets the address it is published at", async
   assert.ok(script.startsWith("#!/usr/bin/env node\nconst __smthrsMeta = "))
 })
 
+test("a module that sets its JSX runtime keeps that setting when it asks where it is", async () => {
+  const source = "/** @jsxImportSource @smthrs/registry/Prompt */\nexport const here = import.meta.url\nexport const node = <box />\n"
+  const rewritten = await rewriteLocation(source, "pkg@1.0.0", "dist/a.js", "tsx")
+  assert.ok(rewritten.startsWith("/** @jsxImportSource @smthrs/registry/Prompt */\nconst __smthrsMeta = "))
+  assert.match(rewritten, /here = __smthrsMeta\.url/)
+})
+
+test("the bundle picks the file of a package that Node picks", () =>
+  withTree({
+    "package.json": { type: "module" },
+    "entry.js": [
+      "import imported from \"dual\"",
+      "import both from \"sync\"",
+      "import shaped from \"shaped\"",
+      "const required = await import(\"./commonjs.cjs\")",
+      "globalThis.seen = { imported, required: required.default, both, shaped }"
+    ].join("\n"),
+    "commonjs.cjs": "module.exports = require(\"dual\")\n",
+    "node_modules/dual/package.json": { name: "dual", version: "1.0.0", exports: { ".": { import: "./esm.mjs", require: "./cjs.cjs" } } },
+    "node_modules/dual/esm.mjs": "export default \"the ES entry\"\n",
+    "node_modules/dual/cjs.cjs": "module.exports = \"the CommonJS entry\"\n",
+    "node_modules/sync/package.json": { name: "sync", version: "1.0.0", exports: { ".": { "module-sync": "./sync.mjs", import: "./import.mjs" } } },
+    "node_modules/sync/sync.mjs": "export default \"module-sync\"\n",
+    "node_modules/sync/import.mjs": "export default \"import\"\n",
+    "node_modules/shaped/package.json": { name: "shaped", version: "1.0.0", main: "main.cjs", module: "module.mjs" },
+    "node_modules/shaped/main.cjs": "module.exports = \"main\"\n",
+    "node_modules/shaped/module.mjs": "export default \"module\"\n"
+  }, async (root) => {
+    const native = await import(pathToFileURL(join(root, "entry.js")).href).then(() => globalThis.seen)
+    assert.deepEqual(native, { imported: "the ES entry", required: "the CommonJS entry", both: "module-sync", shaped: "main" })
+    delete globalThis.seen
+    await build({ entryPoints: [join(root, "entry.js")], outfile: join(root, "out.mjs"), bundle: true, format: "esm", platform: "node", logLevel: "silent", ...nodeResolution })
+    await import(pathToFileURL(join(root, "out.mjs")).href)
+    assert.deepEqual(globalThis.seen, native)
+    delete globalThis.seen
+  }))
+
+test("a module that hides its requires from the bundler is refused by name", () => {
+  const universal = "(function (factory) { if (typeof module === \"object\") { var v = factory(require, exports); } })(function (require, exports) {})"
+  assert.match(inliningRefusal(universal, "/x/lib/umd/main.js"), /\/x\/lib\/umd\/main\.js passes require to a function/)
+  assert.equal(inliningRefusal("const fs = require(\"node:fs\")\nmodule.exports = fs\n", "/x/plain.js"), undefined)
+})
+
+test("a VibeLang module that asks where it is gets the address it is published at", () =>
+  withTree({
+    "packages/first/package.json": { name: "@smthrs/first", version: "1.0.0", type: "module" },
+    "packages/first/tsconfig.json": { compilerOptions: { module: "esnext", moduleResolution: "bundler", target: "es2022", lib: ["es2022"], types: [] } },
+    "packages/first/src/Where.vibe": "export const where: string = (import.meta as any).url\n"
+  }, async (root) => {
+    const directory = join(root, "packages/first")
+    const { outputFiles: [output] } = await build({
+      entryPoints: [join(directory, "src/Where.vibe")],
+      write: false,
+      bundle: true,
+      format: "esm",
+      platform: "node",
+      logLevel: "silent",
+      absWorkingDir: directory,
+      external: ["effect", "vibelang-runtime", "vibelang-runtime/*"],
+      plugins: [locating(vibelang({ root: directory }))]
+    })
+    assert.match(output.text, /__smthrsOriginMeta\("@smthrs\/first", "dist\/esm\/Where\.js"\)/)
+    assert.doesNotMatch(output.text, /import\.meta\.url/)
+  }))
+
 test("the same words in a string, a comment or a module's own declaration are left alone", async () => {
   assert.equal(await rewriteLocation("export const one = 1\n", "pkg@1.0.0", "a.js", "js"), undefined)
   assert.equal(await rewriteLocation("// import.meta.url\nexport const text = \"import.meta.url and __dirname\"\n", "pkg@1.0.0", "a.js", "js"), undefined)
@@ -119,7 +189,9 @@ test("an export map's public specifiers are its named entries and what each patt
     "dist/deep/Nested.js": "",
     "dist/internal/Hidden.js": "",
     "dist/Open.d.ts": "",
-    "data/table.json": "{}"
+    "data/table.json": "{}",
+    "src/Typed.ts": "",
+    "src/Typed.d.ts": ""
   }, (root) => {
     assert.deepEqual(
       publicSpecifiers("pkg", root, {
@@ -133,6 +205,7 @@ test("an export map's public specifiers are its named entries and what each patt
       }),
       ["pkg", "pkg/Named", "pkg/Open", "pkg/deep/Nested", "pkg/index"]
     )
+    assert.deepEqual(publicSpecifiers("pkg", root, { "./typed/*": "./src/*.ts" }), ["pkg/typed/Typed"])
   }))
 
 test("a package is reached from the CLI by the names that install it, shortest chain first", () =>
@@ -187,6 +260,25 @@ test("a package left outside the bundle resolves from the package that imports i
     }
   }))
 
+test("a require left outside the bundle resolves from the package that requires it", () =>
+  withTree({
+    ...installation,
+    // A different version where a walk up from the CLI would find it first.
+    "node_modules/inner/package.json": { name: "inner", version: "9.9.9", type: "module", exports: "./index.js" },
+    "node_modules/inner/index.js": "export default \"hoisted inner\"\n"
+  }, (root) => {
+    const bundle = pathToFileURL(join(root, "dist/bundle/bin.js")).href
+    const hooks = registerHooks(resolveHooks(bundle))
+    try {
+      const required = createRequire(bundle)
+      assert.equal(required("smthrs-from:outer!inner").default, "inner of outer")
+      assert.equal(required("smthrs-from:outer!node:path").sep, "/")
+      assert.throws(() => required("smthrs-from:outer!absent"), { code: "MODULE_NOT_FOUND" })
+    } finally {
+      hooks.deregister()
+    }
+  }))
+
 test("a module's own resolve answers as the installed module would", () =>
   withTree(installation, (root) => {
     const outer = pathToFileURL(join(root, "node_modules/outer/index.js")).href
@@ -232,6 +324,9 @@ test("the real program bundles into one file that imports only what its packages
     for (const specifier of ["effect", "effect/Schema", "@smthrs/targets", "@smthrs/flow", "@smthrs/agent", "@smthrs/evals", "@smthrs/registry/Prompt/jsx-runtime"]) {
       assert.ok(text.includes(`[${JSON.stringify(specifier)}, () => `), `${specifier} is not in the bundle's table`)
     }
+    // Each entry names the file its module is published as.
+    assert.match(text, /\["effect\/Schema", \(\) => [^\n]*__smthrsOriginMeta\("effect@[^"]+", "dist\/Schema\.js"\)\]/)
+    assert.match(text, /\["@smthrs\/targets", \(\) => [^\n]*__smthrsOriginMeta\("@smthrs\/targets", "dist\/esm\/[^"]+\.js"\)\]/)
     // The package a chain ends at, found the way the running bundle finds it.
     const installed = pathToFileURL(join(cliRoot, "dist/bundle/bin.js")).href
     const declares = (chain, name) => {

@@ -27,9 +27,15 @@
  *    `@smthrs/patterns`, `@smthrs/evals`, `@smthrs/scorers`, the registry's
  *    JSX runtime) are in the bundle with
  *    every public subpath, each initialized on first use. The bundle publishes
- *    that table on `globalThis`, and `@smthrs/build-cli/effect-resolution`
- *    answers those specifiers from it. The build's cache keys, which hold a
+ *    that table on `globalThis` with the file each module is published as.
+ *    `@smthrs/build-cli/effect-resolution` resolves those specifiers to those
+ *    files and loads the table's instance in their place, so a workspace sees
+ *    the same addresses it saw before. The build's cache keys, which hold a
  *    digest of the code that runs, digest the bundle.
+ * 4. **A package resolves as Node resolves it.** `import` and `require` each
+ *    get Node's export conditions, and a package's entry is its `main`. A
+ *    CommonJS module that requires a package with both formats gets the
+ *    CommonJS one it was written against.
  *
  * The bundle is not minified: a stack trace names functions, and each module
  * starts with a comment naming its path.
@@ -69,6 +75,8 @@ export const externalPackages = [
   "better-sqlite3",
   "electrobun",
   "esbuild",
+  // Its `main` passes `require` to a factory, so the bundler cannot see what it loads.
+  "jsonc-parser",
   "react",
   "tsx",
   "vibelang"
@@ -149,6 +157,9 @@ export const publishedPath = (found, file) => {
   return `dist/esm/${path.slice("src/".length).replace(/\.(?:tsx?|mts|vibe)$/, ".js")}`
 }
 
+/** The comments that set how a module's JSX compiles, which a transform does not keep. */
+const jsxPragmas = (source) => source.match(/\/\*[*\s]*@jsx\w*\s[^*]*\*+\//g)?.join("\n") ?? ""
+
 const locationPattern = /\bimport\.meta\.(?:url|dirname|filename|resolve)\b|(?<![.\w$])__(?:dirname|filename)\b/
 
 /** What a module can ask about its location, and the member of its `__smthrsMeta` that answers. */
@@ -183,11 +194,49 @@ export const rewriteLocation = async (source, key, path, loader) => {
   })
   if (!/\b__smthrsMeta\b/.test(code)) return undefined
   const shebang = code.startsWith("#!") ? code.indexOf("\n") + 1 : 0
-  const declaration = `const __smthrsMeta = __smthrsOriginMeta(${JSON.stringify(key)}, ${JSON.stringify(path)});\n`
+  const pragmas = jsxPragmas(source)
+  const declaration = `${pragmas === "" ? "" : `${pragmas}\n`}const __smthrsMeta = __smthrsOriginMeta(${JSON.stringify(key)}, ${JSON.stringify(path)});\n`
   return `${code.slice(0, shebang)}${declaration}${code.slice(shebang)}`
 }
 
 const loaders = { ".ts": "ts", ".tsx": "tsx", ".mts": "ts", ".js": "js", ".mjs": "js", ".cjs": "js", ".jsx": "jsx" }
+
+/**
+ * Why a module cannot be inlined, or undefined when it can. A module that
+ * passes `require` to a function loads files the bundler never sees: the
+ * bundle would fail when the call runs.
+ */
+export const inliningRefusal = (source, path) =>
+  /\bfactory\(\s*require\s*,\s*exports\s*\)/.test(source)
+    ? `${path} passes require to a function, so its files cannot be bundled. Add its package to externalPackages.`
+    : undefined
+
+/** The contents and loader that give the module at `path` its published address, or undefined when it asks for none. */
+const located = async (source, path, loader) => {
+  const found = packageOf(path)
+  const contents = await rewriteLocation(source, keyOf(found), publishedPath(found, path), loader)
+  return contents === undefined ? undefined : { contents, loader: loader.endsWith("x") ? "jsx" : "js", resolveDir: dirname(path) }
+}
+
+/**
+ * A plugin whose loaded modules also get their published address. esbuild
+ * stops at the first plugin that loads a file, so `.vibe` modules, which the
+ * VibeLang plugin loads, are located as that plugin returns them.
+ */
+export const locating = (plugin) => ({
+  name: `${plugin.name}-located`,
+  setup: (context) =>
+    plugin.setup({
+      ...context,
+      onLoad: (options, load) =>
+        context.onLoad(options, async (args) => {
+          const result = await load(args)
+          if (typeof result?.contents !== "string") return result
+          const moved = await located(result.contents, args.path, result.loader ?? "js")
+          return moved === undefined ? result : { ...result, ...moved }
+        })
+    })
+})
 
 /**
  * Keeps the listed packages outside and gives every inlined module its
@@ -207,22 +256,23 @@ const overlay = (externals) => ({
         ? { path, external: true }
         : { path: `smthrs-from:${keyOf(from)}!${path}`, external: true }
     })
-    context.onLoad({ filter: /\.(?:[cm]?js|tsx?|mts|jsx)$/, namespace: "file" }, async ({ path }) => {
+    context.onLoad({ filter: /\.(?:[cm]?js|tsx?|mts|jsx)$/, namespace: "file" }, ({ path }) => {
       const source = readFileSync(path, "utf8")
-      const found = packageOf(path)
-      const loader = loaders[/\.[^.]+$/.exec(path)[0]]
-      const contents = await rewriteLocation(source, keyOf(found), publishedPath(found, path), loader)
-      if (contents === undefined) return undefined
-      return { contents, loader: loader.endsWith("x") ? "jsx" : "js", resolveDir: dirname(path) }
+      const refusal = inliningRefusal(source, path)
+      return refusal === undefined
+        ? located(source, path, loaders[/\.[^.]+$/.exec(path)[0]])
+        : { errors: [{ text: refusal }] }
     })
   }
 })
 
-const javascriptFiles = (directory, prefix = "") =>
+const modulePattern = /\.(?:[cm]?js|tsx?|vibe)$/
+
+const moduleFiles = (directory, prefix = "") =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
     entry.isDirectory()
-      ? javascriptFiles(join(directory, entry.name), `${prefix}${entry.name}/`)
-      : entry.name.endsWith(".js") ? [`${prefix}${entry.name}`] : []
+      ? moduleFiles(join(directory, entry.name), `${prefix}${entry.name}/`)
+      : modulePattern.test(entry.name) && !entry.name.endsWith(".d.ts") ? [`${prefix}${entry.name}`] : []
   )
 
 /**
@@ -239,13 +289,13 @@ export const publicSpecifiers = (name, root, exports) => {
   for (const [subpath, target] of Object.entries(exports)) {
     if (target === null || subpath === "./package.json") continue
     const file = typeof target === "string" ? target : target.import?.default ?? target.default
-    if (typeof file !== "string" || !/\.(?:[cm]?js|tsx?|vibe)$/.test(file)) continue
+    if (typeof file !== "string" || !modulePattern.test(file)) continue
     if (!subpath.includes("*")) {
       specifiers.add(subpath === "." ? name : `${name}/${subpath.slice(2)}`)
       continue
     }
     const [before, after] = file.split("*")
-    for (const path of javascriptFiles(join(root, before))) {
+    for (const path of moduleFiles(join(root, before))) {
       if (!path.endsWith(after)) continue
       const reached = subpath.replace("*", path.slice(0, path.length - after.length))
       if (open(reached)) specifiers.add(`${name}/${reached.slice(2)}`)
@@ -283,7 +333,9 @@ const ownedSpecifiers = () => {
  *
  * A table entry is `require` of the module: esbuild turns it into the
  * module's initializer, run on first use, and the object it returns reads the
- * module's live exports.
+ * module's live exports. The specifier resolves as an `import`, because a
+ * workspace file imports it, and the entry records the file that module is
+ * published as.
  */
 const entryModules = (owned) => ({
   name: "smthrs-bundle-entry",
@@ -295,19 +347,30 @@ const entryModules = (owned) => ({
       loader: "js",
       contents: [
         ...tables.map((_, index) => `import { modules as modules${index} } from "smthrs-bundle:owned/${index}"`),
-        `globalThis[Symbol.for(${JSON.stringify(bundleKey)})] = { url: import.meta.url, modules: new Map([${tables.map((_, index) => `...modules${index}`).join(", ")}]) }`,
+        `const owned = [${tables.map((_, index) => `...modules${index}`).join(", ")}]`,
+        `globalThis[Symbol.for(${JSON.stringify(bundleKey)})] = {`,
+        `  url: import.meta.url,`,
+        `  modules: new Map(owned.map(([specifier, load]) => [specifier, load])),`,
+        `  addresses: new Map(owned.map(([specifier, , address]) => [specifier, address]))`,
+        `}`,
         `await import("./src/bin.ts")`
       ].join("\n")
     }))
-    context.onLoad({ filter: /^owned\/\d+$/, namespace: "smthrs-bundle" }, ({ path }) => {
+    const asImport = (specifier, resolveDir) =>
+      context.resolve(specifier, { kind: "import-statement", resolveDir, importer: join(resolveDir, "package.json"), namespace: "file" })
+    context.onResolve({ filter: /^[^./]/, namespace: "smthrs-bundle" }, ({ path, kind, resolveDir }) =>
+      kind === "require-call" ? asImport(path, resolveDir) : undefined
+    )
+    context.onLoad({ filter: /^owned\/\d+$/, namespace: "smthrs-bundle" }, async ({ path }) => {
       const directory = tables[Number(path.slice("owned/".length))]
-      return {
-        resolveDir: directory,
-        loader: "js",
-        contents: `export const modules = [\n${
-          owned.get(directory).map((specifier) => `  [${JSON.stringify(specifier)}, () => require(${JSON.stringify(specifier)})]`).join(",\n")
-        }\n]\n`
-      }
+      const rows = await Promise.all(owned.get(directory).map(async (specifier) => {
+        const { path: file, errors } = await asImport(specifier, directory)
+        if (errors.length > 0) throw new Error(`${specifier} does not resolve from ${directory}: ${errors[0].text}`)
+        const found = packageOf(file)
+        const name = JSON.stringify(specifier)
+        return `  [${name}, () => require(${name}), __smthrsOriginMeta(${JSON.stringify(keyOf(found))}, ${JSON.stringify(publishedPath(found, file))})]`
+      }))
+      return { resolveDir: directory, loader: "js", contents: `export const modules = [\n${rows.join(",\n")}\n]\n` }
     })
   }
 })
@@ -381,6 +444,12 @@ const banner = [
   `};`
 ].join("\n")
 
+/**
+ * How Node picks a package's file: its `main`, and the export conditions Node
+ * sets. esbuild adds `import` or `require` by how each module asks.
+ */
+export const nodeResolution = { mainFields: ["main"], conditions: ["module-sync", "node-addons"] }
+
 /** Warnings that mean an inlined module will look for a file the bundle does not hold. */
 const fatalWarnings = new Set(["require-resolve-not-external", "unsupported-require-call"])
 
@@ -394,15 +463,13 @@ export const buildBundle = async ({ logLevel = "warning", outdir = resolve(packa
     format: "esm",
     platform: "node",
     target: "node22",
-    // A package that ships both formats is inlined as ES modules, which initialize lazily and tree-shake.
-    mainFields: ["module", "main"],
-    conditions: ["import"],
+    ...nodeResolution,
     banner: { js: banner },
     metafile: true,
     write: false,
     logLevel,
     logOverride: Object.fromEntries([...fatalWarnings].map((id) => [id, "error"])),
-    plugins: [entryModules(owned), vibelang({ root: packageRoot }), overlay(new Set(externalPackages))]
+    plugins: [entryModules(owned), locating(vibelang({ root: packageRoot })), overlay(new Set(externalPackages))]
   })
   if (result.errors.length > 0) throw new Error("The CLI bundle failed to build")
   const chains = dependencyChains(result.metafile, packageRoot)
@@ -427,4 +494,4 @@ export const buildBundle = async ({ logLevel = "warning", outdir = resolve(packa
   return { metafile: result.metafile, chains }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) await buildBundle()
+if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) await buildBundle()

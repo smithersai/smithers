@@ -74,7 +74,6 @@ const registration = Symbol.for("smthrs/effect-resolution-registration")
 const ownership = Symbol.for("smthrs/effect-resolution-ownership")
 const buildModuleParameter = "smithers-build-module"
 const bundle = Symbol.for("smthrs/bundle")
-const bundledScheme = "smthrs-bundled:"
 const admittedBuildModules = Symbol.for("smthrs/effect-resolution-build-modules")
 
 /**
@@ -123,27 +122,46 @@ const ownerOf = (specifier) => {
 }
 
 /**
- * The URL an owned specifier has when this CLI runs as one file, or
+ * The file an owned specifier names when this CLI runs as one file, or
  * `undefined` when it does not or the file does not hold the module.
  *
  * A published `@smthrs/cli` runs `dist/bundle/bin.js`, which holds Effect and
  * the owned packages inside it and publishes them as `globalThis[bundle]`:
  * `modules` maps each public specifier to a function returning that module's
- * exports. The instances a declaration module must share are those, not the
- * files beside the bundle, so an owned import resolves to a `smthrs-bundled:`
- * URL and {@link bundledSource} is what it loads.
+ * exports, and `addresses` to the file the module is published as. An owned
+ * import resolves to that file, the URL it has without the bundle, so
+ * `import.meta.resolve` still answers a path. {@link bundledSpecifier} is what
+ * then loads the bundle's instance in its place.
  */
-const bundledUrl = (specifier) =>
-  globalThis[bundle]?.modules.has(specifier) ? `${bundledScheme}${specifier}` : undefined
+const bundledUrl = (specifier) => globalThis[bundle]?.addresses.get(specifier)?.url
+
+const bundledFiles = new WeakMap()
 
 /**
- * The module a `smthrs-bundled:` URL loads: every export of the bundle's own
+ * The bundle's specifier for a file URL, or `undefined` when the bundle does
+ * not hold that file. Every way of reaching the file gets the one instance:
+ * an owned import, a generated file that names the URL, and a `require` that
+ * ordinary resolution leads to it.
+ */
+const bundledSpecifier = (url) => {
+  const table = globalThis[bundle]
+  if (table === undefined || !url.startsWith("file:")) return undefined
+  let files = bundledFiles.get(table)
+  if (files === undefined) {
+    files = new Map([...table.addresses].map(([specifier, address]) => [address.url, specifier]))
+    bundledFiles.set(table, files)
+  }
+  const end = url.search(/[?#]/)
+  return files.get(end === -1 ? url : url.slice(0, end))
+}
+
+/**
+ * The module that stands for an owned file: every export of the bundle's own
  * instance, under the same names. A name is read once, when the importing
  * module first loads it; the owned packages assign no export after they
  * initialize.
  */
-const bundledSource = (url) => {
-  const specifier = url.slice(bundledScheme.length)
+const bundledSource = (specifier) => {
   const names = Object.keys(globalThis[bundle].modules.get(specifier)())
   return [
     `const exports = globalThis[Symbol.for(${JSON.stringify(bundle.description)})].modules.get(${
@@ -319,8 +337,6 @@ const asBuildModule = (resolved, base) => {
  */
 const parentHooks = {
   resolve(specifier, context, nextResolve) {
-    // A module imported by the URL an earlier resolution returned.
-    if (specifier.startsWith(bundledScheme)) return { url: specifier, format: "module", shortCircuit: true }
     // CommonJS consumers must install their ordinary dependencies. Node 26
     // also sends require() through these synchronous hooks.
     const owner = ownerOf(specifier)
@@ -343,15 +359,16 @@ const parentHooks = {
     return url === resolved.url ? resolved : { ...resolved, url }
   },
   load(url, context, nextLoad) {
-    return url.startsWith(bundledScheme)
-      ? { format: "module", source: bundledSource(url), shortCircuit: true }
-      : nextLoad(url, context)
+    const specifier = bundledSpecifier(url)
+    return specifier === undefined
+      ? nextLoad(url, context)
+      : { format: "module", source: bundledSource(specifier), shortCircuit: true }
   }
 }
 
 /**
  * The parent hooks as this process registers them. Only a CLI that runs as
- * one file has `smthrs-bundled:` modules to load, so only it gets the load
+ * one file has modules to load in place of files, so only it gets the load
  * hook: every other process keeps the hooks it had.
  */
 const ownedHooks = () => globalThis[bundle] === undefined ? { resolve: parentHooks.resolve } : parentHooks

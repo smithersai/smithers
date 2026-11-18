@@ -50,7 +50,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { availableParallelism, loadavg, tmpdir } from "node:os"
 import { delimiter, dirname, join, resolve } from "node:path"
 import { after, before, describe, it } from "node:test"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { releaseRegistry } from "../../../.smithers/flows/release/release-registry.mjs"
 
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url))
@@ -262,6 +262,54 @@ describe("a workspace with PACKAGE.ts targets", () => {
     const separate = JSON.parse(passed(separateModules(fresh, ["ci", "//...", "--json"]), "smthrs ci, separate modules"))
     assert.deepEqual(separate.results.map((result) => result.status), ["ran", "ran", "ran", "ran"])
     assert.notDeepEqual(one.results.map((result) => result.key), separate.results.map((result) => result.key))
+  })
+})
+
+describe("a workspace file's view of the packages the program holds", () => {
+  it("sees the installed files, and every way of reaching one gets the program's instance", () => {
+    const project = join(root, "addresses")
+    const report = join(project, "report.json")
+    mkdirSync(join(project, ".smithers"), { recursive: true })
+    writeFileSync(join(project, ".smithers/WORKSPACE.ts"), [
+      "import { Smithers as S } from \"@smthrs/targets\"",
+      "export const Workspace = S.Workspace(\"addresses\", { repository: \"addresses\", cache: S.Cache({ directory: \".flows\" }), host: S.Host({ bins: [\"sh\"] }) })",
+      ""
+    ].join("\n"))
+    writeFileSync(join(project, ".gitignore"), ".flows\nreport.json\n")
+    writeFileSync(join(project, "PACKAGE.ts"), [
+      "import { Smithers as S } from \"@smthrs/targets\"",
+      "import * as Schema from \"effect/Schema\"",
+      "import { writeFileSync } from \"node:fs\"",
+      "import { createRequire } from \"node:module\"",
+      "import { fileURLToPath } from \"node:url\"",
+      "const address = import.meta.resolve(\"effect/Schema\")",
+      "const byUrl = await import(address)",
+      "const required = createRequire(fileURLToPath(address))(fileURLToPath(address))",
+      "const table = (globalThis as any)[Symbol.for(\"smthrs/bundle\")]",
+      `writeFileSync(${JSON.stringify(report)}, JSON.stringify({`,
+      "  address,",
+      "  sameByUrl: byUrl.Struct === Schema.Struct,",
+      "  sameByRequire: required.Struct === Schema.Struct,",
+      "  addresses: Object.fromEntries([...table.addresses].map(([specifier, entry]: any) => [specifier, entry.url]))",
+      "}))",
+      "export const Package = S.Package({ targets: { ok: S.Shell.Test({ shell: \"true\" }) } })",
+      ""
+    ].join("\n"))
+    git(root, "init", "-q", "-b", "main", project)
+    git(project, "add", "--all")
+    git(project, "commit", "-q", "-m", "addresses")
+    passed(smthrs(project, ["ci", "//...", "--json"]), "smthrs ci")
+    const seen = JSON.parse(readFileSync(report, "utf8"))
+    assert.equal(seen.address, pathToFileURL(join(realpathSync(join(consumer, "node_modules/effect")), "dist/Schema.js")).href)
+    assert.equal(seen.sameByUrl, true)
+    assert.equal(seen.sameByRequire, true)
+    // Every module the program holds is at the address Node resolves for it from this installation.
+    const specifiers = Object.keys(seen.addresses)
+    assert.ok(specifiers.length > 500)
+    const script = join(root, "resolve-all.mjs")
+    writeFileSync(script, `const parent = ${JSON.stringify(pathToFileURL(join(installed, "package.json")).href)}\nconsole.log(JSON.stringify(Object.fromEntries(${JSON.stringify(specifiers)}.map((s) => [s, import.meta.resolve(s, parent)]))))\n`)
+    const resolved = spawnSync(process.execPath, ["--experimental-import-meta-resolve", "--no-warnings", script], { env: environment, encoding: "utf8", maxBuffer: 1 << 26 })
+    assert.deepEqual(seen.addresses, JSON.parse(passed(resolved, "resolve every module")))
   })
 })
 
