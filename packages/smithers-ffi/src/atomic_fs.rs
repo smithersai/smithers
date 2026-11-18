@@ -348,11 +348,15 @@ const METADATA_FLAGS: i32 = libc::O_EVTONLY;
 #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
 const METADATA_FLAGS: i32 = libc::O_RDONLY;
 
+// Linux gives fchmodat2 this number on every architecture; libc does not name it on all of them.
+#[cfg(target_os = "linux")]
+const SYS_FCHMODAT2: libc::c_long = 452;
+
 #[cfg(target_os = "linux")]
 fn chmod_metadata(file: &File, mode: libc::mode_t) -> io::Result<()> {
     let rc = unsafe {
         libc::syscall(
-            libc::SYS_fchmodat2,
+            SYS_FCHMODAT2,
             file.as_raw_fd(),
             c"".as_ptr(),
             mode as libc::c_uint,
