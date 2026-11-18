@@ -23,6 +23,10 @@ not count.
 `smithers-ci inventory` shows the fact as an unsupported entry with the feature
 `smithers-build` and the workspace file.
 
+The inventory reads the working tree, and a replay runs the newest commit. When
+the workspace file is in the working tree and not committed, the replay
+generates targets as on any repository, and the report's last line says so.
+
 ## Nothing is generated or written over
 
 - `smithers-ci apply` exits 3 with one line that names the workspace file, and
@@ -106,8 +110,8 @@ modes, because a CI machine pays for it either way. The speedup is therefore
 lower than the ratio of the two `smthrs ci` runs alone; `workMs` in the report
 is the sum of the targets' own time in each mode, with no install in it.
 
-A failed target is run again to tell a failure from a flake. Those reruns are
-not timed.
+A failed target is run again, up to twice, to tell a failure from a flake.
+Those reruns are not timed.
 
 ## How verdicts compare
 

@@ -2,9 +2,10 @@
  * Real repositories and real processes for the `smithers-ci` tests.
  */
 
-import { execFile, execFileSync } from "node:child_process"
+import { execFile, execFileSync, spawn as spawnChild } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -174,6 +175,56 @@ export const spawn = (entry: string, args: ReadonlyArray<string>, cwd: string): 
       }
     )
   })
+
+/**
+ * Starts a Node entry as a child process in `cwd`, with `env` added to this
+ * process's environment. `done` resolves when it has ended and its output is
+ * closed; `signal` sends it a signal.
+ */
+export const start = (
+  entry: string,
+  args: ReadonlyArray<string>,
+  cwd: string,
+  env: Readonly<Record<string, string>> = {}
+) => {
+  const child = spawnChild(process.execPath, [entry, ...args], {
+    cwd,
+    env: { ...process.env, ...env },
+    stdio: ["ignore", "pipe", "pipe"]
+  })
+  const printed = { stdout: "", stderr: "" }
+  child.stdout.setEncoding("utf8").on("data", (chunk: string) => void (printed.stdout += chunk))
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => void (printed.stderr += chunk))
+  const done = new Promise<Outcome>((resolve) => {
+    child.on("close", (code) => resolve({ code: code ?? -1, ...printed }))
+  })
+  return { done, signal: (signal: "SIGINT" | "SIGTERM") => child.kill(signal) }
+}
+
+/** Whether a process with this id exists. */
+export const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Waits until `holds`, looking ten times a second; rejects after `limitMs`. */
+export const until = async (holds: () => boolean, what: string, limitMs = 100_000): Promise<void> => {
+  const end = Date.now() + limitMs
+  while (!holds()) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+}
+
+/** Waits for a file another process writes whole, and gives its text. */
+export const awaited = async (path: string): Promise<string> => {
+  await until(() => existsSync(path) && readFileSync(path, "utf8").trim() !== "", path)
+  return readFileSync(path, "utf8")
+}
 
 /** A console that records what the program logs, for runs inside this process. */
 export const recorder = () => {

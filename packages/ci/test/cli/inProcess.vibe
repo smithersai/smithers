@@ -10,7 +10,8 @@ import { cli, type Parts } from "../../src/cli/Cli.vibe"
 import { type Environment, type Host, layer } from "../../src/cli/Host.vibe"
 
 /**
- * Runs the program and resolves to its exit code.
+ * Runs the program and resolves to its exit code. `directory` is where it
+ * was started, when that is not the repository's top directory.
  */
 export async function inProcess(
   args: ReadonlyArray<string>,
@@ -18,9 +19,10 @@ export async function inProcess(
   chosen: Parts<Host>,
   sink: Console.Console,
   environment: Environment,
-  faulty?: Layer.Layer<FileSystem.FileSystem, never, FileSystem.FileSystem>
+  faulty?: Layer.Layer<FileSystem.FileSystem, never, FileSystem.FileSystem>,
+  directory?: string
 ): Promise<number> {
-  const run = cli(args, root, chosen)
+  const run = cli(args, root, chosen, directory)
   const program = (faulty === undefined ? run : Effect.provide(run, faulty))
     |> Effect.provide(%, layer(environment))
     |> Effect.provideService(%, Console.Console, sink)

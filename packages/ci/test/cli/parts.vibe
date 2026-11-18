@@ -59,6 +59,28 @@ export effect function run<R>(request: ReplayRequest, _parts: ReplayParts<R>) {
 }
 
 /**
+ * A replay that does not end by itself. In a scope it makes a directory and
+ * starts a real `sleep` there, writes both to the file `marker` as JSON, and
+ * waits for the process. Interrupted, the scope removes the directory and
+ * stops the process.
+ */
+export const hanging = (marker: string) =>
+  effect function <R>(request: ReplayRequest, given: ReplayParts<R>) {
+    const waited = scoped(effect {
+      const fs = try FileSystem.FileSystem
+      const spawner = try ChildProcessSpawner.ChildProcessSpawner
+      const directory = try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-hanging-" })
+      const handle = try spawner.spawn(ChildProcess.make("sleep", ["600"], { cwd: directory }))
+      try fs.writeFileString(marker, JSON.stringify({ directory, pid: Number(handle.pid) }))
+      try handle.exitCode
+    })
+    waited catch effect (error) => {
+      throw { code: "command-failed", message: error.message, part: "replay" } satisfies Failure
+    }
+    return try run(request, given)
+  }
+
+/**
  * Every part on `main`, with this replay.
  */
 export const parts: Parts<Host> = { ...onMain, run }

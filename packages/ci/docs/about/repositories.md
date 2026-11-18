@@ -48,4 +48,6 @@ Smithers CI slower, never wrong.
 
 When the repository depends on something Smithers CI cannot run, the command
 stops with exit code 3 and names it. `smithers-ci inventory` shows what was
-read and what was marked unsupported, without replaying anything.
+read and what was marked unsupported, without replaying anything: under each
+job what stops it, and at the top each file that could not be read, such as a
+workflow that does not parse.

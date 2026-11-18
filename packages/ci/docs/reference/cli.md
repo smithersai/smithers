@@ -7,7 +7,9 @@ description: "Every smithers-ci command, flag and exit code."
 smithers-ci [command] [flags]
 ```
 
-Run it with `bunx smithers-ci` in the root of a Git repository.
+Run it with `bunx smithers-ci` in any directory of a Git repository. It works on
+the whole repository: the root is the repository's top directory, found from
+the directory you run it in.
 
 The four tables on this page are checked against the command surface in
 `src/contract/Command.ts` by `test/docs.test.ts`: a command, flag, default or
@@ -63,6 +65,20 @@ smithers-ci: 2/5 3f2a1c9 baseline
 smithers-ci: 2/5 3f2a1c9 normal
 ```
 
+A replay runs commits. When the working tree has changes that are not
+committed, standard error says first that they are not replayed.
+
+`--out` is read from the directory you run the command in. When the file is
+inside the repository, it is the one file the command writes there, and the
+report's last line names it; otherwise that line says the run wrote nothing to
+the repository. The last line also says what the replay ran: targets generated
+from the newest commit, or the repository's
+[own targets](../concepts/own-targets.md).
+
+`smithers-ci inventory` prints, under the first line, each file it could not
+read and each thing that belongs to no job, as `unsupported <feature>: <detail>`.
+A workflow that does not parse is listed there and nowhere else.
+
 ## Exit codes
 
 | Code | Name          | Meaning                                                                  |
@@ -74,6 +90,10 @@ smithers-ci: 2/5 3f2a1c9 normal
 | `4`  | `failed`      | A step of the command could not finish.                                  |
 
 A mismatch is defined in [How it works](../concepts/how-it-works.md#3-replay).
+
+Ctrl-C (`SIGINT`) and `SIGTERM` stop the program: the step it is running is
+stopped, its temporary copies are removed, and it exits `130` or `143`, as a
+shell reports a program ended by that signal. A second signal ends it at once.
 
 ## Environment
 

@@ -99,13 +99,34 @@ export const isBuildFile = (file: GeneratedFile): boolean => /(^|\/)(WORKSPACE|P
 export const overwriteRefusal = (paths: ReadonlyArray<string>): string =>
   `${paths.join(", ")} ${paths.length === 1 ? "was" : "were"} not written by smithers-ci and would be replaced`
 
+const wroteNothing = "This run wrote nothing to the repository."
+
 /**
  * What the text report ends with after a replay of the repository's own
- * targets.
+ * targets. `file` is the workspace file in the working tree; without one,
+ * only the newest commit holds it. `wrote` says what the run wrote to the
+ * repository.
  *
  * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
-export const footer = (file: string): string =>
-  `This repository already builds with Smithers build (${file}). The replay ran its own targets, cold against cached; there is nothing for apply to convert. This run wrote nothing to the repository.`
+export const footer = (file: string | undefined, wrote: string = wroteNothing): string =>
+  `${
+    file === undefined
+      ? "The newest commit already builds with Smithers build"
+      : `This repository already builds with Smithers build (${file})`
+  }. The replay ran its own targets, cold against cached; there is nothing for apply to convert. ${wrote}`
+
+/**
+ * What the text report ends with when the working tree holds a workspace
+ * file, `file`, that the newest commit does not: the replay ran the commit,
+ * so it generated targets, and `apply` converts nothing while the file is
+ * there.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const uncommittedFooter = (file: string, wrote: string = wroteNothing): string =>
+  `The replay ran targets generated from the newest commit, which has no Smithers workspace: ${file} is not committed. smithers-ci apply converts nothing while that file is there. ${wrote}`

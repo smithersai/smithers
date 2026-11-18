@@ -27,6 +27,7 @@ import type {
 import { ReplayReport } from "../contract/ReplayReport.ts"
 import type { Mode } from "../contract/RunRecord.ts"
 import * as Native from "../native/index.ts"
+import { uncommittedFooter } from "../native/Workspace.ts"
 import { check } from "./Apply.vibe"
 
 /**
@@ -187,6 +188,10 @@ const clean = (value: string): string => value.replace(/[^\P{Cc}\n\t]/gu, "\uFFF
  */
 function inventoryText(inventory: Inventory): string {
   const lines = [`${inventory.repository} at ${inventory.commit}`]
+  // What belongs to a file and to no job: a workflow that does not parse is seen here or nowhere.
+  for (const unsupported of inventory.unsupported ?? []) {
+    lines.push(`unsupported ${unsupported.feature}: ${unsupported.detail}`)
+  }
   for (const tool of inventory.toolchains) {
     lines.push(`toolchain ${tool.name}${tool.version === undefined ? "" : ` ${tool.version}`} (${tool.source})`)
   }
@@ -232,11 +237,20 @@ effect function write(path: string, content: string) {
   }
 }
 
+/** The feature the inventory records when the working tree differs from the commit it names. */
+const uncommitted = "uncommitted-changes"
+
+/** What the default command's report ends with: what the run wrote to the repository. */
+const wroteLine = (file: string | undefined): string =>
+  file === undefined ? "This run wrote nothing to the repository." : `This run wrote one file to the repository: ${file}.`
+
 /**
- * The command tree. A handler that finishes sets its exit code in `status`;
- * a part's failure leaves through the error channel.
+ * The command tree. `root` is the repository's top directory and `directory`
+ * where the program was started, which a relative `--out` is read from. A
+ * handler that finishes sets its exit code in `status`; a part's failure
+ * leaves through the error channel.
  */
-function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
+function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: Ref.Ref<number>) {
   const settle = (code: number) => Ref.set(status, code)
   const replayParts = {
     read: parts.read,
@@ -254,16 +268,30 @@ function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
       return { files, ignores: try check(root, files) }
     }
 
-  effect function replayAndPrint(input: ReplayInput, footer: string) {
+  /**
+   * Replays and prints. A replay runs commits, so changes that are not committed are named on standard error
+   * before it starts. `footer` is given the report and the `--out` file when it is inside the repository.
+   */
+  effect function replayAndPrint(
+    input: ReplayInput,
+    read: Inventory,
+    footer: (report: ReplayReport, written: string | undefined) => string
+  ) {
+    if (read.unsupported?.some((entry) => entry.feature === uncommitted)) {
+      try Console.error(`${Surface.name}: the working tree has changes that are not committed; a replay runs commits, so they are not replayed`)
+    }
     const report = try parts.run(requestOf(root, input), replayParts)
     const document = try documentOf(ReplayReport, report, "replay")
+    let written: string | undefined
     if (Option.isSome(input.out)) {
       const paths = try Path.Path
-      const target = paths.resolve(root, input.out.value)
+      const target = paths.resolve(directory, input.out.value)
       try write(target, try render(parts.html, report))
       try Console.error(`${Surface.name}: wrote ${target}`)
+      const within = paths.relative(root, target)
+      if (!within.startsWith("..")) written = within
     }
-    try Console.log(input.json ? document : `${try render(parts.text, report)}${footer}`)
+    try Console.log(input.json ? document : `${try render(parts.text, report)}${footer(report, written)}`)
     try settle(report.mismatches > 0 ? Surface.exitCodes.mismatch : Surface.exitCodes.ok)
   }
 
@@ -288,20 +316,25 @@ function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
   }).pipe(Command.withDescription(Surface.commands.inventory))
 
   const replay = Command.make("replay", replayFlags, effect (input) => {
-    try replayAndPrint(input, "")
+    try replayAndPrint(input, try parts.read(root), () => "")
   }).pipe(Command.withDescription(Surface.commands.replay))
 
   return Command.make(Surface.name, replayFlags, effect (input) => {
     const read = try parts.read(root)
+    // The footer says what the replay did, which the report holds: it ran the newest commit, and the inventory
+    // was read from the working tree. A report with `targets` is a replay of the repository's own targets.
     const own = ownWorkspace(read)
     if (own !== undefined) {
-      try replayAndPrint(input, `\n\n${Native.footer(own)}`)
+      try replayAndPrint(input, read, (report, written) =>
+        `\n\n${(report.targets === undefined ? uncommittedFooter : Native.footer)(own, wroteLine(written))}`)
       return
     }
     const { files, ignores } = try generate(read, input.cache)
     const adds = ignores.added.length === 0 ? "" : ` and add ${ignores.added.join(", ")} to .gitignore`
-    const footer = `\n\n${Surface.name} apply would write ${files.length} files${adds}. This run wrote nothing to the repository.`
-    try replayAndPrint(input, footer)
+    try replayAndPrint(input, read, (report, written) =>
+      report.targets === undefined
+        ? `\n\n${Surface.name} apply would write ${files.length} files${adds}. ${wroteLine(written)}`
+        : `\n\n${Native.footer(undefined, wroteLine(written))}`)
   }).pipe(
     Command.withDescription(Surface.commands[""]),
     Command.withSubcommands([apply, inventory, replay])
@@ -323,15 +356,16 @@ const presenter = CliOutput.layerPresenter({
 })
 
 /**
- * Runs `smithers-ci` with `args` against the repository at `root` and
- * returns its exit code. The only built-in flag is `--help`.
+ * Runs `smithers-ci` with `args` against the repository at `root`, started
+ * from `directory` inside it, and returns its exit code. The only built-in
+ * flag is `--help`.
  *
  * @category running
  * @since 0.1.0
  */
-export effect function cli<R>(args: ReadonlyArray<string>, root: string, parts: Parts<R>) {
+export effect function cli<R>(args: ReadonlyArray<string>, root: string, parts: Parts<R>, directory: string = root) {
   const status = try Ref.make<number>(Surface.exitCodes.ok)
-  const run = Command.runWith(commandOf(root, parts, status), { version: "0.1.0" })(args)
+  const run = Command.runWith(commandOf(root, directory, parts, status), { version: "0.1.0" })(args)
   provide CliConfig.layer({ builtIns: [GlobalFlag.Help] }), presenter {
     const outcome = run catch effect (error) => {
       if (CliError.isCliError(error)) return Surface.exitCodes.usage

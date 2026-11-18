@@ -4,25 +4,69 @@
  * @since 0.1.0
  */
 
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { cli, type Parts } from "./Cli.vibe"
 import { type Environment, type Host, layer } from "./Host.vibe"
 import { parts } from "./parts.ts"
+import { deaf, exitCodes, type Listen, type Signal } from "./Signals.ts"
 
 /**
- * Runs the program with `args` in the repository at `root` over the given
- * parts, and resolves to the exit code. `environment` chooses fast mode's
- * judge.
+ * The top directory of the repository that holds `directory`, as git names
+ * it; `directory` itself when it is in no repository, which each command
+ * then reports in its own words.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export effect function rootOf(directory: string) {
+  const spawner = try ChildProcessSpawner
+  const top = spawner.string(ChildProcess.make("git", ["-C", directory, "rev-parse", "--show-toplevel"])) catch () => ""
+  return top.trim() === "" ? directory : top.trim()
+}
+
+/**
+ * Ends with a signal's exit code when the first of the signals arrives. It
+ * stops listening to both then, and when it is interrupted, so a second
+ * signal ends the process at once.
+ */
+const signalled = (listen: Listen) =>
+  callback<number>((resume) => {
+    const stops: Array<() => void> = []
+    const stop = () => stops.forEach((each) => each())
+    const hear = (signal: Signal) =>
+      stops.push(listen(signal, () => {
+        stop()
+        resume(succeed(exitCodes[signal]))
+      }))
+    hear("SIGINT")
+    hear("SIGTERM")
+    return sync(stop)
+  })
+
+/**
+ * Runs the program with `args` from `directory`, a directory of the
+ * repository, over the given parts, and resolves to the exit code.
+ * `environment` chooses fast mode's judge.
+ *
+ * A signal `listen` hears interrupts the program: its steps are stopped and
+ * its temporary copies removed before this resolves, to the signal's exit
+ * code.
  *
  * @category running
  * @since 0.1.0
  */
 export async function run(
   args: ReadonlyArray<string>,
-  root: string,
+  directory: string,
   environment: Environment,
-  chosen: Parts<Host>
+  chosen: Parts<Host>,
+  listen: Listen = deaf
 ): Promise<number> {
-  return await runPromise(Effect.provide(cli(args, root, chosen), layer(environment)))
+  const program = effect {
+    return try cli(args, try rootOf(directory), chosen, directory)
+  }
+  return await runPromise(race(Effect.provide(program, layer(environment)), signalled(listen)))
 }
 
 /**
@@ -31,6 +75,11 @@ export async function run(
  * @category running
  * @since 0.1.0
  */
-export async function main(args: ReadonlyArray<string>, root: string, environment: Environment): Promise<number> {
-  return await run(args, root, environment, parts)
+export async function main(
+  args: ReadonlyArray<string>,
+  directory: string,
+  environment: Environment,
+  listen: Listen = deaf
+): Promise<number> {
+  return await run(args, directory, environment, parts, listen)
 }

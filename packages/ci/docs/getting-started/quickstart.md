@@ -5,7 +5,7 @@ description: "Run smithers-ci in a repository: what it reads, what it prints, an
 
 ## Run it
 
-In the root of a Git repository:
+In any directory of a Git repository:
 
 ```sh
 bunx smithers-ci
@@ -58,7 +58,11 @@ JSON instead of text.
 ## What it does not touch
 
 - **Your repository.** Every replayed run happens in a copy. The command writes
-  no file, commit or branch to the repository you run it in.
+  no file, commit or branch to the repository you run it in. The one
+  exception is the file `--out` names, when you point it inside the
+  repository; the report's last line then names it.
+- **Your uncommitted changes.** A replay runs commits. Changes you have not
+  committed are not replayed, and the command says so on standard error.
 - **Your CI.** Nothing changes until you run `smithers-ci apply`.
 - **Your secrets.** It records a secret your CI uses by name only, never its
   value.
