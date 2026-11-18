@@ -1,8 +1,9 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
+import { execFileSync } from "node:child_process"
 import { EventEmitter } from "node:events"
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { main, rootOf, run } from "../../src/cli/main.vibe"
 import { deaf, exitCodes as signalExitCodes, type Listen, listenTo, type Signal } from "../../src/cli/Signals.ts"
@@ -306,26 +307,35 @@ describe("a signal", () => {
       mkdirSync(temp)
       const root = keep(temporary("slow"))
       git(root, "init", "--quiet", "--initial-branch=main")
-      const hang = `echo $$ > ${join(work, "step.pid")}\nsleep 600 &\necho $! > ${join(work, "sleep.pid")}\nwait\n`
-      const once = join(work, "ran-once")
+      // A jailed step has process ids of its own and can write only its copy, its home and its temporary
+      // directory. So the step says there that it started, and it and its child are found among the machine's
+      // processes by a name no other process has.
+      const token = `slow-${basename(work)}`
+      const hang = `sh -c 'sleep 600' ${token}-child &\n: > "$TMPDIR/started"\nwait\n`
+      const once = `if [ ! -f "$HOME/ran-once" ]; then touch "$HOME/ran-once"; exit 0; fi\n`
       commit(root, "first", {
-        "package.json": JSON.stringify({ name: "slow", scripts: { ci: "sh ./slow.sh" } }),
-        "slow.sh": phase === "the baseline"
-          ? hang
-          : `if [ ! -f ${once} ]; then touch ${once}; exit 0; fi\n${hang}`
+        "package.json": JSON.stringify({ name: "slow", scripts: { ci: `sh ./${token}.sh` } }),
+        [`${token}.sh`]: phase === "the baseline" ? hang : `${once}${hang}`
       })
+      const named = (): ReadonlyArray<string> =>
+        execFileSync("ps", ["-A", "-ww", "-o", "args="], { encoding: "utf8" }).split("\n").filter((line) =>
+          line.includes(token)
+        )
+      const replays = (): ReadonlyArray<string> => readdirSync(temp).filter((name) => name.startsWith("smithers-ci-"))
       const running = start(bin, ["replay", "--commits", "1"], root, { TMPDIR: temp })
-      const step = Number(await awaited(join(work, "step.pid")))
-      const sleeper = Number(await awaited(join(work, "sleep.pid")))
-      expect(readdirSync(temp).some((name) => name.startsWith("smithers-ci-replay-"))).toBe(true)
-      expect(alive(step) && alive(sleeper)).toBe(true)
+      // In a jail the step's temporary directory is the replay's own; with no jail it is the program's.
+      const started = (): boolean =>
+        existsSync(join(temp, "started")) || replays().some((name) => existsSync(join(temp, name, "tmp", "started")))
+      await until(started, "the step to start", 250_000)
+      expect(named().some((line) => line.includes(`${token}.sh`))).toBe(true)
+      expect(named().some((line) => line.includes(`${token}-child`))).toBe(true)
       running.signal(signal)
       const outcome = await running.done
       expect(outcome.code, outcome.stderr).toBe(signalExitCodes[signal])
       expect(outcome.stdout).toBe("")
       expect(outcome.stderr.trim().split("\n").at(-1)).toMatch(phase === "the baseline" ? / baseline$/ : / normal$/)
-      expect(readdirSync(temp).filter((name) => name.startsWith("smithers-ci-"))).toEqual([])
-      await until(() => !alive(step) && !alive(sleeper), "the step and its child to stop")
+      expect(replays()).toEqual([])
+      await until(() => named().length === 0, "the step and its child to stop")
     }, 300_000)
   }
 })

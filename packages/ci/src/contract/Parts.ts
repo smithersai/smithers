@@ -70,13 +70,17 @@ export interface GeneratedFile {
 
 /**
  * Choices the generated files carry. `cache` is the URL of the shared cache
- * the generated workspace and workflow name.
+ * the generated workspace and workflow name. `inheritEnv` names variables of
+ * the machine every target passes to its step, beside the ones the step
+ * names; a variable the step sets keeps the step's value. The replay names
+ * the ones that tell git to refuse a push.
  *
  * @category models
  * @since 0.1.0
  */
 export interface GenerateOptions {
   readonly cache?: string | undefined
+  readonly inheritEnv?: ReadonlyArray<string> | undefined
 }
 
 /**

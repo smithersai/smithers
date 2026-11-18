@@ -10,6 +10,7 @@ import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Par
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { Options, run } from "../../src/replay/index.ts"
 import { job, linkTargets, makeEmptyDirectory, makeSmallRepository, smthrs } from "./fixture.ts"
+import { unconfined } from "./place.ts"
 import { options, parts } from "./TestParts.vibe"
 
 const created: Array<string> = []
@@ -122,7 +123,8 @@ describe("a baseline step", () => {
         Effect.sync(() => {
           prepared.push(directory)
           linkTargets(directory)
-        })
+        }),
+      confine: unconfined
     })
     // Fast mode's rows are built in the copy the targets ran in: what does git say about that copy?
     const status: Array<string> = []

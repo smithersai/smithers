@@ -305,6 +305,23 @@ describe("what a step becomes", () => {
     expect(source).toContain("// a:2: not generated, it uses a value only GitHub Actions can provide.")
   })
 
+  it("passes the variables every target is told to pass, beside its own, unless the step sets one", () => {
+    const document = inventory([job("a", [
+      step("a:1", "echo $RUNNER_OS"),
+      step("a:2", "git push", { env: { GIT_TERMINAL_PROMPT: "1" } }),
+      step("a:3", "true")
+    ])])
+    const passed = { inheritEnv: ["GIT_TERMINAL_PROMPT", "GIT_CONFIG_COUNT", "RUNNER_OS"] }
+    const source = content(Effect.runSync(files(given(document), passed)), packagePath)
+    expect(declaration(source, "a-1")).toContain(`inheritEnv: ["GIT_CONFIG_COUNT","GIT_TERMINAL_PROMPT","RUNNER_OS"]`)
+    // Smithers build refuses a variable a target both sets and passes on, and the step's value is the one it means.
+    expect(declaration(source, "a-2")).toContain(`env: {"GIT_TERMINAL_PROMPT":"1"}`)
+    expect(declaration(source, "a-2")).toContain(`inheritEnv: ["GIT_CONFIG_COUNT","RUNNER_OS"]`)
+    expect(declaration(source, "a-3")).toContain(`inheritEnv: ["GIT_CONFIG_COUNT","GIT_TERMINAL_PROMPT","RUNNER_OS"]`)
+    // Without the option a target passes on only what its step names.
+    expect(declaration(targetsOf(document), "a-3")).not.toContain("inheritEnv")
+  })
+
   it("enters the step's directory and refuses one outside the repository", () => {
     const source = targetsOf(inventory([job("a", [
       step("a:1", "ls", { cwd: "./packages/it's/" }),

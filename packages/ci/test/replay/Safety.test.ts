@@ -5,11 +5,12 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { execFileSync } from "node:child_process"
 import { readFileSync, rmSync } from "node:fs"
+import { homedir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { noPushUrl, stepEnvironment } from "../../src/replay/Environment.ts"
+import { noPushUrl, placeEnvironment, pushRefusal, stepEnvironment } from "../../src/replay/Environment.ts"
 import { run } from "../../src/replay/index.ts"
 import { job, makeEmptyDirectory, makeSmallRepository } from "./fixture.ts"
 import { options, parts } from "./TestParts.vibe"
@@ -104,8 +105,13 @@ describe("a baseline step", () => {
     const text = readFileSync(seen, "utf8")
     const names = text.split("\n").filter((line) => line.includes("=")).map((line) => line.slice(0, line.indexOf("=")))
     for (const value of Object.values(planted)) expect(text).not.toContain(value)
-    // bash adds its own three; every other name is one Smithers build gives a target, or the step's.
-    const target = Object.keys(toolEnvironment({ SEEN: seen, MINE: "from the step" }, []))
+    // bash adds its own three; every other name is one Smithers build gives a target, the step's, or one the replay
+    // sets for every step: its home and temporary directory, and what tells git to refuse a push.
+    const target = new Set([
+      ...Object.keys(toolEnvironment({ SEEN: seen, MINE: "from the step" }, [])),
+      ...Object.keys(placeEnvironment({ home: "", tmp: "" })),
+      ...Object.keys(pushRefusal)
+    ])
     expect(names.filter((name) => !["PWD", "SHLVL", "_", "OLDPWD"].includes(name)).sort()).toEqual([...target].sort())
     expect(text).toContain("MINE=from the step\n")
     expect(text).toContain("LANG=C\n")
@@ -121,8 +127,19 @@ describe("a baseline step", () => {
 })
 
 describe("stepEnvironment", () => {
-  it("lets a step's own value win over the machine's", () => {
-    expect(stepEnvironment({ HOME: "/somewhere/else" })["HOME"]).toBe("/somewhere/else")
-    expect(stepEnvironment({})["HOME"]).toBe(process.env["HOME"])
+  const place = { home: "/replay/home", tmp: "/replay/tmp" }
+
+  it("gives the replay's home in place of the person's, and keeps the machine's temporary directory", () => {
+    const environment = stepEnvironment({}, place)
+    expect(environment).toMatchObject({ HOME: "/replay/home", XDG_CACHE_HOME: "/replay/home/.cache" })
+    // A jail puts the replay's own directory behind the name; the name stays, so `smthrs` finds its compiled code.
+    expect(environment["TMPDIR"]).toBe(process.env["TMPDIR"])
+    expect(environment).toMatchObject(pushRefusal)
+    expect(Object.values(environment)).not.toContain(homedir())
+  })
+
+  it("lets a step's own value win", () => {
+    expect(stepEnvironment({ HOME: "/somewhere/else" }, place)["HOME"]).toBe("/somewhere/else")
+    expect(stepEnvironment({ GIT_TERMINAL_PROMPT: "1" }, place)["GIT_TERMINAL_PROMPT"]).toBe("1")
   })
 })

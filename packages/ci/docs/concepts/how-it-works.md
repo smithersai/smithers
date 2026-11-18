@@ -183,11 +183,69 @@ none that can be run on this machine, is not replayed and the report lists it.
 Every run happens in a copy. The replay never changes the repository it reads.
 `--jobs` caps how many targets run at once; the default is the machine's.
 
-A copy fetches from the repository's remote and has no remote to push to. A
-baseline step gets what a target gets: a short list of the machine's
-variables such as `PATH` and `HOME`, the step's own `env`, end of file on
-standard input, and a limit of six hours. It gets no other variable of the
-person running the replay.
+### What a step can reach
+
+A step is a command from a past commit, and someone else may have written it.
+Every step runs under the same rules, in the baseline and as a target, and so
+does every install the replay runs.
+
+**Its own home.** `HOME` and the cache directory are directories the replay
+makes, keeps until it ends and then removes. Nothing of your home is in them:
+no `.npmrc`, no `.gitconfig`, no token. What a package manager downloads at
+one commit is in its cache at the next. Your tools stay reachable through
+`PATH`.
+
+**Its own variables.** A step gets a short list of the machine's variables,
+such as `PATH`, then the step's own `env`, end of file on standard input, and
+a limit of six hours. It gets no other variable of yours: no token and no
+`SSH_AUTH_SOCK`.
+
+**No push.** Every `git` a step starts refuses to push. A `pre-push` hook,
+set through git's environment, stops the push before anything is sent, so
+`git remote add` and `git remote set-url` do not undo it. That `git` has no
+credential helper and never asks for a password. A copy fetches from the
+repository's remote and has no remote to push to.
+
+**A jail.** On Linux with
+[bubblewrap](https://github.com/containers/bubblewrap) installed, a step can
+write three places: its copy of the repository, its home and a temporary
+directory of its own, which it finds at `/tmp` and at `TMPDIR`. Every other
+file of the machine is read-only, so a push to a repository on the same disk
+fails. These files and
+directories of your home are empty for it: `.ssh`, `.gnupg`, `.aws`, `.azure`,
+`.config/gcloud`, `.kube`, `.docker`, `.netrc`, `.npmrc`, `.yarnrc`,
+`.yarnrc.yml`, `.pypirc`, `.gem/credentials`, `.cargo/credentials`,
+`.cargo/credentials.toml`, `.m2/settings.xml`, `.gradle/gradle.properties`,
+`.gitconfig`, `.git-credentials`, `.git-credential-cache`,
+`.cache/git/credential`, `.config/git` and `.config/gh`. So are the machine's
+own temporary files and your session's runtime directory under `/run/user`,
+where key agents listen. The step's processes end when the step does. The network stays
+open, as it is in your CI.
+
+| A step                                                | In the jail | With no jail |
+| ----------------------------------------------------- | ----------- | ------------ |
+| sees your home directory as its `HOME`                | no          | no           |
+| gets a token or an SSH agent from your environment    | no          | no           |
+| pushes with `git push`                                | no          | no           |
+| writes its copy, its home and its temporary directory | yes         | yes          |
+| writes any other file, such as a repository beside it | no          | yes          |
+| reads a credential listed above by its path           | no          | yes          |
+| reads the other files of the machine                  | yes         | yes          |
+
+On macOS, and on Linux without bubblewrap, there is no jail. `smithers-ci`
+says so once on standard error and names what to install. The first three
+rules still hold. Replay there only a history you trust.
+
+The hook is not what stops a determined step. `git push --no-verify` skips
+it, and a tool can publish over HTTPS with a token it carries itself. What
+stops those is the home and the jail: the step finds no credential of yours to
+push or publish with, and cannot write a repository on your disk. A token
+committed to the repository is the repository's own, and a step can use it.
+A step that reaches a Docker daemon can do what the daemon can; the jail does
+not hold the daemon.
+
+A refused push fails its step in the baseline and as a target alike, so it is
+never a mismatch.
 
 In the baseline, a GitHub Actions job runs in a fresh checkout of its own.
 The recipes of one Justfile, the rules of one Makefile, and the scripts of one

@@ -17,7 +17,16 @@ import {
   makeSmallRepository,
   recordingSmthrs
 } from "./fixture.ts"
-import { generated, gitFails, noTemporaryDirectories, noWrites, options, parts } from "./TestParts.vibe"
+import { unconfined } from "./place.ts"
+import {
+  generated,
+  gitFails,
+  noGeneratedWrites,
+  noTemporaryDirectories,
+  noWrites,
+  options,
+  parts
+} from "./TestParts.vibe"
 
 const created: Array<string> = []
 const track = (root: string): string => {
@@ -38,15 +47,17 @@ const request = (root: string, extra: Partial<ReplayRequest> = {}): ReplayReques
   ...extra
 })
 
+// A command the test wrote in the temporary directory, which records there: it runs with no jail.
 const withCommand = (command: string) =>
   Layer.succeed(Options, {
     smthrs: [command],
     reruns: 1,
-    prepare: (directory) => Effect.sync(() => linkTargets(directory))
+    prepare: (directory) => Effect.sync(() => linkTargets(directory)),
+    confine: unconfined
   })
 
 const withSmthrs = (command: string) =>
-  Layer.succeed(Options, { smthrs: [command], reruns: 1, prepare: () => Effect.void })
+  Layer.succeed(Options, { smthrs: [command], reruns: 1, prepare: () => Effect.void, confine: unconfined })
 
 const replay = (
   root: string,
@@ -166,7 +177,7 @@ describe("a replay that cannot run", () => {
       ])
       expect(existsSync(outside)).toBe(false)
     },
-    120_000
+    600_000
   )
 
   it("reports a Smithers build that cannot start", async () => {
@@ -211,9 +222,16 @@ describe("a replay that cannot run", () => {
 
   it("reports a generated file it cannot write", async () => {
     const root = track(makeSmallRepository(passing))
-    const failure = await failureOf(replay(root, {}, {}, noWrites as never))
+    const failure = await failureOf(replay(root, {}, {}, noGeneratedWrites as never))
     expect(failure.code).toBe("command-failed")
     expect(failure.message).toContain("could not write .smithers/WORKSPACE.ts")
+  })
+
+  it("reports a home for the steps it cannot make", async () => {
+    const root = track(makeSmallRepository(passing))
+    const failure = await failureOf(replay(root, {}, {}, noWrites as never))
+    expect(failure.code).toBe("command-failed")
+    expect(failure.message).toContain("could not make the steps' home")
   })
 })
 

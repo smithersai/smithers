@@ -47,9 +47,10 @@ import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { split } from "../../src/decompose/index.ts"
 import { files } from "../../src/generate/index.ts"
 import { read } from "../../src/inventory/index.ts"
-import { run } from "../../src/replay/index.ts"
+import { Options, run } from "../../src/replay/index.ts"
 import { rows, score } from "../../src/select/index.ts"
 import { makeEmptyDirectory, recordingSmthrs, smthrs } from "./fixture.ts"
+import { unconfined } from "./place.ts"
 
 const created: Array<string> = []
 afterAll(() => {
@@ -117,6 +118,21 @@ interface Measurement {
 /** The parts the program replays with, each with the services `layer` gives it. */
 const parts = { read, decompose: split, files, rows, score } as unknown as ReplayParts<never>
 
+/**
+ * How the program replays, with `command` for `smthrs`. The command and the steps write what the test counts
+ * outside every copy, so the runs have no jail.
+ */
+const recorded = (command: string) =>
+  Layer.provide(
+    Layer.effect(
+      Options,
+      Effect.gen(function*() {
+        return { ...(yield* Options), confine: unconfined }
+      })
+    ),
+    replayOptions([command], targetsDirectory())
+  )
+
 const measure = async (root: string, installs: string): Promise<Measurement> => {
   const recording = recordingSmthrs(false)
   created.push(recording.directory)
@@ -124,7 +140,7 @@ const measure = async (root: string, installs: string): Promise<Measurement> => 
   const before = startOf()
   const report = await Effect.runPromise(
     run({ root, commits: 1, modes: ["normal"] }, parts).pipe(
-      Effect.provide(Layer.provide(replayOptions([recording.command], targetsDirectory()), NodeServices.layer)),
+      Effect.provide(Layer.provide(recorded(recording.command), NodeServices.layer)),
       Effect.provide(layer({}))
     ) as Effect.Effect<ReplayReport, Failure>
   )

@@ -13,6 +13,7 @@ import {
   noSmthrs,
   smthrsBin
 } from "../../src/native/index.ts"
+import { makePlace } from "../replay/place.ts"
 import { brokenInstall, ownFiles } from "./own.ts"
 import { temporary } from "./repo.ts"
 import { cannotStart, noExists } from "./support.vibe"
@@ -29,6 +30,13 @@ const checkout = (files: Readonly<Record<string, string>>): string => {
     writeFileSync(join(root, name), content)
   }
   return root
+}
+
+/** The home and temporary directory an install runs with. */
+const place = () => {
+  const made_ = makePlace()
+  made.push(join(made_.home, ".."))
+  return made_
 }
 
 const onNode = <A, R>(work: Effect.Effect<A, never, R>) =>
@@ -68,7 +76,7 @@ describe("the install rules", () => {
 describe("install", { timeout: 300_000 }, () => {
   it("runs the lockfile's package manager and finds the checkout's own smthrs", async () => {
     const root = checkout(ownFiles())
-    expect(await onNode(install(root, "WORKSPACE.ts"))).toEqual({ ok: true, smthrs: join(root, smthrsBin) })
+    expect(await onNode(install(root, "WORKSPACE.ts", place()))).toEqual({ ok: true, smthrs: join(root, smthrsBin) })
     expect(existsSync(join(root, "node_modules/@smthrs/targets/package.json"))).toBe(true)
   })
 
@@ -79,7 +87,7 @@ describe("install", { timeout: 300_000 }, () => {
       ) => [name.startsWith(".git") ? name : `.smithers/${name}`, content])
     )
     const root = checkout(files)
-    expect(await onNode(install(root, ".smithers/WORKSPACE.ts"))).toEqual({
+    expect(await onNode(install(root, ".smithers/WORKSPACE.ts", place()))).toEqual({
       ok: true,
       smthrs: join(root, ".smithers", smthrsBin)
     })
@@ -87,7 +95,7 @@ describe("install", { timeout: 300_000 }, () => {
 
   it("reports the command that failed, and where", async () => {
     const root = checkout({ ...ownFiles(), "tools/install.mjs": brokenInstall })
-    expect(await onNode(install(root, "WORKSPACE.ts"))).toEqual({
+    expect(await onNode(install(root, "WORKSPACE.ts", place()))).toEqual({
       ok: false,
       reason: "npm ci --no-audit --no-fund exited 1 in the repository root"
     })
@@ -95,7 +103,7 @@ describe("install", { timeout: 300_000 }, () => {
 
   it("reports a package manager that cannot be started", async () => {
     const root = checkout(ownFiles())
-    expect(await onNode(Effect.provide(install(root, "WORKSPACE.ts"), cannotStart("npm")))).toEqual({
+    expect(await onNode(Effect.provide(install(root, "WORKSPACE.ts", place()), cannotStart("npm")))).toEqual({
       ok: false,
       reason: "npm ci --no-audit --no-fund exited 127 in the repository root"
     })
@@ -105,7 +113,7 @@ describe("install", { timeout: 300_000 }, () => {
     const { "package-lock.json": _lockfile, ...unlocked } = ownFiles()
     for (const files of [unlocked, { "package-lock.json": "{}" }, { "README.md": "empty\n" }]) {
       const root = checkout(files)
-      expect(await onNode(install(root, ".smithers/WORKSPACE.ts"))).toEqual({
+      expect(await onNode(install(root, ".smithers/WORKSPACE.ts", place()))).toEqual({
         ok: false,
         reason: noSmthrs([".smithers", ""])
       })
@@ -115,7 +123,7 @@ describe("install", { timeout: 300_000 }, () => {
 
   it("finds no smthrs when the file system cannot say it is there", async () => {
     const root = checkout(ownFiles())
-    expect(await onNode(Effect.provide(install(root, "WORKSPACE.ts"), noExists))).toEqual({
+    expect(await onNode(Effect.provide(install(root, "WORKSPACE.ts", place()), noExists))).toEqual({
       ok: false,
       reason: noSmthrs([""])
     })

@@ -26,7 +26,9 @@ export const jumping = <A, E, R>(moment: "prepare" | "checkout", work: A!E!R) =>
     sleep: (duration) => live.sleep(duration)
   }
   const processes = makeSpawner((process) => {
-    const checkout = process._tag === "StandardCommand" && process.command === "git" && process.args[0] === "checkout"
+    // On a copy a step has written, git runs in the jail, so `git checkout` is looked for among a command's words.
+    const words = process._tag === "StandardCommand" ? [process.command, ...process.args.map(String)] : []
+    const checkout = words[words.indexOf("git") + 1] === "checkout"
     if (moment === "checkout" && checkout) ahead += hour
     return real.spawn(process)
   })

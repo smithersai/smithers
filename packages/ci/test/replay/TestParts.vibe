@@ -9,6 +9,7 @@ import type { Row, Score } from "../../src/contract/Selection.ts"
 import { path as targetMapPath } from "../../src/contract/TargetMap.ts"
 import { Options } from "../../src/replay/index.ts"
 import { linkTargets, smthrs } from "./fixture.ts"
+import { unconfined } from "./place.ts"
 
 const name = (step: Step, variant: number): string => `${step.id}_${variant}`
 
@@ -138,11 +139,15 @@ export const parts = (first: string): ReplayParts<FileSystem.FileSystem | Path.P
   score: scoreKeeping(first)
 })
 
-/** One rerun keeps the tests quick; the ten-rerun limit has its own test. */
+/**
+ * One rerun keeps the tests quick; the ten-rerun limit has its own test. These tests read what a step wrote
+ * outside its copy, so the steps run with no jail; `Jail.test.ts` runs them in one.
+ */
 export const options = Layer.succeed(Options, {
   smthrs: [smthrs],
   reruns: 1,
-  prepare: (directory) => sync(() => linkTargets(directory))
+  prepare: (directory) => sync(() => linkTargets(directory)),
+  confine: unconfined
 })
 
 const denied = (method: string) =>
@@ -154,11 +159,15 @@ export const noTemporaryDirectories = Layer.effect(FileSystem.FileSystem, effect
   return { ...real, makeTempDirectoryScoped: () => Effect.fail(denied("makeTempDirectoryScoped")) }
 })
 
-/** The real processes, except that one git command fails as git does on a damaged object store. */
+/**
+ * The real processes, except that one git command fails as git does on a damaged object store. On a copy a step
+ * has written, git runs in the jail, so the words of a command are looked at wherever git is among them.
+ */
 export const gitFails = (subcommand: string) => Layer.effect(ChildProcessSpawner, effect {
   const real = try ChildProcessSpawner
+  const runs = (words: ReadonlyArray<string>): boolean => words[words.indexOf("git") + 1] === subcommand
   return makeSpawner((process) =>
-    process._tag === "StandardCommand" && process.command === "git" && process.args[0] === subcommand
+    process._tag === "StandardCommand" && runs([process.command, ...process.args.map(String)])
       ? real.spawn(ChildProcess.make("sh", ["-c", "echo 'fatal: bad object' >&2; exit 128"]))
       : real.spawn(process)
   )
@@ -168,4 +177,14 @@ export const gitFails = (subcommand: string) => Layer.effect(ChildProcessSpawner
 export const noWrites = Layer.effect(FileSystem.FileSystem, effect {
   const real = try FileSystem.FileSystem
   return { ...real, writeFileString: () => Effect.fail(denied("writeFileString")) }
+})
+
+/** The real file system, except that writing a generated workspace file is refused. */
+export const noGeneratedWrites = Layer.effect(FileSystem.FileSystem, effect {
+  const real = try FileSystem.FileSystem
+  return {
+    ...real,
+    writeFileString: (path: string, data: string) =>
+      path.endsWith("WORKSPACE.ts") ? Effect.fail(denied("writeFileString")) : real.writeFileString(path, data)
+  }
 })

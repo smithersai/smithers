@@ -9,6 +9,7 @@ import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { compiledCode, Options, run } from "../../src/replay/index.ts"
 import { job, linkTargets, makeEmptyDirectory, makeSmallRepository, smthrs } from "./fixture.ts"
+import { unconfined } from "./place.ts"
 import { parts } from "./TestParts.vibe"
 import { hour, jumping } from "./WallClock.vibe"
 
@@ -39,10 +40,12 @@ describe("a start of smthrs in a copy", () => {
     // The step passes only when it is not told: in the baseline, and as a target.
     const root = makeSmallRepository([job("a", `test -z "$NODE_COMPILE_CACHE"`)])
     created.push(root)
+    // The script writes outside every copy, so the runs have no jail.
     const host = Layer.succeed(Options, {
       smthrs: [command],
       reruns: 1,
-      prepare: (directory: string) => Effect.sync(() => linkTargets(directory))
+      prepare: (directory: string) => Effect.sync(() => linkTargets(directory)),
+      confine: unconfined
     })
     const report = await Effect.runPromise(
       run({ root, commits: 1, modes: ["normal", "fast"] }, parts("none") as unknown as ReplayParts<never>).pipe(

@@ -161,13 +161,21 @@ const outputsOf = (target: StepTarget, narrowed: boolean): ReadonlyArray<string>
   ]
 }
 
+// The variables of the machine a target passes to its step: the ones its step names, and `passed`, the ones every
+// target passes. A variable the step sets itself keeps the step's value.
+const inheritedBy = (target: StepTarget, passed: ReadonlyArray<string>): ReadonlyArray<string> =>
+  [...new Set([...target.inheritEnv, ...passed.filter((name) => !Object.hasOwn(target.env, name))])]
+    .sort((left, right) => left < right ? -1 : 1)
+
 const renderTarget = (
   target: StepTarget,
   index: number,
   variables: ReadonlyMap<string, string>,
-  narrowed: boolean
+  narrowed: boolean,
+  passed: ReadonlyArray<string>
 ): string => {
   const data = [...filesOf(target, narrowed), ...target.dependencies.map((label) => variables.get(label) as string)]
+  const inheritEnv = inheritedBy(target, passed)
   const fields = [
     // Before a sealed step's target, the step also checks that it left that target's files alone. When no target
     // declares its inputs, none is sealed and nothing is checked.
@@ -179,7 +187,7 @@ const renderTarget = (
       : [`tools: [${target.tools.map((tool) => `S.Host.bin(${text(tool)})`).join(", ")}]`]),
     ...(target.rule === "setup" ? outputsOf(target, narrowed) : []),
     ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(target.env)}`]),
-    ...(target.inheritEnv.length === 0 ? [] : [`inheritEnv: ${JSON.stringify(target.inheritEnv)}`]),
+    ...(inheritEnv.length === 0 ? [] : [`inheritEnv: ${JSON.stringify(inheritEnv)}`]),
     ...(target.host === undefined ? [] : [`hosts: [${text(target.host)}]`]),
     // A target that declares what it reads is held to it: a read outside its
     // inputs fails the target instead of passing on a stale result. The
@@ -199,7 +207,7 @@ const renderTarget = (
   ].join("\n")
 }
 
-const renderPackage = (plan: StepPlan, narrowed: boolean): string => {
+const renderPackage = (plan: StepPlan, narrowed: boolean, passed: ReadonlyArray<string>): string => {
   const shared = plan.targets.length > sharedInputsAbove
   const variables = new Map(plan.targets.map((target, index) => [target.label, `step${index}`]))
   return [
@@ -212,7 +220,7 @@ const renderPackage = (plan: StepPlan, narrowed: boolean): string => {
     comment("A setup target always runs. It declares files only when its step names what it reads and writes."),
     `const repository = ${shared ? `S.Filegroup({ srcs: [S.glob("//**")] })` : `S.glob("//**")`}`,
     ``,
-    ...plan.targets.map((target, index) => renderTarget(target, index, variables, narrowed)),
+    ...plan.targets.map((target, index) => renderTarget(target, index, variables, narrowed, passed)),
     `export const Package = S.Package({`,
     `  targets: {`,
     [
@@ -445,7 +453,9 @@ const renderNotes = (plan: StepPlan): string =>
 /**
  * Renders the workspace, the targets, the target map and the workflow. The
  * workflow shares results through the cache its repository names in the
- * `SMITHERS_CACHE_URL` variable, or else through `options.cache`.
+ * `SMITHERS_CACHE_URL` variable, or else through `options.cache`. With
+ * `options.inheritEnv`, every target passes those variables of the machine to
+ * its step.
  *
  * A target declares its step's inputs and runs confined to them. A step that
  * names none declares the whole repository and is observed: it runs again
@@ -463,9 +473,10 @@ export const renderFiles = (
   options?: GenerateOptions
 ): Result.Result<ReadonlyArray<GeneratedFile>, Failure> => {
   const fits = (content: string): boolean => new TextEncoder().encode(content).length <= maximumPackageBytes
-  const narrowed = renderPackage(plan, true)
+  const passed = options?.inheritEnv ?? []
+  const narrowed = renderPackage(plan, true, passed)
   const held = fits(narrowed)
-  const targets = held ? narrowed : renderPackage(plan, false)
+  const targets = held ? narrowed : renderPackage(plan, false, passed)
   if (!fits(targets)) {
     return Result.fail({
       code: "unsupported",

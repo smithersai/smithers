@@ -18,7 +18,8 @@ import {
   run
 } from "../../src/native/index.ts"
 import { noPushUrl } from "../../src/replay/Environment.ts"
-import { Options, Progress } from "../../src/replay/index.ts"
+import { Options, type Probe, Progress } from "../../src/replay/index.ts"
+import { unconfined } from "../replay/place.ts"
 import {
   fakeSmthrs,
   installScript,
@@ -52,10 +53,12 @@ const partsFor = (first: string): Parts => ({
 })
 
 const said: Array<string> = []
-const host = Layer.mergeAll(
-  Layer.succeed(Options, { smthrs: ["never-used"], reruns: 1, prepare: () => Effect.void }),
-  Layer.succeed(Progress, { say: (line) => Effect.sync(() => void said.push(line)) })
-)
+const hostWith = (confine: { readonly confine?: () => Probe }) =>
+  Layer.mergeAll(
+    Layer.succeed(Options, { smthrs: ["never-used"], reruns: 1, prepare: () => Effect.void, ...confine }),
+    Layer.succeed(Progress, { say: (line) => Effect.sync(() => void said.push(line)) })
+  )
+const host = hostWith({})
 
 const request = (root: string, extra: Partial<ReplayRequest> = {}): ReplayRequest => ({
   root,
@@ -64,8 +67,12 @@ const request = (root: string, extra: Partial<ReplayRequest> = {}): ReplayReques
   ...extra
 })
 
-const onNode = <A, E>(work: Effect.Effect<A, E, Host | Layer.Success<typeof host>>): Promise<A> =>
-  Effect.runPromise(Effect.provide(work, Layer.provideMerge(host, NodeServices.layer)) as Effect.Effect<A, E>)
+const onNodeWith =
+  (chosen: typeof host) => <A, E>(work: Effect.Effect<A, E, Host | Layer.Success<typeof host>>): Promise<A> =>
+    Effect.runPromise(Effect.provide(work, Layer.provideMerge(chosen, NodeServices.layer)) as Effect.Effect<A, E>)
+
+/** On this machine as it is: where it can jail a run, the runs are jailed. */
+const onNode = onNodeWith(host)
 
 const failureOf = (attempt: Promise<unknown>): Promise<Failure> =>
   attempt.then(
@@ -184,6 +191,10 @@ describe("replaying six real commits of a repository's own targets", () => {
 
 // Each test runs real processes; a loaded machine must not turn that into a failure.
 describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
+  // These repositories bring a `smthrs` the test wrote in the temporary directory, and the test reads what a run
+  // wrote there. A jailed run has a temporary directory of its own, so these run with no jail.
+  const onNode = onNodeWith(hostWith({ confine: unconfined }))
+
   /** A `smthrs` that records the shared-cache variables it was given and its command line, then runs the real one. */
   const recordingSmthrs = () => {
     const calls = keep(temporary("calls"))

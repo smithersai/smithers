@@ -345,7 +345,9 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     expect(report.notReplayed).toBeUndefined()
     expect(await main(["apply", "--commits", "1"], root, environment)).toBe(exitCodes.usage)
     expect(changed(before, snapshot(root))).toEqual([])
-  }, 240_000)
+    // A step starts with a home of its own, so on a machine with Zig the first `zig build` fills Zig's cache
+    // before it looks for a build file: two minutes of work on a busy machine.
+  }, 900_000)
 
   it("provides the select part's services, with no judge configured", async () => {
     const root = repo()

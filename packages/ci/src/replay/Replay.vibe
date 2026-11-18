@@ -25,7 +25,9 @@ import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
 import { check } from "../apply/index.ts"
 import { refusal as ownWorkspace } from "../native/Workspace.ts"
-import { noPushUrl, stepEnvironment, thisHost } from "./Environment.ts"
+import { type Confined, confine, held } from "./Confine.vibe"
+import { noPushUrl, placeEnvironment, pushRefusal, searchPath, stepEnvironment, thisHost } from "./Environment.ts"
+import { probe, type Probe } from "./Jail.ts"
 import {
   addRerun,
   blocked,
@@ -89,7 +91,8 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
  * linking the package the generated files import. A baseline checkout is
  * never prepared: it is what a fresh clone is. `stepTimeout` is how long one
  * baseline step may run; without it the limit is the one generated targets
- * have (`Inventory.stepTimeoutHours`).
+ * have (`Inventory.stepTimeoutHours`). `confine` says whether this machine can
+ * hold a step in a file-system jail; without it the machine is asked.
  *
  * @category services
  * @since 0.1.0
@@ -99,6 +102,7 @@ export service Options {
   readonly reruns: number
   readonly prepare: (directory: string) => void!Failure
   readonly stepTimeout?: Duration.Input | undefined
+  readonly confine?: (() => Probe) | undefined
   static readonly defaultValue = () => ({
     smthrs: ["smthrs"] as const,
     reruns: maxReruns,
@@ -161,8 +165,8 @@ const describe = (cause: { readonly message: string }): string => cause.message
 
 /**
  * Runs a command to its end, with end of file on its standard input. `env` is added to this process's environment.
- * With `step`, the command is a CI step: `env` is its whole environment, and it is stopped, and has failed, when it
- * runs longer than the limit.
+ * With `step`, the command is a past commit's: `env` is its whole environment, and with a limit it is stopped, and
+ * has failed, when it runs longer.
  */
 effect function exec(
   command: string,
@@ -171,7 +175,7 @@ effect function exec(
   env: Readonly<Record<string, string | undefined>>,
   limit: number,
   output: (handle: ChildProcessHandle) => Stream.Stream<Uint8Array, PlatformError.PlatformError> = (handle) => handle.all,
-  step: { readonly limit: Duration.Input } | undefined = undefined
+  step: { readonly limit?: Duration.Input } | undefined = undefined
 ) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
@@ -188,7 +192,7 @@ effect function exec(
     const reader = fork (output(handle)
       |> Stream.decodeText(%)
       |> Stream.runForEach(%, (chunk: string) => Ref.update(kept, (text) => (text + chunk).slice(-limit))))
-    const waited = step === undefined
+    const waited = step?.limit === undefined
       ? Option.some(try handle.exitCode)
       : try timeoutOption(handle.exitCode, step.limit)
     // Leaving the scope stops a step that is still running.
@@ -203,8 +207,15 @@ effect function exec(
   }
 }
 
-effect function git(cwd: string, args: ReadonlyArray<string>) {
-  const output = try exec("git", args, cwd, {}, Number.POSITIVE_INFINITY)
+/**
+ * Runs git. With `place`, `cwd` is a copy a step may have written, hooks and configuration included, so git runs
+ * there as a step does: in the jail, with a step's environment.
+ */
+effect function git(cwd: string, args: ReadonlyArray<string>, place: Confined | undefined = undefined) {
+  const [command, ...rest] = place === undefined ? ["git", ...args] : held(place, [cwd], ["git", ...args])
+  const output = place === undefined
+    ? try exec(command, rest, cwd, {}, Number.POSITIVE_INFINITY)
+    : try exec(command, rest, cwd, stepEnvironment({}, place), Number.POSITIVE_INFINITY, undefined, {})
   if (output.exitCode !== 0) {
     throw failure("command-failed", `git ${args[0]} failed: ${output.text.slice(-outputLimit)}`)
   }
@@ -213,9 +224,9 @@ effect function git(cwd: string, args: ReadonlyArray<string>) {
 
 const lines = (text: string): ReadonlyArray<string> => text.split("\n").filter((line) => line !== "")
 
-effect function checkout(copy: string, commit: string) {
-  try git(copy, ["checkout", "--quiet", "--force", "--detach", commit])
-  try git(copy, ["clean", "-ffdxq", "-e", cacheDirectory])
+effect function checkout(copy: string, commit: string, place: Confined) {
+  try git(copy, ["checkout", "--quiet", "--force", "--detach", commit], place)
+  try git(copy, ["clean", "-ffdxq", "-e", cacheDirectory], place)
 }
 
 /**
@@ -288,7 +299,11 @@ effect function measure<R>(
  * shared tree (`Inventory.treeOf`: the recipes of a Justfile, the scripts of a
  * `package.json`) run one after another in one checkout, and the first failure
  * stops them. A baseline step gets a target's environment and time limit, and
- * its checkout holds nothing a fresh clone does not. Generated targets also
+ * its checkout holds nothing a fresh clone does not. Every step, baseline or
+ * target, gets the replay's own home and temporary directory, a `git` that
+ * refuses to push, and, where the machine can hold one, the same file-system
+ * jail: it can write its checkout, that home and that directory, and cannot
+ * read the person's credentials. Generated targets also
  * stay within the target map's `maxJobs`. Commits run oldest
  * first and the normal and fast copies keep their caches between commits, so
  * the first commit starts cold.
@@ -316,6 +331,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-replay-" }), "could not make a directory")
     const source = path.join(work, "source")
     const root = path.resolve(request.root)
+    const place = try orFail(
+      confine(work, options.confine ?? probe, progress.say, [...options.smthrs, ...searchPath()]),
+      "could not make the steps' home"
+    )
+    // Where `smthrs` writes its run records: the one place it can write that a step run on its own cannot.
+    const records = path.join(work, "records")
+    try orFail(fs.makeDirectory(records), "could not make a directory")
     const cloned = try exec("git", ["clone", "--quiet", "--no-checkout", root, source], work, {}, outputLimit)
     if (cloned.exitCode !== 0) throw failure("not-a-repository", `${root} is not a git repository`)
     const head = try exec("git", ["rev-parse", "--verify", "--quiet", "HEAD"], source, {}, outputLimit)
@@ -331,7 +353,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const noPush = ["--config", `remote.origin.pushurl=${noPushUrl}`]
       try git(work, ["clone", "--quiet", "--shared", "--no-checkout", ...noPush, source, copy])
       if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", withoutCredentials(origin.text)])
-      try checkout(copy, commit)
+      try checkout(copy, commit, place)
     }
 
     effect function copyAt(name: string, commit: string) {
@@ -352,7 +374,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       if (why !== undefined) throw failure("unsupported", why)
       const narrowed = ci(inventory)
       const split = parts.decompose === undefined ? narrowed : try parts.decompose(normalCopy, narrowed)
-      const generated = try parts.files(split, { cache: request.cache })
+      // A target passes on what tells git to refuse a push, as the baseline's step is told.
+      const generated = try parts.files(split, { cache: request.cache, inheritEnv: Object.keys(pushRefusal) })
       // A commit can hold a link, or a file its owner wrote, where a generated file goes: nothing is written then.
       check(normalCopy, generated) catch effect (cause) => {
         throw failure("unsupported", cause.message)
@@ -393,20 +416,28 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       try options.prepare(copy)
       // Everything untracked now is the replay's own: the generated files, the cache, what `prepare` linked. Listed in
       // the copy's exclude file, it leaves `git status` as clean as in the baseline's fresh clone.
-      const untracked = try git(copy, ["ls-files", "--others", "--directory", "--exclude-per-directory=.gitignore", "-z"])
+      const listed = ["ls-files", "--others", "--directory", "--exclude-per-directory=.gitignore", "-z"]
+      const untracked = try git(copy, listed, place)
       const info = path.join(copy, ".git", "info")
       try orFail(fs.makeDirectory(info, { recursive: true }), "could not write .git/info/exclude")
       try orFail(fs.writeFileString(path.join(info, "exclude"), excludeLines(untracked)), "could not write .git/info/exclude")
     }
 
     let runs = 0
-    const cacheEnv = request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }
-    /** What a start of `smthrs` in `copy` adds to this process's environment. */
-    const startEnv = (copy: string) => ({ ...cacheEnv, NODE_COMPILE_CACHE: path.join(copy, compiledCode) })
+    /**
+     * What a start of `smthrs` in `copy` adds to this process's environment, and so hands on to a target: the
+     * steps' home and temporary directory, and the push refusal.
+     */
+    const startEnv = (copy: string) => ({
+      ...(request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }),
+      NODE_COMPILE_CACHE: path.join(copy, compiledCode),
+      ...placeEnvironment(place),
+      ...pushRefusal
+    })
 
     effect function planOf(copy: string, own: Prepared) {
-      const [command, ...prefix] = options.smthrs
-      const args = [...prefix, "ci", ...own.labels, "--plan", "--format", "json", "--workspace", copy]
+      const plan = ["ci", ...own.labels, "--plan", "--format", "json", "--workspace", copy]
+      const [command, ...args] = held(place, [copy], [...options.smthrs, ...plan])
       const planned = try exec(command, args, copy, startEnv(copy), Number.POSITIVE_INFINITY, (handle) => handle.stdout)
       const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
         throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
@@ -418,10 +449,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const selected = targets ?? own.labels
       if (selected.length === 0) return []
       runs += 1
-      const file = path.join(work, `run-${runs}.json`)
-      const [command, ...prefix] = options.smthrs
-      const args = [
-        ...prefix,
+      const file = path.join(records, `run-${runs}.json`)
+      const [command, ...args] = held(place, [copy, records], [
+        ...options.smthrs,
         "ci",
         ...selected,
         "--workspace",
@@ -433,7 +463,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         "--ui",
         "plain",
         ...(own.jobs === undefined ? [] : ["--jobs", String(own.jobs)])
-      ]
+      ])
       const output = try exec(command, args, copy, startEnv(copy), outputLimit)
       const unreadable = () => failure("command-failed", `smthrs ci wrote no run record: ${output.text}`)
       const text = fs.readFileString(file) catch effect () => {
@@ -464,9 +494,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             continue
           }
           const start = try Clock.currentTimeMillis
-          const argv = [...shell.slice(1), step.command]
-          const environment = stepEnvironment(step.env)
-          const output = exec(shell[0], argv, path.join(copy, step.cwd), environment, outputLimit, undefined, {
+          const [program, ...argv] = held(place, [copy], [...shell, step.command])
+          const environment = stepEnvironment(step.env, place)
+          const output = exec(program, argv, path.join(copy, step.cwd), environment, outputLimit, undefined, {
             limit: stepLimit
           }) catch () => noStart
           const durationMs = (try Clock.currentTimeMillis) - start
@@ -517,7 +547,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * because none of it runs here, is not a failed replay: the reason is kept and the commit is listed.
      */
     effect function preparedAt(commit: string) {
-      try checkout(normalCopy, commit)
+      try checkout(normalCopy, commit, place)
       return prepared() catch effect (cause) => {
         if (cause.code !== "unsupported" && cause.code !== "invalid-document") throw cause
         return { reason: cause.message }
@@ -538,7 +568,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const baseRecord = recordOf(base.results, commit, base.wallMs)
       try progress.say(`${at} normal`)
       const normal = try measure(
-        checkout(normalCopy, commit),
+        checkout(normalCopy, commit, place),
         equip(normalCopy, own),
         smithers(normalCopy, own),
         undefined,
@@ -555,7 +585,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const labels = normal.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
         try progress.say(`${at} fast`)
         const fast = try measure(
-          checkout(fastCopy, commit),
+          checkout(fastCopy, commit, place),
           equip(fastCopy, own),
           smithers(fastCopy, own),
           labels,
