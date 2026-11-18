@@ -11,7 +11,7 @@ import { type Failure, type GeneratedFile, writtenFiles } from "../../src/contra
 import * as TargetMap from "../../src/contract/TargetMap.ts"
 import { generatedMark } from "../../src/native/index.ts"
 import { unreadable } from "../native/support.vibe"
-import { generated, inProcess, noRemove, noStat } from "./inProcess.vibe"
+import { generated, inProcess, noBytes, noRemove, noStat } from "./inProcess.vibe"
 import { parts } from "./parts.vibe"
 import {
   bin,
@@ -100,6 +100,108 @@ describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
       const outcome = await exec(["apply", "--cache", "https://cache.example.invalid/teams/@ci?as=a@b"], root)
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
       expect(read(`${root}/${workflow}`)).toContain("https://cache.example.invalid/teams/@ci?as=a@b")
+    })
+  })
+
+  describe.concurrent("--check", () => {
+    const missing = [
+      `${workflow} is missing: run smithers-ci apply`,
+      ".smithers/WORKSPACE.smithers is missing: run smithers-ci apply",
+      ".smithers/.npmignore is missing: run smithers-ci apply",
+      ".gitignore lacks .flows: run smithers-ci apply"
+    ]
+
+    it("names each file apply would write, exits 1 and writes nothing", async () => {
+      const root = repo()
+      const before = snapshot(root)
+      expect(await exec(["apply", "--check"], root)).toEqual({
+        code: exitCodes.mismatch,
+        stdout: missing.map((line) => `${line}\n`).join(""),
+        stderr: ""
+      })
+      expect(changed(before, snapshot(root))).toEqual([])
+    })
+
+    it("exits 0 and writes nothing once apply has written the files, before and after they are committed", async () => {
+      const root = repo()
+      const applied = await exec(["apply"], root)
+      expect(applied.code, applied.stderr).toBe(exitCodes.ok)
+      const before = snapshot(root)
+      const up = { code: exitCodes.ok, stdout: "smithers-ci: the generated files are up to date\n", stderr: "" }
+      expect(await exec(["apply", "--check"], root)).toEqual(up)
+      commit(root, "apply")
+      expect(await exec(["apply", "--check"], root)).toEqual(up)
+      expect(changed(before, snapshot(root)).filter((path) => !path.startsWith(".git/"))).toEqual([])
+    })
+
+    it("names a file edited by hand, one removed, one an earlier smithers-ci left, and a .gitignore that lost the cache", async () => {
+      const root = repo()
+      expect((await exec(["apply"], root)).code).toBe(exitCodes.ok)
+      const edited = `${read(`${root}/.smithers/WORKSPACE.smithers`)}// mine\n`
+      commit(root, "edits", {
+        ".smithers/WORKSPACE.smithers": edited,
+        ".gitignore": "dist\n",
+        "PACKAGE.ts": `${generatedMark} Do not edit.\n`
+      })
+      remove(`${root}/.smithers/.npmignore`)
+      const before = snapshot(root)
+      expect(await exec(["apply", "--check"], root)).toEqual({
+        code: exitCodes.mismatch,
+        stdout: [
+          ".smithers/WORKSPACE.smithers is out of date: run smithers-ci apply",
+          ".smithers/.npmignore is missing: run smithers-ci apply",
+          "PACKAGE.ts is no longer used: run smithers-ci apply",
+          ".gitignore lacks .flows: run smithers-ci apply",
+          ""
+        ].join("\n"),
+        stderr: ""
+      })
+      expect(changed(before, snapshot(root))).toEqual([])
+      // apply makes each of those changes; then there is nothing left to change.
+      expect((await exec(["apply"], root)).code).toBe(exitCodes.ok)
+      expect((await exec(["apply", "--check"], root)).code).toBe(exitCodes.ok)
+      expect(read(`${root}/.gitignore`)).toBe("dist\n.flows\n")
+    })
+
+    it("compares bytes: a byte-order mark or a changed line ending is a change apply would make", async () => {
+      const root = repo()
+      expect((await exec(["apply"], root)).code).toBe(exitCodes.ok)
+      const text = read(`${root}/${workflow}`)
+      writeFileSync(`${root}/${workflow}`, `\uFEFF${text}`)
+      writeFileSync(`${root}/.smithers/.npmignore`, read(`${root}/.smithers/.npmignore`).replaceAll("\n", "\r\n"))
+      const outcome = await exec(["apply", "--check"], root)
+      expect(outcome.code).toBe(exitCodes.mismatch)
+      expect(outcome.stdout).toBe(
+        `${workflow} is out of date: run smithers-ci apply\n.smithers/.npmignore is out of date: run smithers-ci apply\n`
+      )
+    })
+
+    it("refuses as apply does when a file it would replace is not one smithers-ci wrote", async () => {
+      const root = repo()
+      commit(root, "own workflow", { [workflow]: owners })
+      const before = snapshot(root)
+      const refusal = {
+        code: exitCodes.unsupported,
+        stdout: "",
+        stderr: `smithers-ci: generate: ${workflow} was not written by smithers-ci and would be replaced\n`
+      }
+      expect(await exec(["apply", "--check"], root)).toEqual(refusal)
+      expect(await exec(["apply"], root)).toEqual(refusal)
+      expect(changed(before, snapshot(root))).toEqual([])
+    })
+
+    it("compares against the files apply writes for the same cache", async () => {
+      const root = repo()
+      const cache = "https://cache.example.invalid/v1"
+      expect((await exec(["apply", "--cache", cache], root)).code).toBe(exitCodes.ok)
+      expect(await exec(["apply", "--check"], root)).toEqual({
+        code: exitCodes.mismatch,
+        stdout: `${workflow} is out of date: run smithers-ci apply\n`,
+        stderr: ""
+      })
+      expect((await exec(["apply", "--check", "--cache", cache], root)).code).toBe(exitCodes.ok)
+      // The workflow runs the check with the cache it names, so it passes on the files apply wrote.
+      expect(read(`${root}/${workflow}`)).toContain(`smithers-ci apply --check --cache '${cache}'`)
     })
   })
 
@@ -470,6 +572,36 @@ describe.concurrent("what apply checks before it writes", () => {
     expect(await onNode(check(flat, notes))).toMatchObject({
       _tag: "Failure",
       failure: { message: ".smithers is not a directory, so .smithers/ci/NOT-REPRODUCED.md cannot be written" }
+    })
+  })
+
+  it("says what writing the files would change, path by path, in the order apply writes them", async () => {
+    const root = repo()
+    expect(await onNode(check(root, files))).toMatchObject({
+      _tag: "Success",
+      success: {
+        changes: [
+          { path: "PACKAGE.ts", change: "missing" },
+          { path: ".smithers/ci/NOT-REPRODUCED.md", change: "missing" },
+          { path: ".gitignore", change: "ignores" }
+        ]
+      }
+    })
+    for (const file of files) {
+      mkdirSync(join(root, file.path, ".."), { recursive: true })
+      writeFileSync(join(root, file.path), file.content)
+    }
+    writeFileSync(join(root, ".gitignore"), ".flows\n")
+    expect(await onNode(check(root, files))).toMatchObject({ _tag: "Success", success: { changes: [] } })
+    // A generated file whose bytes cannot be read is written again.
+    expect(await onNode(Effect.provide(check(root, files), noBytes))).toMatchObject({
+      _tag: "Success",
+      success: {
+        changes: [{ path: "PACKAGE.ts", change: "differs" }, {
+          path: ".smithers/ci/NOT-REPRODUCED.md",
+          change: "differs"
+        }]
+      }
     })
   })
 

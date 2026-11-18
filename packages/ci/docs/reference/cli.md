@@ -47,6 +47,25 @@ root, `.smithers/WORKSPACE.ts`, `.smithers/ci-targets.json` and
 `smithers-ci` generated, and prints `removed` and the path: what they held is
 in the files it writes now. A second `apply` writes the same bytes.
 
+`apply --check` writes nothing. It works out the same files `apply` would
+write, from the same repository, and compares them byte for byte with the
+files there. It prints one line for each file `apply` would change and exits
+`1`:
+
+```text
+.smithers/WORKSPACE.smithers is out of date: run smithers-ci apply
+.smithers/ci/legs.txt is missing: run smithers-ci apply
+PACKAGE.ts is no longer used: run smithers-ci apply
+.gitignore lacks .flows: run smithers-ci apply
+```
+
+When nothing would change, it prints
+`smithers-ci: the generated files are up to date` and exits `0`. It refuses
+what `apply` refuses, with the same line and exit `3`. Give it the `--cache`
+URL you gave `apply`: the workflow holds that URL, so the files differ without
+it. The workflow `apply` writes runs this check as its first step; see
+[When your repository changes](../getting-started/quickstart.md#when-your-repository-changes).
+
 ## Flags
 
 | Flag           | Commands                                                     | Default  | What it does                                                                                                                                      |
@@ -59,6 +78,7 @@ in the files it writes now. A second `apply` writes the same bytes.
 | `--out`        | `smithers-ci`, `smithers-ci replay`                          | none     | Also write the report as an HTML file here.                                                                                                       |
 | `--json`       | `smithers-ci`, `smithers-ci inventory`, `smithers-ci replay` | `false`  | Print the document as JSON.                                                                                                                       |
 | `--allow-root` | `smithers-ci`, `smithers-ci replay`                          | `false`  | Replay even when run as root, where a past commit's commands could change this machine.                                                           |
+| `--check`      | `smithers-ci apply`                                          | `false`  | Write nothing; name each file apply would change, and exit 1 if there is one.                                                                     |
 
 Of the commits `--commits` counts, one that had no CI the program can run is not
 replayed; the report lists it with the reason.
@@ -110,13 +130,13 @@ A workflow that does not parse is listed there and nowhere else.
 
 ## Exit codes
 
-| Code | Name          | Meaning                                                                                                                                                                 |
-| ---- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | `ok`          | The command finished.                                                                                                                                                   |
-| `1`  | `mismatch`    | A replayed target's verdict in a mode differs from its baseline verdict. A flaky target, which passed on a rerun, agrees with a pass and does not make the exit code 1. |
-| `2`  | `usage`       | The command line was wrong: an unknown command or flag, a bad value, or a replay as root without --allow-root.                                                          |
-| `3`  | `unsupported` | The repository uses something Smithers CI cannot run, or its CI does not pass on this machine.                                                                          |
-| `4`  | `failed`      | A step of the command could not finish.                                                                                                                                 |
+| Code | Name          | Meaning                                                                                                                                                                                                                       |
+| ---- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | `ok`          | The command finished.                                                                                                                                                                                                         |
+| `1`  | `mismatch`    | A replayed target's verdict in a mode differs from its baseline verdict, or `apply --check` found a file `apply` would change. A flaky target, which passed on a rerun, agrees with a pass and does not make the exit code 1. |
+| `2`  | `usage`       | The command line was wrong: an unknown command or flag, a bad value, or a replay as root without --allow-root.                                                                                                                |
+| `3`  | `unsupported` | The repository uses something Smithers CI cannot run, or its CI does not pass on this machine.                                                                                                                                |
+| `4`  | `failed`      | A step of the command could not finish.                                                                                                                                                                                       |
 
 Exit `3` also means the repository's CI does not pass on this machine: no step
 passed in the baseline of any replayed commit. The program then prints no

@@ -69,7 +69,8 @@ const sample = (flag: keyof typeof flags, out: string): ReadonlyArray<string> =>
     targets: ["--targets", "//packages/ci/..."],
     out: ["--out", out],
     json: ["--json"],
-    "allow-root": ["--allow-root"]
+    "allow-root": ["--allow-root"],
+    check: ["--check"]
   })[flag]
 
 const requestOf = (stderr: string): unknown => JSON.parse(/replay request: (.*)/.exec(stderr)?.[1] ?? "null")
@@ -85,7 +86,11 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       const help = await exec(["--help"], repo())
       expect(help.code).toBe(exitCodes.ok)
       for (const name of ["apply", "inventory", "replay"]) expect(help.stdout).toContain(name)
-      for (const flag of flagNames) expect(help.stdout).toContain(`--${flag}`)
+      // The default command's help lists its own flags; a flag of one command alone is in that command's help.
+      for (const flag of flagNames) {
+        const on: ReadonlyArray<string> = flags[flag].on
+        expect(help.stdout.includes(`--${flag}`), `--${flag}`).toBe(on.includes(""))
+      }
       expect(help.stdout).toContain("Writes nothing to the repository.")
       expect(help.stdout).toContain("How many past commits to replay. Default: 20.")
       expect(help.stdout).not.toContain("--version")
@@ -111,7 +116,8 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
         it(`${accepted ? "accepts" : "refuses with exit 2"} --${flag} on ${where}`, async () => {
           const args = [...(command === "" ? [] : [command]), ...sample(flag, `${scratch()}/report.html`)]
           const outcome = await exec(args, repo())
-          if (accepted) expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+          // A fresh repository has none of the generated files, so the check finds them missing.
+          if (accepted) expect(outcome.code, outcome.stderr).toBe(flag === "check" ? exitCodes.mismatch : exitCodes.ok)
           else {
             expect(outcome.code).toBe(exitCodes.usage)
             expect(outcome.stdout).toBe("")

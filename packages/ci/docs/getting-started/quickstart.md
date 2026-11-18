@@ -124,13 +124,13 @@ says fast mode was not measured and why, and the command exits `4`.
 
 ## Exit codes
 
-| Code | Meaning                                                                                        |
-| ---- | ---------------------------------------------------------------------------------------------- |
-| `0`  | The run finished.                                                                              |
-| `1`  | A target's pass or fail in a mode differs from the baseline.                                   |
-| `2`  | The command line was wrong.                                                                    |
-| `3`  | The repository uses something Smithers CI cannot run, or its CI does not pass on this machine. |
-| `4`  | A step of the command could not finish.                                                        |
+| Code | Meaning                                                                                                            |
+| ---- | ------------------------------------------------------------------------------------------------------------------ |
+| `0`  | The run finished.                                                                                                  |
+| `1`  | A target's pass or fail in a mode differs from the baseline, or `apply --check` found a file `apply` would change. |
+| `2`  | The command line was wrong.                                                                                        |
+| `3`  | The repository uses something Smithers CI cannot run, or its CI does not pass on this machine.                     |
+| `4`  | A step of the command could not finish.                                                                            |
 
 Code `3` also means your CI does not pass on this machine: no step passed at
 any replayed commit, so there is nothing to measure. The program prints no
@@ -181,6 +181,35 @@ it as written.
 
 `apply` never replaces a file it did not generate: it names the file and writes
 nothing. Review the files as you would any change, and commit them.
+
+### When your repository changes
+
+The generated files list your packages and the files each step of your CI
+reads. A new package, or a new test file outside the files a step lists, is in
+none of them until you run `apply` again. So the files are generated again
+whenever the repository's shape changes, and the workflow makes sure of it:
+its first step after setting up Node runs `smithers-ci apply --check`. That
+command writes nothing; it compares the files in the commit with what `apply`
+would write for that commit. When they differ, the step fails before any of
+your CI runs, and names each file and the command that fixes it:
+
+```text
+.smithers/WORKSPACE.smithers is out of date: run smithers-ci apply
+```
+
+Run `bunx smithers-ci apply`, then commit the files it changed. A pull request
+that adds a package fails this way until then, so a test in the new package is
+never left out of a run that passes. A generated file you edit by hand fails
+the same way: `apply` would write it back. Run the check yourself before you
+push:
+
+```sh
+bunx smithers-ci apply --check
+```
+
+It exits `0` and prints `smithers-ci: the generated files are up to date` when
+`apply` would change nothing. If you gave `apply` a `--cache` URL, give the
+check the same one; the workflow does.
 
 ### When one of your tools reads a generated file
 

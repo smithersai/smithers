@@ -99,6 +99,19 @@ export const noStat = Layer.effect(FileSystem.FileSystem, effect {
 })
 
 /**
+ * The real file system, except that a file's bytes cannot be read, though its text can.
+ */
+export const noBytes = Layer.effect(FileSystem.FileSystem, effect {
+  const fs = try FileSystem.FileSystem
+  const blind: FileSystem.FileSystem = {
+    ...fs,
+    readFile: (path: string) =>
+      Effect.fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "readFile", pathOrDescriptor: path }))
+  }
+  return blind
+})
+
+/**
  * What the parts on `main` generate for the repository at `root`, for the shared cache named.
  */
 export async function generated(

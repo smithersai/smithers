@@ -526,7 +526,7 @@ jobs:
       ])
       // The workflow's own command, as a runner would run it for each machine.
       const command = generated.jobs.ci.steps.flatMap((step) =>
-        step.run?.startsWith("npx") ? [step.run] : []
+        step.run?.includes(" smthrs ci ") ? [step.run] : []
       )[0] as string
       const selection = /\$\(sed .*\)/.exec(command)?.[0] as string
       const runLeg = (leg: Record<string, string>, name: string) => {

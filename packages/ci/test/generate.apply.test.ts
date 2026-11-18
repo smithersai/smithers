@@ -63,8 +63,13 @@ describe("the real program, applied twice", () => {
       const inventory = run(root, process.execPath, [program, "inventory", "--json"])
       expect(inventory.output).toContain(`"source": ${JSON.stringify(workflowPath)}`)
       expect(apply()).toEqual(first)
-      // The repository pins no Node, so the workflow installs its own, before the repository's tools.
-      expect(first[workflowPath]).toContain(`node-version: "24"\n      - uses: extractions/setup-just@v3\n`)
+      // The workflow installs the Node smithers-ci runs on and checks the generated files, before the repository's
+      // tools. The files apply wrote twice pass that check.
+      expect(first[workflowPath]).toContain(
+        `node-version: "24"\n      - name: Generated files are up to date\n        run: npx --yes --package=smithers-ci@`
+      )
+      expect(first[workflowPath]).toMatch(/ apply --check\n      - uses: extractions\/setup-just@v3\n/)
+      expect(run(root, process.execPath, [program, "apply", "--check"]).status).toBe(0)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

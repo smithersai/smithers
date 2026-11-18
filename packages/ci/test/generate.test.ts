@@ -199,6 +199,32 @@ describe("files", () => {
     for (const workflow of [plain, cached]) expect(workflow).not.toMatch(/TOKEN: (?!\$\{\{ )/)
   })
 
+  it("checks first that the generated files are what apply writes, with the cache apply was given", () => {
+    const document = inventory([job("a", [step("a:1", "x", { inputs: ["src/**"], from: "a:1" })])], {
+      toolchains: [{ name: "pnpm", source: "package.json", version: "9.0.0" }]
+    })
+    const stepsOf = (workflow: string) =>
+      (parseYaml(workflow) as { jobs: { ci: { steps: ReadonlyArray<Record<string, unknown>> } } }).jobs.ci.steps
+    const check = `npx --yes --package=smithers-ci@${releaseVersion} smithers-ci apply --check`
+    // After the checkout and the Node smithers-ci runs on, and before the repository's tools, the sandbox and the
+    // cache: a pull request that changes the repository's shape fails here, before anything else runs.
+    expect(stepsOf(content(generate(document), workflowPath)).slice(0, 4)).toEqual([
+      { uses: "actions/checkout@v4" },
+      { uses: "actions/setup-node@v4", with: { "node-version": "24" } },
+      { name: "Generated files are up to date", run: check },
+      { uses: "pnpm/action-setup@v4", with: { version: "9.0.0" } }
+    ])
+    // A URL apply was given is in the workflow, so the check is given it too, as one word whatever it holds.
+    const url = "https://cache.example.com/a b/it's?x=$HOME#c"
+    const cached = stepsOf(content(Effect.runSync(files(given(document), { cache: url })), workflowPath))
+    const run = String(cached[2]?.["run"])
+    expect(run).toBe(`${check} --cache 'https://cache.example.com/a b/it'\\''s?x=$HOME#c'`)
+    const words = spawnSync("bash", ["-c", `set -- ${run.slice(check.length)}; printf '%s\\n' "$@"`], {
+      encoding: "utf8"
+    })
+    expect(words.stdout).toBe(`--cache\n${url}\n`)
+  })
+
   it("gives identical bytes for the same inventory, in any job order", () => {
     const document = fixture("inventory.github-actions-bun.json")
     expect(generate(document)).toEqual(generate(document))
@@ -1094,7 +1120,9 @@ describe("the workspace and workflow", () => {
     }))
     expect(second).toEqual(first)
     expect(content(first, workflowPath)).toContain(
-      `          node-version: "24"\n      - uses: extractions/setup-just@v3\n`
+      `          node-version: "24"\n      - name: Generated files are up to date\n` +
+        `        run: npx --yes --package=smithers-ci@${releaseVersion} smithers-ci apply --check\n` +
+        `      - uses: extractions/setup-just@v3\n`
     )
   })
 
@@ -1132,8 +1160,10 @@ describe("the workspace and workflow", () => {
     )
     expect(workflow).toContain("on:\n  pull_request:\n  push:\n")
     expect(workflow).toContain(`os: ["ubuntu-latest"]`)
-    expect(workflow).toContain(`node-version: "22.20.0"`)
-    expect(workflow).not.toContain(`node-version: "24"`)
+    // smithers-ci checks the generated files on its own Node; the repository's Node is set up after that.
+    const versions = [...workflow.matchAll(/node-version: "([^"]+)"/g)].map((match) => match[1])
+    expect(versions).toEqual(["24", "22.20.0"])
+    expect(workflow.indexOf("apply --check")).toBeLessThan(workflow.indexOf(`node-version: "22.20.0"`))
   })
 })
 

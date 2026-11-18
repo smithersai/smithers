@@ -46,7 +46,7 @@ describe("the executable in an install", () => {
 })
 
 describe("the workflow apply writes", () => {
-  it("installs the @smthrs/cli this version of smithers-ci was released with", () => {
+  it("installs this release of smithers-ci and the @smthrs/cli it was released with", () => {
     const document = JSON.parse(
       readFileSync(new URL("../fixtures/inventory.justfile-zig.json", import.meta.url), "utf8")
     )
@@ -54,5 +54,7 @@ describe("the workflow apply writes", () => {
     const workflow = generated.find((file) => file.path === workflowPath)?.content
     expect(manifest.dependencies["@smthrs/cli"]).toBe(manifest.version)
     expect(workflow).toContain(`npx --yes --package=@smthrs/cli@${manifest.version} smthrs ci `)
+    // Its first step checks the generated files with this same release.
+    expect(workflow).toContain(`npx --yes --package=smithers-ci@${manifest.version} smithers-ci apply --check`)
   })
 })

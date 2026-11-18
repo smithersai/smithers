@@ -10,7 +10,7 @@
  */
 
 import { CliConfig, CliError, CliOutput, Command, Flag, GlobalFlag } from "effect/cli"
-import { check } from "../apply/index.ts"
+import { type Change, check } from "../apply/index.ts"
 import * as Surface from "../contract/Command.ts"
 import { changesMachine, ci, Inventory, notReplayed, ownWorkspace, refusal } from "../contract/Inventory.ts"
 import {
@@ -162,6 +162,22 @@ const allowRoot = Flag.Boolean("allow-root").pipe(
 )
 
 const replayFlags = { commits, mode, jobs, cache, targets, out, json, allowRoot }
+
+const checkOnly = Flag.Boolean("check").pipe(
+  Flag.withDefault(false),
+  Flag.withDescription(helpOf("check"))
+)
+
+/** What `apply --check` prints for one file `apply` would change. */
+const changeLine = (change: Change, added: ReadonlyArray<string>): string => {
+  const what = {
+    missing: "is missing",
+    differs: "is out of date",
+    unused: "is no longer used",
+    ignores: `lacks ${added.join(", ")}`
+  }[change.change]
+  return `${change.path} ${what}: run ${Surface.name} apply`
+}
 
 /** What `--mode` asks the replay to run. */
 const modes: Record<"normal" | "fast" | "both", ReadonlyArray<Mode>> = {
@@ -370,9 +386,16 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     try settle(report.mismatches > 0 ? Surface.exitCodes.mismatch : Surface.exitCodes.ok)
   }
 
-  const apply = Command.make("apply", { cache }, effect (input) => {
+  const apply = Command.make("apply", { cache, check: checkOnly }, effect (input) => {
     // Every path was checked before the first is written, so a refusal leaves nothing written.
     const { files, ignores } = try generate(try parts.read(root), input.cache)
+    if (input.check) {
+      // What the writes below would change, from the same files: nothing is written.
+      for (const change of ignores.changes) try Console.log(changeLine(change, ignores.added))
+      if (ignores.changes.length === 0) try Console.log(`${Surface.name}: the generated files are up to date`)
+      try settle(ignores.changes.length === 0 ? Surface.exitCodes.ok : Surface.exitCodes.mismatch)
+      return
+    }
     const paths = try Path.Path
     for (const file of files) {
       try write(paths.join(root, file.path), file.content)

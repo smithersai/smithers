@@ -12,6 +12,9 @@
  * own that Smithers build would read beside the generated ones is refused
  * the same way.
  *
+ * The same check says what writing the files would change, file by file:
+ * `apply --check` prints that in place of writing.
+ *
  * @since 0.1.0
  */
 
@@ -35,16 +38,32 @@ export interface Ignores {
 }
 
 /**
+ * What writing the generated files would do to one path: write a file that
+ * is `missing`, replace one whose bytes `differ`, remove one an earlier
+ * `smithers-ci` wrote (`unused`), or add lines to `.gitignore` (`ignores`).
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Change {
+  readonly path: string
+  readonly change: "missing" | "differs" | "unused" | "ignores"
+}
+
+/**
  * What a check of the generated paths gives: what `.gitignore` gains, which
  * only `apply` writes, and `former`, the files an earlier `smithers-ci` wrote
  * where the generated files no longer go. Whoever writes the generated files
- * removes those.
+ * removes those. `changes` is every path whose bytes `apply` would change, in
+ * the order it writes them: an empty list means the files on disk are the
+ * ones it would write.
  *
  * @category models
  * @since 0.1.0
  */
 export interface Checked extends Ignores {
   readonly former: ReadonlyArray<string>
+  readonly changes: ReadonlyArray<Change>
 }
 
 /** What is at a path `apply` would write: nothing, a file, or something that stops the write. */
@@ -120,6 +139,14 @@ effect function textOf(path: string) {
   return fs.readFileString(path) catch () => undefined
 }
 
+/** True when the file at `path` holds exactly the bytes `apply` writes for `content`. */
+effect function holds(path: string, content: string) {
+  const fs = try FileSystem.FileSystem
+  const bytes = fs.readFile(path) catch () => undefined
+  const wanted = new TextEncoder().encode(content)
+  return bytes !== undefined && bytes.length === wanted.length && bytes.every((byte, index) => byte === wanted[index])
+}
+
 /**
  * Checks every path of `files` that is written, in the repository or the
  * copy of one at `root`, and writes nothing. It fails `unsupported` with one refusal that
@@ -136,14 +163,18 @@ export effect function check(root: string, files: ReadonlyArray<GeneratedFile>) 
   const realRoot = fs.realPath(root) catch () => root
   const problems: Array<string> = []
   const kept: Array<string> = []
+  const changes: Array<Change> = []
   const placed = writtenFiles(files)
   for (const file of placed) {
     const place = try placeOf(root, realRoot, file.path)
     if (place._tag === "Refused") problems.push(place.why)
+    if (place._tag === "Absent") changes.push({ path: file.path, change: "missing" })
     if (place._tag !== "Present") continue
     // A file that cannot be read is the owner's.
-    const text = try textOf(paths.join(root, file.path))
+    const at = paths.join(root, file.path)
+    const text = try textOf(at)
     if (text === undefined || !wrote(file.path, text)) kept.push(file.path)
+    else if (!(try holds(at, file.content))) changes.push({ path: file.path, change: "differs" })
   }
   if (kept.length > 0) problems.push(overwriteRefusal(kept))
   // What an earlier smithers-ci left where the files no longer go is removed. What Smithers build would read
@@ -175,5 +206,8 @@ export effect function check(root: string, files: ReadonlyArray<GeneratedFile>) 
     else ignore = text
   }
   if (problems.length > 0) throw refuse(problems)
-  return { ...ignoresFor(ignore), former } satisfies Checked
+  const ignores = ignoresFor(ignore)
+  changes.push(...former.map((path): Change => ({ path, change: "unused" })))
+  if (ignores.added.length > 0) changes.push({ path: ignoreFile, change: "ignores" })
+  return { ...ignores, former, changes } satisfies Checked
 }

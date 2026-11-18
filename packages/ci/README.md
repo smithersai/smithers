@@ -65,6 +65,14 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-18, generated files that go stale** (additive, by the `sci-never-stale` lane):
+
+- Contract 7: the flag `check` on `apply`. `apply --check` writes nothing, prints one line for each file `apply` would
+  change (`<path> is out of date: run smithers-ci apply`), and exits 1, or 0 when nothing would change.
+  `exitCodeHelp.mismatch` also names it. It compares what `apply` would write, from the same code, byte for byte.
+- Not a contract, and changed with it: the generated workflow runs `smithers-ci apply --check` right after the
+  checkout and Node, so a commit that adds a package or a test file the generated files do not list fails there.
+
 **2026-11-18, thirteenth round** (optional additions by the generated-files lane, so a repository's own tools never read
 a generated file as one of theirs):
 
@@ -291,16 +299,16 @@ and none removes):
 
 ## Where each part lives
 
-| Directory       | Part                                                     |
-| --------------- | -------------------------------------------------------- |
-| `src/contract`  | The contracts. Changed only as the first rule says       |
-| `src/inventory` | Reads a repository's CI into contract 4                  |
-| `src/generate`  | Writes Smithers targets from contract 4                  |
-| `src/replay`    | Runs past commits and writes contract 5                  |
-| `src/report`    | Renders contract 5 for a terminal and as HTML            |
-| `src/select`    | Fast mode: builds rows, scores them, measures the result |
-| `src/decompose` | Splits a coarse CI step into per-package steps           |
-| `src/closure`   | Contract 9, one strategy per language                    |
-| `src/apply`     | Checks every generated path before anything is written   |
-| `src/native`    | Replays a repository that already builds with Smithers   |
-| `src/cli`       | The `smithers-ci` program                                |
+| Directory       | Part                                                       |
+| --------------- | ---------------------------------------------------------- |
+| `src/contract`  | The contracts. Changed only as the first rule says         |
+| `src/inventory` | Reads a repository's CI into contract 4                    |
+| `src/generate`  | Writes Smithers targets from contract 4                    |
+| `src/replay`    | Runs past commits and writes contract 5                    |
+| `src/report`    | Renders contract 5 for a terminal and as HTML              |
+| `src/select`    | Fast mode: builds rows, scores them, measures the result   |
+| `src/decompose` | Splits a coarse CI step into per-package steps             |
+| `src/closure`   | Contract 9, one strategy per language                      |
+| `src/apply`     | Checks every generated path, and what writing would change |
+| `src/native`    | Replays a repository that already builds with Smithers     |
+| `src/cli`       | The `smithers-ci` program                                  |
