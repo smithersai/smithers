@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "repository": "example/bun-turbo-monorepo",
+  "commits": [
+    {
+      "commit": "0000000000000000000000000000000000000002",
+      "changedFiles": 3,
+      "baseline": {
+        "ok": true,
+        "wallMs": 1320000,
+        "workMs": 1320000,
+        "counts": { "hit": 0, "ran": 40, "failed": 0, "skipped": 0 }
+      },
+      "normal": {
+        "ok": true,
+        "wallMs": 240000,
+        "workMs": 610000,
+        "counts": { "hit": 33, "ran": 7, "failed": 0, "skipped": 0 }
+      },
+      "fast": {
+        "ok": true,
+        "wallMs": 90000,
+        "workMs": 200000,
+        "counts": { "hit": 33, "ran": 3, "failed": 0, "skipped": 4 }
+      },
+      "mismatches": []
+    },
+    {
+      "commit": "0000000000000000000000000000000000000003",
+      "changedFiles": 1,
+      "baseline": {
+        "ok": false,
+        "wallMs": 1300000,
+        "workMs": 1300000,
+        "counts": { "hit": 0, "ran": 39, "failed": 1, "skipped": 0 }
+      },
+      "normal": {
+        "ok": false,
+        "wallMs": 200000,
+        "workMs": 500000,
+        "counts": { "hit": 35, "ran": 4, "failed": 1, "skipped": 0 }
+      },
+      "fast": {
+        "ok": true,
+        "wallMs": 60000,
+        "workMs": 100000,
+        "counts": { "hit": 35, "ran": 2, "failed": 0, "skipped": 3 }
+      },
+      "mismatches": [{ "label": "//packages/core:test", "mode": "fast", "baseline": "fail", "got": "skipped" }]
+    }
+  ],
+  "baselineWallMs": 2620000,
+  "normalWallMs": 440000,
+  "fastWallMs": 150000,
+  "speedup": 5.954545454545454,
+  "mismatches": 1,
+  "selection": {
+    "rows": 12,
+    "selected": 5,
+    "failures": 1,
+    "failedChanges": 1,
+    "selectionRate": 0.4166666666666667,
+    "testRecall": 0,
+    "changeRecall": 0
+  }
+}

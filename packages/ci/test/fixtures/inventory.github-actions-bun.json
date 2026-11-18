@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "repository": "example/bun-turbo-monorepo",
+  "commit": "0000000000000000000000000000000000000002",
+  "toolchains": [
+    { "name": "bun", "source": "package.json", "version": "1.3.0" },
+    { "name": "turbo", "source": "turbo.json" }
+  ],
+  "jobs": [
+    {
+      "id": "ci.yml:test",
+      "source": "github-actions",
+      "file": ".github/workflows/ci.yml",
+      "name": "Test",
+      "needs": [],
+      "triggers": ["pull_request", "push"],
+      "matrix": [{ "os": "ubuntu-latest" }, { "os": "macos-latest" }],
+      "runsOn": "${{ matrix.os }}",
+      "steps": [
+        {
+          "id": "ci.yml:test:1",
+          "name": "Install",
+          "command": "bun install --frozen-lockfile",
+          "cwd": "",
+          "env": {},
+          "secrets": []
+        },
+        {
+          "id": "ci.yml:test:2",
+          "name": "Test",
+          "command": "bun run test",
+          "cwd": "",
+          "env": { "CI": "true" },
+          "secrets": ["CODECOV_TOKEN"]
+        }
+      ],
+      "unsupported": [{ "feature": "uses", "detail": "codecov/codecov-action@v5 has no command to run" }]
+    }
+  ]
+}

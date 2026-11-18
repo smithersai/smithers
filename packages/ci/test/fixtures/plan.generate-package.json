@@ -1,0 +1,30 @@
+{
+  "verb": "auto",
+  "pattern": "//packages/smithers/build:newPackage",
+  "roots": [
+    "//packages/smithers/build:newPackage"
+  ],
+  "targets": [
+    {
+      "label": "//packages/smithers/build:newPackage",
+      "rule": "NewPackage",
+      "mode": "execute",
+      "key": "c366db1d76e462d152ac0e648ba7d88c9a904b9fe0ce5aad2b477d8d02b3f629",
+      "cacheable": false,
+      "dependencies": []
+    }
+  ],
+  "cta": {
+    "description": "Suggested commands:",
+    "commands": [
+      {
+        "command": "smthrs targets",
+        "description": "Inspect available workspace targets"
+      },
+      {
+        "command": "smthrs flow list",
+        "description": "Inspect discovered flows"
+      }
+    ]
+  }
+}

@@ -1,0 +1,77 @@
+[
+  {
+    "commit": "c1",
+    "target": "//a:test",
+    "features": {
+      "extensions": [".ts"],
+      "fileChanges": { "d3": 2, "d14": 5, "d56": 9 },
+      "failureRates": { "d7": 0.2, "d14": 0.1, "d28": 0.05, "d56": 0.05 },
+      "project": "a",
+      "testCount": 40,
+      "graphDistance": 0
+    },
+    "attempts": [false, false, false, false, false, false, false, false, false, false],
+    "failed": true,
+    "flaky": false
+  },
+  {
+    "commit": "c1",
+    "target": "//b:test",
+    "features": {
+      "extensions": [".ts"],
+      "fileChanges": { "d3": 2, "d14": 5, "d56": 9 },
+      "failureRates": { "d7": 0, "d14": 0, "d28": 0, "d56": 0 },
+      "project": "b",
+      "testCount": 12,
+      "graphDistance": 3
+    },
+    "attempts": [true],
+    "failed": false,
+    "flaky": false
+  },
+  {
+    "commit": "c1",
+    "target": "//c:test",
+    "features": {
+      "extensions": [".ts"],
+      "fileChanges": { "d3": 2, "d14": 5, "d56": 9 },
+      "failureRates": { "d7": 0.5, "d14": 0.4, "d28": 0.3, "d56": 0.3 },
+      "project": "c",
+      "testCount": 7,
+      "graphDistance": 2
+    },
+    "attempts": [false, true],
+    "failed": false,
+    "flaky": true
+  },
+  {
+    "commit": "c2",
+    "target": "//a:test",
+    "features": {
+      "extensions": [".md"],
+      "fileChanges": { "d3": 0, "d14": 1, "d56": 2 },
+      "failureRates": { "d7": 0.2, "d14": 0.1, "d28": 0.05, "d56": 0.05 },
+      "project": "a",
+      "testCount": 40,
+      "graphDistance": 4
+    },
+    "attempts": [true],
+    "failed": false,
+    "flaky": false
+  },
+  {
+    "commit": "c3",
+    "target": "//b:test",
+    "features": {
+      "extensions": [".ts"],
+      "fileChanges": { "d3": 1, "d14": 1, "d56": 1 },
+      "failureRates": { "d7": 0, "d14": 0, "d28": 0, "d56": 0 },
+      "project": "b",
+      "testCount": 12,
+      "graphDistance": 0
+    },
+    "attempts": [false, false, false, false, false, false, false, false, false, false],
+    "failed": true,
+    "flaky": false
+  }
+]

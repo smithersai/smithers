@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "repository": "example/zig-with-justfile",
+  "commit": "0000000000000000000000000000000000000001",
+  "toolchains": [
+    { "name": "zig", "source": "build.zig.zon", "version": "0.15.1" },
+    { "name": "just", "source": "Justfile" }
+  ],
+  "jobs": [
+    {
+      "id": "justfile:test",
+      "source": "justfile",
+      "file": "Justfile",
+      "name": "test",
+      "needs": ["justfile:build"],
+      "triggers": [],
+      "matrix": [],
+      "steps": [{ "id": "justfile:test:1", "command": "zig build test", "cwd": "", "env": {}, "secrets": [] }],
+      "unsupported": []
+    },
+    {
+      "id": "justfile:build",
+      "source": "justfile",
+      "file": "Justfile",
+      "name": "build",
+      "needs": [],
+      "triggers": [],
+      "matrix": [],
+      "steps": [{ "id": "justfile:build:1", "command": "zig build", "cwd": "", "env": {}, "secrets": [] }],
+      "unsupported": []
+    }
+  ]
+}
