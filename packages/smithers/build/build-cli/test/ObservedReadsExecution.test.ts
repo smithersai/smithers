@@ -300,6 +300,16 @@ describe("an observed test", () => {
     expect(await run()).toEqual({ check: "ran" })
   })
 
+  tracedIt("gives its command the signals a plain run has", async () => {
+    // A command that passes only when no signal is ignored, as none is when nothing traces it.
+    const unignored = "/bin/grep -q '^SigIgn:[[:space:]]*0000000000000000$' /proc/self/status\n" +
+      "/bin/cat input.txt > /dev/null"
+    const { logs, run } = await fixture({ check: unignored })
+    expect(await run()).toEqual({ check: "ran" })
+    expect(logs.filter((line) => line.includes("failed while its reads were recorded"))).toEqual([])
+    expect(await run()).toEqual({ check: "hit" })
+  })
+
   tracedIt("is reused after a run that changed the mode and the time of a file it read", async () => {
     const marking = "/bin/chmod +x input.txt\n/usr/bin/touch input.txt\n/bin/cat input.txt > /dev/null"
     const { logs, run } = await fixture({ check: marking })

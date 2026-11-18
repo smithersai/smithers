@@ -109,6 +109,7 @@ const calls: ReadonlyArray<string> = [
   "renameat",
   "renameat2",
   "rmdir",
+  "setns",
   "stat",
   "statx",
   "symlink",
@@ -146,21 +147,24 @@ const quoted = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
  *
  * The tracer waits for every process it follows, so a command that leaves
  * one running would hold the run until that process ends. A shell inside the
- * trace writes the command's exit status beside the trace file the moment
- * the command ends. A process still followed a second later is killed: one
- * the tracer let go would keep the tracer's filter and fail every file call.
- * A tracer that has to be killed itself may not have written its last lines,
- * so a line no trace holds is added and the run stores nothing.
+ * trace writes the command's exit status, and the tracer's process id,
+ * beside the trace file the moment the command ends. A watcher then kills
+ * any process the tracer still follows a second later: one the tracer let go
+ * would keep the tracer's filter and fail every file call. A tracer that has
+ * to be killed itself may not have written its last lines, so a line no
+ * trace holds is added and the run stores nothing.
+ *
+ * The watcher is the background job, and the tracer with the command keeps
+ * the foreground: a shell makes its background jobs ignore the interrupt and
+ * quit signals and gives them no input, and the command would inherit both.
  */
 const supervisor = [
   "tracer=$1",
   "out=$2",
   "shift 2",
-  `"$tracer" ${tracerFlags.map(quoted).join(" ")} -o "$out" -- \\`,
-  `  /bin/sh -c '"$@"; status=$?; echo "$status" > "$0"; exit "$status"' "$out.status" "$@" &`,
-  "tracing=$!",
-  `while [ ! -s "$out.status" ] && kill -0 "$tracing" 2>/dev/null; do sleep 0.1; done`,
-  `if [ -s "$out.status" ]; then`,
+  "(",
+  `  while [ ! -s "$out.status" ]; do sleep 0.1; done`,
+  `  read -r status tracing < "$out.status"`,
   "  rounds=0",
   `  while kill -0 "$tracing" 2>/dev/null; do`,
   "    rounds=$((rounds + 1))",
@@ -176,10 +180,14 @@ const supervisor = [
   "    fi",
   "    sleep 0.1",
   "  done",
-  "fi",
-  `wait "$tracing"`,
+  ") > /dev/null 2>&1 &",
+  "watching=$!",
+  `"$tracer" ${tracerFlags.map(quoted).join(" ")} -o "$out" -- \\`,
+  `  /bin/sh -c '"$@"; status=$?; echo "$status $PPID" > "$0"; exit "$status"' "$out.status" "$@"`,
   "code=$?",
-  `if [ -s "$out.status" ]; then read -r code < "$out.status"; fi`,
+  `kill "$watching" 2>/dev/null`,
+  `wait "$watching" 2>/dev/null`,
+  `if [ -s "$out.status" ]; then read -r code tracing < "$out.status"; fi`,
   `rm -f "$out.status"`,
   `exit "$code"`
 ].join("\n")
@@ -449,9 +457,17 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       if (gone) first(missing, path, entered)
       else first(found, path, entered)
     }
-    const wrote = (path: string | undefined, how: "made" | "emptied" | "changed"): void => {
+    /**
+     * Notes a write. `creates` says the call would have made the name: when it
+     * finds nothing, the directory the name goes in is what was missing.
+     */
+    const wrote = (path: string | undefined, how: "made" | "emptied" | "changed", creates = false): void => {
       if (path === undefined) return
-      if (gone) return first(missing, path, entered)
+      if (gone) {
+        first(missing, path, entered)
+        if (creates) first(missing, NodePath.posix.dirname(path), entered)
+        return
+      }
       if (failed) return first(found, path, entered)
       changed.add(path)
       if (ok && how !== "changed") first(how === "made" ? made : emptied, path, at)
@@ -465,16 +481,14 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
         const at2 = name === "openat" || name === "openat2"
         const path = pathOf(args[at2 ? 1 : 0], at2 ? baseOf(args[0]) : cell.path)
         const flags = name === "creat" ? "O_WRONLY|O_CREAT|O_TRUNC" : args[at2 ? 2 : 1] ?? ""
-        const writes = /O_WRONLY|O_RDWR/.test(flags)
-        if (/O_CREAT/.test(flags) && /O_EXCL/.test(flags)) wrote(path, "made")
-        else if (/O_TRUNC/.test(flags)) wrote(path, "emptied")
-        else if (writes && !/O_RDWR/.test(flags)) {
-          // Opened to write without reading: the run learns only that the path can be opened.
-          if (path !== undefined && !failed) changed.add(path)
-          else looked(path)
-        } else {
+        const creates = /O_CREAT/.test(flags)
+        if (creates && /O_EXCL/.test(flags)) wrote(path, "made", true)
+        else if (/O_TRUNC/.test(flags)) wrote(path, "emptied", creates)
+        // Opened to write without reading: the run learns only that the path can be opened.
+        else if (/O_WRONLY/.test(flags)) wrote(path, "changed", creates)
+        else {
           looked(path)
-          if (writes && path !== undefined && !failed) changed.add(path)
+          if (/O_RDWR/.test(flags)) wrote(path, "changed", creates)
         }
         return
       }
@@ -538,13 +552,13 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       case "fchown":
         return wrote(baseOf(args[0]), "changed")
       case "mkdir":
-        return wrote(pathOf(args[0], cell.path), "made")
+        return wrote(pathOf(args[0], cell.path), "made", true)
       case "mkdirat":
-        return wrote(pathOf(args[1], baseOf(args[0])), "made")
+        return wrote(pathOf(args[1], baseOf(args[0])), "made", true)
       case "symlink":
-        return wrote(pathOf(args[1], cell.path), "made")
+        return wrote(pathOf(args[1], cell.path), "made", true)
       case "symlinkat":
-        return wrote(pathOf(args[2], baseOf(args[1])), "made")
+        return wrote(pathOf(args[2], baseOf(args[1])), "made", true)
       case "rename":
       case "link": {
         // The new path holds what the old one held, so the old one was read.
@@ -596,6 +610,7 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       }
       case "mount":
       case "pivot_root":
+      case "setns":
         if (ok) refusals.add("it changed its view of the file system")
         return
       case "io_uring_setup":

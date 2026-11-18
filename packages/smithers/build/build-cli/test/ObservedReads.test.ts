@@ -149,6 +149,33 @@ describe("reading a trace", () => {
       "/w/two"
     ])
     expect(paths(trace.missing)).toEqual(["/w/gone.txt", "/w/nolog"])
+    // A name that could not be made was missing its directory, and that is what the run learned.
+    const unmade = read([
+      "100 openat(AT_FDCWD</w>, \"nodir/new.txt\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = -1 ENOENT (No such file or directory)",
+      "100 openat(AT_FDCWD</w>, \"noexcl/new.txt\", O_WRONLY|O_CREAT|O_EXCL, 0666) = -1 ENOENT (No such file or directory)",
+      "100 openat(AT_FDCWD</w>, \"nolog/a.log\", O_WRONLY|O_CREAT|O_APPEND, 0666) = -1 ENOENT (No such file or directory)",
+      "100 openat(AT_FDCWD</w>, \"nodb/db\", O_RDWR|O_CREAT, 0666) = -1 ENOENT (No such file or directory)",
+      "100 creat(\"nocreat/f\", 0644)        = -1 ENOENT (No such file or directory)",
+      "100 symlink(\"target\", \"/w/nolink/l\") = -1 ENOENT (No such file or directory)",
+      "100 openat(AT_FDCWD</w>, \"plain-missing\", O_WRONLY|O_TRUNC) = -1 ENOENT (No such file or directory)",
+      "100 openat(AT_FDCWD</w>, \"db-missing\", O_RDWR) = -1 ENOENT (No such file or directory)"
+    ].join("\n"))
+    expect(paths(unmade.missing)).toEqual([
+      "/w/db-missing",
+      "/w/nocreat",
+      "/w/nocreat/f",
+      "/w/nodb",
+      "/w/nodb/db",
+      "/w/nodir",
+      "/w/nodir/new.txt",
+      "/w/noexcl",
+      "/w/noexcl/new.txt",
+      "/w/nolink",
+      "/w/nolink/l",
+      "/w/nolog",
+      "/w/nolog/a.log",
+      "/w/plain-missing"
+    ])
     expect(paths(trace.emptied)).toEqual(["/w/by-creat", "/w/out.txt"])
     expect(paths(trace.made)).toEqual(["/w/new.txt"])
     expect([...trace.changed].sort()).toEqual(["/w/by-creat", "/w/db", "/w/log.txt", "/w/new.txt", "/w/out.txt"])
@@ -265,7 +292,15 @@ describe("reading a trace", () => {
       "/w/to"
     ])
     expect(paths(trace.found)).toEqual(["/w/exists", "/w/f2", "/w/from", "/w/h3", "/w/o2", "/w/o3", "/w/orig"])
-    expect(paths(trace.missing)).toEqual(["/w/d2/sub", "/w/f3", "/w/hard-gone", "/w/orig-gone", "/w/t3", "/w/tmp2"])
+    expect(paths(trace.missing)).toEqual([
+      "/w/d2",
+      "/w/d2/sub",
+      "/w/f3",
+      "/w/hard-gone",
+      "/w/orig-gone",
+      "/w/t3",
+      "/w/tmp2"
+    ])
   })
 
   it("counts a new mode, owner or time as the run's own change", () => {
@@ -345,6 +380,10 @@ describe("reading a trace", () => {
       .toEqual(["it changed its view of the file system"])
     expect(read("100 pivot_root(\".\", \".\")             = 0").refusals)
       .toEqual(["it changed its view of the file system"])
+    expect(read("100 setns(5</proc/1/ns/mnt>, CLONE_NEWNS) = 0").refusals)
+      .toEqual(["it changed its view of the file system"])
+    expect(read("100 setns(5</proc/1/ns/mnt>, CLONE_NEWNS) = -1 EPERM (Operation not permitted)").refusals)
+      .toEqual([])
     expect(read("100 mount(\"none\", \"/mnt\", \"tmpfs\", 0, NULL) = -1 EPERM (Operation not permitted)").refusals)
       .toEqual([])
     expect(read("100 io_uring_setup(256, {flags=0, sq_thread_cpu=0}) = 4<anon_inode:[io_uring]>").refusals)
