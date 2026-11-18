@@ -1,0 +1,291 @@
+/**
+ * Turns an inventory into the targets to declare: one per step of each matrix
+ * variant, in dependency order.
+ *
+ * A job's steps share one machine, so a step can leave files the next step
+ * needs. A cache hit restores no files, so only a step nothing later relies on
+ * may be replayed. Every other step is a `setup` target, which always runs.
+ * GitHub jobs run on separate machines, so `needs` only orders them; the other
+ * sources run in one working tree, so what they need is `setup` too.
+ *
+ * @since 0.1.0
+ */
+
+import * as Result from "effect/Result"
+import type { Inventory, Job, Step } from "../contract/Inventory.ts"
+import type { Failure } from "../contract/Parts.ts"
+import { shardOf } from "../contract/Shard.ts"
+import { forShell, forText, type Variant } from "./Expressions.ts"
+
+/**
+ * An operating system a target can be limited to, in Node's names.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Host = "linux" | "darwin" | "win32"
+
+/**
+ * One target to declare.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface StepTarget {
+  readonly label: string
+  readonly rule: "setup" | "check"
+  readonly script: string
+  readonly env: Readonly<Record<string, string>>
+  readonly host: Host | undefined
+  readonly dependencies: ReadonlyArray<string>
+  readonly title: string
+}
+
+/**
+ * Everything the renderer needs.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface StepPlan {
+  readonly targets: ReadonlyArray<StepTarget>
+  readonly notes: ReadonlyArray<string>
+  readonly runners: ReadonlyArray<string>
+  readonly triggers: ReadonlyArray<string>
+}
+
+/**
+ * Where a `setup` target records that it ran. The build requires a declared
+ * output, and the cache directory stays out of every target's inputs.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const markerDirectory = ".flows/ci"
+
+interface Tail {
+  readonly host: Host | undefined
+  readonly labels: ReadonlyArray<string>
+}
+
+interface Draft extends Omit<StepTarget, "rule" | "script"> {
+  readonly job: Job
+  readonly command: string
+  readonly directory: string
+}
+
+const plainCommand = /^[A-Za-z0-9_./:=@%+,-]+(?: +[A-Za-z0-9_./:=@%+,-]+)*$/
+const workflowTriggers: ReadonlySet<string> = new Set(["merge_group", "pull_request", "push", "workflow_dispatch"])
+
+const invalid = (message: string): Result.Result<never, Failure> =>
+  Result.fail({ code: "invalid-document", message, part: "generate" })
+
+// Every list sorted here holds distinct values.
+const compare = (left: string, right: string): number => left < right ? -1 : 1
+
+const sorted = (values: Iterable<string>): ReadonlyArray<string> => [...new Set(values)].sort(compare)
+
+const quote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
+
+const clean = (text: string): string => text.replace(/[^A-Za-z0-9._-]+/g, "-")
+
+const slug = (text: string): string => {
+  const cleaned = clean(text)
+  return /^[A-Za-z_]/.test(cleaned) ? cleaned : `s-${cleaned}`
+}
+
+const hostOf = (runsOn: string | undefined): Host | undefined => {
+  if (runsOn === undefined) return undefined
+  if (/ubuntu|linux/i.test(runsOn)) return "linux"
+  if (/macos|darwin/i.test(runsOn)) return "darwin"
+  return /windows/i.test(runsOn) ? "win32" : undefined
+}
+
+const variantKey = (variant: Variant): string =>
+  JSON.stringify(Object.keys(variant).sort(compare).map((name) => [name, variant[name]]))
+
+const variantsOf = (job: Job): ReadonlyArray<Variant> => {
+  const unique = new Map<string, Variant>(job.matrix.map((variant) => [variantKey(variant), variant]))
+  return unique.size === 0 ? [{}] : [...unique.keys()].sort(compare).map((key) => unique.get(key) as Variant)
+}
+
+const variantSuffix = (variant: Variant): string =>
+  Object.keys(variant).sort(compare).map((name) => `--${clean(variant[name] as string)}`).join("")
+
+const directoryOf = (cwd: string): string | undefined => {
+  const parts = cwd.split("/").filter((part) => part !== "" && part !== ".")
+  return cwd.startsWith("/") || parts.includes("..") ? undefined : parts.join("/")
+}
+
+const scriptOf = (
+  job: Job,
+  command: string,
+  directory: string,
+  marker: string | undefined
+): string => {
+  const github = job.source === "github-actions"
+  // GitHub runs each `run` block with `bash -e`. A command of plain words means
+  // the same in any shell and keeps its program visible to the cache key.
+  const body = github && !plainCommand.test(command)
+    ? `bash --noprofile --norc -e -c ${quote(command)}`
+    : command
+  const prelude = [
+    ...(marker === undefined ? [] : [`mkdir -p ${markerDirectory}`, `: > ${marker}`]),
+    ...(directory === "" ? [] : [`cd -- ${quote(directory)}`])
+  ]
+  return [
+    ...prelude.map((line) => `${line} || exit`),
+    // Just and Make stop at the first failing line of a recipe.
+    ...(!github && command.includes("\n") ? ["set -e"] : []),
+    body
+  ].join("\n")
+}
+
+const validate = (inventory: Inventory): Failure | undefined => {
+  const fail = (message: string): Failure => ({ code: "invalid-document", message, part: "generate" })
+  const jobs = new Set<string>()
+  const steps = new Set<string>()
+  for (const job of inventory.jobs) {
+    if (jobs.has(job.id)) return fail(`Job ${job.id} appears twice.`)
+    jobs.add(job.id)
+    for (const step of job.steps) {
+      if (steps.has(step.id)) return fail(`Step ${step.id} appears twice.`)
+      steps.add(step.id)
+    }
+  }
+  for (const job of inventory.jobs) {
+    const missing = job.needs.find((need) => !jobs.has(need))
+    if (missing !== undefined) return fail(`Job ${job.id} needs ${missing}, which the inventory does not hold.`)
+  }
+  return undefined
+}
+
+const inDependencyOrder = (jobs: ReadonlyArray<Job>): ReadonlyArray<Job> | undefined => {
+  const pending = [...jobs].sort((left, right) => compare(left.id, right.id))
+  const placed = new Set<string>()
+  const ordered: Array<Job> = []
+  while (pending.length > 0) {
+    const next = pending.findIndex((job) => job.needs.every((need) => placed.has(need)))
+    if (next < 0) return undefined
+    const [job] = pending.splice(next, 1) as [Job]
+    placed.add(job.id)
+    ordered.push(job)
+  }
+  return ordered
+}
+
+/**
+ * Plans the targets for an inventory. Fails when the document contradicts
+ * itself or holds nothing to run.
+ *
+ * @throws {never}
+ * @category planning
+ * @since 0.1.0
+ */
+export const planSteps = (inventory: Inventory): Result.Result<StepPlan, Failure> => {
+  const problem = validate(inventory)
+  if (problem !== undefined) return Result.fail(problem)
+  const jobs = inDependencyOrder(inventory.jobs)
+  if (jobs === undefined) return invalid("The jobs' needs form a cycle.")
+
+  const drafts = new Map<string, Draft>()
+  const tails = new Map<string, Array<Tail>>()
+  const notes = new Set<string>()
+  const runners = new Set<string>()
+  // Targets a later target needs on disk: these can never be replayed.
+  const reliedOn = new Set<string>()
+
+  const uniqueLabel = (step: Step, variant: Variant): string => {
+    const label = `${slug(step.id)}${variantSuffix(variant)}`
+    if (!drafts.has(label)) return label
+    return `${label}-${shardOf(`${step.id}\n${variantKey(variant)}`, 0x1_0000_0000).toString(16)}`
+  }
+
+  const upstreamOf = (job: Job, host: Host | undefined): ReadonlyArray<string> =>
+    sorted(job.needs.flatMap((need) =>
+      (tails.get(need) as ReadonlyArray<Tail>).flatMap((tail) => {
+        if (tail.host === undefined || tail.host === host) return tail.labels
+        if (host === undefined) notes.add(`${job.id}: runs on every system, so it does not wait for ${need}.`)
+        return []
+      })
+    ))
+
+  const draftOf = (
+    job: Job,
+    step: Step,
+    variant: Variant,
+    host: Host | undefined,
+    dependencies: ReadonlyArray<string>
+  ): Draft | undefined => {
+    const command = forShell(step.command, variant)
+    const cwd = forText(step.cwd, variant)
+    const directory = cwd === undefined ? undefined : directoryOf(cwd)
+    if (command === undefined || directory === undefined) {
+      notes.add(`${step.id}: not generated, it uses a value only GitHub Actions can provide.`)
+      return undefined
+    }
+    const env: Record<string, string> = {}
+    for (const name of Object.keys(step.env).sort(compare)) {
+      const value = forText(step.env[name] as string, variant)
+      if (value === undefined) notes.add(`${step.id}: ${name} is not set, its value exists only on GitHub Actions.`)
+      else env[name] = value
+    }
+    for (const secret of step.secrets) notes.add(`${step.id}: secret ${secret} is not passed to the target.`)
+    return {
+      label: uniqueLabel(step, variant),
+      env,
+      host,
+      dependencies,
+      title: `${job.name} / ${step.name ?? step.id}`,
+      job,
+      command,
+      directory
+    }
+  }
+
+  for (const job of jobs) {
+    for (const feature of job.unsupported) notes.add(`${job.id}: ${feature.feature}: ${feature.detail}`)
+    const jobTails: Array<Tail> = []
+    tails.set(job.id, jobTails)
+    for (const variant of variantsOf(job)) {
+      const runsOn = job.runsOn === undefined ? undefined : forText(job.runsOn, variant)
+      const host = hostOf(runsOn)
+      if (host === "win32") notes.add(`${job.id}: runs only on Windows, which generated targets do not support.`)
+      else if (runsOn !== undefined) runners.add(runsOn)
+      let previous = upstreamOf(job, host)
+      if (job.source !== "github-actions") { for (const label of previous) reliedOn.add(label) }
+      let last: Draft | undefined
+      for (const step of job.steps) {
+        const draft = draftOf(job, step, variant, host, previous)
+        if (draft === undefined) continue
+        drafts.set(draft.label, draft)
+        if (last !== undefined) reliedOn.add(last.label)
+        last = draft
+        previous = [draft.label]
+      }
+      jobTails.push({ host, labels: previous })
+    }
+  }
+
+  if (drafts.size === 0) {
+    return Result.fail({ code: "unsupported", message: "No job has a command to run.", part: "generate" })
+  }
+
+  const targets = [...drafts.values()].map(({ command, directory, job, ...draft }): StepTarget => {
+    const setup = reliedOn.has(draft.label)
+    return {
+      ...draft,
+      rule: setup ? "setup" : "check",
+      script: scriptOf(job, command, directory, setup ? `${markerDirectory}/${draft.label}` : undefined)
+    }
+  })
+
+  return Result.succeed({
+    targets,
+    notes: sorted(notes),
+    runners: runners.size === 0 ? ["ubuntu-latest"] : sorted(runners),
+    triggers: ((found) => found.length === 0 ? ["pull_request", "push"] : found)(
+      sorted(inventory.jobs.flatMap((job) => job.triggers).filter((trigger) => workflowTriggers.has(trigger)))
+    )
+  })
+}

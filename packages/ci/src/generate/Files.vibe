@@ -1,0 +1,21 @@
+/**
+ * The generate part (contract 10).
+ *
+ * @since 0.1.0
+ */
+
+import type { Inventory } from "../contract/Inventory.ts"
+import type { Failure, GeneratedFile } from "../contract/Parts.ts"
+import { renderFiles } from "./Render.ts"
+import { planSteps } from "./Steps.ts"
+
+/**
+ * The Smithers workspace, target files and CI workflow for an inventory. The
+ * same inventory always gives the same bytes, and nothing is written.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export effect function files(inventory: Inventory): ReadonlyArray<GeneratedFile>!Failure {
+  return renderFiles(inventory, try fromResult(planSteps(inventory)))
+}
