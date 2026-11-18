@@ -1233,9 +1233,15 @@ importers:
       effect:
         specifier: 4.1.1
         version: 4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c)
+      jsonc-parser:
+        specifier: 3.3.1
+        version: 3.3.1
       vibelang-runtime:
         specifier: 0.0.13
         version: 0.0.13(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2

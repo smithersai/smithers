@@ -1,0 +1,203 @@
+/**
+ * Reads what a repository's CI does today, from its files and its git history.
+ *
+ * Nothing here runs the repository's code. A file that cannot be read becomes
+ * an `unsupported` entry, so a reader of the inventory sees it was not covered.
+ *
+ * @since 0.1.0
+ */
+
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type { Source } from "../contract/Inventory.ts"
+import type { Failure, ReadInventory } from "../contract/Parts.ts"
+import { assemble, fileProblem, type Parsed } from "./Draft.ts"
+import { readWorkflow } from "./GithubActions.ts"
+import { readJustfile } from "./Justfile.ts"
+import {
+  chooseRunner,
+  readGlobs,
+  readPackage,
+  readWorkspacePatterns,
+  type Runner,
+  segmentMatcher
+} from "./PackageJson.ts"
+import { repositoryName } from "./Repository.ts"
+import { readToolFile, toolFiles } from "./Toolchains.ts"
+import { readTurbo } from "./Turbo.ts"
+
+/** Directories a workspace pattern never walks into. */
+const skipped = (name: string) => name === "node_modules" || name.startsWith(".")
+
+/** How deep `**` follows directories, which also ends a symbolic link cycle. */
+const maxDepth = 12
+
+type Loaded =
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "absent" }
+  | { readonly kind: "problem"; readonly reason: string }
+
+interface Tree {
+  readonly fs: FileSystem.FileSystem
+  readonly path: Path.Path
+  readonly root: string
+}
+
+const notARepository = (root: string): Failure => ({
+  code: "not-a-repository",
+  message: `${root} is not a git repository with a commit`,
+  part: "inventory"
+})
+
+effect function git(root: string, args: ReadonlyArray<string>) {
+  const spawner = try ChildProcessSpawner
+  const output = spawner.string(ChildProcess.make("git", ["-C", root, ...args])) catch () => ""
+  return output.trim()
+}
+
+effect function load(tree: Tree, file: string): Loaded!! {
+  return map(tree.fs.readFileString(tree.path.join(tree.root, file)), (text): Loaded => ({ kind: "text", text }))
+    catch (error): Loaded =>
+      error.reason._tag === "NotFound"
+        ? { kind: "absent" }
+        : { kind: "problem", reason: `it could not be read (${error.reason._tag})` }
+}
+
+/** The names in a directory, sorted. A directory that is missing has none. */
+effect function list(tree: Tree, directory: string) {
+  const names = tree.fs.readDirectory(tree.path.join(tree.root, directory)) catch (): ReadonlyArray<string> => []
+  return [...names].sort()
+}
+
+/** The text of a file that is only useful when present. */
+effect function optional(tree: Tree, file: string) {
+  const loaded = try load(tree, file)
+  return loaded.kind === "text" ? loaded.text : undefined
+}
+
+/** Reads one file with `read`; a file that exists and cannot be read is recorded. */
+effect function readWith(tree: Tree, id: string, source: Source, file: string, read: (text: string) => Parsed) {
+  const loaded = try load(tree, file)
+  if (loaded.kind === "text") return read(loaded.text)
+  return loaded.kind === "absent"
+    ? { jobs: [], toolchains: [] }
+    : fileProblem(id, source, file, "unreadable-file", loaded.reason)
+}
+
+effect function isDirectory(tree: Tree, directory: string) {
+  const info = tree.fs.stat(tree.path.join(tree.root, directory)) catch () => undefined
+  return info?.type === "Directory"
+}
+
+const under = (directory: string, name: string) => (directory === "" ? name : `${directory}/${name}`)
+
+effect function children(tree: Tree, directory: string): ReadonlyArray<string>!! {
+  const found: Array<string> = []
+  for (const name of try list(tree, directory)) {
+    const child = under(directory, name)
+    if (!skipped(name) && try isDirectory(tree, child)) found.push(child)
+  }
+  return found
+}
+
+/** The directories under `directory` that match the rest of a pattern. */
+effect function walk(
+  tree: Tree,
+  directory: string,
+  pattern: ReadonlyArray<string>,
+  depth: number
+): ReadonlyArray<string>!! {
+  if (pattern.length === 0) return [directory]
+  if (depth > maxDepth) return []
+  const head = pattern[0] as string
+  const rest = pattern.slice(1)
+  const found: Array<string> = []
+  if (head === "**") {
+    found.push(...try walk(tree, directory, rest, depth))
+    for (const child of try children(tree, directory)) found.push(...try walk(tree, child, pattern, depth + 1))
+  } else if (head.includes("*")) {
+    const matcher = segmentMatcher(head)
+    for (const child of try children(tree, directory)) {
+      if (matcher.test(child.slice(child.lastIndexOf("/") + 1))) found.push(...try walk(tree, child, rest, depth + 1))
+    }
+  } else if (try isDirectory(tree, under(directory, head))) {
+    found.push(...try walk(tree, under(directory, head), rest, depth + 1))
+  }
+  return found
+}
+
+effect function readWorkflows(tree: Tree) {
+  const directory = ".github/workflows"
+  const parts: Array<Parsed> = []
+  for (const name of try list(tree, directory)) {
+    if (/\.ya?ml$/.test(name)) {
+      const file = `${directory}/${name}`
+      parts.push(try readWith(tree, name, "github-actions", file, (text) => readWorkflow(file, text)))
+    }
+  }
+  return parts
+}
+
+effect function readPackages(tree: Tree, rootText: string | undefined, runner: Runner) {
+  const pnpm = try optional(tree, "pnpm-workspace.yaml")
+  const globs = readGlobs(readWorkspacePatterns(rootText, pnpm))
+  const parts: Array<Parsed> = []
+  const packageFile = "package.json"
+  parts.push(try readWith(tree, packageFile, "package-json", packageFile, (text) => readPackage(packageFile, text, runner)))
+  for (const pattern of globs.unreadable) {
+    parts.push(fileProblem(`workspace:${pattern}`, "package-json", packageFile, "workspace-pattern", `pattern ${pattern} was not read`))
+  }
+  const directories = new Set<string>()
+  for (const pattern of globs.include) {
+    for (const directory of try walk(tree, "", pattern, 0)) {
+      if (directory !== "" && !globs.exclude.some((exclude) => exclude.test(directory))) directories.add(directory)
+    }
+  }
+  for (const directory of [...directories].sort()) {
+    const file = `${directory}/package.json`
+    parts.push(try readWith(tree, file, "package-json", file, (text) => readPackage(file, text, runner)))
+    const hasTurbo = tree.fs.exists(tree.path.join(tree.root, directory, "turbo.json")) catch () => false
+    if (hasTurbo) {
+      const turbo = `${directory}/turbo.json`
+      parts.push(fileProblem(turbo, "turbo", turbo, "package-turbo", "its changes to the root tasks were not read"))
+    }
+  }
+  return parts
+}
+
+/**
+ * Reads the CI of the repository at `root`: GitHub Actions workflows, a
+ * Justfile, `package.json` scripts and `turbo.json` tasks, with the tools the
+ * repository pins. It fails with `not-a-repository` when `root` has no commit.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProcessSpawner> = effect function (root) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const commit = try git(root, ["rev-parse", "--verify", "HEAD"])
+  if (commit === "") throw notARepository(root)
+  const remote = try git(root, ["remote", "get-url", "origin"])
+  const tree: Tree = { fs, path, root }
+  const rootFiles = try list(tree, "")
+
+  const parts: Array<Parsed> = [...try readWorkflows(tree)]
+  for (const name of rootFiles) {
+    if (/^\.?justfile$/i.test(name)) {
+      parts.push(try readWith(tree, "justfile", "justfile", name, (text) => readJustfile(name, text)))
+    }
+  }
+
+  const manifest = try optional(tree, "package.json")
+  const runner = chooseRunner(manifest, rootFiles)
+  parts.push(...try readPackages(tree, manifest, runner))
+  for (const name of ["turbo.json", "turbo.jsonc"]) {
+    parts.push(try readWith(tree, name, "turbo", name, (text) => readTurbo(name, text, runner)))
+  }
+  for (const name of toolFiles) {
+    const text = rootFiles.includes(name) ? try optional(tree, name) : undefined
+    if (text !== undefined) parts.push({ jobs: [], toolchains: readToolFile(name, text) })
+  }
+  return assemble(repositoryName(remote, path.basename(path.resolve(root))), commit, parts)
+}

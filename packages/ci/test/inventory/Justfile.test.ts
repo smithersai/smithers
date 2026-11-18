@@ -1,0 +1,326 @@
+import { describe, expect, it } from "vitest"
+import type { Job } from "../../src/contract/Inventory.ts"
+import { readJustfile } from "../../src/inventory/Justfile.ts"
+
+const read = (text: string) => readJustfile("Justfile", text)
+
+const jobOf = (text: string, name: string): Job => {
+  const job = read(text).jobs.find((candidate) => candidate.name === name)
+  if (job === undefined) throw new Error(`no recipe ${name}`)
+  return job
+}
+
+const commands = (job: Job) => job.steps.map((step) => step.command)
+const features = (job: Job) => job.unsupported.map((entry) => entry.feature)
+
+describe("readJustfile recipes", () => {
+  it("reads recipes, their lines and their dependencies", () => {
+    const { jobs, toolchains } = read(`# a comment
+
+alias t := test
+
+default:
+    @just --list
+
+# Build
+build:
+    zig build
+
+    # a note for the reader
+    zig build docs
+
+test: build (lint "src") # runs after build
+    zig build test
+
+ci: t build
+`)
+    expect(toolchains).toEqual([{ name: "just", source: "Justfile" }])
+    expect(jobs.map((job) => job.id)).toEqual(["justfile:default", "justfile:build", "justfile:test", "justfile:ci"])
+    expect(jobs[1]).toEqual({
+      id: "justfile:build",
+      source: "justfile",
+      file: "Justfile",
+      name: "build",
+      needs: [],
+      triggers: [],
+      matrix: [],
+      steps: [
+        { id: "justfile:build:1", command: "zig build", cwd: "", env: {}, secrets: [] },
+        { id: "justfile:build:2", command: "zig build docs", cwd: "", env: {}, secrets: [] }
+      ],
+      unsupported: []
+    })
+    expect(commands(jobs[0] as Job)).toEqual(["just --list"])
+    expect(jobs[2]?.needs).toEqual(["justfile:build"])
+    expect(features(jobs[2] as Job)).toEqual(["dependency-arguments"])
+    expect(jobs[3]?.needs).toEqual(["justfile:test", "justfile:build"])
+    expect(jobs[3]?.steps).toEqual([])
+  })
+
+  it("reads quiet recipe headers and CRLF files", () => {
+    expect(commands(jobOf("@quiet:\r\n  echo hi\r\n", "quiet"))).toEqual(["echo hi"])
+  })
+
+  it("joins continued lines the way just does", () => {
+    const job = jobOf(
+      `run:
+    docker run --rm \\
+      alpine sh -c 'a && \\
+      b'
+    tail \\
+`,
+      "run"
+    )
+    expect(commands(job)).toEqual(["docker run --rm alpine sh -c 'a && b'", "tail"])
+    expect(commands(jobOf("run:\n  tail \\", "run"))).toEqual(["tail"])
+  })
+
+  it("reports a line allowed to fail and keeps it", () => {
+    const job = jobOf("clean:\n  -@rm -rf out\n", "clean")
+    expect(commands(job)).toEqual(["rm -rf out"])
+    expect(job.unsupported).toEqual([{
+      feature: "ignored-failure",
+      detail: "Justfile: clean line 2 may fail without failing the recipe"
+    }])
+  })
+
+  it("reports recipes that run others afterwards", () => {
+    const job = jobOf("a: b && c\n  echo a\n", "a")
+    expect(job.needs).toEqual(["justfile:b"])
+    expect(features(job)).toEqual(["subsequent-recipes"])
+  })
+})
+
+describe("readJustfile values", () => {
+  it("fills in literal variables and parameter defaults", () => {
+    const job = jobOf(
+      `mode := 'fast'
+name := "zig" # the tool
+test filter='' *rest count="3":
+    {{ name }} build -Dmode={{mode}} -Dfilter={{ filter }} {{ rest }} -Dcount={{ count }} {{{{raw}}
+`,
+      "test"
+    )
+    expect(commands(job)).toEqual(["zig build -Dmode=fast -Dfilter=  -Dcount=3 {{raw}}"])
+    expect(job.unsupported).toEqual([])
+  })
+
+  it("reports what just would have to evaluate", () => {
+    const text = `computed := \`git rev-parse HEAD\`
+joined := "a" + "b"
+escaped := "a\\tb"
+one seed:
+  run {{ seed }}
+two:
+  run {{ computed }}
+  run {{ joined }}
+  run {{ escaped }}
+  run {{ os() }}
+  echo fine
+three value=computed plus="x":
+  run {{ value }} {{ plus }}
+four +items:
+  run {{ items }}
+`
+    const one = jobOf(text, "one")
+    expect(one.steps).toEqual([])
+    expect(features(one)).toEqual(["recipe-argument", "expression"])
+    expect(one.unsupported[0]?.detail).toBe("Justfile: one needs a value for seed")
+    expect(one.unsupported[1]?.detail).toBe("Justfile: one line 5 depends on seed")
+    const two = jobOf(text, "two")
+    expect(commands(two)).toEqual(["echo fine"])
+    expect(two.unsupported.map((entry) => entry.detail)).toEqual([
+      "Justfile: two line 7 depends on computed",
+      "Justfile: two line 8 depends on joined",
+      "Justfile: two line 9 depends on escaped",
+      "Justfile: two line 10 depends on os()"
+    ])
+    expect(features(jobOf(text, "three"))).toEqual(["recipe-argument", "expression"])
+    expect(features(jobOf(text, "four"))).toEqual(["recipe-argument", "expression"])
+  })
+
+  it("exports what the file exports", () => {
+    const text = `export LEVEL := "debug"
+OTHER := "x"
+export DYNAMIC := env_var("HOME")
+run $PORT="80" plain="y":
+  serve
+`
+    const job = jobOf(text, "run")
+    expect(job.steps[0]?.env).toEqual({ LEVEL: "debug", PORT: "80" })
+    expect(job.unsupported[0]?.detail).toBe("Justfile: run exports DYNAMIC, which just must evaluate")
+    const all = jobOf(`set export\nA := "1"\nrun b="2":\n  go\n`, "run")
+    expect(all.steps[0]?.env).toEqual({ A: "1", b: "2" })
+    const off = jobOf(`set export := false\nA := "1"\nrun:\n  go\n`, "run")
+    expect(off.steps[0]?.env).toEqual({})
+  })
+
+  it("keeps a literal credential out of the step", () => {
+    const job = jobOf(`export API_TOKEN := "abc123"\nrun:\n  go\n`, "run")
+    expect(job.steps[0]).toMatchObject({ env: {}, secrets: ["API_TOKEN"] })
+    expect(JSON.stringify(job)).not.toContain("abc123")
+  })
+})
+
+describe("readJustfile scripts", () => {
+  it("runs a shebang recipe with its interpreter", () => {
+    const job = jobOf(
+      `test filter='x':
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if true; then
+      echo "{{ filter }}'s"
+    fi
+`,
+      "test"
+    )
+    expect(commands(job)).toEqual([
+      `bash -c 'set -euo pipefail\n\nif true; then\n  echo "x'\\''s"\nfi'`
+    ])
+  })
+
+  it.each([
+    ["#!/bin/sh -eu", "sh -eu -c 'echo a'"],
+    ["#!/usr/bin/env -S bash -e", "bash -e -c 'echo a'"]
+  ])("keeps the flags of %s", (shebang, command) => {
+    expect(commands(jobOf(`run:\n  ${shebang}\n  echo a\n`, "run"))).toEqual([command])
+  })
+
+  it("reports other interpreters and values it cannot fill in", () => {
+    const python = jobOf("run:\n  #!/usr/bin/env python3\n  print(1)\n", "run")
+    expect(python.steps).toEqual([])
+    expect(python.unsupported[0]).toEqual({
+      feature: "interpreter",
+      detail: "Justfile: run runs in /usr/bin/env python3"
+    })
+    const unknown = jobOf("run arg:\n  #!/bin/bash\n  echo {{ arg }}\n", "run")
+    expect(features(unknown)).toEqual(["recipe-argument", "expression"])
+  })
+})
+
+describe("readJustfile attributes and settings", () => {
+  it("applies attributes", () => {
+    const text = `[private]
+[doc("Has, a comma")]
+quiet:
+  echo a
+
+[working-directory: 'packages/a']
+place:
+  echo b
+
+[working-directory('packages/c')]
+[group('x')]
+other:
+  echo c
+
+[confirm]
+danger:
+  echo d
+
+[no-cd]
+stay:
+  echo e
+`
+    expect(jobOf(text, "quiet").unsupported).toEqual([])
+    expect(jobOf(text, "place").steps[0]?.cwd).toBe("packages/a")
+    expect(jobOf(text, "other").steps[0]?.cwd).toBe("packages/c")
+    expect(features(jobOf(text, "danger"))).toEqual(["attribute"])
+    expect(features(jobOf(text, "stay"))).toEqual(["attribute"])
+  })
+
+  it("keeps the Linux recipe of a name defined per platform", () => {
+    const { jobs } = read(`[macos]
+open:
+  mac-open
+
+[linux]
+open:
+  xdg-open
+
+[windows]
+only-windows:
+  start
+
+[unix]
+[macos]
+both:
+  run
+`)
+    expect(jobs.map((job) => job.name)).toEqual(["open", "both", "only-windows"])
+    expect(commands(jobs[0] as Job)).toEqual(["xdg-open"])
+    expect(features(jobs[0] as Job)).toEqual(["duplicate-recipe"])
+    expect(commands(jobs[1] as Job)).toEqual(["run"])
+    expect(jobs[2]?.steps).toEqual([])
+    expect(features(jobs[2] as Job)).toEqual(["platform"])
+  })
+
+  it("reports settings that change how recipes run and ignores the rest", () => {
+    const job = jobOf(
+      `set shell := ["bash", "-c"]
+set dotenv-load
+set positional-arguments := true
+set quiet
+run:
+  echo a
+`,
+      "run"
+    )
+    expect(job.unsupported.map((entry) => entry.detail)).toEqual([
+      "Justfile: set shell changes how recipes run",
+      "Justfile: set dotenv-load changes how recipes run"
+    ])
+  })
+
+  it("reports modules and imports it did not read", () => {
+    const { jobs } = read(`mod devnet 'etc/devnet.just'
+mod? bare
+import 'other.just'
+run:
+  echo a
+`)
+    expect(jobs.map((job) => job.id)).toEqual([
+      "justfile:run",
+      "justfile:devnet::*",
+      "justfile:bare::*",
+      "justfile:import::*"
+    ])
+    expect(jobs[1]?.unsupported).toEqual([{
+      feature: "module",
+      detail: "Justfile: the recipes of module devnet in 'etc/devnet.just' were not read"
+    }])
+    expect(jobs[2]?.unsupported[0]?.detail).toBe("Justfile: the recipes of module bare were not read")
+    expect(jobs[3]?.unsupported[0]?.detail).toBe("Justfile: the recipes imported from 'other.just' were not read")
+  })
+})
+
+describe("readJustfile malformed files", () => {
+  it("keeps what it read and reports the lines it could not", () => {
+    const { jobs } = read(`good:
+  echo a
+
+what is this
+  stray body
+???
+bad !param:
+  echo b
+`)
+    expect(jobs.map((job) => job.id)).toEqual(["justfile:good", "justfile"])
+    expect(jobs[1]).toMatchObject({ source: "justfile", steps: [] })
+    expect(jobs[1]?.unsupported).toEqual([{
+      feature: "malformed-file",
+      detail: "Justfile: line 4 cannot be read (5 such lines)"
+    }])
+  })
+
+  it("reads an empty file as no jobs", () => {
+    expect(read("").jobs).toEqual([])
+  })
+
+  it("does not take a colon in a quoted default or in parentheses for the end of a header", () => {
+    const job = jobOf(`run url='a:b' other=("x:y"):\n  echo {{ url }}\n`, "run")
+    expect(commands(job)).toEqual(["echo a:b"])
+    expect(features(job)).toEqual(["recipe-argument"])
+  })
+})

@@ -1,0 +1,186 @@
+/**
+ * Reads `package.json` files: each script is a job run by the repository's
+ * package manager, which puts the package's tools on `PATH`.
+ *
+ * @since 0.1.0
+ */
+
+import { parse as parseYaml } from "yaml"
+import type { Toolchain } from "../contract/Inventory.ts"
+import { addStep, draft, fileProblem, note, type Parsed } from "./Draft.ts"
+import { asStrings, isRecord, shellQuote } from "./Values.ts"
+
+const source = "package-json"
+
+/**
+ * How a package manager runs a script and a package's tool.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Runner {
+  readonly run: string
+  readonly exec: string
+}
+
+const runners: Readonly<Record<string, Runner>> = {
+  bun: { run: "bun run", exec: "bunx" },
+  pnpm: { run: "pnpm run", exec: "pnpm exec" },
+  yarn: { run: "yarn run", exec: "yarn" },
+  npm: { run: "npm run", exec: "npx" }
+}
+
+const lockfiles: ReadonlyArray<readonly [file: string, manager: string]> = [
+  ["bun.lock", "bun"],
+  ["bun.lockb", "bun"],
+  ["pnpm-lock.yaml", "pnpm"],
+  ["yarn.lock", "yarn"],
+  ["package-lock.json", "npm"]
+]
+
+/**
+ * The runner for a repository: the `packageManager` field names it, then the
+ * lockfile present at the root, then npm.
+ *
+ * @category readers
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const chooseRunner = (manifest: string | undefined, rootFiles: ReadonlyArray<string>): Runner => {
+  const declared = readManifest(manifest ?? "")
+  const field = isRecord(declared) && typeof declared["packageManager"] === "string"
+    ? declared["packageManager"].split("@")[0] as string
+    : ""
+  const locked = lockfiles.find(([file]) => rootFiles.includes(file))?.[1]
+  return runners[field] ?? runners[locked ?? "npm"] as Runner
+}
+
+const readManifest = (text: string): unknown => {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return undefined
+  }
+}
+
+const longRunning = (name: string, script: string): boolean =>
+  /^(dev|start|serve|watch)(:|$)/.test(name) || /(^|\s)--watch(\s|$)/.test(script)
+
+const readToolchains = (file: string, manifest: Record<string, unknown>): ReadonlyArray<Toolchain> => {
+  const tools: Array<Toolchain> = []
+  const manager = manifest["packageManager"]
+  if (typeof manager === "string") {
+    const [name, version] = manager.split("+")[0]?.split("@") as [string, string?]
+    tools.push(version === undefined ? { name, source: file } : { name, source: file, version })
+  }
+  const engines = manifest["engines"]
+  if (isRecord(engines)) {
+    for (const [name, version] of Object.entries(engines)) {
+      if (typeof version === "string") tools.push({ name, source: file, version })
+    }
+  }
+  const dev = manifest["devDependencies"]
+  const turbo = isRecord(dev) ? dev["turbo"] : undefined
+  if (typeof turbo === "string") tools.push({ name: "turbo", source: file, version: turbo })
+  return tools
+}
+
+/**
+ * Reads one `package.json`. Only the root file's tools are recorded: a
+ * workspace package's `engines` say what it accepts, not what CI pins.
+ *
+ * @category readers
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const readPackage = (file: string, text: string, runner: Runner): Parsed => {
+  const manifest = readManifest(text)
+  if (!isRecord(manifest)) return fileProblem(file, source, file, "malformed-file", "it is not a JSON object")
+  const directory = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : ""
+  const scripts = manifest["scripts"]
+  const jobs = Object.entries(isRecord(scripts) ? scripts : {}).map(([name, script]) => {
+    const job = draft({ id: `${file}:${name}`, source, file, name })
+    if (typeof script !== "string") {
+      note(job, "malformed-script", `script ${name} is not text`)
+      return job
+    }
+    if (longRunning(name, script)) note(job, "long-running", `script ${name} keeps running until it is stopped`)
+    addStep(job, { where: `script ${name}`, command: `${runner.run} ${shellQuote(name)}`, cwd: directory })
+    return job
+  })
+  return { jobs, toolchains: directory === "" ? readToolchains(file, manifest) : [] }
+}
+
+/**
+ * The workspace patterns of a repository, from `pnpm-workspace.yaml` when it
+ * has one, else from the root `package.json`.
+ *
+ * @category readers
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const readWorkspacePatterns = (
+  manifest: string | undefined,
+  pnpmWorkspace: string | undefined
+): ReadonlyArray<string> => {
+  if (pnpmWorkspace !== undefined) {
+    try {
+      const parsed: unknown = parseYaml(pnpmWorkspace)
+      return isRecord(parsed) ? asStrings(parsed["packages"]) ?? [] : []
+    } catch {
+      return []
+    }
+  }
+  const root = readManifest(manifest ?? "")
+  if (!isRecord(root)) return []
+  const workspaces = root["workspaces"]
+  return asStrings(isRecord(workspaces) ? workspaces["packages"] : workspaces) ?? []
+}
+
+/**
+ * Workspace patterns ready to walk.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface WorkspaceGlobs {
+  readonly include: ReadonlyArray<ReadonlyArray<string>>
+  readonly exclude: ReadonlyArray<RegExp>
+  readonly unreadable: ReadonlyArray<string>
+}
+
+const segmentSource = (segment: string): string =>
+  segment.split("*").map((part) => part.replace(/[.+^$()|\\]/g, "\\$&")).join("[^/]*")
+
+/**
+ * A matcher for one path segment holding `*`.
+ *
+ * @category readers
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const segmentMatcher = (segment: string): RegExp => new RegExp(`^${segmentSource(segment)}$`)
+
+const clean = (pattern: string): ReadonlyArray<string> =>
+  pattern.split("/").filter((segment) => segment !== "" && segment !== ".")
+
+/**
+ * Splits patterns into those to walk and those to subtract. A pattern using
+ * braces, classes or `?` is left unread.
+ *
+ * @category readers
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const readGlobs = (patterns: ReadonlyArray<string>): WorkspaceGlobs => {
+  const unreadable = patterns.filter((pattern) => /[{}[\]?]|\.\./.test(pattern))
+  const usable = patterns.filter((pattern) => !unreadable.includes(pattern))
+  return {
+    include: usable.filter((pattern) => !pattern.startsWith("!")).map(clean),
+    exclude: usable.filter((pattern) => pattern.startsWith("!")).map((pattern) => {
+      const parts = clean(pattern.slice(1)).map((part) => (part === "**" ? ".*" : segmentSource(part)))
+      return new RegExp(`^${parts.join("/")}$`)
+    }),
+    unreadable
+  }
+}

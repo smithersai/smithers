@@ -1,0 +1,227 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import * as PlatformError from "effect/PlatformError"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import { Inventory } from "../../src/contract/Inventory.ts"
+import { read } from "../../src/inventory/index.ts"
+
+const denied = (method: string) =>
+  PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method })
+
+effect function git(root: string, args: ReadonlyArray<string>) {
+  const spawner = try ChildProcessSpawner
+  const code = try spawner.exitCode(ChildProcess.make("git", ["-C", root, ...args]))
+  try Effect.try(() => expect(Number(code)).toBe(0))
+}
+
+/** Writes files into a new directory and commits them, so the directory is a real repository. */
+effect function repository(files: Readonly<Record<string, string>>) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try fs.makeTempDirectoryScoped()
+  for (const [name, text] of Object.entries(files)) {
+    try fs.makeDirectory(path.dirname(path.join(root, name)), { recursive: true })
+    try fs.writeFileString(path.join(root, name), text)
+  }
+  try git(root, ["init", "--quiet"])
+  try git(root, ["add", "--all"])
+  try git(root, ["-c", "user.name=t", "-c", "user.email=t@example.test", "commit", "--quiet", "--allow-empty", "-m", "c"])
+  return root
+}
+
+const workflow = `
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.3.0 }
+      - run: bun run build
+  test:
+    needs: build
+    runs-on: \${{ matrix.os }}
+    strategy: { matrix: { os: [ubuntu-latest, macos-latest] } }
+    steps:
+      - run: bun test
+        env: { CODECOV_TOKEN: "\${{ secrets.CODECOV_TOKEN }}", CI: "true" }
+`
+
+const allSources = {
+  ".github/workflows/ci.yml": workflow,
+  ".github/workflows/broken.yaml": "jobs: [unclosed",
+  ".github/workflows/notes.txt": "not a workflow",
+  "Justfile": "build:\n  zig build\n",
+  "package.json": JSON.stringify({
+    packageManager: "bun@1.3.0",
+    workspaces: ["packages/*", "tools/**", "!packages/skip", "bad/{a,b}"],
+    scripts: { test: "vitest run" }
+  }),
+  "bun.lock": "",
+  "turbo.json": `{ "tasks": { "build": {} } }`,
+  ".nvmrc": "22\n",
+  "packages/a/package.json": `{ "scripts": { "build": "tsc" } }`,
+  "packages/a/turbo.json": "{}",
+  "packages/skip/package.json": `{ "scripts": { "build": "tsc" } }`,
+  "packages/no-manifest/readme.md": "x",
+  "packages/node_modules/package.json": `{ "scripts": { "build": "tsc" } }`,
+  "tools/deep/er/package.json": `{ "scripts": { "lint": "x" } }`,
+  "packages/file.txt": "x"
+}
+
+it.layer(NodeServices.layer)("read", (it) => {
+  it.effect("reads all four sources of a real repository into a valid inventory", () =>
+    effect {
+      const root = try repository(allSources)
+      try git(root, ["remote", "add", "origin", "https://user:hunter2@github.com/acme/widgets.git"])
+      const inventory = try read(root)
+      const decoded = try Schema.decodeUnknownEffect(Inventory)(inventory)
+      try Effect.try(() => {
+        expect(decoded.repository).toBe("acme/widgets")
+        expect(decoded.commit).toMatch(/^[0-9a-f]{40}$/)
+        expect(decoded.jobs.map((job) => job.id)).toEqual([
+          "broken.yaml",
+          "ci.yml:build",
+          "ci.yml:test",
+          "justfile:build",
+          "package.json:test",
+          "workspace:bad/{a,b}",
+          "packages/a/package.json:build",
+          "packages/a/turbo.json",
+          "tools/deep/er/package.json:lint",
+          "turbo.json:build"
+        ])
+        const test = decoded.jobs[2]
+        expect(test?.needs).toEqual(["ci.yml:build"])
+        expect(test?.matrix).toEqual([{ os: "ubuntu-latest" }, { os: "macos-latest" }])
+        expect(test?.steps[0]).toMatchObject({ command: "bun test", env: { CI: "true" }, secrets: ["CODECOV_TOKEN"] })
+        expect(decoded.jobs[1]?.unsupported[0]?.feature).toBe("uses")
+        expect(decoded.jobs[0]?.unsupported[0]?.feature).toBe("malformed-file")
+        expect(decoded.jobs[6]?.steps[0]).toMatchObject({ command: "bun run build", cwd: "packages/a" })
+        expect(decoded.jobs[9]?.steps[0]?.command).toBe("bunx turbo run build")
+        expect(decoded.toolchains).toContainEqual({ name: "node", source: ".nvmrc", version: "22" })
+        expect(decoded.toolchains).toContainEqual({
+          name: "bun",
+          source: ".github/workflows/ci.yml",
+          version: "1.3.0"
+        })
+        expect(decoded.toolchains).toContainEqual({ name: "just", source: "Justfile" })
+        expect(JSON.stringify(decoded)).not.toContain("hunter2")
+      })
+    })
+
+  it.effect("names a repository with no remote after its directory and reads no CI as no jobs", () =>
+    effect {
+      const path = try Path.Path
+      const root = try repository({ "readme.md": "x" })
+      const inventory = try read(root)
+      try Effect.try(() => {
+        expect(inventory.repository).toBe(path.basename(root))
+        expect(inventory.jobs).toEqual([])
+        expect(inventory.toolchains).toEqual([])
+      })
+    })
+
+  it.effect("reads workspaces from pnpm-workspace.yaml and a lowercase hidden justfile", () =>
+    effect {
+      const root = try repository({
+        ".justfile": "a:\n  echo a\n",
+        "pnpm-workspace.yaml": "packages:\n  - libs/*\n  - exact/one\n  - missing/one\n  - plugins/p-*\n",
+        "pnpm-lock.yaml": "",
+        "package.json": "{}",
+        "libs/x/package.json": `{ "scripts": { "t": "x" } }`,
+        "exact/one/package.json": `{ "scripts": { "t": "x" } }`,
+        "plugins/p-a/package.json": `{ "scripts": { "t": "x" } }`,
+        "plugins/other/package.json": `{ "scripts": { "t": "x" } }`
+      })
+      const inventory = try read(root)
+      try Effect.try(() => {
+        expect(inventory.jobs.map((job) => job.id)).toEqual([
+          "justfile:a",
+          "exact/one/package.json:t",
+          "libs/x/package.json:t",
+          "plugins/p-a/package.json:t"
+        ])
+        expect(inventory.jobs[0]?.file).toBe(".justfile")
+        expect(inventory.jobs[1]?.steps[0]?.command).toBe("pnpm run t")
+      })
+    })
+
+  it.effect("stops following a symbolic link cycle", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const root = try repository({
+        "package.json": `{ "workspaces": ["apps/**"] }`,
+        "apps/a/package.json": `{ "scripts": { "t": "x" } }`
+      })
+      try fs.symlink(path.join(root, "apps"), path.join(root, "apps/a/loop"))
+      const inventory = try read(root)
+      try Effect.try(() => {
+        expect(inventory.jobs[0]?.id).toBe("apps/a/package.json:t")
+        expect(inventory.jobs.every((job) => job.id.split("/").length < 40)).toBe(true)
+      })
+    })
+
+  it.effect("records a file it cannot read", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const root = try repository({ "readme.md": "x" })
+      try fs.makeDirectory(path.join(root, "package.json"))
+      const inventory = try read(root)
+      try Effect.try(() => {
+        expect(inventory.jobs).toHaveLength(1)
+        expect(inventory.jobs[0]).toMatchObject({ id: "package.json", steps: [] })
+        expect(inventory.jobs[0]?.unsupported[0]?.feature).toBe("unreadable-file")
+        expect(inventory.jobs[0]?.unsupported[0]?.detail).toContain("it could not be read")
+      })
+    })
+
+  it.effect("reads on when a package's turbo.json cannot be checked", () =>
+    effect {
+      const root = try repository({
+        "package.json": `{ "workspaces": ["packages/*"] }`,
+        "packages/a/package.json": `{ "scripts": { "t": "x" } }`
+      })
+      const real = try FileSystem.FileSystem
+      const faulty = { ...real, exists: (file: string) => fail(denied(`exists ${file}`)) }
+      provide FileSystem.FileSystem = faulty {
+        const inventory = try read(root)
+        try Effect.try(() => expect(inventory.jobs.map((job) => job.id)).toEqual(["packages/a/package.json:t"]))
+      }
+    })
+
+  it.effect("fails with not-a-repository outside a repository", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const root = try fs.makeTempDirectoryScoped()
+      const failure = try flip(read(root))
+      try Effect.try(() => expect(failure).toMatchObject({ code: "not-a-repository", part: "inventory" }))
+    })
+
+  it.effect("fails with not-a-repository on a repository with no commit", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const root = try fs.makeTempDirectoryScoped()
+      try git(root, ["init", "--quiet"])
+      const failure = try flip(read(root))
+      try Effect.try(() => expect(failure.code).toBe("not-a-repository"))
+    })
+
+  it.effect("fails with not-a-repository when git cannot start", () =>
+    effect {
+      const root = try repository({ "readme.md": "x" })
+      const broken = makeSpawner(() => fail(PlatformError.systemError({
+        _tag: "NotFound",
+        module: "ChildProcess",
+        method: "spawn"
+      })))
+      provide ChildProcessSpawner = broken {
+        const failure = try flip(read(root))
+        try Effect.try(() => expect(failure.code).toBe("not-a-repository"))
+      }
+    })
+})

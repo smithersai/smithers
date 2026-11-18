@@ -1,0 +1,55 @@
+/**
+ * Reads the files at a repository's root that pin a tool's version.
+ *
+ * @since 0.1.0
+ */
+
+import type { Toolchain } from "../contract/Inventory.ts"
+
+const firstLine = (text: string): string | undefined => text.trim().split(/\s/)[0] || undefined
+
+const pattern = (expression: RegExp) => (text: string): string | undefined => expression.exec(text)?.[1]
+
+const readers: ReadonlyMap<string, readonly [tool: string, read: (text: string) => string | undefined]> = new Map([
+  [".nvmrc", ["node", firstLine]],
+  [".node-version", ["node", firstLine]],
+  [".bun-version", ["bun", firstLine]],
+  [".python-version", ["python", firstLine]],
+  [".ruby-version", ["ruby", firstLine]],
+  [".go-version", ["go", firstLine]],
+  [".zig-version", ["zig", firstLine]],
+  ["rust-toolchain", ["rust", firstLine]],
+  ["rust-toolchain.toml", ["rust", pattern(/^\s*channel\s*=\s*"([^"]+)"/m)]],
+  ["go.mod", ["go", pattern(/^go\s+(\S+)/m)]],
+  ["build.zig.zon", ["zig", pattern(/\.minimum_zig_version\s*=\s*"([^"]+)"/)]],
+  ["flake.nix", ["nix", () => undefined]]
+])
+
+/**
+ * Every root file this module reads.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const toolFiles: ReadonlyArray<string> = [...readers.keys(), ".tool-versions"]
+
+const readToolVersions = (text: string): ReadonlyArray<Toolchain> =>
+  text.split("\n").flatMap((line) => {
+    const [name, version] = line.replace(/#.*/, "").trim().split(/\s+/)
+    return name && version ? [{ name, source: ".tool-versions", version }] : []
+  })
+
+/**
+ * The tools one root file pins. It must be a file named in {@link toolFiles}.
+ *
+ * @category readers
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const readToolFile = (file: string, text: string): ReadonlyArray<Toolchain> => {
+  const reader = readers.get(file)
+  if (reader === undefined) return readToolVersions(text)
+  const [name, read] = reader
+  const version = read(text)
+  return [version === undefined ? { name, source: file } : { name, source: file, version }]
+}
