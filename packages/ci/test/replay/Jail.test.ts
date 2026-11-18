@@ -46,6 +46,7 @@ import {
   credentials,
   daemonSockets,
   jailed,
+  keyringFilter,
   type Probe,
   probe,
   temporaryOf,
@@ -456,9 +457,12 @@ describe("confine", () => {
         ],
         tmp: join(work, "tmp", way),
         temporary: ["/tmp", "/tmp/of-the-machine"],
-        visible: ["/tmp/bunx-1000-smithers-ci@latest", cache, work]
+        visible: ["/tmp/bunx-1000-smithers-ci@latest", cache, work],
+        filter: join(work, "keyring-filter")
       })
     }
+    // The filter that refuses a step the keys of the person's session is written once, beside the homes.
+    expect(new Uint8Array(readFileSync(join(work, "keyring-filter")))).toEqual(keyringFilter())
   })
 
   it("says once why there is no jail", async () => {
@@ -513,9 +517,20 @@ describe("the jail", () => {
     }
   })
 
-  it("runs a command as it is when there is none", () => {
-    expect(jailed(undefined, ["/copy"], ["/home/hooks"], argv)).toBe(argv)
-    expect(held({ ...place, jail: undefined }, ["/copy"], argv)).toBe(argv)
+  /** What closes every descriptor a step has no business with. */
+  const closes = [
+    "for d in /proc/self/fd/* /dev/fd/*; do",
+    "  n=${d##*/}",
+    "  case $n in *[!0-9]*|[012]) ;; *) eval \"exec $n<&-\" ;; esac",
+    "done"
+  ].join("\n")
+
+  it("runs a command through a shell that closes every descriptor but its three, when there is none", () => {
+    // The shell names a command that is not there before it tries to become it.
+    const named = "command -v -- \"$1\" > /dev/null 2>&1 || { printf 'could not run %s\\n' \"$1\" >&2; exit 127; }"
+    const started = ["bash", "-c", `${closes}\n${named}\nexec "$@"`, "smithers-ci", ...argv]
+    expect(jailed(undefined, ["/copy"], ["/home/hooks"], argv)).toEqual(started)
+    expect(held({ ...place, jail: undefined }, ["/copy"], argv)).toEqual(started)
   })
 
   it("leaves the machine read-only but the places given, hides the masks, and keeps the hook read-only", () => {
@@ -524,10 +539,18 @@ describe("the jail", () => {
       masks: [{ path: "/person/.ssh", directory: true }, { path: "/person/.npmrc", directory: false }],
       tmp: "/work/tmp",
       temporary: ["/tmp", "/var/tmp/mine"],
-      visible: ["/tmp/bunx", "/work"]
+      visible: ["/tmp/bunx", "/work"],
+      filter: "/work/keyring-filter"
     }
     expect(held({ ...place, jail }, ["/copy"], argv)).toEqual([
+      // A shell closes every descriptor but its three, opens the filter as 9 and becomes bubblewrap, which loads it.
+      "bash",
+      "-c",
+      `${closes}\nexec "$@" 9< "$0"`,
+      "/work/keyring-filter",
       "/usr/bin/bwrap",
+      "--seccomp",
+      "9",
       "--ro-bind",
       "/",
       "/",

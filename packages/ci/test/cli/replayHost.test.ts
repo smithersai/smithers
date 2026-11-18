@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { layer, replayOptions } from "../../src/cli/Host.vibe"
-import { nodeProgram, smthrsCommand } from "../../src/cli/Install.ts"
+import { nodeProgram, smthrsCommand, smthrsWithToken } from "../../src/cli/Install.ts"
 import { Options, Progress } from "../../src/replay/index.ts"
 import { recorder } from "./repo.ts"
 
@@ -42,6 +42,21 @@ describe("this install", () => {
 
   it("falls back to the smthrs on the path when it is not installed", () => {
     expect(smthrsCommand(missing)).toEqual(["smthrs"])
+  })
+
+  it("starts its smthrs with a shared cache's token through the program that reads it from a pipe", () => {
+    const [node, starter, script] = smthrsWithToken() as readonly [string, string, string]
+    expect(node).toBe(process.execPath)
+    expect(readFileSync(starter, "utf8")).toContain("standard input")
+    expect(script).toBe(smthrsCommand()[1])
+    expect(smthrsWithToken(undefined, "/opt/node")?.[0]).toBe("/opt/node")
+    // Without its own smthrs, or its own files, there is no such command.
+    expect(smthrsWithToken(missing)).toBeUndefined()
+    const onlySmthrs = (specifier: string): string =>
+      specifier.startsWith("@smthrs/cli")
+        ? smthrsCommand()[1]!.replace(/bin\/smithers\.mjs$/, "package.json")
+        : missing()
+    expect(smthrsWithToken(onlySmthrs)).toBeUndefined()
   })
 })
 
@@ -118,6 +133,9 @@ describe("how the program lets a replay run in a stranger's checkout", () => {
     ))
     expect(options.smthrs).toEqual(smthrsCommand())
     expect(options.reruns).toBe(2)
+    // The variables the program was started with, and the way its smthrs is given a token.
+    expect(options.environment).toEqual({})
+    expect(options.smthrsWithToken).toEqual(smthrsWithToken())
   })
 
   it("puts nothing into a checkout: smthrs finds the package the generated files import by itself", async () => {

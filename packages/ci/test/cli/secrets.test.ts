@@ -1,9 +1,10 @@
 /**
  * `smithers-ci` started with tokens in its environment, on a repository whose
- * CI looks for them: a step that reads its own environment and the
- * environment of every process it can see. The whole program, every part on
- * `main`, real `git`, real `smthrs`, and on a machine that has one, the real
- * jail.
+ * CI looks for them: a step that reads its own environment, the environment
+ * and command line of every process it can see, the descriptors it was
+ * started with, and every file the replay wrote. The whole program, every
+ * part on `main`, real `git`, real `smthrs`, a real shared cache to send the
+ * token to, and on a machine that has one, the real jail.
  */
 import * as Console from "effect/Console"
 import * as Effect from "effect/Effect"
@@ -11,6 +12,8 @@ import * as Layer from "effect/Layer"
 import { execFileSync, spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { createServer, type Server } from "node:http"
+import type { AddressInfo } from "node:net"
 import { dirname, join } from "node:path"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
 import { cli } from "../../src/cli/Cli.vibe"
@@ -25,45 +28,75 @@ const keep = (path: string): string => {
   made.push(path)
   return path
 }
-afterAll(() => made.forEach(remove))
+const servers: Array<Server> = []
+afterAll(() => {
+  made.forEach(remove)
+  servers.forEach((server) => server.close())
+})
 afterEach(() => vi.unstubAllEnvs())
 
-const environment = { HOME: keep(temporary("home")), PATH: process.env["PATH"] }
+const home = { HOME: keep(temporary("home")), PATH: process.env["PATH"] }
 
-/** A value no other process on this machine holds. Every token of the test starts with it. */
-const canary = `smithers-ci-canary-${randomUUID()}`
+/** A value no other process on this machine holds, in two halves. Every token of the test starts with it. */
+const halves = ["smithers-ci-canary-", randomUUID()] as const
+const canary = halves.join("")
 
 /** The variables a person has set when they run the program: the two it reads, and two of other tools. */
-const tokens = ["AI_GATEWAY_API_KEY", "SMITHERS_CACHE_TOKEN", "GITHUB_TOKEN", "NPM_TOKEN"]
+const tokens = Object.fromEntries(
+  ["AI_GATEWAY_API_KEY", "SMITHERS_CACHE_TOKEN", "GITHUB_TOKEN", "NPM_TOKEN"].map((
+    name,
+    index
+  ) => [name, `${canary}-${index}`])
+)
 
 /**
- * The step. It fails when its own environment holds a canary, or the environment or command line of any process it
- * can read does: through `/proc` on Linux, through `ps` where there is none. It prints the name of what held one,
- * never a value.
+ * The step. It fails when it finds a canary: in its own environment; in the environment or command line of any
+ * process it can read, through `/proc` on Linux and through `ps` where there is none; or in a file under the
+ * directory the replay keeps its copies, homes, caches and run records in. It also fails when it was started with a
+ * descriptor beyond its three, as it would be if the program passed on one it was itself started with. It prints
+ * the name of what held a canary, never a value. The script holds the canary
+ * in halves, so a search for the whole does not find the script.
  */
 const look = [
   "#!/bin/bash",
-  `canary=${canary}`,
-  "if env | grep -q \"$canary\"; then echo \"a token is in the step's environment\" >&2; exit 1; fi",
-  "for process in /proc/[0-9]*; do",
-  "  for file in environ cmdline; do",
-  "    if { tr '\\0' '\\n' < $process/$file; } 2>/dev/null | grep -aq \"$canary\"; then",
-  "      echo \"a token is in $file of process ${process#/proc/}: $(tr '\\0' ' ' < $process/cmdline | cut -c1-60)\" >&2",
-  "      exit 1",
-  "    fi",
-  "  done",
-  "done",
+  `canary=${halves[0]}`,
+  `canary="$canary"${halves[1]}`,
+  // The canary is on no command line of the step's own: a search reads it from descriptor 3. What records the
+  // step's commands, as the replay does to learn what a step reads, so records no canary either.
+  "case \"$(env)\" in *\"$canary\"*) echo \"a token is in the step's environment\" >&2; exit 1 ;; esac",
+  // One search over what every process was started with.
+  "set -- /proc/[0-9]*/environ /proc/[0-9]*/cmdline",
+  "held=$(grep -alF -f /dev/fd/3 -- \"$@\" 3<<<\"$canary\" 2>/dev/null | head -1)",
+  "if [ -n \"$held\" ]; then",
+  "  echo \"a token is in $held: $(tr '\\0' ' ' < \"${held%/*}/cmdline\" | cut -c1-60)\" >&2",
+  "  exit 1",
+  "fi",
   "if [ ! -d /proc/self ]; then",
   "  ps eww -ax > \"$HOME/processes\" 2>/dev/null",
-  "  if grep -q \"$canary\" \"$HOME/processes\"; then echo \"a token is in what ps shows of a process\" >&2; exit 1; fi",
+  "  if grep -qF -f /dev/fd/3 \"$HOME/processes\" 3<<<\"$canary\"; then",
+  "    echo \"a token is in what ps shows of a process\" >&2",
+  "    exit 1",
+  "  fi",
+  "  rm -f \"$HOME/processes\"",
   "fi",
+  // bash holds the script itself as 255. Listing the descriptors opens one more, closed again by the time it is
+  // looked at.
+  "for descriptor in /proc/$$/fd/*; do",
+  "  case ${descriptor##*/} in 0|1|2|255|'*') continue ;; esac",
+  "  [ -e \"$descriptor\" ] || continue",
+  "  echo \"descriptor ${descriptor##*/} is open\" >&2",
+  "  exit 1",
+  "done",
+  // The step's home is `home/<way>` in the replay's directory.
+  "held=$(grep -rIlF -f /dev/fd/3 -- \"$HOME/../..\" 3<<<\"$canary\" 2>/dev/null | head -1)",
+  "if [ -n \"$held\" ]; then echo \"a token is in the file $held\" >&2; exit 1; fi",
   ""
 ].join("\n")
 
 /** Where the person's container daemon is, in the test that allows Docker. No daemon listens there. */
 const daemon = "unix:///nowhere/docker.sock"
 
-/** A repository whose CI is the step, then `more`. */
+/** A repository of two commits whose CI is the step, then `more`. */
 const fixture = (more: ReadonlyArray<string> = []): string => {
   const root = keep(temporary("secrets"))
   const workflow = [
@@ -85,14 +118,40 @@ const fixture = (more: ReadonlyArray<string> = []): string => {
   chmodSync(join(root, "look.sh"), 0o755)
   git(root, "add", "--all")
   git(root, "commit", "--quiet", "--message", "c1")
+  // A second commit, the one replayed: its steps run after the replay's first run, at the commit before, and
+  // search everything that run left behind.
+  writeFileSync(join(root, "notes.md"), "a change\n")
+  git(root, "add", "--all")
+  git(root, "commit", "--quiet", "--message", "c2")
   return root
 }
 
-/** Runs the program in `root` with the tokens set. With `refusal`, the machine says it cannot jail a step. */
-const program = async (root: string, refusal?: string) => {
-  for (const [index, name] of tokens.entries()) vi.stubEnv(name, `${canary}-${index}`)
+/**
+ * A shared cache on this machine that holds nothing and takes everything. It keeps the credential of each request it
+ * is sent.
+ */
+const cache = async () => {
+  const sent: Array<string> = []
+  const server = createServer((request, response) => {
+    sent.push(request.headers.authorization ?? "")
+    request.resume().on("end", () => {
+      response.statusCode = request.method === "PUT" ? 201 : 404
+      response.end()
+    })
+  })
+  servers.push(server)
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, sent }
+}
+
+/**
+ * Runs the program in `root` with the tokens set and the shared cache named. With `refusal`, the machine says it
+ * cannot jail a step.
+ */
+const program = async (root: string, url: string, refusal?: string) => {
+  for (const [name, value] of Object.entries(tokens)) vi.stubEnv(name, value)
   const sink = recorder()
-  const run = cli(["--commits", "1", "--json"], root, parts)
+  const run = cli(["--commits", "1", "--json", "--cache", url], root, parts)
   const noJail = Layer.effect(
     Options,
     Effect.gen(function*() {
@@ -101,31 +160,39 @@ const program = async (root: string, refusal?: string) => {
   )
   const code = await Effect.runPromise(
     (refusal === undefined ? run : Effect.provide(run, noJail)).pipe(
-      Effect.provide(layer(environment)),
+      // The program gives its parts the variables it was started with, as the published program does.
+      Effect.provide(layer({ ...home, ...tokens })),
       Effect.provideService(Console.Console, sink.service as never)
     ) as Effect.Effect<number>
   )
   return { code, stdout: sink.stdout(), stderr: sink.stderr() }
 }
 
-/** What the report says of the one commit: how each way ended, and why a step failed. */
-const ways = (stdout: string) => {
-  const [commit] = (JSON.parse(stdout) as {
-    readonly commits: ReadonlyArray<
-      Readonly<
-        Record<"baseline" | "normal", { readonly ok: boolean; readonly failures?: ReadonlyArray<{ reason: string }> }>
-      >
-    >
-  }).commits
-  const of = (way: "baseline" | "normal") => ({
-    ok: commit?.[way].ok,
-    reasons: (commit?.[way].failures ?? []).map((failure) => failure.reason)
-  })
-  return { baseline: of("baseline"), normal: of("normal") }
+interface Way {
+  readonly ok: boolean
+  readonly failures?: ReadonlyArray<{ readonly reason: string }>
 }
+
+/** What the report says of each commit: how each way ended, and why a step failed. */
+const ways = (stdout: string) =>
+  (JSON.parse(stdout) as { readonly commits: ReadonlyArray<Readonly<Record<"baseline" | "normal", Way>>> }).commits
+    .map((commit) => {
+      const of = (way: "baseline" | "normal") => ({
+        ok: commit[way].ok,
+        reasons: (commit[way].failures ?? []).map((failure) => failure.reason)
+      })
+      return { baseline: of("baseline"), normal: of("normal") }
+    })
+
+/** How a run ended and what its report says; what it wrote as errors when it printed no report. */
+const told = (outcome: { readonly code: number; readonly stdout: string; readonly stderr: string }) => ({
+  code: outcome.code,
+  ways: outcome.stdout === "" ? outcome.stderr : ways(outcome.stdout)
+})
 
 const jailable = !("refusal" in probe())
 const passed = { ok: true, reasons: [] }
+const bothPassed = { baseline: passed, normal: passed }
 
 /** What the system says a process was started with: every process of this user can read it. */
 const startedWith = (pid: number): string => {
@@ -139,18 +206,21 @@ const startedWith = (pid: number): string => {
 }
 
 describe("smithers-ci started with tokens in its environment", () => {
-  it.skipIf(!jailable)("shows a step none of them, in its environment or any process it can read", async () => {
-    const outcome = await program(fixture())
+  it.skipIf(!jailable)("shows a step none of them, and sends the cache its token", async () => {
+    const shared = await cache()
+    const outcome = await program(fixture(), shared.url)
 
-    expect(ways(outcome.stdout)).toEqual({ baseline: passed, normal: passed })
-    expect(outcome.code).toBe(0)
+    expect(told(outcome)).toEqual({ code: 0, ways: [bothPassed] })
+    // Smithers build was given the token, on a pipe: the cache was sent it.
+    expect(shared.sent).toContain(`Bearer ${tokens["SMITHERS_CACHE_TOKEN"]}`)
   }, 1_800_000)
 
   it("shows a step none of them on a machine with no jail", async () => {
-    const outcome = await program(fixture(), "bwrap is not on PATH (install the bubblewrap package)")
+    const shared = await cache()
+    const outcome = await program(fixture(), shared.url, "bwrap is not on PATH (install the bubblewrap package)")
 
-    expect(ways(outcome.stdout)).toEqual({ baseline: passed, normal: passed })
-    expect(outcome.code).toBe(0)
+    expect(told(outcome)).toEqual({ code: 0, ways: [bothPassed] })
+    expect(shared.sent).toContain(`Bearer ${tokens["SMITHERS_CACHE_TOKEN"]}`)
   }, 1_800_000)
 
   it("holds none of them in its own process while a step runs", async () => {
@@ -162,12 +232,13 @@ describe("smithers-ci started with tokens in its environment", () => {
       cwd: fixture([`test "$DOCKER_HOST" = ${daemon}`]),
       env: {
         ...process.env,
-        ...environment,
+        ...home,
         PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
         DOCKER_HOST: daemon,
-        ...Object.fromEntries(tokens.map((name, index) => [name, `${canary}-${index}`]))
+        ...tokens
       },
-      stdio: ["ignore", "pipe", "pipe"]
+      // A fourth descriptor, as a caller that keeps a channel to the program leaves one open.
+      stdio: ["ignore", "pipe", "pipe", "pipe"]
     })
     let stdout = ""
     let stderr = ""
@@ -183,6 +254,6 @@ describe("smithers-ci started with tokens in its environment", () => {
     expect(startedWith(pid)).not.toBe("")
 
     expect(await code, stderr).toBe(0)
-    expect(ways(stdout)).toEqual({ baseline: passed, normal: passed })
+    expect(ways(stdout)).toEqual([bothPassed])
   }, 1_800_000)
 })

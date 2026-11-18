@@ -23,6 +23,7 @@ import {
   credentials,
   type Jail,
   jailed,
+  keyringFilter,
   type Mask,
   type Probe,
   temporaryOf,
@@ -184,7 +185,10 @@ export effect function confine(
     if (try fs.exists(cache)) caches.push(cache)
   }
   const visible = [...temporaryRoots(programs, temporary), ...caches, work]
-  const jailOf = (tmp: string): Jail => ({ bwrap: found.bwrap, masks, tmp, temporary, visible })
+  // The filter that refuses a step the keys of the person's session, where bubblewrap reads it and no step writes it.
+  const filter = path.join(work, "keyring-filter")
+  try fs.writeFile(filter, keyringFilter())
+  const jailOf = (tmp: string): Jail => ({ bwrap: found.bwrap, masks, tmp, temporary, visible, filter })
   return {
     baseline: { ...made.baseline, jail: jailOf(made.baseline.tmp) },
     normal: { ...made.normal, jail: jailOf(made.normal.tmp) },

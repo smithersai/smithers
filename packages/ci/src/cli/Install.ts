@@ -70,3 +70,26 @@ export const smthrsCommand = (
   const cli = directoryOf("@smthrs/cli", resolve)
   return cli === undefined ? ["smthrs"] : [node, join(cli, "bin", "smithers.mjs")]
 }
+
+/**
+ * The command that starts this install's `smthrs` with the token of a shared
+ * cache: `smthrs-with-token.mjs` of this package, which reads the token from
+ * its standard input and then runs `smthrs` in its own process. A step runs beside
+ * `smthrs` and reads what every process was started with, so the token is in
+ * no environment. Without this install's `smthrs` there is no such command,
+ * and a replay's `smthrs` gets no token.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const smthrsWithToken = (
+  resolve: Resolve = fromHere,
+  node: string = process.execPath
+): readonly [string, ...Array<string>] | undefined => {
+  const cli = directoryOf("@smthrs/cli", resolve)
+  const own = directoryOf("smithers-ci", resolve)
+  return cli === undefined || own === undefined
+    ? undefined
+    : [node, join(own, "bin", "smthrs-with-token.mjs"), join(cli, "bin", "smithers.mjs")]
+}

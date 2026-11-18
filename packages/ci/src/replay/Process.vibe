@@ -130,6 +130,8 @@ const keep = (
  * is its whole environment. `heard` is given the output as it comes. A command
  * that outlives its stop signal is killed. With `watch`, what a stalled command
  * waits in is stopped, so a run of `smthrs` can still write its record.
+ * `handed` is text the command reads from its standard input in place of end
+ * of file: what it must be given and no process beside it may read.
  *
  * @category running
  * @since 0.1.0
@@ -143,7 +145,8 @@ export effect function exec(
   output: (handle: ChildProcessHandle) => Stream.Stream<Uint8Array, PlatformError.PlatformError> = (handle) => handle.all,
   whole = false,
   heard: (chunk: string) => void!! = () => Effect.void,
-  watch: Watch | undefined = undefined
+  watch: Watch | undefined = undefined,
+  handed: string | undefined = undefined
 ) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
@@ -152,7 +155,7 @@ export effect function exec(
         cwd,
         env: { ...env },
         extendEnv: !whole,
-        stdin: "ignore",
+        stdin: handed === undefined ? "ignore" : Stream.make(new TextEncoder().encode(handed)),
         forceKillAfter: "5 seconds"
       })
     )

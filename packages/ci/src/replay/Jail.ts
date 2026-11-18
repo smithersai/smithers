@@ -166,7 +166,8 @@ export interface Mask {
 /**
  * The jail of one replay: the program that holds it, what it hides, the
  * directory its steps find in place of each of the machine's `temporary`
- * directories, and what they still read of those.
+ * directories, and what they still read of those. `filter` is the file that
+ * holds {@link keyringFilter}.
  *
  * @category models
  * @since 0.1.0
@@ -177,7 +178,95 @@ export interface Jail {
   readonly tmp: string
   readonly temporary: ReadonlyArray<string>
   readonly visible: ReadonlyArray<string>
+  readonly filter: string
 }
+
+/**
+ * The kernel's three key calls, `add_key`, `request_key` and `keyctl`, by the
+ * number each processor gives them: x86-64 with its x32 form, 32-bit x86,
+ * 64-bit Arm and 32-bit Arm. A 64-bit kernel also runs its 32-bit programs,
+ * so both forms are named.
+ */
+const keyCalls: ReadonlyArray<readonly [processor: number, calls: ReadonlyArray<number>]> = [
+  [0xC000003E, [248, 249, 250, 0x40000000 + 248, 0x40000000 + 249, 0x40000000 + 250]],
+  [0x40000003, [286, 287, 288]],
+  [0xC00000B7, [217, 218, 219]],
+  [0x40000028, [309, 310, 311]]
+]
+
+/** One instruction of a seccomp filter: an operation, two jumps and a value. */
+const instruction = (operation: number, whenTrue: number, whenFalse: number, value: number): Uint8Array => {
+  const bytes = new Uint8Array(8)
+  const view = new DataView(bytes.buffer)
+  view.setUint16(0, operation, true)
+  view.setUint8(2, whenTrue)
+  view.setUint8(3, whenFalse)
+  view.setUint32(4, value, true)
+  return bytes
+}
+
+/**
+ * The seccomp filter a jailed step runs under, as bubblewrap loads it. It
+ * refuses the kernel's key calls with "not implemented" and allows every
+ * other call.
+ *
+ * A session's kernel keyring is inherited by every process the session
+ * starts, the jail's included: without the filter a step reads the keys the
+ * person's session holds, such as a Kerberos ticket. With it, a tool that
+ * looks for a keyring finds a kernel that has none.
+ *
+ * @throws {never}
+ * @category rendering
+ * @since 0.1.0
+ */
+export const keyringFilter = (): Uint8Array => {
+  const load = (offset: number) => instruction(0x20, 0, 0, offset)
+  const equal = (value: number, whenTrue: number, whenFalse: number) => instruction(0x15, whenTrue, whenFalse, value)
+  const answer = (value: number) => instruction(0x06, 0, 0, value)
+  const allow = answer(0x7FFF0000)
+  const notImplemented = answer(0x00050000 + 38)
+  // For each processor: skip the block when the call is another processor's, else refuse its key calls.
+  const program = [
+    ...keyCalls.flatMap(([processor, calls]) => [
+      load(4),
+      equal(processor, 0, calls.length + 3),
+      load(0),
+      ...calls.map((call, index) => equal(call, calls.length - index, 0)),
+      allow,
+      notImplemented
+    ]),
+    allow
+  ]
+  const bytes = new Uint8Array(program.length * 8)
+  program.forEach((each, index) => bytes.set(each, index * 8))
+  return bytes
+}
+
+/**
+ * Closes every descriptor but standard input, output and error. A program
+ * passes on to what it starts each descriptor it was started with and never
+ * closed: a file its caller opened, or the channel a tool that started
+ * `smithers-ci` talks to it through. A step gets none of them.
+ */
+const closes = [
+  "for d in /proc/self/fd/* /dev/fd/*; do",
+  "  n=${d##*/}",
+  "  case $n in *[!0-9]*|[012]) ;; *) eval \"exec $n<&-\" ;; esac",
+  "done"
+].join("\n")
+
+/**
+ * What the shell runs to start a command with its three descriptors only. A
+ * command that is not there is named, as the system names one it cannot start.
+ */
+const bare = [
+  closes,
+  "command -v -- \"$1\" > /dev/null 2>&1 || { printf 'could not run %s\\n' \"$1\" >&2; exit 127; }",
+  "exec \"$@\""
+].join("\n")
+
+/** The same, with the jail's filter open as descriptor 9 for bubblewrap to load. */
+const withFilter = `${closes}\nexec "$@" 9< "$0"`
 
 /**
  * The directories a jailed step finds replaced by the replay's own: `/tmp`,
@@ -228,14 +317,17 @@ export const unjailed = (refusal: string, allowDocker: boolean = false): string 
   `push with git${allowDocker ? "" : " or start docker or podman by name"}`
 
 /**
- * The command that runs `argv` in the jail, or `argv` itself with no jail.
+ * The command that runs `argv` in the jail, or on its own with no jail. Either
+ * way a shell starts it, with no descriptor but standard input, output and
+ * error.
  *
  * In the jail every file of the machine is read-only, the masks are empty
  * but for what each keeps, and only `writable` can be written; `sealed` names paths under a writable
  * one that stay read-only. The machine's temporary directories are the
  * replay's own, so a step that writes `/tmp` writes nothing of the machine's
  * and finds nothing another program left there. The step has its own device
- * and process trees, and it ends, with everything it started, when the
+ * and process trees, the kernel refuses it the keys of the person's session
+ * ({@link keyringFilter}), and it ends, with everything it started, when the
  * replay does. The network stays as it is.
  *
  * @throws {never}
@@ -248,8 +340,14 @@ export const jailed = (
   sealed: ReadonlyArray<string>,
   argv: readonly [string, ...Array<string>]
 ): readonly [string, ...Array<string>] =>
-  jail === undefined ? argv : [
+  jail === undefined ? ["bash", "-c", bare, "smithers-ci", ...argv] : [
+    "bash",
+    "-c",
+    withFilter,
+    jail.filter,
     jail.bwrap,
+    "--seccomp",
+    "9",
     "--ro-bind",
     "/",
     "/",

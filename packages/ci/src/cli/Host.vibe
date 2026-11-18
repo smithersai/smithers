@@ -25,7 +25,7 @@ import type { Failure } from "../contract/Parts.ts"
 import { name } from "../contract/Command.ts"
 import { Options, Progress } from "../replay/index.ts"
 import { Ledger, Repository } from "../select/index.ts"
-import { nodeProgram, smthrsCommand } from "./Install.ts"
+import { nodeProgram, smthrsCommand, smthrsWithToken } from "./Install.ts"
 
 /** An environment, read once at the composition root and never printed. */
 export type Environment = Readonly<Record<string, string | undefined>>
@@ -70,7 +70,8 @@ const noNode: Failure = {
  * into a checkout for it: a step that installs would find it under
  * `node_modules`, and remove it. `hasNode` says whether `smthrs` has a Node
  * to run on. `environment` holds the variables the program was started with,
- * which it keeps out of its own process.
+ * which it keeps out of its own process. `withToken` starts `smthrs` with the
+ * token of a shared cache, read from a pipe.
  *
  * @category layers
  * @since 0.1.0
@@ -78,12 +79,14 @@ const noNode: Failure = {
 export const replayOptions = (
   smthrs: readonly [string, ...Array<string>],
   hasNode: boolean = true,
-  environment: Environment | undefined = undefined
+  environment: Environment | undefined = undefined,
+  withToken: readonly [string, ...Array<string>] | undefined = undefined
 ) =>
   Layer.succeed(Options, {
     smthrs,
     reruns,
     environment,
+    smthrsWithToken: withToken,
     prepare: effect (_checkout: string) => {
       if (!hasNode) throw noNode
     }
@@ -114,7 +117,12 @@ export const layer = (environment: Environment) => {
       FlowEngine.layerMemory,
       WebCrypto.layer,
       judge(environment),
-      replayOptions(smthrsCommand(undefined, runtime), runtime !== undefined, environment),
+      replayOptions(
+        smthrsCommand(undefined, runtime),
+        runtime !== undefined,
+        environment,
+        smthrsWithToken(undefined, runtime)
+      ),
       replayProgress
     ),
     node

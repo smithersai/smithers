@@ -25,11 +25,11 @@ export const noExists = Layer.effect(FileSystem.FileSystem, effect {
   return { ...real, exists: () => Effect.fail(denied("exists")) }
 })
 
-/** The real processes, except that `command` cannot be started. */
+/** The real processes, except that `command` cannot be started, by itself or by the shell that starts a step. */
 export const cannotStart = (command: string) => Layer.effect(ChildProcessSpawner, effect {
   const real = try ChildProcessSpawner
   return makeSpawner((process) =>
-    process._tag === "StandardCommand" && process.command === command
+    process._tag === "StandardCommand" && [process.command, ...process.args].includes(command)
       ? Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "ChildProcess", method: "spawn" }))
       : real.spawn(process)
   )

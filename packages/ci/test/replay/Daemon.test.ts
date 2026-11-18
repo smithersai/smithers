@@ -341,9 +341,10 @@ describe("the jail", () => {
       masks: [{ path: "/run/user/1000", directory: true, kept: ["/run/user/1000/docker.sock"] }],
       tmp: "/work/tmp",
       temporary: ["/tmp"],
-      visible: []
+      visible: [],
+      filter: "/work/keyring-filter"
     }
-    expect(jailed(jail, [], [], ["true"]).slice(9, 16)).toEqual([
+    expect(jailed(jail, [], [], ["true"]).slice(15, 22)).toEqual([
       "--tmpfs",
       "/run/user/1000",
       "--bind",

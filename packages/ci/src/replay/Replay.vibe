@@ -152,7 +152,9 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
  * it, the machine's core count. `processes` is where a step's processes are
  * read and stopped. `environment` holds the variables of the person who runs
  * the replay, which the program keeps out of its own process; without it they
- * are read from the process.
+ * are read from the process. `smthrsWithToken` starts Smithers build as
+ * `smthrs` does and reads the token of the shared cache from its standard input;
+ * without it the replay's Smithers build gets no token.
  *
  * @category services
  * @since 0.1.0
@@ -166,6 +168,7 @@ export service Options {
   readonly cores?: number | undefined
   readonly processes?: Table | undefined
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  readonly smthrsWithToken?: readonly [string, ...Array<string>] | undefined
   static readonly defaultValue = () => ({
     smthrs: ["smthrs"] as const,
     reruns: maxReruns,
@@ -363,6 +366,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-replay-" }), "could not make a directory")
     const source = path.join(work, "source")
     const root = path.resolve(request.root)
+    // The variables of the person who runs the replay. The token of the shared cache `--cache` names is one: it
+    // reaches Smithers build alone, on a pipe.
+    const person = options.environment ?? ambientEnvironment()
+    const token = request.cache === undefined ? undefined : person["SMITHERS_CACHE_TOKEN"]
     // Without the person's word, no step reaches a container daemon and no job that starts one is replayed.
     const allowDocker = request.allowDocker === true
     // Each way has a home of its own: none finds a cache another way filled.
@@ -373,7 +380,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         progress.say,
         [...options.smthrs, ...searchPath()],
         allowDocker,
-        options.environment
+        person
       ),
       "could not make the steps' homes"
     )
@@ -567,8 +574,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       if (selected.length === 0) return []
       runs += 1
       const file = path.join(records, `run-${runs}.json`)
+      // With a token to give, Smithers build is started by the program that reads it from a pipe.
+      const starter = token === undefined ? undefined : options.smthrsWithToken
       const [command, ...args] = held(place, [copy, records], [
-        ...options.smthrs,
+        ...(starter ?? options.smthrs),
         "ci",
         ...selected,
         "--workspace",
@@ -582,7 +591,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         ...(own.jobs === undefined ? [] : ["--jobs", String(own.jobs)])
       ])
       const watch = try watchFor(stall.minutes, stall.table)
-      const output = try exec(command, args, copy, { ...startEnv(copy, place), ...printsNotes }, printedLimit, undefined, true, heard, watch)
+      const environment = { ...startEnv(copy, place), ...printsNotes }
+      const handed = starter === undefined ? undefined : token
+      const output = try exec(command, args, copy, environment, printedLimit, undefined, true, heard, watch, handed)
       const stalled = try Ref.get(watch.stalled)
       const record = effect {
         const text = try fs.readFileString(file)
