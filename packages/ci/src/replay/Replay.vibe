@@ -9,9 +9,17 @@
 import * as ChildProcess from "effect/process/ChildProcess"
 import type * as PlatformError from "effect/PlatformError"
 import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { ci, type Inventory, notReplayed, refusal, shell, stepTimeoutHours } from "../contract/Inventory.ts"
-import type { Failure, ReplayParts, ReplayRequest } from "../contract/Parts.ts"
-import type { ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
+import {
+  ci,
+  type Inventory,
+  type NotReplayed,
+  notReplayed,
+  refusal,
+  shell,
+  stepTimeoutHours
+} from "../contract/Inventory.ts"
+import type { Failure, GeneratedFile, ReplayParts, ReplayRequest } from "../contract/Parts.ts"
+import type { NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { type Mode, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
@@ -117,6 +125,19 @@ interface Output {
 interface Measured {
   readonly results: ReadonlyArray<TargetResult>
   readonly wallMs: number
+}
+
+/** What one commit's own CI gives the replay: the files to write, the units to run, and what is left out. */
+interface Prepared {
+  readonly inventory: Inventory
+  readonly generated: ReadonlyArray<GeneratedFile>
+  readonly units: ReadonlyArray<Unit>
+  /** Every target of the units, each once. */
+  readonly labels: ReadonlyArray<string>
+  readonly splits: ReadonlyMap<string, ReadonlyArray<string>>
+  readonly left: ReadonlyArray<NotReplayed>
+  /** How many generated targets may run at once. */
+  readonly jobs: number | undefined
 }
 
 /** A step that could not start, for example because its directory does not exist at this commit, failed. */
@@ -231,6 +252,12 @@ effect function measure<R>(
 /**
  * Replays the last `request.commits` commits and reports.
  *
+ * Each commit runs its own CI: the inventory is read, split and turned into
+ * targets from that commit's own tree, so a commit that renamed a script or a
+ * job is replayed with the names it had. The newest commit's CI must be
+ * replayable. An older commit whose CI is not (it had none, or none of it
+ * runs on this machine) is left out of the times and listed.
+ *
  * The baseline runs the CI's steps as they are. The targets come from the CI
  * after `parts.decompose` split its steps, when the part is given, and a split
  * step's verdict is the combined verdict of its targets.
@@ -288,43 +315,51 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     const normalCopy = try copyAt("normal", "HEAD")
-    const inventory: Inventory = try parts.read(normalCopy)
-    const why = ownWorkspace(inventory) ?? refusal(inventory)
-    if (why !== undefined) throw failure("unsupported", why)
-    const narrowed = ci(inventory)
-    const split = parts.decompose === undefined ? narrowed : try parts.decompose(normalCopy, narrowed)
-    const generated = try parts.files(split, { cache: request.cache })
 
     /**
-     * Refuses a copy that holds a link, or a file its owner wrote, where a generated file goes. Nothing is written
-     * there, at the newest commit before anything runs and at each commit before its files are written.
+     * What the CI of the commit checked out in the normal copy gives the replay: read, split and generated from that
+     * commit's own tree. It fails `unsupported` when nothing of that CI can be replayed on this machine.
      */
-    effect function writable(copy: string) {
-      check(copy, generated) catch effect (cause) => {
+    effect function prepared(): Prepared!Failure!(R | Host) {
+      const inventory: Inventory = try parts.read(normalCopy)
+      const why = ownWorkspace(inventory) ?? refusal(inventory)
+      if (why !== undefined) throw failure("unsupported", why)
+      const narrowed = ci(inventory)
+      const split = parts.decompose === undefined ? narrowed : try parts.decompose(normalCopy, narrowed)
+      const generated = try parts.files(split, { cache: request.cache })
+      // A commit can hold a link, or a file its owner wrote, where a generated file goes: nothing is written then.
+      check(normalCopy, generated) catch effect (cause) => {
         throw failure("unsupported", cause.message)
       }
+      const mapFile = generated.find((file) => file.path === targetMapPath)
+      if (mapFile === undefined) throw failure("invalid-document", `the generated files have no ${targetMapPath}`)
+      const targetMap = Schema.decodeUnknownEffect(Schema.fromJsonString(TargetMap))(mapFile.content) catch effect () => {
+        throw failure("invalid-document", `${targetMapPath} is not a target map`)
+      }
+      // A variant for another system, and a job with a step that has no target, are left out and listed.
+      const replayed = replayable(narrowed, targetMap, thisHost())
+      const labels = [...new Set(targetsOf(replayed.units))]
+      if (labels.length === 0) throw failure("unsupported", nothingToReplay(replayed.left))
+      const cycle = cycleIn(replayed.units)
+      if (cycle !== undefined) throw failure("invalid-document", `job ${cycle} needs itself`)
+      return {
+        inventory,
+        generated,
+        units: replayed.units,
+        labels,
+        splits: splitOf(replayed.units),
+        left: [...notReplayed(inventory), ...replayed.left],
+        jobs: jobsFor(request.jobs, targetMap.maxJobs)
+      }
     }
-    try writable(normalCopy)
-    const mapFile = generated.find((file) => file.path === targetMapPath)
-    if (mapFile === undefined) throw failure("invalid-document", `the generated files have no ${targetMapPath}`)
-    const targetMap = Schema.decodeUnknownEffect(Schema.fromJsonString(TargetMap))(mapFile.content) catch effect () => {
-      throw failure("invalid-document", `${targetMapPath} is not a target map`)
-    }
-    // A variant for another system, and a job with a step that has no target, are left out and listed.
-    const replayed = replayable(narrowed, targetMap, thisHost())
-    const units = replayed.units
-    const left = [...notReplayed(inventory), ...replayed.left]
-    const allLabels = [...new Set(targetsOf(units))]
-    const splits = splitOf(units)
-    if (allLabels.length === 0) throw failure("unsupported", nothingToReplay(replayed.left))
-    const cycle = cycleIn(units)
-    if (cycle !== undefined) throw failure("invalid-document", `job ${cycle} needs itself`)
+
+    // The newest commit's CI must be replayable: it is what the repository runs today.
+    const newest = try prepared()
     const fastCopy = request.modes.includes("fast") ? try copyAt("fast", "HEAD") : undefined
 
-    effect function ready(copy: string, commit: string) {
+    effect function ready(copy: string, commit: string, own: Prepared) {
       try checkout(copy, commit)
-      try writable(copy)
-      for (const file of generated) {
+      for (const file of own.generated) {
         const target = path.resolve(copy, file.path)
         try orFail(fs.makeDirectory(path.dirname(target), { recursive: true }), `could not write ${file.path}`)
         try orFail(fs.writeFileString(target, file.content), `could not write ${file.path}`)
@@ -332,19 +367,18 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       try options.prepare(copy)
       // Everything untracked now is the replay's own: the generated files, the cache, what `prepare` linked. Listed in
       // the copy's exclude file, it leaves `git status` as clean as in the baseline's fresh clone.
-      const own = try git(copy, ["ls-files", "--others", "--directory", "--exclude-per-directory=.gitignore", "-z"])
+      const untracked = try git(copy, ["ls-files", "--others", "--directory", "--exclude-per-directory=.gitignore", "-z"])
       const info = path.join(copy, ".git", "info")
       try orFail(fs.makeDirectory(info, { recursive: true }), "could not write .git/info/exclude")
-      try orFail(fs.writeFileString(path.join(info, "exclude"), excludeLines(own)), "could not write .git/info/exclude")
+      try orFail(fs.writeFileString(path.join(info, "exclude"), excludeLines(untracked)), "could not write .git/info/exclude")
     }
 
     let runs = 0
-    const jobs = jobsFor(request.jobs, targetMap.maxJobs)
     const cacheEnv = request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }
 
-    effect function planOf(copy: string) {
+    effect function planOf(copy: string, own: Prepared) {
       const [command, ...prefix] = options.smthrs
-      const args = [...prefix, "ci", ...allLabels, "--plan", "--format", "json", "--workspace", copy]
+      const args = [...prefix, "ci", ...own.labels, "--plan", "--format", "json", "--workspace", copy]
       const planned = try exec(command, args, copy, cacheEnv, Number.POSITIVE_INFINITY, (handle) => handle.stdout)
       const printed = Schema.decodeUnknownEffect(Schema.fromJsonString(PrintedPlan))(planned.text) catch effect () => {
         throw failure("command-failed", `smthrs ci --plan printed no plan: ${planned.text.slice(-outputLimit)}`)
@@ -352,8 +386,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return planOfPrinted(printed)
     }
 
-    const smithers = (copy: string): Execute<Host> => (targets) => effect {
-      const selected = targets ?? allLabels
+    const smithers = (copy: string, own: Prepared): Execute<Host> => (targets) => effect {
+      const selected = targets ?? own.labels
       if (selected.length === 0) return []
       runs += 1
       const file = path.join(work, `run-${runs}.json`)
@@ -370,7 +404,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         file,
         "--ui",
         "plain",
-        ...(jobs === undefined ? [] : ["--jobs", String(jobs)])
+        ...(own.jobs === undefined ? [] : ["--jobs", String(own.jobs)])
       ]
       const output = try exec(command, args, copy, cacheEnv, outputLimit)
       const unreadable = () => failure("command-failed", `smthrs ci wrote no run record: ${output.text}`)
@@ -416,9 +450,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       })
     }
 
-    const baseline = (commit: string): Execute<Host> => (targets) => effect {
+    const baseline = (commit: string, own: Prepared): Execute<Host> => (targets) => effect {
       const wanted = targets === undefined ? undefined : new Set(targets)
-      const chosen = stationsOf(units, wanted)
+      const chosen = stationsOf(own.units, wanted)
       const atOnce = chosen.reduce((total, station) => total + station.runs.length, 0)
       const limit = try Semaphore.make(Math.max(1, request.jobs ?? atOnce))
       const plan: Array<Station & { readonly gate: Deferred.Deferred<boolean> }> = []
@@ -445,34 +479,53 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     const commitsDone: Array<ReplayCommit> = []
+    const commitsLeft: Array<NotReplayedCommit> = []
     const allRows: Array<Row> = []
     let flaky = 0
     const selected = new Map<string, ReadonlyArray<string>>()
 
-    for (const commit of commits) {
+    /**
+     * An older commit's own CI, read from its own tree. A commit whose CI cannot be replayed, because it had none or
+     * because none of it runs here, is not a failed replay: the reason is kept and the commit is listed.
+     */
+    effect function preparedAt(commit: string) {
+      try checkout(normalCopy, commit)
+      return prepared() catch effect (cause) => {
+        if (cause.code !== "unsupported" && cause.code !== "invalid-document") throw cause
+        return { reason: cause.message }
+      }
+    }
+
+    for (const [index, commit] of commits.entries()) {
+      const at = `${index + 1}/${commits.length} ${commit.slice(0, 7)}`
+      const own = index === commits.length - 1 ? newest : try preparedAt(commit)
+      if ("reason" in own) {
+        try progress.say(`${at} not replayed`)
+        commitsLeft.push({ commit, reason: own.reason })
+        continue
+      }
       const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
-      const at = `${commitsDone.length + 1}/${commits.length} ${commit.slice(0, 7)}`
       try progress.say(`${at} baseline`)
-      const base = try measure(Effect.void, baseline(commit), undefined, options.reruns)
+      const base = try measure(Effect.void, baseline(commit, own), undefined, options.reruns)
       const baseRecord = recordOf(base.results, commit, base.wallMs)
       try progress.say(`${at} normal`)
-      const normal = try measure(ready(normalCopy, commit), smithers(normalCopy), undefined, options.reruns)
+      const normal = try measure(ready(normalCopy, commit, own), smithers(normalCopy, own), undefined, options.reruns)
       const normalRecord = recordOf(normal.results, commit, normal.wallMs, "normal")
       let fastPart: Pick<ReplayCommit, "fast"> = {}
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
       flaky += flakyOf([baseRecord, normalRecord])
       if (fastCopy !== undefined) {
-        const rows = try parts.rows(normalCopy, normalRecord, try planOf(normalCopy))
+        const rows = try parts.rows(normalCopy, normalRecord, try planOf(normalCopy, own))
         const scores = try parts.score(rows)
         const choice = choose(scores, request.settings ?? defaultSettings)
         const labels = normal.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
         try progress.say(`${at} fast`)
-        const fast = try measure(ready(fastCopy, commit), smithers(fastCopy), labels, options.reruns)
+        const fast = try measure(ready(fastCopy, commit, own), smithers(fastCopy, own), labels, options.reruns)
         const byLabel = new Map(fast.results.map((result) => [result.label, result]))
         const merged = normal.results.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
         const fastRecord = recordOf(merged, commit, fast.wallMs, "fast" satisfies Mode)
         fastPart = { fast: totalsOf(fastRecord) }
-        fastMismatches = mismatchesOf("fast", baseRecord, fastRecord, splits)
+        fastMismatches = mismatchesOf("fast", baseRecord, fastRecord, own.splits)
         flaky += flakyOf([fastRecord])
         allRows.push(...rows)
         selected.set(commit, choice.selected)
@@ -482,13 +535,14 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         changedFiles: changed.length,
         baseline: totalsOf(baseRecord),
         normal: totalsOf(normalRecord),
-        mismatches: [...mismatchesOf("normal", baseRecord, normalRecord, splits), ...fastMismatches],
+        mismatches: [...mismatchesOf("normal", baseRecord, normalRecord, own.splits), ...fastMismatches],
         ...fastPart
       })
     }
-    return reportOf(inventory, commitsDone, {
+    return reportOf(newest.inventory, commitsDone, {
       selection: fastCopy === undefined ? undefined : selectionOf(allRows, selected),
-      left,
-      flaky
+      left: newest.left,
+      flaky,
+      commitsLeft
     })
   })

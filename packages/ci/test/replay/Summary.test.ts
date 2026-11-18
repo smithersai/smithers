@@ -590,4 +590,11 @@ describe("reportOf", () => {
     expect(reportOf({ ...read, unsupported: [own, unread] }, [entry], nothing).notRead).toEqual([unread])
     expect(reportOf({ ...read, unsupported: [own] }, [entry], nothing).notRead).toBeUndefined()
   })
+
+  it("lists the commits whose own CI could not be replayed", () => {
+    const commitsLeft = [{ commit: "0123456789abcdef", reason: "no job runs on a push" }]
+    expect(reportOf(read, [entry], { ...nothing, commitsLeft }).notReplayedCommits).toEqual(commitsLeft)
+    expect(reportOf(read, [entry], { ...nothing, commitsLeft: [] }).notReplayedCommits).toBeUndefined()
+    expect(reportOf(read, [entry], nothing).notReplayedCommits).toBeUndefined()
+  })
 })

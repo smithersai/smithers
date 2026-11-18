@@ -78,7 +78,10 @@ the target always runs.
 ## 3. Replay
 
 The replay runs past commits, 20 unless `--commits` says otherwise, and
-measures each one up to three ways:
+measures each one up to three ways. Each commit runs its own CI: the inventory
+and the targets are made again from that commit's own files, so a commit that
+renamed a script is replayed with the name it had. A commit that had no CI, or
+none that can be run on this machine, is not replayed and the report lists it.
 
 | Way      | What runs                                                                                                |
 | -------- | -------------------------------------------------------------------------------------------------------- |

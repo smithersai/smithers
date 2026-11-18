@@ -136,7 +136,7 @@ describe("a replay that cannot run", () => {
   })
 
   it(
-    "refuses, at the commit that holds it, a link where a generated file goes, and writes nothing through it",
+    "does not replay a commit that holds a link where a generated file goes, and writes nothing through it",
     async () => {
       // Review finding 5, in a replay's copy: an older commit can hold a link the newest commit does not.
       const root = track(makeSmallRepository(passing))
@@ -159,9 +159,11 @@ describe("a replay that cannot run", () => {
       commit("a link where PACKAGE.ts goes")
       rmSync(join(root, "PACKAGE.ts"))
       commit("the link is gone")
-      const failure = await failureOf(replay(root, {}, { commits: 2 }))
-      expect(failure).toMatchObject({ code: "unsupported", part: "replay" })
-      expect(failure.message).toBe(`PACKAGE.ts is a link to ${outside}, which does not exist`)
+      const report = await replay(root, {}, { commits: 2 })
+      expect(report.commits).toHaveLength(1)
+      expect(report.notReplayedCommits?.map((entry) => entry.reason)).toEqual([
+        `PACKAGE.ts is a link to ${outside}, which does not exist`
+      ])
       expect(existsSync(outside)).toBe(false)
     },
     120_000

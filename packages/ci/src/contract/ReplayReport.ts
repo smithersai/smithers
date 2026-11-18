@@ -86,12 +86,34 @@ export const ReplayCommit = Schema.Struct({
 export type ReplayCommit = typeof ReplayCommit.Type
 
 /**
- * The whole replay. `speedup` is baseline wall time divided by normal-mode
- * wall time, summed over every commit. `flaky` is how many verdicts were
+ * A commit that was not replayed because its own CI could not be: it had
+ * none, or none of it can be run on this machine. `reason` says which.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const NotReplayedCommit = Schema.Struct({
+  commit: Schema.NonEmptyString,
+  reason: Schema.String
+})
+
+/**
+ * A decoded `NotReplayedCommit`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type NotReplayedCommit = typeof NotReplayedCommit.Type
+
+/**
+ * The whole replay. Each commit in `commits` ran its own CI, read from its
+ * own tree; a commit whose CI could not be replayed is in
+ * `notReplayedCommits` and in no time. `speedup` is baseline wall time
+ * divided by normal-mode wall time, summed over every commit. `flaky` is how many verdicts were
  * `flaky`, in the baseline and in every mode; they are counted apart from
  * `mismatches`. `notReplayed` lists the CI jobs, or matrix variants, that
- * were not run, and `notRead` what the inventory could not read at all, so
- * a speedup is never read as covering them.
+ * were not run, and `notRead` what the inventory could not read at all, both
+ * at the newest commit, so a speedup is never read as covering them.
  *
  * @category models
  * @since 0.1.0
@@ -109,6 +131,7 @@ export const ReplayReport = Schema.Struct({
   flaky: Schema.optionalKey(Schema.Int),
   notReplayed: Schema.optionalKey(Schema.Array(NotReplayed)),
   notRead: Schema.optionalKey(Schema.Array(Unsupported)),
+  notReplayedCommits: Schema.optionalKey(Schema.Array(NotReplayedCommit)),
   targets: Schema.optionalKey(Schema.Array(Schema.NonEmptyString))
 })
 

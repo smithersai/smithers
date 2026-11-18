@@ -3,7 +3,8 @@
  * sentences. A mismatch is the first line whenever there is one, and every
  * mismatch is listed; nothing about a wrong verdict is summarised away. Each
  * commit has a line that says whether the CI passed or failed there, in the
- * baseline and in each mode. A CI
+ * baseline and in each mode; a commit whose own CI could not be replayed is
+ * listed with the reason. A CI
  * job that was not replayed is counted beside the commits and listed with its
  * reasons, and so is what the inventory could not read, so the speedup is
  * never read as covering them. Flaky verdicts are counted beside the
@@ -21,8 +22,10 @@ import type { RenderReport } from "../contract/Parts.ts"
 import type { ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
 import {
   bar,
+  commitsLeftOut,
   count,
   duration,
+  firstLine,
   flaky,
   leftOut,
   mismatches,
@@ -114,12 +117,19 @@ export const text: RenderReport = (report) => {
   ))
   const left = report.notReplayed ?? []
   const notRead = report.notRead ?? []
+  const commitsLeft = report.notReplayedCommits ?? []
   sections.push([
     `${count(report.commits.length, "commit")} · ${mismatches(found)}${flaky(report.flaky ?? 0)}${
-      leftOut(left.length)
-    }${unread(notRead.length)}`
+      commitsLeftOut(commitsLeft.length)
+    }${leftOut(left.length)}${unread(notRead.length)}`
   ])
   sections.push([...commitLines(report.commits)])
+  if (commitsLeft.length > 0) {
+    sections.push([
+      "commits not replayed",
+      ...commitsLeft.map((entry) => `${clean(shortCommit(entry.commit))}  ${clean(firstLine(entry.reason))}`.trimEnd())
+    ])
+  }
   if (listed.length > 0) {
     sections.push(listed.map((mismatch) =>
       [

@@ -11,11 +11,13 @@
 
 import type { NotReplayed, Unsupported } from "../contract/Inventory.ts"
 import type { RenderReport } from "../contract/Parts.ts"
-import type { Mismatch, ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
+import type { Mismatch, NotReplayedCommit, ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
 import type { Metrics } from "../contract/Selection.ts"
 import {
+  commitsLeftOut,
   count,
   duration,
+  firstLine,
   flaky,
   leftOut,
   mismatches,
@@ -168,6 +170,18 @@ const notReplayedTable = (left: ReadonlyArray<NotReplayed>): string =>
     "</table></div>"
   ].join("\n")
 
+const commitsLeftTable = (entries: ReadonlyArray<NotReplayedCommit>): string =>
+  [
+    "<h2>Commits not replayed</h2>",
+    "<div class=\"scroll\"><table>",
+    ...entries.map((entry) =>
+      `<tr><th scope="row"><code title="${escape(entry.commit)}">${
+        escape(shortCommit(entry.commit))
+      }</code></th><td class="sub">${escape(firstLine(entry.reason))}</td></tr>`
+    ),
+    "</table></div>"
+  ].join("\n")
+
 const notReadTable = (entries: ReadonlyArray<Unsupported>): string =>
   [
     "<h2>Not read</h2>",
@@ -222,13 +236,15 @@ export const html: RenderReport = (report) => {
     body.push(bars(modes))
     const left = report.notReplayed ?? []
     const notRead = report.notRead ?? []
+    const commitsLeft = report.notReplayedCommits ?? []
     body.push(
       `<p class="summary">${count(report.commits.length, "commit")} · ${mismatches(found)}${flaky(report.flaky ?? 0)}${
-        leftOut(left.length)
-      }${unread(notRead.length)}</p>`
+        commitsLeftOut(commitsLeft.length)
+      }${leftOut(left.length)}${unread(notRead.length)}</p>`
     )
     if (report.selection !== undefined) body.push(selection(report.selection))
     body.push(commitTable(report.commits))
+    if (commitsLeft.length > 0) body.push(commitsLeftTable(commitsLeft))
     if (left.length > 0) body.push(notReplayedTable(left))
     if (notRead.length > 0) body.push(notReadTable(notRead))
   }

@@ -172,9 +172,12 @@ export interface ReplayParts<R = never> {
  * Replays past commits and reports. It never changes the repository at
  * `root`; every run happens in a copy.
  *
- * For each commit it reads the inventory, narrows it with `Inventory.ci`,
- * runs that as the baseline, then generates targets from the decomposed CI
- * and runs them. It compares each baseline step's verdict with
+ * For each commit it reads the inventory from that commit's own tree,
+ * narrows it with `Inventory.ci`, runs that as the baseline, then generates
+ * targets from the decomposed CI and runs them. The newest commit's CI must
+ * be replayable, or the replay fails `unsupported`. An older commit whose CI
+ * is not is left out of `commits` and listed in
+ * `ReplayReport.notReplayedCommits`. It compares each baseline step's verdict with
  * `RunRecord.combine` of the verdicts of the step's targets, found with
  * `TargetMap.labelsOf` in the target map among the generated files.
  *

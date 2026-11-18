@@ -137,6 +137,23 @@ export const flaky = (verdicts: number): string => verdicts === 0 ? "" : ` · ${
 export const unread = (entries: number): string => entries === 0 ? "" : ` · ${entries} not read`
 
 /**
+ * How many commits were not replayed, or nothing when every one was.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const commitsLeftOut = (commits: number): string =>
+  commits === 0 ? "" : ` · ${count(commits, "commit")} not replayed`
+
+/**
+ * The first line of why a commit was not replayed; the rest lists jobs.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const firstLine = (reason: string): string => reason.split("\n")[0] as string
+
+/**
  * Why a job was left out: each feature once, in the order found.
  *
  * @category formatting

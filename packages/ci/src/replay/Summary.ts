@@ -24,7 +24,7 @@ import {
 } from "../contract/Inventory.ts"
 import type { Failure } from "../contract/Parts.ts"
 import type { Plan } from "../contract/Plan.ts"
-import type { Mismatch, ReplayCommit, ReplayReport, RunTotals } from "../contract/ReplayReport.ts"
+import type { Mismatch, NotReplayedCommit, ReplayCommit, ReplayReport, RunTotals } from "../contract/ReplayReport.ts"
 import {
   combine,
   type Mode,
@@ -637,6 +637,8 @@ export interface Findings {
   readonly left: ReadonlyArray<NotReplayed>
   /** How many verdicts were flaky, in the baseline and in every mode. */
   readonly flaky: number
+  /** The commits whose own CI could not be replayed. */
+  readonly commitsLeft?: ReadonlyArray<NotReplayedCommit> | undefined
 }
 
 /**
@@ -671,6 +673,9 @@ export const reportOf = (
       ? {}
       : { fastWallMs: sum((commit) => commit.fast?.wallMs ?? 0), selection: found.selection }),
     ...(found.left.length === 0 ? {} : { notReplayed: found.left }),
+    ...(found.commitsLeft === undefined || found.commitsLeft.length === 0
+      ? {}
+      : { notReplayedCommits: found.commitsLeft }),
     ...(unread.length === 0 ? {} : { notRead: unread })
   }
 }

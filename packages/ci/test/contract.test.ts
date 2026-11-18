@@ -686,6 +686,16 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
       flaky: 2
     })
     expect(report).toMatchObject({ notRead: [unread], flaky: 2 })
+    const older = { commit: "0000000000000000000000000000000000000001", reason: "it had no CI" }
+    expect(
+      Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...report, notReplayedCommits: [older] }).notReplayedCommits
+    ).toEqual([older])
+    expect(() =>
+      Schema.decodeUnknownSync(ReplayReport.ReplayReport)({
+        ...report,
+        notReplayedCommits: [{ commit: "", reason: "" }]
+      })
+    ).toThrow()
     expect(Schema.decodeUnknownSync(ReplayReport.ReplayReport)(fixture("replay-report.example.json")).flaky).toBe(0)
   })
 

@@ -307,6 +307,36 @@ describe("flaky verdicts and what was not read", () => {
     expect(page.indexOf("<h2>Not read</h2>")).toBeGreaterThan(page.indexOf("<h2>Not replayed</h2>"))
   })
 
+  it("lists the commits whose own CI could not be replayed, with the first line of the reason", () => {
+    const older: ReplayReport = {
+      ...clean,
+      notReplayedCommits: [
+        {
+          commit: "0123456789abcdef",
+          reason: "0 of 1 CI job can be reproduced on this machine\n  ci.yml:<deploy>  secret"
+        },
+        { commit: "fedcba9876543210", reason: "" }
+      ]
+    }
+    const lines = text(older).split("\n")
+    expect(lines).toContain("2 commits · 0 mismatches · 2 commits not replayed")
+    expect(lines.slice(-3)).toEqual([
+      "commits not replayed",
+      "0123456  0 of 1 CI job can be reproduced on this machine",
+      "fedcba9"
+    ])
+    const page = html(older)
+    expect(page).toContain("<p class=\"summary\">2 commits · 0 mismatches · 2 commits not replayed</p>")
+    expect(page).toContain(
+      "<tr><th scope=\"row\"><code title=\"0123456789abcdef\">0123456</code></th><td class=\"sub\">0 of 1 CI job can be reproduced on this machine</td></tr>"
+    )
+    expect(text({ ...older, notReplayedCommits: [older.notReplayedCommits![1]!] })).toContain("· 1 commit not replayed")
+    for (const report of [clean, { ...clean, notReplayedCommits: [] }]) {
+      expect(text(report)).not.toContain("not replayed")
+      expect(html(report)).not.toContain("not replayed")
+    }
+  })
+
   it("says nothing when everything was read", () => {
     for (const report of [clean, { ...clean, notRead: [] }]) {
       expect(text(report)).not.toContain("not read")
