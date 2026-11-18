@@ -17,12 +17,12 @@
 export type Variant = Readonly<Record<string, string>>
 
 const expression = /\$\{\{\s*(.*?)\s*\}\}/g
-const reference = /^(matrix|env|secrets|github|runner)\.[A-Za-z_][A-Za-z0-9_-]*$/
+// `secrets` is not among them: a `Ci` never holds a step that receives a secret, and a target is given none.
+const reference = /^(matrix|env|github|runner)\.[A-Za-z_][A-Za-z0-9_-]*$/
 const variableName = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 const prefixes: ReadonlyMap<string, string> = new Map([
   ["env", ""],
-  ["secrets", ""],
   ["github", "GITHUB_"],
   ["runner", "RUNNER_"]
 ])

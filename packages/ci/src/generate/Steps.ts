@@ -126,7 +126,6 @@ interface Draft extends Omit<StepTarget, "rule" | "script" | "job"> {
 }
 
 const runnerVariable = /\$\{?((?:GITHUB|RUNNER)_[A-Z0-9_]+)/g
-const secretReference = /\$\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const workflowTriggers: ReadonlySet<string> = new Set(["merge_group", "pull_request", "push", "workflow_dispatch"])
 
 const invalid = (message: string): Result.Result<never, Failure> =>
@@ -296,10 +295,6 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       const value = forText(step.env[name] as string, variant)
       if (value === undefined) notes.add(`${step.id}: ${name} is not set, its value exists only on GitHub Actions.`)
       else env[name] = value
-    }
-    const referenced = [...step.command.matchAll(secretReference)].map((match) => match[1] as string)
-    for (const secret of [...step.secrets, ...referenced]) {
-      notes.add(`${step.id}: secret ${secret} is not passed to the target.`)
     }
     // The runner's own variables reach a step only when it names them. They
     // enter its key, so a step that reads the commit reruns on every commit.

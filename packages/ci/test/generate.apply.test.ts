@@ -1,0 +1,52 @@
+import { spawnSync } from "node:child_process"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { fileURLToPath } from "node:url"
+import { describe, expect, it } from "vitest"
+import { path as targetMapPath } from "../src/contract/TargetMap.ts"
+import { packagePath, workflowPath, workspacePath } from "../src/generate/Render.ts"
+
+const program = fileURLToPath(new URL("../bin/smithers-ci.mjs", import.meta.url))
+const generated = [workflowPath, workspacePath, packagePath, targetMapPath]
+
+const run = (cwd: string, command: string, args: ReadonlyArray<string>) => {
+  const result = spawnSync(command, args, { cwd, encoding: "utf8" })
+  return { status: result.status, output: `${result.stdout}${result.stderr}` }
+}
+
+/** A real git repository whose CI is a Justfile, with one commit. */
+const repository = (): string => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-ci-apply-twice-"))
+  writeFileSync(join(root, "justfile"), "ci: test\n\ntest:\n\techo ok\n")
+  for (
+    const args of [
+      ["init", "-q", "."],
+      ["add", "--all"],
+      ["-c", "user.name=t", "-c", "user.email=t@example.test", "commit", "-q", "-m", "c"]
+    ]
+  ) expect(run(root, "git", args).status).toBe(0)
+  return root
+}
+
+describe("the real program, applied twice", () => {
+  it("writes byte-equal files the second time, with its own workflow in the tree", () => {
+    const root = repository()
+    try {
+      const apply = (): Readonly<Record<string, string>> => {
+        const outcome = run(root, process.execPath, [program, "apply"])
+        expect(outcome.status, outcome.output).toBe(0)
+        return Object.fromEntries(generated.map((path) => [path, readFileSync(join(root, path), "utf8")]))
+      }
+      const first = apply()
+      // The second run reads an inventory that holds the first run's workflow: its Node and its `just`.
+      const inventory = run(root, process.execPath, [program, "inventory", "--json"])
+      expect(inventory.output).toContain(`"source": ${JSON.stringify(workflowPath)}`)
+      expect(apply()).toEqual(first)
+      // The repository pins no Node, so the workflow installs its own, before the repository's tools.
+      expect(first[workflowPath]).toContain(`node-version: "24"\n      - uses: extractions/setup-just@v3\n`)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 180_000)
+})

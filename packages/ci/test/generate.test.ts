@@ -76,7 +76,7 @@ describe("expressions", () => {
   it("writes matrix values in place and names the variable GitHub documents for the rest", () => {
     const variant = { node: "22" }
     expect(forShell("use ${{ matrix.node }}", variant)).toBe("use 22")
-    expect(forShell("${{env.A}} ${{ secrets.B }}", variant)).toBe("${A} ${B}")
+    expect(forShell("${{env.A}} ${{ env.B }}", variant)).toBe("${A} ${B}")
     expect(forShell("${{ github.sha }} ${{ runner.os }}", variant)).toBe("${GITHUB_SHA} ${RUNNER_OS}")
   })
 
@@ -88,6 +88,8 @@ describe("expressions", () => {
     expect(forShell("${{ env.not-a-name }}", {})).toBeUndefined()
     expect(forShell("${{ vars.SETTING }}", {})).toBeUndefined()
     expect(forShell("${{ github.token }}", {})).toBeUndefined()
+    // A target is given no secret, so a command that names one has no shell form.
+    expect(forShell("${{ secrets.B }}", {})).toBeUndefined()
   })
 
   it("allows only matrix values where no shell reads the text", () => {
@@ -154,9 +156,8 @@ describe("files", () => {
     expect(generate({ ...document, commit: "other" })).toEqual(generate(document))
   })
 
-  it("names a secret and never carries a value", () => {
+  it("never carries a secret's value, and reports the actions it cannot run", () => {
     const source = targetsOf(fixture("inventory.github-actions-bun.json"))
-    expect(source).toContain("secret CODECOV_TOKEN is not passed to the target")
     expect(source).not.toContain("CODECOV_TOKEN\":")
     expect(source).toContain("codecov/codecov-action@v5 has no command to run")
   })
@@ -211,8 +212,9 @@ describe("what a step becomes", () => {
       step("a:2", "echo ${{ secrets.DEPLOY_KEY }}")
     ])]))
     expect(declaration(source, "a-1")).toContain(`inheritEnv: ["GITHUB_SHA","RUNNER_OS"]`)
-    expect(declaration(source, "a-2")).not.toContain("inheritEnv")
-    expect(source).toContain("// a:2: secret DEPLOY_KEY is not passed to the target.")
+    // `Inventory.ci` leaves out a job whose step receives a secret, so a command that names one is not generated.
+    expect(declaration(source, "a-2")).toBe("")
+    expect(source).toContain("// a:2: not generated, it uses a value only GitHub Actions can provide.")
   })
 
   it("enters the step's directory and refuses one outside the repository", () => {
@@ -705,6 +707,25 @@ describe("the workspace and workflow", () => {
       "setup action installs by default.",
       "- zig 0.15.1 (build.zig.zon) is not installed: every target runs with zig 0.14.0 (a-later-file)."
     ])
+  })
+
+  it("writes the same workflow when the inventory was read with the generated workflow in place", () => {
+    const jobs = [
+      job("justfile:test", [step("t:1", "echo ok")], { source: "justfile", file: "justfile", triggers: [] })
+    ]
+    const first = generate(inventory(jobs, { toolchains: [{ name: "just", source: "justfile" }] }))
+    // What the importer reads from the workflow the first run wrote: its Node, and `just` a second time.
+    const second = generate(inventory(jobs, {
+      toolchains: [
+        { name: "just", source: workflowPath },
+        { name: "just", source: "justfile" },
+        { name: "node", source: workflowPath, version: "24" }
+      ]
+    }))
+    expect(second).toEqual(first)
+    expect(content(first, workflowPath)).toContain(
+      `          node-version: "24"\n      - uses: extractions/setup-just@v3\n`
+    )
   })
 
   it("installs the read sandbox on the runner when a target is held to its inputs, and only then", () => {

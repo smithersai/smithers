@@ -11,7 +11,7 @@
  * @since 0.1.0
  */
 
-import type { Ci, Toolchain } from "../contract/Inventory.ts"
+import { type Ci, generatedWorkflow, type Toolchain } from "../contract/Inventory.ts"
 
 /**
  * The tools to install, one entry per tool in name order, and a note for
@@ -55,7 +55,11 @@ export const chooseToolchains = (inventory: Ci): Choice => {
     ciFiles.has(toolchain.source) ? 0 : toolchain.source.startsWith(workflows) ? 2 : 1
   const key = (toolchain: Toolchain): string =>
     `${toolchain.name}\n${rank(toolchain)}\n${toolchain.source}\n${toolchain.version ?? ""}`
-  const ordered = [...inventory.toolchains].sort((left, right) => key(left) < key(right) ? -1 : 1)
+  // The generated workflow's own setup steps are read back by the next inventory. They are this generator's
+  // choice, never the repository's: counting them would make a second run write a different workflow.
+  const ordered = inventory.toolchains
+    .filter((toolchain) => toolchain.source !== generatedWorkflow)
+    .sort((left, right) => key(left) < key(right) ? -1 : 1)
 
   // A workflow that is not CI is asked only for a tool nothing else names, and what it leaves out is no loss.
   const own = ordered.filter((toolchain) => rank(toolchain) < 2)
