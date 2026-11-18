@@ -6,10 +6,11 @@
 import { expect } from "@effect/vitest"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { ci, type NotReplayed, notReplayed, refusal } from "../../src/contract/Inventory.ts"
+import { ci, type NotReplayed, notReplayed, reasonsText, refusal } from "../../src/contract/Inventory.ts"
 import { path as targetMapPath, TargetMap } from "../../src/contract/TargetMap.ts"
 import { files } from "../../src/generate/index.ts"
 import { read } from "../../src/inventory/index.ts"
+import { onThisMachine } from "../../src/inventory/Machine.vibe"
 import { replayable } from "../../src/replay/Summary.ts"
 
 effect function git(root: string, args: ReadonlyArray<string>) {
@@ -33,6 +34,39 @@ export effect function repository(written: Readonly<Record<string, string>>) {
   return root
 }
 
+/**
+ * A directory to use as a machine's whole `PATH`: `bash`, and one real program for each tool, which prints the
+ * given text for `--version`. A program whose text starts with `version:` answers only `version`, as `go` does,
+ * and one whose text starts with `script:` runs the rest as its shell script.
+ */
+export effect function toolbox(tools: Readonly<Record<string, string>>) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const spawner = try ChildProcessSpawner
+  const directory = try fs.makeTempDirectoryScoped()
+  const bash = try spawner.string(ChildProcess.make("bash", ["-c", "command -v bash"]))
+  try fs.symlink(bash.trim(), path.join(directory, "bash"))
+  for (const [name, printed] of Object.entries(tools)) {
+    const program = path.join(directory, name)
+    const script = printed.startsWith("version:")
+      ? `if [ "$1" = version ]; then echo "${printed.slice("version:".length)}"; else echo "unknown flag $1" >&2; exit 2; fi`
+      : printed.startsWith("script:") ? printed.slice("script:".length) : `echo "${printed}"`
+    try fs.writeFileString(program, `#!/bin/sh\n${script}\n`)
+    try fs.chmod(program, 0o755)
+  }
+  return directory
+}
+
+/** The tools of the build server the corpus was first run on: no Go on `PATH`, no Ruby, no Docker. */
+export const buildServer = {
+  node: "v26.5.0",
+  npm: "11.6.0",
+  pnpm: "12.15.0",
+  bun: "1.4.2",
+  python3: "Python 3.12.3",
+  uv: "uv 0.9.7"
+}
+
 /** What a first run decides: the units it would run, by job, and each job it lists with its reasons. */
 export interface FirstRun {
   /** Why nothing can be run, when that is the answer. */
@@ -43,20 +77,32 @@ export interface FirstRun {
   readonly listed: ReadonlyArray<readonly [job: string, reasons: string]>
   /** Every reason's detail, for a test that reads what the report says. */
   readonly details: ReadonlyArray<string>
+  /** Each tool the machine has at another version than a job asks for: the job, then both versions. */
+  readonly versions: ReadonlyArray<string>
 }
 
 const listedOf = (left: ReadonlyArray<NotReplayed>) => ({
-  listed: left.map((entry) => [entry.job, [...new Set(entry.reasons.map((reason) => reason.feature))].join(", ")] as const),
+  listed: left.map((entry) => [entry.job, reasonsText(entry.reasons)] as const),
   details: left.flatMap((entry) => entry.reasons.map((reason) => reason.detail))
 })
 
-/** Reads the repository made of `written` and sorts its CI as a replay on `host` does. */
-export effect function firstRun(written: Readonly<Record<string, string>>, host: string = "linux") {
+/**
+ * Reads the repository made of `written` for a machine with the system `host` and the tools named, and sorts its
+ * CI as a replay there does.
+ */
+export effect function firstRun(
+  written: Readonly<Record<string, string>>,
+  host: string = "linux",
+  tools: Readonly<Record<string, string>> = buildServer
+) {
   const root = try repository(written)
-  const inventory = try read(root)
+  const inventory = try onThisMachine(try read(root), { host, path: try toolbox(tools) })
+  const versions = (inventory.toolVersions ?? []).map((entry) =>
+    `${entry.job} asks for ${entry.tool} ${entry.asked}; this machine has ${entry.tool} ${entry.found}`
+  )
   const why = refusal(inventory)
   if (why !== undefined) {
-    const run: FirstRun = { refusal: why, replayed: [], ...listedOf(notReplayed(inventory)) }
+    const run: FirstRun = { refusal: why, replayed: [], versions, ...listedOf(notReplayed(inventory)) }
     return run
   }
   const narrowed = ci(inventory)
@@ -68,6 +114,7 @@ export effect function firstRun(written: Readonly<Record<string, string>>, host:
   const run: FirstRun = {
     refusal: undefined,
     replayed: sorted.units.map((unit) => unit.job),
+    versions,
     ...listedOf([...notReplayed(inventory), ...sorted.left])
   }
   return run

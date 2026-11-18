@@ -337,6 +337,46 @@ describe("flaky verdicts and what was not read", () => {
     }
   })
 
+  it("lists each tool this machine has at another version than a job asks for, with both versions", () => {
+    const versions: ReplayReport = {
+      ...clean,
+      toolVersions: [
+        { job: "tests.yml:test", tool: "node", asked: "22.x", found: "26.5.0" },
+        { job: "ci.yml:<lint>", tool: "go", asked: "1.23", found: "1.25.4\u001b[2J" }
+      ]
+    }
+    expect(text(versions).split("\n").slice(-3)).toEqual([
+      "tool versions",
+      "tests.yml:test  asks for node 22.x; this machine has node 26.5.0",
+      "ci.yml:<lint>   asks for go 1.23; this machine has go 1.25.4\uFFFD[2J"
+    ])
+    const page = html(versions)
+    expect(page).toContain("<h2>Tool versions</h2>")
+    expect(page).toContain(
+      "<tr><th scope=\"row\"><code>ci.yml:&lt;lint&gt;</code></th><td class=\"sub\">asks for go 1.23; this machine has go 1.25.4\u001b[2J</td></tr>"
+    )
+    for (const report of [clean, { ...clean, toolVersions: [] }]) {
+      expect(text(report)).not.toContain("tool versions")
+      expect(html(report)).not.toContain("Tool versions")
+    }
+  })
+
+  it("names the tool to install beside a job that was left out for it", () => {
+    const missing: ReplayReport = {
+      ...clean,
+      notReplayed: [{
+        job: "linux.yml:build",
+        reasons: [
+          { feature: "missing-tool", detail: "go 1.23" },
+          { feature: "missing-tool", detail: "ruby 3.4.6" },
+          { feature: "needs", detail: "it needs a job that is not replayed" }
+        ]
+      }]
+    }
+    expect(text(missing).split("\n").at(-1)).toBe("linux.yml:build  missing-tool (go 1.23, ruby 3.4.6), needs")
+    expect(html(missing)).toContain("<td class=\"sub\">missing-tool (go 1.23, ruby 3.4.6), needs</td>")
+  })
+
   it("says nothing when everything was read", () => {
     for (const report of [clean, { ...clean, notRead: [] }]) {
       expect(text(report)).not.toContain("not read")

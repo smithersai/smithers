@@ -18,6 +18,7 @@ import {
   notRead,
   type NotReplayed,
   otherSystem,
+  reasonsText,
   treeOf,
   type Unsupported,
   withVariant
@@ -231,9 +232,7 @@ export const nothingToReplay = (left: ReadonlyArray<NotReplayed>): string => {
   const width = Math.max(0, ...left.map((entry) => entry.job.length))
   return [
     "no CI step that runs on a change has a target on this machine",
-    ...left.map((entry) =>
-      `  ${entry.job.padEnd(width)}  ${[...new Set(entry.reasons.map((reason) => reason.feature))].join(", ")}`
-    )
+    ...left.map((entry) => `  ${entry.job.padEnd(width)}  ${reasonsText(entry.reasons)}`)
   ].join("\n")
 }
 
@@ -644,7 +643,8 @@ export interface Findings {
 /**
  * The replay report of `inventory`'s repository. `speedup` is baseline wall
  * time over normal-mode wall time, and 0 when nothing ran in normal mode.
- * What the inventory could not read is listed as `notRead`.
+ * What the inventory could not read is listed as `notRead`, and each tool this
+ * machine has at another version than a job asks for as `toolVersions`.
  *
  * @category report
  * @throws {never}
@@ -676,6 +676,7 @@ export const reportOf = (
     ...(found.commitsLeft === undefined || found.commitsLeft.length === 0
       ? {}
       : { notReplayedCommits: found.commitsLeft }),
-    ...(unread.length === 0 ? {} : { notRead: unread })
+    ...(unread.length === 0 ? {} : { notRead: unread }),
+    ...(inventory.toolVersions === undefined ? {} : { toolVersions: inventory.toolVersions })
   }
 }

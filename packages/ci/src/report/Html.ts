@@ -9,7 +9,7 @@
  * @since 0.1.0
  */
 
-import type { NotReplayed, Unsupported } from "../contract/Inventory.ts"
+import type { NotReplayed, ToolVersion, Unsupported } from "../contract/Inventory.ts"
 import type { RenderReport } from "../contract/Parts.ts"
 import type { Mismatch, NotReplayedCommit, ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
 import type { Metrics } from "../contract/Selection.ts"
@@ -28,6 +28,7 @@ import {
   shortCommit,
   speedup,
   times,
+  toolVersion,
   unread,
   verdict
 } from "./Format.ts"
@@ -192,6 +193,18 @@ const notReadTable = (entries: ReadonlyArray<Unsupported>): string =>
     "</table></div>"
   ].join("\n")
 
+const toolVersionsTable = (entries: ReadonlyArray<ToolVersion>): string =>
+  [
+    "<h2>Tool versions</h2>",
+    "<div class=\"scroll\"><table>",
+    ...entries.map((entry) =>
+      `<tr><th scope="row"><code>${escape(entry.job)}</code></th><td class="sub">${
+        escape(toolVersion(entry))
+      }</td></tr>`
+    ),
+    "</table></div>"
+  ].join("\n")
+
 const commitTable = (commits: ReadonlyArray<ReplayCommit>): string => {
   const withFast = commits.some((commit) => commit.fast !== undefined)
   return [
@@ -247,6 +260,8 @@ export const html: RenderReport = (report) => {
     if (commitsLeft.length > 0) body.push(commitsLeftTable(commitsLeft))
     if (left.length > 0) body.push(notReplayedTable(left))
     if (notRead.length > 0) body.push(notReadTable(notRead))
+    const tools = report.toolVersions ?? []
+    if (tools.length > 0) body.push(toolVersionsTable(tools))
   }
   return `${head(`${report.repository} · Smithers CI`)}\n<body>\n<main>\n${
     body.join("\n")

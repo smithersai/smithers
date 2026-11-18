@@ -762,7 +762,12 @@ jobs:
       tool("uv", "astral-sh/setup-uv@v9"),
       tool("terraform", "hashicorp/setup-terraform@v3")
     ])
-    expect(features(jobs[0] as Job)).toEqual(Array.from({ length: 9 }, () => "host-action"))
+    // Each is left out as a step; the one that receives a secret keeps its job from running.
+    expect(features(jobs[0] as Job).filter((feature) => feature === "host-action")).toHaveLength(9)
+    expect(jobs[0]?.unsupported.filter((entry) => entry.feature !== "host-action")).toEqual([{
+      feature: "secret",
+      detail: `${file}: test step 8: hashicorp/setup-terraform@v3 receives PIN`
+    }])
     expect(jobs[0]?.steps).toEqual([])
   })
 
@@ -808,6 +813,38 @@ jobs:
         detail: `${file}: docs step 1: ruby/setup-ruby@v1 installs gems in a way that was not read (bundler-cache)`
       }
     ])
+  })
+})
+
+describe("readWorkflow setup actions and secrets", () => {
+  it("does not run a job whose setup action receives a secret, and reads the token every job has as none", () => {
+    const { jobs } = read(`
+on: push
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+          cli_config_credentials_token: \${{ secrets.TF_API_TOKEN }}
+      - run: terraform plan
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: astral-sh/setup-uv@v9
+        with:
+          github-token: \${{ github.token }}
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with: { token: "\${{ secrets.GITHUB_TOKEN }}" }
+      - run: uv sync
+`)
+    expect(jobs[0]?.unsupported).toEqual([
+      { feature: "host-action", detail: `${file}: hashicorp/setup-terraform@v3 has no command to run` },
+      { feature: "secret", detail: `${file}: plan step 1: hashicorp/setup-terraform@v3 receives TF_API_TOKEN` }
+    ])
+    expect(features(jobs[1] as Job)).toEqual(["host-action", "host-action"])
   })
 })
 

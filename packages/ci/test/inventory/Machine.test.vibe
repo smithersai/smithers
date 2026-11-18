@@ -1,0 +1,151 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import * as PlatformError from "effect/PlatformError"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { Inventory, missingTool, notReplayed, otherSystem } from "../../src/contract/Inventory.ts"
+import { read, readHere } from "../../src/inventory/index.ts"
+import { onThisMachine } from "../../src/inventory/Machine.vibe"
+import { repository, toolbox } from "./corpus.vibe"
+
+const workflow = `
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 22.x }
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.23" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: extractions/setup-just@v3
+      - run: just build
+  gems:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ruby/setup-ruby@v1
+        with: { ruby-version: 3.4.6 }
+      - run: bundle exec rake
+`
+
+/** A job whose tool has the name of a command every shell has, and of no file. */
+const builtin = `
+on: push
+jobs:
+  say:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: acme/setup-echo@v1
+      - run: echo done
+`
+
+const tools = {
+  node: "v26.5.0",
+  go: "version:go version go1.25.4 linux/amd64",
+  python: "Python 3.12.3",
+  just: "just"
+}
+
+const cannot = (method: string) => PlatformError.systemError({ _tag: "PermissionDenied", module: "ChildProcess", method })
+
+// Real programs are waited for, so the tests run on the real clock.
+it.layer(NodeServices.layer, { excludeTestServices: true })("an inventory read for a machine", (it) => {
+  it.effect("looks for each tool a CI job sets up, and asks the ones it finds for their version", () =>
+    effect {
+      const inventory = try read(try repository({ ".github/workflows/ci.yml": workflow }))
+      const here = try onThisMachine(inventory, { host: "linux", path: try toolbox(tools) })
+      const decoded = try Schema.decodeUnknownEffect(Inventory)(here)
+      try Effect.try(() => {
+        // Ruby is not there, so its job is left out with what to install. `python` answers for Python where
+        // `python3` is absent, and `go` answers `go version`.
+        expect(notReplayed(decoded)).toEqual([
+          { job: "ci.yml:gems", reasons: [{ feature: missingTool, detail: "ruby 3.4.6" }] }
+        ])
+        expect(decoded.toolVersions).toEqual([
+          { job: "ci.yml:build", tool: "go", asked: "1.23", found: "1.25.4" },
+          { job: "ci.yml:build", tool: "node", asked: "22.x", found: "26.5.0" }
+        ])
+        // A program that prints no version is on the machine all the same.
+        expect(decoded.jobs[0]?.unsupported.map((entry) => entry.feature)).not.toContain(missingTool)
+      })
+    })
+
+  it.effect("counts a tool only when its program is a file on PATH, and asks once while the program runs", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const said = try read(try repository({ ".github/workflows/ci.yml": builtin }))
+      const box = try toolbox(tools)
+      const first = try onThisMachine(said, { host: "linux", path: box })
+      const inventory = try read(try repository({ ".github/workflows/ci.yml": workflow }))
+      const before = try onThisMachine(inventory, { host: "linux", path: box })
+      // What was learned holds for the run: a replay reads once for every commit and gets one answer.
+      try fs.remove(path.join(box, "go"))
+      try fs.writeFileString(path.join(box, "ruby"), "#!/bin/sh\necho ruby 3.4.6\n")
+      try fs.chmod(path.join(box, "ruby"), 0o755)
+      const after = try onThisMachine(inventory, { host: "linux", path: box })
+      try Effect.try(() => {
+        expect(notReplayed(first)).toEqual([{ job: "ci.yml:say", reasons: [{ feature: missingTool, detail: "echo" }] }])
+        expect(after).toEqual(before)
+        expect(notReplayed(after).map((entry) => entry.job)).toEqual(["ci.yml:gems"])
+      })
+    })
+
+  it.effect("reads for this machine: its own system, and the tools on its own PATH", () =>
+    effect {
+      const root = try repository({
+        ".github/workflows/ci.yml": `
+on: push
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - run: dir
+        shell: bash
+  tool:
+    runs-on: \${{ matrix.os }}
+    strategy: { matrix: { os: [ubuntu-latest, macos-latest] } }
+    steps:
+      - uses: acme/setup-no-such-tool-of-smithers-ci@v1
+        with: { version: 9 }
+      - run: "true"
+`
+      })
+      const here = try readHere(root)
+      try Effect.try(() => {
+        expect(here.jobs[0]?.unsupported).toEqual([{
+          feature: otherSystem,
+          detail: expect.stringMatching(/^\.github\/workflows\/ci\.yml: windows runs on Windows; this machine is /)
+        }])
+        expect(here.jobs[1]?.unsupported.at(-1)).toEqual({
+          feature: missingTool,
+          detail: "no-such-tool-of-smithers-ci 9"
+        })
+      })
+    })
+
+  it.effect("runs the job when the machine cannot be asked, and gives no version it did not read", () =>
+    effect {
+      const inventory = try read(try repository({ ".github/workflows/ci.yml": workflow }))
+      const path = try toolbox(tools)
+      const real = try ChildProcessSpawner
+      const deaf = { ...real, exitCode: () => fail(cannot("exitCode")), string: () => fail(cannot("string")) }
+      provide ChildProcessSpawner = deaf {
+        const here = try onThisMachine(inventory, { host: "linux", path })
+        try Effect.try(() => expect(here).toEqual(inventory))
+      }
+    })
+
+  it.effect("stops waiting for a program that does not print its version in time", () =>
+    effect {
+      const inventory = try read(try repository({ ".github/workflows/ci.yml": workflow }))
+      const path = try toolbox({ ...tools, node: "script:exec /bin/sleep 3" })
+      const here = try onThisMachine(inventory, { host: "linux", path, patience: "200 millis" })
+      try Effect.try(() => {
+        // Node is on the machine, so its job runs; no version was read for it, so none is compared.
+        expect(here.toolVersions).toEqual([{ job: "ci.yml:build", tool: "go", asked: "1.23", found: "1.25.4" }])
+        expect(notReplayed(here).map((entry) => entry.job)).toEqual(["ci.yml:gems"])
+      })
+    })
+})

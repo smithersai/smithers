@@ -39,6 +39,11 @@ import { uncommittedFooter } from "../native/Workspace.ts"
  */
 export interface Parts<R> {
   readonly read: ReadInventory<R>
+  /**
+   * Reads the CI for this machine, for a replay: a job this machine cannot run is marked. Without it a replay
+   * reads with `read`.
+   */
+  readonly readHere?: ReadInventory<R> | undefined
   readonly decompose: Decompose<R>
   readonly files: GenerateFiles<R>
   readonly run: RunReplay<R>
@@ -195,9 +200,11 @@ function inventoryText(inventory: Inventory): string {
   for (const unsupported of inventory.unsupported ?? []) {
     lines.push(`unsupported ${unsupported.feature}: ${unsupported.detail}`)
   }
-  for (const tool of inventory.toolchains) {
-    lines.push(`toolchain ${tool.name}${tool.version === undefined ? "" : ` ${tool.version}`} (${tool.source})`)
-  }
+  // Several jobs of one file may set the same tool up: it is listed once.
+  const tools = inventory.toolchains.map((tool) =>
+    `toolchain ${tool.name}${tool.version === undefined ? "" : ` ${tool.version}`} (${tool.source})`
+  )
+  lines.push(...new Set(tools))
   for (const job of inventory.jobs) {
     const needs = job.needs.length === 0 ? "" : `, needs ${job.needs.join(", ")}`
     lines.push(`job ${job.id} (${job.source} ${job.file}${needs})`)
@@ -256,7 +263,7 @@ const wroteLine = (file: string | undefined): string =>
 function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: Ref.Ref<number>) {
   const settle = (code: number) => Ref.set(status, code)
   const replayParts = {
-    read: parts.read,
+    read: parts.readHere ?? parts.read,
     decompose: parts.decompose,
     files: parts.files,
     rows: parts.rows,

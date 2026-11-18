@@ -20,7 +20,7 @@ describe("readSetup", () => {
   it("names the tool after the action's owner when the name says none", () => {
     expect(toolOf("pnpm/action-setup@v4")).toEqual([{ name: "pnpm" }])
     expect(toolOf("supabase/setup-cli@v1")).toEqual([{ name: "supabase" }])
-    expect(toolOf("haskell-actions/setup-tool@v2")).toEqual([{ name: "haskell" }])
+    expect(toolOf("acme-actions/setup-tool@v2")).toEqual([{ name: "acme" }])
   })
 
   it("gives one tool one name however the action spells it", () => {
@@ -40,7 +40,11 @@ describe("readSetup", () => {
       { name: "just" },
       { name: "cargo-deny" }
     ])
-    expect(toolOf("taiki-e/install-action@nextest")).toEqual([])
+    // Its release names the one tool when it is no version of the action itself.
+    expect(toolOf("taiki-e/install-action@nextest")).toEqual([{ name: "nextest" }])
+    expect(toolOf("taiki-e/install-action@v2")).toEqual([])
+    expect(toolOf("taiki-e/install-action")).toEqual([])
+    expect(toolOf("taiki-e/install-action@0a5b3c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b")).toEqual([])
   })
 
   it("reads the version from the tool's own input, then the general ones", () => {
@@ -60,13 +64,53 @@ describe("readSetup", () => {
     expect(toolOf("actions/setup-node@v4", "not a mapping")).toEqual([{ name: "node" }])
   })
 
-  it("reads a Rust version from the release the action is pinned to, unless that names the action's own", () => {
+  it("reads a Rust version from the release dtolnay/rust-toolchain is pinned to, and from no other release", () => {
     expect(toolOf("dtolnay/rust-toolchain@1.85.0")).toEqual([{ name: "rust", version: "1.85.0" }])
+    expect(toolOf("dtolnay/rust-toolchain@nightly")).toEqual([{ name: "rust", version: "nightly" }])
     expect(toolOf("dtolnay/rust-toolchain@master")).toEqual([{ name: "rust" }])
-    expect(toolOf("actions-rs/toolchain@v1")).toEqual([{ name: "rust" }])
     expect(toolOf("dtolnay/rust-toolchain")).toEqual([{ name: "rust" }])
-    // No other tool's version is read from the release of its action.
+    // A commit names the action, not a version of Rust.
+    expect(toolOf("dtolnay/rust-toolchain@4305c38b25d97ef35a8ad1f985ccf2d2242004f2")).toEqual([{ name: "rust" }])
+    // Another action's release is its own version.
+    expect(toolOf("actions-rs/toolchain@v1.0.6")).toEqual([{ name: "rust" }])
+    expect(toolOf("actions-rust-lang/setup-rust-toolchain@v1.10.1")).toEqual([{ name: "rust" }])
     expect(toolOf("actions/setup-node@22")).toEqual([{ name: "node" }])
+  })
+
+  it("is no setup action when what its name says is a server, a cluster, an environment or the job's own preparation", () => {
+    for (
+      const uses of [
+        "medyagh/setup-minikube@v0.0.19",
+        "engineerd/setup-kind@v0.6.2",
+        "ankane/setup-postgres@v1",
+        "ankane/setup-mysql@v1",
+        "conda-incubator/setup-miniconda@v3",
+        "mamba-org/setup-micromamba@v2",
+        "docker/setup-qemu-action@v3",
+        "docker/setup-docker-action@v4",
+        "msys2/setup-msys2@v2",
+        "acme/setup-env@v1",
+        "acme/setup-ci@v1",
+        "r-lib/actions/setup-r-dependencies@v2",
+        "acme/setup-python-env@v1"
+      ]
+    ) {
+      expect(readSetup(uses, undefined), uses).toBeUndefined()
+    }
+  })
+
+  it("reads what a setup action sets up besides the tool it is named for", () => {
+    // uv is told which Python to run: a version of Python the job asks for.
+    expect(toolOf("astral-sh/setup-uv@v9", { version: "0.9.7", "python-version": "3.11" })).toEqual([
+      { name: "uv", version: "0.9.7" },
+      { name: "python", version: "3.11" }
+    ])
+    expect(toolOf("astral-sh/setup-uv@v9", { "enable-cache": true })).toEqual([{ name: "uv" }])
+    // The Gradle action keeps a cache; it installs Gradle only when asked for a version.
+    expect(readSetup("gradle/actions/setup-gradle@v4", undefined)).toEqual({ tools: [] })
+    expect(readSetup("gradle/actions/setup-gradle@v4", { "gradle-version": "8.10" })).toEqual({
+      tools: [{ name: "gradle", version: "8.10" }]
+    })
   })
 
   it("is not a setup action when the name says no such thing, or the action is local or a container", () => {
@@ -75,10 +119,6 @@ describe("readSetup", () => {
     expect(readSetup("./.github/actions/setup-node", undefined)).toBeUndefined()
     expect(readSetup("docker://ghcr.io/acme/setup-node:1", undefined)).toBeUndefined()
     expect(readSetup("setup-node", undefined)).toBeUndefined()
-  })
-
-  it("reads an action that only keeps a cache as needing no tool", () => {
-    expect(readSetup("gradle/actions/setup-gradle@v4", undefined)).toEqual({ tools: [] })
   })
 
   it("reads the command a setup action also runs", () => {
@@ -107,6 +147,19 @@ describe("readSetup", () => {
     expect(readSetup("pnpm/action-setup@v4", { run_install: [{ args: ["--frozen-lockfile"] }] })).toEqual({
       tools: [{ name: "pnpm" }],
       problem: "installs packages with its own arguments (run_install)"
+    })
+    expect(readSetup("astral-sh/setup-uv@v9", { "activate-environment": true })).toEqual({
+      tools: [{ name: "uv" }],
+      problem: "makes an environment the steps after it run in (activate-environment)"
+    })
+    expect(readSetup("astral-sh/setup-uv@v9", { "activate-environment": false })).toEqual({ tools: [{ name: "uv" }] })
+    // It turns warnings into errors for the steps after it, unless told to set no flags.
+    expect(readSetup("actions-rust-lang/setup-rust-toolchain@v1", { toolchain: "1.85.0" })).toEqual({
+      tools: [{ name: "rust", version: "1.85.0" }],
+      problem: "sets RUSTFLAGS for the steps after it"
+    })
+    expect(readSetup("actions-rust-lang/setup-rust-toolchain@v1", { rustflags: "" })).toEqual({
+      tools: [{ name: "rust" }]
     })
   })
 })

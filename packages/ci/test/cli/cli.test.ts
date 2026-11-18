@@ -408,6 +408,42 @@ describe.concurrent("smithers-ci on a workspace", () => {
   })
 })
 
+describe.concurrent("smithers-ci reading for a replay", () => {
+  /** A replay that reports the repository name its own reader gave it. */
+  const named: Chosen["run"] = (request, given) =>
+    Effect.gen(function*() {
+      const inventory = yield* given.read(request.root)
+      return { ...(yield* parts.run(request, given)), repository: inventory.repository }
+    })
+  const here: Chosen["read"] = (root) =>
+    Effect.map(parts.read(root), (inventory) => ({ ...inventory, repository: "read for this machine" }))
+
+  it("gives a replay the reader for this machine, and the commands that write nothing the plain one", async () => {
+    const root = repo()
+    const outcome = await runIn(["replay", "--commits", "1", "--json"], root, { ...parts, run: named, readHere: here })
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+    expect(decode(ReplayReport, outcome.stdout).repository).toBe("read for this machine")
+    const listed = await runIn(["inventory", "--json"], root, { ...parts, readHere: here })
+    expect(decode(Inventory, listed.stdout).repository).toBe(basename(root))
+  })
+
+  it("gives a replay the plain reader when there is no other", async () => {
+    const root = repo()
+    const outcome = await runIn(["replay", "--commits", "1", "--json"], root, {
+      ...parts,
+      run: named,
+      readHere: undefined
+    })
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+    expect(decode(ReplayReport, outcome.stdout).repository).toBe(basename(root))
+  })
+
+  it("reads for this machine with the parts on main", () => {
+    expect(onMain.readHere).toBeDefined()
+    expect(onMain.readHere).not.toBe(onMain.read)
+  })
+})
+
 describe.concurrent("smithers-ci with a faulty part or host", () => {
   const failing = (failure: Failure): Chosen => ({ ...parts, read: () => Effect.fail(failure) })
 
@@ -541,6 +577,12 @@ describe.concurrent("smithers-ci with a faulty part or host", () => {
     const bunLines = await lines(bun)
     expect(bunLines).toContain("toolchain bun 1.3.0 (package.json)")
     expect(bunLines).toContain("toolchain turbo (turbo.json)")
+    // Two jobs of one workflow that set the same tool up give one line.
+    const setUp = bun.toolchains[1]!
+    const twice = await lines({ ...bun, toolchains: [setUp, { ...setUp, job: "ci.yml:lint" }] })
+    expect(twice.filter((line) => line.startsWith("toolchain "))).toEqual([
+      "toolchain bun 1.3.0 (.github/workflows/ci.yml)"
+    ])
     expect(bunLines.some((line) => line.startsWith("  unsupported "))).toBe(true)
     const zigLines = await lines(moved)
     expect(zigLines).toContain(`  $ ${step.command}`)

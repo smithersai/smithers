@@ -87,6 +87,104 @@ describe("contract 4: inventory", () => {
     })
   })
 
+  it("holds what one machine makes of an inventory: a tool at another version, and a tool to install", () => {
+    const decode = Schema.decodeUnknownSync(Inventory.Inventory)
+    const bun = decode(fixture("inventory.github-actions-bun.json"))
+    // An inventory read for no machine says nothing about one.
+    expect(bun.toolVersions).toBeUndefined()
+    const toolVersions = [{ job: "ci.yml:test", tool: "bun", asked: "1.3.0", found: "1.4.2" }]
+    expect(decode({ ...fixture("inventory.github-actions-bun.json") as object, toolVersions }).toolVersions).toEqual(
+      toolVersions
+    )
+    expect(() => decode({ ...bun, toolVersions: [{ job: "ci.yml:test", tool: "bun", asked: "1.3.0" }] })).toThrow()
+    // The replay report carries the same list, so both versions appear beside the times.
+    const report = Schema.decodeUnknownSync(ReplayReport.ReplayReport)({
+      ...(fixture("replay-report.example.json") as object),
+      toolVersions
+    })
+    expect(report.toolVersions).toEqual(toolVersions)
+    expect(
+      Schema.decodeUnknownSync(ReplayReport.ReplayReport)(fixture("replay-report.example.json")).toolVersions
+    ).toBeUndefined()
+    expect(Inventory.missingTool).toBe("missing-tool")
+    expect(Inventory.reasonsText([
+      { feature: "condition", detail: "a" },
+      { feature: Inventory.missingTool, detail: "go 1.23" },
+      { feature: "condition", detail: "b" },
+      { feature: Inventory.missingTool, detail: "ruby 3.4.6" },
+      { feature: Inventory.missingTool, detail: "go 1.23" }
+    ])).toBe("condition, missing-tool (go 1.23, ruby 3.4.6)")
+    expect(Inventory.reasonsText([])).toBe("")
+  })
+
+  it("says in one line that every CI job runs on another system, and where to run instead", () => {
+    const decode = Schema.decodeUnknownSync(Inventory.Inventory)
+    const elsewhere = (runsOn: string, matrix: ReadonlyArray<Record<string, string>> = []) => (id: string) => ({
+      id,
+      source: "github-actions",
+      file: ".github/workflows/main.yml",
+      name: id,
+      needs: [],
+      triggers: ["push"],
+      matrix,
+      runsOn,
+      steps: [{ id: `${id}:1`, command: "npm test", cwd: "", env: {}, secrets: [] }],
+      unsupported: [{ feature: Inventory.otherSystem, detail: `${id} runs on another system` }]
+    })
+    const read = (...jobs: ReadonlyArray<unknown>) =>
+      decode({ version: 1, repository: "r", commit: "c", toolchains: [], jobs })
+    expect(Inventory.refusal(read(elsewhere("macos-latest")("test"), elsewhere("macos-15")("browser")))).toBe(
+      "every CI job of this repository runs on macOS; run smithers-ci on a Mac"
+    )
+    expect(Inventory.refusal(read(elsewhere("ubuntu-latest")("test")))).toBe(
+      "every CI job of this repository runs on Linux; run smithers-ci on Linux"
+    )
+    expect(Inventory.refusal(read(elsewhere("windows-latest")("test")))).toBe(
+      "every CI job of this repository runs on Windows; smithers-ci runs on Linux and macOS"
+    )
+    // A job that runs only on Windows is for another system whatever else is said of it: no machine is Windows.
+    const powershell = {
+      ...elsewhere("windows-latest")("test"),
+      steps: [],
+      unsupported: [{ feature: "shell", detail: "test step 1 runs in PowerShell on Windows" }]
+    }
+    expect(Inventory.refusal(read(powershell))).toBe(
+      "every CI job of this repository runs on Windows; smithers-ci runs on Linux and macOS"
+    )
+    const both = elsewhere("${{ matrix.os }}", [{ os: "windows-latest" }, { os: "macos-latest" }])("test")
+    expect(Inventory.refusal(read(both, elsewhere("windows-2025")("pack")))).toBe(
+      "every CI job of this repository runs on macOS or Windows; run smithers-ci on a Mac"
+    )
+    // One job left out for another reason alone, and the answer is the list.
+    const blocked = { ...elsewhere("ubuntu-latest")("lint"), unsupported: [{ feature: "uses", detail: "an action" }] }
+    expect(Inventory.refusal(read(elsewhere("macos-latest")("test"), blocked))).toBe(
+      "0 of 2 CI jobs can be reproduced on this machine\n  test  other-system\n  lint  uses"
+    )
+    // A macOS job that also receives a secret would not run on a Mac either: the list says both.
+    const guarded = {
+      ...elsewhere("macos-latest")("deploy"),
+      unsupported: [
+        { feature: Inventory.otherSystem, detail: "deploy runs on macOS" },
+        { feature: "secret", detail: "deploy:1 receives TOKEN" }
+      ]
+    }
+    expect(Inventory.refusal(read(elsewhere("macos-latest")("test"), guarded))).toBe(
+      "0 of 2 CI jobs can be reproduced on this machine\n  test    other-system\n  deploy  other-system, secret"
+    )
+    // A job that waits for a job on that system runs there with it.
+    const after = { ...elsewhere("macos-latest")("after"), needs: ["test"] }
+    expect(Inventory.refusal(read(elsewhere("macos-latest")("test"), after))).toBe(
+      "every CI job of this repository runs on macOS; run smithers-ci on a Mac"
+    )
+    const tool = {
+      ...elsewhere("ubuntu-latest")("build"),
+      unsupported: [{ feature: Inventory.missingTool, detail: "ruby 3.4.6" }]
+    }
+    expect(Inventory.refusal(read(tool))).toBe(
+      "0 of 1 CI job can be reproduced on this machine\n  build  missing-tool (ruby 3.4.6)"
+    )
+  })
+
   it("fills one matrix variant into a step's command, directory and environment values", () => {
     const step: Inventory.Step = {
       id: "ci.yml:test:1",

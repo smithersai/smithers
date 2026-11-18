@@ -166,8 +166,38 @@ export const Toolchain = Schema.Struct({
 export type Toolchain = typeof Toolchain.Type
 
 /**
+ * A tool one machine has at another version than a job's CI sets up: the
+ * version the job asks for and the version found. The job still runs; the
+ * report shows both, so a verdict is never read as that of the version
+ * asked for.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const ToolVersion = Schema.Struct({
+  job: Schema.NonEmptyString,
+  tool: Schema.NonEmptyString,
+  asked: Schema.NonEmptyString,
+  found: Schema.NonEmptyString
+})
+
+/**
+ * A decoded `ToolVersion`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type ToolVersion = typeof ToolVersion.Type
+
+/**
  * Everything a repository's CI does at one commit. `unsupported` holds what
  * belongs to a file and to no job, such as a workflow that does not parse.
+ *
+ * An inventory says nothing about the machine that read it, unless it was
+ * read for one, as a replay reads it: then a job no variant of which runs on
+ * that machine's system has an `otherSystem` entry, a job that sets up a
+ * tool the machine lacks has a `missingTool` entry, and `toolVersions` lists
+ * each tool the machine has at another version than a job asks for.
  *
  * @category models
  * @since 0.1.0
@@ -178,7 +208,8 @@ export const Inventory = Schema.Struct({
   commit: Schema.NonEmptyString,
   toolchains: Schema.Array(Toolchain),
   jobs: Schema.Array(Job),
-  unsupported: Schema.optionalKey(Schema.Array(Unsupported))
+  unsupported: Schema.optionalKey(Schema.Array(Unsupported)),
+  toolVersions: Schema.optionalKey(Schema.Array(ToolVersion))
 })
 
 /**
@@ -262,6 +293,33 @@ export const hostOf = (runsOn: string | undefined): Host | undefined => {
 export const otherSystem = "other-system"
 
 /**
+ * The feature of a job that sets up a tool this machine does not have. Its
+ * `detail` is what to install: the tool, and the version when the job asks
+ * for one, such as `ruby 3.4.6`. Nothing is downloaded for a job; it is
+ * left out and listed until the tool is on the machine.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const missingTool = "missing-tool"
+
+/**
+ * The reasons a job is left out, as one line: each feature once, in the
+ * order found, and a missing tool with what to install, as in
+ * `missing-tool (go 1.23, ruby 3.4.6)`.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const reasonsText = (reasons: ReadonlyArray<Unsupported>): string => {
+  const tools = [...new Set(reasons.flatMap((reason) => reason.feature === missingTool ? [reason.detail] : []))]
+  return [...new Set(reasons.map((reason) => reason.feature))]
+    .map((feature) => feature === missingTool ? `${feature} (${tools.join(", ")})` : feature)
+    .join(", ")
+}
+
+/**
  * The `NotReplayed` feature of a CI job that has no command: every step of
  * it was a host action, such as a checkout and an upload.
  *
@@ -341,7 +399,8 @@ export const longRunning = "long-running"
  * host: it checks the repository out, sets up a tool the inventory lists
  * (`Toolchain.job`), restores or saves a cache, or uploads a file. The
  * replay makes the checkout itself and runs the job only on a machine that
- * has its tools, so leaving the step out cannot change a verdict.
+ * has its tools, so the step is left out. A tool at another version than
+ * the step asks for can change a verdict: `toolVersions` lists it.
  *
  * @category constants
  * @since 0.1.0
@@ -732,11 +791,53 @@ export const withSteps = (inventory: Ci, steps: (job: Job) => ReadonlyArray<Step
     })
   })
 
+const systems: ReadonlyArray<readonly [host: Host, name: string, where: string | undefined]> = [
+  ["linux", "Linux", "on Linux"],
+  ["darwin", "macOS", "on a Mac"],
+  // Generated targets do not run on Windows, so there is nowhere to send the reader.
+  ["win32", "Windows", undefined]
+]
+
+/**
+ * The one line for a repository whose every CI job is for another operating
+ * system, or `undefined` when the list of jobs says more.
+ *
+ * A job is for another system when it says so (`otherSystem`, written by a
+ * reader that knows its machine), or when it runs only on Windows, which is
+ * no machine `smithers-ci` runs on. The line sends the reader to a Mac or
+ * to Linux only when every job that runs there has nothing else against it:
+ * a macOS job that also receives a secret would not run on a Mac either.
+ */
+const everyJobElsewhere = (inventory: Inventory, left: ReadonlyArray<NotReplayed>): string | undefined => {
+  const byId = new Map(inventory.jobs.map((job) => [job.id, job]))
+  const hostsOf = (id: string): ReadonlyArray<Host | undefined> => {
+    const job = byId.get(id) as Job
+    return (job.matrix.length === 0 ? [{}] : job.matrix).map((variant) =>
+      hostOf(job.runsOn === undefined ? undefined : expand(job.runsOn, variant))
+    )
+  }
+  const windowsOnly = (entry: NotReplayed): boolean => hostsOf(entry.job).every((host) => host === "win32")
+  const elsewhere = (entry: NotReplayed): boolean =>
+    entry.reasons.some((reason) => reason.feature === otherSystem) || windowsOnly(entry)
+  if (!left.every(elsewhere)) return undefined
+  const runsThere = (entry: NotReplayed): boolean =>
+    windowsOnly(entry) || entry.reasons.every((reason) => [otherSystem, needsLeftOut].includes(reason.feature))
+  if (!left.every(runsThere)) return undefined
+  const hosts = new Set(left.flatMap((entry) => hostsOf(entry.job)))
+  const found = systems.filter(([host]) => hosts.has(host))
+  const names = found.map(([, name]) => name).join(" or ")
+  const where = found.find(([, , place]) => place !== undefined)?.[2]
+  return `every CI job of this repository runs on ${names}; ${
+    where === undefined ? "smithers-ci runs on Linux and macOS" : `run smithers-ci ${where}`
+  }`
+}
+
 /**
  * Why nothing of this CI can be run, or `undefined` when `ci` keeps a job.
  * The replay and `apply` refuse with this text, so a repository reads one
- * answer: it has no CI, or the jobs left out, one per line with their
- * features.
+ * answer: it has no CI, every job of it runs on another operating system
+ * (one line that names the system), or the jobs left out, one per line with
+ * their features and the tools to install.
  *
  * @throws {never}
  * @category accessors
@@ -748,11 +849,11 @@ export const refusal = (inventory: Inventory): string | undefined => {
   if (left.length === 0) {
     return "no job runs on a push or a pull request, and the repository root has no `ci` recipe or script"
   }
+  const elsewhere = everyJobElsewhere(inventory, left)
+  if (elsewhere !== undefined) return elsewhere
   const width = Math.max(...left.map((entry) => entry.job.length))
   return [
     `0 of ${left.length} CI job${left.length === 1 ? "" : "s"} can be reproduced on this machine`,
-    ...left.map((entry) =>
-      `  ${entry.job.padEnd(width)}  ${[...new Set(entry.reasons.map((reason) => reason.feature))].join(", ")}`
-    )
+    ...left.map((entry) => `  ${entry.job.padEnd(width)}  ${reasonsText(entry.reasons)}`)
   ].join("\n")
 }

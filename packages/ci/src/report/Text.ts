@@ -7,8 +7,9 @@
  * listed with the reason. A CI
  * job that was not replayed is counted beside the commits and listed with its
  * reasons, and so is what the inventory could not read, so the speedup is
- * never read as covering them. Flaky verdicts are counted beside the
- * mismatches. On a repository that
+ * never read as covering them. A tool this machine has at another version
+ * than a job asks for is listed with both versions. Flaky verdicts are
+ * counted beside the mismatches. On a repository that
  * already builds with Smithers build, the patterns replayed stand above the
  * speedup.
  *
@@ -35,6 +36,7 @@ import {
   shortCommit,
   speedup,
   times,
+  toolVersion,
   unread,
   verdict
 } from "./Format.ts"
@@ -149,6 +151,14 @@ export const text: RenderReport = (report) => {
     sections.push([
       "not read",
       ...notRead.map((entry) => `${clean(entry.feature).padEnd(featureWidth)}  ${clean(entry.detail)}`.trimEnd())
+    ])
+  }
+  const tools = report.toolVersions ?? []
+  if (tools.length > 0) {
+    const jobWidth = Math.max(...tools.map((entry) => clean(entry.job).length))
+    sections.push([
+      "tool versions",
+      ...tools.map((entry) => `${clean(entry.job).padEnd(jobWidth)}  ${clean(toolVersion(entry))}`)
     ])
   }
   return sections.map(paragraph).join("\n\n")

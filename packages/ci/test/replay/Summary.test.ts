@@ -250,6 +250,9 @@ describe("replayable", () => {
       "  m        no-target"
     ].join("\n"))
     expect(nothingToReplay([])).toBe("no CI step that runs on a change has a target on this machine")
+    expect(nothingToReplay([{ job: "gems", reasons: [{ feature: "missing-tool", detail: "ruby 3.4.6" }] }])).toBe(
+      "no CI step that runs on a change has a target on this machine\n  gems  missing-tool (ruby 3.4.6)"
+    )
   })
 
   it("leaves out a variant for another system, and a job with no variant for this one", () => {
@@ -589,6 +592,12 @@ describe("reportOf", () => {
     const own = { feature: "smithers-build", detail: "WORKSPACE.ts" }
     expect(reportOf({ ...read, unsupported: [own, unread] }, [entry], nothing).notRead).toEqual([unread])
     expect(reportOf({ ...read, unsupported: [own] }, [entry], nothing).notRead).toBeUndefined()
+  })
+
+  it("lists each tool the machine has at another version than a job asks for", () => {
+    const toolVersions = [{ job: "ci.yml:test", tool: "node", asked: "22.x", found: "26.5.0" }]
+    expect(reportOf({ ...read, toolVersions }, [entry], nothing).toolVersions).toEqual(toolVersions)
+    expect(reportOf(read, [entry], nothing).toolVersions).toBeUndefined()
   })
 
   it("lists the commits whose own CI could not be replayed", () => {

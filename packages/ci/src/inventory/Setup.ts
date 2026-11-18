@@ -22,8 +22,16 @@
  * action: `pnpm/action-setup` sets up `pnpm`. Four actions set a tool up
  * under another name and are listed in `otherNames`.
  *
+ * A name of one of these forms is still no setup action when what it names
+ * is no tool: a server, a cluster or an environment the action starts
+ * (`setup-minikube`, `setup-postgres`, `setup-miniconda`), or a word for the
+ * job's own preparation (`setup-env`, `setup-ci`). Such an action does more
+ * than a tool on the machine stands for, so it stays an action with no
+ * command, and its job is not run.
+ *
  * The version is the input `<tool>-version`, `<tool>_version`, `version` or
- * `toolchain`, whichever comes first.
+ * `toolchain`, whichever comes first. `dtolnay/rust-toolchain@1.85.0` names
+ * it in its release.
  *
  * @since 0.1.0
  */
@@ -64,11 +72,22 @@ const otherNames: ReadonlyMap<string, string> = new Map([
   ["taiki-e/install-action", ""]
 ])
 
-/** Actions the name rule matches that put no tool on the machine: they only keep a cache. */
-const noTool: ReadonlySet<string> = new Set(["gradle/actions/setup-gradle"])
-
 /** Words in the place of a tool that name none; the owner of the action names it then. */
 const noName: ReadonlySet<string> = new Set(["action", "actions", "cli", "tool", "tools", "toolchain"])
+
+/**
+ * Names in the place of a tool that are none. The first rows are servers,
+ * clusters and environments an action starts or activates; the last are
+ * words for what a job prepares, some of which are also programs every
+ * machine has, such as `env`.
+ */
+const notTools: ReadonlySet<string> = new Set([
+  ...["minikube", "kind", "k3s", "k3d", "kubernetes", "docker", "podman", "qemu", "xvfb", "msys2", "wsl"],
+  ...["postgres", "postgresql", "mysql", "mariadb", "redis", "mongodb", "mongo", "elasticsearch", "rabbitmq"],
+  ...["miniconda", "micromamba", "conda", "mambaforge", "pixi"],
+  ...["env", "environment", "ci", "project", "repo", "repository", "workspace", "deps", "dependencies"],
+  ...["build", "test", "tests", "common", "base", "runner", "job", "cache", "config", "git", "ssh", "gpg", "auth"]
+])
 
 /** Other spellings of a tool's name, so one tool has one name. */
 const spellings: ReadonlyMap<string, string> = new Map([
@@ -79,6 +98,9 @@ const spellings: ReadonlyMap<string, string> = new Map([
   ["rust-toolchain", "rust"],
   ["homebrew", "brew"]
 ])
+
+/** A name that ends in what a job prepares, as `r-dependencies` and `python-env` do, is no tool either. */
+const preparation = /-(?:dependencies|deps|env|environment|cache|config)$/
 
 const forms = [/^setup-(.+)$/, /^(.+)-setup$/, /^install-(.+)$/, /^(.+)-installer$/, /^(.+)-toolchain$/]
 
@@ -93,33 +115,60 @@ const toolOf = (action: string): string | undefined => {
   const name = (parts.at(-1) as string).toLowerCase().replace(/-action$/, "")
   for (const form of forms) {
     const tool = form.exec(name)?.[1]
-    if (tool !== undefined) return named(noName.has(tool) ? owner.replace(/-actions?$/, "") : tool)
+    if (tool === undefined) continue
+    const found = named(noName.has(tool) ? owner.replace(/-actions?$/, "") : tool)
+    return notTools.has(found) || preparation.test(found) ? undefined : found
   }
   return undefined
 }
 
-/** The tools `taiki-e/install-action` installs: its `tool` input, a list separated by commas, each `name@version`. */
-const listed = (inputs: Record<string, unknown>): ReadonlyArray<SetupTool> =>
-  (asScalar(inputs["tool"]) ?? "").split(",").flatMap((entry) => {
+/** True for a release that names the action's own version or commit, not a tool. */
+const ownRelease = (ref: string): boolean => /^(?:master|main|v\d[\w.-]*|[0-9a-f]{40})$/.test(ref)
+
+/**
+ * The tools `taiki-e/install-action` installs: its `tool` input, a list separated by commas, each `name@version`,
+ * or the one tool its release names, as in `taiki-e/install-action@nextest`.
+ */
+const listed = (inputs: Record<string, unknown>, ref: string | undefined): ReadonlyArray<SetupTool> => {
+  const tools = (asScalar(inputs["tool"]) ?? "").split(",").flatMap((entry): ReadonlyArray<SetupTool> => {
     const [name, version] = entry.trim().split("@")
     if (name === undefined || name === "") return []
     return [version === undefined || version === "" ? { name } : { name, version }]
   })
+  return tools.length > 0 || ref === undefined || ownRelease(ref) ? tools : [{ name: ref }]
+}
 
-const versionOf = (tool: string, inputs: Record<string, unknown>, ref: string | undefined): string | undefined => {
-  for (const input of [`${tool}-version`, `${tool}_version`, "version", "toolchain"]) {
-    const value = asScalar(inputs[input])
-    if (value !== undefined && value !== "") return value
+const input = (inputs: Record<string, unknown>, name: string): string | undefined => {
+  const value = asScalar(inputs[name])
+  return value === undefined || value === "" ? undefined : value
+}
+
+const versionOf = (
+  action: string,
+  tool: string,
+  inputs: Record<string, unknown>,
+  ref: string | undefined
+): string | undefined => {
+  for (const name of [`${tool}-version`, `${tool}_version`, "version", "toolchain"]) {
+    const value = input(inputs, name)
+    if (value !== undefined) return value
   }
   // `dtolnay/rust-toolchain@1.85.0` names the version where other actions name their own release.
-  return tool === "rust" && ref !== undefined && !/^(?:master|main|v\d+)$/.test(ref) ? ref : undefined
+  return action === "dtolnay/rust-toolchain" && ref !== undefined && !ownRelease(ref) ? ref : undefined
 }
+
+/** A tool with the version asked for, when one is. */
+const tool = (name: string, version: string | undefined): SetupTool =>
+  version === undefined ? { name } : { name, version }
 
 const isOn = (value: unknown): boolean => value === true || value === "true"
 const isOff = (value: unknown): boolean => value === undefined || value === null || value === false || value === "false"
 
-/** What an input makes the action run besides setting its tool up. */
-const alsoRuns = (action: string, inputs: Record<string, unknown>): Pick<Setup, "command" | "problem"> => {
+/**
+ * What a setup action does besides putting its tool on the machine: a command it runs, which the job then runs
+ * too, or something the steps after it see that was not read, which keeps the job from being run.
+ */
+const alsoDoes = (action: string, inputs: Record<string, unknown>): Pick<Setup, "command" | "problem"> => {
   if (action === "ruby/setup-ruby" && !isOff(inputs["bundler-cache"])) {
     // The action installs the gems into the checkout, never into the machine's own gem directory.
     return isOn(inputs["bundler-cache"]) && inputs["working-directory"] === undefined
@@ -131,7 +180,27 @@ const alsoRuns = (action: string, inputs: Record<string, unknown>): Pick<Setup, 
       ? { command: "pnpm install" }
       : { problem: "installs packages with its own arguments (run_install)" }
   }
+  if (action === "astral-sh/setup-uv" && !isOff(inputs["activate-environment"])) {
+    return { problem: "makes an environment the steps after it run in (activate-environment)" }
+  }
+  // It turns warnings into errors for every step after it unless `rustflags` is set to nothing.
+  if (action === "actions-rust-lang/setup-rust-toolchain" && asScalar(inputs["rustflags"]) !== "") {
+    return { problem: "sets RUSTFLAGS for the steps after it" }
+  }
   return {}
+}
+
+/** The tools of the actions that set up more or less than their name says. */
+const toolsOf = (action: string, name: string, inputs: Record<string, unknown>, ref: string | undefined) => {
+  // It keeps Gradle's cache; it installs Gradle only when a version is asked for.
+  if (action === "gradle/actions/setup-gradle") {
+    const version = input(inputs, "gradle-version")
+    return version === undefined ? [] : [tool("gradle", version)]
+  }
+  const own = tool(name, versionOf(action, name, inputs, ref))
+  // uv is told which Python to run, which is a version of Python the job asks for.
+  const python = action === "astral-sh/setup-uv" ? input(inputs, "python-version") : undefined
+  return python === undefined ? [own] : [own, tool("python", python)]
 }
 
 /**
@@ -146,11 +215,9 @@ const alsoRuns = (action: string, inputs: Record<string, unknown>): Pick<Setup, 
 export const readSetup = (uses: string, inputs: unknown): Setup | undefined => {
   const [action, ref] = uses.split("@") as [string, string | undefined]
   if (action.startsWith(".") || action.includes(":") || !action.includes("/")) return undefined
-  if (noTool.has(action)) return { tools: [] }
-  const tool = toolOf(action)
-  if (tool === undefined) return undefined
+  const name = toolOf(action)
+  if (name === undefined) return undefined
   const given = isRecord(inputs) ? inputs : {}
-  if (tool === "") return { tools: listed(given) }
-  const version = versionOf(tool, given, ref)
-  return { tools: [version === undefined ? { name: tool } : { name: tool, version }], ...alsoRuns(action, given) }
+  if (name === "") return { tools: listed(given, ref) }
+  return { tools: toolsOf(action, name, given, ref), ...alsoDoes(action, given) }
 }

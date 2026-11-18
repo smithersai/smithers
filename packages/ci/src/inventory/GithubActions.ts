@@ -17,6 +17,7 @@ import {
   hostActions,
   hostOf,
   releaseTrigger,
+  secret,
   type Toolchain,
   triggerFilter,
   writePermission
@@ -137,6 +138,13 @@ const shellStart = (shell: string): string | undefined => {
   return template === null ? undefined : `${template[1]}${template[2]} -c`
 }
 
+/** The secrets among an action's inputs, by name. The token every job has is none: an action uses it to download. */
+const secretsIn = (inputs: unknown, scope: Scope): ReadonlyArray<string> => {
+  const values = isRecord(inputs) ? Object.values(inputs) : []
+  const names = values.flatMap((value) => resolve(asScalar(value) ?? "", scope).secrets)
+  return [...new Set(names)].filter((name) => name !== "GITHUB_TOKEN")
+}
+
 /**
  * The tools a setup action stands for, as the inventory lists them: with the job that needs them, and the version
  * when it is written out or is a matrix value, which each variant fills in.
@@ -235,6 +243,9 @@ const readStep = (context: JobContext, raw: unknown, index: number): void => {
     }
     context.toolchains.push(...toolchainsOf(setup, uses, scope, job))
     note(job, hostAction, `${uses} has no command to run`)
+    // With a secret the action does what a tool on the machine cannot stand for, such as signing a tool in.
+    const received = secretsIn(raw["with"], scope)
+    if (received.length > 0) note(job, secret, `${where}: ${uses} receives ${received.join(", ")}`)
     if (setup.problem !== undefined) note(job, "uses", `${where}: ${uses} ${setup.problem}`)
     if (setup.command === undefined) return
     return addStep(job, {

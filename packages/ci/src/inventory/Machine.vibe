@@ -1,0 +1,102 @@
+/**
+ * Reads a repository's CI for the machine it is on: what `read` reads, with
+ * each CI job this machine cannot run marked, so it is left out and listed.
+ *
+ * It looks for the tools the CI's setup actions stand for, on `PATH`, and
+ * asks each one found for its version, once while the program runs. It
+ * installs nothing and changes nothing.
+ *
+ * @since 0.1.0
+ */
+
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type { Inventory } from "../contract/Inventory.ts"
+import type { ReadInventory } from "../contract/Parts.ts"
+import { read } from "./Read.vibe"
+import { type Found, type Machine, neededTools, onMachine, programsOf, thisMachine, versionIn } from "./Tools.ts"
+
+/** How long a program may take to print its version. One that takes longer is on the machine, at no known version. */
+const patience = "30 seconds"
+
+/** Runs one line of shell with a program's name as `$1`, as a step's command is run, with nothing to read. */
+const shell = (machine: Machine, line: string, program: string) =>
+  ChildProcess.make("bash", ["-c", line, "smithers-ci", program], {
+    stdin: "ignore",
+    ...(machine.path === undefined ? {} : { env: { PATH: machine.path }, extendEnv: true })
+  })
+
+/**
+ * What was learned of each program, by `PATH` and name. A tool does not come or go while the program runs, and a
+ * replay reads once for every commit: asking once keeps one answer for all of them.
+ */
+const known = new Map<string, Found | "absent">()
+
+/**
+ * Whether a program is a file on the machine's `PATH`, or `undefined` when that could not be asked. A shell's own
+ * commands, such as `test`, are no file.
+ */
+effect function has(machine: Machine, program: string) {
+  const spawner = try ChildProcessSpawner
+  const code = spawner.exitCode(shell(machine, `type -P "$1" >/dev/null 2>&1`, program)) catch () => undefined
+  return code === undefined ? undefined : Number(code) === 0
+}
+
+/** What a program prints when asked for its version, in either of the two ways programs are asked. */
+effect function printed(machine: Machine, program: string) {
+  const spawner = try ChildProcessSpawner
+  const asked = spawner.string(shell(machine, `"$1" --version 2>&1 || "$1" version 2>&1`, program), {
+    includeStderr: true
+  })
+  return timeout(asked, machine.patience ?? patience) catch () => ""
+}
+
+/** The first of a tool's programs that is on the machine, with its version. */
+effect function find(machine: Machine, tool: string): (Found | undefined)!!ChildProcessSpawner {
+  for (const program of programsOf(tool)) {
+    const key = `${machine.path ?? ""}\n${program}`
+    const seen = known.get(key)
+    if (seen === "absent") continue
+    if (seen !== undefined) return seen
+    const there = try has(machine, program)
+    // When the machine cannot be asked, the job runs and its own steps say whether the tool is there.
+    if (there === undefined) return { program }
+    if (!there) {
+      known.set(key, "absent")
+      continue
+    }
+    const found = { program, version: versionIn(try printed(machine, program)) }
+    known.set(key, found)
+    return found
+  }
+  return undefined
+}
+
+/**
+ * The inventory as `machine` can run it: `Tools.onMachine` of what was found
+ * there. It asks about a tool only when a CI job with a variant on the
+ * machine's system sets it up.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export effect function onThisMachine(inventory: Inventory, machine: Machine = thisMachine()) {
+  const found = new Map<string, Found>()
+  for (const tool of neededTools(inventory, machine.host)) {
+    const have = try find(machine, tool)
+    if (have !== undefined) found.set(tool, have)
+  }
+  return onMachine(inventory, machine.host, found)
+}
+
+/**
+ * Reads the CI of the repository at `root` for this machine, with the
+ * contract 10 type `ReadInventory`. A replay reads with it; `inventory` and
+ * `apply` read with `read`, whose answer is the same on every machine.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export const readHere: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProcessSpawner> = effect function (root) {
+  return try onThisMachine(try read(root))
+}

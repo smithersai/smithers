@@ -4,14 +4,14 @@
 //
 //   node packages/ci/scripts/corpus.mjs <directory> [--commits 2] [--only <name>,<name>]
 //
-// Each repository is cloned into <directory>/<name> at the commit named below, with five commits of history, unless
+// Each repository is cloned into <directory>/<name> at the commit named below, with the history before it, unless
 // that directory is already there. Then `smithers-ci --commits <n> --json` runs in it. What each run printed is
 // kept in <directory>/out. Clone into a directory outside any repository.
 import { spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { ciJobs } from "../src/contract/Inventory.ts"
+import { ciJobs, expand, hostOf } from "../src/contract/Inventory.ts"
 
 const repositories = [
   ["ky", "https://github.com/sindresorhus/ky.git", "3541888"],
@@ -37,7 +37,7 @@ mkdirSync(out, { recursive: true })
 
 const git = (cwd, ...rest) => spawnSync("git", ["-C", cwd, ...rest], { encoding: "utf8" })
 
-/** A clone with the named commit checked out and the five commits before it. */
+/** A clone with the named commit checked out and commits before it. */
 const clone = (name, url, commit) => {
   const root = join(directory, name)
   if (existsSync(join(root, ".git"))) return root
@@ -74,12 +74,16 @@ const parse = (text) => {
   }
 }
 
-/** The jobs a refusal lists: one per line, the job, two spaces, its reasons. */
+/** The jobs a refusal lists: one per line, the job, two spaces, its reasons; a missing tool is in parentheses. */
 const refused = (stderr) =>
-  [...stderr.matchAll(/^ {2}(\S+(?: \(.*\))?) {2,}(\S.*)$/gm)].map(([, job, reasons]) => ({
+  [...stderr.matchAll(/^ {2}(\S+) {2,}(\S.*)$/gm)].map(([, job, reasons]) => ({
     job,
-    features: reasons.split(", ").map((reason) => reason.replace(/[ (:].*$/, ""))
+    features: reasons.replace(/ \([^)]*\)/g, "").split(", "),
+    tools: [...reasons.matchAll(/missing-tool \(([^)]*)\)/g)].flatMap((match) => match[1].split(", "))
   }))
+
+/** What a refusal says when it lists no job: its one line, without the program's name. */
+const said = (stderr) => /^smithers-ci: \w+: (.*)$/m.exec(stderr)?.[1] ?? "-"
 
 const rowOf = (name, commit, root) => {
   const inventory = parse(run(root, name, "inventory", "inventory", "--json").stdout)
@@ -91,29 +95,40 @@ const rowOf = (name, commit, root) => {
     : (report.notReplayed ?? []).map((entry) => ({
       job: entry.job,
       features: entry.reasons.map((reason) => reason.feature),
-      variants: entry.reasons.filter((reason) => reason.feature === "other-system").length
+      tools: entry.reasons.flatMap((reason) => reason.feature === "missing-tool" ? [reason.detail] : [])
     }))
-  // A job with a variant for another system is listed and still replayed: its other variants ran.
-  const variantsOf = (id) => Math.max(1, jobs.find((job) => job.id === id)?.matrix.length ?? 1)
+  // A job with a variant for this system is listed for its other variants and still replayed.
+  const runsHere = (id) => {
+    const job = jobs.find((candidate) => candidate.id === id)
+    if (job === undefined) return false
+    const systems = (job.matrix.length === 0 ? [{}] : job.matrix).map((variant) =>
+      hostOf(job.runsOn === undefined ? undefined : expand(job.runsOn, variant)) ?? process.platform
+    )
+    return systems.includes(process.platform)
+  }
   const whole = left.filter((entry) =>
-    report === undefined || !entry.features.every((feature) => feature === "other-system")
-    || entry.variants >= variantsOf(entry.job)
+    report === undefined || !entry.features.every((feature) => feature === "other-system") || !runsHere(entry.job)
   )
   const replayed = report === undefined ? [] : jobs.filter((job) => !whole.some((entry) => entry.job === job.id))
   const byReason = new Map()
   for (const entry of whole) {
     for (const feature of new Set(entry.features)) byReason.set(feature, (byReason.get(feature) ?? 0) + 1)
   }
+  const tools = [...new Set(whole.flatMap((entry) => entry.tools))]
   const partial = left.length - whole.length
+  const reasons = [
+    ...[...byReason].sort(([a], [b]) => (a < b ? -1 : 1)).map(([feature, count]) =>
+      feature === "missing-tool" ? `${feature} ${count} (${tools.join(", ")})` : `${feature} ${count}`
+    ),
+    ...(partial === 0 ? [] : [`other-system variants of ${partial}`])
+  ]
   return [
     `${name}@${commit}`,
     String(replay.status ?? `signal ${replay.signal}`),
     String(report?.commits.length ?? 0),
     `${replayed.length} of ${jobs.length}`,
-    [
-      ...[...byReason].sort(([a], [b]) => (a < b ? -1 : 1)).map(([feature, count]) => `${feature} ${count}`),
-      ...(partial === 0 ? [] : [`other-system variants of ${partial}`])
-    ].join(", ") || "-"
+    // A refusal that lists no job says why in one line.
+    reasons.length > 0 ? reasons.join(", ") : report === undefined ? said(replay.stderr ?? "") : "-"
   ]
 }
 

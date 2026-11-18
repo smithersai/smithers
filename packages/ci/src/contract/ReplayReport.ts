@@ -11,7 +11,7 @@
  */
 
 import * as Schema from "effect/Schema"
-import { NotReplayed, Unsupported } from "./Inventory.ts"
+import { NotReplayed, ToolVersion, Unsupported } from "./Inventory.ts"
 import { Mode, StatusCounts, Verdict } from "./RunRecord.ts"
 import { Metrics } from "./Selection.ts"
 
@@ -114,6 +114,8 @@ export type NotReplayedCommit = typeof NotReplayedCommit.Type
  * `mismatches`. `notReplayed` lists the CI jobs, or matrix variants, that
  * were not run, and `notRead` what the inventory could not read at all, both
  * at the newest commit, so a speedup is never read as covering them.
+ * `toolVersions` lists each tool this machine has at another version than a
+ * replayed job's CI sets up, with both versions.
  *
  * @category models
  * @since 0.1.0
@@ -132,6 +134,7 @@ export const ReplayReport = Schema.Struct({
   notReplayed: Schema.optionalKey(Schema.Array(NotReplayed)),
   notRead: Schema.optionalKey(Schema.Array(Unsupported)),
   notReplayedCommits: Schema.optionalKey(Schema.Array(NotReplayedCommit)),
+  toolVersions: Schema.optionalKey(Schema.Array(ToolVersion)),
   targets: Schema.optionalKey(Schema.Array(Schema.NonEmptyString))
 })
 

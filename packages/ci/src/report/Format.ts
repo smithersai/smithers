@@ -5,7 +5,7 @@
  * @since 0.1.0
  */
 
-import type { NotReplayed } from "../contract/Inventory.ts"
+import { type NotReplayed, reasonsText, type ToolVersion } from "../contract/Inventory.ts"
 
 /**
  * Elapsed time in the largest units that keep it short: `850ms`, `12.3s`,
@@ -154,13 +154,23 @@ export const commitsLeftOut = (commits: number): string =>
 export const firstLine = (reason: string): string => reason.split("\n")[0] as string
 
 /**
- * Why a job was left out: each feature once, in the order found.
+ * Why a job was left out: each feature once, in the order found, and a
+ * missing tool with what to install.
  *
  * @category formatting
  * @since 0.1.0
  */
-export const reasons = (entry: NotReplayed): string =>
-  [...new Set(entry.reasons.map((reason) => reason.feature))].join(", ")
+export const reasons = (entry: NotReplayed): string => reasonsText(entry.reasons)
+
+/**
+ * A tool this machine has at another version than a job asks for, as one
+ * line after the job's name.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const toolVersion = (entry: ToolVersion): string =>
+  `asks for ${entry.tool} ${entry.asked}; this machine has ${entry.tool} ${entry.found}`
 
 const shownTargets = 3
 

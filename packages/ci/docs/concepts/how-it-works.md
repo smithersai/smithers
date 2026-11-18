@@ -41,6 +41,60 @@ and a TypeScript monorepo driven by GitHub Actions and Turborepo look alike:
 - A **toolchain** is a tool the repository pins, such as Zig or Bun, with the
   file that pins it and its version when the file gives one.
 
+### Setup actions
+
+A step that uses an action to put a tool on the CI machine means the job needs
+that tool, at that version when the step gives one. Smithers CI downloads no
+tool. A replay looks for the tool on your machine:
+
+| The tool is              | The job                                                            |
+| ------------------------ | ------------------------------------------------------------------ |
+| on your machine          | runs                                                               |
+| there at another version | runs, and the report gives the version asked for and the one found |
+| not there                | is not replayed, and the report names the tool to install          |
+
+Versions are compared by number: `22` and `22.x` are any 22, `^1.22` is any 1
+from 1.22 on. A name such as `latest`, and a version read from a file such as
+`.nvmrc`, are not compared.
+
+An action is read as a setup action by its name: the last part of its path,
+with a closing `-action` left off.
+
+| Name               | Example                                   | Tool     |
+| ------------------ | ----------------------------------------- | -------- |
+| `setup-<tool>`     | `actions/setup-node`, `ruby/setup-ruby`   | `<tool>` |
+| `<tool>-setup`     | `bufbuild/buf-setup-action`               | `<tool>` |
+| `install-<tool>`   | `snok/install-poetry`                     | `<tool>` |
+| `<tool>-installer` | `DeterminateSystems/nix-installer-action` | `<tool>` |
+| `<tool>-toolchain` | `dtolnay/rust-toolchain`                  | `<tool>` |
+
+When `<tool>` names nothing, as `action` and `cli` do, the tool is the owner of
+the action: `pnpm/action-setup` means pnpm. Four actions set a tool up under
+another name: `actions-rs/toolchain` (Rust), `jdx/mise-action` (mise),
+`subosito/flutter-action` (Flutter) and `taiki-e/install-action` (the tools its
+`tool` input lists).
+
+The version is the step's `<tool>-version`, `<tool>_version`, `version` or
+`toolchain` input; `dtolnay/rust-toolchain@1.85.0` names it in its release. A
+version written with a matrix value is filled in for each variant.
+
+An action with such a name is still not a setup action when what it names is
+no tool: a server, a cluster or an environment it starts, as `setup-minikube`,
+`setup-postgres` and `setup-miniconda` do, or the job's own preparation, as
+`setup-env` does. A setup action that receives a secret, or that changes what
+the steps after it see (`astral-sh/setup-uv` with `activate-environment`,
+`actions-rust-lang/setup-rust-toolchain` and its `RUSTFLAGS`), does more than a
+tool on your machine stands for. The job of any of these is not run.
+
+Two setup actions also run a command when asked, and the job runs it too:
+`ruby/setup-ruby` with `bundler-cache: true` installs the gems into the
+checkout, and `pnpm/action-setup` with `run_install: true` runs `pnpm install`.
+
+A tool counts as on your machine when its program is a file on `PATH`. Python
+is `python3` or `python`, and Rust is `cargo`.
+
+### What has no command
+
 Some CI features have no command to run, such as a hosted service container or
 a third-party action. The inventory lists each one under its job as
 unsupported, with the reason. When the repository depends on something
@@ -114,13 +168,25 @@ The recipes of one Justfile, the rules of one Makefile, and the scripts of one
 `package.json` run one after another in one checkout, in the order the `ci`
 recipe or rule lists them, and stop at the first failure.
 
-Three things are left out and listed in the report:
+Four things are left out and listed in the report:
 
-| Feature        | What is not replayed                                      |
-| -------------- | --------------------------------------------------------- |
-| `other-system` | a matrix variant whose runner is another operating system |
-| `no-target`    | a job with a step that has no target                      |
-| `needs`        | a job that needs a job left out                           |
+| Feature        | What is not replayed                                                    |
+| -------------- | ----------------------------------------------------------------------- |
+| `other-system` | a matrix variant, or a whole job, that runs on another operating system |
+| `missing-tool` | a job that sets up a tool your machine does not have                    |
+| `no-target`    | a job with a step that has no target                                    |
+| `needs`        | a job that needs a job left out                                         |
+
+A matrix over `ubuntu-latest`, `macos-latest` and `windows-latest` is replayed
+on Linux for its Ubuntu variants. The other variants are listed; the job is
+not dropped. A missing tool is listed with what to install, as in
+`missing-tool (ruby 3.4.6)`.
+
+When every CI job runs on another operating system, nothing can be measured
+here. The command says so in one line that names the system, and exits with
+code 3:
+
+> every CI job of this repository runs on macOS; run smithers-ci on a Mac
 
 A failed target reruns up to the limit the program sets (two) or until it
 passes. Its attempts give its verdict:
@@ -165,8 +231,15 @@ number of mismatches and the number of flaky verdicts. The speedup is the
 baseline wall time divided by the normal-mode wall time, both summed over
 every commit. It lists each CI job that was not replayed with its reasons,
 and each file the inventory could not read, so the speedup is never read as
-covering them. With fast mode, it also
-gives fast mode's selection metrics; see
+covering them. Under `tool versions` it lists each tool your machine has at
+another version than a job asks for:
+
+```text
+tool versions
+tests.yml:test  asks for node 22.x; this machine has node 26.5.0
+```
+
+With fast mode, it also gives fast mode's selection metrics; see
 [Normal mode and fast mode](modes.md#how-fast-mode-is-measured).
 
 The report prints as text: the totals, then one line for each commit that

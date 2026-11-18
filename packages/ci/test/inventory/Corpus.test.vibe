@@ -63,6 +63,295 @@ jobs:
 `
 }
 
+/** sindresorhus/ky: both jobs run on macOS only. */
+const ky = {
+  ".github/workflows/main.yml": `
+name: CI
+on:
+  - push
+  - pull_request
+jobs:
+  test:
+    name: Node.js \${{ matrix.node-version }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - latest
+          - 24
+          - 22
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: \${{ matrix.node-version }}
+      - run: npm install
+      - run: npx ava 'test/**' '!test/browser.ts'
+  browser:
+    name: Browsers and static checks
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: latest
+      - run: npm install
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+      - run: npm test -- test/browser.ts
+`
+}
+
+/** pallets/click: every job sets up uv with `astral-sh/setup-uv`, which is on no list of setup actions. */
+const click = {
+  ".github/workflows/tests.yaml": `
+name: Tests
+on:
+  pull_request:
+    paths-ignore: ['docs/**', 'README.md']
+  push:
+    branches: [main, stable]
+    paths-ignore: ['docs/**', 'README.md']
+permissions: {}
+jobs:
+  typing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: pyproject.toml
+      - name: cache mypy
+        uses: actions/cache@v6
+        with:
+          path: ./.mypy_cache
+          key: mypy|\${{ hashFiles('pyproject.toml') }}
+      - run: uv run --locked --no-default-groups --group dev tox run -e typing
+`,
+  ".github/workflows/pre-commit.yaml": `
+name: pre-commit
+on:
+  pull_request:
+  push:
+    branches: [main, stable]
+permissions: {}
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit|\${{ hashFiles('pyproject.toml', '.pre-commit-config.yaml') }}
+      - run: uv run --locked --no-default-groups --group pre-commit pre-commit run --show-diff-on-failure --all-files
+`,
+  ".github/workflows/zizmor.yaml": `
+name: GitHub Actions security analysis with zizmor
+on:
+  pull_request:
+    paths: ["**/*.yaml?"]
+permissions: {}
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: zizmorcore/zizmor-action@v0.6.0
+        with:
+          advanced-security: false
+`
+}
+
+/** junegunn/fzf: the Linux job sets up Go and, with `ruby/setup-ruby`, Ruby; one job is for macOS. */
+const fzf = {
+  ".github/workflows/linux.yml": `
+name: build
+on:
+  push:
+    branches: [ master, devel ]
+  pull_request:
+    branches: [ master, devel ]
+permissions:
+  contents: read
+env:
+  LANG: C.UTF-8
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version: "1.23"
+    - name: Setup Ruby
+      uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+      with:
+        ruby-version: 3.4.6
+    - name: Install Ruby gems
+      run: bundle install
+    - name: Rubocop
+      run: make lint
+    - name: Unit test
+      run: make test
+`,
+  ".github/workflows/macos.yml": `
+name: Test fzf on macOS
+on:
+  push:
+    branches: [ master, devel ]
+  pull_request:
+    branches: [ master ]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v7
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version: "1.23"
+    - name: Setup Ruby
+      uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+      with:
+        ruby-version: 3.0.0
+    - name: Unit test
+      run: make test
+`,
+  ".github/workflows/typos.yml": `
+name: "Spell Check"
+on: [pull_request]
+jobs:
+  typos:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: crate-ci/typos@v1.29.4
+`
+}
+
+/** t3-oss/create-t3-app: every job starts with the repository's own setup action, which sets up pnpm and Node. */
+const createT3App = {
+  ".github/actions/setup/action.yml": `
+name: "Setup and install"
+description: "Common setup steps for Actions"
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v3
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: "pnpm"
+    - shell: bash
+      run: pnpm install
+`,
+  ".github/workflows/ci.yml": `
+name: CI
+on:
+  pull_request:
+    branches: ["*"]
+  merge_group:
+jobs:
+  prettier:
+    runs-on: ubuntu-latest
+    name: Run Prettier
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      - run: pnpm format:check
+  bun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: pnpm install
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - run: cd cli && bun run dist/index.js ../../ci-bun --default
+`
+}
+
+/** spf13/cobra: one job runs Docker, one a third-party linter, one a Go matrix, and one is for Windows. */
+const cobra = {
+  ".github/workflows/test.yml": `
+name: Test
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  lic-headers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker run -v $(pwd):/wrk -w /wrk ghcr.io/google/addlicense -check .
+  golangci-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '^1.22'
+      - uses: golangci/golangci-lint-action@v8.0.0
+        with:
+          version: latest
+  test-unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu, macOS]
+        go: [23, 24]
+    name: '\${{ matrix.platform }} | 1.\${{ matrix.go }}.x'
+    runs-on: \${{ matrix.platform }}-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v6
+      with:
+        go-version: 1.\${{ matrix.go }}.x
+        cache: true
+    - run: make test
+  test-win:
+    name: MINGW64
+    defaults:
+      run:
+        shell: msys2 {0}
+    runs-on: windows-latest
+    steps:
+    - shell: bash
+      run: git config --global core.autocrlf input
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+    - uses: actions/checkout@v4
+    - run: make test
+`
+}
+
 it.layer(NodeServices.layer)("a first run on the shape of a public repository", (it) => {
   it.effect("commander.js: a matrix entry for another system removes only itself", () =>
     effect {
@@ -83,6 +372,106 @@ it.layer(NodeServices.layer)("a first run on the shape of a public repository", 
         // On a Mac the macOS variants run and the other six are listed.
         expect(mac.replayed).toHaveLength(3)
         expect(mac.details.filter((detail) => detail.includes("this machine is darwin"))).toHaveLength(6)
+        // The build server has Node 26: the variants that ask for 22 and 24 run on it, and the report says so.
+        expect(linux.versions).toEqual([
+          "tests.yml:test asks for node 22.x; this machine has node 26.5.0",
+          "tests.yml:test asks for node 24.x; this machine has node 26.5.0"
+        ])
+      })
+    })
+
+  it.effect("ky: every job is for macOS, which is said in one line on any other system", () =>
+    effect {
+      const linux = try firstRun(ky, "linux")
+      const mac = try firstRun(ky, "darwin")
+      try Effect.try(() => {
+        expect(linux.refusal).toBe("every CI job of this repository runs on macOS; run smithers-ci on a Mac")
+        expect(linux.replayed).toEqual([])
+        expect(linux.listed).toEqual([["main.yml:test", "other-system"], ["main.yml:browser", "other-system"]])
+        expect(linux.details).toEqual([
+          ".github/workflows/main.yml: Node.js ${{ matrix.node-version }} runs on macOS; this machine is Linux",
+          ".github/workflows/main.yml: Browsers and static checks runs on macOS; this machine is Linux"
+        ])
+        // On a Mac all of it runs: three Node versions of the tests, and the browser job.
+        expect(mac.refusal).toBeUndefined()
+        expect(mac.replayed).toEqual(["main.yml:test", "main.yml:test", "main.yml:test", "main.yml:browser"])
+        expect(mac.listed).toEqual([])
+        expect(mac.versions).toEqual([
+          "main.yml:test asks for node 24; this machine has node 26.5.0",
+          "main.yml:test asks for node 22; this machine has node 26.5.0"
+        ])
+      })
+    })
+
+  it.effect("click: a setup action on no list means its tool, which the machine has", () =>
+    effect {
+      const linux = try firstRun(click, "linux")
+      const bare = try firstRun(click, "linux", { python3: "Python 3.12.3" })
+      try Effect.try(() => {
+        expect(linux.refusal).toBeUndefined()
+        expect(linux.replayed).toEqual(["pre-commit.yaml:main", "tests.yaml:typing"])
+        // A third-party action that is no setup action still has no command to run.
+        expect(linux.listed).toEqual([["zizmor.yaml:zizmor", "uses"]])
+        expect(linux.versions).toEqual(["pre-commit.yaml:main asks for python 3.14; this machine has python 3.12.3"])
+        // Without uv the jobs are not run, and the answer names what to install.
+        expect(bare.refusal).toBe([
+          "0 of 3 CI jobs can be reproduced on this machine",
+          "  pre-commit.yaml:main  missing-tool (uv)",
+          "  tests.yaml:typing     missing-tool (uv)",
+          "  zizmor.yaml:zizmor    uses"
+        ].join("\n"))
+      })
+    })
+
+  it.effect("fzf: a job is listed with the tools to install until the machine has them", () =>
+    effect {
+      const without = try firstRun(fzf, "linux")
+      const withBoth = try firstRun(fzf, "linux", {
+        go: "version:go version go1.25.4 linux/amd64",
+        ruby: "ruby 3.4.6 (2025-09-16 revision dbd83256b1) +PRISM [x86_64-linux]"
+      })
+      try Effect.try(() => {
+        expect(without.refusal).toBe([
+          "0 of 3 CI jobs can be reproduced on this machine",
+          "  linux.yml:build  missing-tool (go 1.23, ruby 3.4.6)",
+          "  macos.yml:build  other-system",
+          "  typos.yml:typos  uses"
+        ].join("\n"))
+        expect(without.replayed).toEqual([])
+        // With Go and Ruby on the machine the Linux job runs, on the Go that is there.
+        expect(withBoth.refusal).toBeUndefined()
+        expect(withBoth.replayed).toEqual(["linux.yml:build"])
+        expect(withBoth.listed).toEqual([["macos.yml:build", "other-system"], ["typos.yml:typos", "uses"]])
+        expect(withBoth.versions).toEqual(["linux.yml:build asks for go 1.23; this machine has go 1.25.4"])
+      })
+    })
+
+  it.effect("create-t3-app: pnpm, Node and Bun set up in a job are tools the machine has", () =>
+    effect {
+      const linux = try firstRun(createT3App, "linux")
+      const noBun = try firstRun(createT3App, "linux", { node: "v20.18.0", pnpm: "9.15.0" })
+      try Effect.try(() => {
+        expect(linux.replayed).toContain("ci.yml:bun")
+        expect(linux.versions).toContain("ci.yml:bun asks for node 20; this machine has node 26.5.0")
+        expect(noBun.replayed).not.toContain("ci.yml:bun")
+        expect(noBun.listed).toContainEqual(["ci.yml:bun", "missing-tool (bun latest)"])
+        expect(noBun.versions).toEqual([])
+      })
+    })
+
+  it.effect("cobra: a job for Windows is listed as that, and the Docker job runs", () =>
+    effect {
+      const linux = try firstRun(cobra, "linux")
+      try Effect.try(() => {
+        expect(linux.replayed).toContain("test.yml:lic-headers")
+        const reasons = new Map(linux.listed)
+        // Its linter action stops it; Go is not asked about for a job that would not run with it.
+        expect(reasons.get("test.yml:golangci-lint")).toBe("uses")
+        // MSYS2 is an environment its action starts, not a tool, so the action still has no command.
+        expect(reasons.get("test.yml:test-win")).toBe("uses, shell, other-system")
+        // Go is not on the build server, so the Go matrix is listed with what to install, never run and failed.
+        // Its Ubuntu variants ask for two versions, so the line names the tool alone.
+        expect(reasons.get("test.yml:test-unix")).toBe("missing-tool (go)")
       })
     })
 })
