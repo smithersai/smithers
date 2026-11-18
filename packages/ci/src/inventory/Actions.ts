@@ -38,8 +38,9 @@ export const setupVariables: ReadonlyMap<string, ReadonlyArray<string>> = new Ma
 ])
 
 /**
- * The cache actions. A replay has no cache to restore from, so a cache step
- * restores nothing and its `cache-hit` output is empty, as after a miss.
+ * The cache actions. A replay keeps their caches in a store of its own
+ * (`Cache.ts`). A cache step that names no path or no key restores nothing,
+ * and its `cache-hit` output is empty, as after a miss.
  *
  * @category constants
  * @since 0.1.0

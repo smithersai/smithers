@@ -174,7 +174,7 @@ no runner is there to give it.
 | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `actions/checkout`                                                  | Nothing to run: the replay made the checkout. One that asks for another repository, directory or commit, or for submodules, leaves the job out.                 |
 | A setup action, such as `actions/setup-node` or `oven-sh/setup-bun` | Nothing to run. Smithers CI installs no tool: it looks for the tool on your machine before it runs the job. See [setup actions](how-it-works.md#setup-actions). |
-| `actions/cache`                                                     | Nothing to run. No cache is restored, so `cache-hit` is empty, as after a miss.                                                                                 |
+| `actions/cache`, `actions/cache/restore`, `actions/cache/save`      | A command that restores and one that saves, in a store on your machine. See [Caches](#caches).                                                                  |
 | `actions/upload-artifact`                                           | Nothing to run.                                                                                                                                                 |
 | A local action, `./path`, that is composite                         | Its own steps, with its `inputs` and `outputs`.                                                                                                                 |
 | A local workflow, `./.github/workflows/x.yml`, called by a job      | Its jobs, with its `inputs`. The calling job waits for all of them. A matrix of calls is not read, and its job is left out.                                     |
@@ -183,6 +183,33 @@ no runner is there to give it.
 A setup action also sets variables for the steps after it, such as
 `JAVA_HOME`. Smithers CI sets none of them, so a job with a step that reads
 one is left out.
+
+## Caches
+
+A cache step restores files an earlier run saved under a key, and saves them
+again when its job has passed. Smithers CI keeps those files in a store on your
+machine, under the step's home, which the replay keeps from one commit to the
+next. What one commit's run saved is there for the next commit, as on GitHub,
+so a build tool finds its own cache and the baseline takes the time your CI
+takes.
+
+`actions/cache` restores where the step stands and saves after the job's other
+steps. `actions/cache/restore` only restores, and `actions/cache/save` only
+saves.
+
+| What                                | How                                                                                                                                                              |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| An entry is found                   | Under `key` itself, or else the newest entry whose key starts with one of `restore-keys`, in the order written. Only entries saved for the same `path` are read. |
+| `cache-hit`                         | `true` for `key` itself, `false` for one of `restore-keys`, empty when nothing was found. `cache-primary-key` and `cache-matched-key` are set too.               |
+| An entry is saved                   | Once. A job that restored its own `key` saves nothing, and neither does a job with a failed step.                                                                |
+| `path`                              | Files and directories of the checkout, of the home (`~/...`) and of `RUNNER_TEMP`.                                                                               |
+| `fail-on-cache-miss`, `lookup-only` | As on GitHub.                                                                                                                                                    |
+
+A cache step restores and saves nothing, as after a miss, when its `path` is a
+pattern (`dist/**`, `!dist/tmp`) or leads outside those three places. So does
+one whose `key` or `path` cannot be worked out on your machine: a key that
+hashes the files a pattern names, such as `hashFiles('**/package-lock.json')`,
+or one that reads a secret. Its job is replayed all the same.
 
 ## What leaves a job out
 

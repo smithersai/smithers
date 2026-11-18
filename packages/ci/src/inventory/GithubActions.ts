@@ -28,6 +28,7 @@ import {
   writePermission
 } from "../contract/Inventory.ts"
 import { cacheActions, checkoutProblems, parseYaml, readAction, setupVariables } from "./Actions.ts"
+import { cacheUse, handedOn, restoreScript, saveScript, shell as cacheShell } from "./Cache.ts"
 import { leaveCacheEmpty } from "./CacheCredentials.ts"
 import {
   type Event,
@@ -165,6 +166,8 @@ interface JobState extends Shape {
   readonly keeps: Array<readonly [name: string, parts: Entry]>
   /** How many local actions the job has had read, which a job that nests them without end would not stop. */
   actions: number
+  /** What the job's actions run after its other steps, as a cache step saves: the last one added runs first. */
+  readonly after: Array<() => void>
 }
 
 /** A job is read with this many local actions and no more. */
@@ -765,6 +768,52 @@ const secretsIn = (inputs: unknown, scope: Expressions): ReadonlyArray<string> =
   return [...new Set(names)].filter((name) => name !== "GITHUB_TOKEN")
 }
 
+/**
+ * Reads a cache step as the commands that keep its cache on this machine (`Cache.ts`): one that restores, where
+ * the step stands, and for `actions/cache` one that saves, after the job's other steps. `undefined` for a step
+ * with no `path` or no `key`, and for one whose inputs cannot be worked out here, such as a key that hashes the
+ * files a pattern names: a replay runs nothing for it, and a cache that restores nothing is a miss.
+ */
+const readCache = (context: StepContext, raw: Record<string, unknown>, uses: string): StepRecord | undefined => {
+  const { reads, state, where } = context
+  const { job } = state
+  const use = cacheUse(uses.split("@")[0] as string, raw["with"])
+  if (use === undefined || Object.values(use.env).some((text) => fill(text, reads).kind !== "ok")) return undefined
+  const named = { ...context, name: context.name ?? uses }
+  const env = withEnv(context.env, use.env, job, where, reads, true)
+  addRun({ ...named, env }, [use.kind === "save" ? saveScript : restoreScript], cacheShell, "")
+  const output = (name: string): Variable => ({
+    id: `output:${context.key}/${name.toUpperCase()}`,
+    name: `an output of ${where}`,
+    nullable: true,
+    typed: false
+  })
+  if (use.kind === "cache") {
+    // The saving command is given what the restoring one worked out when the step started, through its outputs.
+    const entries = new Map(context.env.entries)
+    const own = new Set(context.env.own)
+    for (const [name, from] of handedOn) {
+      entries.set(name, [{ residual: { kind: "variable", variable: output(from) }, written: "" }])
+      own.add(name)
+    }
+    // It runs whatever the step's condition is by then: with nothing restored it finds no key and saves nothing.
+    const post: StepContext = {
+      ...named,
+      key: `${context.key}.POST`,
+      name: `Post ${named.name}`,
+      env: { ...context.env, entries, own },
+      ran: { kind: "always" }
+    }
+    state.after.push(() => addRun(post, [saveScript], cacheShell, ""))
+  }
+  const outputs = fields((name) =>
+    /^[a-z0-9_-]+$/.test(name)
+      ? { kind: "residual", residual: { kind: "variable", variable: output(name) } }
+      : unknown(`an output of ${where} with a name a replay does not keep`)
+  )
+  return recordOf(context.ran, outputs, () => variable(`outcome:${context.key}`, `how ${where} ended`))
+}
+
 const readUses = (context: StepContext, raw: Record<string, unknown>, uses: string): StepRecord => {
   const { ran, reads, state, where } = context
   const { job } = state
@@ -802,6 +851,8 @@ const readUses = (context: StepContext, raw: Record<string, unknown>, uses: stri
     note(job, "uses", `${uses} has no command to run`)
     return recordOf({ kind: "problem", why: "" }, notRun, undefined)
   }
+  const kept = readCache(context, raw, uses)
+  if (kept !== undefined) return kept
   note(job, hostAction, `${uses} has no command to run`)
   if (action === "actions/checkout") {
     const read = (text: string): string | Residual | undefined => {
@@ -816,7 +867,7 @@ const readUses = (context: StepContext, raw: Record<string, unknown>, uses: stri
       note(job, "checkout", `${where} ${problem}`)
     }
   }
-  // A replay restores no cache, so a cache step reports a miss.
+  // A cache step with no path or no key restores nothing, and reports a miss.
   const outputs = cacheActions.includes(action) ? fields((name) => name === "cache-hit" ? value("") : noOutput) : notRun
   return recordOf(ran, outputs, undefined)
 }
@@ -1146,7 +1197,8 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     only: undefined,
     setupNames: new Set(),
     keeps: [],
-    actions: 0
+    actions: 0,
+    after: []
   }
   const scope: StepScope = {
     env: withEnv(workflow.env, raw["env"], job, name, before, false),
@@ -1160,6 +1212,8 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     limit: "problem" in limit ? undefined : limit.minutes
   }
   steps.forEach((step: unknown, index) => readStep(state, scope, step, index))
+  // "Metadata syntax: runs.post": what an action runs after the job's steps, the last action's first.
+  for (const run of state.after.reverse()) run()
   // A command no other command follows is told so: no later step reads what it leaves. A step a replay may
   // leave out, before it, is no reader of it.
   const only = state.only === undefined ? undefined : job.steps[state.only.at]
