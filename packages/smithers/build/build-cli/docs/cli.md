@@ -27,10 +27,11 @@ workspace before resolving ownership.
 
 Every command takes these.
 
-| Option        | Alias | Type   | Default                | Meaning                                                       |
-| ------------- | ----- | ------ | ---------------------- | ------------------------------------------------------------- |
-| `--workspace` | `-w`  | string | the working directory  | A directory inside the workspace. Discovery walks up from it. |
-| `--cache-dir` |       | string | the declared directory | Cache directory, overriding the declaration.                  |
+| Option             | Alias | Type   | Default                | Meaning                                                                                             |
+| ------------------ | ----- | ------ | ---------------------- | --------------------------------------------------------------------------------------------------- |
+| `--workspace`      | `-w`  | string | the working directory  | A directory inside the workspace. Discovery walks up from it.                                       |
+| `--cache-dir`      |       | string | the declared directory | Cache directory, overriding the declaration.                                                        |
+| `--workspace-file` |       | path   | none                   | Read the workspace declaration from this plain workspace file, which may lie outside the workspace. |
 
 A workspace-relative `--cache-dir` must be non-empty and free of `..` segments.
 An absolute path, or a relative path that starts with `..` and is read from the
@@ -38,6 +39,16 @@ workspace root, names a directory outside the workspace; one that holds the
 workspace is refused. Precedence is the flag, then the `S.Cache({ directory })`
 in the workspace declaration, then `.flows`. See
 [Caching](./concepts/caching.md).
+
+`--workspace-file` names a plain workspace file: a JavaScript module that
+exports `Workspace` and may export `Package`, the root package `//`, as
+`.smithers/WORKSPACE.smithers` does, whatever the file's name. The path is
+absolute or relative to the process working directory. With it, `--workspace`
+is the workspace root itself, and the workspace's own `.smithers/WORKSPACE.ts`,
+`.smithers/WORKSPACE.smithers`, root `WORKSPACE.ts` and `.smithers/FACTORY.ts`
+are not read. `review` does not take it, and `ci --remote` refuses it: a
+machine receives the workspace tree, which does not hold the file. See
+[A declaration outside the workspace](/pkg/build/workspace/structure#a-declaration-outside-the-workspace).
 
 ## Private dependencies
 
@@ -340,16 +351,16 @@ Each takes one or more patterns and workspace options. Commands other than
 `review` also accept the execution options. Several patterns run their union
 in one plan.
 
-| Command  | Argument        | Options                                                                                                                                                                                                        |
-| -------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `build`  | `<patterns...>` | `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--shard`                                                     |
-| `test`   | `<patterns...>` | `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard`                                      |
-| `lint`   | `<patterns...>` | `--fix`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--shard`                                            |
-| `docs`   | `<patterns...>` | `--write`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard`                           |
-| `review` | `<patterns...>` | `--policy-revision` (required), `--revision`, `--plan`, `--required`, `--findings-store`, `--credential-receiver`, `--workspace`, `--cache-dir`                                                                |
-| `ci`     | `<patterns...>` | `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard`, `--timings`, `--remote`             |
-| `run`    | `<patterns...>` | `--name, -n`, `--message, -m`, `--sweep`, `--input, -i`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`       |
-| `target` | `<labels...>`   | `--write`, `--fix`, `--message, -m`, `--sweep`, `--input, -i`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file` |
+| Command  | Argument        | Options                                                                                                                                                                                                                            |
+| -------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `build`  | `<patterns...>` | `--workspace`, `--cache-dir`, `--workspace-file`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--shard`                                                     |
+| `test`   | `<patterns...>` | `--workspace`, `--cache-dir`, `--workspace-file`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard`                                      |
+| `lint`   | `<patterns...>` | `--fix`, `--workspace`, `--cache-dir`, `--workspace-file`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--shard`                                            |
+| `docs`   | `<patterns...>` | `--write`, `--workspace`, `--cache-dir`, `--workspace-file`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard`                           |
+| `review` | `<patterns...>` | `--policy-revision` (required), `--revision`, `--plan`, `--required`, `--findings-store`, `--credential-receiver`, `--workspace`, `--cache-dir`                                                                                    |
+| `ci`     | `<patterns...>` | `--workspace`, `--cache-dir`, `--workspace-file`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard`, `--timings`, `--remote`             |
+| `run`    | `<patterns...>` | `--name, -n`, `--message, -m`, `--sweep`, `--input, -i`, `--workspace`, `--cache-dir`, `--workspace-file`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`       |
+| `target` | `<labels...>`   | `--write`, `--fix`, `--message, -m`, `--sweep`, `--input, -i`, `--workspace`, `--cache-dir`, `--workspace-file`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file` |
 
 ### build, test, lint
 
@@ -497,15 +508,15 @@ target does.
 
 These take the workspace options and execute no targets.
 
-| Command     | Argument    | Options                                                        |
-| ----------- | ----------- | -------------------------------------------------------------- |
-| `install`   |             | `--workspace`, `--cache-dir`                                   |
-| `query`     | `<expr>`    | `--workspace`, `--cache-dir`                                   |
-| `index`     | `<pattern>` | `--workspace`, `--cache-dir`                                   |
-| `graph`     | `<pattern>` | `--mermaid, -m`, `--workspace`, `--cache-dir`                  |
-| `owners`    | `[paths…]`  | `--diff, -d`, `--workspace`, `--cache-dir`                     |
-| `git-hooks` |             | `--write`, `--workspace`, `--cache-dir`                        |
-| `gitHooks`  |             | Alias for `git-hooks`; `--write`, `--workspace`, `--cache-dir` |
+| Command     | Argument    | Options                                                                            |
+| ----------- | ----------- | ---------------------------------------------------------------------------------- |
+| `install`   |             | `--workspace`, `--cache-dir`, `--workspace-file`                                   |
+| `query`     | `<expr>`    | `--workspace`, `--cache-dir`, `--workspace-file`                                   |
+| `index`     | `<pattern>` | `--workspace`, `--cache-dir`, `--workspace-file`                                   |
+| `graph`     | `<pattern>` | `--mermaid, -m`, `--workspace`, `--cache-dir`, `--workspace-file`                  |
+| `owners`    | `[paths…]`  | `--diff, -d`, `--workspace`, `--cache-dir`, `--workspace-file`                     |
+| `git-hooks` |             | `--write`, `--workspace`, `--cache-dir`, `--workspace-file`                        |
+| `gitHooks`  |             | Alias for `git-hooks`; `--write`, `--workspace`, `--cache-dir`, `--workspace-file` |
 
 ### install
 
@@ -632,22 +643,22 @@ names are preserved.
 These commands inspect the workspace or operate on explicitly bounded local
 state.
 
-| Command          | Arguments              | Options                                                                                                                                                                                                            |
-| ---------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `cache`          |                        | Subcommands listed below.                                                                                                                                                                                          |
-| `show`           |                        | Subcommands listed below.                                                                                                                                                                                          |
-| `cache status`   |                        | `--workspace`, `--cache-dir`                                                                                                                                                                                       |
-| `cache prune`    |                        | `--older-than-days`, `--max-size`, `--keep-used-minutes`, `--dry-run`, `--yes`, `--workspace`, `--cache-dir`                                                                                                       |
-| `cache clear`    |                        | `--dry-run`, `--yes`, `--workspace`, `--cache-dir`                                                                                                                                                                 |
-| `show target`    | `<label>`              | `--verb`, `--workspace`, `--cache-dir`                                                                                                                                                                             |
-| `show workspace` |                        | `--workspace`, `--cache-dir`                                                                                                                                                                                       |
-| `targets`        | `[pattern]`            | `--workspace`, `--cache-dir`                                                                                                                                                                                       |
-| `info`           |                        | `--workspace`, `--cache-dir`                                                                                                                                                                                       |
-| `explain`        | `<label>`              | `--verb`, `--workspace`, `--cache-dir`                                                                                                                                                                             |
-| `affected`       | `<verb> [patterns...]` | `--base`, `--head`, `--files`, `--list`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard` |
-| `units`          | `<label>`              | `--base`, `--head`, `--files`, `--all`, `--list`, `--closures`, `--jobs`, `--results-file`, `--workspace`, `--cache-dir`                                                                                           |
-| `clean`          | `[patterns...]`        | `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`                                                                    |
-| `watch`          | `<verb> [patterns...]` | `--debounce-ms`, `--once`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`                                         |
+| Command          | Arguments              | Options                                                                                                                                                                                                                                |
+| ---------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cache`          |                        | Subcommands listed below.                                                                                                                                                                                                              |
+| `show`           |                        | Subcommands listed below.                                                                                                                                                                                                              |
+| `cache status`   |                        | `--workspace`, `--cache-dir`, `--workspace-file`                                                                                                                                                                                       |
+| `cache prune`    |                        | `--older-than-days`, `--max-size`, `--keep-used-minutes`, `--dry-run`, `--yes`, `--workspace`, `--cache-dir`, `--workspace-file`                                                                                                       |
+| `cache clear`    |                        | `--dry-run`, `--yes`, `--workspace`, `--cache-dir`, `--workspace-file`                                                                                                                                                                 |
+| `show target`    | `<label>`              | `--verb`, `--workspace`, `--cache-dir`, `--workspace-file`                                                                                                                                                                             |
+| `show workspace` |                        | `--workspace`, `--cache-dir`, `--workspace-file`                                                                                                                                                                                       |
+| `targets`        | `[pattern]`            | `--workspace`, `--cache-dir`, `--workspace-file`                                                                                                                                                                                       |
+| `info`           |                        | `--workspace`, `--cache-dir`, `--workspace-file`                                                                                                                                                                                       |
+| `explain`        | `<label>`              | `--verb`, `--workspace`, `--cache-dir`, `--workspace-file`                                                                                                                                                                             |
+| `affected`       | `<verb> [patterns...]` | `--base`, `--head`, `--files`, `--list`, `--workspace`, `--cache-dir`, `--workspace-file`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard` |
+| `units`          | `<label>`              | `--base`, `--head`, `--files`, `--all`, `--list`, `--closures`, `--jobs`, `--results-file`, `--workspace`, `--cache-dir`, `--workspace-file`                                                                                           |
+| `clean`          | `[patterns...]`        | `--workspace`, `--cache-dir`, `--workspace-file`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`                                                                    |
+| `watch`          | `<verb> [patterns...]` | `--debounce-ms`, `--once`, `--workspace`, `--cache-dir`, `--workspace-file`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`                                         |
 
 `cache status` reports the local action-result count and size plus the remote
 endpoint without exposing credentials. Its `goBuild` field reports the

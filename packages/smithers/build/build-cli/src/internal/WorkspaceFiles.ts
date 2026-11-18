@@ -4,6 +4,8 @@
  * @since 1.0.0
  */
 
+import { isAbsolute } from "node:path"
+
 /**
  * The plain workspace declaration: a JavaScript module under `.smithers/`
  * with a name no type checker, linter or formatter reads as one of its own
@@ -44,3 +46,15 @@ export const workspaceFileNames: ReadonlyArray<string> = [...names]
  * @since 1.0.0
  */
 export const isWorkspaceFileName = (name: string): boolean => names.has(name)
+
+/**
+ * Checks whether a discovered workspace declaration is a plain workspace
+ * file, which may export the root package: `.smithers/WORKSPACE.smithers`,
+ * or the file `--workspace-file` names. Discovery records that file by its
+ * absolute path and every declaration it finds itself by a workspace-relative
+ * one, so the spelling says how the file was found.
+ *
+ * @category discovery
+ * @since 1.0.0
+ */
+export const isPlainWorkspaceFile = (file: string): boolean => file === plainWorkspaceFile || isAbsolute(file)

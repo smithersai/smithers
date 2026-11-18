@@ -32,6 +32,10 @@
             "description": "Cache directory; overrides the WORKSPACE.ts declaration. An absolute path or one starting with .. lies outside the workspace",
             "type": "string"
           },
+          "workspaceFile": {
+            "description": "Read the workspace declaration, a plain workspace file, from this path, which may lie outside the workspace; the workspace's own WORKSPACE.ts and .smithers/ declarations are not read",
+            "type": "string"
+          },
           "verbose": {
             "default": false,
             "description": "Show plain progress for agent and pipe consumers",

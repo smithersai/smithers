@@ -40,7 +40,7 @@ import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import * as Diagnostic from "./Diagnostic.ts"
-import { importDeclarationModule } from "./effect-resolution.js"
+import { buildModuleUrl, importDeclarationModule } from "./effect-resolution.js"
 import { type LoadedFactory, validateFactoryModule } from "./FactoryLoader.ts"
 import { assertDeclarationDependencies } from "./internal/DeclarationDependencies.ts"
 import { containedRelative } from "./internal/Path.ts"
@@ -59,7 +59,8 @@ import { rootPackageOf, validateWorkspaceModule } from "./WorkspaceLoader.ts"
 export interface LoadedPackage {
   /**
    * The workspace-relative module path, for example `src/PACKAGE.ts`. The root
-   * package a plain workspace file declares names that file.
+   * package a plain workspace file declares names that file, by its absolute
+   * path when `--workspace-file` named it.
    */
   readonly file: string
   /** The package path the file's directory derives, `""` for the root. */
@@ -98,6 +99,24 @@ const declarationName = (file: string): string => NodePath.posix.basename(file)
 const packagePathOf = (file: string): string => {
   const directory = posix(NodePath.dirname(file))
   return directory === "." ? "" : directory
+}
+
+/**
+ * The absolute path of the workspace declaration: discovery records the file
+ * `--workspace-file` names by its absolute path, and every other declaration
+ * workspace-relative.
+ */
+const workspacePathOf = (root: string, workspaceFile: string): string =>
+  NodePath.isAbsolute(workspaceFile) ? workspaceFile : NodePath.join(root, workspaceFile)
+
+/**
+ * The URL the workspace declaration is imported by. A file `--workspace-file`
+ * names is admitted as a declaration module explicitly, so it evaluates as an
+ * ES module whatever its name; the others are admitted by their names.
+ */
+const workspaceUrlOf = (root: string, workspaceFile: string): string => {
+  const url = pathToFileURL(workspacePathOf(root, workspaceFile)).href
+  return NodePath.isAbsolute(workspaceFile) ? buildModuleUrl(url) : url
 }
 
 /**
@@ -467,6 +486,12 @@ const scanNamedImports = async (
  * identity no matter who wrote it.
  */
 const scanImports = async (discovery: Discovery): Promise<StaticScan> => {
+  // The file `--workspace-file` names, when it lies inside the workspace: a
+  // Package module may not import it under any name.
+  const inside = NodePath.isAbsolute(discovery.workspaceFile)
+    ? containedRelative(discovery.root, discovery.workspaceFile)
+    : undefined
+  const namedWorkspaceFile = inside === undefined ? undefined : posix(inside)
   const packageSet = new Set(discovery.packageFiles)
   const foldedPackages = new Map<string, string>()
   for (const file of discovery.packageFiles) foldedPackages.set(file.toLowerCase(), file)
@@ -514,7 +539,7 @@ const scanImports = async (discovery: Discovery): Promise<StaticScan> => {
           )
         }
         const basename = resolved.split("/").at(-1)!
-        if (isWorkspaceFileName(basename) || basename === "WORKSPACE.js") {
+        if (isWorkspaceFileName(basename) || basename === "WORKSPACE.js" || resolved === namedWorkspaceFile) {
           if (!rules.workspaceOneWay) continue
           throw new PackageError(
             "unsupported_module_specifier",
@@ -548,7 +573,11 @@ const scanImports = async (discovery: Discovery): Promise<StaticScan> => {
     }
   }
   await scanPass(discovery.packageFiles, { contained: true, workspaceOneWay: true })
-  await scanPass([discovery.workspaceFile], { contained: false, workspaceOneWay: false })
+  // A file `--workspace-file` names is not a workspace module: its imports are
+  // its own, resolved from where it is. Only its content is digested.
+  if (!NodePath.isAbsolute(discovery.workspaceFile)) {
+    await scanPass([discovery.workspaceFile], { contained: false, workspaceOneWay: false })
+  }
   if (discovery.factoryFile !== undefined) {
     await scanPass([discovery.factoryFile], { contained: true, workspaceOneWay: false })
     checkFactoryImports(discovery, edges)
@@ -644,11 +673,21 @@ const graphDigest = async (discovery: Discovery, scannedFiles: ReadonlyArray<str
   }
   for (const pruned of discovery.pruned) digests.push(`pruned\0${pruned}`)
   for (const file of [...files].sort(byCodeUnit)) {
-    const digest = await SafeFs.digestFile(NodePath.join(discovery.root, file), { what: file })
+    const digest = await SafeFs.digestFile(workspacePathOf(discovery.root, file), { what: file })
     digests.push(`${file}\0${digest ?? "absent"}`)
   }
   return createHash("sha256").update(digests.join("\n")).digest("hex")
 }
+
+/**
+ * The absolute paths whose shared runtime packages must be the CLI's own:
+ * every scanned module, and a file `--workspace-file` names, which resolves
+ * `@smthrs/targets` from its own directory.
+ */
+const declarationPaths = (discovery: Discovery, files: ReadonlyArray<string>): ReadonlyArray<string> => [
+  ...files.map((file) => NodePath.join(discovery.root, file)),
+  ...(NodePath.isAbsolute(discovery.workspaceFile) ? [discovery.workspaceFile] : [])
+]
 
 const loads = new Map<string, Promise<LoadedGraph>>()
 
@@ -719,7 +758,7 @@ const importGraph = async (
   const entryDirectory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-package-entry-"))
   const lines: Array<string> = []
   const bindings: Array<string> = []
-  const workspaceUrl = pathToFileURL(NodePath.join(discovery.root, discovery.workspaceFile)).href
+  const workspaceUrl = workspaceUrlOf(discovery.root, discovery.workspaceFile)
   lines.push(`import * as workspaceModule from ${JSON.stringify(workspaceUrl)}`)
   if (discovery.factoryFile !== undefined) {
     const factoryUrl = pathToFileURL(NodePath.join(discovery.root, discovery.factoryFile)).href
@@ -799,7 +838,7 @@ const importGraph = async (
 export const load = async (discovery: Discovery): Promise<LoadedGraph> => {
   const scan = await scanImports(discovery)
   checkCycles(scan, discovery.packageFiles)
-  assertDeclarationDependencies(scan.files.map((file) => NodePath.join(discovery.root, file)), { bootstrap: true })
+  assertDeclarationDependencies(declarationPaths(discovery, scan.files), { bootstrap: true })
   const named = await scanNamedImports(discovery.root, scan.files)
   const modules = [...scan.files, ...named.files].sort(byCodeUnit)
   const digest = await graphDigest(discovery, modules)
@@ -826,6 +865,10 @@ export const load = async (discovery: Discovery): Promise<LoadedGraph> => {
  * to undefined, and this function keeps no memo of its own, so every call
  * re-evaluates the module.
  *
+ * `workspaceFile` is workspace-relative, or the absolute path of the file
+ * `--workspace-file` names. That file is not scanned as a workspace module:
+ * its imports resolve from its own directory.
+ *
  * ## Evaluation lifetime
  *
  * Each call evaluates the workspace in a fresh tsx namespace, separate from
@@ -844,7 +887,7 @@ export const loadWorkspaceDeclaration = async (
   let namespace: unknown
   try {
     const canonicalRoot = await Fs.realpath(root)
-    const scan = await scanImports({
+    const discovery: Discovery = {
       root: canonicalRoot,
       workspaceFile,
       packageFiles: [],
@@ -852,12 +895,10 @@ export const loadWorkspaceDeclaration = async (
       repositories: [],
       pruned: [],
       directories: 0
-    })
-    assertDeclarationDependencies(scan.files.map((file) => NodePath.join(canonicalRoot, file)), { bootstrap: true })
-    namespace = await importDeclarationModule(
-      pathToFileURL(NodePath.join(root, workspaceFile)).href,
-      import.meta.url
-    )
+    }
+    const scan = await scanImports(discovery)
+    assertDeclarationDependencies(declarationPaths(discovery, scan.files), { bootstrap: true })
+    namespace = await importDeclarationModule(workspaceUrlOf(root, workspaceFile), import.meta.url)
   } catch (cause) {
     if (cause instanceof PackageError) throw cause
     throw new PackageError(

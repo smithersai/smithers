@@ -46,9 +46,17 @@ const fixedStoreDirectory = ".flows/store"
 export interface Discovery {
   /** The canonical workspace root. */
   readonly root: string
-  /** `.smithers/WORKSPACE.ts`, or the root `WORKSPACE.ts` fallback. */
+  /**
+   * `.smithers/WORKSPACE.ts`, `.smithers/WORKSPACE.smithers`, or the root
+   * `WORKSPACE.ts` fallback, workspace-relative. The file `--workspace-file`
+   * names is recorded by its absolute canonical path instead: it may lie
+   * outside the workspace, and it is a plain workspace file whatever its name.
+   */
   readonly workspaceFile: string
-  /** The `FACTORY.ts` beside the workspace file, when the workspace declares a factory. */
+  /**
+   * The `FACTORY.ts` beside the workspace file, when the workspace declares a
+   * factory. A workspace read from `--workspace-file` declares none.
+   */
   readonly factoryFile?: string | undefined
   /** Every exact-case package declaration (`PACKAGE.ts` or `PACKAGE.vibe`) in the tree. */
   readonly packageFiles: ReadonlyArray<string>
@@ -124,6 +132,32 @@ export const workspaceFileOf = async (root: string): Promise<string | undefined>
     if (await declarationAt(NodePath.join(root, ...candidate.split("/")))) return candidate
   }
   return undefined
+}
+
+/**
+ * Admits the file `--workspace-file` names and returns its absolute canonical
+ * path. The path may be absolute or relative to the process working
+ * directory, and may lie outside the workspace. It must resolve to a regular
+ * file: a missing path, a directory, a FIFO or a device fails with a
+ * `PackageError` naming the path, before anything opens it. A symbolic link is
+ * followed, so the file's own imports resolve from where it really is.
+ *
+ * @category discovery
+ * @since 1.0.0
+ */
+export const workspaceFileAt = async (path: string): Promise<string> => {
+  const absolute = NodePath.resolve(path)
+  let canonical: string
+  try {
+    canonical = await Fs.realpath(absolute)
+  } catch (cause) {
+    throw new PackageError("module_missing", "the workspace file does not exist", { path: absolute, cause })
+  }
+  const stats = await Fs.stat(canonical)
+  if (!stats.isFile()) {
+    throw new PackageError("module_not_regular", "the workspace file is not a regular file", { path: absolute })
+  }
+  return canonical
 }
 
 interface Walk {
@@ -312,6 +346,11 @@ export const discover = async (
     readonly signal?: AbortSignal | undefined
     /** The filesystem seam the walk lists through; tests count its calls. */
     readonly io?: SafeFs.Io | undefined
+    /**
+     * The file `--workspace-file` names. The workspace's own declaration
+     * files are then neither looked for nor read, and no factory is declared.
+     */
+    readonly workspaceFile?: string | undefined
   } = {}
 ): Promise<Discovery> => {
   const canonical = await SafeFs.canonicalRoot(root)
@@ -319,8 +358,9 @@ export const discover = async (
   const repositories = Object.entries(options.repositories ?? {})
     .map(([name, repository]) => ({ name, path: repository.path }))
     .sort((left, right) => byCodeUnit(left.name, right.name))
-  const present: Array<string> = []
-  for (const candidate of workspaceFiles) {
+  const given = options.workspaceFile === undefined ? undefined : await workspaceFileAt(options.workspaceFile)
+  const present: Array<string> = given === undefined ? [] : [given]
+  for (const candidate of given === undefined ? workspaceFiles : []) {
     try {
       if (await admitDeclaration(canonical, candidate)) present.push(candidate)
     } catch (cause) {
@@ -353,7 +393,9 @@ export const discover = async (
   const factoryCandidate = factoryFileBeside(workspaceFile)
   let factoryFile: string | undefined
   try {
-    factoryFile = (await admitDeclaration(canonical, factoryCandidate)) ? factoryCandidate : undefined
+    factoryFile = given === undefined && (await admitDeclaration(canonical, factoryCandidate))
+      ? factoryCandidate
+      : undefined
   } catch (cause) {
     throw new PackageError("module_not_regular", "the factory declaration could not be admitted", {
       path: factoryCandidate,

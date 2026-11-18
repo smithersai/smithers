@@ -29,10 +29,11 @@ bare-label form.
 
 Every command accepts these.
 
-| Option        | Alias | Type   | Default                       | Description                                                                                                                                                                          |
-| ------------- | ----- | ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--workspace` | `-w`  | string | the process working directory | Workspace root containing `PACKAGE.ts` files                                                                                                                                         |
-| `--cache-dir` |       | string | unset                         | Cache directory. Overrides the root declaration. An absolute path or one that starts with `..` (read from the workspace root) is outside the workspace; `install` requires `.flows`. |
+| Option             | Alias | Type   | Default                       | Description                                                                                                                                                                                                                         |
+| ------------------ | ----- | ------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--workspace`      | `-w`  | string | the process working directory | Workspace root containing `PACKAGE.ts` files                                                                                                                                                                                        |
+| `--cache-dir`      |       | string | unset                         | Cache directory. Overrides the root declaration. An absolute path or one that starts with `..` (read from the workspace root) is outside the workspace; `install` requires `.flows`.                                                |
+| `--workspace-file` |       | string | unset                         | A plain workspace file to read the workspace declaration from, absolute or relative to the working directory; it may lie outside the workspace. The workspace's own declaration files are then not read. `review` does not take it. |
 
 `affected`, `clean`, `watch`, `build`, `test`, `lint`, `docs`, `review`, `run`,
 `target`, and `ci` also accept:
@@ -58,12 +59,15 @@ selection rules and what each renderer draws.
 
 Every command does the same three things before its own work.
 
-1. Resolve the workspace root from `--workspace`.
+1. Resolve the workspace root from `--workspace`. With `--workspace-file`, the
+   root is the `--workspace` directory itself, and the declaration is the named
+   file: it must be a regular file, and the workspace's own declaration files
+   are not looked for.
 2. Resolve the cache directory: `--cache-dir`, then the root `PACKAGE.ts` `Workspace`
    declaration, then `.flows`. Resolving the declaration evaluates the root
-   `PACKAGE.ts` if one exists. A declaration with `outside: true` resolves to a
-   directory under the machine's user cache directory; see
-   [Configuration](../workspace/configuration.md#precedence).
+   `PACKAGE.ts` if one exists, or the `--workspace-file` file. A declaration
+   with `outside: true` resolves to a directory under the machine's user cache
+   directory; see [Configuration](../workspace/configuration.md#precedence).
 3. If the declaration sets `gitignored: true`, ensure the root `.gitignore`
    carries an entry for the resolved directory. A directory outside the
    workspace gets no entry.

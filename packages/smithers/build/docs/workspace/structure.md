@@ -155,6 +155,37 @@ A repository with that one file is a workspace: `smthrs ci //...` runs
 - No Package module may import the plain workspace file, as none may import
   `WORKSPACE.ts`.
 
+## A declaration outside the workspace
+
+A step that lists the tree, such as `git status --porcelain --ignored` or
+`git clean -ndx`, sees `.smithers/` like any other file. To keep the
+declaration out of the checkout, put a plain workspace file anywhere and name
+it with `--workspace-file`:
+
+```sh
+smthrs ci //... --workspace ~/src/demo --workspace-file /tmp/demo/ws.smithers
+```
+
+- The file is a plain workspace file whatever its name: it exports
+  `Workspace` and may export `Package`, the root package `//`. Its labels are
+  `//:name`, and a path in one of its targets resolves from the `--workspace`
+  directory, which is the workspace root.
+- The path is absolute or relative to the working directory. It must be a
+  regular file: a missing path fails `module_missing`, and a directory or a
+  FIFO fails `module_not_regular`. A symbolic link is followed.
+- The workspace's own `.smithers/WORKSPACE.ts`, `.smithers/WORKSPACE.smithers`,
+  root `WORKSPACE.ts` and `.smithers/FACTORY.ts` are not read. Packages below
+  the root are discovered as always, and a root `PACKAGE.ts` beside an exported
+  `Package` still fails `duplicate_package_path`.
+- The file's imports resolve from where it is, by Node resolution. Put a
+  `node_modules/@smthrs/targets` beside it, the same installation the CLI
+  runs; it may import its own siblings, and a `PACKAGE.ts` of the workspace,
+  as a `WORKSPACE.ts` may. No Package module may import it.
+- Its path is not key material. A target's key comes from what the file
+  declares, so the same file at another path hits the same cache entries.
+- `ci --remote` refuses the option: a machine receives the workspace tree,
+  which does not hold the file. `review` does not take it.
+
 ## Lazy evaluation
 
 The workspace imports only the `PACKAGE.ts` modules a command needs.

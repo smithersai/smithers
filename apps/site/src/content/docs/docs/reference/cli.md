@@ -962,6 +962,7 @@ smthrs run <patterns...> [options] | <command>
 | --- | --- | --- | --- | --- |
 | `--workspace`, `-w` | string | `<cwd>` | no | Directory inside a workspace containing WORKSPACE.ts |
 | `--cache-dir` | string |  | no | Cache directory; overrides the WORKSPACE.ts declaration. An absolute path or one starting with .. lies outside the workspace |
+| `--workspace-file` | string |  | no | Read the workspace declaration, a plain workspace file, from this path, which may lie outside the workspace; the workspace's own WORKSPACE.ts and .smithers/ declarations are not read |
 | `--verbose` | boolean | `false` | no | Show plain progress for agent and pipe consumers |
 | `--plan` | boolean | `false` | no | Print the inert plan instead of executing |
 | `--jobs`, `-j` | integer, minimum 1 |  | no | Maximum concurrent targets; defaults to host parallelism. Exclusive targets run alone after ready ordinary work |

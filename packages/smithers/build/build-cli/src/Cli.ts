@@ -92,6 +92,10 @@ const workspaceOption = z.object({
   workspace: z.string().default(process.cwd()).describe("Directory inside a workspace containing WORKSPACE.ts"),
   cacheDir: z.string().optional().describe(
     "Cache directory; overrides the WORKSPACE.ts declaration. An absolute path or one starting with .. lies outside the workspace"
+  ),
+  workspaceFile: z.string().optional().describe(
+    "Read the workspace declaration, a plain workspace file, from this path, which may lie outside the workspace; " +
+      "the workspace's own WORKSPACE.ts and .smithers/ declarations are not read"
   )
 })
 
@@ -186,6 +190,8 @@ const globalOptions = z.object({
 export interface WorkspaceFlags {
   readonly workspace: string
   readonly cacheDir?: string | undefined
+  /** The plain workspace file to read instead of the workspace's own declaration; it may lie outside the workspace. */
+  readonly workspaceFile?: string | undefined
 }
 
 /** The flags shared by commands that execute targets.
@@ -504,7 +510,13 @@ export const openPackageIndex = async (
         signal: runtime.signal
       })
     )
-    const root = yield* services.findWorkspaceRoot(invocation)
+    // `--workspace-file` names the declaration, so the workspace root is the
+    // invocation directory itself and none of its own declarations is read.
+    const requested = flags.workspaceFile
+    const given = requested === undefined
+      ? undefined
+      : yield* hostIo(() => PackageDiscovery.workspaceFileAt(requested))
+    const root = given === undefined ? yield* services.findWorkspaceRoot(invocation) : invocation
     if (root === undefined) {
       return yield* Effect.fail(new Error("not a workspace; create .smithers/WORKSPACE.ts"))
     }
@@ -512,7 +524,7 @@ export const openPackageIndex = async (
     // child repositories, and its `discovery.prune` paths are discovery
     // boundaries. The full graph load
     // imports the same module instance together with the admitted Packages.
-    const workspaceFile = yield* services.workspaceFileOf(root)
+    const workspaceFile = given ?? (yield* services.workspaceFileOf(root))
     if (workspaceFile === undefined) {
       return yield* Effect.fail(new Error("not a workspace; create .smithers/WORKSPACE.ts"))
     }
@@ -529,7 +541,8 @@ export const openPackageIndex = async (
         cacheDirectory,
         repositories: workspace.repos,
         prune: workspace.discovery?.prune,
-        signal: runtime.signal
+        signal: runtime.signal,
+        workspaceFile: given
       })
     )
     const loaded = yield* hostIo(() => PackageLoader.load(discovery))
@@ -950,6 +963,12 @@ const runCi = async (
     throw new CommandRefused({
       message:
         "--remote does not take --known-red yet: a machine's results file carries no failure diagnostics to fingerprint"
+    })
+  }
+  if (flags.remote !== undefined && flags.workspaceFile !== undefined) {
+    throw new CommandRefused({
+      message: "--remote does not take --workspace-file: a machine runs on the workspace tree it receives, " +
+        "which does not hold that file"
     })
   }
   if (flags.remote === undefined && flags.timings !== undefined) {
@@ -1437,7 +1456,9 @@ const workspaceInfo = async (flags: WorkspaceFlags, config: RuntimeConfig) => {
   return {
     name: index.workspace.name,
     root: index.root,
-    declaration: await PackageDiscovery.workspaceFileOf(index.root),
+    declaration: flags.workspaceFile === undefined
+      ? await PackageDiscovery.workspaceFileOf(index.root)
+      : await PackageDiscovery.workspaceFileAt(flags.workspaceFile),
     currentPackage: index.currentPackage,
     repository: index.workspace.repository,
     packages: new Set(index.targets().map((row) => row.packagePath)).size,
@@ -1990,6 +2011,9 @@ const makeCommands = (config: RuntimeConfig) =>
             ...(context.options.jobs === undefined ? [] : ["--jobs", String(context.options.jobs)]),
             ...(context.options.cache ? [] : ["--no-cache"]),
             ...(context.options.cacheDir === undefined ? [] : ["--cache-dir", context.options.cacheDir]),
+            ...(context.options.workspaceFile === undefined
+              ? []
+              : ["--workspace-file", NodePath.resolve(context.options.workspaceFile)]),
             ...(context.options.knownRed === undefined
               ? []
               : ["--known-red", NodePath.resolve(context.options.workspace, context.options.knownRed)]),
@@ -2145,7 +2169,8 @@ const makeCommands = (config: RuntimeConfig) =>
       description: "Review committed source using policy from an approved commit",
       mcp: { annotations: { readOnlyHint: true } },
       args: patternsArgument,
-      options: workspaceOption.extend({
+      // Review reads its policy from a commit, never from a declaration file.
+      options: workspaceOption.omit({ workspaceFile: true }).extend({
         policyRevision: z.string().optional().describe("Full approved commit SHA containing the trusted review index"),
         revision: z.string().default("HEAD").describe("Committed source revision: HEAD or a full commit SHA"),
         plan: z.boolean().default(false).describe("Show pinned policy and source selection without inference"),
