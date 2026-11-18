@@ -16,7 +16,7 @@ A result is stored only after the step ran held to the files it names. A step
 held to its files fails when it reads any other file, so a stored result never
 depends on a file the cache did not see. A step that may read any file still
 has its result kept on the machine that ran it; the generated workflow carries
-those between runs of the same runner with `actions/cache`.
+those from one run to the next with `actions/cache`.
 
 The cache never holds:
 
