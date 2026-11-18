@@ -3,7 +3,7 @@ title: Fast Smithers CI (customer zero for smithers-ci)
 status: in-progress
 area: build
 owner: Claude Fable, Will's chat session 20474551, since 2026-11-17 16:50 PST
-updated: 2026-11-17 23:00 PST
+updated: 2026-11-18 00:25 PST
 links: [ci-cd-parity.md, ci-parity-cache.md, second-build-machine.md, release-burn-down.md, ../../../../packages/smithers/build/docs/workspace/caching.md, ../../../../packages/smithers/build/docs/workspace/adoption.md]
 ---
 
@@ -181,7 +181,7 @@ the ones that need judgement, on the Claude accounts that reset soonest first.
 - Generated targets run one at a time for now: they share one working tree. The gain on an outside repository is
   from caching, not from parallel jobs.
 
-### The join: first runs of the whole program (2026-11-17, 20:40 to 23:00 PST)
+### The join: first runs of the whole program (2026-11-17 20:40 to 2026-11-18 00:25 PST)
 
 The parts are joined on `main` (`ac588de183f2`): `smithers-ci` reads the CI, generates targets, replays commits and
 reports, as one program run from a clone. Three more contract rounds landed (five to seven); the list is in
@@ -198,13 +198,23 @@ reports, as one program run from a clone. Three more contract rounds landed (fiv
 | --- | --- | --- |
 | Fixture, 4 commits (one docs-only, one that breaks a check) | Works: 0 mismatches, the broken commit fails in both modes. Speedup 0.02: starting `smthrs` costs 6 s per commit against 0.1 s of work, and the docs-only commit reran all 3 targets | `~/ci/w0-scratch/fx.json` |
 | `elizaOS/eliza` | Refused in 6 s (exit 3): 0 of 15 CI jobs can be reproduced. Blockers: condition 13 jobs, action 11, expression 9, runner variable 8 | `~/ci/w0-scratch/eliza.err` |
-| `refcell/needlefish` | Replay of `just ci` running since 22:12. Its 3,180 Zig tests take over 25 minutes per run, single-threaded | `~/ci/w0-scratch/needlefish.json` |
-| Smithers, VibeLang | Broken: the program generated a workspace over the repository's own in its scratch copy and failed (exit 4). The `sci-native` lane makes it measure the repository's own targets | lane report |
+| `refcell/needlefish` | Works: `just ci` replayed on 1 commit with 0 mismatches. 36 min 11 s as CI, 31 min 54 s as targets on a cold cache (3,180 Zig tests in one step). A 5-commit replay started 00:14 on Nov 18 and takes about 6 hours | `~/ci/w0-scratch/needlefish.json`, `needlefish5.json` |
+| Smithers | Works on its own targets (`a700ffcfc5ff`): never converted; a replay runs a cold `smthrs ci` against a cached one. First trial, 2 commits of `//packages/ci/...`: 0 mismatches, 0.92x, both commits changed the package. `--targets` names the patterns (`e8dd0c0f938c`) | `sci-native` lane report |
+| VibeLang | Not yet: its pinned `smthrs` (rc.16) ran `ci //... --plan` for 9 minutes without output | `sci-native` lane report |
 | Smithers, `packages/ci` targets only, by the replay lane's script | 1.32x over 5 commits; every one of them changed `packages/ci` | `~/ci/sci-replay-scratch/run5c/report.json` |
 
-What the numbers say so far: no repository shows a gain yet. The two causes are known. Every generated target reads
-the whole repository until the splitter's inputs reach the generator, and eliza's CI needs `if:` conditions,
-`${{ }}` expressions and runner variables evaluated before one job can run.
+What the numbers say so far: no repository shows a gain yet. Three causes are known.
+
+1. **A fresh install does not stay unchanged, so nothing is reused on a fresh machine** (census lane, 2026-11-18
+   00:13, verified). The first `dprint` run hard-links its platform binary into `node_modules`, 46 s into the run. The
+   root `node_modules` digest changes, 570 of 734 planned keys change with it, and targets that finish later print
+   `not cached: an installed tree changed after it was planned`. Every CI run starts from a fresh install. The census
+   of all 734 targets is still running.
+2. A target whose confined run reads a file its declaration does not name stores nothing. `//packages/ci:test` is
+   one: `PACKAGE.ts` declares no dependencies and `package.json` has seven.
+3. On outside repositories a step is one target. needlefish's 3,180 tests are one step; eliza's CI needs `if:`
+   conditions, `${{ }}` expressions and runner variables evaluated before one job can run. The replay now runs split
+   steps (`d25e74ec261f`), so a split shows up in the next replay.
 
 ### Needs Will
 
