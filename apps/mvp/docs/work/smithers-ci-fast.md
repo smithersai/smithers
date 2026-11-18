@@ -3,7 +3,7 @@ title: Fast Smithers CI (customer zero for smithers-ci)
 status: in-progress
 area: build
 owner: Claude Fable, Will's chat session 20474551, since 2026-11-17 16:50 PST
-updated: 2026-11-17 17:50 PST
+updated: 2026-11-17 18:10 PST
 links: [ci-cd-parity.md, ci-parity-cache.md, second-build-machine.md, release-burn-down.md, ../../../../packages/smithers/build/docs/workspace/caching.md, ../../../../packages/smithers/build/docs/workspace/adoption.md]
 ---
 
@@ -115,6 +115,47 @@ So the MVP records one row per commit and target from its first run: the
 change, the target, and whether it failed. Failures are the rare label; most
 targets pass on most `main` commits, so the record must include failed runs
 from before a merge, not only `main` history.
+
+### The eval matches Facebook's (Will, 2026-11-17)
+
+Will: "our evals should match how facebook trained their model." Source:
+Machalica, Samylkin, Porth and Chandra, "Predictive Test Selection", 2018,
+[arXiv:1810.05286](https://arxiv.org/abs/1810.05286), sections III to VI.
+
+| Part | Facebook | Ours |
+| --- | --- | --- |
+| One row | A change and one test target that depends on it | The same; the targets are the ones normal mode selects |
+| Label | Positive only when the target failed on that change | The same |
+| Flaky failures | A failed target reruns up to ten times or until it passes. Failed means every attempt failed; any pass makes it flaky, and flaky is not a positive | The same |
+| Where labels come from | "Learning test runs": every dependent target runs on a sample of changes, close to a quarter of them, off-peak, unseen by developers | The replay in normal mode |
+| Split | By time. The most recent week is the test set; the three months before it are the training set | The same split. The Jev classifier is not trained, so the earlier period only supplies its history features |
+| Output | A score from 0 to 1 per change and target, from gradient boosted decision trees | A score from 0 to 1 from the Jev classifier, not a yes or no |
+| Selection | Every target at or above a score cutoff, plus the top N by score | The same two settings |
+| Refresh | Weekly: retrain, check the bar, replace the model or alert a person | Weekly: re-score; below the bar, fast mode switches off |
+| Missed failure | Caught later in the stabilization stage, which runs everything | Caught by normal mode before a release |
+
+The three metrics, as the paper defines them:
+
+- **Test recall:** of all failures, the share whose target was selected.
+- **Change recall:** of all changes with a failure, the share where at least
+  one failing target was selected.
+- **Selection rate:** targets selected, divided by targets the dependency
+  graph selects.
+
+Facebook's production bar: test recall above 0.95 and change recall above
+0.999. Its weekly check: selection rate below 0.3 at test recall 0.9.
+
+Features in the paper's best model, which each row records and the classifier
+reads: extensions of the changed files; how often those files changed in the
+last 3, 14 and 56 days; the target's failure rate over the last 7, 14, 28 and
+56 days; the project name; the number of tests in the target; and the shortest
+dependency-graph distance from a changed file to the target. The paper dropped
+four others because they made the model worse: files changed, targets
+triggered, shared path tokens and distinct authors.
+
+A limit to state on the splash and in the docs: a change recall of 0.999
+cannot be measured on fewer than a thousand changes that failed. On a small
+history we report the recall we measured and the count behind it.
 
 Not designed yet. Three constraints the design must meet, the agent's reading
 and not Will's words:
