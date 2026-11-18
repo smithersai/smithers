@@ -5,11 +5,10 @@
  */
 
 import { parse, type ParseError } from "jsonc-parser"
+import { longRunning } from "../contract/Inventory.ts"
 import { addStep, draft, fileProblem, note, type Parsed } from "./Draft.ts"
 import type { Runner } from "./PackageJson.ts"
 import { asStrings, isRecord, shellQuote } from "./Values.ts"
-
-const source = "turbo"
 
 /**
  * Reads the root Turborepo file, which may hold comments. `needs` lists the
@@ -23,24 +22,22 @@ const source = "turbo"
 export const readTurbo = (file: string, text: string, runner: Runner): Parsed => {
   const errors: Array<ParseError> = []
   const config: unknown = parse(text, errors, { allowTrailingComma: true })
-  if (errors.length > 0 || !isRecord(config)) {
-    return fileProblem(file, source, file, "malformed-file", "it is not a JSON object")
-  }
+  if (errors.length > 0 || !isRecord(config)) return fileProblem(file, "malformed-file", "it is not a JSON object")
   const tasks = config["tasks"] ?? config["pipeline"]
-  if (!isRecord(tasks)) return fileProblem(file, source, file, "malformed-file", "it has no tasks")
+  if (!isRecord(tasks)) return fileProblem(file, "malformed-file", "it has no tasks")
   const jobs = Object.entries(tasks).map(([name, raw]) => {
     const task = isRecord(raw) ? raw : {}
     const dependsOn = asStrings(task["dependsOn"] ?? []) ?? []
     const job = draft({
       id: `${file}:${name}`,
-      source,
+      source: "turbo",
       file,
       name,
       needs: dependsOn.filter((need) => Object.hasOwn(tasks, need)).map((need) => `${file}:${need}`)
     })
-    if (task["persistent"] === true) note(job, "long-running", `task ${name} keeps running until it is stopped`)
+    if (task["persistent"] === true) note(job, longRunning, `task ${name} keeps running until it is stopped`)
     addStep(job, { where: `task ${name}`, command: `${runner.exec} turbo run ${shellQuote(name)}` })
     return job
   })
-  return { jobs, toolchains: [{ name: "turbo", source: file }] }
+  return { jobs, toolchains: [{ name: "turbo", source: file }], unsupported: [] }
 }

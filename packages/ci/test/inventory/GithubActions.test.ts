@@ -94,10 +94,10 @@ on:
 jobs: { test: { steps: [] } }
 `)
     expect(filtered.triggers).toEqual(["workflow_dispatch", "schedule", "push", "pull_request"])
-    expect(filtered.unsupported).toEqual([{
-      feature: "trigger-filter",
-      detail: `${file}: push runs only for matching branches, paths-ignore`
-    }])
+    expect(filtered.unsupported).toEqual([
+      { feature: "trigger-filter", detail: `${file}: push runs only for matching branches, paths-ignore` },
+      { feature: "trigger-filter", detail: `${file}: pull_request runs only for matching types` }
+    ])
   })
 
   it("reports what a job needs that a command cannot reproduce", () => {
@@ -216,10 +216,10 @@ env: { LEVEL: workflow, ONLY_WORKFLOW: "1", COUNT: 3, FLAG: true, EMPTY: null }
 jobs:
   test:
     runs-on: ubuntu-latest
-    env: { LEVEL: job, FROM_ENV: "\${{ env.ONLY_WORKFLOW }}-x" }
+    env: { LEVEL: job }
     steps:
       - run: echo a
-        env: { LEVEL: step }
+        env: { LEVEL: step, FROM_ENV: "\${{ env.ONLY_WORKFLOW }}-x" }
       - run: echo \${{ env.LEVEL }}
 `)
     const [first, second] = jobs[0]?.steps ?? []
@@ -313,11 +313,15 @@ jobs:
       - run: curl -H "\${{ secrets.INLINE }}" example.test
 `)
     expect(job.steps).toHaveLength(1)
-    expect(job.steps[0]?.secrets).toEqual(["WORKFLOW_TOKEN", "NPM_TOKEN", "GITHUB_TOKEN", "OTHER"])
+    expect(job.steps[0]?.secrets).toEqual(["OTHER", "WORKFLOW_TOKEN", "NPM_TOKEN", "GITHUB_TOKEN"])
+    expect(job.steps[0]?.secretEnv).toEqual({
+      WORKFLOW_TOKEN: "WORKFLOW_TOKEN",
+      NPM_TOKEN: "NPM_TOKEN",
+      GH_TOKEN: "GITHUB_TOKEN"
+    })
     expect(job.steps[0]?.env).toEqual({})
     expect(details(job)).toEqual([
-      `${file}: test step 1 sets GH_TOKEN from secret GITHUB_TOKEN`,
-      `${file}: test step 1 sets MIXED from secret OTHER`,
+      `${file}: test step 1 builds MIXED from secret OTHER`,
       `${file}: test step 2 depends on secret INLINE`
     ])
   })
@@ -469,6 +473,164 @@ jobs:
   })
 })
 
+describe("readWorkflow exactness", () => {
+  it("never pastes a literal secret into a command or another variable", () => {
+    const job = jobOf(`
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env: { API_KEY: hunter2 }
+    steps:
+      - run: curl -u \${{ env.API_KEY }} x.test
+      - run: echo ok
+        env: { COPY: "\${{ env.API_KEY }}" }
+`)
+    expect(job.steps.map((step) => step.command)).toEqual(["echo ok"])
+    expect(job.steps[0]?.env).toEqual({})
+    expect(job.steps[0]?.secretEnv).toEqual({ COPY: "API_KEY", API_KEY: "API_KEY" })
+    expect(details(job)[0]).toBe(`${file}: test step 1 depends on secret API_KEY`)
+    expect(JSON.stringify(job)).not.toContain("hunter2")
+  })
+
+  it("treats a dollar sign in a secret-named value as part of the value", () => {
+    const job = jobOf(withSteps(`
+      - run: go
+        env: { API_TOKEN: "pa$$word1" }
+`))
+    expect(job.steps[0]).toMatchObject({ env: {}, secretEnv: { API_TOKEN: "API_TOKEN" } })
+  })
+
+  it("forgets a secret when a nearer env block sets the same variable", () => {
+    const job = jobOf(`
+on: push
+env: { DEPLOY: "\${{ secrets.DEPLOY }}" }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: go
+        env: { DEPLOY: "off" }
+`)
+    expect(job.steps[0]).toMatchObject({ env: { DEPLOY: "off" }, secrets: [] })
+    expect(job.steps[0]?.secretEnv).toBeUndefined()
+  })
+
+  it("gives the workflow's and a job's env no env context, as GitHub does", () => {
+    const job = jobOf(`
+on: push
+env: { A: x, B: "\${{ env.A }}" }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env: { C: "\${{ env.A }}" }
+    steps:
+      - run: go
+`)
+    expect(job.steps[0]?.env).toEqual({ A: "x" })
+    expect(details(job).sort()).toEqual([
+      `${file}: test sets C from env.A`,
+      `${file}: the workflow sets B from env.A`
+    ])
+  })
+
+  it("makes a matrix key a variant lacks empty, as GitHub reads it", () => {
+    const job = jobOf(`
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy: { matrix: { n: [1, 2], include: [{ n: 1, extra: yes1 }, { n: 1, unused: z }] } }
+    steps:
+      - run: t --flag=\${{ matrix.extra }}
+`)
+    expect(job.matrix).toEqual([{ n: "1", extra: "yes1", unused: "z" }, { n: "2", extra: "" }])
+  })
+
+  it.each([
+    ["windows-\${{ matrix.v }}", "{ v: [2022, 2025] }"],
+    ["\${{ matrix.os }}", "{ os: [windows-2022, windows-2025] }"],
+    ["\${{ matrix.pool }}-\${{ matrix.os }}", "{ pool: [a], os: [windows] }"]
+  ])("reads %s with every variant on Windows as PowerShell", (runsOn, matrix) => {
+    const job = jobOf(`
+on: push
+jobs:
+  test:
+    runs-on: ${runsOn}
+    strategy: { matrix: ${matrix} }
+    steps:
+      - run: dir
+`)
+    expect(job.steps).toEqual([])
+    expect(features(job)).toEqual(["shell"])
+  })
+
+  it("refuses a matrix value that would end the quoting around a script", () => {
+    const job = jobOf(`
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy: { matrix: { a: ["--grep 'x y'"] } }
+    steps:
+      - run: t \${{ matrix.a }}
+        shell: bash
+      - run: t \${{ matrix.a }}
+`)
+    expect(job.steps.map((step) => step.command)).toEqual(["t \${{ matrix.a }}"])
+    expect(details(job)).toEqual([`${file}: test step 1 puts a matrix value holding a quote into its script`])
+  })
+
+  it("reads a numeric directory and reports one that is not a scalar", () => {
+    const job = jobOf(withSteps(`
+      - run: a
+        working-directory: 2024
+      - run: b
+        working-directory: [x]
+`))
+    expect(job.steps.map((step) => step.cwd)).toEqual(["2024"])
+    expect(details(job)).toEqual([`${file}: test step 2 has a directory that is not text`])
+  })
+
+  it("checks a matrix directory against every variant", () => {
+    const inside = jobOf(`
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy: { matrix: { d: [a/b] } }
+    steps:
+      - run: a
+        working-directory: ./\${{ matrix.d }}/../
+`)
+    expect(inside.steps[0]?.cwd).toBe("\${{ matrix.d }}/..")
+    const outside = jobOf(`
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy: { matrix: { d: [a, /opt/x] } }
+    steps:
+      - run: a
+        working-directory: \${{ matrix.d }}
+`)
+    expect(outside.steps).toEqual([])
+    expect(features(outside)).toEqual(["working-directory"])
+  })
+
+  it("reports a strategy computed when the workflow runs", () => {
+    const job = jobOf(`
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy: \${{ fromJSON(vars.S) }}
+    steps: []
+`)
+    expect(features(job)).toEqual(["matrix"])
+  })
+})
+
 describe("readWorkflow toolchains", () => {
   it("records the tools setup actions pin, by version when it is known", () => {
     const { toolchains } = read(`
@@ -505,11 +667,10 @@ jobs:
 
 describe("readWorkflow malformed files", () => {
   const problem = (text: string) => {
-    const { jobs, toolchains } = readWorkflow(".github/workflows/bad.yaml", text)
+    const { jobs, toolchains, unsupported } = readWorkflow(".github/workflows/bad.yaml", text)
     expect(toolchains).toEqual([])
-    expect(jobs).toHaveLength(1)
-    expect(jobs[0]).toMatchObject({ id: "bad.yaml", name: "bad.yaml", source: "github-actions", steps: [] })
-    return jobs[0]?.unsupported[0]
+    expect(jobs).toEqual([])
+    return unsupported[0]
   }
 
   it("reports invalid YAML with its line", () => {

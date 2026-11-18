@@ -82,25 +82,31 @@ it.layer(NodeServices.layer)("read", (it) => {
         expect(decoded.repository).toBe("acme/widgets")
         expect(decoded.commit).toMatch(/^[0-9a-f]{40}$/)
         expect(decoded.jobs.map((job) => job.id)).toEqual([
-          "broken.yaml",
           "ci.yml:build",
           "ci.yml:test",
           "justfile:build",
           "package.json:test",
-          "workspace:bad/{a,b}",
           "packages/a/package.json:build",
-          "packages/a/turbo.json",
           "tools/deep/er/package.json:lint",
           "turbo.json:build"
         ])
-        const test = decoded.jobs[2]
+        expect(decoded.unsupported?.map((entry) => entry.feature)).toEqual([
+          "malformed-file",
+          "workspace-pattern",
+          "package-turbo"
+        ])
+        const test = decoded.jobs[1]
         expect(test?.needs).toEqual(["ci.yml:build"])
         expect(test?.matrix).toEqual([{ os: "ubuntu-latest" }, { os: "macos-latest" }])
-        expect(test?.steps[0]).toMatchObject({ command: "bun test", env: { CI: "true" }, secrets: ["CODECOV_TOKEN"] })
-        expect(decoded.jobs[1]?.unsupported[0]?.feature).toBe("uses")
-        expect(decoded.jobs[0]?.unsupported[0]?.feature).toBe("malformed-file")
-        expect(decoded.jobs[6]?.steps[0]).toMatchObject({ command: "bun run build", cwd: "packages/a" })
-        expect(decoded.jobs[9]?.steps[0]?.command).toBe("bunx turbo run build")
+        expect(test?.steps[0]).toMatchObject({
+          command: "bun test",
+          env: { CI: "true" },
+          secrets: ["CODECOV_TOKEN"],
+          secretEnv: { CODECOV_TOKEN: "CODECOV_TOKEN" }
+        })
+        expect(decoded.jobs[0]?.unsupported[0]?.feature).toBe("uses")
+        expect(decoded.jobs[4]?.steps[0]).toMatchObject({ command: "bun run build", cwd: "packages/a" })
+        expect(decoded.jobs[6]?.steps[0]?.command).toBe("bunx turbo run build")
         expect(decoded.toolchains).toContainEqual({ name: "node", source: ".nvmrc", version: "22" })
         expect(decoded.toolchains).toContainEqual({
           name: "bun",
@@ -121,6 +127,7 @@ it.layer(NodeServices.layer)("read", (it) => {
         expect(inventory.repository).toBe(path.basename(root))
         expect(inventory.jobs).toEqual([])
         expect(inventory.toolchains).toEqual([])
+        expect(inventory.unsupported).toBeUndefined()
       })
     })
 
@@ -173,10 +180,24 @@ it.layer(NodeServices.layer)("read", (it) => {
       try fs.makeDirectory(path.join(root, "package.json"))
       const inventory = try read(root)
       try Effect.try(() => {
-        expect(inventory.jobs).toHaveLength(1)
-        expect(inventory.jobs[0]).toMatchObject({ id: "package.json", steps: [] })
-        expect(inventory.jobs[0]?.unsupported[0]?.feature).toBe("unreadable-file")
-        expect(inventory.jobs[0]?.unsupported[0]?.detail).toContain("it could not be read")
+        expect(inventory.jobs).toEqual([])
+        expect(inventory.unsupported?.[0]?.feature).toBe("unreadable-file")
+        expect(inventory.unsupported?.[0]?.detail).toContain("package.json: it could not be read")
+      })
+    })
+
+  it.effect("says when the working tree is not the commit it names", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const root = try repository({ "readme.md": "x" })
+      try fs.writeFileString(path.join(root, "readme.md"), "changed")
+      const inventory = try read(root)
+      try Effect.try(() => {
+        expect(inventory.unsupported).toEqual([{
+          feature: "uncommitted-changes",
+          detail: `the working tree differs from ${inventory.commit}`
+        }])
       })
     })
 

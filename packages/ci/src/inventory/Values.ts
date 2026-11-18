@@ -51,4 +51,25 @@ export const asStrings = (value: unknown): ReadonlyArray<string> | undefined => 
  * @throws {never}
  */
 export const shellQuote = (word: string): string =>
-  /^[\w@%+=:,./#-]+$/.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`
+  /^(?!#)[\w@%+=:,./#-]+$/.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`
+
+/**
+ * A directory relative to the repository root in its shortest form, the root
+ * being empty. A directory outside the repository is `undefined`.
+ *
+ * @category readers
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const normalizeDirectory = (text: string): string | undefined => {
+  if (text.startsWith("/")) return undefined
+  const parts: Array<string> = []
+  for (const part of text.split("/")) {
+    if (part === "..") {
+      if (parts.pop() === undefined) return undefined
+    } else if (part !== "" && part !== ".") {
+      parts.push(part)
+    }
+  }
+  return parts.join("/")
+}

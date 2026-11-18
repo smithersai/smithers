@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { Job } from "../../src/contract/Inventory.ts"
 import { readJustfile } from "../../src/inventory/Justfile.ts"
+import { shellQuote } from "../../src/inventory/Values.ts"
 
 const read = (text: string) => readJustfile("Justfile", text)
 
@@ -12,6 +13,7 @@ const jobOf = (text: string, name: string): Job => {
 
 const commands = (job: Job) => job.steps.map((step) => step.command)
 const features = (job: Job) => job.unsupported.map((entry) => entry.feature)
+const inSh = (line: string) => `sh -cu ${shellQuote(line)}`
 
 describe("readJustfile recipes", () => {
   it("reads recipes, their lines and their dependencies", () => {
@@ -71,7 +73,7 @@ ci: t build
 `,
       "run"
     )
-    expect(commands(job)).toEqual(["docker run --rm alpine sh -c 'a && b'", "tail"])
+    expect(commands(job)).toEqual([inSh("docker run --rm alpine sh -c 'a && b'"), "tail"])
     expect(commands(jobOf("run:\n  tail \\", "run"))).toEqual(["tail"])
   })
 
@@ -101,7 +103,7 @@ test filter='' *rest count="3":
 `,
       "test"
     )
-    expect(commands(job)).toEqual(["zig build -Dmode=fast -Dfilter=  -Dcount=3 {{raw}}"])
+    expect(commands(job)).toEqual([inSh("zig build -Dmode=fast -Dfilter=  -Dcount=3 {{raw}}")])
     expect(job.unsupported).toEqual([])
   })
 
@@ -182,7 +184,8 @@ describe("readJustfile scripts", () => {
 
   it.each([
     ["#!/bin/sh -eu", "sh -eu -c 'echo a'"],
-    ["#!/usr/bin/env -S bash -e", "bash -e -c 'echo a'"]
+    ["#!/usr/bin/env -S bash -e -u", "bash -e -u -c 'echo a'"],
+    ["#!/usr/bin/env sh", "sh -c 'echo a'"]
   ])("keeps the flags of %s", (shebang, command) => {
     expect(commands(jobOf(`run:\n  ${shebang}\n  echo a\n`, "run"))).toEqual([command])
   })
@@ -267,37 +270,164 @@ run:
 `,
       "run"
     )
+    expect(commands(job)).toEqual(["bash -c 'echo a'"])
     expect(job.unsupported.map((entry) => entry.detail)).toEqual([
-      "Justfile: set shell changes how recipes run",
       "Justfile: set dotenv-load changes how recipes run"
     ])
   })
 
   it("reports modules and imports it did not read", () => {
-    const { jobs } = read(`mod devnet 'etc/devnet.just'
+    const { jobs, unsupported } = read(`mod devnet 'etc/devnet.just' # the devnet
 mod? bare
 import 'other.just'
-run:
+import 'more.just'
+run: devnet::up
   echo a
 `)
-    expect(jobs.map((job) => job.id)).toEqual([
-      "justfile:run",
-      "justfile:devnet::*",
-      "justfile:bare::*",
-      "justfile:import::*"
+    expect(jobs.map((job) => job.id)).toEqual(["justfile:run"])
+    expect(jobs[0]?.needs).toEqual([])
+    expect(features(jobs[0] as Job)).toEqual(["module"])
+    expect(unsupported).toEqual([
+      { feature: "module", detail: "Justfile: the recipes of module devnet in 'etc/devnet.just' were not read" },
+      { feature: "module", detail: "Justfile: the recipes of module bare were not read" },
+      { feature: "module", detail: "Justfile: the recipes imported from 'other.just' were not read" },
+      { feature: "module", detail: "Justfile: the recipes imported from 'more.just' were not read" }
     ])
-    expect(jobs[1]?.unsupported).toEqual([{
-      feature: "module",
-      detail: "Justfile: the recipes of module devnet in 'etc/devnet.just' were not read"
-    }])
-    expect(jobs[2]?.unsupported[0]?.detail).toBe("Justfile: the recipes of module bare were not read")
-    expect(jobs[3]?.unsupported[0]?.detail).toBe("Justfile: the recipes imported from 'other.just' were not read")
+  })
+})
+
+describe("readJustfile exactness", () => {
+  it("names sh for a line the two shells could read differently", () => {
+    const job = jobOf(`run:\n  false; echo ok\n  echo "$UNSET"\n  zig build test\n`, "run")
+    expect(commands(job)).toEqual([inSh("false; echo ok"), inSh(`echo "$UNSET"`), "zig build test"])
+  })
+
+  it("runs every line in the shell the file sets", () => {
+    const job = jobOf(`set shell := ['bash', "-euo", "pipefail", "-c"] # strict\nrun:\n  zig build\n`, "run")
+    expect(commands(job)).toEqual(["bash -euo pipefail -c 'zig build'"])
+  })
+
+  it.each([
+    ["set shell := SOME_SHELL", "shell"],
+    ["set shell", "shell"],
+    ["set working-directory := 'sub'", "working-directory"]
+  ])("states no command under %s", (setting, name) => {
+    const job = jobOf(`${setting}\nrun:\n  go\n`, "run")
+    expect(job.steps).toEqual([])
+    expect(job.unsupported[0]?.detail).toBe(`Justfile: set ${name} changes how recipes run`)
+  })
+
+  it("never fills a literal secret into a command", () => {
+    const job = jobOf(`export API_TOKEN := "abc123"\nrun:\n  curl -H "t: {{API_TOKEN}}" x.test\n`, "run")
+    expect(job.steps).toEqual([])
+    expect(job.unsupported[0]?.detail).toBe("Justfile: run line 3 depends on API_TOKEN")
+    expect(JSON.stringify(job)).not.toContain("abc123")
+  })
+
+  it("lets a comment swallow the line it continues onto", () => {
+    expect(commands(jobOf("run:\n  # note \\\n  echo hi\n  echo after\n", "run"))).toEqual(["echo after"])
+    const ignored = "set ignore-comments\nrun:\n  # note \\\n  echo hi\n"
+    expect(commands(jobOf(ignored, "run"))).toEqual(["echo hi"])
+  })
+
+  it("does not read a backslash followed by a space as a continuation", () => {
+    expect(commands(jobOf("run:\n  echo a \\ \n  echo b\n", "run"))).toEqual([inSh("echo a \\"), "echo b"])
+  })
+
+  it.each([
+    ["--version", "-version", ["ignored-failure"]],
+    ["@@scope/x", "@scope/x", []],
+    ["-@-y", "-y", ["ignored-failure"]],
+    ["@-z", "z", ["ignored-failure"]]
+  ])("strips one of each prefix from %s", (line, command, expected) => {
+    const job = jobOf(`run:\n  ${line}\n`, "run")
+    expect(commands(job)).toEqual([command])
+    expect(features(job)).toEqual(expected)
+  })
+
+  it("reports a line that only held a prefix or an empty value", () => {
+    expect(features(jobOf("run *a:\n  @{{ a }}\n", "run"))).toEqual(["empty-command"])
+  })
+
+  it("reads a recipe header continued on the next line", () => {
+    const job = jobOf("r: a \\\n  b\n  echo r\n", "r")
+    expect(job.needs).toEqual(["justfile:a", "justfile:b"])
+    expect(commands(job)).toEqual(["echo r"])
+  })
+
+  it("keeps the last recipe when the file allows duplicates", () => {
+    const { jobs } = read("set allow-duplicate-recipes\nr:\n  echo first\nr:\n  echo second\n")
+    expect(commands(jobs[0] as Job)).toEqual(["echo second"])
+    expect(jobs[0]?.unsupported).toEqual([])
+  })
+
+  it("reports lines that read positional arguments", () => {
+    const set = jobOf(`set positional-arguments\nr a="x":\n  echo "$1"\n  echo ok\n`, "r")
+    expect(commands(set)).toEqual(["echo ok"])
+    expect(features(set)).toEqual(["positional-arguments"])
+    const attribute = jobOf(`[positional-arguments]\nr:\n  #!/bin/sh\n  echo "\${1}"\n`, "r")
+    expect(attribute.steps).toEqual([])
+    expect(features(attribute)).toEqual(["positional-arguments"])
+    expect(commands(jobOf(`set positional-arguments := false\nr:\n  echo "$1"\n`, "r"))).toHaveLength(1)
+  })
+
+  it("reads a set export with a comment", () => {
+    const job = jobOf(`set export := false # off\nA := "1"\nr:\n  go\n`, "r")
+    expect(job.steps[0]?.env).toEqual({})
+  })
+
+  it("does not read attribute arguments as attributes", () => {
+    const text = `[metadata("x", "windows")]\nr:\n  go\n`
+    const job = jobOf(text, "r")
+    expect(commands(job)).toEqual(["go"])
+    expect(job.unsupported).toEqual([])
+    expect(read(text).unsupported).toEqual([])
+  })
+
+  it("applies an attribute line with a comment and reports one it cannot read", () => {
+    const mac = jobOf("[macos] # only there\nr:\n  echo mac\n", "r")
+    expect(mac.steps).toEqual([])
+    expect(features(mac)).toEqual(["platform"])
+    for (const line of ["[unclosed", "[a] trailing", "[!bad]"]) {
+      expect(read(`${line}\nr:\n  go\n`).unsupported[0]?.feature).toBe("malformed-file")
+    }
+  })
+
+  it("reports a recipe directory outside the repository", () => {
+    for (const attribute of [`[working-directory("../x")]`, "[working-directory]"]) {
+      const job = jobOf(`${attribute}\nr:\n  go\n`, "r")
+      expect(job.steps).toEqual([])
+      expect(features(job)).toEqual(["working-directory"])
+    }
+  })
+
+  it("reads [script] recipes as one script", () => {
+    expect(commands(jobOf("[script]\nr:\n  a=1\n  echo $a\n", "r"))).toEqual([`sh -eu -c 'a=1\necho $a'`])
+    expect(commands(jobOf(`[script("bash", "-e")]\nr:\n  a\n`, "r"))).toEqual(["bash -e -c a"])
+    expect(jobOf("[script]\nr:\n", "r").steps).toEqual([])
+    const python = jobOf(`[script("python3")]\nr:\n  x = 1\n  print(x)\n`, "r")
+    expect(python.steps).toEqual([])
+    expect(python.unsupported).toEqual([{ feature: "interpreter", detail: "Justfile: r runs in python3" }])
+    const custom = jobOf(`set script-interpreter := ['python3']\n[script]\nr:\n  x\n`, "r")
+    expect(custom.steps).toEqual([])
+    expect(features(custom)).toEqual(["interpreter"])
+  })
+
+  it("removes only the shebang's indent from a script", () => {
+    const job = jobOf("r:\n  #!/bin/sh\n    cat <<X\n    X\n", "r")
+    expect(commands(job)).toEqual([`sh -c ${shellQuote("cat <<X\n  X")}`])
+  })
+
+  it("does not read flags from an env shebang Linux would pass as one argument", () => {
+    const job = jobOf("r:\n  #!/usr/bin/env bash -e\n  go\n", "r")
+    expect(job.steps).toEqual([])
+    expect(features(job)).toEqual(["interpreter"])
   })
 })
 
 describe("readJustfile malformed files", () => {
   it("keeps what it read and reports the lines it could not", () => {
-    const { jobs } = read(`good:
+    const { jobs, unsupported } = read(`good:
   echo a
 
 what is this
@@ -306,9 +436,8 @@ what is this
 bad !param:
   echo b
 `)
-    expect(jobs.map((job) => job.id)).toEqual(["justfile:good", "justfile"])
-    expect(jobs[1]).toMatchObject({ source: "justfile", steps: [] })
-    expect(jobs[1]?.unsupported).toEqual([{
+    expect(jobs.map((job) => job.id)).toEqual(["justfile:good"])
+    expect(unsupported).toEqual([{
       feature: "malformed-file",
       detail: "Justfile: line 4 cannot be read (5 such lines)"
     }])

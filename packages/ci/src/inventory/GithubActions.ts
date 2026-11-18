@@ -10,18 +10,22 @@
  */
 
 import { parseDocument } from "yaml"
-import type { Toolchain } from "../contract/Inventory.ts"
+import { expand, type Toolchain } from "../contract/Inventory.ts"
 import { addStep, type Draft, draft, fileProblem, note, type Parsed } from "./Draft.ts"
-import { expandMatrix, type Matrix } from "./Matrix.ts"
-import { asScalar, asStrings, isRecord, shellQuote } from "./Values.ts"
+import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
+import { isLiteralSecret } from "./Secrets.ts"
+import { asScalar, asStrings, isRecord, normalizeDirectory, shellQuote } from "./Values.ts"
 
 const source = "github-actions"
 
 /** What an expression can see at one level of a workflow. */
 interface Scope {
   readonly env: ReadonlyMap<string, string>
+  /** Variable name to the secret it receives. */
+  readonly secretEnv: ReadonlyMap<string, string>
+  /** Secrets used inside longer values, which reach no variable here. */
   readonly secrets: ReadonlyArray<string>
-  readonly matrixKeys: ReadonlySet<string>
+  readonly matrix: Matrix
 }
 
 interface Resolved {
@@ -30,55 +34,71 @@ interface Resolved {
   readonly secrets: ReadonlyArray<string>
 }
 
+const matrixReferences = (text: string): ReadonlyArray<string> =>
+  [...text.matchAll(/\$\{\{\s*matrix\.([\w.-]+)\s*\}\}/g)].map((match) => match[1] as string)
+
 const resolve = (text: string, scope: Scope): Resolved => {
   const unresolved: Array<string> = []
   const secrets: Array<string> = []
   const resolved = text.replace(/\$\{\{([\s\S]*?)\}\}/g, (whole, inner: string) => {
     const expression = inner.trim()
-    const secret = /^secrets\.([\w-]+)$/.exec(expression)?.[1] ??
-      (expression === "github.token" ? "GITHUB_TOKEN" : undefined)
+    const secret = /^secrets\.([\w-]+)$/.exec(expression)?.[1]
+      ?? (expression === "github.token" ? "GITHUB_TOKEN" : undefined)
     if (secret !== undefined) {
       secrets.push(secret)
       return whole
     }
-    if (expression.startsWith("matrix.") && scope.matrixKeys.has(expression.slice("matrix.".length))) {
+    if (expression.startsWith("matrix.") && scope.matrix.keys.has(expression.slice("matrix.".length))) {
       return `\${{ ${expression} }}`
     }
-    const value = scope.env.get(/^env\.([\w-]+)$/.exec(expression)?.[1] ?? "")
-    if (value !== undefined) return value
-    unresolved.push(expression)
+    const name = /^env\.([\w-]+)$/.exec(expression)?.[1] ?? ""
+    const value = scope.env.get(name)
+    if (value === undefined) {
+      unresolved.push(expression)
+      return whole
+    }
+    if (!isLiteralSecret(name, value)) return value
+    secrets.push(name)
     return whole
   })
   return { text: resolved, unresolved, secrets }
 }
 
-/** Adds one `env:` block to a scope. A value that is not known is left out and reported. */
-const withEnv = (scope: Scope, raw: unknown, job: Draft, where: string): Scope => {
+/**
+ * Adds one `env:` block to a scope. A value that is not known is left out and
+ * reported. Only a step's block may read `env`; GitHub offers no `env` context
+ * to the workflow's or a job's.
+ */
+const withEnv = (scope: Scope, raw: unknown, job: Draft, where: string, readsEnv: boolean): Scope => {
   if (raw === undefined) return scope
   if (!isRecord(raw)) {
     note(job, "expression", `${where} computes its whole environment`)
     return scope
   }
+  const visible = readsEnv ? scope : { ...scope, env: new Map<string, string>() }
   const env = new Map(scope.env)
+  const secretEnv = new Map(scope.secretEnv)
   const secrets = [...scope.secrets]
   for (const [name, rawValue] of Object.entries(raw)) {
     env.delete(name)
+    secretEnv.delete(name)
     const scalar = asScalar(rawValue)
     if (scalar === undefined) {
       note(job, "malformed-env", `${where} sets ${name} to a list or mapping`)
       continue
     }
-    const value = resolve(scalar, scope)
-    secrets.push(...value.secrets)
-    for (const secret of value.secrets) {
-      if (secret !== name) note(job, "secret-env", `${where} sets ${name} from secret ${secret}`)
+    const value = resolve(scalar, visible)
+    const only = value.secrets[0]
+    if (only !== undefined && value.secrets.length === 1 && /^\s*\$\{\{[^}]*\}\}\s*$/.test(scalar)) {
+      secretEnv.set(name, only)
+    } else {
+      secrets.push(...value.secrets)
+      for (const secret of value.secrets) note(job, "secret-env", `${where} builds ${name} from secret ${secret}`)
     }
-    for (const expression of value.unresolved) {
-      note(job, "expression", `${where} sets ${name} from ${expression}`)
-    }
+    for (const expression of value.unresolved) note(job, "expression", `${where} sets ${name} from ${expression}`)
     if (value.secrets.length === 0 && value.unresolved.length === 0) env.set(name, value.text)
   }
-  return { ...scope, env, secrets: [...new Set(secrets)] }
+  return { ...scope, env, secretEnv, secrets: [...new Set(secrets)] }
 }
 
 /** The directory a step runs in, relative to the repository root. */
@@ -86,16 +106,16 @@ const readCwd = (raw: string, scope: Scope): { readonly cwd: string } | { readon
   const value = resolve(raw.replace(/^\$\{\{\s*github\.workspace\s*\}\}\/?/, ""), scope)
   const first = [...value.unresolved, ...value.secrets][0]
   if (first !== undefined) return { problem: `its directory comes from ${first}` }
-  if (value.text.startsWith("/")) return { problem: `its directory ${value.text} is outside the repository` }
-  const parts: Array<string> = []
-  for (const part of value.text.split("/")) {
-    if (part === "..") {
-      if (parts.pop() === undefined) return { problem: `its directory ${value.text} is outside the repository` }
-    } else if (part !== "" && part !== ".") {
-      parts.push(part)
-    }
+  const outside = { problem: `its directory ${value.text} is outside the repository` }
+  if (!value.text.includes("${{")) {
+    const cwd = normalizeDirectory(value.text)
+    return cwd === undefined ? outside : { cwd }
   }
-  return { cwd: parts.join("/") }
+  // The variants decide where this is, so each must stay inside the repository.
+  if (scope.matrix.variants.some((variant) => normalizeDirectory(expand(value.text, variant)) === undefined)) {
+    return outside
+  }
+  return { cwd: value.text.replace(/^(?:\.\/)+/, "").replace(/\/+$/, "") }
 }
 
 /** The shell command that starts a named shell, or `undefined` for one this cannot run. */
@@ -125,13 +145,13 @@ const readSetup = (uses: string, inputs: unknown, scope: Scope, file: string): T
   if (setup === undefined) return undefined
   const [name, input] = setup
   const raw = isRecord(inputs) ? asScalar(inputs[input]) : undefined
-  const version = raw === undefined ? undefined : resolve(raw, { ...scope, matrixKeys: new Set() })
+  const version = raw === undefined ? undefined : resolve(raw, { ...scope, matrix: noMatrix })
   return version === undefined || version.text === "" || version.text.includes("${{")
     ? { name, source: file }
     : { name, source: file, version: version.text }
 }
 
-/** Job and step keys that change what runs and cannot be reproduced from a command. */
+/** Job keys that change what runs and cannot be reproduced from a command. */
 const jobFeatures: ReadonlyMap<string, string> = new Map([
   ["services", "runs service containers"],
   ["container", "runs inside a container"],
@@ -145,7 +165,7 @@ const readTriggers = (
   if (!isRecord(on)) return { triggers: asStrings(on) ?? [], filters: [] }
   const filters = Object.entries(on).flatMap(([event, config]) => {
     const keys = isRecord(config)
-      ? Object.keys(config).filter((key) => /^(branches|tags|paths)(-ignore)?$/.test(key))
+      ? Object.keys(config).filter((key) => /^(?:(?:branches|tags|paths)(?:-ignore)?|types|workflows)$/.test(key))
       : []
     return keys.length === 0 ? [] : [`${event} runs only for matching ${keys.join(", ")}`]
   })
@@ -180,7 +200,7 @@ const readStep = (context: JobContext, raw: unknown, index: number): void => {
   if (!isRecord(raw)) return note(job, "malformed-step", `step ${number} of ${job.name} is not a mapping`)
   const stepName = typeof raw["name"] === "string" ? raw["name"] : undefined
   const where = `${job.name} step ${number}${stepName === undefined ? "" : ` (${stepName})`}`
-  const scope = withEnv(context.scope, raw["env"], job, where)
+  const scope = withEnv(context.scope, raw["env"], job, where, true)
 
   if (raw["if"] !== undefined) note(job, "condition", `${where} runs only if ${String(raw["if"])}`)
   if (raw["continue-on-error"] !== undefined) {
@@ -208,8 +228,17 @@ const readStep = (context: JobContext, raw: unknown, index: number): void => {
   const blocking = [...command.unresolved, ...command.secrets.map((name) => `secret ${name}`)]
   if (blocking.length > 0) return note(job, "expression", `${where} depends on ${blocking.join(", ")}`)
 
-  const rawCwd = raw["working-directory"] ?? defaults.cwd
-  const place = typeof rawCwd === "string" ? readCwd(rawCwd, scope) : { cwd: "" }
+  // GitHub pastes a matrix value into the script text, where a quote would end the quoting added here.
+  const references = matrixReferences(command.text)
+  const breaksQuoting = (variant: Readonly<Record<string, string>>) =>
+    references.some((key) => variant[key]?.includes("'"))
+  if (start !== "" && scope.matrix.variants.some(breaksQuoting)) {
+    return note(job, "shell", `${where} puts a matrix value holding a quote into its script`)
+  }
+
+  const rawCwd = asScalar(raw["working-directory"] ?? defaults.cwd ?? "")
+  if (rawCwd === undefined) return note(job, "working-directory", `${where} has a directory that is not text`)
+  const place = readCwd(rawCwd, scope)
   if ("problem" in place) return note(job, "working-directory", `${where}: ${place.problem}`)
 
   const runnerNames = [...new Set(command.text.match(/\b(?:GITHUB|RUNNER)_[A-Z_]+\b/g))]
@@ -221,16 +250,18 @@ const readStep = (context: JobContext, raw: unknown, index: number): void => {
     cwd: place.cwd,
     env: scope.env,
     secrets: scope.secrets,
+    secretEnv: scope.secretEnv,
     name: stepName
   })
 }
 
-/** True when some variant of the job, or every run of it, is on Windows. */
-const runnerOs = (runsOn: string | undefined, matrix: Matrix): "all" | "some" | "none" => {
+/** How many runs of the job are on Windows, once each variant fills in its runner. */
+const windowsRuns = (runsOn: string | undefined, matrix: Matrix): "all" | "some" | "none" => {
   if (runsOn === undefined) return "none"
-  const key = /\$\{\{\s*matrix\.([\w.-]+)\s*\}\}/.exec(runsOn)?.[1]
-  if (key !== undefined) return matrix.variants.some((variant) => /windows/i.test(variant[key] ?? "")) ? "some" : "none"
-  return /windows/i.test(runsOn) ? "all" : "none"
+  const names = matrix.variants.length === 0 ? [runsOn] : matrix.variants.map((variant) => expand(runsOn, variant))
+  const windows = names.filter((name) => /windows/i.test(name)).length
+  if (windows === 0) return "none"
+  return windows === names.length ? "all" : "some"
 }
 
 const readRunsOn = (raw: unknown, job: { readonly name: string }, problems: Array<[string, string]>) => {
@@ -243,6 +274,19 @@ const readRunsOn = (raw: unknown, job: { readonly name: string }, problems: Arra
   return { runsOn: labels.join(",") }
 }
 
+/** GitHub reads a matrix key a variant lacks as empty, so a variant must say so. */
+const fillReferencedKeys = (job: Draft, matrix: Matrix): Draft => {
+  const texts = [job.runsOn ?? "", ...job.steps.flatMap((step) => [step.command, step.cwd, ...Object.values(step.env)])]
+  const used = texts.flatMap(matrixReferences).filter((key) => matrix.keys.has(key))
+  return {
+    ...job,
+    matrix: matrix.variants.map((variant) => ({
+      ...variant,
+      ...Object.fromEntries(used.filter((key) => !Object.hasOwn(variant, key)).map((key) => [key, ""]))
+    }))
+  }
+}
+
 interface WorkflowContext {
   readonly file: string
   readonly base: string
@@ -251,6 +295,42 @@ interface WorkflowContext {
   readonly scope: Scope
   readonly defaults: RunDefaults
   readonly toolchains: Array<Toolchain>
+}
+
+const readJobBody = (workflow: WorkflowContext, job: Draft, raw: Record<string, unknown>, matrix: Matrix): void => {
+  const { name } = job
+  for (const filter of workflow.filters) note(job, "trigger-filter", filter)
+  if (matrix.problem !== undefined) note(job, "matrix", `${name}: ${matrix.problem}`)
+  if (raw["strategy"] !== undefined && !isRecord(raw["strategy"])) {
+    note(job, "matrix", `${name}: its strategy is computed when the workflow runs`)
+  }
+  if (raw["if"] !== undefined) note(job, "condition", `${name} runs only if ${String(raw["if"])}`)
+  for (const [jobKey, reason] of jobFeatures) {
+    if (raw[jobKey] !== undefined) note(job, jobKey, `${name} ${reason}`)
+  }
+
+  const jobScope = { ...workflow.scope, matrix }
+  if (job.runsOn !== undefined) {
+    const unknown = resolve(job.runsOn, jobScope).unresolved
+    if (unknown.length > 0) note(job, "runner", `${name} picks its runner from ${unknown.join(", ")}`)
+  }
+  const windows = windowsRuns(job.runsOn, matrix)
+  if (windows === "some") note(job, "shell", `some variants of ${name} run in PowerShell on Windows`)
+
+  if (typeof raw["uses"] === "string") {
+    return note(job, "uses", `${raw["uses"]} is a reusable workflow; its jobs were not read`)
+  }
+  const steps: unknown = raw["steps"]
+  if (!Array.isArray(steps)) return note(job, "malformed-job", `${name} has no list of steps`)
+  const context: JobContext = {
+    file: workflow.file,
+    job,
+    scope: withEnv(jobScope, raw["env"], job, name, false),
+    defaults: readDefaults(raw, workflow.defaults),
+    windowsOnly: windows === "all",
+    toolchains: workflow.toolchains
+  }
+  steps.forEach((step: unknown, index) => readStep(context, step, index))
 }
 
 const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Draft => {
@@ -274,44 +354,11 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Draft =>
     name,
     needs: (needs ?? []).map((need) => `${base}:${need}`),
     triggers,
-    matrix: matrix.variants,
     ...readRunsOn(raw["runs-on"], { name }, problems)
   })
   for (const [feature, reason] of problems) note(job, feature, reason)
-  for (const filter of workflow.filters) note(job, "trigger-filter", filter)
-  if (matrix.problem !== undefined) note(job, "matrix", `${name}: ${matrix.problem}`)
-  if (raw["if"] !== undefined) note(job, "condition", `${name} runs only if ${String(raw["if"])}`)
-  for (const [jobKey, reason] of jobFeatures) {
-    if (raw[jobKey] !== undefined) note(job, jobKey, `${name} ${reason}`)
-  }
-
-  const jobScope = { ...workflow.scope, matrixKeys: matrix.keys }
-  if (job.runsOn !== undefined) {
-    const unknown = resolve(job.runsOn, jobScope).unresolved
-    if (unknown.length > 0) note(job, "runner", `${name} picks its runner from ${unknown.join(", ")}`)
-  }
-  const os = runnerOs(job.runsOn, matrix)
-  if (os === "some") note(job, "shell", `some variants of ${name} run in PowerShell on Windows`)
-
-  if (typeof raw["uses"] === "string") {
-    note(job, "uses", `${raw["uses"]} is a reusable workflow; its jobs were not read`)
-    return job
-  }
-  const steps: unknown = raw["steps"]
-  if (!Array.isArray(steps)) {
-    note(job, "malformed-job", `${name} has no list of steps`)
-    return job
-  }
-  const context: JobContext = {
-    file,
-    job,
-    scope: withEnv(jobScope, raw["env"], job, name),
-    defaults: readDefaults(raw, workflow.defaults),
-    windowsOnly: os === "all",
-    toolchains: workflow.toolchains
-  }
-  steps.forEach((step: unknown, index) => readStep(context, step, index))
-  return job
+  readJobBody(workflow, job, raw, matrix)
+  return fillReferencedKeys(job, matrix)
 }
 
 const parseYaml = (text: string): { readonly value: unknown } | { readonly problem: string } => {
@@ -326,8 +373,8 @@ const parseYaml = (text: string): { readonly value: unknown } | { readonly probl
 }
 
 /**
- * Reads a workflow. A file that is not a workflow is one job with no steps
- * whose `unsupported` entry says why.
+ * Reads a workflow. A file that is not a workflow adds no jobs, only the
+ * reason.
  *
  * @category readers
  * @since 0.1.0
@@ -336,28 +383,28 @@ const parseYaml = (text: string): { readonly value: unknown } | { readonly probl
 export const readWorkflow = (file: string, text: string): Parsed => {
   const base = file.slice(file.lastIndexOf("/") + 1)
   const parsed = parseYaml(text)
-  if ("problem" in parsed) return fileProblem(base, source, file, "malformed-file", parsed.problem)
+  if ("problem" in parsed) return fileProblem(file, "malformed-file", parsed.problem)
   const workflow = parsed.value
   if (!isRecord(workflow) || !isRecord(workflow["jobs"])) {
-    return fileProblem(base, source, file, "malformed-file", "it has no jobs mapping")
+    return fileProblem(file, "malformed-file", "it has no jobs mapping")
   }
   const { filters, triggers } = readTriggers(workflow["on"])
   const toolchains: Array<Toolchain> = []
   const holder = draft({ id: base, source, file, name: base })
-  const scope = withEnv({ env: new Map(), secrets: [], matrixKeys: new Set() }, workflow["env"], holder, "the workflow")
+  const empty: Scope = { env: new Map(), secretEnv: new Map(), secrets: [], matrix: noMatrix }
   const context: WorkflowContext = {
     file,
     base,
     triggers,
     filters,
-    scope,
+    scope: withEnv(empty, workflow["env"], holder, "the workflow", false),
     defaults: readDefaults(workflow, { shell: undefined, cwd: undefined }),
     toolchains
   }
   const jobs = Object.entries(workflow["jobs"]).map(([key, job]) => {
     const read = readJob(context, key, job)
-    read.unsupported.push(...holder.unsupported)
+    for (const entry of holder.unsupported) read.unsupported.push(entry)
     return read
   })
-  return { jobs, toolchains }
+  return { jobs, toolchains, unsupported: [] }
 }

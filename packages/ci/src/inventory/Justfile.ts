@@ -5,18 +5,23 @@
  * string literal or a parameter's literal default; anything `just` would have
  * to evaluate is reported, not guessed.
  *
+ * Contract 4 runs a step with `bash -e -c`, and `just` runs a line with
+ * `sh -cu`, so a line that either shell could read differently names its shell.
+ *
  * @since 0.1.0
  */
 
-import { addStep, type Draft, draft, fileProblem, note, type Parsed } from "./Draft.ts"
-import { shellQuote } from "./Values.ts"
+import type { Unsupported } from "../contract/Inventory.ts"
+import { addStep, type Draft, draft, note, type Parsed } from "./Draft.ts"
+import { isLiteralSecret } from "./Secrets.ts"
+import { normalizeDirectory, shellQuote } from "./Values.ts"
 
 const source = "justfile"
 const jobId = (name: string): string => `justfile:${name}`
 
 interface Attribute {
   readonly name: string
-  readonly value: string | undefined
+  readonly args: ReadonlyArray<string>
 }
 
 interface Parameter {
@@ -39,42 +44,80 @@ interface Recipe {
   readonly body: ReadonlyArray<BodyLine>
 }
 
-interface Module {
-  readonly name: string
-  readonly reason: string
-}
-
 interface Justfile {
   readonly variables: Map<string, string | undefined>
   readonly exported: Set<string>
   readonly aliases: Map<string, string>
+  /** Settings that change a recipe's surroundings but leave its commands exact. */
   readonly settings: Array<string>
-  readonly modules: Array<Module>
+  /** Settings without which a recipe's commands cannot be stated. */
+  readonly blockers: Array<string>
+  readonly modules: Array<string>
   readonly recipes: Array<Recipe>
   readonly unreadable: Array<number>
   exportAll: boolean
+  allowDuplicates: boolean
+  positional: boolean
+  ignoreComments: boolean
+  customInterpreter: boolean
+  /** The words `set shell` names, ready to put before a quoted line. */
+  shell: string | undefined
 }
 
-/** Settings that do not change what a recipe's commands do when it runs with no arguments. */
+/** Settings that do not change what a recipe's commands do. */
 const harmlessSettings = new Set([
-  "allow-duplicate-recipes",
   "allow-duplicate-variables",
   "fallback",
-  "ignore-comments",
-  "positional-arguments",
   "quiet",
   "unstable",
   "windows-powershell",
   "windows-shell"
 ])
 
-const harmlessAttributes = new Set(["doc", "exit-message", "group", "no-exit-message", "no-quiet", "private"])
+const harmlessAttributes = new Set([
+  "default",
+  "doc",
+  "exit-message",
+  "extension",
+  "group",
+  "metadata",
+  "no-exit-message",
+  "no-quiet",
+  "parallel",
+  "private"
+])
 const platforms = new Set(["android", "dragonfly", "freebsd", "linux", "macos", "netbsd", "openbsd", "unix", "windows"])
 const thisPlatform = new Set(["linux", "unix"])
 
 /** The string a literal holds, or `undefined` for anything `just` must evaluate. */
 const literal = (text: string): string | undefined =>
   (/^'([^']*)'(?:\s+#.*)?$/.exec(text) ?? /^"([^"\\]*)"(?:\s+#.*)?$/.exec(text))?.[1]
+
+const quotedStrings = (text: string): ReadonlyArray<string> =>
+  [...text.matchAll(/'([^']*)'|"([^"\\]*)"/g)].map((match) => (match[1] ?? match[2]) as string)
+
+/** Where unquoted text ends: at the first `stop` character outside quotes and parentheses, or the end. */
+const unquotedEnd = (text: string, stop: string, from = 0): number => {
+  let quote = ""
+  let depth = 0
+  for (let index = from; index < text.length; index++) {
+    const char = text.charAt(index)
+    if (quote !== "") {
+      if (char === quote) quote = ""
+    } else if (char === "'" || char === `"`) {
+      quote = char
+    } else if (char === "(") {
+      depth++
+    } else if (char === ")") {
+      depth--
+    } else if (char === stop && depth === 0) {
+      return index
+    }
+  }
+  return text.length
+}
+
+const withoutComment = (line: string): string => line.slice(0, unquotedEnd(line, "#")).trim()
 
 /** Splits on spaces outside quotes and parentheses, stopping at the first such colon when asked. */
 const scanWords = (text: string, stopAtColon: boolean) => {
@@ -117,14 +160,39 @@ const readParameter = (word: string): Parameter | undefined => {
   return { name, exported: exported === "$", value }
 }
 
-const readAttributes = (line: string): ReadonlyArray<Attribute> =>
-  [...line.slice(1, -1).matchAll(/([\w-]+)(?:\s*[:(]\s*(?:'([^']*)'|"([^"]*)")\s*\)?)?/g)].map((match) => ({
-    name: match[1] as string,
-    value: match[2] ?? match[3]
-  }))
+/** Reads `[a, b("x"), c: "y"]`, with an optional comment after it. */
+const readAttributes = (line: string): ReadonlyArray<Attribute> | undefined => {
+  const close = unquotedEnd(line, "]")
+  if (close === line.length || !/^\s*(?:#.*)?$/.test(line.slice(close + 1))) return undefined
+  const inner = line.slice(1, close)
+  const attributes: Array<Attribute> = []
+  let start = 0
+  while (start < inner.length) {
+    const end = unquotedEnd(inner, ",", start)
+    const match = /^\s*([\w-]+)\s*(?:\((.*)\)|:(.*))?\s*$/.exec(inner.slice(start, end))
+    if (match === null) return undefined
+    attributes.push({ name: match[1] as string, args: quotedStrings(match[2] ?? match[3] ?? "") })
+    start = end + 1
+  }
+  return attributes
+}
+
+const isOn = (value: string | undefined): boolean => value === undefined || value === "true"
+
+const readShellSetting = (justfile: Justfile, value: string | undefined): void => {
+  const words = quotedStrings(value ?? "")
+  if (words.length === 0) justfile.blockers.push("shell")
+  else justfile.shell = words.map(shellQuote).join(" ")
+}
 
 const readSetting = (justfile: Justfile, name: string, value: string | undefined): void => {
-  if (name === "export") justfile.exportAll = value?.trim() !== "false"
+  if (name === "export") justfile.exportAll = isOn(value)
+  else if (name === "allow-duplicate-recipes") justfile.allowDuplicates = isOn(value)
+  else if (name === "positional-arguments") justfile.positional = isOn(value)
+  else if (name === "ignore-comments") justfile.ignoreComments = isOn(value)
+  else if (name === "script-interpreter") justfile.customInterpreter = true
+  else if (name === "shell") readShellSetting(justfile, value)
+  else if (name === "working-directory") justfile.blockers.push(name)
   else if (!harmlessSettings.has(name)) justfile.settings.push(name)
 }
 
@@ -134,26 +202,26 @@ const readTopLine = (
   line: string,
   attributes: ReadonlyArray<Attribute>
 ): Omit<Recipe, "body"> | "read" | "unreadable" => {
-  const setting = /^set\s+([\w-]+)(?:\s*:=\s*(.*))?$/.exec(line)
+  const plain = withoutComment(line)
+  const setting = /^set\s+([\w-]+)(?:\s*:=\s*(.*))?$/.exec(plain)
   if (setting !== null) {
     readSetting(justfile, setting[1] as string, setting[2])
     return "read"
   }
-  const alias = /^alias\s+([\w-]+)\s*:=\s*([\w:-]+)\s*(?:#.*)?$/.exec(line)
+  const alias = /^alias\s+([\w-]+)\s*:=\s*([\w:-]+)$/.exec(plain)
   if (alias !== null) {
     justfile.aliases.set(alias[1] as string, alias[2] as string)
     return "read"
   }
-  const module = /^mod\??\s+([\w-]+)(?:\s+(\S.*))?$/.exec(line)
+  const module = /^mod\??\s+([\w-]+)(?:\s+(\S.*))?$/.exec(plain)
   if (module !== null) {
-    const name = module[1] as string
     const place = module[2] === undefined ? "" : ` in ${module[2]}`
-    justfile.modules.push({ name, reason: `the recipes of module ${name}${place} were not read` })
+    justfile.modules.push(`the recipes of module ${module[1]}${place} were not read`)
     return "read"
   }
-  const imported = /^import\??\s+(\S.*)$/.exec(line)
+  const imported = /^import\??\s+(\S.*)$/.exec(plain)
   if (imported !== null) {
-    justfile.modules.push({ name: "import", reason: `the recipes imported from ${imported[1]} were not read` })
+    justfile.modules.push(`the recipes imported from ${imported[1]} were not read`)
     return "read"
   }
   const assignment = /^(export\s+)?([A-Za-z_][\w-]*)\s*:=\s*(.*)$/.exec(line)
@@ -173,7 +241,7 @@ const readTopLine = (
   return {
     name: header[1] as string,
     attributes,
-    parameters: parameters,
+    parameters,
     dependencies: comment === -1 ? words : words.slice(0, comment)
   }
 }
@@ -184,10 +252,16 @@ const parse = (text: string): Justfile => {
     exported: new Set(),
     aliases: new Map(),
     settings: [],
+    blockers: [],
     modules: [],
     recipes: [],
     unreadable: [],
-    exportAll: false
+    exportAll: false,
+    allowDuplicates: false,
+    positional: false,
+    ignoreComments: false,
+    customInterpreter: false,
+    shell: undefined
   }
   const lines = text.split(/\r?\n/)
   let attributes: Array<Attribute> = []
@@ -195,13 +269,19 @@ const parse = (text: string): Justfile => {
   while (index < lines.length) {
     const line = lines[index] as string
     const number = ++index
-    const trimmed = line.trim()
+    let trimmed = line.trim()
     if (trimmed === "" || trimmed.startsWith("#")) continue
     if (/^\s/.test(line)) {
       justfile.unreadable.push(number)
-    } else if (/^\[.*\]$/.test(trimmed)) {
-      attributes.push(...readAttributes(trimmed))
+    } else if (trimmed.startsWith("[")) {
+      const read = readAttributes(trimmed)
+      if (read === undefined) justfile.unreadable.push(number)
+      else attributes.push(...read)
     } else {
+      // A recipe header may continue on the next line.
+      while (trimmed.endsWith("\\") && !trimmed.includes(":=") && index < lines.length) {
+        trimmed = `${trimmed.slice(0, -1)} ${(lines[index++] as string).trim()}`
+      }
       const read = readTopLine(justfile, trimmed, attributes)
       if (read === "unreadable") justfile.unreadable.push(number)
       if (typeof read === "object") {
@@ -229,59 +309,91 @@ const interpolate = (text: string, values: ReadonlyMap<string, string | undefine
   return { text: resolved, unresolved }
 }
 
-/** Joins lines ending in a backslash, as `just` does, and leaves out blanks and comments. */
-const logicalLines = (body: ReadonlyArray<BodyLine>): ReadonlyArray<BodyLine> => {
+/**
+ * Joins lines ending in a backslash, as `just` does, and leaves out blanks.
+ * A comment line does nothing, including what it swallows by continuing.
+ */
+const logicalLines = (body: ReadonlyArray<BodyLine>, ignoreComments: boolean): ReadonlyArray<BodyLine> => {
   const lines: Array<BodyLine> = []
   let open: BodyLine | undefined
   for (const line of body) {
-    const text = open === undefined ? line.text.trim() : line.text.trimStart()
-    if (open === undefined && (text === "" || text.startsWith("#"))) continue
+    const text = line.text.trimStart()
+    if (open === undefined && (text === "" || (ignoreComments && text.startsWith("#")))) continue
     const joined: BodyLine = open === undefined ? { text, number: line.number } : { ...open, text: open.text + text }
-    if (joined.text.trimEnd().endsWith("\\")) {
-      open = { ...joined, text: joined.text.trimEnd().slice(0, -1) }
+    if (joined.text.endsWith("\\")) {
+      open = { ...joined, text: joined.text.slice(0, -1) }
     } else {
       lines.push(joined)
       open = undefined
     }
   }
-  return open === undefined ? lines : [...lines, open]
+  return (open === undefined ? lines : [...lines, open]).filter((line) => !line.text.startsWith("#"))
 }
 
 interface RecipeContext {
+  readonly justfile: Justfile
   readonly job: Draft
   readonly recipe: Recipe
   readonly values: ReadonlyMap<string, string | undefined>
   readonly cwd: string
   readonly env: ReadonlyMap<string, string>
+  readonly positional: boolean
 }
 
-const readScript = (context: RecipeContext, shebang: string, lines: ReadonlyArray<BodyLine>): void => {
-  const { cwd, env, job, recipe, values } = context
-  const interpreter = /^#!\s*(?:\/usr\/bin\/env\s+(?:-S\s+)?|\/(?:[\w.-]+\/)*)(bash|sh)((?:\s+-[\w-]+)*)\s*$/.exec(
-    shebang
-  )
-  if (interpreter === null) return note(job, "interpreter", `${recipe.name} runs in ${shebang.slice(2).trim()}`)
-  const indent = Math.min(
-    ...lines.filter((line) => line.text.trim() !== "").map((line) => /^\s*/.exec(line.text)?.[0].length as number)
-  )
-  const script = interpolate(lines.map((line) => line.text.slice(indent)).join("\n").trim(), values)
-  if (script.unresolved.length > 0) {
-    return note(job, "expression", `${recipe.name} depends on ${script.unresolved.join(", ")}`)
+/** The text to run, or `undefined` once the reason it cannot be stated is recorded. */
+const fillIn = (context: RecipeContext, where: string, text: string): string | undefined => {
+  const filled = interpolate(text, context.values)
+  if (filled.unresolved.length > 0) {
+    note(context.job, "expression", `${where} depends on ${filled.unresolved.join(", ")}`)
+    return undefined
   }
-  const start = `${interpreter[1]}${(interpreter[2] as string).replace(/\s+/g, " ")}`
-  addStep(job, { where: recipe.name, command: `${start} -c ${shellQuote(script.text)}`, cwd, env })
+  if (context.positional && /\$(?:[0-9@*#]|\{[0-9@*#])/.test(filled.text)) {
+    note(context.job, "positional-arguments", `${where} reads the recipe's arguments`)
+    return undefined
+  }
+  return filled.text
+}
+
+const readScript = (
+  context: RecipeContext,
+  start: string,
+  indent: number,
+  lines: ReadonlyArray<BodyLine>
+): void => {
+  const { cwd, env, job, recipe } = context
+  const script = fillIn(context, recipe.name, lines.map((line) => line.text.slice(indent)).join("\n").trim())
+  if (script !== undefined) {
+    addStep(job, { where: recipe.name, command: `${start} -c ${shellQuote(script)}`, cwd, env })
+  }
+}
+
+/**
+ * The shell a shebang names. Linux passes everything after the interpreter as
+ * one argument, so flags are read only where that still means flags.
+ */
+const shebangStart = (shebang: string): string | undefined => {
+  const match = /^#!\s*\/usr\/bin\/env\s+-S\s+(?:\S*\/)?(bash|sh)((?:\s+-[\w-]+)*)\s*$/.exec(shebang)
+    ?? /^#!\s*\/usr\/bin\/env\s+(?:\S*\/)?(bash|sh)()\s*$/.exec(shebang)
+    ?? /^#!\s*\/(?:[\w.-]+\/)*(bash|sh)(\s+-[\w-]+)?\s*$/.exec(shebang)
+  return match === null ? undefined : `${match[1]}${(match[2] ?? "").replace(/\s+/g, " ")}`
+}
+
+const indentOf = (line: BodyLine): number => line.text.length - line.text.trimStart().length
+
+const inShell = (justfile: Justfile, line: string): string => {
+  if (justfile.shell !== undefined) return `${justfile.shell} ${shellQuote(line)}`
+  // Plain words mean the same to both shells.
+  return /^[\w@%+=:,./ -]+$/.test(line) ? line : `sh -cu ${shellQuote(line)}`
 }
 
 const readLine = (context: RecipeContext, line: BodyLine): void => {
-  const { cwd, env, job, recipe, values } = context
+  const { cwd, env, job, justfile, recipe } = context
   const where = `${recipe.name} line ${line.number}`
-  const prefix = /^[@-]*/.exec(line.text)?.[0] as string
+  const prefix = /^(?:@-?|-@?)/.exec(line.text)?.[0] ?? ""
   if (prefix.includes("-")) note(job, "ignored-failure", `${where} may fail without failing the recipe`)
-  const command = interpolate(line.text.slice(prefix.length), values)
-  if (command.unresolved.length > 0) {
-    return note(job, "expression", `${where} depends on ${command.unresolved.join(", ")}`)
-  }
-  addStep(job, { where, command: command.text, cwd, env })
+  const command = fillIn(context, where, line.text.slice(prefix.length))
+  if (command !== undefined && command.trim() === "") return note(job, "empty-command", `${where} has no command`)
+  if (command !== undefined) addStep(job, { where, command: inShell(justfile, command.trim()), cwd, env })
 }
 
 const runsHere = (recipe: Recipe): boolean => {
@@ -294,22 +406,56 @@ const readDependencies = (job: Draft, recipe: Recipe, aliases: ReadonlyMap<strin
   if (after !== -1) note(job, "subsequent-recipes", `${recipe.name} runs recipes after itself`)
   const before = after === -1 ? recipe.dependencies : recipe.dependencies.slice(0, after)
   return before.flatMap((word) => {
-    if (!word.startsWith("(")) return [jobId(aliases.get(word) ?? word)]
-    note(job, "dependency-arguments", `${recipe.name} passes arguments to ${word}`)
-    return []
+    if (word.startsWith("(")) {
+      note(job, "dependency-arguments", `${recipe.name} passes arguments to ${word}`)
+      return []
+    }
+    if (word.includes("::")) {
+      note(job, "module", `${recipe.name} needs ${word} from a module that was not read`)
+      return []
+    }
+    return [jobId(aliases.get(word) ?? word)]
   })
 }
 
+/** The start of a `[script]` recipe, or `undefined` once the reason is recorded. */
+const scriptStart = (justfile: Justfile, job: Draft, recipe: Recipe, args: ReadonlyArray<string>) => {
+  if (args.length === 0 && !justfile.customInterpreter) return "sh -eu"
+  if (/^(?:\S*\/)?(?:bash|sh)$/.test(args[0] ?? "")) return args.map(shellQuote).join(" ")
+  note(job, "interpreter", `${recipe.name} runs in ${args.join(" ") || "the script interpreter the file sets"}`)
+  return undefined
+}
+
+const readBody = (context: RecipeContext, script: Attribute | undefined): void => {
+  const { job, justfile, recipe } = context
+  const first = recipe.body.find((line) => line.text.trim() !== "")
+  if (script !== undefined) {
+    const start = scriptStart(justfile, job, recipe, script.args)
+    if (start !== undefined && first !== undefined) readScript(context, start, indentOf(first), recipe.body)
+  } else if (first?.text.trim().startsWith("#!")) {
+    const shebang = first.text.trim()
+    const start = shebangStart(shebang)
+    if (start === undefined) return note(job, "interpreter", `${recipe.name} runs in ${shebang.slice(2).trim()}`)
+    readScript(context, start, indentOf(first), recipe.body.slice(recipe.body.indexOf(first) + 1))
+  } else {
+    for (const line of logicalLines(recipe.body, justfile.ignoreComments)) readLine(context, line)
+  }
+}
+
 const readRecipe = (justfile: Justfile, recipe: Recipe, file: string): Draft => {
-  const dependencies = draft({ id: jobId(recipe.name), source, file, name: recipe.name })
-  const job = { ...dependencies, needs: readDependencies(dependencies, recipe, justfile.aliases) }
-  for (const setting of justfile.settings) note(job, "setting", `set ${setting} changes how recipes run`)
-  let cwd = ""
-  let platformBlocked = false
+  const start = draft({ id: jobId(recipe.name), source, file, name: recipe.name })
+  const job: Draft = { ...start, needs: readDependencies(start, recipe, justfile.aliases) }
+  for (const setting of [...justfile.settings, ...justfile.blockers]) {
+    note(job, "setting", `set ${setting} changes how recipes run`)
+  }
+  let cwd: string | undefined = ""
+  let positional = justfile.positional
+  let script: Attribute | undefined
   for (const attribute of recipe.attributes) {
-    if (attribute.name === "working-directory" && attribute.value !== undefined) cwd = attribute.value
-    else if (platforms.has(attribute.name)) platformBlocked = !runsHere(recipe)
-    else if (!harmlessAttributes.has(attribute.name)) {
+    if (attribute.name === "working-directory") cwd = normalizeDirectory(attribute.args[0] ?? "/")
+    else if (attribute.name === "positional-arguments") positional = true
+    else if (attribute.name === "script") script = attribute
+    else if (!platforms.has(attribute.name) && !harmlessAttributes.has(attribute.name)) {
       note(job, "attribute", `${recipe.name} has attribute ${attribute.name}`)
     }
   }
@@ -326,23 +472,24 @@ const readRecipe = (justfile: Justfile, recipe: Recipe, file: string): Draft => 
       note(job, "recipe-argument", `${recipe.name} needs a value for ${parameter.name}`)
     } else if (parameter.exported || justfile.exportAll) env.set(parameter.name, parameter.value)
   }
-  if (platformBlocked) {
-    note(job, "platform", `${recipe.name} does not run on Linux`)
-    return job
+  // A secret's value stays out of commands, so an interpolation of one cannot be filled in.
+  for (const [name, value] of values) {
+    if (value !== undefined && isLiteralSecret(name, value)) values.set(name, undefined)
   }
-  const context: RecipeContext = { job, recipe, values, cwd, env }
-  const first = recipe.body.find((line) => line.text.trim() !== "")
-  if (first?.text.trim().startsWith("#!")) {
-    readScript(context, first.text.trim(), recipe.body.slice(recipe.body.indexOf(first) + 1))
-  } else {
-    for (const line of logicalLines(recipe.body)) readLine(context, line)
+  if (!runsHere(recipe)) {
+    note(job, "platform", `${recipe.name} does not run on Linux`)
+  } else if (cwd === undefined) {
+    note(job, "working-directory", `the directory of ${recipe.name} is outside the repository`)
+  } else if (justfile.blockers.length === 0) {
+    readBody({ justfile, job, recipe, values, cwd, env, positional }, script)
   }
   return job
 }
 
 /**
- * Reads a Justfile. A recipe becomes one job; recipes with the same name keep
- * the first that runs on Linux.
+ * Reads a Justfile. A recipe becomes one job. Of recipes with the same name
+ * the first that runs on Linux is kept, or the last when the file allows
+ * duplicates, as `just` does.
  *
  * @category readers
  * @since 0.1.0
@@ -357,25 +504,21 @@ export const readJustfile = (file: string, text: string): Parsed => {
   ]
   for (const recipe of ordered) {
     const existing = jobs.get(recipe.name)
-    if (existing === undefined) jobs.set(recipe.name, readRecipe(justfile, recipe, file))
-    else note(existing, "duplicate-recipe", `${recipe.name} is defined more than once; the first was kept`)
+    if (existing === undefined || (justfile.allowDuplicates && runsHere(recipe))) {
+      jobs.set(recipe.name, readRecipe(justfile, recipe, file))
+    } else {
+      note(existing, "duplicate-recipe", `${recipe.name} is defined more than once; the first was kept`)
+    }
   }
-  const modules = justfile.modules.map((module) => {
-    const job = draft({ id: jobId(`${module.name}::*`), source, file, name: module.name })
-    note(job, "module", module.reason)
-    return job
-  })
-  const problems = justfile.unreadable.length === 0
-    ? []
-    : fileProblem(
-      "justfile",
-      source,
-      file,
-      "malformed-file",
-      `line ${justfile.unreadable[0]} cannot be read (${justfile.unreadable.length} such lines)`
-    ).jobs
-  return {
-    jobs: [...jobs.values(), ...modules, ...problems],
-    toolchains: [{ name: "just", source: file }]
+  const unsupported: Array<Unsupported> = justfile.modules.map((reason) => ({
+    feature: "module",
+    detail: `${file}: ${reason}`
+  }))
+  if (justfile.unreadable.length > 0) {
+    unsupported.push({
+      feature: "malformed-file",
+      detail: `${file}: line ${justfile.unreadable[0]} cannot be read (${justfile.unreadable.length} such lines)`
+    })
   }
+  return { jobs: [...jobs.values()], toolchains: [{ name: "just", source: file }], unsupported }
 }

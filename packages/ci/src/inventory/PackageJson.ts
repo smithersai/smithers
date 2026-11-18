@@ -6,7 +6,7 @@
  */
 
 import { parse as parseYaml } from "yaml"
-import type { Toolchain } from "../contract/Inventory.ts"
+import { longRunning, type Toolchain } from "../contract/Inventory.ts"
 import { addStep, draft, fileProblem, note, type Parsed } from "./Draft.ts"
 import { asStrings, isRecord, shellQuote } from "./Values.ts"
 
@@ -63,7 +63,7 @@ const readManifest = (text: string): unknown => {
   }
 }
 
-const longRunning = (name: string, script: string): boolean =>
+const keepsRunning = (name: string, script: string): boolean =>
   /^(dev|start|serve|watch)(:|$)/.test(name) || /(^|\s)--watch(\s|$)/.test(script)
 
 const readToolchains = (file: string, manifest: Record<string, unknown>): ReadonlyArray<Toolchain> => {
@@ -95,7 +95,7 @@ const readToolchains = (file: string, manifest: Record<string, unknown>): Readon
  */
 export const readPackage = (file: string, text: string, runner: Runner): Parsed => {
   const manifest = readManifest(text)
-  if (!isRecord(manifest)) return fileProblem(file, source, file, "malformed-file", "it is not a JSON object")
+  if (!isRecord(manifest)) return fileProblem(file, "malformed-file", "it is not a JSON object")
   const directory = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : ""
   const scripts = manifest["scripts"]
   const jobs = Object.entries(isRecord(scripts) ? scripts : {}).map(([name, script]) => {
@@ -104,11 +104,11 @@ export const readPackage = (file: string, text: string, runner: Runner): Parsed 
       note(job, "malformed-script", `script ${name} is not text`)
       return job
     }
-    if (longRunning(name, script)) note(job, "long-running", `script ${name} keeps running until it is stopped`)
+    if (keepsRunning(name, script)) note(job, longRunning, `script ${name} keeps running until it is stopped`)
     addStep(job, { where: `script ${name}`, command: `${runner.run} ${shellQuote(name)}`, cwd: directory })
     return job
   })
-  return { jobs, toolchains: directory === "" ? readToolchains(file, manifest) : [] }
+  return { jobs, toolchains: directory === "" ? readToolchains(file, manifest) : [], unsupported: [] }
 }
 
 /**
@@ -164,6 +164,22 @@ export const segmentMatcher = (segment: string): RegExp => new RegExp(`^${segmen
 const clean = (pattern: string): ReadonlyArray<string> =>
   pattern.split("/").filter((segment) => segment !== "" && segment !== ".")
 
+/** A matcher for a whole path. `**` also matches no directories at all. */
+const excludeMatcher = (parts: ReadonlyArray<string>): RegExp => {
+  if (parts.every((part) => part === "**")) return /^.*$/
+  let matcher = ""
+  let started = false
+  for (const part of parts) {
+    if (part === "**") {
+      matcher += started ? "(?:/.*)?" : "(?:.*/)?"
+    } else {
+      matcher += `${started ? "/" : ""}${segmentSource(part)}`
+      started = true
+    }
+  }
+  return new RegExp(`^${matcher}$`)
+}
+
 /**
  * Splits patterns into those to walk and those to subtract. A pattern using
  * braces, classes or `?` is left unread.
@@ -177,10 +193,9 @@ export const readGlobs = (patterns: ReadonlyArray<string>): WorkspaceGlobs => {
   const usable = patterns.filter((pattern) => !unreadable.includes(pattern))
   return {
     include: usable.filter((pattern) => !pattern.startsWith("!")).map(clean),
-    exclude: usable.filter((pattern) => pattern.startsWith("!")).map((pattern) => {
-      const parts = clean(pattern.slice(1)).map((part) => (part === "**" ? ".*" : segmentSource(part)))
-      return new RegExp(`^${parts.join("/")}$`)
-    }),
+    exclude: usable.filter((pattern) => pattern.startsWith("!")).map((pattern) =>
+      excludeMatcher(clean(pattern.slice(1)))
+    ),
     unreadable
   }
 }

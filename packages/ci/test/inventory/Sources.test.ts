@@ -12,7 +12,7 @@ import { repositoryName } from "../../src/inventory/Repository.ts"
 import { hasSecretValue, isLiteralSecret, scrub } from "../../src/inventory/Secrets.ts"
 import { readToolFile, toolFiles } from "../../src/inventory/Toolchains.ts"
 import { readTurbo } from "../../src/inventory/Turbo.ts"
-import { asScalar, asStrings, isRecord, shellQuote } from "../../src/inventory/Values.ts"
+import { asScalar, asStrings, isRecord, normalizeDirectory, shellQuote } from "../../src/inventory/Values.ts"
 
 const bun: Runner = chooseRunner(`{"packageManager":"bun@1.3.0"}`, [])
 const token = `ghp_${"a".repeat(30)}`
@@ -62,7 +62,8 @@ describe("readPackage", () => {
   it("reads a package manager with no version and a package with no scripts", () => {
     expect(readPackage("package.json", `{"packageManager":"npm"}`, bun)).toEqual({
       jobs: [],
-      toolchains: [{ name: "npm", source: "package.json" }]
+      toolchains: [{ name: "npm", source: "package.json" }],
+      unsupported: []
     })
   })
 
@@ -89,9 +90,9 @@ describe("readPackage", () => {
   })
 
   it.each([["{ not json"], ["[1]"]])("reports a malformed file: %s", (text) => {
-    const { jobs } = readPackage("package.json", text, bun)
-    expect(jobs[0]).toMatchObject({ id: "package.json", steps: [] })
-    expect(jobs[0]?.unsupported[0]?.feature).toBe("malformed-file")
+    const { jobs, unsupported } = readPackage("package.json", text, bun)
+    expect(jobs).toEqual([])
+    expect(unsupported[0]?.feature).toBe("malformed-file")
   })
 })
 
@@ -145,6 +146,14 @@ describe("workspace patterns", () => {
     expect(globs.exclude[1]?.test("apps/a/b/old")).toBe(true)
   })
 
+  it("lets ** in an exclusion match no directories", () => {
+    const [both, leading, all] = readGlobs(["!**/test/**", "!**/old", "!**"]).exclude
+    for (const path of ["test", "components/test", "components/test/unit"]) expect(both?.test(path)).toBe(true)
+    expect(both?.test("components/testing")).toBe(false)
+    expect(leading?.test("old")).toBe(true)
+    expect(all?.test("any/path")).toBe(true)
+  })
+
   it("matches one path segment", () => {
     expect(segmentMatcher("plugin-*.x").test("plugin-a.x")).toBe(true)
     expect(segmentMatcher("plugin-*.x").test("plugin-aax")).toBe(false)
@@ -195,8 +204,9 @@ describe("readTurbo", () => {
     ["[]", "it is not a JSON object"],
     ["{}", "it has no tasks"]
   ])("reports %s", (text, reason) => {
-    const { jobs } = readTurbo("turbo.json", text, bun)
-    expect(jobs[0]?.unsupported).toEqual([{ feature: "malformed-file", detail: `turbo.json: ${reason}` }])
+    const { jobs, unsupported } = readTurbo("turbo.json", text, bun)
+    expect(jobs).toEqual([])
+    expect(unsupported).toEqual([{ feature: "malformed-file", detail: `turbo.json: ${reason}` }])
   })
 })
 
@@ -211,6 +221,11 @@ describe("readToolFile", () => {
   ])("reads %s", (file, text, name, version) => {
     expect(toolFiles).toContain(file)
     expect(readToolFile(file, text)).toEqual([{ name, source: file, version }])
+  })
+
+  it("reads a rust-toolchain file written as TOML", () => {
+    expect(readToolFile("rust-toolchain", `[toolchain]\nchannel = "1.82.0"\n`)[0]?.version).toBe("1.82.0")
+    expect(readToolFile("rust-toolchain", `[toolchain]\nprofile = "minimal"\n`)[0]?.version).toBeUndefined()
   })
 
   it("records a tool with no readable version by name", () => {
@@ -250,7 +265,14 @@ describe("secrets", () => {
     ["AKIAABCDEFGHIJKLMNOP"],
     [`npm_${"a".repeat(36)}`],
     ["-----BEGIN RSA PRIVATE KEY-----"],
-    ["postgres://user:hunter2@db.test/app"]
+    ["postgres://user:hunter2@db.test/app"],
+    ["postgres://user:pa$$word@db.test/app"],
+    ["API_TOKEN=abc123"],
+    [`MY_SECRET_VALUE="abc123"`],
+    ["--password=abc123"],
+    ["--token abc123"],
+    ["Authorization: Bearer abc123def"],
+    ["mysql -u root -phunter2"]
   ])("recognises %s", (value) => {
     expect(hasSecretValue(`before ${value} after`)).toBe(true)
     expect(scrub(`before ${value} after`)).toContain("before [withheld]")
@@ -260,7 +282,15 @@ describe("secrets", () => {
   it.each([
     ["task-with-a-very-long-name-that-goes-on"],
     ["postgres://user:$PASSWORD@db.test/app"],
-    ["https://example.test/a:b@c"]
+    ["https://example.test/a:b@c"],
+    ["API_TOKEN=$FROM_SHELL"],
+    [`API_TOKEN="$FROM_SHELL"`],
+    [`API_TOKEN=""`],
+    ["MAX_TOKENS=100"],
+    ["--token $TOKEN"],
+    ["--password-stdin"],
+    ["Authorization: Bearer $TOKEN"],
+    ["mysql -u root -p$PASSWORD"]
   ])("leaves %s alone", (value) => {
     expect(hasSecretValue(value)).toBe(false)
   })
@@ -270,9 +300,23 @@ describe("secrets", () => {
     expect(isLiteralSecret("NODE_AUTH_TOKEN", "abc")).toBe(true)
     expect(isLiteralSecret("API_KEY", "")).toBe(false)
     expect(isLiteralSecret("API_KEY", "$OTHER")).toBe(false)
+    expect(isLiteralSecret("API_KEY", "\${OTHER}")).toBe(false)
+    expect(isLiteralSecret("API_KEY", "\${{ matrix.key }}")).toBe(false)
+    expect(isLiteralSecret("API_KEY", "pa$$word")).toBe(true)
+    expect(isLiteralSecret("PGPASSWORD", "abc")).toBe(true)
+    expect(isLiteralSecret("DB_PASS", "abc")).toBe(true)
+    expect(isLiteralSecret("SIGNING_KEY", "abc")).toBe(true)
+    expect(isLiteralSecret("MYSQL_PWD", "abc")).toBe(true)
+    expect(isLiteralSecret("PWD", "/work")).toBe(false)
     expect(isLiteralSecret("MAX_TOKENS", "100")).toBe(false)
     expect(isLiteralSecret("TOKENIZERS_PARALLELISM", "false")).toBe(false)
     expect(isLiteralSecret("PLAIN", token)).toBe(true)
+  })
+
+  it("withholds the whole body of a private key", () => {
+    const key = "-----BEGIN PRIVATE KEY-----\nMIIEabc\n-----END PRIVATE KEY-----"
+    expect(scrub(`a ${key} b`)).toBe("a [withheld] b")
+    expect(scrub("-----BEGIN PRIVATE KEY-----\nMIIEabc")).toBe("[withheld]")
   })
 
   it("scrubs every string and key of a document and leaves other values", () => {
@@ -304,20 +348,36 @@ describe("drafts", () => {
     ])
   })
 
-  it("makes a job for a problem with a whole file", () => {
-    expect(fileProblem("f", "turbo", "f", "x", "why").jobs[0]).toMatchObject({
-      id: "f",
-      source: "turbo",
+  it("records a problem with a whole file outside any job", () => {
+    expect(fileProblem("f", "x", "why")).toEqual({
+      jobs: [],
+      toolchains: [],
       unsupported: [{ feature: "x", detail: "f: why" }]
     })
+  })
+
+  it("keeps a literal secret by the variable that receives it", () => {
+    const value = job()
+    addStep(value, { where: "w", command: "go", env: new Map([["API_KEY", "abc"]]) })
+    expect(value.steps[0]).toMatchObject({ env: {}, secrets: ["API_KEY"], secretEnv: { API_KEY: "API_KEY" } })
   })
 
   it("assembles parts, keeping each tool once in a stable order and no credential anywhere", () => {
     const named = { ...job(), name: `deploy ${token}` }
     const inventory = assemble("o/r", "abc", [
-      { jobs: [named], toolchains: [{ name: "zig", source: "b" }, { name: "bun", source: "a", version: "1" }] },
-      { jobs: [], toolchains: [{ name: "bun", source: "a", version: "1" }] }
+      {
+        jobs: [named],
+        toolchains: [{ name: "zig", source: "b" }, { name: "bun", source: "a", version: "1" }],
+        unsupported: []
+      },
+      {
+        jobs: [],
+        toolchains: [{ name: "bun", source: "a", version: "1" }],
+        unsupported: [{ feature: "x", detail: `f: ${token}` }]
+      }
     ])
+    expect(inventory.unsupported).toEqual([{ feature: "x", detail: "f: [withheld]" }])
+    expect(assemble("o/r", "abc", []).unsupported).toBeUndefined()
     expect(inventory.toolchains).toEqual([{ name: "bun", source: "a", version: "1" }, { name: "zig", source: "b" }])
     expect(inventory.jobs[0]?.name).toBe("deploy [withheld]")
     expect(inventory).toMatchObject({ version: 1, repository: "o/r", commit: "abc" })
@@ -345,5 +405,14 @@ describe("values", () => {
   it("quotes only what a shell would read differently", () => {
     expect(shellQuote("a/b:c")).toBe("a/b:c")
     expect(shellQuote("it's here")).toBe(`'it'\\''s here'`)
+    expect(shellQuote("#x")).toBe("'#x'")
+    expect(shellQuote("a#x")).toBe("a#x")
+  })
+
+  it("normalizes directories inside the repository", () => {
+    expect(normalizeDirectory("./a//b/../c/")).toBe("a/c")
+    expect(normalizeDirectory(".")).toBe("")
+    expect(normalizeDirectory("/tmp")).toBeUndefined()
+    expect(normalizeDirectory("a/../..")).toBeUndefined()
   })
 })

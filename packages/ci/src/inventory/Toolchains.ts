@@ -10,6 +10,8 @@ const firstLine = (text: string): string | undefined => text.trim().split(/\s/)[
 
 const pattern = (expression: RegExp) => (text: string): string | undefined => expression.exec(text)?.[1]
 
+const channel = pattern(/^\s*channel\s*=\s*"([^"]+)"/m)
+
 const readers: ReadonlyMap<string, readonly [tool: string, read: (text: string) => string | undefined]> = new Map([
   [".nvmrc", ["node", firstLine]],
   [".node-version", ["node", firstLine]],
@@ -18,8 +20,11 @@ const readers: ReadonlyMap<string, readonly [tool: string, read: (text: string) 
   [".ruby-version", ["ruby", firstLine]],
   [".go-version", ["go", firstLine]],
   [".zig-version", ["zig", firstLine]],
-  ["rust-toolchain", ["rust", firstLine]],
-  ["rust-toolchain.toml", ["rust", pattern(/^\s*channel\s*=\s*"([^"]+)"/m)]],
+  ["rust-toolchain", [
+    "rust",
+    (text) => channel(text) ?? (text.trimStart().startsWith("[") ? undefined : firstLine(text))
+  ]],
+  ["rust-toolchain.toml", ["rust", channel]],
   ["go.mod", ["go", pattern(/^go\s+(\S+)/m)]],
   ["build.zig.zon", ["zig", pattern(/\.minimum_zig_version\s*=\s*"([^"]+)"/)]],
   ["flake.nix", ["nix", () => undefined]]

@@ -4,11 +4,12 @@
  * @since 0.1.0
  */
 
-import type { Inventory, Job, Source, Step, Toolchain, Unsupported } from "../contract/Inventory.ts"
+import type { Inventory, Job, Step, Toolchain, Unsupported } from "../contract/Inventory.ts"
 import { hasSecretValue, isLiteralSecret, scrub } from "./Secrets.ts"
 
 /**
- * What one file contributes to an inventory.
+ * What one file contributes to an inventory. `unsupported` holds what belongs
+ * to the file and to no job.
  *
  * @category models
  * @since 0.1.0
@@ -16,6 +17,7 @@ import { hasSecretValue, isLiteralSecret, scrub } from "./Secrets.ts"
 export interface Parsed {
   readonly jobs: ReadonlyArray<Job>
   readonly toolchains: ReadonlyArray<Toolchain>
+  readonly unsupported: ReadonlyArray<Unsupported>
 }
 
 /**
@@ -57,6 +59,7 @@ export const note = (job: Draft, feature: string, reason: string): void => {
 
 /**
  * One command to add to a job. `where` names it in anything recorded about it.
+ * `secretEnv` maps a variable to the secret it receives.
  *
  * @category models
  * @since 0.1.0
@@ -67,13 +70,14 @@ export interface StepInput {
   readonly cwd?: string
   readonly env?: ReadonlyMap<string, string>
   readonly secrets?: ReadonlyArray<string>
+  readonly secretEnv?: ReadonlyMap<string, string>
   readonly name?: string | undefined
 }
 
 /**
  * Adds a step numbered after the steps before it. A command holding a value
- * shaped like a credential is not added, and such an environment value is kept
- * by name only.
+ * shaped like a credential is not added. A variable holding one is kept by
+ * name, as a secret that variable receives.
  *
  * @category mutations
  * @since 0.1.0
@@ -84,10 +88,10 @@ export const addStep = (job: Draft, input: StepInput): void => {
   if (command === "") return note(job, "empty-command", `${input.where} has no command`)
   if (hasSecretValue(command)) return note(job, "secret-value", `${input.where} holds a value shaped like a secret`)
   const env: Array<[string, string]> = []
-  const secrets = new Set(input.secrets)
+  const secretEnv = new Map(input.secretEnv)
   for (const [name, value] of input.env ?? []) {
     if (isLiteralSecret(name, value)) {
-      secrets.add(name)
+      secretEnv.set(name, name)
       note(job, "secret-value", `${input.where} sets ${name} to a literal value; only its name is kept`)
     } else {
       env.push([name, value])
@@ -98,24 +102,24 @@ export const addStep = (job: Draft, input: StepInput): void => {
     command,
     cwd: input.cwd ?? "",
     env: Object.fromEntries(env),
-    secrets: [...secrets],
+    secrets: [...new Set([...(input.secrets ?? []), ...secretEnv.values()])],
+    ...(secretEnv.size === 0 ? {} : { secretEnv: Object.fromEntries(secretEnv) }),
     ...(input.name === undefined ? {} : { name: input.name })
   })
 }
 
 /**
- * A job standing for a whole file that could not be read as jobs, so the
- * reason has a place in the inventory.
+ * What a file adds when all it can add is a reason it was not read.
  *
  * @category constructors
  * @since 0.1.0
  * @throws {never}
  */
-export const fileProblem = (id: string, source: Source, file: string, feature: string, reason: string): Parsed => {
-  const job = draft({ id, source, file, name: id })
-  note(job, feature, reason)
-  return { jobs: [job], toolchains: [] }
-}
+export const fileProblem = (file: string, feature: string, reason: string): Parsed => ({
+  jobs: [],
+  toolchains: [],
+  unsupported: [{ feature, detail: `${file}: ${reason}` }]
+})
 
 /**
  * Joins what each file contributed: jobs in reading order, each tool and file
@@ -131,11 +135,13 @@ export const assemble = (repository: string, commit: string, parts: ReadonlyArra
   for (const tool of parts.flatMap((part) => part.toolchains)) {
     toolchains.set(JSON.stringify([tool.name, tool.source, tool.version]), tool)
   }
+  const unsupported = parts.flatMap((part) => part.unsupported)
   return scrub({
     version: 1,
     repository,
     commit,
     toolchains: [...toolchains.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, tool]) => tool),
-    jobs: parts.flatMap((part) => part.jobs)
+    jobs: parts.flatMap((part) => part.jobs),
+    ...(unsupported.length === 0 ? {} : { unsupported })
   })
 }

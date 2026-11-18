@@ -9,7 +9,6 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import type { Source } from "../contract/Inventory.ts"
 import type { Failure, ReadInventory } from "../contract/Parts.ts"
 import { assemble, fileProblem, type Parsed } from "./Draft.ts"
 import { readWorkflow } from "./GithubActions.ts"
@@ -42,6 +41,8 @@ interface Tree {
   readonly path: Path.Path
   readonly root: string
 }
+
+const nothing: Parsed = { jobs: [], toolchains: [], unsupported: [] }
 
 const notARepository = (root: string): Failure => ({
   code: "not-a-repository",
@@ -76,12 +77,10 @@ effect function optional(tree: Tree, file: string) {
 }
 
 /** Reads one file with `read`; a file that exists and cannot be read is recorded. */
-effect function readWith(tree: Tree, id: string, source: Source, file: string, read: (text: string) => Parsed) {
+effect function readWith(tree: Tree, file: string, read: (text: string) => Parsed): Parsed!! {
   const loaded = try load(tree, file)
   if (loaded.kind === "text") return read(loaded.text)
-  return loaded.kind === "absent"
-    ? { jobs: [], toolchains: [] }
-    : fileProblem(id, source, file, "unreadable-file", loaded.reason)
+  return loaded.kind === "absent" ? nothing : fileProblem(file, "unreadable-file", loaded.reason)
 }
 
 effect function isDirectory(tree: Tree, directory: string) {
@@ -132,7 +131,7 @@ effect function readWorkflows(tree: Tree) {
   for (const name of try list(tree, directory)) {
     if (/\.ya?ml$/.test(name)) {
       const file = `${directory}/${name}`
-      parts.push(try readWith(tree, name, "github-actions", file, (text) => readWorkflow(file, text)))
+      parts.push(try readWith(tree, file, (text) => readWorkflow(file, text)))
     }
   }
   return parts
@@ -143,9 +142,9 @@ effect function readPackages(tree: Tree, rootText: string | undefined, runner: R
   const globs = readGlobs(readWorkspacePatterns(rootText, pnpm))
   const parts: Array<Parsed> = []
   const packageFile = "package.json"
-  parts.push(try readWith(tree, packageFile, "package-json", packageFile, (text) => readPackage(packageFile, text, runner)))
+  parts.push(try readWith(tree, packageFile, (text) => readPackage(packageFile, text, runner)))
   for (const pattern of globs.unreadable) {
-    parts.push(fileProblem(`workspace:${pattern}`, "package-json", packageFile, "workspace-pattern", `pattern ${pattern} was not read`))
+    parts.push(fileProblem(packageFile, "workspace-pattern", `pattern ${pattern} was not read`))
   }
   const directories = new Set<string>()
   for (const pattern of globs.include) {
@@ -155,11 +154,11 @@ effect function readPackages(tree: Tree, rootText: string | undefined, runner: R
   }
   for (const directory of [...directories].sort()) {
     const file = `${directory}/package.json`
-    parts.push(try readWith(tree, file, "package-json", file, (text) => readPackage(file, text, runner)))
+    parts.push(try readWith(tree, file, (text) => readPackage(file, text, runner)))
     const hasTurbo = tree.fs.exists(tree.path.join(tree.root, directory, "turbo.json")) catch () => false
     if (hasTurbo) {
       const turbo = `${directory}/turbo.json`
-      parts.push(fileProblem(turbo, "turbo", turbo, "package-turbo", "its changes to the root tasks were not read"))
+      parts.push(fileProblem(turbo, "package-turbo", "its changes to the root tasks were not read"))
     }
   }
   return parts
@@ -179,13 +178,18 @@ export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProces
   const commit = try git(root, ["rev-parse", "--verify", "HEAD"])
   if (commit === "") throw notARepository(root)
   const remote = try git(root, ["remote", "get-url", "origin"])
+  const changes = try git(root, ["status", "--porcelain"])
   const tree: Tree = { fs, path, root }
   const rootFiles = try list(tree, "")
 
-  const parts: Array<Parsed> = [...try readWorkflows(tree)]
+  // The files are read from the working tree, which may not be what `commit` holds.
+  const parts: Array<Parsed> = changes === ""
+    ? []
+    : [{ ...nothing, unsupported: [{ feature: "uncommitted-changes", detail: `the working tree differs from ${commit}` }] }]
+  parts.push(...try readWorkflows(tree))
   for (const name of rootFiles) {
     if (/^\.?justfile$/i.test(name)) {
-      parts.push(try readWith(tree, "justfile", "justfile", name, (text) => readJustfile(name, text)))
+      parts.push(try readWith(tree, name, (text) => readJustfile(name, text)))
     }
   }
 
@@ -193,11 +197,11 @@ export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProces
   const runner = chooseRunner(manifest, rootFiles)
   parts.push(...try readPackages(tree, manifest, runner))
   for (const name of ["turbo.json", "turbo.jsonc"]) {
-    parts.push(try readWith(tree, name, "turbo", name, (text) => readTurbo(name, text, runner)))
+    parts.push(try readWith(tree, name, (text) => readTurbo(name, text, runner)))
   }
   for (const name of toolFiles) {
     const text = rootFiles.includes(name) ? try optional(tree, name) : undefined
-    if (text !== undefined) parts.push({ jobs: [], toolchains: readToolFile(name, text) })
+    if (text !== undefined) parts.push({ ...nothing, toolchains: readToolFile(name, text) })
   }
   return assemble(repositoryName(remote, path.basename(path.resolve(root))), commit, parts)
 }

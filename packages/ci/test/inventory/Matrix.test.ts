@@ -69,6 +69,32 @@ describe("expandMatrix", () => {
     expect(matrix.problem).toContain(problem)
   })
 
+  it("compares nested values whatever order their fields are written in", () => {
+    const node = { a: 1, b: 2, c: 3 }
+    expect(expandMatrix({ node: [node], include: [{ node: { c: 3, b: 2, a: 1 }, extra: 1 }] }).variants).toEqual([
+      { "node.a": "1", "node.b": "2", "node.c": "3", extra: "1" }
+    ])
+  })
+
+  it("does not merge an include entry that changes a nested value", () => {
+    expect(expandMatrix({ node: [{ version: 20 }], include: [{ node: { other: 1 } }] }).variants).toEqual([
+      { "node.version": "20" },
+      { "node.other": "1" }
+    ])
+    expect(expandMatrix({ node: [{ version: 20 }], include: [{ node: { version: 20 }, extra: 1 }] }).variants).toEqual([
+      { "node.version": "20", extra: "1" }
+    ])
+  })
+
+  it.each([
+    [{ include: [{ API_TOKEN: "abc123" }] }],
+    [{ login: [{ password: "abc123" }] }]
+  ])("withholds a matrix holding a secret by name: %j", (raw) => {
+    const matrix = expandMatrix(raw)
+    expect(matrix.variants).toEqual([])
+    expect(matrix.problem).toBe("it holds a value named like a secret")
+  })
+
   it("refuses more variants than GitHub allows", () => {
     const values = Array.from({ length: 17 }, (_, index) => index)
     expect(expandMatrix({ a: values, b: values }).problem).toBe("it has over 256 variants")
