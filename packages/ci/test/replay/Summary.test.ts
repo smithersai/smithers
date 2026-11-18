@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { type Ci, ci, type Job, longRunning } from "../../src/contract/Inventory.ts"
+import { type Ci, ci, type Inventory, type Job, longRunning } from "../../src/contract/Inventory.ts"
 import type { RunRecord, TargetResult } from "../../src/contract/RunRecord.ts"
 import type { TargetMap } from "../../src/contract/TargetMap.ts"
 import {
@@ -8,22 +8,25 @@ import {
   choose,
   cycleIn,
   firstAttempt,
+  flakyOf,
   groupByJob,
   isBlocked,
   jobsFor,
   labelsOf,
   maxReruns,
   mismatchesOf,
+  nothingToReplay,
   planOfPrinted,
   predictedSafe,
   recordOf,
   recovered,
+  replayable,
   reportOf,
   selectionOf,
   splitOf,
+  stepKey,
   targetsOf,
   totalsOf,
-  unitsOf,
   withoutCredentials
 } from "../../src/replay/Summary.ts"
 
@@ -65,14 +68,25 @@ const failed = (label: string): TargetResult => ({
 })
 const record = (results: ReadonlyArray<TargetResult>): RunRecord => recordOf(results, "c", 10, "normal")
 
-describe("unitsOf", () => {
-  const map = (
-    entries: ReadonlyArray<readonly [string, string, Readonly<Record<string, string>>, string]>
-  ): TargetMap => ({
-    version: 1,
-    targets: entries.map(([job, step, variant, label]) => ({ job, step, variant, label }))
-  })
+type Entries = ReadonlyArray<readonly [string, string, Readonly<Record<string, string>>, string]>
+const map = (entries: Entries): TargetMap => ({
+  version: 1,
+  targets: entries.map(([job, step, variant, label]) => ({ job, step, variant, label }))
+})
+/** A target for every step of every variant, named after the step and the variant's values. */
+const mapAll = (inventory: Ci): TargetMap =>
+  map(
+    inventory.jobs.flatMap((entry) =>
+      (entry.matrix.length === 0 ? [{}] : entry.matrix).flatMap((variant) =>
+        entry.steps.map((each) =>
+          [entry.id, each.id, variant, `//:${[each.id, ...Object.values(variant)].join("-")}`] as const
+        )
+      )
+    )
+  )
+const unitsOf = (inventory: Ci, targets: TargetMap = mapAll(inventory)) => replayable(inventory, targets, "linux").units
 
+describe("replayable", () => {
   it("makes a unit of every job the CI holds, and of no other", () => {
     const units = unitsOf(
       inventory([
@@ -82,63 +96,160 @@ describe("unitsOf", () => {
         job("cron", { triggers: ["schedule"] }),
         job("dev", { unsupported: [{ feature: longRunning, detail: "a server" }] }),
         job("after-dev", { needs: ["dev"] })
-      ]),
-      map([])
+      ])
     )
     expect(units.map((unit) => unit.job)).toEqual(["push", "pr"])
     expect(units[1]?.needs).toEqual(["push"])
+    expect(units.map((unit) => unit.tree)).toEqual([undefined, undefined])
   })
 
   it("runs a job once per matrix variant with its values filled in, and finds each target", () => {
-    const os = {
+    const size = {
       id: "s",
-      command: "echo ${{ matrix.os }}",
-      cwd: "${{ matrix.os }}",
-      env: { WHERE: "${{matrix.os}}" },
+      command: "echo ${{ matrix.size }}",
+      cwd: "${{ matrix.size }}",
+      env: { WHERE: "${{matrix.size}}" },
       secrets: []
     }
-    const [one, two] = unitsOf(
-      inventory([job("m", { matrix: [{ os: "linux" }, { os: "mac" }], steps: [os] })]),
-      map([["m", "s", { os: "linux" }, "//:linux"]])
-    )
+    const [one, two] = unitsOf(inventory([job("m", { matrix: [{ size: "small" }, { size: "big" }], steps: [size] })]))
     expect(one?.steps[0]).toEqual({
       id: "s",
-      label: "//:linux",
-      targets: ["//:linux"],
-      command: "echo linux",
-      cwd: "linux",
-      env: { WHERE: "linux" }
+      label: "//:s-small",
+      targets: ["//:s-small"],
+      command: "echo small",
+      cwd: "small",
+      env: { WHERE: "small" }
     })
-    expect(two?.steps[0]).toMatchObject({ label: undefined, targets: [], command: "echo mac" })
+    expect(two?.steps[0]).toMatchObject({ label: "//:s-big", targets: ["//:s-big"], command: "echo big" })
   })
 
   it("compares a split step under its own id, and runs every target it became", () => {
     const units = unitsOf(
-      inventory([job("j", { steps: [step("whole", "true"), step("split", "true"), step("none", "true")] })]),
+      inventory([job("j", { steps: [step("whole", "true"), step("split", "true")] })]),
       map([["j", "whole", {}, "//:whole"], ["j", "split", {}, "//:split-a"], ["j", "split", {}, "//:split-b"]])
     )
     expect(units[0]!.steps.map((entry) => [entry.label, entry.targets])).toEqual([
       ["//:whole", ["//:whole"]],
-      ["split", ["//:split-a", "//:split-b"]],
-      [undefined, []]
+      ["split", ["//:split-a", "//:split-b"]]
     ])
     expect(labelsOf(units[0]!, undefined)).toEqual(["//:whole", "split"])
     expect(targetsOf(units)).toEqual(["//:whole", "//:split-a", "//:split-b"])
     expect([...splitOf(units)]).toEqual([["split", ["//:split-a", "//:split-b"]]])
   })
 
+  it("compares a split step of a matrix job under a name for each variant, with that variant's targets", () => {
+    const variants = [{ suite: "one", node: "22" }, { node: "22", suite: "two" }]
+    const units = unitsOf(
+      inventory([job("j", { matrix: variants, steps: [step("s", "true")] })]),
+      map(
+        variants.flatMap((variant) =>
+          ["a", "b"].map((name) => ["j", "s", variant, `//:s-${name}--${variant.suite}`] as const)
+        )
+      )
+    )
+    expect(stepKey("s", {})).toBe("s")
+    expect(units.map((unit) => unit.steps[0]!.label)).toEqual(["s (node=22, suite=one)", "s (node=22, suite=two)"])
+    expect([...splitOf(units)]).toEqual([
+      ["s (node=22, suite=one)", ["//:s-a--one", "//:s-b--one"]],
+      ["s (node=22, suite=two)", ["//:s-a--two", "//:s-b--two"]]
+    ])
+    // The hidden failure of review finding 7: variant one's target fails, and only variant one's step differs.
+    const baseline = record(units.map((unit) => ran(unit.steps[0]!.label)))
+    const normal = record([failed("//:s-a--one"), ran("//:s-b--one"), ran("//:s-a--two"), ran("//:s-b--two")])
+    expect(mismatchesOf("normal", baseline, normal, splitOf(units))).toEqual([
+      { label: "s (node=22, suite=one)", mode: "normal", baseline: "pass", got: "fail" }
+    ])
+  })
+
   it("groups a job's variants", () => {
-    const units = unitsOf(inventory([job("m", { matrix: [{ a: "1" }, { a: "2" }] }), job("n")]), map([]))
+    const units = unitsOf(inventory([job("m", { matrix: [{ a: "1" }, { a: "2" }] }), job("n")]))
     expect(groupByJob(units).map((group) => [group.job, group.units.length])).toEqual([["m", 2], ["n", 1]])
   })
 
-  it("lists a unit's target labels, limited to the wanted ones", () => {
-    const [unit] = unitsOf(
-      inventory([job("j", { steps: [step("a", "true"), step("b", "true"), step("c", "true")] })]),
-      map([["j", "a", {}, "//:a"], ["j", "b", {}, "//:b"]])
-    )
+  it("lists a unit's comparison names, limited to the wanted ones", () => {
+    const [unit] = unitsOf(inventory([job("j", { steps: [step("a", "true"), step("b", "true")] })]))
     expect(labelsOf(unit!, undefined)).toEqual(["//:a", "//:b"])
     expect(labelsOf(unit!, new Set(["//:b"]))).toEqual(["//:b"])
+  })
+
+  it("leaves out a job with a step that has no target, and every job that needs it", () => {
+    const narrowed = inventory([
+      job("x", { steps: [step("x1", "true"), step("x2", "true")] }),
+      job("after-x", { needs: ["x"] }),
+      job("last", { needs: ["after-x", "plain", "gone"] }),
+      job("plain"),
+      job("m", { matrix: [{ a: "1" }, { a: "2" }] }),
+      job("loop", { needs: ["loop"] })
+    ])
+    const targets = mapAll(narrowed).targets.filter((entry) => entry.step !== "x2" && entry.label !== "//:m1-2")
+    const { left, units } = replayable(narrowed, { version: 1, targets }, "linux")
+    expect(units.map((unit) => unit.job)).toEqual(["plain", "loop"])
+    expect(left).toEqual([
+      { job: "x", reasons: [{ feature: "no-target", detail: "x2 has no target" }] },
+      { job: "after-x", reasons: [{ feature: "needs", detail: "after-x needs x, which is not replayed" }] },
+      { job: "last", reasons: [{ feature: "needs", detail: "last needs after-x, which is not replayed" }] },
+      { job: "m", reasons: [{ feature: "no-target", detail: "m1 (a=2) has no target" }] }
+    ])
+    expect(nothingToReplay(left)).toBe([
+      "no CI step that runs on a change has a target on this machine",
+      "  x        no-target",
+      "  after-x  needs",
+      "  last     needs",
+      "  m        no-target"
+    ].join("\n"))
+    expect(nothingToReplay([])).toBe("no CI step that runs on a change has a target on this machine")
+  })
+
+  it("leaves out a variant for another system, and a job with no variant for this one", () => {
+    const narrowed = inventory([
+      job("both", { runsOn: "${{ matrix.os }}", matrix: [{ os: "ubuntu-latest" }, { os: "macos-latest" }] }),
+      job("mac", { runsOn: "macos-15" }),
+      job("after-mac", { needs: ["mac"] }),
+      job("after-both", { needs: ["both"] }),
+      job("self", { runsOn: "self-hosted,gpu" }),
+      job("windows", { runsOn: "windows-latest" })
+    ])
+    // The generator makes no target Smithers build would run here for another system; the map may still name one.
+    const on = (host: string) => replayable(narrowed, mapAll(narrowed), host)
+    expect(on("linux").units.map((unit) => [unit.job, unit.steps[0]!.label])).toEqual([
+      ["both", "//:both1-ubuntu-latest"],
+      ["after-both", "//:after-both1"],
+      ["self", "//:self1"]
+    ])
+    expect(on("linux").left).toEqual([
+      {
+        job: "both",
+        reasons: [{ feature: "other-system", detail: "both (os=macos-latest) runs on darwin; this machine is linux" }]
+      },
+      { job: "mac", reasons: [{ feature: "other-system", detail: "mac runs on darwin; this machine is linux" }] },
+      { job: "after-mac", reasons: [{ feature: "needs", detail: "after-mac needs mac, which is not replayed" }] },
+      { job: "windows", reasons: [{ feature: "other-system", detail: "windows runs on win32; this machine is linux" }] }
+    ])
+    expect(on("darwin").units.map((unit) => unit.job)).toEqual(["both", "mac", "after-mac", "after-both", "self"])
+    expect(on("darwin").left.map((entry) => entry.job)).toEqual(["both", "windows"])
+    // A variant for another system needs no target to be left out as that, not as `no-target`.
+    const none = replayable(narrowed, map([]), "linux")
+    expect(none.units).toEqual([])
+    expect(none.left.find((entry) => entry.job === "mac")?.reasons[0]?.feature).toBe("other-system")
+    expect(none.left.find((entry) => entry.job === "both")?.reasons.map((reason) => reason.feature)).toEqual([
+      "no-target"
+    ])
+  })
+
+  it("puts the jobs of one Justfile in the order they run, in one tree, after the jobs with a checkout of their own", () => {
+    const recipe = (id: string, needs: ReadonlyArray<string> = []) =>
+      job(id, { source: "justfile", file: "Justfile", needs: [...needs], triggers: [] })
+    const narrowed = inventory([
+      recipe("justfile:ci", ["justfile:build", "justfile:test"]),
+      recipe("justfile:test", ["justfile:build"]),
+      recipe("justfile:build")
+    ])
+    const units = unitsOf(narrowed)
+    expect(units.map((unit) => [unit.job, unit.tree])).toEqual([
+      ["justfile:build", "Justfile"],
+      ["justfile:test", "Justfile"],
+      ["justfile:ci", "Justfile"]
+    ])
   })
 })
 
@@ -303,9 +414,16 @@ describe("mismatchesOf", () => {
       )
     })
 
-    it("counts a target that was never reported as skipped", () => {
+    it("differs when the mode never reported one of its targets, whatever the others say", () => {
       expect(mismatchesOf("normal", record([ran("s")]), record([]), split)).toEqual(mismatch("pass", "skipped"))
-      expect(mismatchesOf("normal", record([ran("s")]), record([ran("a")]), split)).toEqual([])
+      expect(mismatchesOf("normal", record([ran("s")]), record([ran("a")]), split)).toEqual(
+        mismatch("pass", "skipped")
+      )
+      expect(mismatchesOf("normal", record([failed("s")]), record([failed("a")]), split)).toEqual(
+        mismatch("fail", "skipped")
+      )
+      // A target that was reported as skipped behind a failure is not missing.
+      expect(mismatchesOf("normal", record([failed("s")]), record([failed("a"), blocked("b", "a")]), split)).toEqual([])
     })
 
     it("forgives predicted-safe skips unless the baseline failed and no target that ran shows it", () => {
@@ -323,6 +441,33 @@ describe("mismatchesOf", () => {
       expect(mismatchesOf("fast", record([failed("s")]), record([predictedSafe("a"), predictedSafe("b")]), split))
         .toEqual(fast("fail", "skipped"))
     })
+  })
+
+  it("lets pass and flaky agree, in either direction, and counts flaky verdicts apart", () => {
+    const flaky = (label: string) => addRerun(firstAttempt(failed(label)), ran(label))
+    const hit: TargetResult = { label: "a", status: "hit", key: "k", durationMs: 0 }
+    expect(mismatchesOf("normal", record([flaky("a")]), record([ran("a")]))).toEqual([])
+    expect(mismatchesOf("normal", record([flaky("a")]), record([hit]))).toEqual([])
+    expect(mismatchesOf("normal", record([ran("a")]), record([flaky("a")]))).toEqual([])
+    expect(mismatchesOf("normal", record([flaky("a")]), record([flaky("a")]))).toEqual([])
+    // Flaky never agrees with a failure or a skip.
+    expect(mismatchesOf("normal", record([flaky("a")]), record([failed("a")]))).toEqual([
+      { label: "a", mode: "normal", baseline: "flaky", got: "fail" }
+    ])
+    expect(mismatchesOf("normal", record([failed("a")]), record([flaky("a")]))).toEqual([
+      { label: "a", mode: "normal", baseline: "fail", got: "flaky" }
+    ])
+    expect(mismatchesOf("normal", record([flaky("a")]), record([blocked("a", "b")]))).toEqual([
+      { label: "a", mode: "normal", baseline: "flaky", got: "skipped" }
+    ])
+    expect(mismatchesOf("normal", record([blocked("a", "b")]), record([flaky("a")]))).toEqual([
+      { label: "a", mode: "normal", baseline: "skipped", got: "flaky" }
+    ])
+    // A split step with a flaky target agrees with a step that passed, and with a flaky step.
+    const split = new Map([["s", ["a", "b"]]])
+    expect(mismatchesOf("normal", record([ran("s")]), record([flaky("a"), ran("b")]), split)).toEqual([])
+    expect(mismatchesOf("fast", record([flaky("s")]), record([ran("a"), predictedSafe("b")]), split)).toEqual([])
+    expect(flakyOf([record([flaky("a"), ran("b"), failed("c")]), record([flaky("a")]), record([])])).toBe(2)
   })
 
   it("ignores a target only the mode has", () => {
@@ -352,28 +497,45 @@ describe("reportOf", () => {
     counts: { hit: 0, ran: 1, failed: 0, skipped: 0 }
   })
   const entry = { commit: "c", changedFiles: 1, baseline: totals(30), normal: totals(10), mismatches: [] }
+  const read: Inventory = { version: 1, repository: "r", commit: "c", toolchains: [], jobs: [] }
+  const nothing = { left: [], flaky: 0 }
 
   it("divides baseline wall time by normal-mode wall time", () => {
-    const report = reportOf("r", [entry, entry], undefined, [])
+    const report = reportOf(read, [entry, entry], nothing)
     expect(report.notReplayed).toBeUndefined()
-    expect(report).toMatchObject({ baselineWallMs: 60, normalWallMs: 20, speedup: 3, mismatches: 0 })
+    expect(report.notRead).toBeUndefined()
+    expect(report).toMatchObject({
+      repository: "r",
+      baselineWallMs: 60,
+      normalWallMs: 20,
+      speedup: 3,
+      mismatches: 0,
+      flaky: 0
+    })
     expect(report.fastWallMs).toBeUndefined()
   })
 
   it("is 0 when nothing ran, and sums fast mode when it ran", () => {
-    expect(reportOf("r", [], undefined, []).speedup).toBe(0)
+    expect(reportOf(read, [], nothing).speedup).toBe(0)
     const metrics = selectionOf([], new Map())
-    expect(reportOf("r", [{ ...entry, fast: totals(4) }, entry], metrics, [])).toMatchObject({
+    expect(reportOf(read, [{ ...entry, fast: totals(4) }, entry], { ...nothing, selection: metrics })).toMatchObject({
       fastWallMs: 4,
       selection: metrics
     })
   })
 
-  it("lists the CI jobs that were left out", () => {
+  it("lists the CI jobs that were left out, and counts the flaky verdicts", () => {
     const left = [
       { job: "deploy", reasons: [{ feature: "secret-env", detail: "a" }, { feature: "secret-env", detail: "b" }] },
       { job: "after", reasons: [{ feature: "condition", detail: "c" }, { feature: "needs", detail: "d" }] }
     ]
-    expect(reportOf("r", [entry], undefined, left).notReplayed).toEqual(left)
+    expect(reportOf(read, [entry], { left, flaky: 3 })).toMatchObject({ notReplayed: left, flaky: 3 })
+  })
+
+  it("lists what the inventory could not read, but not the workspace file it found", () => {
+    const unread = { feature: "malformed-file", detail: ".github/workflows/tests.yml: BAD_INDENT at line 3" }
+    const own = { feature: "smithers-build", detail: "WORKSPACE.ts" }
+    expect(reportOf({ ...read, unsupported: [own, unread] }, [entry], nothing).notRead).toEqual([unread])
+    expect(reportOf({ ...read, unsupported: [own] }, [entry], nothing).notRead).toBeUndefined()
   })
 })

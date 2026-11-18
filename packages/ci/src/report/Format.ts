@@ -107,6 +107,23 @@ export const bar = (value: number, max: number, width: number): string => {
 export const leftOut = (jobs: number): string => jobs === 0 ? "" : ` · ${count(jobs, "job")} not replayed`
 
 /**
+ * How many verdicts were flaky, or nothing when none was. They stand beside
+ * the mismatches and are not among them: a flaky step passed in the end.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const flaky = (verdicts: number): string => verdicts === 0 ? "" : ` · ${verdicts} flaky`
+
+/**
+ * How many things the inventory could not read, or nothing when it read all.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const unread = (entries: number): string => entries === 0 ? "" : ` · ${entries} not read`
+
+/**
  * Why a job was left out: each feature once, in the order found.
  *
  * @category formatting

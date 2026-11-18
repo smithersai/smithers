@@ -1,12 +1,12 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { existsSync, rmSync } from "node:fs"
+import { existsSync, readdirSync, rmSync } from "node:fs"
 import { join, relative } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { path as targetMapPath } from "../../src/contract/TargetMap.ts"
+import { path as targetMapPath, type TargetMap } from "../../src/contract/TargetMap.ts"
 import { Options, run } from "../../src/replay/index.ts"
 import {
   job,
@@ -113,7 +113,11 @@ describe("a replay that cannot run", () => {
   it("is unsupported when no step has a target", async () => {
     const root = track(makeSmallRepository(passing))
     const files: Parts["files"] = (inventory) => Effect.succeed(generated(inventory, () => false))
-    expect(await failureOf(replay(root, { files }))).toMatchObject({ code: "unsupported" })
+    expect(await failureOf(replay(root, { files }))).toEqual({
+      code: "unsupported",
+      part: "replay",
+      message: "no CI step that runs on a change has a target on this machine\n  a  no-target"
+    })
   })
 
   it("refuses a generated file outside the repository and writes nothing there", async () => {
@@ -174,9 +178,20 @@ describe("a replay that runs", () => {
   it("does not wait for a process a step leaves running", async () => {
     // The process outlives this test, so waiting for its pipe to close would time the test out.
     const root = track(makeSmallRepository([job("x", "sleep 240 & exit 0"), ...passing]))
-    const files: Parts["files"] = (inventory) => Effect.succeed(generated(inventory, (entry) => entry.step !== "x0"))
+    // Only the baseline runs the step: the target map names the other job's target for it.
+    const files: Parts["files"] = (inventory) =>
+      Effect.succeed(
+        generated(inventory).map((file) => {
+          if (file.path !== targetMapPath) return file
+          const map = JSON.parse(file.content) as TargetMap
+          const targets = map.targets.map((entry) => entry.step === "x0" ? { ...entry, label: "//:a0_0" } : entry)
+          return { ...file, content: JSON.stringify({ ...map, targets }) }
+        })
+      )
     const report = await replay(root, { files })
-    expect(report.commits[0]?.baseline.ok).toBe(true)
+    expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
+    expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+    expect(report.mismatches).toBe(0)
   }, 200_000)
 
   it("uses the default fast-mode settings when the request gives none, and gives rows the commit's plan", async () => {
@@ -219,18 +234,78 @@ describe("a replay that runs", () => {
     expect(failure.message).toContain("printed no plan")
   }, 120_000)
 
-  it("runs a step with no target but gives it no verdict, and it still stops its job", async () => {
+  it("does not replay a job with a step that has no target, nor a job that needs it, and lists both", async () => {
+    const out = track(makeEmptyDirectory())
     const root = track(makeSmallRepository([
-      job("x", "true", { more: ["sh a.sh"] }),
-      job("y", "exit 1", { more: ["sh a.sh", "true"] })
+      job("x", `touch ${out}/x-ran`, { more: ["sh a.sh"] }),
+      job("after", `touch ${out}/after-ran`, { needs: ["x"] }),
+      job("y", "sh a.sh")
     ]))
-    const files: Parts["files"] = (inventory) =>
-      Effect.succeed(generated(inventory, (entry) => !["x0", "y0", "y2"].includes(entry.step)))
-    const [commit] = (await replay(root, { files })).commits
-    expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 1 })
-    // The target for y's second step depends on y0, which fails, so normal mode skips it too.
-    expect(commit?.normal.counts.skipped).toBe(1)
-    expect(commit?.mismatches).toEqual([])
+    const recording = recordingSmthrs(false)
+    track(recording.directory)
+    const files: Parts["files"] = (inventory) => Effect.succeed(generated(inventory, (entry) => entry.step !== "x0"))
+    const report = await replay(root, { files }, {}, withCommand(recording.command) as never)
+    // Review finding 8: the step ran and was timed in the baseline only, and its failure was in no count.
+    expect(existsSync(join(out, "x-ran"))).toBe(false)
+    expect(existsSync(join(out, "after-ran"))).toBe(false)
+    expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+    expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+    expect(recording.commands().filter((line) => line.startsWith("ci "))[0]).toMatch(/^ci \/\/:y0_0 --workspace /)
+    expect(report.notReplayed).toEqual([
+      { job: "x", reasons: [{ feature: "no-target", detail: "x0 has no target" }] },
+      { job: "after", reasons: [{ feature: "needs", detail: "after needs x, which is not replayed" }] }
+    ])
+  }, 120_000)
+
+  it("does not run a job for another operating system, in the baseline or as a target, and lists it", async () => {
+    const out = track(makeEmptyDirectory())
+    const elsewhere = process.platform === "darwin" ? "ubuntu-latest" : "macos-latest"
+    const here = process.platform === "darwin" ? "macos-latest" : "ubuntu-latest"
+    const both = {
+      ...job("both", `touch ${out}/\${{ matrix.os }}`),
+      runsOn: "${{ matrix.os }}",
+      matrix: [{ os: here }, { os: elsewhere }]
+    }
+    const root = track(makeSmallRepository([both, { ...job("other", `touch ${out}/other`), runsOn: elsewhere }]))
+    const recording = recordingSmthrs(false)
+    track(recording.directory)
+    const report = await replay(root, {}, {}, withCommand(recording.command) as never)
+    // Review finding 11: the baseline ran the other system's variant here, and Smithers build then refused its target.
+    expect(readdirSync(out)).toEqual([here])
+    expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+    expect(recording.commands().filter((line) => line.startsWith("ci "))[0]).toMatch(/^ci \/\/:both0_0 --workspace /)
+    const system = process.platform === "darwin" ? "linux" : "darwin"
+    expect(report.notReplayed).toEqual([
+      {
+        job: "both",
+        reasons: [{
+          feature: "other-system",
+          detail: `both (os=${elsewhere}) runs on ${system}; this machine is ${process.platform}`
+        }]
+      },
+      {
+        job: "other",
+        reasons: [{ feature: "other-system", detail: `other runs on ${system}; this machine is ${process.platform}` }]
+      }
+    ])
+  }, 120_000)
+
+  it("lists a job with no command and a file that was not read, beside the jobs it replays", async () => {
+    const upload = { feature: "host-action", detail: "ci.yml: actions/upload-artifact@v4 has no command to run" }
+    const root = track(
+      makeSmallRepository([...passing, { ...job("package", "true"), steps: [], unsupported: [upload] }])
+    )
+    const unread = { feature: "malformed-file", detail: ".github/workflows/tests.yml: BAD_INDENT at line 3" }
+    const read: Parts["read"] = (copy) =>
+      Effect.map(base.read(copy), (inventory) => ({ ...inventory, unsupported: [unread] }))
+    const report = await replay(root, { read })
+    // Review finding 15: the report read as covering the whole CI; one of two jobs ran and a workflow was not read.
+    expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+    expect(report.notReplayed).toEqual([
+      { job: "package", reasons: [{ feature: "no-command", detail: "package has no command to run" }] }
+    ])
+    expect(report.notRead).toEqual([unread])
+    expect(report.flaky).toBe(0)
   }, 120_000)
 
   it("fails a step whose directory is missing, without stopping the replay, and reports the mismatch", async () => {

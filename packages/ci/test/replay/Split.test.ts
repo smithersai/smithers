@@ -41,8 +41,11 @@ const files: Parts["files"] = (inventory) => {
   )
 }
 
-const replay = (decompose: Decompose<never>): Promise<ReplayReport> => {
-  const root = makeSmallRepository([job("a", "sh a.sh")])
+const replay = (
+  decompose: Decompose<never>,
+  jobs: ReadonlyArray<unknown> = [job("a", "sh a.sh")]
+): Promise<ReplayReport> => {
+  const root = makeSmallRepository(jobs)
   created.push(root)
   const chosen = { ...(parts("none") as unknown as Parts), files, decompose }
   return Effect.runPromise(
@@ -100,4 +103,26 @@ describe("a replay whose steps were split", () => {
     expect(report.commits[0]!.mismatches).toEqual([{ label: "a0", mode: "normal", baseline: "pass", got: "fail" }])
     expect(report.mismatches).toBe(1)
   }, 120_000)
+
+  it("compares a split step of a matrix job variant by variant, and reruns each variant as itself", async () => {
+    // Review finding 7: variant one fails in CI and as a target alike. Its rerun was answered by variant two's pass,
+    // which made the baseline flaky and the replay report a mismatch.
+    const suites = { ...job("m", "test ${{ matrix.suite }} = two"), matrix: [{ suite: "one" }, { suite: "two" }] }
+    const report = await replay(inTwo("true"), [suites])
+    const [commit] = report.commits
+    expect(commit!.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 0 })
+    // In variant one the first half fails and the second, which follows it, is skipped: together, a failure.
+    expect(commit!.normal.counts).toEqual({ hit: 0, ran: 2, failed: 1, skipped: 1 })
+    expect(commit!.mismatches).toEqual([])
+    expect(report.flaky).toBe(0)
+  }, 180_000)
+
+  it("names the variant in the mismatch when one variant's target differs", async () => {
+    // The step passes in both variants; the second half of the split fails only where the suite is `one`.
+    const suites = { ...job("m", "true"), matrix: [{ suite: "one" }, { suite: "two" }] }
+    const report = await replay(inTwo("test ${{ matrix.suite }} = two"), [suites])
+    expect(report.commits[0]!.mismatches).toEqual([
+      { label: "m0 (suite=one)", mode: "normal", baseline: "pass", got: "fail" }
+    ])
+  }, 180_000)
 })

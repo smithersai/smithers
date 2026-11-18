@@ -500,9 +500,10 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
       "justfile:fmt",
       "justfile:ci"
     ])
+    // The recipes of one Justfile come in the order `just ci` runs them: `ci: tidy test`, and `tidy` needs `fmt`.
     const narrowed = Inventory.ci(zig)
-    expect(narrowed.jobs.map((entry) => entry.id)).toEqual(["justfile:test", "justfile:tidy", "justfile:fmt"])
-    expect(narrowed.jobs.map((entry) => entry.needs)).toEqual([[], ["justfile:fmt"], ["justfile:tidy"]])
+    expect(narrowed.jobs.map((entry) => entry.id)).toEqual(["justfile:fmt", "justfile:tidy", "justfile:test"])
+    expect(narrowed.jobs.map((entry) => entry.needs)).toEqual([["justfile:tidy"], ["justfile:fmt"], []])
   })
 
   it("finds no CI in a repository with only scripts, and never runs a job that does not exit", () => {
@@ -644,6 +645,96 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     }
   })
 
+  it("lists a CI job whose every step was a host action, and leaves a job that only groups others in neither list", () => {
+    const upload = { ...job("ci.yml:package", [Inventory.hostAction], []), needs: ["ci.yml:plain"] }
+    const group = { ...job("ci.yml:group", [], []), needs: ["ci.yml:plain"] }
+    const after = { ...job("ci.yml:after", []), needs: ["ci.yml:package", "ci.yml:group"] }
+    const both = decode({ ...inventory, jobs: [inventory.jobs[4]!, upload, group, after] })
+    expect(Inventory.noCommand).toBe("no-command")
+    expect(Inventory.notReplayed(both)).toEqual([
+      { job: "ci.yml:package", reasons: [{ feature: "no-command", detail: "ci.yml:package has no command to run" }] }
+    ])
+    // It ran nothing, so the job that needs it waits for what it waited for, as with a job that only groups.
+    expect(Inventory.ci(both).jobs.map((entry) => [entry.id, entry.needs])).toEqual([
+      ["ci.yml:plain", []],
+      ["ci.yml:after", ["ci.yml:plain"]]
+    ])
+    expect(Inventory.refusal(decode({ ...inventory, jobs: [upload] }))).toBe(
+      "0 of 1 CI job can be reproduced on this machine\n  ci.yml:package  no-command"
+    )
+  })
+
+  it("names the system a runner means, and the features of what a replay leaves out for it", () => {
+    expect(["ubuntu-latest", "self-hosted,linux,x64", "macos-15", "macOS-latest", "windows-2022"].map(Inventory.hostOf))
+      .toEqual(["linux", "linux", "darwin", "darwin", "win32"])
+    expect(Inventory.hostOf("self-hosted")).toBeUndefined()
+    expect(Inventory.hostOf(undefined)).toBeUndefined()
+    expect(Schema.decodeUnknownSync(Inventory.Host)("darwin")).toBe("darwin")
+    expect([Inventory.otherSystem, Inventory.noTarget]).toEqual(["other-system", "no-target"])
+    expect(Inventory.stepTimeoutHours).toBe(6)
+  })
+
+  it("holds what was read and belongs to no job, without the workspace file it found", () => {
+    const unread = { feature: "malformed-file", detail: ".github/workflows/tests.yml: BAD_INDENT at line 3" }
+    const own = { feature: Inventory.smithersBuild, detail: "WORKSPACE.ts" }
+    expect(Inventory.notRead(inventory)).toEqual([])
+    expect(Inventory.notRead(decode({ ...inventory, unsupported: [own, unread] }))).toEqual([unread])
+    const report = Schema.decodeUnknownSync(ReplayReport.ReplayReport)({
+      ...(fixture("replay-report.example.json") as object),
+      notRead: [unread],
+      flaky: 2
+    })
+    expect(report).toMatchObject({ notRead: [unread], flaky: 2 })
+    expect(Schema.decodeUnknownSync(ReplayReport.ReplayReport)(fixture("replay-report.example.json")).flaky).toBe(0)
+  })
+
+  it("gives the jobs of one shared tree in the order they run, and a GitHub job a checkout of its own", () => {
+    const recipe = (id: string, needs: ReadonlyArray<string>, commands: ReadonlyArray<string> = ["true"]) => ({
+      ...job(`justfile:${id}`, [], commands),
+      source: "justfile",
+      file: "Justfile",
+      triggers: [],
+      needs: needs.map((need) => `justfile:${need}`)
+    })
+    // `ci: lint build test` with no body, written above the recipes it lists; `test` also lists `build`.
+    const jobs = [
+      recipe("ci", ["lint", "build", "test"], []),
+      recipe("test", ["build"]),
+      recipe("clean", ["gone"]),
+      recipe("build", ["install"]),
+      recipe("lint", ["install"]),
+      recipe("install", [])
+    ]
+    const just = decode({ ...inventory, jobs })
+    expect(Inventory.treeOf(just.jobs[0]!)).toBe("Justfile")
+    expect(Inventory.treeOf(inventory.jobs[0]!)).toBeUndefined()
+    expect([...Inventory.treeOrder(just.jobs)]).toEqual([
+      ["Justfile", ["install", "lint", "build", "test", "ci", "clean"].map((id) => `justfile:${id}`)]
+    ])
+    expect(Inventory.treeOrder(inventory.jobs).size).toBe(0)
+    // `ci` only groups and `clean` is not CI: the four that run come in the order `just ci` runs them.
+    expect(Inventory.ci(just).jobs.map((entry) => entry.id)).toEqual(
+      ["install", "lint", "build", "test"].map((id) => `justfile:${id}`)
+    )
+    // A job of another tree between them keeps its place, and a need on a job of another tree orders nothing.
+    const script = {
+      ...job("package.json:ci", [], ["npm test"]),
+      source: "package-json",
+      file: "package.json",
+      triggers: [],
+      needs: ["justfile:build"]
+    }
+    const mixed = decode({
+      ...inventory,
+      jobs: [recipe("test", ["build"]), script, recipe("build", []), recipe("ci", ["build", "test"], [])]
+    })
+    expect(Inventory.ci(mixed).jobs.map((entry) => entry.id)).toEqual([
+      "justfile:build",
+      "package.json:ci",
+      "justfile:test"
+    ])
+  })
+
   it("never counts the workflow it generated as the repository's CI", () => {
     const own = { ...job("smithers-ci.yml:ci", []), file: Inventory.generatedWorkflow }
     const both = decode({ ...inventory, jobs: [own, inventory.jobs[4]!] })
@@ -734,6 +825,7 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
         ]
       },
       { job: "ci.yml:shards", reasons: [{ feature: "runner-variable", detail: "ci.yml:shards runner-variable" }] },
+      { job: "ci.yml:reusable", reasons: [{ feature: "no-command", detail: "ci.yml:reusable has no command to run" }] },
       {
         job: "ci.yml:after-shards",
         reasons: [{ feature: "needs", detail: "ci.yml:after-shards needs ci.yml:shards, which is not replayed" }]

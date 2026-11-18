@@ -7,7 +7,21 @@
  */
 
 import * as Schema from "effect/Schema"
-import { type Ci, type NotReplayed, withVariant } from "../contract/Inventory.ts"
+import {
+  type Ci,
+  expand,
+  hostOf,
+  type Inventory,
+  type Job,
+  needsLeftOut,
+  noTarget,
+  notRead,
+  type NotReplayed,
+  otherSystem,
+  treeOf,
+  type Unsupported,
+  withVariant
+} from "../contract/Inventory.ts"
 import type { Failure } from "../contract/Parts.ts"
 import type { Plan } from "../contract/Plan.ts"
 import type { Mismatch, ReplayCommit, ReplayReport, RunTotals } from "../contract/ReplayReport.ts"
@@ -17,6 +31,7 @@ import {
   type RunRecord,
   type StatusCounts,
   type TargetResult,
+  type Verdict,
   verdictOf
 } from "../contract/RunRecord.ts"
 import { type Metrics, metrics, type Row, type Score, select, type Settings } from "../contract/Selection.ts"
@@ -32,18 +47,19 @@ import { labelsOf as targetsOfStep, type TargetMap } from "../contract/TargetMap
 export const maxReruns = 10
 
 /**
- * One step of a baseline unit, with its matrix values filled in. `label` is the
- * target it became; a step with none still runs, because later steps may need
- * what it did, but has no verdict to compare.
+ * One step of a baseline unit, with its matrix values filled in.
  *
  * @category models
  * @since 0.1.0
  */
 export interface UnitStep {
   readonly id: string
-  /** The name the step's verdict is compared under: its target's label, or its own id when it was split. */
-  readonly label: string | undefined
-  /** The targets that run the step: one, several when it was split, none when the generator made none. */
+  /**
+   * The name the step's verdict is compared under: its target's label, or, when it was split, its own id with the
+   * matrix variant it ran in.
+   */
+  readonly label: string
+  /** The targets that run the step: one, or several when it was split. */
   readonly targets: ReadonlyArray<string>
   readonly command: string
   readonly cwd: string
@@ -51,7 +67,9 @@ export interface UnitStep {
 }
 
 /**
- * One job on one matrix variant: the steps one machine runs in order.
+ * One job on one matrix variant: the steps one machine runs in order. `tree`
+ * names the working tree the unit shares with the units before and after it
+ * (`Inventory.treeOf`); without it the unit gets a checkout of its own.
  *
  * @category models
  * @since 0.1.0
@@ -60,6 +78,7 @@ export interface Unit {
   readonly job: string
   readonly needs: ReadonlyArray<string>
   readonly steps: ReadonlyArray<UnitStep>
+  readonly tree?: string | undefined
 }
 
 /**
@@ -71,26 +90,110 @@ export interface Unit {
  */
 export const failure = (code: Failure["code"], message: string): Failure => ({ code, message, part: "replay" })
 
+type Variant = Readonly<Record<string, string>>
+
+/** A variant as a person reads it: ` (os=macos-latest, node=22)`, or nothing for a job with no matrix. */
+const variantText = (variant: Variant): string => {
+  const entries = Object.entries(variant).sort(([a], [b]) => (a < b ? -1 : 1))
+  return entries.length === 0 ? "" : ` (${entries.map(([name, value]) => `${name}=${value}`).join(", ")})`
+}
+
 /**
- * The units a change runs: every job of the CI (`Inventory.ci`), once per
- * matrix variant.
+ * The name a split step's verdict is compared under: the step's id with the
+ * matrix variant, so one variant's verdict never answers for another's.
  *
  * @category baseline
  * @throws {never}
  * @since 0.1.0
  */
-export const unitsOf = (inventory: Ci, map: TargetMap): ReadonlyArray<Unit> =>
-  inventory.jobs.flatMap((job) => {
-    const variants: ReadonlyArray<Readonly<Record<string, string>>> = job.matrix.length === 0 ? [{}] : job.matrix
-    return variants.map((variant) => ({
+export const stepKey = (step: string, variant: Variant): string => `${step}${variantText(variant)}`
+
+/**
+ * What of a CI the replay runs, and what it leaves out.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Replayable {
+  readonly units: ReadonlyArray<Unit>
+  /** The jobs and matrix variants left out here, each with its reasons. */
+  readonly left: ReadonlyArray<NotReplayed>
+}
+
+/**
+ * The units a change runs on this machine: every job of the CI
+ * (`Inventory.ci`), once per matrix variant, in the CI's order, which is
+ * the order the jobs of a shared tree run in. Three things are left out and
+ * listed:
+ *
+ * - a variant whose runner is another operating system than `host`
+ *   (`other-system`): its commands were written for that system, and
+ *   Smithers build refuses its target here;
+ * - a job with a step the generator made no target for (`no-target`): the
+ *   step would run and be timed in the baseline with nothing to compare it
+ *   with;
+ * - a job that needs a job left out whole (`needs`).
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const replayable = (inventory: Ci, map: TargetMap, host: string): Replayable => {
+  const byId = new Map(inventory.jobs.map((job) => [job.id, job]))
+  const variantsOf = (job: Job): ReadonlyArray<Variant> => job.matrix.length === 0 ? [{}] : job.matrix
+  const systemOf = (job: Job, variant: Variant) =>
+    hostOf(job.runsOn === undefined ? undefined : expand(job.runsOn, variant))
+  const here = (job: Job): ReadonlyArray<Variant> =>
+    variantsOf(job).filter((variant) => (systemOf(job, variant) ?? host) === host)
+  const elsewhere = (job: Job): ReadonlyArray<Unsupported> =>
+    variantsOf(job).flatMap((variant) => {
+      const system = systemOf(job, variant) ?? host
+      return system === host
+        ? []
+        : [{
+          feature: otherSystem,
+          detail: `${job.id}${variantText(variant)} runs on ${system}; this machine is ${host}`
+        }]
+    })
+  const untargeted = (job: Job): ReadonlyArray<Unsupported> =>
+    here(job).flatMap((variant) =>
+      job.steps.flatMap((step) =>
+        targetsOfStep(map, job.id, step.id, variant).length > 0
+          ? []
+          : [{ feature: noTarget, detail: `${step.id}${variantText(variant)} has no target` }]
+      )
+    )
+  const known = new Map<string, ReadonlyArray<Unsupported>>()
+  /** Why a job is left out whole; empty when some variant of it runs. */
+  const whole = (job: Job): ReadonlyArray<Unsupported> => {
+    const found = known.get(job.id)
+    if (found !== undefined) return found
+    // A job that needs itself is refused by `cycleIn`; here it only must not loop.
+    known.set(job.id, [])
+    const own = here(job).length === 0 ? elsewhere(job) : untargeted(job)
+    const reasons = [
+      ...own,
+      ...job.needs.flatMap((id) => {
+        const need = byId.get(id)
+        return need === undefined || whole(need).length === 0
+          ? []
+          : [{ feature: needsLeftOut, detail: `${job.id} needs ${id}, which is not replayed` }]
+      })
+    ]
+    known.set(job.id, reasons)
+    return reasons
+  }
+  const units = inventory.jobs.filter((job) => whole(job).length === 0).flatMap((job) =>
+    here(job).map((variant): Unit => ({
       job: job.id,
       needs: job.needs,
+      tree: treeOf(job),
       steps: job.steps.map((step) => {
         const filled = withVariant(step, variant)
         const targets = targetsOfStep(map, job.id, step.id, variant)
         return {
           id: step.id,
-          label: targets.length > 1 ? step.id : targets[0],
+          label: targets.length > 1 ? stepKey(step.id, variant) : (targets[0] as string),
           targets,
           command: filled.command,
           cwd: filled.cwd,
@@ -98,19 +201,41 @@ export const unitsOf = (inventory: Ci, map: TargetMap): ReadonlyArray<Unit> =>
         }
       })
     }))
+  )
+  const left = inventory.jobs.flatMap((job) => {
+    const reasons = whole(job).length > 0 ? whole(job) : elsewhere(job)
+    return reasons.length === 0 ? [] : [{ job: job.id, reasons }]
   })
+  return { units, left }
+}
 
 /**
- * The target labels of a unit, limited to `wanted` when it is given.
+ * The comparison names of a unit, limited to `wanted` when it is given.
  *
  * @category baseline
  * @throws {never}
  * @since 0.1.0
  */
 export const labelsOf = (unit: Unit, wanted: ReadonlySet<string> | undefined): ReadonlyArray<string> =>
-  unit.steps.flatMap((step) =>
-    step.label !== undefined && (wanted === undefined || wanted.has(step.label)) ? [step.label] : []
-  )
+  unit.steps.flatMap((step) => wanted === undefined || wanted.has(step.label) ? [step.label] : [])
+
+/**
+ * Why a replay has nothing to run although the CI has jobs: each job left
+ * out, one per line with its features.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const nothingToReplay = (left: ReadonlyArray<NotReplayed>): string => {
+  const width = Math.max(0, ...left.map((entry) => entry.job.length))
+  return [
+    "no CI step that runs on a change has a target on this machine",
+    ...left.map((entry) =>
+      `  ${entry.job.padEnd(width)}  ${[...new Set(entry.reasons.map((reason) => reason.feature))].join(", ")}`
+    )
+  ].join("\n")
+}
 
 /**
  * A remote URL without the user name and password it may hold. The replay
@@ -135,7 +260,8 @@ export const targetsOf = (units: ReadonlyArray<Unit>): ReadonlyArray<string> =>
   units.flatMap((unit) => unit.steps.flatMap((step) => step.targets))
 
 /**
- * The steps that were split: the name each is compared under, with its targets.
+ * The steps that were split: the name each is compared under, which carries
+ * its matrix variant, with its targets.
  *
  * @category baseline
  * @throws {never}
@@ -144,7 +270,7 @@ export const targetsOf = (units: ReadonlyArray<Unit>): ReadonlyArray<string> =>
 export const splitOf = (units: ReadonlyArray<Unit>): ReadonlyMap<string, ReadonlyArray<string>> =>
   new Map(
     units.flatMap((unit) =>
-      unit.steps.flatMap((step) => step.targets.length > 1 ? [[step.id, step.targets] as const] : [])
+      unit.steps.flatMap((step) => step.targets.length > 1 ? [[step.label, step.targets] as const] : [])
     )
   )
 
@@ -372,12 +498,18 @@ export const totalsOf = (record: RunRecord): RunTotals => ({
   counts: record.counts
 })
 
+/** `pass` and `flaky` agree: the step passed in the end. */
+const agree = (one: Verdict, other: Verdict): boolean =>
+  one === other || (one !== "fail" && one !== "skipped" && other !== "fail" && other !== "skipped")
+
 /**
- * Every baseline step whose verdict differs in a mode. A step that was split
- * (`split` names its targets) has the combined verdict of its targets. A
- * target the mode never reported counts as skipped, so a mode that ran
- * nothing cannot agree. `predicted-safe` skips differ only from a baseline
- * failure: the targets that did run must then show it.
+ * Every baseline step whose verdict differs in a mode. `pass` and `flaky`
+ * agree; flaky verdicts are counted by `flakyOf`. A step that was split
+ * (`split` names its targets) has the combined verdict of its targets, and
+ * is a mismatch when the mode never reported one of them. A target the mode
+ * never reported counts as skipped, so a mode that ran nothing cannot agree.
+ * `predicted-safe` skips differ only from a baseline failure: the targets
+ * that did run must then show it.
  *
  * @category report
  * @throws {never}
@@ -396,15 +528,32 @@ export const mismatchesOf = (
     const judged = others.filter((other) => other?.skipReason !== "predicted-safe")
     const verdictOfAll = (all: typeof others) =>
       combine(all.map((other) => other === undefined ? "skipped" : verdictOf(other)))
+    if (others.length > 1 && others.includes(undefined)) {
+      return [{ label: result.label, mode, baseline: expected, got: "skipped" as const }]
+    }
     const verdict = verdictOfAll(others)
     const same = judged.length === others.length
-      ? verdict === expected
+      ? agree(verdict, expected)
       : expected === "fail"
       ? verdictOfAll(judged) === "fail"
-      : judged.length === 0 || verdictOfAll(judged) === expected
+      : judged.length === 0 || agree(verdictOfAll(judged), expected)
     return same ? [] : [{ label: result.label, mode, baseline: expected, got: verdict }]
   })
 }
+
+/**
+ * How many verdicts of these runs are `flaky`: a step or target that failed
+ * and then passed on a rerun.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const flakyOf = (records: ReadonlyArray<RunRecord>): number =>
+  records.reduce(
+    (total, record) => total + record.results.filter((result) => verdictOf(result) === "flaky").length,
+    0
+  )
 
 /**
  * What fast mode does with one change's scores: the targets it selected, and
@@ -433,32 +582,52 @@ export const selectionOf = (rows: ReadonlyArray<Row>, selected: ReadonlyMap<stri
   metrics(rows, selected)
 
 /**
- * The replay report. `speedup` is baseline wall time over normal-mode wall
- * time, and 0 when nothing ran in normal mode.
+ * What a replay found besides its commits.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Findings {
+  /** Fast mode's metrics, when fast mode ran. */
+  readonly selection?: Metrics | undefined
+  /** The jobs and variants not replayed. */
+  readonly left: ReadonlyArray<NotReplayed>
+  /** How many verdicts were flaky, in the baseline and in every mode. */
+  readonly flaky: number
+}
+
+/**
+ * The replay report of `inventory`'s repository. `speedup` is baseline wall
+ * time over normal-mode wall time, and 0 when nothing ran in normal mode.
+ * What the inventory could not read is listed as `notRead`.
  *
  * @category report
  * @throws {never}
  * @since 0.1.0
  */
 export const reportOf = (
-  repository: string,
+  inventory: Inventory,
   commits: ReadonlyArray<ReplayCommit>,
-  selection: Metrics | undefined,
-  left: ReadonlyArray<NotReplayed>
+  found: Findings
 ): ReplayReport => {
   const sum = (wall: (commit: ReplayCommit) => number): number =>
     commits.reduce((total, commit) => total + wall(commit), 0)
   const baselineWallMs = sum((commit) => commit.baseline.wallMs)
   const normalWallMs = sum((commit) => commit.normal.wallMs)
+  const unread = notRead(inventory)
   return {
     version: 1,
-    repository,
+    repository: inventory.repository,
     commits,
     baselineWallMs,
     normalWallMs,
     speedup: normalWallMs === 0 ? 0 : baselineWallMs / normalWallMs,
     mismatches: commits.reduce((total, commit) => total + commit.mismatches.length, 0),
-    ...(selection === undefined ? {} : { fastWallMs: sum((commit) => commit.fast?.wallMs ?? 0), selection }),
-    ...(left.length === 0 ? {} : { notReplayed: left })
+    flaky: found.flaky,
+    ...(found.selection === undefined
+      ? {}
+      : { fastWallMs: sum((commit) => commit.fast?.wallMs ?? 0), selection: found.selection }),
+    ...(found.left.length === 0 ? {} : { notReplayed: found.left }),
+    ...(unread.length === 0 ? {} : { notRead: unread })
   }
 }

@@ -28,6 +28,8 @@ import * as Result from "effect/Result"
 import {
   type Ci,
   generatedWorkflow,
+  type Host,
+  hostOf,
   type Inventory,
   type Job,
   shell,
@@ -38,14 +40,6 @@ import type { Failure } from "../contract/Parts.ts"
 import { shardOf } from "../contract/Shard.ts"
 import { forShell, forText, type Variant } from "./Expressions.ts"
 import { chooseToolchains } from "./Toolchains.ts"
-
-/**
- * An operating system a target can be limited to, in Node's names.
- *
- * @category models
- * @since 0.1.0
- */
-export type Host = "linux" | "darwin" | "win32"
 
 /**
  * One target to declare.
@@ -157,13 +151,6 @@ const clean = (text: string): string => text.replace(/[^A-Za-z0-9._-]+/g, "-")
 const slug = (text: string): string => {
   const cleaned = clean(text)
   return /^[A-Za-z_]/.test(cleaned) ? cleaned : `s-${cleaned}`
-}
-
-const hostOf = (runsOn: string | undefined): Host | undefined => {
-  if (runsOn === undefined) return undefined
-  if (/ubuntu|linux/i.test(runsOn)) return "linux"
-  if (/macos|darwin/i.test(runsOn)) return "darwin"
-  return /windows/i.test(runsOn) ? "win32" : undefined
 }
 
 const variantKey = (variant: Variant): string =>

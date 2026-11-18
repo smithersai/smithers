@@ -3,7 +3,9 @@
  * sentences. A mismatch is the first line whenever there is one, and every
  * mismatch is listed; nothing about a wrong verdict is summarised away. A CI
  * job that was not replayed is counted beside the commits and listed with its
- * reasons, so the speedup is never read as covering it. On a repository that
+ * reasons, and so is what the inventory could not read, so the speedup is
+ * never read as covering them. Flaky verdicts are counted beside the
+ * mismatches. On a repository that
  * already builds with Smithers build, the patterns replayed stand above the
  * speedup.
  *
@@ -18,6 +20,7 @@ import {
   bar,
   count,
   duration,
+  flaky,
   leftOut,
   mismatches,
   ownTargets,
@@ -25,7 +28,8 @@ import {
   reasons,
   shortCommit,
   speedup,
-  times
+  times,
+  unread
 } from "./Format.ts"
 
 const width = 24
@@ -78,7 +82,12 @@ export const text: RenderReport = (report) => {
     ].join("  ")
   ))
   const left = report.notReplayed ?? []
-  sections.push([`${count(report.commits.length, "commit")} · ${mismatches(found)}${leftOut(left.length)}`])
+  const notRead = report.notRead ?? []
+  sections.push([
+    `${count(report.commits.length, "commit")} · ${mismatches(found)}${flaky(report.flaky ?? 0)}${
+      leftOut(left.length)
+    }${unread(notRead.length)}`
+  ])
   if (listed.length > 0) {
     sections.push(listed.map((mismatch) =>
       [
@@ -92,6 +101,13 @@ export const text: RenderReport = (report) => {
   if (left.length > 0) {
     const jobWidth = Math.max(...left.map((entry) => clean(entry.job).length))
     sections.push(left.map((entry) => `${clean(entry.job).padEnd(jobWidth)}  ${clean(reasons(entry))}`.trimEnd()))
+  }
+  if (notRead.length > 0) {
+    const featureWidth = Math.max(...notRead.map((entry) => clean(entry.feature).length))
+    sections.push([
+      "not read",
+      ...notRead.map((entry) => `${clean(entry.feature).padEnd(featureWidth)}  ${clean(entry.detail)}`.trimEnd())
+    ])
   }
   return sections.map(paragraph).join("\n\n")
 }

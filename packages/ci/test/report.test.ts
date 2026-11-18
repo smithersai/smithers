@@ -224,6 +224,59 @@ describe("jobs that were not replayed", () => {
   })
 })
 
+describe("flaky verdicts and what was not read", () => {
+  it("counts flaky verdicts beside the mismatches, never among them", () => {
+    expect(text({ ...clean, flaky: 2 }).split("\n").at(-1)).toBe("2 commits · 0 mismatches · 2 flaky")
+    expect(text({ ...clean, flaky: 2 })).not.toContain("✗")
+    expect(html({ ...clean, flaky: 2 })).toContain("<p class=\"summary\">2 commits · 0 mismatches · 2 flaky</p>")
+    expect(html({ ...clean, flaky: 2 })).not.toContain("role=\"alert\"")
+    for (const report of [clean, { ...clean, flaky: 0 }]) {
+      expect(text(report)).not.toContain("flaky")
+      expect(html(report)).not.toContain("flaky")
+    }
+  })
+
+  const unread: ReplayReport = {
+    ...clean,
+    flaky: 1,
+    notReplayed: [{ job: "ci.yml:package", reasons: [{ feature: "no-command", detail: "it has no command" }] }],
+    notRead: [
+      { feature: "malformed-file", detail: ".github/workflows/<tests>.yml: BAD_INDENT at line 3\u001b[2J" },
+      { feature: "package-turbo", detail: "" }
+    ]
+  }
+
+  it("lists what the inventory could not read under the jobs not replayed, in the terminal", () => {
+    expect(text(unread).split("\n").slice(-7)).toEqual([
+      "2 commits · 0 mismatches · 1 flaky · 1 job not replayed · 2 not read",
+      "",
+      "ci.yml:package  no-command",
+      "",
+      "not read",
+      "malformed-file  .github/workflows/<tests>.yml: BAD_INDENT at line 3\uFFFD[2J",
+      "package-turbo"
+    ])
+  })
+
+  it("does the same on the page, escaped", () => {
+    const page = html(unread)
+    expect(page).toContain(
+      "<p class=\"summary\">2 commits · 0 mismatches · 1 flaky · 1 job not replayed · 2 not read</p>"
+    )
+    expect(page).toContain(
+      "<tr><th scope=\"row\"><code>malformed-file</code></th><td class=\"sub\">.github/workflows/&lt;tests&gt;.yml: BAD_INDENT at line 3\u001b[2J</td></tr>"
+    )
+    expect(page.indexOf("<h2>Not read</h2>")).toBeGreaterThan(page.indexOf("<h2>Not replayed</h2>"))
+  })
+
+  it("says nothing when everything was read", () => {
+    for (const report of [clean, { ...clean, notRead: [] }]) {
+      expect(text(report)).not.toContain("not read")
+      expect(html(report)).not.toContain("Not read")
+    }
+  })
+})
+
 describe("html", () => {
   it("holds the same facts as the text", () => {
     const page = html(example)

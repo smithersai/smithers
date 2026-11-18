@@ -178,6 +178,123 @@ export type Inventory = typeof Inventory.Type
 export const shell = ["bash", "-e", "-c"] as const
 
 /**
+ * How long one step may run, in hours. The baseline stops a step that runs
+ * longer and counts it failed, and a generated target has the same limit.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const stepTimeoutHours = 6
+
+/**
+ * An operating system a job runs on, in Node's names.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const Host = Schema.Literals(["linux", "darwin", "win32"])
+
+/**
+ * A decoded `Host`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Host = typeof Host.Type
+
+/**
+ * The system a runner name means (`Job.runsOn`, with its matrix values filled
+ * in), or `undefined` when the name says nothing about it. A variant whose
+ * system is not this machine's is never run here and never named to Smithers
+ * build: the replay lists it as not replayed with the feature `otherSystem`.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const hostOf = (runsOn: string | undefined): Host | undefined => {
+  if (runsOn === undefined) return undefined
+  if (/ubuntu|linux/i.test(runsOn)) return "linux"
+  if (/macos|darwin/i.test(runsOn)) return "darwin"
+  return /windows/i.test(runsOn) ? "win32" : undefined
+}
+
+/**
+ * The `NotReplayed` feature of a matrix variant, or a whole job, that runs
+ * on another operating system than this machine's.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const otherSystem = "other-system"
+
+/**
+ * The `NotReplayed` feature of a CI job that has no command: every step of
+ * it was a host action, such as a checkout and an upload.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const noCommand = "no-command"
+
+/**
+ * The `NotReplayed` feature of a job with a step the generator made no
+ * target for. The step's verdict could not be compared, so the job is not
+ * run in the baseline either.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const noTarget = "no-target"
+
+/**
+ * The working tree a job shares with the other jobs that name it, or
+ * `undefined` for a job that gets a checkout of its own. A GitHub Actions
+ * job runs on its own machine. The recipes of one Justfile, the scripts of
+ * one `package.json` and the like run one after another in the directory
+ * they were started in, so each sees what the one before it built.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const treeOf = (job: Job): string | undefined => job.source === "github-actions" ? undefined : job.file
+
+/**
+ * The order the jobs of each shared tree (`treeOf`) run in, by job id,
+ * starting at the jobs no other job needs: what a job needs in the order it
+ * lists them, each job once, then the job. It is the order `just ci` runs
+ * `ci: build test`. `ci` returns the jobs of a
+ * shared tree in this order, worked out before a job that only groups
+ * others, such as that `ci` recipe, is left out.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const treeOrder = (jobs: ReadonlyArray<Job>): ReadonlyMap<string, ReadonlyArray<string>> => {
+  const byId = new Map(jobs.map((job) => [job.id, job]))
+  const order = new Map<string, Array<string>>()
+  const seen = new Set<string>()
+  const visit = (job: Job, tree: string): void => {
+    if (seen.has(job.id)) return
+    seen.add(job.id)
+    for (const id of job.needs) {
+      const need = byId.get(id)
+      if (need !== undefined && treeOf(need) === tree) visit(need, tree)
+    }
+    order.set(tree, [...(order.get(tree) ?? []), job.id])
+  }
+  // A run starts at the jobs nothing needs, such as a `ci` recipe; the rest are reached from them, or are in a cycle.
+  const needed = new Set(jobs.flatMap((job) => job.needs))
+  for (const job of [...jobs.filter((entry) => !needed.has(entry.id)), ...jobs]) {
+    const tree = treeOf(job)
+    if (tree !== undefined) visit(job, tree)
+  }
+  return order
+}
+
+/**
  * The `Unsupported.feature` of a job that never exits, such as a dev server
  * or a watcher.
  *
@@ -433,7 +550,11 @@ export const NotReplayed = Schema.Struct({
  */
 export type NotReplayed = typeof NotReplayed.Type
 
-/** Sorts the CI jobs into those run and those left out. A job is left out with every job that needs it. */
+/**
+ * Sorts the CI jobs into those run and those left out. A job is left out with every job that needs it. A job with
+ * no step is run by nobody: it is listed as left out (`noCommand`) when it had host actions, and is in neither list
+ * when it only groups other jobs.
+ */
 const sort = (
   inventory: Inventory
 ): { readonly kept: ReadonlyArray<Job>; readonly left: ReadonlyArray<NotReplayed> } => {
@@ -464,21 +585,38 @@ const sort = (
       seen.add(id)
       return need.steps.length > 0 ? [id] : waitsFor(need, seen)
     })
+  /** Why a job is listed as left out: its reasons, or that all it had was host actions. */
+  const listedFor = (job: Job): ReadonlyArray<Unsupported> => {
+    const found = reasonsOf(job)
+    if (found.length > 0 || job.steps.length > 0) return found
+    return job.unsupported.some((entry) => entry.feature === hostAction)
+      ? [{ feature: noCommand, detail: `${job.id} has no command to run` }]
+      : []
+  }
   const jobs = ciJobs(inventory)
+  const kept = jobs.filter((job) => job.steps.length > 0 && reasonsOf(job).length === 0)
+  // The kept jobs of a shared tree take that tree's places in the order they run.
+  const order = treeOrder(jobs)
+  const queues = new Map<string, Array<Job>>()
+  for (const [tree, ids] of order) {
+    queues.set(tree, kept.filter((job) => treeOf(job) === tree).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)))
+  }
+  const next = (job: Job): Job => queues.get(treeOf(job) ?? "")?.shift() ?? job
   return {
-    kept: jobs
-      .filter((job) => job.steps.length > 0 && reasonsOf(job).length === 0)
-      .map((job) => ({ ...job, needs: waitsFor(job, new Set()) })),
-    left: jobs.filter((job) => reasonsOf(job).length > 0).map((job) => ({ job: job.id, reasons: reasonsOf(job) }))
+    kept: kept.map(next).map((job) => ({ ...job, needs: waitsFor(job, new Set()) })),
+    left: jobs.filter((job) => listedFor(job).length > 0).map((job) => ({ job: job.id, reasons: listedFor(job) }))
   }
 }
 
 /**
  * The inventory narrowed to its CI: the `ciJobs` that have a step, have no
  * blocker, and need no job that has one. A need on a job with no step, which
- * only groups other jobs, becomes a need on the jobs it groups. The
- * baseline, the generator and the replay work from this, never from the
- * whole inventory.
+ * only groups other jobs, becomes a need on the jobs it groups. The jobs of
+ * one shared tree (`treeOf`) come in the order they run (`treeOrder`): the
+ * baseline runs them in that order in one checkout and stops at the first
+ * failure, and the targets generated from them must run in the same order.
+ * The baseline, the generator and the replay work from this, never from
+ * the whole inventory.
  *
  * @throws {never}
  * @category accessors
@@ -487,15 +625,29 @@ const sort = (
 export const ci = (inventory: Inventory): Ci => asCi({ ...inventory, jobs: sort(inventory).kept })
 
 /**
- * The CI jobs `ci` leaves out, each with its reasons: its blockers, and a
- * `needs` entry for each job it needs that is left out. The report lists
- * them, so a speedup is never read as covering a job that was not run.
+ * The CI jobs `ci` leaves out, each with its reasons: its blockers, a
+ * `needs` entry for each job it needs that is left out, or `noCommand` for
+ * a job whose every step was a host action. The report lists them, so a
+ * speedup is never read as covering a job that was not run.
  *
  * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
 export const notReplayed = (inventory: Inventory): ReadonlyArray<NotReplayed> => sort(inventory).left
+
+/**
+ * What an inventory could not read and belongs to no job, such as a
+ * workflow that does not parse: `Inventory.unsupported` without the
+ * `smithersBuild` entry, which names a workspace and no gap. The replay
+ * report lists these under the jobs not replayed.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const notRead = (inventory: Inventory): ReadonlyArray<Unsupported> =>
+  (inventory.unsupported ?? []).filter((entry) => entry.feature !== smithersBuild)
 
 /**
  * The top-level `unsupported` feature of a repository that already builds

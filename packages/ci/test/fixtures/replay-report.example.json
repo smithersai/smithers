@@ -54,6 +54,7 @@
   "fastWallMs": 150000,
   "speedup": 5.954545454545454,
   "mismatches": 1,
+  "flaky": 0,
   "selection": {
     "rows": 12,
     "selected": 5,

@@ -178,6 +178,13 @@ export interface ReplayParts<R = never> {
  * `RunRecord.combine` of the verdicts of the step's targets, found with
  * `TargetMap.labelsOf` in the target map among the generated files.
  *
+ * Not everything in a `Ci` is replayed. A matrix variant whose runner is
+ * another operating system (`Inventory.hostOf`) is not run in the baseline
+ * and its targets are not named to Smithers build (`Inventory.otherSystem`).
+ * A job with a step the generator made no target for is not replayed
+ * (`Inventory.noTarget`), and neither is a job that needs a job left out.
+ * Each is listed in `ReplayReport.notReplayed`.
+ *
  * @category parts
  * @since 0.1.0
  */

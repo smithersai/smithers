@@ -17,7 +17,7 @@ import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
 import { replaced } from "../native/Detect.vibe"
 import { overwriteRefusal, refusal as ownWorkspace } from "../native/Workspace.ts"
-import { noPushUrl, stepEnvironment } from "./Environment.ts"
+import { noPushUrl, stepEnvironment, thisHost } from "./Environment.ts"
 import {
   addRerun,
   blocked,
@@ -25,6 +25,7 @@ import {
   cycleIn,
   failure,
   firstAttempt,
+  flakyOf,
   groupByJob,
   isBlocked,
   type JobGroup,
@@ -32,18 +33,19 @@ import {
   labelsOf,
   maxReruns,
   mismatchesOf,
+  nothingToReplay,
   planOfPrinted,
   predictedSafe,
   PrintedPlan,
   recordOf,
   recovered,
+  replayable,
   reportOf,
   selectionOf,
   splitOf,
   targetsOf,
   totalsOf,
   type Unit,
-  unitsOf,
   withoutCredentials
 } from "./Summary.ts"
 
@@ -261,7 +263,6 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const inventory: Inventory = try parts.read(normalCopy)
     const why = ownWorkspace(inventory) ?? refusal(inventory)
     if (why !== undefined) throw failure("unsupported", why)
-    const left = notReplayed(inventory)
     const narrowed = ci(inventory)
     const split = parts.decompose === undefined ? narrowed : try parts.decompose(normalCopy, narrowed)
     const generated = try parts.files(split, { cache: request.cache })
@@ -272,10 +273,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const targetMap = Schema.decodeUnknownEffect(Schema.fromJsonString(TargetMap))(mapFile.content) catch effect () => {
       throw failure("invalid-document", `${targetMapPath} is not a target map`)
     }
-    const units = unitsOf(narrowed, targetMap)
-    const allLabels = targetsOf(units)
+    // A variant for another system, and a job with a step that has no target, are left out and listed.
+    const replayed = replayable(narrowed, targetMap, thisHost())
+    const units = replayed.units
+    const left = [...notReplayed(inventory), ...replayed.left]
+    const allLabels = [...new Set(targetsOf(units))]
     const splits = splitOf(units)
-    if (allLabels.length === 0) throw failure("unsupported", "no CI step that runs on a change has a target")
+    if (allLabels.length === 0) throw failure("unsupported", nothingToReplay(replayed.left))
     const cycle = cycleIn(units)
     if (cycle !== undefined) throw failure("invalid-document", `job ${cycle} needs itself`)
     const fastCopy = request.modes.includes("fast") ? try copyAt("fast", "HEAD") : undefined
@@ -348,7 +352,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         let failed: string | undefined = undefined
         for (const step of unit.steps) {
           if (failed !== undefined) {
-            if (step.label !== undefined) results.push(blocked(step.label, failed))
+            results.push(blocked(step.label, failed))
             continue
           }
           const start = try Clock.currentTimeMillis
@@ -358,10 +362,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             catch () => noStart
           const durationMs = (try Clock.currentTimeMillis) - start
           const passed = output.exitCode === 0
-          if (step.label !== undefined) {
-            results.push({ label: step.label, status: passed ? "ran" : "failed", key: "", durationMs })
-          }
-          if (!passed) failed = step.label ?? step.id
+          results.push({ label: step.label, status: passed ? "ran" : "failed", key: "", durationMs })
+          if (!passed) failed = step.label
         }
         return targets === undefined ? results : results.filter((result) => targets.has(result.label))
       })
@@ -393,13 +395,14 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return collected
     }
 
-    const replayed: Array<ReplayCommit> = []
+    const commitsDone: Array<ReplayCommit> = []
     const allRows: Array<Row> = []
+    let flaky = 0
     const selected = new Map<string, ReadonlyArray<string>>()
 
     for (const commit of commits) {
       const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
-      const at = `${replayed.length + 1}/${commits.length} ${commit.slice(0, 7)}`
+      const at = `${commitsDone.length + 1}/${commits.length} ${commit.slice(0, 7)}`
       try progress.say(`${at} baseline`)
       const base = try measure(Effect.void, baseline(commit), undefined, options.reruns)
       const baseRecord = recordOf(base.results, commit, base.wallMs)
@@ -408,6 +411,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const normalRecord = recordOf(normal.results, commit, normal.wallMs, "normal")
       let fastPart: Pick<ReplayCommit, "fast"> = {}
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
+      flaky += flakyOf([baseRecord, normalRecord])
       if (fastCopy !== undefined) {
         const rows = try parts.rows(normalCopy, normalRecord, try planOf(normalCopy))
         const scores = try parts.score(rows)
@@ -420,10 +424,11 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const fastRecord = recordOf(merged, commit, fast.wallMs, "fast" satisfies Mode)
         fastPart = { fast: totalsOf(fastRecord) }
         fastMismatches = mismatchesOf("fast", baseRecord, fastRecord, splits)
+        flaky += flakyOf([fastRecord])
         allRows.push(...rows)
         selected.set(commit, choice.selected)
       }
-      replayed.push({
+      commitsDone.push({
         commit,
         changedFiles: changed.length,
         baseline: totalsOf(baseRecord),
@@ -432,10 +437,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         ...fastPart
       })
     }
-    return reportOf(
-      inventory.repository,
-      replayed,
-      fastCopy === undefined ? undefined : selectionOf(allRows, selected),
-      left
-    )
+    return reportOf(inventory, commitsDone, {
+      selection: fastCopy === undefined ? undefined : selectionOf(allRows, selected),
+      left,
+      flaky
+    })
   })

@@ -33,3 +33,13 @@ export const stepEnvironment = (
  * @since 0.1.0
  */
 export const noPushUrl = "/dev/null/smithers-ci-replay-copies-do-not-push"
+
+/**
+ * This machine's operating system, in Node's names. A matrix variant for
+ * another system is not replayed here.
+ *
+ * @category environment
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const thisHost = (): string => process.platform

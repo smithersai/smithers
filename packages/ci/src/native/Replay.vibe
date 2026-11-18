@@ -22,6 +22,7 @@ import { type Execute, Options, Progress, settle } from "../replay/Replay.vibe"
 import {
   choose,
   failure,
+  flakyOf,
   mismatchesOf,
   planOfPrinted,
   predictedSafe,
@@ -315,6 +316,7 @@ export const own = <R>(
     const baselines: Array<RunRecord> = []
     const allRows: Array<Row> = []
     const selected = new Map<string, ReadonlyArray<string>>()
+    let flaky = 0
 
     for (const commit of commits) {
       const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
@@ -326,6 +328,7 @@ export const own = <R>(
       const normalRecord = recordOf(normal.results, commit, normal.wallMs, "normal")
       let fastPart: Pick<ReplayCommit, "fast"> = {}
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
+      flaky += flakyOf([baseRecord, normalRecord])
       if (fastCopy !== undefined) {
         const rows = normal.state.ok ? try parts.rows(normalCopy, normalRecord, try planOf(normal.state.smthrs)) : []
         const scores = try parts.score(rows)
@@ -337,6 +340,7 @@ export const own = <R>(
         const fastRecord = recordOf(merged, commit, fast.wallMs, "fast" satisfies Mode)
         fastPart = { fast: totalsOf(fastRecord) }
         fastMismatches = mismatchesOf("fast", baseRecord, fastRecord)
+        flaky += flakyOf([fastRecord])
         allRows.push(...rows)
         selected.set(commit, choice.selected)
       }
@@ -352,12 +356,11 @@ export const own = <R>(
     // One commit where nothing passes is a failed commit. When nothing passes at any, the build does not run here.
     const nothing = nothingPassed(baselines)
     if (nothing !== undefined) throw failure("unsupported", nothing)
-    const report = reportOf(
-      inventory.repository,
-      replayed,
-      fastCopy === undefined ? undefined : selectionOf(allRows, selected),
-      chosen.left
-    )
+    const report = reportOf(inventory, replayed, {
+      selection: fastCopy === undefined ? undefined : selectionOf(allRows, selected),
+      left: chosen.left,
+      flaky
+    })
     return { ...report, targets: chosen.patterns }
   })
 

@@ -33,8 +33,9 @@ const job = (
   } = {}
 ) => ({
   id,
-  source: "justfile",
-  file: "Justfile",
+  // A GitHub Actions job gets a checkout of its own; the jobs of a Justfile would share one and run in order.
+  source: "github-actions",
+  file: ".github/workflows/ci.yml",
   name: id,
   needs: extra.needs ?? [],
   triggers: ["push"],

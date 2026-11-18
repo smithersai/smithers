@@ -9,13 +9,14 @@
  * @since 0.1.0
  */
 
-import type { NotReplayed } from "../contract/Inventory.ts"
+import type { NotReplayed, Unsupported } from "../contract/Inventory.ts"
 import type { RenderReport } from "../contract/Parts.ts"
 import type { Mismatch, ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
 import type { Metrics } from "../contract/Selection.ts"
 import {
   count,
   duration,
+  flaky,
   leftOut,
   mismatches,
   ownTargets,
@@ -24,7 +25,8 @@ import {
   reasons,
   shortCommit,
   speedup,
-  times
+  times,
+  unread
 } from "./Format.ts"
 
 const entities: Readonly<Record<string, string>> = {
@@ -160,6 +162,16 @@ const notReplayedTable = (left: ReadonlyArray<NotReplayed>): string =>
     "</table></div>"
   ].join("\n")
 
+const notReadTable = (entries: ReadonlyArray<Unsupported>): string =>
+  [
+    "<h2>Not read</h2>",
+    "<div class=\"scroll\"><table>",
+    ...entries.map((entry) =>
+      `<tr><th scope="row"><code>${escape(entry.feature)}</code></th><td class="sub">${escape(entry.detail)}</td></tr>`
+    ),
+    "</table></div>"
+  ].join("\n")
+
 const commitTable = (commits: ReadonlyArray<ReplayCommit>): string => {
   const withFast = commits.some((commit) => commit.fast !== undefined)
   return [
@@ -176,8 +188,8 @@ const commitTable = (commits: ReadonlyArray<ReplayCommit>): string => {
 /**
  * Renders a replay report as one self-contained HTML page, light and dark,
  * readable on a phone: the speedup, a bar per mode, fast mode's recall and
- * selection rate with the counts behind them, and one row per commit with
- * its times and mismatches.
+ * selection rate with the counts behind them, one row per commit with its
+ * times and mismatches, the jobs not replayed and what was not read.
  *
  * @category renderers
  * @since 0.1.0
@@ -202,12 +214,16 @@ export const html: RenderReport = (report) => {
     body.push(`<p class="hero">${speedup(report.speedup)}</p>`)
     body.push(bars(modes))
     const left = report.notReplayed ?? []
+    const notRead = report.notRead ?? []
     body.push(
-      `<p class="summary">${count(report.commits.length, "commit")} · ${mismatches(found)}${leftOut(left.length)}</p>`
+      `<p class="summary">${count(report.commits.length, "commit")} · ${mismatches(found)}${flaky(report.flaky ?? 0)}${
+        leftOut(left.length)
+      }${unread(notRead.length)}</p>`
     )
     if (report.selection !== undefined) body.push(selection(report.selection))
     body.push(commitTable(report.commits))
     if (left.length > 0) body.push(notReplayedTable(left))
+    if (notRead.length > 0) body.push(notReadTable(notRead))
   }
   return `${head(`${report.repository} · Smithers CI`)}\n<body>\n<main>\n${
     body.join("\n")
