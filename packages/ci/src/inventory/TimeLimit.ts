@@ -10,6 +10,7 @@
  * @since 0.1.0
  */
 
+import { stepTimeoutHours } from "../contract/Inventory.ts"
 import { evaluate, type Scope, whole } from "./Expression.ts"
 
 /**
@@ -59,3 +60,15 @@ export const readLimit = (raw: unknown, scope: Scope): Limit => {
  */
 export const within = (outer: number | undefined, own: number | undefined): number | undefined =>
   outer === undefined ? own : own === undefined ? outer : Math.min(outer, own)
+
+/**
+ * The seconds a step is held to, or `undefined` when its limit is no shorter
+ * than the limit every step has (`Inventory.stepTimeoutHours`), which stops
+ * it first.
+ *
+ * @category reading
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const secondsOf = (minutes: number | undefined): number | undefined =>
+  minutes === undefined || minutes >= stepTimeoutHours * 60 ? undefined : minutes * 60

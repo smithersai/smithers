@@ -86,6 +86,7 @@ beforeEach(() => {
   mark = undefined
   shared = true
   begun.clear()
+  placed.length = 0
   at = place(2)
 })
 
@@ -107,6 +108,7 @@ const defaults: StepFacts = {
   second: false,
   apart: false,
   job: "build",
+  before: [],
   cwd: "",
   directory: undefined,
   start: ["bash", "-e"],
@@ -131,6 +133,9 @@ let mark: string | undefined
 /** The jobs that have run a step after the first step the test last ran: their next step is not their second. */
 const begun = new Set<string>()
 
+/** The keys of the steps run since the first step the test last ran, in order: a step reads what each left. */
+const placed: Array<string> = []
+
 /** True when the first step the test last ran was given no job, so the job's second step copies what it left. */
 let shared = true
 
@@ -145,14 +150,20 @@ const run = ({ alone, first: started, ...facts }: Facts, command: string, option
   const second = !first && after !== undefined && shared && !begun.has(state)
   // A first step is given no job unless the test gives it one, as a step that asks for none is.
   const told = first && !("job" in facts) ? { job: undefined } : {}
-  const step = { ...defaults, after, second, ...told, ...facts }
+  // A step the test gives no key is the next step of the job. One it names again reads what the steps before its
+  // first run left, as the same step of a workflow does when it runs again.
+  const key = facts.key ?? (first ? "STEP" : `STEP_${placed.length + 1}`)
+  const before = first ? [] : placed.includes(key) ? placed.slice(0, placed.indexOf(key)) : [...placed]
+  const step = { ...defaults, after, second, before, ...told, ...facts, key }
   const written = write(facts_, step, command)
   if (!("text" in written)) throw new Error(written.problem)
   if (first) {
     mark = written.mark
     shared = step.job === undefined
     begun.clear()
+    placed.length = 0
   } else if (!apart) begun.add(state)
+  if (!apart && !placed.includes(key)) placed.push(key)
   const runner = alone === true ? written.alone : written.text
   const text = expand(
     script({ command, runner, ...(options.part === true ? { from: "whole" } : {}) }, options.unit),
@@ -905,9 +916,10 @@ describe("write", () => {
       const lint = { job: job({ id: "lint" }) }
       const install = `echo "FROM=first" >> "$GITHUB_ENV"`
       pass({ key: "INSTALL", first: true }, install)
-      pass({}, `echo "KEPT=yes" >> "$GITHUB_ENV"; echo x > "$RUNNER_TEMP/made"`, lint)
+      pass({ key: "KEEP" }, `echo "KEPT=yes" >> "$GITHUB_ENV"; echo x > "$RUNNER_TEMP/made"`, lint)
       pass({ key: "INSTALL", first: true }, install)
-      expect(pass({ second: false }, `echo "$FROM $KEPT $(ls "$RUNNER_TEMP")"`, lint)).toBe("first yes made\n")
+      const third = { key: "USE", second: false, before: ["INSTALL", "KEEP"] }
+      expect(pass(third, `echo "$FROM $KEPT $(ls "$RUNNER_TEMP")"`, lint)).toBe("first yes made\n")
     })
 
     // A second step that fails is run again alone. It starts from what the first step left, as it did before.
@@ -1178,6 +1190,27 @@ describe("a step with a time limit", () => {
     expect(await gone(Number(readFileSync(pids, "utf8")))).toBe(true)
   })
 
+  // What the step started is ended too, when it outlives the step and refuses to stop.
+  it("ends a program the step started that refuses to stop, after the step itself has stopped", async () => {
+    pass({ first: true }, "true")
+    const pids = join(at.home, "pids")
+    const began = Date.now()
+    const ran = run({ limit: 1 }, `(trap '' TERM; echo $BASHPID > ${quote(pids)}; sleep 300) & sleep 300`)
+    expect(ran.status).toBe(124)
+    expect(Date.now() - began).toBeGreaterThanOrEqual(11_000)
+    expect(alive(Number(readFileSync(pids, "utf8")))).toBe(false)
+  })
+
+  // macOS `sleep` refuses a number of seconds past 2,147,483,647. Here a `sleep` that refuses one number stands in.
+  it("runs the step with no limit when the limit cannot be waited for", () => {
+    pass({ first: true }, "true")
+    const bin = join(at.home, "bin")
+    mkdirSync(bin)
+    writeFileSync(join(bin, "sleep"), `#!/bin/sh\n[ "$1" = 777 ] && exit 1\nexec /bin/sleep "$@"\n`, { mode: 0o755 })
+    const env = { PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}` }
+    expect(pass({ limit: 777 }, "sleep 1; echo ran", { env })).toBe("ran\n")
+  })
+
   it("runs a step that ends within it as any other step, and leaves no program behind", async () => {
     pass({ first: true }, "true")
     // What waits to stop the step sleeps for the limit: a number of seconds no other program on the machine sleeps.
@@ -1214,15 +1247,14 @@ describe("a step with a time limit", () => {
     expect(text(undefined)).not.toContain("__limit=")
   })
 
-  // A replay that is stopped stops its steps: the signal reaches the script, which runs in a group of its own.
-  it("passes a signal on to the step", async () => {
+  /** Starts a step with a time limit as a process, and gives it and where its script wrote its process id. */
+  const started = async (command: (pids: string) => string) => {
     pass({ first: true }, "true")
     const pids = join(at.home, "pids")
-    const written = write(job(), { ...defaults, after: mark, second: true, limit: 300 }, "")
+    const written = write(job(), { ...defaults, after: mark, second: true, before: ["STEP"], limit: 300 }, "")
     if (!("text" in written)) throw new Error(written.problem)
-    const command = `echo $$ > ${quote(pids)}; sleep 300`
     const [program, ...flags] = shell
-    const child = spawn(program, [...flags, script({ command, runner: written.text })], {
+    const child = spawn(program, [...flags, script({ command: command(pids), runner: written.text })], {
       cwd: at.repo,
       env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: at.home, TMPDIR: at.tmp },
       stdio: "ignore"
@@ -1231,10 +1263,30 @@ describe("a step with a time limit", () => {
     for (let waited = 0; waited < 600 && !existsSync(pids); waited += 1) {
       await new Promise((done) => setTimeout(done, 100))
     }
-    const step = Number(readFileSync(pids, "utf8"))
+    return { child, ended, step: Number(readFileSync(pids, "utf8")) }
+  }
+
+  // A replay that is stopped stops its steps: the signal reaches the script, which runs in a group of its own.
+  it("passes a signal on to the step, and waits until the step is gone", async () => {
+    const done = join(at.home, "done")
+    const { child, ended, step } = await started((pids) =>
+      `trap 'sleep 1; echo cleaned > ${quote(done)}; exit 0' TERM; echo $$ > ${quote(pids)}; sleep 300 & wait`
+    )
     expect(alive(step)).toBe(true)
     child.kill("SIGTERM")
+    // The step ended itself with success, and its shell still says it was stopped.
     expect(await ended).toBe(143)
+    expect(readFileSync(done, "utf8")).toBe("cleaned\n")
+    expect(alive(step)).toBe(false)
+  })
+
+  it("ends a step that refuses a signal passed on to it", async () => {
+    const { child, ended, step } = await started((pids) => `trap '' TERM; echo $$ > ${quote(pids)}; sleep 300`)
+    const began = Date.now()
+    child.kill("SIGTERM")
+    child.kill("SIGTERM")
+    expect(await ended).toBe(137)
+    expect(Date.now() - began).toBeGreaterThanOrEqual(9_000)
     expect(await gone(step)).toBe(true)
   })
 })

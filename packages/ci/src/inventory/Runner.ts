@@ -62,6 +62,9 @@ export interface JobFacts {
  *   packages, and the machine may have them. It starts from a copy of what the steps before it left (`after` and
  *   `second` say which), leaves nothing, and stops when it wrote a value for later steps. The steps around it are
  *   the first, the second and the rest whether or not it runs.
+ * - `before`: the keys of the job's steps before this one that leave values, in the order they run. The step is
+ *   given what those steps wrote to `GITHUB_ENV` and `GITHUB_PATH` and nothing else: a value a later step left on
+ *   an earlier run of the job is not this step's to read.
  * - `cwd`: the directory the step is started in, from the repository root.
  * - `directory`: a directory decided while the job runs, which the step enters from the root before its script.
  * - `start`: the shell and its flags; the script follows `-c`.
@@ -85,6 +88,7 @@ export interface StepFacts {
   readonly second: boolean
   readonly apart: boolean
   readonly job: string | undefined
+  readonly before: ReadonlyArray<string>
   readonly cwd: string
   readonly directory: ReadonlyArray<Part> | undefined
   readonly start: ReadonlyArray<string>
@@ -204,7 +208,7 @@ const library = (job: JobFacts): string =>
     `}`,
     // The variables a runner gives every step.
     `__ci_start() {`,
-    `  mkdir -p -- "$__state/temp" "$__state/tool-cache" "$__state/env" "$__state/steps" || exit 1`,
+    `  mkdir -p -- "$__state/temp" "$__state/tool-cache" "$__state/steps" || exit 1`,
     // The commit, the event file and the job's name are given to the step that names them, by the lines after
     // this. What the machine holds under those names is not the workflow's.
     `  unset GITHUB_SHA GITHUB_EVENT_PATH GITHUB_JOB __limit`,
@@ -225,20 +229,37 @@ const library = (job: JobFacts): string =>
     `  __parent=$(git -C "$__root" rev-parse --verify --quiet 'HEAD^') || __parent=0000000000000000000000000000000000000000`,
     `  printf '%s\\n' ${eventText(job.event)} > "$GITHUB_EVENT_PATH"`,
     `}`,
-    // What earlier steps wrote to GITHUB_ENV and GITHUB_PATH. A step's own variables, and the runner's, stay.
+    // What the steps before this one wrote to GITHUB_ENV and GITHUB_PATH, step by step in the order they ran. A
+    // step's own variables, and the runner's, stay. Each step keeps what it wrote in a place of its own, named
+    // after it, and a step asks only the places of the steps before it: it lists no directory, so what a later
+    // step left there on an earlier run is nothing it reads.
     `__ci_load() {`,
-    `  for __f in "$__state"/env/*; do`,
-    `    [ -f "$__f" ] || continue`,
-    `    __n=\${__f##*/}`,
-    `    case " $1 " in *" $__n "*) continue;; esac`,
-    `    case $__n in GITHUB_*|RUNNER_*) continue;; esac`,
-    `    IFS= read -r -d '' __v < "$__f"`,
-    `    export "$__n=$__v"`,
+    `  for __k in $__before; do`,
+    `    if [ -f "$__state/steps/$__k/vars" ]; then`,
+    `      while IFS= read -r __n; do`,
+    `        case " $1 " in *" $__n "*) continue;; esac`,
+    `        case $__n in GITHUB_*|RUNNER_*) continue;; esac`,
+    `        IFS= read -r -d '' __v < "$__state/steps/$__k/env.$__n"`,
+    `        export "$__n=$__v"`,
+    `      done < "$__state/steps/$__k/vars"`,
+    `    fi`,
+    `    if [ -f "$__state/steps/$__k/path" ]; then`,
+    `      while IFS= read -r __p; do PATH=$__p:$PATH; done < "$__state/steps/$__k/path"`,
+    `    fi`,
     `  done`,
-    `  [ -f "$__state/path" ] || return 0`,
-    `  while IFS= read -r __p || [ -n "$__p" ]; do PATH=$__p:$PATH; done < "$__state/path"`,
     `  export PATH`,
     `}`,
+    // The value the steps before this one last gave a variable through GITHUB_ENV, or `f` when none did.
+    `__ci_given() {`,
+    `  __v=; __t=f`,
+    `  for __k in $__before; do`,
+    `    [ -f "$__state/steps/$__k/env.$1" ] || continue`,
+    `    IFS= read -r -d '' __v < "$__state/steps/$__k/env.$1"; __t=s`,
+    `  done`,
+    `}`,
+    // A step starts with nothing in its own place: what it left on an earlier run is gone before it runs or is
+    // skipped. Steps split from one step share a place, and each keeps what the ones before it wrote there.
+    `__ci_fresh() { [ -n "\${__smithers_ci_part-}" ] || rm -rf -- "$__state/steps/$1" || exit 1; }`,
     `__ci_outcome() { mkdir -p -- "$__state/steps/$1" && printf %s "$2" > "$__state/steps/$1/outcome" || exit 1; }`,
     // A directory decided while the job runs: one of the repository, as a step's `working-directory` is.
     `__ci_enter() {`,
@@ -269,6 +290,7 @@ const library = (job: JobFacts): string =>
     `  __script=$__script$__rest`,
     `}`,
     `__ci_skip() {`,
+    `  __ci_fresh "$1"`,
     `  __ci_outcome "$1" skipped`,
     `  echo "smithers-ci: not run, its condition is false"`,
     `  exit 0`,
@@ -304,30 +326,55 @@ const library = (job: JobFacts): string =>
     `    NODE_OPTIONS) __ci_fail "a step may not set NODE_OPTIONS for later steps: GitHub refuses it";;`,
     `    ''|[!A-Za-z_]*|*[!A-Za-z0-9_]*) __ci_fail "a step set a variable for later steps under a name a shell cannot hold";;`,
     `  esac`,
-    `  printf %s "$2" > "$__state/env/$1" || exit 1`,
+    `  printf %s "$2" > "$__state/steps/$__key/env.$1" && printf '%s\\n' "$1" >> "$__state/steps/$__key/vars" || exit 1`,
     `}`,
     // Runs the step's script and stops it at its limit, as a runner stops a step at its `timeout-minutes`. The
-    // script runs in a process group of its own, so the programs it started stop with it; one that outlives the
-    // first signal gets a second that it cannot refuse. A signal to this shell is passed on to the script.
-    `__ci_limited() {`,
+    // script runs in a process group of its own, so the programs it started stop with it: the group is asked to
+    // stop, given ten seconds, and then ended. A signal to this shell is passed on the same way, and the shell
+    // waits until the script is gone. A read from the terminal fails in the script, as where there is none.
+    `__ci_stop() {`,
+    `  kill -TERM -- "-$__pid" 2>/dev/null`,
+    `  [ -z "$__signal" ] || return 0`,
+    `  __signal=1`,
     `  set -m`,
-    `  "$@" -c "$__script" < /dev/null &`,
+    `  { sleep 10 && kill -KILL -- "-$__pid"; } < /dev/null > /dev/null 2>&1 &`,
+    `  __end=$!`,
+    `  set +m`,
+    `}`,
+    `__ci_limited() {`,
+    `  __late="$__files.late"; __signal=; __end=`,
+    `  set -m`,
+    `  ( trap '' TTIN TTOU; exec "$@" -c "$__script" ) < /dev/null &`,
     `  __pid=$!`,
-    `  { sleep "$__limit"; : > "$__files/late"; kill -TERM -- "-$__pid"; sleep 10; kill -KILL -- "-$__pid"; } < /dev/null > /dev/null 2>&1 &`,
+    `  { sleep "$__limit" && : > "$__late" && kill -TERM -- "-$__pid" && sleep 10 && kill -KILL -- "-$__pid"; } < /dev/null > /dev/null 2>&1 &`,
     `  __watch=$!`,
     `  set +m`,
-    `  trap 'kill -TERM -- "-$__pid" 2>/dev/null' TERM INT HUP`,
-    `  wait "$__pid" 2>/dev/null`,
-    `  __status=$?`,
+    `  trap __ci_stop TERM INT HUP`,
+    // A signal ends `wait` at once, with the script still there.
+    `  while :; do`,
+    `    wait "$__pid" 2>/dev/null`,
+    `    __status=$?`,
+    `    kill -0 "$__pid" 2>/dev/null || break`,
+    `  done`,
+    // The script was told to stop and is gone. What it started has the rest of its ten seconds.
+    `  if [ -e "$__late" ] || [ -n "$__signal" ]; then`,
+    `    __n=0`,
+    `    while kill -0 -- "-$__pid" 2>/dev/null && [ "$__n" -lt 100 ]; do sleep 0.1; __n=$((__n + 1)); done`,
+    `    kill -KILL -- "-$__pid" 2>/dev/null`,
+    `  fi`,
+    `  for __job in "$__watch" $__end; do kill -KILL -- "-$__job" 2>/dev/null; wait "$__job" 2>/dev/null; done`,
     `  trap - TERM INT HUP`,
-    `  kill -KILL -- "-$__watch" 2>/dev/null`,
-    `  wait "$__watch" 2>/dev/null`,
-    `  [ -e "$__files/late" ] || return 0`,
-    `  echo "smithers-ci: stopped, it ran longer than the $__allowed its timeout-minutes allows" >&2`,
-    `  __status=124`,
+    `  if [ -e "$__late" ]; then`,
+    `    rm -f -- "$__late"`,
+    `    echo "smithers-ci: stopped, it ran longer than the $__allowed its timeout-minutes allows" >&2`,
+    `    __status=124`,
+    `  elif [ -n "$__signal" ] && [ "$__status" -eq 0 ]; then`,
+    `    __status=143`,
+    `  fi`,
     `}`,
     `__ci_run() {`,
     `  __key=$1; __script=$2; shift 2`,
+    `  __ci_fresh "$__key"`,
     `  __files=$(mktemp -d "$__state/step.XXXXXX") || exit 1`,
     `  : > "$__files/output"; : > "$__files/env"; : > "$__files/path"; : > "$__files/summary"; : > "$__files/state"`,
     `  export GITHUB_OUTPUT="$__files/output" GITHUB_ENV="$__files/env" GITHUB_PATH="$__files/path"`,
@@ -344,7 +391,9 @@ const library = (job: JobFacts): string =>
     `  mkdir -p -- "$__state/steps/$__key" || exit 1`,
     `  __ci_each "$__files/output" __ci_output "$__key"`,
     `  __ci_each "$__files/env" __ci_env`,
-    `  while IFS= read -r __p || [ -n "$__p" ]; do [ -z "$__p" ] || printf '%s\\n' "$__p" >> "$__state/path"; done < "$__files/path"`,
+    `  while IFS= read -r __p || [ -n "$__p" ]; do`,
+    `    [ -z "$__p" ] || printf '%s\\n' "$__p" >> "$__state/steps/$__key/path" || exit 1`,
+    `  done < "$__files/path"`,
     `  __ci_outcome "$__key" success`,
     `  rm -rf -- "$__files"`,
     `  exit 0`,
@@ -363,7 +412,7 @@ const loadOf = (found: Variable): string => {
   if (kind === "env") {
     const { name, held } = JSON.parse(detail) as { readonly name: string; readonly held: string | null }
     const fallback = held === null ? `__v=; __t=f` : `__v=${quote(held)}; __t=s`
-    return `__ci_read "$__state/env/${name}"; [ "$__t" = s ] || { ${fallback}; }`
+    return `__ci_given ${name}; [ "$__t" = s ] || { ${fallback}; }`
   }
   if (kind === "kept") return `__ci_read "$__state/kept/${detail}"; __t=s`
   if (kind === "process") return `__v=\${${detail}-}; __t=s`
@@ -579,6 +628,12 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
     for (const [name, parts] of entries) emitter.lines.push(`export ${name}=${words(parts)}`)
   }
   try {
+    // The steps whose values this one reads. An expression may ask for one before they are loaded. A step split
+    // from another also reads what the ones split with it wrote, which is kept under the key they share.
+    emitter.lines.push(
+      `__before=${quote(step.before.join(" "))}`,
+      `[ -z "\${__smithers_ci_part-}" ] || __before="$__before "${quote(step.key)}`
+    )
     // A variable of the job is set before what earlier steps wrote is loaded, so GITHUB_ENV replaces it.
     exported(step.outer)
     emitter.lines.push(`__ci_load ${quote(step.own.join(" "))}`)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { type Context, fields, type Scope, unknown, value, variable } from "../../src/inventory/Expression.ts"
-import { readLimit, within } from "../../src/inventory/TimeLimit.ts"
+import { readLimit, secondsOf, within } from "../../src/inventory/TimeLimit.ts"
 
 const contexts: Record<string, Context> = {
   inputs: fields((name) => ({ minutes: value(45), label: value("45") })[name]),
@@ -60,5 +60,16 @@ describe("within", () => {
     expect(within(undefined, 3)).toBe(3)
     expect(within(20, 3)).toBe(3)
     expect(within(20, 30)).toBe(20)
+  })
+})
+
+describe("secondsOf", () => {
+  // Any step is stopped after six hours, here as on GitHub's own machines, so a longer limit is none.
+  it("gives the limit in seconds, and none for a limit of six hours or more", () => {
+    expect(secondsOf(undefined)).toBeUndefined()
+    expect(secondsOf(1)).toBe(60)
+    expect(secondsOf(359)).toBe(21_540)
+    expect(secondsOf(360)).toBeUndefined()
+    expect(secondsOf(Number.MAX_SAFE_INTEGER)).toBeUndefined()
   })
 })

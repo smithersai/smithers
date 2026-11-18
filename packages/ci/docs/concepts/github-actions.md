@@ -98,11 +98,16 @@ failure, such as one that collects logs, is left out.
 
 A step with `timeout-minutes` is stopped when it runs longer, together with
 every program it started, and has failed, as on GitHub. The step prints
-`stopped, it ran longer than the 10 minutes its timeout-minutes allows`.
+`stopped, it ran longer than the 10 minutes its timeout-minutes allows`. The
+step and its programs are asked to stop and have ten seconds; what is still
+there is then ended. Stopping the replay itself stops a step the same way.
 
 A job's `timeout-minutes` holds each of its steps: a step that alone runs
 longer than its job may is stopped. A step of a local action is held to the
 limit of the step that uses the action.
+
+Any step is stopped after six hours, so a limit of 360 minutes or more adds
+nothing.
 
 The value is a positive whole number, written out or given by an expression
 that is known when the workflow is read. Any other value, such as a fraction
@@ -134,6 +139,10 @@ A line it writes to `GITHUB_PATH` goes first on `PATH` for later steps. What it
 writes to `GITHUB_OUTPUT` is its `steps.<id>.outputs`. As on GitHub, a step's
 own `env:` wins over `GITHUB_ENV`, and a step may not set `NODE_OPTIONS` for
 later steps.
+
+A step is given what the steps before it wrote, and nothing else. When a
+change makes one step of a job run again and the steps around it are reused,
+the step does not see what a later step wrote the last time the job ran.
 
 `GITHUB_SHA` and the event file are another at every commit. A step that names
 neither in its script, and reads neither `github.sha` nor the event's commits,

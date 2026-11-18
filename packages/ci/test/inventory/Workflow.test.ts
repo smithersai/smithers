@@ -1440,6 +1440,8 @@ jobs:
       - run: echo free
       - timeout-minutes: 1
         run: echo held
+      - timeout-minutes: 400
+        run: echo long
 `,
       {
         ".github/actions/both/action.yml":
@@ -1460,8 +1462,9 @@ jobs:
     ])
     expect(outputs(runJob(repo, job))).toEqual(["one", "two", "three", "four", "five", "four", "five"])
     const free = jobOf(repo, "ci.yml:free")
-    expect(limits(free)).toEqual([undefined, ["60", "1 minute"]])
-    expect(outputs(runJob(repo, free))).toEqual(["free", "held"])
+    // Any step is stopped after six hours, so a longer limit adds nothing.
+    expect(limits(free)).toEqual([undefined, ["60", "1 minute"], undefined])
+    expect(outputs(runJob(repo, free))).toEqual(["free", "held", "long"])
   })
 
   it.each<[string, string, string, string]>([
@@ -1492,5 +1495,83 @@ jobs:
     const job = jobOf(repo, "ci.yml:test")
     expect(features(job)).toEqual(["expression"])
     expect(job.unsupported[0]?.detail).toContain(reason)
+  })
+})
+
+// A step that runs again without the steps before it, because their results were reused, starts from the job's
+// state as an earlier run left it. It reads what the steps before it wrote, never what a step after it left there.
+describe("a step that runs again after a whole run of its job", () => {
+  const workflow = `
+on: pull_request
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "FIRST=1" >> "$GITHUB_ENV"
+      - run: echo "SECOND=2" >> "$GITHUB_ENV"
+      - id: early
+        run: |
+          echo "[\${FIRST-}] [\${SECOND-}] [\${LATE-unset}] [\${{ env.LATE }}] \${PATH%%:*}"
+          echo "seen=\${LATE-unset}" >> "$GITHUB_OUTPUT"
+      - id: late
+        run: |
+          if [ ! -f quiet ]; then
+            echo "LATE=3" >> "$GITHUB_ENV"
+            echo "/opt/late" >> "$GITHUB_PATH"
+            echo "said=yes" >> "$GITHUB_OUTPUT"
+          fi
+      - run: echo "[\${LATE-unset}] [\${{ env.LATE }}] [\${{ steps.late.outputs.said }}] [\${{ steps.early.outputs.seen }}] \${PATH%%:*}"
+`
+
+  it("reads what the steps before it wrote, and nothing a later step left on the earlier run", () => {
+    const repo = withWorkflow(workflow)
+    const job = jobOf(repo, "ci.yml:test")
+    expect(job.unsupported).toEqual([])
+    // The first place on PATH, which a step finds there until a step before it writes to GITHUB_PATH.
+    const first = "/smithers-ci-test/bin"
+    const path = `${first}:${process.env["PATH"] ?? ""}`
+    const whole = outputs(runJob(repo, job, {}, path))
+    expect(whole.slice(2)).toEqual([`[1] [2] [unset] [] ${first}`, "", "[3] [3] [yes] [unset] /opt/late"])
+    // The third step runs again: the two before it are not run, and what the fourth left is still in the state.
+    const again = outputs(runJob(repo, { ...job, steps: job.steps.slice(2) }, {}, path))
+    expect(again).toEqual([`[1] [2] [unset] [] ${first}`, "", "[3] [3] [yes] [unset] /opt/late"])
+  })
+
+  it("starts each step with nothing of what that step left before", () => {
+    const repo = withWorkflow(workflow)
+    const job = jobOf(repo, "ci.yml:test")
+    runJob(repo, job)
+    // This time the fourth step writes nothing, so the fifth is given nothing by it.
+    writeFileSync(join(repo.root, "quiet"), "")
+    const again = outputs(runJob(repo, { ...job, steps: job.steps.slice(3) }))
+    expect(again[1]?.startsWith("[unset] [] [] [unset] ")).toBe(true)
+    expect(again[1]).not.toContain("/opt/late")
+  })
+
+  it("gives a step the keys of the steps before it, a local action's own steps among them", () => {
+    const repo = withWorkflow(
+      `
+on: pull_request
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - id: one
+        run: echo one
+      - id: two
+        uses: ./.github/actions/both
+      - run: sudo apt-get install -y zsh
+      - run: echo last
+`,
+      {
+        ".github/actions/both/action.yml":
+          "runs:\n  using: composite\n  steps:\n    - id: a\n      run: echo a\n      shell: bash\n    - run: echo b\n      shell: bash\n"
+      }
+    )
+    const before = jobOf(repo, "ci.yml:test").steps.map((step) =>
+      /^__before='([^']*)'$/m.exec(String(step.runner))?.[1]
+    )
+    // A step that only installs packages reads what the steps before it left, and leaves nothing to read.
+    expect(before).toEqual(["", "ONE", "ONE TWO.A", "ONE TWO.A TWO.-2", "ONE TWO.A TWO.-2"])
   })
 })

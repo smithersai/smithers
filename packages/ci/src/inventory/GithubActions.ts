@@ -62,7 +62,7 @@ import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
 import { type JobFacts, settled, type StepFacts, write } from "./Runner.ts"
 import { isLiteralSecret, isSecretName } from "./Secrets.ts"
 import { readSetup, type Setup } from "./Setup.ts"
-import { readLimit, within as withinLimit } from "./TimeLimit.ts"
+import { readLimit, secondsOf, within as withinLimit } from "./TimeLimit.ts"
 import { asScalar, asStrings, isRecord, normalizeDirectory } from "./Values.ts"
 
 const source = "github-actions"
@@ -151,6 +151,8 @@ interface JobState extends Shape {
   readonly setupNames: Set<string>
   /** How many commands of the job have a place among its steps: every one but those a replay may leave out. */
   placed: number
+  /** The keys of those commands, in the order they run: a later step reads what each wrote for the steps after it. */
+  readonly keys: Array<string>
   /** True when the command added last is one a replay may leave out. */
   apart: boolean
   /** The mark of the job's first command, by which the commands after it find what it left. */
@@ -610,6 +612,7 @@ const addRun = (
     second: state.placed === 1 && state.shared,
     apart,
     job: first && !asks(reads) ? undefined : state.key,
+    before: [...state.keys],
     cwd,
     directory,
     start,
@@ -620,7 +623,7 @@ const addRun = (
     env: decided.filter(([, , own]) => own).map(([name, entry]) => [name, entry] as const),
     fills: [...fills],
     commit: /\bGITHUB_(?:SHA|EVENT_PATH)\b/.test(command),
-    limit: context.limit === undefined ? undefined : context.limit * 60
+    limit: secondsOf(context.limit)
   })
   const told = facts(false)
   const tried = write(state.runner, told, command)
@@ -649,6 +652,7 @@ const addRun = (
       state.only = { at: before, text: written.alone }
     }
     state.placed += 1
+    state.keys.push(context.key)
   }
 }
 
@@ -1135,6 +1139,7 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     },
     ran: false,
     placed: 0,
+    keys: [],
     apart: false,
     mark: undefined,
     shared: false,
