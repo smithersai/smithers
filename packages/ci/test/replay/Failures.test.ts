@@ -2,7 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { existsSync, rmSync } from "node:fs"
-import { join } from "node:path"
+import { join, relative } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
@@ -147,6 +147,20 @@ describe("a replay that cannot run", () => {
 })
 
 describe("a replay that runs", () => {
+  it("accepts a root relative to the working directory", async () => {
+    const root = track(makeSmallRepository(passing))
+    const report = await replay(relative(process.cwd(), root), {}, { commits: 0 })
+    expect(report.commits).toEqual([])
+  })
+
+  it("does not wait for a process a step leaves running", async () => {
+    // The process outlives this test, so waiting for its pipe to close would time the test out.
+    const root = track(makeSmallRepository([job("x", "sleep 240 & exit 0"), ...passing]))
+    const files: Parts["files"] = (inventory) => Effect.succeed(generated(inventory, (entry) => entry.step !== "x0"))
+    const report = await replay(root, { files })
+    expect(report.commits[0]?.baseline.ok).toBe(true)
+  }, 200_000)
+
   it("uses the default fast-mode settings when the request gives none", async () => {
     const root = track(makeSmallRepository(passing))
     // A score of 0 is under every cutoff, but the default keeps the five highest-scoring targets.

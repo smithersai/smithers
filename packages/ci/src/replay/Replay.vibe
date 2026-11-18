@@ -101,11 +101,15 @@ effect function exec(
   const spawner = try ChildProcessSpawner
   return scoped(effect {
     const handle = try spawner.spawn(ChildProcess.make(command, [...args], { cwd, env: { ...env }, extendEnv: true }))
-    const text = try (handle.all
+    const kept = try Ref.make("")
+    const reader = fork (handle.all
       |> Stream.decodeText(%)
-      |> Stream.runFold(%, () => "", (kept: string, chunk: string) => (kept + chunk).slice(-limit)))
+      |> Stream.runForEach(%, (chunk: string) => Ref.update(kept, (text) => (text + chunk).slice(-limit))))
     const exitCode = try handle.exitCode
-    return { exitCode: Number(exitCode), text } satisfies Output
+    // A process a step left running keeps the pipe open, so only complete output is waited for without a limit.
+    if (limit === Number.POSITIVE_INFINITY) try Fiber.join(reader)
+    else try timeoutOption(Fiber.await(reader), "1 second")
+    return { exitCode: Number(exitCode), text: try Ref.get(kept) } satisfies Output
   }) catch effect (cause) => {
     throw failure("command-failed", `could not run ${command}: ${describe(cause)}`)
   }
@@ -192,8 +196,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-replay-" }), "could not make a directory")
     const source = path.join(work, "source")
-    const cloned = try exec("git", ["clone", "--quiet", "--no-checkout", request.root, source], work, {}, outputLimit)
-    if (cloned.exitCode !== 0) throw failure("not-a-repository", `${request.root} is not a git repository`)
+    const root = path.resolve(request.root)
+    const cloned = try exec("git", ["clone", "--quiet", "--no-checkout", root, source], work, {}, outputLimit)
+    if (cloned.exitCode !== 0) throw failure("not-a-repository", `${root} is not a git repository`)
     const history = lines(try git(source, ["rev-list", "--first-parent", `--max-count=${request.commits}`, "HEAD"]))
     const commits = [...history].reverse()
 
