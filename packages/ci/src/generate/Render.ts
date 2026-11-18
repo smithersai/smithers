@@ -177,7 +177,30 @@ const renderSetup = (toolchain: Toolchain): ReadonlyArray<string> => {
   ]
 }
 
-const renderWorkflow = (inventory: Inventory, plan: StepPlan, cache: string | undefined): string => {
+// What the read sandbox needs on a GitHub runner, as Smithers' own workflow installs it. Linux targets are confined
+// by bubblewrap, which an Ubuntu runner lacks, and Ubuntu 24.04 lets it make its namespace only once AppArmor's
+// restriction is lifted. Without the step a confined target fails `sandbox_unenforceable`. macOS confines with
+// seatbelt, which every Mac has.
+const sandboxSetup: ReadonlyArray<string> = [
+  `      ${yamlComment("A target that declares its inputs is held to them, on Linux by bubblewrap.")}`,
+  `      - name: Install the read sandbox`,
+  `        if: runner.os == 'Linux'`,
+  `        shell: bash`,
+  `        run: |`,
+  `          if command -v apt-get >/dev/null 2>&1; then`,
+  `            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends bubblewrap`,
+  `            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then`,
+  `              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`,
+  `            fi`,
+  `          fi`
+]
+
+const renderWorkflow = (
+  inventory: Inventory,
+  plan: StepPlan,
+  cache: string | undefined,
+  confined: boolean
+): string => {
   const toolchains = new Map<string, Toolchain>()
   for (const toolchain of [...inventory.toolchains].sort(byNameThenSource)) {
     if (!toolchains.has(toolchain.name)) toolchains.set(toolchain.name, toolchain)
@@ -201,6 +224,7 @@ const renderWorkflow = (inventory: Inventory, plan: StepPlan, cache: string | un
     `      - uses: actions/checkout@v4`,
     ...(hasNode ? [] : [`      - uses: actions/setup-node@v4`, `        with:`, `          node-version: "24"`]),
     ...[...toolchains.values()].flatMap(renderSetup),
+    ...(confined ? sandboxSetup : []),
     `      ${yamlComment("Unconfined results never reach a remote cache, so the runner keeps its own.")}`,
     `      - uses: actions/cache@v4`,
     `        with:`,
@@ -266,7 +290,8 @@ export const renderFiles = (
 ): Result.Result<ReadonlyArray<GeneratedFile>, Failure> => {
   const fits = (content: string): boolean => new TextEncoder().encode(content).length <= maximumPackageBytes
   const narrowed = renderPackage(plan, true)
-  const targets = fits(narrowed) ? narrowed : renderPackage(plan, false)
+  const held = fits(narrowed)
+  const targets = held ? narrowed : renderPackage(plan, false)
   if (!fits(targets)) {
     return Result.fail({
       code: "unsupported",
@@ -275,7 +300,16 @@ export const renderFiles = (
     })
   }
   return Result.succeed([
-    { path: workflowPath, content: renderWorkflow(inventory, plan, options?.cache) },
+    {
+      path: workflowPath,
+      content: renderWorkflow(
+        inventory,
+        plan,
+        options?.cache,
+        // The runner needs the sandbox only when a target runs under it.
+        plan.targets.some((target) => narrows(target, held))
+      )
+    },
     { path: workspacePath, content: renderWorkspace(inventory) },
     { path: packagePath, content: targets },
     { path: targetMapPath, content: renderTargetMap(plan) },

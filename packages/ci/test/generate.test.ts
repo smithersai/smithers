@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest"
 import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
 import { ci, Inventory, shell } from "../src/contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateFiles } from "../src/contract/Parts.ts"
+import { shardOf } from "../src/contract/Shard.ts"
 import { labelsOf, path as targetMapPath, TargetMap } from "../src/contract/TargetMap.ts"
 import { forShell, forText } from "../src/generate/Expressions.ts"
 import { files } from "../src/generate/index.ts"
@@ -509,6 +510,42 @@ describe("labels", () => {
     expect(source).toContain(`"ok-x": step`)
     expect(source).toContain("// j / Line one")
   })
+
+  const labelsOfSteps = (document: InventoryDocument): ReadonlyArray<string> =>
+    [...content(generate(document), packagePath).matchAll(/^ {4}"([^"]+)": step/gm)].map((match) => match[1] as string)
+
+  it("keeps labels apart whatever their letter case", () => {
+    // Smithers build refuses a package holding `ci-Build` and `ci-build`.
+    const labels = labelsOfSteps(inventory([job("ci", [
+      step("ci:Build", "one"),
+      step("ci:build", "two"),
+      step("ci:BUILD", "three"),
+      step("_Repository", "four")
+    ])]))
+    expect(labels[0]).toBe("ci-Build")
+    expect(labels[1]).toMatch(/^ci-build-[0-9a-f]+$/)
+    expect(labels[2]).toMatch(/^ci-BUILD-[0-9a-f]+$/)
+    expect(labels[3]).toMatch(/^_Repository-[0-9a-f]+$/)
+    expect(new Set(labels.map((label) => label.toLowerCase())).size).toBe(4)
+  })
+
+  it("never gives two steps one label, even when an id is written to equal another's suffixed label", () => {
+    // `ci:x-y` collides with `ci:x y` and would be suffixed to the label the first step already has.
+    const taken = `ci:x-y-${shardOf("ci:x-y\n[]", 0x1_0000_0000).toString(16)}`
+    const document = inventory([
+      job("j1", [step(taken, "false")]),
+      job("j2", [step("ci:x y", "true")]),
+      job("j3", [step("ci:x-y", "true")])
+    ])
+    const labels = labelsOfSteps(document)
+    expect(labels.slice(0, 2)).toEqual([taken.replace(":", "-"), "ci-x-y"])
+    expect(labels[2]).toMatch(/^ci-x-y-[0-9a-f]+$/)
+    expect(new Set(labels).size).toBe(3)
+    // Every step keeps its own target: none replaced another's.
+    const map = Schema.decodeUnknownSync(Schema.fromJsonString(TargetMap))(content(generate(document), targetMapPath))
+    expect(map.targets.map((entry) => entry.step)).toEqual([taken, "ci:x y", "ci:x-y"])
+    expect(new Set(map.targets.map((entry) => entry.label)).size).toBe(3)
+  })
 })
 
 describe("matrix and systems", () => {
@@ -608,6 +645,25 @@ describe("the workspace and workflow", () => {
     expect(workflow).toContain(`node-version: "24"`)
     expect(workflow).toContain("smthrs ci '//...' --jobs 1")
     expect(workflow.indexOf("path: .flows/cache")).toBeLessThan(workflow.indexOf("smthrs ci"))
+  })
+
+  it("installs the read sandbox on the runner when a target is held to its inputs, and only then", () => {
+    const held = inventory([job("a", [step("a:1", "x", { inputs: ["src/**"], from: "a:1" })])])
+    const workflow = content(generate(held), workflowPath)
+    expect(content(generate(held), packagePath)).toContain("sandbox: { network: true }")
+    // Linux targets are confined by bubblewrap, which an Ubuntu runner does not have.
+    expect(workflow).toContain("        if: runner.os == 'Linux'\n")
+    expect(workflow).toContain("apt-get install -y -qq --no-install-recommends bubblewrap")
+    expect(workflow).toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0")
+    expect(workflow.indexOf("bubblewrap\n")).toBeLessThan(workflow.indexOf("smthrs ci"))
+    // No target is confined: nothing to install.
+    const open = content(generate(inventory([job("a", [step("a:1", "x")])])), workflowPath)
+    expect(open).not.toContain("bubblewrap")
+    // Inputs too large for one PACKAGE.ts: every target runs in the open, so the step is left out.
+    const inputs = Array.from({ length: 4000 }, (_, index) => `packages/${"p".repeat(300)}-${index}/**`)
+    const large = generate(inventory([job("a", [step("a:1", "x", { inputs, from: "a:1" })])]))
+    expect(content(large, packagePath)).not.toContain("sandbox: {")
+    expect(content(large, workflowPath)).not.toContain("bubblewrap")
   })
 
   it("uses the repository's Node and defaults its triggers and runner", () => {

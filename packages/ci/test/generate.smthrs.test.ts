@@ -1,14 +1,16 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { spawnSync } from "node:child_process"
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { delimiter, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
+import { parse as parseYaml } from "yaml"
 import type { Ci, Inventory as InventoryDocument, Job } from "../src/contract/Inventory.ts"
 import { Inventory, shell } from "../src/contract/Inventory.ts"
 import { files } from "../src/generate/index.ts"
+import { workflowPath } from "../src/generate/Render.ts"
 
 const cli = fileURLToPath(new URL("../../smithers/bin/smithers.mjs", import.meta.url))
 const slow = 180_000
@@ -17,8 +19,8 @@ const prefix = "//:"
 const fixture = (name: string): InventoryDocument =>
   Schema.decodeUnknownSync(Inventory)(JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8")))
 
-const run = (cwd: string, command: string, args: ReadonlyArray<string>) => {
-  const result = spawnSync(command, args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+const run = (cwd: string, command: string, args: ReadonlyArray<string>, env: NodeJS.ProcessEnv = process.env) => {
+  const result = spawnSync(command, args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env })
   return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
 
@@ -54,15 +56,15 @@ const plan = (root: string): ReadonlyArray<PlannedTarget> => {
 }
 
 /** Runs every target and returns each one's status from the run's results file. */
-const execute = (root: string, name: string) => {
+const execute = (root: string, name: string, env: NodeJS.ProcessEnv = process.env) => {
   // The CLI refuses to overwrite a results file, so each run names its own.
   const resultsFile = join(root, ".flows", `${name}.json`)
-  const result = run(root, process.execPath, [cli, "ci", "//...", "--jobs", "1", "--results-file", resultsFile])
+  const result = run(root, process.execPath, [cli, "ci", "//...", "--jobs", "1", "--results-file", resultsFile], env)
   const record = JSON.parse(readFileSync(resultsFile, "utf8")) as {
     readonly results: ReadonlyArray<{ readonly label: string; readonly status: string }>
   }
   const statuses = new Map(record.results.map((target) => [target.label.slice(prefix.length), target.status]))
-  return { status: result.status, statuses }
+  return { status: result.status, statuses, output: `${result.stdout}${result.stderr}` }
 }
 
 const job = (id: string, commands: ReadonlyArray<string>, extra: Partial<Job> = {}): Job => ({
@@ -165,6 +167,32 @@ describe("generated files under the real smthrs", () => {
         "github-2": "ran",
         "recipe-1": "ran"
       })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, slow)
+
+  it("plans and runs steps whose ids differ only by letter case, each as its own target", () => {
+    const steps = ["ci:Build", "ci:build", "ci:a b", "ci:a-b"].map((id) => ({
+      id,
+      command: id === "ci:build" ? "false" : "true",
+      cwd: "",
+      env: {},
+      secrets: []
+    }))
+    // One job per step, so one failure skips nothing.
+    const root = repository(document(steps.map((step, index) => ({ ...job(`j${index}`, []), steps: [step] }))))
+    try {
+      // Smithers build refuses a package whose labels differ only by case: the plan succeeding is the proof.
+      const labels = plan(root).map((target) => target.label.slice(prefix.length))
+      expect(labels).toHaveLength(4)
+      expect(new Set(labels.map((label) => label.toLowerCase())).size).toBe(4)
+      expect(labels.slice(0, 1)).toEqual(["ci-Build"])
+      const { statuses } = execute(root, "only")
+      // The failing command belongs to `ci:build` alone.
+      expect([...statuses.values()].sort()).toEqual(["failed", "ran", "ran", "ran"])
+      expect(statuses.get("ci-Build")).toBe("ran")
+      expect([...statuses].find(([label]) => /^ci-build-/.test(label))?.[1]).toBe("failed")
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -308,6 +336,44 @@ describe("generated files under the real smthrs", () => {
       // The file the build read changes. A key made of `packages/a/**` would not: the step would hit, and pass stale.
       writeFileSync(join(root, "config/value"), "bad\n")
       expect(statuses("third")).toEqual({ "ci-1": "ran", "ci-2-a": "failed", "ci-2-b": "ran" })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, slow)
+
+  it("installs the read sandbox in the workflow, without which a Linux runner fails every confined target", () => {
+    const held = {
+      id: "ci:1:a",
+      command: "grep -q source packages/a/input.txt",
+      cwd: "",
+      env: {},
+      secrets: [],
+      inputs: ["packages/a/**"],
+      from: "ci:1"
+    }
+    const inventory = document([{ ...job("ci", []), steps: [held], runsOn: "ubuntu-latest" }])
+    const workflow = parseYaml(
+      Effect.runSync(files(inventory as Ci)).find((file) => file.path === workflowPath)?.content ?? ""
+    ) as { readonly jobs: { readonly ci: { readonly steps: ReadonlyArray<Record<string, string>> } } }
+    const steps = workflow.jobs.ci.steps
+    const install = steps.findIndex((step) => step["name"] === "Install the read sandbox")
+    // The step runs on Linux runners only, before the targets, and is a script bash reads.
+    expect(install).toBeGreaterThan(-1)
+    expect(install).toBeLessThan(steps.findIndex((step) => step["run"]?.includes("smthrs ci")))
+    expect(steps[install]?.["if"]).toBe("runner.os == 'Linux'")
+    expect(steps[install]?.["run"]).toContain("--no-install-recommends bubblewrap")
+    expect(run(tmpdir(), "bash", ["-n", "-c", steps[install]?.["run"] as string]).status).toBe(0)
+    // What the step prevents, on a Linux machine that has bubblewrap: take it off PATH, as on a fresh runner.
+    if (process.platform !== "linux" || !confines) return
+    const root = repository(inventory, { "packages/a/input.txt": "source\n" })
+    try {
+      const without = (process.env["PATH"] ?? "").split(delimiter).filter((directory) =>
+        !existsSync(join(directory, "bwrap"))
+      )
+      const bare = execute(root, "bare", { ...process.env, PATH: without.join(delimiter) })
+      expect(Object.fromEntries(bare.statuses)).toEqual({ "ci-1-a": "failed" })
+      expect(bare.output).toContain("bwrap is not on PATH (install the bubblewrap package)")
+      expect(Object.fromEntries(execute(root, "installed").statuses)).toEqual({ "ci-1-a": "ran" })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

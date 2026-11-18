@@ -238,10 +238,22 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
   // Targets a later target needs on disk: these can never be replayed.
   const reliedOn = new Set<string>()
 
+  // The labels taken so far, in lower case. Smithers build refuses a package with two labels that differ only by
+  // case, and a setup target's marker is a file, which a macOS disk finds whatever its case.
+  const taken = new Set<string>([repositoryLabel.toLowerCase()])
+
+  // A label another step took gets a suffix from this step's id, hashed. An id can be written to equal such a
+  // label, so a suffixed label that is taken too is hashed again until one is free.
   const uniqueLabel = (step: Step, variant: Variant): string => {
-    const label = `${slug(step.id)}${variantSuffix(variant)}`
-    if (label !== repositoryLabel && !drafts.has(label)) return label
-    return `${label}-${shardOf(`${step.id}\n${variantKey(variant)}`, 0x1_0000_0000).toString(16)}`
+    const base = `${slug(step.id)}${variantSuffix(variant)}`
+    const identity = `${step.id}\n${variantKey(variant)}`
+    let label = base
+    for (let attempt = 0; taken.has(label.toLowerCase()); attempt += 1) {
+      const hashed = shardOf(attempt === 0 ? identity : `${identity}\n${attempt}`, 0x1_0000_0000)
+      label = `${base}-${hashed.toString(16)}`
+    }
+    taken.add(label.toLowerCase())
+    return label
   }
 
   const upstreamOf = (job: Job, host: Host | undefined): ReadonlyArray<string> =>
