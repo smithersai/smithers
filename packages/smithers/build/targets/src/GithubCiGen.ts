@@ -72,6 +72,15 @@ export type OutputMode = typeof OutputMode.Type
 export const maximumParallelism = 256
 
 /**
+ * The most shards one job may fan out to: GitHub runs at most 256 jobs from
+ * one matrix.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maximumShards = 256
+
+/**
  * One invocation of the build system over part of the target graph.
  *
  * This is the ONLY thing a job can be declared to do. There is no free-form
@@ -320,6 +329,17 @@ export const Job = Schema.Struct({
    * untrusted, writers are post-merge trunk jobs only. Absent means false.
    */
   publishesToCache: Schema.optional(Schema.Boolean),
+  /**
+   * How many machines split this job's target steps. The job renders once as
+   * a matrix over `shard: [0, …, shards - 1]`, and each target step passes
+   * `--shard ${{ matrix.shard }}/<shards>`: every machine plans the same
+   * selection and runs the targets whose label hashes to its shard, with
+   * their dependencies. Machines share work only through the remote cache.
+   * Refused beside {@link Job.matrix}.
+   */
+  shards: Schema.optional(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(2), Schema.isLessThanOrEqualTo(maximumShards))
+  ),
   /** What the runner must provide before the first target runs. */
   toolchain: CiToolchain.Toolchain,
   steps: Schema.Array(TargetStep)
@@ -594,7 +614,8 @@ const runner = (value: string): string => {
  */
 export const matrixExpressions = {
   os: "${{ matrix.os }}",
-  advisory: "${{ matrix.advisory }}"
+  advisory: "${{ matrix.advisory }}",
+  shard: "${{ matrix.shard }}"
 } as const
 
 /**
@@ -789,7 +810,12 @@ const installArgv = (attrs: Attrs): ReadonlyArray<string> =>
  * @category rendering
  * @since 0.1.0
  */
-export const stepCommand = (attrs: Attrs, step: TargetStep, nix?: CiToolchain.NixSetup | undefined): string => {
+export const stepCommand = (
+  attrs: Attrs,
+  step: TargetStep,
+  nix?: CiToolchain.NixSetup | undefined,
+  shards?: number | undefined
+): string => {
   if (step.verb.name === "review") {
     throw new Error("GithubCiGen: model review requires a trusted review host and an explicitly pinned policy")
   }
@@ -798,6 +824,8 @@ export const stepCommand = (attrs: Attrs, step: TargetStep, nix?: CiToolchain.Ni
     ...PackageManager.exec(attrs.packageManager, ["smthrs", Verb.command(step.verb)]),
     ...[step.pattern, ...(step.additionalPatterns ?? [])].map(shellArgument),
     ...(step.parallelism === undefined ? [] : ["--jobs", String(step.parallelism)]),
+    // The matrix supplies a whole number, so the expression renders as one shell word.
+    ...(shards === undefined ? [] : ["--shard", `${matrixExpressions.shard}/${shards}`]),
     ...(attrs.knownRed === undefined ? [] : ["--known-red", shellArgument(attrs.knownRed)]),
     // GITHUB_ACTION is unique per step within a job, so no two steps share a file.
     ...(attrs.results === true ? ["--results-file", `"$RUNNER_TEMP/${resultsDirectory}/$GITHUB_ACTION.json"`] : []),
@@ -1324,6 +1352,11 @@ const validateJobRunners = (job: Job): void => {
   ) {
     throw new InvalidLiteral({ message: "GithubCiGen: matrixNameSuffix must be \"os\" on a named matrix job" })
   }
+  if (job.shards !== undefined && job.matrix !== undefined) {
+    throw new Error(
+      `GithubCiGen: job ${JSON.stringify(job.id)} declares both shards and a platform matrix; declare one`
+    )
+  }
   if (job.matrix === undefined) {
     if (job.runsOn === undefined) {
       throw new Error(`GithubCiGen: job ${JSON.stringify(job.id)} declares no runs-on and no matrix`)
@@ -1753,7 +1786,11 @@ export const render = (attrs: Attrs): string => {
       const name = literalScalar(job.name)
       // Keep each platform's check identity without accepting an expression
       // from the declaration. Only the generator supplies this fixed suffix.
-      const renderedName = job.matrixNameSuffix === undefined ? name : scalar(`${job.name} (${matrixExpressions.os})`)
+      const renderedName = job.matrixNameSuffix !== undefined
+        ? scalar(`${job.name} (${matrixExpressions.os})`)
+        : job.shards !== undefined
+        ? scalar(`${job.name} (shard ${matrixExpressions.shard}/${job.shards})`)
+        : name
       lines.push(`    name: ${renderedName}`)
     }
     // The matrix comes before `runs-on`, because `runs-on` reads it. The rows
@@ -1773,6 +1810,16 @@ export const render = (attrs: Attrs): string => {
       }
       lines.push(`    runs-on: ${matrixExpressions.os}`)
     } else {
+      // A sharded job is a matrix over shard indexes on one runner. Every
+      // shard is required, and a red one must not cancel the others' verdicts.
+      if (job.shards !== undefined) {
+        lines.push(
+          "    strategy:",
+          `      fail-fast: ${matrixFailFast}`,
+          "      matrix:",
+          `        shard: [${Array.from({ length: job.shards }, (_, index) => index).join(", ")}]`
+        )
+      }
       lines.push(`    runs-on: ${runner(job.runsOn!)}`)
     }
     if (publishes) {
@@ -1801,7 +1848,7 @@ export const render = (attrs: Attrs): string => {
       rendered.push({
         ...(step.name === undefined ? {} : { name: step.name }),
         condition: independentGate,
-        run: stepCommand(attrs, step, job.toolchain.nix),
+        run: stepCommand(attrs, step, job.toolchain.nix, job.shards),
         // Result paths read runner environment variables using Bash syntax.
         // Windows otherwise selects PowerShell and expands both names to empty.
         ...(attrs.results === true
@@ -1817,7 +1864,9 @@ export const render = (attrs: Attrs): string => {
       })
     }
     if (job.toolchain.artifacts !== undefined) rendered.push(...artifactSteps(job.toolchain.artifacts))
-    if (attrs.results === true) rendered.push(resultsUpload(job.id, job.matrix !== undefined))
+    if (attrs.results === true) {
+      rendered.push(resultsUpload(job.id, job.matrix !== undefined || job.shards !== undefined))
+    }
     for (const step of rendered) lines.push(...renderStep(step, "      "))
   }
   return `${lines.join("\n")}\n`

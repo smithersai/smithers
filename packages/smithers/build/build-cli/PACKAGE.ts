@@ -100,7 +100,9 @@ const test = Smithers.Vitest({
     Smithers.file("TestPolicy.ts"),
     Smithers.file("//rust-toolchain.toml"),
     Smithers.file("//packages/smithers/flows/jj-wasm/PACKAGE.ts"),
-    Smithers.file("//packages/smithers/flows/jj-wasm/src/abi.rs")
+    Smithers.file("//packages/smithers/flows/jj-wasm/src/abi.rs"),
+    // Shards.test.ts checks --shard against the pairs smithers-ci tests its Shard contract with.
+    Smithers.file("//packages/ci/test/fixtures/shard-labels.json")
   ],
   deps: [lib],
   config: Smithers.file("vitest.config.ts"),

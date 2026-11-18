@@ -655,7 +655,6 @@ describe("parseWorkflow", () => {
     // SCOPE-3 (82b5490d) retired the legacy-app and Go jobs.
     expect(workflow.jobs.map((job) => job.id)).toEqual([
       "test",
-      ...Array.from({ length: 8 }, (_, index) => `test-${index + 2}`),
       "repository",
       "scripts",
       "docs",
@@ -672,6 +671,8 @@ describe("parseWorkflow", () => {
     const matrix = workflow.jobs.find((job) => job.id === "packages")!
     expect(matrix.runsOn).toBe("${{ matrix.os }}")
     expect(matrix.continueOnError).toBe("${{ matrix.advisory }}")
+    // The workspace graph parses as ONE job over its shards, on one runner.
+    expect(workflow.jobs.find((job) => job.id === "test")!.runsOn).toBe("ubuntu-latest")
     // Every job has at least a checkout, so no job parsed as empty.
     for (const job of workflow.jobs) expect(job.steps.length).toBeGreaterThan(0)
   })
@@ -685,7 +686,6 @@ describe("parseWorkflow", () => {
     const source = await readReal()
     const required = [
       "test",
-      ...Array.from({ length: 8 }, (_, index) => `test-${index + 2}`),
       "repository",
       "scripts",
       "docs",

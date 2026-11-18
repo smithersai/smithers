@@ -76,7 +76,8 @@ their issues and inspect the reported results. See the
 [build CLI policy](packages/smithers/build/build-cli/docs/cli.md).
 
 The `cloud-contract` gate checks local commands against the generated CI
-workflow. After changing the shard partition or regenerating
+workflow; `workspace` and `workspace-N` run shards 0 and N-1 of the `test` job.
+After changing the shard partition or regenerating
 `.github/workflows/ci.yml`, update the `workspace*` and `packages*` commands in
 `.github/scripts/ci/cloud.sh` and run `bun test .github/scripts/ci/cloud.test.ts`.
 
@@ -151,11 +152,12 @@ packages with a different layout carry their own BUILD file.
 
 The CI declaration has several deliberate operational constraints:
 
-- Eight `test` shards aggregate build, test, lint, docs, format, and circular
-  targets. Eight `packages` matrices repeat test targets across Linux, macOS
-  and Windows. Both use the measured package partition in
-  `packages/repo-targets/ci/shards.ts` and `parallelism: 2`, because extra
-  concurrency can starve the heavy suites' finite per-test budgets. The
+- The `test` job aggregates build, test, lint, docs, format, and circular
+  targets across nine shards: each machine runs `ci --shard <index>/9` over
+  every package. Nine `packages` matrices repeat test targets across Linux,
+  macOS and Windows over the measured package partition in
+  `packages/repo-targets/ci/shards.ts`. Both use `parallelism: 2`, because
+  extra concurrency can starve the heavy suites' finite per-test budgets. The
   [shard contract](packages/repo-targets/README.md#hosted-ci-shards) pins coverage,
   workload balance, platform policy and the limits of the timing evidence.
 - `actionlint` checks every workflow named by the declaration so GitHub-only

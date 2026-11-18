@@ -176,6 +176,11 @@ export interface RunOptions {
   /** Durable approvals for `approval: "required"` targets; without them those targets refuse. */
   readonly approvals?: TargetApprovals | undefined
   /**
+   * `--shard`: run only the planned targets whose label hashes to `index`
+   * among `count` shards, counted from zero, and their dependencies.
+   */
+  readonly shard?: { readonly index: number; readonly count: number } | undefined
+  /**
    * File digests shared by every plan of one invocation. The caller that
    * passes one loads and saves it; without one, a plan loads the workspace's
    * saved index and saves it when planning ends.

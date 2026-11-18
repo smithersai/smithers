@@ -298,7 +298,9 @@ export const Package = S.Package({ targets: { bad, good } })
     [["--remote", "absent"], "--remote absent is not declared; the workspace declares pair (S.Workspace remotes)"],
     [["--remote", "pair", "--shard", "1/2"], "--remote and --shard are exclusive"],
     [["--remote", "pair", "--known-red", "known.json"], "--remote does not take --known-red yet"],
-    [["--timings", "timings.json"], "--timings needs --shard or --remote"]
+    [["--timings", "timings.json"], "--timings needs --remote"],
+    [["--remote", "pair", "--timings", "absent.json"], "absent.json: cannot read the timings"],
+    [["--remote", "pair", "--timings", "PACKAGE.ts"], "PACKAGE.ts: timings are not JSON"]
   ])("refuses %j before running a target", async (flags, message) => {
     const { guest, root } = await fixture(pair)
     const file = NodePath.join(root, "out", "refused.json")

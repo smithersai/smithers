@@ -9,8 +9,13 @@ const shell = readFileSync(new URL("cloud.sh", import.meta.url), "utf8")
 const github = readFileSync(new URL("../../../.github/workflows/ci.yml", import.meta.url), "utf8")
 // The per-commit drift workflow GitHub keeps beside ci.yml (#2484).
 const drift = readFileSync(new URL("../../../.github/workflows/drift.yml", import.meta.url), "utf8")
-const runs = (yaml: string): string[] => Object.values(Yaml.parse(yaml).jobs as Record<string, { steps?: Array<{ run?: string }> }>).
-  flatMap(({ steps }) => (steps ?? []).flatMap(({ run }) => run?.startsWith("pnpm exec ") ? [run.replace(/ --results-file "[^"]+"/g, "")] : []))
+type Job = { steps?: Array<{ run?: string }>; strategy?: { matrix?: { shard?: number[] } } }
+// A sharded job runs its commands once per shard, as GitHub expands its matrix.
+const runs = (yaml: string): string[] => Object.values(Yaml.parse(yaml).jobs as Record<string, Job>).
+  flatMap(({ steps, strategy }) => (strategy?.matrix?.shard ?? [undefined]).flatMap((shard) =>
+    (steps ?? []).flatMap(({ run }) => run?.startsWith("pnpm exec ")
+      ? [run.replace(/ --results-file "[^"]+"/g, "").replaceAll("${{ matrix.shard }}", String(shard))]
+      : [])))
 const nodeVersion = readFileSync(new URL("../../../.node-version", import.meta.url), "utf8")
 const section = (from: string, to: string) => shell.slice(shell.indexOf(from), shell.indexOf(to))
 const toolsBlock = section("gate_tools() {", "bootstrap_for() {")

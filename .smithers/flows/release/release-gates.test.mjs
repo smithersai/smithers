@@ -253,7 +253,7 @@ test("exclusion drift checks use literal tokens and reject dynamic gates", () =>
 })
 
 /** Pin every job so a new one forces a release decision. `on.push` is a trigger, not a job. */
-const ciJobs = ["test", ...Array.from({ length: 8 }, (_, index) => `test-${index + 2}`), "repository", "scripts", "docs", "apps-e2e", "rust", "rust-ffi", "wasm-repro", "browser", "packages", ...Array.from({ length: 8 }, (_, index) => `packages-${index + 2}`)]
+const ciJobs = ["test", "repository", "scripts", "docs", "apps-e2e", "rust", "rust-ffi", "wasm-repro", "browser", "packages", ...Array.from({ length: 8 }, (_, index) => `packages-${index + 2}`)]
 
 /** A copy of the release workflow with one more step ahead of the build. */
 const withUnlistedStep = (source, name, command) => {
@@ -439,6 +439,11 @@ test("a CI gate added outside the exclusions is reported, and an exclusion that 
   const mutated = releaseGates.filter((gate) => gate.target !== "//packages/smithers/flows/jj-wasm:buildScript")
   assert.deepEqual(ciGatesMissingFromInventory(mutated, ci, releaseGateExclusions).map((step) => step.command), ["pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:buildScript' --verbose"])
   const workspaceCommand = workflowGateSteps(ci, "test")[0].command
+  // Each shard of the workspace job runs its share; the matrix runs them all, so the step is the inventory's gate.
+  assert.match(ci, / --shard \$\{\{ matrix\.shard \}\}\/9 /)
+  assert.doesNotMatch(workspaceCommand, /--shard/)
+  const literalShard = ci.replace("--shard ${{ matrix.shard }}/9", "--shard 0/9")
+  assert.deepEqual(ciGatesMissingFromInventory(releaseGates, literalShard, releaseGateExclusions).map((step) => step.job), ["test"])
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "test", commands: [workspaceCommand], reason: "stale" }]), [
     `test excludes ${workspaceCommand}, which the inventory runs`
   ])

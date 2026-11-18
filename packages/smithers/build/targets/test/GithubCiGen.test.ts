@@ -506,6 +506,7 @@ describe("the declaration surface", () => {
         "name",
         "publishesToCache",
         "runsOn",
+        "shards",
         "steps",
         "timeoutMinutes",
         "toolchain"
@@ -2017,11 +2018,67 @@ describe("a platform matrix", () => {
         "name",
         "publishesToCache",
         "runsOn",
+        "shards",
         "steps",
         "timeoutMinutes",
         "toolchain"
       ])
     expect(Object.keys(MatrixRow.fields).sort()).toEqual(["advisory", "os"])
+  })
+})
+
+/**
+ * One job split across machines: a matrix over shard indexes, each machine
+ * running `--shard <index>/<count>` over the same selection, so the job is
+ * declared once however many machines run it.
+ */
+describe("a shard matrix", () => {
+  const shardedJob = {
+    id: "test",
+    name: "workspace graph",
+    runsOn: "ubuntu-latest",
+    shards: 3,
+    timeoutMinutes: 40,
+    toolchain: CiToolchain.Needs({ runtimes: [node] }),
+    steps: [{ name: "Workspace targets", verb: Verb.Ci, pattern: "//packages/...", parallelism: 2 }]
+  }
+  const withShardedJob = (job: unknown, extra: Readonly<Record<string, unknown>> = {}): never =>
+    attrsOf({ ...goldenAttrs, gates: [], requiredJobs: ["test"], jobs: [job], ...extra })
+
+  it("renders one job over every shard, each step running its own shard", () => {
+    const rendered = render(withShardedJob(shardedJob))
+    expect(rendered).toContain(
+      "  \"test\":\n    name: \"workspace graph (shard ${{ matrix.shard }}/3)\"\n    strategy:\n      fail-fast: false\n      matrix:\n        shard: [0, 1, 2]\n    runs-on: \"ubuntu-latest\"\n    timeout-minutes: 40\n    steps:\n"
+    )
+    expect(rendered).toContain("smthrs ci '//packages/...' --jobs 2 --shard ${{ matrix.shard }}/3 ")
+    // Every shard runs the same steps, rendered once.
+    expect(rendered.split("smthrs ci '//packages/...'").length - 1).toBe(1)
+    expect(rendered).not.toMatch(otherCondition)
+    const workflow = parseWorkflow(rendered)
+    expect(workflow.jobs.map((job) => job.id)).toEqual(["test"])
+  })
+
+  it("leaves an unsharded job and its steps without a shard", () => {
+    const { shards: _shards, ...whole } = shardedJob
+    const rendered = render(withShardedJob(whole))
+    expect(rendered).not.toContain("--shard")
+    expect(rendered).not.toContain("strategy:")
+    expect(rendered).toContain("name: \"workspace graph\"\n")
+  })
+
+  it("keeps result artifacts distinct across shards and rerun attempts", () => {
+    const rendered = render(withShardedJob(shardedJob, { results: true }))
+    expect(rendered).toContain("smthrs-results-test-${{ strategy.job-index }}-${{ github.run_attempt }}")
+  })
+
+  it("refuses shards beside a platform matrix", () => {
+    const { runsOn: _runsOn, ...noRunner } = shardedJob
+    expect(() => render(withShardedJob({ ...noRunner, matrix: [{ os: "ubuntu-latest", advisory: false }] })))
+      .toThrow(/declares both shards and a platform matrix; declare one/)
+  })
+
+  it.each([1, 0, 257, 2.5])("refuses %d shards", (shards) => {
+    expect(() => withShardedJob({ ...shardedJob, shards })).toThrow()
   })
 })
 

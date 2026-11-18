@@ -69,8 +69,7 @@ describe("ci conformance", () => {
     const ciDeclaration = declaration.slice(declaration.indexOf("const ci = Smithers.GithubCiGen("))
     const required = [...(ciDeclaration.match(/requiredJobs: \[([^\]]+)\]/)?.[1] ?? "").matchAll(/"([^"]+)"/g)]
       .map((match) => match[1])
-    for (const owner of owners.filter((id) => id !== "test")) assert.ok(required.includes(owner), `${owner} must remain required`)
-    assert.ok(ciDeclaration.includes('...packageShards.map((_, index) => shardJobId("test", index))'))
+    for (const owner of owners) assert.ok(required.includes(owner), `${owner} must remain required`)
     const evidence = Object.entries(ci.jobs).filter(([, job]) =>
       job.steps
         .some((step) => step.name === "Upload ci-test-tier-evidence")
@@ -406,7 +405,7 @@ describe("ci conformance", () => {
       .flatMap((step) => step.run === undefined || step.run.includes("\n") ? [] : [step.run])
     assert.ok(commands.length > 0)
     const derived = [
-      /^pnpm exec smthrs (?:build|test|lint|docs|review|ci)(?: '\/\/[^']*')+( --jobs \d+)?( --known-red '\.github\/ci-known-red\.json')? --verbose$/,
+      /^pnpm exec smthrs (?:build|test|lint|docs|review|ci)(?: '\/\/[^']*')+( --jobs \d+)?( --shard \$\{\{ matrix\.shard \}\}\/[1-9]\d*)?( --known-red '\.github\/ci-known-red\.json')? --verbose$/,
       /^pnpm install --frozen-lockfile --ignore-scripts$/,
       /^rustup toolchain install$/,
       /^jj git init --colocate$/
@@ -425,7 +424,9 @@ describe("ci conformance", () => {
     for (const run of [
       "pnpm exec smthrs test '//packages/...' || true\n",
       "echo setup\npnpm exec smthrs test '//packages/...' --verbose\n",
-      "echo setup\npnpm exec smithers-build test '//packages/...' --verbose\n"
+      "echo setup\npnpm exec smithers-build test '//packages/...' --verbose\n",
+      // Only the generator's matrix expression names a shard.
+      "pnpm exec smthrs ci '//packages/...' --shard 0/9 --verbose"
     ]) assert.throws(() => assertCiCommands([setup, { run }]), run)
   })
 

@@ -101,13 +101,18 @@ policy in `.smithers/factory.json`.
 | `--fail-fast`            |       | boolean    | `false`          | Stop at the first failure that fails the run; cancel the rest.       |
 | `--results-file`         |       | path       | none             | Also write the summary, one status per label, as JSON to a new file. |
 
+`affected`, `build`, `test`, `lint`, `docs`, and `ci` also take:
+
+| Option    | Type              | Default | Meaning                                                                      |
+| --------- | ----------------- | ------- | ---------------------------------------------------------------------------- |
+| `--shard` | `<index>/<count>` | none    | Run one shard of the planned targets, counted from 0; see [Shards](#shards). |
+
 `ci` also takes:
 
-| Option      | Type              | Default | Meaning                                                                                               |
-| ----------- | ----------------- | ------- | ----------------------------------------------------------------------------------------------------- |
-| `--shard`   | `<index>/<count>` | none    | Run one part of the selected roots; see [Shards](#shards).                                            |
-| `--remote`  | name              | none    | Run the parts on the machines an `S.Remotes` entry declares; see [Remote machines](#remote-machines). |
-| `--timings` | path, repeatable  | none    | Earlier `--results-file` files whose durations weigh the split.                                       |
+| Option      | Type             | Default | Meaning                                                                                               |
+| ----------- | ---------------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| `--remote`  | name             | none    | Run the parts on the machines an `S.Remotes` entry declares; see [Remote machines](#remote-machines). |
+| `--timings` | path, repeatable | none    | Earlier `--results-file` files whose durations weigh the `--remote` split.                            |
 
 Exclusive targets run alone after ready ordinary work drains, regardless of
 `--jobs`. Dependencies keep their ordering. Explicit labels, including
@@ -138,32 +143,31 @@ status from that artifact, never from the log (`.specs/engineering/checks/README
 
 ### Shards
 
-`ci --shard <index>/<count>` runs one part of the selected roots, so `count`
-machines each run a part and together run the selection once:
+`--shard <index>/<count>` runs one shard of the plan, so `count` machines each
+run a shard and together run every planned target once:
 
 ```sh
-smthrs ci //... --shard 2/6 --timings last-run/part-1.json --timings last-run/part-2.json
+smthrs ci //... --shard 0/2   # first machine
+smthrs ci //... --shard 1/2   # second machine
 ```
 
-The split is a function of the plan's roots and the `--timings` files only.
-Machines that plan the same commit with the same files agree on it without
-talking to each other.
+- `index` counts from 0, and `count` is 1 to 1024.
+- A shard owns the planned targets whose label hashes to `index`: 32-bit
+  FNV-1a over the label's UTF-16 code units, modulo `count`. Every machine
+  plans the same commit, so they agree on the split without talking to each
+  other. `smithers-ci` uses the same rule, and both are tested against
+  `packages/ci/test/fixtures/shard-labels.json`.
+- A shard runs the targets it owns and their dependencies. A dependency that
+  another shard owns is replayed when the cache holds it and runs again when
+  it does not, so machines share work only through a
+  [shared cache](./guides/share-a-remote-cache.md).
+- The summary and the `--results-file` record carry
+  `"shard": { "index": 0, "count": 2 }`.
+- A shard that owns no selected target runs nothing and passes. `--plan`
+  prints the shard: its own targets as `roots`, with their dependencies.
 
-- `--timings <path>` names a `--results-file` of an earlier run; repeat it for
-  a run that wrote one file per machine. A root weighs the `durationMs` of its
-  last `ran` or `failed` row, and a later file wins. Cache hits, skipped and
-  cancelled rows carry no measurement.
-- A root no file measured weighs the median of the measured roots. With no
-  timings, every root weighs the same and the split is by label.
-- Roots are placed longest first, each on the lightest part so far, so two
-  parts never differ by more than the longest root.
-- A part runs its roots and their dependencies. A dependency two parts need
-  runs in both unless a [shared cache](./guides/share-a-remote-cache.md)
-  replays it.
-- A part past the last root runs nothing and passes. `--plan` prints the part.
-
-`--timings` without `--shard` or `--remote`, an unreadable file, or a file
-that isn't a results file refuses the run before any declaration loads.
+A value that is not `<index>/<count>` with `0 <= index < count <= 1024` is
+refused before any declaration loads. So is `--timings` without `--remote`.
 
 ### Remote machines
 
@@ -184,8 +188,12 @@ remotes: S.Remotes({
 smthrs ci //... --remote boxes --timings last-run.json --results-file this-run.json
 ```
 
-The coordinator plans locally and splits the roots across the machines as
-`--shard` would. For each machine with roots, at the same time, it sends the
+The coordinator plans locally and splits the roots across the machines by
+measured duration. A root weighs the `durationMs` of its last `ran` or
+`failed` row in the `--timings` files, a later file winning; a root no file
+measured weighs the median of the measured roots. Roots are placed longest
+first, each on the lightest machine so far. For each machine with roots, at
+the same time, it sends the
 workspace tree as one tar archive, runs `setup`, runs `ci` on that machine's
 roots, and reads its results file back. Every line a machine prints is
 streamed prefixed with `machine <n>:`.
@@ -327,10 +335,10 @@ in one plan.
 
 | Command  | Argument        | Options                                                                                                                                                                                                        |
 | -------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `build`  | `<patterns...>` | `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`                                                                |
-| `test`   | `<patterns...>` | `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`                                                 |
-| `lint`   | `<patterns...>` | `--fix`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`                                                       |
-| `docs`   | `<patterns...>` | `--write`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`                                      |
+| `build`  | `<patterns...>` | `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--shard`                                                     |
+| `test`   | `<patterns...>` | `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard`                                      |
+| `lint`   | `<patterns...>` | `--fix`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--shard`                                            |
+| `docs`   | `<patterns...>` | `--write`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard`                           |
 | `review` | `<patterns...>` | `--policy-revision` (required), `--revision`, `--plan`, `--required`, `--findings-store`, `--credential-receiver`, `--workspace`, `--cache-dir`                                                                |
 | `ci`     | `<patterns...>` | `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard`, `--timings`, `--remote`             |
 | `run`    | `<patterns...>` | `--name, -n`, `--message, -m`, `--sweep`, `--input, -i`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`       |
@@ -617,21 +625,21 @@ names are preserved.
 These commands inspect the workspace or operate on explicitly bounded local
 state.
 
-| Command          | Arguments              | Options                                                                                                                                                                                                 |
-| ---------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cache`          |                        | Subcommands listed below.                                                                                                                                                                               |
-| `show`           |                        | Subcommands listed below.                                                                                                                                                                               |
-| `cache status`   |                        | `--workspace`, `--cache-dir`                                                                                                                                                                            |
-| `cache prune`    |                        | `--older-than-days`, `--max-size`, `--keep-used-minutes`, `--dry-run`, `--yes`, `--workspace`, `--cache-dir`                                                                                            |
-| `cache clear`    |                        | `--dry-run`, `--yes`, `--workspace`, `--cache-dir`                                                                                                                                                      |
-| `show target`    | `<label>`              | `--verb`, `--workspace`, `--cache-dir`                                                                                                                                                                  |
-| `show workspace` |                        | `--workspace`, `--cache-dir`                                                                                                                                                                            |
-| `targets`        | `[pattern]`            | `--workspace`, `--cache-dir`                                                                                                                                                                            |
-| `info`           |                        | `--workspace`, `--cache-dir`                                                                                                                                                                            |
-| `explain`        | `<label>`              | `--verb`, `--workspace`, `--cache-dir`                                                                                                                                                                  |
-| `affected`       | `<verb> [patterns...]` | `--base`, `--head`, `--files`, `--list`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle` |
-| `clean`          | `[patterns...]`        | `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`                                                         |
-| `watch`          | `<verb> [patterns...]` | `--debounce-ms`, `--once`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`                              |
+| Command          | Arguments              | Options                                                                                                                                                                                                            |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cache`          |                        | Subcommands listed below.                                                                                                                                                                                          |
+| `show`           |                        | Subcommands listed below.                                                                                                                                                                                          |
+| `cache status`   |                        | `--workspace`, `--cache-dir`                                                                                                                                                                                       |
+| `cache prune`    |                        | `--older-than-days`, `--max-size`, `--keep-used-minutes`, `--dry-run`, `--yes`, `--workspace`, `--cache-dir`                                                                                                       |
+| `cache clear`    |                        | `--dry-run`, `--yes`, `--workspace`, `--cache-dir`                                                                                                                                                                 |
+| `show target`    | `<label>`              | `--verb`, `--workspace`, `--cache-dir`                                                                                                                                                                             |
+| `show workspace` |                        | `--workspace`, `--cache-dir`                                                                                                                                                                                       |
+| `targets`        | `[pattern]`            | `--workspace`, `--cache-dir`                                                                                                                                                                                       |
+| `info`           |                        | `--workspace`, `--cache-dir`                                                                                                                                                                                       |
+| `explain`        | `<label>`              | `--verb`, `--workspace`, `--cache-dir`                                                                                                                                                                             |
+| `affected`       | `<verb> [patterns...]` | `--base`, `--head`, `--files`, `--list`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`, `--lifecycle`, `--shard` |
+| `clean`          | `[patterns...]`        | `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`                                                                    |
+| `watch`          | `<verb> [patterns...]` | `--debounce-ms`, `--once`, `--workspace`, `--cache-dir`, `--verbose`, `--plan`, `--jobs`, `--include-exclusive`, `--cache`, `--known-red`, `--fail-fast`, `--results-file`                                         |
 
 `cache status` reports the local action-result count and size plus the remote
 endpoint without exposing credentials. Its `goBuild` field reports the

@@ -86,7 +86,8 @@ The coordinator:
 
 1. Plans the selection locally, as `ci` always does.
 2. Splits the plan's roots across the machines by the durations `--timings`
-   measured, exactly as [`--shard`](../cli.md#shards) splits them.
+   measured: longest first, each on the lightest machine so far. A root no
+   file measured weighs the median of the measured roots.
 3. Lists the workspace's files, packs them into one tar archive, and sends it to
    every machine that has roots.
 4. On each machine, unpacks the tree, runs `setup`, then runs

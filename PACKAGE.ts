@@ -5,7 +5,7 @@ import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 import project from "./apps/site/src/data/project.json" with { type: "json" }
 import { Package as codingFlowsPackage } from "./.smithers/flows/PACKAGE.ts"
-import { packageShards, shardJobId, shardStep } from "./packages/repo-targets/ci/shards.ts"
+import { packagePatterns, packageShards, shardJobId, shardStep, workspaceShards, workspaceStep } from "./packages/repo-targets/ci/shards.ts"
 
 // Workspace selections cross package boundaries as explicit files. Expansion
 // retains the shared ignore, repository, symlink and host-state rules.
@@ -399,14 +399,12 @@ const ci = Smithers.GithubCiGen({
   results: true,
   mode: "check",
   gates: [
-    ...packageShards.flatMap((shard, index) => shard.patterns.map((pattern) => ({
-      name: "documentation parity", verb: Smithers.Verb.Docs, pattern, job: shardJobId("test", index)
-    }))),
+    ...packagePatterns.map((pattern) => ({ name: "documentation parity", verb: Smithers.Verb.Docs, pattern, job: "test" })),
     { name: "native FFI compiler and tests", verb: Smithers.Verb.Build, pattern: "//:nativeFfi", job: "rust-ffi" },
     { name: "web bundle compatibility", verb: Smithers.Verb.Test, pattern: "//packages/repo-targets:webBundleContract" }
   ],
   requiredJobs: [
-    ...packageShards.map((_, index) => shardJobId("test", index)),
+    "test",
     "repository",
     "scripts",
     "docs",
@@ -418,13 +416,18 @@ const ci = Smithers.GithubCiGen({
     "rust-ffi"
   ],
   jobs: [
-    ...packageShards.map((_, index) => ({
-      id: shardJobId("test", index),
-      name: index === 0 ? "workspace graph (coverage gates enforced)" : `workspace graph ${index + 1}/${packageShards.length} (coverage gates enforced)`,
+    {
+      id: "test",
+      name: "workspace graph (coverage gates enforced)",
       runsOn: ubuntu,
-      // Measured shards carry at most 32 target-minutes before two-slot execution.
-      // Leave setup headroom without extending the former 180-minute budget.
-      timeoutMinutes: 40,
+      // Nine machines plan every package and each runs `ci --shard <index>/9`:
+      // the targets whose label hashes to its shard, and their dependencies.
+      // No CI job publishes to the cache, so each shard also runs the
+      // dependencies other shards own. By ci/timings.json over the 2026-11-17
+      // plans, the heaviest shard's closure is 73 target-minutes, about 37
+      // minutes at two slots; leave setup headroom.
+      shards: workspaceShards,
+      timeoutMinutes: 60,
       toolchain: Smithers.CiToolchain.Needs({
         cargoBinaries: nativeFilesystem,
         runtimes: [node, bun],
@@ -451,9 +454,9 @@ const ci = Smithers.GithubCiGen({
         })
       }),
       steps: [
-        { name: "Workspace targets", verb: Smithers.Verb.Ci, ...shardStep(index) }
+        { name: "Workspace targets", verb: Smithers.Verb.Ci, ...workspaceStep }
       ]
-    })),
+    },
     {
       // Everything the workspace graph used to run after its package step.
       // None of it reads that step's results, so it starts with the other

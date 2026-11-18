@@ -1,7 +1,9 @@
 /**
- * The measured-duration split behind `ci --shard`: parsing, reading a results
- * file's durations, balancing, and the plan one part runs.
+ * The rule behind `--shard`: parsing, the label hash both `smthrs` and
+ * `smithers-ci` use, and the plan one shard runs; and the measured-duration
+ * split behind `ci --remote`.
  */
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import type * as Executor from "../src/Executor.ts"
 import * as Shards from "../src/internal/Shards.ts"
@@ -25,19 +27,40 @@ const target = (label: string, dependencies: ReadonlyArray<string> = []): Planne
 const results = (rows: ReadonlyArray<Readonly<Record<string, unknown>>>): string =>
   JSON.stringify({ ok: true, results: rows, version: 1 })
 
+/**
+ * The label and shard pairs `smithers-ci` tests its `Shard` contract with.
+ * Both packages read this one file, so the two rules cannot disagree.
+ */
+const pairs = (JSON.parse(
+  readFileSync(new URL("../../../../ci/test/fixtures/shard-labels.json", import.meta.url), "utf8")
+) as {
+  readonly cases: ReadonlyArray<{ readonly label: string; readonly count: number; readonly shard: number }>
+}).cases
+
 describe("Shards.parse", () => {
-  it.each([["1/1", 1, 1], ["2/6", 2, 6], ["1024/1024", 1024, 1024]])("reads %s", (text, index, count) => {
+  it.each([["0/1", 0, 1], ["2/6", 2, 6], ["1023/1024", 1023, 1024]])("reads %s", (text, index, count) => {
     expect(Shards.parse(text)).toEqual({ index, count })
   })
 
-  it.each(["", "2", "0/2", "3/2", "1/0", "1/1025", "01/2", "1/2/3", "a/b", "-1/2", "1.5/2", " 1/2"])(
+  it.each(["", "2", "2/2", "3/2", "0/0", "1/0", "0/1025", "01/2", "0/02", "1/2/3", "a/b", "-1/2", "1.5/2", " 0/2"])(
     "refuses %j",
     (text) => {
       expect(() => Shards.parse(text)).toThrow(
-        `--shard expects <index>/<count> with 1 <= index <= count <= 1024, received ${JSON.stringify(text)}`
+        `--shard expects <index>/<count> with 0 <= index < count <= 1024, received ${JSON.stringify(text)}`
       )
     }
   )
+})
+
+describe("Shards.shardOf", () => {
+  it("covers labels of several counts, including ones outside ASCII", () => {
+    expect(new Set(pairs.map((pair) => pair.count)).size).toBeGreaterThanOrEqual(5)
+    expect(pairs.some((pair) => pair.label.includes("🚀"))).toBe(true)
+  })
+
+  it.each(pairs)("puts $label in shard $shard of $count", ({ count, label, shard }) => {
+    expect(Shards.shardOf(label, count)).toBe(shard)
+  })
 })
 
 describe("Shards.measure", () => {
@@ -125,6 +148,7 @@ describe("Shards.split", () => {
 })
 
 describe("Shards.select", () => {
+  // Among two shards, shard 0 owns //:shared, //:lib, //:a and //:c; shard 1 owns //:b and //:only-c.
   const plan: Executor.MergedPlan = {
     roots: ["//:a", "//:b", "//:c"],
     targets: [
@@ -143,24 +167,38 @@ describe("Shards.select", () => {
     ],
     warnings: ["kept"]
   }
-  const measured = new Map([["//:a", 50], ["//:b", 20], ["//:c", 20]])
+  const labels = plan.targets.map((entry) => entry.label)
 
-  it("keeps a part's roots and exactly their dependency closure, in plan order", () => {
-    const first = Shards.select(plan, { index: 1, count: 2 }, measured)
-    expect(first.roots).toEqual(["//:a"])
-    expect(first.targets.map((entry) => entry.label)).toEqual(["//:shared", "//:lib", "//:a"])
-    expect(first.edges).toEqual([{ from: "//:shared", to: "//:lib" }, { from: "//:lib", to: "//:a" }])
+  it("keeps the targets a shard owns and exactly their dependency closure, in plan order", () => {
+    expect(labels.map((label) => Shards.shardOf(label, 2))).toEqual([0, 0, 0, 1, 1, 0])
+    // Shard 0 also builds //:only-c for //:c: shard 1 owns it, and only the cache can spare the work.
+    const first = Shards.select(plan, { index: 0, count: 2 })
+    expect(first.roots).toEqual(["//:shared", "//:lib", "//:a", "//:c"])
+    expect(first.targets.map((entry) => entry.label)).toEqual(["//:shared", "//:lib", "//:a", "//:only-c", "//:c"])
+    expect(first.edges).toEqual([
+      { from: "//:shared", to: "//:lib" },
+      { from: "//:lib", to: "//:a" },
+      { from: "//:only-c", to: "//:c" }
+    ])
     expect(first.warnings).toEqual(["kept"])
 
-    const second = Shards.select(plan, { index: 2, count: 2 }, measured)
-    expect(second.roots).toEqual(["//:b", "//:c"])
-    expect(second.targets.map((entry) => entry.label)).toEqual(["//:shared", "//:b", "//:only-c", "//:c"])
-    expect(second.edges).toEqual([{ from: "//:shared", to: "//:b" }, { from: "//:only-c", to: "//:c" }])
+    const second = Shards.select(plan, { index: 1, count: 2 })
+    expect(second.roots).toEqual(["//:b", "//:only-c"])
+    expect(second.targets.map((entry) => entry.label)).toEqual(["//:shared", "//:b", "//:only-c"])
+    expect(second.edges).toEqual([{ from: "//:shared", to: "//:b" }])
   })
 
-  it("is the whole plan as one part of one, and nothing as a part past the roots", () => {
-    expect(Shards.select(plan, { index: 1, count: 1 }, measured)).toEqual(plan)
-    expect(Shards.select(plan, { index: 4, count: 4 }, measured)).toEqual({
+  it.each([1, 2, 3, 5, 8, 64])("gives every planned label exactly one of %i shards", (count) => {
+    const owned = Array.from({ length: count }, (_, index) => Shards.select(plan, { index, count }).roots).flat()
+    expect(owned.sort()).toEqual([...labels].sort())
+  })
+
+  it("is the whole plan as one shard of one, and nothing as a shard that owns no label", () => {
+    expect(Shards.select(plan, { index: 0, count: 1 })).toEqual({ ...plan, roots: labels })
+    const empty = Array.from({ length: 64 }, (_, index) => index).find((index) =>
+      labels.every((label) => Shards.shardOf(label, 64) !== index)
+    )!
+    expect(Shards.select(plan, { index: empty, count: 64 })).toEqual({
       roots: [],
       targets: [],
       edges: [],

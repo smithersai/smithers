@@ -1,25 +1,27 @@
 /**
- * Splits a CI plan across machines by measured duration.
+ * Divides one run across machines.
  *
- * `ci --shard 2/6` runs the second of six parts of the selected roots. Every
- * machine plans the same commit with the same `--timings` files, so each
- * derives the same split with no coordinator: the split is a pure function of
- * the plan's roots and the measured durations.
+ * `--shard <index>/<count>` gives a machine the planned targets whose label
+ * hashes to `index` among `count` shards: 32-bit FNV-1a over the label's
+ * UTF-16 code units, modulo `count`. Every machine plans the same commit, so
+ * each derives the same split with no coordinator. A machine runs its own
+ * targets and every dependency they need; a dependency another shard owns is
+ * replayed when the cache already holds it and run again when it does not.
+ * The rule is the one `smithers-ci` declares in its `Shard` contract; both
+ * packages test against the same label and shard pairs.
  *
- * A root weighs the time it last took to run. A root no file measured weighs
- * the median of the measured roots, so a new target is neither free nor the
- * longest. Roots are placed longest first, each on the lightest part so far.
- * A dependency several parts need runs in each of them unless a shared cache
- * replays it.
+ * `ci --remote` keeps a measured split: {@link split} balances the plan's
+ * roots by the durations {@link measure} reads from earlier results files.
  *
  * @since 1.0.0
  */
 
 import * as Data from "effect/Data"
 import type * as Executor from "../Executor.ts"
+import type { PackagePlan } from "./PackageOptions.ts"
 
 /**
- * One part of a split: `index` of `count`, counted from one.
+ * One machine's share: shard `index` of `count`, counted from zero.
  *
  * @category models
  * @since 1.0.0
@@ -29,30 +31,46 @@ export interface Shard {
   readonly count: number
 }
 
-/** A `--shard` or `--timings` input the split cannot use; the message names it and says why. */
+/** A `--shard` or `--timings` input the run cannot use; the message names it and says why. */
 class ShardRefused extends Data.TaggedError("smithers-build/ShardRefused")<{ readonly message: string }> {}
 
-/** The most parts one split may have. */
+/** The most shards one run may have. */
 const maxCount = 1024
 
 /**
- * Parses `--shard <index>/<count>`.
+ * Parses `--shard <index>/<count>`, counted from zero.
  *
  * @category parsing
  * @since 1.0.0
  */
 export const parse = (text: string): Shard => {
-  const match = /^([1-9]\d{0,3})\/([1-9]\d{0,3})$/.exec(text)
+  const match = /^(0|[1-9]\d{0,3})\/([1-9]\d{0,3})$/.exec(text)
   const index = Number(match?.[1])
   const count = Number(match?.[2])
-  if (match === null || index > count || count > maxCount) {
+  if (match === null || index >= count || count > maxCount) {
     throw new ShardRefused({
-      message: `--shard expects <index>/<count> with 1 <= index <= count <= ${maxCount}, received ${
+      message: `--shard expects <index>/<count> with 0 <= index < count <= ${maxCount}, received ${
         JSON.stringify(text)
       }`
     })
   }
   return { index, count }
+}
+
+/**
+ * The shard a label belongs to among `count` shards: 32-bit FNV-1a over the
+ * label's UTF-16 code units, modulo `count`.
+ *
+ * @category planning
+ * @since 1.0.0
+ */
+export const shardOf = (label: string, count: number): number => {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < label.length; index++) {
+    hash ^= label.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash % count
 }
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
@@ -134,32 +152,49 @@ export const split = (
   return totals.map((_, index) => roots.filter((root) => part.get(root) === index))
 }
 
-/**
- * The plan one shard runs: its roots and exactly their dependency closure, in
- * the plan's order.
- *
- * @category planning
- * @since 1.0.0
- */
-export const select = (
-  plan: Executor.MergedPlan,
-  shard: Shard,
-  measured: ReadonlyMap<string, number>
-): Executor.MergedPlan => {
-  const roots = split(plan.roots, measured, shard.count)[shard.index - 1]!
-  const dependencies = new Map(plan.targets.map((target) => [target.label, target.dependencies]))
+/** The labels `shard` owns, in plan order, and the closure it runs: those labels and every dependency. */
+const closureOf = (
+  targets: ReadonlyArray<{ readonly label: string; readonly dependencies: ReadonlyArray<string> }>,
+  shard: Shard
+): { readonly owned: ReadonlyArray<string>; readonly closure: ReadonlySet<string> } => {
+  const owned = targets.map(({ label }) => label).filter((label) => shardOf(label, shard.count) === shard.index)
+  const dependencies = new Map(targets.map((target) => [target.label, target.dependencies]))
   const closure = new Set<string>()
-  const pending = [...roots]
+  const pending = [...owned]
   while (pending.length > 0) {
     const label = pending.pop()!
     if (closure.has(label)) continue
     closure.add(label)
     pending.push(...dependencies.get(label)!)
   }
+  return { owned, closure }
+}
+
+/**
+ * The merged plan one shard runs. Its roots are the targets it owns; its
+ * targets are those and exactly their dependency closure, in plan order.
+ *
+ * @category planning
+ * @since 1.0.0
+ */
+export const select = (plan: Executor.MergedPlan, shard: Shard): Executor.MergedPlan => {
+  const { closure, owned } = closureOf(plan.targets, shard)
   return {
-    roots,
+    roots: owned,
     targets: plan.targets.filter((target) => closure.has(target.label)),
     edges: plan.edges.filter((edge) => closure.has(edge.to)),
     warnings: plan.warnings
   }
+}
+
+/**
+ * The package plan one shard runs, by the same rule as {@link select}.
+ * Nodes that are planned but never scheduled stay available to consumers.
+ *
+ * @category planning
+ * @since 1.0.0
+ */
+export const selectPackage = (plan: PackagePlan, shard: Shard): PackagePlan => {
+  const { closure, owned } = closureOf(plan.workList, shard)
+  return { ...plan, roots: owned, workList: plan.workList.filter((node) => closure.has(node.label)) }
 }

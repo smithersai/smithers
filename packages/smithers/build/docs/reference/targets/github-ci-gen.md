@@ -235,6 +235,7 @@ writes made with read credentials.
 | `matrixNameSuffix` | `"os"`                  | optional                 | Append the generator-owned platform suffix to a named matrix job.                                                        |
 | `timeoutMinutes`   | `number`                | optional                 | A whole number from 1 to 360.                                                                                            |
 | `continueOnError`  | `boolean`               | optional                 | Advisory lane.                                                                                                           |
+| `shards`           | `number`                | optional                 | Split the job's target steps across this many machines, 2 to 256. See [Shards](#shards). Refused beside `matrix`.        |
 | `toolchain`        | `CiToolchain.Toolchain` | required                 | What the runner must provide before the first target runs. See [CiToolchain](#citoolchain).                              |
 | `steps`            | `Array<TargetStep>`     | required                 | The target invocations this job performs. A job with none is refused.                                                    |
 
@@ -259,6 +260,18 @@ with `name: "package suites"` and `matrixNameSuffix: "os"`, the generator append
 such as `package suites (ubuntu-latest)`, without accepting an expression
 from the declaration. Without `matrixNameSuffix`, a literal job name stays
 unchanged. Branch protection lists these check names individually.
+
+### Shards
+
+A job with `shards: 9` renders once as a matrix over `shard: [0, 1, …, 8]`
+on its `runsOn` runner, and every target step passes
+`--shard ${{ matrix.shard }}/9`. Every machine plans the same selection and
+runs the targets whose label hashes to its shard, with their dependencies; see
+[`--shard`](../../../build-cli/docs/cli.md#shards). Machines share work only
+through the remote cache, so a dependency another shard owns runs again unless
+the cache already holds it. A named job gets the generator's
+`(shard ${{ matrix.shard }}/9)` suffix, one check name per shard. `fail-fast`
+is `false`: one red shard does not cancel the others' verdicts.
 
 ### TargetStep
 

@@ -228,20 +228,16 @@ describe("test-file ownership", () => {
     for (const label of ["//.smithers/flows:issueClaim", "//.smithers/flows:evidenceBindings", "//.smithers/flows:releaseRehearsal", "//.smithers/flows:releaseVersion"]) {
       assert.ok(scripts.includes(`smthrs test '${label}'`), label)
     }
-    // Package suites now belong to nine disjoint, required workspace jobs.
-    // Check the emitted selectors against the real target inventory so losing
-    // a package, duplicating it or making its owner advisory still fails here.
-    const shards = Object.entries(workflow.jobs).filter(([id]) => /^test(?:-\d+)?$/.test(id))
-    assert.equal(shards.length, 9)
-    const selected = shards.flatMap(([id, job]) => {
-      assert.deepEqual(advisoryFlags(job), [], id)
-      const steps = job.steps.filter((step) => step.name === "Workspace targets")
-      assert.equal(steps.length, 1, id)
-      assert.match(steps[0].run, /^pnpm exec smthrs ci /, id)
-      const patterns = [...steps[0].run.matchAll(/'(\/\/packages\/[^']+:\*)'/g)].map((match) => match[1])
-      assert.ok(patterns.length > 0, id)
-      return patterns
-    })
+    // Package suites belong to the required workspace job, which nine shards
+    // split by label. Check the emitted selectors against the real target
+    // inventory so losing a package, duplicating it or making its owner
+    // advisory still fails here.
+    assert.deepEqual(Object.keys(workflow.jobs).filter((id) => /^test-\d+$/.test(id)), [])
+    assert.deepEqual(workflow.jobs.test.strategy.matrix.shard, [0, 1, 2, 3, 4, 5, 6, 7, 8])
+    const steps = workflow.jobs.test.steps.filter((step) => step.name === "Workspace targets")
+    assert.equal(steps.length, 1)
+    assert.match(steps[0].run, /^pnpm exec smthrs ci .* --shard \$\{\{ matrix\.shard \}\}\/9 /)
+    const selected = [...steps[0].run.matchAll(/'(\/\/packages\/[^']+:\*)'/g)].map((match) => match[1])
     const expected = [...new Set(inventory.filter((row) => row.package.startsWith("packages/") &&
       row.kinds.some((kind) => ["build", "test", "lint", "docs"].includes(kind)))
       .map((row) => `//${row.package}:*`))].sort()

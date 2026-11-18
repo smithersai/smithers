@@ -14,12 +14,13 @@ const root = resolve(import.meta.dirname, "../../..")
 it("CI runs the package pattern that holds the coverage-enabled test target and runner", () => {
   const ci = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8")
   const jobs = Yaml.parse(ci).jobs as Record<string, { steps: Array<{ run?: string }> }>
-  for (const [id, verb] of [["test", "ci"], ["packages", "test"]]) {
+  // The workspace graph's shards each take their share of the one selection.
+  for (const [id, verb, shard] of [["test", "ci", " --shard ${{ matrix.shard }}/9"], ["packages", "test", ""]]) {
     const matches = Object.entries(jobs).filter(([name]) => name === id || name.startsWith(`${id}-`))
       .flatMap(([, job]) => job.steps).filter((step) => step.run?.startsWith(`pnpm exec smthrs ${verb} `))
       .filter((step) => step.run?.includes("'//packages/repo-targets:*'"))
     expect(matches).toHaveLength(1)
-    expect(matches[0]!.run).toContain("--jobs 2 --known-red '.github/ci-known-red.json' --results-file")
+    expect(matches[0]!.run).toContain(`--jobs 2${shard} --known-red '.github/ci-known-red.json' --results-file`)
   }
 
   const attrs = Target.metadata(Package.test).attrs as Vitest.Attrs

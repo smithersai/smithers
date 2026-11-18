@@ -9,6 +9,7 @@ import type * as Executor from "./Executor.ts"
 import type { PlanReport, RunOptions } from "./internal/PackageOptions.ts"
 import { plan } from "./internal/PackagePlanner.ts"
 import { execute, sandboxRequest } from "./internal/PackageRunner.ts"
+import * as Shards from "./internal/Shards.ts"
 export type {
   CrateRow,
   ExecuteOptions,
@@ -52,7 +53,8 @@ export function run(options: RunOptions & { readonly plan: true }): Promise<Plan
 export function run(options: RunOptions & { readonly plan?: false }): Promise<Executor.Summary>
 export function run(options: RunOptions): Promise<Executor.Summary | PlanReport>
 export async function run(options: RunOptions): Promise<Executor.Summary | PlanReport> {
-  const planned = await plan(options)
+  const whole = await plan(options)
+  const planned = options.shard === undefined ? whole : Shards.selectPackage(whole, options.shard)
   if (options.plan === true) {
     return {
       verb: options.verb,

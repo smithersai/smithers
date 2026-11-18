@@ -279,13 +279,19 @@ ship, so a local in a body types as `any`.
 
 ## Hosted CI shards
 
-`ci/shards.ts` assigns every package to one of nine jobs in each lane.
-`GithubCiGen.balanceShards` uses longest-first scheduling with lexical ties.
-One assignment serves both lanes, so a package weighs its measured
-workspace-lane work (every target) plus its package-lane work (its tests);
-`additionalPatterns` keeps each shard in one graph plan. Nonrecursive `//package:*` selections
-preserve manual, exclusive and host filtering; prerequisites can run in more
-than one job. Coverage and known-red handling remain the package's own gates.
+The workspace graph is one `test` job with `shards: 9`. Each of its nine
+machines plans every package selection in `ci/shards.ts` and runs
+`ci --shard <index>/9`: the targets whose label hashes to its shard, and their
+dependencies. A dependency another shard owns runs again unless the cache
+replays it.
+
+The package suites lane assigns every package to one of nine jobs.
+`GithubCiGen.balanceShards` uses longest-first scheduling with lexical ties. A
+package weighs its measured workspace-lane work (every target) plus its
+package-lane work (its tests); `additionalPatterns` keeps each job in one graph
+plan. Nonrecursive `//package:*` selections preserve manual, exclusive and host
+filtering; prerequisites can run in more than one job. Coverage and known-red
+handling remain the package's own gates.
 
 `ci/timings.json` records the maximum completed per-target duration from run
 40929998769's `smthrs-results-test-0-1/__run_8.json` and run 41088937554's

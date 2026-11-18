@@ -35,7 +35,7 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number]> = [
   ["src/DocsCheck.ts", 3],
   ["src/Exec.ts", 1],
   ["src/GeneratedFile.ts", 18],
-  ["src/GithubCiGen.ts", 34],
+  ["src/GithubCiGen.ts", 35],
   ["src/Input.ts", 16],
   ["src/Install.ts", 1],
   ["src/LlmLint.ts", 33],

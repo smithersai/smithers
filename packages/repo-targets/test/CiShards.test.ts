@@ -2,10 +2,16 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { expect, it } from "vitest"
 import * as Yaml from "yaml"
-import { packageShards, shardJobId, shardStep } from "../ci/shards.ts"
+import { packagePatterns, packageShards, shardJobId, shardStep, workspaceShards, workspaceStep } from "../ci/shards.ts"
 import timings from "../ci/timings.json" with { type: "json" }
 
-type Job = { steps: Array<{ name?: string; run?: string; if?: string }>; needs?: unknown; "timeout-minutes": number }
+type Job = {
+  name?: string
+  steps: Array<{ name?: string; run?: string; if?: string }>
+  needs?: unknown
+  strategy?: { "fail-fast"?: boolean; matrix?: Record<string, unknown> }
+  "timeout-minutes": number
+}
 const ci = () => Yaml.parse(readFileSync(new URL("../../../.github/workflows/ci.yml", import.meta.url), "utf8")) as {
   jobs: Record<string, Job>
 }
@@ -21,9 +27,8 @@ const testWeights = new Map(roots.map((pattern) => [pattern, Object.entries(timi
   .filter(([label]) => label.split(":")[0] === pattern.slice(0, -2) && testLabels.has(label))
   .reduce((sum, [, duration]) => sum + duration, 0)]))
 
-type Lane = "test" | "packages"
 type Costs = { readonly all: ReadonlyMap<string, number>; readonly tests: ReadonlyMap<string, number> }
-const stepName = (lane: Lane) => lane === "test" ? "Workspace targets" : "Package test targets"
+const stepName = "Package test targets"
 
 // A spread bound measures how evenly the balancer split divisible work. A
 // heaviest shard holding one package root cannot get lighter under any split,
@@ -36,20 +41,21 @@ const spread = (costs: ReadonlyArray<number>, rootCounts: ReadonlyArray<number>)
   return Math.max(...compared) - Math.min(...compared)
 }
 
-function verify(jobs: Record<string, Job>, lane: Lane, costs: Costs = { all: weights, tests: testWeights }) {
+/** The package suite lane: nine jobs, each owning a measured share of the packages. */
+function verify(jobs: Record<string, Job>, costs: Costs = { all: weights, tests: testWeights }) {
   const selections: Array<string> = []
   const rootCounts: Array<number> = []
   const testDurations: Array<number> = []
   const durations = packageShards.map((_, index) => {
-    const id = shardJobId(lane, index)
+    const id = shardJobId("packages", index)
     const job = jobs[id]!
     assert.ok(job, `missing ${id}`)
     assert.equal(job.needs, undefined)
     assert.equal(job["timeout-minutes"], 40)
-    const steps = job.steps.filter((step) => step.name === stepName(lane))
+    const steps = job.steps.filter((step) => step.name === stepName)
     assert.equal(steps.length, 1)
     const command = steps[0]!.run!
-    assert.ok(command.startsWith(`pnpm exec smthrs ${lane === "test" ? "ci" : "test"} `))
+    assert.ok(command.startsWith("pnpm exec smthrs test "))
     assert.ok(command.includes("--jobs 2 --known-red '.github/ci-known-red.json' --results-file"))
     assert.ok(command.endsWith("--verbose"))
     assert.equal(steps[0]!.if, "${{ !cancelled() && steps.setup.conclusion == 'success' }}")
@@ -60,23 +66,21 @@ function verify(jobs: Record<string, Job>, lane: Lane, costs: Costs = { all: wei
     testDurations.push(patterns.reduce((sum, pattern) => sum + costs.tests.get(pattern)!, 0))
     return patterns.reduce((sum, pattern) => sum + costs.all.get(pattern)!, 0)
   })
-  assert.equal(Object.keys(jobs).filter((id) => id === lane || id.startsWith(`${lane}-`)).length, 9)
+  assert.equal(Object.keys(jobs).filter((id) => id === "packages" || id.startsWith("packages-")).length, 9)
   // Package selections are nonrecursive and disjoint. Hence each target root
   // has exactly one owner, with the CLI's manual/exclusive/host policy intact.
   assert.deepEqual(selections.sort(), roots, "missing or duplicated target ownership")
   assert.ok(Math.max(...durations) <= 32 * 60_000, "shard exceeds 32 measured target-minutes")
   assert.ok(spread(durations, rootCounts) <= 3 * 60_000, "shards differ by over three target-minutes")
-  if (lane === "packages") {
-    assert.ok(Math.max(...testDurations) <= 32 * 60_000, "test shard exceeds 32 measured target-minutes")
-    assert.ok(spread(testDurations, rootCounts) <= 4 * 60_000, "test shards differ by over four target-minutes")
-  }
+  assert.ok(Math.max(...testDurations) <= 32 * 60_000, "test shard exceeds 32 measured target-minutes")
+  assert.ok(spread(testDurations, rootCounts) <= 4 * 60_000, "test shards differ by over four target-minutes")
 }
 
 /** The generated lane, with each job's package selection replaced by one entry of `layout`. */
-const relaid = (lane: Lane, layout: ReadonlyArray<ReadonlyArray<string>>): Record<string, Job> => {
+const relaid = (layout: ReadonlyArray<ReadonlyArray<string>>): Record<string, Job> => {
   const jobs = ci().jobs
   for (const [index, patterns] of layout.entries()) {
-    const step = jobs[shardJobId(lane, index)]!.steps.find((step) => step.name === stepName(lane))!
+    const step = jobs[shardJobId("packages", index)]!.steps.find((step) => step.name === stepName)!
     step.run = step.run!.replace(/(?: '\/\/[^']+')+/, patterns.map((pattern) => ` '${pattern}'`).join(""))
   }
   return jobs
@@ -98,9 +102,38 @@ const costsOf = (layout: ReadonlyArray<ReadonlyArray<string>>, minutes: Readonly
   new Map(layout.flatMap((patterns, index) =>
     patterns.map((pattern) => [pattern, minutes[index]! * 60_000 / patterns.length] as const)))
 
-it("both generated lanes cover every target once and stay inside the measured balance bounds", () => {
-  verify(ci().jobs, "test")
-  verify(ci().jobs, "packages")
+/**
+ * The workspace graph is one job over nine shards. Every shard plans every
+ * package selection and runs `ci --shard <index>/9`, so the shards together
+ * run each planned target once (`build-cli/test/CiShard.test.ts` proves the
+ * split), and no target has to be assigned to a job by hand.
+ */
+it("fans the workspace graph out to nine shards that each plan every package once", () => {
+  const jobs = ci().jobs
+  const job = jobs.test!
+  expect(Object.keys(jobs).filter((id) => /^test-\d+$/.test(id))).toEqual([])
+  expect(job.name).toBe("workspace graph (coverage gates enforced) (shard ${{ matrix.shard }}/9)")
+  expect(job.strategy).toEqual({ "fail-fast": false, matrix: { shard: [0, 1, 2, 3, 4, 5, 6, 7, 8] } })
+  expect(job.needs).toBeUndefined()
+  expect(job["timeout-minutes"]).toBe(60)
+  const steps = job.steps.filter((step) => step.name === "Workspace targets")
+  expect(steps).toHaveLength(1)
+  const command = steps[0]!.run!
+  expect(command.startsWith("pnpm exec smthrs ci ")).toBe(true)
+  expect(command).toContain(
+    "--jobs 2 --shard ${{ matrix.shard }}/9 --known-red '.github/ci-known-red.json' --results-file"
+  )
+  expect(command.endsWith("--verbose")).toBe(true)
+  expect(steps[0]!.if).toBe("${{ !cancelled() && steps.setup.conclusion == 'success' }}")
+  // Every package selection appears once, in one graph plan.
+  expect([...command.matchAll(/'(\/\/[^']+)'/g)].map((match) => match[1]!)).toEqual(roots)
+  expect(packagePatterns).toEqual(roots)
+  expect(workspaceShards).toBe(9)
+  expect(workspaceStep).toEqual({ pattern: roots[0], additionalPatterns: roots.slice(1), parallelism: 2 })
+})
+
+it("the package suite lane covers every target once and stays inside the measured balance bounds", () => {
+  verify(ci().jobs)
   for (const [index, shard] of packageShards.entries()) {
     expect(shardStep(index)).toEqual({
       pattern: shard.patterns[0], additionalPatterns: shard.patterns.slice(1), parallelism: 2
@@ -116,35 +149,35 @@ it("both generated lanes cover every target once and stay inside the measured ba
 
 it("rejects a missing job, a dropped target, a duplicate and a complete but unbalanced split", () => {
   const missing = ci().jobs
-  delete missing.test
-  expect(() => verify(missing, "test")).toThrow(/missing test/)
+  delete missing.packages
+  expect(() => verify(missing)).toThrow(/missing packages/)
   const dropped = ci().jobs
-  const step = dropped.test!.steps.find((step) => step.name === "Workspace targets")!
+  const step = dropped.packages!.steps.find((step) => step.name === stepName)!
   const pattern = step.run!.match(/'(\/\/[^']+)'/)![0]
   step.run = step.run!.replace(pattern, "")
-  expect(() => verify(dropped, "test")).toThrow()
+  expect(() => verify(dropped)).toThrow()
   const duplicated = ci().jobs
-  const duplicate = duplicated["test-2"]!.steps.find((step) => step.name === "Workspace targets")!
+  const duplicate = duplicated["packages-2"]!.steps.find((step) => step.name === stepName)!
   duplicate.run = duplicate.run!.replace(" --jobs", ` ${pattern} --jobs`)
-  expect(() => verify(duplicated, "test")).toThrow(/ownership/)
+  expect(() => verify(duplicated)).toThrow(/ownership/)
   const unbalanced = ci().jobs
-  const destination = unbalanced.test!.steps.find((step) => step.name === "Workspace targets")!
+  const destination = unbalanced.packages!.steps.find((step) => step.name === stepName)!
   for (let index = 1; index < packageShards.length; index++) {
-    const source = unbalanced[shardJobId("test", index)]!.steps.find((step) => step.name === "Workspace targets")!
+    const source = unbalanced[shardJobId("packages", index)]!.steps.find((step) => step.name === stepName)!
     const move = source.run!.match(/'(\/\/[^']+)'/)![0]
     source.run = source.run!.replace(move, "")
     destination.run = destination.run!.replace(" --jobs", ` ${move} --jobs`)
   }
-  expect(() => verify(unbalanced, "test")).toThrow(/target-minutes/)
+  expect(() => verify(unbalanced)).toThrow(/target-minutes/)
   // This move keeps combined costs within three minutes but separates test
   // costs by over four: the package lane must check its own workload too.
   const testOnly = ci().jobs
-  const from = testOnly["packages-7"]!.steps.find((step) => step.name === "Package test targets")!
-  const to = testOnly["packages-2"]!.steps.find((step) => step.name === "Package test targets")!
+  const from = testOnly["packages-7"]!.steps.find((step) => step.name === stepName)!
+  const to = testOnly["packages-2"]!.steps.find((step) => step.name === stepName)!
   const move = "'//packages/smithers/agent/harness:*'"
   from.run = from.run!.replace(move, "")
   to.run = to.run!.replace(" --jobs", ` ${move} --jobs`)
-  expect(() => verify(testOnly, "packages")).toThrow(/test shards differ/)
+  expect(() => verify(testOnly)).toThrow(/test shards differ/)
 })
 
 it("excuses only an irreducible single-root heaviest shard from the spread bounds", () => {
@@ -152,19 +185,19 @@ it("excuses only an irreducible single-root heaviest shard from the spread bound
   // (4 and 4.5 target-minutes), and the other shards are even: no split can do better.
   const single = layoutWith([roots[0]!])
   const irreducible = { all: costsOf(single, totals(31, 27)), tests: costsOf(single, totals(30, 25.5)) }
-  expect(() => verify(relaid("packages", single), "packages", irreducible)).not.toThrow()
+  expect(() => verify(relaid(single), irreducible)).not.toThrow()
   // The same totals with two roots in the heaviest shard: a split could have evened it.
   const paired = layoutWith([roots[0]!, roots[1]!])
-  expect(() => verify(relaid("packages", paired), "packages", {
+  expect(() => verify(relaid(paired), {
     all: costsOf(paired, totals(31, 27)), tests: costsOf(paired, totals(30, 27))
   })).toThrow(/shards differ by over three/)
   // An irreducible heaviest shard does not excuse uneven remaining shards, in either measure.
-  expect(() => verify(relaid("packages", single), "packages", { ...irreducible, all: costsOf(single, totals(31, 27, 23.5)) }))
+  expect(() => verify(relaid(single), { ...irreducible, all: costsOf(single, totals(31, 27, 23.5)) }))
     .toThrow(/shards differ by over three/)
-  expect(() => verify(relaid("packages", single), "packages", { ...irreducible, tests: costsOf(single, totals(30, 25.5, 21)) }))
+  expect(() => verify(relaid(single), { ...irreducible, tests: costsOf(single, totals(30, 25.5, 21)) }))
     .toThrow(/test shards differ by over four/)
   // Each measure finds its own heaviest shard: the single root is heaviest
   // overall but lightest in tests, so every shard counts toward the test spread.
-  expect(() => verify(relaid("packages", single), "packages", { ...irreducible, tests: costsOf(single, totals(20, 24.5)) }))
+  expect(() => verify(relaid(single), { ...irreducible, tests: costsOf(single, totals(20, 24.5)) }))
     .toThrow(/test shards differ by over four/)
 })

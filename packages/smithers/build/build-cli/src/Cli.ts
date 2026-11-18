@@ -115,18 +115,25 @@ const executionOptions = workspaceOption.extend({
   )
 })
 
-const lifecycleOptions = executionOptions.extend({
+/** `--shard`, on every verb that plans a selection and executes it. */
+const shardOptions = {
+  shard: z.string().optional().describe(
+    "Run one shard, as <index>/<count> counted from 0: the planned targets whose label hashes to index, " +
+      "and their dependencies"
+  )
+}
+
+const shardedOptions = executionOptions.extend(shardOptions)
+
+const lifecycleOptions = shardedOptions.extend({
   lifecycle: z.enum(["evergreen", "artifact", "all"]).optional().describe(
     "Select targets by lifecycle; omitted selects all"
   )
 })
 
 const ciOptions = lifecycleOptions.extend({
-  shard: z.string().optional().describe(
-    "Run one part of the selection, as <index>/<count>; parts are balanced by the durations --timings measured"
-  ),
   timings: z.array(z.string()).optional().describe(
-    "A --results-file of an earlier run whose durations weigh the --shard or --remote split; repeatable, later files win"
+    "A --results-file of an earlier run whose durations weigh the --remote split; repeatable, later files win"
   ),
   remote: z.string().optional().describe(
     "Run the selection across the machines this S.Remotes entry declares, one part each, and merge their results"
@@ -192,11 +199,12 @@ export interface ExecutionFlags extends WorkspaceFlags {
   readonly cache: boolean
   readonly failFast?: boolean | undefined
   readonly knownRed?: string | undefined
+  /** `--shard <index>/<count>`: run only this machine's share of the plan. */
+  readonly shard?: string | undefined
 }
 
-/** The flags `ci` adds: which part of the selection this machine runs. */
+/** The flags `ci` adds: how its selection is split across machines. */
 interface CiFlags extends ExecutionFlags {
-  readonly shard?: string | undefined
   readonly timings?: ReadonlyArray<string> | undefined
   readonly remote?: string | undefined
 }
@@ -781,6 +789,8 @@ export const runPackageVerb = async (
   config: RuntimeConfig,
   reporter: Reporter.Reporter
 ): Promise<Executor.Summary | PackageExec.PlanReport> => {
+  // A mistyped shard must not cost a plan.
+  const shard = shardOf(flags)
   const index = await openPackageIndex(flags, config)
   const cacheDirectory = flags.cacheDir === undefined
     ? index.workspace.cache.directory
@@ -817,10 +827,26 @@ export const runPackageVerb = async (
       inputs: parseInputs(flags.input),
       environment: config.environment,
       packageName: flags.name,
-      approvals: config.approvals
-    })
+      approvals: config.approvals,
+      shard
+    }).then((outcome) => recordShard(outcome, shard))
   )
 }
+
+/** `--shard`, parsed before any declaration loads; absent runs the whole plan. */
+const shardOf = (flags: ExecutionFlags): Shards.Shard | undefined =>
+  flags.shard === undefined ? undefined : Shards.parse(flags.shard)
+
+/** A summary as a sharded run records it: with the shard it ran. */
+interface ShardedSummary extends Executor.Summary {
+  readonly shard?: Shards.Shard | undefined
+}
+
+/** Adds the shard to a sharded run's summary, so its record says which share it ran. */
+const recordShard = <A extends Executor.Summary | PackageExec.PlanReport>(
+  outcome: A,
+  shard: Shards.Shard | undefined
+): A => shard === undefined || !("ok" in outcome) ? outcome : { ...outcome, shard }
 
 /**
  * Plans one target inertly and returns the revision an approval must name.
@@ -925,10 +951,10 @@ const runCi = async (
         "--remote does not take --known-red yet: a machine's results file carries no failure diagnostics to fingerprint"
     })
   }
-  if (flags.shard === undefined && flags.remote === undefined && flags.timings !== undefined) {
-    throw new CommandRefused({ message: "--timings needs --shard or --remote" })
+  if (flags.remote === undefined && flags.timings !== undefined) {
+    throw new CommandRefused({ message: "--timings needs --remote" })
   }
-  const shard = flags.shard === undefined ? undefined : Shards.parse(flags.shard)
+  const shard = shardOf(flags)
   const measured = new Map<string, number>()
   for (const path of flags.timings ?? []) {
     let content: string
@@ -1027,7 +1053,7 @@ const runCi = async (
     if (remote !== undefined) {
       return runRemote(index, knownRed, remote, whole, measured, pattern, flags, config, reporter)
     }
-    const merged = shard === undefined ? whole : Shards.select(whole, shard, measured)
+    const merged = shard === undefined ? whole : Shards.select(whole, shard)
     if (flags.plan) return { verb: "ci", pattern, ...merged, targets: merged.targets.map(plannedTarget) }
     // Services and key-only dependencies are planned but never scheduled.
     // Keep them available to consumers when merging the runnable CI graph.
@@ -1058,7 +1084,7 @@ const runCi = async (
           ...terminalsOf(config),
           environment: config.environment
         }
-      )
+      ).then((summary) => recordShard(summary, shard))
     )
   }
 }
@@ -1263,7 +1289,15 @@ const writeResults = async (
   try {
     await writeReceipt(
       file,
-      `${JSON.stringify({ ok: summary.ok, counts: summary.counts, results, version: 1 })}\n`,
+      `${
+        JSON.stringify({
+          ok: summary.ok,
+          counts: summary.counts,
+          results,
+          version: 1,
+          ...((summary as ShardedSummary).shard === undefined ? {} : { shard: (summary as ShardedSummary).shard })
+        })
+      }\n`,
       config
     )
     return undefined
@@ -1414,6 +1448,7 @@ const runSelected = async (
   config: RuntimeConfig,
   reporter: Reporter.Reporter
 ): Promise<Executor.Summary | PackageExec.PlanReport> => {
+  const shard = shardOf(flags)
   const knownRed = await knownRedOf(index, flags)
   const options = {
     index,
@@ -1478,12 +1513,13 @@ const runSelected = async (
   const work = new Map<string, PackageExec.PackageNode>()
   for (const plan of plans) for (const node of plan.workList) if (!work.has(node.label)) work.set(node.label, node)
   for (const [label, node] of work) nodes.set(label, node)
-  const combined: PackageExec.PackagePlan = {
+  const whole: PackageExec.PackagePlan = {
     roots: [...new Set(plans.flatMap((plan) => plan.roots))],
     workList: [...work.values()],
     nodes,
     closures: new Map(plans.flatMap((plan) => [...plan.closures]))
   }
+  const combined = shard === undefined ? whole : Shards.selectPackage(whole, shard)
   if (flags.plan) {
     return {
       verb,
@@ -1503,7 +1539,7 @@ const runSelected = async (
   const summary = await rememberExecution(
     index,
     knownRed,
-    PackageExec.execute(combined, { ...options, verb, patterns })
+    PackageExec.execute(combined, { ...options, verb, patterns }).then((outcome) => recordShard(outcome, shard))
   )
   // A planned target the executor holds no record of never ran; that is red.
   requireRecorded(combined.workList.map((node) => node.label), summary, "Planned targets have no execution record")
@@ -1735,6 +1771,7 @@ const makeCommands = (config: RuntimeConfig) =>
       }),
       async run(context) {
         try {
+          shardOf(context.options)
           const index = await openPackageIndex(context.options, config)
           const files = await Affected.changedPaths(index.root, {
             ...context.options,
@@ -1993,7 +2030,7 @@ const makeCommands = (config: RuntimeConfig) =>
       description: "Execute the build targets selected by a pattern",
       mcp: { annotations: { readOnlyHint: false } },
       args: patternsArgument,
-      options: executionOptions,
+      options: shardedOptions,
       alias: executionAlias,
       run: (context) =>
         executeCommand(
@@ -2021,7 +2058,7 @@ const makeCommands = (config: RuntimeConfig) =>
       description: "Execute the lint targets selected by a pattern",
       mcp: { annotations: { readOnlyHint: false } },
       args: patternsArgument,
-      options: executionOptions.extend({
+      options: shardedOptions.extend({
         fix: z.boolean().default(false).describe("Apply agent lint fixes inside the declared fixes write-set")
       }),
       alias: executionAlias,

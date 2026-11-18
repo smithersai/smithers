@@ -1,0 +1,365 @@
+{
+  "rule": "32-bit FNV-1a over the label's UTF-16 code units, modulo count",
+  "cases": [
+    {
+      "label": "//:a",
+      "count": 1,
+      "shard": 0
+    },
+    {
+      "label": "//:a",
+      "count": 2,
+      "shard": 0
+    },
+    {
+      "label": "//:a",
+      "count": 3,
+      "shard": 2
+    },
+    {
+      "label": "//:a",
+      "count": 7,
+      "shard": 1
+    },
+    {
+      "label": "//:a",
+      "count": 9,
+      "shard": 2
+    },
+    {
+      "label": "//:a",
+      "count": 1024,
+      "shard": 654
+    },
+    {
+      "label": "//:b",
+      "count": 1,
+      "shard": 0
+    },
+    {
+      "label": "//:b",
+      "count": 2,
+      "shard": 1
+    },
+    {
+      "label": "//:b",
+      "count": 3,
+      "shard": 0
+    },
+    {
+      "label": "//:b",
+      "count": 7,
+      "shard": 3
+    },
+    {
+      "label": "//:b",
+      "count": 9,
+      "shard": 3
+    },
+    {
+      "label": "//:b",
+      "count": 1024,
+      "shard": 251
+    },
+    {
+      "label": "//packages/ci:test",
+      "count": 1,
+      "shard": 0
+    },
+    {
+      "label": "//packages/ci:test",
+      "count": 2,
+      "shard": 1
+    },
+    {
+      "label": "//packages/ci:test",
+      "count": 3,
+      "shard": 0
+    },
+    {
+      "label": "//packages/ci:test",
+      "count": 7,
+      "shard": 5
+    },
+    {
+      "label": "//packages/ci:test",
+      "count": 9,
+      "shard": 0
+    },
+    {
+      "label": "//packages/ci:test",
+      "count": 1024,
+      "shard": 127
+    },
+    {
+      "label": "//packages/ci:lib",
+      "count": 1,
+      "shard": 0
+    },
+    {
+      "label": "//packages/ci:lib",
+      "count": 2,
+      "shard": 0
+    },
+    {
+      "label": "//packages/ci:lib",
+      "count": 3,
+      "shard": 2
+    },
+    {
+      "label": "//packages/ci:lib",
+      "count": 7,
+      "shard": 1
+    },
+    {
+      "label": "//packages/ci:lib",
+      "count": 9,
+      "shard": 5
+    },
+    {
+      "label": "//packages/ci:lib",
+      "count": 1024,
+      "shard": 210
+    },
+    {
+      "label": "//packages/ci:check",
+      "count": 1,
+      "shard": 0
+    },
+    {
+      "label": "//packages/ci:check",
+      "count": 2,
+      "shard": 1
+    },
+    {
+      "label": "//packages/ci:check",
+      "count": 3,
+      "shard": 1
+    },
+    {
+      "label": "//packages/ci:check",
+      "count": 7,
+      "shard": 4
+    },
+    {
+      "label": "//packages/ci:check",
+      "count": 9,
+      "shard": 4
+    },
+    {
+      "label": "//packages/ci:check",
+      "count": 1024,
+      "shard": 221
+    },
+    {
+      "label": "//packages/ci:lint",
+      "count": 1,
+      "shard": 0
+    },
+    {
+      "label": "//packages/ci:lint",
+      "count": 2,
+      "shard": 0
+    },
+    {
+      "label": "//packages/ci:lint",
+      "count": 3,
+      "shard": 2
+    },
+    {
+      "label": "//packages/ci:lint",
+      "count": 7,
+      "shard": 2
+    },
+    {
+      "label": "//packages/ci:lint",
+      "count": 9,
+      "shard": 2
+    },
+    {
+      "label": "//packages/ci:lint",
+      "count": 1024,
+      "shard": 990
+    },
+    {
+      "label": "//packages/smithers/build/build-cli:test",
+      "count": 1,
+      "shard": 0
+    },
+    {
+      "label": "//packages/smithers/build/build-cli:test",
+      "count": 2,
+      "shard": 1
+    },
+    {
+      "label": "//packages/smithers/build/build-cli:test",
+      "count": 3,
+      "shard": 2
+    },
+    {
+      "label": "//packages/smithers/build/build-cli:test",
+      "count": 7,
+      "shard": 0
+    },
+    {
+      "label": "//packages/smithers/build/build-cli:test",
+      "count": 9,
+      "shard": 8
+    },
+    {
+      "label": "//packages/smithers/build/build-cli:test",
+      "count": 1024,
+      "shard": 161
+    },
+    {
+      "label": "//packages/smithers/flows/jj-wasm:wasmReproducibility",
+      "count": 1,
+      "shard": 0
+    },
+    {
+      "label": "//packages/smithers/flows/jj-wasm:wasmReproducibility",
+      "count": 2,
+      "shard": 0
+    },
+    {
+      "label": "//packages/smithers/flows/jj-wasm:wasmReproducibility",
+      "count": 3,
+      "shard": 2
+    },
+    {
+      "label": "//packages/smithers/flows/jj-wasm:wasmReproducibility",
+      "count": 7,
+      "shard": 3
+    },
+    {
+      "label": "//packages/smithers/flows/jj-wasm:wasmReproducibility",
+      "count": 9,
+      "shard": 8
+    },
+    {
+      "label": "//packages/smithers/flows/jj-wasm:wasmReproducibility",
+      "count": 1024,
+      "shard": 620
+    },
+    {
+      "label": "//:é",
+      "count": 1,
+      "shard": 0
+    },
+    {
+      "label": "//:é",
+      "count": 2,
+      "shard": 0
+    },
+    {
+      "label": "//:é",
+      "count": 3,
+      "shard": 1
+    },
+    {
+      "label": "//:é",
+      "count": 7,
+      "shard": 4
+    },
+    {
+      "label": "//:é",
+      "count": 9,
+      "shard": 7
+    },
+    {
+      "label": "//:é",
+      "count": 1024,
+      "shard": 118
+    },
+    {
+      "label": "//pkg:🚀",
+      "count": 1,
+      "shard": 0
+    },
+    {
+      "label": "//pkg:🚀",
+      "count": 2,
+      "shard": 0
+    },
+    {
+      "label": "//pkg:🚀",
+      "count": 3,
+      "shard": 2
+    },
+    {
+      "label": "//pkg:🚀",
+      "count": 7,
+      "shard": 5
+    },
+    {
+      "label": "//pkg:🚀",
+      "count": 9,
+      "shard": 8
+    },
+    {
+      "label": "//pkg:🚀",
+      "count": 1024,
+      "shard": 486
+    },
+    {
+      "label": "//pkg/日本:テスト",
+      "count": 1,
+      "shard": 0
+    },
+    {
+      "label": "//pkg/日本:テスト",
+      "count": 2,
+      "shard": 0
+    },
+    {
+      "label": "//pkg/日本:テスト",
+      "count": 3,
+      "shard": 0
+    },
+    {
+      "label": "//pkg/日本:テスト",
+      "count": 7,
+      "shard": 6
+    },
+    {
+      "label": "//pkg/日本:テスト",
+      "count": 9,
+      "shard": 0
+    },
+    {
+      "label": "//pkg/日本:テスト",
+      "count": 1024,
+      "shard": 600
+    },
+    {
+      "label": "//xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:t",
+      "count": 1,
+      "shard": 0
+    },
+    {
+      "label": "//xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:t",
+      "count": 2,
+      "shard": 1
+    },
+    {
+      "label": "//xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:t",
+      "count": 3,
+      "shard": 2
+    },
+    {
+      "label": "//xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:t",
+      "count": 7,
+      "shard": 4
+    },
+    {
+      "label": "//xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:t",
+      "count": 9,
+      "shard": 5
+    },
+    {
+      "label": "//xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:t",
+      "count": 1024,
+      "shard": 541
+    }
+  ]
+}

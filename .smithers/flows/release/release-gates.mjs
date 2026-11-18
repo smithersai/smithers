@@ -1,5 +1,5 @@
 import { parse } from "yaml"
-import { packageShards, shardJobId } from "../../../packages/repo-targets/ci/shards.ts"
+import { packagePatterns, packageShards, shardJobId } from "../../../packages/repo-targets/ci/shards.ts"
 
 const shardCommands = (verb) => packageShards.map((shard) =>
   `pnpm exec smthrs ${verb} ${shard.patterns.map((pattern) => `'${pattern}'`).join(" ")} --jobs 2 --verbose`)
@@ -61,7 +61,13 @@ const shardCommands = (verb) => packageShards.map((shard) =>
  * @type {readonly ReleaseGate[]}
  */
 export const releaseGates = [
-  { name: "Workspace targets", verb: "ci", target: "//packages/...", jobs: 2, ciCommands: shardCommands("ci") },
+  {
+    name: "Workspace targets",
+    verb: "ci",
+    target: "//packages/...",
+    jobs: 2,
+    ciCommands: [`pnpm exec smthrs ci ${packagePatterns.map((pattern) => `'${pattern}'`).join(" ")} --jobs 2 --verbose`]
+  },
   { name: "Issue claims and check receipts", verb: "test", target: "//.smithers/flows:issueClaim" },
   { name: "Check bindings", verb: "test", target: "//.smithers/flows:evidenceBindings" },
   { name: "Release rehearsal and gate inventory", verb: "test", target: "//.smithers/flows:releaseRehearsal" },
@@ -489,7 +495,7 @@ const discoveredJobGates = (jobs, job) => {
   if (!Object.hasOwn(jobs, job)) throw new Error(`${job} is not a job in this workflow`)
   return (jobs[job].steps ?? []).flatMap((step) => {
     if (typeof step.run !== "string") return []
-    const commands = shellCommands(step.run)
+    const commands = shellCommands(step.run.replace(shardOption, ""))
     const assignedValues = []
     for (const { tokens } of commands) {
       let at = ["export", "readonly", "env"].includes(tokens[0]) ? 1 : 0
@@ -541,6 +547,15 @@ const matchesCommand = (step, command) => {
   const [canonical] = shellCommands(command)
   return canonical.tokens.length === step.tokens.length && canonical.tokens.every((token, i) => token === step.tokens[i])
 }
+
+/**
+ * The shard a step of a sharded CI job runs. The job's matrix runs one machine
+ * per shard and together they run the step's whole selection, so like a
+ * known-red list the option changes which machine runs a target, not which
+ * targets the job runs; discovery drops it. Only the generated matrix
+ * expression is dropped: any other value stays and leaves the step unowned.
+ */
+const shardOption = / --shard \$\{\{ matrix\.shard \}\}\/[1-9]\d*(?= )/
 
 /**
  * The results file every CI and release step writes for the check receipts

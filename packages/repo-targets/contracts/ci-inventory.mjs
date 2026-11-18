@@ -22,7 +22,11 @@ export function targetInvocation(run) {
   if (typeof run !== "string" || !/^pnpm exec smthrs (?:ci|test|build|lint|docs)\b/.test(run)) return undefined
   const match = run.match(/^pnpm exec smthrs (ci|test|build|lint|docs) '(\/\/[^']+)'(.*)$/)
   if (!match) throw new Error(`Unrecognized CI target invocation: ${run}`)
-  const [, verb, pattern, tail] = match
+  const [, verb, pattern, whole] = match
+  // A sharded job's step runs one shard of its selection, and the job's
+  // matrix runs every shard, so the job as a whole runs the full selection.
+  const sharded = / --shard \$\{\{ matrix\.shard \}\}\/([1-9]\d*)(?= |$)/.exec(whole)
+  const tail = sharded ? whole.replace(sharded[0], "") : whole
   const options = tail.trim() === "" ? [] : tail.trim().match(/"[^"]*"|'[^']*'|\S+/g) ?? []
   const additionalPatterns = []
   while (/^'\/\/[^']+'$/.test(options[0] ?? "")) additionalPatterns.push(options.shift().slice(1, -1))
@@ -41,7 +45,8 @@ export function targetInvocation(run) {
       resultsFile = options[++index].slice(1, -1)
     } else throw new Error(`Unrecognized CI target option in: ${run}`)
   }
-  return { verb, pattern, ...(additionalPatterns.length ? { additionalPatterns } : {}), jobs, ...(knownRed === undefined ? {} : { knownRed }), verbose,
+  return { verb, pattern, ...(additionalPatterns.length ? { additionalPatterns } : {}), jobs,
+    ...(sharded ? { shards: Number(sharded[1]) } : {}), ...(knownRed === undefined ? {} : { knownRed }), verbose,
     ...(resultsFile === undefined ? {} : { resultsFile }) }
 }
 
