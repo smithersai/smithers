@@ -15,6 +15,7 @@ import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as NodeUtil from "node:util/types"
+import * as Config from "./Config.ts"
 import * as Exec from "./Exec.ts"
 import { failureMessage } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
@@ -411,6 +412,9 @@ const cachePath = (root: string, declared: string, value: string | undefined): s
   if (value === "" || NodePath.isAbsolute(value)) {
     throw new OutputError({ path: declared, message: "configured cache directory is not workspace-relative" })
   }
+  // A directory outside the workspace holds no declared output, which must
+  // stay inside it.
+  if (Config.isOutsideCacheDirectory(value)) return undefined
   const absolute = NodePath.resolve(root, value)
   if (!inside(root, absolute) || absolute === root) {
     throw new OutputError({ path: declared, message: "configured cache directory leaves the workspace" })

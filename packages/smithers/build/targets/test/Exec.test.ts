@@ -600,6 +600,42 @@ describe("run", () => {
     expect(await Fs.readFile(NodePath.join(root, ".flows.txt"), "utf8")).toBe("ok")
   })
 
+  it("substitutes the token in declared env values as well as argv", async () => {
+    const exit = await run(
+      { workspaceRoot: root, cacheDirectory: ".flows" },
+      {
+        ...payload([
+          "node",
+          "-e",
+          `require('node:fs').writeFileSync('env.txt', process.env.ZIG_LOCAL_CACHE_DIR + '|' + process.env.PLAIN)`
+        ]),
+        env: { ZIG_LOCAL_CACHE_DIR: `${Exec.cacheDirectoryToken}/tools/zig/local`, PLAIN: "plain" }
+      }
+    )
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(await Fs.readFile(NodePath.join(root, "env.txt"), "utf8"))
+      .toBe(`${NodePath.join(root, ".flows")}/tools/zig/local|plain`)
+  })
+
+  it("substitutes an outside cache directory as named, without the workspace check", async () => {
+    const climb = Array.from({ length: 64 }, () => "..").join("/")
+    const cacheDirectory = `${climb}${outside}`
+    const exit = await run(
+      { workspaceRoot: root, cacheDirectory },
+      {
+        ...payload([
+          "node",
+          "-e",
+          `require('node:fs').writeFileSync(process.argv[1], process.env.STATE)`,
+          `${Exec.cacheDirectoryToken}/probe.txt`
+        ]),
+        env: { STATE: Exec.cacheDirectoryToken }
+      }
+    )
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(await Fs.readFile(NodePath.join(outside, "probe.txt"), "utf8")).toBe(outside)
+  })
+
   it("substitutes the checked cache root when the child runs in a subdirectory", async () => {
     await Fs.mkdir(NodePath.join(root, "sub"))
     const exit = await run(

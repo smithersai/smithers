@@ -7,7 +7,7 @@ Arguments:
 
 Options:
   --workspace, -w <string>  Directory inside a workspace containing WORKSPACE.ts (default: <cwd>)
-  --cache-dir <string>      Workspace-relative cache directory; overrides the WORKSPACE.ts declaration
+  --cache-dir <string>      Cache directory; overrides the WORKSPACE.ts declaration. An absolute path or one starting with .. lies outside the workspace
   --verbose                 Show plain progress for agent and pipe consumers
   --plan                    Print the inert plan instead of executing
   --jobs, -j <number>       Maximum concurrent targets; defaults to host parallelism. Exclusive targets run alone after ready ordinary work

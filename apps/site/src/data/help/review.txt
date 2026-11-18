@@ -7,7 +7,7 @@ Arguments:
 
 Options:
   --workspace <string>            Directory inside a workspace containing WORKSPACE.ts (default: <cwd>)
-  --cache-dir <string>            Workspace-relative cache directory; overrides the WORKSPACE.ts declaration
+  --cache-dir <string>            Cache directory; overrides the WORKSPACE.ts declaration. An absolute path or one starting with .. lies outside the workspace
   --policy-revision <string>      Full approved commit SHA containing the trusted review index
   --revision <string>             Committed source revision: HEAD or a full commit SHA (default: HEAD)
   --plan                          Show pinned policy and source selection without inference

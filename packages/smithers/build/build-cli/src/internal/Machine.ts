@@ -469,7 +469,9 @@ export const environment = (machine: Machine): Readonly<Record<string, string>> 
  * @since 1.0.0
  */
 export const relocated = (value: string, root: string, tree: string, cacheDirectory: string): string => {
-  const kept = `${root}/${cacheDirectory}`
+  // Joined, not concatenated: a cache directory outside the workspace is a
+  // leading run of `..` segments, which only a join resolves.
+  const kept = NodePath.join(root, ...cacheDirectory.split("/"))
   let moved = ""
   let from = 0
   for (let at = value.indexOf(root); at !== -1; at = value.indexOf(root, from)) {

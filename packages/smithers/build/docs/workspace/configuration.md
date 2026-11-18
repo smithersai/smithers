@@ -82,24 +82,55 @@ Every command settles the cache directory before it reads or writes anything.
 2. The `cache` declaration in `WORKSPACE.ts`.
 3. `.flows`.
 
-Both the flag and the declaration go through the same validation, so an absolute
-path, a `..` segment, or an empty value fails the command regardless of where it
-came from.
+The flag may name any directory; a declaration may only name one inside the
+workspace, or ask for `outside: true`.
+
+- A workspace-relative flag or declared directory is validated the same way: an
+  absolute path, a `..` segment, or an empty value fails the command.
+- A flag that is an absolute path, or a relative path that starts with `..`, names
+  a directory outside the workspace. A relative path is read from the workspace
+  root, not the current directory.
+- `S.Cache({ directory, outside: true })` asks the machine to place the
+  directory under its user cache directory, at
+  `<user cache directory>/smithers/<name>-<hash>/<directory>`. See
+  [the workspace reference](../reference/config.md#keep-the-cache-outside-the-checkout).
 
 ```bash
 smithers-build build //... --cache-dir .smithers-build-cache
+smithers-build build //... --cache-dir "$RUNNER_TEMP/smithers"
+smithers-build build //... --cache-dir ../state
 ```
 
-Add the resolved directory to your `.gitignore`. It holds replayable state that
-no commit should carry.
+An outside directory keeps the checkout exactly as git left it: a step that runs
+`git status --porcelain --ignored`, `git clean -ndx`, or `ls -A` sees no
+`.flows`. That is the reason to choose one on a CI runner or in a replay of
+another repository's CI. The command creates it with its parents. A directory
+that holds the workspace, such as `--cache-dir ..`, is refused, because clearing
+the cache must never reach the checkout.
+
+`smithers-build cache status` prints the resolved directory as an absolute path.
+`smithers-build cache clear --yes` removes its result entries; to remove all of
+its state, delete the directory.
+
+Add an inside directory to your `.gitignore`. It holds replayable state that no
+commit should carry.
 
 ## What lives in the cache directory
 
 | Path                                      | Written by                                                                       |
 | ----------------------------------------- | -------------------------------------------------------------------------------- |
 | `<cacheDirectory>/cache/<xx>/<key>.json`  | The result cache, one JSON file per stored target result                         |
+| `<cacheDirectory>/cas/<digest>`           | The content store for captured outputs                                           |
+| `<cacheDirectory>/plan`                   | Plan state, such as file digests and installed-tree measurements                 |
 | `<cacheDirectory>/knip-<fingerprint>.mjs` | `DepsLint`, when its ignore lists are non-empty and the tool is knip             |
 | `<cacheDirectory>/sandbox/<run>`          | A confined run's private temporary directory and home; removed when the run ends |
+
+Everything in the table, and every other file a run keeps in the cache
+directory, follows the directory when it is outside the workspace. Files inside
+it keep every check they have inside the workspace: the `cache` and `cas`
+children must not be links that leave the directory. A confined run can write
+its private temporary directory and home under an outside directory, and cannot
+write the rest of it.
 
 Package-manager stores are not controlled by this setting. They stay at
 `.flows/store/<manager>` because fetch declares those fixed paths as
@@ -123,8 +154,14 @@ Three mechanisms keep it out.
   empty file list.
 - **Tool execution** never receives the real path in an action payload.
   `DepsLint` emits the constant token `{smthrs:cache-directory}` at plan time,
-  and the exec layer substitutes the validated host directory into the argv
-  immediately before spawn.
+  and the exec layer substitutes the validated host directory into the argv and
+  into each declared `env` value immediately before spawn. A target can set
+  `env: { ZIG_LOCAL_CACHE_DIR: "{smthrs:cache-directory}/tools/zig/local" }`;
+  the key holds the token, so two machines with different directories share
+  one key.
+
+A directory outside the workspace never matches a workspace path, so discovery
+and glob expansion skip nothing for it.
 
 ## Next
 

@@ -61,25 +61,25 @@ must be a string; Workspace(name, options) takes the name first`.
 `repository` and `cache` are required. Everything else is optional, and an
 unknown key fails with `Workspace received unknown option "x"`.
 
-| Option           | Type                                    | Description                                                                            |
-| ---------------- | --------------------------------------- | -------------------------------------------------------------------------------------- |
-| `repository`     | `string`                                | The repository this workspace is. A non-empty string.                                  |
-| `cache`          | `S.Cache({ directory, remote? })`       | Where results are kept, and optionally the remote cache they replicate to.             |
-| `runtime`        | `S.Runtime.Node` or `S.Runtime.Bun`     | The interpreter every tool-running target is held to.                                  |
-| `packageManager` | `S.PackageManager.Pnpm` or `.Yarn`      | The manager targets run their tools through.                                           |
-| `nodeModules`    | `S.Npm.NodeModules({ packageJson })`    | The installed tree the workspace depends on.                                           |
-| `environment`    | `S.Nix.Environment({ flake })`          | The Nix closure tools resolve from. See [Environments](../concepts/environments.md).   |
-| `toolchains`     | `Array<Declaration>`                    | Non-Node toolchain layers, such as `S.Rust.Toolchain`. Must be non-empty when present. |
-| `sandboxes`      | `S.Sandboxes({ ... })`                  | The confinement mechanisms available by name.                                          |
-| `remotes`        | `S.Remotes({ ... })`                    | The machines `ci --remote <name>` splits a run across, and flows acquire, by name.     |
-| `host`           | `S.Host({ bins })`                      | Host binaries the workspace requires on `PATH`.                                        |
-| `flags`          | `S.Flags(...)`                          | Workspace-wide flag declarations.                                                      |
-| `agents`         | `S.Agents(...)`                         | The agents model-backed targets may name.                                              |
-| `memory`         | `S.Memory.SmithersCloud(...)`           | The Smithers Cloud memory the workspace uses.                                          |
-| `gitHooks`       | `Record<hook, target>`                  | One target per git hook. An unknown hook name is refused.                              |
-| `repos`          | `Record<name, S.LocalRepository(path)>` | Nested workspaces, by name. Names must be portable and paths distinct.                 |
-| `owners`         | `S.Owners.*`                            | Workspace-wide default owners. See [Ownership](../concepts/ownership.md).              |
-| `teams`          | `S.Teams(...)`                          | The team names owner declarations may reference.                                       |
+| Option           | Type                                        | Description                                                                            |
+| ---------------- | ------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `repository`     | `string`                                    | The repository this workspace is. A non-empty string.                                  |
+| `cache`          | `S.Cache({ directory, outside?, remote? })` | Where results are kept, and optionally the remote cache they replicate to.             |
+| `runtime`        | `S.Runtime.Node` or `S.Runtime.Bun`         | The interpreter every tool-running target is held to.                                  |
+| `packageManager` | `S.PackageManager.Pnpm` or `.Yarn`          | The manager targets run their tools through.                                           |
+| `nodeModules`    | `S.Npm.NodeModules({ packageJson })`        | The installed tree the workspace depends on.                                           |
+| `environment`    | `S.Nix.Environment({ flake })`              | The Nix closure tools resolve from. See [Environments](../concepts/environments.md).   |
+| `toolchains`     | `Array<Declaration>`                        | Non-Node toolchain layers, such as `S.Rust.Toolchain`. Must be non-empty when present. |
+| `sandboxes`      | `S.Sandboxes({ ... })`                      | The confinement mechanisms available by name.                                          |
+| `remotes`        | `S.Remotes({ ... })`                        | The machines `ci --remote <name>` splits a run across, and flows acquire, by name.     |
+| `host`           | `S.Host({ bins })`                          | Host binaries the workspace requires on `PATH`.                                        |
+| `flags`          | `S.Flags(...)`                              | Workspace-wide flag declarations.                                                      |
+| `agents`         | `S.Agents(...)`                             | The agents model-backed targets may name.                                              |
+| `memory`         | `S.Memory.SmithersCloud(...)`               | The Smithers Cloud memory the workspace uses.                                          |
+| `gitHooks`       | `Record<hook, target>`                      | One target per git hook. An unknown hook name is refused.                              |
+| `repos`          | `Record<name, S.LocalRepository(path)>`     | Nested workspaces, by name. Names must be portable and paths distinct.                 |
+| `owners`         | `S.Owners.*`                                | Workspace-wide default owners. See [Ownership](../concepts/ownership.md).              |
+| `teams`          | `S.Teams(...)`                              | The team names owner declarations may reference.                                       |
 
 A nested repository without its own `.git` is always treated as dirty for
 `Repo.Target` caching. It never borrows an enclosing repository's commit
@@ -96,9 +96,10 @@ Two rules tie the toolchain options together:
 
 ## The cache directory
 
-`S.Cache({ directory })` normalizes and validates the directory with the same
-function the `--cache-dir` flag goes through, so both paths enforce the same
-rules.
+`S.Cache({ directory })` normalizes and validates the directory. A
+workspace-relative `--cache-dir` value goes through the same rules. A
+declaration can only name a directory inside the workspace; only the command
+line can name one outside it.
 
 Normalization, in order:
 
@@ -134,9 +135,36 @@ Examples:
 The value can name a nested directory such as `build/cache`. It cannot be
 absolute and cannot escape the workspace.
 
-`S.Cache` accepts exactly two keys, `directory` and `remote`. A `remote` value
-must be an `S.RemoteCache.make` declaration; see
+`S.Cache` accepts `directory`, `outside`, `hostDirectories`, and `remote`. A
+`remote` value must be an `S.RemoteCache.make` declaration; see
 [Remote caching](../workspace/remote-caching.md).
+
+### Keep the cache outside the checkout
+
+`outside: true` keeps the state out of the checkout without naming where. The
+machine places it, never the repository:
+
+```text
+<user cache directory>/smithers/<name>-<hash>/<directory>
+```
+
+- `<user cache directory>` is `XDG_CACHE_HOME` when it is an absolute path.
+  Otherwise it is `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows when
+  it is set, and `~/.cache` everywhere else.
+- `<name>` is the workspace name with every run of characters other than
+  letters, digits, `.`, `_`, and `-` replaced by `-`.
+- `<hash>` is the first 12 hex digits of the sha256 of the canonical workspace
+  root, so two checkouts of one repository keep separate state.
+- `<directory>` is the declared `directory`, which is still validated as above.
+
+```ts
+cache: S.Cache({ directory: ".flows", outside: true })
+```
+
+`smithers-build cache status` prints the resolved directory.
+`smithers-build cache clear --yes` removes its result entries; to remove all of
+its state, delete the directory. `outside` must be a boolean, and
+`Cache outside must be a boolean` is the error otherwise.
 
 ## Precedence
 
@@ -146,9 +174,12 @@ Every command settles the cache directory before it reads or writes anything:
 2. The `cache` declaration.
 3. `.flows`.
 
-Both the flag and the declaration go through the same validator, so an absolute
-path, a `..` segment, or an empty value fails the command regardless of where it
-came from.
+The flag may name any directory. A workspace-relative value goes through the
+validator above. An absolute path, or a path that starts with `..` and is read
+from the workspace root, names a directory outside the workspace. A declaration
+may only name a directory inside the workspace, or ask for `outside: true`. An
+outside directory that holds the workspace, such as `--cache-dir ..`, is
+refused, and so is an empty value from either source.
 
 ## What the setting controls
 
@@ -183,7 +214,7 @@ digest.
   file list.
 - Action payloads carry the constant token `{smthrs:cache-directory}` instead
   of the path. The exec layer substitutes the validated host directory into every
-  argument immediately before spawn.
+  argument and every declared `env` value immediately before spawn.
 
 ## Next
 

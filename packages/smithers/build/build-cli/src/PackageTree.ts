@@ -618,7 +618,10 @@ export interface Quarantine {
 export const openQuarantine = (root: string, cacheDirectory: string, label: string): Quarantine => {
   const slug = label.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[_.]+|_+$/g, "") || "body"
   const stamp = `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomBytes(3).toString("hex")}`
-  return { root, directory: `${posix(cacheDirectory)}/reverted/${slug}-${stamp}`, held: [] }
+  // Relative to the root even when the cache directory is outside the
+  // workspace, so a message names it in the fewest segments.
+  const directory = posix(NodePath.relative(root, NodePath.join(root, ...cacheDirectory.split("/"))))
+  return { root, directory: `${directory}/reverted/${slug}-${stamp}`, held: [] }
 }
 
 /**
@@ -2112,11 +2115,12 @@ export const materializeFile = async (
   root: string,
   cacheDirectory: string,
   manifest: FileManifest,
-  io: TreeIo = Fs
+  io: TreeIo = Fs,
+  storeRoot: string = root
 ): Promise<void> => {
   if (!isConfinedRelative(manifest.path)) throw new Error(`materialize refused path: ${manifest.path}`)
   const destination = NodePath.join(root, ...manifest.path.split("/"))
-  const blob = NodePath.join(casDirectory(root, cacheDirectory), manifest.digest)
+  const blob = NodePath.join(casDirectory(storeRoot, cacheDirectory), manifest.digest)
   await confinedAncestor(root, destination, manifest.path)
   await io.mkdir(NodePath.dirname(destination), { recursive: true })
   await confinedParent(root, destination, manifest.path)

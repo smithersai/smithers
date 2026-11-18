@@ -60,44 +60,44 @@ describe("Workspace", () => {
   })
 })
 
-describe("Config.normalizeCacheDirectory", () => {
+describe("Config.normalizeDeclaredCacheDirectory", () => {
   it("rejects a non-string cache directory as a caller type error", () => {
-    expect(() => Config.normalizeCacheDirectory(null as never)).toThrowError(
+    expect(() => Config.normalizeDeclaredCacheDirectory(null as never)).toThrowError(
       new TypeError("cacheDirectory must be a string")
     )
   })
 
   it("normalizes redundant separators, dot segments, and whitespace", () => {
-    expect(Config.normalizeCacheDirectory("  .flows/  ")).toBe(".flows")
-    expect(Config.normalizeCacheDirectory("./.flows")).toBe(".flows")
-    expect(Config.normalizeCacheDirectory("build//cache/")).toBe("build/cache")
+    expect(Config.normalizeDeclaredCacheDirectory("  .flows/  ")).toBe(".flows")
+    expect(Config.normalizeDeclaredCacheDirectory("./.flows")).toBe(".flows")
+    expect(Config.normalizeDeclaredCacheDirectory("build//cache/")).toBe("build/cache")
   })
 
   it("refuses an empty value", () => {
-    expect(() => Config.normalizeCacheDirectory("")).toThrow(/must not be empty/)
-    expect(() => Config.normalizeCacheDirectory("   ")).toThrow(/must not be empty/)
-    expect(() => Config.normalizeCacheDirectory("./")).toThrow(/must not be empty/)
+    expect(() => Config.normalizeDeclaredCacheDirectory("")).toThrow(/must not be empty/)
+    expect(() => Config.normalizeDeclaredCacheDirectory("   ")).toThrow(/must not be empty/)
+    expect(() => Config.normalizeDeclaredCacheDirectory("./")).toThrow(/must not be empty/)
   })
 
   it("refuses an absolute path", () => {
-    expect(() => Config.normalizeCacheDirectory("/tmp/flows")).toThrow(/workspace-relative/)
-    expect(() => Config.normalizeCacheDirectory("C:\\flows")).toThrow(/workspace-relative/)
-    expect(() => Config.normalizeCacheDirectory("\\\\server\\flows")).toThrow(/workspace-relative/)
+    expect(() => Config.normalizeDeclaredCacheDirectory("/tmp/flows")).toThrow(/workspace-relative/)
+    expect(() => Config.normalizeDeclaredCacheDirectory("C:\\flows")).toThrow(/workspace-relative/)
+    expect(() => Config.normalizeDeclaredCacheDirectory("\\\\server\\flows")).toThrow(/workspace-relative/)
   })
 
   it("refuses parent traversal anywhere in the path", () => {
-    expect(() => Config.normalizeCacheDirectory("../flows")).toThrow(/must not leave the workspace/)
-    expect(() => Config.normalizeCacheDirectory("build/../../flows")).toThrow(/must not leave the workspace/)
+    expect(() => Config.normalizeDeclaredCacheDirectory("../flows")).toThrow(/must not leave the workspace/)
+    expect(() => Config.normalizeDeclaredCacheDirectory("build/../../flows")).toThrow(/must not leave the workspace/)
   })
 
   it("refuses control characters, ill-formed text, and oversized paths", () => {
-    expect(() => Config.normalizeCacheDirectory("cache\nelsewhere")).toThrow(/control characters/)
-    expect(() => Config.normalizeCacheDirectory("cache\0elsewhere")).toThrow(/control characters/)
-    expect(() => Config.normalizeCacheDirectory("cache\ud800")).toThrow(/well-formed text/)
-    expect(() => Config.normalizeCacheDirectory("x".repeat(Config.maximumCacheDirectoryBytes + 1)))
+    expect(() => Config.normalizeDeclaredCacheDirectory("cache\nelsewhere")).toThrow(/control characters/)
+    expect(() => Config.normalizeDeclaredCacheDirectory("cache\0elsewhere")).toThrow(/control characters/)
+    expect(() => Config.normalizeDeclaredCacheDirectory("cache\ud800")).toThrow(/well-formed text/)
+    expect(() => Config.normalizeDeclaredCacheDirectory("x".repeat(Config.maximumCacheDirectoryBytes + 1)))
       .toThrow(/at most/)
     expect(() =>
-      Config.normalizeCacheDirectory(
+      Config.normalizeDeclaredCacheDirectory(
         `root/${"x".repeat(Config.maximumCacheDirectorySegmentBytes + 1)}`
       )
     ).toThrow(/segments must be at most/)
@@ -107,6 +107,34 @@ describe("Config.normalizeCacheDirectory", () => {
     expect(() => Config.Workspace({ cacheDirectory: "" })).toThrow(/must not be empty/)
     expect(() => Config.Workspace({ cacheDirectory: "/abs" })).toThrow(/workspace-relative/)
     expect(() => Config.Workspace({ cacheDirectory: ".." })).toThrow(/must not leave the workspace/)
+  })
+})
+
+describe("Config.normalizeCacheDirectory", () => {
+  it("accepts the declared form unchanged", () => {
+    expect(Config.normalizeCacheDirectory("  ./.flows//cache/ ")).toBe(".flows/cache")
+    expect(() => Config.normalizeCacheDirectory("/tmp/flows")).toThrow(/workspace-relative/)
+  })
+
+  it("accepts an outside directory as a leading run of .. segments", () => {
+    expect(Config.normalizeCacheDirectory("../../tmp//state/")).toBe("../../tmp/state")
+    expect(Config.isOutsideCacheDirectory("../../tmp/state")).toBe(true)
+    expect(Config.isOutsideCacheDirectory(".flows")).toBe(false)
+    expect(Config.isOutsideCacheDirectory("..flows")).toBe(false)
+  })
+
+  it("refuses .. after the leading run and a run with nothing after it", () => {
+    expect(() => Config.normalizeCacheDirectory("../tmp/../state")).toThrow(
+      "cacheDirectory must not leave the workspace: ../tmp/../state"
+    )
+    expect(() => Config.normalizeCacheDirectory("build/../../flows")).toThrow(/must not leave the workspace/)
+    expect(() => Config.normalizeCacheDirectory("../..")).toThrow(/must not leave the workspace/)
+  })
+
+  it("refuses an outside directory on another Windows drive", () => {
+    expect(() => Config.normalizeCacheDirectory("../../D:/state")).toThrow(
+      "cacheDirectory outside the workspace must be on the workspace's drive: ../../D:/state"
+    )
   })
 })
 

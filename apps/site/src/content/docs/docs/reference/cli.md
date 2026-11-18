@@ -936,7 +936,7 @@ smthrs review <patterns...> [options]
 | Option | Type | Default | Required | Description |
 | --- | --- | --- | --- | --- |
 | `--workspace` | string | `<cwd>` | no | Directory inside a workspace containing WORKSPACE.ts |
-| `--cache-dir` | string |  | no | Workspace-relative cache directory; overrides the WORKSPACE.ts declaration |
+| `--cache-dir` | string |  | no | Cache directory; overrides the WORKSPACE.ts declaration. An absolute path or one starting with .. lies outside the workspace |
 | `--policy-revision` | string |  | no | Full approved commit SHA containing the trusted review index |
 | `--revision` | string | `HEAD` | no | Committed source revision: HEAD or a full commit SHA |
 | `--plan` | boolean | `false` | no | Show pinned policy and source selection without inference |
@@ -961,7 +961,7 @@ smthrs run <patterns...> [options] | <command>
 | Option | Type | Default | Required | Description |
 | --- | --- | --- | --- | --- |
 | `--workspace`, `-w` | string | `<cwd>` | no | Directory inside a workspace containing WORKSPACE.ts |
-| `--cache-dir` | string |  | no | Workspace-relative cache directory; overrides the WORKSPACE.ts declaration |
+| `--cache-dir` | string |  | no | Cache directory; overrides the WORKSPACE.ts declaration. An absolute path or one starting with .. lies outside the workspace |
 | `--verbose` | boolean | `false` | no | Show plain progress for agent and pipe consumers |
 | `--plan` | boolean | `false` | no | Print the inert plan instead of executing |
 | `--jobs`, `-j` | integer, minimum 1 |  | no | Maximum concurrent targets; defaults to host parallelism. Exclusive targets run alone after ready ordinary work |

@@ -27,13 +27,15 @@ workspace before resolving ownership.
 
 Every command takes these.
 
-| Option        | Alias | Type   | Default                | Meaning                                                         |
-| ------------- | ----- | ------ | ---------------------- | --------------------------------------------------------------- |
-| `--workspace` | `-w`  | string | the working directory  | A directory inside the workspace. Discovery walks up from it.   |
-| `--cache-dir` |       | string | the declared directory | Workspace-relative cache directory, overriding the declaration. |
+| Option        | Alias | Type   | Default                | Meaning                                                       |
+| ------------- | ----- | ------ | ---------------------- | ------------------------------------------------------------- |
+| `--workspace` | `-w`  | string | the working directory  | A directory inside the workspace. Discovery walks up from it. |
+| `--cache-dir` |       | string | the declared directory | Cache directory, overriding the declaration.                  |
 
-`--cache-dir` must be relative, non-empty, and free of `..` segments; anything
-else fails the command. Precedence is the flag, then the `S.Cache({ directory })`
+A workspace-relative `--cache-dir` must be non-empty and free of `..` segments.
+An absolute path, or a relative path that starts with `..` and is read from the
+workspace root, names a directory outside the workspace; one that holds the
+workspace is refused. Precedence is the flag, then the `S.Cache({ directory })`
 in the workspace declaration, then `.flows`. See
 [Caching](./concepts/caching.md).
 

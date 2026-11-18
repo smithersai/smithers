@@ -176,9 +176,10 @@ under the pnpm layer and returns the canonical workspace, manager, recorded
 nodes, and link manifest.
 
 The declared store is fixed at `.flows/store/pnpm`. If `--cache-dir` or the
-root `Workspace` declaration selects another directory, install refuses rather
-than declaring one path and writing another. Other verbs support custom cache
-directories.
+root `Workspace` declaration selects another directory, inside or outside the
+workspace, install refuses rather than declaring one path and writing another.
+Other verbs support custom cache directories, including ones outside the
+workspace.
 
 See [Install](../concepts/install.md).
 

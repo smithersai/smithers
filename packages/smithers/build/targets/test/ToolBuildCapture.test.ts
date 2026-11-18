@@ -681,6 +681,11 @@ describe("capture confinement", () => {
       .rejects.toMatchObject({ message: expect.stringContaining("overlaps the configured cache directory") })
   })
 
+  it("measures an output beside a cache directory outside the workspace", async () => {
+    await write("out/file", "content")
+    await expect(measureOutput(root, ".", "out", { cacheDirectory: "../../../outside/state" })).resolves.toBeDefined()
+  })
+
   it("refuses canonical overlap through a cache-directory link", async () => {
     await write("real-cache/out/file", "content")
     await Fs.symlink(at("real-cache"), at("cache-alias"))

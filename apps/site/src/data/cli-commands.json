@@ -1808,7 +1808,7 @@
               "type": "string"
             },
             "cacheDir": {
-              "description": "Workspace-relative cache directory; overrides the WORKSPACE.ts declaration",
+              "description": "Cache directory; overrides the WORKSPACE.ts declaration. An absolute path or one starting with .. lies outside the workspace",
               "type": "string"
             },
             "policyRevision": {

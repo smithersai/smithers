@@ -29,10 +29,10 @@ bare-label form.
 
 Every command accepts these.
 
-| Option        | Alias | Type   | Default                       | Description                                                                                                           |
-| ------------- | ----- | ------ | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `--workspace` | `-w`  | string | the process working directory | Workspace root containing `PACKAGE.ts` files                                                                          |
-| `--cache-dir` |       | string | unset                         | Workspace-relative cache directory. Overrides the root declaration; `install` requires the result to remain `.flows`. |
+| Option        | Alias | Type   | Default                       | Description                                                                                                                                                                          |
+| ------------- | ----- | ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--workspace` | `-w`  | string | the process working directory | Workspace root containing `PACKAGE.ts` files                                                                                                                                         |
+| `--cache-dir` |       | string | unset                         | Cache directory. Overrides the root declaration. An absolute path or one that starts with `..` (read from the workspace root) is outside the workspace; `install` requires `.flows`. |
 
 `affected`, `clean`, `watch`, `build`, `test`, `lint`, `docs`, `review`, `run`,
 `target`, and `ci` also accept:
@@ -61,9 +61,12 @@ Every command does the same three things before its own work.
 1. Resolve the workspace root from `--workspace`.
 2. Resolve the cache directory: `--cache-dir`, then the root `PACKAGE.ts` `Workspace`
    declaration, then `.flows`. Resolving the declaration evaluates the root
-   `PACKAGE.ts` if one exists.
+   `PACKAGE.ts` if one exists. A declaration with `outside: true` resolves to a
+   directory under the machine's user cache directory; see
+   [Configuration](../workspace/configuration.md#precedence).
 3. If the declaration sets `gitignored: true`, ensure the root `.gitignore`
-   carries an entry for the resolved directory.
+   carries an entry for the resolved directory. A directory outside the
+   workspace gets no entry.
 
 `install` stops there. The others then open the workspace index, which lists
 discoverable files.
@@ -83,7 +86,8 @@ smithers-build cache clear --yes
 ```
 
 `status` reports the cache path, entry count, bytes, and configured remote
-endpoint without reading credentials. `prune` selects entries older than 30
+endpoint without reading credentials. The path is absolute, so it names a cache
+directory outside the workspace too. `prune` selects entries older than 30
 days by default; `clear` selects every entry. A mutation requires `--yes`.
 `--dry-run` reports the candidates without deleting them. Removal is
 irreversible and fails closed if an entry, shard, or path changes while the

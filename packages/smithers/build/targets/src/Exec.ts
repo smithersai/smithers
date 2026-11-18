@@ -1578,17 +1578,27 @@ export const run = (
         // write into, so the directory gets the same confinement check every
         // other path crossing this boundary gets. `normalizeCacheDirectory`
         // settles the lexical question only: a `.flows` that is a symbolic
-        // link to somewhere else entirely is refused here.
-        const cacheRoot = resolveWorkspacePath(options.workspaceRoot, cacheDirectory)
+        // link to somewhere else entirely is refused here. A directory
+        // outside the workspace was chosen by the command line or the
+        // machine, never by a declaration, and is used as named.
+        const cacheRoot = Config.isOutsideCacheDirectory(cacheDirectory)
+          ? NodePath.resolve(options.workspaceRoot, cacheDirectory)
+          : resolveWorkspacePath(options.workspaceRoot, cacheDirectory)
         const substitute = (value: string): string =>
           resolveScriptToken(
             value.replaceAll(cacheDirectoryToken, cacheRoot).replaceAll(runtimeBinToken, process.execPath)
           )
         const cwd = resolveWorkspacePath(options.workspaceRoot, payload.cwd)
         const [executable, ...args] = payload.argv
+        // Declared env values get the cache-directory token too. The key
+        // holds the token; the host path never enters it.
+        const env = Object.fromEntries(
+          Object.entries(payload.env).map(([name, value]) => [name, value.replaceAll(cacheDirectoryToken, cacheRoot)])
+        )
         const resolved: Payload = {
           ...payload,
-          argv: [substitute(executable), ...args.map(substitute)]
+          argv: [substitute(executable), ...args.map(substitute)],
+          env
         }
         const hostFacts = options.sandbox === undefined ? undefined : host ?? ExecSandbox.host()
         const confinement = options.sandbox === undefined

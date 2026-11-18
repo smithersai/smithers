@@ -12,7 +12,6 @@
  */
 
 import metadata from "@smthrs/build-cli/package.json" with { type: "json" }
-import * as Config from "@smthrs/targets/Config"
 import * as Input from "@smthrs/targets/Input"
 import * as Target from "@smthrs/targets/Target"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
@@ -36,6 +35,7 @@ import * as GitHooks from "./GitHooks.ts"
 import * as GraphOutput from "./GraphOutput.ts"
 import * as ApprovalBridge from "./internal/ApprovalBridge.ts"
 import { CacheCredentials } from "./internal/CacheCredentials.ts"
+import * as CacheLocation from "./internal/CacheLocation.ts"
 import * as DigestIndexFile from "./internal/DigestIndexFile.ts"
 import * as GoCache from "./internal/GoCache.ts"
 import type { TreeInputReads } from "./internal/PackageOptions.ts"
@@ -91,7 +91,7 @@ export const selectInstallTarget = (
 const workspaceOption = z.object({
   workspace: z.string().default(process.cwd()).describe("Directory inside a workspace containing WORKSPACE.ts"),
   cacheDir: z.string().optional().describe(
-    "Workspace-relative cache directory; overrides the WORKSPACE.ts declaration"
+    "Cache directory; overrides the WORKSPACE.ts declaration. An absolute path or one starting with .. lies outside the workspace"
   )
 })
 
@@ -517,9 +517,13 @@ export const openPackageIndex = async (
       return yield* Effect.fail(new Error("not a workspace; create .smithers/WORKSPACE.ts"))
     }
     const workspace = yield* hostIo(() => PackageLoader.loadWorkspaceDeclaration(root, workspaceFile))
-    const cacheDirectory = flags.cacheDir === undefined
-      ? workspace.cache.directory
-      : Config.normalizeCacheDirectory(flags.cacheDir)
+    const cacheDirectory = CacheLocation.resolve(
+      root,
+      flags.cacheDir,
+      workspace.cache,
+      workspace.name,
+      CacheLocation.ambientHost(environmentOf(runtime))
+    )
     const discovery = yield* hostIo(() =>
       PackageDiscovery.discover(root, {
         cacheDirectory,
@@ -793,9 +797,7 @@ export const runPackageVerb = async (
   // A mistyped shard must not cost a plan.
   const shard = shardOf(flags)
   const index = await openPackageIndex(flags, config)
-  const cacheDirectory = flags.cacheDir === undefined
-    ? index.workspace.cache.directory
-    : Config.normalizeCacheDirectory(flags.cacheDir)
+  const cacheDirectory = cacheDirectoryOf(index, flags, config)
   // The WORKSPACE.ts declaration and SMITHERS_CACHE_URL both reach execution
   // here, under the workspace declaration's precedence.
   const remoteCache = await remoteCacheAccess(
@@ -863,9 +865,7 @@ export const approvalRevision = async (
   const index = await openPackageIndex(flags, config)
   const planned = await PackageExec.plan({
     index,
-    cacheDirectory: flags.cacheDir === undefined
-      ? index.workspace.cache.directory
-      : Config.normalizeCacheDirectory(flags.cacheDir),
+    cacheDirectory: cacheDirectoryOf(index, flags, config),
     verb: "auto",
     patterns: [label],
     plan: true,
@@ -971,9 +971,7 @@ const runCi = async (
   const remote = flags.remote === undefined ? undefined : remoteOf(index, flags.remote)
   const knownRed = await knownRedOf(index, flags)
   {
-    const cacheDirectory = flags.cacheDir === undefined
-      ? index.workspace.cache.directory
-      : Config.normalizeCacheDirectory(flags.cacheDir)
+    const cacheDirectory = cacheDirectoryOf(index, flags, config)
     const remoteCache = await remoteCacheAccess(
       remoteCacheOf(index.workspace.cache.remote, config.cacheUrl),
       config
@@ -1140,7 +1138,7 @@ const runRemote = async (
   // An unset token is refused here, before the tree is packed or any machine contacted.
   const provider = RemoteCi.providers(remote.declaration, environmentOf(config))
   const started = Date.now()
-  const cacheDirectory = cacheDirectoryOf(index, flags)
+  const cacheDirectory = cacheDirectoryOf(index, flags, config)
   // The listing every declared glob agrees with: .gitignore applied, host state and the cache never shipped.
   const paths = await Input.discoverFiles(index.root, { cacheDirectory, signal: config.signal })
   const files = await Promise.all(paths.map(async (path) => {
@@ -1422,12 +1420,19 @@ const selectionArgs = z.object({
   ...optionalPatterns.shape
 })
 
-const cacheDirectoryOf = (index: PackageIndex.PackageIndex, flags: WorkspaceFlags): string =>
-  flags.cacheDir === undefined ? index.workspace.cache.directory : Config.normalizeCacheDirectory(flags.cacheDir)
+/** The cache directory a command uses: `--cache-dir`, else the declaration, in the resolved form. */
+const cacheDirectoryOf = (index: PackageIndex.PackageIndex, flags: WorkspaceFlags, config: RuntimeConfig): string =>
+  CacheLocation.resolve(
+    index.root,
+    flags.cacheDir,
+    index.workspace.cache,
+    index.workspace.name,
+    CacheLocation.ambientHost(environmentOf(config))
+  )
 
 const workspaceInfo = async (flags: WorkspaceFlags, config: RuntimeConfig) => {
   const index = await openPackageIndex(flags, config)
-  const cacheDirectory = cacheDirectoryOf(index, flags)
+  const cacheDirectory = cacheDirectoryOf(index, flags, config)
   const remote = remoteCacheOf(index.workspace.cache.remote, config.cacheUrl)
   return {
     name: index.workspace.name,
@@ -1461,7 +1466,7 @@ const runSelected = async (
   const knownRed = await knownRedOf(index, flags)
   const options = {
     index,
-    cacheDirectory: cacheDirectoryOf(index, flags),
+    cacheDirectory: cacheDirectoryOf(index, flags, config),
     remoteCache: await remoteCacheAccess(remoteCacheOf(index.workspace.cache.remote, config.cacheUrl), config),
     jobs: flags.jobs,
     readCache: flags.cache,
@@ -1570,13 +1575,13 @@ const showTarget = async (
     index,
     patterns: [row.label],
     verb: flags.verb ?? "auto",
-    cacheDirectory: cacheDirectoryOf(index, flags),
+    cacheDirectory: cacheDirectoryOf(index, flags, config),
     plan: true,
     signal: config.signal,
     environment: config.environment
   })
   const node = planned.nodes.get(planned.roots[0]!)!
-  const cached = await CacheAdmin.inspect(index.root, cacheDirectoryOf(index, flags), node.keyPreview)
+  const cached = await CacheAdmin.inspect(index.root, cacheDirectoryOf(index, flags, config), node.keyPreview)
   const candidate = cached?.exitOk && cached.label === node.label && cached.target === node.target
   return {
     label: row.label,
@@ -1614,7 +1619,7 @@ const cacheCli = (config: RuntimeConfig) => {
       async run(context) {
         try {
           const index = await openPackageIndex(context.options, config)
-          const cacheDirectory = cacheDirectoryOf(index, context.options)
+          const cacheDirectory = cacheDirectoryOf(index, context.options, config)
           const entries = await CacheAdmin.entries(index.root, cacheDirectory)
           const remote = remoteCacheOf(index.workspace.cache.remote, config.cacheUrl)
           return {
@@ -1650,7 +1655,7 @@ const cacheCli = (config: RuntimeConfig) => {
           const index = await openPackageIndex(context.options, config)
           return await CacheAdmin.remove({
             root: index.root,
-            cacheDirectory: cacheDirectoryOf(index, context.options),
+            cacheDirectory: cacheDirectoryOf(index, context.options, config),
             olderThanDays: context.options.olderThanDays,
             keepUsedWithinMs: context.options.keepUsedMinutes * 60_000,
             maxSizeBytes: context.options.maxSize === undefined
@@ -1674,7 +1679,7 @@ const cacheCli = (config: RuntimeConfig) => {
           const index = await openPackageIndex(context.options, config)
           return await CacheAdmin.remove({
             root: index.root,
-            cacheDirectory: cacheDirectoryOf(index, context.options),
+            cacheDirectory: cacheDirectoryOf(index, context.options, config),
             dryRun: context.options.dryRun,
             yes: context.options.yes
           })
@@ -1790,7 +1795,7 @@ const makeCommands = (config: RuntimeConfig) =>
           })
           const changed = Affected.select(index, context.args.patterns, files, {
             explain: context.options.list,
-            cacheDirectory: cacheDirectoryOf(index, context.options)
+            cacheDirectory: cacheDirectoryOf(index, context.options, config)
           })
           const kinds = context.args.verb === "ci" ? ciKinds : [context.args.verb]
           const resolver = RepoResolution.resolver(index, environmentOf(config))
@@ -1910,7 +1915,7 @@ const makeCommands = (config: RuntimeConfig) =>
             ...context.options,
             index,
             label: context.args.label,
-            cacheDirectory: cacheDirectoryOf(index, context.options),
+            cacheDirectory: cacheDirectoryOf(index, context.options, config),
             signal: config.signal,
             environment: environmentOf(config),
             log: (line) => terminalsOf(config).stderr.write(`${line}\n`)
@@ -1962,7 +1967,7 @@ const makeCommands = (config: RuntimeConfig) =>
             })
           }
           const index = await openPackageIndex(context.options, config)
-          const ignored = [cacheDirectoryOf(index, context.options)]
+          const ignored = [cacheDirectoryOf(index, context.options, config)]
           for (const row of index.targets()) {
             const outputs = Target.metadata(row.target).outputs
             if (outputs !== undefined) {
@@ -2044,9 +2049,7 @@ const makeCommands = (config: RuntimeConfig) =>
         try {
           const index = await openPackageIndex(context.options, config)
           const install = selectInstallTarget(index.targets())
-          const cacheDirectory = context.options.cacheDir === undefined
-            ? index.workspace.cache.directory
-            : Config.normalizeCacheDirectory(context.options.cacheDir)
+          const cacheDirectory = cacheDirectoryOf(index, context.options, config)
           const remoteCache = await remoteCacheAccess(
             remoteCacheOf(index.workspace.cache.remote, config.cacheUrl),
             config

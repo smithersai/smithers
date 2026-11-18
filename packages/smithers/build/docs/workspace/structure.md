@@ -233,6 +233,11 @@ The store stays fixed because fetch declares it as a `TreeArtifact` boundary, an
 a declared boundary is key material that must mean the same thing on every
 machine.
 
+The cache directory can also live outside the workspace: `--cache-dir` names
+one, or `S.Cache({ outside: true })` asks the machine to place one. The checkout
+then holds no host state at all, and no workspace path is dropped for it. See
+[Configuration](configuration.md#precedence).
+
 ## Next
 
 - [Writing build files](writing-build-files.md)

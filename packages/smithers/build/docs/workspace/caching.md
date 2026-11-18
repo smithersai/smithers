@@ -759,16 +759,24 @@ following Bazel's `DiskCacheClient.saveFile`:
 
 A reader therefore sees either no entry or a whole entry, never a partial one.
 
-### The cache directory stays inside the workspace
+### A declared cache directory stays inside the workspace
 
-`cacheDirectory` is validated lexically when it is declared: it must be
-relative, non-empty, and free of `..`. That is not enough on its own, because
-the directory it names can be a symbolic link to somewhere else entirely. Every
-ancestor is therefore resolved when the cache is opened, again after the
-directory is created, and again before an entry is written, and a cache
-directory that leaves the workspace fails the command before anything is
-created out there. `Exec` applies the same check before it substitutes the
-cache-directory token into a tool's argv.
+A declared `cacheDirectory` is validated lexically: it must be relative,
+non-empty, and free of `..`. A repository's content never chooses a path
+outside its checkout. That is not enough on its own, because the directory it
+names can be a symbolic link to somewhere else entirely. Every ancestor is
+therefore resolved when the cache is opened, again after the directory is
+created, and again before an entry is written, and a cache directory that
+leaves the workspace fails the command before anything is created out there.
+`Exec` applies the same check before it substitutes the cache-directory token
+into a tool's argv and env values.
+
+A directory outside the workspace is there on purpose: the command line named
+it with `--cache-dir`, or the machine placed it for `S.Cache({ outside: true })`.
+It is created where it is named, and the workspace check is skipped for it.
+Everything inside it keeps its checks: the result cache and the content store
+must not be links that leave it. See
+[Configuration](configuration.md#precedence).
 
 The unavoidable limit: Node exposes no portable descriptor-relative open, so an
 ancestor directory replaced by an outside-pointing link between a check and a

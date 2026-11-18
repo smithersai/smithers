@@ -1624,8 +1624,11 @@ export const executeEffect = (
         if (
           tar === undefined
         ) return "host binary \"tar\" is not present on PATH; Go.ModDownload cache capture cannot run"
-        const archive = Input.resolvePath(cacheDirectory, `tmp/go-mod-${node.keyPreview}.tar`)
-        const absoluteArchive = NodePath.join(root, ...archive.split("/"))
+        // The archive is named relative to the cache directory, which may be
+        // outside the workspace, so its `tmp` is still checked for links.
+        const archiveRoot = NodePath.join(root, ...cacheDirectory.split("/"))
+        const archive = `tmp/go-mod-${node.keyPreview}.tar`
+        const absoluteArchive = NodePath.join(archiveRoot, ...archive.split("/"))
         yield* joined(() => Fs.mkdir(NodePath.dirname(absoluteArchive), { recursive: true }))
         return yield* Effect.gen(function*() {
           const created = yield* spawnNode(
@@ -1634,7 +1637,7 @@ export const executeEffect = (
             [tar, "-cf", absoluteArchive, "-C", NodePath.join(root, ...node.outDirs[0]!.split("/")), "."]
           )
           if (!created.ok) return created.error
-          const manifest = yield* services.captureFile(root, cacheDirectory, archive)
+          const manifest = yield* services.captureFile(archiveRoot, cacheDirectory, archive, root)
           yield* cachePut(node, { kind: "directory-archive", outDir: node.outDirs[0], digest: manifest.digest })
           return undefined
         }).pipe(Effect.ensuring(
@@ -1655,15 +1658,16 @@ export const executeEffect = (
         ) return false
         const tar = yield* services.findOnPath("tar")
         if (tar === undefined) return false
-        const archive = Input.resolvePath(cacheDirectory, `tmp/go-mod-${node.keyPreview}.tar`)
+        const archiveRoot = NodePath.join(root, ...cacheDirectory.split("/"))
+        const archive = `tmp/go-mod-${node.keyPreview}.tar`
         const manifest: PackageTree.FileManifest = { path: archive, digest: record.digest, executable: false }
         if (
           (yield* joined(() => PackageTree.verifyFileManifest(root, cacheDirectory, manifest))) !== undefined
         ) return false
-        const absoluteArchive = NodePath.join(root, ...archive.split("/"))
+        const absoluteArchive = NodePath.join(archiveRoot, ...archive.split("/"))
         const listing = `${absoluteArchive}.list`
         return yield* Effect.gen(function*() {
-          yield* joined(() => PackageTree.materializeFile(root, cacheDirectory, manifest))
+          yield* joined(() => PackageTree.materializeFile(archiveRoot, cacheDirectory, manifest, Fs, root))
           const listed = yield* spawnNode(node, root, [
             "/bin/sh",
             "-c",

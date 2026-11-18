@@ -60,6 +60,25 @@ describe("workspace option boundaries", () => {
       "cache/tools"
     ])
   })
+  it("asks for an outside directory with outside: true and still refuses a named outside path", () => {
+    expect(Workspace.Cache({ directory: ".cache", outside: true })).toMatchObject({
+      directory: ".cache",
+      outside: true
+    })
+    expect(Workspace.Cache({ directory: ".cache", outside: false }).outside).toBeUndefined()
+    expect(() => Workspace.Cache({ directory: ".cache", outside: "yes" } as never)).toThrow(
+      "Cache outside must be a boolean"
+    )
+    expect(() => Workspace.Cache({ directory: "../cache", outside: true })).toThrow(
+      "cacheDirectory must not leave the workspace: ../cache"
+    )
+    expect(() => Workspace.Cache({ directory: "/abs", outside: true })).toThrow(
+      "cacheDirectory must be workspace-relative: /abs"
+    )
+    expect(() => Workspace.Cache({ directory: ".cache", hostDirectories: ["../tools"] })).toThrow(
+      "cacheDirectory must not leave the workspace: ../tools"
+    )
+  })
 })
 
 describe("JSON/template boundaries", () => {

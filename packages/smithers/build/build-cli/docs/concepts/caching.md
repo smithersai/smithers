@@ -16,13 +16,16 @@ member bytes change the key. There are no produced files to restore.
 
 ## The cache directory
 
-Every workspace command takes `--cache-dir`, a workspace-relative directory
-holding the result cache, the content-addressed artifact store, and rule
-scratch files.
+Every workspace command takes `--cache-dir`, the directory holding the result
+cache, the content-addressed artifact store, and rule scratch files.
 
 Precedence is the flag, then the `S.Cache({ directory })` of the workspace
-declaration, then `.flows`. An empty value, an absolute path, and any `..`
-segment fail the command.
+declaration, then `.flows`. A declared directory, and a workspace-relative
+flag, must be non-empty and free of `..` segments. The flag may also name a
+directory outside the workspace with an absolute path or a path that starts
+with `..`, and `S.Cache({ directory, outside: true })` asks the machine to place
+one under its user cache directory. The checkout then holds no cache state.
+See [Configuration](../../../docs/workspace/configuration.md#precedence).
 
 The directory also holds Go's compile cache, in `go-build`. Every tool a
 target spawns runs with `GOCACHE` set to that directory, and so does every

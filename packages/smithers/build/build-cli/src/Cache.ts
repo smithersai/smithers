@@ -508,8 +508,8 @@ const inside = (root: string, candidate: string): boolean => {
  * Resolves a directory that must stay inside the workspace once symbolic links
  * are followed, or throws.
  *
- * `Config.normalizeCacheDirectory` already refuses an absolute path and any
- * `..` segment, which settles the lexical question. It cannot settle the
+ * `Config.normalizeDeclaredCacheDirectory` already refuses an absolute path
+ * and any `..` segment in a declaration, which settles the lexical question. It cannot settle the
  * filesystem question: `.flows` may itself be a symbolic link to somewhere
  * else entirely, and every entry the cache published would then land outside
  * the workspace, writing files wherever the link points. A missing directory
@@ -546,6 +546,10 @@ const confineDirectory = async (
 /**
  * Creates the cache directory and refuses one that escapes the workspace.
  *
+ * A directory outside the workspace, which only `--cache-dir` or
+ * `S.Cache({ outside: true })` can choose, is created as named and skips the
+ * workspace check; its `cache` child must still stay beneath it.
+ *
  * The check runs before the directory is created, so an existing link is
  * caught, and again afterwards, so a link created concurrently with the
  * `mkdir` is caught too.
@@ -559,7 +563,21 @@ export const ensureCacheDirectory = async (
   cacheDirectory: string
 ): Promise<string> => {
   const root = await Fs.realpath(workspaceRoot)
-  const segments = [...Config.normalizeCacheDirectory(cacheDirectory).split("/"), "cache"]
+  const normalized = Config.normalizeCacheDirectory(cacheDirectory)
+  if (Config.isOutsideCacheDirectory(normalized)) {
+    // The command line or the machine chose a directory outside the
+    // workspace, so it is created where it is named. Its `cache` child is
+    // still held beneath it.
+    const base = NodePath.join(root, ...normalized.split("/"))
+    await Fs.mkdir(base, { recursive: true })
+    const real = await Fs.realpath(base)
+    const cache = NodePath.join(real, "cache")
+    await confineDirectory(real, cache, "result cache")
+    await Fs.mkdir(cache, { recursive: true })
+    await confineDirectory(real, cache, "result cache")
+    return Fs.realpath(cache)
+  }
+  const segments = [...normalized.split("/"), "cache"]
   // Every ancestor is checked, and checked before anything is created: a
   // `.flows` that already points outside must fail the command rather than
   // have a `cache` directory created out there first.
@@ -1866,10 +1884,12 @@ export const openCache = async (opts: OpenCacheOptions): Promise<CacheStore> => 
       artifactTimeouts: options.artifactTimeouts
     })
   const contentRoot = NodePath.join(workspaceRoot, ...options.cacheDirectory.split("/"), "cas")
+  // An outside cache directory bounds its own content store.
+  const boundary = Config.isOutsideCacheDirectory(options.cacheDirectory) ? NodePath.dirname(cacheRoot) : workspaceRoot
   const ensureContentRoot = async (): Promise<string> => {
-    await confineDirectory(workspaceRoot, contentRoot, "content store")
+    await confineDirectory(boundary, contentRoot, "content store")
     await Fs.mkdir(contentRoot, { recursive: true })
-    await confineDirectory(workspaceRoot, contentRoot, "content store")
+    await confineDirectory(boundary, contentRoot, "content store")
     return contentRoot
   }
   return {

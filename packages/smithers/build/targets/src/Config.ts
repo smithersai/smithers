@@ -124,13 +124,58 @@ const absolute = /^([/\\]|[A-Za-z]:)/
  *
  * The value names a single workspace-relative directory. Surrounding
  * whitespace, redundant separators, and `.` segments are dropped. An empty
- * value, an absolute path, and any `..` segment are refused, so the directory
- * can never escape the workspace.
+ * value, an absolute path, and any `..` segment are refused, so a directory a
+ * declaration names can never escape the workspace. A repository's content
+ * never chooses a path outside its checkout.
+ *
+ * @category validation
+ * @since 0.1.0
+ */
+export const normalizeDeclaredCacheDirectory = (value: string): string => {
+  const segments = cacheDirectorySegments(value)
+  if (segments.includes("..")) throw new Error(`cacheDirectory must not leave the workspace: ${value}`)
+  return joinCacheDirectory(segments)
+}
+
+/**
+ * Validates one resolved cache directory and returns its normalized posix
+ * form.
+ *
+ * A resolved directory is what the CLI carries after it settles the
+ * `--cache-dir` flag and the declaration. It is the declared form, or a
+ * directory outside the workspace spelled as a leading run of `..` segments
+ * followed by the directory's absolute path: joining it with any workspace
+ * root climbs to the filesystem root first, so every root names the same
+ * outside directory. Only the command line or the machine chooses such a
+ * directory; {@link normalizeDeclaredCacheDirectory} refuses it in a
+ * declaration. A `..` after the leading run is refused.
  *
  * @category validation
  * @since 0.1.0
  */
 export const normalizeCacheDirectory = (value: string): string => {
+  const segments = cacheDirectorySegments(value)
+  const climb = segments.findIndex((segment) => segment !== "..")
+  if (climb === -1 || segments.slice(climb).includes("..")) {
+    throw new Error(`cacheDirectory must not leave the workspace: ${value}`)
+  }
+  // A Windows directory on another drive cannot be reached by climbing.
+  if (climb > 0 && /^[A-Za-z]:$/.test(segments[climb]!)) {
+    throw new Error(`cacheDirectory outside the workspace must be on the workspace's drive: ${value}`)
+  }
+  return joinCacheDirectory(segments)
+}
+
+/**
+ * Whether a resolved cache directory lies outside the workspace: the form
+ * {@link normalizeCacheDirectory} accepts with a leading `..` run.
+ *
+ * @category validation
+ * @since 0.1.0
+ */
+export const isOutsideCacheDirectory = (cacheDirectory: string): boolean => cacheDirectory.startsWith("../")
+
+const cacheDirectorySegments = (value: string): ReadonlyArray<string> => {
   if (typeof value !== "string") throw new TypeError("cacheDirectory must be a string")
   if (value.length > maximumCacheDirectoryBytes) {
     throw new Error(`cacheDirectory must be at most ${maximumCacheDirectoryBytes} UTF-8 bytes`)
@@ -143,7 +188,10 @@ export const normalizeCacheDirectory = (value: string): string => {
   if (absolute.test(trimmed)) throw new Error(`cacheDirectory must be workspace-relative: ${value}`)
   const segments = trimmed.split(/[/\\]/).filter((segment) => segment !== "" && segment !== ".")
   if (segments.length === 0) throw new Error("cacheDirectory must not be empty")
-  if (segments.includes("..")) throw new Error(`cacheDirectory must not leave the workspace: ${value}`)
+  return segments
+}
+
+const joinCacheDirectory = (segments: ReadonlyArray<string>): string => {
   const encoder = new TextEncoder()
   for (const segment of segments) {
     if (encoder.encode(segment).byteLength > maximumCacheDirectorySegmentBytes) {
@@ -219,7 +267,7 @@ export const Workspace = (options: Options = {}): Workspace => {
     [TypeId]: TypeId,
     cacheDirectory: cacheDirectory === undefined
       ? defaultCacheDirectory
-      : normalizeCacheDirectory(cacheDirectory),
+      : normalizeDeclaredCacheDirectory(cacheDirectory),
     gitignored: gitignored ?? false,
     sandbox: sandbox === undefined
       ? "none"

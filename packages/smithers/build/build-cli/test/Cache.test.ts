@@ -225,9 +225,21 @@ describe("openCache", () => {
     await cache.close()
   })
 
-  it("refuses a cache directory outside the workspace", async () => {
-    await expect(openCache({ workspaceRoot: root, cacheDirectory: "../escape" }))
+  it("refuses a cache directory that climbs after naming a workspace directory", async () => {
+    await expect(openCache({ workspaceRoot: root, cacheDirectory: "build/../../escape" }))
       .rejects.toThrow(/must not leave the workspace/)
+  })
+
+  it("opens a resolved outside directory where it is named", async () => {
+    const sibling = `${root}-outside`
+    try {
+      const cache = await openCache({ workspaceRoot: root, cacheDirectory: `../${NodePath.basename(sibling)}` })
+      await cache.put(result.key, result)
+      await cache.close()
+      expect(JSON.parse(await Fs.readFile(NodePath.join(sibling, "cache/al/alpha.json"), "utf8"))).toEqual(result)
+    } finally {
+      await Fs.rm(sibling, { recursive: true, force: true })
+    }
   })
 
   it("does not contact the remote on a local hit", async () => {

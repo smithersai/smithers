@@ -22,12 +22,17 @@ export interface Entry {
 }
 
 /** Resolves an existing cache directory without creating it or following links.
+ *
+ * Inside the workspace no part of the path may be a link. A directory outside
+ * the workspace is the invoker's choice, so only its `cache` child is checked.
  * @category querying
  * @since 0.1.0
  */
 export const directory = async (root: string, cacheDirectory: string): Promise<string | undefined> => {
-  let current = await Fs.realpath(root)
-  for (const part of [...Config.normalizeCacheDirectory(cacheDirectory).split("/"), "cache"]) {
+  const normalized = Config.normalizeCacheDirectory(cacheDirectory)
+  const outside = Config.isOutsideCacheDirectory(normalized)
+  let current = outside ? Path.join(root, ...normalized.split("/")) : await Fs.realpath(root)
+  for (const part of [...(outside ? [] : normalized.split("/")), "cache"]) {
     current = Path.join(current, part)
     const stat = await Fs.lstat(current).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return undefined
