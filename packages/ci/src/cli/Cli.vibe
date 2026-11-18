@@ -109,6 +109,13 @@ const cache = Flag.String("cache").pipe(
   Flag.withDescription(helpOf("cache"))
 )
 
+const targets = Flag.String("targets").pipe(
+  Flag.map((value) => value.split(",").map((pattern) => pattern.trim()).filter((pattern) => pattern !== "")),
+  Flag.filter((patterns) => patterns.length > 0, () => "one or more Smithers build patterns, such as //packages/ci/..."),
+  Flag.optional,
+  Flag.withDescription(helpOf("targets"))
+)
+
 const out = Flag.String("out").pipe(
   Flag.filter((value) => value.length > 0, () => "a file path"),
   Flag.optional,
@@ -120,7 +127,7 @@ const json = Flag.Boolean("json").pipe(
   Flag.withDescription(helpOf("json"))
 )
 
-const replayFlags = { commits, mode, jobs, cache, out, json }
+const replayFlags = { commits, mode, jobs, cache, targets, out, json }
 
 /** What `--mode` asks the replay to run. */
 const modes: Record<"normal" | "fast" | "both", ReadonlyArray<Mode>> = {
@@ -134,6 +141,7 @@ interface ReplayInput {
   readonly mode: "normal" | "fast" | "both"
   readonly jobs: Option.Option<number>
   readonly cache: Option.Option<string>
+  readonly targets: Option.Option<ReadonlyArray<string>>
   readonly out: Option.Option<string>
   readonly json: boolean
 }
@@ -143,7 +151,8 @@ const requestOf = (root: string, input: ReplayInput): ReplayRequest => ({
   commits: input.commits,
   modes: modes[input.mode],
   jobs: Option.getOrUndefined(input.jobs),
-  cache: Option.getOrUndefined(input.cache)
+  cache: Option.getOrUndefined(input.cache),
+  targets: Option.getOrUndefined(input.targets)
 })
 
 /** A document as indented JSON, checked against its schema on the way out. */

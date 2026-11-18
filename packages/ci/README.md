@@ -24,6 +24,17 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-17, ninth round** (asked for by the native lane):
+
+- `--targets` (`Command.flags.targets`) names Smithers build patterns to replay, on `smithers-ci` and `replay`. The
+  program parses it and passes `ReplayRequest.targets`. On a repository with no workspace of its own, a replay given
+  `targets` fails `unsupported` (exit 3); it never ignores the flag.
+- `ReplayReport.targets` holds the patterns replayed, present only when the repository's own targets were replayed.
+  The native lane may edit `src/report` to show it above the speedup.
+- `Inventory.smithersBuild` and `Inventory.ownWorkspace(inventory)` name a repository that already builds with
+  Smithers build. `Command.applyRefuses` is now the two workspace files; `apply` refuses when either exists and never
+  writes over a build file it did not generate.
+
 **2026-11-17, eighth round** (the replay runs split steps):
 
 - `Inventory.withSteps(ci, steps)` returns a `Ci` with the steps of each job replaced. `split` uses it in place of

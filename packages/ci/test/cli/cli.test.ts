@@ -62,6 +62,7 @@ const sample = (flag: keyof typeof flags, out: string): ReadonlyArray<string> =>
     mode: ["--mode", "fast"],
     jobs: ["--jobs", "3"],
     cache: ["--cache", "https://cache.example.invalid"],
+    targets: ["--targets", "//packages/ci/..."],
     out: ["--out", out],
     json: ["--json"]
   })[flag]
@@ -128,7 +129,8 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       ["a --mode outside normal, fast and both", ["--mode", "slow"], "slow"],
       ["a --cache that is not a URL", ["--cache", "cache"], "http or https URL"],
       ["a --cache that is not http", ["apply", "--cache", "ftp://cache.example.invalid"], "http or https URL"],
-      ["an empty --out", ["--out", ""], "a file path"]
+      ["an empty --out", ["--out", ""], "a file path"],
+      ["a --targets that names no pattern", ["replay", "--targets", " , "], "Smithers build patterns"]
     ]
     for (const [what, args, named] of refusals) {
       it(`exits 2 with one line on ${what}`, async () => {
@@ -177,10 +179,18 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       const page = `${scratch()}/pages/report.html`
       const before = snapshot(root)
       const cache = "https://cache.example.invalid"
-      const args = ["--commits", "2", "--mode", "both", "--jobs", "3", "--cache", cache, "--out", page, "--json"]
-      const outcome = await exec(args, root)
+      const patterns = "//packages/ci/..., //apps/site:check,"
+      const args = ["--commits", "2", "--mode", "both", "--jobs", "3", "--cache", cache, "--targets", patterns]
+      const outcome = await exec([...args, "--out", page, "--json"], root)
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
-      expect(requestOf(outcome.stderr)).toEqual({ root, commits: 2, modes: ["normal", "fast"], jobs: 3, cache })
+      expect(requestOf(outcome.stderr)).toEqual({
+        root,
+        commits: 2,
+        modes: ["normal", "fast"],
+        jobs: 3,
+        cache,
+        targets: ["//packages/ci/...", "//apps/site:check"]
+      })
       const report = decode(ReplayReport, outcome.stdout)
       expect(report.commits).toHaveLength(2)
       expect(report.fastWallMs).toBe(100)

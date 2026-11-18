@@ -105,6 +105,8 @@ export interface ReplayRequest {
   readonly modes: ReadonlyArray<Mode>
   readonly jobs?: number | undefined
   readonly cache?: string | undefined
+  /** Smithers build patterns to replay, on a repository that already builds with Smithers build. */
+  readonly targets?: ReadonlyArray<string> | undefined
   readonly settings?: Settings | undefined
 }
 

@@ -449,6 +449,27 @@ export const ci = (inventory: Inventory): Ci => asCi({ ...inventory, jobs: sort(
 export const notReplayed = (inventory: Inventory): ReadonlyArray<NotReplayed> => sort(inventory).left
 
 /**
+ * The top-level `unsupported` feature of a repository that already builds
+ * with Smithers build. Its `detail` is the workspace file.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const smithersBuild = "smithers-build"
+
+/**
+ * The repository's own Smithers workspace file, or `undefined` when it has
+ * none. Such a repository is never converted: `apply` refuses it, and a
+ * replay measures its own targets.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const ownWorkspace = (inventory: Inventory): string | undefined =>
+  inventory.unsupported?.find((entry) => entry.feature === smithersBuild)?.detail
+
+/**
  * A CI with each job's steps replaced, for a part that splits steps. `ci`
  * cannot be called again on its own result (a root `ci` recipe is gone from
  * it), so this is how a `Ci` is changed. A job given no steps keeps the steps

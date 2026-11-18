@@ -100,7 +100,8 @@ export const ReplayReport = Schema.Struct({
   mismatches: Schema.Int,
   fastWallMs: Schema.optionalKey(Schema.Finite),
   selection: Schema.optionalKey(Metrics),
-  notReplayed: Schema.optionalKey(Schema.Array(NotReplayed))
+  notReplayed: Schema.optionalKey(Schema.Array(NotReplayed)),
+  targets: Schema.optionalKey(Schema.Array(Schema.NonEmptyString))
 })
 
 /**

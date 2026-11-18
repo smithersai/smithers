@@ -43,6 +43,12 @@ export const flags = {
   mode: { on: ["", "replay"], default: "normal", help: "normal, fast, or both." },
   jobs: { on: ["", "replay"], default: "", help: "Most targets to run at once; the default is the machine's." },
   cache: { on: ["", "replay", "apply"], default: "", help: "URL of a shared cache." },
+  targets: {
+    on: ["", "replay"],
+    default: "",
+    help:
+      "Smithers build patterns to replay, separated by commas, on a repository that already builds with Smithers build; the default is what its CI runs."
+  },
   out: { on: ["", "replay"], default: "", help: "Also write the report as an HTML file here." },
   json: { on: ["", "inventory", "replay"], default: "false", help: "Print the document as JSON." }
 } as const
@@ -126,15 +132,15 @@ export const environment = {
 } as const
 
 /**
- * Smithers build files. `apply` exits `unsupported` and writes nothing when
- * the repository already holds one: generated targets would hide or be
- * hidden by the targets already there. `PACKAGE.ts` and `PACKAGE.vibe` count
- * in any directory.
+ * Where a repository's own Smithers workspace is, in the order Smithers build
+ * looks. `apply` exits `unsupported` and writes nothing when one exists: the
+ * repository's CI is already its targets, and there is nothing to convert.
+ * `apply` also never writes over a build file it did not generate.
  *
  * @category constants
  * @since 0.1.0
  */
-export const applyRefuses = ["PACKAGE.ts", "PACKAGE.vibe", ".smithers/WORKSPACE.ts"] as const
+export const applyRefuses = [".smithers/WORKSPACE.ts", "WORKSPACE.ts"] as const
 
 /**
  * Lines `apply` adds to the repository's `.gitignore` when they are absent:

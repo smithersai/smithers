@@ -434,7 +434,7 @@ describe("contract changes, third round", () => {
     const map = Schema.decodeUnknownSync(TargetMap.TargetMap)(fixture("target-map.example.json"))
     expect(map.maxJobs).toBe(1)
     expect(() => Schema.decodeUnknownSync(TargetMap.TargetMap)({ ...map, maxJobs: 0 })).toThrow()
-    expect(Command.applyRefuses).toEqual(["PACKAGE.ts", "PACKAGE.vibe", ".smithers/WORKSPACE.ts"])
+    expect(Command.applyRefuses).toEqual([".smithers/WORKSPACE.ts", "WORKSPACE.ts"])
     expect(Command.applyIgnores).toEqual([".flows"])
   })
 })
@@ -616,6 +616,28 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     const both = decode({ ...inventory, jobs: [own, inventory.jobs[4]!] })
     expect(Inventory.ciJobs(both).map((entry) => entry.id)).toEqual(["ci.yml:plain"])
     expect(Inventory.ciJobs(decode({ ...inventory, jobs: [own] }))).toEqual([])
+  })
+
+  it("names a repository that already builds with Smithers build, by its workspace file", () => {
+    expect(Inventory.ownWorkspace(inventory)).toBeUndefined()
+    const own = decode({
+      ...inventory,
+      unsupported: [{ feature: "something-else", detail: "x" }, {
+        feature: Inventory.smithersBuild,
+        detail: "WORKSPACE.ts"
+      }]
+    })
+    expect(Inventory.ownWorkspace(own)).toBe("WORKSPACE.ts")
+    expect(Command.applyRefuses).toContain(Inventory.ownWorkspace(own))
+    expect(Command.flags.targets.on).toEqual(["", "replay"])
+  })
+
+  it("names the patterns a replay of a repository's own targets measured", () => {
+    const report = Schema.decodeUnknownSync(ReplayReport.ReplayReport)(fixture("replay-report.example.json"))
+    expect(report.targets).toBeUndefined()
+    const native = Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...report, targets: ["//packages/ci/..."] })
+    expect(native.targets).toEqual(["//packages/ci/..."])
+    expect(() => Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...report, targets: [""] })).toThrow()
   })
 
   it("replaces the steps of a CI's jobs, and never leaves a job without a step", () => {

@@ -26,14 +26,15 @@ exit code or variable that one has and the other lacks fails the package's tests
 
 ## Flags
 
-| Flag        | Commands                                                     | Default  | What it does                                               |
-| ----------- | ------------------------------------------------------------ | -------- | ---------------------------------------------------------- |
-| `--commits` | `smithers-ci`, `smithers-ci replay`                          | `20`     | How many past commits to replay.                           |
-| `--mode`    | `smithers-ci`, `smithers-ci replay`                          | `normal` | normal, fast, or both.                                     |
-| `--jobs`    | `smithers-ci`, `smithers-ci replay`                          | none     | Most targets to run at once; the default is the machine's. |
-| `--cache`   | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | none     | URL of a shared cache.                                     |
-| `--out`     | `smithers-ci`, `smithers-ci replay`                          | none     | Also write the report as an HTML file here.                |
-| `--json`    | `smithers-ci`, `smithers-ci inventory`, `smithers-ci replay` | `false`  | Print the document as JSON.                                |
+| Flag        | Commands                                                     | Default  | What it does                                                                                                                                      |
+| ----------- | ------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--commits` | `smithers-ci`, `smithers-ci replay`                          | `20`     | How many past commits to replay.                                                                                                                  |
+| `--mode`    | `smithers-ci`, `smithers-ci replay`                          | `normal` | normal, fast, or both.                                                                                                                            |
+| `--jobs`    | `smithers-ci`, `smithers-ci replay`                          | none     | Most targets to run at once; the default is the machine's.                                                                                        |
+| `--cache`   | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | none     | URL of a shared cache.                                                                                                                            |
+| `--targets` | `smithers-ci`, `smithers-ci replay`                          | none     | Smithers build patterns to replay, separated by commas, on a repository that already builds with Smithers build; the default is what its CI runs. |
+| `--out`     | `smithers-ci`, `smithers-ci replay`                          | none     | Also write the report as an HTML file here.                                                                                                       |
+| `--json`    | `smithers-ci`, `smithers-ci inventory`, `smithers-ci replay` | `false`  | Print the document as JSON.                                                                                                                       |
 
 `--mode fast` and `--mode both` add fast mode to the replay; see
 [Normal mode and fast mode](../concepts/modes.md). `--cache` is described in
