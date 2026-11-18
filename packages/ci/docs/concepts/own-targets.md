@@ -196,8 +196,9 @@ works or patterns that name no package look like. A repository whose install bri
 on `@smthrs/cli`.
 
 When only some targets fail, they fail in the baseline and in normal mode
-alike. The report shows both runs as failed, and standard error names the
-targets and their reasons.
+alike. The report shows both runs as failed and names each target with its exit
+code and reason, and standard error names them as the run goes. A commit where a
+target fails in the baseline is left out of the speedup.
 
 `smithers-ci` installs what the lockfiles name and nothing else. A repository
 whose CI prepares more before it runs its targets, such as other installs a

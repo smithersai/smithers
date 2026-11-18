@@ -40,6 +40,14 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-18, failures have names** (additive, by the replay's failure lane):
+
+- `TargetResult.exitCode` and `TargetResult.command` say how a failed target's command ended.
+- `RunTotals.failures` lists each failed step as a `StepFailure`: `step`, `reason`, `exitCode`, `command`.
+- `ReplayReport.speedupCommits` counts the commits the speedup covers. `speedup` and the three wall times now cover
+  only commits whose baseline passed; a report without the field covers every commit.
+- A replay where no step passes at any commit fails `unsupported` (exit 3) for generated targets too.
+
 **2026-11-18, twelfth round** (the eliza lane: a GitHub Actions step is run as a runner runs it; every change adds
 and none removes):
 

@@ -107,6 +107,13 @@ A workflow that does not parse is listed there and nowhere else.
 | `3`  | `unsupported` | The repository uses something Smithers CI cannot run.                                                                                                                   |
 | `4`  | `failed`      | A step of the command could not finish.                                                                                                                                 |
 
+Exit `3` also means the repository's CI does not pass on this machine: no step
+passed in the baseline of any replayed commit. The program then prints no
+report and no speedup. Standard error gives the first failure of the newest
+commit: the step, its command, its exit code and the first line of its error.
+When only some commits fail, the program exits `0`, the report names each failed
+step, and the speedup covers the commits where the CI passed.
+
 A mismatch is defined in [How it works](../concepts/how-it-works.md#3-replay).
 A target that failed and then passed on a rerun is `flaky`. The report counts
 flaky verdicts apart from mismatches, and they never make the exit code `1`.

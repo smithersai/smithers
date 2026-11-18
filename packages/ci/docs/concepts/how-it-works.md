@@ -338,10 +338,24 @@ the target files there, which `apply` commits once. For every way it leaves
 out what happens before a CI machine is ready: starting the machine, fetching
 the repository over the network, installing tools and moving the cache.
 
-Over all commits it gives the total wall time of each way, the speedup, the
-number of mismatches and the number of flaky verdicts. The speedup is the
-baseline wall time divided by the normal-mode wall time, both summed over
-every commit. It lists each CI job that was not replayed with its reasons,
+Every step that failed in a way is named, with its exit code and the first line
+of its error output. When the step wrote no error, the last line it printed
+stands in. When its program is missing, the report says `` `docker` is not
+installed on this machine ``. A value shaped like a credential is withheld, by
+the rule the inventory uses.
+
+Over the commits where the baseline passed it gives the total wall time of each
+way and the speedup: the baseline wall time divided by the normal-mode wall
+time. A failed baseline stops at its failure, so its time says nothing about
+your CI. Such a commit is shown with its failure and left out of these numbers,
+and the report says how many commits they cover. It also gives the number of
+mismatches and the number of flaky verdicts over every commit.
+
+When no step passes in the baseline of any commit, your CI does not pass on this
+machine and there is nothing to measure. The command prints the first failure of
+the newest commit, prints no speedup and exits with code 3.
+
+It lists each CI job that was not replayed with its reasons,
 and each file the inventory could not read, so the speedup is never read as
 covering them. Under `tool versions` it lists each tool your machine has at
 another version than a job asks for:
@@ -354,10 +368,11 @@ tests.yml:test  asks for node 22.x; this machine has node 26.5.0
 With fast mode, it also gives fast mode's selection metrics; see
 [Normal mode and fast mode](modes.md#how-fast-mode-is-measured).
 
-The report prints as text: the totals, then one line for each commit that
-says whether each way passed, with its wall time. `--out` also writes it as an
-HTML file with a row for each commit. `--json` prints it as JSON, which also
-holds work time and the target counts.
+The report prints as text: the totals, one line for each commit that says
+whether each way passed, with its wall time, and the failed steps. `--out` also
+writes it as an HTML file with a row for each commit. `--json` prints it as
+JSON, which also holds work time, the target counts and each failed step's
+command.
 
 ## See also
 

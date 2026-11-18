@@ -50,13 +50,20 @@ no toolchain.
 ## What it prints
 
 The text report gives the totals: the baseline wall time, the normal-mode wall
-time, the speedup (baseline wall time divided by normal-mode wall time, summed
-over every commit), how many commits were replayed, and the number of
-mismatches. Then it gives one line for each commit: the files it changed, and
-whether each way passed, with its wall time. Under them it lists:
+time, the speedup (baseline wall time divided by normal-mode wall time), how
+many commits were replayed, and the number of mismatches. The times and the
+speedup cover the commits where your CI passed. When it failed at some of them,
+the speedup says how many it covers: `6.0× faster over 4 of 5 commits`. When it
+failed at all of them, the report prints no speedup. Then it gives one line for
+each commit: the files it changed, and whether each way passed, with its wall
+time. Under them it lists:
 
 - every commit it did not replay because that commit had no CI it can run,
   with the reason;
+- every step that failed, with its commit, the ways it failed in, its exit code
+  and the first line of its error output, or `` `docker` is not installed on
+  this machine `` when its program is missing. A value shaped like a credential
+  is withheld;
 - every mismatch: a target whose pass or fail in normal mode differs from the
   baseline, with its commit;
 - every CI job it did not replay, with the reason, and every file it could not
@@ -64,9 +71,10 @@ whether each way passed, with its wall time. Under them it lists:
 - every tool your machine has at another version than a job asks for.
 
 `--json` also gives, for each commit and each way, its work time (the sum of
-every target's own time) and how many targets were cache hits, ran, failed or
-were skipped. The HTML page has a row for each commit with its times, `fail`
-beside the time of a run that failed, and its mismatches.
+every target's own time), how many targets were cache hits, ran, failed or
+were skipped, and each failed step's name, exit code, first error line and
+command. The HTML page has a row for each commit with its times, `fail` beside
+the time of a run that failed, its mismatches and its failed steps.
 
 To keep a copy or feed it to another program:
 
@@ -123,6 +131,22 @@ says fast mode was not measured and why, and the command exits `4`.
 | `2`  | The command line was wrong.                                  |
 | `3`  | The repository uses something Smithers CI cannot run.        |
 | `4`  | A step of the command could not finish.                      |
+
+Code `3` also means your CI does not pass on this machine: no step passed at
+any replayed commit, so there is nothing to measure. The program prints no
+speedup. It prints the first failure of the newest commit, with the step, its
+command, its exit code and the first line of its error:
+
+```text
+smithers-ci: replay: this repository's CI does not pass on this machine, so there is no speedup to measure. No step passed at any of the 2 replayed commits.
+First failure at adbc881:
+  step     test.yml:lic-headers:1
+  command  docker run -v $(pwd):/wrk -w /wrk ghcr.io/google/addlicense -check .
+  exit     127
+  error    `docker` is not installed on this machine
+```
+
+Install what is missing and run it again.
 
 A mismatch is the result to look at first: it means a mode would have changed
 what your CI reports. A target that failed and then passed when run again is
