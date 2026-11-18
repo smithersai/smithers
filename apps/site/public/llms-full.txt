@@ -5127,6 +5127,15 @@ absence, enters the key, so a host with a different value runs the target again.
 Name each variable in `env` or `inheritEnv`, not both. Credentials belong in
 `secrets`, which keep the value out of the tool and the key.
 
+`Shell.Test` accepts `observe: true`, or `observe: { ignore: [...] }`. The run
+is traced, and the stored result holds every path it looked at: files, directory
+listings, and paths it did not find. The next run is a cache hit when each of
+them is unchanged, whatever else in `data` changed. `ignore` names paths left
+out of the record. It requires `sandbox: "none"` and cannot be combined with
+`shards` or `services`. It needs Linux with `strace`; on any other host the
+target is keyed by its `data`. The build's caching page describes the record,
+what stores nothing, and the hosts.
+
 `Shell.Build` command forms key the shell and the leading literal executable.
 List executables a shell target spawns by itself in `tools`: their bytes join
 the key the same way, and an absent one refuses the target. Executable
@@ -38356,7 +38365,13 @@ environment, host?)` resolve a request into an enforced command.
 and refusals. `toolchainReads(searchPath, workspaceRoot, host)` and
 `hiddenEntries(workspaceRoot, prefixes, restored, host)` compute what the
 verification mode opens and hides, and a plan's `hidden` field carries the
-result to the renderers. Requests name `network`, `reads`, and writable directory `writes`,
+result to the renderers. `toolchain(searchPath, workspaceRoot, host)` answers
+what a run needs to find every tool on a `PATH` by name: `reads` (each `PATH`
+directory, the install root of each program linked out of it, and a version
+manager's home), `links` (host links to place, passed as `externalLinks`),
+`privateLinks` (a version manager's home under the run's private `HOME`) and
+`selections` (the files that choose a shim's version). It never returns the home directory, a directory
+programs share in it, or a credential location. Requests name `network`, `reads`, and writable directory `writes`,
 with optional `mechanism`, `writeFiles`, `readOnly`, `externalReads`, `strict`,
 and `unixSockets`. Native agent confinement uses a strict process and IPC
 policy and closes Unix sockets; build tools retain their declared policy. Build

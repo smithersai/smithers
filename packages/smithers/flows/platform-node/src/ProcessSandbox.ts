@@ -121,6 +121,17 @@ export interface Request {
    * one under any other mechanism is refused.
    */
   readonly scratch?: boolean | undefined
+  /**
+   * Host links outside the workspace the run sees as links, each at its
+   * absolute path with its target string: the links a tool on `PATH` is
+   * reached through. A link grants nothing; see {@link Toolchain.links}.
+   */
+  readonly externalLinks?: ReadonlyArray<Link> | undefined
+  /**
+   * Links placed in the run's private directories; see
+   * {@link Toolchain.privateLinks}.
+   */
+  readonly privateLinks?: ReadonlyArray<Link> | undefined
 }
 
 /**
@@ -159,6 +170,11 @@ export interface Host {
    * paths. Explicit external read aliases use this probe when supplied.
    */
   readonly realpath?: ((path: string) => string | undefined) | undefined
+  /**
+   * The target string of a symbolic link, exactly as stored, or `undefined`
+   * when the path is not a link the host can read. Defaults to the real host.
+   */
+  readonly readlink?: ((path: string) => string | undefined) | undefined
   /**
    * The program a package-manager shim script runs: the absolute path on the
    * `# cmd-shim-target=` line pnpm's cmd-shim writes, or `undefined` for any
@@ -292,6 +308,19 @@ export interface Plan {
   readonly hidden?: Hidden | undefined
   /** Undeclared workspace writes land in a private, discarded layer; see {@link Request.scratch}. */
   readonly scratch?: boolean | undefined
+  /**
+   * Host links outside the workspace, placed as links. Bubblewrap creates each
+   * one no bound path already holds; seatbelt grants the link itself. Docker
+   * takes its tools from the image and ignores them.
+   */
+  readonly externalLinks?: ReadonlyArray<Link> | undefined
+  /**
+   * Links in the run's private directories. Each path is relative to the
+   * private temporary directory (`home/.volta`, `data/mise`). Bubblewrap
+   * creates them under its own `/tmp`; under seatbelt the caller creates them
+   * below {@link Plan.tmp} before the run starts.
+   */
+  readonly privateLinks?: ReadonlyArray<Link> | undefined
   /** A host directory the run may scribble in; created by the caller, removed after. */
   readonly tmp: string
   readonly uid: number | undefined
@@ -400,9 +429,18 @@ export const host = (env?: Readonly<Record<string, string | undefined>>): Host =
         return undefined
       }
     },
+    readlink,
     shimTarget,
     uid: typeof process.getuid === "function" ? process.getuid() : undefined,
     gid: typeof process.getgid === "function" ? process.getgid() : undefined
+  }
+}
+
+const readlink = (path: string): string | undefined => {
+  try {
+    return NodeFs.readlinkSync(path)
+  } catch {
+    return undefined
   }
 }
 
@@ -776,6 +814,15 @@ export const plan = (
     const absolute = anchor(relative)
     if (absolute !== undefined) readOnly.push(absolute)
   }
+  // A host link is placed outside the workspace only: inside it, the
+  // declaration alone decides what exists.
+  const externalLinks = (request.externalLinks ?? []).filter((link) =>
+    pathApi(link.path).isAbsolute(link.path) && !insideRoot(root, link.path)
+  )
+  // A private link stays below the private directory it is named in.
+  const privateLinks = (request.privateLinks ?? []).filter((link) =>
+    !pathApi(link.path).isAbsolute(link.path) && !link.path.split("/").includes("..")
+  )
   return {
     mechanism: selected,
     network: request.network,
@@ -790,6 +837,8 @@ export const plan = (
     readOnly: collapse(readOnly),
     externalReads: collapse(externalReads),
     ...(request.scratch === true ? { scratch: true } : {}),
+    ...(externalLinks.length === 0 ? {} : { externalLinks }),
+    ...(privateLinks.length === 0 ? {} : { privateLinks }),
     tmp: location.tmp,
     uid: hostFacts.uid,
     gid: hostFacts.gid
@@ -850,8 +899,8 @@ export const environment = (
   }
 }
 
-/** The fixed runtime surface, never the host root, home, PATH, or arbitrary env paths. */
-const runtimeReads = (hostFacts: Host): ReadonlyArray<string> => {
+/** The system part of the runtime surface: the same on every `PATH`. */
+const systemPaths = (hostFacts: Host): Array<string> => {
   const paths = [
     "/usr",
     "/bin",
@@ -898,6 +947,18 @@ const runtimeReads = (hostFacts: Host): ReadonlyArray<string> => {
     paths.push(developerDirectory)
   }
   if (hostFacts.home !== undefined) paths.push(pathApi(hostFacts.home).join(hostFacts.home, ".cache/node/corepack"))
+  return paths
+}
+
+/** The paths that exist, under the spelling given and the real one. */
+const present = (paths: ReadonlyArray<string>, hostFacts: Host): ReadonlyArray<string> =>
+  collapse(
+    paths.filter((path) => hostFacts.exists(path)).flatMap((path) => [path, hostFacts.realpath?.(path) ?? path])
+  )
+
+/** The fixed runtime surface, never the host root, home, PATH, or arbitrary env paths. */
+const runtimeReads = (hostFacts: Host): ReadonlyArray<string> => {
+  const paths = systemPaths(hostFacts)
   for (const name of ["node", "bun"]) {
     const executable = hostFacts.executable(name)
     if (executable !== undefined) {
@@ -909,8 +970,7 @@ const runtimeReads = (hostFacts: Host): ReadonlyArray<string> => {
       paths.push(pathApi(real).resolve(pathApi(real).dirname(real), "../lib/node_modules"))
     }
   }
-  const present = paths.filter((path) => hostFacts.exists(path))
-  return collapse(present.flatMap((path) => [path, hostFacts.realpath?.(path) ?? path]))
+  return present(paths, hostFacts)
 }
 
 /** Credentials remain closed even when a workspace or runtime grant contains the home. */
@@ -928,7 +988,9 @@ const credentialPaths = (hostFacts: Host): ReadonlyArray<string> => {
     ".config/gh",
     ".npmrc",
     ".netrc",
-    ".git-credentials"
+    ".git-credentials",
+    ".cargo/credentials",
+    ".cargo/credentials.toml"
   ].flatMap((relative) => {
     const path = pathApi(home).join(home, relative)
     return [path, hostFacts.realpath?.(path) ?? path]
@@ -994,17 +1056,27 @@ export const launcher = (
   const runtime = runtimeReads(hostFacts)
   const covered = (path: string) => [...runtime, ...granted].some((parent) => insideRoot(parent, path))
   const withinGrant = covered(found) ? unchanged : { program: real, reads: [] }
-  let directory = pathApi(real).dirname(real)
+  const directory = packageRoot(real, hostFacts)
+  if (directory !== undefined) return covered(directory) ? withinGrant : { program: real, reads: [directory] }
+  return covered(real) ? withinGrant : { program: real, reads: [real] }
+}
+
+/**
+ * The nearest package directory holding a file: a named `package.json`, at
+ * most three levels up, never the home or the root.
+ */
+const packageRoot = (file: string, hostFacts: Host): string | undefined => {
+  let directory = pathApi(file).dirname(file)
   for (let level = 0; level < 3; level++) {
-    if (directory === pathApi(directory).dirname(directory) || directory === hostFacts.home) break
+    if (directory === pathApi(directory).dirname(directory) || directory === hostFacts.home) return undefined
     if (
       hostFacts.packageDirectory?.(directory) ?? hostFacts.exists(pathApi(directory).join(directory, "package.json"))
     ) {
-      return covered(directory) ? withinGrant : { program: real, reads: [directory] }
+      return directory
     }
     directory = pathApi(directory).dirname(directory)
   }
-  return covered(real) ? withinGrant : { program: real, reads: [real] }
+  return undefined
 }
 
 /**
@@ -1073,6 +1145,248 @@ export const toolchainReads = (
     found.push(...launcher(program, searchPath, [], workspaceRoot, hostFacts).reads)
   }
   return collapse(found.filter(admissible))
+}
+
+/**
+ * What a confined run is shown of the tools the host has on `PATH`.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Toolchain {
+  /** Real host paths the run reads: each `PATH` directory and each tool's install root. */
+  readonly reads: ReadonlyArray<string>
+  /**
+   * The links a tool is reached through that no read holds: a `PATH` entry
+   * that is itself a link, or a link in a directory the run cannot read
+   * (`/etc/alternatives/awk`). Each path is absolute and real up to the link.
+   */
+  readonly links: ReadonlyArray<Link>
+  /**
+   * Links that put a version manager's home where its shims look for it once
+   * `HOME` is the run's private directory. Each path is relative to the
+   * private temporary directory: `home/.volta`, `data/mise`.
+   */
+  readonly privateLinks: ReadonlyArray<Link>
+  /**
+   * Readable files whose bytes choose the version a shim runs: Volta's
+   * default platform, rustup's settings and `~/.tool-versions`. A caller keys
+   * on their bytes.
+   */
+  readonly selections: ReadonlyArray<string>
+}
+
+/** The directory names a tool's programs sit in, below its install prefix. */
+const programDirectories: ReadonlyArray<string> = ["bin", "shims"]
+
+/** What a version manager's home holds: asdf and mise, pyenv and rbenv, Volta. */
+const managerMarkers: ReadonlyArray<string> = ["installs", "versions", "tools/image"]
+
+/**
+ * A tool that keeps its versions in a home directory no `PATH` entry leads
+ * to: rustup's proxies in `~/.cargo/bin` run the toolchains in `~/.rustup`.
+ */
+const companionHomes: ReadonlyArray<{ readonly program: string; readonly home: string; readonly selection: string }> = [
+  { program: "rustup", home: ".rustup", selection: "settings.toml" }
+]
+
+/** Home directories many programs share; never opened as one tool's prefix. */
+const sharedHomeDirectories: ReadonlyArray<string> = [
+  ".local",
+  ".local/share",
+  ".local/state",
+  ".config",
+  ".cache",
+  "Library"
+]
+
+/** Where each private directory of {@link environment} sits under a real home. */
+const privateDirectories: ReadonlyArray<readonly [home: string, name: string]> = [
+  [".local/share/", "data/"],
+  [".local/state/", "state/"],
+  [".config/", "config/"],
+  [".cache/", "cache/"]
+]
+
+/**
+ * Every symbolic link the host follows to resolve a path, in order, each
+ * named by its real location. Nothing when a link cannot be read or the
+ * chain does not end.
+ */
+const followed = (path: string, hostFacts: Host): ReadonlyArray<Link> | undefined => {
+  const api = pathApi(path)
+  const isLink = hostFacts.isSymbolicLink ?? isSymbolicLink
+  const links: Array<Link> = []
+  let current = api.parse(path).root
+  const pending = path.slice(current.length).split(api.sep)
+  while (pending.length > 0) {
+    const part = pending.shift()!
+    if (part === "" || part === ".") continue
+    if (part === "..") {
+      current = api.dirname(current)
+      continue
+    }
+    const next = api.join(current, part)
+    if (!isLink(next)) {
+      current = next
+      continue
+    }
+    const target = (hostFacts.readlink ?? readlink)(next)
+    if (target === undefined || links.length === 40) return undefined
+    links.push({ path: next, target })
+    const targetRoot = api.parse(target).root
+    if (targetRoot !== "") current = targetRoot
+    pending.unshift(...target.slice(targetRoot.length).split(api.sep))
+  }
+  return links
+}
+
+/**
+ * The host tools a confined run finds by name, and what each one needs to
+ * run: the same answer `PATH` gives outside the sandbox.
+ *
+ * Every absolute `PATH` entry that is a directory is read, at its real path.
+ * Each program in it that is a link out of the directory brings its install
+ * root: the package directory holding the real file (`lib/node_modules/npm`),
+ * else the directory holding it (`~/.local/zig-0.17.1`). A package-manager
+ * shim script is followed like a link. When a directory is named `bin` or
+ * `shims` and its parent is an install prefix (it holds `lib`, or a version
+ * manager's `installs`, `versions` or `tools/image`), the parent is read too,
+ * so an interpreter finds its library and a shim finds the versions it
+ * chooses from. That covers nvm, fnm, Volta, asdf, mise, pyenv, a Go SDK, a
+ * plain `~/.local/<tool>/bin`, Bun and Zig, under the home directory or
+ * anywhere else. rustup's proxies bring `~/.rustup`, which no link leads to.
+ *
+ * A shim finds its versions under `HOME`, and a confined run's `HOME` is
+ * private. {@link Toolchain.privateLinks} puts each version manager's home at
+ * the same place under the private one, and `~/.tool-versions` beside it when
+ * asdf or mise is there, so the shim chooses what it chooses on the host.
+ *
+ * Nothing else of the home directory is read. A path that is the workspace,
+ * the home directory, or an ancestor of one is never returned; neither is a
+ * credential location, an ancestor of one, or a path inside one, nor a path
+ * that is or resolves inside the workspace. The directories programs share
+ * (`~/.local`, `~/.config`, `~/.cache`, `~/Library`) and a directory at the
+ * top of the filesystem are never taken for a prefix. When the directory
+ * holding a linked program cannot be opened, the program's file alone is.
+ *
+ * A system directory (`/usr/bin`) is already
+ * readable, so only what its links leave it for is added.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const toolchain = (
+  searchPath: string | undefined,
+  workspaceRoot: string,
+  hostFacts: Host
+): Toolchain => {
+  const api = pathApi(workspaceRoot)
+  const home = hostFacts.home
+  const credentials = credentialPaths(hostFacts)
+  const closed = [workspaceRoot, ...(home === undefined ? [] : [home]), ...credentials]
+  const real = (path: string): string => hostFacts.realpath?.(path) ?? path
+  const admissible = (path: string): boolean =>
+    hostFacts.exists(path) && !insideRoot(workspaceRoot, path) &&
+    !insideRoot(workspaceRoot, real(path)) &&
+    !closed.some((kept) => insideRoot(path, kept)) &&
+    !credentials.some((kept) => insideRoot(kept, path))
+  // Only the system directories count as already readable. What the runtime
+  // surface adds for one `node` depends on which `node` leads `PATH`.
+  const system = present(systemPaths(hostFacts), hostFacts)
+  const covered = (path: string): boolean => system.some((parent) => insideRoot(parent, path))
+  const shared = home === undefined ? [] : sharedHomeDirectories.map((relative) => api.join(home, relative))
+  const holds = (directory: string, markers: ReadonlyArray<string>): boolean =>
+    markers.some((marker) => hostFacts.exists(api.join(directory, marker)))
+  // The install prefix above a program directory, or the directory itself.
+  const rootOf = (directory: string): string => {
+    const prefix = api.dirname(directory)
+    return programDirectories.includes(api.basename(directory)) && api.dirname(prefix) !== api.parse(prefix).root &&
+        !shared.includes(prefix) && admissible(prefix) && holds(prefix, ["lib", ...managerMarkers])
+      ? prefix
+      : directory
+  }
+  // What a program outside its `PATH` directory is installed as.
+  const installed = (file: string): string => {
+    const root = packageRoot(file, hostFacts) ?? rootOf(api.dirname(file))
+    return admissible(root) ? root : file
+  }
+  const reads: Array<string> = []
+  const links = new Map<string, string>()
+  const names = new Set<string>()
+  const note = (path: string): void => {
+    for (const link of followed(path, hostFacts) ?? []) links.set(link.path, link.target)
+  }
+  const visited = new Set<string>()
+  for (const entry of (searchPath ?? "").split(":")) {
+    if (entry === "" || !api.isAbsolute(entry) || !hostFacts.isDirectory(entry)) continue
+    const directory = real(entry)
+    if (visited.has(directory) || !admissible(entry) || !admissible(directory)) continue
+    visited.add(directory)
+    const open = !covered(directory)
+    if (open) reads.push(directory, rootOf(directory))
+    if (directory !== entry) note(entry)
+    for (const name of [...(hostFacts.entries?.(directory) ?? [])].sort()) {
+      const path = api.join(directory, name)
+      if (!hostFacts.exists(path) || hostFacts.isDirectory(path)) continue
+      const file = real(path)
+      names.add(name)
+      if (file !== path) note(path)
+      // A shim script is read to find its program; a system directory holds none.
+      const shim = open ? hostFacts.shimTarget?.(file) : undefined
+      const program = shim === undefined || hostFacts.executable(shim) === undefined ? file : real(shim)
+      for (const target of new Set([file, program])) {
+        if (insideRoot(directory, target) || covered(target)) continue
+        const root = installed(target)
+        if (admissible(root)) reads.push(root)
+      }
+    }
+  }
+  const privateLinks: Array<Link> = []
+  const selections: Array<string> = []
+  if (home !== undefined) {
+    // A version manager's shims look for its home under `HOME`.
+    let shims = false
+    for (const root of collapse(reads)) {
+      if (!insideRoot(home, root) || !holds(root, managerMarkers)) continue
+      const relative = toPosix(api.relative(home, root))
+      privateLinks.push({ path: `home/${relative}`, target: root })
+      for (const [under, name] of privateDirectories) {
+        if (relative.startsWith(under)) privateLinks.push({ path: name + relative.slice(under.length), target: root })
+      }
+      const platform = api.join(root, "tools/user/platform.json")
+      if (hostFacts.exists(platform)) selections.push(platform)
+      shims ||= hostFacts.exists(api.join(root, "installs"))
+    }
+    for (const companion of companionHomes) {
+      const directory = real(api.join(home, companion.home))
+      if (!names.has(companion.program) || !admissible(directory)) continue
+      reads.push(directory)
+      privateLinks.push({ path: `home/${companion.home}`, target: directory })
+      const selection = api.join(directory, companion.selection)
+      if (hostFacts.exists(selection)) selections.push(selection)
+    }
+    // The versions asdf and mise fall back to when the repository names none.
+    const versions = real(api.join(home, ".tool-versions"))
+    if (shims && admissible(versions)) {
+      reads.push(versions)
+      privateLinks.push({ path: "home/.tool-versions", target: versions })
+      selections.push(versions)
+    }
+  }
+  const opened = collapse(reads)
+  return {
+    reads: opened,
+    // A link inside a read is there as the host's own.
+    links: [...links]
+      .filter(([path]) =>
+        !insideRoot(workspaceRoot, path) && !covered(path) && !opened.some((read) => insideRoot(read, path)) &&
+        !credentials.some((kept) => insideRoot(kept, path))
+      )
+      .map(([path, target]) => ({ path, target })),
+    privateLinks,
+    selections
+  }
 }
 
 const hiddenPrefix = /^[A-Za-z0-9._-]+$/
@@ -1197,6 +1511,21 @@ export const bubblewrap = (
   for (const read of launch?.reads ?? []) out.push("--ro-bind", read, read)
   for (const read of confinement.reads) out.push("--ro-bind", read, read)
   for (const write of confinement.writes) out.push("--bind", write, write)
+  // A host link is created where no bound path already holds it: a link
+  // inside a bind is there as the host's own, and an older bubblewrap refuses
+  // to create one that exists.
+  const bound = [
+    ...runtime,
+    ...confinement.externalReads,
+    ...(launch?.reads ?? []),
+    ...confinement.reads,
+    ...confinement.writes
+  ]
+  for (const link of confinement.externalLinks ?? []) {
+    if (bound.some((path) => insideRoot(path, link.path))) continue
+    out.push("--symlink", link.target, link.path)
+  }
+  for (const link of confinement.privateLinks ?? []) out.push("--symlink", link.target, `/tmp/${link.path}`)
   // A link inside a bound read or write is already there as the host's own
   // link. Every other one is created in the workspace tmpfs, with its parent
   // directories, before the tmpfs is remounted read-only.
@@ -1402,7 +1731,8 @@ export const seatbelt = (confinement: Plan, hostFacts: Host = host()): string =>
   const readable = [...confinement.reads, ...confinement.writes, confinement.tmp]
   // Node realpath walks every ancestor, including parents outside the
   // workspace. Grant only their metadata, without listing or reading bytes.
-  const traversable = ancestors("/", [...runtime, ...readable, ...confinement.externalReads])
+  const externalLinks = (confinement.externalLinks ?? []).map((link) => link.path)
+  const traversable = ancestors("/", [...runtime, ...readable, ...confinement.externalReads, ...externalLinks])
     .filter((path) => !insideRoot(confinement.workspaceRoot, path))
   lines.push(`(allow file-read-metadata ${traversable.map((path) => `(literal ${sbpl(path)})`).join(" ")})`)
   const links = (confinement.links ?? []).map((link) => link.path)
@@ -1458,6 +1788,10 @@ export const seatbelt = (confinement: Plan, hostFacts: Host = host()): string =>
   }
   if (confinement.externalReads.length > 0) {
     lines.push(`(allow file-read* ${confinement.externalReads.map((path) => `(subpath ${sbpl(path)})`).join(" ")})`)
+  }
+  // A host link is granted as itself; what it points at needs its own read.
+  if (externalLinks.length > 0) {
+    lines.push(`(allow file-read* ${externalLinks.map((path) => `(literal ${sbpl(path)})`).join(" ")})`)
   }
   const hidden = confinement.hidden
   if (hidden !== undefined && hidden.prefixes.length > 0) {

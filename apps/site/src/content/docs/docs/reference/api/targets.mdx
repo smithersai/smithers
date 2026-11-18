@@ -326,6 +326,15 @@ absence, enters the key, so a host with a different value runs the target again.
 Name each variable in `env` or `inheritEnv`, not both. Credentials belong in
 `secrets`, which keep the value out of the tool and the key.
 
+`Shell.Test` accepts `observe: true`, or `observe: { ignore: [...] }`. The run
+is traced, and the stored result holds every path it looked at: files, directory
+listings, and paths it did not find. The next run is a cache hit when each of
+them is unchanged, whatever else in `data` changed. `ignore` names paths left
+out of the record. It requires `sandbox: "none"` and cannot be combined with
+`shards` or `services`. It needs Linux with `strace`; on any other host the
+target is keyed by its `data`. The build's caching page describes the record,
+what stores nothing, and the hosts.
+
 `Shell.Build` command forms key the shell and the leading literal executable.
 List executables a shell target spawns by itself in `tools`: their bytes join
 the key the same way, and an absent one refuses the target. Executable

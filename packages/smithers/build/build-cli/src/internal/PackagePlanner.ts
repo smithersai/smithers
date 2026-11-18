@@ -75,6 +75,7 @@ import { declarationLabels } from "./DeclarationLabels.ts"
 import * as DigestIndexFile from "./DigestIndexFile.ts"
 import { gitPathspecBatches } from "./GitPathspecBatches.ts"
 import * as HostProbes from "./HostProbes.ts"
+import * as HostTools from "./HostTools.ts"
 import { inputPackage } from "./InputPackage.ts"
 import * as InstalledTree from "./InstalledTree.ts"
 import * as ObservedReads from "./ObservedReads.ts"
@@ -92,6 +93,7 @@ import * as Path from "./Path.ts"
 import type * as RuleContract from "./RuleContract.ts"
 import * as RulePolicy from "./RulePolicy.ts"
 import * as NativeRules from "./rules/NativeRules.ts"
+import * as ShellWords from "./ShellWords.ts"
 import { posix, sha256Hex } from "./Text.ts"
 
 /**
@@ -282,6 +284,8 @@ interface PlanContext {
   readonly executableIdentities: Map<string, Promise<unknown>>
   /** One plan's PATH lookups, by name and search path. */
   readonly pathLookups: Map<string, string | undefined>
+  /** One plan's host tools, by `PATH`. */
+  readonly hostTools: Map<string, Promise<HostTools.HostTools>>
   readonly probes: Map<string, PackageTree.Probe>
   /**
    * Host facts the native planners (Docker, Foundry, Anvil, mise) share across
@@ -3301,12 +3305,16 @@ const visit = async (
   // A command-form target spawns a shell, but its leading literal program
   // can change independently of that shell. Dynamic commands still need
   // declared bin/using tools to identify their executable dependencies.
+  // The text names more programs than its first: `bash -e -c 'npm test'`
+  // starts `npm`. Each one `PATH` resolves is keyed by its bytes.
+  const namedCommands: Array<string> = []
   if (
     ((rule.startsWith("Shell.") && (attrs as Shell.ExecAttrs).shell !== undefined) || argv?.[0] === "/bin/sh") &&
     argv?.[1] === "-c"
   ) {
-    const program = argv[2]?.match(/^\s*(?:exec\s+)?([A-Za-z0-9_./+-]+)(?:\s|$)/)?.[1]
+    const [program, ...named] = argv.slice(2, 3).flatMap((text) => ShellWords.commands(text))
     if (program !== undefined) executableCommands.push(program)
+    namedCommands.push(...named)
   }
   const executable: Array<unknown> = []
   for (const command of executableCommands) {
@@ -3317,6 +3325,30 @@ const visit = async (
     if (path !== undefined && NodeFs.existsSync(path)) {
       executable.push(await binaryIdentity({ ...context, environment: spawnEnvironment }, path))
     }
+  }
+  for (const command of namedCommands) {
+    const path = onPath(context, command, spawnEnvironment)
+    if (path === undefined) continue
+    // A word of the text may be no program at all, so one that cannot be
+    // identified is left to the run.
+    const identity = await binaryIdentity({ ...context, environment: spawnEnvironment }, path).catch(() => undefined)
+    if (identity !== undefined) executable.push(identity)
+  }
+  // A shell command finds its tools by name, so it is shown what `PATH`
+  // gives the host, and keyed by each file that chooses a shim's version.
+  // Docker takes its tools from the image.
+  let hostTools: PackageNode["hostTools"]
+  if (isShellExec && context.index.workspace.sandboxes?.sandboxes["default"]?._tag !== "SandboxDocker") {
+    const searchPath = String(spawnEnvironment["PATH"])
+    let found = context.hostTools.get(searchPath)
+    if (found === undefined) {
+      found = HostTools.resolve(context.root, spawnEnvironment)
+      context.hostTools.set(searchPath, found)
+    }
+    const tools = await found
+    if (tools.selections.length > 0) executable.push({ _tag: "ToolVersions", selections: tools.selections })
+    externalReads.push(...tools.reads.filter((read) => !externalReads.includes(read)))
+    hostTools = { links: tools.links, privateLinks: tools.privateLinks }
   }
   // Native tools can live under the host's /tmp, which bubblewrap hides.
   // Admit both the launcher and its real installation, including shebang
@@ -3533,6 +3565,7 @@ const visit = async (
     writeSet,
     readSet,
     externalReads,
+    ...(hostTools === undefined ? {} : { hostTools }),
     ...(dependencyInstallations.size === 0 ? {} : { dependencyInstallations: [...dependencyInstallations] }),
     ...(installedTrees.length === 0 ? {} : { installedTrees }),
     ...(evidence === undefined ? {} : { evidence }),
@@ -4149,6 +4182,7 @@ const planWithServices = async (
     toolBytes: new Map(),
     executableIdentities: new Map(),
     pathLookups: new Map(),
+    hostTools: new Map(),
     probes: new Map(),
     hostProbes: HostProbes.make(),
     nodes: new Map(),

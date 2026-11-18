@@ -1462,6 +1462,9 @@ export const Package = S.Package({ targets: { dist } })
     await write(root, "PACKAGE.ts", declaration("one"))
     commitAll(root)
     try {
+      // A tool that keeps its versions under the home directory is keyed by
+      // them, so this PATH holds none: the home's location alone is no key.
+      vi.stubEnv("PATH", [NodePath.dirname(process.execPath), "/usr/bin", "/bin"].join(NodePath.delimiter))
       const first = await serve(root, ["//:dist", "--plan"])
       vi.stubEnv("HOME", home)
       vi.stubEnv("TMPDIR", tmp)

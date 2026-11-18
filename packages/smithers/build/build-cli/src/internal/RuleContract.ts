@@ -231,6 +231,15 @@ export interface SharedFields extends Planner.PlannedTarget {
    * today; the confinement binds each read-only.
    */
   readonly externalReads: ReadonlyArray<string>
+  /**
+   * The host links the tools on `PATH` are reached through and the private
+   * links their version managers need, for a node whose command finds its
+   * tools by name; see `ExecSandbox.toolchain`.
+   */
+  readonly hostTools?: {
+    readonly links: ReadonlyArray<{ readonly path: string; readonly target: string }>
+    readonly privateLinks: ReadonlyArray<{ readonly path: string; readonly target: string }>
+  }
   /** Canonical dependency installations admitted when this node was planned. */
   readonly dependencyInstallations?: ReadonlyArray<string>
   /** Workspace-relative `node_modules` directories whose measured content is in this node's key. */

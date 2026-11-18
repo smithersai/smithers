@@ -244,6 +244,10 @@ The admitted paths include:
   import patterns rather than `S.file` declarations;
 - what the package manager opens before it runs anything: the manifest, the
   lockfile, and the workspace file, when a rule drives `pnpm`;
+- for a `Shell` target, the tools on `PATH`: each `PATH` directory, the
+  install root of each program linked out of it, a version manager's home, and
+  the links between them, and nothing else of the home directory. See
+  [the tools a shell target finds](../../../docs/concepts/actions-and-boundaries.md#the-tools-a-shell-target-finds);
 - where a declared read really lives when the path reaches it through a link
   that leaves the workspace, such as a scratch tree's `node_modules`, which
   bubblewrap and Docker bind read-only because their `/tmp` is private;

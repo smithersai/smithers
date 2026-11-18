@@ -11,6 +11,13 @@ of it.
 - `Shell.Test` accepts `observe: true` or `observe: { ignore: [...] }`: the
   build records every path a run looks at and reuses the result while each is
   unchanged. It requires `sandbox: "none"` and refuses `shards` and `services`.
+
+- `ExecSandbox.toolchain(searchPath, workspaceRoot, host)` answers what a
+  confined run reads to find the host's tools by name. `ExecSandbox.Request`
+  takes `externalLinks`, host links placed as links outside the workspace, and
+  `privateLinks`, links placed in the run's private directories; `Exec.run`
+  makes the private links before the tool starts.
+
 - `ExecSandbox.Request.writeProtected` names workspace paths a run nothing
   confines may not write. `Exec.run` starts such a run through
   `ExecSandbox.protect`, which wraps the argv on a host that has the mechanism

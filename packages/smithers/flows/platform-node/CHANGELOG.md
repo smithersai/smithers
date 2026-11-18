@@ -4,6 +4,19 @@
 
 ### Added
 
+- `ProcessSandbox.toolchain(searchPath, workspaceRoot, host)` answers what a
+  confined run needs to find the host's tools by name: every `PATH` directory,
+  the install root of each program linked out of it, the prefix above a `bin`
+  directory, and a version manager's home, under the home directory or anywhere
+  else. It returns the reads, the links to place, the private links that put a
+  version manager's home under the run's private `HOME`, and the files that
+  choose a shim's version. The home
+  directory, the directories programs share in it and credential locations are
+  never opened. A request and a plan take `externalLinks` and `privateLinks`;
+  bubblewrap creates both, and seatbelt grants a host link as itself.
+  `Host.readlink` reads a link's target. `~/.cargo/credentials.toml` and
+  `~/.cargo/credentials` join the credential locations every mechanism closes.
+
 - `ProcessSandbox.writeProtected(paths, argv, host?)` wraps an argv so the
   process keeps the whole host and finds the named paths read-only: bubblewrap
   with the host bound as it is and each path bound read-only over itself. It is

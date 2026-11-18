@@ -14,6 +14,20 @@
   command left running is stopped. A host that cannot trace keys the target
   by its `data`, as before.
 
+- A confined `Shell` target finds every tool the host's `PATH` gives. It used
+  to see only the program its command named first, so `bash -e -c 'npm test'`
+  failed with `npm: command not found` wherever Node is installed under the
+  home directory (nvm, fnm, Volta, asdf, mise, `~/.local/node/bin`). The target
+  now reads each `PATH` directory, the install root of each program linked out
+  of it, a version manager's home and the links between them, and nothing else
+  of the home directory. Its key holds each program the text names by its
+  bytes, through `bash -c`, `env` and `exec`, where it held the first word's
+  alone, and each file that chooses a shim's version by its bytes, so another
+  Node or another default reruns it. A `Shell` target whose text names more
+  than one program gets a new key once. A command whose tool is not installed
+  fails with one line, `<tool>: not found. No directory on PATH holds <tool>;
+  install it or add its directory to PATH (exit 127)`.
+
 - A fresh install no longer loses every test, type-check and lint result of
   its first run. A run of `TsBuild`, `Typecheck`, `Vitest`, `EsLint`, `Dprint`
   or `NodeTest` that the workspace does not confine now finds the keyed entries

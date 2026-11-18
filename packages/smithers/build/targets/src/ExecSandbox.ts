@@ -59,6 +59,13 @@ export type {
    */
   Plan,
   /**
+   * What a confined run is shown of the tools the host has on `PATH`.
+   *
+   * @category models
+   * @since 0.1.0
+   */
+  Toolchain,
+  /**
    * The refusal a host that cannot enforce a declared confinement produces.
    *
    * @category models
@@ -118,6 +125,14 @@ export {
    * @since 0.1.0
    */
   seatbelt,
+  /**
+   * The host tools a confined run finds by name on `PATH`, and what each one
+   * needs to run.
+   *
+   * @category resolution
+   * @since 0.1.0
+   */
+  toolchain,
   /**
    * Rechecks write grants before directory creation and before rendering.
    *
@@ -196,6 +211,17 @@ export interface Request {
    */
   readonly externalReads?: ReadonlyArray<string> | undefined
   /**
+   * Host links outside the workspace the run sees as links: the links a tool
+   * on `PATH` is reached through. A link grants nothing.
+   */
+  readonly externalLinks?: ReadonlyArray<ProcessSandbox.Link> | undefined
+  /**
+   * Links placed in the run's private directories, each path relative to the
+   * private temporary directory: a version manager's home where its shims
+   * look for it.
+   */
+  readonly privateLinks?: ReadonlyArray<ProcessSandbox.Link> | undefined
+  /**
    * Whether an undeclared write under the workspace lands in a private layer
    * discarded with the run, instead of failing. A check whose product is its
    * exit code asks for it, so a tool that leaves files beside its inputs
@@ -262,6 +288,8 @@ const lower = (request: Request): ProcessSandbox.Request => {
     writeFiles: request.writeFiles,
     readOnly: request.readOnly,
     externalReads: request.externalReads,
+    ...(request.externalLinks === undefined ? {} : { externalLinks: request.externalLinks }),
+    ...(request.privateLinks === undefined ? {} : { privateLinks: request.privateLinks }),
     ...(request.scratch === true ? { scratch: true } : {})
   }
 }

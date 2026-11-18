@@ -183,6 +183,22 @@ fails closed instead. Declare `{ network: true }` only if full network access
 is acceptable. A target with `services` must make one of these network choices
 explicit, or declare `sandbox: "none"` to opt out of confinement; listing a service does not silently open the network.
 
+## A tool was not found
+
+**A target fails with `<tool>: not found. No directory on PATH holds <tool>`.**
+
+The command started a program this machine does not have: the shell exited
+127. Install the tool, or put its directory on the `PATH` of the shell that
+runs `smthrs`. A confined `Shell` target sees every program `PATH` gives that
+shell, so a tool that runs in your terminal runs in the target.
+
+A version manager's shim that fails inside a target and works outside reads
+its version from a file under the home directory that a target cannot read,
+such as `~/.config/mise/config.toml`. Pin the version in the repository
+(`.tool-versions`, `mise.toml`, or `volta` in `package.json`). What a target
+reads of the home directory is listed under
+[the tools a shell target finds](../../docs/concepts/actions-and-boundaries.md#the-tools-a-shell-target-finds).
+
 ## A target wrote outside its write set
 
 **The node fails and the change is reverted.**

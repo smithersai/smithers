@@ -232,6 +232,58 @@ Docker binds paths, and a bind of the link would grant its target, so a
 confined Docker target with a link input fails with `sandbox_unenforceable`.
 See [Inputs](inputs.md#symbolic-link-inputs).
 
+### The tools a shell target finds
+
+A `Shell` target runs text, and the text starts programs by name:
+`bash -e -c 'npm test'` starts `npm`, which starts `node`. So a confined
+`Shell` target is shown what `PATH` gives an unconfined run, and nothing else
+of the home directory.
+
+| What                       | Example                                                                                                                                  |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Each `PATH` directory      | `~/.nvm/versions/node/v22.1.0/bin`, `~/.bun/bin`, `~/.local/bin`                                                                         |
+| A linked program's install | `bin/npm` links into `lib/node_modules/npm`; `~/.local/bin/zig` links to `~/.local/zig-0.17.1/zig`, and that directory holds Zig's `lib` |
+| The prefix above `bin`     | `~/.local/node` for `~/.local/node/bin`, when it holds `lib`                                                                             |
+| A version manager's home   | `~/.volta`, `~/.asdf`, `~/.local/share/mise`, `~/.pyenv`; `~/.rustup` for rustup's proxies                                               |
+| The links on the way       | fnm's per-shell link to its installation; `/etc/alternatives/awk`                                                                        |
+
+This covers nvm, fnm, Volta, asdf, mise, a plain `~/.local/<tool>/bin`, Bun
+under `~/.bun` and Zig, under the home directory or anywhere else.
+
+The home directory itself, its ancestors, `~/.local`, `~/.config`, `~/.cache`
+and `~/Library` are never opened whole, and neither is a credential location
+(`~/.ssh`, `~/.aws`, `~/.npmrc`, `~/.cargo/credentials.toml` and the rest of
+the list above) or a directory that holds one. A program linked from a
+directory that cannot be opened is readable as that one file.
+
+A confined run has a private `HOME`, and a shim looks for its versions under
+`HOME`. Each version manager's home is linked at the same place under the
+private one (`$HOME/.volta`, `$XDG_DATA_HOME/mise`), with `~/.tool-versions`
+beside it when asdf or mise is on `PATH`, so a shim chooses the version it
+chooses outside. A version pinned only in `~/.config/mise/config.toml` is not
+read: pin it in the repository.
+
+The target's key holds the tools its command names. Each program the text
+names is keyed by its bytes and its interpreter's, through `bash -c`, `env`,
+`exec` and the words of `if` and `for`: `bash -e -c 'npm test'` keys `npm`
+and the `node` that runs it. Each file that chooses a shim's version (Volta's
+default platform, rustup's settings, `~/.tool-versions`) is keyed by its
+bytes. Another Node version or another default reruns the target.
+
+A program the text does not name, such as one a script or a Makefile starts,
+is readable and not keyed: keying every program on `PATH` would rerun every
+target whenever any of them is updated. Name the tool in the command, declare
+it with `tools`, or use
+[`observe: true`](../workspace/caching.md), which records every path a run
+looked at. A workspace that confines with Docker takes its tools from the
+image, and none of this applies.
+
+A command whose tool is not installed fails with one line that names it:
+
+```text
+//:test  failed  npm: not found. No directory on PATH holds npm; install it or add its directory to PATH (exit 127): /bin/sh -c bash -e -c 'npm test'
+```
+
 An undeclared workspace read is missing or refused, and an undeclared write
 fails at the kernel. Native host reads outside the admitted runtime and explicit
 grants are also refused; redirecting `HOME` alone would not enforce that boundary.
@@ -247,8 +299,9 @@ sandbox: seatbelt, network none, 3 read path(s), 2 write path(s)
 
 The workspace tree is what the content key covers. Host toolchain identity
 belongs to the `nix:<hash>` layer of a declared
-[Nix environment](environments.md); runtime read grants do not make those paths
-workspace inputs.
+[Nix environment](environments.md), and for a `Shell` target to
+[the tools it finds](#the-tools-a-shell-target-finds); runtime read grants do
+not make those paths workspace inputs.
 
 A `PACKAGE.ts` file is not sandboxed, and it is not meant to be. It is
 executable TypeScript evaluated in the CLI process: it can import any host

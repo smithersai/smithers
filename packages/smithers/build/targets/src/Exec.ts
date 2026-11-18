@@ -1769,6 +1769,13 @@ const confined = (
       ExecSandbox.validateWrites(confinement, hostFacts)
       NodeFs.mkdirSync(NodePath.join(confinement.tmp, "home"), { recursive: true })
       NodeFs.mkdirSync(NodePath.join(confinement.tmp, "cache"), { recursive: true })
+      // Seatbelt runs on the host's files, so its private links are made
+      // here; bubblewrap makes its own under the `/tmp` it mounts.
+      for (const link of confinement.privateLinks ?? []) {
+        const path = NodePath.join(confinement.tmp, ...link.path.split("/"))
+        NodeFs.mkdirSync(NodePath.dirname(path), { recursive: true })
+        NodeFs.symlinkSync(link.target, path)
+      }
       for (const write of confinement.writes) NodeFs.mkdirSync(write, { recursive: true })
       const base = toolEnvironment(resolved.env, sensitiveEnv, secretEnv, options.environment)
       const visible = Object.create(null) as Record<string, string>

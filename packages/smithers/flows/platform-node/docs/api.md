@@ -1385,7 +1385,13 @@ environment, host?)` resolve a request into an enforced command.
 and refusals. `toolchainReads(searchPath, workspaceRoot, host)` and
 `hiddenEntries(workspaceRoot, prefixes, restored, host)` compute what the
 verification mode opens and hides, and a plan's `hidden` field carries the
-result to the renderers. Requests name `network`, `reads`, and writable directory `writes`,
+result to the renderers. `toolchain(searchPath, workspaceRoot, host)` answers
+what a run needs to find every tool on a `PATH` by name: `reads` (each `PATH`
+directory, the install root of each program linked out of it, and a version
+manager's home), `links` (host links to place, passed as `externalLinks`),
+`privateLinks` (a version manager's home under the run's private `HOME`) and
+`selections` (the files that choose a shim's version). It never returns the home directory, a directory
+programs share in it, or a credential location. Requests name `network`, `reads`, and writable directory `writes`,
 with optional `mechanism`, `writeFiles`, `readOnly`, `externalReads`, `strict`,
 and `unixSockets`. Native agent confinement uses a strict process and IPC
 policy and closes Unix sockets; build tools retain their declared policy. Build

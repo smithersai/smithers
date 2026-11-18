@@ -62,6 +62,7 @@ import * as ApprovalBridge from "./ApprovalBridge.ts"
 import * as CacheEvidence from "./CacheEvidence.ts"
 import * as GoCache from "./GoCache.ts"
 import * as InstalledTree from "./InstalledTree.ts"
+import * as MissingTool from "./MissingTool.ts"
 import * as ObservedReads from "./ObservedReads.ts"
 import type { ExecuteOptions, PackageNode, PackagePlan, TestOperandPlan } from "./PackageOptions.ts"
 import type { StoredResolve } from "./PackagePlanner.ts"
@@ -420,7 +421,10 @@ export const sandboxRequest = (
     writes: [...writes],
     writeFiles: [...writeFiles],
     readOnly: [`${cacheDirectory}/cache`],
-    externalReads: [...externalReads]
+    externalReads: [...externalReads],
+    ...(node.hostTools === undefined
+      ? {}
+      : { externalLinks: node.hostTools.links, privateLinks: node.hostTools.privateLinks })
   }
 }
 
@@ -658,9 +662,15 @@ const filesTestErrorText = (error: Compose.FilesTestError): string =>
 // name the failure.
 // A command the machine was too busy to start never ran, so its report says
 // so instead of naming an exit status; callers key on the first words.
+// A command that could not find its tool leads with the tool's name.
 const execErrorText = (error: Exec.ExecError): string => {
   const detail = [error.stderr.trim(), error.stdout.trim()].filter((stream) => stream !== "").join("\n")
-  const head = error.code === "start_timed_out" ? "command did not start" : `command failed (exit ${error.exitCode})`
+  const missing = MissingTool.named(error.exitCode, detail)
+  const head = error.code === "start_timed_out"
+    ? "command did not start"
+    : missing !== undefined
+    ? MissingTool.headline(missing)
+    : `command failed (exit ${error.exitCode})`
   return `${head}: ${error.argv.join(" ")}${detail === "" ? "" : `\n${detail}`}`
 }
 
