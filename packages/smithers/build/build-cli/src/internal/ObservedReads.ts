@@ -443,6 +443,15 @@ interface Cell {
 
 const cloneCall = /^(\d+)\s+(?:(clone3?|v?fork)\(|<\.\.\. (clone3?|v?fork) resumed>)/
 
+/** An argument the tracer printed as an address. */
+const address = /^0x[0-9a-f]+$/
+
+/** What the tracer ends a line with when a thread ends in the middle of the line. */
+const detachedMark = "<detached ...>"
+
+/** The answers a call that starts a program can have: it started, or it did not and the answer names why. */
+const startAnswer = /^(?:0|-1 E[A-Z0-9]+\b.*)$/
+
 /** Whether an address a run connected or bound to is on this machine's loopback. */
 const loopback = (address: string): boolean =>
   /inet_addr\("127\./.test(address) || /inet_pton\(AF_INET6, "(?:::1|::ffff:127\.[0-9.]+)"/.test(address)
@@ -564,13 +573,18 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
     const failed = result !== undefined && result.startsWith("-1 ")
     const errno = failed ? result.split(" ")[1]! : undefined
     const gone = errno === "ENOENT" || errno === "ENOTDIR"
-    const ok = result !== undefined && !failed && result !== "?"
+    // An answer that starts with `?` is no answer: the thread ended inside the call.
+    const ok = result !== undefined && !failed && !result.startsWith("?")
 
     /** The absolute path an argument names from a directory, or `undefined` when it names none. */
     const pathOf = (argument: string | undefined, base: string | undefined): string | undefined => {
       if (argument === undefined || argument === "NULL") return undefined
       const text = unquote(argument)
       if (text === undefined) {
+        // An address where a path belongs: the tracer could not read the path from the thread. Either the thread
+        // was killed where it stopped before the call, or the address is no memory of the process and the call
+        // failed on it. Neither opened a file. A call that succeeded on such a path did read something.
+        if (address.test(argument) && !ok) return undefined
         refusals.add(`its trace holds a path that cannot be read: ${argument.slice(0, 80)}`)
         return undefined
       }
@@ -683,6 +697,11 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       case "execveat": {
         const path = name === "execve" ? pathOf(args[0], cell.path) : pathOf(args[1], baseOf(args[0]))
         looked(path)
+        // Any other answer is not this call's. The tracer lost its place, as it does when a thread other than
+        // the first starts a program, and the first call the new program made is then in no line.
+        if (result !== undefined && !result.startsWith("?") && !startAnswer.test(result)) {
+          refusals.add(`the tracer lost its place when a thread started ${path ?? "a program"}`)
+        }
         if (path !== undefined && !failed) {
           first(started, path, entered)
           programs.set(pid, path.slice(path.lastIndexOf("/") + 1))
@@ -796,6 +815,12 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
     }
   }
 
+  /** A call cut off by the end of its thread still happened, with an answer nobody saw. */
+  const cutOff = (pid: number, open: { readonly at: number; readonly text: string }): void => {
+    const paren = open.text.indexOf("(")
+    if (paren > 0) handle(pid, open.text.slice(0, paren), open.text.slice(paren + 1), undefined, open.at)
+  }
+
   for (const line of lines()) {
     at += 1
     const match = /^(\d+)\s+(.*)$/s.exec(line)
@@ -810,7 +835,29 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       cells.set(pid, { path: cwd })
     }
     if (!cells.has(pid)) cells.set(pid, { path: undefined })
+    const superseded = /^\+\+\+ superseded by execve in pid (\d+) \+\+\+$/.exec(rest)
+    if (superseded !== null) {
+      // A thread that starts a program becomes the process, and the tracer names it by the process from here on:
+      // the call that starts the program is answered under that name. A call the first thread was in is cut off.
+      const thread = Number(superseded[1])
+      const own = pending.get(pid)
+      if (own !== undefined) cutOff(pid, own)
+      const starting = pending.get(thread)
+      pending.delete(thread)
+      if (starting === undefined) pending.delete(pid)
+      else pending.set(pid, starting)
+      continue
+    }
     if (rest.startsWith("+++") || rest.startsWith("---")) continue
+    // The tracer writes `???` for a call it could not ask the thread about: the thread was killed where it stopped
+    // before the call, by a thread that ended the process or started another program. The call never ran.
+    if (rest.startsWith("???(") || rest.startsWith("<... ??? resumed>")) {
+      pending.delete(pid)
+      continue
+    }
+    // A thread that ended in the middle of its line: the call began, and nobody saw the answer.
+    const detached = rest.endsWith(detachedMark)
+    if (detached) rest = rest.slice(0, -detachedMark.length)
     let entered = at
     const resumed = /^<\.\.\. (\w+) resumed>/.exec(rest)
     if (resumed !== null) {
@@ -825,11 +872,21 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
     }
     const start = resumed === null ? children.get(at) : undefined
     if (start !== undefined) {
+      // A process id comes round again. A call its last holder never finished was cut off when that one ended.
+      const unfinished = pending.get(start.child)
+      if (unfinished !== undefined) {
+        pending.delete(start.child)
+        cutOff(start.child, unfinished)
+      }
       const parent = cells.get(pid)!
       cells.set(start.child, start.shared ? parent : { path: parent.path })
       const program = programs.get(pid)
       if (program !== undefined) programs.set(start.child, program)
       if (installing.has(pid) || installed.has(pid)) installed.add(start.child)
+    }
+    if (detached) {
+      cutOff(pid, { at: entered, text: rest })
+      continue
     }
     if (rest.endsWith("<unfinished ...>")) {
       pending.set(pid, { at: entered, text: rest.slice(0, -"<unfinished ...>".length) })
@@ -853,11 +910,7 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
   }
   // Every traced run starts a program, so a trace without a line is not a run's trace.
   if (root === undefined) refusals.add("its trace is empty")
-  // A call cut off by the end of its process still happened, with an answer nobody saw.
-  for (const [pid, open] of pending) {
-    const paren = open.text.indexOf("(")
-    if (paren > 0) handle(pid, open.text.slice(0, paren), open.text.slice(paren + 1), undefined, open.at)
-  }
+  for (const [pid, open] of pending) cutOff(pid, open)
   return { found, missing, listed, made, emptied, changed, started, removed, fetched, refusals: [...refusals] }
 }
 

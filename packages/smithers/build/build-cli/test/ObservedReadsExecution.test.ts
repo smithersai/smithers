@@ -218,6 +218,41 @@ describe("an observed test", () => {
     expect(await run(["plain"])).toEqual({ plain: "ran" })
   })
 
+  // A program of many threads ends while its threads are asking about files: Go's tools do at every exit. The
+  // tracer then writes lines for calls it could not follow, each for a thread killed where it stopped. Here a
+  // process of twenty-five threads is killed three times. The step still passes, and its result is stored.
+  tracedIt("is stored when a program ended while its threads were in the middle of calls", async () => {
+    // The process is killed a moment after the last of its threads says it is asking about files.
+    const threads = [
+      "const { Worker, isMainThread, parentPort } = require(\"node:worker_threads\")",
+      "const fs = require(\"node:fs\")",
+      "if (isMainThread) {",
+      "  let asking = 0",
+      "  const started = () => {",
+      "    asking += 1",
+      "    if (asking === 24) setTimeout(() => process.kill(process.pid, \"SIGKILL\"), 100)",
+      "  }",
+      "  for (let index = 0; index < 24; index += 1) new Worker(__filename).on(\"message\", started)",
+      "} else {",
+      "  fs.statSync(\"input.txt\")",
+      "  parentPort.postMessage(\"asking\")",
+      "  for (;;) fs.statSync(\"input.txt\")",
+      "}"
+    ].join("\n")
+    const { logs, reasons, run, write } = await fixture({
+      check: `for round in 1 2 3; do '${process.execPath}' threads.cjs; done; /bin/cat input.txt > /dev/null`
+    })
+    await write("threads.cjs", threads)
+    expect(await run()).toEqual({ check: "ran" })
+    expect(logs.filter((line) => line.includes("cannot be read"))).toEqual([])
+    expect(await run()).toEqual({ check: "hit" })
+    await write("docs/readme.md", "changed\n")
+    expect(await run()).toEqual({ check: "hit" })
+    await write("input.txt", "pass, changed\n")
+    expect(await run()).toEqual({ check: "ran" })
+    expect(reasons).toEqual(["input.txt changed"])
+  }, 120_000)
+
   tracedIt("is answered from the cache after a step it depends on ran again", async () => {
     const { run, write } = await fixture()
     expect(await run(["second"])).toEqual({ setup: "ran", second: "ran" })

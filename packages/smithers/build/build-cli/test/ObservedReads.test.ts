@@ -564,6 +564,117 @@ describe("reading a trace", () => {
     expect(paths(read("100 unfinished-without-call <unfinished ...>").found)).toEqual([])
   })
 
+  // The lines strace 6.8 wrote for a program of seventeen threads that ended, or started another program, while
+  // sixteen of them asked about files.
+  it("leaves out a call a thread was killed before, and keeps one it was killed in", () => {
+    const trace = read([
+      "100 openat(AT_FDCWD</w>, \"read.txt\", O_RDONLY|O_CLOEXEC) = 3</w/read.txt>",
+      // Killed where it stopped before a call: the tracer could not ask which call, and the call never ran.
+      "101 ???( <unfinished ...>",
+      "102 newfstatat(AT_FDCWD</w>, \"asked.txt\",  <unfinished ...>",
+      "101 <... ??? resumed>)              = ?",
+      "102 <... newfstatat resumed>)       = ? <unavailable>",
+      "103 ???( <detached ...>",
+      // Killed inside a call: the call began, and nobody saw its answer.
+      "104 openat(AT_FDCWD</w>, \"opened.txt\", O_RDONLY|O_CLOEXEC <detached ...>",
+      "105 openat(AT_FDCWD</w>, \"begun.txt\", O_RDONLY|O_CLOEXEC <unfinished ...>",
+      "105 <... openat resumed> <detached ...>",
+      "106 newfstatat(AT_FDCWD</w>, \"cut.txt\",  <unfinished ...>",
+      "106 <... newfstatat resumed> <unfinished ...>) = ?",
+      "107 openat(AT_FDCWD</w>, \"late.txt\", O_RDONLY|O_CLOEXEC <unfinished ...>",
+      "107 <... openat resumed>)           = -1 (errno 18446744073709551359)",
+      // Killed before a call whose path the tracer could no longer read: an address stands where the path was.
+      "108 newfstatat(AT_FDCWD</w>, 0x1c2e122eccd0,  <unfinished ...>",
+      "108 <... newfstatat resumed>)       = ?",
+      "109 openat(AT_FDCWD</w>, 0x1c2e122ecd00, O_RDONLY|O_CLOEXEC <detached ...>",
+      // An address that is no memory of the process: the call fails on it and opens nothing.
+      "100 openat(AT_FDCWD</w>, 0xdeadbeef, O_RDONLY) = -1 EFAULT (Bad address)",
+      // A file opened to write with no answer is not a file the run is known to have made.
+      "110 openat(AT_FDCWD</w>, \"new.txt\", O_WRONLY|O_CREAT|O_EXCL, 0644 <unfinished ...>",
+      "110 <... openat resumed>)           = ? <unavailable>"
+    ].join("\n"))
+    expect(trace.refusals).toEqual([])
+    expect(paths(trace.found)).toEqual([
+      "/w/asked.txt",
+      "/w/begun.txt",
+      "/w/cut.txt",
+      "/w/late.txt",
+      "/w/opened.txt",
+      "/w/read.txt"
+    ])
+    expect(paths(trace.made)).toEqual([])
+    expect([...trace.changed]).toEqual(["/w/new.txt"])
+  })
+
+  it("stores nothing when a call that succeeded names its path by an address", () => {
+    expect(read("100 openat(AT_FDCWD</w>, 0x1c2e122eccd0, O_RDONLY) = 3").refusals)
+      .toEqual(["its trace holds a path that cannot be read: 0x1c2e122eccd0"])
+  })
+
+  // strace 6.8 with its seccomp filter, when a thread other than the first starts a program: it takes the first
+  // call of the new program for the answer of the call that started it, and writes no line for that call.
+  it("stores nothing when the tracer lost its place at a program a thread started", () => {
+    const start = [
+      "100 execve(\"/w/first\", [\"first\"], 0x7ffe73c01cc8 /* 21 vars */) = 0",
+      "100 clone(child_stack=0x2e2ca7c36000, flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS, tls=0x2e2ca7cfc090) = 108",
+      "100 newfstatat(AT_FDCWD</w>, \"first-was-in.txt\",  <unfinished ...>",
+      "108 execve(\"/bin/true\", [\"true\"], 0x2e2ca8002090 /* 0 vars */ <unfinished ...>",
+      // The tracer names the thread by the process it became: the answer is on a line of the process.
+      "100 +++ superseded by execve in pid 108 +++"
+    ]
+    const lost = read([
+      ...start,
+      "100 <... execve resumed>)           = -1 (errno 18446744073709551595)",
+      "100 openat(AT_FDCWD</w>, \"/etc/ld.so.cache\", O_RDONLY|O_CLOEXEC) = 3</etc/ld.so.cache>"
+    ].join("\n"))
+    expect(lost.refusals).toEqual(["the tracer lost its place when a thread started /bin/true"])
+    // The same program when the tracer kept its place: the first call of the new program has its line.
+    const kept = read([
+      ...start,
+      "100 <... execve resumed>)           = 0",
+      "100 access(\"/etc/ld.so.preload\", R_OK) = -1 ENOENT (No such file or directory)"
+    ].join("\n"))
+    expect(kept.refusals).toEqual([])
+    expect(paths(kept.started)).toEqual(["/bin/true", "/w/first"])
+    expect(paths(kept.missing)).toEqual(["/etc/ld.so.preload"])
+    expect(paths(kept.found)).toEqual(["/bin/true", "/w/first", "/w/first-was-in.txt"])
+    // A thread that took the place of the process with no call of its own open answers nothing.
+    expect(
+      read([
+        "100 execve(\"/w/first\", [\"first\"], 0x7ffe73c01cc8 /* 21 vars */) = 0",
+        "100 +++ superseded by execve in pid 108 +++",
+        "100 <... execve resumed>)           = 0"
+      ].join("\n")).refusals
+    ).toEqual(["its trace resumes a call it never started: <... execve resumed>)           = 0"])
+    expect(read("100 execve(\"/bin/true\", [\"true\"], 0x2e2ca8002090 /* 0 vars */) = 12").refusals)
+      .toEqual(["the tracer lost its place when a thread started /bin/true"])
+    expect(read("100 execveat(AT_FDCWD</w>, NULL, [\"true\"], NULL, 0) = 12").refusals)
+      .toEqual(["the tracer lost its place when a thread started a program"])
+    // A program that started, one that did not, and one whose thread ended in the call are all the call's own.
+    expect(
+      read([
+        "100 execve(\"/bin/true\", [\"true\"], 0x2e2ca8002090 /* 0 vars */) = 0",
+        "100 execve(\"/bin/none\", [\"none\"], 0x2e2ca8002090 /* 0 vars */) = -1 ENOENT (No such file or directory)",
+        "100 execve(\"/bin/true\", [\"true\"], 0x2e2ca8002090 /* 0 vars */ <unfinished ...>",
+        "100 <... execve resumed>)           = ?"
+      ].join("\n")).refusals
+    ).toEqual([])
+  })
+
+  it("keeps a call its process never finished when the process id comes round again", () => {
+    const trace = read([
+      "100 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD, child_tidptr=0x7f) = 101",
+      "101 chdir(\"/w/first\")                  = 0",
+      "101 openat(AT_FDCWD</w/first>, \"cut.txt\", O_RDONLY <unfinished ...>",
+      "101 +++ killed by SIGKILL +++",
+      "100 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD, child_tidptr=0x7f) = 101",
+      "101 openat(AT_FDCWD</w>, \"second.txt\", O_RDONLY <unfinished ...>",
+      "101 <... openat resumed>)               = 3</w/second.txt>"
+    ].join("\n"))
+    expect(trace.refusals).toEqual([])
+    expect(paths(trace.found)).toEqual(["/w/first", "/w/first/cut.txt", "/w/second.txt"])
+  })
+
   it("reads a path as the tracer escaped it", () => {
     const trace = read(
       "100 stat(\"/w/q\\\"uote\\\\back\\n\\t\\r\\v\\f\\a\\b\\e\\303\\251\\x41, >x\", {st_mode=S_IFREG|0644, ...}) = 0"
