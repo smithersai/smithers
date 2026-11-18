@@ -38,6 +38,14 @@ directly, so the parts are built at the same time.
   No page or message says judge, scorer, scored or rows.
 - **Never a stale pass** (`sci-never-stale`): Smithers build measures a target's declared inputs again when it starts,
   and `smithers-ci apply --check` fails when the generated files no longer match the repository.
+- **A replay starts warm** (`sci-replay-robust`). Before the first counted commit, normal and fast mode run once at
+  the parent of the oldest replayed commit to fill the cache, as a CI run has the cache of the run before it. That
+  run is not in the speedup; `ReplayReport` carries its time per mode (optional) and the report prints it as the
+  first run. `--cold` counts from an empty cache. Measured cause: on needlefish's five commits the cold count is
+  1.67 and the count with the cache of the commit before is 2.5.
+- **An install under the step's own home is not a machine change** (`sci-replay-robust`): `go install`,
+  `cargo install`, `pip install --user` and the like, on a host where steps run in the jail. `changes-machine` stays
+  for what needs root or writes outside the checkout and the home, and on a host with no jail.
 
 **Eleventh round, 2026-11-18 (open).** Decisions from the ship review. Each is built by the lane named.
 
