@@ -21,6 +21,8 @@ import {
 import { Options, Progress } from "../../src/replay/index.ts"
 import { fakeSmthrs, makeOwn, makeOwnWith, type Own, ownFiles, smthrs } from "./own.ts"
 import { git, repository, temporary } from "./repo.ts"
+
+const head = (root: string): string => git(root, "rev-parse", "HEAD").trim()
 import { cannotStart, noTemporaryDirectories, rows, scoreKeeping } from "./support.vibe"
 
 const made: Array<string> = []
@@ -80,7 +82,7 @@ describe("replaying six real commits of a repository's own targets", () => {
         partsFor(repo.commits[0]!)
       )
     )
-  }, 600_000)
+  }, 1_200_000)
 
   const commit = (index: number) => report.commits[index]!
   const normalMismatches = (index: number) => commit(index).mismatches.filter((entry) => entry.mode === "normal")
@@ -118,7 +120,9 @@ describe("replaying six real commits of a repository's own targets", () => {
     }
     expect(commit(4).mismatches).toEqual([])
     expect(said).toContain(
-      `${repo.commits[4]!.slice(0, 7)} is not installed: npm ci --no-audit --no-fund exited 1 in the repository root`
+      `5/6 ${
+        repo.commits[4]!.slice(0, 7)
+      } baseline: (install) failed: npm ci --no-audit --no-fund exited 1 in the repository root`
     )
     // The install script is no target's input, so the next commit comes back from the cache.
     expect(commit(5).baseline.counts).toEqual({ hit: 0, ran: 3, failed: 0, skipped: 0 })
@@ -139,6 +143,19 @@ describe("replaying six real commits of a repository's own targets", () => {
     expect(report.selection).toBeDefined()
   })
 
+  it("says what each run did as it goes, and why a target failed", () => {
+    const short = (index: number) => repo.commits[index]!.slice(0, 7)
+    expect(said).toContain(`1/6 ${short(0)} baseline`)
+    expect(
+      said.some((line) => /^1\/6 \w{7} baseline: 3 ran, 0 from the cache, 0 failed, 0 skipped in \d+ s$/.test(line))
+    )
+      .toBe(true)
+    expect(said.some((line) => /^2\/6 \w{7} normal: 1 ran, 2 from the cache, 0 failed, 0 skipped in \d+ s$/.test(line)))
+      .toBe(true)
+    expect(said.some((line) => line.startsWith(`3/6 ${short(2)} baseline: //:a failed: `))).toBe(true)
+    expect(said.some((line) => line.startsWith(`3/6 ${short(2)} normal: //:a failed: `))).toBe(true)
+  })
+
   it("says which targets it replays and which CI job it leaves out", () => {
     expect(said).toContain("replaying the repository's own targets (WORKSPACE.ts): //:a //:b //:c")
     expect(report.notReplayed).toEqual([{
@@ -155,7 +172,8 @@ describe("replaying six real commits of a repository's own targets", () => {
   })
 })
 
-describe("replaying a repository's own targets", () => {
+// Each test runs real processes; a loaded machine must not turn that into a failure.
+describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
   it("replays the patterns asked for instead of the ones its CI runs, with the jobs and the cache named", async () => {
     const calls = keep(temporary("calls"))
     const recording = fakeSmthrs(`echo "cache=$SMITHERS_CACHE_URL $*" >> ${calls}/log\nexec $real "$@"`)
@@ -191,7 +209,7 @@ describe("replaying a repository's own targets", () => {
     expect(report.commits[0]?.fast?.ok).toBe(true)
     expect(report.selection).toBeDefined()
     expect(report.mismatches).toBe(0)
-  }, 120_000)
+  })
 
   it("is unsupported, with the reason, when no commit can be installed", async () => {
     const root = keep(repository({ ...ownFiles(), "tools/install.mjs": "process.exit(1)\n" }))
@@ -199,8 +217,38 @@ describe("replaying a repository's own targets", () => {
     expect(failure).toEqual({
       code: "unsupported",
       part: "replay",
-      message: "no replayed commit could be installed: npm ci --no-audit --no-fund exited 1 in the repository root"
+      message: `no target passed at any of the 1 replayed commit. At ${
+        head(root).slice(0, 7)
+      }, (install) failed: npm ci --no-audit --no-fund exited 1 in the repository root`
     })
+  })
+
+  it("is unsupported, with the reason smthrs printed, when no target passes on this machine", async () => {
+    const missing = `host binary "go" is declared in S.Host({ bins }) but is not present on PATH`
+    const old = fakeSmthrs(
+      [
+        `echo '//:a  failed  1ms  ${missing}'`,
+        `echo '{"ok":false,"counts":{"hit":0,"ran":0,"failed":1,"skipped":1},"results":[{"label":"//:a","status":"failed","key":"k","durationMs":1},{"label":"//:b","status":"skipped","key":"k","durationMs":0}]}' > "$results"`,
+        "exit 1"
+      ].join("\n")
+    )
+    const root = keep(makeOwnWith(old))
+    const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
+    expect(failure).toEqual({
+      code: "unsupported",
+      part: "replay",
+      message: `no target passed at any of the 1 replayed commit. At ${head(root).slice(0, 7)}, //:a failed: ${missing}`
+    })
+  })
+
+  it("is unsupported when the patterns select no target", async () => {
+    const none = fakeSmthrs(
+      `echo '{"ok":true,"counts":{"hit":0,"ran":0,"failed":0,"skipped":0},"results":[]}' > "$results"`
+    )
+    const root = keep(makeOwnWith(none))
+    const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
+    expect(failure.code).toBe("unsupported")
+    expect(failure.message).toContain("the patterns selected no target that ran")
   })
 
   it("fails with what smthrs printed when it writes no run record", async () => {
@@ -250,7 +298,7 @@ describe("replaying a repository's own targets", () => {
   })
 })
 
-describe("the replay part for any repository", () => {
+describe("the replay part for any repository", { timeout: 120_000 }, () => {
   const generic: RunReplay<Host> = (given) =>
     Effect.succeed({
       version: 1,

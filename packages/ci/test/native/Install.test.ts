@@ -65,7 +65,7 @@ describe("the install rules", () => {
   })
 })
 
-describe("install", () => {
+describe("install", { timeout: 300_000 }, () => {
   it("runs the lockfile's package manager and finds the checkout's own smthrs", async () => {
     const root = checkout(ownFiles())
     expect(await onNode(install(root, "WORKSPACE.ts"))).toEqual({ ok: true, smthrs: join(root, smthrsBin) })

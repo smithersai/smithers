@@ -104,8 +104,22 @@ not timed.
 Each target's verdict in normal mode is compared with its verdict in the
 baseline, by label. A cache hit is a pass. A target skipped because a target it
 depends on failed is skipped in both, so it is no mismatch. A mismatch means a
-cached result disagrees with a fresh one: a flaky target, or a target that
-reads something its key does not cover.
+cached result disagrees with a fresh one: a target that reads something its key
+does not cover, or a flaky target. A target that fails once and passes when run
+again is `flaky`, which is not `pass`: on a busy machine a test that times out
+shows up this way.
+
+## What it prints while it runs
+
+Standard error gets one line as each mode of each commit starts and one when
+it ends, with its counts and its time, then a line for each of the first five
+targets that failed, with the first line of the reason `smthrs` gave, and one
+for each target that failed and then passed when run again:
+
+```text
+smithers-ci: 2/3 3f2a1c9 normal
+smithers-ci: 2/3 3f2a1c9 normal: 1 ran, 6 from the cache, 0 failed, 0 skipped in 41 s
+```
 
 ## A commit that cannot be installed
 
@@ -115,13 +129,25 @@ error names the install command, its directory and its exit code. The command's
 output is not shown, because it may hold a registry credential; run the command
 in a checkout of that commit to read it.
 
-When no replayed commit can be installed, there is nothing to report:
-`smithers-ci` exits 3 with the reason for the newest commit. A repository whose
-install brings no `node_modules/.bin/smthrs` gets the same exit, with a line
-that says it must depend on `@smthrs/cli`.
+## A build that does not run on this machine
 
-When `smthrs ci` starts and writes no run record, for example because the
-workspace names a tool this machine does not have, `smithers-ci` exits 4 with
+When no target passes in the baseline of any replayed commit, there is nothing
+to measure: `smithers-ci` exits 3 with the first failure of the newest commit.
+That is what a missing tool looks like, for example a workspace that names
+`go` as a host program on a machine without it, and what an install that never
+works looks like. A repository whose install brings no
+`node_modules/.bin/smthrs` gets this exit with a line that says it must depend
+on `@smthrs/cli`.
+
+When only some targets fail, they fail in the baseline and in normal mode
+alike. The report shows both runs as failed, and standard error names the
+targets and their reasons.
+
+`smithers-ci` installs what the lockfiles name and nothing else. A repository
+whose CI prepares more before it runs its targets, such as other installs a
+script makes, has the targets that need them fail here.
+
+When `smthrs ci` starts and writes no run record, `smithers-ci` exits 4 with
 what `smthrs` printed.
 
 ## Reproduce a number by hand

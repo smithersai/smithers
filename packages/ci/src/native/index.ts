@@ -17,6 +17,7 @@ export {
   smthrsBin
 } from "./Install.ts"
 export { committedWorkspace, type Host, install, own, run, Targets } from "./Replay.vibe"
+export { firstLine, linesOf, nothingPassed, reasonsIn, withReasons } from "./Results.ts"
 export { type Chosen, chosenFor, covers, everything, notSelected, notTargets, patternsIn } from "./Targets.ts"
 export {
   feature,

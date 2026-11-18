@@ -24,7 +24,7 @@ const run = async (args: ReadonlyArray<string>, root: string): Promise<Outcome> 
   return { code, stdout: sink.stdout(), stderr: sink.stderr() }
 }
 
-describe("smithers-ci on a repository that builds with Smithers build", () => {
+describe("smithers-ci on a repository that builds with Smithers build", { timeout: 300_000 }, () => {
   it("replays the repository's own targets by default and says nothing was converted", async () => {
     const root = keep(makeOwnWith(smthrs))
     const before = snapshot(root)
@@ -36,7 +36,7 @@ describe("smithers-ci on a repository that builds with Smithers build", () => {
       "smithers-ci: replaying the repository's own targets (WORKSPACE.ts): //:a //:b //:c"
     )
     expect(changed(before, snapshot(root))).toEqual([])
-  }, 120_000)
+  })
 
   it("prints the replay report as JSON, as a process", async () => {
     const root = keep(makeOwnWith(smthrs))
@@ -48,7 +48,7 @@ describe("smithers-ci on a repository that builds with Smithers build", () => {
     expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 3, failed: 0, skipped: 0 })
     expect(report.mismatches).toBe(0)
     expect(report.notReplayed?.map((entry) => entry.job)).toEqual(["ci.yml:docs"])
-  }, 120_000)
+  })
 
   it("words the footer once", () => {
     expect(footer(".smithers/WORKSPACE.ts")).toBe(

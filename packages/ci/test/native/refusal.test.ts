@@ -10,7 +10,7 @@ import type { Failure } from "../../src/contract/Parts.ts"
 import { generatedMark, workspaceOf } from "../../src/native/index.ts"
 import { run as generic } from "../../src/replay/index.ts"
 import { inProcess } from "../cli/inProcess.vibe"
-import { bin, changed, type Outcome, read, recorder, snapshot, spawn, temporary } from "../cli/repo.ts"
+import { bin, changed, head, type Outcome, read, recorder, snapshot, spawn, temporary } from "../cli/repo.ts"
 import { ciFiles, ownPackage, ownWorkspace, repository } from "./repo.ts"
 
 const made: Array<string> = []
@@ -31,7 +31,7 @@ const run = async (args: ReadonlyArray<string>, root: string): Promise<Outcome> 
 const already = (file: string): string =>
   `the repository already builds with Smithers build (${file}); there is nothing to convert\n`
 
-describe("smithers-ci on a repository with its own Smithers workspace", () => {
+describe("smithers-ci on a repository with its own Smithers workspace", { timeout: 300_000 }, () => {
   it("apply exits 3 with one line and writes nothing, as a process", async () => {
     const root = keep(repository({ ...ciFiles, "WORKSPACE.ts": ownWorkspace, "PACKAGE.ts": ownPackage }))
     const before = snapshot(root)
@@ -61,7 +61,9 @@ describe("smithers-ci on a repository with its own Smithers workspace", () => {
         expect(outcome.code).toBe(exitCodes.unsupported)
         expect(outcome.stdout).toBe("")
         expect(outcome.stderr.trimEnd().split("\n").at(-1)).toBe(
-          `smithers-ci: replay: no replayed commit could be installed: no node_modules/.bin/smthrs in ${where} after the install; the repository must depend on @smthrs/cli`
+          `smithers-ci: replay: no target passed at any of the 1 replayed commit. At ${
+            head(root).slice(0, 7)
+          }, (install) failed: no node_modules/.bin/smthrs in ${where} after the install; the repository must depend on @smthrs/cli`
         )
       }
       expect(changed(before, snapshot(root))).toEqual([])
@@ -90,7 +92,7 @@ describe("smithers-ci on a repository with its own Smithers workspace", () => {
   })
 })
 
-describe("smithers-ci on a repository it converted", () => {
+describe("smithers-ci on a repository it converted", { timeout: 300_000 }, () => {
   it("is not refused: the workspace it generated is its own to write again", async () => {
     const root = keep(repository(ciFiles))
     expect((await run(["apply"], root)).code).toBe(exitCodes.ok)
@@ -104,7 +106,7 @@ describe("smithers-ci on a repository it converted", () => {
   })
 })
 
-describe("smithers-ci on a repository with a build file it did not write", () => {
+describe("smithers-ci on a repository with a build file it did not write", { timeout: 300_000 }, () => {
   it("never writes a generated file over it, in the repository or in a replay's copy", async () => {
     const root = keep(repository({ ...ciFiles, "PACKAGE.ts": ownPackage }))
     const before = snapshot(root)

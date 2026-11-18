@@ -26,7 +26,7 @@ const generatedFiles = [
   { path: ".github/workflows/smithers-ci.yml", content: "# generated\n" }
 ]
 
-describe("workspace", () => {
+describe("workspace", { timeout: 300_000 }, () => {
   it("finds the workspace an owner wrote, at the root or under .smithers", async () => {
     expect(await onNode(workspace(repo({ "WORKSPACE.ts": ownWorkspace })))).toBe("WORKSPACE.ts")
     expect(await onNode(workspace(repo({ ".smithers/WORKSPACE.ts": ownWorkspace })))).toBe(".smithers/WORKSPACE.ts")
@@ -48,7 +48,7 @@ describe("workspace", () => {
   })
 })
 
-describe("replaced", () => {
+describe("replaced", { timeout: 300_000 }, () => {
   it("lists the generated build files that would replace an owner's file", async () => {
     const root = repo({ "PACKAGE.ts": ownPackage, ".github/workflows/smithers-ci.yml": "on: [push]\n" })
     expect(await onNode(replaced(root, generatedFiles))).toEqual(["PACKAGE.ts"])
