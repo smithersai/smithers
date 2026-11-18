@@ -8,8 +8,16 @@
  */
 
 import * as ChildProcess from "effect/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { gitConfig, guardedPrograms, guardScript, hooksDirectory, type Place, prePush } from "./Environment.ts"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import {
+  gitConfig,
+  guardedPrograms,
+  guardScript,
+  hooksDirectory,
+  type Place,
+  prePush,
+  stepEnvironment
+} from "./Environment.ts"
 import {
   credentials,
   type Jail,
@@ -157,3 +165,28 @@ export const held = (
   writable: ReadonlyArray<string>,
   argv: readonly [string, ...Array<string>]
 ): readonly [string, ...Array<string>] => jailed(place.jail, [place.home, ...writable], [place.hooks], argv)
+
+/**
+ * The process runner a part is given while it reads `copy`, a checkout a
+ * step may have written. git runs the commands its repository's
+ * configuration names, such as `core.fsmonitor` under `git status` and
+ * `git ls-files`, and a step can write that configuration. So every `git`
+ * the part starts runs as a step of `place` does: in the jail, where it can
+ * write the copy and that way's home, with a step's environment and nothing
+ * else of the person's. Any other command starts as it is.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const reading = (real: ChildProcessSpawner["Service"], place: Confined, copy: string) =>
+  makeSpawner((command) => {
+    if (command._tag !== "StandardCommand" || command.command !== "git") return real.spawn(command)
+    const [program, ...before] = held(place, [copy], ["git"])
+    return real.spawn(ChildProcess.make(program, [...before, ...command.args], {
+      ...command.options,
+      // git is told its repository on the command line or by its directory, never by the program's own.
+      cwd: command.options.cwd ?? copy,
+      env: stepEnvironment({}, place),
+      extendEnv: false
+    }))
+  })

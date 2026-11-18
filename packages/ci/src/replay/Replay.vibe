@@ -33,7 +33,7 @@ import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
 import { check } from "../apply/index.ts"
 import { refusal as ownWorkspace } from "../native/Workspace.ts"
 import { withReasons } from "../native/Results.ts"
-import { type Confined, confine, held, type Way } from "./Confine.vibe"
+import { type Confined, confine, held, reading, type Way } from "./Confine.vibe"
 import {
   coreCount,
   noPushUrl,
@@ -285,16 +285,31 @@ effect function runStep(
 }
 
 /**
- * Runs git. With `place`, `cwd` is a copy a step may have written, hooks and configuration included, so git runs
- * there as a step does: in the jail, with a step's environment.
+ * What git answered: its standard output alone, with what it said on standard error kept in `errors`. git warns
+ * there, for example of a file-system monitor a step left in its copy's configuration, and a warning is no part of
+ * an answer.
+ */
+const answered = (errors: Ref.Ref<string>) => (handle: ChildProcessHandle) =>
+  Stream.merge(
+    handle.stdout,
+    handle.stderr
+      |> Stream.decodeText(%)
+      |> Stream.tap(%, (chunk: string) => Ref.update(errors, (text) => (text + chunk).slice(-outputLimit)))
+      |> Stream.drain(%)
+  )
+
+/**
+ * Runs git and returns what it printed on standard output. With `place`, `cwd` is a copy a step may have written,
+ * hooks and configuration included, so git runs there as a step does: in the jail, with a step's environment.
  */
 effect function git(cwd: string, args: ReadonlyArray<string>, place: Confined | undefined = undefined) {
   const [command, ...rest] = place === undefined ? ["git", ...args] : held(place, [cwd], ["git", ...args])
+  const errors = try Ref.make("")
   const output = place === undefined
-    ? try exec(command, rest, cwd, {}, Number.POSITIVE_INFINITY)
-    : try exec(command, rest, cwd, stepEnvironment({}, place), Number.POSITIVE_INFINITY, undefined, true)
+    ? try exec(command, rest, cwd, {}, Number.POSITIVE_INFINITY, answered(errors))
+    : try exec(command, rest, cwd, stepEnvironment({}, place), Number.POSITIVE_INFINITY, answered(errors), true)
   if (output.exitCode !== 0) {
-    throw failure("command-failed", `git ${args[0]} failed: ${output.text.slice(-outputLimit)}`)
+    throw failure("command-failed", `git ${args[0]} failed: ${try Ref.get(errors)}`)
   }
   return output.text
 }
@@ -474,17 +489,29 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     const normalCopy = try copyAt("normal", "HEAD")
+    const spawner = try ChildProcessSpawner
+    /**
+     * Runs a part on the normal copy, which the targets wrote: every `git` the part starts there runs as a step
+     * does, in the jail, so a command a step left in the copy's `.git/config` never runs outside it.
+     */
+    effect function onNormalCopy<A, E, S>(part: A!E!S) {
+      provide ChildProcessSpawner = reading(spawner, places.normal, normalCopy) {
+        return try part
+      }
+    }
 
     /**
      * What the CI of the commit checked out in the normal copy gives the replay: read, split and generated from that
      * commit's own tree. It fails `unsupported` when nothing of that CI can be replayed on this machine.
      */
     effect function prepared(): Prepared!Failure!(R | Host) {
-      const inventory: Inventory = try parts.read(normalCopy)
+      const inventory: Inventory = try onNormalCopy(parts.read(normalCopy))
       const why = ownWorkspace(inventory) ?? refusal(inventory)
       if (why !== undefined) throw failure("unsupported", why)
       const narrowed = ci(inventory)
-      const split = parts.decompose === undefined ? narrowed : try parts.decompose(normalCopy, narrowed)
+      const split = parts.decompose === undefined
+        ? narrowed
+        : try onNormalCopy(parts.decompose(normalCopy, narrowed))
       // A target passes on what tells git to refuse a push, as the baseline's step is told.
       const generated = try parts.files(split, { cache: request.cache, inheritEnv: Object.keys(pushRefusal) })
       // A commit can hold a link, or a file its owner wrote, where a generated file goes: nothing is written then.
@@ -764,7 +791,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
       flaky += flakyOf([baseRecord, normalRecord])
       if (fastCopy !== undefined && fastNotMeasured === undefined) {
-        const rows = try parts.rows(normalCopy, normalRecord, try planOf(normalCopy, own))
+        const rows = try onNormalCopy(parts.rows(normalCopy, normalRecord, try planOf(normalCopy, own)))
         const scores = try scoresOrReason(parts.score, rows)
         if (typeof scores === "string") {
           fastNotMeasured = scores

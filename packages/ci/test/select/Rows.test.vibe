@@ -9,6 +9,7 @@ import { directory, live, plan, record, repository, result } from "./support.vib
 
 const now = Date.UTC(2026, 10, 14)
 
+// `rows` starts git with its caller's process runner, so every test runs on the real host, whatever it reads.
 describe("rows", () => {
   it.live("builds a commit's rows from its run record, the repository and the ledger, and records them", () => live(effect {
     const fs = try FileSystem.FileSystem
@@ -94,16 +95,16 @@ describe("rows", () => {
     }
   }))
 
-  it.effect("refuses a fast-mode record: a skipped target has no outcome", () => effect {
+  it.effect("refuses a fast-mode record: a skipped target has no outcome", () => live(effect {
     provide Layer.merge(layerMemory(), Layer.succeed(Repository, { change: () => die("never read") })) {
       const failed = try flip(rows("/repo", record("c1", [result("//a:test", "ran")], "fast")))
       try Effect.try(() => {
         expect(failed).toEqual(failure("invalid-document", "Rows are built from a normal-mode run record; this one is fast mode's"))
       })
     }
-  })
+  }))
 
-  it.effect("refuses a record that names no commit", () => effect {
+  it.effect("refuses a record that names no commit", () => live(effect {
     provide Layer.merge(layerMemory(), Layer.succeed(Repository, { change: () => die("never read") })) {
       const absent = try flip(rows("/repo", record(undefined, [result("//a:test", "ran")])))
       const blank = try flip(rows("/repo", record("", [result("//a:test", "ran")])))
@@ -112,9 +113,9 @@ describe("rows", () => {
         expect(blank).toEqual(absent)
       })
     }
-  })
+  }))
 
-  it.effect("fails as the repository fails, and records nothing", () => effect {
+  it.effect("fails as the repository fails, and records nothing", () => live(effect {
     const broken = failure("not-a-repository", "/repo is not a git repository")
     provide Layer.merge(layerMemory(), Layer.succeed(Repository, { change: () => fail(broken) })) {
       const failed = try flip(rows("/repo", record("c1", [result("//a:test", "ran")])))
@@ -124,9 +125,9 @@ describe("rows", () => {
         expect(held).toEqual([])
       })
     }
-  })
+  }))
 
-  it.effect("fails as the ledger fails", () => effect {
+  it.effect("fails as the ledger fails", () => live(effect {
     const broken = failure("command-failed", "The ledger file rows.jsonl could not be used: full disk")
     const change = { at: now, files: ["a.ts"], history: [], tree: ["a.ts"] }
     const faulty = (part: "observations" | "plan" | "record") => Layer.succeed(Ledger, {
@@ -143,5 +144,5 @@ describe("rows", () => {
     try Effect.try(() => {
       expect(outcomes).toEqual([broken, broken, broken])
     })
-  })
+  }))
 })

@@ -8,9 +8,12 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { execFileSync } from "node:child_process"
 import {
   accessSync,
+  chmodSync,
   constants,
   existsSync,
   mkdirSync,
@@ -29,7 +32,7 @@ import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import type { Mode } from "../../src/contract/RunRecord.ts"
 import { files } from "../../src/generate/index.ts"
-import { confine, held } from "../../src/replay/Confine.vibe"
+import { confine, held, reading } from "../../src/replay/Confine.vibe"
 import { gitConfig, hooksDirectory, prePush, pushRefused } from "../../src/replay/Environment.ts"
 import { Options, Progress, run } from "../../src/replay/index.ts"
 import { credentials, jailed, type Probe, probe, temporaryOf, temporaryRoots, unjailed } from "../../src/replay/Jail.ts"
@@ -304,6 +307,92 @@ describe.each(
     for (const totals of [second?.baseline, second?.normal, second?.fast]) expect(totals?.counts).toEqual(once)
     expect(report.commits.flatMap((commit) => commit.mismatches)).toEqual([])
   }, 1_200_000)
+})
+
+describe("git a part starts in a copy a step wrote", () => {
+  const live = <A>(work: Effect.Effect<A, unknown, unknown>) =>
+    Effect.runPromise(Effect.scoped(work).pipe(Effect.provide(NodeServices.layer)) as Effect.Effect<A>)
+
+  /**
+   * A repository whose `.git/config` names commands for git to run, as a step can leave it. The command says it ran
+   * in the repository's `.git`, where a jailed git can write, and beside the repository, where one cannot.
+   */
+  const planted = () => {
+    const outside = directory("outside")
+    const copy = directory("copy")
+    git(copy, "init", "--quiet", "--initial-branch=main")
+    writeFileSync(join(copy, "a.txt"), "a\n")
+    git(copy, "add", "-A")
+    git(copy, "commit", "--quiet", "-m", "one")
+    const script = join(outside, "planted.sh")
+    const say = `echo "$1 home=$HOME"`
+    writeFileSync(script, `#!/bin/sh\n${say} >> ${copy}/.git/ran\n(${say} >> ${outside}/ran) 2>/dev/null\nexit 0\n`)
+    chmodSync(script, 0o755)
+    git(copy, "config", "core.fsmonitor", `${script} fsmonitor`)
+    git(copy, "config", "core.pager", `${script} pager`)
+    git(copy, "config", "alias.status", `!${script} alias`)
+    return { copy, inside: join(copy, ".git", "ran"), outside: join(outside, "ran") }
+  }
+
+  /** What the inventory reader, the splitter and fast mode ask git, as each asks it. */
+  const asked = (copy: string) =>
+    [
+      ChildProcess.make("git", ["-C", copy, "--no-optional-locks", "status", "--porcelain"]),
+      ChildProcess.make("git", ["-C", copy, "ls-files", "-z"]),
+      ChildProcess.make("git", ["-c", "core.quotePath=false", "rev-parse", "--git-dir"], { cwd: copy })
+    ] as const
+
+  const linesOf = (file: string): ReadonlyArray<string> => [...new Set(readFileSync(file, "utf8").trim().split("\n"))]
+
+  it.each(
+    [
+      { where: "in the jail", confined: () => found, runs: jailable },
+      { where: "with no jail", confined: () => ({ refusal: "no bubblewrap" }), runs: true }
+    ] as const
+  )("runs as a step does $where, and a command planted in .git/config with it", async ({ confined, runs, where }) => {
+    if (!runs) return
+    const { copy, inside, outside } = planted()
+    const work = directory("work")
+    const seen = await live(Effect.gen(function*() {
+      const real = yield* ChildProcessSpawner
+      // Started as a program starts any git, the planted command runs as the person, anywhere the person can write.
+      yield* real.string(asked(copy)[0])
+      const unheld = { inside: linesOf(inside), outside: linesOf(outside) }
+      rmSync(inside)
+      rmSync(outside)
+      const places = yield* confine(work, confined, () => Effect.void, [])
+      const held = reading(real, places.normal, copy)
+      const printed: Array<string> = []
+      for (const command of asked(copy)) printed.push(yield* held.string(command))
+      return { unheld, printed, home: places.normal.home }
+    }))
+
+    const person = `fsmonitor home=${process.env["HOME"]}`
+    expect(seen.unheld).toEqual({ inside: [person], outside: [person] })
+    // Each git answered: the tree is clean, it holds one file, and its repository is the copy's.
+    expect(seen.printed).toEqual(["", "a.txt\0", ".git\n"])
+    // The planted command ran again, this time with the step's home, and in the jail it wrote nothing outside.
+    const step = `fsmonitor home=${seen.home}`
+    expect(linesOf(inside)).toEqual([step])
+    if (where === "in the jail") expect(existsSync(outside)).toBe(false)
+    else expect(linesOf(outside)).toEqual([step])
+  }, 120_000)
+
+  it("starts any other command as it is", async () => {
+    const copy = directory("copy")
+    const work = directory("work")
+    const printed = await live(Effect.gen(function*() {
+      const real = yield* ChildProcessSpawner
+      const places = yield* confine(work, () => ({ refusal: "no bubblewrap" }), () => Effect.void, [])
+      const held = reading(real, places.normal, copy)
+      const plain = yield* held.string(ChildProcess.make("sh", ["-c", "echo $HOME"]))
+      const piped = yield* held.string(
+        ChildProcess.make("echo", ["git"]).pipe(ChildProcess.pipeTo(ChildProcess.make("cat")))
+      )
+      return [plain.trim(), piped.trim()]
+    }))
+    expect(printed).toEqual([process.env["HOME"], "git"])
+  })
 })
 
 describe("confine", () => {

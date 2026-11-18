@@ -93,6 +93,31 @@ describe("Repository.layerGit", () => {
     })
   }))
 
+  it.live("starts git with the process runner of its caller, not of whoever built the layer", () => live(effect {
+    const { root, commits } = try repository([{ at: now, files: { "a.ts": "1" } }])
+    const real = try ChildProcessSpawner
+    const started: Array<string> = []
+    // A recording spawner: it starts every command for real and keeps the program and git's subcommand.
+    const recording = ChildProcessSpawner.of({
+      ...real,
+      spawn: (command) => {
+        if (command._tag === "StandardCommand") started.push(`${command.command} ${String(command.args[2])}`)
+        return real.spawn(command)
+      }
+    })
+    // The layer is built once, as the program builds it; the runner is the one around each call.
+    provide layerGit {
+      const reader = try Repository
+      provide ChildProcessSpawner = recording {
+        const read = try reader.change(root, commits[0]!)
+        try Effect.try(() => {
+          expect(read.tree).toEqual(["a.ts"])
+          expect(started).toEqual(["git rev-parse", "git show", "git ls-tree"])
+        })
+      }
+    }
+  }))
+
   it.live("fails command-failed when a git command it needs exits nonzero", () => live(effect {
     const { root, commits } = try repository([{ at: now - day, files: { "a.ts": "1" } }, { at: now, files: { "a.ts": "2" } }])
     const real = try ChildProcessSpawner

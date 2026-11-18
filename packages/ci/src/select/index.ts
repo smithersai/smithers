@@ -2,13 +2,15 @@
  * Fast mode: builds rows, scores them, measures the result.
  *
  * `rows` and `score` are this part's two functions under contract 10. A host
- * gives `rows` a {@link Repository} and a {@link Ledger}, and gives `score`
+ * gives `rows` a {@link Repository}, a {@link Ledger} and the process runner
+ * its `git` starts with, and gives `score`
  * the judge (`Evaluator` from `@smthrs/model`), a flow engine (`FlowRuntime`
  * from `@smthrs/flow`) and Effect's `Digest` and `SecureRandom`.
  *
  * @since 0.1.0
  */
 
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { BuildRows, ScoreRows } from "../contract/Parts.ts"
 import type { Ledger } from "./Ledger.vibe"
 import type { Repository } from "./Repository.vibe"
@@ -22,7 +24,7 @@ import * as Score from "./Score.vibe"
  * @category parts
  * @since 0.1.0
  */
-export const rows: BuildRows<Ledger | Repository> = Rows.rows
+export const rows: BuildRows<ChildProcessSpawner | Ledger | Repository> = Rows.rows
 
 /**
  * Scores rows: for each, the chance its target fails on its change, from 0

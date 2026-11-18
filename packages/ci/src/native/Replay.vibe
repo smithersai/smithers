@@ -17,7 +17,7 @@ import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract
 import type { ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { type Mode, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
-import { type Confined, confine, held, type Way } from "../replay/Confine.vibe"
+import { type Confined, confine, held, reading, type Way } from "../replay/Confine.vibe"
 import { noPushUrl, searchPath, stepEnvironment } from "../replay/Environment.ts"
 import { probe } from "../replay/Jail.ts"
 import { nothingPassed, printedLimit } from "../replay/Failures.ts"
@@ -276,7 +276,17 @@ export const own = <R>(
     }
 
     const normalCopy = try copyOf("normal")
-    const inventory = try parts.read(normalCopy)
+    const spawner = try ChildProcessSpawner
+    /**
+     * Runs a part on the normal copy, which installs and targets write: every `git` the part starts there runs as
+     * they do, in the jail, so a command one of them left in the copy's `.git/config` never runs outside it.
+     */
+    effect function onNormalCopy<A, E, S>(part: A!E!S) {
+      provide ChildProcessSpawner = reading(spawner, places.normal, normalCopy) {
+        return try part
+      }
+    }
+    const inventory = try onNormalCopy(parts.read(normalCopy))
     const chosen = chosenFor(inventory, request.targets)
     try progress.say(`replaying the repository's own targets (${workspaceFile}): ${chosen.patterns.join(" ")}`)
     const baselineCopy = try copyOf("baseline")
@@ -402,7 +412,7 @@ export const own = <R>(
       if (fastCopy === undefined) try clean(normalCopy, [cacheDirectory], places.normal)
       else {
         const plan = normal.state.ok ? try planOf(normal.state.smthrs) : undefined
-        const rows = plan === undefined ? [] : try parts.rows(normalCopy, normalRecord, plan)
+        const rows = plan === undefined ? [] : try onNormalCopy(parts.rows(normalCopy, normalRecord, plan))
         try clean(normalCopy, [cacheDirectory], places.normal)
         const scores = try parts.score(rows)
         const choice = choose(scores, request.settings ?? defaultSettings)
