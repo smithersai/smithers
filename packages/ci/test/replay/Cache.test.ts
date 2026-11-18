@@ -28,8 +28,10 @@ jobs:
       - run: sh build.sh "\${{ steps.cache.outputs.cache-hit }}"
 `
 
-// With `expect-cache` in the tree, the build passes only when the tool came out of the cache.
+// With `expect-cache` in the tree, the build passes only when the tool came out of the cache. The store is the
+// replay's own: nothing of it is in the step's home.
 const build = [
+  "[ ! -e \"$HOME/.cache/smithers-ci\" ] || { echo 'the store is in the home' >&2; exit 1; }",
   "if [ -f expect-cache ]; then",
   "  [ \"$1\" = true ] && [ \"$(cat .tool-cache/tool)\" = built ] || { echo 'the cache was not restored' >&2; exit 1; }",
   "else",

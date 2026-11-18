@@ -807,6 +807,12 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
     expect(Schema.decodeUnknownSync(Parts.Failure)(failure)).toEqual(failure)
   })
 
+  it("names the variable a baseline step is told its store by, which no step's own script is given", () => {
+    expect(Inventory.stateVariable).toBe("SMITHERS_CI_STATE")
+    // It is the replay's own word to its steps, not one a person sets.
+    expect(JSON.stringify(Command.environment)).not.toContain(Inventory.stateVariable)
+  })
+
   it("compares a step with all the targets it was split into", () => {
     const entry = (label: string) => ({ label, job: "ci.yml:test", step: "ci.yml:test:1", variant: {} })
     const map = Schema.decodeUnknownSync(TargetMap.TargetMap)({

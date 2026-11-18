@@ -26,7 +26,7 @@
  * @since 0.1.0
  */
 
-import { commitNote, runnerEntry } from "../contract/Inventory.ts"
+import { commitNote, runnerEntry, stateVariable } from "../contract/Inventory.ts"
 import { shardOf } from "../contract/Shard.ts"
 import {
   finish,
@@ -88,6 +88,9 @@ export interface JobFacts {
  * - `env`: the step's own variables whose values are decided while the job runs.
  * - `fills`: the `${{ }}` texts left in the script, each with the expression that replaces it.
  * - `commit`: the step's script names the commit, so its verdict belongs to one commit.
+ * - `store`: the step keeps files from one run to the next, as a cache step does. It is told where in
+ *   `SMITHERS_CI_CACHE_STORE`: under the directory Smithers build keeps its cache in when the step is a target,
+ *   under the one `Inventory.stateVariable` names in a baseline, and else in the user's own cache directory.
  * - `limit`: the most seconds the step may run, from `timeout-minutes`. A step that runs longer is stopped with
  *   every program it started, and has failed.
  *
@@ -112,6 +115,7 @@ export interface StepFacts {
   readonly fills: ReadonlyArray<readonly [written: string, residual: Residual]>
   readonly commit: boolean
   readonly limit?: number | undefined
+  readonly store?: boolean | undefined
 }
 
 /**
@@ -148,6 +152,9 @@ class Refused {
 export const quote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
 
 const marker = "__SMITHERS_CI_LIB__"
+
+/** The text Smithers build replaces, in a target's script, with the directory it keeps its cache in. */
+const cacheDirectoryToken = "{smthrs:cache-directory}"
 
 /**
  * Where the commit goes in `JobFacts.event`. A control character cannot be part of a branch or repository name,
@@ -218,12 +225,26 @@ const library = (job: JobFacts): string =>
     `  __v=$(printf "$(printf %s "$__h" | sed 's/../\\\\x&/g')" | __ci_sha) || __ci_fail "could not hash"`,
     `  __v=\${__v%% *}`,
     `}`,
+    // The files of the checkout whose path matches one of the expressions before `--` and none after it, hashed
+    // in sorted order: the SHA-256 of their SHA-256s. Empty when there is none. A cache key is made of it, which
+    // has to be the same from one run to the next and is never compared with GitHub's.
+    `__ci_glob() {`,
+    `  __v=; __t=s; __take=(); __leave=()`,
+    `  while [ "$1" != -- ]; do __take+=(-e "$1"); shift; done`,
+    `  shift`,
+    `  for __f in "$@"; do __leave+=(-e "$__f"); done`,
+    `  __h=$(cd -- "$__root" && find . -type f ! -path './.git/*' | sed 's|^\\./||' | LC_ALL=C grep -E "\${__take[@]}" | LC_ALL=C sort)`,
+    `  [ "\${#__leave[@]}" -eq 0 ] || __h=$(printf '%s\\n' "$__h" | LC_ALL=C grep -v -E "\${__leave[@]}")`,
+    `  [ -n "$__h" ] || return 0`,
+    `  __v=$(cd -- "$__root" && printf '%s\\n' "$__h" | while IFS= read -r __f; do __ci_sha < "$__f"; done | __ci_sha) || __ci_fail "could not hash"`,
+    `  __v=\${__v%% *}`,
+    `}`,
     // The variables a runner gives every step.
     `__ci_start() {`,
     `  mkdir -p -- "$__state/temp" "$__state/tool-cache" "$__state/steps" || exit 1`,
     // The commit, the event file and the job's name are given to the step that names them, by the lines after
     // this. What the machine holds under those names is not the workflow's.
-    `  unset GITHUB_SHA GITHUB_EVENT_PATH GITHUB_JOB __limit`,
+    `  unset GITHUB_SHA GITHUB_EVENT_PATH GITHUB_JOB __limit ${stateVariable}`,
     `  case $(uname -m) in arm64|aarch64) RUNNER_ARCH=ARM64;; x86_64|amd64) RUNNER_ARCH=X64;; *) RUNNER_ARCH=$(uname -m);; esac`,
     `  case $(uname -s) in Linux) RUNNER_OS=Linux;; Darwin) RUNNER_OS=macOS;; *) RUNNER_OS=Windows;; esac`,
     `  export RUNNER_OS RUNNER_ARCH GITHUB_WORKSPACE="$__root" RUNNER_TEMP="$__state/temp" RUNNER_TOOL_CACHE="$__state/tool-cache"`,
@@ -429,6 +450,10 @@ const loadOf = (found: Variable): string => {
   if (kind === "kept") return `__ci_read "$__state/kept/${detail}"; __t=s`
   if (kind === "process") return `__v=\${${detail}-}; __t=s`
   if (kind === "hash") return `__ci_hash ${(JSON.parse(detail) as ReadonlyArray<string>).map(quote).join(" ")}`
+  if (kind === "glob") {
+    const files = JSON.parse(detail) as { readonly take: ReadonlyArray<string>; readonly leave: ReadonlyArray<string> }
+    return `__ci_glob ${[...files.take, "--", ...files.leave].map(quote).join(" ")}`
+  }
   if (kind === "matrix") return `__v='\${{ matrix.${detail} }}'; __t=s`
   if (kind === "path") return `__v=$__root/${quote(detail)}; __t=s`
   if (kind === "base") {
@@ -462,6 +487,7 @@ const shellNames: ReadonlyMap<string, string> = new Map([
  * - `process:NAME`: a variable of the job or the workflow, as the step finds it once `GITHUB_ENV` is loaded.
  * - `kept:NAME`: a value an earlier step of the job worked out and kept (`StepFacts.keeps`).
  * - `hash:[...]`: `hashFiles` of the files named, from the repository root.
+ * - `glob:{take,leave}`: the files patterns name (`Glob.Files`), hashed in sorted order, for a cache key.
  * - `matrix:key`: a matrix value, filled in for each variant.
  * - `path:dir`: a directory of the repository.
  * - `base:what`: the commit's first parent, which must exist; `before`: the same, or 40 zeros.
@@ -477,6 +503,7 @@ export const variableKinds: ReadonlyArray<string> = [
   "process",
   "kept",
   "hash",
+  "glob",
   "matrix",
   "path",
   "base",
@@ -789,6 +816,16 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       `${runnerEntry}() {`,
       ...(commit ? [commitNote] : []),
       `set +e`,
+      // Smithers build puts its cache directory where the line between the two marks is, before it starts a
+      // target. A baseline leaves the line as written and names the directory in a variable.
+      ...(step.store === true
+        ? [
+          `IFS= read -r __kept <<'__SMITHERS_CI_KEPT__'`,
+          cacheDirectoryToken,
+          `__SMITHERS_CI_KEPT__`,
+          `case $__kept in '{'smthrs:*) __kept=\${${stateVariable}:-\${XDG_CACHE_HOME:-$HOME/.cache}/smithers-ci};; esac`
+        ]
+        : []),
       `__cwd=${quote(step.cwd)}`,
       `__root=$PWD`,
       `if [ -n "$__cwd" ]; then`,
@@ -884,6 +921,7 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       `__ci_start`,
       ...(step.job === undefined ? [] : [`export GITHUB_JOB=${quote(step.job)}`]),
       ...(commit ? [`__ci_commit`] : []),
+      ...(step.store === true ? [`export SMITHERS_CI_CACHE_STORE="$__kept/actions-cache"`] : []),
       ...emitter.lines,
       `__ci_run ${quote(step.key)} "$__script" ${step.start.map(quote).join(" ")}`,
       `}`

@@ -555,8 +555,9 @@ jobs:
     ])
   })
 
-  // "actions/cache": `cache-hit` is empty after a miss. A replay has no cache, so every restore is a miss.
-  it("reads a cache step as a miss, an upload as nothing to run, and leaves out a job that uses any other action", () => {
+  // "actions/cache": `cache-hit` is empty after a miss. A cache step whose key hashes a file outside the repository
+  // cannot be kept here (`Cache.test.ts` has the ones that can), so it restores nothing.
+  it("reads a cache step it cannot keep as a miss, an upload as nothing to run, and leaves out a job that uses any other action", () => {
     const repo = withWorkflow(`
 on: pull_request
 jobs:
@@ -565,7 +566,7 @@ jobs:
     steps:
       - id: cache
         uses: actions/cache@v4
-        with: { path: node_modules, key: "deps-\${{ hashFiles('**/bun.lock') }}" }
+        with: { path: node_modules, key: "deps-\${{ hashFiles('/etc/hostname') }}" }
       - if: steps.cache.outputs.cache-hit != 'true'
         run: echo install
       - id: upload

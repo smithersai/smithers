@@ -385,19 +385,61 @@ describe("a step that only restores, and one that only saves", () => {
   })
 })
 
+// "hashFiles" over a pattern has a value only GitHub knows, because its runner decides the order. A cache key need
+// not be GitHub's: it has to be the same from one run here to the next, and another when a named file changes.
+describe("a cache key that hashes the files a pattern names", () => {
+  const workflow = steps(
+    `      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: deps-\${{ hashFiles('**/package-lock.json', '!vendor/**') }}`,
+    `      - run: echo "hit=[\${{ steps.cache.outputs.cache-hit }}]"; mkdir -p node_modules; echo x > node_modules/x`
+  )
+  const files = {
+    "package-lock.json": "root\n",
+    "packages/a/package-lock.json": "a\n",
+    "vendor/b/package-lock.json": "vendored\n"
+  }
+
+  it("is the same from one run to the next, and another when one of the files changes", () => {
+    const repo = withWorkflow(workflow, files)
+    expect(jobOf(repo).unsupported).toEqual([])
+    const first = run(repo)
+    expect(first[0]).toMatch(/^Cache not found for input keys: deps-[0-9a-f]{64}$/)
+    expect(first[2]).toMatch(/^Cache saved with key: deps-[0-9a-f]{64}$/)
+    rmSync(join(repo.root, "node_modules"), { recursive: true })
+    expect(run(repo)[1]).toBe("hit=[true]")
+    // A file the pattern leaves out, and one it does not name, change nothing.
+    writeFileSync(join(repo.root, "vendor/b/package-lock.json"), "changed\n")
+    writeFileSync(join(repo.root, "packages/a/package.json"), "{}\n")
+    expect(run(repo)[1]).toBe("hit=[true]")
+    writeFileSync(join(repo.root, "packages/a/package-lock.json"), "changed\n")
+    const changed = run(repo)
+    expect(changed[1]).toBe("hit=[]")
+    expect(changed[2]).toMatch(/^Cache saved with key: deps-[0-9a-f]{64}$/)
+    expect(saved(repo)).toHaveLength(2)
+  })
+
+  it("is a key with nothing hashed when the pattern names no file, as on GitHub", () => {
+    const repo = withWorkflow(workflow)
+    expect(run(repo)[0]).toBe("Cache not found for input keys: deps-")
+  })
+})
+
 describe("a cache step a replay cannot keep", () => {
-  // "hashFiles" over a pattern is worked out only on GitHub, and a secret is never given: the step restores
+  // A file outside the repository is hashed only on GitHub, and a secret is never given: the step restores
   // nothing and runs nothing, as after a miss, and its job is replayed.
   it("restores nothing when its key or its path cannot be worked out here", () => {
     const repo = withWorkflow(`
 on: pull_request
 jobs:
-  pattern:
+  outside:
     runs-on: ubuntu-latest
     steps:
       - id: cache
         uses: actions/cache@v4
-        with: { path: node_modules, key: "deps-\${{ hashFiles('**/package-lock.json') }}" }
+        with: { path: node_modules, key: "deps-\${{ hashFiles('~/.npmrc', '**/package-lock.json') }}" }
       - if: steps.cache.outputs.cache-hit != 'true'
         run: echo install
   secret:
@@ -416,12 +458,12 @@ jobs:
       - uses: actions/cache/save@v4
       - run: echo build
 `)
-    for (const id of ["pattern", "secret", "bare"]) {
+    for (const id of ["outside", "secret", "bare"]) {
       const job = jobOf(repo, `ci.yml:${id}`)
       expect(job.steps).toHaveLength(1)
       expect(job.unsupported.map((entry) => entry.feature)).toEqual(job.unsupported.map(() => "host-action"))
     }
-    expect(run(repo, "ci.yml:pattern")).toEqual(["install"])
+    expect(run(repo, "ci.yml:outside")).toEqual(["install"])
   })
 })
 

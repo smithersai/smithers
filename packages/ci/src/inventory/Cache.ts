@@ -9,8 +9,10 @@
  *
  * So a cache step is two commands here. The first restores, where the step
  * stands. The second saves, after the job's other steps. Both keep their
- * files in a store under the step's home, which a replay keeps from one commit
- * to the next and gives each way of running a commit on its own.
+ * files in a store the step's runner names (`StepFacts.store`): a directory of
+ * the replay's own, one for each way of running a commit, outside every
+ * checkout and every home, so a job that starts on a new machine still finds
+ * what the last one saved.
  *
  * A cache is found as the action finds it: an entry saved under `key` itself,
  * or else the newest entry whose key starts with one of `restore-keys`, taken
@@ -75,7 +77,7 @@ export const shell: ReadonlyArray<string> = ["bash", "--noprofile", "--norc", "-
  * restores and saves nothing, as after a miss.
  */
 const common = [
-  `__store=\${XDG_CACHE_HOME:-$HOME/.cache}/smithers-ci/actions-cache`,
+  `__store=$SMITHERS_CI_CACHE_STORE`,
   `__sum() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | cut -c1-64; }`,
   `__trim() { __line=\${__line#"\${__line%%[![:space:]]*}"}; __line=\${__line%"\${__line##*[![:space:]]}"}; }`,
   `__work=(); __home=(); __temp=(); __list=`,

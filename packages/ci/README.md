@@ -176,6 +176,10 @@ and none removes):
   steps or without. Such a step runs on a copy of what the steps before it left and leaves nothing; nothing may
   read its `outputs` or `outcome`. Any other code that removes a step from a job breaks the job: a step's runner
   text knows its place.
+- `Inventory.stateVariable` (`SMITHERS_CI_STATE`): the variable a baseline step is told by where files are kept
+  from one run to the next, as a cache step keeps them. The replay sets it to a directory of its own, outside every
+  checkout and every home. A generated target is told through Smithers build's cache directory, written into its
+  text. The runner text takes the variable away before a step's own script starts.
 - A `command` may hold a `${{ }}` that is not a matrix value, such as `${{ steps.diff.outputs.base }}`: the runner
   text replaces it when the step runs. The generator writes only matrix values into a step that has runner text,
   and passes it no runner variable of the machine: the runner text sets them all.

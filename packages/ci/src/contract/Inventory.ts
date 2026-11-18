@@ -253,6 +253,18 @@ export const shell = ["bash", "-e", "-c"] as const
 export const toolCache = ".flows/tools"
 
 /**
+ * The variable that tells a baseline step where files are kept from one run to
+ * the next, as a cache step keeps them: a directory of the replay's own, one
+ * for each way of running a commit, outside every checkout and every home. A
+ * generated target needs no variable: Smithers build writes its cache
+ * directory into the step's text. The step's own script is given neither.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const stateVariable = "SMITHERS_CI_STATE"
+
+/**
  * The shell function a step's `runner` text defines.
  *
  * @category constants

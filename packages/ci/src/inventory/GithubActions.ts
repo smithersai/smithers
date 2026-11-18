@@ -58,6 +58,7 @@ import {
   variable,
   whole
 } from "./Expression.ts"
+import { filesOf } from "./Glob.ts"
 import { installsOf } from "./MachineChanges.ts"
 import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
 import { type JobFacts, settled, type StepFacts, write } from "./Runner.ts"
@@ -248,6 +249,16 @@ const matrixContext = (state: Shape): Context => {
       : undefined
   }
   return fields(under)
+}
+
+/**
+ * `hashFiles` in a cache key. Named files are hashed as GitHub hashes them. A pattern is read too (`Glob.ts`): a
+ * key has to be the same from one run to the next, and is never compared with GitHub's.
+ */
+const hashFilesForKey = (patterns: ReadonlyArray<string>): Context => {
+  const named = hashFiles(patterns)
+  const files = named.kind === "unknown" ? filesOf(patterns) : undefined
+  return files === undefined ? named : variable(`glob:${JSON.stringify(files)}`, "hashFiles")
 }
 
 /** `hashFiles` of files named without a wildcard. */
@@ -547,6 +558,8 @@ interface StepContext {
   readonly reads: Expressions
   readonly ran: Condition & { readonly kind: "always" | "when" }
   readonly limit: number | undefined
+  /** True for a step that keeps files from one run to the next, as a cache step does. */
+  readonly store?: boolean
 }
 
 /** Adds a command to the job, with the runner text that runs it as its step. */
@@ -626,7 +639,8 @@ const addRun = (
     env: decided.filter(([, , own]) => own).map(([name, entry]) => [name, entry] as const),
     fills: [...fills],
     commit: /\bGITHUB_(?:SHA|EVENT_PATH)\b/.test(command),
-    limit: secondsOf(context.limit)
+    limit: secondsOf(context.limit),
+    store: context.store
   })
   const told = facts(false)
   const tried = write(state.runner, told, command)
@@ -775,11 +789,12 @@ const secretsIn = (inputs: unknown, scope: Expressions): ReadonlyArray<string> =
  * files a pattern names: a replay runs nothing for it, and a cache that restores nothing is a miss.
  */
 const readCache = (context: StepContext, raw: Record<string, unknown>, uses: string): StepRecord | undefined => {
-  const { reads, state, where } = context
+  const { state, where } = context
   const { job } = state
+  const reads = { ...context.reads, hashFiles: hashFilesForKey }
   const use = cacheUse(uses.split("@")[0] as string, raw["with"])
   if (use === undefined || Object.values(use.env).some((text) => fill(text, reads).kind !== "ok")) return undefined
-  const named = { ...context, name: context.name ?? uses }
+  const named = { ...context, name: context.name ?? uses, store: true }
   const env = withEnv(context.env, use.env, job, where, reads, true)
   addRun({ ...named, env }, [use.kind === "save" ? saveScript : restoreScript], cacheShell, "")
   const output = (name: string): Variable => ({

@@ -16,6 +16,7 @@ import {
   notReplayed,
   refusal,
   shell,
+  stateVariable,
   stepTimeoutHours,
   variantsFailedHere,
   withoutFailedHere
@@ -342,6 +343,11 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // Where `smthrs` writes its run records: the one place it can write that a step run on its own cannot.
     const records = path.join(work, "records")
     try orFail(fs.makeDirectory(records), "could not make a directory")
+    // Where a baseline step keeps files from one run to the next, as a cache step does: outside every checkout and
+    // every home, so a job that starts on a new machine finds what an earlier commit's job saved. A target keeps
+    // them in the cache directory of its own copy, so each way of running a commit has a store of its own.
+    const kept = path.join(work, "kept")
+    try orFail(fs.makeDirectory(kept), "could not make a directory")
     const cloned = try exec("git", ["clone", "--quiet", "--no-checkout", root, source], work, {}, outputLimit)
     if (cloned.exitCode !== 0) throw failure("not-a-repository", `${root} is not a git repository`)
     const head = try exec("git", ["rev-parse", "--verify", "--quiet", "HEAD"], source, {}, outputLimit)
@@ -585,8 +591,11 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             continue
           }
           const start = try Clock.currentTimeMillis
-          const [program, ...argv] = held(place, [copy], [...shell, step.command])
-          const environment = stepEnvironment({ ...place.daemon, ...step.env }, place)
+          const [program, ...argv] = held(place, [copy, kept], [...shell, step.command])
+          // Only a step whose text names the variable is given it: the text takes it away before the step's own
+          // script starts, and a step with no such text would hand it on.
+          const told = step.command.includes(stateVariable) ? { [stateVariable]: kept } : {}
+          const environment = stepEnvironment({ ...place.daemon, ...step.env, ...told }, place)
           // A step that cannot start, for example because its directory does not exist at this commit, has failed.
           const output = runStep(program, argv, path.join(copy, step.cwd), environment, stepLimit, stall)
             catch (cause) => ({ timedOut: false, stalled: false, exitCode: undefined, stderr: `could not start: ${describe(cause)}`, stdout: "" } satisfies StepRun)

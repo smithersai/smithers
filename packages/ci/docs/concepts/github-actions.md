@@ -187,11 +187,11 @@ one is left out.
 ## Caches
 
 A cache step restores files an earlier run saved under a key, and saves them
-again when its job has passed. Smithers CI keeps those files in a store on your
-machine, under the step's home, which the replay keeps from one commit to the
-next. What one commit's run saved is there for the next commit, as on GitHub,
-so a build tool finds its own cache and the baseline takes the time your CI
-takes.
+again when its job has passed. Smithers CI keeps those files in a store of its
+own on your machine, outside your checkout and outside the step's home. What
+one commit's run saved is there for the next commit, as on GitHub, so a build
+tool finds its own cache and the baseline takes the time your CI takes. Each
+way of running a commit, the baseline and each mode, has a store of its own.
 
 `actions/cache` restores where the step stands and saves after the job's other
 steps. `actions/cache/restore` only restores, and `actions/cache/save` only
@@ -205,11 +205,21 @@ saves.
 | `path`                              | Files and directories of the checkout, of the home (`~/...`) and of `RUNNER_TEMP`.                                                                               |
 | `fail-on-cache-miss`, `lookup-only` | As on GitHub.                                                                                                                                                    |
 
+In a cache step's `key`, `hashFiles` also takes patterns, such as
+`hashFiles('**/package-lock.json', '!vendor/**')`: the files they name are
+hashed in sorted order. The key is another than GitHub's, where the runner
+decides the order, and it is the same from one run on your machine to the
+next, which is all a key has to be.
+
 A cache step restores and saves nothing, as after a miss, when its `path` is a
 pattern (`dist/**`, `!dist/tmp`) or leads outside those three places. So does
-one whose `key` or `path` cannot be worked out on your machine: a key that
-hashes the files a pattern names, such as `hashFiles('**/package-lock.json')`,
-or one that reads a secret. Its job is replayed all the same.
+one whose `key` or `path` cannot be worked out on your machine, such as one
+that reads a secret. Its job is replayed all the same.
+
+Where the store is: in a replay, in the replay's own working directory, which
+is removed when the replay ends. When you run the generated targets yourself,
+in the directory Smithers build keeps its cache in, so the generated workflow
+carries it from one run to the next with that cache.
 
 ## What leaves a job out
 

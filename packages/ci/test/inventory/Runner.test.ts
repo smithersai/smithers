@@ -50,6 +50,8 @@ interface Options {
   readonly part?: boolean
   /** The job the step is run for, as a baseline tells it. */
   readonly unit?: string
+  /** The directory Smithers build keeps its cache in, which it writes into the text of a target's step. */
+  readonly cacheDirectory?: string
 }
 
 const roots: Array<string> = []
@@ -165,10 +167,13 @@ const run = ({ alone, first: started, ...facts }: Facts, command: string, option
   } else if (!apart) begun.add(state)
   if (!apart && !placed.includes(key)) placed.push(key)
   const runner = alone === true ? written.alone : written.text
-  const text = expand(
+  const composed = expand(
     script({ command, runner, ...(options.part === true ? { from: "whole" } : {}) }, options.unit),
     options.variant ?? {}
   )
+  const text = options.cacheDirectory === undefined
+    ? composed
+    : composed.replaceAll("{smthrs:cache-directory}", options.cacheDirectory)
   const [program, ...flags] = shell
   const ran = spawnSync(program, [...flags, text], {
     cwd: options.cwd ?? at.repo,
@@ -460,6 +465,7 @@ describe("write", () => {
       "process",
       "kept",
       "hash",
+      "glob",
       "matrix",
       "path",
       "base",
@@ -521,6 +527,44 @@ describe("write", () => {
   })
 
   // Contexts: matrix. Each variant of a job keeps its own state.
+  // For a cache key only: the files patterns name, hashed in sorted order. GitHub hashes them in an order of its
+  // own, so this value is another than GitHub's, and the same from one run to the next.
+  it("hashes the files patterns name in sorted order, and gives nothing when they name none", () => {
+    const files: Readonly<Record<string, string>> = {
+      "lock.json": "root\n",
+      "pkg/a/lock.json": "a\n",
+      "pkg/b/lock.json": "b\n",
+      "vendor/x/lock.json": "vendored\n",
+      "pkg/a/other.txt": "other\n"
+    }
+    for (const [name, text] of Object.entries(files)) {
+      mkdirSync(join(at.repo, name, ".."), { recursive: true })
+      writeFileSync(join(at.repo, name), text)
+    }
+    const glob = (take: ReadonlyArray<string>, leave: ReadonlyArray<string> = []): Residual =>
+      named(`glob:${JSON.stringify({ take, leave })}`)
+    const hashed = (...names: ReadonlyArray<string>): string =>
+      `[${
+        sha256(names.map((name) => `${sha256(files[name] as string).toString("hex")}  -\n`).join("")).toString("hex")
+      }]`
+    const locks = "^(.*/)?lock\\.json(/.*)?$"
+    pass({ first: true }, "true")
+    expect(valueOf(glob([locks]))).toBe(hashed("lock.json", "pkg/a/lock.json", "pkg/b/lock.json", "vendor/x/lock.json"))
+    expect(valueOf(glob([locks], ["^vendor/.*(/.*)?$", "^pkg/b(/.*)?$"]))).toBe(hashed("lock.json", "pkg/a/lock.json"))
+    expect(valueOf(glob(["^pkg/a(/.*)?$", "^lock\\.json(/.*)?$"]))).toBe(
+      hashed("lock.json", "pkg/a/lock.json", "pkg/a/other.txt")
+    )
+    expect(valueOf(glob(["^none(/.*)?$"]))).toBe("[]")
+    expect(valueOf(glob([locks], ["^.*$"]))).toBe("[]")
+    // A file no pattern names changes nothing, and one that a pattern names changes the value.
+    writeFileSync(join(at.repo, "pkg/a/other.txt"), "changed\n")
+    expect(valueOf(glob([locks]))).toBe(hashed("lock.json", "pkg/a/lock.json", "pkg/b/lock.json", "vendor/x/lock.json"))
+    writeFileSync(join(at.repo, "pkg/b/lock.json"), "changed\n")
+    expect(valueOf(glob([locks]))).not.toBe(
+      hashed("lock.json", "pkg/a/lock.json", "pkg/b/lock.json", "vendor/x/lock.json")
+    )
+  })
+
   it("fills in matrix values and keeps each variant's state apart", () => {
     const matrixJob = job({ matrixKeys: ["os"] })
     const linux = { job: matrixJob, variant: { os: "linux" } }
@@ -1362,5 +1406,42 @@ describe("a step with a time limit", () => {
     expect(await ended).toBe(137)
     expect(Date.now() - began).toBeGreaterThanOrEqual(9_000)
     expect(await gone(step)).toBe(true)
+  })
+})
+
+// A cache step keeps its files outside the checkout and the home. Where is the runner's to say.
+describe("a step that keeps files from one run to the next", () => {
+  const where = `echo "$SMITHERS_CI_CACHE_STORE [\${SMITHERS_CI_STATE-unset}]"`
+
+  it("is told the directory Smithers build keeps its cache in, when it is a target", () => {
+    pass({ first: true }, "true")
+    const directory = join(at.home, "it's a cache")
+    // The variable a baseline is told by is not the target's, and reaches no script.
+    expect(pass({ store: true }, where, { cacheDirectory: directory, env: { SMITHERS_CI_STATE: "/nowhere" } })).toBe(
+      `${directory}/actions-cache [unset]\n`
+    )
+  })
+
+  it("is told the directory a baseline names, and the variable that names it reaches no script", () => {
+    pass({ first: true }, "true")
+    const env = { SMITHERS_CI_STATE: join(at.home, "kept") }
+    expect(pass({ store: true }, where, { env })).toBe(`${at.home}/kept/actions-cache [unset]\n`)
+    expect(pass({}, `echo "[\${SMITHERS_CI_CACHE_STORE-unset}] [\${SMITHERS_CI_STATE-unset}]"`, { env })).toBe(
+      "[unset] [unset]\n"
+    )
+  })
+
+  it("is told the user's cache directory when nothing else says where", () => {
+    pass({ first: true }, "true")
+    expect(pass({ store: true }, where)).toBe(`${at.home}/.cache/smithers-ci/actions-cache [unset]\n`)
+    expect(pass({ store: true }, where, { env: { XDG_CACHE_HOME: join(at.home, "xdg") } })).toBe(
+      `${at.home}/xdg/smithers-ci/actions-cache [unset]\n`
+    )
+  })
+
+  it("is the first step of its job as any other", () => {
+    expect(pass({ first: true, store: true, job: "build" }, where)).toBe(
+      `${at.home}/.cache/smithers-ci/actions-cache [unset]\n`
+    )
   })
 })
