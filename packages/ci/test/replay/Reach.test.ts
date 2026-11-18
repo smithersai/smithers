@@ -11,15 +11,16 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { spawn, spawnSync, type SpawnSyncReturns } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
-import { join } from "node:path"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { createServer, type Server } from "node:net"
+import { homedir, tmpdir, userInfo } from "node:os"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
 import { smthrsWithToken } from "../../src/cli/Install.ts"
 import { confine, held, reading } from "../../src/replay/Confine.vibe"
 import { stepEnvironment } from "../../src/replay/Environment.ts"
-import { keyringFilter, probe } from "../../src/replay/Jail.ts"
+import { keyringFilter, probe, scopeProgram } from "../../src/replay/Jail.ts"
 
 const made: Array<string> = []
 afterAll(() => made.forEach((path) => rmSync(path, { recursive: true, force: true })))
@@ -185,6 +186,108 @@ describe.skipIf(!jailable)("the person's home, in the jail", () => {
     )
     expect(printed).toEqual(["done\n", "done\n"])
   })
+})
+
+describe.skipIf(process.platform !== "linux")("a program of the person's that listens on a socket", () => {
+  const listening: Array<Server> = []
+  /** Whether this machine's kernel keeps a jailed step from the sockets that have a name and no file. */
+  const scoped = !("refusal" in found) && found.scope !== undefined
+  afterAll(() => listening.forEach((server) => server.close()))
+  /** A program that listens at `address`, as a key agent or a session bus does. */
+  const listens = (address: string) =>
+    new Promise<string>((resolve) => {
+      const server = createServer()
+      listening.push(server)
+      server.listen(address, () => resolve(address))
+    })
+
+  /** A socket in the session's runtime directory, where one is: the SSH agent of a desktop session listens there. */
+  const session = `/run/user/${userInfo().uid}`
+  let agents = 0
+  const places = (): ReadonlyArray<string> => {
+    const temporary = mkdtempSync("/tmp/ssh-")
+    made.push(temporary)
+    agents += 1
+    const inSession = join(session, `smithers-ci-test-${randomUUID()}`)
+    if (existsSync(session)) made.push(inSession)
+    return [
+      // Where ssh-agent listens when a shell starts it, and where gpg-agent listens in a home.
+      join(temporary, `agent.${agents}`),
+      join(dirname(unlisted.inside), `S.gpg-agent.${agents}`),
+      ...(existsSync(session) ? [inSession] : [])
+    ]
+  }
+
+  /**
+   * What a step's program says of each address it tries: `reached`, or why not. A socket with a name and no file
+   * is written with `@` first.
+   */
+  const tries = [
+    "const net = require('node:net')",
+    "const all = process.argv.slice(1).map((address) => new Promise((resolve) => {",
+    "  const socket = net.connect(address.startsWith('@') ? '\\0' + address.slice(1) : address)",
+    "  socket.on('connect', () => resolve('reached')).on('error', (error) => resolve(error.code))",
+    "}))",
+    "Promise.all(all).then((answers) => { console.log(answers.join(' ')); process.exit(0) })"
+  ].join("\n")
+
+  it.skipIf(!jailable)("is out of a jailed step's reach, by the path of its socket and by its name alone", async () => {
+    const paths = await Promise.all(places().map(listens))
+    const name = `smithers-ci-test-${randomUUID()}`
+    await listens(`\0${name}`)
+    const seen = await inJail(["node", "-e", tries, ...paths, `@${name}`])
+    expect(seen.status, seen.stderr).toBe(0)
+    // No file of a socket is there. One with a name alone is refused by the kernel, where the kernel can.
+    expect(seen.stdout.trim().split(" ")).toEqual([...paths.map(() => "ENOENT"), scoped ? "EPERM" : "reached"])
+  })
+
+  it("is reached by a step with no jail", async () => {
+    const paths = await Promise.all(places().map(listens))
+    const name = `smithers-ci-test-${randomUUID()}`
+    await listens(`\0${name}`)
+    const seen = await asStep(["node", "-e", tries, ...paths, `@${name}`], false)
+    expect(seen.status, seen.stderr).toBe(0)
+    expect(seen.stdout.trim().split(" ")).toEqual([...paths.map(() => "reached"), "reached"])
+  })
+
+  it("leaves a step the sockets it makes itself", async () => {
+    const own = [
+      "const net = require('node:net')",
+      "const server = net.createServer((socket) => socket.end('mine'))",
+      "server.listen('\\0smithers-ci-test-own-' + process.pid, () => {",
+      "  net.connect('\\0smithers-ci-test-own-' + process.pid).on('data', (said) => {",
+      "    console.log(String(said))",
+      "    process.exit(0)",
+      "  })",
+      "})"
+    ].join("\n")
+    const seen = await asStep(["node", "-e", own], jailable)
+    expect(seen.status, seen.stderr).toBe(0)
+    expect(seen.stdout).toBe("mine\n")
+  })
+
+  it.skipIf(!scoped)(
+    "is kept from a jailed step before its command starts, and a command that is not there is named",
+    async () => {
+      const seen = await inJail(["/no/such/program"])
+      expect([seen.status, seen.stderr, seen.stdout]).toEqual([127, "could not run /no/such/program\n", ""])
+    }
+  )
+
+  it.skipIf(spawnSync("perl", ["-e", "1"]).status !== 0)(
+    "starts a step's command only once the kernel has taken the scope",
+    () => {
+      // The kernel scopes only a process that can gain no privilege. The jail's cannot; whether one outside it
+      // can depends on what started the tests. Where the kernel refuses, the command never starts.
+      const seen = spawnSync("perl", ["-e", scopeProgram, "--", "sh", "-c", "echo started"], { encoding: "utf8" })
+      if (seen.status === 0) {
+        expect([seen.stdout, seen.stderr]).toEqual(["started\n", ""])
+      } else {
+        expect([seen.status, seen.stdout]).toEqual([126, ""])
+        expect(seen.stderr).toContain("smithers-ci: the kernel did not keep abstract sockets out of the jail")
+      }
+    }
+  )
 })
 
 describe.skipIf(process.platform !== "linux")("a command with no jail", () => {

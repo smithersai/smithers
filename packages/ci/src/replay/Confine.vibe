@@ -242,7 +242,15 @@ export effect function confine(
   // The filter that refuses a step the keys of the person's session, where bubblewrap reads it and no step writes it.
   const filter = path.join(work, "keyring-filter")
   try fs.writeFile(filter, keyringFilter())
-  const jailOf = (tmp: string): Jail => ({ bwrap: found.bwrap, masks, tmp, temporary, visible, filter })
+  const jailOf = (tmp: string): Jail => ({
+    bwrap: found.bwrap,
+    masks,
+    tmp,
+    temporary,
+    visible,
+    filter,
+    ...(found.scope === undefined ? {} : { scope: found.scope })
+  })
   return {
     baseline: { ...made.baseline, jail: jailOf(made.baseline.tmp) },
     normal: { ...made.normal, jail: jailOf(made.normal.tmp) },

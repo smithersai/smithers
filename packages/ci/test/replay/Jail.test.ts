@@ -53,6 +53,8 @@ import {
   keyringFilter,
   type Probe,
   probe,
+  scopeProgram,
+  scopes,
   temporaryOf,
   temporaryRoots,
   toolsOn,
@@ -498,7 +500,9 @@ describe("confine", () => {
       daemons: [],
       tmp: "/tmp/of-the-machine",
       caches: [cache, join(cache, "none")],
-      tools: toolsOf(owner)
+      tools: toolsOf(owner),
+      // The kernel of this machine keeps what a perl starts from the abstract sockets outside it.
+      scope: "/usr/bin/perl"
     })
     const places = await scoped(confine(work, asked, () => Effect.void, programs, false, undefined, checkout))
 
@@ -539,7 +543,8 @@ describe("confine", () => {
         tmp: join(work, "tmp", way),
         temporary: ["/tmp", "/tmp/of-the-machine"],
         visible: ["/tmp/bunx-1000-smithers-ci@latest", cache, work],
-        filter: join(work, "keyring-filter")
+        filter: join(work, "keyring-filter"),
+        scope: "/usr/bin/perl"
       })
     }
     // The filter that refuses a step the keys of the person's session is written once, beside the homes.
@@ -671,8 +676,13 @@ describe("the jail", () => {
       refusal: "write protection needs bubblewrap, and bwrap is not on PATH (install the bubblewrap package)"
     })
     // A machine whose bubblewrap starts, whatever machine the test runs on.
-    const starts = { ...facts, executable: () => "/usr/bin/bwrap", home: "/home/person", uid: 1234 }
-    expect(probe(starts, () => undefined)).toEqual({
+    const starts = {
+      ...facts,
+      executable: (name: string) => `/usr/bin/${name}`,
+      home: "/home/person",
+      uid: 1234
+    }
+    const jail = {
       bwrap: "/usr/bin/bwrap",
       home: "/home/person",
       hidden: ["/run/user/1234", ...elsewhere(starts)],
@@ -680,8 +690,25 @@ describe("the jail", () => {
       tmp: tmpdir(),
       caches: [join(tmpdir(), "tsx-1234"), join(tmpdir(), "vibelang-cache-1234")],
       tools: toolsOn(process.env["PATH"], starts)
+    }
+    // Its kernel keeps what a perl starts from the abstract sockets outside it, or it does not.
+    const asked: Array<string> = []
+    const kernel = (answer: boolean) => (perl: string) => {
+      asked.push(perl)
+      return answer
+    }
+    expect(probe(starts, () => undefined, kernel(true))).toEqual({ ...jail, scope: "/usr/bin/perl" })
+    expect(probe(starts, () => undefined, kernel(false))).toEqual(jail)
+    expect(asked).toEqual(["/usr/bin/perl", "/usr/bin/perl"])
+    // With no perl there is nothing to ask the kernel with.
+    const perlless = { ...starts, executable: (name: string) => name === "perl" ? undefined : `/usr/bin/${name}` }
+    expect(probe(perlless, () => undefined, kernel(true))).toEqual({
+      ...jail,
+      tools: toolsOn(process.env["PATH"], perlless)
     })
+    expect(asked).toHaveLength(2)
     if (jailable) {
+      const perl = facts.executable("perl")
       expect(found).toEqual({
         bwrap: facts.executable("bwrap"),
         home: homedir(),
@@ -689,9 +716,16 @@ describe("the jail", () => {
         daemons: daemonSockets(facts.uid, process.env),
         tmp: tmpdir(),
         caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)],
-        tools: toolsOn(process.env["PATH"], facts)
+        tools: toolsOn(process.env["PATH"], facts),
+        ...(perl !== undefined && scopes(perl) ? { scope: perl } : {})
       })
     }
+  })
+
+  it("asks the kernel by starting the program it is given, and takes no answer for no", () => {
+    expect(scopes("/bin/true")).toBe(true)
+    expect(scopes("/bin/false")).toBe(false)
+    expect(scopes("/no/such/perl")).toBe(false)
   })
 
   /** What closes every descriptor a step has no business with. */
@@ -786,6 +820,21 @@ describe("the jail", () => {
       "--",
       ...argv
     ])
+  })
+
+  it("has perl scope the step where the kernel can: it runs first in the jail and becomes the step's command", () => {
+    const jail = {
+      bwrap: "/usr/bin/bwrap",
+      masks: [],
+      tmp: "/work/tmp",
+      temporary: ["/tmp"],
+      visible: [],
+      filter: "/work/keyring-filter"
+    }
+    const plain = held({ ...place, jail }, ["/copy"], argv)
+    const scoped = held({ ...place, jail: { ...jail, scope: "/usr/bin/perl" } }, ["/copy"], argv)
+    expect(plain.slice(-5)).toEqual(["--", ...argv])
+    expect(scoped).toEqual([...plain.slice(0, -4), "/usr/bin/perl", "-e", scopeProgram, "--", ...argv])
   })
 
   it("replaces /tmp and the machine's temporary directory, and keeps in sight what the replay runs from them", () => {

@@ -391,6 +391,11 @@ process but its own, and the kernel gives it none of the keys it holds for
 your session, such as a Kerberos ticket. The step's processes end when the
 step does. The network stays open, as it is in your CI.
 
+A socket with a name and no file, an abstract socket, is in no directory, so
+no jail of files hides it. An older D-Bus session bus listens on one and takes
+whoever connects for you. On Linux 6.12 and later, with perl installed, the
+kernel refuses a step every such socket it did not make itself.
+
 What a step can do depends on the machine:
 
 | A step                                                   | Linux with bubblewrap | Linux without it | macOS |
@@ -410,6 +415,7 @@ What a step can do depends on the machine:
 | leaves a process running after it ends                   | no                    | yes              | yes   |
 | sees your other programs and what they were started with | no                    | yes              | yes   |
 | reads the keys the Linux kernel holds for your session   | no                    | yes              | no    |
+| connects to an abstract socket of one of your programs   | no, from Linux 6.12   | yes              | no    |
 
 On macOS, and on Linux without bubblewrap, there is no jail. `smithers-ci`
 says so once on standard error and names what to install. The first six lines of the table
@@ -426,8 +432,9 @@ your disk. A token committed to the repository is the repository's own, and a
 step can use it. A daemon that listens on a network port is reached over the
 network, which stays open. So is the metadata service of a cloud machine, at
 `169.254.169.254`, which gives the machine's own credentials to any program on
-it. And so is a program of yours that listens on a socket with no file, as an
-X11 display does: such a socket belongs to the network, not to a directory.
+it. And so, on a kernel older than Linux 6.12 or a machine without perl, is a
+program of yours that listens on a socket with no file, as an X11 display
+does: such a socket belongs to the network, not to a directory.
 
 A refused push fails its step in the baseline and as a target alike, so it is
 never a mismatch. The report lists the step as failed, with the line git

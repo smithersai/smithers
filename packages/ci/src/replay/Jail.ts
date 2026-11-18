@@ -7,6 +7,7 @@
  */
 
 import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
+import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -81,7 +82,9 @@ export const daemonSockets = (
  * and `hidden` the other paths a step must find empty. `daemons` are the sockets of the container daemons, which a
  * step finds empty too unless the person allows Docker. `tmp` is the
  * machine's temporary directory, which a step finds replaced, and `caches`
- * the directories in it a step still reads.
+ * the directories in it a step still reads. `scope` is the perl that keeps a
+ * step from the abstract sockets of the machine, where the kernel can
+ * ({@link scopeProgram}).
  *
  * @category models
  * @since 0.1.0
@@ -95,6 +98,7 @@ export type Probe =
     readonly tmp: string
     readonly caches: ReadonlyArray<string>
     readonly tools: Tools
+    readonly scope?: string | undefined
   }
   | { readonly refusal: string }
 
@@ -170,26 +174,68 @@ export const elsewhere = (facts: ExecSandbox.Host): ReadonlyArray<string> => [
 ]
 
 /**
+ * What perl runs in the jail before a step: it tells the kernel that this
+ * process and everything it starts may connect to no abstract socket made
+ * outside of them, then becomes the step's command.
+ *
+ * An abstract socket has a name and no file, so no file-system jail hides
+ * it: any program on the same network connects to it, and a step keeps the
+ * machine's network. An older D-Bus session bus listens on one and takes
+ * its caller for the person. The kernel's Landlock scope, from Linux 6.12,
+ * is what refuses the connection. The call numbers are the same on every
+ * processor. A kernel that refuses the scope after the machine was found to
+ * have it ends the step before it starts.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const scopeProgram = [
+  "my $scoped = pack('x16 L< L<', 1, 0);",
+  "my $rules = syscall(444, $scoped, 24, 0);",
+  "if ($rules < 0 || syscall(446, $rules, 0) != 0) {",
+  "  print STDERR \"smithers-ci: the kernel did not keep abstract sockets out of the jail: $!\\n\";",
+  "  exit 126;",
+  "}",
+  "exec { $ARGV[0] } @ARGV;",
+  "print STDERR \"could not run $ARGV[0]\\n\";",
+  "exit 127;"
+].join("\n")
+
+/**
+ * Whether the kernel keeps a process started by `perl` from the abstract
+ * sockets of the machine: it has Landlock, in the version that scopes them.
+ * Asks by starting `perl` once.
+ *
+ * @throws {never}
+ * @category resolution
+ * @since 0.1.0
+ */
+export const scopes = (perl: string): boolean =>
+  spawnSync(perl, ["-e", "exit(syscall(444, 0, 0, 1) >= 6 ? 0 : 1)"], { stdio: "ignore" }).status === 0
+
+/**
  * A machine's answer for a person whose variables are `environment`: they say
  * where the person's session and container daemon are.
  */
 const answer = (
   facts: ExecSandbox.Host,
   refuses: (facts: ExecSandbox.Host) => string | undefined,
-  environment: Readonly<Record<string, string | undefined>>
+  environment: Readonly<Record<string, string | undefined>>,
+  scoped: (perl: string) => boolean
 ): Probe => {
   const refusal = refuses(facts)
-  return refusal === undefined
-    ? {
-      bwrap: facts.executable("bwrap") as string,
-      home: facts.home as string,
-      hidden: [`/run/user/${facts.uid}`, ...elsewhere(facts)],
-      daemons: daemonSockets(facts.uid, environment),
-      tmp: tmpdir(),
-      caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)],
-      tools: toolsOn(environment["PATH"], facts)
-    }
-    : { refusal }
+  if (refusal !== undefined) return { refusal }
+  const perl = facts.executable("perl")
+  return {
+    bwrap: facts.executable("bwrap") as string,
+    home: facts.home as string,
+    hidden: [`/run/user/${facts.uid}`, ...elsewhere(facts)],
+    daemons: daemonSockets(facts.uid, environment),
+    tmp: tmpdir(),
+    caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)],
+    tools: toolsOn(environment["PATH"], facts),
+    ...(perl !== undefined && scoped(perl) ? { scope: perl } : {})
+  }
 }
 
 /**
@@ -203,6 +249,8 @@ const answer = (
  * without them every replay would compile `smthrs` again. An installed
  * `smthrs` has neither. The person's variables are read from this process;
  * {@link probeWith} asks for a person whose variables are held elsewhere.
+ * `scoped` says whether the kernel keeps what a perl starts from the
+ * machine's abstract sockets; without it the kernel is asked ({@link scopes}).
  *
  * @throws {never}
  * @category resolution
@@ -210,8 +258,9 @@ const answer = (
  */
 export const probe = (
   facts: ExecSandbox.Host = ExecSandbox.host(),
-  refuses: (facts: ExecSandbox.Host) => string | undefined = ExecSandbox.writeProtectionRefusal
-): Probe => answer(facts, refuses, process.env)
+  refuses: (facts: ExecSandbox.Host) => string | undefined = ExecSandbox.writeProtectionRefusal,
+  scoped: (perl: string) => boolean = scopes
+): Probe => answer(facts, refuses, process.env, scoped)
 
 /**
  * Asks this machine, for a person whose variables are `environment`.
@@ -221,7 +270,7 @@ export const probe = (
  * @since 0.1.0
  */
 export const probeWith = (environment: Readonly<Record<string, string | undefined>>): Probe =>
-  answer(ExecSandbox.host(), ExecSandbox.writeProtectionRefusal, environment)
+  answer(ExecSandbox.host(), ExecSandbox.writeProtectionRefusal, environment, scopes)
 
 /**
  * A path a jailed step finds empty: the person's home, a credential a link
@@ -266,7 +315,8 @@ export const installOf = (program: string, marks: (directory: string) => boolean
  * The jail of one replay: the program that holds it, what it hides, the
  * directory its steps find in place of each of the machine's `temporary`
  * directories, and what they still read of those. `filter` is the file that
- * holds {@link keyringFilter}.
+ * holds {@link keyringFilter}, and `scope` the perl that runs
+ * {@link scopeProgram} where the kernel can.
  *
  * @category models
  * @since 0.1.0
@@ -278,6 +328,7 @@ export interface Jail {
   readonly temporary: ReadonlyArray<string>
   readonly visible: ReadonlyArray<string>
   readonly filter: string
+  readonly scope?: string | undefined
 }
 
 /**
@@ -426,8 +477,9 @@ export const unjailed = (refusal: string, allowDocker: boolean = false): string 
  * replay's own, so a step that writes `/tmp` writes nothing of the machine's
  * and finds nothing another program left there. The step has its own device
  * and process trees, the kernel refuses it the keys of the person's session
- * ({@link keyringFilter}), and it ends, with everything it started, when the
- * replay does. The network stays as it is.
+ * ({@link keyringFilter}) and, where it can, the abstract sockets of the
+ * machine ({@link scopeProgram}), and it ends, with everything it started,
+ * when the replay does. The network stays as it is.
  *
  * @throws {never}
  * @category rendering
@@ -475,5 +527,6 @@ export const jailed = (
     "--new-session",
     "--die-with-parent",
     "--",
+    ...(jail.scope === undefined ? [] : [jail.scope, "-e", scopeProgram, "--"]),
     ...argv
   ]
