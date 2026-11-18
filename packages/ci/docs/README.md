@@ -1,6 +1,6 @@
 ---
 title: "Smithers CI"
-description: "Smart CI that only runs what changed: smithers-ci reads the CI a repository has today, turns it into incremental Smithers build targets, and replays past commits to measure the difference."
+description: "Fast CI for agents: smithers-ci reads the CI a repository has today, turns it into incremental Smithers build targets, and replays past commits to measure the difference."
 ---
 
 Smithers CI makes a repository's CI run only what a change affects. Run it in a
@@ -36,7 +36,7 @@ See [Normal mode and fast mode](concepts/modes.md).
 | [Fast mode](fast-mode.md)                      | What fast mode skips, what its three numbers mean, and their limits.   |
 | [Its own targets](concepts/own-targets.md)     | What happens on a repository that already builds with Smithers build.  |
 | [The shared cache](concepts/shared-cache.md)   | Reusing results across machines and runs.                              |
-| [Repositories](about/repositories.md)          | What Smithers CI reads today, and what it cannot run yet.              |
+| [Repositories](about/repositories.md)          | What Smithers CI reads, and what it does not run.                      |
 | [Command reference](reference/cli.md)          | Every command, flag and exit code.                                     |
 | [The Zig strategy](strategies/zig.md)          | Which files a Zig build step reads, as the Zig toolchain reports it.   |
 

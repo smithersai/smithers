@@ -1,6 +1,6 @@
 # smithers-ci
 
-Smart CI that only runs what changed.
+Fast CI for agents.
 
 This package holds the contracts every part of Smithers CI builds against.
 Each part reads and writes these documents and never calls another part

@@ -44,7 +44,7 @@ and a TypeScript monorepo driven by GitHub Actions and Turborepo look alike:
 Some CI features have no command to run, such as a hosted service container or
 a third-party action. The inventory lists each one under its job as
 unsupported, with the reason. When the repository depends on something
-Smithers CI cannot run yet, the command stops with exit code 3.
+Smithers CI cannot run, the command stops with exit code 3.
 
 A job with one of these is never run and never becomes a target:
 

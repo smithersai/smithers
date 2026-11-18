@@ -88,7 +88,7 @@ wall time, and the report adds how well the skipping did. See
 | `0`  | The run finished.                                            |
 | `1`  | A target's pass or fail in a mode differs from the baseline. |
 | `2`  | The command line was wrong.                                  |
-| `3`  | The repository uses something Smithers CI cannot run yet.    |
+| `3`  | The repository uses something Smithers CI cannot run.        |
 | `4`  | A step of the command could not finish.                      |
 
 A mismatch is the result to look at first: it means a mode would have changed

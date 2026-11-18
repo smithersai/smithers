@@ -147,7 +147,7 @@ replaces GitHub Actions, and toward coding factories such as
 | Piece | State |
 | --- | --- |
 | Name | Smithers CI; `bunx smithers-ci`; `ci.smithers.sh`. Proposed by the agent, not objected to |
-| Eyebrow | "Smart CI that only runs what changed" (Will) |
+| Eyebrow | "Fast CI for agents" (Will, 2026-11-18) |
 | Tagline | Open |
 | Buttons, install command, stats | Not started |
 

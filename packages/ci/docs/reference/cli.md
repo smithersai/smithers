@@ -86,7 +86,7 @@ A workflow that does not parse is listed there and nowhere else.
 | `0`  | `ok`          | The command finished.                                                                                                                                                   |
 | `1`  | `mismatch`    | A replayed target's verdict in a mode differs from its baseline verdict. A flaky target, which passed on a rerun, agrees with a pass and does not make the exit code 1. |
 | `2`  | `usage`       | The command line was wrong: an unknown command or flag, or a bad value.                                                                                                 |
-| `3`  | `unsupported` | The repository uses something Smithers CI cannot run yet.                                                                                                               |
+| `3`  | `unsupported` | The repository uses something Smithers CI cannot run.                                                                                                                   |
 | `4`  | `failed`      | A step of the command could not finish.                                                                                                                                 |
 
 A mismatch is defined in [How it works](../concepts/how-it-works.md#3-replay).

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "license": "MIT",
   "author": "Smithers",
-  "description": "Smart CI that only runs what changed",
+  "description": "Fast CI for agents",
   "sideEffects": [],
   "type": "module",
   "exports": {
