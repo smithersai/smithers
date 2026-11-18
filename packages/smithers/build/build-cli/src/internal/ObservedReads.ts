@@ -56,6 +56,7 @@
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import * as NodeFs from "node:fs"
+import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import { byCodeUnit } from "./Text.ts"
 
@@ -1785,8 +1786,9 @@ export const remembering = (io: Io = defaultIo, now: () => number = Date.now): (
 
 /**
  * The absolute paths whose subtrees a record leaves out: the build's cache
- * directory and each path a declaration names. `~` stands for `home`, and a
- * relative path is read from the workspace root.
+ * directory and each path a declaration names. `~` stands for `home`,
+ * `$TMPDIR` for `temporary`, the run's temporary directory, and a relative
+ * path is read from the workspace root.
  *
  * @category recording
  * @since 1.0.0
@@ -1795,11 +1797,14 @@ export const ignored = (
   root: string,
   home: string,
   cacheDirectory: string,
-  declared: ReadonlyArray<string>
+  declared: ReadonlyArray<string>,
+  temporary: string = NodeOs.tmpdir()
 ): ReadonlyArray<string> =>
   [cacheDirectory, ...declared].map((entry) => {
     const path = entry === "~" || entry.startsWith("~/")
       ? NodePath.join(home, entry.slice(1))
+      : entry === temporaryName || entry.startsWith(`${temporaryName}/`)
+      ? NodePath.join(temporary, entry.slice(temporaryName.length))
       : NodePath.resolve(root, entry)
     try {
       return NodeFs.realpathSync(path)
@@ -1807,6 +1812,9 @@ export const ignored = (
       return path
     }
   })
+
+/** How a declaration names the run's temporary directory in a path it leaves out. */
+const temporaryName = "$TMPDIR"
 
 /** The tag of a stored set of records. */
 const kind = "observed"

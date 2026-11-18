@@ -18,6 +18,7 @@ import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as PackageTree from "../PackageTree.ts"
 import * as ObservedReads from "./ObservedReads.ts"
+import { byCodeUnit } from "./Text.ts"
 
 /**
  * One machine of a build: `tree` is its copy of the workspace, under the
@@ -483,4 +484,83 @@ export const relocated = (value: string, root: string, tree: string, cacheDirect
     from = at + root.length
   }
   return moved + value.slice(from)
+}
+
+/**
+ * Where a record names a machine's own paths from: a path no host has. A
+ * machine's directory is another in every checkout and on every host, so a
+ * record that named it would answer only where its run happened.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const anchor = "/smthrs-machine"
+
+/**
+ * A path of a machine written from the machine: `/smthrs-machine/home/.npmrc`
+ * for a file of its home. Any other path is as it is. A path of the copy is
+ * never given here: a record writes those from the copy's root.
+ *
+ * @category rendering
+ * @since 1.0.0
+ */
+export const neutral = (machine: Machine) => (path: string): string =>
+  under(path, machine.directory) ? `${anchor}${path.slice(machine.directory.length)}` : path
+
+/**
+ * The path on this host that a record's path names: one written from the
+ * machine is under the machine's directory.
+ *
+ * @category rendering
+ * @since 1.0.0
+ */
+export const actual = (machine: Machine) => (path: string): string =>
+  under(path, anchor) ? `${machine.directory}${path.slice(anchor.length)}` : path
+
+/**
+ * Reads that take each path through `place` first.
+ *
+ * @category rendering
+ * @since 1.0.0
+ */
+export const through = (
+  place: (path: string) => string,
+  io: ObservedReads.Io = ObservedReads.defaultIo
+): ObservedReads.Io => ({
+  lstat: (path) => io.lstat(place(path)),
+  readlink: (path) => io.readlink(place(path)),
+  readdir: (path) => io.readdir(place(path)),
+  readFile: (path) => io.readFile(place(path)),
+  head: (path, length) => io.head(place(path), length)
+})
+
+/**
+ * What a run on a machine read and left, with the machine's own paths
+ * written from the machine ({@link neutral}). The record then holds no path
+ * of this checkout, so it answers in another one that restored the cache.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const recorded = (observation: ObservedReads.Observation, machine: Machine): ObservedReads.Observation => {
+  const name = neutral(machine)
+  const written = <Row extends readonly [string, ...ReadonlyArray<unknown>]>(rows: ReadonlyArray<Row>): Array<Row> =>
+    rows
+      .map((row) => [name(row[0]), ...row.slice(1)] as unknown as Row)
+      .sort((left, right) => byCodeUnit(left[0], right[0]))
+  const { id: _id, ...read } = observation.record
+  const body = {
+    ...read,
+    reads: written(read.reads),
+    lists: written(read.lists),
+    ...(read.given === undefined ? {} : { given: written(read.given) })
+  }
+  const left = observation.left === undefined || "refusal" in observation.left
+    ? observation.left
+    : { ...observation.left, outside: written(observation.left.outside) }
+  return {
+    ...observation,
+    record: { ...body, id: ObservedReads.idOf(body) },
+    ...(left === undefined ? {} : { left })
+  }
 }

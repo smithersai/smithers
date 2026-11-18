@@ -27,8 +27,8 @@ afterEach(async () => {
 })
 
 /** The host's tracer, when it has one that can trace a process here. */
-const host = ObservedReads.observer(ExecSandbox.host())
-const tracedIt = it.skipIf("reason" in host)
+const tracing = ObservedReads.observer(ExecSandbox.host())
+const tracedIt = it.skipIf("reason" in tracing)
 const posixIt = it.skipIf(process.platform === "win32")
 /** A host that cannot record what a run reads, as macOS is. */
 const untraced: ExecutionServices = {
@@ -54,7 +54,7 @@ const on = (machine: string, shell: string, data: ReadonlyArray<unknown> = []) =
     data: [S.glob("**"), ...data] as never
   })
 
-const fixture = async (targets: (base: string) => Targets) => {
+const fixture = async (targets: (base: string) => Targets, host?: { readonly home: string; readonly kept: string }) => {
   // Beside the temporary directory, as a user's cache directory is: what a run leaves in a machine's home is then
   // left outside the workspace and the temporary directory.
   const base = await Fs.realpath(await Fs.mkdtemp(Path.join("/var/tmp", "smithers-machine-run-")))
@@ -84,13 +84,13 @@ const fixture = async (targets: (base: string) => Targets) => {
     factory: undefined,
     packages: [{ file: "PACKAGE.ts", packagePath: "", value: S.Package({ targets: targets(base) }) }]
   })
-  const kept = Path.join(base, "machines")
+  const kept = host?.kept ?? Path.join(base, "machines")
   const environment: Record<string, string> = {
-    PATH: [...("tracer" in host ? [Path.dirname(host.tracer)] : []), "/usr/bin", "/bin"].join(Path.delimiter),
-    HOME: Path.join(base, "home"),
+    PATH: [...("tracer" in tracing ? [Path.dirname(tracing.tracer)] : []), "/usr/bin", "/bin"].join(Path.delimiter),
+    HOME: host?.home ?? Path.join(base, "home"),
     [Machine.holdingVariable]: kept
   }
-  await Fs.mkdir(environment["HOME"]!)
+  await Fs.mkdir(environment["HOME"]!, { recursive: true })
   const logs: Array<string> = []
   const options = (names: ReadonlyArray<string>, jobs: number) => ({
     index,
@@ -261,10 +261,10 @@ describe("an observed target on a machine", () => {
 
   tracedIt("finds what an answered step of its machine left, put back in the machine's tree", async () => {
     const { logs, made, root, run, write } = await fixture(() => {
-      const install = on("job", "mkdir -p deps && cp a.txt deps/a && echo fetched > \"$TMPDIR/fetched\"")
+      const install = on("job", "mkdir -p deps && cp a.txt deps/a")
       return {
         install,
-        test: on("job", "grep -q a deps/a && grep -q b b.txt && grep -q fetched \"$TMPDIR/fetched\"", [install]),
+        test: on("job", "grep -q a deps/a && grep -q b b.txt", [install]),
         // Another machine waits for the install and reads nothing of it.
         after: on("after", "test ! -e deps && grep -q nothing docs/readme.md", [install])
       }
@@ -291,7 +291,7 @@ describe("an observed target on a machine", () => {
     expect(logs.filter((line) => line.includes("put back"))).toEqual([])
   })
 
-  tracedIt("runs again when its home is not as its run left it and a target after it runs", async () => {
+  tracedIt("runs again when a target after it runs and needs what it left in its home", async () => {
     const { run, write } = await fixture(() => {
       const tool = on("job", "mkdir -p ~/bin && printf '#!/bin/sh\\nexit 0\\n' > ~/bin/tool && chmod +x ~/bin/tool")
       return { tool, uses: on("job", "~/bin/tool && grep -q b b.txt", [tool]) }
@@ -301,5 +301,65 @@ describe("an observed target on a machine", () => {
     // A machine starts with an empty home, so the tool is installed again for the step that needs it.
     await write("b.txt", "b, changed\n")
     expect(await run(["uses"])).toEqual({ tool: "ran", uses: "ran" })
+  })
+
+  tracedIt("runs again when a target after it runs and needs what it left in its temporary directory", async () => {
+    const { run, write } = await fixture(() => {
+      const fetch = on("job", "echo fetched > \"$TMPDIR/fetched\"")
+      return { fetch, uses: on("job", "grep -q fetched \"$TMPDIR/fetched\" && grep -q b b.txt", [fetch]) }
+    })
+    expect(await run(["uses"])).toEqual({ fetch: "ran", uses: "ran" })
+    expect(await run(["uses"])).toEqual({ fetch: "hit", uses: "hit" })
+    await write("b.txt", "b, changed\n")
+    expect(await run(["uses"])).toEqual({ fetch: "ran", uses: "ran" })
+  })
+
+  tracedIt("leaves out of its record what the declaration names under the machine's temporary directory", async () => {
+    // What Node does: a step fills a cache of compiled code under TMPDIR, with other bytes on every run, and the
+    // step after it reads that cache and nothing of it decides its result.
+    const { logs, run } = await fixture(() => {
+      const setup = S.Shell.Build({
+        shell:
+          "mkdir -p .flows/ci \"$TMPDIR/compiled\" && : > .flows/ci/setup && date +%s%N > \"$TMPDIR/compiled/code\"",
+        outFiles: ["//.flows/ci/setup"],
+        cache: false,
+        machine: "job",
+        sandbox: "none",
+        data: []
+      })
+      const reads = (ignore: ReadonlyArray<string>) =>
+        S.Shell.Test({
+          shell: `cat "$TMPDIR/compiled/code" > /dev/null && grep -q a a.txt # ${ignore.length}`,
+          machine: "job",
+          sandbox: "none",
+          observe: { ignore },
+          data: [S.glob("**"), setup]
+        })
+      return { setup, left: reads(["$TMPDIR/compiled"]), kept: reads([]) }
+    })
+    expect(await run(["left", "kept"])).toEqual({ setup: "ran", left: "ran", kept: "ran" })
+    logs.length = 0
+    expect(await run(["left", "kept"])).toEqual({ setup: "ran", left: "hit", kept: "ran" })
+    expect(logs).toContain("//:kept  runs again: /smthrs-machine/tmp/compiled/code changed")
+  })
+
+  tracedIt("is answered in another checkout that restored the cache, and its files are put back there", async () => {
+    // What a CI machine does between two runs: a fresh checkout somewhere, and the cache directory carried over.
+    const targets = () => {
+      const install = on("job", "mkdir -p deps && cp a.txt deps/a && test ! -e ~/.toolrc && : > ~/.seen && rm ~/.seen")
+      return { install, test: on("job", "grep -q a deps/a && grep -q b b.txt && test ! -e ~/.toolrc", [install]) }
+    }
+    const first = await fixture(targets)
+    const shared = { home: first.environment["HOME"]!, kept: first.kept }
+    expect(await first.run(["test"])).toEqual({ install: "ran", test: "ran" })
+    const second = await fixture(targets, shared)
+    expect(second.root).not.toBe(first.root)
+    await Fs.cp(Path.join(first.root, ".flows"), Path.join(second.root, ".flows"), { recursive: true })
+    expect(await second.run(["test"])).toEqual({ install: "hit", test: "hit" })
+    expect(second.made()).toEqual([])
+    // Only the test reads the changed file: what the install left in the first checkout's machine is put back here.
+    await second.write("b.txt", "b, changed\n")
+    expect(await second.run(["test"])).toEqual({ install: "hit", test: "ran" })
+    expect(second.logs).toContain("//:install  what it left is put back for //:test")
   })
 })

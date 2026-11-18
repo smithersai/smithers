@@ -183,9 +183,10 @@ export const TestAttrs = Schema.Struct({
    * it lists and the paths it finds missing. A later run is answered from
    * the cache when each of them is unchanged, whatever else in `data`
    * changed. `ignore` names paths left out of the record: a file or a
-   * directory with all it holds, from the workspace root, absolute, or under
-   * the home directory as `~/...`. Use it for what a tool writes on every
-   * run and never reads to decide its result, such as a log directory.
+   * directory with all it holds, from the workspace root, absolute, under
+   * the home directory as `~/...`, or under the run's temporary directory as
+   * `$TMPDIR/...`. Use it for what a tool writes on every run and never reads
+   * to decide its result, such as a log directory or a compiled-code cache.
    *
    * `env` names variables of the host the run is given whose values differ
    * from one run to the next, such as the commit a CI run is for. Each

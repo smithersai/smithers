@@ -425,3 +425,83 @@ describe("a target on a machine", () => {
     expect(moved("echo hello")).toBe("echo hello")
   })
 })
+
+describe("a record of a run on a machine", () => {
+  const machine = Machine.named("/kept/abc", "/work/repo", "job")
+
+  it("names the machine's own paths from the machine, and finds them again on any host", () => {
+    const name = Machine.neutral(machine)
+    expect(name(Path.join(machine.home, ".npmrc"))).toBe("/smthrs-machine/home/.npmrc")
+    expect(name(machine.tmp)).toBe("/smthrs-machine/tmp")
+    expect(name(machine.directory)).toBe("/smthrs-machine")
+    expect(name("/usr/lib/node")).toBe("/usr/lib/node")
+    expect(name(`${machine.directory}-other/home`)).toBe(`${machine.directory}-other/home`)
+    const elsewhere = Machine.named("/other/kept/def", "/elsewhere/repo", "job")
+    const found = Machine.actual(elsewhere)
+    expect(found("/smthrs-machine/home/.npmrc")).toBe(Path.join(elsewhere.home, ".npmrc"))
+    expect(found("/smthrs-machine")).toBe(elsewhere.directory)
+    expect(found("/usr/lib/node")).toBe("/usr/lib/node")
+    expect(found("/smthrs-machines/x")).toBe("/smthrs-machines/x")
+  })
+
+  posixIt("reads each path where it is placed", async () => {
+    const real = await directory("placed")
+    await write(real, "home/file", "content\n")
+    await Fs.symlink("file", Path.join(real, "home/link"))
+    const io = Machine.through(Machine.actual({ ...machine, directory: real }))
+    expect(io.lstat("/smthrs-machine/home").isDirectory()).toBe(true)
+    expect(io.readdir("/smthrs-machine/home").toSorted()).toEqual(["file", "link"])
+    expect(io.readlink("/smthrs-machine/home/link")).toBe("file")
+    expect(io.readFile("/smthrs-machine/home/file").toString()).toBe("content\n")
+    expect(io.head("/smthrs-machine/home/file", 3).toString()).toBe("con")
+    expect(ObservedReads.measure("/smthrs-machine/home/file", io)).toBe(
+      ObservedReads.measure(Path.join(real, "home/file"))
+    )
+  })
+
+  it("holds no path of the checkout it was made in", () => {
+    const home = (name: string): string => Path.join(machine.home, name)
+    const body = {
+      reads: [["src/a.txt", "f:1"], [home(".npmrc"), "-"], ["/usr/bin/node", "f:2:x"], [home(".seen"), "f:3", "-"]],
+      lists: [[machine.home, "digest", [".seen"]], ["src", "digest", []]],
+      given: [[home("bin/tool"), "f:4:x", 0]],
+      from: [["//:install", "id"]]
+    } as const
+    const observation: ObservedReads.Observation = {
+      record: { ...body, id: ObservedReads.idOf(body) } as never,
+      made: new Set([home(".seen")]),
+      touched: new Set([home(".seen")]),
+      left: { keep: ["deps/a"], gone: [], outside: [[home("bin/tool"), "f:4:x"]] }
+    }
+    const written = Machine.recorded(observation, machine)
+    expect(written.record.reads).toEqual([
+      ["/smthrs-machine/home/.npmrc", "-"],
+      ["/smthrs-machine/home/.seen", "f:3", "-"],
+      ["/usr/bin/node", "f:2:x"],
+      ["src/a.txt", "f:1"]
+    ])
+    expect(written.record.lists).toEqual([["/smthrs-machine/home", "digest", [".seen"]], ["src", "digest", []]])
+    expect(written.record.given).toEqual([["/smthrs-machine/home/bin/tool", "f:4:x", 0]])
+    expect(written.record.from).toEqual(body.from)
+    expect(written.left).toEqual({ keep: ["deps/a"], gone: [], outside: [["/smthrs-machine/home/bin/tool", "f:4:x"]] })
+    // The paths the run wrote stay the host's: the targets after it in this build read them there.
+    expect(written.made).toBe(observation.made)
+    const { id, ...rest } = written.record
+    expect(id).toBe(ObservedReads.idOf(rest))
+    expect(id).not.toBe(observation.record.id)
+    // The same run on another host gives the same record.
+    const elsewhere = Machine.named("/other/def", "/elsewhere/repo", "job")
+    const moved = JSON.parse(JSON.stringify(observation.record).replaceAll(machine.directory, elsewhere.directory))
+    expect(Machine.recorded({ ...observation, record: moved }, elsewhere).record).toEqual(written.record)
+    // A run that read nothing a step before it wrote, and one whose files cannot be kept, keep what they have.
+    const { given: _given, ...plain } = body
+    const refused = Machine.recorded(
+      { ...observation, record: { ...plain, id: "x" } as never, left: { refusal: "it left too much to keep" } },
+      machine
+    )
+    expect(refused.record.given).toBeUndefined()
+    expect(refused.left).toEqual({ refusal: "it left too much to keep" })
+    const { left: _left, ...nothingLeft } = observation
+    expect(Machine.recorded(nothingLeft, machine).left).toBeUndefined()
+  })
+})

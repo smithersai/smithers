@@ -1950,6 +1950,18 @@ describe("the paths a record leaves out", () => {
       Path.join(root, "tmp", "scratch"),
       "/var/absolute"
     ])
+    // `$TMPDIR` is the run's temporary directory: the one it is given, or the host's.
+    const temporary = Path.join(base, "tmp")
+    expect(ObservedReads.ignored(root, home, ".flows", ["$TMPDIR/node-compile-cache", "$TMPDIR"], temporary)).toEqual([
+      Path.join(root, ".flows"),
+      Path.join(temporary, "node-compile-cache"),
+      temporary
+    ])
+    expect(ObservedReads.ignored(root, home, ".flows", ["$TMPDIR/x", "$TMPDIRECTORY"])).toEqual([
+      Path.join(root, ".flows"),
+      Path.join(Os.tmpdir(), "x"),
+      Path.join(root, "$TMPDIRECTORY")
+    ])
   })
 })
 

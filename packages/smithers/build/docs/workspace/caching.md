@@ -490,8 +490,10 @@ key, as with `inheritEnv`.
 **What is left out.** `/proc`, `/sys` and `/dev` are the machine, not files. The
 workspace cache directory is the build's own. `observe: { ignore: [...] }` names
 more: a file, or a directory with all it holds, from the workspace root,
-absolute, or under the home directory as `~/...`. Use it for what a tool writes
-on every run and never reads to decide its result, such as a log directory.
+absolute, under the home directory as `~/...`, or under the run's temporary
+directory as `$TMPDIR/...`. Use it for what a tool writes on every run and never
+reads to decide its result, such as a log directory, or the compiled code Node
+keeps in `$TMPDIR/node-compile-cache`.
 
 **When nothing is stored.** A green run stores nothing when what it read cannot
 all be known, and says why on its own line:
@@ -591,6 +593,17 @@ the target runs there. The line says how long the copy took:
 ```text
 smthrs: machine ci.yml:test has a fresh checkout, made in 412 ms
 ```
+
+A record of a run on a machine names the machine's own paths from the machine,
+as in `/smthrs-machine/home/.npmrc`, and the copy's paths from the copy's root.
+It holds no path of the checkout it was made in, so it answers in another
+checkout that restored the cache directory, as a CI machine does between runs.
+
+What a step left in its machine's home or temporary directory is not kept with
+what it left in the copy. When a step after it has to run, the step runs again
+and leaves it again. What a locked install fetched into its own cache is left
+out, as it is without a machine: the install is answered, and its files in the
+copy are put back.
 
 Machines are kept under the user's cache directory
 (`$XDG_CACHE_HOME/smthrs/machines`, else `~/.cache/smthrs/machines`), outside

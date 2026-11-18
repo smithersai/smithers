@@ -2386,10 +2386,24 @@ export const executeEffect = (
             .map((directory) => NodeFs.realpathSync(directory))
         )
       ]
-    /** The temporary directories of a target's run: its machine's own comes first. */
-    const temporaryOf = (node: PackageNode): ReadonlyArray<string> => {
-      const machine = machineOf(node)
-      return machine === undefined ? temporary() : [machine.tmp, ...temporary()]
+    /** The host as a machine that is not made yet would find it; set when the targets are answered together. */
+    let unmade: ReturnType<typeof Machine.unmade> | undefined
+    /**
+     * How a target's record is held against the host. A record names a path of a machine from the machine, so it
+     * answers in any checkout: the path is found on the machine once that is made, and before that in what the
+     * machine would start with.
+     */
+    const seenBy = (
+      node: PackageNode
+    ): { readonly measured: (path: string) => string; readonly io: ObservedReads.Io | undefined } => {
+      if (node.machine === undefined) return { measured: stateOf, io: undefined }
+      const made = machineOf(node)
+      const place = Machine.actual(made ?? Machine.named(machinesKept!, NodeFs.realpathSync(root), node.machine))
+      const measured = made === undefined ? unmade!.measured : stateOf
+      return {
+        measured: (path) => measured(place(path)),
+        io: Machine.through(place, made === undefined ? unmade!.io : undefined)
+      }
     }
     /** Whether two targets run in one tree, so that one can read what the other leaves. */
     const together = (one: PackageNode, other: PackageNode): boolean => one.machine === other.machine
@@ -2401,9 +2415,9 @@ export const executeEffect = (
       path === real ? "." : path.startsWith(`${real}/`) ? path.slice(real.length + 1) : path
     const fromKept = (real: string, name: string): string => name.startsWith("/") ? name : NodePath.join(real, name)
     /** Whether a record's kept files are there, and what its run left outside the workspace still as it left it. */
-    const restorable = (observed: NonNullable<PackageNode["observed"]>, stored: ObservedReads.Record): boolean => {
-      if (stored.kept === undefined || !ObservedReads.outsideHolds(stored, stateOf)) return false
-      const stem = keptStem(observed, stored.kept.archive)
+    const restorable = (node: PackageNode, stored: ObservedReads.Record): boolean => {
+      if (stored.kept === undefined || !ObservedReads.outsideHolds(stored, seenBy(node).measured)) return false
+      const stem = keptStem(node.observed!, stored.kept.archive)
       return NodeFs.existsSync(`${stem}.tar`) && NodeFs.existsSync(`${stem}.json`)
     }
     /**
@@ -2429,6 +2443,9 @@ export const executeEffect = (
         const tar = yield* services.findOnPath("tar")
         if (tar === undefined) return record
         const real = NodeFs.realpathSync(placeOf(node))
+        // A path of the machine is written from the machine, so the kept files answer in another checkout.
+        const machine = machineOf(node)
+        const written = machine === undefined ? (path: string): string => path : Machine.neutral(machine)
         const stem = keptStem(observed, record.id!)
         const names = (absolute: boolean): string =>
           left.keep.filter((name) => name.startsWith("/") === absolute).map((name) => `${name}\0`).join("")
@@ -2439,8 +2456,8 @@ export const executeEffect = (
           await Fs.writeFile(
             `${stem}.json`,
             JSON.stringify({
-              made: [...observation.made].map((path) => keptPath(real, path)),
-              touched: [...observation.touched].map((path) => keptPath(real, path))
+              made: [...observation.made].map((path) => keptPath(real, written(path))),
+              touched: [...observation.touched].map((path) => keptPath(real, written(path)))
             })
           )
         })
@@ -2494,6 +2511,8 @@ export const executeEffect = (
         if (stored.kept === undefined || tar === undefined) return false
         const { archive, gone } = stored.kept
         const real = NodeFs.realpathSync(placeOf(node))
+        const machine = machineOf(node)
+        const found = machine === undefined ? (path: string): string => path : Machine.actual(machine)
         const stem = keptStem(observed, archive)
         const listed = yield* spawnNode(node, root, [
           "/bin/sh",
@@ -2510,7 +2529,7 @@ export const executeEffect = (
             // Nothing is put back outside the workspace and the temporary directory, whatever an archive holds.
             if (
               ![...names.map((name) => name.replace(/\/$/, "")), ...gone].every((name) =>
-                ObservedReads.keptName(name, temporaryOf(node))
+                ObservedReads.keptName(name, temporary())
               )
             ) return undefined
             const paths = JSON.parse(await Fs.readFile(`${stem}.json`, "utf8")) as {
@@ -2519,8 +2538,8 @@ export const executeEffect = (
             }
             for (const name of gone) await Fs.rm(fromKept(real, name), { recursive: true, force: true })
             return {
-              made: new Set(paths.made.map((name) => fromKept(real, name))),
-              touched: new Set(paths.touched.map((name) => fromKept(real, name)))
+              made: new Set(paths.made.map((name) => found(fromKept(real, name)))),
+              touched: new Set(paths.touched.map((name) => found(fromKept(real, name))))
             }
           } catch {
             return undefined
@@ -2597,7 +2616,7 @@ export const executeEffect = (
         const real = yield* joined(async () => NodeFs.realpathSync(root))
         // A machine is made only for a target that has to run. Until then its record is held against what the
         // machine would start with: a fresh checkout, an empty home and an empty temporary directory.
-        const unmade = machinesKept === undefined ? undefined : Machine.unmade(yield* joined(startOf), stateOf)
+        if (machinesKept !== undefined) unmade = Machine.unmade(yield* joined(startOf), stateOf)
         /** A dependency that runs nothing, as a group of files does, holds nobody back. */
         const still = (label: string): boolean => kept.has(label) || byLabel.get(label)?.rule === "Filegroup"
         for (let settled = false; !settled;) {
@@ -2605,6 +2624,7 @@ export const executeEffect = (
           for (const node of candidates) {
             const before = kept.get(node.label)
             if (before === undefined) continue
+            const seen = seenBy(node)
             const holding = !node.dependencies.every(still)
               ? []
               : yield* joined(async () =>
@@ -2613,8 +2633,8 @@ export const executeEffect = (
                   ObservedReads.changed(
                       record,
                       real,
-                      node.machine === undefined ? stateOf : unmade!.measured,
-                      node.machine === undefined ? undefined : unmade!.io,
+                      seen.measured,
+                      seen.io,
                       (label) => kept.get(label),
                       node.observed!.variables
                     ) === undefined
@@ -2625,9 +2645,7 @@ export const executeEffect = (
             const awaited = awaitedBy(node, (label) => !kept.has(label))
             const answering = !awaited ?
               holding :
-              yield* joined(async () =>
-                holding.filter((record) => record.left !== true || restorable(node.observed!, record))
-              )
+              yield* joined(async () => holding.filter((record) => record.left !== true || restorable(node, record)))
             if (answering.length === 0) {
               kept.delete(node.label)
               settled = false
@@ -2684,8 +2702,16 @@ export const executeEffect = (
         const awaited = awaitedBy(node)
         let why: string | undefined
         for (const stored of earlier) {
+          const seen = seenBy(node)
           const moved = yield* joined(async () =>
-            ObservedReads.changed(stored, NodeFs.realpathSync(place), stateOf, undefined, undefined, observed.variables)
+            ObservedReads.changed(
+              stored,
+              NodeFs.realpathSync(place),
+              seen.measured,
+              seen.io,
+              undefined,
+              observed.variables
+            )
           )
           if (moved !== undefined) {
             why ??= moved
@@ -2695,7 +2721,7 @@ export const executeEffect = (
           // the step runs again.
           if (
             stored.left === true && awaited &&
-            !(restorable(observed, stored) && (yield* restore(node, observed, stored)))
+            !(restorable(node, stored) && (yield* restore(node, observed, stored)))
           ) {
             why ??= "a step after it runs, and may read what this one leaves"
             continue
@@ -2778,12 +2804,18 @@ export const executeEffect = (
                 },
                 root: NodeFs.realpathSync(place),
                 ignore: [
-                  ...ObservedReads.ignored(place, machine?.home ?? NodeOs.homedir(), cacheDirectory, observed.ignore),
+                  ...ObservedReads.ignored(
+                    place,
+                    machine?.home ?? NodeOs.homedir(),
+                    cacheDirectory,
+                    observed.ignore,
+                    machine?.tmp
+                  ),
                   // The cache is the build's own wherever a target runs.
                   ...(machine === undefined ? [] : ObservedReads.ignored(root, machine.home, cacheDirectory, []))
                 ],
                 startedMs,
-                temporary: temporaryOf(node),
+                temporary: temporary(),
                 // In the order they ran or would have run: the last to write a path is the one it came from.
                 producers: inOrder.flatMap((earlier) => {
                   const producer = before.has(earlier.label) ? wroteHere.get(earlier.label) : undefined
@@ -2801,7 +2833,12 @@ export const executeEffect = (
             return green("ran")
           }
           const { made, touched } = read.value
-          const record = yield* keep(node, observed, read.value)
+          // What the run read and left on its machine, outside the copy, is written from the machine.
+          const record = yield* keep(
+            node,
+            observed,
+            machine === undefined ? read.value : Machine.recorded(read.value, machine)
+          )
           const stored = ObservedReads.store(record, earlier)
           if (stored === undefined) unstored(node, "it read more paths than one record holds")
           else {
