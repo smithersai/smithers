@@ -42,6 +42,30 @@ decisions are in each lane's brief. This list holds what one lane asked of anoth
   generator and contract 11 stay as they are.
 - **Lead, after the native lane exits.** `src/native/Detect.vibe` reads a path whose directory is a regular file as
   "no workspace file", so `apply` gives its own message.
+- **`Step.outputs`** (optional, asked for by the generate lane): the paths and globs a step writes. Without it the
+  step may write any file, so a step after it in the same working tree keeps the whole repository. **Generate lane,
+  after your findings:** build what item 1 of your `CONTRACT.md` describes. The splitter fills `outputs` for the
+  commands it reads; a setup step's `outputs` become `outDirs` of its target and its `inputs` become `data`; a later
+  target stays narrowed only when every earlier step in its tree has both. Test under the real `smthrs` that a
+  change to a file the setup step reads reruns the later target.
+- **Generate lane.** `smithers-ci apply` twice writes two different workflows in a repository whose CI is a
+  justfile (`setup-just` changes place; proof in item 6 of `sci-fix-apply.CONTRACT.md`). Find the cause and hold it
+  with a test: a second `apply` writes byte-equal files.
+- **Generate lane** (asked for by the replay lane, items 1 to 3 of `sci-fix-replay.CONTRACT.md`). The first target
+  of a job in a shared tree depends on the last target of the job before it in
+  `Inventory.treeOrder(jobs).get(Inventory.treeOf(job))`, so `ci: build test` runs `build`, then `test`, as the
+  baseline does. `stepTimeout` in `src/generate/Render.ts` comes from `Inventory.stepTimeoutHours`. A `Ci` never
+  holds a step with a secret, so delete the generator's "secret is not passed to the target" note and its test if
+  no real `Ci` reaches them.
+- **Apply lane** (asked for by the replay lane, items 4 and 5). `docs/getting-started/quickstart.md` says: "The text
+  report gives one line for each commit: the files it changed, and whether each way passed, with its wall time.
+  `--json` and the HTML page also give work time and the target counts." `docs/reference/cli.md` and
+  `Command.exitCodeHelp` say a flaky step does not make the exit code 1.
+- **Confirmed for the replay lane.** `release-trigger` is written only when a workflow's sole change trigger is a
+  push limited to `tags`. A workflow that also runs on branches or pull requests is CI; its publishing jobs are
+  kept out by `secret`, `write-permission` and `condition`.
+- **Lead, after the replay lane exits.** `Toolchain.version` may hold `${{ matrix.<key> }}` and `Toolchain.job`
+  names the job that installs the tool (item 2 of `sci-fix-generate.CONTRACT.md`); the importer writes both.
 
 **2026-11-17, ninth round** (asked for by the native lane):
 
@@ -66,9 +90,12 @@ decisions are in each lane's brief. This list holds what one lane asked of anoth
 
 **2026-11-17, seventh round** (asked for by the splitter and replay lanes):
 
-- `Step.inputs` are globs as Smithers build's `glob` reads them. **A target generated from a step with `inputs` must
-  run under Smithers build's enforced read sandbox**, never `sandbox: "none"`: an undeclared read then fails the
-  target instead of passing stale. A step whose inputs cannot be enforced stays whole.
+- `Step.inputs` are globs as Smithers build's `glob` reads them. **A target that declares its step's inputs runs
+  under Smithers build's enforced read sandbox**: an undeclared read then fails the target instead of passing
+  stale. A step with inputs still gets `sandbox: "none"` when its target declares no inputs, and then declares the
+  whole repository: a step a later step relies on (it always runs and its result is never reused), a step that
+  follows another step in its working tree (until that step has `outputs`, tenth round), and every step when
+  `PACKAGE.ts` would pass 1 MiB.
 - Contract 2's comment now says what `smthrs ci --plan` really prints; the replay's `planOfPrinted` converts it.
 - Not adopted yet: a flag that names a repository's own wrapper script as standing for `turbo`. It waits until a
   repository's CI passes the sixth-round rule and only the wrapper stops a split.

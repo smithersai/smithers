@@ -43,6 +43,14 @@ export type Source = typeof Source.Type
  * nobody enforces would let a step pass on a file it never declared, which
  * is a stale pass. `from` is the id of the step this one was split from.
  *
+ * `outputs` lists every path the step writes, from the repository root, in
+ * the same forms. Without `outputs` the step may write any file, so a step
+ * that runs after it in the same working tree cannot be held to its own
+ * `inputs`: it may read what this step wrote, and its key would not hold
+ * what this step read. A step after one with both `inputs` and `outputs`
+ * stays narrowed: its target reads those outputs and its key holds those
+ * inputs.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -55,6 +63,7 @@ export const Step = Schema.Struct({
   name: Schema.optionalKey(Schema.String),
   secretEnv: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
   inputs: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+  outputs: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   from: Schema.optionalKey(Schema.NonEmptyString)
 })
 

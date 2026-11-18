@@ -544,6 +544,10 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
     }
     expect(Schema.decodeUnknownSync(Inventory.Step)(split)).toEqual(split)
     expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, inputs: [""] })).toThrow()
+    // What a step writes is optional and held to the same form as what it reads.
+    expect(Schema.decodeUnknownSync(Inventory.Step)({ ...split, outputs: ["packages/core/dist/**"] }).outputs)
+      .toEqual(["packages/core/dist/**"])
+    expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, outputs: [""] })).toThrow()
     const failure = { code: "command-failed", message: "bun pm ls exited 1", part: "decompose" }
     expect(Schema.decodeUnknownSync(Parts.Failure)(failure)).toEqual(failure)
   })
