@@ -133,8 +133,11 @@ const fixture = async (settings: FixtureOptions = {}) => {
           Effect.provideService(ExecutionServices, services)
         )
       ))
+    reasons.splice(0, reasons.length, ...summary.results.map((result) => result.notReused))
     return Object.fromEntries(summary.results.map((result) => [result.label.split(":")[1]!, result.status]))
   }
+  /** Why each target of the last run was not reused, in the run's order. */
+  const reasons: Array<string | undefined> = []
   /** A program that stands where the tracer does and runs `body` with the command in `"$@"` and the trace file in `$out`. */
   const tracer = async (body: string): Promise<ExecutionServices> => {
     const file = Path.join(base, "tools", "tracer")
@@ -156,7 +159,7 @@ const fixture = async (settings: FixtureOptions = {}) => {
   /** What a run's traces left behind: nothing, once the run is over. */
   const traceFiles = async (): Promise<ReadonlyArray<string>> =>
     (await Fs.readdir(Path.join(root, ".flows", "tmp")).catch(() => [])).filter((name) => name.startsWith("reads-"))
-  return { root, write, run, node, logs, tracer, attempts, traceFiles }
+  return { root, write, run, node, logs, reasons, tracer, attempts, traceFiles }
 }
 
 describe("a plan", () => {
@@ -224,12 +227,17 @@ describe("an observed test", () => {
   })
 
   tracedIt("runs again when a file it read changes", async () => {
-    const { logs, run, write } = await fixture()
+    const { logs, reasons, run, write } = await fixture()
     expect(await run()).toEqual({ check: "ran" })
+    // A first run has no stored result to say anything about.
+    expect(reasons).toEqual([undefined])
     await write("tests/a.test", "changed\n")
     expect(await run()).toEqual({ check: "ran" })
     expect(logs).toContain("//:check  runs again: tests/a.test changed")
+    // The run's record says so too, on the target's row.
+    expect(reasons).toEqual(["tests/a.test changed"])
     expect(await run()).toEqual({ check: "hit" })
+    expect(reasons).toEqual([undefined])
     // Both states now have a record, so going back is answered too.
     await write("tests/a.test", "a\n")
     expect(await run()).toEqual({ check: "hit" })
@@ -254,13 +262,16 @@ describe("an observed test", () => {
   })
 
   tracedIt("fails when its command fails, and stores nothing", async () => {
-    const { attempts, logs, run, write } = await fixture()
+    const { attempts, logs, reasons, run, write } = await fixture()
+    expect(await run()).toEqual({ check: "ran" })
     await write("input.txt", "fail\n")
     expect(await run()).toEqual({ check: "failed" })
+    // A failure after a change names the change.
+    expect(reasons).toEqual(["input.txt changed"])
     expect(logs).toContain("//:check  failed while its reads were recorded; it runs again without the recording")
     expect(await attempts()).toEqual([])
+    // The passing run's record still answers once the file is as that run read it.
     await write("input.txt", "pass\n")
-    expect(await run()).toEqual({ check: "ran" })
     expect(await run()).toEqual({ check: "hit" })
   })
 
@@ -316,6 +327,25 @@ describe("an observed test", () => {
     expect(await run()).toEqual({ check: "ran" })
     expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
     expect(await run()).toEqual({ check: "hit" })
+  })
+
+  tracedIt("is reused after a run that filled a directory, moved it into place and read it there", async () => {
+    // What `uv`, `go mod download` and `pnpm` do with their caches.
+    const staging = [
+      "/bin/mkdir -p stage/pkg",
+      "/bin/cat input.txt > stage/pkg/RECORD",
+      "/bin/mv stage unpacked",
+      "/bin/cat unpacked/pkg/RECORD > /dev/null"
+    ].join("\n")
+    const { logs, root, run, write } = await fixture({ check: staging })
+    expect(await run()).toEqual({ check: "ran" })
+    expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+    expect(await run()).toEqual({ check: "hit" })
+    // What it moved into place is its own product: a fresh checkout without it is answered too.
+    await Fs.rm(Path.join(root, "unpacked"), { recursive: true })
+    expect(await run()).toEqual({ check: "hit" })
+    await write("input.txt", "pass, changed\n")
+    expect(await run()).toEqual({ check: "ran" })
   })
 
   tracedIt("ends when its command ends, and stops a process the command left running", async () => {

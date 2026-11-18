@@ -142,7 +142,9 @@ status from that artifact, never from the log (`.specs/engineering/checks/README
 `--fail-fast`. A row carries `notStored`, the reason, when its run found that a
 green result could not be stored. The record carries `notStored`, a list of
 `{ reason, count }`, when any green result was not stored
-([reasons](../../docs/workspace/caching.md#why-a-result-was-not-stored)).
+([reasons](../../docs/workspace/caching.md#why-a-result-was-not-stored)). A row
+carries `notReused` when the target had a stored result and ran again: the
+first thing that result read that changed, such as `src/a.ts changed`.
 
 ### Shards
 

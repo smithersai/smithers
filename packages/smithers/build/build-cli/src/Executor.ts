@@ -61,6 +61,13 @@ export interface TargetReport {
    * no result; the summary counts those.
    */
   readonly notStored?: string | undefined
+  /**
+   * Why a stored result of this target was not reused: the first thing its
+   * run read that no longer holds what the run left there, such as
+   * `src/a.ts changed`. Present for a target reused from what its run read
+   * that had a stored result and ran again.
+   */
+  readonly notReused?: string | undefined
 }
 
 /**

@@ -360,6 +360,14 @@ const loopback = (address: string): boolean =>
 
 const portOf = (address: string): string | undefined => /sin6?_port=htons\((\d+)\)/.exec(address)?.[1]
 
+/** Which program reached which address, for the line that says why a run stores nothing. */
+const reached = (program: string | undefined, address: string): string => {
+  const host = /inet_addr\("([^"]+)"\)/.exec(address)?.[1] ?? /inet_pton\(AF_INET6, "([^"]+)"/.exec(address)?.[1]
+  const port = portOf(address)
+  const where = `${host ?? "an address the trace does not show"}${port === undefined ? "" : ` port ${port}`}`
+  return `${program === undefined ? "" : `${program} `}to ${where}`
+}
+
 /**
  * Reads a trace. `lines` is called twice and gives the trace's lines each
  * time; `cwd` is the directory the traced command started in.
@@ -383,6 +391,36 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
   const first = (map: Map<string, number>, path: string, at: number): void => {
     if (!map.has(path)) map.set(path, at)
   }
+  /** The paths the run wrote, by the directory each is in. */
+  const below = new Map<string, Set<string>>()
+  const write = (path: string): void => {
+    changed.add(path)
+    const parent = path.slice(0, path.lastIndexOf("/"))
+    let paths = below.get(parent)
+    if (paths === undefined) below.set(parent, paths = new Set())
+    paths.add(path)
+  }
+  /**
+   * A directory the run moved takes along what the run wrote in it: each such
+   * path is the run's own under its new name too, made there when the run
+   * made it under the old one.
+   */
+  const carry = (from: string, to: string, at: number): void => {
+    const moves: Array<readonly [string, string]> = [[from, to]]
+    for (let index = 0; index < moves.length; index += 1) {
+      const [source, target] = moves[index]!
+      for (const path of [...(below.get(source) ?? [])]) {
+        const moved = `${target}${path.slice(source.length)}`
+        write(moved)
+        if (made.has(path)) first(made, moved, at)
+        if (emptied.has(path)) first(emptied, moved, at)
+        moves.push([path, moved])
+      }
+    }
+  }
+  /** The program each process is running, by the name it was started under. */
+  const programs = new Map<number, string>()
+  let networked = false
 
   // Which line starts each process, and whether it shares its parent's directory.
   const children = new Map<number, { readonly child: number; readonly shared: boolean }>()
@@ -469,7 +507,7 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
         return
       }
       if (failed) return first(found, path, entered)
-      changed.add(path)
+      write(path)
       if (ok && how !== "changed") first(how === "made" ? made : emptied, path, at)
     }
 
@@ -526,7 +564,10 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       case "execveat": {
         const path = name === "execve" ? pathOf(args[0], cell.path) : pathOf(args[1], baseOf(args[0]))
         looked(path)
-        if (path !== undefined && !failed) first(started, path, entered)
+        if (path !== undefined && !failed) {
+          first(started, path, entered)
+          programs.set(pid, path.slice(path.lastIndexOf("/") + 1))
+        }
         return
       }
       case "unlink":
@@ -563,20 +604,26 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       case "link": {
         // The new path holds what the old one held, so the old one was read.
         const from = pathOf(args[0], cell.path)
+        const to = pathOf(args[1], cell.path)
         looked(from)
         if (name === "rename") wrote(from, "changed")
-        else if (from !== undefined && ok) changed.add(from)
-        return wrote(pathOf(args[1], cell.path), "made")
+        else if (from !== undefined && ok) write(from)
+        wrote(to, "made")
+        if (name === "rename" && ok && from !== undefined && to !== undefined && from !== to) carry(from, to, at)
+        return
       }
       case "renameat":
       case "renameat2":
       case "linkat": {
         const from = pathOf(args[1], baseOf(args[0]))
+        const to = pathOf(args[3], baseOf(args[2]))
         looked(from)
         if (name === "linkat") {
-          if (from !== undefined && ok) changed.add(from)
+          if (from !== undefined && ok) write(from)
         } else wrote(from, "changed")
-        return wrote(pathOf(args[3], baseOf(args[2])), "made")
+        wrote(to, "made")
+        if (name !== "linkat" && ok && from !== undefined && to !== undefined && from !== to) carry(from, to, at)
+        return
       }
       case "bind":
       case "connect": {
@@ -601,8 +648,11 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
             refusals.add(`it reached a program outside the run through the socket ${unix ?? "it was given"}`)
           }
         } else if (family === "AF_INET" || family === "AF_INET6") {
-          if (!loopback(address)) refusals.add("it opened a network connection")
-          else if (!ephemeral && !bound.has(key!)) {
+          if (!loopback(address)) {
+            // The first connection is named; a run that opened one usually opened many.
+            if (!networked) refusals.add(`it opened a network connection (${reached(programs.get(pid), address)})`)
+            networked = true
+          } else if (!ephemeral && !bound.has(key!)) {
             refusals.add(`it reached a program outside the run on local port ${portOf(address)}`)
           }
         }
@@ -652,6 +702,8 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
     if (start !== undefined) {
       const parent = cells.get(pid)!
       cells.set(start.child, start.shared ? parent : { path: parent.path })
+      const program = programs.get(pid)
+      if (program !== undefined) programs.set(start.child, program)
     }
     if (rest.endsWith("<unfinished ...>")) {
       pending.set(pid, { at: entered, text: rest.slice(0, -"<unfinished ...>".length) })

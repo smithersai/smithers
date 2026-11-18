@@ -741,6 +741,8 @@ export const executeEffect = (
     const notGreen = new Set<string>()
     /** Label → why its run found that its green result could not be stored. */
     const unstoredReasons = new Map<string, string>()
+    /** Label → what a stored result's run read that is no longer the same, where that is why the target ran again. */
+    const unreusedReasons = new Map<string, string>()
     /** Why each green result that was not stored was not, one entry a result. */
     const notStoredReasons: Array<string> = []
     /** Label → the node as it ran, where an installation it waited for replaced the planned one. */
@@ -2268,7 +2270,10 @@ export const executeEffect = (
           if (moved === undefined) return green("hit")
           why ??= moved
         }
-        if (why !== undefined) log(`${node.label}  runs again: ${why}`)
+        if (why !== undefined) {
+          unreusedReasons.set(node.label, why)
+          log(`${node.label}  runs again: ${why}`)
+        }
         const attemptPath = posix(
           NodePath.relative(root, CacheEvidence.attemptPath(root, cacheDirectory, observed.key))
         )
@@ -4248,7 +4253,8 @@ export const executeEffect = (
           key: keyFor(node),
           ...(outcome.error === undefined ? {} : { error: outcome.error }),
           ...(outcome.blockedBy === undefined ? {} : { blockedBy: outcome.blockedBy }),
-          ...(notStored === undefined ? {} : { notStored })
+          ...(notStored === undefined ? {} : { notStored }),
+          ...(unreusedReasons.has(label) ? { notReused: unreusedReasons.get(label) } : {})
         })
       })
     yield* Executor.scheduleEffect(planned.workList, jobs, runOne, options.signal, {

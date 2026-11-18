@@ -358,12 +358,23 @@ describe("reading a trace", () => {
       )).refusals
     ).toEqual(["it reached a program outside the run on local port 6379"])
     expect(read(address("{sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr(\"93.184.216.34\")}")).refusals)
-      .toEqual(["it opened a network connection"])
+      .toEqual(["it opened a network connection (to 93.184.216.34 port 443)"])
     expect(
       read(
         "100 connect(3<socket:[9]>, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr(\"93.184.216.34\")}, 16) = -1 EINPROGRESS (Operation now in progress)"
       ).refusals
-    ).toEqual(["it opened a network connection"])
+    ).toEqual(["it opened a network connection (to 93.184.216.34 port 443)"])
+    // The line names the program that connected, also when a process it started did, and only the first connection.
+    expect(
+      read([
+        "100 execve(\"/usr/bin/uv\", [\"uv\", \"run\"], 0x7ffc /* 9 vars */) = 0",
+        "100 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 101",
+        "101 connect(3<socket:[9]>, {sa_family=AF_INET6, sin6_port=htons(443), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, \"2a04:4e42::223\", &sin6_addr), sin6_scope_id=0}, 28) = 0",
+        "100 connect(4<socket:[10]>, {sa_family=AF_INET, sin_port=htons(80), sin_addr=inet_addr(\"93.184.216.34\")}, 16) = 0"
+      ].join("\n")).refusals
+    ).toEqual(["it opened a network connection (uv to 2a04:4e42::223 port 443)"])
+    expect(read("100 connect(3<socket:[9]>, {sa_family=AF_INET, sin_addr=0x7f}, 16) = 0").refusals)
+      .toEqual(["it opened a network connection (to an address the trace does not show)"])
     // A server the run started on a port the system chose answers any local port.
     expect(
       read([
@@ -372,6 +383,43 @@ describe("reading a trace", () => {
       ].join("\n")).refusals
     ).toEqual([])
     expect(read("100 connect(3<socket:[9]>) = 0").refusals).toEqual([])
+  })
+
+  it("takes what the run wrote in a directory along when the run moves the directory", () => {
+    const trace = read([
+      "100 mkdir(\"/w/stage\", 0777)                                            = 0",
+      "100 mkdir(\"/w/stage/inner\", 0777)                                      = 0",
+      "100 openat(AT_FDCWD</w>, \"stage/inner/new.txt\", O_WRONLY|O_CREAT|O_EXCL, 0666) = 3",
+      "100 openat(AT_FDCWD</w>, \"stage/inner/emptied.txt\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3",
+      "100 openat(AT_FDCWD</w>, \"stage/appended.txt\", O_WRONLY|O_APPEND)        = 3",
+      "100 openat(AT_FDCWD</w>, \"stage/only-read.txt\", O_RDONLY)                = 3",
+      "100 rename(\"/w/stage\", \"/w/middle\")                                   = 0",
+      "100 renameat2(AT_FDCWD</w>, \"middle\", AT_FDCWD</w>, \"final\", RENAME_NOREPLACE) = 0",
+      "100 rename(\"/w/final\", \"/w/final\")                                    = 0",
+      "100 rename(\"/w/absent\", \"/w/elsewhere\")                               = -1 ENOENT (No such file or directory)",
+      "100 linkat(AT_FDCWD</w>, \"final\", AT_FDCWD</w>, \"linked\", 0)          = 0"
+    ].join("\n"))
+    expect(trace.refusals).toEqual([])
+    expect(paths(trace.made).filter((path) => path.startsWith("/w/final"))).toEqual([
+      "/w/final",
+      "/w/final/inner",
+      "/w/final/inner/new.txt"
+    ])
+    expect(paths(trace.emptied)).toEqual([
+      "/w/final/inner/emptied.txt",
+      "/w/middle/inner/emptied.txt",
+      "/w/stage/inner/emptied.txt"
+    ])
+    expect([...trace.changed].filter((path) => path.startsWith("/w/final")).sort()).toEqual([
+      "/w/final",
+      "/w/final/appended.txt",
+      "/w/final/inner",
+      "/w/final/inner/emptied.txt",
+      "/w/final/inner/new.txt"
+    ])
+    // A link to a directory's name moves nothing, and a file the run only read stays somebody else's.
+    expect([...trace.changed].filter((path) => path.startsWith("/w/linked"))).toEqual(["/w/linked"])
+    expect(paths(trace.made)).not.toContain("/w/elsewhere")
   })
 
   it("stores nothing for a run that changed its view of the file system", () => {
@@ -580,6 +628,26 @@ describe("recording what a run read", () => {
     `100 openat(AT_FDCWD<${root}>, ${JSON.stringify(name)}, ${flags}) = 3`
   const absent = (root: string, name: string): string =>
     `100 openat(AT_FDCWD<${root}>, ${JSON.stringify(name)}, O_RDONLY) = -1 ENOENT (No such file or directory)`
+
+  it("takes a file the run moved into place inside a directory for the run's own", async () => {
+    const { record, root, rows } = await setup()
+    // What a package manager leaves: a directory filled under one name and moved to another.
+    await Fs.mkdir(Path.join(root, "cache", "pkg"), { recursive: true })
+    await Fs.writeFile(Path.join(root, "cache", "pkg", "RECORD"), "written by the run")
+    const filled = [
+      `100 mkdir("${root}/.tmp1", 0777) = 0`,
+      `100 mkdir("${root}/.tmp1/pkg", 0777) = 0`,
+      open(root, ".tmp1/pkg/RECORD", "O_WRONLY|O_CREAT|O_EXCL"),
+      `100 rename("${root}/.tmp1", "${root}/cache") = 0`,
+      open(root, "cache/pkg/RECORD")
+    ]
+    // The run began before the file was written, and the run wrote it: it is the run's product, not something it read.
+    expect(rows(record(filled, [], 0))).toEqual({ reads: [], lists: [] })
+    // The same file read with no move before it is somebody else's, changed during the run.
+    expect(record([open(root, "cache/pkg/RECORD")], [], 0)).toEqual({
+      refusal: "cache/pkg/RECORD changed while it ran"
+    })
+  })
 
   it("holds each path the run found, each it found missing, and each listing", async () => {
     const { outside, record, root, rows } = await setup()

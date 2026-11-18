@@ -330,6 +330,10 @@ The line of a target that runs again names the first difference:
 //:test  runs again: packages/a/value.js changed
 ```
 
+The structured summary carries the same text on the target's row as
+`notReused`, and `--results-file` writes it, so a program that reads a run can
+say which file made a step run again.
+
 **The declaration's key.** The records are stored under a key of the
 declaration alone: the command, the environment, the executables it names, the
 platform and the labels it depends on. No file is in it. A run sees only its
@@ -340,7 +344,9 @@ are kept for one declaration, so a fresh checkout and a tree a run has already
 been through each find their own.
 
 **What the run wrote.** A path the run made before it looked at it is its own
-product and never an input. A path it found missing and then made matches when
+product and never an input. So is what the run wrote in a directory it then
+moved into place, as a package manager fills a directory under a temporary name
+and renames it into its cache. A path it found missing and then made matches when
 it is missing again or still as the run left it. A file the run read and then
 rewrote is compared with what the run wrote, because what it held before is
 gone. A new mode or time the run gave a file counts as such a write. A step is therefore taken to give the same verdict when it runs again on
@@ -355,15 +361,15 @@ on every run and never reads to decide its result, such as a log directory.
 **When nothing is stored.** A green run stores nothing when what it read cannot
 all be known, and says why on its own line:
 
-| Reason                                                    | What happened                                                                                |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `it opened a network connection`                          | What a network answers is in no record                                                       |
-| `it reached a program outside the run ...`                | A daemon reads files this run's trace does not show. A server the run starts itself is in it |
-| `it changed its view of the file system`                  | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says          |
-| `<path> changed while it ran`, `was removed while it ran` | Something else wrote a file the run read, so what the run saw can no longer be measured      |
-| `its trace ...`                                           | A line of the trace could not be read in full                                                |
-| `it read more paths than one record holds`                | The record passed 12 MiB                                                                     |
-| `it passed, but failed while its reads were recorded`     | See below                                                                                    |
+| Reason                                                          | What happened                                                                                |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `it opened a network connection (uv to 151.101.0.223 port 443)` | What a network answers is in no record. The line names the program and the first address     |
+| `it reached a program outside the run ...`                      | A daemon reads files this run's trace does not show. A server the run starts itself is in it |
+| `it changed its view of the file system`                        | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says          |
+| `<path> changed while it ran`, `was removed while it ran`       | Something else wrote a file the run read, so what the run saw can no longer be measured      |
+| `its trace ...`                                                 | A line of the trace could not be read in full                                                |
+| `it read more paths than one record holds`                      | The record passed 12 MiB                                                                     |
+| `it passed, but failed while its reads were recorded`           | See below                                                                                    |
 
 A tracer changes what a few programs can do: one that gains privileges, as
 `sudo` does, or one that traces another program. A traced run that fails is
