@@ -308,6 +308,18 @@ describe("contract 5: replay report", () => {
       got: "skipped"
     })
   })
+
+  it("decodes a report whose fast mode could not be measured, which holds no fast-mode number", () => {
+    const document = fixture("replay-report.fast-not-measured.json")
+    const report = Schema.decodeUnknownSync(ReplayReport.ReplayReport)(document)
+    expect(report.fastNotMeasured).toContain("could not be reached")
+    expect(report.fastWallMs).toBeUndefined()
+    expect(report.selection).toBeUndefined()
+    expect(report.commits.every((commit) => commit.fast === undefined)).toBe(true)
+    expect(report.commits.flatMap((commit) => commit.mismatches).filter((each) => each.mode === "fast")).toEqual([])
+    expect(() => Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...(document as object), fastNotMeasured: "" }))
+      .toThrow()
+  })
 })
 
 describe("contract 6: selection", () => {

@@ -11,7 +11,8 @@
  * than a job asks for is listed with both versions. Flaky verdicts are
  * counted beside the mismatches. On a repository that
  * already builds with Smithers build, the patterns replayed stand above the
- * speedup.
+ * speedup. When fast mode was asked for and could not be measured, a line says
+ * so and why.
  *
  * Labels and commit ids come from the repository being replayed, so control
  * characters in them are replaced before they reach a terminal.
@@ -26,6 +27,7 @@ import {
   commitsLeftOut,
   count,
   duration,
+  fastNotMeasured,
   firstLine,
   flaky,
   leftEmpty,
@@ -97,6 +99,7 @@ export const text: RenderReport = (report) => {
   const found = Math.max(report.mismatches, listed.length)
   const sections: Array<Array<string>> = []
   if (found > 0) sections.push([`✗ ${mismatches(found)}`])
+  if (report.fastNotMeasured !== undefined) sections.push([clean(fastNotMeasured(report.fastNotMeasured))])
   if (report.commits.length === 0) return [...sections, [count(0, "commit")]].map(paragraph).join("\n\n")
   const modes = [
     { name: "baseline", ms: report.baselineWallMs, ratio: undefined },

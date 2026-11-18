@@ -10,7 +10,7 @@ import type { SecureRandom } from "effect/crypto/SecureRandom"
 import { Classifier, type Evaluator } from "@smthrs/model"
 import { Node } from "@smthrs/plan"
 import { Features, type Row } from "../contract/Selection.ts"
-import { failure } from "./Failure.ts"
+import { failure, unavailable } from "./Failure.ts"
 import * as Scoring from "./Scoring.ts"
 
 /**
@@ -95,7 +95,7 @@ export effect function score(rows: ReadonlyArray<Row>) {
     )
     const answered: Array<ReadonlyArray<Scoring.Reading>> = []
     for (const batch of settled) {
-      if (Result.isFailure(batch)) throw failure("model-unavailable", `The judge did not score the rows: ${batch.failure.message}`)
+      if (Result.isFailure(batch)) throw failure("model-unavailable", unavailable(batch.failure))
       answered.push(batch.success)
     }
     return Scoring.scoresOf(rows, asked, answered)

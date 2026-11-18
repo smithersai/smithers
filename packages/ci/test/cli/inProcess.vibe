@@ -4,14 +4,17 @@
  * unhappy path.
  */
 
+import { Evaluator } from "@smthrs/model"
 import { ci } from "../../src/contract/Inventory.ts"
 import type { GeneratedFile } from "../../src/contract/Parts.ts"
 import { cli, type Parts } from "../../src/cli/Cli.vibe"
 import { type Environment, type Host, layer } from "../../src/cli/Host.vibe"
+import type * as Scoring from "../../src/select/Scoring.ts"
 
 /**
  * Runs the program and resolves to its exit code. `directory` is where it
- * was started, when that is not the repository's top directory.
+ * was started, when that is not the repository's top directory. `model`
+ * replaces the model the host reads from `environment`.
  */
 export async function inProcess(
   args: ReadonlyArray<string>,
@@ -20,14 +23,41 @@ export async function inProcess(
   sink: Console.Console,
   environment: Environment,
   faulty?: Layer.Layer<FileSystem.FileSystem, never, FileSystem.FileSystem>,
-  directory?: string
+  directory?: string,
+  model?: Layer.Layer<Evaluator.Evaluator>
 ): Promise<number> {
   const run = cli(args, root, chosen, directory)
-  const program = (faulty === undefined ? run : Effect.provide(run, faulty))
+  const withFiles = faulty === undefined ? run : Effect.provide(run, faulty)
+  const program = (model === undefined ? withFiles : Effect.provide(withFiles, model))
     |> Effect.provide(%, layer(environment))
     |> Effect.provideService(%, Console.Console, sink)
   return await runPromise(program)
 }
+
+type Items = typeof Scoring.State.Type["items"]
+
+/** A model that answers every question it is asked with a low chance of failure. */
+export const answeringModel = Evaluator.layerScripted((request) =>
+  Object.fromEntries((request.state as typeof Scoring.State.Type).items.flatMap(({ item }) => [
+    [`fails${item}`, { probability: 0 }],
+    [`why${item}`, { choice: "none" }]
+  ]))
+)
+
+/**
+ * The answering model, except that it cannot be reached for a question whose
+ * items `lost` picks.
+ */
+export const modelLostFor = (lost: (items: Items) => boolean) =>
+  Layer.effect(Evaluator.Evaluator, effect {
+    const answering = try Evaluator.Evaluator
+    return Evaluator.Evaluator.of({
+      evaluate: (request) =>
+        lost((request.state as typeof Scoring.State.Type).items)
+          ? fail(new Evaluator.EvaluatorError({ code: "unreachable", message: Evaluator.unreachableMessage }))
+          : answering.evaluate(request)
+    })
+  }) |> Layer.provide(%, answeringModel)
 
 /**
  * The real file system, except that writing a file fails as a full disk does.

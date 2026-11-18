@@ -18,7 +18,7 @@ import {
   shell,
   stepTimeoutHours
 } from "../contract/Inventory.ts"
-import type { Failure, GeneratedFile, ReplayParts, ReplayRequest } from "../contract/Parts.ts"
+import type { Failure, GeneratedFile, ReplayParts, ReplayRequest, ScoreRows } from "../contract/Parts.ts"
 import type { NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { type Mode, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
@@ -58,7 +58,8 @@ import {
   targetsOf,
   totalsOf,
   type Unit,
-  withoutCredentials
+  withoutCredentials,
+  withoutFast
 } from "./Summary.ts"
 
 /** The cache directory, kept between commits. Smithers build never reads it as a source. */
@@ -282,6 +283,20 @@ effect function measure<R>(
 }
 
 /**
+ * The scores of one commit's rows, or, when the model cannot answer, the
+ * reason as text. Any other failure stays a failure.
+ *
+ * @category internals
+ * @since 0.1.0
+ */
+export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArray<Row>) {
+  return score(rows) catch effect (cause) => {
+    if (cause.code !== "model-unavailable") throw cause
+    return cause.message
+  }
+}
+
+/**
  * Replays the last `request.commits` commits and reports.
  *
  * Each commit runs its own CI: the inventory is read, split and turned into
@@ -313,6 +328,10 @@ effect function measure<R>(
  * build and its planning. What only a replay does is not counted: writing the
  * generated files into the copy, which `apply` commits once, and linking the
  * package they import. Neither are the reruns that label flaky targets.
+ *
+ * When the model fast mode needs stops answering, the baseline and normal mode
+ * still run for every commit, fast mode runs for no further commit, and the
+ * report holds no fast-mode number and says why (`fastNotMeasured`).
  *
  * @category parts
  * @since 0.1.0
@@ -540,6 +559,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const commitsLeft: Array<NotReplayedCommit> = []
     const allRows: Array<Row> = []
     let flaky = 0
+    let fastFlaky = 0
+    let fastNotMeasured: string | undefined = undefined
     const selected = new Map<string, ReadonlyArray<string>>()
 
     /**
@@ -578,27 +599,32 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       let fastPart: Pick<ReplayCommit, "fast"> = {}
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
       flaky += flakyOf([baseRecord, normalRecord])
-      if (fastCopy !== undefined) {
+      if (fastCopy !== undefined && fastNotMeasured === undefined) {
         const rows = try parts.rows(normalCopy, normalRecord, try planOf(normalCopy, own))
-        const scores = try parts.score(rows)
-        const choice = choose(scores, request.settings ?? defaultSettings)
-        const labels = normal.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
-        try progress.say(`${at} fast`)
-        const fast = try measure(
-          checkout(fastCopy, commit, place),
-          equip(fastCopy, own),
-          smithers(fastCopy, own),
-          labels,
-          options.reruns
-        )
-        const byLabel = new Map(fast.results.map((result) => [result.label, result]))
-        const merged = normal.results.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
-        const fastRecord = recordOf(merged, commit, fast.wallMs, "fast" satisfies Mode)
-        fastPart = { fast: totalsOf(fastRecord) }
-        fastMismatches = mismatchesOf("fast", baseRecord, fastRecord, own.splits)
-        flaky += flakyOf([fastRecord])
-        allRows.push(...rows)
-        selected.set(commit, choice.selected)
+        const scores = try scoresOrReason(parts.score, rows)
+        if (typeof scores === "string") {
+          fastNotMeasured = scores
+          try progress.say(`${at} fast not measured`)
+        } else {
+          const choice = choose(scores, request.settings ?? defaultSettings)
+          const labels = normal.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
+          try progress.say(`${at} fast`)
+          const fast = try measure(
+            checkout(fastCopy, commit, place),
+            equip(fastCopy, own),
+            smithers(fastCopy, own),
+            labels,
+            options.reruns
+          )
+          const byLabel = new Map(fast.results.map((result) => [result.label, result]))
+          const merged = normal.results.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
+          const fastRecord = recordOf(merged, commit, fast.wallMs, "fast" satisfies Mode)
+          fastPart = { fast: totalsOf(fastRecord) }
+          fastMismatches = mismatchesOf("fast", baseRecord, fastRecord, own.splits)
+          fastFlaky += flakyOf([fastRecord])
+          allRows.push(...rows)
+          selected.set(commit, choice.selected)
+        }
       }
       commitsDone.push({
         commit,
@@ -609,10 +635,12 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         ...fastPart
       })
     }
-    return reportOf(newest.inventory, commitsDone, {
-      selection: fastCopy === undefined ? undefined : selectionOf(allRows, selected),
+    const measured = fastNotMeasured === undefined
+    return reportOf(newest.inventory, measured ? commitsDone : commitsDone.map(withoutFast), {
+      selection: fastCopy === undefined || !measured ? undefined : selectionOf(allRows, selected),
       left: newest.left,
-      flaky,
-      commitsLeft
+      flaky: measured ? flaky + fastFlaky : flaky,
+      commitsLeft,
+      fastNotMeasured
     })
   })

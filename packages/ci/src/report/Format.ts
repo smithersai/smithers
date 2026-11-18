@@ -39,6 +39,14 @@ export const times = (ratio: number): string => {
 }
 
 /**
+ * The line that says fast mode has no numbers, and why.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const fastNotMeasured = (reason: string): string => `Fast mode was not measured. ${reason}`
+
+/**
  * Whether a run passed, as one word.
  *
  * @category formatting

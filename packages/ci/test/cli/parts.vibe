@@ -3,12 +3,14 @@
  * small real replay in place of the replay part, which has not landed. It
  * replays `git log`: each commit's normal-mode time is 100 ms per changed file
  * against a 1 s baseline, and a subject holding `[mismatch]` reports one
- * mismatch. It prints the request it got on standard error.
+ * mismatch. It prints the request it got on standard error, and a model that
+ * answers stands in for the real one.
  */
 
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
 import type { ReplayCommit, ReplayReport, RunTotals } from "../../src/contract/ReplayReport.ts"
+import type { Row } from "../../src/contract/Selection.ts"
 import type { Parts } from "../../src/cli/Cli.vibe"
 import type { Host } from "../../src/cli/Host.vibe"
 import { parts as onMain } from "../../src/cli/parts.ts"
@@ -81,6 +83,14 @@ export const hanging = (marker: string) =>
   }
 
 /**
- * Every part on `main`, with this replay.
+ * Scores every row 0, as a model that answers does. The tests that are about
+ * the model use the real score part.
  */
-export const parts: Parts<Host> = { ...onMain, run }
+export effect function score(rows: ReadonlyArray<Row>) {
+  return rows.map((row) => ({ commit: row.commit, target: row.target, score: 0 }))
+}
+
+/**
+ * Every part on `main`, with this replay and this score.
+ */
+export const parts: Parts<Host> = { ...onMain, run, score }

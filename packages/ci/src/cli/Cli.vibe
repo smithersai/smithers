@@ -29,6 +29,7 @@ import { ReplayReport } from "../contract/ReplayReport.ts"
 import type { Mode } from "../contract/RunRecord.ts"
 import * as Native from "../native/index.ts"
 import { uncommittedFooter } from "../native/Workspace.ts"
+import * as Preflight from "./Preflight.ts"
 
 /**
  * The parts the program calls, one function each, as contract 10 names them.
@@ -64,13 +65,16 @@ export function exitCodeOf(failure: Failure): number {
 }
 
 /**
- * The one line the program prints for a part's failure.
+ * The one line the program prints for a part's failure. A model that cannot
+ * be reached is the person's to fix, so that line names no part of the program.
  *
  * @category exit codes
  * @since 0.1.0
  */
 export function lineOf(failure: Failure): string {
-  return `${Surface.name}: ${failure.part}: ${failure.message}`
+  return failure.code === "model-unavailable"
+    ? `${Surface.name}: ${failure.message}`
+    : `${Surface.name}: ${failure.part}: ${failure.message}`
 }
 
 const failed = (message: string): Failure => ({ code: "command-failed", message, part: "cli" })
@@ -279,14 +283,28 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     }
 
   /**
+   * Asks the model one small question when the replay will need it, so a model that cannot answer stops the
+   * program before anything is copied or run.
+   */
+  effect function checkModel(input: ReplayInput) {
+    if (input.mode === "normal") return
+    parts.score([Preflight.row]) catch effect (cause) => {
+      if (cause.code !== "model-unavailable") throw cause
+      throw { ...cause, message: `${cause.message} ${Preflight.withoutTheModel}` } satisfies Failure
+    }
+  }
+
+  /**
    * Replays and prints. A replay runs commits, so changes that are not committed are named on standard error
-   * before it starts. `footer` is given the report and the `--out` file when it is inside the repository.
+   * before it starts. `footer` is given the report and the `--out` file when it is inside the repository. A report
+   * whose fast mode could not be measured is printed whole, and the program then says so and exits `failed`.
    */
   effect function replayAndPrint(
     input: ReplayInput,
     read: Inventory,
     footer: (report: ReplayReport, written: string | undefined) => string
   ) {
+    try checkModel(input)
     if (read.unsupported?.some((entry) => entry.feature === uncommitted)) {
       try Console.error(`${Surface.name}: the working tree has changes that are not committed; a replay runs commits, so they are not replayed`)
     }
@@ -302,6 +320,11 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
       if (!within.startsWith("..")) written = within
     }
     try Console.log(input.json ? document : `${try render(parts.text, report)}${footer(report, written)}`)
+    if (report.fastNotMeasured !== undefined) {
+      try Console.error(`${Surface.name}: fast mode was not measured. ${report.fastNotMeasured}`)
+      try settle(Surface.exitCodes.failed)
+      return
+    }
     try settle(report.mismatches > 0 ? Surface.exitCodes.mismatch : Surface.exitCodes.ok)
   }
 

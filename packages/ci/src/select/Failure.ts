@@ -1,9 +1,11 @@
 /**
- * The failure every part of fast mode answers with.
+ * The failure every part of fast mode answers with, and what it tells a
+ * person when the model cannot answer.
  *
  * @since 0.1.0
  */
 
+import type { Classifier } from "@smthrs/model"
 import type { Failure } from "../contract/Parts.ts"
 
 /**
@@ -14,3 +16,33 @@ import type { Failure } from "../contract/Parts.ts"
  * @throws {never}
  */
 export const failure = (code: Failure["code"], message: string): Failure => ({ code, message, part: "select" })
+
+const theModel = "The model that predicts which tests a change cannot break"
+
+/**
+ * What a person reads when the model did not answer: what is wrong and what
+ * to do. It never repeats the service's own message, which names internals. A
+ * failure of the flow engine around the request carries no model code and
+ * reads as an answer that could not be used.
+ *
+ * @category constructors
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const unavailable = (error: { readonly _tag: string }): string => {
+  const { code, status } = error as Partial<Pick<Classifier.ClassifierError, "code" | "status">>
+  switch (code) {
+    case "unconfigured":
+      return `${theModel} needs a key or a sign-in, and this machine has neither. Set AI_GATEWAY_API_KEY, run \`claude auth login\` with ANTHROPIC_API_KEY unset, or run \`codex login\` with SMITHERS_OPENAI_AUTH=chatgpt.`
+    case "refused":
+      return status === 429
+        ? `${theModel} is over its usage limit. Run this again when the limit resets.`
+        : `${theModel} refused the request. Check AI_GATEWAY_API_KEY or your sign-in.`
+    case "timeout":
+      return `${theModel} did not answer in time. Check this machine's network and run this again.`
+    case "unreachable":
+      return `${theModel} could not be reached. Check this machine's network, AI_GATEWAY_API_KEY and your sign-in.`
+    default:
+      return `${theModel} did not give a usable answer. Run this again.`
+  }
+}

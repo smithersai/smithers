@@ -6,6 +6,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Evaluator } from "@smthrs/model"
 import * as Selection from "../../src/contract/Selection.ts"
 import { layer, score, ScoreFlow } from "../../src/select/Score.vibe"
+import { unavailable } from "../../src/select/Failure.ts"
 import * as Scoring from "../../src/select/Scoring.ts"
 import { row } from "./support.vibe"
 
@@ -136,7 +137,7 @@ describe("score", () => {
     provide host(unconfigured) {
       const failed = try flip(score([row("c1", "//a:test")]))
       try Effect.try(() => {
-        expect(failed).toEqual({ code: "model-unavailable", message: "The judge did not score the rows: No judge is configured", part: "select" })
+        expect(failed).toEqual({ code: "model-unavailable", message: unavailable({ _tag: "flows/model/ClassifierError", code: "unconfigured" } as never), part: "select" })
       })
     }
   })
@@ -166,7 +167,7 @@ describe("score", () => {
       const failed = try flip(score([row("c1", "//a:test")]))
       try Effect.try(() => {
         expect(failed.code).toBe("model-unavailable")
-        expect(failed.message).toContain("\"weather\" is not an option")
+        expect(failed.message).toBe(unavailable({ _tag: "flows/model/ClassifierError", code: "invalid_answer" } as never))
         expect(requests).toBe(Scoring.attempts)
       })
     }

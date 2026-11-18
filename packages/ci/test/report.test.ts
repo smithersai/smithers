@@ -574,3 +574,33 @@ describe("numbers", () => {
     expect(bar(0, 0, 4)).toBe("")
   })
 })
+
+describe("a report whose fast mode could not be measured", () => {
+  const reason = "The model <could not> be reached."
+  const report: ReplayReport = { ...normalOnly(), fastNotMeasured: reason }
+
+  it("says so and why, beside the whole normal-mode report", () => {
+    const printed = text(report)
+    expect(printed).toContain(`Fast mode was not measured. ${reason}`)
+    expect(printed).toContain("5.5× faster")
+    expect(printed).toContain("1 commit · 0 mismatches")
+    expect(printed).not.toMatch(/^fast/m)
+  })
+
+  it("says so on the page, escaped", () => {
+    const page = html(report)
+    expect(page).toContain("Fast mode was not measured. The model &lt;could not&gt; be reached.")
+    expect(page).toContain("5.5× faster")
+  })
+
+  it("says so when no commit was replayed", () => {
+    const empty = { ...report, commits: [] }
+    expect(text(empty)).toBe(`Fast mode was not measured. ${reason}\n\n0 commits`)
+    expect(html(empty)).toContain("Fast mode was not measured.")
+  })
+
+  it("says nothing when fast mode was measured or never asked for", () => {
+    expect(text(normalOnly())).not.toContain("not measured")
+    expect(html(normalOnly())).not.toContain("not measured")
+  })
+})

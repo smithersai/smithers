@@ -29,7 +29,8 @@ import {
   stepsThrough,
   targetsOf,
   totalsOf,
-  withoutCredentials
+  withoutCredentials,
+  withoutFast
 } from "../../src/replay/Summary.ts"
 
 const step = (id: string, command: string, env: Readonly<Record<string, string>> = {}) => ({
@@ -638,5 +639,31 @@ describe("reportOf", () => {
     expect(reportOf(read, [entry], { ...nothing, commitsLeft }).notReplayedCommits).toEqual(commitsLeft)
     expect(reportOf(read, [entry], { ...nothing, commitsLeft: [] }).notReplayedCommits).toBeUndefined()
     expect(reportOf(read, [entry], nothing).notReplayedCommits).toBeUndefined()
+    expect(reportOf(read, [entry], nothing)).not.toHaveProperty("fastNotMeasured")
+    expect(reportOf(read, [entry], { ...nothing, fastNotMeasured: "why" }).fastNotMeasured).toBe("why")
+  })
+})
+
+describe("withoutFast", () => {
+  const totals = { ok: true, wallMs: 1, workMs: 1, counts: { hit: 0, ran: 1, failed: 0, skipped: 0 } }
+
+  it("takes out the commit's fast-mode time and mismatches and keeps the rest", () => {
+    const normal = { label: "//:a", mode: "normal", baseline: "pass", got: "fail" } as const
+    const fast = { label: "//:b", mode: "fast", baseline: "fail", got: "skipped" } as const
+    const commit = {
+      commit: "c",
+      changedFiles: 1,
+      baseline: totals,
+      normal: totals,
+      mismatches: [normal, fast],
+      fast: totals
+    }
+    expect(withoutFast(commit)).toStrictEqual({
+      commit: "c",
+      changedFiles: 1,
+      baseline: totals,
+      normal: totals,
+      mismatches: [normal]
+    })
   })
 })

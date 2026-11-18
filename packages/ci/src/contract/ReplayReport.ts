@@ -120,6 +120,11 @@ export type NotReplayedCommit = typeof NotReplayedCommit.Type
  * secret (`Inventory.withheldOf`): the baseline ran without the remote
  * build cache they open.
  *
+ * `fastNotMeasured` says why fast mode has no numbers, when it was asked for
+ * and the model it needs stopped answering during the replay. Every commit
+ * then still has its baseline and normal-mode results, and no commit, total
+ * or mismatch holds a fast-mode number: part of a measurement is not one.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -133,6 +138,7 @@ export const ReplayReport = Schema.Struct({
   mismatches: Schema.Int,
   fastWallMs: Schema.optionalKey(Schema.Finite),
   selection: Schema.optionalKey(Metrics),
+  fastNotMeasured: Schema.optionalKey(Schema.NonEmptyString),
   flaky: Schema.optionalKey(Schema.Int),
   notReplayed: Schema.optionalKey(Schema.Array(NotReplayed)),
   notRead: Schema.optionalKey(Schema.Array(Unsupported)),

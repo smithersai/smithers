@@ -456,7 +456,9 @@ describe.concurrent("smithers-ci with a faulty part or host", () => {
     const exit = failureExitCodes[code]
     it(`exits ${exit} with one line when a part fails with ${code}`, async () => {
       const outcome = await runIn(["inventory"], repo(), failing({ code, message: "it broke", part: "inventory" }))
-      expect(outcome).toEqual({ code: exit, stdout: "", stderr: "smithers-ci: inventory: it broke\n" })
+      // A model that cannot be reached is the person's to fix, so its line names no part of the program.
+      const where = code === "model-unavailable" ? "" : "inventory: "
+      expect(outcome).toEqual({ code: exit, stdout: "", stderr: `smithers-ci: ${where}it broke\n` })
     })
   }
 

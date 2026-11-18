@@ -92,8 +92,11 @@ JSON instead of text.
 
 ## Try fast mode
 
-Fast mode also skips targets a scorer judges safe to skip. To measure both
-modes on the same commits:
+Fast mode also skips what the model that predicts which tests a change cannot
+break says is safe to skip. Give the command a way to reach that model: set
+`AI_GATEWAY_API_KEY`, run `claude auth login` with `ANTHROPIC_API_KEY` unset, or
+run `codex login` with `SMITHERS_OPENAI_AUTH=chatgpt`. Then measure both modes
+on the same commits:
 
 ```sh
 bunx smithers-ci --mode both
@@ -102,6 +105,14 @@ bunx smithers-ci --mode both
 Each commit then also gets a fast-mode entry, the total gives the fast-mode
 wall time, and the report adds how well the skipping did. See
 [Normal mode and fast mode](../concepts/modes.md).
+
+The command asks the model one small question before it copies or runs
+anything. When the model cannot answer, the command exits `4` at once and says
+what is missing and how to supply it.
+
+When the model stops answering during the replay, your time is not lost. The
+baseline and normal mode finish for every commit, the report prints in full and
+says fast mode was not measured and why, and the command exits `4`.
 
 ## Exit codes
 

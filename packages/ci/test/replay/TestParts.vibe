@@ -2,12 +2,16 @@
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Evaluator } from "@smthrs/model"
 import { Inventory, type Job, shell, type Step, withVariant } from "../../src/contract/Inventory.ts"
 import type { Failure, GeneratedFile, ReplayParts } from "../../src/contract/Parts.ts"
 import type { RunRecord } from "../../src/contract/RunRecord.ts"
 import type { Row, Score } from "../../src/contract/Selection.ts"
 import { path as targetMapPath } from "../../src/contract/TargetMap.ts"
 import { Options } from "../../src/replay/index.ts"
+import type * as Scoring from "../../src/select/Scoring.ts"
 import { linkTargets, smthrs } from "./fixture.ts"
 import { unconfined } from "./place.ts"
 
@@ -138,6 +142,38 @@ export const parts = (first: string): ReplayParts<FileSystem.FileSystem | Path.P
   rows,
   score: scoreKeeping(first)
 })
+
+/** The rows of {@link rows}, with the commit as the project, so each commit asks the model a new question. */
+export effect function rowsOfEachCommit(root: string, record: RunRecord) {
+  return (try rows(root, record)).map((row) => ({ ...row, features: { ...row.features, project: row.commit } }))
+}
+
+/**
+ * What the real score part needs, with a model that answers its first
+ * `answers` requests, each with a chance of failure of 0, and then cannot be
+ * reached.
+ */
+export const modelFailingAfter = (answers: number) => {
+  let asked = 0
+  const answering = Evaluator.layerScripted((request) =>
+    Object.fromEntries((request.state as typeof Scoring.State.Type).items.flatMap(({ item }) => [
+      [`fails${item}`, { probability: 0 }],
+      [`why${item}`, { choice: "none" }]
+    ]))
+  )
+  const model = Layer.effect(Evaluator.Evaluator, effect {
+    const real = try Evaluator.Evaluator
+    return Evaluator.Evaluator.of({
+      evaluate: (request) =>
+        effect {
+          asked += 1
+          if (asked > answers) throw new Evaluator.EvaluatorError({ code: "unreachable", message: Evaluator.unreachableMessage })
+          return try real.evaluate(request)
+        }
+    })
+  }) |> Layer.provide(%, answering)
+  return Layer.mergeAll(FlowEngine.layerMemory, WebCrypto.layer, model)
+}
 
 /**
  * One rerun keeps the tests quick; the ten-rerun limit has its own test. These tests read what a step wrote

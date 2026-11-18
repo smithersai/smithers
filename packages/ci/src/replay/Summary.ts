@@ -640,7 +640,22 @@ export interface Findings {
   readonly flaky: number
   /** The commits whose own CI could not be replayed. */
   readonly commitsLeft?: ReadonlyArray<NotReplayedCommit> | undefined
+  /** Why fast mode has no numbers, when the model stopped answering during the replay. */
+  readonly fastNotMeasured?: string | undefined
 }
+
+/**
+ * A commit with every fast-mode number taken out, for a replay whose fast
+ * mode could not be measured to the end.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const withoutFast = ({ fast: _fast, ...commit }: ReplayCommit): ReplayCommit => ({
+  ...commit,
+  mismatches: commit.mismatches.filter((mismatch) => mismatch.mode !== "fast")
+})
 
 /**
  * The replay report of `inventory`'s repository. `speedup` is baseline wall
@@ -676,6 +691,7 @@ export const reportOf = (
     ...(found.selection === undefined
       ? {}
       : { fastWallMs: sum((commit) => commit.fast?.wallMs ?? 0), selection: found.selection }),
+    ...(found.fastNotMeasured === undefined ? {} : { fastNotMeasured: found.fastNotMeasured }),
     ...(found.left.length === 0 ? {} : { notReplayed: found.left }),
     ...(found.commitsLeft === undefined || found.commitsLeft.length === 0
       ? {}

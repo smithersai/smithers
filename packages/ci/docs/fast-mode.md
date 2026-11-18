@@ -50,9 +50,10 @@ target is at distance 0 only inside a changed file's own project.
 
 ## A score
 
-The scorer is a Jev classifier. It reads a row's six features and nothing
-else: not the target's name, not the diff. For each row it answers the chance
-the target fails, and which fact most decides that:
+Scores come from the model that predicts which tests a change cannot break. It
+reads a row's six features and nothing else: not the target's name, not the
+diff. For each row it answers the chance the target fails, and which fact most
+decides that:
 
 | Reason the score carries                                   | The fact               |
 | ---------------------------------------------------------- | ---------------------- |
@@ -64,12 +65,30 @@ the target fails, and which fact most decides that:
 | Nothing in the features points to a failure.               | None                   |
 
 Rows with equal features share one question, so a change with thousands of
-targets asks about a few dozen feature sets. Each request to the judge is a
-durable flow step: a run that stops and resumes pays for no request twice.
-When the judge cannot answer, scoring fails; nothing is scored by guess.
+targets asks about a few dozen feature sets. An answer is kept for the rest of
+the run, so no question is paid for twice. When the model cannot answer, nothing
+is scored by guess.
 
-The judge is the host's. With an `AI_GATEWAY_API_KEY` it is Jev. Without one
-it is the host's signed-in subscription model.
+## Reaching the model
+
+Fast mode reaches the model one of three ways:
+
+| Way         | What to do                                              |
+| ----------- | ------------------------------------------------------- |
+| A key       | Set `AI_GATEWAY_API_KEY`.                               |
+| Claude Code | Run `claude auth login` with `ANTHROPIC_API_KEY` unset. |
+| Codex       | Run `codex login` with `SMITHERS_OPENAI_AUTH=chatgpt`.  |
+
+Before a replay copies or runs anything, `smithers-ci` asks the model one small
+question. When the model cannot answer, the command exits `4` at once with one
+line that says what is missing and how to supply it. `--mode normal` does not
+use the model.
+
+When the model stops answering during a replay, fast mode stops and the rest of
+the replay goes on. The baseline and normal mode finish for every commit, and
+the report holds all of them. It holds no fast-mode number, because part of a
+measurement is not one, and it says fast mode was not measured and why. The
+same line goes to standard error, and the command exits `4`.
 
 ## The three numbers
 
@@ -112,8 +131,7 @@ The eval measures fast mode the way the paper measures its model.
 
 - **Split by time.** The newest seven days of rows are the test set. Earlier
   rows only supply the test set's failure rates; the classifier is not trained.
-- **Score.** Every change of the test set is scored by the real scorer on a
-  real model.
+- **Score.** Every change of the test set is scored by the real model.
 - **Sweep.** The score cutoff is swept with the count cutoff at 0, and the
   count cutoff with the score cutoff at 1.
 - **Weekly check.** The paper accepts a new model when, at a test recall of at
@@ -127,7 +145,7 @@ The eval measures fast mode the way the paper measures its model.
   a test set is not the test set's recall.
 
 It is a Smithers eval: a suite with one case per change, graded per change by
-two scorers (`caught`, the share of the change's failures selected, and
+two measures (`caught`, the share of the change's failures selected, and
 `skipped`, the share of its targets skipped).
 
 ### Running it
@@ -160,7 +178,7 @@ rows. The test week is its newest seven days.
 | Test set   | 443,007 rows in 152 changes                                                         |
 | Failures   | 687, in 94 changes                                                                  |
 | Flaky rows | 41, not counted as failures                                                         |
-| Judge      | GPT-6 Luna, the host's subscription judge. The build server holds no key for Jev.   |
+| Model      | GPT-6 Luna, through a subscription. The build server holds no `AI_GATEWAY_API_KEY`. |
 | Requests   | 481, in 17 minutes. A second run replayed every one from the journal, in 2 minutes. |
 
 | Settings                                    | Test recall        | Change recall    | Selection rate             |

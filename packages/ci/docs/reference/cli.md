@@ -59,6 +59,21 @@ password in it is a usage error (exit `2`), because `apply` writes the URL into
 the workflow. With `--json`, `inventory` prints the inventory and the other two
 commands print the replay report.
 
+### Fast mode and its model
+
+Fast mode needs the model that predicts which tests a change cannot break.
+`--mode fast` and `--mode both` ask it one small question before anything is
+copied or run. When it cannot answer, the program prints one line on standard
+error that says what is missing and how to supply it, prints no report, and
+exits `4`.
+
+When the model stops answering during the replay, the program stops using it.
+The baseline and normal mode still run for every commit. The report is printed
+in full with no fast-mode numbers, not even for the commits fast mode finished,
+and it says fast mode was not measured and why. With `--json` the reason is the
+report's `fastNotMeasured` field. The same line goes to standard error, and the
+program exits `4`, also when the report lists a mismatch.
+
 ## Output
 
 The report goes to standard output. While a replay runs, standard error gets one line as each mode of each commit starts:
@@ -102,11 +117,14 @@ shell reports a program ended by that signal. A second signal ends it at once.
 
 ## Environment
 
-The program reads two environment variables and no others.
+The program reads two environment variables of its own.
 
 | Variable               | What it is                                                                                                    |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `SMITHERS_CACHE_TOKEN` | The token sent to the shared cache that `--cache` names.                                                      |
 | `AI_GATEWAY_API_KEY`   | The key for Jev, the judge fast mode asks. Without it, fast mode asks the model this machine is signed in to. |
 
-With neither a key nor a signed-in model, `--mode fast` and `--mode both` exit `4`.
+To sign this machine in instead of setting a key, run `claude auth login` with
+`ANTHROPIC_API_KEY` unset, or `codex login` with `SMITHERS_OPENAI_AUTH=chatgpt`.
+With neither a key nor a sign-in, `--mode fast` and `--mode both` exit `4` before
+they copy or run anything.

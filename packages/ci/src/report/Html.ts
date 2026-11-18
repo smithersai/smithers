@@ -17,6 +17,7 @@ import {
   commitsLeftOut,
   count,
   duration,
+  fastNotMeasured,
   firstLine,
   flaky,
   leftEmpty,
@@ -233,6 +234,9 @@ export const html: RenderReport = (report) => {
   const found = Math.max(report.mismatches, report.commits.reduce((sum, commit) => sum + commit.mismatches.length, 0))
   const body: Array<string> = [`<h1>${escape(report.repository)}</h1>`]
   if (found > 0) body.push(`<p class="alert" role="alert">${mismatches(found)}</p>`)
+  if (report.fastNotMeasured !== undefined) {
+    body.push(`<p class="summary">${escape(fastNotMeasured(report.fastNotMeasured))}</p>`)
+  }
   if (report.commits.length === 0) {
     body.push(`<p class="summary">${count(0, "commit")}</p>`)
   } else {
