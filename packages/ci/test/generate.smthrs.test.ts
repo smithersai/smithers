@@ -11,6 +11,7 @@ import type { Ci, Inventory as InventoryDocument, Job } from "../src/contract/In
 import { Inventory, shell } from "../src/contract/Inventory.ts"
 import { files } from "../src/generate/index.ts"
 import { workflowPath } from "../src/generate/Render.ts"
+import { observes } from "./cli/repo.ts"
 
 const cli = fileURLToPath(new URL("../../smithers/bin/smithers.mjs", import.meta.url))
 const slow = 180_000
@@ -369,8 +370,10 @@ describe("generated files under the real smthrs", () => {
       expect(statuses("first")).toEqual({ "ci-1": "ran", "ci-2-a": "ran", "ci-2-b": "ran" })
       expect(statuses("second")).toEqual({ "ci-1": "ran", "ci-2-a": "hit", "ci-2-b": "hit" })
       // The file the build read changes. A key made of `packages/a/**` would not: the step would hit, and pass stale.
+      // The other package's step read neither file. Where its reads are recorded it is answered from the cache;
+      // elsewhere it runs on every change.
       writeFileSync(join(root, "config/value"), "bad\n")
-      expect(statuses("third")).toEqual({ "ci-1": "ran", "ci-2-a": "failed", "ci-2-b": "ran" })
+      expect(statuses("third")).toEqual({ "ci-1": "ran", "ci-2-a": "failed", "ci-2-b": observes ? "hit" : "ran" })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

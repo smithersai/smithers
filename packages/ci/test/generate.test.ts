@@ -579,6 +579,16 @@ describe("a step that names what it reads", () => {
     expect(whole).toContain(`sandbox: "none"`)
   })
 
+  it("observes a step nobody declared inputs for, and no other", () => {
+    const source = targetsOf(inventory([job("a", [step("a:1", "npm ci"), step("a:2", "npm test")]), job("b", parts)]))
+    // What the step reads is recorded when it runs; npm's own log directory is left out of the record.
+    expect(declaration(source, "a-2")).toContain(`  sandbox: "none",\n  observe: { ignore: ["~/.npm/_logs"] },\n`)
+    // A step a later step relies on always runs, and a step held to its inputs is already known.
+    expect(declaration(source, "a-1")).not.toContain("observe")
+    expect(declaration(source, "a-2-ui")).not.toContain("observe")
+    expect(declaration(source, "a-2-web")).not.toContain("observe")
+  })
+
   it("keeps the whole repository for a step that follows another in its working tree", () => {
     // The install wrote files the package steps read, and nothing says which files it read to write them.
     const source = targetsOf(split())
@@ -1041,14 +1051,20 @@ describe("the workspace and workflow", () => {
     expect(workflow).toContain("apt-get install -y -qq --no-install-recommends bubblewrap")
     expect(workflow).toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0")
     expect(workflow.indexOf("bubblewrap\n")).toBeLessThan(workflow.indexOf("smthrs ci"))
-    // No target is confined: nothing to install.
+    expect(workflow).not.toContain("strace")
+    // No target is confined: nothing to install for the sandbox. The step is observed, which needs the tracer.
     const open = content(generate(inventory([job("a", [step("a:1", "x")])])), workflowPath)
     expect(open).not.toContain("bubblewrap")
+    expect(open).toContain("      - name: Install the tracer\n        if: runner.os == 'Linux'\n")
+    expect(open).toContain("apt-get install -y -qq --no-install-recommends strace")
+    expect(open.indexOf("strace\n")).toBeLessThan(open.indexOf("smthrs ci"))
     // Inputs too large for one PACKAGE.ts: every target runs in the open, so the step is left out.
     const inputs = Array.from({ length: 4000 }, (_, index) => `packages/${"p".repeat(300)}-${index}/**`)
     const large = generate(inventory([job("a", [step("a:1", "x", { inputs, from: "a:1" })])]))
     expect(content(large, packagePath)).not.toContain("sandbox: {")
+    expect(content(large, packagePath)).toContain("observe: {")
     expect(content(large, workflowPath)).not.toContain("bubblewrap")
+    expect(content(large, workflowPath)).toContain("strace")
   })
 
   it("uses the repository's Node and defaults its triggers and runner", () => {

@@ -140,6 +140,21 @@ strategy returns the same shape. A strategy never guesses. When it meets an
 import it cannot follow, the closure counts as affected by every change, so
 the target always runs.
 
+A plain shell step, `npm test` or `make check`, has no entry files, and nobody
+can say what it reads. Smithers CI records it. The step runs under a trace that
+names every file it opened, every directory it listed, and every path it looked
+for and did not find. Its result is stored with that list. On the next change
+the step is a cache hit when everything on the list is unchanged. It runs again
+when a file it read changed, when a file appeared in a directory it listed, or
+when a path it looked for now exists. A change to a file it never read, the
+docs for one, does not run it.
+
+A step that reached the network, or a program outside its own run, stores
+nothing and runs every time: what those answered is on no list. Recording
+needs Linux with `strace`, which the generated workflow installs on its
+runners. On any other system such a step runs on every change, as it does in
+the repository's CI today.
+
 ## 3. Replay
 
 The replay runs past commits, 20 unless `--commits` says otherwise, and

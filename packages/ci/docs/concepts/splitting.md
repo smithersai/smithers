@@ -3,9 +3,9 @@ title: "Splitting a step"
 description: "How smithers-ci turns one CI step that runs a task over a whole workspace into one step per package, what each of those steps reads, and which steps it never splits."
 ---
 
-A CI step such as `turbo run test` reads the whole repository, so every change
-reruns it. Smithers CI splits such a step into one step per package, and names
-the files each one reads. A change then reruns only the steps that read a file
+A CI step such as `turbo run test` reads every package, so a change to any of
+them reruns it. Smithers CI splits such a step into one step per package, and
+names the files each one reads. A change then reruns only the steps that read a file
 it touched.
 
 ```text
@@ -139,15 +139,17 @@ which a generated target cannot ask for yet.
 
 Three kinds of target run in the open, as an unsplit step does:
 
-- A step with no inputs. Its target declares the whole repository.
+- A step with no inputs. What it reads is recorded when it runs, and it runs
+  again only when one of those files changes: see
+  [How it works](how-it-works.md#2-targets).
 - A step a later step follows. Its target always runs and its result is never
   reused. It declares no files, unless it names what it reads and what it
   writes.
 - A step that follows a step that does not name what it reads and writes. Its
-  target declares the whole repository.
+  reads are recorded in the same way.
 
 When the targets' inputs would make `PACKAGE.ts` larger than the 1 MiB Smithers
-build reads, every target declares the whole repository and runs in the open.
+build reads, every target runs in the open with its reads recorded.
 
 ## A step after another step
 
@@ -167,10 +169,10 @@ old pass is replayed.
 So a step that follows another is held to its inputs only when every earlier
 step in its working tree names both what it reads and what it writes:
 
-| The earlier steps                              | The step after them                                                           |
-| ---------------------------------------------- | ----------------------------------------------------------------------------- |
-| Each names what it reads and what it writes    | Stays narrowed. It can read what they wrote, and its key holds what they read |
-| One does not name what it reads, or its writes | Declares the whole repository and runs in the open. It reruns on every change |
+| The earlier steps                              | The step after them                                                             |
+| ---------------------------------------------- | ------------------------------------------------------------------------------- |
+| Each names what it reads and what it writes    | Stays narrowed. It can read what they wrote, and its key holds what they read   |
+| One does not name what it reads, or its writes | Runs in the open with its reads recorded. It reruns when a file it read changes |
 
 An earlier step that names both becomes a target that declares both. Smithers
 build lets a target read the outputs of the targets it depends on, and puts

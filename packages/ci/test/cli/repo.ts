@@ -2,7 +2,7 @@
  * Real repositories and real processes for the `smithers-ci` tests.
  */
 
-import { execFile, execFileSync, spawn as spawnChild } from "node:child_process"
+import { execFile, execFileSync, spawn as spawnChild, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
   existsSync,
@@ -154,6 +154,14 @@ export interface Outcome {
 }
 
 const packageRoot = fileURLToPath(new URL("../../", import.meta.url))
+
+/**
+ * True when this host can record what a step reads: Linux with a `strace`
+ * that can trace a process. A step that names no inputs is then reused until
+ * a file it read changes; on any other host it runs on every change.
+ */
+export const observes = process.platform === "linux" &&
+  spawnSync("strace", ["-f", "--seccomp-bpf", "-e", "trace=openat", "-o", "/dev/null", "true"]).status === 0
 
 /** The published executable. */
 export const bin = join(packageRoot, "bin", "smithers-ci.mjs")

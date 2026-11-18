@@ -113,6 +113,16 @@ const renderWorkspace = (inventory: Inventory, plan: StepPlan, narrowed: boolean
 const narrows = (target: StepTarget, narrowed: boolean): boolean =>
   narrowed && target.rule === "check" && target.inputs !== undefined
 
+// Paths a tool writes each time it starts and never reads to decide its result: npm keeps a log of every command
+// there. Left out of what an observed step read, they cannot make it run again.
+const bookkeeping: ReadonlyArray<string> = ["~/.npm/_logs"]
+
+// True for a target whose step names no inputs, so nobody knows what it reads. Smithers build observes it: the run
+// is traced, the result is stored with every path the run looked at, and the target runs again only when one of
+// those paths changed. The whole repository it declares is then the most it may read, not what reruns it.
+const observes = (target: StepTarget, narrowed: boolean): boolean =>
+  target.rule === "check" && !narrows(target, narrowed)
+
 // The files a target declares.
 //
 // A setup target always runs. One that names what it reads and what it writes
@@ -165,6 +175,7 @@ const renderTarget = (
     // inputs fails the target instead of passing on a stale result. The
     // network stays open, as it is for the step in the original CI.
     `sandbox: ${narrows(target, narrowed) ? "{ network: true }" : text("none")}`,
+    ...(observes(target, narrowed) ? [`observe: { ignore: ${JSON.stringify(bookkeeping)} }`] : []),
     `timeout: ${text(stepTimeout)}`,
     `data: [${data.join(", ")}]`
   ]
@@ -187,6 +198,7 @@ const renderPackage = (plan: StepPlan, narrowed: boolean): string => {
     `import { Smithers as S } from "@smthrs/targets"`,
     ``,
     comment("A step can read any file, so a target declares the whole repository unless its step names what it reads."),
+    comment("Such a target is observed: it runs again only when a file its last run read has changed."),
     comment("A setup target always runs. It declares files only when its step names what it reads and writes."),
     `const repository = ${shared ? `S.Filegroup({ srcs: [S.glob("//**")] })` : `S.glob("//**")`}`,
     ``,
@@ -231,6 +243,19 @@ const sandboxSetup: ReadonlyArray<string> = [
   `            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then`,
   `              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`,
   `            fi`,
+  `          fi`
+]
+
+// What observing a step needs on a GitHub runner: the tracer that records what its run reads, which an Ubuntu
+// runner lacks. Without it the step still runs, and reruns on every change. macOS has no such tracer.
+const tracerSetup: ReadonlyArray<string> = [
+  `      ${yamlComment("A step that names no inputs is traced, so it runs again only when a file it read changes.")}`,
+  `      - name: Install the tracer`,
+  `        if: runner.os == 'Linux'`,
+  `        shell: bash`,
+  `        run: |`,
+  `          if command -v apt-get >/dev/null 2>&1 && ! command -v strace >/dev/null 2>&1; then`,
+  `            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends strace`,
   `          fi`
 ]
 
@@ -280,7 +305,13 @@ const collides = (plan: StepPlan, narrowed: boolean): boolean => {
   )
 }
 
-const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boolean, serial: boolean): string => {
+const renderWorkflow = (
+  plan: StepPlan,
+  cache: string | undefined,
+  confined: boolean,
+  serial: boolean,
+  observed: boolean
+): string => {
   const hasNode = plan.toolchains.some((toolchain) => toolchain.name === "node")
   // A step that keeps a tool's own cache names a directory under the tool cache in its environment.
   const keepsTools = plan.targets.some((target) =>
@@ -305,6 +336,7 @@ const renderWorkflow = (plan: StepPlan, cache: string | undefined, confined: boo
     ...(hasNode ? [] : [`      - uses: actions/setup-node@v4`, `        with:`, `          node-version: "24"`]),
     ...plan.toolchains.flatMap(renderSetup),
     ...(confined ? sandboxSetup : []),
+    ...(observed ? tracerSetup : []),
     `      ${yamlComment("Unconfined results never reach a remote cache, so the runner keeps its own.")}`,
     `      ${yamlComment("It also keeps the compiled code of smthrs, so the next run starts sooner.")}`,
     `      - uses: actions/cache@v4`,
@@ -367,10 +399,11 @@ const renderNotes = (plan: StepPlan): string =>
  * workflow shares results through the cache its repository names in the
  * `SMITHERS_CACHE_URL` variable, or else through `options.cache`.
  *
- * A target declares its step's inputs and runs confined to them. When that
- * makes the targets too large for one `PACKAGE.ts`, every target declares the
- * whole repository instead, which reruns more and is never wrong. Fails when
- * the targets still do not fit.
+ * A target declares its step's inputs and runs confined to them. A step that
+ * names none declares the whole repository and is observed: it runs again
+ * only when a file its last run read has changed. When the inputs make the
+ * targets too large for one `PACKAGE.ts`, every target is declared that way.
+ * Fails when the targets still do not fit.
  *
  * @throws {never}
  * @category rendering
@@ -399,9 +432,10 @@ export const renderFiles = (
       content: renderWorkflow(
         plan,
         options?.cache,
-        // The runner needs the sandbox only when a target runs under it.
+        // The runner needs the sandbox only when a target runs under it, and the tracer only when one is observed.
         plan.targets.some((target) => narrows(target, held)),
-        serial
+        serial,
+        plan.targets.some((target) => observes(target, held))
       )
     },
     { path: workspacePath, content: renderWorkspace(inventory, plan, held) },

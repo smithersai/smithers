@@ -21,6 +21,11 @@ With no command, `smithers-ci` does four things:
    runs them today (the baseline), and once in normal mode.
 4. Prints the report.
 
+On Linux, install `strace` first (`sudo apt-get install strace`). Smithers CI
+uses it to record the files each CI command reads, so a command runs again
+only when one of them changes. Without it, a command that names no inputs runs
+on every commit.
+
 The baseline runs your CI's commands once per replayed commit, so the first
 run takes a while. `--commits` sets how many commits to replay:
 
