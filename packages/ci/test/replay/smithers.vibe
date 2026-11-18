@@ -17,6 +17,10 @@ const jobId = (target: string): string => `ci-${target}`
 const stepId = (target: string): string => `ci-${target}-1`
 const label = (target: string): string => `//packages/ci:${target}`
 
+/** `check` and `test` depend on `lib` in `packages/ci/PACKAGE.ts`, so a broken `lib` skips them. */
+const needsOf = (target: string, targets: ReadonlyArray<string>): ReadonlyArray<string> =>
+  (target === "check" || target === "test") && targets.includes("lib") ? [jobId("lib")] : []
+
 const inventoryOf = (targets: ReadonlyArray<string>): Inventory => ({
   version: 1,
   repository: "smithersai/smithers",
