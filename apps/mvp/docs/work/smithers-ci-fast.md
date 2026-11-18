@@ -3,7 +3,7 @@ title: Fast Smithers CI (customer zero for smithers-ci)
 status: in-progress
 area: build
 owner: Claude Fable, Will's chat session 20474551, since 2026-11-17 16:50 PST
-updated: 2026-11-17 20:45 PST
+updated: 2026-11-17 23:00 PST
 links: [ci-cd-parity.md, ci-parity-cache.md, second-build-machine.md, release-burn-down.md, ../../../../packages/smithers/build/docs/workspace/caching.md, ../../../../packages/smithers/build/docs/workspace/adoption.md]
 ---
 
@@ -180,6 +180,31 @@ the ones that need judgement, on the Claude accounts that reset soonest first.
   replay compares a step with the combined verdict of its targets.
 - Generated targets run one at a time for now: they share one working tree. The gain on an outside repository is
   from caching, not from parallel jobs.
+
+### The join: first runs of the whole program (2026-11-17, 20:40 to 23:00 PST)
+
+The parts are joined on `main` (`ac588de183f2`): `smithers-ci` reads the CI, generates targets, replays commits and
+reports, as one program run from a clone. Three more contract rounds landed (five to seven); the list is in
+`packages/ci/README.md`.
+
+- **A job that cannot be reproduced exactly is never run.** Only checkout, cache and artifact-upload actions and
+  trigger filters are harmless; any other unsupported feature leaves the job out, with every job that needs it. The
+  report lists what was left out, so a speedup is never read as covering it. The type system enforces it: the
+  generator and the replay accept only what `Inventory.ci` returns.
+- **A replay says what it is running** (`2/5 3f2a1c9 baseline` on standard error). Before, a 25-minute run printed
+  nothing.
+
+| Repository | Result | Evidence on nyc-01 |
+| --- | --- | --- |
+| Fixture, 4 commits (one docs-only, one that breaks a check) | Works: 0 mismatches, the broken commit fails in both modes. Speedup 0.02: starting `smthrs` costs 6 s per commit against 0.1 s of work, and the docs-only commit reran all 3 targets | `~/ci/w0-scratch/fx.json` |
+| `elizaOS/eliza` | Refused in 6 s (exit 3): 0 of 15 CI jobs can be reproduced. Blockers: condition 13 jobs, action 11, expression 9, runner variable 8 | `~/ci/w0-scratch/eliza.err` |
+| `refcell/needlefish` | Replay of `just ci` running since 22:12. Its 3,180 Zig tests take over 25 minutes per run, single-threaded | `~/ci/w0-scratch/needlefish.json` |
+| Smithers, VibeLang | Broken: the program generated a workspace over the repository's own in its scratch copy and failed (exit 4). The `sci-native` lane makes it measure the repository's own targets | lane report |
+| Smithers, `packages/ci` targets only, by the replay lane's script | 1.32x over 5 commits; every one of them changed `packages/ci` | `~/ci/sci-replay-scratch/run5c/report.json` |
+
+What the numbers say so far: no repository shows a gain yet. The two causes are known. Every generated target reads
+the whole repository until the splitter's inputs reach the generator, and eliza's CI needs `if:` conditions,
+`${{ }}` expressions and runner variables evaluated before one job can run.
 
 ### Needs Will
 
