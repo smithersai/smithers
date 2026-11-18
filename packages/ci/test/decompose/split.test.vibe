@@ -439,7 +439,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
 
   it.effect("keeps every job of a CI that is the root ci recipe", () =>
     effect {
-      const root = try repository({ ...pnpmWorkspace, "Justfile": "build:\n  pnpm install\ntest:\n  pnpm -r run test\nci: build test\n" })
+      const root = try repository({ ...pnpmWorkspace, "Justfile": "test:\n  pnpm -r run test\nbuild:\n  pnpm -r run build\nci: test build\n" })
       const recipe = (name: string, steps: ReadonlyArray<Step>, needs: ReadonlyArray<string>): Job => ({
         id: `justfile:${name}`,
         source: "justfile",
@@ -455,24 +455,24 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       const before = ciOf({
         ...ci([]),
         jobs: [
-          recipe("build", [step("justfile:build:1", "pnpm install")], []),
+          recipe("build", [step("justfile:build:1", "pnpm -r run build")], []),
           recipe("test", [step("justfile:test:1", "pnpm -r run test")], []),
-          recipe("ci", [], ["justfile:build", "justfile:test"])
+          recipe("ci", [], ["justfile:test", "justfile:build"])
         ]
       })
       const after = try split(root, before)
       try Effect.try(() => {
-        expect(before.jobs.map((job) => job.id)).toEqual(["justfile:build", "justfile:test"])
+        // `ci: test build`: the CI holds the two recipes in the order `just ci` runs them, and no `ci` job.
+        expect(before.jobs.map((job) => job.id)).toEqual(["justfile:test", "justfile:build"])
         expect(after.jobs.map((job) => [job.id, job.needs])).toEqual([
-          ["justfile:build", []],
-          ["justfile:test", []]
+          ["justfile:test", []],
+          ["justfile:build", []]
         ])
-        expect(stepsOf(after).map((found) => found.id)).toEqual([
-          "justfile:build:1",
-          "justfile:test:1:ui",
-          "justfile:test:1:web",
-          "justfile:test:1:x",
-          "justfile:test:1:y"
+        // `test` runs first and `build` after it in one working tree. The first keeps its command, because a
+        // later step relies on it, and names what it reads; the second may read what the first wrote.
+        expect(stepsOf(after).map((found) => [found.id, found.command, found.inputs !== undefined])).toEqual([
+          ["justfile:test:1", "pnpm -r run test", true],
+          ["justfile:build:1", "pnpm -r run build", false]
         ])
       })
     })

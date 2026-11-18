@@ -6,7 +6,7 @@
  */
 
 import * as Result from "effect/Result"
-import type { Inventory, Toolchain } from "../contract/Inventory.ts"
+import { type Inventory, stepTimeoutHours, type Toolchain } from "../contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.ts"
 import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.ts"
 import { markerDirectory, repositoryLabel, type StepPlan, type StepTarget, workflowPath } from "./Steps.ts"
@@ -49,8 +49,8 @@ const sharedInputsAbove = 32
 // Smithers refuses a larger PACKAGE.ts.
 const maximumPackageBytes = 1024 * 1024
 
-// GitHub stops a job after six hours; the build's own default is 30 minutes.
-const stepTimeout = "6h"
+// The limit a baseline step has, which is GitHub's for a job; the build's own default is 30 minutes.
+const stepTimeout = `${stepTimeoutHours}h`
 
 const setupActions: ReadonlyMap<string, { readonly uses: string; readonly input: string }> = new Map([
   ["bun", { uses: "oven-sh/setup-bun@v2", input: "bun-version" }],

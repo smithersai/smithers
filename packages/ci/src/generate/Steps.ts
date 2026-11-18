@@ -19,8 +19,11 @@
  * after it. Without that, the later target declares the whole repository, as
  * a step with no inputs does: its own inputs would not hold the files the
  * earlier step read, and it would pass stale when one of them changed.
- * GitHub jobs run on separate machines, so `needs` only orders them; the other
- * sources run in one working tree, so what they need is `setup` too.
+ * GitHub jobs run on separate machines, so `needs` only orders them. The jobs
+ * of any other source run one after another in one working tree, in
+ * `Inventory.treeOrder`: each waits for the job before it, as `just ci` runs
+ * `build` and then `test` for `ci: build test`, and what a later job relies
+ * on is `setup` too.
  *
  * An inventory also lists work CI never runs on a change: release workflows,
  * and every recipe and script, such as `clean` or `start`. Only what runs on a
@@ -39,7 +42,8 @@ import {
   type Job,
   shell,
   type Step,
-  type Toolchain
+  type Toolchain,
+  treeOrder
 } from "../contract/Inventory.ts"
 import type { Failure } from "../contract/Parts.ts"
 import { shardOf } from "../contract/Shard.ts"
@@ -240,6 +244,22 @@ const validate = (inventory: Inventory): Failure | undefined => {
   return undefined
 }
 
+// Each job with the job that runs just before it in its working tree added to what it needs. The recipes of one
+// Justfile run one after another in one directory, so each waits for the one before it; a job with a checkout of
+// its own, as a GitHub job has, waits only for what it names.
+const inTreeOrder = (jobs: ReadonlyArray<Job>): ReadonlyArray<Job> => {
+  const before = new Map<string, string>()
+  for (const order of treeOrder(jobs).values()) {
+    for (const [index, id] of order.entries()) {
+      if (index > 0) before.set(id, order[index - 1] as string)
+    }
+  }
+  return jobs.map((job) => {
+    const prior = before.get(job.id)
+    return prior === undefined || job.needs.includes(prior) ? job : { ...job, needs: [...job.needs, prior] }
+  })
+}
+
 const inDependencyOrder = (jobs: ReadonlyArray<Job>): ReadonlyArray<Job> | undefined => {
   const pending = [...jobs].sort((left, right) => compare(left.id, right.id))
   const placed = new Set<string>()
@@ -266,8 +286,10 @@ const inDependencyOrder = (jobs: ReadonlyArray<Job>): ReadonlyArray<Job> | undef
 export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
   const problem = validate(inventory)
   if (problem !== undefined) return Result.fail(problem)
-  const jobs = inDependencyOrder(inventory.jobs)
-  if (jobs === undefined) return invalid("The jobs' needs form a cycle.")
+  const jobs = inDependencyOrder(inTreeOrder(inventory.jobs))
+  if (jobs === undefined) {
+    return invalid("The jobs' needs form a cycle, or contradict the order the jobs of one working tree run in.")
+  }
 
   const drafts = new Map<string, Draft>()
   const tails = new Map<string, Array<Tail>>()

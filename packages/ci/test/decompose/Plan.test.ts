@@ -701,6 +701,14 @@ describe("followed, preceded and keepCommand", () => {
     // GitHub jobs run on separate machines: a need only orders them.
     const hosted = followed([job("build", [named("build")]), job("lint", [named("lint")], { needs: ["build"] })])
     expect([...hosted]).toEqual([])
+    // Recipes of one file run in the order listed even when none needs another: all but the last are followed.
+    const listed = [
+      job("tidy", [named("tidy")], { source: "justfile", file: "justfile" }),
+      job("test", [named("test")], { source: "justfile", file: "justfile" }),
+      job("other", [named("other")], { source: "makefile", file: "Makefile" })
+    ]
+    expect([...followed(listed)].map((each) => each.id)).toEqual(["tidy"])
+    expect([...preceded(listed)].map((each) => each.id)).toEqual(["test"])
   })
 
   it("finds every step that follows another in one working tree", () => {

@@ -13,7 +13,7 @@
 
 import type { Closure } from "../contract/Closure.ts"
 import { isComplete } from "../contract/Closure.ts"
-import type { Job, Step } from "../contract/Inventory.ts"
+import { type Job, type Step, treeOrder } from "../contract/Inventory.ts"
 import { executorOf, type Invocation, type Known, type Pattern, recognize, turbo } from "./Runners.ts"
 import { type Command, commands, quote } from "./Shell.ts"
 import { type Config, defines, rootRuns, walk } from "./Turbo.ts"
@@ -460,6 +460,17 @@ export const closureInputs = (closure: Closure | undefined): ReadonlyArray<strin
       ...(closure.directories ?? []).map((directory) => `${directory.replace(/\/$/, "")}/**`)
     ]
 
+// Where each job stands in the run of its working tree. The jobs of one Justfile, and of any source but GitHub
+// Actions, run one after another in one directory, in `Inventory.treeOrder`. A GitHub job has a checkout of its
+// own: it is the first and the last job in it.
+const placesOf = (jobs: ReadonlyArray<Job>): (job: Job) => { readonly first: boolean; readonly last: boolean } => {
+  const places = new Map<string, { readonly first: boolean; readonly last: boolean }>()
+  for (const order of treeOrder(jobs).values()) {
+    for (const [index, id] of order.entries()) places.set(id, { first: index === 0, last: index === order.length - 1 })
+  }
+  return (job) => places.get(job.id) ?? { first: true, last: true }
+}
+
 /**
  * The steps a later step relies on: every step but a job's last, and the
  * last step of a job that another job runs after in the same working tree.
@@ -472,9 +483,11 @@ export const closureInputs = (closure: Closure | undefined): ReadonlyArray<strin
  */
 export const followed = (jobs: ReadonlyArray<Job>): ReadonlySet<Step> => {
   const found = new Set<Step>()
+  const place = placesOf(jobs)
   for (const job of jobs) {
     // GitHub jobs run on separate machines; every other source shares one tree.
-    const needed = jobs.some((other) => other.source !== "github-actions" && other.needs.includes(job.id))
+    const needed = !place(job).last ||
+      jobs.some((other) => other.source !== "github-actions" && other.needs.includes(job.id))
     for (const [index, step] of job.steps.entries()) {
       if (needed || index < job.steps.length - 1) found.add(step)
     }
@@ -484,8 +497,8 @@ export const followed = (jobs: ReadonlyArray<Job>): ReadonlySet<Step> => {
 
 /**
  * The steps that follow another step in one working tree: every step but a
- * job's first, and every step of a job that needs another when its source
- * shares one tree. Such a step can read what the earlier step wrote, and no
+ * job's first, and every step of a job that runs after another in a tree
+ * they share. Such a step can read what the earlier step wrote, and no
  * input names that, so it is never split or scoped.
  *
  * @throws {never}
@@ -494,9 +507,10 @@ export const followed = (jobs: ReadonlyArray<Job>): ReadonlySet<Step> => {
  */
 export const preceded = (jobs: ReadonlyArray<Job>): ReadonlySet<Step> => {
   const found = new Set<Step>()
+  const place = placesOf(jobs)
   for (const job of jobs) {
     // GitHub jobs run on separate machines; every other source shares one tree.
-    const after = job.source !== "github-actions" && job.needs.length > 0
+    const after = !place(job).first || (job.source !== "github-actions" && job.needs.length > 0)
     for (const [index, step] of job.steps.entries()) {
       if (after || index > 0) found.add(step)
     }

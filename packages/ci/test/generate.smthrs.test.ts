@@ -102,6 +102,40 @@ describe("generated files under the real smthrs", () => {
     }
   }, slow)
 
+  it("runs the recipes of one Justfile in the order listed, in one working tree", () => {
+    const recipe = (name: string, command: string): Job =>
+      job(`justfile:${name}`, [command], { source: "justfile", file: "justfile", name, triggers: [] })
+    // `ci: build test`. Neither recipe needs the other; `just ci` runs `build`, then `test`, which reads what it built.
+    const inventory = document([
+      recipe("build", "mkdir -p out && echo built > out/artifact"),
+      recipe("test", "test -f out/artifact")
+    ])
+    const root = repository(inventory, { justfile: "ci: build test\n" })
+    try {
+      expect(plan(root).map((target) => [target.label, target.target, target.dependencies])).toEqual([
+        [`${prefix}justfile-build-1`, "Shell.Build", []],
+        [`${prefix}justfile-test-1`, "Shell.Test", [`${prefix}justfile-build-1`]]
+      ])
+      const statuses = (name: string) => Object.fromEntries(execute(root, name).statuses)
+      expect(statuses("first")).toEqual({ "justfile-build-1": "ran", "justfile-test-1": "ran" })
+      // A clean checkout: the build runs again before the test's verdict is replayed.
+      rmSync(join(root, "out"), { recursive: true })
+      expect(statuses("second")).toEqual({ "justfile-build-1": "ran", "justfile-test-1": "hit" })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+    // A build that fails skips the test, as `just ci` stops at the first recipe that fails.
+    const failing = repository(document([recipe("build", "false"), recipe("test", "true")]), {})
+    try {
+      expect(Object.fromEntries(execute(failing, "only").statuses)).toEqual({
+        "justfile-build-1": "failed",
+        "justfile-test-1": "skipped"
+      })
+    } finally {
+      rmSync(failing, { recursive: true, force: true })
+    }
+  }, slow)
+
   it("plans one target per GitHub Actions step for this machine's system", () => {
     const root = repository(fixture("inventory.github-actions-bun.json"))
     const variant = process.platform === "darwin" ? "macos-latest" : "ubuntu-latest"

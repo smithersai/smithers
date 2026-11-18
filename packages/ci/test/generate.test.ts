@@ -188,11 +188,50 @@ describe("what a step becomes", () => {
     expect(declaration(separate, "test-1")).toMatch(/data: \[repository, step0\]/)
   })
 
+  it("runs the jobs of one working tree one after another, in the order the CI lists them", () => {
+    const recipe = (name: string, extra: Partial<Job> = {}): Job =>
+      job(`justfile:${name}`, [step(`${name}:1`, `just ${name}`)], {
+        source: "justfile",
+        file: "justfile",
+        triggers: [],
+        ...extra
+      })
+    // `ci: build test`: neither recipe needs the other, and `just ci` still runs `build` first.
+    const listed = targetsOf(inventory([recipe("build"), recipe("test")]))
+    expect(declaration(listed, "build-1")).toContain("S.Shell.Build(")
+    expect(declaration(listed, "build-1")).toContain("data: []")
+    expect(declaration(listed, "test-1")).toContain("S.Shell.Test(")
+    expect(declaration(listed, "test-1")).toContain("data: [repository, step0]")
+    // `ci: test build` runs them the other way round.
+    const reversed = targetsOf(inventory([recipe("test"), recipe("build")]))
+    expect(declaration(reversed, "test-1")).toContain("S.Shell.Build(")
+    expect(declaration(reversed, "build-1")).toContain("data: [repository, step0]")
+    // What a recipe needs runs before it, and each recipe waits for the one before it only once.
+    const needing = targetsOf(inventory([
+      recipe("lint"),
+      recipe("test", { needs: ["justfile:build"] }),
+      recipe("build")
+    ]))
+    expect(declaration(needing, "lint-1")).toContain("data: []")
+    expect(declaration(needing, "build-1")).toContain("data: [step0]")
+    expect(declaration(needing, "test-1")).toContain("data: [repository, step1]")
+    // A job with a checkout of its own waits only for what it names, and another file is another tree.
+    const apart = targetsOf(inventory([
+      job("a", [step("a:1", "x")]),
+      job("b", [step("b:1", "y")]),
+      recipe("make", { source: "makefile", file: "Makefile" }),
+      recipe("just")
+    ]))
+    for (const label of ["a-1", "b-1", "make-1", "just-1"]) {
+      expect(declaration(apart, label), label).toContain("data: [repository]")
+    }
+  })
+
   it("runs every step under the shell the baseline runs it under, whatever its source", () => {
     const source = targetsOf(inventory([
       job("a", [step("a:1", "echo 'hi' && false\necho next"), step("a:2", "source scripts/check.sh")]),
-      job("b", [step("b:1", "false\ntrue")], { source: "makefile", name: "test" }),
-      job("c", [step("c:1", "#!/usr/bin/env bash\n[[ -f x ]]")], { source: "justfile", name: "test" })
+      job("b", [step("b:1", "false\ntrue")], { source: "makefile", file: "Makefile", name: "test" }),
+      job("c", [step("c:1", "#!/usr/bin/env bash\n[[ -f x ]]")], { source: "justfile", file: "justfile", name: "test" })
     ]))
     expect(declaration(source, "a-1")).toContain(
       JSON.stringify(
@@ -701,6 +740,17 @@ describe("refusals", () => {
         job("b", [step("b:1", "y")], { needs: ["a"] })
       ])).message
     ).toContain("cycle")
+    // Two working trees whose jobs need each other across the trees, against the order each tree runs in.
+    const tree = (id: string, file: string, needs: ReadonlyArray<string>): Job =>
+      job(id, [step(`${id}:1`, "x")], { source: "justfile", file, triggers: [], needs })
+    expect(
+      failureOf(inventory([
+        tree("a1", "one/justfile", ["b2"]),
+        tree("a2", "one/justfile", []),
+        tree("b1", "two/justfile", ["a2"]),
+        tree("b2", "two/justfile", [])
+      ])).message
+    ).toContain("the order the jobs of one working tree run in")
   })
 
   it("says so when nothing can run", () => {
