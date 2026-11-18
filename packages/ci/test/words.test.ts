@@ -38,6 +38,12 @@ const messagesIn = (source: string): ReadonlyArray<string> =>
     .flatMap(stringsOf)
     .filter((text) => internal.test(text))
 
+/** What the reference pages show of a contract: its doc comments, without their code and links. */
+const docCommentsIn = (source: string): ReadonlyArray<string> =>
+  [...source.matchAll(/\/\*\*[\s\S]*?\*\//g)].map((match) =>
+    match[0].replace(/`[^`]*`/g, "").replace(/\{@link [^}]*\}/g, "")
+  )
+
 const isProgram = (path: string): boolean =>
   /\.(?:ts|vibe)$/.test(path) && !path.endsWith(".d.vibe.ts") && !path.includes("/.")
 
@@ -57,6 +63,19 @@ describe("the words for fast mode", () => {
     const sources = under("src").filter(isProgram)
     expect(sources.length).toBeGreaterThan(20)
     expect(sources.flatMap((path) => messagesIn(read(path)).map((text) => `${path}: ${text}`))).toEqual([])
+  })
+
+  it("are plain in the doc comments of the contracts, which the reference pages show", () => {
+    const contracts = under("src/contract").filter(isProgram)
+    expect(contracts.length).toBeGreaterThan(5)
+    const found = contracts.flatMap((path) =>
+      docCommentsIn(read(path)).filter((text) => internal.test(text)).map((text) => `${path}: ${text}`)
+    )
+    expect(found).toEqual([])
+    expect(docCommentsIn("/** The `rows` of {@link Rows}. */\n/** The scorer. */")).toEqual([
+      "/** The  of . */",
+      "/** The scorer. */"
+    ])
   })
 
   it("finds an internal word in a message, and not in a comment, an import or an interpolated name", () => {
