@@ -69,12 +69,14 @@ import * as Workspace from "../Workspace.ts"
 import * as WorkspaceToolchain from "../WorkspaceToolchain.ts"
 import * as ApprovalBridge from "./ApprovalBridge.ts"
 import { collectTargets } from "./Attrs.ts"
+import * as CacheEvidence from "./CacheEvidence.ts"
 import * as CoreRuleSelection from "./CoreRuleSelection.ts"
 import { declarationLabels } from "./DeclarationLabels.ts"
 import * as DigestIndexFile from "./DigestIndexFile.ts"
 import { gitPathspecBatches } from "./GitPathspecBatches.ts"
 import * as HostProbes from "./HostProbes.ts"
 import { inputPackage } from "./InputPackage.ts"
+import * as InstalledTree from "./InstalledTree.ts"
 import type {
   CrateRow,
   Mode,
@@ -314,6 +316,10 @@ interface PlanContext {
   readonly remoteCache: Workspace.RemoteCacheAccess | undefined
   /** File digests already read, by this plan, an earlier plan of the invocation, or the last invocation. */
   readonly digests: SafeFs.DigestIndex
+  /** Installed dependency trees measured by this plan, by canonical directory; a failure is kept as its text. */
+  readonly installedTrees: Map<string, InstalledTree.Identity | string>
+  /** Installed-tree unit digests the last invocation read, answered while each unit's status is unchanged. */
+  readonly installedMemory: InstalledTree.Remembered
   /** Package and declared tree input → its digested rows, for this plan or every plan of the invocation. */
   readonly treeInputs: TreeInputReads
   /** Directory reads every glob expansion of this plan, or of the invocation, shares. */
@@ -1940,6 +1946,52 @@ const visit = async (
       !externalReads.includes(real)
     ) externalReads.push(real)
   }
+  // A tool these rules start can read every package installed above its
+  // working directory, so the bytes there are key material beside the lockfile
+  // that asked for them: a package patched in place, or a binary replaced
+  // under one version, re-keys the target. The manifest of the directory the
+  // tool starts in is what the package manager and the tool resolve the
+  // package from; it is keyed and readable for the same reason.
+  const installedTrees: Array<string> = []
+  let installedProblem: string | undefined
+  if (catalogToolBody || rule === "NodeTest") {
+    // A catalog rule declares the directory its tool starts in. A custom
+    // target that borrows a catalog name may not, and starts in its package.
+    const declaredCwd = attrMember(attrs, "cwd")
+    const toolCwd = typeof declaredCwd === "string" ? Input.resolvePath("", declaredCwd) : packagePath
+    for (const directory of nodeModulesDirectories([toolCwd, packagePath])) {
+      let real: string
+      try {
+        real = NodeFs.realpathSync(NodePath.join(context.root, ...directory.split("/")))
+      } catch {
+        continue
+      }
+      let identity = context.installedTrees.get(real)
+      if (identity === undefined) {
+        try {
+          identity = InstalledTree.identify(real, context.installedMemory)
+        } catch (cause) {
+          identity = Diagnostic.describe(cause)
+        }
+        context.installedTrees.set(real, identity)
+      }
+      if (typeof identity === "string") {
+        installedProblem ??= `the installed tree ${directory} could not be identified: ${identity}`
+        continue
+      }
+      toolchain.push({ _tag: "InstalledTree", path: directory, digest: identity.digest })
+      installedTrees.push(directory)
+    }
+    const manifest = Input.resolvePath(toolCwd, "package.json")
+    if (NodeFs.existsSync(NodePath.join(context.root, ...manifest.split("/")))) {
+      const [row] = await Input.digestFiles(context.root, [manifest], {
+        signal: context.signal,
+        digests: context.digests
+      })
+      toolchain.push({ _tag: "Manifest", path: manifest, digest: row!.digest })
+      readSet.push(manifest)
+    }
+  }
   const outDirs: Array<string> = []
   const outFiles: Array<string> = []
   const emptyOutDirs: Array<string> = []
@@ -3200,10 +3252,29 @@ const visit = async (
   const movingDependency = directDependencies.some((dependency) =>
     Target.metadata(dependency).target === "Npm.Published"
   )
+  // A test runner, type checker or linter is reused only with evidence that
+  // its run read nothing its key does not cover; see CacheEvidence. A
+  // declaration that asserts `cache: true` keeps its own promise instead.
+  const evidenceDecision = CacheEvidence.rules.has(rule) && !view.cacheable
+    ? CacheEvidence.decide({
+      rule,
+      attrs,
+      sandbox,
+      mechanism: context.index.workspace.sandboxes?.sandboxes["default"],
+      services: services.length,
+      installed: installedProblem,
+      cache: attrMember(attrs, "cache")
+    })
+    : undefined
+  const evidence = evidenceDecision !== undefined && CacheEvidence.isEvidence(evidenceDecision)
+    ? evidenceDecision
+    : undefined
+  // A tree that could not be measured is missing from the key, so nothing
+  // that could read it is reused, whatever its declaration asserts.
   const cacheable = RulePolicy.of(rule).cache !== false && attrMember(attrs, "cache") !== false &&
     refusal === undefined && pendingInstallations.length === 0 && !movingService && !movingDependency &&
-    !plannedWrite &&
-    (view.cacheable || RulePolicy.cacheable(rule, mode, repositoryState?.dirty))
+    !plannedWrite && installedProblem === undefined &&
+    (view.cacheable || RulePolicy.cacheable(rule, mode, repositoryState?.dirty) || evidence !== undefined)
 
   const spawnEnvironment = Exec.toolEnvironment(
     env,
@@ -3422,6 +3493,11 @@ const visit = async (
     readSet,
     externalReads,
     ...(dependencyInstallations.size === 0 ? {} : { dependencyInstallations: [...dependencyInstallations] }),
+    ...(installedTrees.length === 0 ? {} : { installedTrees }),
+    ...(evidence === undefined ? {} : { evidence }),
+    ...(evidenceDecision === undefined || CacheEvidence.isEvidence(evidenceDecision)
+      ? {}
+      : { uncachedBecause: evidenceDecision.reason }),
     outDirs,
     outFiles,
     ...(emptyOutDirs.length === 0 ? {} : { emptyOutDirs }),
@@ -4058,6 +4134,8 @@ const planWithServices = async (
     storeWarned: false,
     remoteCache: options.remoteCache,
     digests,
+    installedTrees: new Map(),
+    installedMemory: await InstalledTree.load(InstalledTree.path(index.root, options.cacheDirectory)),
     treeInputs: options.treeInputs ?? new Map(),
     walks: options.walks ?? Input.makeWalkCache(),
     crateSets: new Map(),
@@ -4082,6 +4160,9 @@ const planWithServices = async (
     // The plan-time store is scoped to planning; execution opens its own.
     if (context.store !== undefined) await context.store.close()
     if (options.digests === undefined) await DigestIndexFile.save(index.root, options.cacheDirectory, digests, log)
+    // Like the file digests, a cache: a save that fails costs the next plan a re-read.
+    await InstalledTree.save(InstalledTree.path(index.root, options.cacheDirectory), context.installedMemory)
+      .catch((cause: unknown) => log(`smthrs: could not remember installed trees: ${Diagnostic.describe(cause)}`))
   }
   // The work list is the closure of the roots over execution edges only;
   // key-only dependencies (a Clean's targets, a refused rule's attrs) stay

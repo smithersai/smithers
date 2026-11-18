@@ -6,9 +6,8 @@ description: "Declaring the Nix closure that tool-running targets resolve their 
 Where do the tools a target runs come from? Without an environment declaration,
 from whatever the host has on `PATH`. A workspace declares its Node version and
 its package manager, and the CLI refuses to run when the host does not satisfy
-them, but the executable that actually runs is still the host's. That is why
-almost every external-tool target is non-cacheable: the compiler that produced a
-result is not in the result's key.
+them, but the executable that actually runs is still the host's. A target is
+reused only when the programs that produced its result are in the result's key.
 
 A Nix environment closes that gap. The workspace declares the closure its tools
 come from, once, the way it declares a runtime and a `node_modules` tree, and
@@ -127,9 +126,9 @@ transitively when it changes the resolved store path. A target whose capabilitie
 file write because a compiler changed would be work for nothing.
 
 **Cacheability.** Nix contributes tool identity, but does not by itself make
-a target cacheable or override its cache policy. External compiler, test, and
-lint targets remain non-cacheable unless their declaration or native rule
-policy explicitly admits caching. Reuse requires complete identities for the
+a target cacheable or override its cache policy. A test, a type check and a
+lint are reused after a run confined to their declared inputs; a build and a
+formatter are not reused yet. Reuse requires complete identities for the
 executed toolchain, declared environment, dependency inputs, and produced
 outputs; mutation remains non-cacheable. See
 [Caching](../workspace/caching.md#cacheability).

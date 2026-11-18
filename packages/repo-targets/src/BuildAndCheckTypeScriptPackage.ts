@@ -197,9 +197,15 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
   const vitestConfig = options.vitestConfig === undefined
     ? Input.file("vitest.config.ts")
     : options.vitestConfig
+  // Every file after the first is key material for what the flat config
+  // reads: the two shared rule sets it imports, and the tsconfigs its typed
+  // rules load.
   const eslintConfigs = options.eslintConfigs ?? [
     Input.file("eslint.config.js"),
-    Input.file("//eslint.jsdoc.js")
+    Input.file("//eslint.jsdoc.js"),
+    Input.file("//eslint.invariants.js"),
+    tsconfig,
+    testTsconfig
   ]
   const dprintConfig = options.dprintConfig ?? Input.file("dprint.json")
   // The published packages are dual: `PackageJson` derives an `import` and a
@@ -259,6 +265,10 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
       sources: [
         sources,
         testSources,
+        // The suite's VibeLang plugin compiles under the test tsconfig, which
+        // extends the package's: both decide what the suite's cases mean.
+        tsconfig,
+        testTsconfig,
         Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
         Input.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
         Input.file("//packages/repo-targets/test-utils/test-process-environment.mjs"),
@@ -280,6 +290,8 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
       srcs: [
         sources,
         testSources,
+        tsconfig,
+        testTsconfig,
         Input.file("package.json"),
         ...(vitestConfig === null ? [] : [vitestConfig]),
         Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
@@ -300,6 +312,8 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     sources: [sources],
     deps: [],
     configs: eslintConfigs,
+    // Typed rules load the test tsconfig's whole program, which includes the test tree.
+    data: [testSources],
     maxWarnings: 0,
     fix: false,
     cwd

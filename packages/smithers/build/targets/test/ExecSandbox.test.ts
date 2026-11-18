@@ -114,6 +114,33 @@ describe("selection", () => {
     if (ExecSandbox.isUnenforceable(selected)) expect(selected.mechanism).toBe("bubblewrap")
   })
 
+  it("grants a scratch layer only where bubblewrap is the mechanism", () => {
+    expect(ExecSandbox.enforceable({ ...request, scratch: true }, linux)).toBe(true)
+    const planned = ExecSandbox.plan(
+      { ...request, scratch: true },
+      { workspaceRoot: root, cwd: root, tmp: "/tmp/x" },
+      linux
+    )
+    if (planned === undefined || ExecSandbox.isUnenforceable(planned)) throw new Error("expected a plan")
+    expect(planned.scratch).toBe(true)
+    const plain = ExecSandbox.plan(request, { workspaceRoot: root, cwd: root, tmp: "/tmp/x" }, linux)
+    if (plain === undefined || ExecSandbox.isUnenforceable(plain)) throw new Error("expected a plan")
+    expect(plain.scratch).toBeUndefined()
+    // Seatbelt and Docker have no private layer: the write would reach the host.
+    for (
+      const [facts, mechanism] of [
+        [darwin, undefined],
+        [host("linux", { docker: "/usr/bin/docker" }), Sandbox.Docker({ image: "node:26" })]
+      ] as const
+    ) {
+      const selected = ExecSandbox.select({ ...request, mechanism, scratch: true }, facts)
+      expect(ExecSandbox.isUnenforceable(selected) && selected.missing).toBe("bubblewrap")
+      expect(ExecSandbox.enforceable({ ...request, mechanism, scratch: true }, facts)).toBe(false)
+    }
+    // An opted-out policy stays opted out.
+    expect(ExecSandbox.select({ ...request, policy: "none", scratch: true }, darwin)).toEqual({ _tag: "none" })
+  })
+
   it("refuses macOS when the system seatbelt executable is missing", () => {
     const selected = ExecSandbox.select(request, host("darwin"))
     expect(ExecSandbox.isUnenforceable(selected)).toBe(true)

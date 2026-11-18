@@ -32,8 +32,10 @@ export const Package = Smithers.Package({
 | `sources`        | `Array<Input.Declared>`         | required | What to lint. Globs pass through to ESLint as patterns.                                                  |
 | `deps`           | `Array<Target.Target>`          | required | Dependency targets. Usually empty: linting sources needs nothing built.                                  |
 | `configs`        | `Array<Input.File>`             | required | Flat configs. The first is passed as `--config`; the rest are key material for files the config imports. |
+| `data`           | `Array<Input.Declared>`         | `[]`     | Files the run reads and does not lint, such as the test tree a typed rule resolves. Key material only.   |
 | `maxWarnings`    | `number`                        | required | The warning budget, passed as `--max-warnings`.                                                          |
-| `fix`            | `boolean`                       | required | Apply autofixes. The target remains non-cacheable in either mode.                                        |
+| `fix`            | `boolean`                       | required | Apply autofixes. A fixing run rewrites its sources and is never reused.                                  |
+| `cache`          | `false`                         | none     | `false` never reuses the result and runs the target as the workspace declares, with no confined attempt. |
 | `cwd`            | `string`                        | `"."`    | Workspace-relative directory the tool runs in.                                                           |
 
 ## Command
@@ -56,8 +58,8 @@ arguments as follows:
 
 ## Inputs
 
-Collected from the attrs: every declaration in `sources`, plus every entry in
-`configs`.
+Collected from the attrs: every declaration in `sources` and `data`, plus every
+entry in `configs`.
 
 ## Channels
 
@@ -71,7 +73,7 @@ Collected from the attrs: every declaration in `sources`, plus every entry in
 |           |                                                                                                 |
 | --------- | ----------------------------------------------------------------------------------------------- |
 | Kinds     | `lint`                                                                                          |
-| Cacheable | Never |
+| Cacheable | With `fix: false`, after a confined run proves its reads; see [Caching](../../workspace/caching.md#results-reused-with-evidence) |
 | Executes  | Yes, through `ExecLive`                                                                         |
 
 ## Notes

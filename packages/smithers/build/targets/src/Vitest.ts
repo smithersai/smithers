@@ -52,6 +52,21 @@ export const Attrs = Schema.Struct({
    * @default true
    */
   coverage: Schema.Boolean.pipe(Schema.withConstructorDefault(Effect.succeed(true))),
+  /**
+   * Stops the run once this many cases have failed, as `--bail`. Omitted,
+   * every case runs. A run that passes is the same run either way, so the
+   * executor sets it to 1 on a confined attempt whose failure it would
+   * discard: a suite that cannot run confined then costs its first failure,
+   * not its whole length.
+   */
+  bail: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+  /**
+   * `false` never reuses this target's result and runs it exactly as the
+   * workspace declares, with no confined attempt. Declare it on a target
+   * whose run must leave files behind, or whose cases depend on files it
+   * does not declare.
+   */
+  cache: Schema.optional(Schema.Literal(false)),
   cwd: Schema.NonEmptyString.pipe(
     Schema.withConstructorDefault(Effect.succeed("."))
   ),
@@ -101,8 +116,11 @@ export type Attrs = typeof Attrs.Type
  * environment, `env` variables and empty-suite policy, under any declared
  * `services`. Test, source, and config declarations are the
  * target's inputs, so key material contains their digests plus dependency
- * target keys. This models tevm's `test:run` target and Vitest's
- * deterministic run mode. Executing the plan requires {@link Exec.ExecLive}.
+ * target keys. The declaration asserts no cacheability of its own: the
+ * executor reuses a green run only after one confined to the declared inputs,
+ * with the installed runner and its plugins in the key. This models tevm's
+ * `test:run` target and Vitest's deterministic run mode. Executing the plan
+ * requires {@link Exec.ExecLive}.
  *
  * @category targets
  * @since 0.1.0
@@ -125,6 +143,7 @@ export const Vitest = Target.make("Vitest", {
         "--environment",
         attrs.environment,
         ...(attrs.coverage ? [] : ["--coverage.enabled=false"]),
+        ...(attrs.bail === undefined ? [] : [`--bail=${attrs.bail}`]),
         ...(attrs.passWithNoTests ? ["--passWithNoTests"] : [])
       ])
     })

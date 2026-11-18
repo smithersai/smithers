@@ -84,6 +84,6 @@ declare a second target with `fix: true`.
 
 ## See also
 
-- [EsLint](es-lint.md), whose non-cacheable posture this target matches
+- [EsLint](es-lint.md), the lint target that is reused after a confined run
 - [BiomeCheck](biome-check.md), which formats and lints in one tool
 - [buildAndCheckPackage](standard-package.md), which emits a `Dprint` `fmt` target

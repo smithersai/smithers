@@ -29,6 +29,13 @@ export const Attrs = Schema.Struct({
   tsconfig: Input.File,
   buildMode: Schema.Boolean,
   incremental: Schema.Boolean,
+  /**
+   * `false` never reuses this target's result and runs it exactly as the
+   * workspace declares, with no confined attempt. Declare it on a target
+   * whose run must leave files behind, or whose cases depend on files it
+   * does not declare.
+   */
+  cache: Schema.optional(Schema.Literal(false)),
   cwd: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(".")))
 })
 

@@ -193,6 +193,23 @@ describe("Vitest rules", () => {
     ])
   })
 
+  it("Vitest stops after the declared number of failures", () => {
+    expect(plannedArgv(Vitest({ ...base, bail: 1, passWithNoTests: true }))).toEqual([
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "--config",
+      "vitest.config.ts",
+      "--environment",
+      "node",
+      "--bail=1",
+      "--passWithNoTests"
+    ])
+    expect(() => Vitest({ ...base, bail: 0, passWithNoTests: false })).toThrow()
+    expect(() => Vitest({ ...base, bail: 1.5, passWithNoTests: false })).toThrow()
+  })
+
   it("Vitest disables coverage only when explicitly requested", () => {
     expect(plannedArgv(Vitest({ ...base, coverage: false, passWithNoTests: false, timeoutMs: 1_000 })))
       .toContain("--coverage.enabled=false")

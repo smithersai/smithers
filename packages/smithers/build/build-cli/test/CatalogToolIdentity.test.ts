@@ -14,7 +14,7 @@ afterEach(async () => {
 })
 
 // Controlled executable files exercise byte identity, not a simulated compiler
-// verdict. Actual tool execution and sandbox/cache reuse remain separate gates.
+// verdict. CacheEvidenceExecution.test.ts runs the tools and proves reuse.
 const fixture = async (bunOverride = false, relativeNode = false) => {
   const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smithers-catalog-tools-")))
   temporary.push(root)
@@ -135,8 +135,12 @@ posixIt.each(["build", "check", "test", "lint", "fmt"])(
     await write("config.json", "{}")
     await write("pnpm-lock.yaml", "lockfileVersion: '9.0'\n# changed\n")
     expect((await node(name)).keyPreview).not.toBe(original.keyPreview)
-    // Launcher identity alone cannot promise a complete installed-tool/output contract.
-    expect((await node(name)).cacheable).toBe(false)
+    // A build and a formatter still have no complete output contract. A test,
+    // a type check and a lint are reused, and only as the product of a run
+    // confined to what the key covers.
+    const planned = await node(name)
+    expect(planned.cacheable).toBe(["check", "test", "lint"].includes(name))
+    expect(planned.evidence).toEqual(["check", "test", "lint"].includes(name) ? { mode: "declared" } : undefined)
   }
 )
 

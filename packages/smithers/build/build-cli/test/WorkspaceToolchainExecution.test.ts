@@ -58,9 +58,11 @@ export const Workspace = S.Workspace("toolchain-execution", {
     root,
     "PACKAGE.ts",
     `import { Smithers as S } from "@smthrs/targets"
+// The fixture's manager records each invocation in the workspace, which a
+// confined run would discard, so the check runs as the workspace declares.
 const check = S.Typecheck({
   srcs: [S.file("value.ts")], deps: [], tsconfig: S.file("tsconfig.json"),
-  buildMode: false, incremental: false
+  buildMode: false, incremental: false, cache: false
 })
 export const Package = S.Package({ targets: { check } })
 `

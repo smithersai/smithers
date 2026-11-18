@@ -62,15 +62,31 @@ change still invalidates dependency resolution.
 
 ## What is still outside it
 
-**The workhorse targets are not cached.** TsBuild, Typecheck, Vitest, EsLint,
-and Dprint remain non-cacheable. Their action-backed execution keys now identify
-the declared package-manager and runtime executable bytes, including shebang
-interpreters, alongside the lockfile, config, source, and dependency inputs.
-That does not yet identify every installed compiler, runner, lint tool, or
-dprint plugin, or restore every produced output. A declared
+**Tests and type checks are cached once they pass confined; builds are not.**
+`Vitest`, `NodeTest`, `Typecheck` and `EsLint` results are reused after a run
+confined to the target's declared inputs proved it read nothing else. This
+workspace declares `S.Sandbox.None()`, so each target gets one confined attempt
+on a host with `bwrap` and keeps its unconfined verdict when the attempt fails.
+See [Results reused with evidence](caching.md#results-reused-with-evidence).
+
+What that found here, on the first two packages it ran on:
+
+| Target                   | Undeclared read                                             | State          |
+| ------------------------ | ----------------------------------------------------------- | -------------- |
+| `//packages/ci:test`     | `test/fixtures/*.json`                                      | Declared; hits |
+| `//packages/errors:test` | `tsconfig.test.json`, `docs/api.md`, `docs/installation.md` | Declared; hits |
+| `//packages/*:check`     | None                                                        | Hits           |
+| `//packages/*:lint`      | `//eslint.invariants.js`, both tsconfigs, the test tree     | Declared; hits |
+
+Each row was a stale hit waiting to happen: an edit to a fixture did not re-key
+the test that read it. A package whose `test` still runs prints the paths its
+confined attempt could not read; declaring them is what makes it hit.
+
+`TsBuild` and `Dprint` remain non-cacheable, so a `test` that hits still waits
+for its package's `lib` to build. A declared
 [Nix environment](../concepts/environments.md) contributes identity but does
-not make these targets cacheable. See [Caching](caching.md) for the complete
-input contract and remaining acceptance evidence for #1871.
+not make these targets cacheable. See
+[What is not reused yet](caching.md#what-is-not-reused-yet).
 
 **Clean-slate builds are not reproduced.** The pipeline used to wipe every
 `dist` tree before building. The graph rebuilds from declared inputs instead, so
@@ -90,7 +106,8 @@ The sequence that worked, and the one worth copying:
 3. Make the graph the required lane and delete the parallel one.
 4. Move the remaining workflow strings into targets, adding a target type when
    a gate does not fit an existing one.
-5. Complete input contracts, then opt targets into caching.
+5. Complete input contracts. A test, type check or lint is then cached by a
+   confined run, with no opt-in.
 
 Steps 1 through 4 buy addressability: one label, one behavior, locally and in
 CI. Step 5 is what buys wall-clock time, and it comes last because a cache keyed

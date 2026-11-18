@@ -34,6 +34,7 @@ export const Package = Smithers.Package({
 | `tsconfig`       | `Input.File`                    | required | The tsconfig to check.                                                                     |
 | `buildMode`      | `boolean`                       | required | Use `tsc -b` for project references instead of `tsc -p`.                                   |
 | `incremental`    | `boolean`                       | required | Trust incremental build info.                                                              |
+| `cache`          | `false`                         | none     | `false` never reuses the result and runs the check as the workspace declares.              |
 | `cwd`            | `string`                        | `"."`    | Workspace-relative directory `tsc` runs in.                                                |
 
 ## Command
@@ -75,7 +76,7 @@ summary.
 |           |                                                                                                 |
 | --------- | ----------------------------------------------------------------------------------------------- |
 | Kinds     | `build`                                                                                         |
-| Cacheable | Never |
+| Cacheable | With `buildMode: false` and `incremental: false`, after a confined run proves its reads; see [Caching](../../workspace/caching.md#results-reused-with-evidence) |
 | Executes  | Yes, through `ExecLive`                                                                         |
 
 ## Notes

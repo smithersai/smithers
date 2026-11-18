@@ -206,11 +206,14 @@ export const Attrs = Schema.Struct({
    */
   exclusive: Schema.optional(Schema.Boolean),
   /**
-   * Replays a green verdict from the result cache. Set it only when `srcs` and
-   * `deps` cover everything the program reads: an undeclared input cannot
-   * re-key the target. The runtime executable, lockfile, and build
-   * implementation are key material either way. A `suite` run with no `srcs`
-   * and no `deps` declares no file at all, so it refuses `cache: true`.
+   * Replays a green verdict from the result cache without proof of what the
+   * program read. Set it only when `srcs` and `deps` cover everything the
+   * program reads: an undeclared input cannot re-key the target. Omitted, the
+   * executor reuses a verdict only after a run confined to the declared
+   * inputs; `false` never reuses one. The runtime executable, lockfile,
+   * installed trees, and build implementation are key material either way. A
+   * `suite` run with no `srcs` and no `deps` declares no file at all, so it
+   * refuses `cache: true`.
    */
   cache: Schema.optional(Schema.Boolean)
 }).check(

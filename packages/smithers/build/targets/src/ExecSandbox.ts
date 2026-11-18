@@ -186,6 +186,14 @@ export interface Request {
    * sits inside the workspace, is dropped.
    */
   readonly externalReads?: ReadonlyArray<string> | undefined
+  /**
+   * Whether an undeclared write under the workspace lands in a private layer
+   * discarded with the run, instead of failing. A check whose product is its
+   * exit code asks for it, so a tool that leaves files beside its inputs
+   * still runs against exactly its declared reads. Only bubblewrap has the
+   * layer; under any other mechanism the request is refused.
+   */
+  readonly scratch?: boolean | undefined
 }
 
 /**
@@ -233,7 +241,8 @@ const lower = (request: Request): ProcessSandbox.Request => {
     writes: request.writes,
     writeFiles: request.writeFiles,
     readOnly: request.readOnly,
-    externalReads: request.externalReads
+    externalReads: request.externalReads,
+    ...(request.scratch === true ? { scratch: true } : {})
   }
 }
 
@@ -304,7 +313,16 @@ export const select = (
     ))
   }
   const selected = ProcessSandbox.select(lower(request), hostFacts)
-  return ProcessSandbox.isUnenforceable(selected) ? advised(selected) : selected
+  if (ProcessSandbox.isUnenforceable(selected)) return advised(selected)
+  if (request.scratch === true && selected._tag !== "bubblewrap") {
+    return ProcessSandbox.unenforceable(
+      platform,
+      selected._tag,
+      "bubblewrap",
+      `a discarded scratch layer needs bubblewrap; under ${selected._tag} an undeclared write would reach the host`
+    )
+  }
+  return selected
 }
 
 /**

@@ -37,6 +37,8 @@ export const Package = Smithers.Package({
 | `environment`     | `string`                        | required | The Vitest environment, for example `node` or `jsdom`.                                                                                                          |
 | `coverage`        | `boolean`                       | `true`   | Whether the run may compute coverage. `false` renders `--coverage.enabled=false`, which a config with coverage enabled needs on an engine with no V8 inspector. |
 | `passWithNoTests` | `boolean`                       | required | Succeed when the suite matches no files.                                                                                                                        |
+| `bail`            | `number`                        | none     | Stop once this many cases have failed, as `--bail`. The executor sets 1 on a confined attempt whose failure it discards.                                        |
+| `cache`           | `false`                         | none     | `false` never reuses the result and runs the target as the workspace declares, with no confined attempt. Set it when the run must leave a report behind.                                                                                                              |
 | `cwd`             | `string`                        | `"."`    | Workspace-relative directory the runner starts in.                                                                                                              |
 
 ## Command
@@ -45,7 +47,7 @@ The argv is `PackageManager.exec` of the declared package manager. With the
 pnpm declaration:
 
 ```text
-pnpm exec vitest run [--config <config.path>] --environment <environment> [--coverage.enabled=false] [--passWithNoTests]
+pnpm exec vitest run [--config <config.path>] --environment <environment> [--coverage.enabled=false] [--bail=<bail>] [--passWithNoTests]
 ```
 
 The target passes no file arguments. Vitest discovers test files itself; the
@@ -68,7 +70,7 @@ Collected from the attrs: every declaration in `tests` and `sources`, plus
 |           |                                                                                                 |
 | --------- | ----------------------------------------------------------------------------------------------- |
 | Kinds     | `test`                                                                                          |
-| Cacheable | Never |
+| Cacheable | After a confined run proves its reads; see [Caching](../../workspace/caching.md#results-reused-with-evidence) |
 | Executes  | Yes, through `ExecLive`                                                                         |
 
 ## See also

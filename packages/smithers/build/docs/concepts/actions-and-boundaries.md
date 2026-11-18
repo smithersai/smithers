@@ -169,6 +169,13 @@ output file opens the directory it lives in, because a file cannot be bound
 before it exists and a tool that writes by rename needs the directory. The
 network is closed unless the policy opens it.
 
+A test, type-check or lint run that gathers
+[cache evidence](../workspace/caching.md#results-reused-with-evidence) asks
+bubblewrap for a scratch layer: a write its declaration does not name lands in
+a private layer discarded with the run, and each installed tree is granted
+entry by entry so a tool's own state inside it stays hidden. Reads are
+unchanged. Seatbelt and Docker have no such layer and refuse the request.
+
 | Host    | Mechanism                                                                                                                                                                                                                                                                                                                                                     |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Linux   | bubblewrap. An empty root exposes enumerated runtime paths and declared grants. A tmpfs covers the workspace, the declared set is bound on top, the root and workspace are remounted read-only, and the network namespace is unshared. A `loopback` request is refused because bubblewrap cannot expose host loopback without granting the full host network. |

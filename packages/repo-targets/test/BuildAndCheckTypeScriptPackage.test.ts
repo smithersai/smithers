@@ -247,10 +247,10 @@ describe("BuildAndCheckTypeScriptPackage test data", () => {
     const standard = BuildAndCheckTypeScriptPackage({ packageManager, cwd: options.cwd })
     const withData = BuildAndCheckTypeScriptPackage(options)
     expect(Target.metadata(withData.test).inputs).toEqual([
-      ...Target.metadata(standard.test).inputs.slice(0, 10),
+      ...Target.metadata(standard.test).inputs.slice(0, 12),
       Input.glob("test/fixtures/*.mjs"),
       Input.glob("test/fixtures/*.cjs"),
-      ...Target.metadata(standard.test).inputs.slice(10)
+      ...Target.metadata(standard.test).inputs.slice(12)
     ])
     expect(plannedArgv(withData.test)).toEqual(plannedArgv(standard.test))
     for (const name of ["lib", "check", "lint", "fmt", "docs", "circular", "docsFiles"] as const) {
@@ -431,7 +431,16 @@ describe("BuildAndCheckTypeScriptPackage lint and fmt gates", () => {
     expect(attrs.fix).toBe(false)
     // The jsdoc rules are declared key material even though only the first
     // config reaches the argv, so editing them re-keys the target.
-    expect(attrs.configs).toEqual([Input.file("eslint.config.js"), Input.file("//eslint.jsdoc.js")])
+    // The flat config imports both shared rule sets and loads both tsconfigs.
+    expect(attrs.configs).toEqual([
+      Input.file("eslint.config.js"),
+      Input.file("//eslint.jsdoc.js"),
+      Input.file("//eslint.invariants.js"),
+      Input.file("tsconfig.json"),
+      Input.file("tsconfig.test.json")
+    ])
+    // Typed rules resolve the test tsconfig's program, so the test tree keys the run without being linted.
+    expect(attrs.data).toEqual([Input.glob("test/**/*.{ts,vibe}")])
   })
 
   it("plans dprint in check mode over the sources and the test tree", () => {
@@ -573,6 +582,8 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
     expect(attrsOf<Vitest.Attrs>(relocated.test).sources).toEqual([
       moved,
       Input.glob("test/**/*.{ts,vibe}"),
+      Input.file("tsconfig.json"),
+      Input.file("tsconfig.test.json"),
       Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
       Input.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
       Input.file("//packages/repo-targets/test-utils/test-process-environment.mjs"),

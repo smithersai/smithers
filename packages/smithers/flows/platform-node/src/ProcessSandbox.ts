@@ -14,7 +14,9 @@
  *
  * - Linux: bubblewrap. An empty root contains only enumerated system/runtime
  *   paths and declared reads and writes. The workspace and root are remounted
- *   read-only after mounting grants. A private tmp supplies HOME. The network
+ *   read-only after mounting grants, unless the request asks for a scratch
+ *   layer that takes undeclared workspace writes and is discarded with the
+ *   run. A private tmp supplies HOME. The network
  *   namespace is unshared unless explicitly opened; loopback-only is refused.
  * - macOS: seatbelt (`sandbox-exec`). Host reads are denied except enumerated
  *   system/runtime paths, declared inputs, external reads, writes and private
@@ -106,6 +108,19 @@ export interface Request {
    * sits or resolves inside the workspace, is dropped.
    */
   readonly externalReads?: ReadonlyArray<string> | undefined
+  /**
+   * Whether an undeclared write under the workspace lands in a private layer
+   * that is discarded with the run, instead of failing.
+   *
+   * A check whose product is its exit code can run a tool that leaves files
+   * beside its inputs: a compiler sidecar, a bundled config, a coverage
+   * report. With the layer the tool writes them, reads them back, and none
+   * reaches the host. Declared reads stay read-only binds and nothing
+   * undeclared becomes readable, so the layer changes what a write does and
+   * never what a read sees. Only bubblewrap has such a layer; a request for
+   * one under any other mechanism is refused.
+   */
+  readonly scratch?: boolean | undefined
 }
 
 /**
@@ -275,6 +290,8 @@ export interface Plan {
   readonly externalReads: ReadonlyArray<string>
   /** Workspace entries closed by name under every grant; see {@link Hidden}. */
   readonly hidden?: Hidden | undefined
+  /** Undeclared workspace writes land in a private, discarded layer; see {@link Request.scratch}. */
+  readonly scratch?: boolean | undefined
   /** A host directory the run may scribble in; created by the caller, removed after. */
   readonly tmp: string
   readonly uid: number | undefined
@@ -622,6 +639,14 @@ export const plan = (
 ): Plan | Unenforceable => {
   const selected = select(request, hostFacts)
   if (isUnenforceable(selected)) return selected
+  if (request.scratch === true && selected._tag !== "bubblewrap") {
+    return unenforceable(
+      hostFacts.platform,
+      selected._tag,
+      "bubblewrap",
+      `a discarded scratch layer needs bubblewrap; under ${selected._tag} an undeclared write would reach the host`
+    )
+  }
   let root: string
   try {
     const canonical = (hostFacts.realpath ?? NodeFs.realpathSync)(location.workspaceRoot)
@@ -764,6 +789,7 @@ export const plan = (
     writes: collapse(writes),
     readOnly: collapse(readOnly),
     externalReads: collapse(externalReads),
+    ...(request.scratch === true ? { scratch: true } : {}),
     tmp: location.tmp,
     uid: hostFacts.uid,
     gid: hostFacts.gid
@@ -1268,8 +1294,12 @@ export const bubblewrap = (
   // is a declared write (a declared output file at the top level opens its
   // parent), that mount is the writable bind, and remounting it would deny
   // every write the declaration admitted; the tmpfs it replaced needs no
-  // re-closing.
-  if (!confinement.writes.includes(confinement.workspaceRoot)) out.push("--remount-ro", confinement.workspaceRoot)
+  // re-closing. A scratch layer leaves the tmpfs writable: an undeclared write
+  // lands in it and is gone with the namespace, while every declared read
+  // stays its own read-only bind above it.
+  if (confinement.scratch !== true && !confinement.writes.includes(confinement.workspaceRoot)) {
+    out.push("--remount-ro", confinement.workspaceRoot)
+  }
   out.push("--remount-ro", "/")
   out.push("--chdir", confinement.cwd, "--unshare-all", "--new-session", "--die-with-parent")
   // Bubblewrap cannot expose only the host loopback interface. Planning

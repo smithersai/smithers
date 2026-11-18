@@ -26,8 +26,23 @@ export const Attrs = Schema.Struct({
   sources: Schema.Array(Input.Declared),
   deps: Schema.Array(Target.Target),
   configs: Schema.Array(Input.File),
+  /**
+   * Files the run reads and does not lint: the rest of the program a typed
+   * rule resolves, such as the test tree a test tsconfig includes. They are
+   * key material and never reach the argv.
+   *
+   * @default []
+   */
+  data: Schema.Array(Input.Declared).pipe(Schema.withConstructorDefault(Effect.succeed([]))),
   maxWarnings: Schema.Number,
   fix: Schema.Boolean,
+  /**
+   * `false` never reuses this target's result and runs it exactly as the
+   * workspace declares, with no confined attempt. Declare it on a target
+   * whose run must leave files behind, or whose cases depend on files it
+   * does not declare.
+   */
+  cache: Schema.optional(Schema.Literal(false)),
   cwd: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(".")))
 })
 
@@ -62,8 +77,10 @@ const lintPatterns = (cwd: string, sources: ReadonlyArray<Input.Declared>): Read
  * config is declared key material for files the flat config imports. Tools
  * resolve through `pnpm exec`, matching the pnpm workspace install target.
  * Key material contains source and flat-config digests, dependency keys,
- * warning policy, and fix mode. The target remains non-cacheable in either
- * mode until the external ESLint toolchain is complete key material. The target
+ * warning policy, and fix mode. The declaration asserts no cacheability of its
+ * own: the executor reuses a check-mode result only after a run confined to
+ * the declared inputs, with the installed ESLint and its plugins in the key,
+ * and never reuses a fixing run. The target
  * follows ESLint flat-config prior art and this repository's current package
  * lint scripts. Executing the plan requires {@link Exec.ExecLive}.
  *

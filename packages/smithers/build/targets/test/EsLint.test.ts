@@ -47,6 +47,24 @@ describe("ESLint source paths", () => {
     expect(Target.metadata(target).inputs).toContainEqual(config)
   })
 
+  it("keys the files a typed rule reads without linting them", () => {
+    const base = {
+      packageManager,
+      sources: [Input.glob("src/**/*.ts")],
+      configs: [Input.file("eslint.config.js")],
+      deps: [],
+      maxWarnings: 0,
+      fix: false
+    }
+    const plain = EsLint.EsLint(base)
+    const data = [Input.glob("test/**/*.ts"), Input.file("fixtures/types.d.ts")]
+    const typed = EsLint.EsLint({ ...base, data })
+    // The same command: the data never reaches the argv, not even as `--no-warn-ignored`.
+    expect(plannedArgv(typed)).toEqual(plannedArgv(plain))
+    expect(Target.metadata(typed).inputs).toEqual([...Target.metadata(plain).inputs, ...data])
+    expect((Target.metadata(plain).attrs as EsLint.Attrs).data).toEqual([])
+  })
+
   it.each([".", "packages/example"])("lints rooted and relative globs from cwd %s", async (cwd) => {
     const root = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-eslint-")))
     try {

@@ -132,6 +132,9 @@ deliberate semantic breaks.
 - For `LlmLint`, changing the `model` attribute, which also changes `layers`.
 - Any change to the bytes of the shipped `cli/src`, `targets/src`, or `src`
   sources, through the ambient implementation fingerprint.
+- For a test, type-check, lint, build or format target, any change to the
+  bytes of an installed tree above the directory its tool starts in, or to that
+  directory's `package.json`.
 - Under a declared Nix environment, any change to the closure: an edit to the
   flake, its lock, or the expression file that changes the store path.
 
@@ -146,23 +149,24 @@ boolean or a function of decoded attrs. This fails safe for custom targets and f
 catalog targets that invoke an external tool whose complete toolchain identity is
 not yet key material.
 
-| Target                           | Cacheable                                                                      |
-| -------------------------------- | ------------------------------------------------------------------------------ |
-| `DocsParity`, `Filegroup`        | Always; each is a bounded in-process check over declared content               |
-| `PackageJsonCheck`               | Only with no generated fields; generated-field checks consult host-local state |
-| `GithubCiGen`                    | In `check` mode; never in `write` mode                                         |
-| `ToolBuild`, `NodeTest`          | Only when the declaration sets `cache: true`                                   |
-| Rules the executor runs natively | As their rule policy says; `Shell.Test` caches in `execute` mode               |
-| Every other catalog target       | Never                                                                          |
+| Target                                      | Cacheable                                                                               |
+| ------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `DocsParity`, `Filegroup`                   | Always; each is a bounded in-process check over declared content                        |
+| `PackageJsonCheck`                          | Only with no generated fields; generated-field checks consult host-local state          |
+| `GithubCiGen`                               | In `check` mode; never in `write` mode                                                  |
+| `Vitest`, `NodeTest`, `Typecheck`, `EsLint` | After a confined run; see [Results reused with evidence](#results-reused-with-evidence) |
+| `ToolBuild`, `NodeTest`                     | Also when the declaration sets `cache: true`                                            |
+| Rules the executor runs natively            | As their rule policy says; `Shell.Test` caches in `execute` mode                        |
+| `TsBuild`, `Dprint`                         | Never; see [What is not reused yet](#what-is-not-reused-yet)                            |
+| Every other catalog target                  | Never                                                                                   |
 
 Mutation, long-lived processes, model calls, and external publication are never
-cached. External compiler, test, and lint targets remain non-cacheable by
-default: the executable the target spawns is key material, but a program can
-still read files its declaration does not name, and an unconfined run cannot
-prove it did not. `cache: true` on a `NodeTest` is the declaration's assertion
-that `srcs` and `deps` cover everything it reads. A `testSuite` runner names
-only directories, so `cache: true` requires at least one declared `srcs` input
-or dependency; runner directories alone cannot re-key a cached verdict.
+cached. `cache: true` on a `NodeTest` is the declaration's assertion that `srcs`
+and `deps` cover everything it reads; a result stored on that assertion needs no
+confined run and stays in the local tier unless one confined it. A `testSuite`
+runner names only directories, so `cache: true` requires at least one declared
+`srcs` input or dependency; runner directories alone cannot re-key a cached
+verdict.
 
 A declared [Nix environment](../concepts/environments.md) enters keys through
 the tool environment, but does not by itself make these targets cacheable.
@@ -170,49 +174,162 @@ the tool environment, but does not by itself make these targets cacheable.
 A result produced without enforced confinement is stored in the local tier
 only; it never publishes to a remote cache.
 
-### Action-backed tool contracts
+### Results reused with evidence
 
-TsBuild, Typecheck, Vitest, EsLint, and Dprint run through the action-backed
-executor. Their planner now fingerprints the declared manager and runtime
-bytes, including interpreter chains, and records the tool environment even
-without a native argv. Missing or unreadable declared executables refuse the
-plan. Vitest uses the same runtime override selection as execution.
+A test runner, a type checker and a linter each start a program that can read
+any file it can reach. The declared inputs key the result, so a read the
+declaration does not name leaves the key unchanged while the verdict moves. A
+stale green test is the worst thing a build cache can return. `Vitest`,
+`NodeTest`, `Typecheck` and `EsLint` are therefore reused on one condition: the
+run that produced the result was confined to what its key covers.
 
-These action-backed rules accept absolute launcher paths or bare names on an
-absolute `PATH`. Relative launcher paths and relative or empty `PATH` entries
-refuse planning: package-directory probes and workspace-directory services can
-otherwise select different executable bytes. The `smthrs` process entry
-resolves relative `PATH` entries against the launch directory and drops empty
-ones before planning, so `pnpm exec smthrs` works with its `./node_modules/.bin`
-entry. A host that embeds the CLI with its own environment passes an absolute
-launcher or absolute lookup directories.
+**What the key covers.** Beside the declared inputs, the dependency keys, the
+lockfile, the package manager, the runtime and the declared environment:
 
-Default caching requires complete installed-tool and output contracts, tracked in
-[#1871](https://github.com/smithersai/smithers/issues/1871):
+- The bytes of every installed tree the run can read: each `node_modules`
+  directory above the directory the tool starts in. The lockfile says what an
+  install should contain; this measures what is there, so a package patched in
+  place or a binary replaced under one version re-keys the target. The test
+  runner, its plugins, the compiler and the lint rules all live there.
+- The `package.json` of the directory the tool starts in, which the package
+  manager and the tool resolve the package from.
 
-- Identify the actual cwd-selected compiler, test runner, lint tool, dprint
-  native binary, and plugin bytes, not only the manager shim or version.
-- Bind body execution to the measured lookup environment, including explicit
-  environment overrides supplied by an embedding host.
-- Restore TsBuild outputs from the artifact cache in a fresh checkout.
-- Declare and restore Typecheck build/incremental and Vitest coverage outputs,
-  or keep those modes non-cacheable. Keep formatter and lint fix modes
-  non-cacheable.
-- Prove cold-run execution and unchanged second-run hits for all five through
-  `ci`, plus binary, lockfile, config, source, environment, and dependency
-  invalidation; prove missing tools, failed checks, and undeclared reads never
-  produce reusable successes. Retain Linux enforced-sandbox evidence before
-  shared publication, and prove Affected still selects all incomplete contracts.
+A tree is measured as units: its `.bin` directory, each child of a pnpm store
+(`.pnpm/<id>`), and each other entry whose name does not start with a dot. A
+link is recorded as its target text, never followed, so a workspace package
+linked into the tree contributes a link; its sources are the consumer's declared
+inputs. Each unit's digest is remembered in
+`<cacheDirectory>/plan/installed-trees.json` beside the status of its entries
+(size, mode, inode, device, both nanosecond timestamps) and read again only when
+one changed. On this repository the tree is 112,882 files and 2.5 GB: 7.3 s to
+read once, 0.8 s on every later plan. A tree that cannot be measured whole makes
+the contract incomplete, and the result is never reused.
+
+**What a confined run proves.** The run sees its declared inputs, its
+dependencies' declared outputs, the keyed units of each installed tree, and the
+host paths every confined tool sees. Nothing else under the workspace exists for
+it, so a file the declaration does not name is missing, the tool fails, and a
+failed run stores nothing. The network is closed.
+
+The mechanism is bubblewrap with a scratch layer: a write the declaration does
+not name lands in a private layer and is gone when the run ends. A tool that
+leaves files beside its inputs (a compiler's declaration sidecar, a bundled
+config, a coverage report) therefore runs against exactly its declared reads,
+and none of those files reaches the workspace. The layer changes what a write
+does and never what a read sees. A tool's own state under a dot name inside an
+installed tree (`node_modules/.vite`) is not shown to the run.
+
+**How a run gets its evidence.** It depends on what the workspace declares for
+`S.Sandboxes({ default })` and on what the host has:
+
+| Workspace                                  | Run                                                                                                                | Stored               |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | -------------------- |
+| Confines its build, host has `bwrap`       | Confined under the scratch layer. A failure is the target's failure                                                | A green run          |
+| Confines its build with seatbelt or Docker | Confined as declared, without the layer                                                                            | Nothing              |
+| `S.Sandbox.None()`, host has `bwrap`       | One confined attempt. Green: that run is the verdict. Red: the tool runs again unconfined, and that is the verdict | A green confined run |
+| `S.Sandbox.None()`, host has no `bwrap`    | Unconfined, as declared                                                                                            | Nothing              |
+
+Only a run under the scratch layer is evidence. Without the layer an installed
+tree is granted whole, and a tool's own state inside it is readable and in no
+key. For the same reason a tree that is itself a link, or that holds a link out
+of the workspace, stores nothing: it can only be granted whole. A tree installed
+after the plan is in no key and is not shown to the run at all.
+
+A workspace that turned build confinement off keeps every verdict it had: a
+suite that passes today still passes, and it is cached once it also passes
+confined. A red attempt that the unconfined run turns green prints one line
+naming the paths the confinement closed, and its output is kept in
+`<cacheDirectory>/evidence/<id>.json`. The attempt is not repeated for 24 hours
+unless the declaration changes, so a suite that cannot run confined costs one
+extra run a day. A `Vitest` attempt runs with `--bail=1`: an attempt that is
+going to be discarded stops at its first failure.
+
+A host with no scratch-capable mechanism (macOS, or Linux without `bwrap`) stores
+nothing and still answers hits a capable host stored.
+
+**What a confined verdict means.** A green confined run is the verdict, in both
+modes, and it differs from an unconfined run in two ways a declaration has to
+know about:
+
+- A file the run writes outside its declared outputs is discarded: a coverage
+  report, a JUnit file, a snapshot. None of these targets declares outputs, so a
+  hit restores none either.
+- A file the declaration does not name does not exist for the run. A case that
+  is skipped when a file or a host tool is missing is skipped, and the suite can
+  pass without it. A coverage threshold catches that; nothing else does.
+
+A target whose run must leave files behind, or whose cases depend on files it
+does not declare, sets `cache: false`. It then runs exactly as the workspace
+declares, with no confined attempt, and is never reused.
+
+**What a stored result carries.** A dependency's key names its declaration, not
+the bytes its run left on disk, and a dependency that is not itself confined can
+leave different bytes under one key. The result records the measured content of
+every dependency output the run could read, and it answers only while those
+outputs still measure the same.
+
+**What keeps a result from being reused.** Each is a test in
+`build-cli/test/CacheEvidenceExecution.test.ts`, run under real bubblewrap:
+
+- A changed source, test file, config, lockfile, tool byte or installed
+  package: the key changes, the target runs.
+- A failed run: nothing is stored.
+- A run that reads an undeclared file: confined it fails, so nothing is stored;
+  the unconfined verdict is reported and the target runs every time.
+- A missing tool: the run fails.
+- An installed tree that changed after the plan measured it: the trees are
+  measured again before the result is stored.
+- A dependency output that changed under an unchanged key, an entry stored
+  without evidence, a run whose `PATH` is not the one the plan fingerprinted:
+  each is a miss.
+
+**What declares a target out.** `cache: false`, `sandbox: "none"`, an opened
+network, `services`, `Typecheck` in build or incremental mode, and `EsLint` with
+`fix: true` are never reused. The planned node carries the reason as
+`uncachedBecause`.
+
+[Affected selection](affected.md) does not change. A result that is never
+stored still has to rerun, so a file no declaration names selects every
+tool-backed target in its package, as before
+(`build-cli/test/AffectedEvidence.test.ts`).
+
+### What is not reused yet
+
+- **`TsBuild`.** Its outputs are declared and restored, but the package build
+  programs remove and recreate their output directory, which a bind mount
+  refuses, so a confined build fails before it can prove anything.
+- **`Dprint`.** The native binary and its downloaded plugins are not key
+  material. It is under 1% of this repository's CI time.
+- **macOS and Docker.** Seatbelt and Docker have no scratch layer, so no
+  evidence is gathered under them.
+- **A check that a confined run really ran every case.** A suite that skips
+  cases when an undeclared file is missing can be cached green without them.
+  Comparing the confined run's case count with one unconfined run's would catch
+  it and is not built.
+- **Host files.** A confined run still reads the enumerated system paths
+  (`/usr`, `/etc`, the runtime). A system library replaced under an unchanged
+  runtime binary is not in the key.
+- **An embedding host's environment.** A target body resolves its package
+  manager from the process `PATH`. A host that plans under another `PATH` gets
+  no evidence and no stored result, instead of a result keyed on programs it
+  did not start.
+- **Windows.** The POSIX fixtures skip there; wrapper identity needs its own
+  evidence.
 
 `build-cli/test/CatalogToolIdentity.test.ts` covers source, manifest, config,
 lockfile, and dependency invalidation; unchanged and unrelated-file stability;
 manager, runtime, and PATH-selected interpreter byte identity; relative lookup
-refusal; missing,
-non-executable, cyclic, and unidentifiable launcher refusal; and executable
-replacement between planning and execution. Defaults remain non-cacheable.
-Its POSIX shebang fixtures skip Windows; Windows wrapper identity needs separate
-evidence. Planner identity tests do not demonstrate compiler execution or cache
-hits.
+refusal; missing, non-executable, cyclic, and unidentifiable launcher refusal;
+and executable replacement between planning and execution.
+
+These rules accept absolute launcher paths or bare names on an absolute `PATH`.
+Relative launcher paths and relative or empty `PATH` entries refuse planning:
+package-directory probes and workspace-directory services can otherwise select
+different executable bytes. The `smthrs` process entry resolves relative `PATH`
+entries against the launch directory and drops empty ones before planning, so
+`pnpm exec smthrs` works with its `./node_modules/.bin` entry. A host that
+embeds the CLI with its own environment passes an absolute launcher or absolute
+lookup directories.
 
 ## Keys vary by verb
 

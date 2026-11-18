@@ -816,6 +816,71 @@ describe("bubblewrap argv", () => {
     expect(nested).toContain("--remount-ro /work/ws")
   })
 
+  it("leaves the workspace layer writable for a scratch request and still seals the root", () => {
+    const scratch = planned(linux, { scratch: true })
+    expect(scratch.scratch).toBe(true)
+    const text = ProcessSandbox.bubblewrap(scratch, ["true"], linux).join(" ")
+    expect(text).not.toContain("--remount-ro /work/ws")
+    expect(text).toContain("--remount-ro / --chdir")
+    // Declared reads stay read-only binds above the layer.
+    expect(text).toContain("--ro-bind /work/ws/src/a.ts /work/ws/src/a.ts")
+    expect(planned(linux).scratch).toBeUndefined()
+  })
+
+  it("refuses a scratch layer under seatbelt and docker, where the write would reach the host", () => {
+    for (
+      const [facts, override] of [
+        [darwin, {}],
+        [host("linux", { docker: "/usr/bin/docker" }), { mechanism: { _tag: "docker", image: "node:26" } }]
+      ] as const
+    ) {
+      const refused = ProcessSandbox.plan(
+        { ...request, ...override, scratch: true },
+        { workspaceRoot: root, cwd: root, tmp: "/work/ws/.flows/sandbox/run1" },
+        facts
+      )
+      expect(ProcessSandbox.isUnenforceable(refused) && refused.missing).toBe("bubblewrap")
+      expect(ProcessSandbox.isUnenforceable(refused) && refused.message).toContain("discarded scratch layer")
+    }
+  })
+
+  it.skipIf(
+    process.platform !== "linux" ||
+      ProcessSandbox.isUnenforceable(ProcessSandbox.select({ network: "none" }, ProcessSandbox.host()))
+  )("runs a real tool whose undeclared write is readable inside the run and absent from the host", () => {
+    const workspaceRoot = NodeFs.realpathSync(NodeFs.mkdtempSync(NodePath.join(fixtureDirectory(), "smthrs-scratch-")))
+    try {
+      NodeFs.mkdirSync(NodePath.join(workspaceRoot, "src"))
+      NodeFs.mkdirSync(NodePath.join(workspaceRoot, ".tmp"))
+      NodeFs.writeFileSync(NodePath.join(workspaceRoot, "src/declared.txt"), "declared\n")
+      NodeFs.writeFileSync(NodePath.join(workspaceRoot, "src/undeclared.txt"), "undeclared\n")
+      const run = (scratch: boolean, script: string) => {
+        const plan = ProcessSandbox.plan(
+          { network: "none", reads: ["src/declared.txt"], writes: [], scratch },
+          { workspaceRoot, cwd: workspaceRoot, tmp: NodePath.join(workspaceRoot, ".tmp") },
+          ProcessSandbox.host()
+        )
+        if (ProcessSandbox.isUnenforceable(plan)) throw new Error(plan.message)
+        const [program, ...args] = ProcessSandbox.bubblewrap(plan, ["/bin/sh", "-c", script])
+        return spawnSync(program!, args, { encoding: "utf8" })
+      }
+      // The sidecar is written beside the declared input and read back.
+      const wrote = run(true, "cat src/declared.txt && echo sidecar > src/declared.d.txt && cat src/declared.d.txt")
+      expect(wrote.stdout).toBe("declared\nsidecar\n")
+      expect(wrote.status).toBe(0)
+      expect(NodeFs.existsSync(NodePath.join(workspaceRoot, "src/declared.d.txt"))).toBe(false)
+      // The layer opens no read: the undeclared sibling is still absent.
+      expect(run(true, "test ! -e src/undeclared.txt").status).toBe(0)
+      // A declared read stays read-only above the layer.
+      expect(run(true, "echo changed > src/declared.txt").status).not.toBe(0)
+      expect(NodeFs.readFileSync(NodePath.join(workspaceRoot, "src/declared.txt"), "utf8")).toBe("declared\n")
+      // Without the layer the same write is refused.
+      expect(run(false, "echo sidecar > src/declared.d.txt").status).not.toBe(0)
+    } finally {
+      NodeFs.rmSync(workspaceRoot, { recursive: true, force: true })
+    }
+  })
+
   it("unshares the network by default and shares the host network only for an open policy", () => {
     const open = ProcessSandbox.bubblewrap(planned(linux, { network: "open" }), ["true"], linux).join(" ")
     expect(open).toContain("--share-net")

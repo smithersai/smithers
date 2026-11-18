@@ -20,6 +20,7 @@ import type * as OverlayExec from "../OverlayExec.ts"
 import type * as Planner from "../Planner.ts"
 import type * as RepoResolution from "../RepoResolution.ts"
 import type * as ServiceSupervisor from "../ServiceSupervisor.ts"
+import type * as CacheEvidence from "./CacheEvidence.ts"
 
 /**
  * The mode one node executes under: `execute` for plain tool runs and
@@ -232,6 +233,16 @@ export interface SharedFields extends Planner.PlannedTarget {
   readonly externalReads: ReadonlyArray<string>
   /** Canonical dependency installations admitted when this node was planned. */
   readonly dependencyInstallations?: ReadonlyArray<string>
+  /** Workspace-relative `node_modules` directories whose measured content is in this node's key. */
+  readonly installedTrees?: ReadonlyArray<string>
+  /**
+   * How this node's run proves it read only what its key covers. Present on a
+   * test, type-check or lint node whose mode has a complete contract; its
+   * result is stored only after a run confined that way.
+   */
+  readonly evidence?: CacheEvidence.Evidence
+  /** Why a test, type-check or lint node's result is never reused. */
+  readonly uncachedBecause?: string
   readonly outDirs: ReadonlyArray<string>
   readonly outFiles: ReadonlyArray<string>
   /** Declared output directories a successful run may leave empty, such as a requirement-free module cache. */

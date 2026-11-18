@@ -58,7 +58,9 @@ import * as StampExec from "../StampExec.ts"
 import { runTarget } from "../TargetExecution.ts"
 import * as Workspace from "../Workspace.ts"
 import * as ApprovalBridge from "./ApprovalBridge.ts"
+import * as CacheEvidence from "./CacheEvidence.ts"
 import * as GoCache from "./GoCache.ts"
+import * as InstalledTree from "./InstalledTree.ts"
 import type { ExecuteOptions, PackageNode, PackagePlan, TestOperandPlan } from "./PackageOptions.ts"
 import type { StoredResolve } from "./PackagePlanner.ts"
 import {
@@ -76,6 +78,7 @@ import {
   takesExclusiveTreePermit,
   workspaceRootToken
 } from "./PackagePlanner.ts"
+import * as Path from "./Path.ts"
 import * as PathTools from "./PathTools.ts"
 import * as RulePolicy from "./RulePolicy.ts"
 import * as NativeRules from "./rules/NativeRules.ts"
@@ -118,6 +121,8 @@ export interface ExecutionServices {
   readonly cache: (
     options: Parameters<typeof openCache>[0]
   ) => Effect.Effect<Awaited<ReturnType<typeof openCache>>, unknown>
+  /** The host facts that decide whether a run can gather cache evidence. */
+  readonly sandboxHost: () => ExecSandbox.Host
 }
 
 /**
@@ -139,7 +144,8 @@ export const executionServicesLive: ExecutionServices = {
   commit: GitCommit.commit,
   dockerService: DockerExec.serviceSpec,
   anvilService: AnvilExec.serviceSpec,
-  cache: (options) => joined(() => openCache(options))
+  cache: (options) => joined(() => openCache(options)),
+  sandboxHost: () => ExecSandbox.host()
 }
 
 /**
@@ -279,7 +285,15 @@ export const sandboxRequest = (
   nodes: ReadonlyMap<string, PackageNode>,
   workspace: WorkspaceDeclaration.WorkspaceDeclaration,
   cacheDirectory: string,
-  candidateReads: ReadonlyArray<string> = []
+  candidateReads: ReadonlyArray<string> = [],
+  /**
+   * The workspace root, for a run that gathers cache evidence under a scratch
+   * layer: undeclared writes are discarded, each installed tree is granted
+   * entry by entry so a tool's scratch state inside it stays hidden, and a
+   * workspace that turned build confinement off still gets the platform's
+   * mechanism for this one run.
+   */
+  scratchRoot?: string | undefined
 ): ExecSandbox.Request => {
   const reads = new Set<string>()
   // A link input is placed as a link, never bound: binding its path would
@@ -330,7 +344,23 @@ export const sandboxRequest = (
     if (dependency.rule === "Go.Packages") { for (const path of dependency.readSet) reads.add(path) }
     stack.push(...dependency.dependencies)
   }
-  for (const directory of nodeModulesDirectories([node.cwd, node.packagePath])) reads.add(directory)
+  // A scratch run is shown only the trees its key measured. One installed
+  // after planning is in no key, so it stays hidden rather than unproven.
+  for (
+    const directory of scratchRoot === undefined
+      ? new Set([...nodeModulesDirectories([node.cwd, node.packagePath]), ...(node.installedTrees ?? [])])
+      : new Set(node.installedTrees ?? [])
+  ) {
+    const entries = scratchRoot === undefined ? undefined : installedEntries(scratchRoot, directory)
+    if (entries === undefined) {
+      reads.add(directory)
+      continue
+    }
+    for (const entry of entries) {
+      if (entry.link === undefined) reads.add(entry.path)
+      else links.set(entry.path, entry.link)
+    }
+  }
   for (const installation of node.dependencyInstallations ?? []) {
     // A replaced installation cannot grant a different host directory. Keep
     // the planned canonical path; never follow a new alias for authority.
@@ -373,7 +403,10 @@ export const sandboxRequest = (
   return {
     policy: node.sandbox,
     ...(destinationsOf(node) === undefined ? {} : { destinations: destinationsOf(node) }),
-    mechanism: workspace.sandboxes?.sandboxes["default"],
+    mechanism: scratchRoot !== undefined && node.evidence?.mode === "attempt"
+      ? undefined
+      : workspace.sandboxes?.sandboxes["default"],
+    ...(scratchRoot === undefined ? {} : { scratch: true }),
     reads: [...reads],
     ...(links.size === 0 ? {} : { links: [...links].map(([path, target]) => ({ path, target })) }),
     writes: [...writes],
@@ -381,6 +414,70 @@ export const sandboxRequest = (
     readOnly: [`${cacheDirectory}/cache`],
     externalReads: [...externalReads]
   }
+}
+
+/**
+ * The entries of one installed tree a scratch run is shown: exactly the units
+ * its key measures ({@link InstalledTree.units}), so a tool's own state under
+ * a dot name is neither read nor in the way of a write. A link is placed as a
+ * link, which is what lets a pnpm package resolve its own dependencies beside
+ * its real location. Nothing is answered for a tree that is itself a link, is
+ * missing, or holds a link that leaves the workspace; the caller grants that
+ * directory whole, as a run without a scratch layer does.
+ */
+const installedEntries = (
+  root: string,
+  directory: string
+): ReadonlyArray<{ readonly path: string; readonly link: string | undefined }> | undefined => {
+  const absolute = NodePath.join(root, ...directory.split("/"))
+  const entries: Array<{ readonly path: string; readonly link: string | undefined }> = []
+  try {
+    if (!NodeFs.lstatSync(absolute).isDirectory()) return undefined
+    for (const name of NodeFs.readdirSync(absolute)) {
+      if (name !== ".bin" && name !== ".pnpm" && name.startsWith(".")) continue
+      const child = NodePath.join(absolute, name)
+      if (!NodeFs.lstatSync(child).isSymbolicLink()) {
+        entries.push({ path: `${directory}/${name}`, link: undefined })
+        continue
+      }
+      const target = NodeFs.readlinkSync(child)
+      if (NodePath.isAbsolute(target) || !Path.contains(root, NodePath.resolve(absolute, target))) return undefined
+      entries.push({ path: `${directory}/${name}`, link: target })
+    }
+  } catch {
+    return undefined
+  }
+  return entries
+}
+
+/**
+ * Every dependency output a confined run of `node` can read: the declared
+ * output directories and files of its transitive dependencies. They are the
+ * paths {@link sandboxRequest} grants for the same reason, so what a result's
+ * evidence measures is what its run was shown.
+ *
+ * @category internal
+ * @since 1.0.0
+ */
+export const dependencyOutputPaths = (
+  node: PackageNode,
+  nodes: ReadonlyMap<string, PackageNode>
+): ReadonlyArray<string> => {
+  const paths = new Set<string>()
+  const seen = new Set<string>()
+  const stack = [...node.dependencies]
+  while (stack.length > 0) {
+    const label = stack.pop()!
+    if (seen.has(label)) continue
+    seen.add(label)
+    const dependency = nodes.get(label)
+    if (dependency === undefined) continue
+    for (const path of dependency.outDirs) paths.add(path)
+    for (const path of dependency.outFiles) paths.add(path)
+    if (dependency.lane?.kind === "cargo") { for (const path of dependency.lane.outFiles) paths.add(path) }
+    stack.push(...dependency.dependencies)
+  }
+  return [...paths].sort()
 }
 
 /**
@@ -934,13 +1031,16 @@ export const executeEffect = (
      * configured remote does not get says so once, because a publisher that
      * silently shares nothing reads as a cache that never hits (#2254).
      */
-    const publishable = (node: PackageNode, confined: boolean): boolean => {
+    const publishable = (node: PackageNode, confined: boolean, evidenced = false): boolean => {
+      // A run that gathered its own evidence was confined by an enforced
+      // mechanism whatever the workspace declares for the rest of its build.
       if (
         confined &&
-        ExecSandbox.enforceable(
-          sandboxRequest(node, planned.nodes, index.workspace, cacheDirectory),
-          ExecSandbox.host()
-        )
+        (evidenced ||
+          ExecSandbox.enforceable(
+            sandboxRequest(node, planned.nodes, index.workspace, cacheDirectory),
+            ExecSandbox.host()
+          ))
       ) return true
       if (options.remoteCache !== undefined && options.remoteCache.enabled !== false && !unconfinedWarned) {
         unconfinedWarned = true
@@ -956,10 +1056,14 @@ export const executeEffect = (
       node: PackageNode,
       output: unknown,
       key: string = node.keyPreview,
-      confined = true
+      confined = true,
+      evidenced = false
     ): Effect.Effect<void, unknown> =>
       Effect.gen(function*() {
         if (!node.cacheable) return
+        // A test, type-check or lint result is reusable only as the product of
+        // a run confined to what its key covers.
+        if (node.evidence !== undefined && !evidenced) return
         // A tool that replaces itself while running must not publish a result
         // under the identity observed before it ran.
         yield* verifyExecutables(node)
@@ -971,10 +1075,143 @@ export const executeEffect = (
             exitOk: true,
             output,
             storedAt: new Date().toISOString()
-          }, { shared: publishable(node, confined) }).catch((cause: unknown) => {
+          }, { shared: publishable(node, confined, evidenced) }).catch((cause: unknown) => {
             log(`smthrs: could not store ${node.label} in the cache: ${Diagnostic.describe(cause)}`)
           })
         )
+      })
+
+    /**
+     * The measured content of every dependency output a confined run of `node`
+     * can read. An output that cannot be read whole fails the target, as an
+     * unreadable declared input does.
+     */
+    const dependencyReads = (node: PackageNode): Effect.Effect<ReadonlyArray<readonly [string, string]>, unknown> =>
+      joined(async () =>
+        dependencyOutputPaths(node, planned.nodes).map((path) =>
+          [path, InstalledTree.measure(NodePath.join(root, ...path.split("/")))] as const
+        )
+      )
+
+    /**
+     * Whether every installed tree in `node`'s key still measures as planned.
+     * A dependency, or anything else on the host, can change a tree between
+     * the plan and the end of the run; the result would then be stored under
+     * a key that names bytes the run did not read.
+     */
+    const installedTreesHold = (node: PackageNode): Effect.Effect<boolean, unknown> =>
+      joined(async () => {
+        const remembered = await InstalledTree.load(InstalledTree.path(root, cacheDirectory))
+        const rows: Array<Record<string, unknown>> = []
+        collectTagged(node.keyMaterial.inputs, "InstalledTree", rows, new Set())
+        return rows.every((row) =>
+          InstalledTree.identify(
+            NodeFs.realpathSync(NodePath.join(root, ...String(row["path"]).split("/"))),
+            remembered
+          ).digest === row["digest"]
+        )
+      })
+
+    /** How much of a failed confined attempt's failure text is kept beside its record. */
+    const attemptOutputCharacters = 8_000
+    let unprovableNoted = false
+    /**
+     * Runs one evidence rule's body and says whether the run proved its reads.
+     *
+     * A workspace that confines its build runs the body confined, as it
+     * always has, under a scratch layer when the mechanism has one. A
+     * workspace that turned build confinement off gets one confined attempt
+     * where the host can make it: green, that run is the verdict and its
+     * evidence; red, the body runs again as the workspace declares, that
+     * second run is the verdict, and nothing is stored. A declaration whose
+     * attempt failed that way is not attempted again for a day.
+     */
+    const runWithEvidence = (
+      node: PackageNode & { readonly evidence: CacheEvidence.Evidence },
+      run: (
+        sandbox: ExecSandbox.Request,
+        write: (stream: "stdout" | "stderr", text: string) => void,
+        attrs?: unknown
+      ) => Effect.Effect<Exit.Exit<unknown, unknown>, unknown>
+    ): Effect.Effect<{ readonly exit: Exit.Exit<unknown, unknown>; readonly evidenced: boolean }, unknown> =>
+      Effect.gen(function*() {
+        const live = (stream: "stdout" | "stderr", text: string): void => reporter.toolOutput(node.label, stream, text)
+        const declared = yield* sandboxFor(node, root)
+        /** Runs as the workspace declares; whatever the verdict, it proves nothing and is not stored. */
+        const unproven = Effect.map(
+          Effect.suspend(() => run(declared, live)),
+          (exit) => ({ exit, evidenced: false })
+        )
+        // A target body resolves its package manager from this process's
+        // search path. A host that planned under another one fingerprinted
+        // programs this run may not start, so its result proves nothing
+        // about the key it would be stored under.
+        if (
+          node.nixEnvironment === undefined && options.environment !== undefined &&
+          options.environment["PATH"] !== process.env["PATH"]
+        ) return yield* unproven
+        // Evidence needs the run to see exactly the keyed entries of each
+        // installed tree. A tree that is a link, or holds a link out of the
+        // workspace, can only be granted whole, tool scratch and all.
+        const whole = (node.installedTrees ?? []).find((directory) => installedEntries(root, directory) === undefined)
+        if (whole !== undefined) {
+          log(
+            `${node.label}  not cached: the installed tree ${whole} is a link or links out of the workspace, ` +
+              "so a run cannot be shown only the entries its key measures"
+          )
+          return yield* unproven
+        }
+        const scratch = sandboxRequest(node, planned.nodes, index.workspace, cacheDirectory, [], root)
+        // An evidence node never opts out of confinement, so the host either
+        // has a mechanism with a scratch layer or says what it lacks. Without
+        // the layer a confined run still reads a tool's own state inside an
+        // installed tree, which no key covers.
+        const unprovable = ExecSandbox.select(scratch, services.sandboxHost())
+        if (ExecSandbox.isUnenforceable(unprovable)) {
+          if (!unprovableNoted) {
+            unprovableNoted = true
+            log(`smthrs: test, type-check and lint results are not cached on this host: ${unprovable.message}`)
+          }
+          return yield* unproven
+        }
+        if (node.evidence.mode === "declared") {
+          const exit = yield* run(scratch, live)
+          return { exit, evidenced: Exit.isSuccess(exit) }
+        }
+        const identity = CacheEvidence.declarationIdentity(node.label, node.rule, scratch)
+        if (yield* joined(() => CacheEvidence.attemptFailed(root, cacheDirectory, identity))) return yield* unproven
+        const buffered: Array<readonly ["stdout" | "stderr", string]> = []
+        // A failed attempt is discarded whole, so a test runner is told to
+        // stop at its first failure; a passing run is the same run either way.
+        const attempt = yield* run(scratch, (stream, text) => {
+          buffered.push([stream, text])
+        }, node.rule === "Vitest" ? { ...(node.attrs as object), bail: 1 } : node.attrs)
+        if (Exit.isSuccess(attempt)) {
+          for (const [stream, text] of buffered) live(stream, text)
+          return { exit: attempt, evidenced: true }
+        }
+        const exit = yield* run(declared, live)
+        if (Exit.isSuccess(exit)) {
+          // What a failed target prints: the tool's own captured output, past
+          // the line limit of the live view, with the sandbox's reading of it.
+          const failure = Executor.describeFailure(Cause.squash(attempt.cause))
+          const denied = CacheEvidence.deniedLines(failure)
+          yield* joined(() =>
+            CacheEvidence.rememberFailedAttempt(root, cacheDirectory, identity, {
+              label: node.label,
+              denied,
+              output: [failure.slice(-attemptOutputCharacters)]
+            }).catch(() => undefined)
+          )
+          log(
+            `${node.label}  not cached: it passed, but failed when confined to its declared inputs${
+              denied.length === 0 ? "" : `: ${denied.join("; ")}`
+            }; the confined run's output is in ${
+              posix(NodePath.relative(root, CacheEvidence.attemptPath(root, cacheDirectory, identity)))
+            }`
+          )
+        }
+        return { exit, evidenced: false }
       })
 
     /** Validates a target body's declared products, including void generated-file targets. */
@@ -3443,24 +3680,55 @@ export const executeEffect = (
             }
             default: {
               const cached = yield* cacheGet(node)
-              if (cached !== undefined && (yield* answerTargetHit(node, cached.output))) return green("hit")
-              const output = OutputStream.make({
-                write: (stream, text) => reporter.toolOutput(node.label, stream, text),
-                environment: { ...(options.environment ?? process.env), ...node.env },
-                sensitiveNames: credentialNames
-              })
-              const exit = yield* Effect.exit(services.target(
-                root,
-                cacheDirectory,
-                node.declaration,
-                node.attrs,
-                `smithers-build-target-${node.keyPreview.slice(0, 24)}`,
-                credentialNames,
-                options.packageName,
-                node.nixEnvironment,
-                yield* sandboxFor(node, root),
-                output
-              )).pipe(Effect.ensuring(Effect.sync(output.close)))
+              if (cached !== undefined) {
+                if (node.evidence === undefined) {
+                  if (yield* answerTargetHit(node, cached.output)) return green("hit")
+                } else {
+                  // The entry answers only while every dependency output its
+                  // run could read still measures as it did then.
+                  const stored = CacheEvidence.decode(cached.output)
+                  if (
+                    stored !== undefined &&
+                    JSON.stringify(stored.reads) === JSON.stringify(yield* dependencyReads(node)) &&
+                    (yield* answerTargetHit(node, stored.result))
+                  ) return green("hit")
+                }
+              }
+              const runBody = (
+                sandbox: ExecSandbox.Request,
+                write: (stream: "stdout" | "stderr", text: string) => void,
+                attrs: unknown = node.attrs
+              ): Effect.Effect<Exit.Exit<unknown, unknown>, unknown> => {
+                const output = OutputStream.make({
+                  write,
+                  environment: { ...(options.environment ?? process.env), ...node.env },
+                  sensitiveNames: credentialNames
+                })
+                return Effect.exit(services.target(
+                  root,
+                  cacheDirectory,
+                  node.declaration,
+                  attrs,
+                  `smithers-build-target-${node.keyPreview.slice(0, 24)}`,
+                  credentialNames,
+                  options.packageName,
+                  node.nixEnvironment,
+                  sandbox,
+                  output
+                )).pipe(Effect.ensuring(Effect.sync(output.close)))
+              }
+              const evidenceNode = node.evidence === undefined
+                ? undefined
+                : node as PackageNode & { readonly evidence: CacheEvidence.Evidence }
+              const { evidenced, exit } = evidenceNode === undefined
+                ? {
+                  evidenced: false,
+                  exit: yield* runBody(
+                    yield* sandboxFor(node, root),
+                    (stream, text) => reporter.toolOutput(node.label, stream, text)
+                  )
+                }
+                : yield* runWithEvidence(evidenceNode, runBody)
               if (Exit.isFailure(exit)) return outcomeOfTargetFailure(node.label, exit.cause)
               const reviewFindings = Target.metadata(node.declaration).target === "LlmLint"
                 ? reviewFindingsOf(exit.value)
@@ -3479,12 +3747,20 @@ export const executeEffect = (
                   const value = Target.metadata(node.declaration).decodeSuccess(exit.value)
                   const encoded = Executor.encodeCacheOutput(value)
                   if ("output" in encoded) {
-                    yield* cachePut(
-                      node,
-                      node.declaredOutputs === undefined
-                        ? encoded.output
-                        : yield* captureTargetOutputs(node, encoded.output, node.declaredOutputs)
-                    )
+                    const stored = node.declaredOutputs === undefined
+                      ? encoded.output
+                      : yield* captureTargetOutputs(node, encoded.output, node.declaredOutputs)
+                    if (evidenced && !(yield* installedTreesHold(node))) {
+                      log(`${node.label}  not cached: an installed tree changed after it was planned`)
+                    } else {
+                      yield* cachePut(
+                        node,
+                        evidenced ? CacheEvidence.record(yield* dependencyReads(node), stored) : stored,
+                        node.keyPreview,
+                        true,
+                        evidenced
+                      )
+                    }
                   } else log(`smthrs: skipped the cache store for ${node.label}: ${encoded.reason}`)
                   return green("ran")
                 }).pipe(Effect.catchCause((failure) =>

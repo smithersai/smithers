@@ -13,6 +13,8 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
     example: Input.file("examples/quickstart.vibe"),
     test: Input.file("test/quickstart.test.vibe")
   }],
+  // The suite holds two documentation pages to the shipped API and manifest.
+  testData: ["docs/api.md", "docs/installation.md"],
   cwd
 })
 
