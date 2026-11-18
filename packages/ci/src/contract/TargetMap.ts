@@ -23,7 +23,9 @@ export const path = ".smithers/ci-targets.json"
  * One step of one job, in one matrix variant, and the label of a target
  * that runs it. `label` is the label a run record reports. A job with no
  * matrix has the empty variant. A step that was split has one entry per
- * target, each naming the original step.
+ * target, each naming the original step, and `part` says which part of the
+ * step the target runs: a package, a build step or a script. A report names
+ * a failed part by it.
  *
  * @category models
  * @since 0.1.0
@@ -32,7 +34,8 @@ export const Entry = Schema.Struct({
   label: Schema.NonEmptyString,
   job: Schema.NonEmptyString,
   step: Schema.NonEmptyString,
-  variant: Schema.Record(Schema.String, Schema.String)
+  variant: Schema.Record(Schema.String, Schema.String),
+  part: Schema.optionalKey(Schema.NonEmptyString)
 })
 
 /**
@@ -94,3 +97,14 @@ export const labelsOf = (
     .filter((entry) => entry.job === job && entry.step === step && variantKey(entry.variant) === key)
     .map((entry) => entry.label)
 }
+
+/**
+ * The part of a split step each target runs (`Entry.part`), by the target's
+ * label. A target of a step that was not split has no entry.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const partsOf = (map: TargetMap): ReadonlyMap<string, string> =>
+  new Map(map.targets.flatMap((entry) => entry.part === undefined ? [] : [[entry.label, entry.part] as const]))

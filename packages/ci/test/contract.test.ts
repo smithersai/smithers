@@ -580,6 +580,11 @@ describe("contract 11: target map", () => {
     expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:2", { os: "macos-latest" })).toEqual([])
     expect(TargetMap.labelsOf(map, "ci.yml:lint", "ci.yml:test:1", { os: "macos-latest" })).toEqual([])
     expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:1", { os: "windows-latest" })).toEqual([])
+    // A target of a step that was split may say which part of the step it runs.
+    const part = { label: "//:a-lint", job: "a", step: "a:1", variant: {}, part: "lint" }
+    const parted = Schema.decodeUnknownSync(TargetMap.TargetMap)({ version: 1, targets: [part, { ...map.targets[0] }] })
+    expect([...TargetMap.partsOf(parted)]).toEqual([["//:a-lint", "lint"]])
+    expect(() => Schema.decodeUnknownSync(TargetMap.Entry)({ ...part, part: "" })).toThrow()
     expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:1", {})).toEqual([])
   })
 

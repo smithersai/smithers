@@ -86,6 +86,8 @@ export interface StepTarget {
   readonly job: string
   /** The step of the original CI: a step that was split names the step it was split from. */
   readonly step: string
+  /** The part of a split step this target runs, as the step's id names it after the step it came from. */
+  readonly part: string | undefined
   readonly variant: Variant
   /**
    * The paths and globs the target declares, from the repository root. `undefined` for a `check` target that
@@ -235,6 +237,12 @@ const groupsOf = (steps: ReadonlyArray<Step>): ReadonlyArray<ReadonlyArray<Step>
 }
 
 const quote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
+
+// The part of a split step a step is: what its id says after the id of the step it came from and a colon.
+const partOf = (step: Step): string | undefined => {
+  const prefix = `${step.from ?? step.id}:`
+  return step.id.length > prefix.length && step.id.startsWith(prefix) ? step.id.slice(prefix.length) : undefined
+}
 
 const clean = (text: string): string => text.replace(/[^A-Za-z0-9._-]+/g, "-")
 
@@ -457,6 +465,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       dependencies,
       title,
       step: step.from ?? step.id,
+      part: partOf(step),
       variant,
       ...files,
       also: [],

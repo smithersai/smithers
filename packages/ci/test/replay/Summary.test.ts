@@ -166,6 +166,28 @@ describe("replayable", () => {
     ])
   })
 
+  it("calls a target of a split step by the part of the step it runs", () => {
+    const named = { ...step("s", "npm run check"), name: "Check" }
+    const split: TargetMap = {
+      version: 1,
+      targets: [
+        { label: "//:s-lint", job: "j", step: "s", variant: {}, part: "lint" },
+        { label: "//:s-types", job: "j", step: "s", variant: {}, part: "types" },
+        { label: "//:t", job: "j", step: "t", variant: {} }
+      ]
+    }
+    const units = unitsOf(inventory([job("j", { steps: [named, step("t", "true")] })]), split)
+    expect(units[0]?.steps[0]?.parts).toEqual({ "//:s-lint": "lint", "//:s-types": "types" })
+    expect(units[0]?.steps[1]?.parts).toBeUndefined()
+    // The step itself, which the baseline's verdict is compared under, keeps its name.
+    expect([...stepNames(units)]).toEqual([
+      ["s", { step: "j: Check", command: "npm run check" }],
+      ["//:s-lint", { step: "j: Check (lint)", command: "npm run check" }],
+      ["//:s-types", { step: "j: Check (types)", command: "npm run check" }],
+      ["//:t", { step: "t", command: "true" }]
+    ])
+  })
+
   it("shows a step's command as its CI file writes it, not the text that runs it", () => {
     const wrapped = { ...step("s", "make test"), runner: "prepare_the_job" }
     const [unit] = unitsOf(inventory([job("j", { steps: [wrapped] })]))

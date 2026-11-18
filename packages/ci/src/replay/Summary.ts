@@ -50,7 +50,7 @@ import {
   verdictOf
 } from "../contract/RunRecord.ts"
 import { type Metrics, metrics, type Row, type Score, select, type Settings } from "../contract/Selection.ts"
-import { labelsOf as targetsOfStep, type TargetMap } from "../contract/TargetMap.ts"
+import { labelsOf as targetsOfStep, partsOf, type TargetMap } from "../contract/TargetMap.ts"
 import { failuresOf, type StepNames } from "./Failures.ts"
 
 /**
@@ -211,6 +211,8 @@ export interface UnitStep {
   readonly label: string
   /** The targets that run the step: one, or several when it was split. */
   readonly targets: ReadonlyArray<string>
+  /** The part of the step each target runs, by the target's label, for a step that was split (`Entry.part`). */
+  readonly parts?: Readonly<Record<string, string>> | undefined
   /** What the shell runs: the step's command, with what its CI's runner does around it. */
   readonly command: string
   /** The command as the CI file writes it, which is what a report shows. */
@@ -317,6 +319,7 @@ export interface Replayable {
  */
 export const replayable = (inventory: Ci, map: TargetMap, host: string): Replayable => {
   const byId = new Map(inventory.jobs.map((job) => [job.id, job]))
+  const named = partsOf(map)
   const variantsOf = (job: Job): ReadonlyArray<Variant> => job.matrix.length === 0 ? [{}] : job.matrix
   const runnerOf = (job: Job, variant: Variant) => job.runsOn === undefined ? undefined : expand(job.runsOn, variant)
   const systemOf = (job: Job, variant: Variant) => hostOf(runnerOf(job, variant))
@@ -374,11 +377,16 @@ export const replayable = (inventory: Ci, map: TargetMap, host: string): Replaya
       steps: job.steps.map((step) => {
         const filled = withVariant(step, variant)
         const targets = targetsOfStep(map, job.id, step.id, variant)
+        const parts = targets.flatMap((label) => {
+          const part = named.get(label)
+          return part === undefined ? [] : [[label, part] as const]
+        })
         return {
           id: step.id,
           name: stepKey(step.name === undefined ? step.id : `${job.id}: ${step.name}`, variant),
           label: targets.length > 1 ? stepKey(step.id, variant) : (targets[0] as string),
           targets,
+          ...(parts.length === 0 ? {} : { parts: Object.fromEntries(parts) }),
           // The jobs of a baseline run at once in one checkout, so each step is told its job.
           command: script(filled, job.id),
           written: filled.command,
@@ -597,7 +605,8 @@ export const splitOf = (units: ReadonlyArray<Unit>): ReadonlyMap<string, Readonl
 
 /**
  * What each comparison name and target of the units is called in a report, and
- * the command behind it.
+ * the command behind it. A target of a step that was split is called by the
+ * step's name and the part it runs, as in `Check (check:lint)`.
  *
  * @category baseline
  * @throws {never}
@@ -607,7 +616,12 @@ export const stepNames = (units: ReadonlyArray<Unit>): StepNames =>
   new Map(
     units.flatMap((unit) =>
       unit.steps.flatMap((step) =>
-        [step.label, ...step.targets].map((label) => [label, { step: step.name, command: step.written }] as const)
+        [step.label, ...step.targets].map((label) => {
+          // A target of a split step is called by the part it runs: the package or the script that failed.
+          const part = step.parts?.[label]
+          const name = part === undefined ? step.name : `${step.name} (${part})`
+          return [label, { step: name, command: step.written }] as const
+        })
       )
     )
   )

@@ -485,7 +485,9 @@ const renderTargetMap = (plan: StepPlan, serial: boolean): string => {
         label: `//:${target.label}`,
         job: step.job,
         step: step.step,
-        variant: step.variant
+        variant: step.variant,
+        // A split step is never one target for two jobs, so the part is the target's own.
+        ...(target.part === undefined ? {} : { part: target.part })
       }))
     ),
     ...(serial ? { maxJobs: 1 } : {})

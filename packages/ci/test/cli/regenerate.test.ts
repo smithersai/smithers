@@ -160,7 +160,12 @@ describe("a replayed commit that adds a package", () => {
     expect(failed?.normal.ok, outcome.stdout).toBe(false)
     // The step's targets were made from that commit's own tree, so the new package's test ran, and failed.
     expect(failed?.normal.failures).toEqual([
-      { step: "ci.yml:test:1", reason: "c fails here", exitCode: 3, command: "npm run test --workspaces --if-present" }
+      {
+        step: "ci.yml:test:1 (c)",
+        reason: "c fails here",
+        exitCode: 3,
+        command: "npm run test --workspaces --if-present"
+      }
     ])
     // The baseline failed the same way, so it is no mismatch.
     expect(failed?.baseline.ok).toBe(false)

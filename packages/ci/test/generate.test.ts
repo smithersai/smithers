@@ -802,6 +802,24 @@ describe("a step that names what it reads", () => {
       content(generate(inventory([job("a", [step("a:1", "npm ci"), ...links])])), targetMapPath)
     )
     expect(labelsOf(map, "a", "a:2", {})).toEqual(["//:a-2-lint", "//:a-2-types"])
+    // Each says which part of the step it is, so a report can name the script that failed.
+    expect(map.targets).toEqual([
+      { label: "//:a-1", job: "a", step: "a:1", variant: {} },
+      { label: "//:a-2-lint", job: "a", step: "a:2", variant: {}, part: "lint" },
+      { label: "//:a-2-types", job: "a", step: "a:2", variant: {}, part: "types" }
+    ])
+    // A step whose id says nothing after the step it came from is no part of it.
+    const unnamed = Schema.decodeUnknownSync(Schema.fromJsonString(TargetMap))(
+      content(
+        generate(inventory([job("a", [
+          step("a:1", "true", { from: "a:1" }),
+          step("a:1:", "true", { from: "a:1" }),
+          step("b", "true", { from: "a:1" })
+        ])])),
+        targetMapPath
+      )
+    )
+    expect(unnamed.targets.map((entry) => entry.part)).toEqual([undefined, undefined, undefined])
     // A dependency orders every pair, so the links never make the run one at a time on their own account.
     const alone = generate(inventory([job("a", links)]))
     expect(content(alone, workflowPath)).not.toContain("--jobs 1")

@@ -80,8 +80,11 @@ Newest first. A part built before a change adopts it before it lands again.
 - `Step.whole` (optional): why a step that runs a script made of several commands was left as one step, as a
   feature and a detail. `Reasons.wholeScript` holds the sentence of each feature and `Reasons.wholeScriptSentence`
   gives the line; a test holds them to the table in `docs/concepts/splitting.md`.
+- `TargetMap.Entry.part` (optional) and `TargetMap.partsOf(map)`: the part of a split step a target runs (a package,
+  a build step, a script), which the generator writes from the step's id. The replay names a failed target by it:
+  `Check (check:lint)` where it said `Check`.
 - Tests: `test/contract.test.ts`, `test/generate.test.ts` "keeps the order of steps split from a command that ran its
-  parts in order", `test/decompose/Script.test.ts`.
+  parts in order", `test/decompose/Script.test.ts`, `test/replay/Summary.test.ts`.
 
 **2026-11-18, what a replay measures on a machine where part of the CI cannot pass** (optional additions by the
 replay lane):
