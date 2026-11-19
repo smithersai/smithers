@@ -29,7 +29,8 @@ const payload: PackageJson.SyncPayload = {
 
 it("reports an invalid generated-field cache path without writing the manifest", async () => {
   const error = await Effect.runPromise(
-    Effect.flip(PackageJson.sync({ workspaceRoot: root, cacheDirectory: "../outside" }, payload))
+    // A leading `..` can name a directory outside the workspace; one after it is never valid.
+    Effect.flip(PackageJson.sync({ workspaceRoot: root, cacheDirectory: "../outside/../elsewhere" }, payload))
   )
   expect(error.message).toContain("generated field cache path is invalid")
   expect(await Fs.readdir(root)).toEqual([])

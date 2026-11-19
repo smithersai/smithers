@@ -13,6 +13,7 @@
  * @since 0.1.0
  */
 
+import * as Data from "effect/Data"
 import * as NodeUtil from "node:util/types"
 import type * as Attr from "./Attr.ts"
 import type * as WorkspaceDeclaration from "./WorkspaceDeclaration.ts"
@@ -137,6 +138,11 @@ export const normalizeDeclaredCacheDirectory = (value: string): string => {
   return joinCacheDirectory(segments)
 }
 
+/** A resolved cache directory that names no place the build may use. */
+class CacheDirectoryRefused extends Data.TaggedError("smithers-build/CacheDirectoryRefused")<{
+  readonly message: string
+}> {}
+
 /**
  * Validates one resolved cache directory and returns its normalized posix
  * form.
@@ -157,11 +163,13 @@ export const normalizeCacheDirectory = (value: string): string => {
   const segments = cacheDirectorySegments(value)
   const climb = segments.findIndex((segment) => segment !== "..")
   if (climb === -1 || segments.slice(climb).includes("..")) {
-    throw new Error(`cacheDirectory must not leave the workspace: ${value}`)
+    throw new CacheDirectoryRefused({ message: `cacheDirectory must not leave the workspace: ${value}` })
   }
   // A Windows directory on another drive cannot be reached by climbing.
   if (climb > 0 && /^[A-Za-z]:$/.test(segments[climb]!)) {
-    throw new Error(`cacheDirectory outside the workspace must be on the workspace's drive: ${value}`)
+    throw new CacheDirectoryRefused({
+      message: `cacheDirectory outside the workspace must be on the workspace's drive: ${value}`
+    })
   }
   return joinCacheDirectory(segments)
 }
