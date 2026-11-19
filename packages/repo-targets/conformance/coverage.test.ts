@@ -154,9 +154,6 @@ describe("coverage conformance", () => {
   // 2026-11-11 for the same reason (`bde0da03c9`).
   const coverageFloorDeferred = new Set([
     "smithers",
-    "smithers/agent/std",
-    "smithers/build/build-cli",
-    "smithers/build/targets",
     "smithers/agent/integrations",
     "smithers/migrate"
   ])
@@ -560,8 +557,12 @@ describe("coverage conformance", () => {
     assert.notEqual(pinned, null)
     // A file can graduate to complete coverage without weakening the global
     // baseline. No partial, missing-category or glob override is admitted.
+    // The overrides are named files, or the `complete` list spread into the same all-100% form.
     const global = pinned!.replace(
       /"src\/[\w/.-]+\.(?:ts|vibe|js)":\s*{\s*branches:\s*100,\s*functions:\s*100,\s*lines:\s*100,\s*statements:\s*100\s*,?\s*}\s*,?/g,
+      ""
+    ).replace(
+      /\.\.\.Object\.fromEntries\(\s*complete\.map\(\(file\) => \[file, \{ branches: 100, functions: 100, lines: 100, statements: 100 \}\]\)\s*\)\s*,?/g,
       ""
     )
     assert.doesNotMatch(global, /[{}]/, "build-cli file overrides must require every metric at 100%")
