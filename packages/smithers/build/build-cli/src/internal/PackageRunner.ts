@@ -930,6 +930,20 @@ export const executeEffect = (
         )
         return undefined
       })
+    /**
+     * What a target of `machine` still finds under `/tmp` beside the machine's temporary directory: the entries
+     * that hold the workspace, the cache directory, the machine, the tools on its `PATH` and this Node.
+     */
+    const sightOf = (machine: Machine.Machine, path: string | undefined): ReadonlyArray<string> => {
+      const real = NodeFs.realpathSync(root)
+      return Machine.inSight([
+        real,
+        NodePath.join(real, ...cacheDirectory.split("/")),
+        machine.directory,
+        process.execPath,
+        ...(path ?? "").split(NodePath.delimiter)
+      ])
+    }
     /** The machine a target runs on, once it is made. */
     const machineOf = (node: PackageNode): Machine.Machine | undefined =>
       node.machine === undefined ? undefined : madeMachines.get(node.machine)
@@ -1166,7 +1180,14 @@ export const executeEffect = (
         const started = traced === undefined ? resolved.argv : traced(resolved.argv) as [string, ...Array<string>]
         const payload: Exec.Payload = {
           cwd: node.cwd,
-          argv: bwrap === undefined ? started : Machine.withOwnTmp(bwrap, machine!, started),
+          argv: bwrap === undefined
+            ? started
+            : Machine.withOwnTmp(
+              bwrap,
+              machine!,
+              started,
+              sightOf(machine!, resolved.env["PATH"] ?? hostEnvironment["PATH"])
+            ),
           env: GoCache.spawnEnvironment(resolved.env, workspaceRoot, cacheDirectory, cacheEnvironment),
           secrets: resolved.secrets,
           expectedExitCodes: [0],
@@ -3103,7 +3124,7 @@ export const executeEffect = (
           const mounts: ReadonlyArray<readonly [string, string]> =
             machine === undefined || (yield* joined(ownTmp)) === undefined
               ? []
-              : [[Machine.sharedTmp, NodeFs.realpathSync(machine.tmp)]]
+              : Machine.mountsOf(NodeFs.realpathSync(machine.tmp), sightOf(machine, hostEnvironment["PATH"]))
           const read = yield* Effect.exit(joined(async () =>
             ObservedReads.observe(
               ObservedReads.read(listener.lines(ObservedReads.linesOf(traceFile)), NodePath.resolve(place, node.cwd)),

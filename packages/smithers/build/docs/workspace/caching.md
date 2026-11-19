@@ -667,7 +667,9 @@ that writes `/tmp/x` names no `TMPDIR`. On Linux, with bubblewrap on `PATH`
 and a host that lets a process make a mount of its own, each target of a
 machine runs with the machine's temporary directory in place of `/tmp`, so
 `/tmp/x` and `$TMPDIR/x` are one file and no other machine sees it. A record
-names such a path from the machine, as `/smthrs-machine/tmp/x`. Where the host
+names such a path from the machine, as `/smthrs-machine/tmp/x`. What the build
+itself keeps under `/tmp` stays where it was: the entry of `/tmp` that holds
+the workspace, the cache directory, the machine, a tool on `PATH` or Node. Where the host
 gives no such mount (another system, no bubblewrap, or a container that
 refuses it), the targets of every machine share the host's `/tmp`, `TMPDIR`
 is still each machine's own, and the build says so once:

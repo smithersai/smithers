@@ -223,6 +223,34 @@ describe("the /tmp of a machine", () => {
     }
   )
 
+  tracedMountedIt(
+    "is the machine's own when the build keeps its machines under /tmp, which stay in sight",
+    async () => {
+      // A program that works in a temporary directory keeps its machines there, as a replay does: a target's own
+      // checkout and home then lie under the host's `/tmp`.
+      const under = await Fs.realpath(await Fs.mkdtemp(Path.join("/tmp", "smithers-machine-kept-")))
+      temporary.push(under)
+      const seen = `/tmp/smithers-machine-kept-seen-${process.pid}`
+      const { made, run } = await fixture(
+        () => {
+          const first = on("a", `test ! -e ${seen} && touch ${seen} && echo built > out.txt && : > ~/.mark`)
+          return {
+            first,
+            second: on("a", `test -e ${seen} && grep -q built out.txt && test -e ~/.mark`, [first]),
+            other: on("b", `test ! -e ${seen} && touch ${seen} && test ! -e ~/.mark # b`)
+          }
+        },
+        { home: Path.join(under, "home"), kept: Path.join(under, "machines") },
+        mounts
+      )
+      expect(await run(["second", "other"])).toEqual({ first: "ran", second: "ran", other: "ran" })
+      expect(NodeFs.existsSync(seen)).toBe(false)
+      // What the targets read of their machine was read where it is: all three are answered, and no machine is made.
+      expect(await run(["second", "other"])).toEqual({ first: "hit", second: "hit", other: "hit" })
+      expect(made()).toEqual(["a", "b"])
+    }
+  )
+
   posixIt("is this host's where the host gives no other, and the build says so once", async () => {
     // A bubblewrap the host refuses, first on PATH, as in a container that lets no process make a mount.
     const refused = await Fs.realpath(await Fs.mkdtemp(Path.join("/var/tmp", "smithers-machine-bwrap-")))

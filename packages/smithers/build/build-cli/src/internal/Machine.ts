@@ -491,12 +491,30 @@ export const environment = (machine: Machine): Readonly<Record<string, string>> 
 export const sharedTmp = "/tmp"
 
 /**
+ * The entries of `/tmp` that hold one of `paths`, each once: `/tmp/work` for
+ * `/tmp/work/home/x`. A build can keep its workspace, its machines or its
+ * tools under `/tmp`, as a program that works in a temporary directory does,
+ * and a target that finds another directory at `/tmp` must still find them.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const inSight = (paths: ReadonlyArray<string>): ReadonlyArray<string> =>
+  [
+    ...new Set(paths.flatMap((path) => {
+      const name = path.startsWith(`${sharedTmp}/`) ? path.slice(sharedTmp.length + 1).split("/")[0]! : ""
+      return name === "" ? [] : [`${sharedTmp}/${name}`]
+    }))
+  ].sort(byCodeUnit)
+
+/**
  * The command that runs `argv` with the machine's temporary directory in
  * place of `/tmp`, through `bwrap`, a bubblewrap that starts on this host
- * ({@link mounting}). Every other path is the host's, as it is without. So a
- * target that writes `/tmp/x` writes the machine's own, and the targets of
- * another machine never find it, as two jobs of a workflow never share a
- * `/tmp`.
+ * ({@link mounting}). Every other path is the host's, as it is without, and
+ * so is each entry of `/tmp` in `sight` ({@link inSight}), put back where it
+ * was. So a target that writes `/tmp/x` writes the machine's own, and the
+ * targets of another machine never find it, as two jobs of a workflow never
+ * share a `/tmp`.
  *
  * @category rendering
  * @since 1.0.0
@@ -504,7 +522,8 @@ export const sharedTmp = "/tmp"
 export const withOwnTmp = (
   bwrap: string,
   machine: Machine,
-  argv: ReadonlyArray<string>
+  argv: ReadonlyArray<string>,
+  sight: ReadonlyArray<string> = []
 ): [string, ...Array<string>] => [
   bwrap,
   "--dev-bind",
@@ -513,9 +532,27 @@ export const withOwnTmp = (
   "--bind",
   machine.tmp,
   sharedTmp,
+  ...sight.flatMap((entry) => ["--bind", entry, entry]),
   "--die-with-parent",
   "--",
   ...argv
+]
+
+/**
+ * Where a run that was given the machine's temporary directory at `/tmp`
+ * found each directory, for the recorder: the entries in `sight` where they
+ * are, and everything else under `/tmp` in the machine's temporary directory.
+ * The first that holds a path says where it is.
+ *
+ * @category rendering
+ * @since 1.0.0
+ */
+export const mountsOf = (
+  tmp: string,
+  sight: ReadonlyArray<string>
+): ReadonlyArray<readonly [at: string, from: string]> => [
+  ...sight.map((entry) => [entry, entry] as const),
+  [sharedTmp, tmp]
 ]
 
 /**

@@ -459,6 +459,45 @@ describe("the temporary directory of a machine as /tmp", () => {
     ])
   })
 
+  it("keeps in sight the entries of /tmp that hold what the build itself uses", () => {
+    // A workspace, its machines and a tool under `/tmp`, each named by the entry of `/tmp` that holds it, once.
+    const sight = Machine.inSight([
+      "/tmp/work/home/.cache/smthrs/machines/abc/job",
+      "/tmp/work/copy",
+      "/tmp/bunx-1000/node_modules/.bin",
+      "/usr/bin",
+      "/tmp",
+      "/tmp/",
+      "/tmpfile/x",
+      ""
+    ])
+    expect(sight).toEqual(["/tmp/bunx-1000", "/tmp/work"])
+    expect(Machine.withOwnTmp("/usr/bin/bwrap", machine, ["true"], sight)).toEqual([
+      "/usr/bin/bwrap",
+      "--dev-bind",
+      "/",
+      "/",
+      "--bind",
+      machine.tmp,
+      "/tmp",
+      "--bind",
+      "/tmp/bunx-1000",
+      "/tmp/bunx-1000",
+      "--bind",
+      "/tmp/work",
+      "/tmp/work",
+      "--die-with-parent",
+      "--",
+      "true"
+    ])
+    // The recorder finds an entry in sight where it is, and anything else under `/tmp` on the machine.
+    expect(Machine.mountsOf("/real/tmp", sight)).toEqual([
+      ["/tmp/bunx-1000", "/tmp/bunx-1000"],
+      ["/tmp/work", "/tmp/work"],
+      ["/tmp", "/real/tmp"]
+    ])
+  })
+
   posixIt("is asked of the host: a bubblewrap on PATH that starts, or the reason there is none", async () => {
     const base = await directory("mounting")
     // A bubblewrap that starts, one that the host refuses, and a directory that holds none.
