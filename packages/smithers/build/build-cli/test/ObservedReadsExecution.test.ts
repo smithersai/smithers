@@ -1032,6 +1032,33 @@ describe("a job of observed steps", () => {
     expect(await ran()).toEqual(["install", "build", "lint", "test"])
   })
 
+  // `npm ci` reads an entry of its cache and writes it back at every run. A job that restores the cache from
+  // another run's save puts an older entry there before each install.
+  tracedIt("answers a locked install whose own cache outside the workspace holds another run's entries", async () => {
+    const locked = await job({ install: "npm ci" })
+    const entry = Path.join(locked.outside, "cache", "index")
+    const caching = `#!/bin/sh\n/bin/cat ${entry} > /dev/null\necho fetched >> ${entry}\n` +
+      "/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt\n"
+    await locked.write(Path.join(locked.base, "tools", "npm"), caching, 0o755)
+    await locked.write(entry, "saved by another run\n")
+    expect(await locked.run()).toEqual(all("ran"))
+    expect(locked.unstored).toEqual({})
+    // A fresh checkout, and the cache as the other run saved it.
+    await locked.checkout()
+    await locked.write(entry, "saved by another run\n")
+    expect(await locked.run()).toEqual(all("hit"))
+    // The same program asked for anything else read and changed the entry: it runs again.
+    const open = await job({ install: "npm install" })
+    const other = Path.join(open.outside, "cache", "index")
+    await open.write(Path.join(open.base, "tools", "npm"), caching.replaceAll(entry, other), 0o755)
+    await open.write(other, "saved by another run\n")
+    expect(await open.run()).toEqual(all("ran"))
+    await open.checkout()
+    await open.write(other, "saved by another run\n")
+    expect(await open.run()).toEqual({ install: "ran", build: "hit", lint: "hit", test: "hit" })
+    expect(open.reasons).toEqual({ install: `${other} changed` })
+  })
+
   tracedIt("stores an install that fetches what a lockfile pins, and no other step that connects", async () => {
     const server = Net.createServer((socket) => socket.end())
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))

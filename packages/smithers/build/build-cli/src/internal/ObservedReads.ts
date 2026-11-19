@@ -31,7 +31,10 @@
  * One kind of network connection does not stop a result from being stored:
  * that of a package manager told to install exactly what a lockfile pins
  * (`npm ci`, `pnpm install --frozen-lockfile`, `uv sync --locked`), and of the
- * processes it starts. What it fetches is fixed by a file the run read.
+ * processes it starts. What it fetches is fixed by a file the run read. For
+ * the same reason what such an install writes outside the workspace, its own
+ * cache, is no input of the run: it rewrites entries of that cache at every
+ * run, and a cache restored from another run would never match.
  *
  * A run is also given variables of the host whose values differ from one
  * run to the next, such as the commit a CI run is for. No trace shows a
@@ -1519,9 +1522,17 @@ export const observe = (
   const reads: Array<readonly [string, string] | readonly [string, string, string]> = []
   const given: Array<readonly [string, string, number]> = []
   const lists: Array<Record["lists"][number]> = []
+  const temporary = options.temporary ?? []
+  /** True for a path in neither the workspace nor a temporary directory, as a home directory is. */
+  const elsewhere = (path: string): boolean =>
+    !under(path, options.root) && !temporary.some((directory) => under(path, directory))
   for (const path of [...entries.keys()].sort(byCodeUnit)) {
     const entry = entries.get(path)!
     if (!visible(path) || entry.first === "made") continue
+    // What a locked install wrote outside the workspace is the package manager's own cache. What it installs is
+    // fixed by the lockfile the run read, and it writes its cache again when a file of it is missing or other:
+    // whatever the install found there first is no input of the run.
+    if (fetched.has(path) && elsewhere(path)) continue
     const state = measured(path)
     if (entry.first === "missing") {
       reads.push(state !== absent && entry.made ? [inside(path), state, absent] : [inside(path), absent])
@@ -1602,7 +1613,6 @@ export const observe = (
   if (survivors.length === 0) return { record, made, touched }
 
   const limits = options.limits ?? keptLimits
-  const temporary = options.temporary ?? []
   /** A path as it is kept: from the root inside the workspace, absolute under a temporary directory. */
   const keptAs = (path: string): string | undefined =>
     under(path, options.root)

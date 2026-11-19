@@ -1431,6 +1431,41 @@ describe("what a run left behind", () => {
     return { root, temp, home, write, made, filled, observe }
   }
 
+  // `npm ci` reads an entry of its cache index and writes it back with another time at every run. A CI job that
+  // restores that cache from another run's save would find the entry changed at every commit.
+  it("leaves out of what it read the cache a locked install writes outside the workspace", async () => {
+    const { home, observe, root, write } = await places()
+    const index = await write(Path.join(home, ".npm/_cacache/index-v5/03/af/entry"), "old")
+    const blob = await write(Path.join(home, ".npm/_cacache/content-v2/blob"), "tarball")
+    const setting = await write(Path.join(home, ".npmrc"), "registry")
+    const lock = await write(Path.join(root, "package-lock.json"), "{}")
+    const rewrites = (pid: number, file: string): string =>
+      `${pid} openat(AT_FDCWD<${root}>, "${file}", O_RDWR|O_CREAT, 0666) = 3<${file}>`
+    const reads = (pid: number, file: string): string =>
+      `${pid} openat(AT_FDCWD<${root}>, "${file}", O_RDONLY) = 3<${file}>`
+    const install = observe([
+      "100 execve(\"/bin/sh\", [\"npm\", \"ci\"], 0x7ffc /* 9 vars */) = 0",
+      reads(100, setting),
+      reads(100, blob),
+      rewrites(100, index),
+      rewrites(100, lock)
+    ]).record
+    /** The paths of a record that are in the home directory or the workspace. */
+    const read = (record: ObservedReads.Record): ReadonlyArray<string> =>
+      record.reads.map(([path]) => path).filter((path) => path.startsWith(`${home}/`) || !path.startsWith("/"))
+    // The entry it rewrote is not there. What it only read is, and so is a file of the workspace it rewrote.
+    expect(read(install)).toEqual([blob, setting, "package-lock.json"])
+    // The same calls by a program that is no locked install: the entry is something the run read and changed.
+    const other = observe([
+      "100 execve(\"/bin/sh\", [\"npm\", \"install\"], 0x7ffc /* 9 vars */) = 0",
+      reads(100, setting),
+      reads(100, blob),
+      rewrites(100, index),
+      rewrites(100, lock)
+    ]).record
+    expect(read(other)).toEqual([blob, index, setting, "package-lock.json"])
+  })
+
   it("is told apart by where it is: kept in the workspace and the temporary directory, checked anywhere else", async () => {
     const { filled, home, made, observe, root, temp, write } = await places()
     await write(Path.join(root, "node_modules/pkg/index.js"), "package")
