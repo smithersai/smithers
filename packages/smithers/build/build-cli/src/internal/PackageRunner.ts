@@ -921,12 +921,20 @@ export const executeEffect = (
      * The bubblewrap that gives a machine's targets the machine's temporary directory as `/tmp`, asked of the host
      * once; nothing where the host has none, and the build says so once.
      */
+    /** Why this host gives a machine no `/tmp` of its own, once it has been asked and has none. */
+    let noOwnTmp: string | undefined
+    /** The machine whose targets use the host's `/tmp`, where a build must not let two machines share it. */
+    let usesHostTmp: string | undefined
     const ownTmp = (): Promise<string | undefined> =>
       mounting ??= Machine.mounting(hostEnvironment, machinesKept!).then((found) => {
         if ("bwrap" in found) return found.bwrap
+        noOwnTmp = found.reason
         log(
-          `smthrs: the targets of a machine share this host's ${Machine.sharedTmp}: ${found.reason}; ` +
-            "TMPDIR is still each machine's own"
+          hostEnvironment[Machine.ownTmpVariable] === "required"
+            ? `smthrs: this host gives a machine no ${Machine.sharedTmp} of its own: ${found.reason}; ` +
+              "the targets of one machine run here"
+            : `smthrs: the targets of a machine share this host's ${Machine.sharedTmp}: ${found.reason}; ` +
+              "TMPDIR is still each machine's own"
         )
         return undefined
       })
@@ -1177,6 +1185,13 @@ export const executeEffect = (
         // A target on its machine finds the machine's temporary directory at `/tmp` too, where the host can give
         // it one. The tracer runs inside, so what it writes down is what the target saw.
         const bwrap = onIts ? yield* joined(ownTmp) : undefined
+        // Two machines never share the host's `/tmp` in a build that was told so: the first to run has it.
+        if (onIts && bwrap === undefined && hostEnvironment[Machine.ownTmpVariable] === "required") {
+          usesHostTmp ??= machine.name
+          if (usesHostTmp !== machine.name) {
+            return { ok: false as const, error: Machine.sharedRefusal(machine.name, usesHostTmp, noOwnTmp!) }
+          }
+        }
         const started = traced === undefined ? resolved.argv : traced(resolved.argv) as [string, ...Array<string>]
         const payload: Exec.Payload = {
           cwd: node.cwd,

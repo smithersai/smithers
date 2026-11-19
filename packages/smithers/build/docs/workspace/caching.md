@@ -678,6 +678,12 @@ is still each machine's own, and the build says so once:
 smthrs: the targets of a machine share this host's /tmp: bwrap is not on PATH (install the bubblewrap package); TMPDIR is still each machine's own
 ```
 
+`SMTHRS_MACHINE_OWN_TMP=required` forbids that sharing. On a host that gives
+no private `/tmp`, the targets of the first machine to run use the host's, and
+a target of any other machine fails with the reason, so no machine ever finds
+what another left in `/tmp`. Set it where the machines stand for jobs that
+must not meet, as the jobs of a CI on one runner.
+
 `build-cli/test/MachineExecution.test.ts` runs real commands in a real git
 checkout: two machines that never see each other's writes, the steps of one
 machine in order, an answered step whose files are put back in the copy, and a

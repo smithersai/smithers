@@ -459,6 +459,14 @@ describe("the temporary directory of a machine as /tmp", () => {
     ])
   })
 
+  it("names the variable that forbids two machines one /tmp, and says why a target cannot run", () => {
+    expect(Machine.ownTmpVariable).toBe("SMTHRS_MACHINE_OWN_TMP")
+    expect(Machine.sharedRefusal("test", "lint", "bwrap is not on PATH")).toBe(
+      "machine test needs a /tmp of its own, and this host gives none (bwrap is not on PATH); " +
+        "machine lint has used the host's in this build, so it would see what that one left there"
+    )
+  })
+
   it("keeps in sight the entries of /tmp that hold what the build itself uses", () => {
     // A workspace, its machines and a tool under `/tmp`, each named by the entry of `/tmp` that holds it, once.
     const sight = Machine.inSight([

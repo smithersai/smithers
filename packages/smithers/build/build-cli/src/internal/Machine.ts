@@ -482,6 +482,30 @@ export const environment = (machine: Machine): Readonly<Record<string, string>> 
 })
 
 /**
+ * The variable that says two machines must never share a `/tmp`: set to
+ * `required`, a build on a host that gives a machine no `/tmp` of its own
+ * runs the targets of one machine there and fails the targets of every other
+ * machine, with the reason. Without it they share the host's `/tmp` and the
+ * build says so. A workflow that runs the jobs of a CI on one runner sets it:
+ * two jobs of a CI never share a `/tmp`.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const ownTmpVariable = "SMTHRS_MACHINE_OWN_TMP"
+
+/**
+ * Why a target of `machine` cannot run where the host gives no `/tmp` of its
+ * own and `other`, another machine, has used the host's in this build.
+ *
+ * @category rendering
+ * @since 1.0.0
+ */
+export const sharedRefusal = (machine: string, other: string, reason: string): string =>
+  `machine ${machine} needs a ${sharedTmp} of its own, and this host gives none (${reason}); ` +
+  `machine ${other} has used the host's in this build, so it would see what that one left there`
+
+/**
  * The directory every program finds its temporary files in when it names
  * none: a program that writes `/tmp/x` asks for no `TMPDIR`.
  *

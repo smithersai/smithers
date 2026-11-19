@@ -105,6 +105,8 @@ const fixture = async (
   }
   await Fs.mkdir(environment["HOME"]!, { recursive: true })
   const logs: Array<string> = []
+  /** Why each target that failed did, by name. */
+  const failures = new Map<string, string>()
   const options = (names: ReadonlyArray<string>, jobs: number) => ({
     index,
     cacheDirectory: ".flows",
@@ -130,6 +132,9 @@ const fixture = async (
           Effect.provideService(ExecutionServices, services)
         )
       )
+      for (const result of summary.results) {
+        if (result.error !== undefined) failures.set(result.label.split(":")[1]!, result.error)
+      }
       return Object.fromEntries(summary.results.map((result) => [result.label.split(":")[1]!, result.status]))
     } finally {
       process.env["PATH"] = previous
@@ -138,7 +143,7 @@ const fixture = async (
   /** The names of the machines a run made, from what the run said. */
   const made = (): ReadonlyArray<string> =>
     logs.flatMap((line) => /^smthrs: machine (.+) has a fresh checkout/.exec(line)?.[1] ?? []).sort()
-  return { base, root, write, run, logs, made, kept, environment }
+  return { base, root, write, run, logs, made, kept, environment, failures }
 }
 
 describe("targets on two machines", () => {
@@ -271,6 +276,44 @@ describe("the /tmp of a machine", () => {
       `smthrs: the targets of a machine share this host's /tmp: ${refused}/bwrap cannot give a process a mount of ` +
       "its own on this host; TMPDIR is still each machine's own"
     ])
+  })
+})
+
+describe("a build told that two machines never share a /tmp", () => {
+  posixIt("runs the targets of one machine on a host that gives no other /tmp, and fails the rest", async () => {
+    const refused = await Fs.realpath(await Fs.mkdtemp(Path.join("/var/tmp", "smithers-machine-bwrap-")))
+    temporary.push(refused)
+    await Fs.writeFile(Path.join(refused, "bwrap"), "#!/bin/sh\nexit 1\n", { mode: 0o755 })
+    const { environment, failures, logs, run } = await fixture(
+      () => {
+        const first = on("a", "echo built > out.txt")
+        const second = on("a", "grep -q built out.txt", [first])
+        // It waits for the first machine's targets, so that machine is the one that has the host's `/tmp`.
+        return { first, second, other: on("b", "true # b", [second]), alone: on("c", "true # c") }
+      },
+      undefined,
+      [refused]
+    )
+    environment[Machine.ownTmpVariable] = "required"
+    const reason = `${refused}/bwrap cannot give a process a mount of its own on this host`
+    // The targets of the first machine run. The other machine would find what the first left in `/tmp`.
+    expect(await run(["other"], untraced)).toEqual({ first: "ran", second: "ran", other: "failed" })
+    expect(failures.get("other")).toContain(Machine.sharedRefusal("b", "a", reason))
+    expect(logs).toContain(
+      `smthrs: this host gives a machine no /tmp of its own: ${reason}; the targets of one machine run here`
+    )
+    // A build that runs one machine alone passes there.
+    expect(await run(["alone"], untraced)).toEqual({ alone: "ran" })
+  })
+
+  mountedIt("changes nothing on a host that gives each machine a /tmp of its own", async () => {
+    const { environment, run } = await fixture(
+      () => ({ one: on("a", "test ! -e /tmp/mark && touch /tmp/mark"), two: on("b", "test ! -e /tmp/mark # b") }),
+      undefined,
+      mounts
+    )
+    environment[Machine.ownTmpVariable] = "required"
+    expect(await run(["one", "two"], untraced)).toEqual({ one: "ran", two: "ran" })
   })
 })
 
