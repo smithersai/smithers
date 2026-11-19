@@ -1044,12 +1044,24 @@ describe("recording what a run read", () => {
   })
 
   it("stores nothing when a path it read was changed or removed by something else", async () => {
-    const { record, root } = await setup()
+    const { record, root, rows } = await setup()
     // The run began before the file was last written, and the run did not write it.
     expect(record([open(root, "src/a.txt")], [], Date.now() - 60_000))
       .toEqual({ refusal: "src/a.txt changed while it ran" })
     expect(record([`100 getdents64(3<${root}/src>, 0x55 /* 4 entries */, 32768) = 100`], [], Date.now() - 60_000))
       .toEqual({ refusal: "src changed while it ran" })
+    // A directory the run listed, removed and made again is the run's own change, as a CI runner's script does
+    // with the state an earlier run left: it is compared with what the run left there.
+    const remade = rows(record(
+      [
+        `100 getdents64(3<${root}/src>, 0x55 /* 4 entries */, 32768) = 100`,
+        `100 unlinkat(AT_FDCWD<${root}>, "src", AT_REMOVEDIR) = 0`,
+        `100 mkdir("${root}/src", 0777) = 0`
+      ],
+      [],
+      Date.now() - 60_000
+    ))
+    expect(remade.lists.map(([path, , own]) => [path, own])).toEqual([["src", []]])
     expect(record([open(root, "src/a.txt"), open(root, "src/a.txt", "O_RDWR")], [], Date.now() - 60_000))
       .toEqual({
         reads: [["src/a.txt", ObservedReads.measure(Path.join(root, "src", "a.txt"))]],

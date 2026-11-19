@@ -253,6 +253,22 @@ describe("an observed test", () => {
     expect(reasons).toEqual(["input.txt changed"])
   }, 120_000)
 
+  // A CI runner's script starts a job by removing the state an earlier run of the job left and making it again.
+  // The directory changed while the step ran, and the step is what changed it.
+  tracedIt("is stored when it removed a directory an earlier run left and made it again", async () => {
+    const { logs, root, run, write } = await fixture({
+      check: ["/bin/rm -rf left", "/bin/mkdir -p left/temp", "/bin/ls left/temp", "/bin/cat input.txt > /dev/null"]
+        .join("\n")
+    })
+    // What the earlier run left: a directory with an empty one in it.
+    await Fs.mkdir(Path.join(root, "left", "temp"), { recursive: true })
+    expect(await run()).toEqual({ check: "ran" })
+    expect(logs.filter((line) => line.includes("changed while it ran"))).toEqual([])
+    expect(await run()).toEqual({ check: "hit" })
+    await write("input.txt", "pass, changed\n")
+    expect(await run()).toEqual({ check: "ran" })
+  })
+
   tracedIt("is answered from the cache after a step it depends on ran again", async () => {
     const { run, write } = await fixture()
     expect(await run(["second"])).toEqual({ setup: "ran", second: "ran" })

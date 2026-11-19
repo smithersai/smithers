@@ -1547,7 +1547,9 @@ export const observe = (
     }
     const digest = listing(path, [...names, ...added.map(([name]) => name)], io)
     if (digest === undefined) continue
-    if (names.length === 0 && moved(path)) return { refusal: `${inside(path)} changed while it ran` }
+    // A directory the run itself removed, made or renamed changed because the run changed it, as a file it wrote
+    // did: it is compared with what the run left there.
+    if (names.length === 0 && !entry.changed && moved(path)) return { refusal: `${inside(path)} changed while it ran` }
     lists.push(added.length === 0 ? [inside(path), digest, names] : [inside(path), digest, names, added])
   }
   const survivors = [...touched].filter((path) => path !== options.root && present(path, io)).sort(byCodeUnit)
