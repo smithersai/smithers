@@ -11,7 +11,7 @@ import { read, readHere } from "../inventory/index.ts"
 import * as Native from "../native/index.ts"
 import { run } from "../replay/index.ts"
 import { html, text } from "../report/index.ts"
-import { rows, score } from "../select/index.ts"
+import { asked, rows, score } from "../select/index.ts"
 import type { Parts } from "./Cli.vibe"
 import type { Host } from "./Host.vibe"
 
@@ -30,5 +30,6 @@ export const parts: Parts<Host> = {
   text,
   html,
   rows,
-  score
+  score,
+  asked
 }

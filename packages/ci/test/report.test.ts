@@ -32,7 +32,7 @@ const clean: ReplayReport = {
 
 /** No fast mode at all. */
 const normalOnly = (): ReplayReport => {
-  const { fast: _fast, ...first } = green
+  const { fast: _fast, model: _model, skipped: _skipped, ...first } = green
   return {
     version: 1,
     repository: "refcell/needlefish",
@@ -95,12 +95,24 @@ describe("text", () => {
       "",
       "2 failed steps ran again, which took 43m 20s and is in none of these times",
       "",
+      "fast mode",
+      "test recall      0%  0 of 1 failure",
+      "change recall    0%  0 of 1 failed change",
+      "selection rate  42%  5 of 12 targets",
+      "the model answered 9 questions in 33.0s, which is in fast mode's times",
+      "over the commits these times cover, fast mode's runs took 2m 51s less than normal mode's and asking the model took 21.0s",
+      "",
       "commit   files  baseline      normal       fast",
       "0000000      3  pass 22m 00s  pass 4m 00s  pass 1m 30s",
       "0000000      1  fail 21m 40s  fail 3m 20s  pass 1m 00s",
       "",
       "failed steps",
       "0000000  baseline, normal  //packages/core:test  exit 1: expected 2, got 3",
+      "",
+      "skipped, predicted-safe",
+      "0000000  3 targets  Nothing in the features points to a failure.  //apps/web:lint, //apps/web:test, //packages/core:lint",
+      "0000000  1 target  The changed files have changed often lately.  //packages/ui:test",
+      "0000000  3 targets  Nothing in the features points to a failure.  //apps/web:lint, //packages/core:test, //packages/ui:test",
       "",
       "0000000  fast    //packages/core:test  fail → skipped"
     ].join("\n"))
@@ -146,9 +158,9 @@ describe("text", () => {
     ])
     expect(text(normalOnly()).split("\n").at(-1)).toBe("a1b2c3d      3  pass 22m 00s  pass 4m 00s")
     // A commit fast mode did not run has an empty cell.
-    const { fast: _fast, ...plain } = red
+    const { fast: _fast, model: _model, skipped: _skipped, ...plain } = red
     const unnamed = { ...plain, baseline: { ...green.baseline, ...counted }, normal: { ...green.normal, ...counted } }
-    expect(text({ ...clean, commits: [green, { ...unnamed, mismatches: [] }] }).split("\n").at(-1)).toBe(
+    expect(text({ ...clean, commits: [green, { ...unnamed, mismatches: [] }] }).split("\n")).toContain(
       "0000000      1  fail 22m 00s  fail 4m 00s"
     )
   })
@@ -515,7 +527,7 @@ describe("html", () => {
   })
 
   it("leaves a commit's fast cell empty when only that commit lacks fast mode", () => {
-    const { fast: _fast, ...plain } = red
+    const { fast: _fast, model: _model, skipped: _skipped, ...plain } = red
     const page = html({ ...example, commits: [green, plain] })
     expect(page).toContain(
       "<span class=\"sub\">fail</span> 21m 40s</td><td class=\"num\"><span class=\"sub\">fail</span> 3m 20s</td><td class=\"num\"></td>"
@@ -692,7 +704,7 @@ describe("steps not reused", () => {
 describe("failed steps", () => {
   const failure = { step: "lint <job>", reason: "`docker` is not installed on this machine", exitCode: 127 }
   const failedTotals = { ...green.baseline, ok: false, failures: [failure] }
-  const { fast: _fast, ...plainGreen } = green
+  const { fast: _fast, model: _model, skipped: _skipped, ...plainGreen } = green
   const failing: ReplayCommit = {
     ...plainGreen,
     commit: "b".repeat(40),
@@ -950,5 +962,129 @@ describe("failed steps", () => {
       commits: [{ ...failing, baseline: { ...failedTotals, failures: [hostileFailure] } }]
     })
     expect(shown).not.toMatch(/[\u0007\u001b]/u)
+  })
+})
+
+describe("what fast mode did, in both renderers", () => {
+  const section = (report: ReplayReport, heading: string): ReadonlyArray<string> =>
+    text(report).split("\n\n").find((part) => part.startsWith(heading))?.split("\n") ?? []
+
+  it("gives the three numbers with their counts, and no recall when nothing failed", () => {
+    expect(section(clean, "fast mode").slice(0, 4)).toEqual([
+      "fast mode",
+      "test recall     100%  1 of 1 failure",
+      "change recall   100%  1 of 1 failed change",
+      "selection rate   50%  6 of 12 targets"
+    ])
+    const { testRecall: _t, changeRecall: _c, ...metrics } = example.selection!
+    const passed = section({ ...example, selection: { ...metrics, failures: 0, failedChanges: 0 } }, "fast mode")
+    expect(passed.slice(0, 2)).toEqual(["fast mode", "selection rate  42%  5 of 12 targets"])
+    expect(passed.join("\n")).not.toContain("recall")
+    // A report with no fast mode has no such section.
+    expect(section(normalOnly(), "fast mode")).toEqual([])
+  })
+
+  it("says how many questions the model answered and how long that took, or the time alone", () => {
+    expect(section(example, "fast mode")[4]).toBe(
+      "the model answered 9 questions in 33.0s, which is in fast mode's times"
+    )
+    const timed = { ...example, model: { ms: 1500 } }
+    expect(section(timed, "fast mode")[4]).toBe("the model answered in 1.5s, which is in fast mode's times")
+    expect(html(timed)).toContain("<p class=\"summary\">the model answered in 1.5s, which is in fast mode's times</p>")
+    const one = { ...example, model: { ms: 800, questions: 1 } }
+    expect(section(one, "fast mode")[4]).toBe("the model answered 1 question in 800ms, which is in fast mode's times")
+    // A report that does not say what the model cost has no such line.
+    const { model: _model, ...silent } = example
+    expect(section(silent, "fast mode").join("\n")).not.toContain("the model answered")
+    expect(html(silent)).not.toContain("the model answered")
+  })
+
+  it("sets what skipping saved against what asking cost, over the commits the times cover", () => {
+    const saved =
+      "over the commits these times cover, fast mode's runs took 2m 51s less than normal mode's and asking the model took 21.0s"
+    expect(section(example, "fast mode")[5]).toBe(saved)
+    expect(html(example)).toContain(`<p class="summary">${saved}</p>`)
+    // Fast mode's runs can take longer than normal mode's: the line says so.
+    const slower: ReplayReport = {
+      ...example,
+      commits: [{ ...green, fast: { ...green.fast!, wallMs: 300_000 }, model: { ms: 40_000 } }, red]
+    }
+    expect(section(slower, "fast mode")[5]).toBe(
+      "over the commits these times cover, fast mode's runs took 20.0s more than normal mode's and asking the model took 40.0s"
+    )
+    // No commit the times cover was asked about: a failed baseline, a commit with no model time, a normal-mode mismatch.
+    const { model: _model, ...unasked } = green
+    for (
+      const uncovered of [
+        { ...example, commits: [red] },
+        { ...example, commits: [unasked, red] },
+        {
+          ...example,
+          commits: [
+            {
+              ...green,
+              mismatches: [{ label: "//:a", mode: "normal" as const, baseline: "pass" as const, got: "fail" as const }]
+            },
+            red
+          ]
+        }
+      ]
+    ) {
+      expect(section(uncovered, "fast mode").join("\n")).not.toContain("over the commits these times cover")
+      expect(html(uncovered)).not.toContain("over the commits these times cover")
+    }
+  })
+
+  it("lists every skipped target with its commit and the model's reason, five to a line and how many more", () => {
+    const skip = (label: string, reason?: string) => ({
+      label,
+      skipReason: "predicted-safe" as const,
+      score: 0.01,
+      ...(reason === undefined ? {} : { reason })
+    })
+    const many: ReplayReport = {
+      ...example,
+      commits: [
+        {
+          ...green,
+          commit: "aaaaaaa1",
+          skipped: ["a", "b", "c", "d", "e", "f", "g"].map((name) => skip(`//${name}:test`))
+        },
+        { ...red, commit: "bbbbbbb2", skipped: [skip("//x:test", "why")] }
+      ]
+    }
+    expect(section(many, "skipped, predicted-safe")).toEqual([
+      "skipped, predicted-safe",
+      "aaaaaaa  7 targets  //a:test, //b:test, //c:test, //d:test, //e:test and 2 more",
+      "bbbbbbb  1 target  why  //x:test"
+    ])
+    const page = html(many)
+    expect(page).toContain("<h2>skipped, predicted-safe</h2>")
+    expect(page).toContain(
+      "<tr><th scope=\"row\"><code title=\"aaaaaaa1\">aaaaaaa</code></th><td class=\"num\">7</td><td class=\"sub\"></td><td><code>//a:test, //b:test, //c:test, //d:test, //e:test and 2 more</code></td></tr>"
+    )
+    expect(page).toContain(
+      "<td class=\"num\">1</td><td class=\"sub\">why</td><td><code>//x:test</code></td></tr>"
+    )
+    // A report with no skip has no such list.
+    const none: ReplayReport = { ...example, commits: [{ ...green, skipped: [] }, { ...red, skipped: [] }] }
+    expect(section(none, "skipped, predicted-safe")).toEqual([])
+    expect(html(none)).not.toContain("skipped, predicted-safe")
+  })
+
+  it("never lets a skipped target's label or reason reach the terminal or the page as it came", () => {
+    const hostileSkip: ReplayReport = {
+      ...example,
+      commits: [{
+        ...green,
+        skipped: [{ label: "//<b>x</b>:test\u001b[31m", skipReason: "predicted-safe", reason: "<i>why</i>\u0007" }]
+      }, red]
+    }
+    const lines = section(hostileSkip, "skipped, predicted-safe")
+    expect(lines[1]).toBe("0000000  1 target  <i>why</i>\uFFFD  //<b>x</b>:test\uFFFD[31m")
+    const page = html(hostileSkip)
+    expect(page).toContain("&lt;i&gt;why&lt;/i&gt;")
+    expect(page).toContain("//&lt;b&gt;x&lt;/b&gt;:test")
+    expect(page).not.toContain("<b>x</b>")
   })
 })

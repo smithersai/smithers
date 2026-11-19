@@ -10,7 +10,7 @@ import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { Progress, run } from "../../src/replay/index.ts"
 import { unavailable } from "../../src/select/Failure.ts"
-import { score } from "../../src/select/index.ts"
+import { asked, Score, score, Scoring } from "../../src/select/index.ts"
 import { job, makeSmallRepository } from "./fixture.ts"
 import { files, modelFailingAfter, options, read, rowsOfEachCommit } from "./TestParts.vibe"
 
@@ -48,7 +48,12 @@ const replayed = async (root: string, parts: ReplayParts<never>, answers: number
     parts
   ).pipe(
     Effect.provide(
-      Layer.mergeAll(modelFailingAfter(answers), progress, Layer.provideMerge(options, NodeServices.layer))
+      Layer.mergeAll(
+        modelFailingAfter(answers),
+        Score.layerAsked,
+        progress,
+        Layer.provideMerge(options, NodeServices.layer)
+      )
     )
   ) as Effect.Effect<ReplayReport, Failure>
   return { replay, said }
@@ -74,6 +79,8 @@ describe("a model that stops answering at the second of three commits", () => {
 
       // The first commit was measured in fast mode, and part of a measurement is not one.
       expect(report.commits.every((commit) => !("fast" in commit))).toBe(true)
+      expect(report.commits.every((commit) => !("skipped" in commit) && !("model" in commit))).toBe(true)
+      expect(report).not.toHaveProperty("model")
       expect(report.mismatches).toBe(0)
       expect(report).not.toHaveProperty("fastWallMs")
       expect(report).not.toHaveProperty("selection")
@@ -107,7 +114,33 @@ describe("a model that stops answering at the second of three commits", () => {
       got: "skipped"
     }])
     expect(report.selection).toBeDefined()
+    // These parts keep no count of the questions: the report gives the model's time alone.
+    expect(report.model).toEqual({ ms: expect.any(Number) })
+    expect(report.commits.map((commit) => commit.model)).toEqual([
+      { ms: expect.any(Number) },
+      { ms: expect.any(Number) },
+      { ms: expect.any(Number) }
+    ])
   }, 600_000)
+
+  it(
+    "says what the model was asked at each commit, and lists each skipped target with its score and reason",
+    async () => {
+      const { root } = threeCommits()
+      const { replay } = await replayed(root, { ...parts, asked } as unknown as ReplayParts<never>, 3)
+      const report = await Effect.runPromise(replay)
+      expect(Schema.decodeUnknownSync(ReplayReport)(report)).toEqual(report)
+      // Each commit is a feature set of its own, so each asks one question.
+      expect(report.commits.map((commit) => commit.model?.questions)).toEqual([1, 1, 1])
+      expect(report.model?.questions).toBe(3)
+      expect(report.model?.ms).toBe(report.commits.reduce((total, commit) => total + commit.model!.ms, 0))
+      const skip = { label: "//:a0_0", skipReason: "predicted-safe", score: 0, reason: Scoring.reasons.none }
+      expect(report.commits.map((commit) => commit.skipped)).toEqual([[skip], [skip], [skip]])
+      // A fast-mode run waits for the model before it starts, so the model's time is in its wall time.
+      for (const commit of report.commits) expect(commit.fast!.wallMs).toBeGreaterThanOrEqual(commit.model!.ms)
+    },
+    600_000
+  )
 
   it("stays a failure when scoring fails for any other reason", async () => {
     const { root } = threeCommits()

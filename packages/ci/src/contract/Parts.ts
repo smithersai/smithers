@@ -210,6 +210,15 @@ export type BuildRows<R = never> = (
 export type ScoreRows<R = never> = (rows: ReadonlyArray<Row>) => Effect.Effect<ReadonlyArray<Score>, Failure, R>
 
 /**
+ * How many questions the model has answered so far in this run of the
+ * program.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export type AskedQuestions<R = never> = Effect.Effect<number, never, R>
+
+/**
  * Splits coarse CI steps into finer ones that name what they read, so a
  * change reruns only the steps it reaches: a step that runs a task over a
  * whole workspace becomes one step per package. It is given the CI
@@ -235,6 +244,14 @@ export interface ReplayParts<R = never> {
   readonly files: GenerateFiles<R>
   readonly rows: BuildRows<R>
   readonly score: ScoreRows<R>
+  /**
+   * How many questions the model has answered since the program started,
+   * when `score` keeps count. Entries with equal features share one question,
+   * and an answer the program already holds is not asked for again. The
+   * replay reads it around each commit's `score` to report what the model was
+   * asked (`ReplayReport.model`).
+   */
+  readonly asked?: AskedQuestions<R> | undefined
 }
 
 /**

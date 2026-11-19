@@ -24,6 +24,10 @@
  * the number of commits it ran at: a file it read that changed, or what keeps its result
  * from ever being used again. A line gives the
  * CPU time each way's steps used, when this machine's processes could be read.
+ * When fast mode was measured, its test recall, change recall and selection
+ * rate each have a line with the count behind it, a line says how many
+ * questions the model answered and how long that took, and every target it
+ * skipped is listed with its commit and the model's reason.
  *
  * Labels, reasons and commit ids come from the repository being replayed, so control
  * characters in them are replaced before they reach a terminal.
@@ -53,6 +57,8 @@ import {
   leftEmpty,
   leftOut,
   mismatches,
+  modelCost,
+  modelTime,
   normalDiffers,
   noSpeedup,
   noSpeedupMismatch,
@@ -62,7 +68,11 @@ import {
   ratio,
   reasons,
   rerunTime,
+  selectionRows,
   shortCommit,
+  skipGroups,
+  skippedHeading,
+  skippedLabels,
   speedup,
   speedupCommits,
   times,
@@ -169,6 +179,18 @@ export const text: RenderReport = (report) => {
   if (report.firstRun !== undefined) sections.push([firstRunTime(report.firstRun)])
   if (report.cold !== undefined) sections.push([clean(coldStart(report.cold))])
   if (report.reruns !== undefined) sections.push([rerunTime(report.reruns)])
+  if (report.selection !== undefined) {
+    const rows = selectionRows(report.selection)
+    const nameWidth = Math.max(...rows.map((row) => row.name.length))
+    const shareWidth = Math.max(...rows.map((row) => row.share.length))
+    const cost = modelCost(report)
+    sections.push([
+      "fast mode",
+      ...rows.map((row) => `${row.name.padEnd(nameWidth)}  ${row.share.padStart(shareWidth)}  ${row.counts}`),
+      ...(report.model === undefined ? [] : [modelTime(report.model)]),
+      ...(cost === undefined ? [] : [cost])
+    ])
+  }
   sections.push([...commitLines(report.commits)])
   const failed = report.commits.flatMap((commit) => failedSteps(commit).map((entry) => ({ ...entry, commit })))
   if (failed.length > 0) {
@@ -186,6 +208,20 @@ export const text: RenderReport = (report) => {
     sections.push([
       "steps not reused",
       ...again.map((entry) => clean(notReusedText(entry, report.commits.length)))
+    ])
+  }
+  const skips = skipGroups(report.commits)
+  if (skips.length > 0) {
+    sections.push([
+      skippedHeading,
+      ...skips.map((group) =>
+        [
+          clean(shortCommit(group.commit)),
+          count(group.labels.length, "target"),
+          clean(group.reason),
+          clean(skippedLabels(group.labels))
+        ].filter((cell) => cell !== "").join("  ")
+      )
     ])
   }
   if (commitsLeft.length > 0) {

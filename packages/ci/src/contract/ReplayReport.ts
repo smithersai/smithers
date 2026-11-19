@@ -131,7 +131,57 @@ export const Mismatch = Schema.Struct({
 export type Mismatch = typeof Mismatch.Type
 
 /**
- * One replayed commit.
+ * A target fast mode did not run at a commit, because the model predicted
+ * the change cannot break it. `score` is the model's estimate of the chance
+ * the target fails on the change, from 0 to 1, and `reason` the fact that
+ * most decided it. A skip is never a pass: when the target failed in the
+ * baseline, the commit lists a mismatch for it too.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const PredictedSafe = Schema.Struct({
+  label: Schema.NonEmptyString,
+  skipReason: Schema.Literal("predicted-safe"),
+  score: Schema.optionalKey(Schema.Finite),
+  reason: Schema.optionalKey(Schema.String)
+})
+
+/**
+ * A decoded `PredictedSafe`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type PredictedSafe = typeof PredictedSafe.Type
+
+/**
+ * What asking fast mode's model cost: how long the replay waited for its
+ * answers, and how many questions it answered, when the part that asks keeps
+ * count (`ReplayParts.asked`). Entries with equal features share one question.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const ModelUse = Schema.Struct({
+  ms: Schema.Finite,
+  questions: Schema.optionalKey(Schema.Int)
+})
+
+/**
+ * A decoded `ModelUse`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type ModelUse = typeof ModelUse.Type
+
+/**
+ * One replayed commit. `skipped` lists the targets fast mode did not run at
+ * the commit, each with the model's score and reason. `model` is what asking
+ * the model about the commit cost; its time is in `fast.wallMs`, because a
+ * fast-mode run waits for the model before it starts. Both are absent when
+ * fast mode did not run the commit.
  *
  * @category models
  * @since 0.1.0
@@ -142,7 +192,9 @@ export const ReplayCommit = Schema.Struct({
   baseline: RunTotals,
   normal: RunTotals,
   mismatches: Schema.Array(Mismatch),
-  fast: Schema.optionalKey(RunTotals)
+  fast: Schema.optionalKey(RunTotals),
+  skipped: Schema.optionalKey(Schema.Array(PredictedSafe)),
+  model: Schema.optionalKey(ModelUse)
 })
 
 /**
@@ -220,6 +272,10 @@ export type FirstRun = typeof FirstRun.Type
  * secret (`Inventory.withheldOf`): the baseline ran without the remote
  * build cache they open.
  *
+ * `model` is what asking fast mode's model cost over every replayed commit
+ * (`ModelUse`), whether or not the wall times cover the commit. Each
+ * commit's share is in its own `model` and in its fast-mode wall time.
+ *
  * `fastNotMeasured` says why fast mode has no numbers, when it was asked for
  * and the model it needs stopped answering during the replay. Every commit
  * then still has its baseline and normal-mode results, and no commit, total
@@ -269,6 +325,7 @@ export const ReplayReport = Schema.Struct({
   normalCpuMs: Schema.optionalKey(Schema.Finite),
   fastCpuMs: Schema.optionalKey(Schema.Finite),
   selection: Schema.optionalKey(Metrics),
+  model: Schema.optionalKey(ModelUse),
   fastNotMeasured: Schema.optionalKey(Schema.NonEmptyString),
   flaky: Schema.optionalKey(Schema.Int),
   notReplayed: Schema.optionalKey(Schema.Array(NotReplayed)),

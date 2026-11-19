@@ -36,7 +36,14 @@ import {
   type ScoreRows,
   writtenFiles
 } from "../contract/Parts.ts"
-import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport, StepFailure } from "../contract/ReplayReport.ts"
+import type {
+  FirstRun,
+  ModelUse,
+  NotReplayedCommit,
+  ReplayCommit,
+  ReplayReport,
+  StepFailure
+} from "../contract/ReplayReport.ts"
 import { type Parts, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
@@ -413,6 +420,35 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
     if (cause.code !== "model-unavailable") throw cause
     return cause.message
   }
+}
+
+/**
+ * How many questions the model has answered so far, when the parts keep count.
+ *
+ * @category internals
+ * @since 0.1.0
+ */
+export effect function askedSoFar<R>(parts: Pick<ReplayParts<R>, "asked">) {
+  return parts.asked === undefined ? undefined : try parts.asked
+}
+
+/**
+ * The scores of one commit's rows with what asking for them cost: how long
+ * the model took, and how many questions it answered when the parts keep
+ * count. When the model cannot answer, the reason as text.
+ *
+ * @category internals
+ * @since 0.1.0
+ */
+export effect function askModel<R>(parts: Pick<ReplayParts<R>, "asked" | "score">, rows: ReadonlyArray<Row>) {
+  const before = try askedSoFar(parts)
+  const start = try Clock.currentTimeMillis
+  const scores = try scoresOrReason(parts.score, rows)
+  const ms = (try Clock.currentTimeMillis) - start
+  if (typeof scores === "string") return scores
+  const after = try askedSoFar(parts)
+  const model: ModelUse = before === undefined || after === undefined ? { ms } : { ms, questions: after - before }
+  return { scores, model }
 }
 
 /**
@@ -970,7 +1006,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           const found = step.command.includes(runnerEntry) ? { ...software, [jobTemporaryVariable]: place.tmp } : {}
           // A step no runner starts is given the run's variables its script names: what its target passes on.
           const run = givenTo(step.command, given)
-          const environment = stepEnvironment({ ...found, ...place.daemon, ...run, ...step.env, ...told }, place)
+          // A jail puts the job's temporary directory behind the machine's name. Where there is none, the job is
+          // told its own, or every job would write the person's.
+          const temporary = place.jail === undefined ? { TMPDIR: place.tmp } : {}
+          const environment = stepEnvironment(
+            { ...temporary, ...found, ...place.daemon, ...run, ...step.env, ...told },
+            place
+          )
           // A step that cannot start, for example because its directory does not exist at this commit, has failed.
           const output = runStep(program, argv, path.join(copy, step.cwd), environment, stepLimit, stall, count)
             catch (cause) => ({ timedOut: false, stalled: false, exitCode: undefined, stderr: `could not start: ${describe(cause)}`, stdout: "" } satisfies StepRun)
@@ -1243,16 +1285,17 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         counting
       )
       const normalRecord = recordOf(ran.results, commit, ran.wallMs, "normal", withCheckout(spent.parts, ran.checkoutMs))
-      let fastPart: Pick<ReplayCommit, "fast"> = {}
+      let fastPart: Pick<ReplayCommit, "fast" | "skipped" | "model"> = {}
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
       flaky += flakyOf([baseRecord, normalRecord])
       if (fast !== undefined && fastNotMeasured === undefined) {
         const rows = try onNormalCopy(parts.rows(normalCopy, normalRecord, try planOf(normal, own)))
-        const scores = try scoresOrReason(parts.score, rows)
-        if (typeof scores === "string") {
-          fastNotMeasured = scores
+        const answered = try askModel(parts, rows)
+        if (typeof answered === "string") {
+          fastNotMeasured = answered
           try progress.say(`${at} fast not measured`)
         } else {
+          const { scores } = answered
           const choice = choose(scores, request.settings ?? defaultSettings)
           const labels = ran.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
           try progress.say(`${at} fast`)
@@ -1276,7 +1319,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             names,
             own.splits,
             undefined,
-            sped.cpuMs
+            sped.cpuMs,
+            answered
           )
           fastPart = run.part
           fastMismatches = run.mismatches

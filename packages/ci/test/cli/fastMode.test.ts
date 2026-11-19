@@ -177,6 +177,27 @@ describe("a real replay whose model is lost at the second of three commits", () 
   }, 600_000)
 })
 
+describe("a real replay whose model answers every question", () => {
+  it("prints fast mode's numbers with their counts, and what the model was asked", async () => {
+    const root = keep(repository(["first"]))
+    const reading = passingJustfile.replace("test: build\n    true", "test: build\n    cat notes.md")
+    commit(root, "a CI that passes here", { justfile: reading, "notes.md": "one\n" })
+    commit(root, "second", { "notes.md": "two\n" })
+    const args = ["--mode", "both", "--commits", "2", "--no-apply-check", "--cold"]
+    const outcome = await runIn(args, root, onMain, answeringModel)
+
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+    expect(outcome.stdout).toContain("2 commits · 0 mismatches")
+    expect(outcome.stdout).toMatch(/^fast mode\nselection rate {2}100% {2}(\d+) of \1 targets?$/m)
+    // Each commit changes another kind of file, so each asks one question; the program's first question is not the replay's.
+    expect(outcome.stdout).toMatch(/^the model answered 2 questions in \S+( \S+)?, which is in fast mode's times$/m)
+    expect(outcome.stdout).toMatch(/^over the commits these times cover, fast mode's runs took /m)
+    // Nothing failed, so no recall is printed; nothing was skipped among so few targets, so no list is.
+    expect(outcome.stdout).not.toContain("recall")
+    expect(outcome.stdout).not.toContain("predicted-safe")
+  }, 600_000)
+})
+
 describe.runIf(process.env["AI_GATEWAY_API_KEY"])("the model, on a machine with a key", () => {
   it("answers the question the program asks before a replay", async () => {
     const scores = await Effect.runPromise(Effect.provide(onMain.score([Preflight.row]), layer(process.env)))

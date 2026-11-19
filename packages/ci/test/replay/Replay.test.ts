@@ -94,6 +94,16 @@ describe("replaying five real commits", () => {
     expect(report.selection).toMatchObject({ failures: 4, failedChanges: 2 })
   })
 
+  it("stores nothing for a target fast mode skipped: at the next commit, with the same inputs, it runs", () => {
+    // Fast mode skipped all ten targets at the first commit. The second commit changes one script. Normal mode
+    // reuses the other nine results there; fast mode has none to reuse, because a skip is no result, and runs them.
+    expect(commit(0).fast?.counts.skipped).toBe(10)
+    expect(commit(1).normal.counts).toEqual({ hit: 9, ran: 1, failed: 0, skipped: 0 })
+    expect(commit(1).fast?.counts).toEqual({ hit: 0, ran: 9, failed: 0, skipped: 1 })
+    // What it ran then is stored: the commit that restores every script reuses those nine.
+    expect(commit(3).fast?.counts.hit).toBeGreaterThanOrEqual(9)
+  })
+
   it("leaves the repository as it found it", async () => {
     const { execFileSync } = await import("node:child_process")
     expect(execFileSync("git", ["status", "--porcelain"], { cwd: repository.root, encoding: "utf8" })).toBe("")

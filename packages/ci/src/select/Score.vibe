@@ -45,13 +45,100 @@ export const ScoreFlow = Flow.make("ci/select/Score", {
 })
 
 /**
- * Asks the host's judge about one batch.
+ * A count that starts at 0.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export function counter(): Asked.Shape {
+  let answered = 0
+  return {
+    add: (questions: number) =>
+      sync(() => {
+        answered += questions
+      }),
+    total: () => sync(() => answered)
+  }
+}
+
+/**
+ * How many questions the judge has answered: one per feature set of each
+ * batch it answered. A batch whose recorded answer replays asks nothing and
+ * adds nothing. A host that reports the count provides its own
+ * ({@link layerAsked}); without one, every program in the process shares one
+ * count.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export service Asked {
+  add(questions: number): void!!
+  total(): number!!
+  static readonly defaultValue = () => counter()
+}
+
+/**
+ * A count of its own for one run of a program.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerAsked = Layer.sync(Asked, counter)
+
+/** A place that keeps nothing. */
+const forgetful: Kept.Shape = { get: () => succeed(undefined), set: () => Effect.void }
+
+/**
+ * The answers the judge gave in this run of the program, by feature set
+ * (`Scoring.keyOf`). {@link score} asks only about the feature sets it finds
+ * no answer for, so a feature set is asked about once in a run, whichever
+ * change it comes back in. A host with no place of its own keeps none.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export service Kept {
+  get(key: string): (Scoring.Reading | undefined)!!
+  set(key: string, reading: Scoring.Reading): void!!
+  static readonly defaultValue = () => forgetful
+}
+
+/**
+ * A place in memory for the answers of one run of a program.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerKept = Layer.sync(Kept, () => {
+  const held = new Map<string, Scoring.Reading>()
+  return {
+    get: (key: string) => sync(() => held.get(key)),
+    set: (key: string, reading: Scoring.Reading) =>
+      sync(() => {
+        held.set(key, reading)
+      })
+  }
+})
+
+/**
+ * How many questions the judge has answered so far.
+ *
+ * @category scores
+ * @since 0.1.0
+ */
+export effect function asked() {
+  return try (try Asked).total()
+}
+
+/**
+ * Asks the host's judge about one batch, and counts the questions it answered.
  *
  * @category flows
  * @since 0.1.0
  */
 export effect function judge(items: ReadonlyArray<Features>) {
   const answers = try Scoring.classifier(items.length).evaluate(Scoring.stateOf(items))
+  try (try Asked).add(items.length)
   return Scoring.readingsOf(items.length, answers)
 }
 
@@ -76,16 +163,27 @@ export type Host = Evaluator.Evaluator | FlowRuntime.FlowRuntime | Digest | Secu
 /**
  * One score per row, from 0 to 1, with a one-line reason.
  *
- * Rows with equal features share one question. The questions go to the
- * host's judge in batches, each batch one durable flow step on the host's
- * flow engine. A judge that cannot answer fails `model-unavailable`; nothing
- * is scored by guess.
+ * Rows with equal features share one question, and a feature set the host
+ * keeps an answer for ({@link Kept}) is not asked about again. The questions
+ * go to the host's judge in batches, each batch one durable flow step on the
+ * host's flow engine. A judge that cannot answer fails `model-unavailable`;
+ * nothing is scored by guess.
  *
  * @category scores
  * @since 0.1.0
  */
 export effect function score(rows: ReadonlyArray<Row>) {
-  const asked = Scoring.batches(rows)
+  const kept = try Kept
+  const known = new Map<string, Scoring.Reading>()
+  const unanswered: Array<Row> = []
+  for (const row of rows) {
+    const key = Scoring.keyOf(row.features)
+    if (known.has(key)) continue
+    const reading = try kept.get(key)
+    if (reading === undefined) unanswered.push(row)
+    else known.set(key, reading)
+  }
+  const asked = Scoring.batches(unanswered)
   provide layer, Flow.layerExecutionIds(Flow.derived) {
     // Every batch settles before any failure is reported, so one failed batch never cuts another off mid-request.
     const settled = try Effect.forEach(
@@ -98,6 +196,9 @@ export effect function score(rows: ReadonlyArray<Row>) {
       if (Result.isFailure(batch)) throw failure("model-unavailable", unavailable(batch.failure))
       answered.push(batch.success)
     }
-    return Scoring.scoresOf(rows, asked, answered)
+    for (const [batch, items] of asked.entries()) {
+      for (const [item, features] of items.entries()) try kept.set(Scoring.keyOf(features), answered[batch]![item]!)
+    }
+    return Scoring.scoresOf(rows, asked, answered, known)
   }
 }

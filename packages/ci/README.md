@@ -22,6 +22,30 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Sixteenth round, 2026-11-19.** Fast mode on macOS, with a real model (`sci-mac-fast`).
+
+- **`ReplayCommit.skipped`, `ReplayCommit.model`, `ReplayReport.model`** (added, optional), with the schemas
+  `ReplayReport.PredictedSafe` and `ReplayReport.ModelUse`: each target fast mode skipped at a commit, with the
+  model's score and reason, and what asking the model cost (`ms`, and `questions` when the part that asks keeps
+  count). The time the model took for a commit is now in that commit's `fast.wallMs`, and so in `fastWallMs`: a
+  fast-mode run waits for the model before it starts. Before, the report gave fast mode a time that left the model
+  out. `withoutFast` takes the two new fields out with `fast`.
+- **`Parts.AskedQuestions`, `ReplayParts.asked`** (added, optional): how many questions the model has answered since
+  the program started. `src/select` exports `asked` and counts in the step that asks, so an answer that replays
+  adds nothing. The replay reads it around each commit's `score`.
+- **The text report prints fast mode's numbers.** Test recall, change recall and selection rate with their counts,
+  the model's questions and time, and every skipped target: until now only the HTML page had the three numbers.
+- **An answer is kept for the rest of the run** (`Score.Kept`, `Score.layerKept` in `src/select`; no contract
+  changed): `score` asks only about the feature sets the host holds no answer for. Before, a feature set that came
+  back in another change, beside other feature sets, was asked about again. A host that provides no place keeps none.
+- **A baseline job's `TMPDIR` is its own where there is no jail** (`src/replay`; no contract changed): on macOS,
+  and on Linux without bubblewrap, every baseline job was given the person's own `TMPDIR`. A job found there what
+  the job before it left, and a step that passes as a target, which has its own, failed in the baseline.
+- **A Mac is told about macOS** (`Reads.inPlainWords`): the line that says steps run without a jail and the line that
+  says reads are not recorded named the system `darwin`.
+- **`Command.environment.USER`** (added): the program gives the model `USER`. On macOS Claude Code keeps its login in
+  the keychain of the user `USER` names, and without it a signed-in Mac was told it had no sign-in.
+
 **2026-11-19, why a step was not reused** (optional additions by `sci-outside-gain`).
 
 - `RunRecord.TargetResult.notReused` and `notStored` (optional): Smithers build's own lines for a target that ran:

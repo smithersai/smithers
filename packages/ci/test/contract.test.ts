@@ -425,6 +425,33 @@ describe("contract 5: replay report", () => {
     })
   })
 
+  it("lists each target fast mode skipped with the model's score and reason, and what asking the model cost", () => {
+    const document = fixture("replay-report.example.json") as { readonly commits: ReadonlyArray<object> }
+    const report = Schema.decodeUnknownSync(ReplayReport.ReplayReport)(document)
+    const skips = report.commits.flatMap((commit) => commit.skipped ?? [])
+    expect(skips).toHaveLength(7)
+    expect(skips.every((skip) => skip.skipReason === "predicted-safe")).toBe(true)
+    // The target that failed in the baseline is a skip and a mismatch: a skip is never a pass.
+    expect(report.commits[1]?.skipped?.map((skip) => skip.label)).toContain(report.commits[1]?.mismatches[0]?.label)
+    expect(report.model).toEqual({ ms: 33_000, questions: 9 })
+    expect(report.model?.ms).toBe(report.commits.reduce((total, commit) => total + (commit.model?.ms ?? 0), 0))
+    for (const commit of report.commits) expect(commit.fast!.wallMs).toBeGreaterThan(commit.model!.ms)
+    // A skip in this list has one reason, and a target has a label.
+    const withSkip = (skip: object) => ({ ...document, commits: [{ ...document.commits[0], skipped: [skip] }] })
+    expect(() =>
+      Schema.decodeUnknownSync(ReplayReport.ReplayReport)(
+        withSkip({ label: "//a:test", skipReason: "dependency-failed" })
+      )
+    ).toThrow()
+    expect(() =>
+      Schema.decodeUnknownSync(ReplayReport.ReplayReport)(withSkip({ label: "", skipReason: "predicted-safe" }))
+    ).toThrow()
+    expect(
+      Schema.decodeUnknownSync(ReplayReport.ReplayReport)(withSkip({ label: "//a:test", skipReason: "predicted-safe" }))
+        .commits[0]?.skipped
+    ).toEqual([{ label: "//a:test", skipReason: "predicted-safe" }])
+  })
+
   it("decodes a report whose fast mode could not be measured, which holds no fast-mode number", () => {
     const document = fixture("replay-report.fast-not-measured.json")
     const report = Schema.decodeUnknownSync(ReplayReport.ReplayReport)(document)

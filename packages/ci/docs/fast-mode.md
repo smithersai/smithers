@@ -24,6 +24,10 @@ normal mode still runs everything before a release.
    when its score is at least the **score cutoff**, or when it is among the
    **count cutoff** highest-scoring targets of its change.
 
+`smithers-ci` runs with a score cutoff of 0.1 and a count cutoff of 5. So a
+change that affects five targets or fewer skips nothing, and its selection rate
+is 100%.
+
 The method is Machalica, Samylkin, Porth and Chandra, "Predictive Test
 Selection" ([arXiv:1810.05286](https://arxiv.org/abs/1810.05286)), sections
 III to VI.
@@ -105,6 +109,39 @@ lowers change recall: that change would have looked green. A selection rate of
 Every number is reported with its counts: failures caught of failures, changes
 caught of failed changes, targets run of targets. When no entry failed, no recall
 is reported at all.
+
+The report prints them under `fast mode`, then what the model was asked, then
+every target fast mode skipped:
+
+```text
+fast mode
+test recall      92%  11 of 12 failures
+change recall    92%  11 of 12 failed changes
+selection rate   63%  120 of 192 targets
+the model answered 24 questions in 3m 05s, which is in fast mode's times
+over the commits these times cover, fast mode's runs took 1m 42s less than normal mode's and asking the model took 1m 31s
+
+skipped, predicted-safe
+3f2a1c9  3 targets  Nothing in the features points to a failure.  //:ci.yml-unit-api-1, //:ci.yml-unit-cli-1, //:ci.yml-unit-core-1
+```
+
+A line of the list is one commit and one reason: how many targets, the reason
+the score carries, and the targets, the first five by name. `--json` holds
+every one, with its score, in the commit's `skipped`.
+
+## What the model costs
+
+The model takes time to answer, and a fast-mode run waits for it before it
+starts. So that time is in fast mode's times: in each commit's, and in the
+total beside the baseline's and normal mode's. The report says how many
+questions the model answered and how long that took over the whole replay
+(`model` under `--json`, and for each commit in its own `model`). The next line
+sets the two against each other over the commits the times cover: how much
+less fast mode's runs took than normal mode's, and how long asking took.
+
+Fast mode pays when what it skips takes longer than the model's answer. On a
+CI whose steps take seconds, asking costs more than skipping saves, and the
+report shows fast mode slower than normal mode.
 
 Facebook's bar before a merge is a test recall above 0.95 and a change recall
 above 0.999.

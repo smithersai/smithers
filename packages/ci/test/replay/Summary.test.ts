@@ -10,6 +10,8 @@ import {
   failedAt,
   failedTwice,
   failureTexts,
+  fastRunOf,
+  finishedReport,
   firstAttempt,
   flakyOf,
   isBlocked,
@@ -17,6 +19,7 @@ import {
   labelsOf,
   maxReruns,
   mismatchesOf,
+  modelOf,
   noCiBefore,
   noCommitBefore,
   nothingToReplay,
@@ -1032,7 +1035,9 @@ describe("withoutFast", () => {
       baseline: totals,
       normal: totals,
       mismatches: [normal, fast],
-      fast: totals
+      fast: totals,
+      skipped: [{ label: "//:b", skipReason: "predicted-safe" as const, score: 0.01 }],
+      model: { ms: 5, questions: 1 }
     }
     expect(withoutFast(commit)).toStrictEqual({
       commit: "c",
@@ -1076,5 +1081,110 @@ describe("what failed the first run", () => {
     const oldest = "3f2a1c9aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     expect(noCommitBefore(oldest)).toBe("no commit comes before 3f2a1c9 in this repository")
     expect(noCiBefore(oldest)).toBe("the commit before 3f2a1c9 has no CI that runs on this machine")
+  })
+})
+
+describe("fast mode's run of one commit", () => {
+  const normal = [ran("//:a"), ran("//:b"), failed("//:c")]
+  const baseline = recordOf(normal, "c", 10)
+  const nothing = "Nothing in the features points to a failure."
+
+  it("lists each target it skipped with the model's score and reason, and counts the model's time in the run", () => {
+    const scores = [
+      { commit: "c", target: "//:a", score: 0.02, reason: nothing },
+      { commit: "c", target: "//:b", score: 0.6 },
+      { commit: "c", target: "//:c", score: 0.01 }
+    ]
+    const model = { ms: 40, questions: 2 }
+    const run = fastRunOf(normal, [ran("//:b")], "c", 100, baseline, undefined, undefined, undefined, undefined, {
+      scores,
+      model
+    })
+    expect(run.part.fast?.wallMs).toBe(140)
+    expect(run.part.fast?.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 2 })
+    expect(run.part.skipped).toEqual([
+      { label: "//:a", skipReason: "predicted-safe", score: 0.02, reason: nothing },
+      { label: "//:c", skipReason: "predicted-safe", score: 0.01 }
+    ])
+    expect(run.part.model).toEqual(model)
+  })
+
+  it("lists a skipped target the model gave no score with its label alone", () => {
+    const run = fastRunOf(normal, [ran("//:a"), ran("//:b")], "c", 100, baseline, undefined, undefined, undefined, 7, {
+      scores: [],
+      model: { ms: 0 }
+    })
+    expect(run.part.skipped).toEqual([{ label: "//:c", skipReason: "predicted-safe" }])
+    expect(run.part.model).toEqual({ ms: 0 })
+    expect(run.part.fast?.cpuMs).toBe(7)
+  })
+
+  it("adds no list and no model time when it is not told what the model said", () => {
+    const run = fastRunOf(normal, [ran("//:b")], "c", 100, baseline)
+    expect(Object.keys(run.part)).toEqual(["fast"])
+    expect(run.part.fast?.wallMs).toBe(100)
+  })
+})
+
+describe("what asking the model cost over a replay", () => {
+  const totals = { ok: true, wallMs: 1, workMs: 1, counts: { hit: 0, ran: 1, failed: 0, skipped: 0 } }
+  const commit = { commit: "c", changedFiles: 1, baseline: totals, normal: totals, mismatches: [] }
+  const read: Inventory = { version: 1, repository: "r", commit: "c", toolchains: [], jobs: [] }
+
+  it("adds up the time and the questions of every commit the model was asked about", () => {
+    const asked = [
+      { ...commit, fast: totals, model: { ms: 30, questions: 2 } },
+      commit,
+      { ...commit, fast: totals, model: { ms: 12, questions: 1 } }
+    ]
+    expect(modelOf(asked)).toEqual({ ms: 42, questions: 3 })
+    expect(modelOf([commit])).toBeUndefined()
+    expect(modelOf([])).toBeUndefined()
+  })
+
+  it("gives no number of questions when one commit has none", () => {
+    expect(modelOf([{ ...commit, model: { ms: 30, questions: 2 } }, { ...commit, model: { ms: 12 } }])).toEqual({
+      ms: 42
+    })
+  })
+
+  it("is in the report when fast mode was measured, over every commit, and in no other report", () => {
+    const failing = { ...commit, baseline: { ...totals, ok: false }, fast: totals, model: { ms: 9, questions: 4 } }
+    const passing = { ...commit, fast: totals, model: { ms: 30, questions: 2 } }
+    const metrics = selectionOf([], new Map())
+    expect(reportOf(read, [passing, failing], { left: [], flaky: 0, selection: metrics }).model).toEqual({
+      ms: 39,
+      questions: 6
+    })
+    expect(reportOf(read, [passing, failing], { left: [], flaky: 0 })).not.toHaveProperty("model")
+    expect(reportOf(read, [commit], { left: [], flaky: 0, selection: metrics })).not.toHaveProperty("model")
+  })
+})
+
+describe("the report of a replay whose model stopped answering", () => {
+  const totals = { ok: true, wallMs: 1, workMs: 1, counts: { hit: 0, ran: 1, failed: 0, skipped: 0 } }
+  const commit = { commit: "c", changedFiles: 1, baseline: totals, normal: totals, mismatches: [] }
+  const read: Inventory = { version: 1, repository: "r", commit: "c", toolchains: [], jobs: [] }
+  const firstRun = { commit: "b", baselineMs: 30, normalMs: 31, fastMs: 32 }
+  const gathered = { fastAsked: true, rows: [], selected: new Map(), left: [], flaky: 0, fastFlaky: 0 }
+
+  it("holds no time of fast mode's first run either: part of a measurement is not one", () => {
+    const report = finishedReport(read, [{ ...commit, fast: totals, model: { ms: 5 } }], {
+      ...gathered,
+      fastNotMeasured: "the model could not be reached",
+      firstRun
+    })
+    expect(report.firstRun).toStrictEqual({ commit: "b", baselineMs: 30, normalMs: 31 })
+    expect(report).not.toHaveProperty("fastWallMs")
+    expect(report).not.toHaveProperty("model")
+    expect(report.commits[0]).not.toHaveProperty("fast")
+    expect(report.fastNotMeasured).toBe("the model could not be reached")
+  })
+
+  it("keeps it when fast mode was measured, and has none to keep when no run came first", () => {
+    const measured = { ...gathered, fastNotMeasured: undefined }
+    expect(finishedReport(read, [{ ...commit, fast: totals }], { ...measured, firstRun }).firstRun).toEqual(firstRun)
+    const lost = { ...gathered, fastNotMeasured: "why" }
+    expect(finishedReport(read, [commit], lost)).not.toHaveProperty("firstRun")
   })
 })

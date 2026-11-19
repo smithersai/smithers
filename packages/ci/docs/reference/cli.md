@@ -206,6 +206,22 @@ copied or run. When it cannot answer, the program prints one line on standard
 error that says what is missing and how to supply it, prints no report, and
 exits `4`.
 
+The report gives fast mode's test recall, change recall and selection rate with
+their counts (`selection` under `--json`), how many questions the model answered
+during the replay and how long that took (`model`), and each target fast mode
+skipped, with its commit and the reason its score carries (`skipped` in each
+commit, with `skipReason` always `predicted-safe`). The time the model took for
+a commit is in that commit's fast-mode time and in `model` of the commit:
+
+```text
+fast mode
+test recall      92%  11 of 12 failures
+change recall    92%  11 of 12 failed changes
+selection rate   63%  120 of 192 targets
+the model answered 24 questions in 3m 05s, which is in fast mode's times
+over the commits these times cover, fast mode's runs took 1m 42s less than normal mode's and asking the model took 1m 31s
+```
+
 When the model stops answering during the replay, the program stops using it.
 The baseline and normal mode still run for every commit. The report is printed
 in full with no fast-mode numbers, not even for the commits fast mode finished,

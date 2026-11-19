@@ -94,6 +94,12 @@ changes with a failure. When no entry failed, the report gives no recall, since
 recall is defined only over a set with at least one failure. Read a recall with
 its count: a recall measured over a few failures says little.
 
+Under the three metrics the report says how many questions the model answered
+and how long that took. A fast-mode run waits for the model before it starts,
+so that time is in fast mode's times. Then it lists every target fast mode
+skipped, with its commit and the reason its score carries. See
+[What the model costs](../fast-mode.md#what-the-model-costs).
+
 Every failure fast mode missed is also a mismatch in the report, and a mismatch
 makes the command exit with code 1.
 

@@ -142,8 +142,10 @@ bunx smithers-ci --mode both
 ```
 
 Each commit then also gets a fast-mode entry, the total gives the fast-mode
-wall time, and the report adds how well the skipping did. See
-[Normal mode and fast mode](../concepts/modes.md).
+wall time, and the report adds how well the skipping did: test recall, change
+recall and selection rate with the counts behind them, how many questions the
+model answered and how long that took, and every target fast mode skipped with
+the reason. See [Normal mode and fast mode](../concepts/modes.md).
 
 The command asks the model one small question before it copies or runs
 anything. When the model cannot answer, the command exits `4` at once and says

@@ -5,7 +5,7 @@ import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Evaluator } from "@smthrs/model"
 import * as Selection from "../../src/contract/Selection.ts"
-import { layer, score, ScoreFlow } from "../../src/select/Score.vibe"
+import { asked as answered, layer, layerAsked, layerKept, score, ScoreFlow } from "../../src/select/Score.vibe"
 import { unavailable } from "../../src/select/Failure.ts"
 import * as Scoring from "../../src/select/Scoring.ts"
 import { row } from "./support.vibe"
@@ -163,6 +163,110 @@ describe("score", () => {
         expect(others.map((each) => each.score)).toEqual([0.25])
         // The engine once ran this call's last request in the other call's registration, which closed with it.
         expect(Exit.isSuccess(ended)).toBe(true)
+      })
+    }
+  })
+
+  it.live("counts the questions the judge answered, and none for a batch whose answer it already holds", () => effect {
+    const seen: Asked = { requests: 0, questions: 0 }
+    const rows = [
+      row("c1", "//a:test", false, rate(0.8)),
+      row("c1", "//a:lint", false, rate(0)),
+      row("c1", "//a:check", false, rate(0))
+    ]
+    provide host(judge(seen)), layerAsked {
+      const before = try answered()
+      try score(rows)
+      const once = try answered()
+      try score(rows)
+      const twice = try answered()
+      try score([row("c2", "//b:test", false, { testCount: 44 })])
+      const thrice = try answered()
+      try Effect.try(() => {
+        // Two feature sets, then the same batch again, then one new feature set.
+        expect([before, once, twice, thrice]).toEqual([0, 2, 2, 3])
+        expect(seen.requests).toBe(2)
+      })
+    }
+  })
+
+  it.live("counts nothing for a question the judge could not answer", () => effect {
+    const unreachable = Layer.succeed(Evaluator.Evaluator, Evaluator.Evaluator.of({
+      evaluate: () => fail(new Evaluator.EvaluatorError({ code: "unreachable", message: Evaluator.unreachableMessage }))
+    }))
+    provide host(unreachable), layerAsked {
+      try flip(score([row("c1", "//a:test")]))
+      const count = try answered()
+      try Effect.try(() => {
+        expect(count).toBe(0)
+      })
+    }
+  })
+
+  it.live("keeps one count for every program of a process whose host provides none", () => effect {
+    const seen: Asked = { requests: 0, questions: 0 }
+    provide host(judge(seen)) {
+      const before = try answered()
+      try score([row("c1", "//shared:test", false, { testCount: 31_337 })])
+      const after = try answered()
+      try Effect.try(() => {
+        expect(after - before).toBe(1)
+      })
+    }
+  })
+
+  it.live("asks once for a feature set, also when it comes back beside another one", () => effect {
+    const seen: Asked = { requests: 0, questions: 0 }
+    const a = row("c1", "//a:test", false, rate(0.8))
+    const b = row("c1", "//b:test", false, rate(0.2))
+    const c = row("c2", "//c:test", false, rate(0.4))
+    provide host(judge(seen)), layerAsked, layerKept {
+      const first = try score([a, b])
+      // The second change has one feature set the first had and one new one: only the new one is a question.
+      const second = try score([{ ...a, commit: "c2" }, c])
+      const count = try answered()
+      try Effect.try(() => {
+        expect(first.map((each) => each.score)).toEqual([0.8, 0.2])
+        expect(second).toEqual([
+          { commit: "c2", target: "//a:test", score: 0.8, reason: Scoring.reasons.history },
+          { commit: "c2", target: "//c:test", score: 0.4, reason: Scoring.reasons.history }
+        ])
+        expect(count).toBe(3)
+        // Two questions for each feature set the judge was sent: 2 feature sets, then 1.
+        expect(seen).toEqual({ requests: 2, questions: 6 })
+      })
+    }
+  })
+
+  it.live("asks nothing when every feature set of a change was answered before", () => effect {
+    const seen: Asked = { requests: 0, questions: 0 }
+    const a = row("c1", "//a:test", false, rate(0.8))
+    provide host(judge(seen)), layerKept {
+      try score([a])
+      // Two entries of the next change share that feature set: neither is a question.
+      const again = try score([
+        { ...a, commit: "c2", target: "//other:test" },
+        { ...a, commit: "c2", target: "//third:test" }
+      ])
+      try Effect.try(() => {
+        expect(again).toEqual([
+          { commit: "c2", target: "//other:test", score: 0.8, reason: Scoring.reasons.history },
+          { commit: "c2", target: "//third:test", score: 0.8, reason: Scoring.reasons.history }
+        ])
+        expect(seen.requests).toBe(1)
+      })
+    }
+  })
+
+  it.live("keeps no answer on a host that provides no place for them", () => effect {
+    const seen: Asked = { requests: 0, questions: 0 }
+    const a = row("c1", "//a:test", false, rate(0.8))
+    const b = row("c1", "//b:test", false, rate(0.2))
+    provide host(judge(seen)) {
+      try score([a])
+      try score([a, b])
+      try Effect.try(() => {
+        expect(seen.requests).toBe(2)
       })
     }
   })

@@ -7,7 +7,15 @@
 
 import type { NotReplayed, ToolVersion, Unsupported } from "../contract/Inventory.ts"
 import { reasonsSentence } from "../contract/Reasons.ts"
-import type { FirstRun, ReplayCommit, ReplayReport, StepFailure, StepNotReused } from "../contract/ReplayReport.ts"
+import type {
+  FirstRun,
+  ModelUse,
+  ReplayCommit,
+  ReplayReport,
+  StepFailure,
+  StepNotReused
+} from "../contract/ReplayReport.ts"
+import type { Metrics } from "../contract/Selection.ts"
 
 /**
  * Elapsed time in the largest units that keep it short: `850ms`, `12.3s`,
@@ -378,6 +386,126 @@ export const cpuTime = (report: ReplayReport): string | undefined => {
  */
 export const rerunTime = (reruns: { readonly count: number; readonly ms: number }): string =>
   `${count(reruns.count, "failed step")} ran again, which took ${duration(reruns.ms)} and is in none of these times`
+
+/**
+ * One of fast mode's three numbers: its name, the share, and the count
+ * behind it.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface SelectionRow {
+  readonly name: string
+  readonly share: string
+  readonly counts: string
+}
+
+/**
+ * Fast mode's numbers, each with the count behind it: test recall, change
+ * recall and selection rate. No recall is given when nothing failed, since
+ * recall is not defined there.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const selectionRows = (metrics: Metrics): ReadonlyArray<SelectionRow> => {
+  const recall = (name: string, share: number | undefined, total: number, noun: string): ReadonlyArray<SelectionRow> =>
+    share === undefined
+      ? []
+      : [{ name, share: percent(share), counts: `${Math.round(share * total)} of ${count(total, noun)}` }]
+  return [
+    ...recall("test recall", metrics.testRecall, metrics.failures, "failure"),
+    ...recall("change recall", metrics.changeRecall, metrics.failedChanges, "failed change"),
+    {
+      name: "selection rate",
+      share: percent(metrics.selectionRate),
+      counts: `${metrics.selected} of ${count(metrics.rows, "target")}`
+    }
+  ]
+}
+
+/**
+ * What asking the model cost over the replay, as one line:
+ * `the model answered 31 questions in 2m 10s, which is in fast mode's times`.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const modelTime = (model: ModelUse): string =>
+  `the model answered ${model.questions === undefined ? "" : `${count(model.questions, "question")} `}in ${
+    duration(model.ms)
+  }, which is in fast mode's times`
+
+/**
+ * What skipping saved against what asking cost, over the commits the wall
+ * times cover, as one line. Nothing when the model was asked about none of
+ * them.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const modelCost = (report: ReplayReport): string | undefined => {
+  const covered = normalDiffers(report)
+    ? []
+    : report.commits.filter((commit) => commit.baseline.ok && commit.fast !== undefined && commit.model !== undefined)
+  if (covered.length === 0) return undefined
+  const sum = (of: (commit: ReplayCommit) => number): number => covered.reduce((total, commit) => total + of(commit), 0)
+  const asking = sum((commit) => commit.model!.ms)
+  const saved = sum((commit) => commit.normal.wallMs) - (sum((commit) => commit.fast!.wallMs) - asking)
+  return `over the commits these times cover, fast mode's runs took ${duration(Math.abs(saved))} ${
+    saved < 0 ? "more" : "less"
+  } than normal mode's and asking the model took ${duration(asking)}`
+}
+
+/**
+ * The heading of the list of targets fast mode did not run.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const skippedHeading = "skipped, predicted-safe"
+
+/**
+ * The targets fast mode skipped at one commit for one reason.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface SkipGroup {
+  readonly commit: string
+  readonly reason: string
+  readonly labels: ReadonlyArray<string>
+}
+
+/**
+ * Every target fast mode skipped, grouped by commit and by the model's
+ * reason, in the order the report holds them.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const skipGroups = (commits: ReadonlyArray<ReplayCommit>): ReadonlyArray<SkipGroup> =>
+  commits.flatMap((commit) => {
+    const byReason = new Map<string, Array<string>>()
+    for (const skip of commit.skipped ?? []) {
+      const reason = skip.reason ?? ""
+      byReason.set(reason, [...(byReason.get(reason) ?? []), skip.label])
+    }
+    return [...byReason].map(([reason, labels]) => ({ commit: commit.commit, reason, labels }))
+  })
+
+const shownSkips = 5
+
+/**
+ * The targets of a group: the first five, and how many more.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const skippedLabels = (labels: ReadonlyArray<string>): string =>
+  `${labels.slice(0, shownSkips).join(", ")}${
+    labels.length > shownSkips ? ` and ${labels.length - shownSkips} more` : ""
+  }`
 
 /**
  * Why the first counted commit started with an empty cache, as one line.

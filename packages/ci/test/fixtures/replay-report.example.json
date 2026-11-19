@@ -26,6 +26,33 @@
         "counts": { "hit": 33, "ran": 3, "failed": 0, "skipped": 4 },
         "cpuMs": 210000
       },
+      "skipped": [
+        {
+          "label": "//apps/web:lint",
+          "skipReason": "predicted-safe",
+          "score": 0.02,
+          "reason": "Nothing in the features points to a failure."
+        },
+        {
+          "label": "//apps/web:test",
+          "skipReason": "predicted-safe",
+          "score": 0.02,
+          "reason": "Nothing in the features points to a failure."
+        },
+        {
+          "label": "//packages/core:lint",
+          "skipReason": "predicted-safe",
+          "score": 0.02,
+          "reason": "Nothing in the features points to a failure."
+        },
+        {
+          "label": "//packages/ui:test",
+          "skipReason": "predicted-safe",
+          "score": 0.04,
+          "reason": "The changed files have changed often lately."
+        }
+      ],
+      "model": { "ms": 21000, "questions": 5 },
       "mismatches": []
     },
     {
@@ -65,6 +92,27 @@
         "workMs": 100000,
         "counts": { "hit": 35, "ran": 2, "failed": 0, "skipped": 3 }
       },
+      "skipped": [
+        {
+          "label": "//apps/web:lint",
+          "skipReason": "predicted-safe",
+          "score": 0.02,
+          "reason": "Nothing in the features points to a failure."
+        },
+        {
+          "label": "//packages/core:test",
+          "skipReason": "predicted-safe",
+          "score": 0.03,
+          "reason": "Nothing in the features points to a failure."
+        },
+        {
+          "label": "//packages/ui:test",
+          "skipReason": "predicted-safe",
+          "score": 0.03,
+          "reason": "Nothing in the features points to a failure."
+        }
+      ],
+      "model": { "ms": 12000, "questions": 4 },
       "mismatches": [{ "label": "//packages/core:test", "mode": "fast", "baseline": "fail", "got": "skipped" }]
     }
   ],
@@ -93,5 +141,6 @@
     "selectionRate": 0.4166666666666667,
     "testRecall": 0,
     "changeRecall": 0
-  }
+  },
+  "model": { "ms": 33000, "questions": 9 }
 }

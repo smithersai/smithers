@@ -22,6 +22,7 @@ import {
   refusal
 } from "../contract/Inventory.ts"
 import {
+  type AskedQuestions,
   type BuildRows,
   type Decompose,
   type Failure,
@@ -63,6 +64,8 @@ export interface Parts<R> {
   readonly html: RenderReport
   readonly rows: BuildRows<R>
   readonly score: ScoreRows<R>
+  /** How many questions the model has answered, for the report; without it the report gives the time alone. */
+  readonly asked?: AskedQuestions<R> | undefined
 }
 
 /**
@@ -401,7 +404,8 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     decompose: parts.decompose,
     files: parts.files,
     rows: parts.rows,
-    score: parts.score
+    score: parts.score,
+    asked: parts.asked
   }
   const generate = (inventory: Inventory, cache: Option.Option<string>, allowDocker: boolean) =>
     effect {

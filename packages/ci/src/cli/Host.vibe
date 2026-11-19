@@ -5,7 +5,7 @@
  *   processes, jj and HTTP; plus the standard streams and terminal the
  *   command line needs.
  * - Fast mode's services, for the select part: an in-memory ledger for this
- *   run, git history, an in-memory flow engine for the judge's durable steps,
+ *   run, the model's answers and their count for this run, git history, an in-memory flow engine for the judge's durable steps,
  *   Web Crypto, and the judge `smthrs` binds: Jev with `AI_GATEWAY_API_KEY`,
  *   else the model this machine is signed in to.
  * - How a replay runs in a stranger's checkout: this install's `smthrs`,
@@ -24,7 +24,7 @@ import { NodeHost } from "@smthrs/platform-node"
 import type { Failure } from "../contract/Parts.ts"
 import { environment as documented, name } from "../contract/Command.ts"
 import { Options, Progress } from "../replay/index.ts"
-import { Ledger, Repository } from "../select/index.ts"
+import { Ledger, Repository, Score } from "../select/index.ts"
 import { nodeProgram, smthrsCommand, smthrsWithToken } from "./Install.ts"
 import { machine, runtime } from "./Restart.ts"
 
@@ -138,6 +138,8 @@ export const layer = (environment: Environment) => {
   return Layer.provideMerge(
     Layer.mergeAll(
       Ledger.layerMemory(),
+      Score.layerAsked,
+      Score.layerKept,
       Repository.layerGit,
       FlowEngine.layerMemory,
       WebCrypto.layer,

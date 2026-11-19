@@ -11,7 +11,7 @@
  */
 
 import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import type { BuildRows, ScoreRows } from "../contract/Parts.ts"
+import type { AskedQuestions, BuildRows, ScoreRows } from "../contract/Parts.ts"
 import type { Ledger } from "./Ledger.vibe"
 import type { Repository } from "./Repository.vibe"
 import * as Rows from "./Rows.vibe"
@@ -35,6 +35,15 @@ export const rows: BuildRows<ChildProcessSpawner | Ledger | Repository> = Rows.r
  * @since 0.1.0
  */
 export const score: ScoreRows<Score.Host> = Score.score
+
+/**
+ * How many questions the judge has answered since the program started. A
+ * host that reports it provides `Score.layerAsked`.
+ *
+ * @category parts
+ * @since 0.1.0
+ */
+export const asked: AskedQuestions = Score.asked()
 
 /**
  * The six features and the labels, as pure functions.

@@ -15,9 +15,16 @@ afterAll(() => made.forEach(remove))
 
 const runner = process.platform === "darwin" ? "macos-latest" : "ubuntu-latest"
 
-/** The programs of this user whose whole command line is `sleep <seconds>`. */
+/**
+ * The programs of this user whose whole command line is `sleep <seconds>`. The list is read whole: on a build host
+ * with two thousand processes it is over the megabyte `execFileSync` takes by default, and the test died of
+ * `spawnSync ps ENOBUFS` with no step at fault.
+ */
 const sleeping = (seconds: number): ReadonlyArray<string> =>
-  execFileSync("ps", ["-u", String(process.getuid?.()), "-o", "args="], { encoding: "utf8" })
+  execFileSync("ps", ["-u", String(process.getuid?.()), "-o", "args="], {
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024
+  })
     .split("\n")
     .filter((line) => line.trim() === `sleep ${seconds}`)
 

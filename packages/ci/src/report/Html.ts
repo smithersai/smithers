@@ -11,8 +11,7 @@
 
 import type { NotReplayed, ToolVersion, Unsupported } from "../contract/Inventory.ts"
 import type { RenderReport } from "../contract/Parts.ts"
-import type { Mismatch, NotReplayedCommit, ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
-import type { Metrics } from "../contract/Selection.ts"
+import type { Mismatch, NotReplayedCommit, ReplayCommit, ReplayReport, RunTotals } from "../contract/ReplayReport.ts"
 import {
   appliedTime,
   coldStart,
@@ -33,15 +32,20 @@ import {
   leftEmpty,
   leftOut,
   mismatches,
+  modelCost,
+  modelTime,
   normalDiffers,
   noSpeedup,
   noSpeedupMismatch,
   ownTargets,
-  percent,
   ratio,
   reasons,
   rerunTime,
+  selectionRows,
   shortCommit,
+  skipGroups,
+  skippedHeading,
+  skippedLabels,
   speedup,
   speedupCommits,
   times,
@@ -131,24 +135,35 @@ const bars = (modes: ReadonlyArray<Mode>): string => {
   }">\n${rows.join("\n")}\n</div>`
 }
 
-const recallRow = (name: string, share: number | undefined, total: number, noun: string): string =>
-  share === undefined ?
-    "" :
-    `<tr><th scope="row">${name}</th><td class="num">${percent(share)}</td><td class="num sub">${
-      Math.round(share * total)
-    } of ${count(total, noun)}</td></tr>\n`
-
-const selection = (metrics: Metrics): string =>
-  [
+/** Fast mode's three numbers with their counts, then what the model was asked and what that cost. */
+const selection = (report: ReplayReport): string => {
+  const cost = modelCost(report)
+  return [
     "<h2>Fast mode</h2>",
     "<div class=\"scroll\"><table>",
-    recallRow("test recall", metrics.testRecall, metrics.failures, "failure"),
-    recallRow("change recall", metrics.changeRecall, metrics.failedChanges, "failed change"),
-    `<tr><th scope="row">selection rate</th><td class="num">${
-      percent(metrics.selectionRate)
-    }</td><td class="num sub">${metrics.selected} of ${count(metrics.rows, "target")}</td></tr>`,
-    "</table></div>"
+    selectionRows(report.selection!).map((row) =>
+      `<tr><th scope="row">${row.name}</th><td class="num">${row.share}</td><td class="num sub">${row.counts}</td></tr>`
+    ).join("\n"),
+    "</table></div>",
+    report.model === undefined ? "" : `<p class="summary">${modelTime(report.model)}</p>`,
+    cost === undefined ? "" : `<p class="summary">${cost}</p>`
   ].join("")
+}
+
+/** Every target fast mode skipped: its commit, how many, the model's reason, and the targets. */
+const skippedTable = (commits: ReadonlyArray<ReplayCommit>): string =>
+  [
+    `<h2>${skippedHeading}</h2>`,
+    "<div class=\"scroll\"><table>",
+    ...skipGroups(commits).map((group) =>
+      `<tr><th scope="row"><code title="${escape(group.commit)}">${
+        escape(shortCommit(group.commit))
+      }</code></th><td class="num">${group.labels.length}</td><td class="sub">${escape(group.reason)}</td><td><code>${
+        escape(skippedLabels(group.labels))
+      }</code></td></tr>`
+    ),
+    "</table></div>"
+  ].join("\n")
 
 /** A run's time, led by `fail` when the run failed: a time alone would read as a passing run. */
 const time = (totals: RunTotals | undefined): string =>
@@ -296,8 +311,9 @@ export const html: RenderReport = (report) => {
     if (report.firstRun !== undefined) body.push(`<p class="summary">${firstRunTime(report.firstRun)}</p>`)
     if (report.cold !== undefined) body.push(`<p class="summary">${escape(coldStart(report.cold))}</p>`)
     if (report.reruns !== undefined) body.push(`<p class="summary">${rerunTime(report.reruns)}</p>`)
-    if (report.selection !== undefined) body.push(selection(report.selection))
+    if (report.selection !== undefined) body.push(selection(report))
     body.push(commitTable(report.commits))
+    if (skipGroups(report.commits).length > 0) body.push(skippedTable(report.commits))
     if (commitsLeft.length > 0) body.push(commitsLeftTable(commitsLeft))
     if (left.length > 0) body.push(notReplayedTable(left))
     if (notRead.length > 0) body.push(notReadTable(notRead))

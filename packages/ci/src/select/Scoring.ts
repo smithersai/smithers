@@ -237,7 +237,9 @@ export const readingsOf = (
   })
 
 /**
- * One score per row: the reading of the row's feature set.
+ * One score per row: the reading of the row's feature set. `known` holds the
+ * readings of the feature sets that were not asked about again, by
+ * {@link keyOf}.
  *
  * @category reading
  * @since 0.1.0
@@ -246,9 +248,10 @@ export const readingsOf = (
 export const scoresOf = (
   rows: ReadonlyArray<Row>,
   asked: ReadonlyArray<ReadonlyArray<Features>>,
-  answered: ReadonlyArray<ReadonlyArray<Reading>>
+  answered: ReadonlyArray<ReadonlyArray<Reading>>,
+  known: ReadonlyMap<string, Reading> = new Map()
 ): ReadonlyArray<Score> => {
-  const readings = new Map<string, Reading>()
+  const readings = new Map<string, Reading>(known)
   for (const [batch, items] of asked.entries()) {
     for (const [item, features] of items.entries()) readings.set(keyOf(features), answered[batch]![item]!)
   }

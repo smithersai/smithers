@@ -35,7 +35,9 @@ import { reasonsSentence } from "../contract/Reasons.ts"
 import type {
   FirstRun,
   Mismatch,
+  ModelUse,
   NotReplayedCommit,
+  PredictedSafe,
   ReplayCommit,
   ReplayReport,
   RunTotals,
@@ -1172,7 +1174,9 @@ export interface Findings {
  * @throws {never}
  * @since 0.1.0
  */
-export const withoutFast = ({ fast: _fast, ...commit }: ReplayCommit): ReplayCommit => ({
+export const withoutFast = (
+  { fast: _fast, model: _model, skipped: _skipped, ...commit }: ReplayCommit
+): ReplayCommit => ({
   ...commit,
   mismatches: commit.mismatches.filter((mismatch) => mismatch.mode !== "fast")
 })
@@ -1223,6 +1227,7 @@ export const reportOf = (
   const baselineCpuMs = cpu((commit) => commit.baseline)
   const normalCpuMs = cpu((commit) => commit.normal)
   const fastCpuMs = found.selection === undefined ? undefined : cpu((commit) => commit.fast)
+  const model = found.selection === undefined ? undefined : modelOf(commits)
   return {
     version: 1,
     repository: inventory.repository,
@@ -1247,6 +1252,7 @@ export const reportOf = (
     ...(baselineCpuMs === undefined ? {} : { baselineCpuMs }),
     ...(normalCpuMs === undefined ? {} : { normalCpuMs }),
     ...(fastCpuMs === undefined ? {} : { fastCpuMs }),
+    ...(model === undefined ? {} : { model }),
     ...(found.fastNotMeasured === undefined ? {} : { fastNotMeasured: found.fastNotMeasured }),
     ...(found.left.length === 0 ? {} : { notReplayed: found.left }),
     ...(found.commitsLeft === undefined || found.commitsLeft.length === 0
@@ -1259,9 +1265,32 @@ export const reportOf = (
 }
 
 /**
+ * What asking the model cost over `commits`: the time of every commit it was
+ * asked about, and the questions when each of those commits has a count.
+ * Nothing when it was asked about none.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const modelOf = (commits: ReadonlyArray<ReplayCommit>): ModelUse | undefined => {
+  const used = commits.flatMap((commit) => commit.model === undefined ? [] : [commit.model])
+  if (used.length === 0) return undefined
+  const counted = used.flatMap((use) => use.questions === undefined ? [] : [use.questions])
+  return {
+    ms: used.reduce((total, use) => total + use.ms, 0),
+    ...(counted.length === used.length ? { questions: counted.reduce((total, each) => total + each, 0) } : {})
+  }
+}
+
+/**
  * What fast mode's run of one commit adds to the report. `fast` is what it
  * ran, and a target of `normal` it did not run was skipped as predicted safe.
- * `cpuMs` is the CPU time its steps used, when it could be read.
+ * `cpuMs` is the CPU time its steps used, when it could be read. `asked`
+ * holds the model's scores for the commit and what asking for them cost:
+ * each skipped target is then listed with its score and reason, and the time
+ * the model took is in the run's wall time, because a fast-mode run waits for
+ * the model before it starts.
  *
  * @category report
  * @throws {never}
@@ -1276,17 +1305,31 @@ export const fastRunOf = (
   names: StepNames = new Map(),
   split: ReadonlyMap<string, ReadonlyArray<string>> = new Map(),
   causes: ReadonlyMap<string, string> = new Map(),
-  cpuMs?: number | undefined
+  cpuMs?: number | undefined,
+  asked?: { readonly scores: ReadonlyArray<Score>; readonly model: ModelUse } | undefined
 ): {
-  readonly part: Pick<ReplayCommit, "fast">
+  readonly part: Pick<ReplayCommit, "fast" | "skipped" | "model">
   readonly mismatches: ReadonlyArray<Mismatch>
   readonly flaky: number
 } => {
   const byLabel = new Map(fast.map((result) => [result.label, result]))
   const merged = normal.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
-  const record = recordOf(merged, commit, wallMs, "fast")
+  const record = recordOf(merged, commit, wallMs + (asked?.model.ms ?? 0), "fast")
+  const scored = new Map((asked?.scores ?? []).map((score) => [score.target, score]))
+  const skipped = merged.filter((result) => result.skipReason === "predicted-safe").map((result): PredictedSafe => {
+    const score = scored.get(result.label)
+    return {
+      label: result.label,
+      skipReason: "predicted-safe",
+      ...(score === undefined ? {} : { score: score.score }),
+      ...(score?.reason === undefined ? {} : { reason: score.reason })
+    }
+  })
   return {
-    part: { fast: totalsOf(record, names, cpuMs) },
+    part: {
+      fast: totalsOf(record, names, cpuMs),
+      ...(asked === undefined ? {} : { skipped, model: asked.model })
+    },
     mismatches: mismatchesOf("fast", baseline, record, split, causes),
     flaky: flakyOf([record])
   }
@@ -1325,9 +1368,23 @@ export interface Gathered {
 }
 
 /**
+ * The run before the first counted commit with fast mode's time taken out,
+ * for a replay whose fast mode could not be measured to the end.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const firstRunWithoutFast = (run: FirstRun | undefined): FirstRun | undefined => {
+  if (run === undefined) return undefined
+  const { fastMs: _fastMs, ...rest } = run
+  return rest
+}
+
+/**
  * The report of a finished replay. When the model stopped answering, part of
- * a measurement is not one: every fast-mode number is left out and the report
- * says why.
+ * a measurement is not one: every fast-mode number is left out, the time of
+ * fast mode's first run with them, and the report says why.
  *
  * @category report
  * @throws {never}
@@ -1349,7 +1406,7 @@ export const finishedReport = (
     trialMs: gathered.trialMs,
     appliedMs: gathered.appliedMs,
     reruns: gathered.reruns,
-    firstRun: gathered.firstRun,
+    firstRun: measured ? gathered.firstRun : firstRunWithoutFast(gathered.firstRun),
     cold: gathered.cold
   })
 }

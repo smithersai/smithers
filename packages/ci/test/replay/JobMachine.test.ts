@@ -100,6 +100,21 @@ describe("a baseline job", () => {
     expect(report.commits.map((commit) => commit.baseline.counts)).toEqual([counts, counts])
   }, 600_000)
 
+  it("is told a temporary directory of its own where no jail stands behind the machine's", async () => {
+    // On macOS, and on Linux without bubblewrap, every baseline job was given the person's own TMPDIR: a job found
+    // there what the job before it left, and failed where the same job passes as a target, which has its own.
+    const root = repository([
+      job("tmpa", "test ! -e \"$TMPDIR/seen\" && touch \"$TMPDIR/seen\""),
+      job("tmpb", "test ! -e \"$TMPDIR/seen\" && touch \"$TMPDIR/seen\" # b"),
+      // The steps of one job share the job's temporary directory, in order.
+      job("steps", "touch \"$TMPDIR/first\"", { more: ["test -e \"$TMPDIR/first\" && test ! -e \"$TMPDIR/seen\""] })
+    ], two)
+    const report = await replay(root, 2, unconfined)
+    const counts = { hit: 0, ran: 4, failed: 0, skipped: 0 }
+    expect(report.commits.map((commit) => commit.baseline.failures ?? [])).toEqual([[], []])
+    expect(report.commits.map((commit) => commit.baseline.counts)).toEqual([counts, counts])
+  }, 600_000)
+
   it.skipIf(!jailable)("starts with a temporary directory of its own too, in the jail", async () => {
     const root = repository([
       job("tmpa", "test ! -e /tmp/seen && touch /tmp/seen && test ! -e ~/.seen && touch ~/.seen"),
