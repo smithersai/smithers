@@ -399,6 +399,30 @@ describe("BuildAndCheckTypeScriptPackage dependencies", () => {
     }
   })
 
+  /**
+   * The sources of other workspace packages are what a build, a test, a
+   * type-check and a lint read; a format check and the docs do not.
+   */
+  it("hands the file groups it reads to lib, check, test and lint, and to nothing else", () => {
+    const group = Filegroup.Filegroup({ srcs: [Input.glob("src/**")], cwd: "packages/other" })
+    for (const testProgram of [undefined, Input.file("test/run.mjs")]) {
+      const targets = BuildAndCheckTypeScriptPackage({
+        packageManager,
+        cwd: "packages/example",
+        deps: [upstream],
+        reads: [group],
+        ...(testProgram === undefined ? {} : { testProgram })
+      })
+      expect(Target.metadata(targets.lib).dependencies).toEqual([upstream, group])
+      expect(Target.metadata(targets.check).dependencies).toEqual([targets.lib, upstream, group])
+      expect(Target.metadata(targets.test).dependencies).toEqual([targets.lib, upstream, group])
+      expect(Target.metadata(targets.lint).dependencies).toEqual([group])
+      for (const name of ["fmt", "docs", "circular", "docsFiles"] as const) {
+        expect(Target.metadata(targets[name]).dependencies).toEqual([])
+      }
+    }
+  })
+
   it("keeps the self-lib edges when a package declares no dependencies", () => {
     const targets = BuildAndCheckTypeScriptPackage({ packageManager, deps: [], cwd: "packages/example" })
     expect(Target.metadata(targets.lib).dependencies).toEqual([])

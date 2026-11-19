@@ -28,6 +28,7 @@ describe("@smthrs/repo-targets package entry", () => {
       "ReviewJsdocAgainstCode",
       "ReviewTagsMigrationsAndKeys",
       "SdkRules",
+      "WorkspaceSources",
       "smithersReviewPrompt"
     ])
     expect(RepoTargets.smithersReviewPrompt).toContain("You are reviewing a diff in `smithers`")

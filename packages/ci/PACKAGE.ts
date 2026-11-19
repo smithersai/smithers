@@ -1,11 +1,15 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, WorkspaceSources } from "@smthrs/repo-targets"
 /** Standard package targets. */
 import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/ci"
 
+// The sources of the workspace packages this one loads: the build, the type-check, the suite and the lint read them.
+const sources = WorkspaceSources({ cwd })
+
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  reads: Object.values(sources),
   // test/docs.test.ts reads the docs pages and the splash page; test/cli runs bin/ and test/cli/program.mjs;
   // test/closure/zig copies and builds the Zig project under test/fixtures/closure-zig.
   testData: [
@@ -22,5 +26,5 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test }
+  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...sources }
 })

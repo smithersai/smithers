@@ -1,0 +1,85 @@
+/**
+ * The sources of the workspace packages one package reaches, as file groups.
+ *
+ * A package's tests, type-check and lint load the source of every workspace
+ * package it imports, and of every package those import. A confined run is
+ * shown only what its target declares, and a file another package owns is
+ * declared through a file group of that package, so the package lists these
+ * groups among its targets and hands them to
+ * {@link BuildAndCheckTypeScriptPackage} as `reads`. Their files are then in
+ * the key of each run that reads them: an edit to a reached package's source
+ * reruns those runs, and an edit to any other package does not.
+ *
+ * The reach is read from the manifests when the declaration is evaluated,
+ * which every command does: the package's `dependencies`,
+ * `devDependencies` and `peerDependencies`, then the `dependencies` and
+ * `peerDependencies` of each package reached. Membership is
+ * `pnpm-workspace.yaml`'s, through `scripts/workspace-packages.mjs`.
+ *
+ * @since 0.1.0
+ */
+
+import { Filegroup } from "@smthrs/targets/Filegroup"
+import * as Input from "@smthrs/targets/Input"
+import { repoRoot, workspacePackages } from "../scripts/workspace-packages.mjs"
+
+/**
+ * Options accepted by {@link WorkspaceSources}.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Options {
+  /** The workspace-relative directory of the package whose reach is read. */
+  readonly cwd: string
+  /**
+   * The files of each reached package a run reads, relative to that package:
+   * its sources, the launchers its command line starts from, its manifest,
+   * and its compiler configuration, which the test runner's compiler reads for
+   * each source it loads from that package.
+   *
+   * @default ["src/**", "bin/**", "package.json", "{tsconfig,jsconfig,vibe.config}.json"]
+   */
+  readonly files?: ReadonlyArray<string> | undefined
+  /** The workspace root. Omitted, the repository this module is in. */
+  readonly root?: string | undefined
+}
+
+type Member = ReturnType<typeof workspacePackages>[number]
+
+/**
+ * One file group per workspace package reached from the package at `cwd`,
+ * keyed by `sources-` and the package's directory with `/` as `-`. The
+ * package itself is not among them.
+ *
+ * @category macros
+ * @since 0.1.0
+ */
+export const WorkspaceSources = (options: Options): Readonly<Record<string, ReturnType<typeof Filegroup>>> => {
+  const members = workspacePackages(options.root ?? repoRoot)
+  const byName = new Map(members.map((member) => [member.name, member]))
+  const own = members.find((member) => member.dir === options.cwd)
+  if (own === undefined) throw new TypeError(`WorkspaceSources: ${options.cwd} is not a workspace package`)
+  const reached = new Map<string, Member>()
+  const visit = (manifest: Member["manifest"], fields: ReadonlyArray<string>): void => {
+    for (const field of fields) {
+      for (const name of Object.keys((manifest as Record<string, Record<string, string> | undefined>)[field] ?? {})) {
+        const member = byName.get(name)
+        if (member === undefined || member === own || reached.has(member.dir)) continue
+        reached.set(member.dir, member)
+        visit(member.manifest, ["dependencies", "peerDependencies"])
+      }
+    }
+  }
+  visit(own.manifest, ["dependencies", "devDependencies", "peerDependencies"])
+  const files = options.files ?? ["src/**", "bin/**", "package.json", "{tsconfig,jsconfig,vibe.config}.json"]
+  return Object.fromEntries(
+    [...reached.values()].sort((left, right) => left.dir < right.dir ? -1 : 1).map((member) => [
+      `sources-${member.dir.replaceAll("/", "-")}`,
+      Filegroup({
+        srcs: files.map((file) => /[*?{[]/.test(file) ? Input.glob(file) : Input.file(file)),
+        cwd: member.dir
+      })
+    ])
+  )
+}

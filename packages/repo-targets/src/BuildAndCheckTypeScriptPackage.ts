@@ -37,6 +37,16 @@ export interface Options {
   readonly packageManager?: PackageManager.PackageManager | undefined
   /** @default [] */
   readonly deps?: ReadonlyArray<Target.AnyTarget> | undefined
+  /**
+   * File groups whose files `lib`, `check`, `test` and `lint` read beside the
+   * package's own: the sources of the other workspace packages it loads, from
+   * {@link WorkspaceSources}. The compiler reads their types, and the suite
+   * runs them. A confined run is shown them and its key covers them, so an
+   * edit to one reruns those four and nothing else.
+   *
+   * @default []
+   */
+  readonly reads?: ReadonlyArray<Target.AnyTarget> | undefined
   readonly cwd: string
   /**
    * The package's TypeScript and VibeLang sources. It feeds every target that
@@ -188,6 +198,7 @@ export interface PackageTargets {
 export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets => {
   const cwd = options.cwd
   const deps = options.deps ?? []
+  const reads = options.reads ?? []
   const sources = options.sources ?? Input.glob("src/**/*.{ts,vibe}")
   const tests = options.tests ?? Input.glob("test/**/*.test.{ts,vibe}")
   const testSources = options.testSources ?? Input.glob("test/**/*.{ts,vibe}")
@@ -226,7 +237,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
       ...(options.buildInputs ?? [])
     ],
     entries: [entry],
-    deps,
+    deps: [...deps, ...reads],
     tsconfig,
     tool: { name: "program", entry: options.buildProgram ?? Input.file("scripts/build.mjs") },
     format: "dual",
@@ -251,7 +262,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
       Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
       Input.file("//packages/repo-targets/test-utils/vitest-root-temp.d.mts")
     ],
-    deps: [lib, ...deps],
+    deps: [lib, ...deps, ...reads],
     tsconfig: testTsconfig,
     buildMode: false,
     incremental: false,
@@ -278,7 +289,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
         Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
         ...(options.testData ?? []).map((pattern) => Input.glob(pattern))
       ],
-      deps: [lib, ...deps],
+      deps: [lib, ...deps, ...reads],
       config: vitestConfig,
       environment: "node",
       passWithNoTests: false,
@@ -303,14 +314,14 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
         Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
         ...(options.testData ?? []).map((pattern) => Input.glob(pattern))
       ],
-      deps: [lib, ...deps],
+      deps: [lib, ...deps, ...reads],
       timeout: `${options.testTimeoutMs ?? 1_200_000}ms`,
       cwd
     })
   const lint = EsLint({
     ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
     sources: [sources],
-    deps: [],
+    deps: [...reads],
     configs: eslintConfigs,
     // Typed rules load the test tsconfig's whole program, which includes the test tree.
     data: [testSources],

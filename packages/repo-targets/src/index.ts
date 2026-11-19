@@ -9,6 +9,8 @@ export type {
   PackageTargets
 } from "./BuildAndCheckTypeScriptPackage.ts"
 export { CircularImports } from "./CircularImports.ts"
+export { WorkspaceSources } from "./WorkspaceSources.ts"
+export type { Options as WorkspaceSourcesOptions } from "./WorkspaceSources.ts"
 export type { Options as CircularImportsOptions } from "./CircularImports.ts"
 export { ImportRules } from "./ImportRules.ts"
 export type { ImportRulesTarget, Options as ImportRulesOptions } from "./ImportRules.ts"
