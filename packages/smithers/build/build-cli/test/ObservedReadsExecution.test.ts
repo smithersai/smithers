@@ -557,6 +557,71 @@ const job = async (
 
 const all = (status: string) => ({ install: status, build: status, lint: status, test: status })
 
+/**
+ * Two steps and a file both the checkout and the first step hold: `write`
+ * copies a setting from outside the workspace over `answer.txt`, and `check`
+ * passes while `answer.txt` holds `one`.
+ */
+const rewriting = async () => {
+  const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smithers-observed-rewrite-")))
+  const outside = await Fs.realpath(await Fs.mkdtemp("/var/tmp/smithers-observed-setting-"))
+  temporary.push(base, outside)
+  const root = Path.join(base, "ws")
+  await Fs.mkdir(root, { recursive: true })
+  const setting = Path.join(outside, "setting.txt")
+  const answer = Path.join(root, "answer.txt")
+  await Fs.writeFile(setting, "one\n")
+  await Fs.writeFile(answer, "one\n")
+  const write = S.Shell.Test({
+    sandbox: "none",
+    shell: `/bin/cat ${setting} > answer.txt`,
+    observe: true,
+    data: [S.glob("**")]
+  })
+  const check = S.Shell.Test({
+    sandbox: "none",
+    shell: "/bin/grep -q one answer.txt",
+    observe: true,
+    data: [S.glob("**"), write]
+  })
+  const index = PackageIndex.make({
+    root,
+    workspace: S.Workspace("observed-rewrite", {
+      repository: "git+https://example.invalid/observed-rewrite.git",
+      cache: S.Cache({ directory: ".flows" }),
+      host: S.Host({ bins: ["sh"] })
+    }),
+    factory: undefined,
+    packages: [{ file: "PACKAGE.ts", packagePath: "", value: S.Package({ targets: { write, check } }) }]
+  })
+  const environment = {
+    PATH: [...("tracer" in host ? [Path.dirname(host.tracer)] : []), "/usr/bin", "/bin"].join(Path.delimiter)
+  }
+  const reasons: Record<string, string | undefined> = {}
+  const options = {
+    index,
+    cacheDirectory: ".flows",
+    verb: "auto" as const,
+    patterns: ["//:check"],
+    environment,
+    log: () => undefined
+  }
+  const run = async (): Promise<Record<string, string>> => {
+    const summary = await withPath(environment.PATH, async () =>
+      Effect.runPromise(
+        executeEffect(await plan(options), options).pipe(
+          Effect.provideService(ExecutionServices, executionServicesLive)
+        )
+      ))
+    for (const name of Object.keys(reasons)) delete reasons[name]
+    for (const result of summary.results) {
+      if (result.notReused !== undefined) reasons[result.label.split(":")[1]!] = result.notReused
+    }
+    return Object.fromEntries(summary.results.map((result) => [result.label.split(":")[1]!, result.status]))
+  }
+  return { answer, reasons, run, setting }
+}
+
 describe("a job of observed steps", () => {
   tracedIt("runs no step in a fresh checkout while every step would read what it read", async () => {
     const { checkout, exists, ran, run, write } = await job()
@@ -597,6 +662,30 @@ describe("a job of observed steps", () => {
     await write("tests/t.txt", "test 1\n")
     expect(await run()).toEqual(all("hit"))
     expect(await ran()).toEqual([])
+  })
+
+  // The checkout holds a file, and a step writes over it. In a fresh checkout the file holds the checkout's
+  // bytes again, which may be the bytes an older run of that step left. The step after it must not be answered
+  // by what it read then: the step that writes the file is answered from another run now, and would write
+  // something else.
+  tracedIt("is not answered by what a step it reads from left in another of that step's runs", async () => {
+    const { answer, reasons, run, setting } = await rewriting()
+    expect(await run()).toEqual({ write: "ran", check: "ran" })
+    expect(await run()).toEqual({ write: "hit", check: "hit" })
+    // Another setting: the file is written anew, and the check fails on it.
+    await Fs.writeFile(setting, "two\n")
+    expect(await run()).toEqual({ write: "ran", check: "failed" })
+    // A fresh checkout with that setting. The file holds `one`, as when the check passed, and the step that
+    // writes it is answered from its run with `two`: the check runs on what that run left, and fails.
+    await Fs.writeFile(answer, "one\n")
+    expect(await run()).toEqual({ write: "hit", check: "failed" })
+    // By the time the check is looked at alone, what that run left has been put back for it.
+    expect(reasons).toEqual({ check: "answer.txt changed" })
+    expect(NodeFs.readFileSync(answer, "utf8")).toBe("two\n")
+    // Back at the first setting, the first records answer, in a fresh checkout too.
+    await Fs.writeFile(setting, "one\n")
+    await Fs.writeFile(answer, "one\n")
+    expect(await run()).toEqual({ write: "hit", check: "hit" })
   })
 
   tracedIt("fails as the step fails, with what the steps before it left in place", async () => {

@@ -1733,6 +1733,13 @@ const interpreters = (path: string, io: Io): ReadonlyArray<string> => {
  * when every path it read still holds what the run left there and every
  * variable it could have used holds, in `values`, the value it had.
  *
+ * `answered` gives, for a step the run read files from, the ids of the
+ * records that step is answered from while it has written nothing in this
+ * run, and `undefined` once what it left is in place: it ran, or its files
+ * were put back. A step answered from another of its runs would write other
+ * files than this run read, whatever is at those paths now, so the record
+ * does not hold.
+ *
  * @category recording
  * @since 1.0.0
  */
@@ -1753,6 +1760,9 @@ export const changed = (
     if (now === state || now === other) continue
     if (now === absent) return `${path} is gone`
     return state === absent ? `${path} now exists` : `${path} changed`
+  }
+  for (const [label, id] of stored.from ?? []) {
+    if (answered(label)?.has(id) === false) return `${label} is answered from another of its runs`
   }
   /** Whether the step at a place in `from` is answered from the record this run read its files under. */
   const again = (place: number): boolean => {

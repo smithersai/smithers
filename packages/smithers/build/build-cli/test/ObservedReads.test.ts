@@ -1242,6 +1242,17 @@ describe("what a run read that an earlier step wrote", () => {
     const all = (label: string): ReadonlySet<string> => new Set([label === "//:install" ? "install-1" : "build-1"])
     expect(ObservedReads.changed(record, root, undefined, undefined, all)).toBe("node_modules/pkg/index.js changed")
     await write("node_modules/pkg/index.js", "package")
+    // A step answered from another of its runs would write other files than this run read: what is at the paths
+    // now, the same bytes or not, is not what the run would find.
+    const other = (label: string): ReadonlySet<string> => new Set([label === "//:install" ? "install-2" : "build-1"])
+    expect(ObservedReads.changed(record, root, undefined, undefined, other))
+      .toBe("//:install is answered from another of its runs")
+    expect(ObservedReads.changed(record, root, undefined, undefined, () => new Set()))
+      .toBe("//:install is answered from another of its runs")
+    // Among several records of the step, the one this run read under is enough.
+    const several = (label: string): ReadonlySet<string> =>
+      new Set(label === "//:install" ? ["install-2", "install-1"] : ["build-1"])
+    expect(ObservedReads.changed(record, root, undefined, undefined, several)).toBeUndefined()
     await write("node_modules/other.js", "new")
     expect(ObservedReads.changed(record, root)).toBe("node_modules gained or lost an entry")
     await Fs.rm(Path.join(root, "node_modules/other.js"))
@@ -1275,7 +1286,7 @@ describe("what a run read that an earlier step wrote", () => {
         undefined,
         answered({ "//:install": "install-2", "//:build": "build-1" })
       )
-    ).toBe("node_modules is gone")
+    ).toBe("//:install is answered from another of its runs")
     // A name a step added that the run listed and never opened is checked the same way.
     await write("src/generated.js", "generated")
     await Fs.mkdir(Path.join(root, "node_modules/pkg"), { recursive: true })
