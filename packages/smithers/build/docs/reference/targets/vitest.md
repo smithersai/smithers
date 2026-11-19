@@ -84,7 +84,10 @@ A host program is also named in the workspace's `S.Host({ bins })`.
   manager's shim starts. A program replaced in place under the same name and
   version runs the suite again.
 - The run finds each by its name in a directory that leads its `PATH`.
-- A confined run is shown each declared program and the system's own. A program
+- A confined run is shown each declared program, the runtime and package
+  manager it runs through, and the system's own programs. The runtime and the
+  package manager are shown as their own files and links, not as the `PATH`
+  directory they sit in, which holds other programs. A program
   that sits in a `PATH` directory is shown alone; one a link leads into its own
   installation, such as Zig's `lib` beside `zig`, is shown with that
   installation.

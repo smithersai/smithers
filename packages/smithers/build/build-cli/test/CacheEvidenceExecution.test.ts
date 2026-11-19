@@ -707,6 +707,26 @@ describe("a confined run", () => {
     }
   )
 
+  confinedIt("shows a suite its package manager and runtime, never the directory they sit in", async () => {
+    const { write, run, tools, logs } = await fixture({ behaviour: "beside" })
+    await write(Path.join(tools, "beside"), "#!/bin/sh\nexit 0\n", 0o755)
+    expect(await run("test")).toEqual({ test: "ran" })
+    const line = logs.find((entry) => entry.includes("not cached"))!
+    expect(line).toContain("failed when confined to its declared inputs: beside is not declared: declare it in tools")
+  })
+
+  confinedIt("places a package manager that is a link as that link, and stores the suite", async () => {
+    const { write, run, tools, logs } = await fixture()
+    // `pnpm` on the search path is a link into an installation of its own, as corepack's is.
+    const installed = Path.join(Path.dirname(Path.dirname(tools)), "manager", "dist", "pnpm.sh")
+    await write(installed, await Fs.readFile(Path.join(tools, "pnpm"), "utf8"), 0o755)
+    await Fs.rm(Path.join(tools, "pnpm"))
+    await Fs.symlink(Path.relative(tools, installed), Path.join(tools, "pnpm"))
+    expect(await run("test")).toEqual({ test: "ran" })
+    expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+    expect(await run("test")).toEqual({ test: "hit" })
+  })
+
   confinedIt("keys a suite on the program a shim starts, and shows a linked program alone", async () => {
     const { write, run, host, root, logs } = await fixture({
       tools: ["greet", "hello"],

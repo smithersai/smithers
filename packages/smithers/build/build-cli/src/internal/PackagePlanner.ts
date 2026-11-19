@@ -603,6 +603,28 @@ const declaredJavaScriptTool = async (
 }
 
 /**
+ * Each link from `path` to the file it resolves to, with its target text: a
+ * run is given these links and the file, never the directories they sit in.
+ */
+const linkChain = (path: string): ReadonlyArray<{ readonly path: string; readonly target: string }> => {
+  const links: Array<{ readonly path: string; readonly target: string }> = []
+  // The file at the end exists: its bytes were read, so the chain has no loop.
+  let current = path
+  for (;;) {
+    const target = (() => {
+      try {
+        return NodeFs.readlinkSync(current)
+      } catch {
+        return undefined
+      }
+    })()
+    if (target === undefined) return links
+    links.push({ path: current, target })
+    current = NodePath.resolve(NodePath.dirname(current), target)
+  }
+}
+
+/**
  * Identifies executable bytes and their interpreter chain for planning and revalidation.
  *
  * @category internal
@@ -3502,6 +3524,7 @@ const visit = async (
   if (toolLinks.length > 0) {
     hostTools = { links: hostTools?.links ?? [], privateLinks: [...(hostTools?.privateLinks ?? []), ...toolLinks] }
   }
+  const suiteLinks: Array<{ readonly path: string; readonly target: string }> = []
   // Native tools can live under the host's /tmp, which bubblewrap hides.
   // Admit both the launcher and its real installation, including shebang
   // interpreters. Docker gets its toolchain from the image instead.
@@ -3512,14 +3535,37 @@ const visit = async (
     }
     const identities: Array<Record<string, unknown>> = []
     collectTagged([toolchain, executable], "Executable", identities, new Set())
+    // A suite is shown no program it did not declare, so its runtime and
+    // package manager are shown as themselves, not as the `PATH` directory
+    // they sit in: `~/.local/bin` holds `pnpm` beside every other program.
+    const suite = rule === "Vitest"
+    const searched = new Set(
+      suite
+        ? String(spawnEnvironment["PATH"] ?? "").split(NodePath.delimiter)
+          .filter((entry) => NodePath.isAbsolute(entry) && NodeFs.existsSync(entry))
+          .map((entry) => NodeFs.realpathSync(entry))
+        : []
+    )
     for (const identity of identities) {
       for (const field of ["source", "path"]) {
         const path = String(identity[field])
         if (!NodePath.isAbsolute(path)) continue
+        // A name that is a link is placed as that link, and each link it
+        // leads through, so the name resolves to the file the key holds.
+        if (suite && field === "source" && path !== identity["path"]) {
+          for (const link of linkChain(path)) {
+            if (!suiteLinks.some((placed) => placed.path === link.path)) suiteLinks.push(link)
+          }
+          continue
+        }
         // npm executables often live in package/bin and import package/dist.
         // Admit that one installed package, never its sibling packages or the
         // containing node_modules tree. Use the final segment for pnpm stores.
         const installedPackage = /^(.*[\\/]node_modules[\\/](?:@[^\\/]+[\\/])?[^\\/]+)[\\/]/.exec(path)?.[1]
+        if (suite && installedPackage === undefined && searched.has(NodePath.dirname(path))) {
+          if (!externalReads.includes(path)) externalReads.push(path)
+          continue
+        }
         const directory = installedPackage ?? NodePath.dirname(path)
         // Keep the private temp root and undeclared workspace inputs hidden.
         const read = temporaryRoots.has(directory) || Path.contains(directory, context.root) ? path : directory
@@ -3543,6 +3589,10 @@ const visit = async (
       if (Path.contains(path, context.root) || Path.contains(context.root, path)) continue
       if (!externalReads.includes(path)) externalReads.push(path)
     }
+  }
+
+  if (suiteLinks.length > 0) {
+    hostTools = { links: [...(hostTools?.links ?? []), ...suiteLinks], privateLinks: hostTools?.privateLinks ?? [] }
   }
 
   const dependencyInstallations = new Set<string>()
