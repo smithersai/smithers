@@ -32,6 +32,11 @@ things differ from your CI:
 - Jobs run one after another, where your CI runs them on separate machines at
   once.
 - Starting Smithers build takes a few seconds, once per run.
+- A step whose result can be reused runs under a recording of the files it
+  reads. Each file it opens or looks for costs about 40 millionths of a
+  second, so a test run that touches 35,000 files takes about a second
+  longer. A step that reaches the network is never reused, and after its
+  first run it is not recorded.
 
 So the first run of a short CI can take longer than the baseline. The runs
 after it reuse every result whose inputs did not change.

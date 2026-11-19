@@ -13,8 +13,8 @@
  */
 
 import * as Data from "effect/Data"
-import { execFile } from "node:child_process"
-import { createHash } from "node:crypto"
+import { execFile, spawn } from "node:child_process"
+import { createHash, randomBytes } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
@@ -120,6 +120,11 @@ export const prepare = async (
 ): Promise<string> => {
   const kept = holding(root, environment)
   await remove(kept)
+  // What a build set aside to be removed, and whose removal was stopped with the build's host.
+  const beside = NodePath.dirname(kept)
+  for (const name of await Fs.readdir(beside).catch(() => [])) {
+    if (name.startsWith(`${NodePath.basename(kept)}${setAside}`)) await remove(NodePath.join(beside, name))
+  }
   await Fs.mkdir(kept, { recursive: true })
   return Fs.realpath(kept)
 }
@@ -357,6 +362,70 @@ export const remove = async (directory: string): Promise<void> => {
     await unlock(directory)
     await Fs.rm(directory, { recursive: true, force: true })
   }
+}
+
+/** What follows the name of a directory of machines that a build set aside to be removed. */
+const setAside = ".gone-"
+
+/**
+ * The command that removes a directory and everything in it, also where a
+ * tool left a directory nothing can be removed from.
+ *
+ * @category lifecycle
+ * @since 1.0.0
+ */
+export const remover = (directory: string): readonly [string, ...Array<string>] => [
+  "/bin/sh",
+  "-c",
+  "rm -rf \"$1\" 2>/dev/null || { chmod -R u+rwx \"$1\" 2>/dev/null; rm -rf \"$1\"; }",
+  "sh",
+  directory
+]
+
+/**
+ * Starts a command that nobody waits for: it goes on when this program ends.
+ * `failed` is called when the command could not be started.
+ *
+ * @category lifecycle
+ * @since 1.0.0
+ */
+export const startApart = (argv: readonly [string, ...Array<string>], failed: () => void): void => {
+  const [program, ...rest] = argv
+  const child = spawn(program, rest, { detached: true, stdio: "ignore" })
+  child.on("error", failed)
+  child.unref()
+}
+
+/**
+ * Removes the directory a build's machines were kept in, without the build
+ * waiting for it. The machines of a job hold everything the job installed
+ * and built, and removing them took a second of a run that had nothing left
+ * to do: on a CI runner, which is thrown away, a second nobody needed.
+ *
+ * The directory is renamed first, so it is gone for whatever looks next, and
+ * a command that nobody waits for removes it. Where that command is stopped
+ * with the build's host, as in a jail, the next build of the workspace
+ * removes what is left ({@link prepare}). Windows has no such command, and a
+ * directory that cannot be renamed is removed here and now.
+ *
+ * @category lifecycle
+ * @since 1.0.0
+ */
+export const discard = async (
+  directory: string,
+  start: typeof startApart = startApart,
+  platform: NodeJS.Platform = process.platform
+): Promise<void> => {
+  if (platform === "win32") return remove(directory)
+  const gone = `${directory}${setAside}${process.pid}-${randomBytes(4).toString("hex")}`
+  try {
+    await Fs.rename(directory, gone)
+  } catch {
+    return remove(directory)
+  }
+  start(remover(gone), () => {
+    void remove(gone).catch(() => undefined)
+  })
 }
 
 /** How many files are copied at once. */

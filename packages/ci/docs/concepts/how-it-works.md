@@ -253,7 +253,9 @@ date. One thing is lost: the gaps between a long step's files are not kept.
 | `package-lock.json`        | runs     | runs           | runs       |
 
 A step that reached the network, or a program outside its own run, stores
-nothing and runs every time: what those answered is on no list. An install
+nothing and runs every time: what those answered is on no list. For a day
+after such a run the step runs without the recording, which costs time and
+would store nothing. An install
 that fetches exactly what a lockfile pins is the exception, because the
 lockfile it read fixes what it fetches: `npm ci`, `pnpm install
 --frozen-lockfile`, `yarn install --immutable`, `bun install
@@ -769,7 +771,15 @@ that includes starting Smithers build and deciding what to run, once per
 commit. It leaves out what only a replay does, such as writing the file that
 lists your steps for Smithers build, which `apply` commits once. For every way it leaves
 out what happens before a CI machine is ready: starting the machine, fetching
-the repository over the network, installing tools and moving the cache.
+the repository over the network, installing tools and moving the cache. It
+also leaves out removing what a job left when its last step ended: a CI
+machine is thrown away and removes nothing.
+
+Under `--json`, each commit's normal mode says where its wall time went
+(`parts`): the checkout, the start of Smithers build, deciding what to run,
+each step's command, reading what the command read, keeping what it left and
+storing its record, each added up over the steps, with the CPU time of each
+part on Linux.
 
 Beside the wall time of each way, the report gives the CPU time its steps
 used, every process they started included, for the same run the wall time

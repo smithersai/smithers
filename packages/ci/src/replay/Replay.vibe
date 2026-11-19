@@ -366,7 +366,9 @@ export effect function settle<R>(
  * what only a replay does between the two, and the reruns that label flaky
  * targets. `last` holds what the way's steps failed with in its run before,
  * and afterwards what they failed with in this one. The CPU time of the first
- * pass's steps is counted, through `counting`, and of nothing else.
+ * pass's steps is counted, through `counting`, and of nothing else. `tidy` removes
+ * what the pass left behind, after the clock has stopped: a CI machine is
+ * thrown away, and removes nothing.
  */
 effect function measure<R>(
   checkout: void!Failure!R,
@@ -376,7 +378,8 @@ effect function measure<R>(
   reruns: number,
   last: LastFailures,
   tally: RerunTally,
-  counting: Counting = () => undefined
+  counting: Counting = () => undefined,
+  tidy: void!!R = Effect.void
 ) {
   const start = try Clock.currentTimeMillis
   try checkout
@@ -385,11 +388,17 @@ effect function measure<R>(
   const equipped = try Clock.currentTimeMillis
   const used: CpuBucket = { ms: 0, seen: false }
   counting(used)
-  const first = try ensuring(execute(targets), sync(() => counting(undefined)))
-  const wallMs = (try Clock.currentTimeMillis) - equipped + (checkedOut - start)
-  const results = try settle(execute, first, reruns, first.length, last, tally)
+  const pass = try ensuring(
+    effect {
+      const first = try ensuring(execute(targets), sync(() => counting(undefined)))
+      const wallMs = (try Clock.currentTimeMillis) - equipped + (checkedOut - start)
+      return { first, wallMs }
+    },
+    tidy
+  )
+  const results = try ensuring(settle(execute, pass.first, reruns, pass.first.length, last, tally), tidy)
   remember(last, results)
-  return { results, wallMs, cpuMs: usedBy(used), checkoutMs: checkedOut - start } satisfies Measured
+  return { results, wallMs: pass.wallMs, cpuMs: usedBy(used), checkoutMs: checkedOut - start } satisfies Measured
 }
 
 /**
@@ -931,9 +940,14 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       wanted: ReadonlySet<string> | undefined,
       way: Confined,
       store: string,
-      given: Readonly<Record<string, string>>
+      given: Readonly<Record<string, string>>,
+      later: Array<Scope.Closeable> | undefined
     ) {
-      return try scoped(effect {
+      // The job's checkout, home and temporary directory are removed when its last step ends, or, for a run that
+      // is timed, when the caller says: after its clock has stopped.
+      const own = try Scope.make()
+      if (later !== undefined) later.push(own)
+      const steps = Scope.provide(effect {
         // A job is a machine: its home and its temporary directory are its own, and gone when it ends.
         const place = try orFail(machine(way, name), "could not make the home of a job")
         const directory = try orFail(fresh(path.join(work, `${path.basename(way.home)}-copy-${name}`)), "could not make a directory")
@@ -977,10 +991,21 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           failed = step.label
         }
         return wanted === undefined ? results : results.filter((result) => wanted.has(result.label))
-      })
+      }, own)
+      return try (later === undefined ? ensuring(steps, Scope.close(own, Exit.void)) : steps)
     }
 
-    const baseline = (commit: string, own: Prepared, place: Confined = places.baseline): Execute<Host> => (targets) => effect {
+    /** Removes what the jobs of a timed baseline run left: each job's checkout, home and temporary directory. */
+    const removing = (later: Array<Scope.Closeable>) => effect {
+      for (const own of later.splice(0)) try Scope.close(own, Exit.void)
+    }
+
+    const baseline = (
+      commit: string,
+      own: Prepared,
+      place: Confined = places.baseline,
+      later?: Array<Scope.Closeable>
+    ): Execute<Host> => (targets) => effect {
       const wanted = targets === undefined ? undefined : new Set(targets)
       const chosen = stationsOf(own.units, wanted)
       const store = place === places.trial ? keptTrial : kept
@@ -999,7 +1024,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const results: Array<TargetResult> = []
         for concurrent (const sequence of station.runs) {
           if (needsPassed) {
-            results.push(...(try limit.withPermits(1)(runSequence(sequence, names.get(sequence) as string, commit, wanted, place, store, given))))
+            results.push(...(try limit.withPermits(1)(runSequence(sequence, names.get(sequence) as string, commit, wanted, place, store, given, later))))
           } else {
             const waiting = sequence.flatMap((unit) => labelsOf(unit, wanted))
             results.push(...waiting.map((label) => blocked(label, station.needs.join(", "))))
@@ -1188,15 +1213,17 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       }
       const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
       try progress.say(`${at} baseline`)
+      const left: Array<Scope.Closeable> = []
       const base = try measure(
         Effect.void,
         Effect.void,
-        baseline(commit, own),
+        baseline(commit, own, places.baseline, left),
         undefined,
         reruns,
         last.baseline,
         tally,
-        counting
+        counting,
+        removing(left)
       )
       const baseRecord = recordOf(base.results, commit, base.wallMs)
       baselines.push(baseRecord)

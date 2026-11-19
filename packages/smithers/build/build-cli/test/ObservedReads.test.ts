@@ -747,6 +747,35 @@ describe("reading a trace", () => {
     expect([...wrote.changed]).toEqual(["/w/unknown"])
     expect(paths(wrote.made)).toEqual([])
   })
+
+  it("reads every escape a tracer writes, and refuses a path with one it cannot read", () => {
+    // A character the tracer left as it is beside an escape, and an octal escape of one digit in the middle and
+    // at the end.
+    const short = read("100 stat(\"/w/\u00e9\\\\\\1z\\7\", {st_mode=S_IFREG|0644, ...}) = 0")
+    expect(short.refusals).toEqual([])
+    expect(paths(short.found)).toEqual(["/w/\u00e9\\\u0001z\u0007"])
+    // A string with no escape is itself.
+    expect(paths(read("100 stat(\"/w/plain, name\", {st_mode=S_IFREG|0644, ...}) = 0").found))
+      .toEqual(["/w/plain, name"])
+    // No escape starts with these, and a string cannot end in the middle of one.
+    for (const bad of ["\\q", "\\xZZ", "\\x4", "\\"]) {
+      const argument = `"/w/a${bad}"`
+      expect(read(`100 chdir(${argument}) = 0`).refusals)
+        .toEqual([`its trace holds a path that cannot be read: ${argument}`])
+    }
+  })
+
+  it("reads a descriptor's path to the mark that closes it, whatever the path holds", () => {
+    // A path may hold the mark itself, and the mark before a comma.
+    const trace = read([
+      "100 openat(3</w/a>b>,c>, \"x\", O_RDONLY) = 4</w/a>b>,c/x>",
+      "100 getdents64(4</w/dir>>, 0x55d0 /* 3 entries */, 32768) = 80",
+      "100 fchdir(5</w/last>)                 = 0"
+    ].join("\n"))
+    expect(trace.refusals).toEqual([])
+    expect(paths(trace.found)).toContain("/w/a>b>,c/x")
+    expect(paths(trace.listed)).toEqual(["/w/dir>"])
+  })
 })
 
 describe("measuring", () => {

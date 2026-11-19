@@ -119,6 +119,69 @@ describe("declarationIdentity", () => {
   })
 })
 
+describe("a remembered reach outside the run", () => {
+  it("answers with its reason for a day, and with nothing after it", async () => {
+    const root = await workspace()
+    const identity = "b".repeat(64)
+    const reason = "it opened a network connection (npm to 104.16.4.34 port 443)"
+    expect(await CacheEvidence.reachedOutside(root, ".flows", identity)).toBeUndefined()
+    const at = 1_800_000_000_000
+    await CacheEvidence.rememberReachedOutside(root, ".flows", identity, { label: "//:install", reason }, at)
+    const file = CacheEvidence.outsidePath(root, ".flows", identity)
+    expect(file).toBe(Path.join(root, ".flows", "evidence", `${identity}.outside.json`))
+    expect(JSON.parse(await Fs.readFile(file, "utf8"))).toEqual({
+      format: "smthrs-reached-outside/1",
+      at,
+      label: "//:install",
+      reason
+    })
+    expect(await CacheEvidence.reachedOutside(root, ".flows", identity, at)).toBe(reason)
+    expect(await CacheEvidence.reachedOutside(root, ".flows", identity, at + CacheEvidence.attemptMemoryMs - 1))
+      .toBe(reason)
+    expect(await CacheEvidence.reachedOutside(root, ".flows", identity, at + CacheEvidence.attemptMemoryMs))
+      .toBeUndefined()
+    // A record from the future is a clock that moved, not a fact.
+    expect(await CacheEvidence.reachedOutside(root, ".flows", identity, at - 1)).toBeUndefined()
+    // It is no failed attempt, and a failed attempt is no reach outside.
+    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, at)).toBe(false)
+    // The host clock: remembered now, it answers now, and a later remembering replaces it.
+    await CacheEvidence.rememberReachedOutside(root, ".flows", identity, { label: "//:install", reason: "another" })
+    expect(await CacheEvidence.reachedOutside(root, ".flows", identity)).toBe("another")
+  })
+
+  it("answers with nothing for a record that is not one", async () => {
+    const root = await workspace()
+    const identity = "c".repeat(64)
+    const file = CacheEvidence.outsidePath(root, ".flows", identity)
+    await Fs.mkdir(Path.dirname(file), { recursive: true })
+    const at = 1_800_000_000_000
+    for (
+      const text of [
+        "not json",
+        "null",
+        "7",
+        JSON.stringify({ format: "smthrs-confined-attempt/1", at, reason: "r" }),
+        JSON.stringify({ format: "smthrs-reached-outside/1", at: "now", reason: "r" }),
+        JSON.stringify({ format: "smthrs-reached-outside/1", at })
+      ]
+    ) {
+      await Fs.writeFile(file, text)
+      expect(await CacheEvidence.reachedOutside(root, ".flows", identity, at)).toBeUndefined()
+    }
+  })
+
+  it("fails when the place it is remembered cannot be written, and leaves no part of a record", async () => {
+    const root = await workspace()
+    const identity = "d".repeat(64)
+    // A directory stands where the record goes.
+    await Fs.mkdir(CacheEvidence.outsidePath(root, ".flows", identity), { recursive: true })
+    await expect(
+      CacheEvidence.rememberReachedOutside(root, ".flows", identity, { label: "//:install", reason: "r" })
+    ).rejects.toThrow()
+    expect(await Fs.readdir(Path.join(root, ".flows", "evidence"))).toEqual([`${identity}.outside.json`])
+  })
+})
+
 describe("a remembered failed attempt", () => {
   it("answers for a day and then lets the run be attempted again", async () => {
     const root = await workspace()

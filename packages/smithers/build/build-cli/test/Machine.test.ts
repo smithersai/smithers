@@ -94,6 +94,67 @@ describe("where machines are kept", () => {
     expect(await Machine.prepare("/work/repo", environment)).toBe(kept)
     expect(await Fs.readdir(kept)).toEqual([])
   })
+
+  posixIt("is set aside when a build ends, and removed by a command the build does not wait for", async () => {
+    const base = await directory("kept")
+    const environment = { [Machine.holdingVariable]: Path.join(base, "machines") }
+    const kept = await Machine.prepare("/work/repo", environment)
+    await write(kept, "job/home/go/pkg/mod/x/file", "locked\n")
+    // A directory nothing can be removed from, as Go leaves its module cache.
+    await Fs.chmod(Path.join(kept, "job/home/go/pkg/mod/x"), 0o555)
+    const started: Array<ReadonlyArray<string>> = []
+    await Machine.discard(kept, (argv) => {
+      started.push(argv)
+    })
+    // It is gone at once for whatever looks next; what removes it has its new name.
+    expect(NodeFs.existsSync(kept)).toBe(false)
+    const [aside] = await Fs.readdir(Path.dirname(kept))
+    expect(aside).toMatch(new RegExp(`^${Path.basename(kept)}\\.gone-${process.pid}-[0-9a-f]{8}$`))
+    expect(started).toEqual([Machine.remover(Path.join(Path.dirname(kept), aside!))])
+    // The command removes it, locked directory and all, with nobody waiting.
+    Machine.startApart(started[0] as [string, ...Array<string>], () => undefined)
+    await expect.poll(() => Fs.readdir(Path.dirname(kept)), { timeout: 30_000 }).toEqual([])
+  })
+
+  posixIt("is removed by the next build where the command that removes it was stopped", async () => {
+    const base = await directory("kept")
+    const environment = { [Machine.holdingVariable]: Path.join(base, "machines") }
+    const kept = await Machine.prepare("/work/repo", environment)
+    await write(kept, "job/home/left", "left\n")
+    // The command never runs, as in a jail that ends with the build.
+    await Machine.discard(kept, () => undefined)
+    // Another workspace's machines, and its leftovers, are not this build's to remove.
+    const other = await Machine.prepare("/work/other", environment)
+    await write(`${other}.gone-1-00000000`, "job/home/left", "left\n")
+    expect(await Fs.readdir(Path.dirname(kept))).toHaveLength(3)
+    expect(await Machine.prepare("/work/repo", environment)).toBe(kept)
+    expect((await Fs.readdir(Path.dirname(kept))).sort()).toEqual(
+      [Path.basename(kept), Path.basename(other), `${Path.basename(other)}.gone-1-00000000`].sort()
+    )
+  })
+
+  posixIt("is removed here and now where no command can remove it apart", async () => {
+    const base = await directory("kept")
+    const environment = { [Machine.holdingVariable]: Path.join(base, "machines") }
+    // Windows has no such command.
+    const kept = await Machine.prepare("/work/repo", environment)
+    await write(kept, "job/home/left", "left\n")
+    const never = (): void => {
+      throw new Error("no command is started")
+    }
+    await Machine.discard(kept, never, "win32")
+    expect(await Fs.readdir(Path.dirname(kept))).toEqual([])
+    // A directory that is not there cannot be renamed, and there is nothing to remove.
+    await Machine.discard(kept, never)
+    expect(await Fs.readdir(Path.dirname(kept))).toEqual([])
+    // A command that cannot be started says so, and the directory is removed here.
+    await write(kept, "job/home/left", "left\n")
+    await Machine.discard(
+      kept,
+      (argv, failed) => Machine.startApart(["/nonexistent-smithers-remover", ...argv], failed)
+    )
+    await expect.poll(() => Fs.readdir(Path.dirname(kept)), { timeout: 30_000 }).toEqual([])
+  })
 })
 
 describe("a fresh checkout", () => {

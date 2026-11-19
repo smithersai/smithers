@@ -9,10 +9,11 @@ export const hour = 3_600_000
 /**
  * Runs `work` on the machine's clock, moved ahead by an hour at each
  * `moment`: each time the replay prepares a copy for the generated targets
- * (`prepare`), or each time it starts `git checkout` (`checkout`). A wall
- * time that holds the moment is an hour longer for each one.
+ * (`prepare`), each time it starts `git checkout` (`checkout`), or each time
+ * it makes a job's directories removable before it removes them (`tidy`). A
+ * wall time that holds the moment is an hour longer for each one.
  */
-export const jumping = <A, E, R>(moment: "prepare" | "checkout", work: A!E!R) => effect {
+export const jumping = <A, E, R>(moment: "prepare" | "checkout" | "tidy", work: A!E!R) => effect {
   const live = try Clock.Clock
   const real = try ChildProcessSpawner
   let ahead = 0
@@ -30,6 +31,7 @@ export const jumping = <A, E, R>(moment: "prepare" | "checkout", work: A!E!R) =>
     const words = process._tag === "StandardCommand" ? [process.command, ...process.args.map(String)] : []
     const checkout = words[words.indexOf("git") + 1] === "checkout"
     if (moment === "checkout" && checkout) ahead += hour
+    if (moment === "tidy" && words[0] === "chmod") ahead += hour
     return real.spawn(process)
   })
   provide Clock.Clock = clock, ChildProcessSpawner = processes, Options = {

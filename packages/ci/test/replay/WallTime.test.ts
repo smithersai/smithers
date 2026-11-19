@@ -18,7 +18,7 @@ afterAll(() => {
   for (const root of created) rmSync(root, { recursive: true, force: true })
 })
 
-const replay = (moment: "prepare" | "checkout"): Promise<ReplayReport> => {
+const replay = (moment: "prepare" | "checkout" | "tidy"): Promise<ReplayReport> => {
   const root = makeSmallRepository([job("a", "sh a.sh")])
   created.push(root)
   const chosen = parts("none") as unknown as ReplayParts<never>
@@ -101,6 +101,16 @@ describe("the wall time of one commit", () => {
     expect(commit?.normal.wallMs).toBeLessThan(hour)
     expect(commit?.fast?.wallMs).toBeLessThan(hour)
     expect(commit?.baseline.wallMs).toBeLessThan(hour)
+  }, 600_000)
+
+  it("leaves out removing what a job left: a CI machine is thrown away", async () => {
+    // The clock jumps an hour each time a job's checkout, home and temporary directory are made ready to remove.
+    const commit = (await replay("tidy")).commits[0]
+    expect(commit?.baseline.ok).toBe(true)
+    expect(commit?.baseline.wallMs).toBeGreaterThan(0)
+    expect(commit?.baseline.wallMs).toBeLessThan(hour)
+    expect(commit?.normal.wallMs).toBeLessThan(hour)
+    expect(commit?.fast?.wallMs).toBeLessThan(hour)
   }, 600_000)
 
   it("holds the checkout, in the baseline and in each mode", async () => {

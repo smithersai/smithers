@@ -22,6 +22,17 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Fifteenth round, 2026-11-19.** A run says where its time went (`sci-overhead`).
+
+- **`RunRecord.Parts`, `TargetResult.parts`, `RunRecord.parts`, `RunTotals.parts`** (added, all optional): wall time
+  in milliseconds by part (`ms`), and CPU time the same way (`cpuMs`) where the machine's processes can be read.
+  Smithers build times the parts of a target's run (`machine`, `putBack`, `check`, `step`, `reads`, `keep`, `store`)
+  and of the run itself (`start`, `plan`, `answer`, `machinesRemoved`) and writes them with `--results-file`. A replay
+  adds `checkout` and puts the sum of each part, with `rest`, on every commit's normal mode under `--json`.
+- Not contracts, and changed with them: a baseline job's checkout, home and temporary directory are removed after
+  the run's clock has stopped, and Smithers build no longer waits for the machines it made to be removed: a CI
+  machine removes neither.
+
 **Fourteenth round, 2026-11-18.** Nothing of Smithers CI is in the checkout a step sees (`sci-clean-tree`).
 
 - **`Command.applyIgnores` is empty.** `apply` adds no line to `.gitignore`: Smithers build keeps its cache outside

@@ -919,12 +919,13 @@ const executeWith = (
     const protects = (): boolean =>
       (protection ??= { refusal: services.writeProtection(services.sandboxHost()) }).refusal === undefined
     const byLabel = new Map(planned.workList.map((node) => [node.label, node]))
-    // The machines of this build are kept in one directory, emptied before the first target runs and removed when
-    // the build ends: a machine starts with nothing an earlier build left.
+    // The machines of this build are kept in one directory, emptied before the first target runs and set aside to
+    // be removed when the build ends: a machine starts with nothing an earlier build left, and the build does not
+    // wait for what it made to be removed.
     const machinesKept = planned.workList.some((node) => node.machine !== undefined)
       ? yield* Effect.acquireRelease(
         joined(() => Machine.prepare(NodeFs.realpathSync(root), hostEnvironment)),
-        (kept) => timed(undefined, "machinesRemoved", joined(() => Machine.remove(kept)).pipe(Effect.ignore))
+        (kept) => timed(undefined, "machinesRemoved", joined(() => Machine.discard(kept)).pipe(Effect.ignore))
       )
       : undefined
     /** The machines made so far, by name, and the ones being made. */
