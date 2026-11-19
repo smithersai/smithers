@@ -140,22 +140,16 @@ describe("packages/smithers/build prose", () => {
       expect(page, file).toContain("caching.md")
       expect(page, file).not.toMatch(/become cacheable under a declared environment|planner overrides/)
     }
-    for (
-      const target of [
-        "ts-build",
-        "dts-build",
-        "typecheck",
-        "vitest",
-        "vitest-coverage",
-        "biome-check",
-        "deps-lint",
-        "package-lint",
-        "es-lint"
-      ]
-    ) {
-      const page = read(`docs/reference/targets/${target}.md`)
-      const row = page.split("\n").find((line) => /^\|\s*Cacheable\s*\|/.test(line))
-      expect(row, target).toMatch(/^\|\s*Cacheable\s*\|\s*Never\s*\|/)
+    const cacheableRow = (target: string): string | undefined =>
+      read(`docs/reference/targets/${target}.md`).split("\n").find((line) => /^\|\s*Cacheable\s*\|/.test(line))
+    for (const target of ["ts-build", "dts-build", "vitest-coverage", "biome-check", "deps-lint", "package-lint"]) {
+      expect(cacheableRow(target), target).toMatch(/^\|\s*Cacheable\s*\|\s*Never\s*\|/)
+    }
+    // These three are reused on the evidence of a confined run, and on nothing else.
+    for (const target of ["typecheck", "vitest", "es-lint"]) {
+      const row = cacheableRow(target)
+      expect(row, target).toMatch(/after a confined run proves its reads/i)
+      expect(row, target).not.toMatch(/nix|environment/i)
     }
   })
 
