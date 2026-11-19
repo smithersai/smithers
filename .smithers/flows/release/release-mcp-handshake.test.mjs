@@ -116,19 +116,23 @@ test("every settlement kills what the server started and closes the pipes it inh
     descendants.push(pid)
     return { ...outcome, elapsed: Date.now() - started, pid }
   }
+  // Each server must start, read the request and record its descendant before
+  // its deadline. A loaded host takes over 300 ms to start Node, and a deadline
+  // that fires first leaves no descendant to check.
+  const startupMs = 5000
   // The reply settles the probe at once, while the descendant still holds the output open.
   const answered = await probe(
     "answers",
     `process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { serverInfo: { name: "fixture", version } } }) + "\\n")`,
-    5000
+    startupMs
   )
   assert.deepEqual(answered.serverInfo, { name: "fixture", version: "1.0.0" })
-  assert.ok(answered.elapsed < 5000, `settled after ${answered.elapsed} ms`)
+  assert.ok(answered.elapsed < startupMs, `settled after ${answered.elapsed} ms`)
   assert.equal(await exited(answered.pid), true)
   // A server that exits without answering leaves the descendant on the pipes:
   // the deadline ends the probe, with the server's last words.
-  const gone = await probe("exits", `console.error("gone"); process.exit(1)`, 300)
-  assert.match(gone.error.message, /timed out after 300 ms[\s\S]*gone/)
+  const gone = await probe("exits", `console.error("gone"); process.exit(1)`, startupMs)
+  assert.match(gone.error.message, new RegExp(`timed out after ${startupMs} ms[\\s\\S]*gone`))
   assert.equal(await exited(gone.pid), true)
 })
 
