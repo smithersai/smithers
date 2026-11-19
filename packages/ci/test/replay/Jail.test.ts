@@ -508,9 +508,16 @@ describe("confine", () => {
     writeFileSync(join(source, "pnpm-workspace.yaml"), "packages: []\n")
     const alone = join(owner.home, "alone.mjs")
     writeFileSync(alone, "")
+    // The machine's temporary directory, with a bunx install in it, and the `node_modules/.bin` that npx puts on
+    // `PATH` for a directory above the one it starts in, which is not there.
+    const machine = directory("machine")
+    const bunx = join(machine, "bunx-1000-smithers-ci@latest", "node_modules", "@smthrs", "cli", "bin", "smithers.mjs")
+    mkdirSync(dirname(bunx), { recursive: true })
+    writeFileSync(bunx, "")
     const programs = [
       "node",
-      "/tmp/bunx-1000-smithers-ci@latest/node_modules/@smthrs/cli/bin/smithers.mjs",
+      bunx,
+      join(machine, "node_modules", ".bin"),
       installed,
       built,
       alone,
@@ -524,7 +531,7 @@ describe("confine", () => {
       home: owner.home,
       hidden: [owner.runtime, "/run/user/none"],
       daemons: [],
-      tmp: "/tmp/of-the-machine",
+      tmp: machine,
       caches: [cache, join(cache, "none")],
       tools: toolsOf(owner),
       // The kernel of this machine keeps what a perl starts from the abstract sockets outside it.
@@ -573,8 +580,8 @@ describe("confine", () => {
           { path: owner.runtime, directory: true }
         ],
         tmp: join(work, "tmp", way),
-        temporary: ["/tmp", "/tmp/of-the-machine"],
-        visible: ["/tmp/bunx-1000-smithers-ci@latest", cache, work],
+        temporary: ["/tmp", machine],
+        visible: [join(machine, "bunx-1000-smithers-ci@latest"), cache, work],
         filter: join(work, "keyring-filter"),
         scope: "/usr/bin/perl"
       })

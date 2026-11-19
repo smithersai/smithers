@@ -56,9 +56,18 @@ const toolDirectory = (root, tools) => {
   return directory
 }
 
+/**
+ * bubblewrap where this machine has it, so a replay is jailed as on a GitHub runner, whose /usr/bin holds it. A
+ * machine that keeps it elsewhere, as ~/.local/bin, would otherwise replay unjailed and pass what a runner refuses.
+ */
+const jailTools = () => {
+  const found = spawnSync("which", ["bwrap"], { encoding: "utf8" }).stdout.trim()
+  return found === "" ? {} : { bwrap: realpathSync(found) }
+}
+
 const nodeTools = () => {
   const bin = dirname(process.execPath)
-  return { node: process.execPath, npm: join(bin, "npm"), npx: join(bin, "npx") }
+  return { node: process.execPath, npm: join(bin, "npm"), npx: join(bin, "npx"), ...jailTools() }
 }
 
 const bunTools = () => ({ bun: onPath("bun"), bunx: onPath("bun") })

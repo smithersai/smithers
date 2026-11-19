@@ -285,7 +285,13 @@ export effect function confine(
   for (const cache of found.caches) {
     if (try fs.exists(cache)) caches.push(cache)
   }
-  const visible = [...temporaryRoots(programs, temporary), ...caches, work]
+  // bubblewrap refuses to keep in sight a path that is not there. npx puts the `node_modules/.bin` of every
+  // directory above the one it starts in on `PATH`, so a replay started under /tmp names /tmp/node_modules.
+  const roots: Array<string> = []
+  for (const root of temporaryRoots(programs, temporary)) {
+    if (try fs.exists(root)) roots.push(root)
+  }
+  const visible = [...roots, ...caches, work]
   // The filter that refuses a step the keys of the person's session, where bubblewrap reads it and no step writes it.
   const filter = path.join(work, "keyring-filter")
   try fs.writeFile(filter, keyringFilter())
