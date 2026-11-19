@@ -517,6 +517,8 @@ jobs:
           node .smithers/flows/release/smoke-release.mjs "$PACK_DIR"
           # `bunx smithers-ci` is the first command on its page: run it from the tarball.
           node packages/ci/test/package/tarball.e2e.mjs "$PACK_DIR"
+          # An installed `smthrs` runs as one file: prove it behaves as the separate modules do, and how fast it starts.
+          node packages/smithers/test/published-layout.e2e.mjs "$PACK_DIR"
           cp "$PACK_DIR/smoke-evidence.json" "$SMOKE_EVIDENCE_DIR/node26.json"
       - name: Restore and verify archived release candidate
         if: env.CANDIDATE_RUN_ID != '' && matrix.lane != 'gates'
