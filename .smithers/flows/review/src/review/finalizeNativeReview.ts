@@ -93,7 +93,9 @@ export function finalizeNativeReview(
       file: file.path,
       type: "diff_truncated",
       message:
-        `File review prompt was truncated at ${reviewDiffLimit} of ${file.diff.length} diff characters; characters ${reviewDiffLimit + 1}-${file.diff.length} were not reviewed.`
+        `File review prompt was truncated at ${reviewDiffLimit} of ${file.diff.length} diff characters; characters ${
+          reviewDiffLimit + 1
+        }-${file.diff.length} were not reviewed.`
     })
   }
 

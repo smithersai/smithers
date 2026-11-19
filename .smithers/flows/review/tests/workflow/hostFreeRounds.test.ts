@@ -140,7 +140,7 @@ test("a truncated comparison stays incomplete after an empty reviewer answer", a
       status: "added",
       additions: 2,
       deletions: 0,
-      patch: '@@ -0,0 +1,2 @@\n+' + "x".repeat(66_000) + '\n+throw new Error("BUG_AFTER_LIMIT");'
+      patch: "@@ -0,0 +1,2 @@\n+" + "x".repeat(66_000) + "\n+throw new Error(\"BUG_AFTER_LIMIT\");"
     }, {
       filename: "src/small.ts",
       status: "added",

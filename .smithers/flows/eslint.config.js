@@ -3,12 +3,16 @@ import importPlugin from "eslint-plugin-import"
 import unicorn from "eslint-plugin-unicorn"
 import tseslint from "typescript-eslint"
 import { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from "../../eslint.invariants.js"
+import { vibeDeclarations } from "../../eslint.jsdoc.js"
 
 export default tseslint.config(
   {
     // The review seeded-bug suite is its own workspace member; its corpus is
     // deliberately defective input whose exact text is what it measures.
+    // VibeLang writes untracked declarations beside its sources, such as
+    // vibelang-fuzz/main.d.vibe.ts, whenever a run compiles them.
     ignores: [
+      ...vibeDeclarations(import.meta.dirname),
       "**/dist",
       "**/build",
       "**/coverage",

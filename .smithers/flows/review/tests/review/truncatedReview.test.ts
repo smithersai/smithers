@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { finalizeNativeReview } from "../../src/review/finalizeNativeReview.ts"
 import { preparedReviewOf } from "../../src/review/preparedReviewOf.ts"
-import { reviewVerdict } from "../../src/review/reviewVerdict.ts"
 import type { ReviewSnapshot } from "../../src/review/reviewSnapshot.ts"
+import { reviewVerdict } from "../../src/review/reviewVerdict.ts"
 import type { NativeReviewAgentOutput } from "../../src/workflow/nativeReviewAgentOutputSchema.ts"
 import { normalizeOpenCodeReviewInput } from "../../src/workflow/normalizeOpenCodeReviewInput.ts"
 import { diffRecordFixture } from "../support/diffRecordFixture.ts"
@@ -17,7 +17,7 @@ const emptyOutput: NativeReviewAgentOutput = {
 
 function snapshotOf(length: number, kind = "modified"): ReviewSnapshot {
   const prefix = "--- a/src/large.ts\n+++ b/src/large.ts\n@@ -1 +1 @@\n-export const old = 1;\n+"
-  const tail = '\n+throw new Error("BUG_AFTER_LIMIT");\n'
+  const tail = "\n+throw new Error(\"BUG_AFTER_LIMIT\");\n"
   const diff = prefix + "x".repeat(length - prefix.length - tail.length) + tail
   return {
     input: normalizeOpenCodeReviewInput({}),
@@ -69,7 +69,8 @@ describe("truncated file review coverage", () => {
     expect(review.warnings).toContainEqual({
       file: "src/large.ts",
       type: "diff_truncated",
-      message: `File review prompt was truncated at 60000 of ${length} diff characters; characters 60001-${length} were not reviewed.`
+      message:
+        `File review prompt was truncated at 60000 of ${length} diff characters; characters 60001-${length} were not reviewed.`
     })
     if (length > 60_100) expect(prepared.prompt.files[0]!.prompt).not.toContain("BUG_AFTER_LIMIT")
   })

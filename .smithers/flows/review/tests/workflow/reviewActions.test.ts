@@ -145,7 +145,8 @@ test("render action carries failed review diagnostics into HTML", async () => {
 
 test("render action marks a truncated file as a coverage gap", async () => {
   const out = outputPath()
-  const reason = "File review prompt was truncated at 60000 of 66134 diff characters; characters 60001-66134 were not reviewed."
+  const reason =
+    "File review prompt was truncated at 60000 of 66134 diff characters; characters 60001-66134 were not reviewed."
   const result = await render(out, {
     ...review,
     status: "completed_with_warnings",

@@ -73,7 +73,11 @@ const suite = Smithers.NodeTest({
 // Lints flow sources; suites and fixtures are formatted, not linted.
 const lint = Smithers.EsLint({
   sources: [Smithers.glob("**/*.ts")],
-  configs: [Smithers.file("eslint.config.js"), Smithers.file("//eslint.invariants.js")],
+  configs: [
+    Smithers.file("eslint.config.js"),
+    Smithers.file("//eslint.invariants.js"),
+    Smithers.file("//eslint.jsdoc.js")
+  ],
   deps: [],
   maxWarnings: 0,
   fix: false,
