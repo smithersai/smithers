@@ -222,7 +222,8 @@ it("the release all-adapter consumer shares the tested Effect runtime", { timeou
   assert.equal(profiles.length, 2)
   for (const profile of profiles) {
     assert.equal(profile.effectCopies.length, 1)
-    for (const name of ["@effect/sql-pg", "@effect/sql-sqlite-node", "@effect/sql-sqlite-bun", "@effect/vitest"]) {
+    // `@smthrs/database` bundles its Bun SQLite client, so no package peers `@effect/sql-sqlite-bun`.
+    for (const name of ["@effect/sql-pg", "@effect/sql-sqlite-node", "@effect/vitest"]) {
       assert.ok(profile.effectFamily.some(entry => entry.name === name && entry.version === EXPECTED_EFFECT_VERSION), name)
     }
   }
