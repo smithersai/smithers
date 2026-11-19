@@ -342,22 +342,32 @@ gap between a page and the build is work for the build.
 ### A gain on an outside repository (2026-11-19, lane `sci-outside-gain`)
 
 Ship blocker 6 was: no outside repository shows CI getting faster with every result the same
-(`pallets/click`: 0.51 times, 0 steps reused in 6 commits). On `main` at `eccdddf318b7`:
+(`pallets/click`: 0.51 times, 0 steps reused in 6 commits). On `main` at `ca7eea29b4b9`:
 
 | Repository | Head | Commits | Speedup | Mismatches | Steps reused, per commit | Baseline / normal, per commit |
 | --- | --- | ---: | ---: | ---: | --- | --- |
-| `tj/commander.js` | `3431f07` | 4 | 2.55 | 0 | 16 of 25 at each | 119/47, 98/38, 101/43, 130/48 s |
+| `tj/commander.js`, load 18 to 38 | `3431f07` | 4 | 4.55 | 0 | 18 of 25 at each | 70/14, 66/16, 73/16, 74/16 s |
+| the same, as the third reviewer's condition runs it, load 34 to 144 | `3431f07` | 4 | 6.36 | 0 | 18 of 25 at each | 126/20, 111/20, 114/17, 99/14 s |
+| `cheeriojs/cheerio`, load 22 to 108 | `13b09c0` | 4 | 1.27 | 0 | 4, 2, 2, 2 of 15 | 219/141, 203/196, 189/145, 166/132 s |
 
     cd <a clone of tj/commander.js at 3431f07>
     bash ~/ci/quiet-run smithers-ci --commits 4 --json
 
-Measured on nyc-01 under `quiet-run` at load 82 to 114. The four commits change `CHANGELOG.md` or a workflow
-that is not replayed, so no step read what changed. The 9 steps that still run: six that restore or save
-`setup-node`'s cache (a cache step always runs), two of the three installs (below), and the target that holds
-the repository's files. Processor time of the steps: 721 s in the baseline, 220 s in normal mode. The run
-before the first counted commit took 194 s as the baseline and 473 s in normal mode, and is in no number.
+Measured on nyc-01 under `quiet-run`. commander's four commits change `CHANGELOG.md` or a workflow that is not
+replayed, so no step read what changed. The 7 steps that still run: six that restore or save `setup-node`'s
+cache (a cache step always runs) and the target that holds the repository's files. Processor time of the
+steps: 502 s in the baseline, 76 s in normal mode. The run before the first counted commit took 107 s as the
+baseline and 239 s in normal mode, and is in no number. The speedup moves with the load, because the baseline
+runs every step and normal mode runs seven short ones; the count of reused steps does not move. A control run
+of `eccdddf318b7` at the same time as the reviewer's condition gave 2.09 with 16 of 25.
 
-It was 0.94 with 3 of 36 steps reused at `5e321eee8131`, and 0.57 with 0 of 25 one day earlier. Each row is a
+cheerio's last three commits bump a dependency of its website (`website/package-lock.json`), so the website's
+install and what reads it run, rightly. At the fourth, three steps ran for `.git/HEAD changed` (`npm ci` runs
+husky, which asks git for the commit), one is never stored (`it opened a network connection (node to 8.8.8.8
+port 53)`), and one ran for `~/.config/astro/config.json changed`, Astro's own settings file.
+
+It was 2.55 with 16 of 25 at `eccdddf318b7`, 0.94 with 3 of 36 steps reused at `5e321eee8131`, and 0.57 with
+0 of 25 one day earlier. Each row is a
 reason a step ran again, read from the run's own record (`notReused` or `notStored` on the step's row):
 
 | The record said | What it was | Fix |
@@ -369,7 +379,8 @@ reason a step ran again, read from the run's own record (`notReused` or `notStor
 | `its trace holds a line that cannot be read: ???( <detached ...>` | a Go program ends while its threads ask about files | lines for calls a killed thread never made are left out (`9cf758c26817`) |
 | `/tmp/smithers-ci-runner-<uid>/<job>/temp changed while it ran` | a job's first step removes its old state directory and makes it again | a directory the run itself made again is the run's own change (`616db69f2b57`) |
 | `$TMPDIR/node-compile-cache/... changed`, `~/.config/go/telemetry/...count changed` | Node's compiled code and Go's run counters, a tool's own bookkeeping | left out of what a step read (`7c9a9c051eeb`) |
-| `~/.npm/_cacache/index-v5/... changed` | `npm ci` rewrites entries of its own cache index | what a locked install writes outside the workspace is no input (`9ed28e097db9`) |
+| `~/.npm/_cacache/index-v5/... changed` | `npm ci` rewrites entries of its own cache index | what a locked install writes outside the workspace is no input (`9ed28e097db9`), also where the home lies in a temporary directory, as a replay's does (`d673d8362485`) |
+| `.zig-cache/h/<digest> is gone` | `zig build` opens a manifest with `O_RDWR\|O_CREAT` in a cache directory it just made, and the record took it for a file the run read | a file opened to read or make, in a directory the run made, is the run's own (`ca7eea29b4b9`) |
 | exit 4, `//:_repository does not support the lint verb` | the run with the files `apply` writes asked for a group of files as if it were a step; every repository with more than 32 steps ended with no report | it asks for steps only (`eccdddf318b7`) |
 
 Three results would have been wrong. Each was found by a test before a number was reported:
@@ -383,18 +394,32 @@ Three results would have been wrong. Each was found by a test before a number wa
 - **A cache step answered from its record.** A step that restores a cache finds its store in the build's own
   cache directory, which no record holds. It always runs (`7c9a9c051eeb`).
 
-What is open on commander.js: two of its three installs run at every commit
-(`notReused: ~/.npm/_cacache/index-v5/03/af/b652af7d... changed` on the Node 24 and Node 26 variants). The
-entry is the index line of one package's tarball; `npm ci` does not write it in a run by hand. With all three
-reused the same replay gave 3.82 and 3.92 on the generator change before a job became a machine.
+The third ship review found two more in this piece, both fixed in Smithers build before the numbers above:
+
+- **The CI `apply` writes did not reuse what the replay counted.** On a runner every step said `runs again: a
+  step after it runs, and may read what this one leaves`. The stored record named the cause: `kept.outside`
+  held what the step left in its machine's temporary directory
+  (`/smthrs-machine/tmp/smithers-ci-runner-<uid>/<job>/steps/-3/outcome`), and kept files are put back only
+  while every such path is as the run left it. A file was kept only in the workspace or under `/tmp`. A replay
+  keeps its machines under `/tmp`; a runner keeps them under `~/.cache/smthrs/machines`, where a fresh machine
+  never has the file. What a step left in its machine's home and temporary directory is now kept and put back
+  wherever machines are kept, and a declined archive says why (`1a7aee7ae0aa`). The generated workflow's
+  command, run as a runner runs it: ran ran ran, then hit hit ran at a commit only the test reads.
+- **A reused build was put back older than its sources.** `make out`, then `make -q out`: the second step
+  failed in normal mode and passes in CI, because `out` came back with the time of the run it was kept from.
+  Files are now put back as if the step had just run: the newest at the time of the putting back, every one
+  newer than what was there before, in the order the step wrote them (`6cb8b0f38f9d`). One offset for the
+  whole step holds only when the step's files span less time than putting them back takes; a longer step keeps
+  the order and not the gaps, or its first file would be older than the checkout again. With this and the
+  manifest fix, a reused `zig build` is a hit on a fresh clone and the zig step after it reports
+  `compile exe ... cached`.
 
 Other repositories were measured before a job became a machine (`0607101fad66`), so their numbers are not
 `main`'s. What each record showed:
 
 | Repository | Speedup then | Record | Why |
 | --- | ---: | --- | --- |
-| `cheeriojs/cheerio` | 1.32, 0 mismatches | `~/.npm/_cacache/index-v5/... changed`, `.git/HEAD changed` | several jobs installed into one home; one step reads the commit |
-| `highlightjs/highlight.js` | 1.60, 4 mismatches | `build/lib is gone` | its matrix variants each build into `build/` and shared one checkout: a wrong result, which a checkout per job is for |
+| `highlightjs/highlight.js` | 1.60, 4 mismatches | `build/lib is gone` | its matrix variants each build into `build/` and shared one checkout: a wrong result, which a checkout per job is for. On `main` its replay did not finish four commits in 45 minutes: each of 12 variants runs `npm install`, 59 to 82 s, never stored (`it opened a network connection (node to 8.8.8.8 port 53)`): only an install of exactly what a lockfile pins is |
 | `t3-oss/t3-env` | 0.33 | `it opened a network connection (bun to 8.8.8.8 port 53)`, `(turbo to 64.239.123.65 port 443)` | `bun install` without `--frozen-lockfile`; turbo calls its vendor at every run |
 | `BurntSushi/toml`, `google/uuid` | 0.49, 0.20 | `README.md changed`, `CONTRIBUTING.md changed` | `go` asks about every file of a package directory, so a docs commit there reruns the tests; a suite of 3 to 15 s is shorter than the start of `smthrs` |
 | `pallets/click`, `yargs/yargs` | 0.19, none | `.git/HEAD changed` | `pre-commit run --all-files` and yargs' tests read the commit. A traced `tox` step takes 22 to 28 s against 9 s |
