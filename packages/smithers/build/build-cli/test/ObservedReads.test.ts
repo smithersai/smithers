@@ -1434,8 +1434,10 @@ describe("what a run left behind", () => {
   // `npm ci` reads an entry of its cache index and writes it back with another time at every run. A CI job that
   // restores that cache from another run's save would find the entry changed at every commit.
   it("leaves out of what it read the cache a locked install writes outside the workspace", async () => {
-    const { home, observe, root, write } = await places()
+    const { home, observe, root, temp, write } = await places()
     const index = await write(Path.join(home, ".npm/_cacache/index-v5/03/af/entry"), "old")
+    // A machine's home can lie in a temporary directory: the cache there is the install's own as well.
+    const machine = await write(Path.join(temp, "machine/home/.npm/_cacache/index-v5/23/91/entry"), "old")
     const blob = await write(Path.join(home, ".npm/_cacache/content-v2/blob"), "tarball")
     const setting = await write(Path.join(home, ".npmrc"), "registry")
     const lock = await write(Path.join(root, "package-lock.json"), "{}")
@@ -1448,11 +1450,14 @@ describe("what a run left behind", () => {
       reads(100, setting),
       reads(100, blob),
       rewrites(100, index),
+      rewrites(100, machine),
       rewrites(100, lock)
     ]).record
-    /** The paths of a record that are in the home directory or the workspace. */
+    /** The paths of a record that are in the home directory, the temporary directory or the workspace. */
     const read = (record: ObservedReads.Record): ReadonlyArray<string> =>
-      record.reads.map(([path]) => path).filter((path) => path.startsWith(`${home}/`) || !path.startsWith("/"))
+      record.reads.map(([path]) => path).filter((path) =>
+        path.startsWith(`${home}/`) || path === machine || !path.startsWith("/")
+      )
     // The entry it rewrote is not there. What it only read is, and so is a file of the workspace it rewrote.
     expect(read(install)).toEqual([blob, setting, "package-lock.json"])
     // The same calls by a program that is no locked install: the entry is something the run read and changed.
@@ -1461,9 +1466,10 @@ describe("what a run left behind", () => {
       reads(100, setting),
       reads(100, blob),
       rewrites(100, index),
+      rewrites(100, machine),
       rewrites(100, lock)
     ]).record
-    expect(read(other)).toEqual([blob, index, setting, "package-lock.json"])
+    expect(read(other)).toEqual([blob, index, setting, machine, "package-lock.json"].sort())
   })
 
   it("is told apart by where it is: kept in the workspace and the temporary directory, checked anywhere else", async () => {

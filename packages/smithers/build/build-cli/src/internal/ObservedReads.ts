@@ -1523,16 +1523,14 @@ export const observe = (
   const given: Array<readonly [string, string, number]> = []
   const lists: Array<Record["lists"][number]> = []
   const temporary = options.temporary ?? []
-  /** True for a path in neither the workspace nor a temporary directory, as a home directory is. */
-  const elsewhere = (path: string): boolean =>
-    !under(path, options.root) && !temporary.some((directory) => under(path, directory))
   for (const path of [...entries.keys()].sort(byCodeUnit)) {
     const entry = entries.get(path)!
     if (!visible(path) || entry.first === "made") continue
-    // What a locked install wrote outside the workspace is the package manager's own cache. What it installs is
-    // fixed by the lockfile the run read, and it writes its cache again when a file of it is missing or other:
-    // whatever the install found there first is no input of the run.
-    if (fetched.has(path) && elsewhere(path)) continue
+    // What a locked install wrote outside the workspace is the package manager's own cache and scratch files,
+    // in a home directory or a temporary one: a machine's home may itself lie in a temporary directory. What it
+    // installs is fixed by the lockfile the run read, and it writes its cache again when a file of it is missing
+    // or other: whatever the install found there first is no input of the run.
+    if (fetched.has(path) && !under(path, options.root)) continue
     const state = measured(path)
     if (entry.first === "missing") {
       reads.push(state !== absent && entry.made ? [inside(path), state, absent] : [inside(path), absent])
