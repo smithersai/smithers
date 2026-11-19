@@ -1303,6 +1303,11 @@ export const observe = (
     readonly producers?: ReadonlyArray<Producer> | undefined
     /** The temporary directories, by their real paths: what a run left there is kept with what it left in the workspace. */
     readonly temporary?: ReadonlyArray<string> | undefined
+    /**
+     * The directories the run found in place of the host's own, each with where it really is: a run on a machine
+     * finds the machine's temporary directory at `/tmp`. A path the run named under one is read where it is.
+     */
+    readonly mounts?: ReadonlyArray<readonly [at: string, from: string]> | undefined
     /** The limits on what is kept; {@link keptLimits} unless a test gives smaller ones. */
     readonly limits?: typeof keptLimits | undefined
     /** The host variables the run was given, whose values are in the record only when the run could have used them. */
@@ -1331,6 +1336,14 @@ export const observe = (
         return data
       }
     })
+  const mounts = options.mounts ?? []
+  /** Where on the host a path is that the run named: under a mounted directory, under where that really is. */
+  const placed = (path: string): string => {
+    for (const [at, from] of mounts) {
+      if (under(path, at)) return `${from}${path.slice(at.length)}`
+    }
+    return path
+  }
   const kinds = new Map<string, { readonly link: string | undefined; readonly directory: boolean } | undefined>()
   const kindOf = (path: string): { readonly link: string | undefined; readonly directory: boolean } | undefined => {
     if (kinds.has(path)) return kinds.get(path)
@@ -1372,21 +1385,25 @@ export const observe = (
    */
   const resolve = (path: string): string | undefined => {
     const queue = path.split("/").filter((part) => part !== "" && part !== ".")
+    // The path as the run saw it, and where that is on the host: the two differ under a mounted directory.
+    let shown = ""
     let current = ""
     let links = 0
     while (queue.length > 0) {
       const part = queue.shift()!
       if (part === "..") {
-        current = current.slice(0, Math.max(0, current.lastIndexOf("/")))
+        shown = shown.slice(0, Math.max(0, shown.lastIndexOf("/")))
+        current = placed(shown)
         continue
       }
-      const candidate = `${current}/${part}`
+      const candidate = placed(`${shown}/${part}`)
       const kind = kindOf(candidate)
       if (kind === undefined) {
         // Nothing is here, so nothing below it resolves any further.
         return NodePath.posix.normalize([candidate, ...queue].join("/"))
       }
       if (kind.link === undefined) {
+        shown = `${shown}/${part}`
         current = candidate
         continue
       }
@@ -1398,7 +1415,10 @@ export const observe = (
       if (!pseudo(candidate)) touch(candidate, "found")
       const target = kind.link.split("/").filter((piece) => piece !== "" && piece !== ".")
       queue.unshift(...target)
-      if (kind.link.startsWith("/")) current = ""
+      if (kind.link.startsWith("/")) {
+        shown = ""
+        current = ""
+      }
     }
     return current === "" ? "/" : current
   }
@@ -1424,7 +1444,7 @@ export const observe = (
   for (const [path, at] of trace.listed) events.push([at, "listed", path])
   // A program a run starts can name another that the kernel starts for it.
   for (const [path, at] of trace.started) {
-    for (const interpreter of interpreters(path, io)) events.push([at, "found", interpreter])
+    for (const interpreter of interpreters(placed(path), io)) events.push([at, "found", interpreter])
   }
   events.sort((left, right) => left[0] - right[0])
   for (const [, kind, raw] of events) {

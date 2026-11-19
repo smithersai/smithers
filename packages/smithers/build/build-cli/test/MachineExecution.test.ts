@@ -54,7 +54,18 @@ const on = (machine: string, shell: string, data: ReadonlyArray<unknown> = []) =
     data: [S.glob("**"), ...data] as never
   })
 
-const fixture = async (targets: (base: string) => Targets, host?: { readonly home: string; readonly kept: string }) => {
+/** The bubblewrap of this host that gives a command a `/tmp` of its own, when it has one. */
+const mount = await Machine.mounting(process.env, "/var/tmp")
+const mountedIt = it.skipIf(!("bwrap" in mount))
+const tracedMountedIt = it.skipIf("reason" in tracing || !("bwrap" in mount))
+/** The directory that bubblewrap is in, for a build that is to find it on `PATH`. */
+const mounts: ReadonlyArray<string> = "bwrap" in mount ? [Path.dirname(mount.bwrap)] : []
+
+const fixture = async (
+  targets: (base: string) => Targets,
+  host?: { readonly home: string; readonly kept: string },
+  tools: ReadonlyArray<string> = []
+) => {
   // Beside the temporary directory, as a user's cache directory is: what a run leaves in a machine's home is then
   // left outside the workspace and the temporary directory.
   const base = await Fs.realpath(await Fs.mkdtemp(Path.join("/var/tmp", "smithers-machine-run-")))
@@ -86,7 +97,9 @@ const fixture = async (targets: (base: string) => Targets, host?: { readonly hom
   })
   const kept = host?.kept ?? Path.join(base, "machines")
   const environment: Record<string, string> = {
-    PATH: [...("tracer" in tracing ? [Path.dirname(tracing.tracer)] : []), "/usr/bin", "/bin"].join(Path.delimiter),
+    PATH: [...tools, ...("tracer" in tracing ? [Path.dirname(tracing.tracer)] : []), "/usr/bin", "/bin"].join(
+      Path.delimiter
+    ),
     HOME: host?.home ?? Path.join(base, "home"),
     [Machine.holdingVariable]: kept
   }
@@ -159,6 +172,77 @@ describe("targets on two machines", () => {
     }))
     expect(await run(["locked"], untraced)).toEqual({ locked: "ran" })
     expect(NodeFs.existsSync(Machine.holding(await Fs.realpath(Path.dirname(kept) + "/ws"), environment))).toBe(false)
+  })
+})
+
+describe("the /tmp of a machine", () => {
+  mountedIt("is the machine's own: two machines each find it empty, and the targets of one share it", async () => {
+    // Two jobs of a workflow never share a `/tmp`: each of these passes on a runner of its own.
+    const seen = `/tmp/smithers-machine-seen-${process.pid}`
+    const { logs, run } = await fixture(
+      () => {
+        const first = on("a", `test ! -e ${seen} && touch ${seen} && echo t > /tmp/first`)
+        return {
+          first,
+          // What a target writes to `/tmp` is in the machine's temporary directory, by either name.
+          second: on("a", `grep -q t /tmp/first && grep -q t "$TMPDIR/first" && test -e ${seen}`, [first]),
+          other: on("b", `test ! -e ${seen} && touch ${seen} && test ! -e /tmp/first # b`)
+        }
+      },
+      undefined,
+      mounts
+    )
+    expect(await run(["second", "other"], untraced)).toEqual({ first: "ran", second: "ran", other: "ran" })
+    // Nothing of it reached this host's own `/tmp`.
+    expect(NodeFs.existsSync(seen)).toBe(false)
+    expect(logs.some((line) => line.includes("share this host's /tmp"))).toBe(false)
+  })
+
+  tracedMountedIt(
+    "is read through the machine: a target is answered while what it read there is as it was",
+    async () => {
+      const note = `/tmp/smithers-machine-note-${process.pid}`
+      const { made, run, write } = await fixture(
+        () => {
+          const writes = on("job", `echo one > ${note}`)
+          return { writes, reads: on("job", `grep -q one ${note} && grep -q a a.txt`, [writes]) }
+        },
+        undefined,
+        mounts
+      )
+      expect(await run(["reads"])).toEqual({ writes: "ran", reads: "ran" })
+      expect(made()).toEqual(["job"])
+      // Both are answered, and no machine is made: the record names the note from the machine, not from this host.
+      expect(await run(["reads"])).toEqual({ writes: "hit", reads: "hit" })
+      expect(made()).toEqual(["job"])
+      // The reader has to run: the note is not kept with the copy's files, so the writer runs again and leaves it.
+      await write("a.txt", "a, changed\n")
+      expect(await run(["reads"])).toEqual({ writes: "ran", reads: "ran" })
+      expect(made()).toEqual(["job", "job"])
+      expect(NodeFs.existsSync(note)).toBe(false)
+    }
+  )
+
+  posixIt("is this host's where the host gives no other, and the build says so once", async () => {
+    // A bubblewrap the host refuses, first on PATH, as in a container that lets no process make a mount.
+    const refused = await Fs.realpath(await Fs.mkdtemp(Path.join("/var/tmp", "smithers-machine-bwrap-")))
+    temporary.push(refused)
+    await Fs.writeFile(Path.join(refused, "bwrap"), "#!/bin/sh\nexit 1\n", { mode: 0o755 })
+    // The targets still have a `TMPDIR` of their machine's own.
+    const { logs, run } = await fixture(
+      () => ({
+        one: on("a", "test -d \"$TMPDIR\" && test \"$TMPDIR\" != /tmp"),
+        two: on("b", "test -d \"$TMPDIR\" # b")
+      }),
+      undefined,
+      [refused]
+    )
+    // Observed where this host has a tracer: what the targets read is recorded with `/tmp` as the host has it.
+    expect(await run(["one", "two"])).toEqual({ one: "ran", two: "ran" })
+    expect(logs.filter((line) => line.includes("share this host's /tmp"))).toEqual([
+      `smthrs: the targets of a machine share this host's /tmp: ${refused}/bwrap cannot give a process a mount of ` +
+      "its own on this host; TMPDIR is still each machine's own"
+    ])
   })
 })
 

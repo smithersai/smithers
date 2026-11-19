@@ -916,6 +916,20 @@ export const executeEffect = (
         makingMachines.set(name, making)
         return making
       })
+    let mounting: Promise<string | undefined> | undefined
+    /**
+     * The bubblewrap that gives a machine's targets the machine's temporary directory as `/tmp`, asked of the host
+     * once; nothing where the host has none, and the build says so once.
+     */
+    const ownTmp = (): Promise<string | undefined> =>
+      mounting ??= Machine.mounting(hostEnvironment, machinesKept!).then((found) => {
+        if ("bwrap" in found) return found.bwrap
+        log(
+          `smthrs: the targets of a machine share this host's ${Machine.sharedTmp}: ${found.reason}; ` +
+            "TMPDIR is still each machine's own"
+        )
+        return undefined
+      })
     /** The machine a target runs on, once it is made. */
     const machineOf = (node: PackageNode): Machine.Machine | undefined =>
       node.machine === undefined ? undefined : madeMachines.get(node.machine)
@@ -1146,9 +1160,13 @@ export const executeEffect = (
         // A confined tool can write nowhere else, so the directory the host
         // shares between workspaces is for unconfined tools only.
         const cacheEnvironment = ExecSandbox.enforceable(sandbox, ExecSandbox.host()) ? {} : ambient
+        // A target on its machine finds the machine's temporary directory at `/tmp` too, where the host can give
+        // it one. The tracer runs inside, so what it writes down is what the target saw.
+        const bwrap = onIts ? yield* joined(ownTmp) : undefined
+        const started = traced === undefined ? resolved.argv : traced(resolved.argv) as [string, ...Array<string>]
         const payload: Exec.Payload = {
           cwd: node.cwd,
-          argv: traced === undefined ? resolved.argv : traced(resolved.argv) as [string, ...Array<string>],
+          argv: bwrap === undefined ? started : Machine.withOwnTmp(bwrap, machine!, started),
           env: GoCache.spawnEnvironment(resolved.env, workspaceRoot, cacheDirectory, cacheEnvironment),
           secrets: resolved.secrets,
           expectedExitCodes: [0],
@@ -3081,6 +3099,11 @@ export const executeEffect = (
           }
           wroteHere.delete(node.label)
           const before = dependenciesOf(node.label)
+          // The run named the machine's temporary directory `/tmp` where the host gave it one.
+          const mounts: ReadonlyArray<readonly [string, string]> =
+            machine === undefined || (yield* joined(ownTmp)) === undefined
+              ? []
+              : [[Machine.sharedTmp, NodeFs.realpathSync(machine.tmp)]]
           const read = yield* Effect.exit(joined(async () =>
             ObservedReads.observe(
               ObservedReads.read(listener.lines(ObservedReads.linesOf(traceFile)), NodePath.resolve(place, node.cwd)),
@@ -3104,6 +3127,7 @@ export const executeEffect = (
                 ],
                 startedMs,
                 temporary: temporary(),
+                mounts,
                 // In the order they ran or would have run: the last to write a path is the one it came from.
                 producers: inOrder.flatMap((earlier) => {
                   const producer = before.has(earlier.label) ? wroteHere.get(earlier.label) : undefined

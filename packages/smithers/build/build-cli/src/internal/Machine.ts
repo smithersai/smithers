@@ -13,6 +13,7 @@
  */
 
 import * as Data from "effect/Data"
+import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
@@ -479,6 +480,78 @@ export const environment = (machine: Machine): Readonly<Record<string, string>> 
   [temporaryVariable]: machine.tmp,
   GIT_CEILING_DIRECTORIES: NodePath.dirname(machine.tree)
 })
+
+/**
+ * The directory every program finds its temporary files in when it names
+ * none: a program that writes `/tmp/x` asks for no `TMPDIR`.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const sharedTmp = "/tmp"
+
+/**
+ * The command that runs `argv` with the machine's temporary directory in
+ * place of `/tmp`, through `bwrap`, a bubblewrap that starts on this host
+ * ({@link mounting}). Every other path is the host's, as it is without. So a
+ * target that writes `/tmp/x` writes the machine's own, and the targets of
+ * another machine never find it, as two jobs of a workflow never share a
+ * `/tmp`.
+ *
+ * @category rendering
+ * @since 1.0.0
+ */
+export const withOwnTmp = (
+  bwrap: string,
+  machine: Machine,
+  argv: ReadonlyArray<string>
+): [string, ...Array<string>] => [
+  bwrap,
+  "--dev-bind",
+  "/",
+  "/",
+  "--bind",
+  machine.tmp,
+  sharedTmp,
+  "--die-with-parent",
+  "--",
+  ...argv
+]
+
+/**
+ * The bubblewrap on `PATH` that gives a command a `/tmp` of its own on this
+ * host, tried once on `directory`, or why there is none: another system than
+ * Linux, no `bwrap`, or a host that refuses an unprivileged process a mount
+ * of its own, as a container often does.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const mounting = async (
+  environment: Readonly<Record<string, string | undefined>>,
+  directory: string,
+  platform: string = process.platform
+): Promise<{ readonly bwrap: string } | { readonly reason: string }> => {
+  if (platform !== "linux") return { reason: `a private ${sharedTmp} needs bubblewrap, which runs only on Linux` }
+  let bwrap: string | undefined
+  for (const each of (environment["PATH"] ?? "").split(NodePath.delimiter)) {
+    if (each === "") continue
+    const candidate = NodePath.join(each, "bwrap")
+    const found = await Fs.access(candidate, NodeFs.constants.X_OK).then(() => true, () => false)
+    if (found) {
+      bwrap = candidate
+      break
+    }
+  }
+  if (bwrap === undefined) return { reason: "bwrap is not on PATH (install the bubblewrap package)" }
+  const tried = withOwnTmp(bwrap, { name: "", directory, tree: directory, home: directory, tmp: directory }, ["true"])
+  const started = await new Promise<boolean>((resolve) => {
+    execFile(tried[0], tried.slice(1), { env: { PATH: environment["PATH"] }, timeout: 30_000 }, (error) => {
+      resolve(error === null)
+    })
+  })
+  return started ? { bwrap } : { reason: `${bwrap} cannot give a process a mount of its own on this host` }
+}
 
 /**
  * A command word or a variable's value with the workspace's path replaced

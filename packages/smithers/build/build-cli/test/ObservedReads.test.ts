@@ -963,6 +963,49 @@ describe("recording what a run read", () => {
     expect(ObservedReads.changed(stored, root)).toBe("alias changed")
   })
 
+  it("reads a path the run named under a mounted directory where that directory really is", async () => {
+    // A run on a machine finds the machine's temporary directory at `/shared`: what it named there is the machine's.
+    const { base, outside, root } = await setup()
+    const own = Path.join(base, "own")
+    await Fs.mkdir(Path.join(own, "deep"), { recursive: true })
+    await Fs.writeFile(Path.join(own, "note"), "note")
+    await Fs.writeFile(Path.join(own, "run.sh"), `#!${outside}\n`, { mode: 0o755 })
+    // A link in the mounted directory that names it by the name the run knows, and one that leads out of it.
+    await Fs.symlink("/shared/note", Path.join(own, "again"))
+    await Fs.symlink("../../.." + outside, Path.join(own, "deep", "out"))
+    const recorded = (lines: ReadonlyArray<string>, mounts?: ReadonlyArray<readonly [string, string]>) =>
+      ObservedReads.record(ObservedReads.read(() => lines, root), {
+        root,
+        ignore: [],
+        startedMs: Date.now() + 60_000,
+        ...(mounts === undefined ? {} : { mounts })
+      })
+    const read = (lines: ReadonlyArray<string>, mounts: ReadonlyArray<readonly [string, string]>) => {
+      const value = recorded(lines, mounts)
+      if ("refusal" in value) throw new Error(value.refusal)
+      return value.reads.map((row) => row[0])
+    }
+    const lines = [
+      `100 openat(AT_FDCWD<${root}>, "/shared/note", O_RDONLY) = 3`,
+      `100 openat(AT_FDCWD<${root}>, "/shared", O_RDONLY|O_DIRECTORY) = 3`,
+      `100 openat(AT_FDCWD<${root}>, "/shared/again", O_RDONLY) = 3`,
+      `100 openat(AT_FDCWD<${root}>, "/shared/deep/out", O_RDONLY) = 3`,
+      // Above the mounted directory is what is above the name the run knows it by, not above where it is.
+      `100 openat(AT_FDCWD<${root}>, "/shared/..${outside}", O_RDONLY) = 3`,
+      `100 openat(AT_FDCWD<${root}>, "/shared/none", O_RDONLY) = -1 ENOENT (No such file or directory)`,
+      `100 execve("/shared/run.sh", ["run.sh"], 0x7ffd /* 3 vars */) = 0`
+    ]
+    const placed = read(lines, [["/shared", own]])
+    for (const name of ["note", "again", "deep/out", "none", "run.sh"]) expect(placed).toContain(Path.join(own, name))
+    expect(placed).toContain(own)
+    // The file outside is one path, by the link, by the way up, and as the script's interpreter.
+    expect(placed.filter((path) => path === outside)).toEqual([outside])
+    expect(placed.some((path) => path.startsWith("/shared"))).toBe(false)
+    // With nothing mounted the same names are the host's own, where there is no such directory: the run read what
+    // nobody can find again, and stores nothing.
+    expect(recorded(lines)).toEqual({ refusal: "/shared was removed while it ran" })
+  })
+
   it("stores nothing for a path that passes through links without end", async () => {
     const { record, root } = await setup()
     await Fs.symlink("loop-b", Path.join(root, "loop-a"))

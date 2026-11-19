@@ -438,6 +438,60 @@ describe("a target on a machine", () => {
   })
 })
 
+describe("the temporary directory of a machine as /tmp", () => {
+  const machine = Machine.named("/kept/abc", "/work/repo", "job")
+
+  it("is put in place of /tmp for a command, and every other path is the host's", () => {
+    expect(Machine.sharedTmp).toBe("/tmp")
+    expect(Machine.withOwnTmp("/usr/bin/bwrap", machine, ["sh", "-c", "true"])).toEqual([
+      "/usr/bin/bwrap",
+      "--dev-bind",
+      "/",
+      "/",
+      "--bind",
+      machine.tmp,
+      "/tmp",
+      "--die-with-parent",
+      "--",
+      "sh",
+      "-c",
+      "true"
+    ])
+  })
+
+  posixIt("is asked of the host: a bubblewrap on PATH that starts, or the reason there is none", async () => {
+    const base = await directory("mounting")
+    // A bubblewrap that starts, one that the host refuses, and a directory that holds none.
+    const starts = Path.join(base, "starts")
+    const refused = Path.join(base, "refused")
+    const empty = Path.join(base, "empty")
+    await write(base, "starts/bwrap", "#!/bin/sh\nexit 0\n")
+    await write(base, "refused/bwrap", "#!/bin/sh\nexit 1\n")
+    await write(base, "empty/readme", "nothing to run\n")
+    await Fs.chmod(Path.join(starts, "bwrap"), 0o755)
+    await Fs.chmod(Path.join(refused, "bwrap"), 0o755)
+    // An empty entry of PATH and a directory with no bwrap are passed over.
+    expect(await Machine.mounting({ PATH: `:${empty}:${starts}:${refused}` }, base, "linux")).toEqual({
+      bwrap: Path.join(starts, "bwrap")
+    })
+    expect(await Machine.mounting({ PATH: `${refused}:${starts}` }, base, "linux")).toEqual({
+      reason: `${Path.join(refused, "bwrap")} cannot give a process a mount of its own on this host`
+    })
+    expect(await Machine.mounting({ PATH: empty }, base, "linux")).toEqual({
+      reason: "bwrap is not on PATH (install the bubblewrap package)"
+    })
+    expect(await Machine.mounting({}, base, "linux")).toEqual({
+      reason: "bwrap is not on PATH (install the bubblewrap package)"
+    })
+    expect(await Machine.mounting({ PATH: starts }, base, "darwin")).toEqual({
+      reason: "a private /tmp needs bubblewrap, which runs only on Linux"
+    })
+    // This host, as it is: an answer either way.
+    const here = await Machine.mounting(process.env, base)
+    expect("bwrap" in here || here.reason.length > 0).toBe(true)
+  })
+})
+
 describe("a record of a run on a machine", () => {
   const machine = Machine.named("/kept/abc", "/work/repo", "job")
 
