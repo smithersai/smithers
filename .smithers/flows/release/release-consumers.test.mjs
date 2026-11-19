@@ -12,6 +12,7 @@ import {
 } from "../../../packages/repo-targets/contracts/check-single-effect-version.mjs"
 import {
   adapterProfiles,
+  databaseProfiles,
   assertConsumerTree,
   candidateVersion,
   consumerCacheFlags,
@@ -88,7 +89,8 @@ test("a consumer command runs without the caller's credentials and prints none o
 const useRegistry = (url) => {
   const names = ["npm_config_registry", "pnpm_config_registry"]
   const previous = names.map((name) => process.env[name])
-  for (const name of names) process.env[name] = url
+  // A trailing slash, as npm spells its default registry: Bun drops the path otherwise.
+  for (const name of names) process.env[name] = url + "/"
   return () =>
     names.forEach((name, index) => {
       if (previous[index] === undefined) delete process.env[name]
@@ -158,6 +160,26 @@ test("every library, adapter and migration profile selects the supplied candidat
       }
     }
   }
+})
+
+test("the database profiles select each SQL driver, or none, and install under npm, pnpm and Bun", () => {
+  const drivers = ["@effect/sql-sqlite-node", "@effect/sql-pg", "@effect/sql-sqlite-bun"]
+  const profiles = databaseProfiles([{ name: "@smthrs/database", version: "1.2.0-rc.3" }])
+  assert.deepEqual(profiles.map((profile) => profile.name), ["database-sqlite-node", "database-postgres", "database-bun-adapter", "database-bun"])
+  const selected = []
+  for (const profile of profiles) {
+    assert.equal(profile.bunInstall, true, profile.name)
+    assert.equal(profile.dependencies["@smthrs/database"], "1.2.0-rc.3")
+    assert.equal(profile.dependencies.effect, EXPECTED_EFFECT_VERSION)
+    const driver = drivers.filter((name) => profile.dependencies[name] !== undefined)
+    assert.ok(driver.length <= 1, profile.name)
+    for (const name of driver) assert.equal(profile.dependencies[name], EXPECTED_EFFECT_VERSION)
+    assert.deepEqual(drivers.filter((name) => profile.absent.includes(name)), drivers.filter((name) => !driver.includes(name)))
+    selected.push(driver[0] ?? "none")
+  }
+  assert.deepEqual(selected, [...drivers, "none"])
+  // The Bun profiles open the database under Bun as well.
+  assert.deepEqual(profiles.filter((profile) => profile.bun === true).map((profile) => profile.name), ["database-bun-adapter", "database-bun"])
 })
 
 test("the refused Effect is outside the supported range and the tested release is inside it", () => {
@@ -379,8 +401,10 @@ test("consumer requests resolve against a stable-only candidate registry", async
         assert.ok(metadata.versions[requested], `${profile.name} requested unavailable ${name}@${requested}`)
       }
     }
-    for (const manager of ["npm", "pnpm"]) {
+    // Bun reads the scoped registry from .npmrc too.
+    for (const manager of ["npm", "pnpm", "bun"]) {
       const installed = await runConsumerProfile(profiles[0], manager, registry.url, { runtime: true })
+      assert.equal(installed.manager, manager)
       assert.equal(installed.effectCopies.length, 1)
     }
   } finally {

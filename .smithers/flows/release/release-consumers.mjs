@@ -1,4 +1,4 @@
-/** Disposable npm/pnpm consumers of unchanged release manifests or candidate bytes. */
+/** Disposable npm, pnpm and Bun consumers of unchanged release manifests or candidate bytes. */
 import assert from "node:assert/strict"
 import { execFile, execFileSync, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
@@ -53,6 +53,8 @@ export const consumerCacheFlags = (manager, workspace = repoRoot, { offline = tr
   // `offline: false`: it reads fresh metadata and still reuses package bytes.
   const metadata = offline ? ["--prefer-offline"] : []
   if (manager === "npm") return metadata
+  // Bun keeps one global package cache and reads no workspace store.
+  if (manager === "bun") return []
   if (manager !== "pnpm") throw new Error(`Unsupported release package manager: ${manager}`)
   if (!stores.has(workspace)) {
     const store = execFileSync("pnpm", ["store", "path"], { cwd: workspace, encoding: "utf8" }).trim()
@@ -171,6 +173,30 @@ export const adapterProfiles = (entries) => {
       absent: [...runners, ...telemetryAdapters, "@smthrs/platform-browser"],
       imports: ["@smthrs/platform-bun", "@smthrs/platform-bun/BunFileSystem", "@smthrs/platform-bun/BunHost"]
     },
+  ]
+}
+
+/**
+ * `@smthrs/database` as an application selects its SQL driver: the Node SQLite
+ * adapter, the PostgreSQL adapter, the Bun SQLite adapter, and none, which
+ * Bun's bundled client serves. Each installs under npm, pnpm and Bun
+ * (`bunInstall`), and the probe in dependency-adapters.mjs opens a database
+ * through it: on Node for the Node drivers, under Bun (`bun`) for Bun. These
+ * installs are what decided the database's exact optional driver peers.
+ */
+export const databaseProfiles = (entries) => {
+  const firstParty = candidateVersion(entries)
+  const drivers = ["@effect/sql-sqlite-node", "@effect/sql-pg", "@effect/sql-sqlite-bun"]
+  const selecting = (driver) => ({
+    dependencies: { "@smthrs/database": firstParty, effect, ...(driver === undefined ? {} : { [driver]: effect }) },
+    absent: [...runners, ...nodeRuntime, ...drivers.filter((name) => name !== driver)],
+    bunInstall: true
+  })
+  return [
+    { name: "database-sqlite-node", ...selecting("@effect/sql-sqlite-node"), imports: ["@smthrs/database/node/NodeDatabase"] },
+    { name: "database-postgres", ...selecting("@effect/sql-pg"), imports: ["@smthrs/database"] },
+    { name: "database-bun-adapter", ...selecting("@effect/sql-sqlite-bun"), imports: ["@smthrs/database"], bun: true },
+    { name: "database-bun", ...selecting(undefined), imports: ["@smthrs/database"], bun: true }
   ]
 }
 
@@ -474,7 +500,8 @@ export const runCliMcpConsumer = async (manager, registryUrl, cliVersion, { env 
 export const runConsumerProfile = async (profile, manager, registryUrl, { runtime = false } = {}) => {
   const consumer = await mkdtemp(join(tmpdir(), "smithers-k-consumer-" + manager + "-" + profile.name + "-"))
   try {
-    await writeFile(join(consumer, ".npmrc"), "@smthrs:registry=" + registryUrl + "\n")
+    // Bun drops a registry URL's path unless it ends in a slash.
+    await writeFile(join(consumer, ".npmrc"), "@smthrs:registry=" + registryUrl + (manager === "bun" ? "/" : "") + "\n")
     await writeFile(
       join(consumer, "package.json"),
       JSON.stringify({
@@ -493,9 +520,11 @@ export const runConsumerProfile = async (profile, manager, registryUrl, { runtim
       "--ignore-scripts",
       // A release the registry published today is not in yesterday's metadata.
       ...consumerCacheFlags(manager, repoRoot, { offline: profile.effect === undefined }),
-      ...(manager === "npm" ? ["--no-audit", "--no-fund", "--strict-peer-deps"] : ["--strict-peer-dependencies"])
+      // Bun has no strict peer mode: the tree assertions below hold its install
+      // to one Effect and the selected adapters.
+      ...{ npm: ["--no-audit", "--no-fund", "--strict-peer-deps"], pnpm: ["--strict-peer-dependencies"], bun: [] }[manager]
     ]
-    if (profile.omitOptional) args.push(manager === "npm" ? "--omit=optional" : "--no-optional")
+    if (profile.omitOptional) args.push(manager === "pnpm" ? "--no-optional" : "--omit=optional")
     await successful(manager, args, consumer)
     const tree = assertConsumerTree(consumer, profile)
     if (runtime) {
@@ -532,7 +561,7 @@ export const runConsumerProfile = async (profile, manager, registryUrl, { runtim
           }
         })
       }
-      if (probe === "bun") await successful("bun", ["dependency-adapters.mjs", probe], consumer)
+      if (probe === "bun" || profile.bun === true) await successful("bun", ["dependency-adapters.mjs", probe], consumer)
     }
     console.log(
       "consumer ok " + manager + " " + profile.name + ": " + tree.count + " packages; one Effect, " +
@@ -816,6 +845,16 @@ export const runConsumerMatrix = async (directory, entries, {
         }
       }
     }
+    // A profile an application also installs with Bun runs a third time.
+    for (const profile of profiles.filter((profile) => profile.bunInstall === true)) {
+      try {
+        results.push(await runConsumerProfile(profile, "bun", registry.url, { runtime }))
+      } catch (cause) {
+        const error = new Error("bun " + profile.name + ": " + cause.message, { cause })
+        failures.push(error)
+        console.error(error.message)
+      }
+    }
     console.log(JSON.stringify({
       consumerMatrix: {
         profilesPassed: results.filter((result) => result.profile !== undefined).length,
@@ -842,6 +881,7 @@ if (isMain(import.meta)) {
     profiles: [
       ...minimalProfiles(entries),
       ...adapterProfiles(entries),
+      ...databaseProfiles(entries),
       ...migrationProfiles(entries),
     ],
     runtime: true

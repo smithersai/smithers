@@ -50,6 +50,7 @@ import { EXPECTED_EFFECT_VERSION } from "../../../packages/repo-targets/contract
 import { recordSmokeSuccess, verifyLocalCandidate } from "./publish-release.mjs"
 import {
   adapterProfiles,
+  databaseProfiles,
   consumerCacheFlags,
   migrationProfiles,
   minimalProfiles,
@@ -473,6 +474,7 @@ try {
       profiles: [
         ...minimalProfiles(packManifest),
         ...adapterProfiles(packManifest),
+        ...databaseProfiles(packManifest),
         ...migrationProfiles(packManifest)
       ],
       runtime: true,

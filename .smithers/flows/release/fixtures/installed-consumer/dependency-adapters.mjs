@@ -1,9 +1,10 @@
 /** Relocated into the installed consumer; imports must resolve there. */
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer } from "node:http"
 import { createRequire } from "node:module"
-import { resolve } from "node:path"
+import { delimiter, join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -77,6 +78,55 @@ if (profile === "migrate-scan" || profile === "migrate-apply") {
       throw new Error("Host acquisition must not request a model judgment")
     })
     await Effect.runPromise(Effect.scoped(Layer.build(Command.layerNode({ root: project, environment: {}, evaluator }))))
+  }
+}
+// The database opens through the driver the profile selected: SELECT 1.
+const databaseProbes = new Set(["database-sqlite-node", "database-postgres", "database-bun-adapter", "database-bun"])
+if (databaseProbes.has(profile)) {
+  const SqlClient = await import("effect/sql/SqlClient")
+  const selectOne = (layer) =>
+    Effect.runPromise(Effect.scoped(Effect.provide(
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const rows = yield* sql`SELECT 1 AS value`
+        return rows.map((row) => row.value)
+      }),
+      layer
+    )))
+  if (process.versions.bun !== undefined) {
+    const BunDatabase = await import("@smthrs/database/bun/BunDatabase")
+    assert.deepEqual(await selectOne(BunDatabase.layer({ filename: resolve("bun.sqlite") })), [1])
+  } else if (profile === "database-sqlite-node") {
+    const NodeDatabase = await import("@smthrs/database/node/NodeDatabase")
+    assert.deepEqual(await selectOne(NodeDatabase.layer({ filename: resolve("node.sqlite") })), [1])
+  } else if (profile === "database-postgres") {
+    // A disposable PostgreSQL server on loopback, from the host's install.
+    const bin = [
+      ...(process.env.PATH ?? "").split(delimiter),
+      ...(existsSync("/usr/lib/postgresql")
+        ? readdirSync("/usr/lib/postgresql").sort((left, right) => Number(right) - Number(left))
+          .map((major) => join("/usr/lib/postgresql", major, "bin"))
+        : [])
+    ].find((directory) => directory !== "" && existsSync(join(directory, "initdb")) && existsSync(join(directory, "pg_ctl")))
+    assert.ok(bin, "database-postgres needs PostgreSQL's initdb and pg_ctl on PATH or under /usr/lib/postgresql")
+    const data = resolve("postgres")
+    execFileSync(join(bin, "initdb"), ["-D", data, "--auth=trust", "-U", "smoke"], { stdio: "ignore" })
+    const port = await new Promise((done) => {
+      const probe = createServer().listen(0, "127.0.0.1", () => {
+        const { port } = probe.address()
+        probe.close(() => done(port))
+      })
+    })
+    execFileSync(join(bin, "pg_ctl"), [
+      "-D", data, "-w", "-l", join(data, "server.log"), "-o", `-p ${port} -c listen_addresses=127.0.0.1 -k ''`, "start"
+    ], { stdio: "ignore" })
+    try {
+      const { PostgresDatabase } = await import("@smthrs/database")
+      const layer = PostgresDatabase.layer({ url: `postgres://smoke@127.0.0.1:${port}/postgres`, driver: await import("@effect/sql-pg") })
+      assert.deepEqual(await selectOne(layer), [1])
+    } finally {
+      execFileSync(join(bin, "pg_ctl"), ["-D", data, "-m", "immediate", "stop"], { stdio: "ignore" })
+    }
   }
 }
 console.log("adapter and native Effect identity ok: " + profile)
