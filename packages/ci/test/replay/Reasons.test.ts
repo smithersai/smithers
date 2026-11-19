@@ -6,6 +6,7 @@ import {
   failuresOf,
   nothingPassed,
   printedFailure,
+  printedLimitOf,
   reasonOf,
   sentenceOf
 } from "../../src/replay/Failures.ts"
@@ -293,6 +294,62 @@ describe("what smthrs printed for a failed target", () => {
     expect(printedFailure(late.join("\n")).error).toBe("error: line 0")
   })
 
+  // What `smthrs` prints for a generated step: the lines before the script, the script as one quoted word that
+  // holds the step's runner text, and in it, last, the call that runs the step's command.
+  const runnerText = (command: string, before: ReadonlyArray<string> = [], inside: ReadonlyArray<string> = []) =>
+    [
+      `command failed (exit 3): /bin/sh -c ${[...before, "bash -e -c '__smithers_ci_unit='\\'''\\''"].join("\n")}`,
+      "__smithers_ci_step() {",
+      "__ci_fail() { echo \"smithers-ci: $1\" >&2; exit 1; }",
+      "  __ci_fail \"a step wrote a value a replay cannot give\"",
+      ...inside,
+      "}",
+      `__smithers_ci_step '\\''${command}'\\'''`
+    ].join("\n")
+
+  it("says a step printed nothing when nothing follows its command, whatever lines stand before its script", () => {
+    const nothing = { error: "it printed nothing", exitCode: 3 }
+    // The script is the whole command.
+    expect(printedFailure(runnerText("exit 3"))).toMatchObject(nothing)
+    // Jobs that run apart: a line with the job's versions stands before the script.
+    expect(printedFailure(runnerText("exit 3", ["# Runs under job silent."]))).toMatchObject({
+      ...nothing,
+      command: "# Runs under job silent."
+    })
+    // A job's middle step: two statements stand before the script.
+    const middle = ["mkdir -p .flows/ci || exit", ": > .flows/ci/ci.yml-build-2 || exit"]
+    expect(printedFailure(runnerText("exit 3", middle))).toMatchObject(nothing)
+    // A command of many lines, with a quote of its own.
+    expect(printedFailure(runnerText("echo '\\''a'\\'' > b\nexit 3", middle))).toMatchObject(nothing)
+    // And with a script that is no runner text.
+    const plain = "command failed (exit 3): /bin/sh -c cd -- 'a' || exit\nbash -e -c 'one\ntwo'"
+    expect(printedFailure(plain)).toMatchObject(nothing)
+  })
+
+  it("gives the line a step printed after its runner text, never a line of the text", () => {
+    const apart = ["# Runs under job says.", "cd -- 'sub' || exit"]
+    expect(printedFailure(`${runnerText("echo no >&2\nexit 3", apart)}\nthe widget broke`)).toMatchObject({
+      error: "the widget broke"
+    })
+    // A line before the call that opens a quote and never closes it: the output still starts after the call.
+    const open = ["# Runs under node 18 it's."]
+    expect(printedFailure(runnerText("exit 3", open)).error).toBe("it printed nothing")
+    expect(printedFailure(`${runnerText("exit 3", open)}\nthe widget broke`).error).toBe("the widget broke")
+    // So does it when `smthrs` withheld a word of the text and a quote with it.
+    const withheld = ["  export PASSWORD=[REDACTED]\\''"]
+    expect(printedFailure(runnerText("exit 3", [], withheld)).error).toBe("it printed nothing")
+    expect(printedFailure(`${runnerText("exit 3", [], withheld)}\nthe widget broke`).error).toBe("the widget broke")
+    // More lines before the script than a command written by hand has.
+    const many = Array.from({ length: 12 }, (_, n) => `export A${n}=1`)
+    expect(printedFailure(runnerText("exit 3", many)).error).toBe("it printed nothing")
+  })
+
+  it("reads a runner text whose call never closes as a command that printed nothing", () => {
+    const cut = runnerText("exit 3").slice(0, -5)
+    expect(printedFailure(cut).error).toBe("it printed nothing")
+    expect(printedFailure(`${cut}\nmore of the command`).error).toBe("it printed nothing")
+  })
+
   it("ends a command whose quotes never close at its first line break", () => {
     expect(printedFailure("command failed (exit 1): sh -c echo 'open\nthe error")).toMatchObject({ error: "the error" })
     expect(printedFailure("command failed (exit 1): sh -c echo 'open")).toMatchObject({ error: "it printed nothing" })
@@ -306,6 +363,15 @@ describe("what smthrs printed for a failed target", () => {
       error: `host binary "go" is not present`
     })
     expect(printedFailure(`{"_tag":"other"}`)).toEqual({ error: `{"_tag":"other"}` })
+  })
+})
+
+describe("how much of what smthrs prints a replay keeps", () => {
+  it("keeps enough for every target asked for, and no less for a pattern", () => {
+    expect(printedLimitOf(1)).toBe(8_000_000)
+    expect(printedLimitOf(31)).toBe(8_000_000)
+    expect(printedLimitOf(32)).toBe(8_192_000)
+    expect(printedLimitOf(1000)).toBe(256_000_000)
   })
 })
 

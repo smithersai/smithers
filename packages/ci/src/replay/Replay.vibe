@@ -83,7 +83,7 @@ import {
   noJobPassed,
   noProgress,
   nothingPassed,
-  printedLimit,
+  printedLimitOf,
   reasonOf,
   remember,
   type RerunTally,
@@ -862,7 +862,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const given = try givenAt(commit, site.place, own, applied?.seen)
       const environment = { ...startEnv(site), ...given, ...printsNotes }
       const handed = starter === undefined ? undefined : token
-      const output = try exec(command, args, site.copy, environment, printedLimit, undefined, true, heard, watch, handed, count)
+      const output = try exec(command, args, site.copy, environment, printedLimitOf(selected.length), undefined, true, heard, watch, handed, count)
       const stalled = try Ref.get(watch.stalled)
       const record = effect {
         const text = try fs.readFileString(file)

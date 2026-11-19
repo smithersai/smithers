@@ -22,6 +22,25 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Eighteenth round, 2026-11-19.** A failed step's reason is a line the step printed (`sci-mac-fast`). No contract
+changed.
+
+- **A step that printed nothing says so in normal mode** (`Failures.printedFailure`): where a line stands before a
+  step's script in the generated build file (jobs that run apart, a job's middle step, a step in a directory) and the
+  step printed nothing, the reason was a line of the text around the step. On a Mac every job of two or more runs
+  apart, so every silent failure there read `__ci_fail "a step that only installs packages ..."`. The end of a
+  printed command is now found from the call that runs the step's command, so no line before it is ever output.
+- **The shell around a step adds no line of its own** (`src/inventory/Runner.ts`): for a step a signal ended, bash
+  wrote `lib.sh: line 201: 22254 Killed: 9 "$@" -c "$__script"` to the step's error output, in the baseline and in
+  normal mode. GitHub's runner starts the script itself and writes no such line; now the replay writes none.
+- **Each failed step keeps its reason, however many fail** (`Failures.printedLimitOf`): a replay kept the last
+  256,000 characters of what `smthrs ci` printed for a commit, about 19 failed steps. With 30 failing jobs, 11 read
+  `no reason was given` and had no exit code. It now keeps that much for each target asked for.
+- **Another job's line is never a step's reason** (`Results.reasonsIn`): jobs that run at once print between each
+  other's lines, and a line one job printed while it ran (`//label: ...`) was read as the output of the failed step
+  printed before it.
+  Tests: `test/replay/Reasons.test.ts`, `test/native/Results.test.ts`, `test/cli/failedSteps.test.ts`.
+
 **Seventeenth round, 2026-11-19.** A short CI says what starting costs beside it (`sci-overhead`, decided by the lead).
 
 - **`ReplayReport.startCost`, `ReplayReport.StartCost`** (added, optional): `commitMs`, the baseline's wall time for a

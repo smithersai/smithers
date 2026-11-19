@@ -13,18 +13,32 @@
 
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import { runnerEntry } from "../contract/Inventory.ts"
 import type { StepFailure, StepNotReused } from "../contract/ReplayReport.ts"
 import type { RunRecord, TargetResult } from "../contract/RunRecord.ts"
 import { scrub } from "../inventory/Secrets.ts"
 
 /**
- * How much of what `smthrs ci` prints a replay keeps: enough to hold the
- * reason of every failed target.
+ * How much of what `smthrs ci` prints for one failed target a replay keeps:
+ * the target's command, which holds a step's whole runner text, and the end
+ * of its error output and of what it printed, as `smthrs` prints them.
+ */
+const printedForOne = 256_000
+
+/** The least a replay keeps of a run: a pattern names any number of targets. */
+const printedFloor = 8_000_000
+
+/**
+ * How much of what `smthrs ci` prints a replay keeps of a run that was asked
+ * for `targets` labels or patterns: enough to hold the reason of every one
+ * that fails, so the first to fail keeps its reason however many fail after
+ * it.
  *
- * @category constants
+ * @throws {never}
+ * @category accessors
  * @since 0.1.0
  */
-export const printedLimit = 256_000
+export const printedLimitOf = (targets: number): number => Math.max(printedFloor, targets * printedForOne)
 
 const lineLimit = 200
 /** How much of an output is searched for a line. It bounds the work on a command that prints without end. */
@@ -338,21 +352,38 @@ const failedCommand = /^command failed \(exit (-?\d+)\): /
 const leadingLines = 8
 
 /**
+ * How a step's runner text, printed inside the script word it is given to a
+ * shell in, starts its last line: the call that runs the step's command,
+ * which follows as one quoted word.
+ */
+const stepCall = `\n${runnerEntry} '\\''`
+
+/**
  * Where a printed shell command ends. A command can hold many lines: a
  * script given to a shell as one quoted word after `-c`, with short
  * statements on the lines before it. So it ends at the first line break
  * outside quotes after such a word, when one opens in the command's first
  * lines and holds a line break; else at its first line break outside quotes.
- * A command whose quotes never close ends at its first line break.
+ * A script word that closes where the text ends is followed by nothing: the
+ * command printed nothing. A command whose quotes never close ends at its
+ * first line break.
+ *
+ * A step's runner text ends with the call that runs the step's command. No
+ * line before the end of that call is output, whatever the lines before it
+ * quote, so the command is read from the call on; and when the call's word
+ * never closes, the whole text is the command.
  */
 const endOfCommand = (text: string): number => {
-  let quote: string | undefined
+  const call = text.indexOf(stepCall)
+  const runner = call !== -1
+  // The call stands inside the script word, so its own word starts by closing that one.
+  let quote: string | undefined = runner ? "'" : undefined
   // The first line break outside quotes, how many there were, and the script word: open, and closed over lines.
   let first: number | undefined
   let lines = 0
-  let script = false
-  let spanned = false
-  for (let index = 0; index < text.length; index++) {
+  let script = runner
+  let spanned = runner
+  for (let index = runner ? call + stepCall.length - 4 : 0; index < text.length; index++) {
     const character = text[index]
     if (character === "\\" && quote !== "'") index++
     else if (quote !== undefined) {
@@ -369,6 +400,8 @@ const endOfCommand = (text: string): number => {
       if (lines >= leadingLines) break
     } else if (character === " " && !spanned) script = false
   }
+  // Nothing follows the script: the command printed nothing.
+  if (spanned && (quote === undefined || runner)) return text.length
   if (first !== undefined) return first
   const firstBreak = text.indexOf("\n")
   return quote === undefined || firstBreak === -1 ? text.length : firstBreak

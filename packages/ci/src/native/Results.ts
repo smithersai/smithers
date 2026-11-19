@@ -8,11 +8,16 @@
 import { type TargetResult, verdictOf } from "../contract/RunRecord.ts"
 import { failuresOf, firstLine, printedFailure, readable, sentenceOf } from "../replay/Failures.ts"
 
+/** A line a target printed while it ran: `smthrs` heads it with the target's label. */
+const printedWhileRunning = /^\/\/\S*:\S+: /
+
 /**
  * What `smthrs` printed for each failed target, by label. Its plain output
  * gives a failure a line with the label, `failed`, the time and the reason,
  * and then what the command printed, up to the next target or the closing
- * `code:` line.
+ * `code:` line. Targets that run at once print between each other's lines:
+ * a line a target printed while it ran is no part of what a failed command
+ * left, which the failure's own lines hold whole.
  *
  * @throws {never}
  * @category accessors
@@ -22,6 +27,7 @@ export const reasonsIn = (output: string): ReadonlyMap<string, string> => {
   const found = new Map<string, Array<string>>()
   let open: Array<string> | undefined
   for (const line of output.split("\n")) {
+    if (printedWhileRunning.test(line)) continue
     const header = /^(\/\/\S+) +failed +\S+ +(.+)$/.exec(line)
     if (header !== null) {
       open = [header[2] as string]

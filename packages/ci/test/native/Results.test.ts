@@ -81,6 +81,29 @@ describe("the reasons smthrs prints", () => {
     ])
   })
 
+  it("leave out what another target printed while it ran, whichever line it follows", () => {
+    // Two jobs at once: `smthrs` heads a line a target prints as it runs with the target's label.
+    const output = [
+      "//:quiet  failed  1ms  command failed (exit 3): /bin/sh -c bash -e -c 'exit 3'",
+      "//:loud: error: the other job broke",
+      "//:loud: failed 3 tests",
+      "//:says  failed  1ms  command failed (exit 2): /bin/sh -c bash -e -c 'sh check.sh'",
+      "error: the widget broke",
+      "//:loud: error: the other job broke again",
+      "//:says: error: the widget broke",
+      "//:loud  failed  1ms  command failed (exit 1): /bin/sh -c bash -e -c 'sh loud.sh'",
+      "error: the other job broke again",
+      "code: targets_failed"
+    ].join("\n")
+    const results = [result("//:quiet", "failed"), result("//:says", "failed"), result("//:loud", "failed")]
+    expect(withReasons(results, output).map((entry) => entry.error)).toEqual([
+      "it printed nothing",
+      "error: the widget broke",
+      "error: the other job broke again"
+    ])
+    expect([...reasonsIn(output).keys()]).toEqual(["//:quiet", "//:says", "//:loud"])
+  })
+
   it("give a failed command's exit code, command and the line that says what failed, never the rest of its output", () => {
     const printed = JSON.stringify({
       _tag: "smithers-build/ExecError",

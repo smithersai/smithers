@@ -469,7 +469,11 @@ const library = (job: JobFacts): string =>
     // the job has none.
     `  : > "$__files/artifacts"; printf '{}' > "$__files/artifacts-list"`,
     `  export GITHUB_ARTIFACTS="$__files/artifacts" GITHUB_ARTIFACTS_LIST="$__files/artifacts-list"`,
-    `  if [ -n "\${__limit-}" ]; then __ci_limited "$@"; else "$@" -c "$__script"; __status=$?; fi`,
+    // A shell reports a program a signal ended with a line that holds the words it started it with. This shell
+    // writes that line where nobody reads it: the script's error output is its own, and GitHub's runner, which
+    // starts the script itself, writes no such line.
+    `  if [ -n "\${__limit-}" ]; then __ci_limited "$@"`,
+    `  else { "$@" -c "$__script" 2>&9 9>&-; } 9>&2 2>/dev/null; __status=$?; fi`,
     `  [ "$__status" -eq 0 ] || exit "$__status"`,
     // A step a replay may leave out leaves nothing for later steps. One that tried is stopped: without it the
     // steps after it would run on other values.

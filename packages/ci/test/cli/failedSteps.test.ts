@@ -187,6 +187,124 @@ describe("smithers-ci on a job whose middle step fails", { timeout: 600_000 }, (
   })
 })
 
+describe("smithers-ci on a step that fails and prints nothing", { timeout: 600_000 }, () => {
+  const file = ".github/workflows/ci.yml"
+  interface Failure {
+    readonly step: string
+    readonly reason: string
+    readonly exitCode?: number
+  }
+  type Report = {
+    readonly commits: ReadonlyArray<Record<"baseline" | "normal", { readonly failures?: ReadonlyArray<Failure> }>>
+  }
+  const failuresOf = async (root: string): Promise<Record<"baseline" | "normal", ReadonlyArray<Failure>>> => {
+    const json = await spawn(bin, ["--commits", "1", "--no-apply-check", "--no-trial", "--json"], root)
+    expect(json.stdout, json.stderr).not.toBe("")
+    const commit = (JSON.parse(json.stdout) as Report).commits[0]
+    return { baseline: commit?.baseline.failures ?? [], normal: commit?.normal.failures ?? [] }
+  }
+  const job = (name: string, ...steps: ReadonlyArray<string>): ReadonlyArray<string> => [
+    `  ${name}:`,
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    ...steps.map((step) => `      - ${step}`)
+  ]
+  const nothing = (step: string, exitCode: number) =>
+    expect.objectContaining({ step, reason: "it printed nothing", exitCode })
+
+  it("says so in the baseline and in normal mode, for a last step, a middle step and a step under a limit", async () => {
+    const jobs = [
+      "on: push",
+      "jobs:",
+      ...job("last", "run: exit 3"),
+      ...job("middle", "run: sh check.sh", "run: exit 4", "run: sh check.sh"),
+      ...job("limited", "run: exit 5\n        timeout-minutes: 5"),
+      ...job("passes", "run: sh check.sh"),
+      ""
+    ].join("\n")
+    const root = repositoryOf({ [file]: jobs, "check.sh": "exit 0\n" })
+    const expected = [nothing("ci.yml:last:1", 3), nothing("ci.yml:middle:2", 4), nothing("ci.yml:limited:1", 5)]
+    const failures = await failuresOf(root)
+    expect(failures.baseline).toEqual(expected)
+    // Not a line of the text that stands around the step in the generated build file.
+    expect(failures.normal).toEqual(expected)
+  })
+
+  it("says so for jobs that run apart, whose build text starts with a line of its own", async () => {
+    // Two versions of a tool: each job's steps run on a runner of their own.
+    const node = (version: number) => `uses: actions/setup-node@v4\n        with:\n          node-version: ${version}`
+    const jobs = [
+      "on: push",
+      "jobs:",
+      ...job("older", node(20), "run: exit 3"),
+      ...job("newer", node(22), "run: exit 4"),
+      ...job("says", node(22), "run: echo building; echo 'the widget failed' >&2; exit 2"),
+      ...job("passes", node(22), "run: sh check.sh"),
+      ""
+    ].join("\n")
+    const root = repositoryOf({ [file]: jobs, "check.sh": "exit 0\n" })
+    const expected = [
+      nothing("ci.yml:older:1", 3),
+      nothing("ci.yml:newer:1", 4),
+      expect.objectContaining({ step: "ci.yml:says:1", reason: "the widget failed", exitCode: 2 })
+    ]
+    const failures = await failuresOf(root)
+    expect(failures.baseline).toEqual(expected)
+    expect(failures.normal).toEqual(expected)
+  })
+
+  it("says so for a step a signal ended: the shell around the step adds no line of its own", async () => {
+    const jobs = [
+      "on: push",
+      "jobs:",
+      ...job("killed", "run: kill -KILL $$"),
+      ...job("ended", "run: kill -TERM $$\n        timeout-minutes: 5"),
+      ...job("crashed", "run: echo 'the widget failed' >&2; kill -SEGV $$"),
+      ...job("passes", "run: sh check.sh"),
+      ""
+    ].join("\n")
+    const root = repositoryOf({ [file]: jobs, "check.sh": "exit 0\n" })
+    const expected = [
+      nothing("ci.yml:killed:1", 137),
+      nothing("ci.yml:ended:1", 143),
+      expect.objectContaining({ step: "ci.yml:crashed:1", reason: "the widget failed", exitCode: 139 })
+    ]
+    const failures = await failuresOf(root)
+    expect(failures.baseline).toEqual(expected)
+    expect(failures.normal).toEqual(expected)
+  })
+
+  it("gives each of many failed steps its own line, the first to fail as the last", async () => {
+    // Each job prints more than a replay once kept of a whole run, and then what failed.
+    const noisy = [
+      "i=0",
+      "while [ $i -lt 700 ]; do",
+      "  echo \"line $i of job $1, which is of no use to the person who reads why the job failed\" >&2",
+      "  i=$((i + 1))",
+      "done",
+      "echo \"error: job $1 broke\" >&2",
+      "exit 1",
+      ""
+    ].join("\n")
+    const count = 6
+    const jobs = [
+      "on: push",
+      "jobs:",
+      ...Array.from({ length: count }, (_, n) => job(`job${n}`, `run: sh noisy.sh ${n}`)).flat(),
+      ...job("passes", "run: sh check.sh"),
+      ""
+    ].join("\n")
+    const root = repositoryOf({ [file]: jobs, "noisy.sh": noisy, "check.sh": "exit 0\n" })
+    const expected = Array.from(
+      { length: count },
+      (_, n) => expect.objectContaining({ step: `ci.yml:job${n}:1`, reason: `error: job ${n} broke`, exitCode: 1 })
+    )
+    const failures = await failuresOf(root)
+    expect(failures.baseline).toEqual(expected)
+    expect(failures.normal).toEqual(expected)
+  })
+})
+
 describe("smithers-ci on a repository whose CI fails here", { timeout: 600_000 }, () => {
   it("exits 3 with the first failure and no speedup when no step ever passes", async () => {
     const file = ".github/workflows/ci.yml"

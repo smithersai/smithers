@@ -28,7 +28,7 @@ import {
   noJobPassed,
   noProgress,
   nothingPassed,
-  printedLimit,
+  printedLimitOf,
   remember,
   type RerunTally,
   stoppedResults
@@ -481,7 +481,7 @@ export const own = <R>(
         ...(cached ? cacheEnv : {})
       }
       const watch = try watchFor(stall.minutes, stall.table)
-      const output = try exec(command, args, copy, environment, printedLimit, undefined, true, heard, watch, undefined, count)
+      const output = try exec(command, args, copy, environment, printedLimitOf(selected.length), undefined, true, heard, watch, undefined, count)
       const record = effect {
         const text = try fs.readFileString(file)
         return try Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text)

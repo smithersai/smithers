@@ -286,7 +286,8 @@ report and no speedup. Standard error gives the first failure: the step, its
 command, its exit code and the line of its output that says what failed. That
 line is the replay's own when it stopped the step, as it stops a push, else the
 last one that reports an error, never a progress line or a line of
-counts; when no line reports one, it is the last line the step printed. When only some jobs
+counts; when no line reports one, it is the last line the step printed. A step
+that printed nothing is reported with `it printed nothing`. When only some jobs
 fail, the program exits `0`, the report lists them, and the speedup covers the
 others. When only some commits fail, the program exits `0`, the report names each
 failed step, and the speedup covers the commits where the CI passed.
