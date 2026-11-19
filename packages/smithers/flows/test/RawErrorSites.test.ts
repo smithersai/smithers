@@ -42,7 +42,6 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string
   ["flow/src/Flow/internal.ts", 1, "a comment naming the throw payloadSchema.make performs"],
   ["flow/src/internal/DeclarationSite.ts", 1, "captures a stack to locate a declaration; never thrown"],
   ["journal/src/RedactedLogger.ts", 1, "an empty Error clone that receives redacted fields; never thrown"],
-  ["kernel/src/HttpClient.ts", 1, wrappedCause],
   ["kernel/src/test/HostContract.ts", 1, testSupport],
   ["platform-browser/src/BrowserSqlite.ts", 1, wrappedCause],
   [
