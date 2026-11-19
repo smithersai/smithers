@@ -1537,10 +1537,18 @@ export const bubblewrap = (
     // as `/tmp` is: a tool that keeps work apart from `/tmp` makes it here.
     "--tmpfs",
     "/var/tmp",
+    // Every directory the run's variables name is there from the start, so
+    // a program's first use of one changes nothing a later step sees in `/tmp`.
     "--dir",
     home,
     "--dir",
-    "/tmp/cache"
+    "/tmp/cache",
+    "--dir",
+    "/tmp/config",
+    "--dir",
+    "/tmp/data",
+    "--dir",
+    "/tmp/state"
   )
   // A staged run's declared files are one mount: a bind each would pass the
   // argument limit. Every other grant is still bound on top of it.

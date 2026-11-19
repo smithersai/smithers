@@ -775,6 +775,40 @@ describe("the run's own /var/tmp", () => {
   })
 })
 
+describe("the run's own directories", () => {
+  it.skipIf(process.platform !== "linux")("are each there from the start", () => {
+    const { base, workspaceRoot } = writeFixture()
+    try {
+      const tmp = NodePath.join(workspaceRoot, ".tmp")
+      NodeFs.mkdirSync(NodePath.join(tmp, "home"), { recursive: true })
+      const facts = ProcessSandbox.host()
+      const result = ProcessSandbox.plan(
+        { network: "none", reads: [], writes: [] },
+        { workspaceRoot, cwd: workspaceRoot, tmp },
+        facts
+      )
+      if (result === undefined || ProcessSandbox.isUnenforceable(result)) throw new Error("native sandbox unavailable")
+      const named = ["HOME", "TMPDIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"]
+      const each = named.map((name) => `"$${name}"`).join(" ")
+      const script = `ls /tmp; for d in ${each}; do test -d "$d" || echo "missing $d"; done`
+      const wrapped = ProcessSandbox.wrap(result, ["/bin/sh", "-c", script], {}, facts)
+      const ran = spawnSync(wrapped.argv[0]!, wrapped.argv.slice(1), {
+        encoding: "utf8",
+        timeout: 10_000,
+        env: { ...process.env, ...wrapped.env }
+      })
+      expect(ran.status, ran.stderr).toBe(0)
+      // Beside them is only the directory that holds this test's workspace.
+      expect(ran.stdout.trim().split("\n")).toEqual(
+        expect.arrayContaining(["cache", "config", "data", "home", "state"])
+      )
+      expect(ran.stdout).not.toContain("missing")
+    } finally {
+      NodeFs.rmSync(base, { recursive: true, force: true })
+    }
+  })
+})
+
 describe("the run's own user", () => {
   it.skipIf(process.platform !== "linux")("is named inside the jail, and no other user of the host is", () => {
     const { base, workspaceRoot } = writeFixture()
@@ -1225,6 +1259,12 @@ describe("every mechanism renders the same text on any host", () => {
       "/tmp/home",
       "--dir",
       "/tmp/cache",
+      "--dir",
+      "/tmp/config",
+      "--dir",
+      "/tmp/data",
+      "--dir",
+      "/tmp/state",
       "--tmpfs",
       "/work/ws",
       "--dir",
