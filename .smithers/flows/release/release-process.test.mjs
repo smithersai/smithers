@@ -8,6 +8,13 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { captureProcess, consumerEnv, redactCredentials, superviseProcess } from "./release-process.mjs"
 
+/**
+ * A deadline a spawned Node must outlast to start, read its input and write.
+ * A loaded host takes over 300 ms to start Node, and a deadline that fires
+ * first leaves no output, pid file or exit to check.
+ */
+const startupMs = 5000
+
 const node = (source, options) => captureProcess(process.execPath, ["--eval", source], process.cwd(), options)
 
 test("drains all output before classifying a successful release probe", async () => {
@@ -48,10 +55,10 @@ test("a supervised process reads its input and keeps stdin open until the probe 
   ], {
     cwd: process.cwd(),
     input: "request\n",
-    timeoutMs: 300,
+    timeoutMs: startupMs,
     onOutput: (chunk) => { output += chunk }
   })
-  assert.deepEqual({ failure: failure.message, code, signal }, { failure: "Command timed out after 300 ms before its output closed", code: null, signal: null })
+  assert.deepEqual({ failure: failure.message, code, signal }, { failure: `Command timed out after ${startupMs} ms before its output closed`, code: null, signal: null })
   assert.equal(output, "read request\n")
 })
 
@@ -80,12 +87,12 @@ const withDescendant = async (t, stdio, run) => {
 
 test("an expired output drain fails the probe even after its parent exited 0, and kills the descendant", async (t) => {
   const started = Date.now()
-  const { result, pid } = await withDescendant(t, ["ignore", "inherit", "inherit"], (source) => node(source, { timeoutMs: 300 }))
+  const { result, pid } = await withDescendant(t, ["ignore", "inherit", "inherit"], (source) => node(source, { timeoutMs: startupMs }))
   const elapsed = Date.now() - started
   assert.equal(result.ok, false)
   assert.ok(result.output.startsWith("parent finished\n"))
-  assert.match(result.output, /timed out after 300 ms before its output closed/)
-  assert.ok(elapsed >= 300 && elapsed < 2000, `settled after ${elapsed} ms`)
+  assert.match(result.output, new RegExp(`timed out after ${startupMs} ms before its output closed`))
+  assert.ok(elapsed >= startupMs && elapsed < startupMs + 1700, `settled after ${elapsed} ms`)
   assert.equal(await exited(pid), true)
 })
 

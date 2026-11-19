@@ -27,6 +27,13 @@ const escaped = (version) => version.replaceAll(".", "\\.")
 
 const run = promisify(execFile)
 
+/**
+ * A deadline a spawned Node must outlast to start, read its input and write.
+ * A loaded host takes over 300 ms to start Node, and a deadline that fires
+ * first leaves no output, pid file or exit to check.
+ */
+const startupMs = 5000
+
 const scratch = async (t, prefix) => {
   const root = await mkdtemp(join(tmpdir(), prefix))
   t.after(() => rm(root, { recursive: true, force: true }))
@@ -77,12 +84,12 @@ test("rejects every way a server can fail the handshake, with its stderr", async
     ["no serverInfo", `process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: {} }) + "\\n")`,
       /answered without serverInfo\.version/],
     ["non-JSON", `process.stdout.write("Listening on stdio\\n")`, /non-JSON line: Listening on stdio/],
-    ["silent", `console.error("still starting")`, /timed out after 500 ms[\s\S]*still starting/]
+    ["silent", `console.error("still starting")`, new RegExp(`timed out after ${startupMs} ms[\\s\\S]*still starting`)]
   ]
   for (const [name, body, expected] of cases) {
     const script = join(root, "bin", `${name.replace(/\W/g, "-")}.cjs`)
     await write(script, server(body))
-    await assert.rejects(mcpInitialize(process.execPath, [script], { cwd: root, timeoutMs: 500 }), expected, name)
+    await assert.rejects(mcpInitialize(process.execPath, [script], { cwd: root, timeoutMs: startupMs }), expected, name)
   }
   await assert.rejects(mcpInitialize(join(root, "missing-binary"), [], { cwd: root }), /MCP server could not start/)
 })
@@ -116,10 +123,6 @@ test("every settlement kills what the server started and closes the pipes it inh
     descendants.push(pid)
     return { ...outcome, elapsed: Date.now() - started, pid }
   }
-  // Each server must start, read the request and record its descendant before
-  // its deadline. A loaded host takes over 300 ms to start Node, and a deadline
-  // that fires first leaves no descendant to check.
-  const startupMs = 5000
   // The reply settles the probe at once, while the descendant still holds the output open.
   const answered = await probe(
     "answers",
