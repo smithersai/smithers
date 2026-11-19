@@ -737,6 +737,10 @@ describe("reading a trace", () => {
     const plain = read("100 stat(\"/w/caf\u00e9\\n\", {st_mode=S_IFREG|0644, ...}) = 0")
     expect(plain.refusals).toEqual([])
     expect(paths(plain.found)).toEqual(["/w/caf\u00e9\n"])
+    // A directory whose name holds `>,`: the descriptor's path ends at the `>` before a comma and a space.
+    const odd = read("100 openat(7</w/a>,b>, \"x\", O_RDONLY) = 3\n100 fchdir(7</w/a>,>) = 0")
+    expect(odd.refusals).toEqual([])
+    expect(paths(odd.found)).toEqual(["/w/a>,b/x"])
     const answered = read("100 stat(\"/w/unknown\", {st_mode=S_IFREG|0644, ...}) = ?")
     expect(paths(answered.found)).toEqual(["/w/unknown"])
     const wrote = read("100 unlink(\"/w/unknown\") = ?")
@@ -1239,6 +1243,48 @@ describe("what a run read that an earlier step wrote", () => {
     const state = (name: string): string => ObservedReads.measure(Path.join(root, name))
     return { root, write, install, build, unused, open, list, observe, state }
   }
+
+  // `cargo doc` then `cargo test` on same-file with its Cargo.lock committed: the test ran at every commit with
+  // `~/.cargo/.global-cache, which //:ci.yml-test-2 left, changed`, cargo's note of when each crate was last used.
+  it("holds none of what a build tool reads of its own bookkeeping, left by the step before it", async () => {
+    const { observe, root, write } = await installed()
+    await write("home/.cargo/.global-cache", "used at 1")
+    await write("target/.rustc_info.json", "{\"b\":1,\"a\":2}")
+    await write("target/debug/liba.rlib", "built")
+    const doc: ObservedReads.Producer = {
+      label: "//:doc",
+      id: "doc-1",
+      made: new Set(),
+      touched: new Set(
+        ["home/.cargo/.global-cache", "target/.rustc_info.json", "target/debug/liba.rlib"].map((name) =>
+          Path.join(root, name)
+        )
+      )
+    }
+    await write("bin/cargo", "tool")
+    await write("bin/make", "tool")
+    const reads = (program: string) => [
+      `100 execve("${root}/bin/${program}", ["${program}", "test"], 0x7ffc /* 9 vars */) = 0`,
+      `100 openat(AT_FDCWD<${root}>, "home/.cargo/.global-cache", O_RDONLY) = 3`,
+      `100 openat(AT_FDCWD<${root}>, "target/.rustc_info.json", O_RDONLY) = 3`,
+      `100 openat(AT_FDCWD<${root}>, "target/debug/liba.rlib", O_RDONLY) = 3`
+    ]
+    const given = (program: string) => observe(reads(program), [doc]).record.given?.map(([path]) => path)
+    // What the step before built is read as ever: only cargo's own notes are left out.
+    expect(given("cargo")).toEqual(["target/debug/liba.rlib"])
+    expect(given("make")).toEqual([
+      "home/.cargo/.global-cache",
+      "target/.rustc_info.json",
+      "target/debug/liba.rlib"
+    ])
+    // The step before ran again and left its notes with other bytes: cargo's record still holds.
+    const record = observe(reads("cargo"), [doc]).record
+    await write("home/.cargo/.global-cache", "used at 2")
+    await write("target/.rustc_info.json", "{\"a\":2,\"b\":1}")
+    expect(ObservedReads.changed(record, root)).toBeUndefined()
+    await write("target/debug/liba.rlib", "built again")
+    expect(ObservedReads.changed(record, root)).toBe("target/debug/liba.rlib, which //:doc left, changed")
+  })
 
   it("records each such path with the step it came from", async () => {
     const { build, install, list, observe, open, root, state, unused } = await installed()
@@ -1902,7 +1948,11 @@ describe("a build tool that fetches what a lockfile pins", () => {
     "with no Cargo.lock to say what it fetches"
 
   it("is known by its command line", () => {
-    const cargo = { pins: ["Cargo.lock"], rewrites: ["Cargo.lock"], own: /\/\.git(?:\/|$)|\/\.rustc_info\.json$/ }
+    const cargo = {
+      pins: ["Cargo.lock"],
+      rewrites: ["Cargo.lock"],
+      own: /\/\.git(?:\/|$)|\/\.rustc_info\.json$|\/\.global-cache(?:-journal)?$/
+    }
     const go = { pins: ["go.sum"], rewrites: ["go.sum", "go.mod", "go.work.sum", "go.work"] }
     for (
       const line of [
@@ -2026,6 +2076,8 @@ describe("a build tool that fetches what a lockfile pins", () => {
       "100 openat(AT_FDCWD</w/crate>, \"/w/crate/.git/objects/pack\", O_RDONLY|O_DIRECTORY) = 10",
       "100 getdents64(10</w/crate/.git/objects/pack>, 0x55 /* 4 entries */, 32768) = 120",
       open(100, "/w/crate/target/.rustc_info.json"),
+      open(100, "/w/home/.cargo/.global-cache", "O_RDWR|O_CREAT|O_CLOEXEC, 0644"),
+      open(100, "/w/home/.cargo/.global-cache-journal"),
       // A write that failed is a look at the path.
       "100 openat(AT_FDCWD</w/crate>, \"/w/crate/.git/index.lock\", O_WRONLY|O_CREAT|O_EXCL, 0666) = -1 EACCES (Permission denied)"
     ]
@@ -2062,7 +2114,9 @@ describe("a build tool that fetches what a lockfile pins", () => {
         "/w/crate/.git/index",
         "/w/crate/.git/index.lock",
         "/w/crate/.git/objects/pack",
-        "/w/crate/target/.rustc_info.json"
+        "/w/crate/target/.rustc_info.json",
+        "/w/home/.cargo/.global-cache",
+        "/w/home/.cargo/.global-cache-journal"
       ],
       missing: ["/w/crate/.git/commondir"],
       listed: ["/w/crate/.git/objects/pack"]

@@ -500,8 +500,9 @@ const lockedBuilds: ReadonlyMap<
     rewrites: ["Cargo.lock"],
     // For these commands cargo asks git only which files a package holds, to tell whether a build it kept is
     // older than a source, and keeps what it asked the compiler in `.rustc_info.json`, which it checks against
-    // the compiler before it uses it and writes with its entries in another order at every run.
-    own: /\/\.git(?:\/|$)|\/\.rustc_info\.json$/
+    // the compiler before it uses it and writes with its entries in another order at every run. In its home it
+    // notes when each downloaded crate was last used, in `.global-cache`, to remove the ones long unused.
+    own: /\/\.git(?:\/|$)|\/\.rustc_info\.json$|\/\.global-cache(?:-journal)?$/
   }],
   ["go", {
     commands: ["build", "test", "vet"],

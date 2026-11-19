@@ -1232,7 +1232,8 @@ describe("a job of observed steps", () => {
     }
   )
   // `cargo doc` opens the repository's git store to list a package's files, at every commit, and a note of
-  // the compiler it rewrites at every run. A record that held either would never answer another commit.
+  // the compiler it rewrites at every run. A record that held either would never answer another commit. In
+  // its home it notes when each crate was last used: the step after it reads that note, never the same twice.
   tracedIt("answers a cargo step at another commit, and none of a program that reads the commit itself", async () => {
     const tool = `#!${process.execPath}\n` +
       "const fs = require('fs')\n" +
@@ -1241,9 +1242,12 @@ describe("a job of observed steps", () => {
       "fs.mkdirSync('deps', { recursive: true })\n" +
       "fs.mkdirSync('target', { recursive: true })\n" +
       "fs.writeFileSync('target/.rustc_info.json', String(Math.random()))\n" +
+      "const note = process.argv[4] + '/.global-cache'\n" +
+      "try { fs.readFileSync(note) } catch {}\n" +
+      "fs.writeFileSync(note, String(Math.random()))\n" +
       "fs.writeFileSync('deps/installed.txt', fs.readFileSync('lock.txt'))\n"
     const commit = (name: string) => `ref: refs/heads/${name}\n`
-    const listing = await job({ install: "cargo doc" })
+    const listing = await job({ install: (home) => `cargo doc --target-dir ${home}` })
     await listing.write(Path.join(listing.base, "tools", "cargo"), tool, 0o755)
     await listing.write(".git/HEAD", commit("one"))
     expect(await listing.run()).toEqual(all("ran"))
@@ -1252,7 +1256,7 @@ describe("a job of observed steps", () => {
     await listing.write(".git/HEAD", commit("two"))
     expect(await listing.run()).toEqual(all("hit"))
     // `cargo package` writes the commit into what it packs: the same program, and the commit is what it read.
-    const packing = await job({ install: "cargo package" })
+    const packing = await job({ install: (home) => `cargo package --target-dir ${home}` })
     await packing.write(Path.join(packing.base, "tools", "cargo"), tool, 0o755)
     await packing.write(".git/HEAD", commit("one"))
     expect(await packing.run()).toEqual(all("ran"))

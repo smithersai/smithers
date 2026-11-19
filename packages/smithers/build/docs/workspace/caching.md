@@ -552,9 +552,11 @@ above, cargo opens the repository's git store (`.git/HEAD`, `.git/index`) to
 list a package's files, which tells it whether a build it kept is older than
 a source. It also keeps what it asked the compiler in `.rustc_info.json`,
 which it checks against the compiler before use and writes with its entries
-in another order at every run. Neither is recorded when cargo itself reads
-it, so a `cargo doc` step is reused at a commit that changes nothing else it
-read. The directories cargo lists and the sources the compiler reads are
+in another order at every run, and in its home it notes when each downloaded
+crate was last used, in `.global-cache`. None of the three is recorded when
+cargo itself reads it, so a `cargo doc` step is reused at a commit that
+changes nothing else it read, and the `cargo test` after it does not run
+because the step before it left those notes with other bytes. The directories cargo lists and the sources the compiler reads are
 recorded as always. A build script or a test that reads `.git` did read it,
 and so did `cargo package`, which writes the commit into what it packs.
 
