@@ -9,14 +9,29 @@ import { cpuMsOf, type CpuMeter, meterOf, observe } from "./Cpu.ts"
 import type { Table, TableHost } from "./Stall.vibe"
 
 /**
- * How often the processes are read when no one says. A step's last moments
+ * How often every process of the machine is read when no one says, where
+ * the processes under a step cannot be read alone. A step's last moments
  * before it ends are not seen, so a shorter time counts more of a short step
- * and costs more reading.
+ * and costs more reading: 2,500 processes cost 90 ms of processor time each
+ * time.
  *
  * @category constants
  * @since 0.1.0
  */
 export const defaultCpuTick: Duration.Input = "2 seconds"
+
+/**
+ * How often the processes under each step are read where the machine says
+ * which processes a process started (`Table.under`). Reading one step's
+ * processes costs the same however busy the machine is, so they are read
+ * often: of a step's last moments, a quarter of a second at most is not
+ * seen, where every two seconds lost a third of the CPU time of a job of
+ * four 10 s steps.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const nearTick: Duration.Input = "250 millis"
 
 /**
  * Counts the CPU time of process trees. `track` starts counting the tree
@@ -32,24 +47,47 @@ export interface CpuWatch {
 }
 
 /**
- * A watch that reads `table` every `tick` until its scope closes.
+ * A watch that reads `table` until its scope closes: the processes under
+ * each step every {@link nearTick}, or every `tick` when that is shorter,
+ * and where the table cannot read one step's processes, every process of the
+ * machine every `tick`.
  *
  * @category constructors
  * @since 0.1.0
  */
 export effect function cpuWatch(table: Table, tick: Duration.Input = defaultCpuTick) {
   const meters = new Map<CpuMeter, { read: boolean }>()
+  const often = Duration.min(Duration.fromInputUnsafe(tick), Duration.fromInputUnsafe(nearTick))
+  // Whether one step's processes can be read alone: a table that has the reader may still find that this kernel
+  // lists no process's children, and says so the first time it is asked.
+  let alone = table.under
+  effect function whole() {
+    const entries = try table.read
+    if (entries === undefined) return
+    for (const [meter, state] of meters) {
+      observe(meter, entries)
+      state.read = true
+    }
+  }
+  effect function each(under: NonNullable<Table["under"]>) {
+    for (const [meter, state] of [...meters]) {
+      const entries = try under(meter.root)
+      if (entries === undefined) {
+        alone = undefined
+        return
+      }
+      observe(meter, entries)
+      state.read = true
+    }
+  }
   effect function reading() {
     while (true) {
-      try sleep(tick)
+      const under = alone
+      try sleep(under === undefined ? tick : often)
       // Nothing is read while no step runs.
       if (meters.size === 0) continue
-      const entries = try table.read
-      if (entries === undefined) continue
-      for (const [meter, state] of meters) {
-        observe(meter, entries)
-        state.read = true
-      }
+      if (under === undefined) try whole()
+      else try each(under)
     }
   }
   fork.scoped reading()

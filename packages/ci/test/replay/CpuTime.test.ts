@@ -1,8 +1,9 @@
 /** The CPU time each way's steps used, in real repositories, with the real `smthrs`. */
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { rmSync } from "node:fs"
+import { existsSync, rmSync } from "node:fs"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
@@ -24,16 +25,21 @@ afterAll(() => {
 
 const base = parts("none") as unknown as ReplayParts<never>
 
-/** A host that reads the processes ten times a second, from `read` when it is given. */
-const host = (read?: ReturnType<typeof tableFor>["read"]): Layer.Layer<never> =>
+type Table = ReturnType<typeof tableFor>
+
+/** A host that reads every process of the machine each `cpuTick`, from `table` when it is given. */
+const host = (table?: Table, cpuTick: Duration.Input = "100 millis"): Layer.Layer<never> =>
   Layer.succeed(Options, {
     smthrs: [smthrs] as const,
     reruns: 0,
     prepare: (directory: string) => Effect.sync(() => linkTargets(directory)),
     confine: unconfined,
-    cpuTick: "100 millis",
-    ...(read === undefined ? {} : { processes: { ...tableFor(), read } })
+    cpuTick,
+    ...(table === undefined ? {} : { processes: table })
   }) as never
+
+/** Whether this machine says which processes a process started, as a Linux kernel built to list them does. */
+const listsChildren = existsSync(`/proc/${process.pid}/task/${process.pid}/children`)
 
 const start = (root: string, options: Layer.Layer<never>) =>
   Effect.runPromise(
@@ -59,9 +65,35 @@ describe("the CPU time of a replay's steps", { timeout: 600_000 }, () => {
     expect(text(report)).toMatch(/^the steps used .+ of CPU time as the baseline and .+ in normal mode/m)
   })
 
+  it.skipIf(!listsChildren)(
+    "holds a step that ended before every process of the machine was read once, where a step's processes are read alone",
+    async () => {
+      const root = track(makeSmallRepository([job("works", work)]))
+      // The whole machine is never read while the step runs; the processes under the step are, four times a second.
+      const report = await start(root, host(undefined, "1 hour"))
+      const [commit] = report.commits
+      expect(commit?.baseline.cpuMs).toBeGreaterThan(300)
+      expect(commit?.normal.cpuMs).toBeGreaterThan(300)
+    }
+  )
+
+  it("is read from every process of the machine where a step's processes cannot be read alone", async () => {
+    const root = track(makeSmallRepository([job("works", work)]))
+    // A kernel that lists no process's children says so when it is first asked, and a system with no such list
+    // has no reader for it.
+    const { under: _under, ...whole } = tableFor()
+    for (const table of [{ ...tableFor(), under: () => Effect.succeed(undefined) }, whole]) {
+      const report = await start(root, host(table))
+      const [commit] = report.commits
+      expect(commit?.baseline.cpuMs).toBeGreaterThan(300)
+      expect(commit?.normal.cpuMs).toBeGreaterThan(300)
+    }
+  })
+
   it("is in no report on a machine whose processes cannot be read", async () => {
     const root = track(makeSmallRepository([job("works", work)]))
-    const report = await start(root, host(Effect.succeed(undefined)))
+    const unread = Effect.succeed(undefined)
+    const report = await start(root, host({ ...tableFor(), read: unread, under: () => unread }))
     const [commit] = report.commits
     expect(commit?.baseline.ok).toBe(true)
     expect(commit?.baseline).not.toHaveProperty("cpuMs")

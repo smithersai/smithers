@@ -24,7 +24,11 @@ export type TableHost = FileSystem.FileSystem | ChildProcessSpawner
 /**
  * The machine's processes. `read` gives `undefined` when they cannot be read;
  * nothing is then called stalled, because a step is never stopped on time
- * alone. `stop` ends processes at once.
+ * alone. `stop` ends processes at once. `under` gives one process and every
+ * process under it, read by walking down from it, which costs the same
+ * however many other processes the machine runs; none when the process is
+ * gone, and `undefined` where the machine does not say which processes a
+ * process started. A table without it cannot say.
  *
  * @category models
  * @since 0.1.0
@@ -32,6 +36,7 @@ export type TableHost = FileSystem.FileSystem | ChildProcessSpawner
 export interface Table {
   readonly read: (ReadonlyArray<ProcessEntry> | undefined)!!TableHost
   readonly stop: (pids: ReadonlyArray<number>) => void!!TableHost
+  readonly under?: (root: number) => (ReadonlyArray<ProcessEntry> | undefined)!!TableHost
 }
 
 /** Runs a program to its end and gives its standard output, or `undefined` when it fails. */
@@ -78,6 +83,36 @@ effect function readProcByFile() {
   return entries
 }
 
+/**
+ * What a shell runs to print the line of `/proc` of a process and of every process under it: Linux lists the
+ * processes each thread started in `/proc/<pid>/task/<thread>/children`. It reads with the shell's own `read`, so
+ * one program reads the whole tree. It ends with 3 on a kernel that keeps no such list.
+ */
+const walk = [
+  "[ -e \"/proc/$1/task/$1/children\" ] || [ ! -e \"/proc/$1\" ] || exit 3",
+  "while [ $# -gt 0 ]; do",
+  "  process=$1",
+  "  shift",
+  "  IFS= read -r line < \"/proc/$process/stat\" || continue",
+  "  printf '%s\\n' \"$line\"",
+  "  for list in /proc/$process/task/*/children; do",
+  "    started=",
+  "    read -r started < \"$list\"",
+  "    set -- \"$@\" $started",
+  "  done",
+  "done"
+].join("\n")
+
+/** One process and every process under it, from `/proc`; `undefined` where the kernel lists no children. */
+effect function readUnder(root: number) {
+  const text = try outputOf("sh", ["-c", walk, "sh", String(root)])
+  if (text === undefined) return undefined
+  return text.split("\n").flatMap((line) => {
+    const entry = fromStat(line)
+    return entry === undefined ? [] : [entry]
+  })
+}
+
 /** Every process, from `ps`. */
 effect function readPs() {
   const text = try outputOf("ps", ["-axo", "pid=,ppid=,time="])
@@ -93,6 +128,8 @@ effect function readPs() {
  */
 export const tableFor = (host: string = thisHost()): Table => ({
   read: host === "linux" ? readProc() : readPs(),
+  // `ps` cannot be asked for one tree.
+  ...(host === "linux" ? { under: readUnder } : {}),
   stop: (pids) => effect {
     if (pids.length > 0) try outputOf("kill", ["-KILL", ...pids.map(String)])
   }

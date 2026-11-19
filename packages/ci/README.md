@@ -68,7 +68,11 @@ directly, so the parts are built at the same time.
   adds `checkout` and puts the sum of each part, with `rest`, on every commit's normal mode under `--json`.
 - Not contracts, and changed with them: a baseline job's checkout, home and temporary directory are removed after
   the run's clock has stopped, and Smithers build no longer waits for the machines it made to be removed: a CI
-  machine removes neither.
+  machine removes neither. On Linux the CPU time of a step (`RunTotals.cpuMs`) is read from the processes under the
+  step four times a second (`Table.under`, the kernel's list of each thread's children). Read from every process of
+  the machine every two seconds, it lost what a step's processes used after the last reading: p-limit's baseline
+  was reported at 48 s for 74 s used, and a mode lost nothing, because its `smthrs` outlives every step and collects
+  their time.
 
 **Fourteenth round, 2026-11-18.** Nothing of Smithers CI is in the checkout a step sees (`sci-clean-tree`).
 

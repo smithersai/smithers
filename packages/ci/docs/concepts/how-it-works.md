@@ -792,10 +792,15 @@ the steps used 26m 10s of CPU time as the baseline and 4m 02s in normal mode (6.
 ```
 
 A step's CPU time does not reach the program that started it, so the replay
-reads the machine's processes every two seconds while a step runs and counts
-each process under the step for itself. What a step uses in its last moments
-is not seen, and neither is a process that leaves the step where no jail holds
-it. On a machine whose processes cannot be read, the report has no CPU time.
+reads the step's processes while it runs and counts each process under the
+step for itself. On Linux it reads the processes under each step four times a
+second. On macOS, and on a Linux kernel that does not list the processes a
+process started, it reads every process of the machine every two seconds.
+What a step uses after the last reading is not seen: at most a quarter of a
+second of each process on Linux, and up to two seconds elsewhere, which is
+most of a step that takes a second. A process that leaves its step where no
+jail holds it is not counted. On a machine whose processes cannot be read,
+the report has no CPU time.
 
 Every step that failed in a way is named, with its exit code and the first line
 of its error output. When the step wrote no error, a line of what it printed

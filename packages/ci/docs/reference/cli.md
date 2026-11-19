@@ -184,8 +184,9 @@ one line, and for each commit and way under `--json` (`cpuMs`; `baselineCpuMs`,
 the steps used 26m 10s of CPU time as the baseline and 4m 02s in normal mode (6.5× less)
 ```
 
-It is read from the machine's processes while each step runs. A machine whose
-processes cannot be read gives a report with no CPU time.
+It is read from each step's processes while the step runs: four times a second
+on Linux, every two seconds on macOS. A machine whose processes cannot be read
+gives a report with no CPU time.
 
 ### Steps that stop making progress
 
