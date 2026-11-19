@@ -9,6 +9,7 @@ export { workspace } from "./Detect.vibe"
 export {
   commandFailed,
   commandStopped,
+  inputsOf,
   installDirectories,
   type Installed,
   installLabel,
@@ -16,9 +17,11 @@ export {
   managerFor,
   managers,
   noSmthrs,
+  PlannedInputs,
+  readInstalls,
   smthrsBin
 } from "./Install.ts"
-export { committedWorkspace, type Host, install, own, run } from "./Replay.vibe"
+export { committedWorkspace, type Host, install, installEach, own, run } from "./Replay.vibe"
 export {
   linesOf,
   noRecord,

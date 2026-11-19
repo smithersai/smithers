@@ -88,6 +88,11 @@ there names:
 The program is then `node_modules/.bin/smthrs` in the first of those
 directories that has it.
 
+A target that reads a lockfile reads what its install brings, such as a tool
+in that directory's `node_modules/.bin`. So each directory whose lockfile a
+replayed target lists among its inputs is installed too, the same way, before
+the targets run. These installs are timed with the rest; finding them is not.
+
 ## How one commit is run
 
 Commits run oldest first. Each mode has its own copy of the repository; the
@@ -227,8 +232,9 @@ code and reason, and standard error names them as the run goes. A commit where a
 target fails in the baseline is left out of the speedup.
 
 `smithers-ci` installs what the lockfiles name and nothing else. A repository
-whose CI prepares more before it runs its targets, such as other installs a
-script makes, has the targets that need them fail here.
+whose CI prepares more before it runs its targets, such as an install in a
+directory whose lockfile no target lists, or a file a script makes, has the
+targets that need it fail here.
 
 ## Reproduce a number by hand
 

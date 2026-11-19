@@ -57,6 +57,26 @@ export const firstLine = (text: string): string => {
  */
 export const readable = (text: string): string => scrub(text.replace(/\p{Cc}\[[0-9;?]*[ -/]*[@-~]/gu, ""))
 
+/** A line that starts by naming an error, as `error: …`, `fatal: …`, `TypeError: …` and `ValueError: …` do. */
+const namesError = /^(?:error|fatal|panic)\b|^[\w.$]*(?:Error|Exception)\b/
+
+/**
+ * The line of an error output that says why: its first line, unless that is
+ * a heading that ends with a colon, such as the test file's name a test
+ * runner prints or Python's `Traceback (most recent call last):`. Then it is
+ * the first line that starts by naming an error, when one does.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const errorLine = (text: string): string => {
+  const first = firstLine(text)
+  if (!first.endsWith(":")) return first
+  const named = text.split("\n").find((line) => namesError.test(line.replace(/\p{Cc}/gu, " ").trim()))
+  return named === undefined ? first : firstLine(named)
+}
+
 const lastLine = (text: string): string => text.split("\n").findLast((line) => line.trim() !== "") ?? ""
 
 /** How a shell, or `env` on a script's first line, says a program does not exist. */
@@ -91,8 +111,8 @@ export interface StepOutput {
 
 /**
  * Why a command failed, in one line: that a program is not installed, when
- * that is what its exit code and error output say; else the first line of its
- * error output; else the last line it printed, where a test runner puts its
+ * that is what its exit code and error output say; else the line of its
+ * error output that says why ({@link errorLine}); else the last line it printed, where a test runner puts its
  * result.
  *
  * @throws {never}
@@ -102,7 +122,7 @@ export interface StepOutput {
 export const reasonOf = (output: StepOutput): string => {
   const program = output.exitCode === notFound ? missingProgram(readable(output.stderr.slice(-sampleLimit))) : undefined
   if (program !== undefined) return firstLine(`\`${program}\` is not installed on this machine`)
-  return firstLine(readable(output.stderr.slice(0, sampleLimit)))
+  return errorLine(readable(output.stderr.slice(0, sampleLimit)))
     || firstLine(lastLine(readable(output.stdout.slice(-sampleLimit))))
     || noOutput
 }

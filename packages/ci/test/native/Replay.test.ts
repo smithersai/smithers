@@ -204,7 +204,14 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     const command = fakeSmthrs(
       `echo "url=$SMITHERS_CACHE_URL tokens=[$SMITHERS_CACHE_TOKEN][$SMITHERS_CACHE_READ_TOKEN][$SMITHERS_CACHE_WRITE_TOKEN] $*" >> ${calls}/log\nexec $real "$@"`
     )
-    return { command, log: () => execFileSync("cat", [`${calls}/log`], { encoding: "utf8" }).trim().split("\n") }
+    const all = () => execFileSync("cat", [`${calls}/log`], { encoding: "utf8" }).trim().split("\n")
+    // The plan that finds what a commit installs is printed once per commit, before its runs.
+    const planned = /^url=\S* tokens=\[\S*\] ci (\S+ )+--plan --format json --workspace \S+$/
+    return {
+      command,
+      log: () => all().filter((line) => !planned.test(line)),
+      plans: () => all().filter((line) => planned.test(line))
+    }
   }
 
   /** Runs `work` with the credentials of a shared cache in this process's environment. */
@@ -311,8 +318,8 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     const recording = recordingSmthrs()
     const root = keep(makeOwnWith(recording.command))
     await withSecrets(() => onNode(own(request(root, { targets: ["//:c"] }), partsFor("none"), "WORKSPACE.ts")))
-    const log = recording.log()
-    expect(log).toHaveLength(2)
+    const log = [...recording.plans(), ...recording.log()]
+    expect(log).toHaveLength(3)
     for (const line of log) expect(line.startsWith("url= tokens=[][][] ci //:c ")).toBe(true)
   })
 
@@ -353,9 +360,11 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     const report = await onNode(own(asked, parts, "WORKSPACE.ts"))
     expect(report.commits[0]?.normal.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
     expect(report.commits[0]?.fast?.counts).toEqual({ hit: 0, ran: 0, failed: 0, skipped: 2 })
-    // The baseline, normal mode and the plan: fast mode had nothing to name.
+    // The baseline and normal mode ran; fast mode had nothing to name. The plans are the one that finds what the
+    // commit installs and the one fast mode scores.
     const commands = recording.log()
-    expect(commands).toHaveLength(3)
+    expect(commands).toHaveLength(2)
+    expect(recording.plans()).toHaveLength(2)
     expect(commands.some((line) => line.includes(" ci //:a "))).toBe(false)
   })
 

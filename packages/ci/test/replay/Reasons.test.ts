@@ -54,6 +54,27 @@ describe("why a command failed", () => {
       .toBe("first problem")
   })
 
+  it("is the line that names the error when a heading comes first, as a test runner prints the file's name", () => {
+    const stderr = [
+      "tests/readme-exports.test.ts:",
+      "",
+      "# Unhandled error between tests",
+      "-------------------------------",
+      "error: Cannot find package 'fast-check' from 'tests/readme-exports.test.ts'",
+      " 1 error"
+    ].join("\n")
+    expect(reasonOf({ exitCode: 1, stderr, stdout: "" }))
+      .toBe("error: Cannot find package 'fast-check' from 'tests/readme-exports.test.ts'")
+    expect(reasonOf({ exitCode: 1, stderr: "Traceback (most recent call last):\n  x\nValueError: no\n", stdout: "" }))
+      .toBe("ValueError: no")
+    expect(reasonOf({ exitCode: 1, stderr: "\u001b[31mTypeError\u001b[0m: x is not a function\n", stdout: "" }))
+      .toBe("TypeError: x is not a function")
+    expect(reasonOf({ exitCode: 1, stderr: "results:\nerrors: 0\nerror_log off\n", stdout: "" })).toBe("results:")
+    // A first line that is no heading is the reason, though a line that names an error follows.
+    expect(reasonOf({ exitCode: 1, stderr: "push refused\nerror: failed to push some refs\n", stdout: "" }))
+      .toBe("push refused")
+  })
+
   it("is the last printed line when the command wrote no error, and says when it printed nothing", () => {
     expect(reasonOf({ exitCode: 1, stderr: " \n", stdout: "running\n3 tests failed\n\n" })).toBe("3 tests failed")
     expect(reasonOf({ exitCode: 1, stderr: "", stdout: "" })).toBe("it printed nothing")

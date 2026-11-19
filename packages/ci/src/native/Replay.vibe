@@ -78,8 +78,11 @@ import {
   type Installed,
   installDirectories,
   installLabel,
+  inputsOf,
   managerFor,
   noSmthrs,
+  PlannedInputs,
+  readInstalls,
   smthrsBin
 } from "./Install.ts"
 import { linesOf, noRecord, noRecordLabel, ranAgain, ranAgainLines, withReasons } from "./Results.ts"
@@ -137,6 +140,34 @@ export effect function install(
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
   const directories = installDirectories(workspaceFile)
+  const failed = try installEach(checkout, directories, place, limit, stall, count)
+  if (failed !== undefined) return { ok: false, reason: failed }
+  for (const directory of directories) {
+    const smthrs = path.join(checkout, directory, smthrsBin)
+    const present = fs.exists(smthrs) catch () => false
+    if (present) return { ok: true, smthrs }
+  }
+  return { ok: false, reason: noSmthrs(directories) }
+}
+
+/**
+ * Installs each of a checkout's `directories` that holds a `package.json` and
+ * a lockfile, in order, as {@link install} does. Gives why the first that
+ * failed failed, or `undefined` when none did.
+ *
+ * @category internals
+ * @since 0.1.0
+ */
+export effect function installEach(
+  checkout: string,
+  directories: ReadonlyArray<string>,
+  place: Confined,
+  limit: Duration.Input = Duration.hours(stepTimeoutHours),
+  stall: StallLimit = defaultStall(),
+  count: Count = uncounted
+): (string | undefined)!!Host {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
   for (const directory of directories) {
     const names = fs.readDirectory(path.join(checkout, directory)) catch (): ReadonlyArray<string> => []
     const manager = names.includes("package.json") ? managerFor(names) : undefined
@@ -145,16 +176,11 @@ export effect function install(
     const environment = stepEnvironment(place.daemon, place)
     const ran = runStep(command, args, path.join(checkout, directory), environment, limit, stall, count)
       catch () => ({ timedOut: false, stalled: false, exitCode: 127 })
-    if (ran.stalled) return { ok: false, reason: commandStopped(manager.command, directory, noProgress(stall.minutes)) }
-    if (ran.timedOut) return { ok: false, reason: commandStopped(manager.command, directory, pastLimit(limit)) }
-    if (ran.exitCode !== 0) return { ok: false, reason: commandFailed(manager.command, directory, ran.exitCode) }
+    if (ran.stalled) return commandStopped(manager.command, directory, noProgress(stall.minutes))
+    if (ran.timedOut) return commandStopped(manager.command, directory, pastLimit(limit))
+    if (ran.exitCode !== 0) return commandFailed(manager.command, directory, ran.exitCode)
   }
-  for (const directory of directories) {
-    const smthrs = path.join(checkout, directory, smthrsBin)
-    const present = fs.exists(smthrs) catch () => false
-    if (present) return { ok: true, smthrs }
-  }
-  return { ok: false, reason: noSmthrs(directories) }
+  return undefined
 }
 
 /** The one result of a commit whose install failed. */
@@ -191,8 +217,10 @@ interface CommitCi {
  *
  * Commits run oldest first in three copies: the baseline's has no untracked
  * file when a commit starts, and the normal and fast ones only their cache.
- * Each is then installed, and its own `smthrs` runs the patterns. Wall time
- * covers the checkout, the install and the first pass, the same in every
+ * Each is then installed, where the workspace file is and at the root, and
+ * in every directory whose lockfile a target the patterns select names, and
+ * its own `smthrs` runs the patterns. Wall time
+ * covers the checkout, the installs and the first pass, the same in every
  * mode; the reruns that label flaky targets, and the cleaning of a copy after
  * its run, are not counted. The CPU time of what is timed is in the report
  * beside it (`RunTotals.cpuMs`), read from the processes while they run. A
@@ -310,16 +338,54 @@ export const own = <R>(
       return copy
     }
 
-    /** Puts `copy` at `commit` with nothing untracked but what `kept` names, and installs it for `file`. */
+    // The directories each commit's patterns install besides the workspace file's, by commit and patterns.
+    const readAt = new Map<string, ReadonlyArray<string>>()
+
+    /**
+     * The directories whose lockfile a target `patterns` select names at `commit`, from the plan `smthrs` prints in
+     * `copy`. None when it prints no plan: the run then fails as the commit does.
+     */
+    effect function installsFor(
+      commit: string,
+      copy: string,
+      smthrs: string,
+      patterns: ReadonlyArray<string>,
+      place: Confined,
+      installed: ReadonlyArray<string>
+    ) {
+      const known = readAt.get(`${commit} ${patterns.join(" ")}`)
+      if (known !== undefined) return known
+      const plan = ["ci", ...patterns, "--plan", "--format", "json", "--workspace", copy]
+      const [command, ...args] = held(place, [copy], [smthrs, ...plan])
+      const environment = stepEnvironment(place.daemon, place)
+      const planned = try exec(command, args, copy, environment, Number.POSITIVE_INFINITY, stdoutOf, true)
+      const inputs = Schema.decodeUnknownEffect(Schema.fromJsonString(PlannedInputs))(planned.text) catch () => undefined
+      const directories = inputs === undefined ? [] : readInstalls(inputsOf(inputs), installed)
+      readAt.set(`${commit} ${patterns.join(" ")}`, directories)
+      return directories
+    }
+
+    /**
+     * Puts `copy` at `commit` with nothing untracked but what `kept` names, and installs it for `ci`: the workspace
+     * file's directory and the root, then each directory whose lockfile a target the patterns select names. Gives
+     * also the time the plan that finds those took, which is the replay's own work.
+     */
     effect function ready(
       copy: string,
       commit: string,
       kept: ReadonlyArray<string>,
       place: Confined,
-      file: string
+      ci: CommitCi
     ) {
       try checkoutAt(copy, commit, place, kept)
-      return try install(copy, file, place, stepLimit, stall, count)
+      const state = try install(copy, ci.workspaceFile, place, stepLimit, stall, count)
+      if (!state.ok) return { state, planMs: 0 }
+      const planning = try Clock.currentTimeMillis
+      const installed = installDirectories(ci.workspaceFile)
+      const more = try installsFor(commit, copy, state.smthrs, ci.patterns, place, installed)
+      const planMs = (try Clock.currentTimeMillis) - planning
+      const failed = try installEach(copy, more, place, stepLimit, stall, count)
+      return { state: failed === undefined ? state : ({ ok: false, reason: failed } satisfies Installed), planMs }
     }
 
     const normalCopy = try copyOf("normal")
@@ -467,7 +533,7 @@ export const own = <R>(
     effect function judgingAt(commit: string, ci: CommitCi) {
       if (judging?.at === commit) return judging
       const copy = judging?.copy ?? try copyOf("trial")
-      const made = { copy, at: commit, state: try ready(copy, commit, [], places.trial, ci.workspaceFile) }
+      const made = { copy, at: commit, state: (try ready(copy, commit, [], places.trial, ci)).state }
       judging = made
       return made
     }
@@ -552,11 +618,11 @@ export const own = <R>(
       counted = used
       const timed = effect {
         const start = try Clock.currentTimeMillis
-        const state = try ready(copy, commit, cached ? [cacheDirectory] : [], place, ci.workspaceFile)
-        // Finding what to leave out is the replay's own work, so it is not timed.
+        const { state, planMs } = try ready(copy, commit, cached ? [cacheDirectory] : [], place, ci)
+        // Finding what to install and what to leave out is the replay's own work, so it is not timed.
         const planning = try Clock.currentTimeMillis
         const patterns = targets === undefined ? try firstPass(copy, state, place, ci.patterns) : ci.patterns
-        const planned = (try Clock.currentTimeMillis) - planning
+        const planned = (try Clock.currentTimeMillis) - planning + planMs
         const execute = smthrs(copy, cached, state, place, patterns)
         const first = try execute(targets)
         return { state, execute, first, wallMs: (try Clock.currentTimeMillis) - start - planned }

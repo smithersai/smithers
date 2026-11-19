@@ -5,6 +5,8 @@
  * @since 0.1.0
  */
 
+import * as Schema from "effect/Schema"
+
 /**
  * A package manager: the lockfiles that mean a directory is installed with
  * it, and the command that installs exactly what the lockfile pins.
@@ -52,6 +54,61 @@ export const installDirectories = (workspaceFile: string): ReadonlyArray<string>
   const directory = workspaceFile.includes("/") ? workspaceFile.slice(0, workspaceFile.lastIndexOf("/")) : ""
   return directory === "" ? [""] : [directory, ""]
 }
+
+/**
+ * The directories to install, besides `installed`, for targets that name the
+ * files `inputs`, each a path from the repository root: every directory whose
+ * lockfile a target names. A target that reads a lockfile reads what its
+ * install brings, such as a tool in that directory's `node_modules/.bin`.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const readInstalls = (
+  inputs: ReadonlyArray<string>,
+  installed: ReadonlyArray<string>
+): ReadonlyArray<string> => {
+  const lockfiles = managers.flatMap((manager) => manager.lockfiles)
+  const found = inputs.flatMap((file) => {
+    const slash = file.lastIndexOf("/")
+    const directory = slash === -1 ? "" : file.slice(0, slash)
+    return lockfiles.includes(file.slice(slash + 1)) && !installed.includes(directory) ? [directory] : []
+  })
+  return [...new Set(found)].sort()
+}
+
+/**
+ * The part of a printed plan (`smthrs ci --plan --format json`) that names
+ * the files each target reads, by how its target declared them.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const PlannedInputs = Schema.Struct({
+  targets: Schema.Array(Schema.Struct({
+    declaredInputs: Schema.optionalKey(Schema.Array(Schema.Struct({
+      declaration: Schema.Struct({ _tag: Schema.String }),
+      files: Schema.Array(Schema.Struct({ path: Schema.String }))
+    })))
+  }))
+})
+
+/**
+ * Every file the targets of a printed plan name one by one, from the
+ * repository root. A file a glob matches is left out: a lockfile under a
+ * test's fixtures is read as data, not installed.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const inputsOf = (plan: typeof PlannedInputs.Type): ReadonlyArray<string> =>
+  plan.targets.flatMap((target) =>
+    (target.declaredInputs ?? []).flatMap((input) =>
+      input.declaration._tag === "File" ? input.files.map((file) => file.path) : []
+    )
+  )
 
 /**
  * Where a package manager leaves the `smthrs` a directory depends on.

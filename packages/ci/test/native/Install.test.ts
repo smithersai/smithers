@@ -1,16 +1,20 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import {
   commandFailed,
+  inputsOf,
   install,
   installDirectories,
   installLabel,
   managerFor,
   managers,
   noSmthrs,
+  PlannedInputs,
+  readInstalls,
   smthrsBin
 } from "../../src/native/index.ts"
 import { makePlace } from "../replay/place.ts"
@@ -60,6 +64,48 @@ describe("the install rules", () => {
   it("installs where the workspace file is, then at the root", () => {
     expect(installDirectories("WORKSPACE.ts")).toEqual([""])
     expect(installDirectories(".smithers/WORKSPACE.ts")).toEqual([".smithers", ""])
+  })
+
+  it("also installs each directory whose lockfile a target reads, once, and none already installed", () => {
+    const inputs = [
+      "packages/runtime/bun.lock",
+      "packages/runtime/package.json",
+      "packages/runtime/bun.lock",
+      "site/package-lock.json",
+      "docs/tools/pnpm-lock.yaml",
+      "old/bun.lockb",
+      "bun.lock",
+      ".smithers/bun.lock",
+      "packages/yarn.lock",
+      "notes/bun.lock.md"
+    ]
+    expect(readInstalls(inputs, [".smithers", ""])).toEqual(["docs/tools", "old", "packages/runtime", "site"])
+    expect(readInstalls(inputs, [])).toEqual(["", ".smithers", "docs/tools", "old", "packages/runtime", "site"])
+    expect(readInstalls([], [""])).toEqual([])
+  })
+
+  it("reads the files each target of a printed plan names one by one, and none a glob matches", () => {
+    const printed = JSON.stringify({
+      verb: "ci",
+      targets: [
+        {
+          label: "//packages:test",
+          declaredInputs: [
+            { declaration: { _tag: "File", path: "runtime/bun.lock" }, files: [{ path: "packages/runtime/bun.lock" }] },
+            { declaration: { _tag: "File", path: "a.ts" }, files: [{ path: "packages/a.ts", digest: "x" }] },
+            {
+              declaration: { _tag: "Glob", pattern: "test/**" },
+              files: [{ path: "packages/test/fixture/pnpm-lock.yaml" }, { path: "packages/test/b.ts" }]
+            }
+          ]
+        },
+        { label: "//packages:old" }
+      ]
+    })
+    expect(inputsOf(Schema.decodeUnknownSync(Schema.fromJsonString(PlannedInputs))(printed))).toEqual([
+      "packages/runtime/bun.lock",
+      "packages/a.ts"
+    ])
   })
 
   it("words a failed install without its output", () => {

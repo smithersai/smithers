@@ -181,3 +181,56 @@ export const fakeSmthrs = (body: string): string => {
   chmodSync(command, 0o755)
   return command
 }
+
+/** A sub-package's install that leaves the tool `greet`, which prints `greet.txt`, in its `node_modules/.bin`. */
+export const toolInstall = `import { chmodSync, mkdirSync, writeFileSync } from "node:fs"
+mkdirSync("node_modules/.bin", { recursive: true })
+writeFileSync("node_modules/.bin/greet", "#!/bin/sh\\ncat greet.txt\\n")
+chmodSync("node_modules/.bin/greet", 0o755)
+`
+
+/**
+ * A package file whose target `greeting` runs `greet`, a tool `tool/`'s own install brings, and writes its output;
+ * `check` reads that output. Both read `tool/`'s lockfile, as a target that reads an install's `node_modules` does.
+ */
+export const packageWithTool = `import { Smithers as S } from "@smthrs/targets"
+const install = [S.file("tool/package.json"), S.file("tool/package-lock.json")]
+const greeting = S.Shell.Build({
+  shell: "mkdir -p out && tool/node_modules/.bin/greet > out/greeting",
+  data: [...install, S.file("greet.txt")],
+  outDirs: ["out"],
+  sandbox: "none",
+  timeout: "1m"
+})
+const check = S.Shell.Test({
+  shell: "grep -q hello out/greeting",
+  data: [greeting, ...install],
+  sandbox: "none",
+  timeout: "1m"
+})
+export const Package = S.Package({ targets: { greeting, check } })
+`
+
+/** The files of a repository whose targets need a tool that a sub-package's install brings. */
+export const toolFiles = (command: string = smthrs): Readonly<Record<string, string>> => {
+  const { ".github/workflows/ci.yml": _workflow, "a.sh": _a, "b.sh": _b, "c.sh": _c, "docs.sh": _docs, ...rest } =
+    ownFiles(command)
+  return {
+    ...rest,
+    ".gitignore": "node_modules\n.flows\nout\n",
+    "PACKAGE.ts": packageWithTool,
+    "greet.txt": "hello\n",
+    "tool/package.json": JSON.stringify({
+      name: "tool",
+      private: true,
+      scripts: { postinstall: "node tools/install.mjs" }
+    }),
+    "tool/package-lock.json": JSON.stringify({
+      name: "tool",
+      lockfileVersion: 3,
+      requires: true,
+      packages: { "": { name: "tool" } }
+    }),
+    "tool/tools/install.mjs": toolInstall
+  }
+}
