@@ -10,6 +10,7 @@ import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { inPlainWords } from "./Reads.ts"
 
 /**
  * The files and directories of a home directory that hold a credential: the
@@ -463,7 +464,9 @@ export const temporaryRoots = (
  * @since 0.1.0
  */
 export const unjailed = (refusal: string, allowDocker: boolean = false): string =>
-  `steps run without a file-system jail: ${refusal}. Each step still gets a home directory of its own and cannot ` +
+  `steps run without a file-system jail: ${
+    inPlainWords(refusal)
+  }. Each step still gets a home directory of its own and cannot ` +
   `push with git${allowDocker ? "" : " or start docker or podman by name"}`
 
 /**

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { cannotRecord, readsListener } from "../../src/replay/Reads.ts"
+import { unjailed } from "../../src/replay/Jail.ts"
+import { cannotRecord, inPlainWords, readsListener } from "../../src/replay/Reads.ts"
 
 const line =
   "smthrs: reads are not observed on this host: strace is not installed; a target that asks for it is keyed by its declared inputs\n"
@@ -33,5 +34,31 @@ describe("readsListener", () => {
     const hear = readsListener()
     expect(hear(`//:a: ${line}`)).toBeUndefined()
     expect(hear("nothing to see\n")).toBeUndefined()
+  })
+})
+
+describe("what a Mac is told", () => {
+  // The two reasons as Smithers build and its sandbox give them on macOS.
+  const noJail = "write protection needs bubblewrap, which runs only on Linux; this host is darwin"
+  const noReads = "reads cannot be observed on darwin"
+
+  it("names the system macOS, as a person does", () => {
+    expect(unjailed(noJail)).toBe(
+      "steps run without a file-system jail: write protection needs bubblewrap, which runs only on Linux; this host is macOS. Each step still gets a home directory of its own and cannot push with git or start docker or podman by name"
+    )
+    expect(cannotRecord(noReads)).toBe(
+      "this machine cannot record what a step reads (reads cannot be observed on macOS). A step that names no inputs runs on every commit. On Linux, install strace."
+    )
+    expect(inPlainWords("this host is win32, not darwin; darwin has no strace")).toBe(
+      "this host is Windows, not macOS; macOS has no strace"
+    )
+  })
+
+  it("leaves every other reason as it was given", () => {
+    expect(inPlainWords("bubblewrap is not installed; install it with apt-get install bubblewrap")).toBe(
+      "bubblewrap is not installed; install it with apt-get install bubblewrap"
+    )
+    // A word that only holds the name is not the name.
+    expect(inPlainWords("the darwinian step")).toBe("the darwinian step")
   })
 })

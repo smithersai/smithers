@@ -22,6 +22,20 @@ export const printsNotes = { SMITHERS_AUDIENCE: "human" } as const
  */
 const unobserved = /^\W*smthrs: reads are not observed on this host: (.+?)(?:; a target that asks for it .*)?$/
 
+/** What a program calls each system, and what a person calls it. */
+const systems: ReadonlyArray<readonly [RegExp, string]> = [[/\bdarwin\b/g, "macOS"], [/\bwin32\b/g, "Windows"]]
+
+/**
+ * A reason the machine's own programs give, with the system named as a
+ * person names it: `this host is darwin` reads `this host is macOS`.
+ *
+ * @category constructors
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const inPlainWords = (reason: string): string =>
+  systems.reduce((text, [name, plain]) => text.replace(name, plain), reason)
+
 /**
  * The sentence for a machine that cannot record reads, for the reason
  * Smithers build gives.
@@ -31,7 +45,9 @@ const unobserved = /^\W*smthrs: reads are not observed on this host: (.+?)(?:; a
  * @throws {never}
  */
 export const cannotRecord = (reason: string): string =>
-  `this machine cannot record what a step reads (${reason}). A step that names no inputs runs on every commit. On Linux, install strace.`
+  `this machine cannot record what a step reads (${
+    inPlainWords(reason)
+  }). A step that names no inputs runs on every commit. On Linux, install strace.`
 
 /**
  * A listener for the output of `smthrs` runs, chunk by chunk. It returns the
