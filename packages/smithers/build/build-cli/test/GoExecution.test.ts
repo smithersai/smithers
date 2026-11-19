@@ -280,7 +280,7 @@ describe.runIf(!skipGo && hasGo)("Go empty package selections", () => {
       goPath!
     )
     expect(planned.refusal).toBeUndefined()
-    expect(planned.argv).toEqual([goPath, "test", "example.test/fixture"])
+    expect(planned.argv).toEqual([goPath, "test", "-count=1", "example.test/fixture"])
     expect(planned.readSet).toContain("root.go")
   })
 

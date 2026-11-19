@@ -1253,6 +1253,9 @@ const executeWith = (
         // A confined tool can write nowhere else, so the directory the host
         // shares between workspaces is for unconfined tools only.
         const cacheEnvironment = ExecSandbox.enforceable(sandbox, ExecSandbox.host()) ? {} : ambient
+        // A workspace that leaves `go` its own cache starts no tool with the owned one: the tool finds the cache
+        // its environment names, in its machine's home when it runs on one, and no test result outlives that.
+        const ownsGoBuild = index.workspace.cache.goBuild !== false
         // A target on its machine finds the machine's temporary directory at `/tmp` too, where the host can give
         // it one. The tracer runs inside, so what it writes down is what the target saw.
         const bwrap = onIts ? yield* joined(ownTmp) : undefined
@@ -1274,7 +1277,9 @@ const executeWith = (
               started,
               sightOf(machine!, resolved.env["PATH"] ?? hostEnvironment["PATH"])
             ),
-          env: GoCache.spawnEnvironment(resolved.env, workspaceRoot, cacheDirectory, cacheEnvironment),
+          env: ownsGoBuild
+            ? GoCache.spawnEnvironment(resolved.env, workspaceRoot, cacheDirectory, cacheEnvironment)
+            : resolved.env,
           secrets: resolved.secrets,
           expectedExitCodes: [0],
           timeoutMs: node.timeoutMs
@@ -1296,7 +1301,8 @@ const executeWith = (
         })
         // A tool that may start `go` holds a lease for as long as it runs, so
         // a concurrent `cache prune --max-size` leaves what it reads alone.
-        const lease = (yield* joined(() => GoCache.leased(node.rule, workspaceRoot, cacheDirectory, cacheEnvironment)))
+        const lease = ownsGoBuild &&
+            (yield* joined(() => GoCache.leased(node.rule, workspaceRoot, cacheDirectory, cacheEnvironment)))
           ? Effect.acquireRelease(
             joined(() => GoCache.acquireLease(workspaceRoot, cacheDirectory, undefined, cacheEnvironment)),
             (path) => joined(() => GoCache.releaseLease(path)).pipe(Effect.orDie)

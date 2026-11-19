@@ -83,7 +83,7 @@ describe("a step that keeps a tool's cache", () => {
     expect(source).toContain(
       `env: {"ZIG_GLOBAL_CACHE_DIR":"{smthrs:cache-directory}/tools/zig/global","ZIG_LOCAL_CACHE_DIR":"{smthrs:cache-directory}/tools/zig/local"}`
     )
-    expect(source).toContain(`cache: S.Cache({ directory: ".flows", outside: true })`)
+    expect(source).toContain(`cache: S.Cache({ directory: ".flows", outside: true, goBuild: false })`)
     expect(source).toContain(`sandbox: "none"`)
     expect(source).toMatch(/observe: \{ ignore: \[.*\] \}/)
   })

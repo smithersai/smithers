@@ -827,6 +827,10 @@ export const planRule = async (
       }
     }
     const testFlags = [
+      // A target that runs, tests. `go` answers `ok (cached)` from the compile cache while no file the test process
+      // itself opened has changed, and a test also reads through the programs it starts: a golden file a command
+      // under test opens, a fixture `git` or `diff` reads. This target's key changed, so one of its inputs did.
+      "-count=1",
       ...(attrs["timeout"] === undefined ? [] : ["-timeout", String(attrs["timeout"])]),
       // Go's own default for -parallel is GOMAXPROCS, so "cpus" is the
       // default and stays off the argv: spelling the host's core count would

@@ -151,7 +151,7 @@ changed.
 - Not contracts, and changed with them: a replay's copy holds the commit's files and nothing else. Smithers build's
   cache directory, the compiled code of `smthrs`, the generated workspace file and the run records are beside the
   copy (`--cache-dir`, `--workspace-file`), with no ignore line, exclude entry or index bit. The generated workspace
-  declares `S.Cache({ directory: ".flows", outside: true })`, so `smthrs ci '//...'` keeps its cache in the user's
+  declares `S.Cache({ directory: ".flows", outside: true, goBuild: false })`, so `smthrs ci '//...'` keeps its cache in the user's
   cache directory; the generated workflow keeps it in `${{ runner.temp }}/smithers-ci` and saves and restores it from
   there. A setup target writes no marker file.
 

@@ -168,4 +168,71 @@ export const Package = S.Package({ targets: {
       bytes: owned.reduce((sum, entry) => sum + entry.bytes, 0)
     })
   }, 120_000)
+
+  it("tests again when a file the test reads through a child process changes", async () => {
+    const root = await temporary("smthrs-go-cache-stale-")
+    await write(root, "go.mod", "module example.test/stale\n\ngo 1.24\n")
+    await write(root, "go.sum", "")
+    await write(root, "lib/lib.go", "package lib\n")
+    // `go` records the files the test process opens. This one is opened by `cat`.
+    await write(
+      root,
+      "lib/lib_test.go",
+      `package lib
+
+import (
+	"os/exec"
+	"strings"
+	"testing"
+)
+
+func TestValue(t *testing.T) {
+	out, err := exec.Command("cat", "testdata/value.txt").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(out)) != "ok" {
+		t.Fatalf("value is %q", out)
+	}
+}
+`
+    )
+    await write(root, "lib/testdata/value.txt", "ok\n")
+    await write(root, "flake.nix", "{}\n")
+    await write(root, "flake.lock", "{}\n")
+    await write(
+      root,
+      "WORKSPACE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const nix = S.Nix.DevShell({ flake: S.file("//flake.nix"), lock: S.file("//flake.lock") })
+const go = S.Go.Toolchain({ mod: S.file("//go.mod"), sum: S.file("//go.sum"), versions: nix, cgo: false })
+export const Workspace = S.Workspace("stale", { repository: "git+https://example.test/stale.git", cache: S.Cache({ directory: ".flows" }), toolchains: [nix, go] })
+`
+    )
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: {
+  test: S.Go.Test({ pkgs: ["./lib"], data: [S.file("lib/testdata/value.txt")] })
+} })
+`
+    )
+    NodeChildProcess.execFileSync("git", ["-C", root, "init", "-q"])
+    const passed = await serve(root, ["//:test"])
+    expect(passed.exitCode, passed.logs + passed.output).toBe(0)
+    expect(passed.logs).toContain("//:test  ran")
+    // The compile cache is the workspace's own and is still there: only the test's result is not taken from it.
+    expect((await GoCache.entries(root, ".flows")).length).toBeGreaterThan(0)
+    await write(root, "lib/testdata/value.txt", "bad\n")
+    const broken = await serve(root, ["//:test"])
+    expect(broken.logs).not.toContain("(cached)")
+    expect(broken.logs).toContain("value is \"bad")
+    expect(broken.exitCode, broken.logs + broken.output).toBe(1)
+    // Put back, the stored result answers: nothing runs.
+    await write(root, "lib/testdata/value.txt", "ok\n")
+    const again = await serve(root, ["//:test"])
+    expect(again.exitCode, again.logs + again.output).toBe(0)
+    expect(again.logs).toContain("//:test  hit")
+  }, 240_000)
 })

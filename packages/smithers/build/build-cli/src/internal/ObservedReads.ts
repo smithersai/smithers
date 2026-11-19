@@ -798,8 +798,12 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
       if (how !== "changed") first(how === "made" ? made : emptied, path, at)
       // A call that only succeeds where nothing was says so: the name was not there when it began.
       if (fresh) first(began, path, entered)
-      // A name the run found missing and then opened to write, making it if need be, is one the run made.
-      else if (creates && how === "changed" && missing.has(path)) first(made, path, at)
+      // A name the run found missing and then opened to write, making it if need be, is one the run made. So is
+      // one it opens that way in a directory it made: the directory held nothing when it was made, so the run
+      // wrote whatever is there. `go` writes an entry of a new cache so, with nothing asked about it first.
+      else if (
+        creates && how === "changed" && (missing.has(path) || built.has(NodePath.posix.dirname(path)))
+      ) first(made, path, at)
       if (how === "changed" && removers.has(name)) {
         removed.add(path)
         unbuilt(path)

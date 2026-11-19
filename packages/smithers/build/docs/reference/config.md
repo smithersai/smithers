@@ -135,7 +135,7 @@ Examples:
 The value can name a nested directory such as `build/cache`. It cannot be
 absolute and cannot escape the workspace.
 
-`S.Cache` accepts `directory`, `outside`, `hostDirectories`, and `remote`. A
+`S.Cache` accepts `directory`, `outside`, `goBuild`, `hostDirectories`, and `remote`. A
 `remote` value must be an `S.RemoteCache.make` declaration; see
 [Remote caching](../workspace/remote-caching.md).
 
@@ -165,6 +165,34 @@ cache: S.Cache({ directory: ".flows", outside: true })
 `smithers-build cache clear --yes` removes its result entries; to remove all of
 its state, delete the directory. `outside` must be a boolean, and
 `Cache outside must be a boolean` is the error otherwise.
+
+### Leave `go` its own cache
+
+Every tool a target starts runs with `GOCACHE` set to `go-build` inside the
+cache directory. The packages a `go` compiles are then the workspace's own:
+`smithers-build cache status` measures them and `cache prune --max-size`
+bounds them. A target that sets `GOCACHE` in its `env` keeps its own value.
+
+`go` keeps test results in the same directory. It answers `ok (cached)` while
+no file the test process itself opened has changed, and it does not see what
+a test reads through a program it starts. So `S.Go.Test` runs
+`go test -count=1`: when the target runs, its tests run, and the compiled
+packages are still reused. A shell target that starts `go test` itself is
+answered by `go`'s own rule.
+
+`goBuild: false` starts no tool with that `GOCACHE`. A `go` then keeps its
+cache where its environment says, which is under its user's home when nothing
+names another place. For a target on a
+[machine](../workspace/caching.md#a-machine-for-the-steps-of-a-job) that is the machine's
+home, and it is gone with the machine. Declare it when each target stands for
+a job of a CI, which starts on a runner with an empty home:
+
+```ts
+cache: S.Cache({ directory: ".flows", outside: true, goBuild: false })
+```
+
+`goBuild` must be a boolean, and `Cache goBuild must be a boolean` is the
+error otherwise.
 
 ## Precedence
 

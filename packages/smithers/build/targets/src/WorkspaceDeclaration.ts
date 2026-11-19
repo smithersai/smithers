@@ -39,6 +39,7 @@ import type * as Toolchain from "./Toolchain.ts"
 export const CacheDeclaration = Schema.TaggedStruct("Cache", {
   directory: Schema.NonEmptyString,
   outside: Schema.optional(Schema.Boolean),
+  goBuild: Schema.optional(Schema.Boolean),
   hostDirectories: Schema.optional(Schema.Array(Schema.NonEmptyString)),
   remote: Schema.optional(
     Schema.declare<RemoteCache.RemoteCache>(RemoteCache.isRemoteCache, {
@@ -78,18 +79,28 @@ export const isCacheDeclaration: (value: unknown) => value is CacheDeclaration =
  * at `smithers/<workspace>-<root hash>/<directory>`. A declaration never names
  * an absolute path or a `..` segment; only `--cache-dir` may.
  *
+ * `goBuild: false` leaves `go` its own cache: no tool is started with a
+ * `GOCACHE` inside this directory, so a `go` a target starts keeps its compiled
+ * packages and test results where its environment says, under its user's
+ * home when nothing names another place. A workspace whose targets stand for
+ * the jobs of a CI declares it: each job then fills the cache its runner
+ * would, and no test result outlives the job that made it.
+ *
  * @category constructors
  * @since 0.1.0
  */
 export const Cache = (options: {
   readonly directory: string
   readonly outside?: boolean | undefined
+  readonly goBuild?: boolean | undefined
   readonly hostDirectories?: ReadonlyArray<string> | undefined
   readonly remote?: RemoteCache.RemoteCache | undefined
 }): CacheDeclaration => {
   if (typeof options !== "object" || options === null) throw new TypeError("Cache options must be an object")
   for (const key of Object.getOwnPropertyNames(options)) {
-    if (key !== "directory" && key !== "outside" && key !== "remote" && key !== "hostDirectories") {
+    if (
+      key !== "directory" && key !== "outside" && key !== "goBuild" && key !== "remote" && key !== "hostDirectories"
+    ) {
       throw new TypeError(`Cache received unknown option ${JSON.stringify(key)}`)
     }
   }
@@ -98,6 +109,9 @@ export const Cache = (options: {
   }
   if (options.outside !== undefined && typeof options.outside !== "boolean") {
     throw new TypeError("Cache outside must be a boolean")
+  }
+  if (options.goBuild !== undefined && typeof options.goBuild !== "boolean") {
+    throw new TypeError("Cache goBuild must be a boolean")
   }
   if (options.hostDirectories !== undefined && !Array.isArray(options.hostDirectories)) {
     throw new TypeError("Cache hostDirectories must be an array of workspace-relative directories")
@@ -112,6 +126,7 @@ export const Cache = (options: {
   return CacheDeclaration.make({
     directory: Config.normalizeDeclaredCacheDirectory(options.directory),
     ...(options.outside === true ? { outside: true } : {}),
+    ...(options.goBuild === false ? { goBuild: false } : {}),
     ...(hostDirectories === undefined ? {} : { hostDirectories: Object.freeze(hostDirectories) }),
     ...(options.remote === undefined ? {} : { remote: options.remote })
   })

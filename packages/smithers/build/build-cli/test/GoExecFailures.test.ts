@@ -432,7 +432,15 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
       host.context,
       goPath()
     )
-    expect(planned.argv).toEqual([goPath(), "test", "-timeout", "30s", "-parallel=4", "example.test/pkg/lib"])
+    expect(planned.argv).toEqual([
+      goPath(),
+      "test",
+      "-count=1",
+      "-timeout",
+      "30s",
+      "-parallel=4",
+      "example.test/pkg/lib"
+    ])
     expect(planned.readSet).toEqual(["pkg/lib/lib.go", "pkg/lib/lib_test.go"])
     expect((await host.calls())[1]).toMatch(/^go list -deps -test -json /)
   })

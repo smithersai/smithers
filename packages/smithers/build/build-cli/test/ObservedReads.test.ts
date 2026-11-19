@@ -577,6 +577,39 @@ describe("reading a trace", () => {
     expect([...trace.changed]).toContain("/w/.cache/h/manifest")
   })
 
+  // What go does with an entry of the cache it makes in an empty home: the file is opened to write, and made if
+  // it is not there, with nothing asked about it first. A later `go` of the same run reads it.
+  it("takes a name opened to write or made, in a directory the run made, for one the run made", () => {
+    const write = (directory: string, name: string): string =>
+      `100 openat(AT_FDCWD</w>, "${directory}/${name}", O_WRONLY|O_CREAT|O_CLOEXEC, 0666) = 10<${directory}/${name}>`
+    const reads = (directory: string, name: string): string =>
+      `101 openat(AT_FDCWD</w>, "${directory}/${name}", O_RDONLY|O_CLOEXEC) = 10<${directory}/${name}>`
+    const trace = read([
+      "100 mkdir(\"/w/home/go-build\", 0777) = 0",
+      "100 mkdir(\"/w/home/go-build/00\", 0777) = 0",
+      write("/w/home/go-build/00", "entry-a"),
+      reads("/w/home/go-build/00", "entry-a"),
+      // A directory that was there may hold an entry from before the run.
+      "100 mkdir(\"/w/home/go-build/01\", 0777) = -1 EEXIST (File exists)",
+      write("/w/home/go-build/01", "entry-a"),
+      reads("/w/home/go-build/01", "entry-a"),
+      // An entry the call could not open is none the run made.
+      "100 mkdir(\"/w/home/go-build/02\", 0777) = 0",
+      "100 openat(AT_FDCWD</w>, \"/w/home/go-build/02/entry-a\", O_WRONLY|O_CREAT, 0666) = -1 EACCES (Permission denied)",
+      // A directory the run removed is no longer the one it made.
+      "100 mkdir(\"/w/home/go-build/03\", 0777) = 0",
+      "100 rmdir(\"/w/home/go-build/03\") = 0",
+      write("/w/home/go-build/03", "entry-a")
+    ].join("\n"))
+    expect(trace.refusals).toEqual([])
+    expect(paths(trace.made)).toContain("/w/home/go-build/00/entry-a")
+    expect(paths(trace.made)).not.toContain("/w/home/go-build/01/entry-a")
+    expect(paths(trace.made)).not.toContain("/w/home/go-build/02/entry-a")
+    expect(paths(trace.made)).not.toContain("/w/home/go-build/03/entry-a")
+    expect([...trace.changed]).toContain("/w/home/go-build/01/entry-a")
+    expect(paths(trace.found)).toContain("/w/home/go-build/02/entry-a")
+  })
+
   it("stores nothing for a run that changed its view of the file system", () => {
     expect(read("100 chroot(\"/w/jail\")                = 0").refusals).toEqual(["it changed its root directory"])
     expect(read("100 mount(\"none\", \"/mnt\", \"tmpfs\", 0, NULL) = 0").refusals)

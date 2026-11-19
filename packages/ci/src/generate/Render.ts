@@ -147,7 +147,9 @@ const renderWorkspace = (inventory: Inventory): ReadonlyArray<string> => [
   `export const Workspace = S.Workspace(${text(workspaceName(inventory.repository))}, {`,
   `  repository: ${text(inventory.repository)},`,
   // Outside the checkout: a step that lists its files finds the repository's and nothing of Smithers build's.
-  `  cache: S.Cache({ directory: ${JSON.stringify(cacheDirectory)}, outside: true }),`,
+  // `goBuild: false`: a step's `go` keeps its cache in the step's own home, as on the runner, and never in this
+  // directory, which outlives the job. Go would answer a later run from a test result kept there.
+  `  cache: S.Cache({ directory: ${JSON.stringify(cacheDirectory)}, outside: true, goBuild: false }),`,
   `  host: S.Host({ bins: ["bash", "sh"] })`,
   `})`,
   ``

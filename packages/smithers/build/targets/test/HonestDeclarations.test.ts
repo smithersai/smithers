@@ -60,6 +60,18 @@ describe("workspace option boundaries", () => {
       "cache/tools"
     ])
   })
+  it("leaves go its own cache with goBuild: false", () => {
+    expect(Workspace.Cache({ directory: ".cache", goBuild: false })).toMatchObject({
+      directory: ".cache",
+      goBuild: false
+    })
+    // The owned cache is the default and is not written down.
+    expect(Workspace.Cache({ directory: ".cache", goBuild: true }).goBuild).toBeUndefined()
+    expect(Workspace.Cache({ directory: ".cache" }).goBuild).toBeUndefined()
+    expect(() => Workspace.Cache({ directory: ".cache", goBuild: "no" } as never)).toThrow(
+      "Cache goBuild must be a boolean"
+    )
+  })
   it("asks for an outside directory with outside: true and still refuses a named outside path", () => {
     expect(Workspace.Cache({ directory: ".cache", outside: true })).toMatchObject({
       directory: ".cache",
