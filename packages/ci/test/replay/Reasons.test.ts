@@ -109,11 +109,19 @@ describe("why a command failed", () => {
   })
 })
 
-/** Real output of failed steps: the reviewer's ni step, and npm, cargo and pytest. */
-const steps = JSON.parse(readFileSync(new URL("../fixtures/failed-steps.json", import.meta.url), "utf8")) as Record<
-  "ni" | "npm" | "cargo" | "pytest",
-  { readonly exitCode: number; readonly stderr: string; readonly stdout: string }
->
+interface Output {
+  readonly exitCode: number
+  readonly stderr: string
+  readonly stdout: string
+}
+
+/**
+ * Real output of failed steps: the reviewers' ni and is-plain-obj steps, npm, cargo and pytest, and each package
+ * manager running a script that fails.
+ */
+const steps = JSON.parse(readFileSync(new URL("../fixtures/failed-steps.json", import.meta.url), "utf8")) as
+  & Record<"ni" | "npm" | "cargo" | "pytest" | "isPlainObj", Output>
+  & { readonly managers: Record<"npm" | "pnpm" | "yarn" | "bun", Record<"error" | "silent", Output>> }
 
 describe("a reason that is never a progress line", () => {
   it("is the line that says what failed when pnpm prints its progress around it", () => {
@@ -195,6 +203,46 @@ describe("a reason that is never a progress line", () => {
     expect(reasonOf({ exitCode: 1, stderr: "warming up\n", stdout: "3 tests failed\ndone\n" })).toBe("3 tests failed")
     expect(reasonOf({ exitCode: 1, stderr: "error: here\n", stdout: "3 tests failed\n" })).toBe("3 tests failed")
     expect(reasonOf({ exitCode: 1, stderr: "error: here\n", stdout: "done\n" })).toBe("error: here")
+  })
+})
+
+describe("a reason that is never what a package manager writes around a script", () => {
+  it("is xo's error above its long stack trace, not npm's echo of `npm test`", () => {
+    expect(reasonOf(steps.isPlainObj)).toBe("TypeError: util.isDate is not a function")
+    // smthrs prints the error output and then what the step printed, as one text.
+    const printed = { exitCode: 1, stderr: `${steps.isPlainObj.stderr}${steps.isPlainObj.stdout}`, stdout: "" }
+    expect(reasonOf(printed)).toBe("TypeError: util.isDate is not a function")
+  })
+
+  it.each(["npm", "pnpm", "yarn", "bun"] as const)(
+    "is the script's error under %s, not its echo, its account or a frame of the stack",
+    (manager) => {
+      expect(reasonOf(steps.managers[manager].error)).toBe("TypeError: check is not a function")
+    }
+  )
+
+  it.each(["npm", "pnpm", "yarn", "bun"] as const)("says a script %s ran printed nothing when it did", (manager) => {
+    expect(reasonOf(steps.managers[manager].silent)).toBe("it printed nothing")
+  })
+
+  it.each([
+    ["npm's name of the script", "> c@1.0.0 test"],
+    ["pnpm's name of the script and its directory", "> c@1.0.0 test /home/runner/work/c/c"],
+    ["npm's and pnpm's command", "> xo && ava && tsd"],
+    ["Yarn's start", "yarn run v1.22.22"],
+    ["the command Yarn, pnpm and Bun run", "$ xo && ava && tsd"]
+  ])("is never %s", (_kind, line) => {
+    expect(reasonOf({ exitCode: 1, stderr: "the check broke\n", stdout: `${line}\n` })).toBe("the check broke")
+    expect(reasonOf({ exitCode: 1, stderr: `error: the check broke\n${line}\n`, stdout: "" }))
+      .toBe("error: the check broke")
+    expect(reasonOf({ exitCode: 1, stderr: `${line}\n`, stdout: "" })).toBe("it printed nothing")
+  })
+
+  it.each([
+    ["Python's", `ValueError: no\n  File "/w/lib/errors.py", line 3, in check\n`],
+    ["Java's", "java.lang.IllegalStateException: no\n\tat org.c.errors.Check.run(Check.java:10)\n"]
+  ])("passes over a frame of %s stack trace for the error above it", (_kind, stderr) => {
+    expect(reasonOf({ exitCode: 1, stderr, stdout: "" })).toMatch(/: no$/)
   })
 })
 

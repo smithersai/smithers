@@ -12,7 +12,7 @@ import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/Chi
 import { type Confined, held } from "./Confine.vibe"
 import { type Count, uncounted } from "./Cpu.ts"
 import { noPushUrl, stepEnvironment } from "./Environment.ts"
-import { signalExit, type StepOutput } from "./Failures.ts"
+import { reasonOutputLimit, signalExit, type StepOutput } from "./Failures.ts"
 import {
   defaultStall,
   exitOrStall,
@@ -185,8 +185,8 @@ export effect function exec(
  * Runs a past commit's command, a CI step or an install, in the shell's place.
  * `env` is its whole environment, and it is stopped, and has failed, when it
  * runs longer than `limit` or makes no progress for `stall`. The end of its error output and of what it
- * printed are kept: the last line that reports an error says why it failed,
- * wherever a tool printed it. `count` is told the process when it starts, and when it
+ * printed are kept, as much of each as a reason is searched in (`reasonOutputLimit`): the last line that
+ * reports an error says why it failed, wherever a tool printed it, above however long a stack trace. `count` is told the process when it starts, and when it
  * has ended.
  *
  * @category running
@@ -218,8 +218,8 @@ export effect function runStep(
     const stdout = try Ref.make("")
     const watch = try watchFor(stall.minutes, stall.table)
     const readers = fork all([
-      keep(touching(handle.stderr, watch), stderr, (text, chunk) => (text + chunk).slice(-outputLimit)),
-      keep(touching(handle.stdout, watch), stdout, (text, chunk) => (text + chunk).slice(-outputLimit))
+      keep(touching(handle.stderr, watch), stderr, (text, chunk) => (text + chunk).slice(-reasonOutputLimit)),
+      keep(touching(handle.stdout, watch), stdout, (text, chunk) => (text + chunk).slice(-reasonOutputLimit))
     ], { concurrency: "unbounded" })
     // A step a signal ended has the exit code a shell gives for the signal. What it printed says why it failed,
     // as for any other step: the words its exit is refused with hold its whole command.

@@ -2,10 +2,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import { reasonOf } from "../../src/replay/Failures.ts"
 import { exec, runStep } from "../../src/replay/Process.vibe"
 
 const made: Array<string> = []
@@ -83,5 +84,23 @@ describe("a command a signal ended", { timeout: 120_000 }, () => {
       stdout: "out\n"
     })
     expect(await step("kill -TERM $$")).toMatchObject({ exitCode: 143, stderr: "", stdout: "" })
+  })
+})
+
+describe("what a failed step printed", { timeout: 120_000 }, () => {
+  it("holds the error above a long stack trace, as is-plain-obj's `npm test` printed it on a job's machine", async () => {
+    const steps = JSON.parse(readFileSync(new URL("../fixtures/failed-steps.json", import.meta.url), "utf8")) as {
+      readonly isPlainObj: { readonly stderr: string; readonly stdout: string }
+    }
+    const cwd = directory()
+    writeFileSync(join(cwd, "stderr"), steps.isPlainObj.stderr)
+    writeFileSync(join(cwd, "stdout"), steps.isPlainObj.stdout)
+    const run = await onNode(
+      runStep("sh", ["-c", "cat stdout; cat stderr >&2; exit 1"], cwd, environment, "30 seconds").pipe(
+        Effect.provide(NodeServices.layer)
+      ) as never
+    ) as { readonly exitCode: number; readonly stderr: string; readonly stdout: string }
+    expect(run).toMatchObject({ exitCode: 1, stderr: steps.isPlainObj.stderr, stdout: steps.isPlainObj.stdout })
+    expect(reasonOf(run)).toBe("TypeError: util.isDate is not a function")
   })
 })

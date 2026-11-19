@@ -42,8 +42,19 @@ const printedFloor = 8_000_000
 export const printedLimitOf = (targets: number): number => Math.max(printedFloor, targets * printedForOne)
 
 const lineLimit = 200
-/** How much of an output is searched for a line. It bounds the work on a command that prints without end. */
+/** How much of a command or of a short text is read for a line. */
 const sampleLimit = 4000
+/**
+ * How much of the end of each output of a step is kept and searched for the
+ * line that says why it failed: as much as `smthrs` keeps of a failed
+ * command's error output. It holds the error above a long stack trace, whose
+ * every line names a file under the job's work directory, and it bounds the
+ * work on a command that prints without end.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const reasonOutputLimit = 64_000
 /** The exit code a shell gives for a program it cannot find. */
 const notFound = 127
 const noOutput = "it printed nothing"
@@ -95,8 +106,33 @@ const levelWord = /^(?:npm|yarn) (?:error|ERR!)(?: \d{3}(?!\d))?/
 const npmAccount =
   /^(?:npm|yarn) (?:error|ERR!) (?:Lifecycle script|code|path|workspace|location|command|errno|signal)\b/
 
-/** A package manager's echo of the script it runs, as npm prints `> node test.js`. */
-const echo = /^> /
+/**
+ * What a package manager prints to say which script it is about to run, never
+ * what the script printed: npm's and pnpm's `> name@version script` and
+ * `> command`, Yarn's `yarn run v1.22.22` and `$ command`, and pnpm's and
+ * Bun's `$ command`.
+ */
+const echo = /^(?:> |\$ |yarn run v\d)/
+
+/**
+ * What a package manager adds under a script that failed, which says only
+ * that it failed and with which code: pnpm's `[ELIFECYCLE] Test failed.` and
+ * `ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL`, Yarn's `error Command failed with exit
+ * code 1.` and `info Visit …`, and Bun's `error: script "test" exited with
+ * code 1`. The script's own output above it says what failed.
+ */
+const managerAccount =
+  /^(?:\[?ELIFECYCLE\]?\s|\[?ERR_PNPM_RECURSIVE_(?:RUN|EXEC)_FIRST_FAIL\]?\s|error Command failed with exit code -?\d+\.?$|info Visit https:\/\/yarnpkg\.com\/|error: script "[^"]*" exited with code -?\d+)/
+
+/**
+ * A line of a stack trace below the error it belongs to: JavaScript's and
+ * Java's `at …` and Python's `File "…", line 3`. The path it names can hold any
+ * word, as `lib/errors.js` does.
+ */
+const stackFrame = /^(?:at\s|File "[^"]*", line \d)/
+
+/** True for a line a package manager wrote around a script, or a frame of a stack trace: never a reason. */
+const isAround = (line: string): boolean => echo.test(line) || managerAccount.test(line) || stackFrame.test(line)
 
 /**
  * A line the replay wrote for a step it stopped, as the hook that refuses a
@@ -145,9 +181,9 @@ const shownLines = (text: string): ReadonlyArray<string> =>
 /**
  * The line of an output that says why the command failed: the last line the
  * replay wrote for a step it stopped, else the last line that reports an
- * error. Never a progress line, a line of only counts, a package manager's
- * echo of its script or npm's account of a script that failed. Empty when no
- * line reports an error.
+ * error. Never a progress line, a line of only counts, a frame of a stack
+ * trace, a package manager's echo of its script or its account of a script
+ * that failed. Empty when no line reports an error.
  *
  * @throws {never}
  * @category accessors
@@ -156,13 +192,17 @@ const shownLines = (text: string): ReadonlyArray<string> =>
 export const errorLine = (text: string): string => {
   const shown = shownLines(text)
   const reports = (line: string): boolean =>
-    !isProgress(line) && !echo.test(line) && !npmAccount.test(line) && reportsError.test(line.replace(levelWord, ""))
+    !isProgress(line) && !isAround(line) && !npmAccount.test(line) && reportsError.test(line.replace(levelWord, ""))
   return firstLine(shown.findLast((line) => ownLine.test(line)) ?? shown.findLast(reports) ?? "")
 }
 
-/** The last line of an output that is no progress line, else its last line as it is. */
+/**
+ * The last line of an output that is no progress line, else its last line
+ * as it is. A line a package manager wrote around the script is never one:
+ * an output of only those printed nothing.
+ */
 const lastLine = (text: string): string => {
-  const shown = shownLines(text)
+  const shown = shownLines(text).filter((line) => !echo.test(line) && !managerAccount.test(line))
   return firstLine(shown.findLast((line) => !isProgress(line)) ?? shown.at(-1) ?? "")
 }
 
@@ -212,7 +252,9 @@ export const reasonOf = (output: StepOutput): string => {
   const program = output.exitCode === notFound ? missingProgram(readable(output.stderr.slice(-sampleLimit))) : undefined
   if (program !== undefined) return firstLine(`\`${program}\` is not installed on this machine`)
   // Error output first, then what it printed: the order `smthrs` prints a failed target's output in.
-  const text = `${readable(output.stderr.slice(-sampleLimit))}\n${readable(output.stdout.slice(-sampleLimit))}`
+  const errors = readable(output.stderr.slice(-reasonOutputLimit))
+  const printed = readable(output.stdout.slice(-reasonOutputLimit))
+  const text = `${errors}\n${printed}`
   return errorLine(text) || lastLine(text) || noOutput
 }
 

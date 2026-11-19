@@ -1,5 +1,5 @@
 {
-  "comment": "Real output of failed CI steps, as each tool printed it on standard output and standard error (nyc-01, 2026-11-19). Home and work paths are written as a runner names them.",
+  "comment": "Real output of failed CI steps, as each tool printed it on standard output and standard error (nyc-01, 2026-11-19). Home and work paths are written as a runner names them. is-plain-obj ran on a job's machine of a replay, which names its work directory under the home. managers: npm 11, pnpm 12.15.0, Yarn 1.22.22 and Bun 1.4.2 each running a script that prints an error with a frame of its stack, and one that prints nothing.",
   "ni": {
     "command": "pnpm dlx pkg-pr-new publish --pnpm",
     "exitCode": 1,
@@ -23,5 +23,61 @@
     "exitCode": 1,
     "stdout": "============================= test session starts ==============================\nplatform linux -- Python 3.12.3, pytest-9.2.0, pluggy-1.7.0\nrootdir: /home/runner/work/py/py\ncollected 4 items\n\ntest_x.py ..F.                                                           [100%]\n\n=================================== FAILURES ===================================\n____________________________________ test_y ____________________________________\n\n    def test_y():\n>       assert sum([1, 1]) == 3\nE       assert 2 == 3\nE        +  where 2 = sum([1, 1])\n\ntest_x.py:8: AssertionError\n=========================== short test summary info ============================\nFAILED test_x.py::test_y - assert 2 == 3\n========================= 1 failed, 3 passed in 0.02s ==========================\n",
     "stderr": ""
+  },
+  "isPlainObj": {
+    "command": "npm test",
+    "exitCode": 1,
+    "stdout": "\n> is-plain-obj@4.1.0 test\n> xo && ava && tsd\n\n",
+    "stderr": "TypeError: util.isDate is not a function\nOccurred while linting /home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/index.test-d.ts:1\n    at _deepEqual (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/core-assert/index.js:174:19)\n    at module.exports (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/deep-strict-equal/index.js:5:9)\n    at /home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint-plugin-ava/create-ava-rule.js:191:60\n    at Array.some (<anonymous>)\n    at ImportDeclaration (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint-plugin-ava/create-ava-rule.js:191:48)\n    at /home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/linter/safe-emitter.js:45:58\n    at Array.forEach (<anonymous>)\n    at Object.emit (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/linter/safe-emitter.js:45:38)\n    at NodeEventGenerator.applySelector (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/linter/node-event-generator.js:293:26)\n    at NodeEventGenerator.applySelectors (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/linter/node-event-generator.js:322:22)\n    at NodeEventGenerator.enterNode (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/linter/node-event-generator.js:336:14)\n    at CodePathAnalyzer.enterNode (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/linter/code-path-analysis/code-path-analyzer.js:711:23)\n    at /home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/linter/linter.js:960:32\n    at Array.forEach (<anonymous>)\n    at runRules (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/linter/linter.js:955:15)\n    at Linter._verifyWithoutProcessors (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/linter/linter.js:1181:31)\n    at Linter._verifyWithoutProcessors (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint-plugin-eslint-comments/lib/utils/patch.js:181:42)\n    at Linter._verifyWithConfigArray (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/linter/linter.js:1280:21)\n    at Linter.verify (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/linter/linter.js:1235:25)\n    at Linter.verifyAndFix (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/linter/linter.js:1428:29)\n    at verifyText (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/cli-engine/cli-engine.js:240:48)\n    at CLIEngine.executeOnFiles (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/eslint/lib/cli-engine/cli-engine.js:808:28)\n    at runEslint (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/xo/index.js:47:24)\n    at /home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/xo/index.js:116:42\n    at Array.map (<anonymous>)\n    at Object.lintFiles (/home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/xo/index.js:115:86)\n    at async /home/runner/.cache/smthrs/machines/2b8e7caef9138bb6/main.yml-test-node-version-14--9138f8cc/w/is-plain-obj/node_modules/xo/cli-main.js:198:18\n"
+  },
+  "managers": {
+    "npm": {
+      "error": {
+        "exitCode": 1,
+        "stdout": "\n> c@1.0.0 test\n> node error.js\n\nchecking 3 files\n",
+        "stderr": "TypeError: check is not a function\n    at Object.<anonymous> (/home/runner/work/c/c/lib/errors.js:2:9)\n"
+      },
+      "silent": {
+        "exitCode": 1,
+        "stdout": "\n> c@1.0.0 test\n> node silent.js\n\n",
+        "stderr": ""
+      }
+    },
+    "pnpm": {
+      "error": {
+        "exitCode": 1,
+        "stdout": "checking 3 files\n",
+        "stderr": "$ node error.js\nTypeError: check is not a function\n    at Object.<anonymous> (/home/runner/work/c/c/lib/errors.js:2:9)\n[ELIFECYCLE] Test failed. See above for more details.\n"
+      },
+      "silent": {
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "$ node silent.js\n[ELIFECYCLE] Test failed. See above for more details.\n"
+      }
+    },
+    "yarn": {
+      "error": {
+        "exitCode": 1,
+        "stdout": "yarn run v1.22.22\n$ node error.js\nchecking 3 files\ninfo Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command.\n",
+        "stderr": "TypeError: check is not a function\n    at Object.<anonymous> (/home/runner/work/c/c/lib/errors.js:2:9)\nerror Command failed with exit code 1.\n"
+      },
+      "silent": {
+        "exitCode": 1,
+        "stdout": "yarn run v1.22.22\n$ node silent.js\ninfo Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command.\n",
+        "stderr": "error Command failed with exit code 1.\n"
+      }
+    },
+    "bun": {
+      "error": {
+        "exitCode": 1,
+        "stdout": "checking 3 files\n",
+        "stderr": "$ node error.js\nTypeError: check is not a function\n    at Object.<anonymous> (/home/runner/work/c/c/lib/errors.js:2:9)\nerror: script \"test\" exited with code 1\n"
+      },
+      "silent": {
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "$ node silent.js\nerror: script \"test\" exited with code 1\n"
+      }
+    }
   }
 }
