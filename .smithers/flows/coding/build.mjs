@@ -93,13 +93,35 @@ export const bundle = async (entryPoint, outfile) => {
       }))
     }
   }
+  // `@smthrs/platform-bun` loads Electrobun, the desktop host's native
+  // windows (Bun FFI), through its private `#electrobun` import when
+  // `BunDesktop.layer` is built. The coding host reaches that package through
+  // its Bun platform (BunControl.ts), opens no window, and must not run code
+  // from the workspace it is staged into, so it neither inlines Electrobun
+  // (esbuild refuses it: `bun:ffi` and a top-level await under a require) nor
+  // leaves it external. `#electrobun` resolves to the module the package
+  // ships for hosts without Electrobun, its `browser` target, and building
+  // `BunDesktop.layer` fails with DesktopUnavailable as it does on Node.
+  const desktopUnavailable = {
+    name: "desktop-unavailable",
+    setup(build) {
+      build.onResolve({ filter: /^#electrobun$/ }, async ({ resolveDir }) => {
+        const platform = roots["@smthrs/platform-bun"]
+        if (platform === undefined || !resolve(resolveDir).startsWith(platform + "/")) return undefined
+        const manifest = JSON.parse(await readFile(resolve(platform, "package.json"), "utf8"))
+        const target = manifest.imports?.["#electrobun"]?.browser
+        if (typeof target !== "string") throw new Error("@smthrs/platform-bun names no #electrobun module for hosts without Electrobun")
+        return { path: resolve(platform, target) }
+      })
+    }
+  }
   // A repository's file flows share the host's own modules (host-modules.ts).
   // The probe learns which modules the host runs; the build then serves
   // exactly those, so sharing adds no module of its own.
   // vibelang-unplugin compiles the `.vibe` modules of the workspace packages
   // the host bundles from source, each with its own package's tsconfig.
   const vibe = () => vibelang({ root: fileURLToPath(new URL(".", import.meta.url)) })
-  const probe = await build({ ...options, metafile: true, plugins: [vibe(), lazyBunSqlite] })
+  const probe = await build({ ...options, metafile: true, plugins: [desktopUnavailable, vibe(), lazyBunSqlite] })
   // Only modules the host evaluates at start: sharing a module the host only
   // imports dynamically (Bun's platform layers) would evaluate it eagerly.
   const graph = probe.metafile.inputs, inputs = new Set()
@@ -113,7 +135,7 @@ export const bundle = async (entryPoint, outfile) => {
   }
   const result = await build({
     ...options,
-    plugins: [vibe(), {
+    plugins: [desktopUnavailable, vibe(), {
       name: "host-modules",
       setup(build) {
         build.onLoad({ filter: /[\\/]flows[\\/]coding[\\/]host-modules\.ts$/ }, async ({ path }) => ({
