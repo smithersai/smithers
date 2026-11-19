@@ -2856,9 +2856,12 @@ export const executeEffect = (
         const archived = yield* spawnNode(node, root, [
           "/bin/sh",
           "-c",
-          "\"$1\" -C \"$3\" --no-recursion --null -T \"$2.inside\" -cf \"$2.part\" && " +
-          "\"$1\" -P --no-recursion --null -T \"$2.beside\" -rf \"$2.part\" && " +
-          "{ [ -z \"$4\" ] || \"$1\" -C \"$4\" --no-recursion --null -T \"$2.machine\" -cf \"$2.machine.tar\"; } && " +
+          // The format that holds a file's time to the nanosecond: two files written within one second keep
+          // their order when they are put back.
+          "\"$1\" --format=posix -C \"$3\" --no-recursion --null -T \"$2.inside\" -cf \"$2.part\" && " +
+          "\"$1\" --format=posix -P --no-recursion --null -T \"$2.beside\" -rf \"$2.part\" && " +
+          "{ [ -z \"$4\" ] || \"$1\" --format=posix -C \"$4\" --no-recursion --null -T \"$2.machine\" " +
+          "-cf \"$2.machine.tar\"; } && " +
           "mv \"$2.part\" \"$2.tar\"",
           "sh",
           tar,
@@ -2952,7 +2955,8 @@ export const executeEffect = (
             return {
               made: new Set(paths.made.map((name) => found(fromKept(real, name)))),
               touched: new Set(paths.touched.map((name) => found(fromKept(real, name)))),
-              machine: ofMachine.length > 0
+              machine: ofMachine.length > 0,
+              unpacked: [...names, ...ofMachine].map((name) => found(fromKept(real, name)))
             }
           } catch {
             return undefined
@@ -2961,6 +2965,8 @@ export const executeEffect = (
           }
         })
         if (wrote === undefined) return false
+        // Whatever is there now was written before this millisecond ends.
+        const began = BigInt(Date.now() + 1) * 1_000_000n
         const unpacked = yield* spawnNode(node, root, [
           "/bin/sh",
           "-c",
@@ -2973,6 +2979,24 @@ export const executeEffect = (
           wrote.machine ? machine!.directory : ""
         ])
         if (!unpacked.ok) return false
+        // The files are put back as if the step had just run: newer than the checkout and than what the steps
+        // before it left, and in the order the step wrote them. An archive holds the times of the run it is from.
+        const timed = yield* joined(async () => {
+          try {
+            const now = BigInt(Date.now()) * 1_000_000n
+            const held = wrote.unpacked.flatMap((path) => {
+              const stats = NodeFs.lstatSync(path, { bigint: true, throwIfNoEntry: false })
+              return stats === undefined ? [] : [[path, stats.mtimeNs] as const]
+            })
+            const times = ObservedReads.putBackTimes(held.map(([, time]) => time), began, now)
+            const seconds = (time: bigint): number => Number(time) / 1e9
+            held.forEach(([path], index) => NodeFs.lutimesSync(path, seconds(now), seconds(times[index]!)))
+            return true
+          } catch {
+            return false
+          }
+        })
+        if (!timed) return false
         wroteHere.set(node.label, { label: node.label, id: stored.id!, made: wrote.made, touched: wrote.touched })
         // The tree holds other files than the plan measured: a target that waits for this one is measured again.
         wroteBy.set(node.label, ++writes)

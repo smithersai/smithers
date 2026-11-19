@@ -1682,6 +1682,38 @@ export const outsideChanged = (stored: Record, measured: (path: string) => strin
   (stored.kept?.outside ?? []).find(([path, state]) => measured(path) !== state)?.[0]
 
 /**
+ * The modification times to give the files of a run that are put back, in
+ * nanoseconds, each for the time at the same place in `times`: the files as
+ * if the run had just ended.
+ *
+ * A build tool that compares times, as `make` does, must find what a step
+ * built newer than the sources it was built from, and the step's own files
+ * in the order the step wrote them. The times an archive holds are the old
+ * run's: older than a checkout made today. One time for every file would
+ * lose their order. So the times move together, the newest to `now`, and
+ * every one lands after `after`, the moment the files began to be put back:
+ * whatever was there before is older than each of them.
+ *
+ * The times move by one offset when the run's files span less time than
+ * there is between `after` and `now`. A run that took longer keeps the
+ * order of its files and nothing else of their times: each distinct time
+ * gets a place of its own, evenly spaced, ending at `now`.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const putBackTimes = (times: ReadonlyArray<bigint>, after: bigint, now: bigint): ReadonlyArray<bigint> => {
+  const distinct = [...new Set(times)].sort((left, right) => left < right ? -1 : 1)
+  if (distinct.length === 0) return []
+  const newest = distinct[distinct.length - 1]!
+  const room = now > after ? now - after : 0n
+  if (newest - distinct[0]! < room) return times.map((time) => time + (now - newest))
+  const apart = room / BigInt(distinct.length)
+  const place = new Map(distinct.map((time, index) => [time, BigInt(distinct.length - 1 - index)]))
+  return times.map((time) => now - place.get(time)! * apart)
+}
+
+/**
  * Whether a name in a kept archive may be put back: a path inside the
  * workspace, written from its root and never in `.git`, or an absolute path
  * under one of the temporary directories.

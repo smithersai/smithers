@@ -395,6 +395,15 @@ one that is not answered is about to run, what each answered step it waits for
 left is put back first: what the run removed is removed, and its files are
 unpacked where they were.
 
+The files are put back as if the step had just run. An archive holds the
+modification times of the run it was kept from, which are older than a checkout
+made today, and a tool that compares times, as `make` does, would find every
+output out of date. So the times move together: the newest file gets the time
+of the moment it is put back, every file is newer than what was there before,
+and the step's files keep the order the step wrote them in. A step that took
+longer than putting its files back takes keeps that order and not the gaps
+between its files.
+
 | Tree                                                      | What runs                                                     |
 | --------------------------------------------------------- | ------------------------------------------------------------- |
 | Every step would read what it read before                 | Nothing, and nothing is put back, in a fresh checkout too     |

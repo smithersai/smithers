@@ -227,7 +227,9 @@ tree, a build leaves its files, and the step after reads them. Each step is
 recorded the same way, and what each step left is kept with its record. A
 commit that changes nothing a job's steps read runs no step of it: no install,
 no build, no test, in a fresh checkout too. When one step has to run, what the
-steps before it left is put back first, and they do not run.
+steps before it left is put back first, and they do not run. The files are put
+back as new as if those steps had just run and in the order they were written,
+so a later `make` finds what an earlier step built up to date.
 
 | Commit changes             | `npm ci` | `npm run lint` | `npm test` |
 | -------------------------- | -------- | -------------- | ---------- |

@@ -58,6 +58,8 @@ const on = (machine: string, shell: string, data: ReadonlyArray<unknown> = []) =
 const mount = await Machine.mounting(process.env, "/var/tmp")
 const mountedIt = it.skipIf(!("bwrap" in mount))
 const tracedMountedIt = it.skipIf("reason" in tracing || !("bwrap" in mount))
+/** A host that records reads and has `make`, a build tool that compares the times of files. */
+const tracedMakeIt = it.skipIf("reason" in tracing || !NodeFs.existsSync("/usr/bin/make"))
 /** The directory that bubblewrap is in, for a build that is to find it on `PATH`. */
 const mounts: ReadonlyArray<string> = "bwrap" in mount ? [Path.dirname(mount.bwrap)] : []
 
@@ -556,6 +558,54 @@ describe("an observed target on a machine", () => {
       expect(second.logs).toContain("//:install  what it left is put back for //:test")
     }
   )
+
+  // The third ship review's blocker 3: what a reused step built was put back with the times of the run it was
+  // kept from, older than the sources of a checkout made now, so `make -q` said it was out of date.
+  tracedMakeIt(
+    "puts back what a step built as if the step had just run: a check that it is up to date passes",
+    async () => {
+      const { failures, logs, run, write } = await fixture(() => {
+        const build = on("job", "make out")
+        return { build, check: on("job", "cat b.txt > /dev/null && make -q out", [build]) }
+      })
+      await write("Makefile", "out: in\n\tcp in out\n")
+      await write("in", "1\n")
+      expect(await run(["check"])).toEqual({ build: "ran", check: "ran" })
+      // Only the check reads the changed file. The build is answered, and `out` is put back newer than `in`.
+      await write("b.txt", "b, changed\n")
+      expect(await run(["check"]), failures.get("check")).toEqual({ build: "hit", check: "ran" })
+      expect(logs).toContain("//:build  what it left is put back for //:check")
+    }
+  )
+
+  tracedMakeIt("puts back a build of two stages in their order, each newer than what it was built from", async () => {
+    const { failures, run, write } = await fixture(() => {
+      const first = on("job", "make a.o")
+      const second = on("job", "make b", [first])
+      // The object is newer than its source, and the program newer than the object, as after a build.
+      const newer = "make -q b && test a.o -nt a.c && test b -nt a.o"
+      return { first, second, check: on("job", `cat b.txt > /dev/null && ${newer}`, [second]) }
+    })
+    await write("Makefile", "a.o: a.c\n\tcp a.c a.o\nb: a.o\n\tcp a.o b\n")
+    await write("a.c", "1\n")
+    expect(await run(["check"])).toEqual({ first: "ran", second: "ran", check: "ran" })
+    await write("b.txt", "b, changed\n")
+    expect(await run(["check"]), failures.get("check")).toEqual({ first: "hit", second: "hit", check: "ran" })
+  })
+
+  tracedMakeIt("keeps the order of a step's files when the step took longer than putting them back", async () => {
+    const { failures, run, write } = await fixture(() => {
+      // One step builds both, a while apart, and touches a file between them that is no part of the build.
+      const build = on("job", "make a.o && sleep 0.4 && : > between && sleep 0.4 && make b")
+      const newer = "make -q b && test a.o -nt a.c && test between -nt a.o && test b -nt between"
+      return { build, check: on("job", `cat b.txt > /dev/null && ${newer}`, [build]) }
+    })
+    await write("Makefile", "a.o: a.c\n\tcp a.c a.o\nb: a.o\n\tcp a.o b\n")
+    await write("a.c", "1\n")
+    expect(await run(["check"])).toEqual({ build: "ran", check: "ran" })
+    await write("b.txt", "b, changed\n")
+    expect(await run(["check"]), failures.get("check")).toEqual({ build: "hit", check: "ran" })
+  })
 
   tracedIt("leaves out of its record what the declaration names under the machine's temporary directory", async () => {
     // What Node does: a step fills a cache of compiled code under TMPDIR, with other bytes on every run, and the

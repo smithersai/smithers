@@ -1585,6 +1585,29 @@ describe("what a run left behind", () => {
     })
   })
 
+  it("puts a run's files back as if the run had just ended, in the order it wrote them", () => {
+    const second = 1_000_000_000n
+    const now = 5_000n * second
+    const after = now - 40_000_000n
+    // A run whose files span less time than the putting back took: one offset for all, the newest at `now`.
+    const quick = [100n * second, 100n * second + 7n, 100n * second + 30_000_000n]
+    expect(ObservedReads.putBackTimes(quick, after, now)).toEqual([now - 30_000_000n, now - 29_999_993n, now])
+    // A run that took a minute: its files keep their order, each distinct time in a place of its own after
+    // `after`, and files written at one time stay at one time.
+    const long = [160n * second, 100n * second, 130n * second, 100n * second]
+    const moved = ObservedReads.putBackTimes(long, after, now)
+    expect(moved).toEqual([now, now - 26_666_666n, now - 13_333_333n, now - 26_666_666n])
+    expect(moved.every((time) => time > after && time <= now)).toBe(true)
+    // One file, and one time for several, is the time now.
+    expect(ObservedReads.putBackTimes([7n], after, now)).toEqual([now])
+    expect(ObservedReads.putBackTimes([7n, 7n], after, now)).toEqual([now, now])
+    expect(ObservedReads.putBackTimes([], after, now)).toEqual([])
+    // A clock that went back leaves no room: every file is as new as now, and none is in the future.
+    expect(ObservedReads.putBackTimes([1n, 2n], now, now - 5n)).toEqual([now - 5n, now - 5n])
+    // The archive of another host whose clock is ahead: still the newest at `now`.
+    expect(ObservedReads.putBackTimes([now + 9n, now + 4n], after, now)).toEqual([now, now - 5n])
+  })
+
   it("stands for its run while what the run left outside the workspace is as it left it", async () => {
     const { home, write } = await places()
     const tool = await write(Path.join(home, "bin/tool"), "tool")
