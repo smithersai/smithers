@@ -7,9 +7,14 @@ import { operations } from "../release-support/operations.ts"
 import { type Candidate, ReleaseError } from "../release-support/schema.ts"
 import type { ReleaseGateSet } from "../release/gates/flow.ts"
 import { publishedPackages } from "../release/pack-release.mjs"
-import { candidateIntegrity, integrity } from "../release/publish-release.mjs"
+import { candidateIntegrity, consumerTags, integrity } from "../release/publish-release.mjs"
 import { releaseGateCommand, releaseGates } from "../release/release-gates.mjs"
 import { releaseInput, repository } from "./fixtures.ts"
+
+// Each package takes its consumer tags: `smithers-ci` takes `latest` with `next` on a
+// prerelease. `release/publish-release.test.mjs` pins `consumerTags`.
+const consumerTagCount = (packages: ReadonlyArray<{ name: string; version: string }>) =>
+  packages.flatMap(consumerTags).length
 
 const fixture = async (
   test: TestContext,
@@ -124,7 +129,7 @@ test("the publisher rechecks both runtime receipts and publishes only missing ex
   assert.equal(state.publishes.length, 1)
   assert.ok(state.publishes[0]!.includes("--provenance=false"))
   assert.equal(state.publishes[0]![state.publishes[0]!.indexOf("--tag") + 1], "staging")
-  assert.equal(state.promotions.length, state.packages.length)
+  assert.equal(state.promotions.length, consumerTagCount(state.packages))
   assert.deepEqual(state.promotions.at(-1), ["dist-tag", "add", `smthrs@${state.input.version}`, "next"])
   await state.ops.publish({ input: state.input, candidate: verified })
   assert.equal(state.publishes.length, 1)
@@ -139,7 +144,12 @@ for (const version of ["1.0.0", "1.0.0-rc.2"]) {
     const verified = await state.ops.verifyCandidate({ input: state.input, candidate: state.candidate })
     const result = await state.ops.publish({ input: state.input, candidate: verified })
     assert.deepEqual(result.published, [state.packages.at(-1)!.name])
-    assert.deepEqual(state.promotions, rest.map((entry) => ["dist-tag", "add", `${entry.name}@${version}`, tag]))
+    assert.deepEqual(
+      state.promotions,
+      rest.flatMap((entry) =>
+        consumerTags(entry).map((consumer) => ["dist-tag", "add", `${entry.name}@${version}`, consumer])
+      )
+    )
   })
 }
 
@@ -150,7 +160,7 @@ test("local publication accepts absent tags but refuses failed or invalid tag re
     }
   })
   await absent.ops.publish({ input: absent.input, candidate: absent.candidate })
-  assert.equal(absent.promotions.length, absent.packages.length)
+  assert.equal(absent.promotions.length, consumerTagCount(absent.packages))
   for (
     const tagRead of [
       () => {

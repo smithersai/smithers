@@ -9,6 +9,7 @@ import { Effect, Layer, type Scope } from "effect"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import * as DeclarationSite from "../../../../packages/smithers/flows/flow/src/internal/DeclarationSite.ts"
 import * as Host from "../../coding/host.ts"
 import { Landing } from "../../coding/landing.ts"
 import { makeHostJudge } from "./scripted-judge.ts"
@@ -61,7 +62,8 @@ export const withProductionRegistries = async <A>(
           const original = runtime.register
           const descriptor = Object.getOwnPropertyDescriptor(runtime, "register")!
           const observed: typeof runtime.register = (flow, handler, options) => {
-            const site = Object.getOwnPropertyDescriptor(flow, "~@smthrs/flow/DeclaredAt")?.value as { readonly path?: string } | undefined
+            // A declaration carries an unparsed stack until its site is read.
+            const site = DeclarationSite.declaredAt(flow)
             tags.push({ id: flow._tag, runtime: "machine", kind: "registration", ...(site?.path === undefined ? {} : { source: relative(repository, site.path) }) })
             return original(flow, handler, options)
           }
