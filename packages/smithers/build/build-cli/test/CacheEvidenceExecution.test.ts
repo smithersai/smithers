@@ -21,6 +21,7 @@ import {
   executeEffect,
   ExecutionServices,
   executionServicesLive,
+  groupDeclarations,
   sandboxRequest
 } from "../src/internal/PackageRunner.ts"
 import { execute, plan } from "../src/PackageExec.ts"
@@ -940,6 +941,32 @@ describe("a host that cannot confine", () => {
     // Under the path the plan keyed, the run gathers its evidence.
     expect(await run("test")).toEqual({ test: "ran" })
     expect(await run("test")).toEqual({ test: "hit" })
+  })
+})
+
+describe("the file groups a node declares through its dependencies", () => {
+  it("are each group's inputs as written, once, through any dependency, and nothing of another rule", () => {
+    type Node = Parameters<typeof groupDeclarations>[0]
+    const node = (rule: string, dependencies: ReadonlyArray<string>, paths: ReadonlyArray<string> = []): Node =>
+      ({
+        rule,
+        dependencies,
+        declaredInputs: paths.map((path) => ({ declaration: { _tag: "File", path } }))
+      }) as unknown as Node
+    // A diamond: two routes reach one group, which is read once; a build between holds a group of its own.
+    const nodes = new Map<string, Node>([
+      ["//a:left", node("Filegroup", ["//a:shared"], ["a/left.ts"])],
+      ["//a:build", node("TsBuild", ["//a:shared"], ["a/build.ts"])],
+      ["//a:shared", node("Filegroup", [], ["a/shared.ts"])]
+    ])
+    const expected = [
+      { group: "//a:left", input: { _tag: "File", path: "a/left.ts" } },
+      { group: "//a:shared", input: { _tag: "File", path: "a/shared.ts" } }
+    ]
+    expect(groupDeclarations(node("Vitest", ["//a:left", "//a:build"]), nodes)).toEqual(expected)
+    // A dependency the plan does not hold contributes nothing.
+    expect(groupDeclarations(node("Vitest", ["//a:left", "//a:gone"]), nodes)).toEqual(expected)
+    expect(groupDeclarations(node("Vitest", []), nodes)).toEqual([])
   })
 })
 

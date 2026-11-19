@@ -603,6 +603,36 @@ export const refusedByProtection = (output: string): boolean =>
   /read-only file system|\bEROFS\b|\bEXDEV\b|cross-device link|no new privileges|(?:^|\n|\\n|")bwrap: /i.test(output)
 
 /**
+ * The inputs, as written, of every file group a node reads through, directly
+ * or through another dependency. They are part of what the node declares: a
+ * run is shown their files, so declaring one more file in a group is a new
+ * declaration, and a confined attempt that failed is tried again.
+ *
+ * @category internal
+ * @since 1.0.0
+ */
+export const groupDeclarations = (
+  node: PackageNode,
+  nodes: ReadonlyMap<string, PackageNode>
+): ReadonlyArray<unknown> => {
+  const declarations: Array<unknown> = []
+  const seen = new Set<string>()
+  const stack = [...node.dependencies]
+  while (stack.length > 0) {
+    const label = stack.pop()!
+    if (seen.has(label)) continue
+    seen.add(label)
+    const dependency = nodes.get(label)
+    if (dependency === undefined) continue
+    if (dependency.rule === "Filegroup") {
+      for (const input of dependency.declaredInputs) declarations.push({ group: label, input: input.declaration })
+    }
+    stack.push(...dependency.dependencies)
+  }
+  return declarations.sort((left, right) => JSON.stringify(left) < JSON.stringify(right) ? -1 : 1)
+}
+
+/**
  * Every dependency output a confined run of `node` can read: the declared
  * output directories and files of its transitive dependencies. They are the
  * paths {@link sandboxRequest} grants for the same reason, so what a result's
@@ -1743,7 +1773,10 @@ export const executeEffect = (
           label: node.label,
           rule: node.rule,
           sandbox: node.sandbox,
-          inputs: node.declaredInputs.map((input) => input.declaration),
+          inputs: [
+            ...node.declaredInputs.map((input) => input.declaration),
+            ...groupDeclarations(node, planned.nodes)
+          ],
           dependencies: node.dependencies,
           reads: node.readSet,
           installedTrees: node.installedTrees ?? []
