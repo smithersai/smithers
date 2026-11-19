@@ -19,7 +19,8 @@ provenance, which the self-hosted tier stores and this Worker refuses (see
 hosted service alone.
 
 The same stack deploys the hosted sandbox service, a second Worker that lends
-Cloudflare containers to other hosts over HTTP; see "Sandbox service".
+Cloudflare containers to other hosts over HTTP, on every stage not deployed
+with `--cache-only`; see "Sandbox service".
 
 The service has two credentials: one that may read and one that may publish.
 [`CACHE-TRUST.md`](./CACHE-TRUST.md) states the trust model, which secret
@@ -43,10 +44,10 @@ Provide these credentials in the deploying shell:
   value shorter than 32 or longer than 4096 printable ASCII bytes, one with a
   space, or one drawn from a single character class (only digits, only
   lowercase, only uppercase, or only punctuation). The Worker receives only
-  their SHA-256 digests, which are unsalted and live in Alchemy state (the
-  local `.alchemy/` copy and its R2 snapshot) and in the Worker's secret
-  binding, so a guessable value is recoverable offline from any copy; do not put a bearer value in an `.env` file or source
-  control. Both are required and they must differ. The deployment reads the pair before it
+  their SHA-256 digests, which are unsalted and live in the stage's Alchemy
+  state (its local `.alchemy/` working copy and its R2 object) and in the
+  Worker's secret binding, so a guessable value is recoverable offline from
+  any copy; do not put a bearer value in an `.env` file or source control. Both are required and they must differ. The deployment reads the pair before it
   applies any resource and fails when either is missing or the two are equal,
   because one value under two names lets every reader publish. To roll the
   split out without breaking a client that still sends one credential, set
@@ -54,14 +55,14 @@ Provide these credentials in the deploying shell:
   [`CACHE-TRUST.md`](./CACHE-TRUST.md) gives the full order, including when
   to rotate the write token.
 - `SMITHERS_SANDBOX_TOKEN`: The sandbox service's bearer token, held to the
-  same length and character-class rule. The deployment fails before it applies
-  any resource when it is missing or weak. See "The sandbox token".
-- Cloudflare authentication: Set `CLOUDFLARE_API_TOKEN` and
-  `CLOUDFLARE_ACCOUNT_ID` for non-interactive deployments, or authenticate
-  interactively with Cloudflare OAuth. You can use `wrangler whoami` to check
-  an existing Wrangler OAuth login. Alchemy currently keeps its own OAuth
-  profile, so run `pnpm exec alchemy login --configure` and choose OAuth on the
-  first Alchemy deployment if you do not set an API token.
+  same length and character-class rule. Production and every stage deployed
+  without `--cache-only` need it, and the deployment fails before it applies
+  any resource when it is missing or weak. A cache-only stage, which
+  `pnpm run deploy:dev` deploys, does not read it. See "The sandbox token".
+- `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`: The deploy wrapper
+  reaches the R2 state bucket with this token (see "Where the state lives"),
+  so every deployment, plan, and destroy needs both, and Alchemy uses the same
+  token for the resources.
 
 Generate the bearer tokens in the current shell without writing them to disk:
 
@@ -79,32 +80,50 @@ pair or rotates both: mint a new pair, deploy, then run
 `gh secret set SMITHERS_CACHE_WRITE_TOKEN --env cache-publish`. A deploy with a new pair
 and no secret update leaves CI with credentials the Worker refuses.
 
-The Cloudflare account must already contain the `smithers.sh` zone. The API
-token or OAuth grant needs permission to manage Workers, D1, R2, and the
-Worker custom domain in that zone.
+The API token needs permission to manage Workers, D1, and R2. Production also
+attaches the custom domain `build.smithers.sh`, so a production deployment
+needs the `smithers.sh` zone in the account and permission to manage Worker
+custom domains in it. A development stage answers on a `workers.dev` URL and
+needs neither. A stage with the sandbox service also needs permission to
+manage Containers and Durable Objects.
 
 ### Where the state lives
 
-Alchemy knows which physical Worker, D1 database, and R2 bucket belong to this
-stack only through its state. Lose the state and the next deploy creates a
-second production beside the first. The durable copy of the state is therefore
-one object in R2, `smithers-build-infra-state/alchemy/SmithersBuildRemoteCache.json`,
-and the ignored `.alchemy/` directory is a working copy of it.
+Alchemy knows which physical Worker, D1 database, and R2 bucket belong to a
+stage only through its state. Lose the state and the next deploy creates a
+second production beside the first. The durable copy of each stage's state is
+therefore one object in R2,
+`smithers-build-infra-state/alchemy/SmithersBuildRemoteCache/<stage>.json`,
+and the stage's directory in the ignored
+`.alchemy/state/SmithersBuildRemoteCache/<stage>/` is a working copy of it.
+Each stage has its own object, its own lock, and its own working copy, so
+deploying one stage never reads, locks, or publishes another stage's state.
 
 `scripts/deploy.ts` owns the round trip. The state directory must be an
 absolute path with no symbolic link in it or in any ancestor; the wrapper, the
 snapshot read and write, and redaction each check this before they take
 ownership, pull, or change anything, so a linked directory's target is never
-touched. Before Alchemy starts the wrapper takes a lock
-object (the state key with `.lock` appended) with a conditional write, and
-pulls the snapshot over the local state directory. After Alchemy exits it
+touched. Before Alchemy starts the wrapper takes the stage's lock
+object (the stage's key with `.lock` appended) with a conditional write, and
+pulls the stage's snapshot over its working copy. After Alchemy exits it
 redacts, then publishes the snapshot back with a compare-and-swap on the
 version it pulled, whether or not Alchemy succeeded, because a failed run can
 still have created resources that only its state records. It then deletes the
 lock. A held lock, an unreachable bucket, or a snapshot that changed during the
 run fails the command and names the cause. A lock left by a killed deployment
 names its host and process id; delete that object only once that process is
-gone.
+gone. The wrapper also owns the stack's whole `.alchemy/state/` directory on
+this machine for the run, so two commands from one checkout run one at a
+time, whatever their stages.
+
+A plan (`--dry-run`) runs Alchemy's read-only `plan`. It still verifies the
+Cloudflare token, reads the stage's object, and writes it into the working
+copy, because a plan against unsynced local state is wrong, but it takes no
+lock, runs no redaction, and publishes nothing. A destroy (`--destroy`) takes
+the same round trip as a deployment; once Alchemy has deleted the stage's
+state, the wrapper deletes the stage's object instead of publishing an empty
+one. A destroy of a protected stage, or of one whose state holds a sandbox
+Worker, needs `--allow-destroy=<stage>`; see "Deploy a development stage".
 
 Each remote operation has a 30-second deadline, including token verification,
 request signing, response bodies, and lock deletion. Termination during
@@ -151,7 +170,7 @@ concurrent change.
 
 A run that changes state but does not publish it, because redaction failed, the
 publish lost the compare-and-swap, or the process was killed, leaves
-`.smithers-unpublished-state` in the state directory. The marker records the
+`.smithers-unpublished-state` in the stage's working copy. The marker records the
 remote version the run pulled. The next deployment keeps the changed local
 state instead of pulling over it, so resources that run created stay recorded,
 and publishes it. When the remote also changed since that pull, the deployment
@@ -159,7 +178,14 @@ refuses until an operator reconciles both copies and deletes the marker.
 
 The stack program refuses to run unless the wrapper started it
 (`SMITHERS_BUILD_INFRA_STATE_SYNCED`), so `alchemy deploy` or `alchemy plan`
-run directly fail before they read unsynced local state. The state bucket is
+run directly fail before they read unsynced local state. The wrapper sets that
+variable and `SMITHERS_BUILD_INFRA_CACHE_ONLY` for every run and refuses
+Alchemy's `--env-file`, which Alchemy reads before the process environment and
+which could otherwise override either. Export a run's other variables in the
+shell; a `.env` file here is read after the process environment and cannot
+override them. `alchemy destroy`
+never runs the stack program, so nothing refuses it: destroy a stage only
+through the wrapper, which keeps the R2 object in step. The state bucket is
 created once by hand, outside the stack, because the stack's state cannot
 record the bucket that holds it.
 
@@ -170,19 +196,84 @@ a verifier derived from a currently configured bearer, every other value is
 replaced whatever its type, and a credential binding in a shape the script
 cannot read is refused rather than reported clean. A rotated-away credential
 therefore cannot survive a run that claims success. Current state contains
-only the one-way verifier.
+only the one-way cache verifiers, and the redaction placeholder where the
+sandbox token was.
 
-Redaction inspects every `CacheWorker.json*` file under the stack state
-directory, including Alchemy temporary siblings left by an interrupted write.
-It refuses duplicate JSON member names, including escaped spellings, and audits
-credential bindings in every decoded root, including arrays. Published
-replacements fit the 16 MiB read limit; indentation falls back to compact JSON
-when needed, and oversized replacements are refused before publication.
+Redaction reads every state file in the deployed stage's working copy: each
+resource's `<logical id>.json`, the stack output, and the temporary siblings
+Alchemy leaves after an interrupted write. It recognizes a credential by its
+binding name (`CACHE_READ_TOKEN`, `CACHE_WRITE_TOKEN`, the legacy
+`CACHE_TOKEN`, and `SANDBOX_TOKEN`), not by the file it sits in, so the
+sandbox Worker's `SandboxWorker.json` is scrubbed like the cache Worker's. It
+never reads another stage: that stage's verifiers derive from tokens the
+deploying shell does not hold. Alchemy stores every secret value as
+`{"__redacted__": <value>}`; one under any other name is a secret redaction
+cannot classify, so the run fails and publishes nothing rather than send it to
+R2 in clear. An empty state file, or a temporary sibling an interrupted write
+left incomplete, is refused with its path: check it and delete it, then run
+again. Redaction refuses duplicate JSON member names, including escaped
+spellings, and audits credential bindings in every decoded root, including
+arrays. Published replacements fit the 16 MiB read limit;
+indentation falls back to compact JSON when needed, and oversized
+replacements are refused before publication.
+
+### Move state to one object per stage
+
+State used to be one object for every stage,
+`smithers-build-infra-state/alchemy/SmithersBuildRemoteCache.json`, with one
+lock. A deployment, plan, or destroy refuses while that object still holds
+state, and names the command that splits it.
+
+Before you migrate, check every machine that has deployed this stack. A
+machine whose last deployment failed to publish has
+`.smithers-unpublished-state` directly in
+`.alchemy/state/SmithersBuildRemoteCache/`, and its state is missing from the
+shared object. Deploy once more from that machine with a revision from before
+per-stage state, which publishes it, or reconcile it by hand and delete the
+marker. The migration refuses while the machine that runs it has the marker,
+and every later deployment from a machine that has it refuses too; neither can
+see the other machines. Then run it once, from any machine with the Cloudflare
+credentials:
+
+```sh
+pnpm run migrate-state -- --dry-run
+pnpm run migrate-state
+```
+
+The dry run takes no lock and writes nothing; it prints what it would write.
+The migration takes the shared object's lock and copies the shared object,
+byte for byte, to `alchemy/SmithersBuildRemoteCache.pre-split.json`. It
+writes each stage's files, byte for byte, to that stage's object, and reads
+the backup and every stage object back. Only when all of them match does it
+replace the shared object with a marker that names the stage objects. Running
+the migration again does nothing, and a run that stopped part way finishes.
+It refuses, before it writes anything, when the backup or a stage's object
+already holds different bytes. If it is interrupted, delete the lock object
+it names, then run it again.
+
+Never delete the marker at `alchemy/SmithersBuildRemoteCache.json`. A wrapper
+from before per-stage state reads that key: it refuses the marker, but it
+treats a missing object as a first deployment and would create a second
+production beside the first.
+
+To undo the migration, while no deployment runs:
+
+```sh
+pnpm run restore-shared-state -- --dry-run
+pnpm run restore-shared-state
+```
+
+Under the shared lock it copies the backup back over the marker and deletes
+each stage object that still holds exactly what the migration wrote, so
+wrappers from before per-stage state deploy again. It refuses, before it
+writes anything, when a stage was deployed with per-stage state since the
+migration, because restoring would lose that deployment. It keeps the backup.
 
 ## Deploy production
 
 Run both commands from `packages/smithers/build/infra`. Preview the production
-plan against the state pulled from R2:
+plan against the state pulled from R2; the plan takes no lock and publishes
+nothing:
 
 ```sh
 CI=1 pnpm run plan
@@ -209,18 +300,57 @@ Worker does not expose a `workers.dev` URL.
 
 ## Deploy a development stage
 
-Run the development script without `--stage`:
+A development stage is the cache alone: its own Worker on a `workers.dev`
+URL, its own D1 database and R2 bucket, and its own state object. It needs the
+Cloudflare credentials and the two cache tokens, and no zone, Docker, or
+sandbox token. Run these from `packages/smithers/build/infra`:
 
 ```sh
-pnpm run deploy:dev
+export CLOUDFLARE_API_TOKEN=<API token> CLOUDFLARE_ACCOUNT_ID=<account ID>
+export SMITHERS_CACHE_READ_TOKEN="$(openssl rand -hex 32)"
+export SMITHERS_CACHE_WRITE_TOKEN="$(openssl rand -hex 32)"
+STAGE=needlefish_poc
+
+CI=1 pnpm run plan:dev -- --stage "$STAGE"
+CI=1 pnpm run deploy:dev -- --stage "$STAGE" --yes
 ```
 
-The deploy wrapper names the `dev_$USER` stage for any command that has no
-`--stage`. It does not use Alchemy's own default, which is `live_$USER`: a
-stage's resources and state are recorded under its name, so a different default
-would deploy a second development stack. Pass `--stage <name>` to deploy
-another stage. Development stages get independent D1, R2, and Worker resources
-and use a `workers.dev` URL instead of claiming the production custom domain.
+The deploy prints the stack's outputs. Set `URL` to its `url`. `/healthz`
+answers `200`, and a cache read with the read token answers `404` for a key
+nobody wrote (`401` without the token):
+
+```sh
+URL=<url from the deploy output>
+curl --fail-with-body "$URL/healthz"
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $SMITHERS_CACHE_READ_TOKEN" "$URL/ac/verify"
+```
+
+Destroy the stage when you are done. This deletes its Worker, its D1
+database, its R2 bucket and every object in it, then its state object. If that
+last delete fails, run the destroy again: the stage's working copy records it,
+and the next run deletes the object instead of pulling it back.
+
+```sh
+CI=1 pnpm run destroy:dev -- --stage "$STAGE" --yes
+```
+
+Without `--stage`, the three scripts use `dev_$USER`, not Alchemy's own
+default, `live_$USER`, which would name a second development stack.
+`deploy:dev` and `plan:dev` pass `--cache-only`, which leaves the sandbox
+Worker, its container applications, and its token out of the stack. They
+refuse a stage whose state already has a sandbox Worker, such as `vibelang`,
+rather than delete it; deploy such a stage with
+`node scripts/deploy.ts --stage <stage> --yes` and the sandbox token.
+
+Only a throwaway stage gets its bucket emptied on destroy. A `--cache-only`
+deployment of a stage outside the protected list records `forceDestroy` on its
+bucket; a full deployment, or any deployment of a protected stage, does not,
+and R2 then refuses to delete the bucket while it holds objects. A stage last
+deployed without `forceDestroy` stops at the non-empty bucket and keeps the
+state of what remains. The protected stages are `prod` and `vibelang`
+(`protectedStages` in `deployment.ts`). A destroy refuses a protected stage,
+and any stage whose state records a sandbox Worker, unless a flag names it:
+`--allow-destroy=<stage>`.
 
 ## Verify the service
 
@@ -303,10 +433,15 @@ credentials' rule to it: at least 32 random bytes, at most 4096 printable
 ASCII bytes, and two character classes. Unlike the cache tokens, the Worker
 holds the token itself in its `SANDBOX_TOKEN` secret, because
 `HttpSandbox.serve` compares the presented bearer in constant time. The deploy
-wrapper's redaction replaces it in Alchemy state before the state is
-published, so neither `.alchemy/` nor the R2 snapshot keeps it. A Worker
-without the secret answers every request `503`; a request without the token
-gets `401`.
+wrapper's redaction replaces it in the stage's Alchemy state before the state
+is published, so neither `.alchemy/` nor the stage's R2 object keeps it. A
+Worker without the secret answers every request `503`; a request without the
+token gets `401`.
+
+Wrappers before per-stage state read only `CacheWorker.json` and left the
+token raw in `SandboxWorker.json`, in the R2 state and in every working copy
+pulled from it. Treat a sandbox token deployed by one of them as exposed to
+anyone who could read the state bucket or such a copy, and rotate it.
 
 Mint it in the deploying shell, beside the cache pair:
 
@@ -320,10 +455,12 @@ old token is refused from the moment the new Worker is live.
 ### Deploy the sandbox service
 
 The deploy builds the image, so the deploying machine needs Docker with
-`linux/amd64` builds. The API token or OAuth grant also needs permission to
-manage Containers and Durable Objects. Then deploy as above: `pnpm run plan`
+`linux/amd64` builds. The API token also needs permission to manage
+Containers and Durable Objects. Then deploy as above: `pnpm run plan`
 lists `SandboxWorker` and one container application per instance type, and
-`pnpm run deploy` applies them. The stack's output `sandboxUrl` is the
+`pnpm run deploy` applies them. Any other stage gets the sandbox service only
+when deployed without `--cache-only`:
+`node scripts/deploy.ts --stage <stage> --yes`. The stack's output `sandboxUrl` is the
 Worker's `workers.dev` URL; the sandbox service claims no custom domain on any
 stage.
 
@@ -569,7 +706,10 @@ good commit through the wrapper:
 
 Never deploy a commit older than the one that added `scripts/remote-state.ts`.
 Its wrapper does not pull state from R2, so it plans against an empty local
-directory and creates a second production.
+directory and creates a second production. Once state is one object per
+stage, a commit from before that change refuses to deploy, because its
+wrapper reads the migration marker as invalid state, so roll back only to a
+commit that has per-stage state.
 
 Do not roll back with `wrangler rollback` or the Cloudflare dashboard. Either
 restores the older script while Alchemy state still describes the newer one,
@@ -591,9 +731,11 @@ redacted state to R2 (see [Where the state lives](#where-the-state-lives)).
 Redaction uses bounded descriptor-stable reads and atomic durable publication;
 the stack refuses to run unless the wrapper started it.
 
-The wrapper owns the state directory for the whole run, from before Alchemy
-starts until redaction has published its last file, through an exclusive SQLite
-transaction. The OS releases ownership if the process exits. The persistent
+The wrapper owns the stack's state directory, the parent of every stage's
+working copy, for the whole run, from before Alchemy starts until redaction
+has published its last file, through an exclusive SQLite transaction. It is
+the stack's directory and not the stage's because Alchemy's destroy deletes
+the stage's directory. The OS releases ownership if the process exits. The persistent
 `.smithers-state-owner.sqlite` file must not be deleted or replaced; all callers
 must lock the same file. A separate PID file supports diagnostics and older
 wrappers; stale PID reclamation is serialized under the SQLite lock. A second deployment or a
