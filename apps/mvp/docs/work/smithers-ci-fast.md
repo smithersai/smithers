@@ -427,6 +427,51 @@ Other repositories were measured before a job became a machine (`0607101fad66`),
 A first run records every step, the installs too. Around its steps it adds 2.0 to 2.2 starts of `smthrs` on a
 loaded host, at the limit `FirstRun.benchmark.test.ts` holds (2).
 
+### Why a step is not reused: three small libraries (2026-11-19, lane `sci-outside-gain`)
+
+The third review found almost nothing reused on three repositories, every result the same. Each replay below is
+4 commits, `--no-trial`, under `quiet-run` on nyc-01, on `main` at `8407fa8333d2`; the reason of every step that
+ran is the build's own line in the run record.
+
+| Repository | Head | Steps | Reused, per commit | Speedup | What ran, and why |
+| --- | --- | ---: | --- | ---: | --- |
+| `BurntSushi/same-file` | `e7d851b` | 13 | 0, 1, 0, 0 | 0.29 | `cargo build` in 4 toolchains: no `Cargo.lock`, so cargo asks crates.io which versions to use at every run. `cargo doc` and `cargo test` read what the build left, which is never the same bytes twice |
+| the same with `Cargo.lock` committed (a copy) | | 13 | 9, 0, 0, 5, 9, 13 | 0.39 | a file the step read, at every commit: the sources, `README.md` (the tests run its examples), and for `cargo doc` any file of the package and a file added to a directory cargo lists |
+| `chalk/chalk` | `7211001` | 4 | 0, 0, 0, 0 | 0.73 | `npm install` with no lockfile; `npm test` read a file each commit changed (`xo` lints `.github/security.md`) |
+| `sindresorhus/p-limit` | `a8a6fbe` | 6 | 0, 0, 0, 3 | 0.82 | `npm install` with no lockfile; `npm test` is reused at the one commit that changes no file it read |
+
+    CI_CHECKOUT=<a checkout of main> bash ~/ci/quiet-run smithers-ci --commits 4 --json --no-trial
+
+Four reasons were defects of Smithers build and are fixed, each with a test that runs a real program:
+
+- `cargo test` downloads the crates `Cargo.lock` pins, and that connection kept its result from being stored
+  (`a976a935734a`). The tool's own connections now count as fixed by a lockfile the run read and nothing wrote
+  afterwards. The same for `go build`, `go test`, `go vet` and `go.sum`.
+- `cargo doc` opened `.git/HEAD` to list a package's files, so its record never answered another commit
+  (`f1d81b263cc6`). What cargo itself reads there is no input. A build script, a test and `cargo package` that
+  read `.git` did read it.
+- `cargo test` held cargo's note of the compiler (`target/.rustc_info.json`, `f1d81b263cc6`) and its note of when
+  a crate was last used (`~/.cargo/.global-cache`, `8407fa8333d2`), both other bytes at every run.
+
+What stays, by the rule that a result is never reused when the step could have read something that changed:
+an install or a build with no lockfile runs at every commit. The report now says so and what to do
+(`2ce30ff78ba3`, `3a48eaee04fc`):
+
+    steps not reused
+    2 of 2 commits  ci.yml:test:1 (4 variants)  cargo build --verbose  never reused: it opened a network connection (cargo to 8.8.8.8 port 53), with no Cargo.lock to say what it fetches; commit Cargo.lock and this step and the 2 after it can be reused
+
+Asking the tool which versions it would pick today, and reusing the install when they are the same, was measured
+and not built: with an empty home `npm install --package-lock-only` takes 10.7 to 14.4 s against 12.5 to 17.3 s
+for the whole install on chalk, and 11.6 to 16.8 s against 16.5 to 22.8 s on p-limit. npm asks the registry
+about every package either way.
+
+Every speedup in the table is under 1: a step that runs costs more in normal mode than in the repository's CI.
+That is the next thing to fix, and it decides these repositories more than reuse does. The third reviewer's
+commander.js number shows it: 1.27 at `a5a7dc0` against 4.55 and 6.36 at `3431f07`, one commit apart. The three
+commits the runs share agree (17 to 21 s against 128 to 133 s). The newest, `a5a7dc0`, changes
+`package-lock.json`: all 25 steps run, in 384 s against 175 s. A person who replays the newest four commits
+gets 1.27.
+
 ## Fast mode (Will, 2026-11-17)
 
 A second mode beside the normal one.
