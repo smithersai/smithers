@@ -21,6 +21,8 @@
  * output is present, through Node's type stripping — the same path the tests use. That
  * is what makes `pnpm exec smthrs` run the working tree during development
  * with no build step, which `packages/smithers/test/support/check-local-smithers.mjs` requires.
+ * Its compiled VibeLang is kept in `.cache/vibelang` unless
+ * `VIBELANG_CACHE_DIR` names another directory.
  */
 import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import * as Module from "node:module"
@@ -156,5 +158,12 @@ if (await bundled()) {
 } else if (!checkout && existsSync(fileURLToPath(built))) {
   await start(built.href)
 } else {
+  // A checkout compiles its VibeLang sources as they load. VibeLang keeps what
+  // it compiled under the temporary directory by default, so a start under a
+  // new TMPDIR, as every test makes, compiled every package again (40 compiler
+  // runs). The checkout keeps them instead, keyed by the sources' content, in
+  // an ignored directory beside the package's sources: a test's sandbox mounts
+  // `node_modules` read-only, and a replay's jail can still read it there.
+  process.env.VIBELANG_CACHE_DIR ??= fileURLToPath(new URL("../.cache/vibelang", import.meta.url))
   await start(new URL("../src/bin.ts", import.meta.url).href)
 }

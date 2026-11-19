@@ -1,5 +1,5 @@
 /** Real executable contracts, scheduled in the bounded CLI worker pool. */
-import { spawn, spawnSync } from "node:child_process"
+import { execFileSync, spawn, spawnSync } from "node:child_process"
 import {
   chmodSync,
   cpSync,
@@ -625,6 +625,40 @@ describe("the smithers bin shim", processBudget, () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it("compiles a checkout's VibeLang once, whatever TMPDIR a start has", () => {
+    // The real compiler, behind a script that records each run of it.
+    const root = mkdtempSync(temporaryDirectoryPrefix)
+    try {
+      const runs = join(root, "compiler-runs.log")
+      const compiler = join(root, "vibelang")
+      const real = execFileSync(process.execPath, [
+        "--input-type=module",
+        "-e",
+        "const { findBinary } = await import(\"vibelang/binary\"); console.log(findBinary())"
+      ], { cwd: packageRoot, encoding: "utf8" }).trim()
+      writeFileSync(compiler, `#!/bin/sh\necho "$*" >> '${runs}'\nexec '${real}' "$@"\n`, { mode: 0o755 })
+      const start = (name: string) => {
+        const temporary = join(root, name)
+        mkdirSync(temporary)
+        const { VIBELANG_CACHE_DIR: _named, ...environment } = process.env
+        const result = spawnSync(process.execPath, [join(packageRoot, "bin", "smithers.mjs"), "--help"], {
+          cwd: root,
+          encoding: "utf8",
+          timeout: 600_000,
+          env: { ...environment, TMPDIR: temporary, VIBELANG_BINARY: compiler }
+        })
+        expect(result.status, result.stderr).toBe(0)
+        return existsSync(runs)
+          ? readFileSync(runs, "utf8").split("\n").filter((line) => line.includes("--project-emit")).length
+          : 0
+      }
+      const first = start("first")
+      expect(start("second")).toBe(first)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 1_300_000)
 
   it("runs the working-tree source when dist is absent", () => {
     // The development path `packages/smithers/test/support/check-local-smithers.mjs` requires: a fresh
