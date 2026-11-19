@@ -242,6 +242,7 @@ describe("ci conformance", () => {
         "allowBuilds:",
         "  \"@journeyapps/wa-sqlite\": false",
         "  \"@mongodb-js/zstd\": false",
+        "  \"@parcel/watcher\": false",
         "  core-js: false",
         "  dprint: false",
         "  es5-ext: false",
@@ -333,7 +334,8 @@ describe("ci conformance", () => {
         "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0",
       test: "pnpm --recursive --if-present run test",
       tui: "bun apps/tui/src/main.tsx",
-      "test:jsdoc": "node --test eslint.jsdoc.test.mjs"
+      "test:jsdoc": "node --test eslint.jsdoc.test.mjs",
+      "test:design-mock": "node --test .specs/design/mock/player.test.mjs .specs/design/mock/src/sites/reporting.test.mjs"
     })
     const targets = readFileSync(join(packagesDir, "..", "PACKAGE.ts"), "utf8")
     const jsdocTree = targets.match(/const jsdocTree = Smithers\.EsLint\(\{([\s\S]*?)\n\}\)/)?.[1]
