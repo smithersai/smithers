@@ -162,15 +162,17 @@ describe("what a failure says", () => {
   }, 600_000)
 
   it("says a step ran past its time limit", async () => {
-    const root = track(makeSmallRepository([job("ok", "sh a.sh"), job("slow", "sleep 20")]))
+    // The limit is far above what the passing step costs on a loaded host: with a limit of 1 second, `sh a.sh` itself
+    // ran past it in a check run (its machine was made slowly), and the replay then had no step that passed.
+    const root = track(makeSmallRepository([job("ok", "sh a.sh"), job("slow", "sleep 60")]))
     const limited = Layer.succeed(Options, {
       smthrs: [smthrs],
       reruns: 0,
       prepare: (directory) => Effect.sync(() => linkTargets(directory)),
-      stepTimeout: "1 second"
+      stepTimeout: "15 seconds"
     })
     const [failure] = (await replay(root, 1, limited as never)).commits[0]?.baseline.failures ?? []
-    expect(failure).toMatchObject({ step: "slow0", exitCode: 124, reason: "it ran past the limit of 1s for one step" })
+    expect(failure).toMatchObject({ step: "slow0", exitCode: 124, reason: "it ran past the limit of 15s for one step" })
   }, 600_000)
 
   it("lists failures in the order of the CI, whichever job ended first", async () => {

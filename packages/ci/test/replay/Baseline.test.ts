@@ -161,17 +161,20 @@ describe("the recipes of one Justfile, in the baseline", () => {
 
 describe("a baseline step", () => {
   it("is stopped at its time limit and has failed", async () => {
-    // Review finding 14: nothing ended a step. The target of this one sleeps its 20 seconds and passes.
-    const root = track(makeSmallRepository([job("slow", "sleep 20"), job("ok", "sh a.sh")]))
+    // Review finding 14: nothing ended a step. The target of this one sleeps its 60 seconds and passes.
+    // The limit is far above what the passing step costs on a loaded host: with a limit of 2 seconds, `sh a.sh` itself
+    // ran past it in a check run, and the replay then had no step that passed.
+    const root = track(makeSmallRepository([job("slow", "sleep 60"), job("ok", "sh a.sh")]))
     const limited = Layer.succeed(Options, {
       smthrs: [smthrs],
       reruns: 0,
       prepare: (directory) => Effect.sync(() => linkTargets(directory)),
-      stepTimeout: "2 seconds"
+      stepTimeout: "15 seconds"
     })
     const [commit] = (await replay(root, {}, {}, limited as never)).commits
     expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 0 })
-    expect(commit?.baseline.wallMs).toBeLessThan(15_000)
+    // Stopped at 15 seconds, well before the 60 the step would sleep.
+    expect(commit?.baseline.wallMs).toBeLessThan(50_000)
     expect(commit?.mismatches).toEqual([{ label: "//:slow0_0", mode: "normal", baseline: "fail", got: "pass" }])
   }, 600_000)
 
