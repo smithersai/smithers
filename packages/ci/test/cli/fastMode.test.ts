@@ -125,7 +125,8 @@ describe("a real replay whose model is lost at the second of three commits", () 
     commit(root, "second", { "notes.md": "two\n" })
     commit(root, "third", { "notes.txt": "three\n" })
     const lost = modelLostFor((items) => items.some((item) => item.changedFileExtensions.includes(".md")))
-    const outcome = await runIn(["--mode", "both", "--commits", "3"], root, onMain, lost)
+    // The commit before these three has a CI that needs Zig: the count starts from nothing, not from a run of it.
+    const outcome = await runIn(["--mode", "both", "--commits", "3", "--cold"], root, onMain, lost)
 
     expect(outcome.code, outcome.stderr).toBe(exitCodes.failed)
     expect(outcome.stdout).toContain("3 commits · 0 mismatches")
