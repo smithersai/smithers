@@ -61,7 +61,7 @@ const storageReference = [
 
 const seededSources = {
   "packages/ci/src/generate/Render.ts":
-    "`      - run: npx --yes --package=@smthrs/cli@0.1.0 smthrs ci '//...' --jobs 1`,\n",
+    "const release = \"0.1.0\"\n`      - run: npx --yes --package=@smthrs/cli@${release} smthrs ci '//...' --jobs 1`,\n",
   "packages/smithers/flows/database/src/internal/ReleasePolicy.ts": "export const releaseVersion = \"0.1.0\"\n",
   "packages/smithers/flows/observability/src/Otlp.ts": "export const defaultServiceVersion = \"0.1.0\"\n",
   "packages/smithers/migrate/src/flow/Cli.ts": "export const version = \"0.1.0\"\n",
