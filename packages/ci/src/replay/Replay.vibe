@@ -265,7 +265,13 @@ export effect function settle<R>(
   tally: RerunTally = { count: 0, ms: 0 }
 ): ReadonlyArray<TargetResult>!Failure!R {
   let settled: ReadonlyArray<TargetResult> = first.map(firstAttempt)
-  for (let rerun = 0; rerun < reruns; rerun++) {
+  // A `while`, not `for (let rerun = 0; ...)`: V8's coverage gives the statements after a `for (let ...)` loop the
+  // count of the loop's body (Node 26.5: a function called 14 times whose loop body ran 32 times reports 32 for the
+  // line after the loop). The `if` below then has "returned" more often than "reached", its other arm goes negative,
+  // and the suite reads one branch as never taken though every arm runs.
+  let rerun = 0
+  while (rerun < reruns) {
+    rerun += 1
     // A step stopped for making no progress would only wait as long again.
     const failing = new Set(
       settled.filter((result) => result.status === "failed" && !madeNoProgress(result) && !failedAsBefore(last, result))

@@ -80,6 +80,18 @@ describe("settle", () => {
     expect(results.map((entry) => [entry.label, entry.status])).toEqual([["a", "ran"], ["b", "ran"]])
   })
 
+  it("stops at its bound: with no round left, what waited on a flaky target stays skipped", async () => {
+    const { calls, execute } = scripted({ a: ["ran"], b: ["ran"] })
+    const results = await Effect.runPromise(
+      settle(execute, [result("a", "failed"), result("b", "skipped")], maxReruns, 0) as Effect.Effect<
+        ReadonlyArray<TargetResult>
+      >
+    )
+    expect(calls).toEqual([["a"]])
+    expect(results.map((entry) => [entry.label, entry.status])).toEqual([["a", "ran"], ["b", "skipped"]])
+    expect(verdictOf(results[0]!)).toBe("flaky")
+  })
+
   it("leaves a waiting target skipped when what it waited on really failed", async () => {
     const { calls, execute } = scripted({ a: ["failed"] })
     const results = await settled(execute, [result("a", "failed"), result("b", "skipped")])

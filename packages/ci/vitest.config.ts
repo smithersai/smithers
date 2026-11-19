@@ -12,6 +12,11 @@ export default defineConfig({
       fileURLToPath(new URL("../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
     ],
     environment: "node",
+    // Each test file starts real builds, and a build starts compilers that use a thread for every core. With a
+    // worker per core, a 48-core build server at its 32-core limit ran 90 compilers of 50 to 97 threads at once
+    // (load 650) and tests that take seconds took ten minutes. Twelve workers leave the builds room; a machine
+    // with fewer cores is unaffected.
+    maxWorkers: 12,
     // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s
     // wall-clock budget so correct suites survive coverage-instrumented load
     // while a genuine hang still fails the run.
