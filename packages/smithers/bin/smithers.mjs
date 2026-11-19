@@ -114,13 +114,14 @@ const ownCompiledCode = () => {
  * off each one. `NODE_DISABLE_COMPILE_CACHE=1` turns it off.
  *
  * Node writes one file per module it compiles and never removes one. The
- * bundle and the packages beside it are the same modules every start. A
- * workspace's declaration files are loaded under a new address each start, so
- * every start leaves about four small files that no later start reads. In a
- * directory the person names with `NODE_COMPILE_CACHE` those are theirs to
- * keep or clear. Otherwise the launcher uses a directory of its own under the
- * temporary directory (see {@link ownCompiledCode}): about one start in a
- * hundred empties it and compiles the bundle again.
+ * bundle, the packages beside it and a workspace's declaration files have the
+ * same addresses every start, so a start that changes no code adds nothing.
+ * The exception is a Node before 22.22.3, or 24 before 24.11.1: tsx runs its
+ * loader on a thread there, from a new address each start, which leaves about
+ * three small files per start. In a directory the person names with
+ * `NODE_COMPILE_CACHE` those are theirs to keep or clear. Otherwise the
+ * launcher uses a directory of its own under the temporary directory (see
+ * {@link ownCompiledCode}), which it empties when it grows too large.
  */
 const keepCompiledCode = () => {
   if (process.env.NODE_DISABLE_COMPILE_CACHE) return

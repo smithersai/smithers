@@ -7,6 +7,8 @@
  * the module it makes Node evaluate: the format a file runs in, the URL it sees
  * as `import.meta.url`, and the copy of a vendored adapter it receives.
  */
+import { execFileSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import { createRequire } from "node:module"
 import * as Os from "node:os"
@@ -274,6 +276,57 @@ describe("a CLI that runs as one file", () => {
       ].join("\n") + "\n"
     )
     expect((await load(url)).required).toMatch(/NOT_FOUND|NOT_EXPORTED/)
+  })
+})
+
+describe("the address a declaration module is evaluated at", () => {
+  const namespaceOf = (url: unknown) => new URL(url as string).searchParams.get("tsx-namespace")
+
+  it("is the same from start to start, and new for each evaluation in one start", async () => {
+    const url = await write("stable/PACKAGE.ts", "export const self: string = import.meta.url\n")
+    const hash = createHash("sha256").update(url).digest("hex").slice(0, 16)
+    const first = await load(url)
+    const second = await load(url)
+    expect(namespaceOf(first.self)).toBe(`${hash}-1`)
+    expect(namespaceOf(second.self)).toBe(`${hash}-2`)
+    expect(first).not.toBe(second)
+  })
+
+  it("evaluates given source at a URL with no file, and its imports in the same namespace", async () => {
+    const helper = await write("given/PACKAGE.ts", "export const self: string = import.meta.url\n")
+    const url = pathToFileURL(NodePath.join(root, "given", ".entry.mjs")).href
+    const resolver = new URL("../src/effect-resolution.js", import.meta.url).href
+    const source = [
+      `import { self } from ${JSON.stringify(helper)}`,
+      "export const entry = import.meta.url",
+      "export const imported = self"
+    ].join("\n") + "\n"
+    const script = await write(
+      "given/run.mjs",
+      [
+        `import { importDeclarationModule } from ${JSON.stringify(resolver)}`,
+        `const url = ${JSON.stringify(url)}`,
+        `const loaded = await importDeclarationModule(url, import.meta.url, ${JSON.stringify(source)})`,
+        "const absent = await importDeclarationModule(url, import.meta.url).then(() => undefined, (cause) => cause.code)",
+        "console.log(JSON.stringify({ entry: loaded.entry, imported: loaded.imported, absent }))"
+      ].join("\n") + "\n"
+    )
+    const seen = JSON.parse(execFileSync(process.execPath, [fileURLToPath(script)], { encoding: "utf8" }))
+    expect(seen.entry.startsWith(url)).toBe(true)
+    expect(namespaceOf(seen.imported)).toBe(namespaceOf(seen.entry))
+    // Only that one import was answered from the given source.
+    expect(seen.absent).toBe("ERR_MODULE_NOT_FOUND")
+  })
+})
+
+describe("given source evaluated twice at once", () => {
+  it("gives each evaluation its own source", async () => {
+    const url = pathToFileURL(NodePath.join(root, "concurrent", ".entry.mjs")).href
+    const [one, two] = await Promise.all([
+      importDeclarationModule(url, import.meta.url, "export const which = 1\n"),
+      importDeclarationModule(url, import.meta.url, "export const which = 2\n")
+    ]) as ReadonlyArray<{ readonly which: number }>
+    expect([one!.which, two!.which]).toEqual([1, 2])
   })
 })
 

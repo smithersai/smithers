@@ -36,7 +36,6 @@ import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration
 import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import { isBuiltin, registerHooks } from "node:module"
-import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import * as Diagnostic from "./Diagnostic.ts"
@@ -755,7 +754,6 @@ const importGraph = async (
   modules: ReadonlyArray<string>,
   moduleRoots: ReadonlyArray<string>
 ): Promise<LoadedGraph> => {
-  const entryDirectory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-package-entry-"))
   const lines: Array<string> = []
   const bindings: Array<string> = []
   const workspaceUrl = workspaceUrlOf(discovery.root, discovery.workspaceFile)
@@ -774,15 +772,16 @@ const importGraph = async (
   })
   lines.push(`export const workspace = workspaceModule`)
   lines.push(`export const packages = [${bindings.join(", ")}]`)
-  const entryPath = NodePath.join(entryDirectory, "entry.mjs")
-  await Fs.writeFile(entryPath, `${lines.join("\n")}\n`, "utf8")
+  // No file is written: the entry's address stays the same from start to
+  // start, so Node reuses its compiled code and adds nothing to its cache.
+  const entryUrl = pathToFileURL(NodePath.join(discovery.root, ".smithers", ".package-entry.mjs")).href
   let entry: {
     readonly workspace: unknown
     readonly factory: unknown
     readonly packages: ReadonlyArray<readonly [string, object]>
   }
   try {
-    entry = await importDeclarationModule(pathToFileURL(entryPath).href, import.meta.url) as typeof entry
+    entry = await importDeclarationModule(entryUrl, import.meta.url, `${lines.join("\n")}\n`) as typeof entry
   } catch (cause) {
     // A PackageError the declaration code throws is wrapped too: only module
     // evaluation runs in this try, so every failure here is the declaration's.
@@ -794,11 +793,6 @@ const importGraph = async (
       `evaluating the workspace's declaration modules failed: ${undefinedNamespaceHint(Diagnostic.describe(cause))}`,
       { cause }
     )
-  } finally {
-    // The entry module is evaluated and held by the module registry; the
-    // file has no further reader. Every CLI invocation loads a graph, so
-    // leaving the directory behind is one leaked temp dir per command.
-    await Fs.rm(entryDirectory, { recursive: true, force: true })
   }
   const workspace = validateWorkspaceModule(entry.workspace, discovery.workspaceFile)
   const factory = discovery.factoryFile === undefined

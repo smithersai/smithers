@@ -48,7 +48,7 @@
  */
 import assert from "node:assert/strict"
 import { execFileSync, spawn, spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { availableParallelism, loadavg, tmpdir } from "node:os"
 import { delimiter, dirname, join, resolve } from "node:path"
 import { after, before, describe, it } from "node:test"
@@ -259,6 +259,33 @@ describe("a workspace with PACKAGE.ts targets", () => {
     const result = smthrs(workspace, ["ci", "//...", "--json"])
     assert.notEqual(result.status, 0)
     assert.match(`${result.stdout}${result.stderr}`, /\/\/:four/)
+  })
+
+  // Below these versions tsx runs its loader on a thread, from a new address each start.
+  const loaderOnMainThread = (() => {
+    const [major, minor, patch] = process.versions.node.split(".").map(Number)
+    const first = { 22: [22, 3], 24: [11, 1], 25: [1, 0] }[major]
+    return first === undefined ? major >= 26 : minor > first[0] || (minor === first[0] && patch >= first[1])
+  })()
+
+  it("keeps Node's compiled code unchanged across starts that change no code", { skip: !loaderOnMainThread }, () => {
+    const fresh = workspaceIn("workspace-compiled")
+    const compiled = join(root, "compiled-code")
+    const contents = () => readdirSync(compiled, { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => {
+        const path = join(entry.parentPath, entry.name)
+        const { size, mtimeMs } = statSync(path)
+        return `${path} ${size} ${mtimeMs}`
+      })
+      .sort()
+    const start = () => passed(smthrs(fresh, ["ci", "//...", "--json"], { NODE_COMPILE_CACHE: compiled }), "smthrs ci")
+    start()
+    start()
+    const kept = contents()
+    assert.ok(kept.length > 0)
+    start()
+    assert.deepEqual(contents(), kept)
   })
 
   it("reuses what the separate modules did not store, and stores it under another key", () => {

@@ -60,7 +60,7 @@
  *
  * @since 0.1.0
  */
-import { randomUUID } from "node:crypto"
+import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import { createRequire, isBuiltin, registerHooks } from "node:module"
 import * as NodePath from "node:path"
@@ -75,6 +75,7 @@ const ownership = Symbol.for("smthrs/effect-resolution-ownership")
 const buildModuleParameter = "smithers-build-module"
 const bundle = Symbol.for("smthrs/bundle")
 const admittedBuildModules = Symbol.for("smthrs/effect-resolution-build-modules")
+const declarationImports = Symbol.for("smthrs/effect-resolution-declaration-imports")
 
 /**
  * This file's own URL with every query stripped.
@@ -225,6 +226,9 @@ const commonjsVirtualParameter = "tsx-commonjs-virtual-query"
 
 /** tsx's marker for the module registry one `tsImport` call evaluates into. */
 const namespaceParameter = "tsx-namespace"
+
+/** How tsx spells a scoped import to the resolvers: this prefix and a JSON object. */
+const tsxImport = "tsx://"
 
 /**
  * The directory holding the Effect installation this CLI runs on.
@@ -426,8 +430,48 @@ const reassert = () => {
 }
 
 /**
+ * The namespace one evaluation of a declaration module runs in: the module's
+ * URL and how many times this process has evaluated it. Each evaluation gets
+ * its own module instances, and a start that loads the same files gives them
+ * the same addresses as the last start. Node keys compiled code by address, so
+ * that start reuses what the last one kept and adds nothing.
+ */
+const declarationNamespace = (url) => {
+  const imports = globalThis[declarationImports] ??= new Map()
+  const count = (imports.get(url) ?? 0) + 1
+  imports.set(url, count)
+  return `${createHash("sha256").update(url).digest("hex").slice(0, 16)}-${count}`
+}
+
+/**
+ * Answers one URL with the given source, whether or not a file is there. A
+ * scoped import from tsx reaches the resolver as `tsx://<JSON>`, naming the URL
+ * and its namespace. Putting the namespace in the answer is what makes tsx place
+ * everything the module imports in that namespace.
+ */
+const sourceHooks = (url, namespace, source) => {
+  const base = fileModuleBase(url)
+  // Two evaluations of one URL can be in flight at once; each answers only its own.
+  const own = (loaded) =>
+    fileModuleBase(loaded) === base && new URL(loaded).searchParams.get(namespaceParameter) === namespace
+  return {
+    resolve: (specifier, context, nextResolve) => {
+      const scoped = specifier.startsWith(tsxImport) ? JSON.parse(specifier.slice(tsxImport.length)) : undefined
+      return scoped?.specifier === url && scoped.namespace === namespace
+        ? { url: `${url}?${namespaceParameter}=${scoped.namespace}`, format: "module", shortCircuit: true }
+        : nextResolve(specifier, context)
+    },
+    load: (loaded, context, nextLoad) =>
+      own(loaded)
+        ? { format: "module", source, shortCircuit: true }
+        : nextLoad(loaded, context)
+  }
+}
+
+/**
  * Evaluates one declaration module through tsx with the parent resolver in
- * front of tsx's namespace loader.
+ * front of tsx's namespace loader. With `source`, the module is that text at
+ * `url`, and no file needs to exist there.
  *
  * `tsImport` registers that loader and imports in one call, which leaves no
  * point at which the resolver can be moved back to the front. The two steps
@@ -436,9 +480,9 @@ const reassert = () => {
  * lazily still resolves.
  * @slop
  */
-export const importDeclarationModule = async (url, parentURL) => {
+export const importDeclarationModule = async (url, parentURL, source) => {
   installEffectResolution()
-  const namespace = randomUUID()
+  const namespace = declarationNamespace(url)
   // Both halves, as `tsImport` registers them. The CommonJS half is what
   // answers a `require` that a declaration module reaches through the
   // CommonJS bridge, and it must know this namespace or the request arrives
@@ -446,7 +490,12 @@ export const importDeclarationModule = async (url, parentURL) => {
   registerCommonJs({ namespace })
   const loader = registerModule({ namespace, parentURL, tsconfig: false })
   reassert()
-  return await loader.import(url, parentURL)
+  const answering = source === undefined ? undefined : registerHooks(sourceHooks(url, namespace, source))
+  try {
+    return await loader.import(url, parentURL)
+  } finally {
+    answering?.deregister()
+  }
 }
 
 /**

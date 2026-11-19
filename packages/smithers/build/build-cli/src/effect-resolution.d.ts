@@ -31,7 +31,7 @@ export declare const installEffectResolution: (
  * @since 0.1.0
  * @slop
  */
-export declare const importDeclarationModule: (url: string, parentURL: string) => Promise<unknown>
+export declare const importDeclarationModule: (url: string, parentURL: string, source?: string) => Promise<unknown>
 
 /**
  * Marks one admitted declaration URL for ES-module evaluation.

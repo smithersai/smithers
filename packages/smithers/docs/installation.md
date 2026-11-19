@@ -60,10 +60,11 @@ With no directory named, `smthrs` keeps compiled code in
 `smthrs-compile-cache-<user id>` under the temporary directory and empties it
 when it holds more than 512 files. It makes that directory readable and
 writable by your account only, and keeps no compiled code when the name
-belongs to another account or is a link. A directory you name is yours: Node
-adds a few small files to it on every start and removes none, so clear it now
-and then. On a CI runner, name one and keep it between runs as you keep the
-package manager's cache.
+belongs to another account or is a link. A directory you name is yours, and
+Node removes nothing from it. A start that changes no code adds nothing to it.
+On Node before 22.22.3, or 24 before 24.11.1, each start adds a few small
+files, so clear it now and then. On a CI runner, name one and keep it between
+runs as you keep the package manager's cache.
 
 ## Verify the install
 
