@@ -339,6 +339,69 @@ gap between a page and the build is work for the build.
 - **Reuse for a step with no declared inputs is Linux only.** It records reads with `strace`. macOS has no
   unprivileged way to observe a process's reads, so there such a step runs on every change.
 
+### A gain on an outside repository (2026-11-19, lane `sci-outside-gain`)
+
+Ship blocker 6 was: no outside repository shows CI getting faster with every result the same
+(`pallets/click`: 0.51 times, 0 steps reused in 6 commits). On `main` at `eccdddf318b7`:
+
+| Repository | Head | Commits | Speedup | Mismatches | Steps reused, per commit | Baseline / normal, per commit |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| `tj/commander.js` | `3431f07` | 4 | 2.55 | 0 | 16 of 25 at each | 119/47, 98/38, 101/43, 130/48 s |
+
+    cd <a clone of tj/commander.js at 3431f07>
+    bash ~/ci/quiet-run smithers-ci --commits 4 --json
+
+Measured on nyc-01 under `quiet-run` at load 82 to 114. The four commits change `CHANGELOG.md` or a workflow
+that is not replayed, so no step read what changed. The 9 steps that still run: six that restore or save
+`setup-node`'s cache (a cache step always runs), two of the three installs (below), and the target that holds
+the repository's files. Processor time of the steps: 721 s in the baseline, 220 s in normal mode. The run
+before the first counted commit took 194 s as the baseline and 473 s in normal mode, and is in no number.
+
+It was 0.94 with 3 of 36 steps reused at `5e321eee8131`, and 0.57 with 0 of 25 one day earlier. Each row is a
+reason a step ran again, read from the run's own record (`notReused` or `notStored` on the step's row):
+
+| The record said | What it was | Fix |
+| --- | --- | --- |
+| a step after an install always ran | only a job's last step could be reused | every step is recorded and reused, and what it left is kept and put back (`d6df54fbb571`, `f3d4453d4ce2`, generator `7c9a9c051eeb`) |
+| `it opened a network connection` on `npm ci` | a warm `npm ci` still calls the registry | an install of exactly what a lockfile pins is stored (`d6df54fbb571`) |
+| `~/.cache/uv/archive-v0/<id>/... changed while it ran` | uv fills a directory and renames it into its cache | a file in a directory the run moved into place is the run's own (`30a2212d3256`) |
+| `node_modules/@smthrs now exists` | the replay linked a package into each checkout; `npm install` with no lockfile failed on it | the replay puts nothing into `node_modules` (`5e321eee8131`) |
+| `its trace holds a line that cannot be read: ???( <detached ...>` | a Go program ends while its threads ask about files | lines for calls a killed thread never made are left out (`9cf758c26817`) |
+| `/tmp/smithers-ci-runner-<uid>/<job>/temp changed while it ran` | a job's first step removes its old state directory and makes it again | a directory the run itself made again is the run's own change (`616db69f2b57`) |
+| `$TMPDIR/node-compile-cache/... changed`, `~/.config/go/telemetry/...count changed` | Node's compiled code and Go's run counters, a tool's own bookkeeping | left out of what a step read (`7c9a9c051eeb`) |
+| `~/.npm/_cacache/index-v5/... changed` | `npm ci` rewrites entries of its own cache index | what a locked install writes outside the workspace is no input (`9ed28e097db9`) |
+| exit 4, `//:_repository does not support the lint verb` | the run with the files `apply` writes asked for a group of files as if it were a step; every repository with more than 32 steps ended with no report | it asks for steps only (`eccdddf318b7`) |
+
+Three results would have been wrong. Each was found by a test before a number was reported:
+
+- **A lost read.** strace 6.8 with its seccomp filter, when a thread other than the first starts a program,
+  takes the first call of the new program for the answer of `execve` and writes no line for it (36 of 80 runs).
+  Such a run is not stored (`9cf758c26817`).
+- **A stale pass.** A step that reads a file an earlier step wrote was compared with the bytes at that path
+  now. When the earlier step is answered from its record it writes nothing, and a fresh checkout can hold the
+  bytes an older run of it left. `main` answered `hit` where a real run fails (`a8561b5c68b0`).
+- **A cache step answered from its record.** A step that restores a cache finds its store in the build's own
+  cache directory, which no record holds. It always runs (`7c9a9c051eeb`).
+
+What is open on commander.js: two of its three installs run at every commit
+(`notReused: ~/.npm/_cacache/index-v5/03/af/b652af7d... changed` on the Node 24 and Node 26 variants). The
+entry is the index line of one package's tarball; `npm ci` does not write it in a run by hand. With all three
+reused the same replay gave 3.82 and 3.92 on the generator change before a job became a machine.
+
+Other repositories were measured before a job became a machine (`0607101fad66`), so their numbers are not
+`main`'s. What each record showed:
+
+| Repository | Speedup then | Record | Why |
+| --- | ---: | --- | --- |
+| `cheeriojs/cheerio` | 1.32, 0 mismatches | `~/.npm/_cacache/index-v5/... changed`, `.git/HEAD changed` | several jobs installed into one home; one step reads the commit |
+| `highlightjs/highlight.js` | 1.60, 4 mismatches | `build/lib is gone` | its matrix variants each build into `build/` and shared one checkout: a wrong result, which a checkout per job is for |
+| `t3-oss/t3-env` | 0.33 | `it opened a network connection (bun to 8.8.8.8 port 53)`, `(turbo to 64.239.123.65 port 443)` | `bun install` without `--frozen-lockfile`; turbo calls its vendor at every run |
+| `BurntSushi/toml`, `google/uuid` | 0.49, 0.20 | `README.md changed`, `CONTRIBUTING.md changed` | `go` asks about every file of a package directory, so a docs commit there reruns the tests; a suite of 3 to 15 s is shorter than the start of `smthrs` |
+| `pallets/click`, `yargs/yargs` | 0.19, none | `.git/HEAD changed` | `pre-commit run --all-files` and yargs' tests read the commit. A traced `tox` step takes 22 to 28 s against 9 s |
+
+A first run records every step, the installs too. Around its steps it adds 2.0 to 2.2 starts of `smthrs` on a
+loaded host, at the limit `FirstRun.benchmark.test.ts` holds (2).
+
 ## Fast mode (Will, 2026-11-17)
 
 A second mode beside the normal one.
