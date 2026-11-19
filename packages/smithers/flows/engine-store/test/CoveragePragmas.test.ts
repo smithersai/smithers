@@ -5,7 +5,13 @@ import { fileURLToPath } from "node:url"
 import { expect, it } from "vitest"
 
 const root = fileURLToPath(new URL("../", import.meta.url))
-const eslint = new ESLint({ cwd: root })
+// The tests lint text that differs from the file on disk at the same path.
+// With `CI=true`, typescript-estree infers a single run and parses the file on
+// disk instead of that text, so the inference is turned off here.
+const eslint = new ESLint({
+  cwd: root,
+  overrideConfig: { languageOptions: { parserOptions: { disallowAutomaticSingleRunInference: true } } }
+})
 const ruleId = "coverage/no-new-ignores"
 const violations = async (source: string, path = "src/WorkspaceSandbox.ts") =>
   (await eslint.lintText(source, { filePath: join(root, path) }))
