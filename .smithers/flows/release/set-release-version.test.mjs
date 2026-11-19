@@ -165,6 +165,17 @@ test("the MCP client identity is a versioned source", () => {
   )
 })
 
+test("the generated workflow installs smithers-ci and @smthrs/cli at the one version a bump writes", () => {
+  const source = versionedSources.find(({ path }) => path === "packages/ci/src/generate/Render.ts")
+  assert.ok(source, "Render.ts is not in versionedSources")
+  const text = readFileSync(join(repoRoot, source.path), "utf8")
+  const bumped = retargetSource(text, "9.9.9-rc.1", source)
+  assert.equal(bumped, text.replace(/^const release = "[^"]*"$/m, 'const release = "9.9.9-rc.1"'))
+  // Every package the workflow installs takes that constant, so no pin is left behind.
+  const pins = [...bumped.matchAll(/--package=(smithers-ci|@smthrs\/cli)@([^\s`]+)/g)].map(([, name, version]) => [name, version])
+  assert.deepEqual(pins, [["smithers-ci", "${release}"], ["@smthrs/cli", "${release}"]])
+})
+
 test("the storage release policy is a versioned source", () => {
   // Its refusal texts quote the release; the rc.2 and rc.3 bumps left it at rc.1.
   const source = versionedSources.find(({ path }) => path.endsWith("flows/database/src/internal/ReleasePolicy.ts"))

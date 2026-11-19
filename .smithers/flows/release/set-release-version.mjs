@@ -41,12 +41,13 @@ export const versionedTemplates = []
  * version; the bump and the `--check` mode then cover it for free.
  */
 export const versionedSources = [
-  // `smithers-ci apply` writes this version into the workflow it generates. The
-  // train publishes it together with `smithers-ci`, so the two always exist together.
+  // `smithers-ci apply` writes this version into the workflow it generates, on
+  // its `smithers-ci` and its `@smthrs/cli` lines. The train publishes both
+  // packages at it, so the pinned packages always exist.
   {
     path: "packages/ci/src/generate/Render.ts",
-    declaration: "the @smthrs/cli version of the generated workflow",
-    pattern: /(--package=@smthrs\/cli@)([^\s`]+)( smthrs ci)/
+    declaration: "the smithers-ci and @smthrs/cli version of the generated workflow",
+    pattern: /^(const release = ")([^"]*)(")$/m
   },
   {
     path: "packages/smithers/flows/observability/src/Otlp.ts",
