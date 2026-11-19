@@ -1446,6 +1446,35 @@ export const holdsValue = (text: string, value: string): boolean => {
 export const holdsName = (text: string, name: string): boolean =>
   text.includes(name) || text.includes([...name].join("\0"))
 
+/** A text as a pattern that matches it and nothing else. */
+const literally = (text: string): string => text.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")
+
+/**
+ * The names among `names` that a text holds, each as {@link holdsName} finds
+ * it, in the order given.
+ *
+ * A step reads thousands of files and is given tens of variables, and nearly
+ * no file holds any of their names. So the names are looked for together
+ * first, in one pass over the text, and one by one only in a text that holds
+ * some name. The two-byte form is looked for only in a text with a zero byte
+ * in it, which the form of every name longer than a character has.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const heldNames = (names: ReadonlyArray<string>): (text: string) => ReadonlyArray<string> => {
+  if (names.length === 0) return () => []
+  const wide = names.map((name) => [...name].join("\0"))
+  const any = new RegExp(names.map(literally).join("|"))
+  const anyWide = new RegExp(wide.map(literally).join("|"))
+  return (text) => {
+    const plain = any.test(text)
+    const two = text.includes("\0") && anyWide.test(text)
+    if (!plain && !two) return []
+    return names.filter((name, index) => (plain && text.includes(name)) || (two && text.includes(wide[index]!)))
+  }
+}
+
 /**
  * Listens to what a run prints and to the lines of its trace, and collects
  * the names of the variables whose values go by. `hear` takes what the run
@@ -1515,7 +1544,11 @@ export const ignoredByGit = (root: string) => (paths: ReadonlyArray<string>): Re
 
 const pseudo = (path: string): boolean => /^\/(?:proc|sys|dev)(?:\/|$)/.test(path)
 
-const under = (path: string, directory: string): boolean => path === directory || path.startsWith(`${directory}/`)
+const slash = 47
+
+// Asked for every path of a trace against every directory left out: no text is built to answer.
+const under = (path: string, directory: string): boolean =>
+  path.startsWith(directory) && (path.length === directory.length || path.charCodeAt(directory.length) === slash)
 
 /**
  * Turns a trace into the record of what its run read, or says why the run
@@ -1572,6 +1605,7 @@ export const observe = (
   const variableNames = Object.keys(variables?.values ?? {}).sort(byCodeUnit)
   /** The files of the workspace the run read that hold each variable's name. */
   const naming = new Map<string, Array<string>>()
+  const namesHeld = heldNames(variableNames)
   const beyond = options.outside ?? ((path: string): string => measure(path, io))
   /** Measures a path, and looks for the variables' names in a file of the workspace as it is read. */
   const measured = (path: string): string =>
@@ -1579,9 +1613,7 @@ export const observe = (
       ...io,
       readFile: (file) => {
         const data = io.readFile(file)
-        const text = data.toString("latin1")
-        for (const name of variableNames) {
-          if (!holdsName(text, name)) continue
+        for (const name of namesHeld(data.toString("latin1"))) {
           const files = naming.get(name)
           if (files === undefined) naming.set(name, [path])
           else files.push(path)

@@ -2518,6 +2518,50 @@ describe("the variables of the host a run could have used", () => {
     expect(ObservedReads.holdsName("a COMMI b", "COMMIT")).toBe(false)
   })
 
+  it("finds the names a text holds together as it finds each alone", () => {
+    // Names that overlap, that start inside one another, that a pattern would read as more than text, and one
+    // character long: looked for together, each is found exactly where it is found alone.
+    const names = [
+      "JAVA_HOME",
+      "JAVA_HOME_11_X64",
+      "HOME",
+      "XGIT",
+      "GITHUB",
+      "A.B",
+      "C+",
+      "(D)",
+      "E|F",
+      "[G]",
+      "$",
+      "Q",
+      "RUN\\ID"
+    ]
+    const wide = (text: string): string => [...text].join("\0")
+    const texts = [
+      "",
+      "nothing of note",
+      "export JAVA_HOME_11_X64=/opt",
+      "XGITHUB",
+      "a HOM b",
+      "AxB C (D E|F [G] costs $1",
+      "A.B and C+ and (D) and E|F and [G] and RUN\\ID",
+      "Q",
+      `binary ${wide("JAVA_HOME")} text`,
+      `binary ${wide("XGITHUB")} and HOME`,
+      "a zero byte \0 and no name",
+      `${wide("Q")} ${wide("$")}`,
+      "J\0A\0V\0A"
+    ]
+    const together = ObservedReads.heldNames(names)
+    for (const text of texts) {
+      expect(together(text)).toEqual(names.filter((name) => ObservedReads.holdsName(text, name)))
+    }
+    expect(together("export JAVA_HOME_11_X64=/opt")).toEqual(["JAVA_HOME", "JAVA_HOME_11_X64", "HOME"])
+    expect(together("XGITHUB")).toEqual(["XGIT", "GITHUB"])
+    // No name to look for, no text read.
+    expect(ObservedReads.heldNames([])("JAVA_HOME")).toEqual([])
+  })
+
   it("keeps the variables of a record when it moves, and stores them", async () => {
     const stored: ObservedReads.Record = {
       reads: [],
