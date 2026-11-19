@@ -134,9 +134,10 @@ on this machine, the replay starts with an empty cache and the report says so
 
 ### A short CI
 
-Smithers CI starts once for each commit. When that start is more than a
-twentieth of your CI's time for a commit, the report gives both times on one
-line (`startCost` under `--json`, with `commitMs` and `startMs`):
+Smithers CI starts once for each commit. When normal mode took longer than your
+CI and that start is more than a twentieth of your CI's time for a commit, the
+report gives both times on one line (`startCost` under `--json`, with
+`commitMs` and `startMs`):
 
 ```text
 your CI takes 5.8s for a commit and Smithers CI takes 3.2s to start, so only a commit that reuses results is faster here

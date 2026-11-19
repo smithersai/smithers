@@ -1053,6 +1053,14 @@ describe("reportOf", () => {
     // A twentieth of the CI's time or less says nothing: 3 s beside a minute, and just over it.
     expect(reportOf(read, [short(60_000, 2500, 500)], nothing)).not.toHaveProperty("startCost")
     expect(startCostOf([short(60_000, 2500, 501)])).toEqual({ commitMs: 60_000, startMs: 3001 })
+    // Normal mode as fast as the CI, or faster, has no slowness to account for, however short the CI is.
+    const faster = { ...short(5000, 2500, 500), normal: timed(4000, { start: 2500, plan: 500, step: 1000 }) }
+    expect(startCostOf([faster])).toBeUndefined()
+    expect(startCostOf([{ ...faster, normal: timed(5000, { start: 2500, plan: 500, step: 2000 }) }])).toBeUndefined()
+    expect(startCostOf([{ ...faster, normal: timed(5001, { start: 2500, plan: 500, step: 2001 }) }])).toEqual({
+      commitMs: 5000,
+      startMs: 3000
+    })
     // Only the commits the wall times cover count: a failed baseline's time measures nothing.
     const failing = { ...short(100, 3000, 0), baseline: { ...totals(100), ok: false } }
     expect(reportOf(read, [short(60_000, 2500, 500), failing], nothing)).not.toHaveProperty("startCost")

@@ -39,8 +39,9 @@ things differ from your CI:
   is not recorded.
 
 So the first run of a short CI can take longer than the baseline. The runs
-after it reuse every result whose inputs did not change. When the start is
-more than a twentieth of your CI's time for a commit,
+after it reuse every result whose inputs did not change. When a replay comes
+out slower than your CI and the start is more than a twentieth of your CI's
+time for a commit,
 [the report says so](../getting-started/quickstart.md#what-it-prints).
 
 ## Fast mode

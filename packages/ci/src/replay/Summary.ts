@@ -1218,11 +1218,14 @@ export const withoutFast = (
 
 /**
  * What starting costs beside the CI, when it is more than a twentieth of the
- * CI's time for a commit: the baseline's wall time for a commit and the time
- * Smithers build took to start and to decide what to run (`start` and `plan`
- * of the run's parts), each a mean over `commits`. Nothing when the start is
- * a twentieth or less, when there is no commit, or when a commit's normal
- * mode has no timed start.
+ * CI's time for a commit and normal mode took longer than the CI over
+ * `commits`: the baseline's wall time for a commit and the time Smithers
+ * build took to start and to decide what to run (`start` and `plan` of the
+ * run's parts), each a mean over `commits`. Nothing when the start is a
+ * twentieth or less, when normal mode was as fast as the CI or faster (there
+ * is no slowness to account for, and a CI that got faster with nothing
+ * reused would make the line false), when there is no commit, or when a
+ * commit's normal mode has no timed start.
  *
  * @category report
  * @throws {never}
@@ -1238,7 +1241,8 @@ export const startCostOf = (commits: ReadonlyArray<ReplayCommit>): StartCost | u
     values.reduce((total, each) => total + each, 0) / values.length
   const startMs = mean(starts as ReadonlyArray<number>)
   const commitMs = mean(commits.map((commit) => commit.baseline.wallMs))
-  return startMs * 20 > commitMs ? { commitMs, startMs } : undefined
+  const slower = mean(commits.map((commit) => commit.normal.wallMs)) > commitMs
+  return slower && startMs * 20 > commitMs ? { commitMs, startMs } : undefined
 }
 
 /**

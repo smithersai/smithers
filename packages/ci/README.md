@@ -27,7 +27,9 @@ directly, so the parts are built at the same time.
 - **`ReplayReport.startCost`, `ReplayReport.StartCost`** (added, optional): `commitMs`, the baseline's wall time for a
   commit, and `startMs`, the time Smithers build takes to start and to decide what to run for a commit, each a mean
   over the commits the wall times cover. It is present when the start is more than a twentieth of the CI's time for
-  a commit (`Summary.startCostOf`). The text report and the page say it on one line; no number changes.
+  a commit and normal mode took longer than the baseline (`Summary.startCostOf`): a CI that came out faster has
+  nothing to account for, and google/go-cmp is 1.5 times faster with nothing reused. The text report and the page
+  say it on one line; no number changes.
 - The comments on `TargetMap` and `TargetMap.Entry` say what the generator writes: `maxJobs` 1 only when two targets
   that are not ordered could write the same files, and one target for two steps that do the same work at the same
   point of two jobs.

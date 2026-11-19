@@ -333,10 +333,11 @@ export type StartCost = typeof StartCost.Type
  * Without it the first counted commit started with an empty cache. `cold`
  * says why when that was not asked for: there was no commit before it to run.
  *
- * `startCost` is present when the start is more than a twentieth of the CI's
- * time for a commit (`StartCost`). A commit where nothing is reused then
- * takes longer than the CI by that start, and only a commit that reuses
- * results is faster. It is absent when Smithers build did not time its start.
+ * `startCost` is present when normal mode took longer than the baseline and
+ * the start is more than a twentieth of the CI's time for a commit
+ * (`StartCost`). A commit where nothing is reused then takes longer than the
+ * CI by that start, and only a commit that reuses results is faster. It is
+ * absent when Smithers build did not time its start.
  *
  * @category models
  * @since 0.1.0

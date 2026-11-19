@@ -18,9 +18,10 @@
  * when that is not all of them, and every step that failed is listed with its
  * exit code and the first line of its error output. The run of each way
  * before the first counted commit has one line with its times, or a line
- * that says why that commit started with an empty cache. When starting
- * Smithers CI is more than a twentieth of the CI's time for a commit, a line
- * gives both times and says only reuse is faster there. When failed steps
+ * that says why that commit started with an empty cache. When normal mode
+ * took longer than the CI and starting Smithers CI is more than a twentieth
+ * of the CI's time for a commit, a line gives both times and says only reuse
+ * is faster there. When failed steps
  * ran again, a line says how many and how long that took. Every step
  * normal mode ran and did not reuse is listed with the build's reason and
  * the number of commits it ran at: a file it read that changed, or what keeps its result
