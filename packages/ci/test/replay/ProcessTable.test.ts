@@ -7,6 +7,7 @@ import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import { spawn } from "node:child_process"
+import { existsSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { fromPs, fromStat, treeOf, workOver } from "../../src/replay/ProcessTable.ts"
 import { tableFor } from "../../src/replay/Stall.vibe"
@@ -112,6 +113,41 @@ describe("the table of Linux where no program reads it in one go", () => {
       expect(entries?.find((entry) => entry.pid === child.pid)?.parent).toBe(process.pid)
     }
   )
+})
+
+/** Whether this machine's kernel lists the processes each thread started. */
+const listsChildren = existsSync(`/proc/${process.pid}/task/${process.pid}/children`)
+
+describe("the processes under one process", () => {
+  it.skipIf(!listsChildren)(
+    "are read by walking down from it, and no other process of the machine with them",
+    async () => {
+      // A shell that starts a process and waits for it: two processes, one under the other.
+      const child = spawn("sh", ["-c", "sleep 60 & wait"], { stdio: "ignore" })
+      const under = tableFor("linux").under as NonNullable<ReturnType<typeof tableFor>["under"]>
+      let entries = await onNode(under(child.pid as number))
+      // The shell may be read before it has started its process.
+      for (let tries = 0; tries < 50 && entries?.length !== 2; tries += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        entries = await onNode(under(child.pid as number))
+      }
+      expect(entries?.map((entry) => entry.parent)).toEqual([process.pid, child.pid])
+      expect(entries?.[0]?.pid).toBe(child.pid)
+      const started = entries?.[1]?.pid as number
+      const ended = new Promise((resolve) => child.once("exit", resolve))
+      process.kill(started, "SIGKILL")
+      await ended
+      // A process that is gone has nothing under it, and that is an answer.
+      expect(await onNode(under(child.pid as number))).toEqual([])
+    }
+  )
+
+  it("cannot be read alone where no shell can be started, and no system but Linux has a reader for them", async () => {
+    const noPrograms = Layer.succeed(ChildProcessSpawner, makeSpawner(() => Effect.fail(denied("spawn"))))
+    const under = tableFor("linux").under as NonNullable<ReturnType<typeof tableFor>["under"]>
+    expect(await onNode(under(process.pid).pipe(Effect.provide(noPrograms)))).toBeUndefined()
+    expect(tableFor("darwin").under).toBeUndefined()
+  })
 })
 
 describe("a table that cannot be read", () => {
