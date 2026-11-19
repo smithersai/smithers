@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { it } from "node:test"
 import ts from "typescript"
-import { copyInputDeclarations } from "../../../packages/repo-targets/scripts/build-library.mjs"
+import { copyInputDeclarations, packageCompiler } from "../../../packages/repo-targets/scripts/build-library.mjs"
 import { buildPrivateEffectAdapters } from "../../../packages/repo-targets/scripts/private-effect-adapters.mjs"
 import { apiSurface, assertApiBaseline, canonicalDeclaration, withDeclarationBuild } from "./check-api-baseline.mjs"
 import { repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
@@ -76,8 +76,12 @@ it("emits the build-cli release declaration surface with its package compiler an
     mkdirSync(join(root, "packages"))
     symlinkSync(packageRoot, join(root, memberDir), "dir")
 
+    // scripts/build.mjs compiles with packageCompiler: vibelang, because
+    // build-cli's workspace dependencies hold VibeLang sources tsc cannot read.
+    const compiler = packageCompiler(packageRoot)
+    assert.equal(compiler.name, "vibelang")
     const result = spawnSync(process.execPath, [
-      join(packageRoot, "node_modules/typescript/bin/tsc"),
+      compiler.path,
       "-p",
       join(packageRoot, "tsconfig.json"),
       "--outDir",
