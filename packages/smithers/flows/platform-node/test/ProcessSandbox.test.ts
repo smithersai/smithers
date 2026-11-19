@@ -745,6 +745,36 @@ describe("native host read confinement", () => {
   )
 })
 
+describe("the run's own /var/tmp", () => {
+  it.skipIf(process.platform !== "linux")("is there, empty, and gone with the run", () => {
+    const { base, workspaceRoot } = writeFixture()
+    try {
+      const tmp = NodePath.join(workspaceRoot, ".tmp")
+      NodeFs.mkdirSync(NodePath.join(tmp, "home"), { recursive: true })
+      const facts = ProcessSandbox.host()
+      const result = ProcessSandbox.plan(
+        { network: "none", reads: [], writes: [] },
+        { workspaceRoot, cwd: workspaceRoot, tmp },
+        facts
+      )
+      if (result === undefined || ProcessSandbox.isUnenforceable(result)) throw new Error("native sandbox unavailable")
+      const name = `smthrs-var-tmp-${process.pid}-${Date.now()}`
+      const script = `ls -A /var/tmp | wc -l; mkdir /var/tmp/${name} && echo made`
+      const wrapped = ProcessSandbox.wrap(result, ["/bin/sh", "-c", script], {}, facts)
+      const ran = spawnSync(wrapped.argv[0]!, wrapped.argv.slice(1), {
+        encoding: "utf8",
+        timeout: 10_000,
+        env: { ...process.env, ...wrapped.env }
+      })
+      expect(ran.status, ran.stderr).toBe(0)
+      expect(ran.stdout.trim().split("\n").map((line) => line.trim())).toEqual(["0", "made"])
+      expect(NodeFs.existsSync(NodePath.join("/var/tmp", name))).toBe(false)
+    } finally {
+      NodeFs.rmSync(base, { recursive: true, force: true })
+    }
+  })
+})
+
 describe("the run's own user", () => {
   it.skipIf(process.platform !== "linux")("is named inside the jail, and no other user of the host is", () => {
     const { base, workspaceRoot } = writeFixture()
@@ -1189,6 +1219,8 @@ describe("every mechanism renders the same text on any host", () => {
       "/proc",
       "--tmpfs",
       "/tmp",
+      "--tmpfs",
+      "/var/tmp",
       "--dir",
       "/tmp/home",
       "--dir",

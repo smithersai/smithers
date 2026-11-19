@@ -1533,6 +1533,10 @@ export const bubblewrap = (
     "/proc",
     "--tmpfs",
     "/tmp",
+    // The other temporary directory programs expect, empty and the run's own
+    // as `/tmp` is: a tool that keeps work apart from `/tmp` makes it here.
+    "--tmpfs",
+    "/var/tmp",
     "--dir",
     home,
     "--dir",
