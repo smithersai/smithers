@@ -610,10 +610,13 @@ test("the published rc.16 quickstart installs its pinned runtime and every packa
   assert.equal(quickstart.printed, "the note")
   // pnpm 11 ends `pnpm add` with ERR_PNPM_IGNORED_BUILDS for esbuild's install script.
   assert.deepEqual(quickstart.approveBuilds, ["esbuild"])
+  // effect is an exact peer: a bare `effect` resolves npm's latest and npm
+  // overrides the peer with an ERESOLVE warning, so every page pins it.
+  const install = `npm install @smthrs/platform-node@next @smthrs/flows@next effect@${EXPECTED_EFFECT_VERSION}`
   const pages = new Map(flowsPages())
   for (const page of ["README.md", "docs/README.md", "docs/installation.md"]) {
-    assert.ok(pages.get(page).split("\n").includes("npm install @smthrs/platform-node@next @smthrs/flows@next effect"),
-      page + " must install the current runtime and its dependencies")
+    assert.ok(pages.get(page).split("\n").includes(install),
+      page + " must install the current runtime and its dependencies: " + install)
   }
 })
 
