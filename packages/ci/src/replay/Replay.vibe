@@ -152,16 +152,33 @@ import {
 export const compiledCode = "node-compile-cache"
 
 /**
- * Where a `smthrs` that runs from source keeps what it compiled of itself,
- * in the directory Smithers build keeps its cache in, beside the copy.
- * Without it that is under the temporary directory, which
- * a mode finds empty at every commit, as a CI run does: every start would
- * compile `smthrs` again.
+ * Where a `smthrs` that runs from source keeps what it compiled of itself
+ * in a jail, in the directory Smithers build keeps its cache in, beside the
+ * copy. In the jail `/tmp` is the mode's own, which it finds empty at every
+ * commit, as a CI run does, and the person's own compiled code is in sight
+ * but cannot be written: every start would compile `smthrs` again. With no
+ * jail `smthrs` keeps it where the person's own `smthrs` does, so a replay
+ * compiles nothing the person's machine has compiled before. An installed
+ * `smthrs` compiles nothing either way.
  *
  * @category constants
  * @since 0.1.0
  */
 export const compiledSource = "vibelang-cache"
+
+/**
+ * Where a `smthrs` started for a mode keeps its compiled code, given the
+ * directory Smithers build keeps the mode's cache in and whether the mode
+ * runs in a jail: Node's always in that directory ({@link compiledCode}),
+ * and its own there only in a jail ({@link compiledSource}).
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const compiledCaches = (cache: string, jailed: boolean): Readonly<Record<string, string>> => ({
+  NODE_COMPILE_CACHE: `${cache}/${compiledCode}`,
+  ...(jailed ? { VIBELANG_CACHE_DIR: `${cache}/${compiledSource}` } : {})
+})
 
 /**
  * The host services a replay uses.
@@ -699,8 +716,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       ...stepEnvironment({ ...software, ...site.place.daemon }, site.place),
       ...jobHomes(site.place),
       ...(request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }),
-      NODE_COMPILE_CACHE: path.join(site.cache, compiledCode),
-      VIBELANG_CACHE_DIR: path.join(site.cache, compiledSource)
+      ...compiledCaches(site.cache, site.place.jail !== undefined)
     })
 
     effect function planOf(site: Site, own: Prepared) {

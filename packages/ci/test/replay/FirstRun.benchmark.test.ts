@@ -7,13 +7,20 @@
  * the machine's load.
  *
  * **Method.** One commit is replayed with the real reader, generator and
- * replay, and the repository's own `smthrs`, from an empty cache. The start
- * of `smthrs` is timed beside it (`smthrs --help`, before and after, the
- * slower of the two): it loads every command, as a run does, and does no
- * work. `--version` alone is answered before a command loads, so it is not
- * a start. The measurement is repeated up to three times and the best is
- * kept, because the machine is shared and one slow start says nothing about
- * the code.
+ * replay, and the repository's own `smthrs`, from an empty cache. A start of
+ * `smthrs` is timed right before and right after each attempt, and the
+ * attempt is held against the mean of its own two: the load of a shared
+ * machine moves from minute to minute, and a start timed minutes away from
+ * the run says nothing about it. A start is `smthrs --help`, which loads
+ * every command, as a run does, and does no work (`--version` alone is
+ * answered before a command loads). It is started as the replay starts
+ * `smthrs`: with no `TMPDIR`, and with Node's compiled code in an empty
+ * directory, as a first run's cache directory is. One replay before the
+ * first attempt is not timed: a `smthrs` run from source compiles itself,
+ * and the targets the generated files import, once, which an installed
+ * `smthrs` never does (both ship compiled). The measurement is repeated
+ * up to three times and the best is kept, because one slow attempt on a
+ * shared machine says nothing about the code.
  *
  * **What it holds.**
  *
@@ -23,10 +30,18 @@
  *    job, so the two installs are two steps.
  * 3. The steps take no longer than in the baseline, give or take one start.
  * 4. Around its steps, normal mode adds at most two starts of `smthrs`
- *    (the start itself, reading the generated files, and deciding what to
- *    run) and a checkout for each job, timed beside it as the start is: a
- *    clone that shares the repository's objects, as the baseline makes one
- *    for each of its jobs, asked once what it holds, and removed.
+ *    and a checkout for each job, timed beside it as the start is: a clone
+ *    that shares the repository's objects, as the baseline makes one for
+ *    each of its jobs, asked once what it holds, and removed. Measured on
+ *    the build server at load 330 to 420 (2026-11-19, three attempts), a
+ *    start took 6.6 to 7.4 s and the time around the steps was 1.27 to 1.38
+ *    starts. One run, split by the lines `smthrs` prints: the start, reading
+ *    the generated files and deciding what to run 7.6 s; the rest of the run
+ *    between the steps 0.15 s, in which the two jobs' checkouts were made in
+ *    85 and 65 ms; writing the results, removing the checkouts and stopping
+ *    0.5 s. Until 2026-11-19 every replay compiled `smthrs` from source
+ *    again, 11 s more at load 145, and 1 in 4 check runs read 2.2 to 2.4
+ *    starts.
  *
  * **Limits.** It does not hold a ratio of wall times. On this shape normal
  * mode's wall time is the start of `smthrs`, a copy of the checkout for each
@@ -101,10 +116,17 @@ const repository = (installs: string): string => {
 const linesOf = (file: string): number =>
   existsSync(file) ? readFileSync(file, "utf8").split("\n").filter((line) => line !== "").length : 0
 
-/** How long `smthrs` takes to start and stop, in milliseconds. */
+/**
+ * How long `smthrs` takes to start and stop, in milliseconds, started as a replay starts it on a first run: with no
+ * `TMPDIR` and nothing in the directory Node keeps its compiled code in.
+ */
 const startOf = (): number => {
+  const env = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !["TMPDIR", "TMP", "TEMP"].includes(name))),
+    NODE_COMPILE_CACHE: join(directory(), "node-compile-cache")
+  }
   const from = performance.now()
-  execFileSync(smthrs, ["--help"], { stdio: "ignore" })
+  execFileSync(smthrs, ["--help"], { stdio: "ignore", env })
   return performance.now() - from
 }
 
@@ -164,8 +186,8 @@ const measure = async (root: string, installs: string): Promise<Measurement> => 
     report,
     starts: recording.commands().filter((line) => line.startsWith("ci ")).length,
     installs: linesOf(installs) - ran,
-    startMs: Math.max(before, startOf()),
-    checkoutMs: Math.max(copied, checkoutOf(root))
+    startMs: (before + startOf()) / 2,
+    checkoutMs: (copied + checkoutOf(root)) / 2
   }
 }
 
@@ -175,6 +197,8 @@ describe("a first run, with nothing to reuse", () => {
     async () => {
       const installs = join(directory(), "installs")
       const root = repository(installs)
+      // Not timed: a smthrs run from source compiles itself and the targets package here, as no installed one does.
+      await measure(root, installs)
       const overheads: Array<number> = []
       const slower: Array<number> = []
       for (let attempt = 0; attempt < 3; attempt += 1) {

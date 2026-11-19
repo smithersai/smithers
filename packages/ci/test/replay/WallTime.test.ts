@@ -7,7 +7,7 @@ import { dirname, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { compiledCode, compiledSource, Options, run } from "../../src/replay/index.ts"
+import { compiledCaches, compiledCode, compiledSource, Options, run } from "../../src/replay/index.ts"
 import { job, linkTargets, makeEmptyDirectory, makeSmallRepository, smthrs } from "./fixture.ts"
 import { unconfined } from "./place.ts"
 import { parts } from "./TestParts.vibe"
@@ -31,12 +31,14 @@ const replay = (moment: "prepare" | "checkout"): Promise<ReplayReport> => {
 
 describe("a start of smthrs in a copy", () => {
   it(
-    "keeps the compiled code of smthrs beside the copy, in the mode's cache directory, and no step sees where",
+    "keeps Node's compiled code of smthrs in the mode's cache directory, and with no jail lets smthrs keep its own as the person's smthrs does; no step sees where",
     async () => {
       const log = join(makeEmptyDirectory(), "seen")
       created.push(dirname(log))
       // A real smthrs behind a script that writes down where Node, and a smthrs run from source, were told to keep
-      // compiled code. A mode's temporary directory is empty at every commit, so neither is kept there.
+      // compiled code. With no jail a smthrs run from source is told nothing: it keeps what it compiled of itself
+      // where the person's smthrs does, and a replay does not compile it again (before, every replay did: 11 s of a
+      // first run's 19 s around its steps, on the build server at load 145).
       const command = join(dirname(log), "smthrs")
       writeFileSync(
         command,
@@ -59,12 +61,12 @@ describe("a start of smthrs in a copy", () => {
         ) as Effect.Effect<ReplayReport, Failure>
       )
       const starts = readFileSync(log, "utf8").split("\n").filter((line) => line !== "")
-      // Normal mode, the plan fast mode reads, and fast mode: each in its own mode's cache directory, in no copy.
+      // Normal mode, the plan fast mode reads, and fast mode: Node's in its own mode's cache directory, in no copy.
       expect(starts.length).toBeGreaterThanOrEqual(3)
       for (const line of starts) {
         const [node, source] = line.split(" ")
         expect(node).toMatch(new RegExp(`/state/(normal|fast)/${compiledCode}$`))
-        expect(source).toBe(`${node?.slice(0, -compiledCode.length)}${compiledSource}`)
+        expect(source).toBe("")
       }
       expect(new Set(starts.map((line) => /\/state\/(normal|fast)\//.exec(line)?.[1]))).toEqual(
         new Set(["normal", "fast"])
@@ -76,6 +78,19 @@ describe("a start of smthrs in a copy", () => {
     },
     600_000
   )
+})
+
+describe("the compiled code of smthrs", () => {
+  it("is kept in the mode's cache directory, and in a jail what smthrs compiled of itself too", () => {
+    // In a jail `/tmp` is the mode's own and empty at every commit, and the person's compiled code cannot be written.
+    expect(compiledCaches("/replay/state/normal", true)).toEqual({
+      NODE_COMPILE_CACHE: `/replay/state/normal/${compiledCode}`,
+      VIBELANG_CACHE_DIR: `/replay/state/normal/${compiledSource}`
+    })
+    expect(compiledCaches("/replay/state/normal", false)).toEqual({
+      NODE_COMPILE_CACHE: `/replay/state/normal/${compiledCode}`
+    })
+  })
 })
 
 describe("the wall time of one commit", () => {
