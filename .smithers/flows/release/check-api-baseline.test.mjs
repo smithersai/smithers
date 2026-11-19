@@ -254,7 +254,9 @@ it("binds freshly emitted private adapter declarations and leaves workspace outp
           module: "NodeNext",
           moduleResolution: "NodeNext",
           skipLibCheck: true,
-          declaration: true
+          declaration: true,
+          // Every release package sets it; vibelang (TypeScript 7) requires it.
+          rootDir: "src"
         },
         include: ["src"]
       })
