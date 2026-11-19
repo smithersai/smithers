@@ -6846,6 +6846,9 @@ importers:
       vibelang:
         specifier: 0.0.13
         version: 0.0.13(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(typescript@7.0.2)
+      vibelang-unplugin:
+        specifier: 0.0.13
+        version: 0.0.13(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.13(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(typescript@7.0.2))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vibelang-vite:
         specifier: 0.0.13
         version: 0.0.13(vibelang@0.0.13(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(typescript@7.0.2))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -32134,6 +32137,24 @@ snapshots:
       magic-string: 1.4.3
       unplugin: 3.4.0(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vibelang: 0.0.13(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(typescript@5.9.3)
+    transitivePeerDependencies:
+      - '@farmfe/core'
+      - '@rsbuild/core'
+      - '@rspack/core'
+      - bun-types-no-globals
+      - esbuild
+      - rolldown
+      - rollup
+      - unloader
+      - vite
+      - webpack
+
+  vibelang-unplugin@0.0.13(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.13(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(typescript@7.0.2))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)):
+    dependencies:
+      '@jridgewell/remapping': 2.3.5
+      magic-string: 1.4.3
+      unplugin: 3.4.0(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      vibelang: 0.0.13(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(typescript@7.0.2)
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@rsbuild/core'

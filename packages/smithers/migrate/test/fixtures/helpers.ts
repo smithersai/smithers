@@ -9,7 +9,6 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as ProcessSandbox from "@smthrs/platform-node/ProcessSandbox"
-import { buildSync } from "esbuild"
 import { spawnSync } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
 import {
@@ -232,7 +231,7 @@ export const bundleOnce = (options: {
   // esbuild reports its inputs relative to this directory, so name it rather
   // than reading `process.cwd()` twice and hoping it did not move.
   const workingDirectory = process.cwd()
-  const built = buildSync({
+  const esbuildOptions = {
     entryPoints: [options.entryPoint],
     absWorkingDir: workingDirectory,
     bundle: true,
@@ -245,9 +244,14 @@ export const bundleOnce = (options: {
     // A bundled CommonJS dependency still calls `require`, and an ES module has
     // none until one is made.
     banner: { js: "import { createRequire as ___cr } from 'node:module'; const require = ___cr(import.meta.url);" }
+  }
+  const built = spawnSync(process.execPath, [fixture("bundle.ts"), JSON.stringify(esbuildOptions)], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024
   })
+  if (built.status !== 0) throw new Error(`esbuild failed for ${options.entryPoint}:\n${built.stderr}`)
   const sources = [
-    ...Object.keys(built.metafile.inputs).map((input) => resolve(workingDirectory, input)),
+    ...(JSON.parse(built.stdout) as ReadonlyArray<string>).map((input) => resolve(workingDirectory, input)),
     ...options.keyedOn ?? []
   ]
   const inputs = [...new Set([...sources, ...bundleManifests(sources)])]
