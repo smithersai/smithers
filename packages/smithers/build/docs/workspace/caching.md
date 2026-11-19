@@ -133,8 +133,9 @@ deliberate semantic breaks.
 - Any change to the bytes of the shipped `cli/src`, `targets/src`, or `src`
   sources, through the ambient implementation fingerprint.
 - For a test, type-check, lint, build or format target, any change to the
-  bytes of an installed tree above the directory its tool starts in, or to that
-  directory's `package.json`.
+  bytes of an installed tree above the directory its tool starts in or above a
+  file it declares, or to the `package.json` of the directory its tool starts
+  in.
 - Under a declared Nix environment, any change to the closure: an edit to the
   flake, its lock, or the expression file that changes the store path.
 
@@ -188,10 +189,12 @@ run that produced the result was confined to what its key covers.
 lockfile, the package manager, the runtime and the declared environment:
 
 - The bytes of every installed tree the run can read: each `node_modules`
-  directory above the directory the tool starts in. The lockfile says what an
-  install should contain; this measures what is there, so a package patched in
-  place or a binary replaced under one version re-keys the target. The test
-  runner, its plugins, the compiler and the lint rules all live there.
+  directory above the directory the tool starts in, and each one above a file
+  the target declares, which is where that file's imports resolve. The lockfile
+  says what an install should contain; this measures what is there, so a package
+  patched in place or a binary replaced under one version re-keys the target.
+  The test runner, its plugins, the compiler and the lint rules all live there.
+  The tree of a package the target declares no file of is not shown to the run.
 - The `package.json` of the directory the tool starts in, which the package
   manager and the tool resolve the package from.
 

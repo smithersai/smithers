@@ -1999,6 +1999,14 @@ const visit = async (
   // under one version, re-keys the target. The manifest of the directory the
   // tool starts in is what the package manager and the tool resolve the
   // package from; it is keyed and readable for the same reason.
+  //
+  // A declared file resolves its imports from the trees above it, so those are
+  // read the same way: a test that loads a sibling package's source needs that
+  // package's own `node_modules`. The lockfile alone cannot stand for them,
+  // since it does not move when a package is patched in place, so each one is
+  // measured into the key like the tool's own. A package the target declares
+  // no file of stays hidden, and a file inside an installed tree adds nothing:
+  // the tree holding it is what is measured.
   const installedTrees: Array<string> = []
   let installedProblem: string | undefined
   if (catalogToolBody || rule === "NodeTest") {
@@ -2006,7 +2014,8 @@ const visit = async (
     // target that borrows a catalog name may not, and starts in its package.
     const declaredCwd = attrMember(attrs, "cwd")
     const toolCwd = typeof declaredCwd === "string" ? Input.resolvePath("", declaredCwd) : packagePath
-    for (const directory of nodeModulesDirectories([toolCwd, packagePath])) {
+    const declared = declaredFileDirectories(context.nodes, declaredInputs, [...depLabels.values()])
+    for (const directory of nodeModulesDirectories([toolCwd, packagePath, ...declared])) {
       let real: string
       try {
         real = NodeFs.realpathSync(NodePath.join(context.root, ...directory.split("/")))
@@ -4046,6 +4055,42 @@ export const managerFilesOf = (workspace: PackageIndexModule.PackageIndex["works
     if (typeof path === "string" && path !== "") paths.push(Input.resolvePath("", path))
   }
   return paths
+}
+
+/**
+ * The directories holding the files a run of a target is shown as declared:
+ * its own inputs and those of every file group it reaches, the same walk the
+ * confinement grants them by. A file inside an installed tree is left out,
+ * because the tree holding it is what gets measured.
+ */
+const declaredFileDirectories = (
+  nodes: ReadonlyMap<string, PackageNode>,
+  declaredInputs: ReadonlyArray<Workspace.ExpandedInput>,
+  dependencies: ReadonlyArray<string>
+): ReadonlyArray<string> => {
+  const directories = new Set<string>()
+  const add = (inputs: ReadonlyArray<Workspace.ExpandedInput>): void => {
+    for (const input of inputs) {
+      for (const file of input.files) {
+        const directory = NodePath.posix.dirname(file.path)
+        if (!directory.split("/").includes("node_modules")) directories.add(directory)
+      }
+    }
+  }
+  add(declaredInputs)
+  const seen = new Set<string>()
+  const stack = [...dependencies]
+  while (stack.length > 0) {
+    const label = stack.pop()!
+    if (seen.has(label)) continue
+    seen.add(label)
+    const dependency = nodes.get(label)!
+    if (dependency.rule === "Filegroup") {
+      add(dependency.declaredInputs.filter((input) => input.declaration._tag !== "GitDiff"))
+    }
+    stack.push(...dependency.dependencies)
+  }
+  return [...directories].sort()
 }
 
 /**

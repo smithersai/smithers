@@ -80,6 +80,8 @@ interface FixtureOptions {
   readonly patchesInstalledTree?: boolean
   /** Where the tools start; the root package when `.`. */
   readonly cwd?: string
+  /** Files the test target reaches through a file group, and through a group nested in it. */
+  readonly grouped?: ReadonlyArray<string>
 }
 
 const fixture = async (options: FixtureOptions = {}) => {
@@ -131,12 +133,16 @@ const fixture = async (options: FixtureOptions = {}) => {
   })
   const deps = options.unstableDependency === true ? [unstable] : []
   const sources = [S.file("source.ts"), ...data]
+  const inner = S.Filegroup({ srcs: (options.grouped ?? []).map((name) => S.file(name)), cwd })
+  const outer = S.Filegroup({ srcs: [inner], cwd })
+  const groups = options.grouped === undefined ? {} : { inner, outer }
   const targets = {
     ...(options.unstableDependency === true ? { unstable } : {}),
+    ...groups,
     test: S.Vitest({
       tests: [S.file("case.test.ts")],
       sources,
-      deps,
+      deps: [...deps, ...Object.values(groups)],
       config: S.file("config.json"),
       environment: "node",
       passWithNoTests: false,
@@ -653,6 +659,61 @@ describe("a confined run", () => {
     const entry = JSON.parse(await Fs.readFile(Path.join(root, ".flows", "cache", String(stored[0])), "utf8"))
     expect(entry.key).not.toBe(planned)
     expect(entry.key).toBe(await key())
+  })
+
+  confinedIt("shows a run the installed tree above a file it declares, and keys that tree", async () => {
+    const { write, run, node, logs } = await fixture({
+      behaviour: "/bin/cat ../lib/node_modules/dep/index.txt > /dev/null",
+      data: ["//lib/source.ts"]
+    })
+    await write("lib/source.ts", "export const lib = 1\n")
+    await write("lib/node_modules/dep/index.txt", "one\n")
+    await write("other/node_modules/dep/index.txt", "other\n")
+    expect((await node("test")).installedTrees).toEqual(["pkg/node_modules", "lib/node_modules"])
+    expect(await run("test")).toEqual({ test: "ran" })
+    expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+    expect(await run("test")).toEqual({ test: "hit" })
+    // The lockfile is unchanged: only measuring the tree can see a package patched in place.
+    await write("lib/node_modules/dep/index.txt", "two\n")
+    expect(await run("test")).toEqual({ test: "ran" })
+    expect(await run("test")).toEqual({ test: "hit" })
+    // The tree of a package the target declares nothing of is not part of its key.
+    await write("other/node_modules/dep/index.txt", "changed\n")
+    expect(await run("test")).toEqual({ test: "hit" })
+  })
+
+  confinedIt("shows a run the installed tree above a file it reaches through a file group", async () => {
+    const { write, run, node, logs } = await fixture({
+      behaviour: "/bin/cat ../lib/source.ts ../lib/node_modules/dep/index.txt > /dev/null",
+      grouped: ["//lib/source.ts"]
+    })
+    await write("lib/source.ts", "export const lib = 1\n")
+    await write("lib/node_modules/dep/index.txt", "one\n")
+    expect((await node("test")).installedTrees).toEqual(["pkg/node_modules", "lib/node_modules"])
+    expect((await run("test")).test).toBe("ran")
+    expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+    expect((await run("test")).test).toBe("hit")
+    await write("lib/node_modules/dep/index.txt", "two\n")
+    expect((await run("test")).test).toBe("ran")
+  })
+
+  confinedIt("hides the installed tree of a package the target declares nothing of", async () => {
+    const { write, run, logs } = await fixture({
+      behaviour: "/bin/cat ../other/node_modules/dep/index.txt > /dev/null",
+      data: ["//lib/source.ts"]
+    })
+    await write("lib/source.ts", "export const lib = 1\n")
+    await write("other/node_modules/dep/index.txt", "other\n")
+    expect(await run("test")).toEqual({ test: "ran" })
+    expect(logs.join("\n")).toContain("//pkg:test  not cached: it passed, but failed when confined")
+    expect(await run("test")).toEqual({ test: "ran" })
+  })
+
+  posixIt("measures no tree inside an installed tree a target declares a file of", async () => {
+    const { write, node } = await fixture({ data: ["//lib/node_modules/dep/index.txt"] })
+    await write("lib/node_modules/dep/index.txt", "one\n")
+    await write("lib/node_modules/dep/node_modules/inner/index.txt", "inner\n")
+    expect((await node("test")).installedTrees).toEqual(["pkg/node_modules"])
   })
 
   confinedIt("grants a tree entry by entry, placing each link as a link", async () => {
