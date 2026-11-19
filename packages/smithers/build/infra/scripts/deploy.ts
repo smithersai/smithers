@@ -5,11 +5,12 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process"
+import { existsSync } from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { stateSyncVariable } from "../deployment.ts"
+import { cacheOnlyVariable, sandboxWorkerId, stateSyncVariable, wrapperOwnedVariables } from "../deployment.ts"
 import { failureMessage } from "./failure-message.ts"
 import { defaultStateDirectory, redactAlchemyState, type RedactAlchemyStateOptions } from "./redact-state.ts"
 import {
@@ -148,21 +149,42 @@ export const resolveDeployOptions = (options: DeployOptions): ResolvedDeployOpti
 export const developmentStage = (environment: NodeJS.ProcessEnv = process.env): string =>
   `dev_${environment["USER"] || environment["USERNAME"] || "unknown"}`
 
+/** What one wrapper invocation acts on, and the arguments Alchemy gets. */
+interface Invocation {
+  readonly stage: string
+  /** `--cache-only`: the stack leaves the sandbox service out. */
+  readonly cacheOnly: boolean
+  readonly alchemyArgs: ReadonlyArray<string>
+}
+
 /**
- * The stage one wrapper invocation acts on, and the arguments Alchemy gets.
+ * Reads the wrapper's own flags and the stage out of the caller's arguments.
  *
  * pnpm forwards the `--` in `pnpm run deploy -- --yes` literally, and Alchemy
- * reads every argument after it as a positional, so it is dropped. A command
- * that names no stage gets `--stage dev_$USER` appended, so the caller's own
- * arguments keep their positions.
+ * reads every argument after it as a positional, so it is dropped, as is the
+ * wrapper's own `--cache-only`. A command that names no stage gets
+ * `--stage dev_$USER` appended, so the caller's own arguments keep their
+ * positions.
  *
- * @throws An `Error` for a stage named twice, a `--stage` with no value, or a
- * name `stagePattern` refuses.
+ * Alchemy's `--env-file` is refused in either spelling. Alchemy reads that
+ * file before the process environment, so it could override a variable the
+ * wrapper sets for the run (`wrapperOwnedVariables`): the wrapper would pull,
+ * guard and publish one stack while Alchemy applied another. A `.env` file in
+ * this directory is read after the process environment and cannot.
+ *
+ * @throws An `Error` for `--env-file`, a stage named twice, a `--stage` with no
+ * value, or a name `stagePattern` refuses.
  */
-const stageArguments = (
-  args: ReadonlyArray<string>
-): { readonly stage: string; readonly alchemyArgs: ReadonlyArray<string> } => {
-  const forwarded = args.filter((arg) => arg !== "--")
+const invocationOf = (args: ReadonlyArray<string>): Invocation => {
+  if (args.some((arg) => arg === "--env-file" || arg.startsWith("--env-file="))) {
+    throw new Error(
+      `--env-file is refused because Alchemy reads it before the process environment, so it could override ` +
+        `${wrapperOwnedVariables.join(" and ")}, which the wrapper sets for every run; export its variables ` +
+        `in the shell instead`
+    )
+  }
+  const cacheOnly = args.includes("--cache-only")
+  const forwarded = args.filter((arg) => arg !== "--" && arg !== "--cache-only")
   const named: Array<string | undefined> = []
   forwarded.forEach((arg, index) => {
     if (arg === "--stage") named.push(forwarded[index + 1])
@@ -175,21 +197,25 @@ const stageArguments = (
       `stage ${JSON.stringify(stage ?? "")} must be a letter or digit followed by letters, digits, "-" or "_"`
     )
   }
-  return { stage, alchemyArgs: named.length === 0 ? [...forwarded, "--stage", stage] : forwarded }
+  return { stage, cacheOnly, alchemyArgs: named.length === 0 ? [...forwarded, "--stage", stage] : forwarded }
 }
 
 const runAlchemy = (
   command: { readonly cli: string; readonly cwd: string },
-  alchemyArgs: ReadonlyArray<string>,
+  invocation: Invocation,
   onSpawn: (child: ChildProcess) => void
 ): Promise<CommandResult> =>
   new Promise((resolve, reject) => {
     let child: ChildProcess
     try {
-      child = spawn(process.execPath, [command.cli, "deploy", "alchemy.run.ts", ...alchemyArgs], {
+      child = spawn(process.execPath, [command.cli, "deploy", "alchemy.run.ts", ...invocation.alchemyArgs], {
         cwd: command.cwd,
         detached: process.platform !== "win32",
-        env: { ...process.env, [stateSyncVariable]: "1" },
+        // Set on every run, so a value the shell exported never decides
+        // whether production keeps its sandbox service. Alchemy reads the
+        // process environment before a `.env` file, and `--env-file`, which
+        // it reads first, is refused above.
+        env: { ...process.env, [stateSyncVariable]: "1", [cacheOnlyVariable]: invocation.cacheOnly ? "1" : "0" },
         stdio: "inherit"
       })
     } catch (error) {
@@ -264,10 +290,10 @@ export const deploy = async (
     options
   )
   const target = { cli, cwd }
-  let invocation: ReturnType<typeof stageArguments>
+  let invocation: Invocation
   let ownership: StateOwnership
   try {
-    invocation = stageArguments(args)
+    invocation = invocationOf(args)
     // A state directory reached through a symbolic link, in the root or an
     // ancestor, is refused before anything is created or pulled: the pull
     // would otherwise replace the link target's files, and redaction's own
@@ -332,7 +358,7 @@ export const deploy = async (
   // The handlers are installed before the remote lock is taken: a signal's
   // default action during the pull would leave that lock in R2 for every
   // later deployment to trip over. A signal before Alchemy starts cancels it.
-  let remote: RemoteStateSession
+  let remote: RemoteStateSession | undefined
   try {
     const requestOptions = { signal: initialization.signal, timeoutMs }
     const bucket = await remoteStateRequest(
@@ -346,11 +372,23 @@ export const deploy = async (
       pid: process.pid,
       startedAt: new Date().toISOString()
     }, requestOptions)
+    // A cache-only program declares no sandbox Worker, so Alchemy would plan
+    // the deletion of the one this stage's state records.
+    if (invocation.cacheOnly && existsSync(NodePath.join(stageDirectory, `${sandboxWorkerId}.json`))) {
+      throw new Error(
+        `stage ${invocation.stage} has a sandbox Worker, which a --cache-only run would delete; deploy it without ` +
+          `--cache-only, or destroy the stage`
+      )
+    }
   } catch (error) {
     try {
-      await ownership.release()
+      await remote?.release()
     } finally {
-      removeHandlers()
+      try {
+        await ownership.release()
+      } finally {
+        removeHandlers()
+      }
     }
     process.stderr.write(`Alchemy deployment refused: ${failureMessage(error)}\n`)
     return requestedSignal !== undefined && error === initialization.signal.reason ? signalExitCode(requestedSignal) : 1
@@ -366,7 +404,7 @@ export const deploy = async (
       // same synchronous run, so no signal can arrive before `onSpawn`.
       command = await runAlchemy(
         target,
-        invocation.alchemyArgs,
+        invocation,
         (child) => {
           activeChild = child
         }

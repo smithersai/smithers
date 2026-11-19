@@ -5,8 +5,14 @@ import { mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:
 import { tmpdir } from "node:os"
 import * as NodePath from "node:path"
 import { fileURLToPath } from "node:url"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import { loadConfigProvider } from "alchemy/Util/ConfigProvider"
+import * as Config from "effect/Config"
+import * as ConfigProvider from "effect/ConfigProvider"
+import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
-import { stateSyncVariable } from "../deployment.ts"
+import { cacheOnlyVariable, stateSyncVariable, wrapperOwnedVariables } from "../deployment.ts"
 import { deploy as deployWrapper, type DeployOptions, developmentStage, resolveDeployOptions } from "./deploy.ts"
 import { defaultStateDirectory, redactAlchemyState } from "./redact-state.ts"
 import {
@@ -86,6 +92,16 @@ process.exit(Number(process.argv[5] ?? "0"))
     "record-argv",
     `import { writeFileSync } from "node:fs"
 writeFileSync(process.env.SMITHERS_DEPLOY_ARGV_FILE, JSON.stringify(process.argv.slice(2)))
+`
+  )
+  // Records the argv and the cache-only switch the stack program would read.
+  await write(
+    "record-invocation",
+    `import { writeFileSync } from "node:fs"
+writeFileSync(process.env.SMITHERS_DEPLOY_ARGV_FILE, JSON.stringify({
+  argv: process.argv.slice(2),
+  cacheOnly: process.env[${JSON.stringify(cacheOnlyVariable)}]
+}))
 `
   )
   // The wrapper spawns [cli, "deploy", "alchemy.run.ts", ...args], so the
@@ -334,6 +350,100 @@ describe("deploy wrapper", () => {
     } finally {
       stderr.mockRestore()
     }
+  })
+
+  /**
+   * Alchemy reads `--env-file` before the process environment, so a file
+   * passed through the wrapper could set a variable the wrapper sets for the
+   * run, such as `SMITHERS_BUILD_INFRA_CACHE_ONLY=1` on a stage the wrapper
+   * deploys whole, and Alchemy would delete that stage's sandbox Worker.
+   */
+  it.each(wrapperOwnedVariables)("refuses --env-file, which overrides the %s the wrapper sets", async (variable) => {
+    const envFile = NodePath.join(directory, `override-${variable}.env`)
+    await writeFile(envFile, `${variable}=override\n`, "utf8")
+    // Alchemy's own config provider, with the value the wrapper exports.
+    vi.stubEnv(variable, "set-by-the-wrapper")
+    const seen = (envFileFlag: Option.Option<string>): Promise<string> =>
+      Effect.runPromise(
+        Effect.gen(function*() {
+          const provider = yield* loadConfigProvider(envFileFlag)
+          return yield* Effect.provide(
+            Effect.gen(function*() {
+              return yield* Config.String(variable)
+            }),
+            ConfigProvider.layer(provider)
+          )
+        }).pipe(Effect.provide(NodeFileSystem.layer))
+      )
+    const errors: Array<string> = []
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => (errors.push(String(chunk)), true))
+    let redactions = 0
+    try {
+      expect(await seen(Option.some(envFile))).toBe("override")
+      expect(await seen(Option.none())).toBe("set-by-the-wrapper")
+
+      const state = stateDirectory(`env-file-${variable}`)
+      for (const args of [["--stage", "vibelang", "--env-file", envFile], ["--stage", "vibelang", `--env-file=${envFile}`]]) {
+        const code = await deploy(args, {
+          cli: script("exit-zero"),
+          cwd: directory,
+          stateDirectory: state,
+          redact: async () => (redactions += 1, 0)
+        })
+        expect(code).toBe(1)
+      }
+      expect(errors.join("")).toContain(
+        `Alchemy deployment refused: --env-file is refused because Alchemy reads it before the process ` +
+          `environment, so it could override ${wrapperOwnedVariables.join(" and ")}`
+      )
+      expect(redactions).toBe(0)
+      expect(existsSync(state)).toBe(false)
+    } finally {
+      stderr.mockRestore()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it("switches the sandbox off for --cache-only alone, whatever the shell exported", async () => {
+    const argvFile = NodePath.join(directory, "recorded-invocation.json")
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    vi.stubEnv("SMITHERS_DEPLOY_ARGV_FILE", argvFile)
+    // A shell that exported the switch must not strip production's sandbox.
+    vi.stubEnv(cacheOnlyVariable, "1")
+    const recorded = async (args: ReadonlyArray<string>): Promise<unknown> => {
+      const code = await deploy(args, {
+        cli: script("record-invocation"),
+        cwd: directory,
+        stateDirectory: stateDirectory("cache-only-argv-state"),
+        redact: async () => 0
+      })
+      expect(code).toBe(0)
+      return JSON.parse(readFileSync(argvFile, "utf8"))
+    }
+    try {
+      expect(await recorded(["--stage", "prod"])).toEqual({
+        argv: ["deploy", "alchemy.run.ts", "--stage", "prod"],
+        cacheOnly: "0"
+      })
+      // The wrapper's own flag never reaches Alchemy, which would refuse it.
+      expect(await recorded(["--cache-only", "--", "--stage", "needlefish_poc", "--yes"])).toEqual({
+        argv: ["deploy", "alchemy.run.ts", "--stage", "needlefish_poc", "--yes"],
+        cacheOnly: "1"
+      })
+    } finally {
+      vi.unstubAllEnvs()
+      stdout.mockRestore()
+    }
+  })
+
+  // A development cache deploy needs Cloudflare credentials and the two cache
+  // tokens; production keeps its sandbox service.
+  it("deploys development stages cache-only and production with its sandbox", () => {
+    const scripts = (JSON.parse(readFileSync(NodePath.join(infraRoot, "package.json"), "utf8")) as {
+      readonly scripts: Record<string, string>
+    }).scripts
+    expect(scripts["deploy:dev"]).toBe("node scripts/deploy.ts --cache-only")
+    expect(scripts["deploy"]).toBe("node scripts/deploy.ts --stage prod")
   })
 
   it("derives the development stage from the deploying user", () => {
@@ -1038,6 +1148,45 @@ describe("deploy wrapper remote state", () => {
     expect(code).toBe(0)
     expect(seen).toEqual({ synced: "1", pulled: `{"live":true}` })
     expect(JSON.parse(bucket.objects.get(key)!.body).files).toEqual({ "CacheWorker.json": `{"deployed":true}` })
+  })
+
+  /**
+   * A cache-only program declares no sandbox Worker, so Alchemy would plan
+   * the deletion of a stage's existing one and apply it under `--yes`.
+   */
+  it("refuses a cache-only run of a stage whose state holds a sandbox Worker, and frees both locks", async () => {
+    const bucket = memoryStateBucket()
+    const stage = stateObjectKey("vibelang")
+    const snapshot = snapshotOf({ "CacheWorker.json": "{}", "SandboxWorker.json": "{}" })
+    await bucket.put(stage, snapshot, { ifAbsent: true })
+    const root = await realpath(await mkdtemp(NodePath.join(directory, "cache-only-guard-")))
+    const state = NodePath.join(root, "state")
+    const marker = NodePath.join(root, "refused")
+    const errors: Array<string> = []
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => (errors.push(String(chunk)), true))
+    let redactions = 0
+    try {
+      const code = await deployWrapper([marker, "--cache-only", "--stage", "vibelang", "--yes"], {
+        cli: script("ignores-sigterm"),
+        cwd: directory,
+        stateDirectory: state,
+        redact: async () => (redactions += 1, 0),
+        stateBucket: async () => bucket
+      })
+
+      expect(code).toBe(1)
+      expect(errors.join("")).toBe(
+        "Alchemy deployment refused: stage vibelang has a sandbox Worker, which a --cache-only run would delete; " +
+          "deploy it without --cache-only, or destroy the stage\n"
+      )
+      expect(existsSync(`${marker}.ready`)).toBe(false)
+      expect(redactions).toBe(0)
+      expect([...bucket.objects.keys()]).toEqual([stage])
+      expect(bucket.objects.get(stage)!.body).toBe(snapshot)
+      expect(existsSync(lockFileIn(state))).toBe(false)
+    } finally {
+      stderr.mockRestore()
+    }
   })
 
   it("refuses local state a deployment from before per-stage state never published", async () => {

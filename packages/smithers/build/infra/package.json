@@ -15,7 +15,7 @@
   "scripts": {
     "check": "vibelang -b tsconfig.json --force",
     "deploy": "node scripts/deploy.ts --stage prod",
-    "deploy:dev": "node scripts/deploy.ts",
+    "deploy:dev": "node scripts/deploy.ts --cache-only",
     "plan": "node scripts/deploy.ts --stage prod --dry-run",
     "migrate-state": "node scripts/remote-state.ts migrate",
     "restore-shared-state": "node scripts/remote-state.ts restore",

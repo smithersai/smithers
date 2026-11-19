@@ -38,6 +38,53 @@ const configError = (message: string): Config.ConfigError =>
 export const stateSyncVariable = "SMITHERS_BUILD_INFRA_STATE_SYNCED"
 
 /**
+ * The variable the deploy wrapper sets to `1` for a `--cache-only` run and to
+ * `0` for every other run.
+ *
+ * A cache-only stack declares the cache Worker, its D1 database and its R2
+ * bucket, and leaves the sandbox Worker, its container applications and its
+ * token out, so a development cache needs no Docker, no container image and
+ * no `SMITHERS_SANDBOX_TOKEN`. The wrapper always sets the variable, so a
+ * value exported in the deploying shell never reaches the stack.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const cacheOnlyVariable = "SMITHERS_BUILD_INFRA_CACHE_ONLY"
+
+/**
+ * The variables the deploy wrapper sets for every Alchemy run, which nothing
+ * else may decide: Alchemy's `--env-file` would override them, so the wrapper
+ * refuses that flag.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const wrapperOwnedVariables = [stateSyncVariable, cacheOnlyVariable] as const
+
+/**
+ * Whether this run leaves the sandbox service out: `true` only for `1`, so an
+ * unset variable keeps production's full stack.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const cacheOnly: Config.Config<boolean> = Config.String(cacheOnlyVariable).pipe(
+  Config.withDefault(""),
+  Config.map((value) => value === "1")
+)
+
+/**
+ * The sandbox Worker's logical id. Alchemy records its state in
+ * `<stage directory>/SandboxWorker.json`, which is how the deploy wrapper
+ * tells that a stage has a sandbox service.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const sandboxWorkerId = "SandboxWorker"
+
+/**
  * Refuses a stack run the deploy wrapper did not start.
  *
  * @category constructors
@@ -649,7 +696,7 @@ export interface CacheStackResources<Stage, DatabaseName, BucketName, Url, E, R>
 }
 
 /**
- * What one deployment reports.
+ * What one deployment reports. A {@link cacheOnly} stack has no `sandboxUrl`.
  *
  * @category models
  * @since 0.1.0
@@ -659,16 +706,19 @@ export interface CacheStackOutputs<Stage, DatabaseName, BucketName, Url> {
   readonly url: Url
   readonly databaseName: DatabaseName
   readonly bucketName: BucketName
-  readonly sandboxUrl: Url
+  readonly sandboxUrl?: Url
 }
 
 /**
  * The stack program: checks that the deploy wrapper synced state, reads the
- * cache credential pair and the sandbox token, then reports the resources.
+ * cache credential pair and, unless the run is {@link cacheOnly}, the sandbox
+ * token, then reports the resources.
  *
  * Every check runs before any resource is touched, so an equal pair or a weak
  * sandbox token fails the deployment with nothing created or replaced, and a
- * plan that reaches the resources has already proven its credentials.
+ * plan that reaches the resources has already proven its credentials. A
+ * cache-only run never yields the sandbox Worker, so Alchemy never registers
+ * it or its container applications.
  *
  * @category constructors
  * @since 0.1.0
@@ -679,17 +729,14 @@ export const cacheStackOutputs = <Stage, DatabaseName, BucketName, Url, E, R>(
   Effect.gen(function*() {
     yield* stateSyncGuard
     yield* cacheCredentialVerifiers
-    yield* sandboxToken
+    const withoutSandbox = yield* cacheOnly
+    if (!withoutSandbox) yield* sandboxToken
     const { stage } = yield* resources.stack
     const database = yield* resources.database
     const bucket = yield* resources.bucket
     const worker = yield* resources.worker
+    const outputs = { stage, url: worker.url, databaseName: database.databaseName, bucketName: bucket.bucketName }
+    if (withoutSandbox) return outputs
     const sandboxWorker = yield* resources.sandboxWorker
-    return {
-      stage,
-      url: worker.url,
-      databaseName: database.databaseName,
-      bucketName: bucket.bucketName,
-      sandboxUrl: sandboxWorker.url
-    }
+    return { ...outputs, sandboxUrl: sandboxWorker.url }
   })

@@ -14,6 +14,7 @@ import {
   cacheStackOutputs,
   cacheWorkerOptions,
   type RateLimitDeclaration,
+  sandboxWorkerId,
   sandboxWorkerOptions,
   stackName
 } from "./deployment.ts"
@@ -44,8 +45,10 @@ const cacheWorker = Cloudflare.Worker(
 
 // The sandbox Worker shares nothing with the cache Worker but the stack: its
 // own entry, its own secret, and one container application per instance type.
+// A resource exists only once the program yields it, so a cache-only run,
+// which never does, declares none of them.
 const sandboxWorker = Cloudflare.Worker(
-  "SandboxWorker",
+  sandboxWorkerId,
   sandboxWorkerOptions({ container: (id, props) => Cloudflare.Container(id, props) })
 )
 
@@ -55,7 +58,8 @@ const sandboxWorker = Cloudflare.Worker(
  *
  * Production's cache owns `build.smithers.sh`; developer stages use isolated
  * `workers.dev` URLs and independently named D1 and R2 resources. The sandbox
- * service answers on a `workers.dev` URL on every stage.
+ * service answers on a `workers.dev` URL on every stage that has one; a
+ * `--cache-only` run leaves it out.
  *
  * @category infrastructure
  * @since 0.1.0

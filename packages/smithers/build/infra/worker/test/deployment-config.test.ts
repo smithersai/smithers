@@ -15,6 +15,7 @@ import {
   cacheCredentialBindings,
   cacheCredentialVerifiers,
   cacheDatabaseOptions,
+  cacheOnlyVariable,
   cacheStackOutputs,
   cacheTokenDigest,
   cacheTokenVerifier,
@@ -26,6 +27,7 @@ import {
   minCacheTokenBytes,
   retentionCron,
   sandboxTokenVariable,
+  sandboxWorkerId,
   stackName,
   stateSyncVariable,
   workerCompatibilityDate,
@@ -457,6 +459,58 @@ describe("cache credential verification", () => {
       sandboxUrl: "https://sandbox.workers.dev"
     })
     expect(touched).toEqual(["stack", "database", "bucket", "worker", "sandboxWorker"])
+  })
+
+  /**
+   * A development cache needs Cloudflare credentials and the two cache tokens,
+   * not Docker, a container image upload, two paid container applications, or
+   * a sandbox token. The deploy wrapper sets the switch for every run, so a
+   * value exported in the shell never reaches production.
+   */
+  it("leaves the sandbox Worker, its containers and its token out of a cache-only stack", async () => {
+    const touched: Array<string> = []
+    const resource = <A>(name: string, value: A): Effect.Effect<A> =>
+      Effect.sync(() => {
+        touched.push(name)
+        return value
+      })
+    const program = cacheStackOutputs({
+      stack: resource("stack", { stage: "needlefish_poc" }),
+      database: resource("database", { databaseName: "cache-db" }),
+      bucket: resource("bucket", { bucketName: "cache-bucket" }),
+      worker: resource("worker", { url: "https://cache.workers.dev" }),
+      sandboxWorker: resource("sandboxWorker", { url: "https://sandbox.workers.dev" })
+    })
+    // No sandbox token in this shell at all.
+    const run = (cacheOnly: string | undefined) =>
+      Effect.runPromise(
+        Effect.provide(
+          program,
+          ConfigProvider.layer(ConfigProvider.fromUnknown({
+            [readToken]: distinct.read,
+            [writeToken]: distinct.write,
+            [stateSyncVariable]: "1",
+            ...(cacheOnly === undefined ? {} : { [cacheOnlyVariable]: cacheOnly })
+          }))
+        )
+      )
+
+    await expect(run("1")).resolves.toEqual({
+      stage: "needlefish_poc",
+      url: "https://cache.workers.dev",
+      databaseName: "cache-db",
+      bucketName: "cache-bucket"
+    })
+    expect(touched).toEqual(["stack", "database", "bucket", "worker"])
+
+    // Without the switch, production's default, the sandbox token is still
+    // required before any resource is touched.
+    for (const value of [undefined, "0", "true"]) {
+      touched.length = 0
+      await expect(run(value)).rejects.toThrow(sandboxTokenVariable)
+      expect(touched).toEqual([])
+    }
+    expect(sandboxWorkerId).toBe("SandboxWorker")
   })
 
   it("declares the Cloudflare resource graph from those seams", () => {
