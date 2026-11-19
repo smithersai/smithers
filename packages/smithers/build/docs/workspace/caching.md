@@ -223,6 +223,17 @@ and none of those files reaches the workspace. The layer changes what a write
 does and never what a read sees. A tool's own state under a dot name inside an
 installed tree (`node_modules/.vite`) is not shown to the run.
 
+A run that declares more files than bubblewrap can bind one at a time (it
+accepts 9,000 arguments, and each file takes three) is given one private
+directory instead. It holds each declared file at its own path and is mounted
+at the workspace root, so the run sees what the binds would have shown it.
+Without the scratch layer the directory is read-only and its files are hard
+links to the workspace's own, or copies on another filesystem. With the layer
+its files are copies the run may not write, and a stray write lands beside them
+and goes with the directory. The directory is in the host's temporary
+directory, which no confined run can see, and it is removed when the run ends,
+also when the program is killed.
+
 **How a run gets its evidence.** It depends on what the workspace declares for
 `S.Sandboxes({ default })` and on what the host has:
 

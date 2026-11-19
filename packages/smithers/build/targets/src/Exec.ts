@@ -33,6 +33,7 @@ import * as Input from "./Input.ts"
 import * as ExecDestinationPolicy from "./internal/ExecDestinationPolicy.ts"
 import * as ExecEnvironment from "./internal/ExecEnvironment.ts"
 import * as ExecLaunch from "./internal/ExecLaunch.ts"
+import * as ExecStage from "./internal/ExecStage.ts"
 import * as ImportProbe from "./internal/ImportProbe.ts"
 import * as NearestRealpath from "./internal/NearestRealpath.ts"
 import { Process } from "./internal/Process.ts"
@@ -1774,6 +1775,8 @@ const confined = (
   let brokerEnvironment: Readonly<Record<string, string>> = {}
   let command = resolved.argv
   let effectiveConfinement = confinement
+  // The declared files of a run too large to bind one by one; removed when the run ends.
+  let staged: ExecStage.Prepared | undefined
   const prepare = Effect.try({
     try: () => {
       ExecSandbox.validateWrites(confinement, hostFacts)
@@ -1790,7 +1793,12 @@ const confined = (
       const base = toolEnvironment(resolved.env, sensitiveEnv, secretEnv, options.environment)
       const visible = Object.create(null) as Record<string, string>
       for (const [name, value] of Object.entries(base)) if (typeof value === "string") visible[name] = value
-      const wrapped = ExecSandbox.wrap(effectiveConfinement, command, visible, hostFacts)
+      const rendered = ExecStage.render(
+        effectiveConfinement,
+        (plan) => ExecSandbox.wrap(plan, command, visible, hostFacts)
+      )
+      staged = rendered.prepared
+      const wrapped = rendered.wrapped
       return {
         containerName: wrapped.containerName,
         payload: {
@@ -1824,6 +1832,7 @@ const confined = (
       brokerEnvironment = { SMTHRS_DESTINATION_TOKEN: token }
       effectiveConfinement = { ...confinement, destinationSocket: socket }
     }
+    yield* Effect.addFinalizer(() => Effect.sync(() => staged?.release()))
     const { containerName, payload } = yield* prepare
     if (containerName !== undefined && confinement.mechanism._tag === "docker") {
       const executable = confinement.mechanism.executable

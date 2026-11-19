@@ -393,6 +393,51 @@ describe("a confined run", () => {
     }
   )
 
+  /** More declared files than bubblewrap accepts as one bind each: it refuses over 9,000 arguments, three a file. */
+  const overTheLimit = Array.from({ length: 3_100 }, (_, index) => `many/f${index}.txt`)
+  const writeAll = async (
+    write: (name: string, text: string) => Promise<void>,
+    inPackage: (name: string) => string
+  ) => {
+    for (let start = 0; start < overTheLimit.length; start += 200) {
+      await Promise.all(overTheLimit.slice(start, start + 200).map((name) => write(inPackage(name), `${name}\n`)))
+    }
+  }
+
+  confinedIt.each(["off", "default"] as const)(
+    "stores a run that declares more files than one command can bind (confinement %s)",
+    async (confinement) => {
+      const { write, inPackage, run, logs } = await fixture({
+        confinement,
+        data: overTheLimit,
+        behaviour: "/bin/cat many/f0.txt many/f3099.txt > /dev/null\n" +
+          "echo sidecar > many/beside.txt\n/bin/cat many/beside.txt > /dev/null"
+      })
+      await writeAll(write, inPackage)
+      expect(await run("test")).toEqual({ test: "ran" })
+      expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+      expect(await run("test")).toEqual({ test: "hit" })
+      await write(inPackage("many/f7.txt"), "changed\n")
+      expect(await run("test")).toEqual({ test: "ran" })
+      expect(await run("test")).toEqual({ test: "hit" })
+    },
+    300_000
+  )
+
+  confinedIt("refuses a write to a declared file of a run over the limit, and hides undeclared files", async () => {
+    const written = await fixture({
+      confinement: "default",
+      data: overTheLimit,
+      behaviour: "echo changed > many/f0.txt"
+    })
+    await writeAll(written.write, written.inPackage)
+    expect(await written.run("test")).toEqual({ test: "failed" })
+    expect(await Fs.readFile(Path.join(written.root, "pkg/many/f0.txt"), "utf8")).toBe("many/f0.txt\n")
+    const hidden = await fixture({ confinement: "default", data: overTheLimit, behaviour: "/bin/cat data.txt" })
+    await writeAll(hidden.write, hidden.inPackage)
+    expect(await hidden.run("test")).toEqual({ test: "failed" })
+  }, 300_000)
+
   confinedIt("never reuses a failed run, and reuses the green one again once the failure is gone", async () => {
     const { write, inPackage, run, attempts } = await fixture()
     await write(inPackage("source.ts"), "export const broken = 1\n")

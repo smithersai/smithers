@@ -308,6 +308,8 @@ export interface Plan {
   readonly hidden?: Hidden | undefined
   /** Undeclared workspace writes land in a private, discarded layer; see {@link Request.scratch}. */
   readonly scratch?: boolean | undefined
+  /** The run's declared files gathered in one directory mounted at the workspace root; see {@link Stage}. */
+  readonly stage?: Stage | undefined
   /**
    * Host links outside the workspace, placed as links. Bubblewrap creates each
    * one no bound path already holds; seatbelt grants the link itself. Docker
@@ -326,6 +328,43 @@ export interface Plan {
   readonly uid: number | undefined
   readonly gid: number | undefined
 }
+
+/**
+ * A confined run's declared files gathered in one private directory, mounted
+ * at the workspace root in place of the empty one, for a run with more paths
+ * than bubblewrap accepts as binds. The run sees exactly the staged paths at
+ * their own places; the directory holds nothing else, so it grants nothing a
+ * bind of each would not.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Stage {
+  /** The host directory mounted at the workspace root, holding each staged path at its own relative path. */
+  readonly directory: string
+  /**
+   * Whether the mount is writable. A run with a scratch layer needs it: its
+   * stray writes land in the directory and go with it. Its files are then
+   * copies the run may not write. Otherwise the mount is read-only.
+   */
+  readonly writable: boolean
+  /** The declared files the directory holds; bubblewrap binds none of them on its own. */
+  readonly files: ReadonlyArray<string>
+  /** The links the directory holds; bubblewrap creates none of them. */
+  readonly links: ReadonlyArray<string>
+}
+
+/**
+ * The most arguments bubblewrap accepts. It counts the arguments it reads
+ * through `--args <fd>` against the same total, so a run that would bind more
+ * paths is given a {@link Stage} instead. Measured on bubblewrap 0.9.0: 8,900
+ * arguments start, and 9,100 are refused on the command line and through
+ * `--args` alike, with "Exceeded maximum number of arguments 9000".
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const bubblewrapArgumentLimit = 9_000
 
 /**
  * Workspace entries a run may neither read nor write, whatever tree a grant
@@ -1490,12 +1529,16 @@ export const bubblewrap = (
     "--dir",
     home,
     "--dir",
-    "/tmp/cache",
-    "--tmpfs",
-    confinement.workspaceRoot,
-    "--dir",
-    confinement.cwd
+    "/tmp/cache"
   )
+  // A staged run's declared files are one mount: a bind each would pass the
+  // argument limit. Every other grant is still bound on top of it.
+  const stage = confinement.stage
+  if (stage === undefined) out.push("--tmpfs", confinement.workspaceRoot)
+  else out.push(stage.writable ? "--bind" : "--ro-bind", stage.directory, confinement.workspaceRoot)
+  const stagedFiles = new Set(stage?.files)
+  const stagedLinks = new Set(stage?.links)
+  out.push("--dir", confinement.cwd)
   // The target of a link that leaves the workspace is bound first, so the
   // link a declared read then binds resolves to the same bytes the host sees
   // even when `/tmp` above the target has just become a private tmpfs.
@@ -1509,7 +1552,7 @@ export const bubblewrap = (
     hostFacts
   )
   for (const read of launch?.reads ?? []) out.push("--ro-bind", read, read)
-  for (const read of confinement.reads) out.push("--ro-bind", read, read)
+  for (const read of confinement.reads) if (!stagedFiles.has(read)) out.push("--ro-bind", read, read)
   for (const write of confinement.writes) out.push("--bind", write, write)
   // A host link is created where no bound path already holds it: a link
   // inside a bind is there as the host's own, and an older bubblewrap refuses
@@ -1530,6 +1573,7 @@ export const bubblewrap = (
   // link. Every other one is created in the workspace tmpfs, with its parent
   // directories, before the tmpfs is remounted read-only.
   for (const link of confinement.links ?? []) {
+    if (stagedLinks.has(link.path)) continue
     if ([...confinement.reads, ...confinement.writes].some((bound) => insideRoot(bound, link.path))) continue
     out.push("--symlink", link.target, link.path)
   }

@@ -2506,3 +2506,83 @@ describe("hidden workspace entries (#5436)", () => {
     }
   })
 })
+
+describe("a staged workspace", () => {
+  const plan: ProcessSandbox.Plan = {
+    mechanism: { _tag: "bubblewrap", executable: "/usr/bin/bwrap" },
+    network: "none",
+    workspaceRoot: "/work/ws",
+    cwd: "/work/ws/src",
+    reads: ["/work/ws/src/a.ts", "/work/ws/src/b.ts", "/work/ws/node_modules"],
+    links: [{ path: "/work/ws/src/l.ts", target: "a.ts" }, { path: "/work/ws/src/m.ts", target: "b.ts" }],
+    readDenies: [],
+    writes: ["/work/ws/dist"],
+    readOnly: [],
+    externalReads: [],
+    tmp: "/work/tmp",
+    uid: 501,
+    gid: 20
+  }
+  const stage = { directory: "/stage/workspace", files: ["/work/ws/src/a.ts"], links: ["/work/ws/src/l.ts"] }
+
+  it("mounts the directory read-only at the workspace root and binds only what it does not hold", () => {
+    const argv = ProcessSandbox.bubblewrap({ ...plan, stage: { ...stage, writable: false } }, ["true"], linux)
+      .join(" ")
+    expect(argv).toContain("--ro-bind /stage/workspace /work/ws --dir /work/ws/src")
+    expect(argv).not.toContain("--tmpfs /work/ws ")
+    expect(argv).not.toContain("/work/ws/src/a.ts /work/ws/src/a.ts")
+    expect(argv).toContain("--ro-bind /work/ws/src/b.ts /work/ws/src/b.ts")
+    expect(argv).toContain("--ro-bind /work/ws/node_modules /work/ws/node_modules")
+    expect(argv).toContain("--bind /work/ws/dist /work/ws/dist")
+    expect(argv).not.toContain("/work/ws/src/l.ts")
+    expect(argv).toContain("--symlink b.ts /work/ws/src/m.ts")
+    expect(argv).toContain("--remount-ro /work/ws ")
+  })
+
+  it("mounts it writable under a scratch layer, which leaves the root writable", () => {
+    const argv = ProcessSandbox.bubblewrap(
+      { ...plan, scratch: true, stage: { ...stage, writable: true } },
+      ["true"],
+      linux
+    ).join(" ")
+    expect(argv).toContain("--bind /stage/workspace /work/ws --dir /work/ws/src")
+    expect(argv).not.toContain("--remount-ro /work/ws ")
+  })
+
+  it("keeps the empty root and every bind when there is no stage", () => {
+    const argv = ProcessSandbox.bubblewrap(plan, ["true"], linux).join(" ")
+    expect(argv).toContain("--tmpfs /work/ws --dir /work/ws/src")
+    expect(argv).toContain("--ro-bind /work/ws/src/a.ts /work/ws/src/a.ts")
+    expect(argv).toContain("--symlink a.ts /work/ws/src/l.ts")
+  })
+
+  const bwrap = ProcessSandbox.host().executable("bwrap")
+  it.skipIf(process.platform !== "linux" || bwrap === undefined)(
+    "names the limit this host's bubblewrap enforces, which reading arguments from a descriptor does not lift",
+    () => {
+      const run = (count: number, descriptor: boolean) => {
+        const options = Array.from({ length: count / 2 }, () => ["--unsetenv", "SMTHRS_PROBE"]).flat()
+        const head = ["--ro-bind", "/", "/"]
+        if (!descriptor) return spawnSync(bwrap!, [...head, ...options, "--", "/bin/true"], { encoding: "utf8" })
+        const file = NodePath.join(NodeFs.mkdtempSync(NodePath.join(fixtureDirectory(), "smthrs-args-")), "args")
+        NodeFs.writeFileSync(file, [...head, ...options].map((argument) => `${argument}\0`).join(""))
+        const fd = NodeFs.openSync(file, "r")
+        try {
+          return spawnSync(bwrap!, ["--args", "3", "--", "/bin/true"], {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe", fd]
+          })
+        } finally {
+          NodeFs.closeSync(fd)
+          NodeFs.rmSync(NodePath.dirname(file), { recursive: true, force: true })
+        }
+      }
+      const under = ProcessSandbox.bubblewrapArgumentLimit - 100
+      const over = ProcessSandbox.bubblewrapArgumentLimit + 100
+      for (const descriptor of [false, true]) {
+        expect(run(under, descriptor).status).toBe(0)
+        expect(run(over, descriptor).stderr).toContain("Exceeded maximum number of arguments")
+      }
+    }
+  )
+})
