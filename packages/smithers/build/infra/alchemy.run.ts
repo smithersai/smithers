@@ -9,7 +9,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Alchemy from "alchemy"
 import { Stack } from "alchemy/Stack"
 import {
-  cacheBucketOptions,
+  cacheBucketProps,
   cacheDatabaseOptions,
   cacheStackOutputs,
   cacheWorkerOptions,
@@ -23,7 +23,7 @@ import {
 // the suite executes them. This file only names the resources, which cannot
 // be applied without a Cloudflare account.
 const cacheDatabase = Cloudflare.D1.Database("CacheDatabase", cacheDatabaseOptions)
-const cacheBucket = Cloudflare.R2.Bucket("CacheBucket", cacheBucketOptions)
+const cacheBucket = Cloudflare.R2.Bucket("CacheBucket", Stack.use(cacheBucketProps))
 // Annotated so the budget type is the binding a call returns, not the
 // Effect-shaped service tag `Cloudflare.RateLimit` also is.
 const rateLimit: RateLimitDeclaration<Cloudflare.RateLimitBinding> = Cloudflare.RateLimit

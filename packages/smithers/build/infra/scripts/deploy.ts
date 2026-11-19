@@ -10,11 +10,18 @@ import * as Fs from "node:fs/promises"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { cacheOnlyVariable, sandboxWorkerId, stateSyncVariable, wrapperOwnedVariables } from "../deployment.ts"
+import {
+  cacheOnlyVariable,
+  protectedStages,
+  sandboxWorkerId,
+  stateSyncVariable,
+  wrapperOwnedVariables
+} from "../deployment.ts"
 import { failureMessage } from "./failure-message.ts"
 import { defaultStateDirectory, redactAlchemyState, type RedactAlchemyStateOptions } from "./redact-state.ts"
 import {
   openRemoteState,
+  previewRemoteState,
   refuseSharedState,
   remoteStateRequest,
   type RemoteStateSession,
@@ -154,17 +161,26 @@ interface Invocation {
   readonly stage: string
   /** `--cache-only`: the stack leaves the sandbox service out. */
   readonly cacheOnly: boolean
+  /** `--destroy`: Alchemy deletes every resource of the stage, then its object goes. */
+  readonly destroy: boolean
+  /** `--dry-run`: a plan, with no remote lock, no redaction, and nothing published. */
+  readonly dryRun: boolean
+  /** `--allow-destroy=<this stage>`: a destroy may delete a stage that is not throwaway. */
+  readonly allowDestroy: boolean
+  /** The Alchemy command line after the CLI's path. */
   readonly alchemyArgs: ReadonlyArray<string>
 }
+
+/** The wrapper's own flags, which never reach Alchemy as the caller wrote them. */
+const wrapperFlags = new Set(["--", "--cache-only", "--destroy", "--dry-run"])
 
 /**
  * Reads the wrapper's own flags and the stage out of the caller's arguments.
  *
  * pnpm forwards the `--` in `pnpm run deploy -- --yes` literally, and Alchemy
- * reads every argument after it as a positional, so it is dropped, as is the
- * wrapper's own `--cache-only`. A command that names no stage gets
- * `--stage dev_$USER` appended, so the caller's own arguments keep their
- * positions.
+ * reads every argument after it as a positional, so it is dropped, as are the
+ * wrapper's own flags. A command that names no stage gets `--stage dev_$USER`
+ * appended, so the caller's own arguments keep their positions.
  *
  * Alchemy's `--env-file` is refused in either spelling. Alchemy reads that
  * file before the process environment, so it could override a variable the
@@ -172,8 +188,18 @@ interface Invocation {
  * guard and publish one stack while Alchemy applied another. A `.env` file in
  * this directory is read after the process environment and cannot.
  *
+ * A dry run runs Alchemy's read-only `plan` (or `destroy --dry-run`), never a
+ * `deploy` whose `--dry-run` could be switched off by a value after it, since
+ * the wrapper skips the lock and publication for it. Any other spelling of
+ * the flag is refused for the same reason.
+ *
+ * A stage in `protectedStages` is destroyed only with `--allow-destroy=<stage>`
+ * naming it; a flag naming another stage, or no stage, does not count.
+ *
  * @throws An `Error` for `--env-file`, a stage named twice, a `--stage` with no
- * value, or a name `stagePattern` refuses.
+ * value, a name `stagePattern` refuses, a `--dry-run=` or `--no-dry-run`
+ * spelling, `--allow-destroy` without a stage, or `--destroy` of a protected
+ * stage without `--allow-destroy=<stage>`.
  */
 const invocationOf = (args: ReadonlyArray<string>): Invocation => {
   if (args.some((arg) => arg === "--env-file" || arg.startsWith("--env-file="))) {
@@ -183,8 +209,10 @@ const invocationOf = (args: ReadonlyArray<string>): Invocation => {
         `in the shell instead`
     )
   }
-  const cacheOnly = args.includes("--cache-only")
-  const forwarded = args.filter((arg) => arg !== "--" && arg !== "--cache-only")
+  const ambiguous = args.find((arg) => arg.startsWith("--dry-run=") || arg === "--no-dry-run")
+  if (ambiguous !== undefined) throw new Error(`pass --dry-run alone, not ${ambiguous}`)
+  if (args.includes("--allow-destroy")) throw new Error("name the stage: --allow-destroy=<stage>")
+  const forwarded = args.filter((arg) => !wrapperFlags.has(arg) && !arg.startsWith("--allow-destroy="))
   const named: Array<string | undefined> = []
   forwarded.forEach((arg, index) => {
     if (arg === "--stage") named.push(forwarded[index + 1])
@@ -197,7 +225,28 @@ const invocationOf = (args: ReadonlyArray<string>): Invocation => {
       `stage ${JSON.stringify(stage ?? "")} must be a letter or digit followed by letters, digits, "-" or "_"`
     )
   }
-  return { stage, cacheOnly, alchemyArgs: named.length === 0 ? [...forwarded, "--stage", stage] : forwarded }
+  const destroy = args.includes("--destroy")
+  const dryRun = args.includes("--dry-run")
+  const allowDestroy = args.includes(`--allow-destroy=${stage}`)
+  if (destroy && !allowDestroy && protectedStages.includes(stage)) {
+    throw new Error(
+      `refusing to destroy stage ${stage}, which is protected; pass --allow-destroy=${stage} to destroy it`
+    )
+  }
+  const command = destroy ? "destroy" : dryRun ? "plan" : "deploy"
+  return {
+    stage,
+    cacheOnly: args.includes("--cache-only"),
+    destroy,
+    dryRun,
+    allowDestroy,
+    alchemyArgs: [
+      command,
+      "alchemy.run.ts",
+      ...(named.length === 0 ? [...forwarded, "--stage", stage] : forwarded),
+      ...(destroy && dryRun ? ["--dry-run"] : [])
+    ]
+  }
 }
 
 const runAlchemy = (
@@ -208,7 +257,7 @@ const runAlchemy = (
   new Promise((resolve, reject) => {
     let child: ChildProcess
     try {
-      child = spawn(process.execPath, [command.cli, "deploy", "alchemy.run.ts", ...invocation.alchemyArgs], {
+      child = spawn(process.execPath, [command.cli, ...invocation.alchemyArgs], {
         cwd: command.cwd,
         detached: process.platform !== "win32",
         // Set on every run, so a value the shell exported never decides
@@ -258,6 +307,13 @@ const runAlchemy = (
  * objects, or any failure to reach R2 refuses the run before Alchemy starts,
  * and the linked directory is refused before anything is created or pulled
  * into its target. State that failed redaction is never published.
+ *
+ * `--dry-run` runs Alchemy's `plan`: it takes local ownership and pulls the
+ * stage's object without its lock, then redacts and publishes nothing.
+ * `--destroy` runs Alchemy's `destroy` through the same round trip as a
+ * deployment, and once Alchemy has deleted the stage's state the push deletes
+ * the stage's object. A stage in `protectedStages`, or one whose state records
+ * a sandbox Worker, is destroyed only with `--allow-destroy=<stage>`.
  *
  * The wrapper owns the state directory from before Alchemy starts until
  * redaction has published its last file, so no other deployment or standalone
@@ -367,14 +423,30 @@ export const deploy = async (
       requestOptions
     )
     await refuseSharedState(bucket, stateDirectory, invocation.stage, requestOptions)
-    remote = await openRemoteState({ bucket, key: stateObjectKey(invocation.stage) }, stageDirectory, {
-      host: NodeOs.hostname(),
-      pid: process.pid,
-      startedAt: new Date().toISOString()
-    }, requestOptions)
-    // A cache-only program declares no sandbox Worker, so Alchemy would plan
-    // the deletion of the one this stage's state records.
-    if (invocation.cacheOnly && existsSync(NodePath.join(stageDirectory, `${sandboxWorkerId}.json`))) {
+    const stageState = { bucket, key: stateObjectKey(invocation.stage) }
+    if (invocation.dryRun) {
+      // A plan reads the stage's object to plan against durable state; it
+      // writes no state, so it needs no lock and publishes nothing.
+      await previewRemoteState(stageState, stageDirectory, requestOptions)
+    } else {
+      remote = await openRemoteState(stageState, stageDirectory, {
+        host: NodeOs.hostname(),
+        pid: process.pid,
+        startedAt: new Date().toISOString()
+      }, requestOptions)
+    }
+    // A stage whose state records a sandbox Worker serves more than a
+    // throwaway cache. A cache-only program declares no sandbox Worker, so
+    // Alchemy would plan the deletion of that one, and a destroy deletes it
+    // with everything else, so a destroy needs the flag that names the stage.
+    const hasSandbox = existsSync(NodePath.join(stageDirectory, `${sandboxWorkerId}.json`))
+    if (hasSandbox && invocation.destroy && !invocation.allowDestroy) {
+      throw new Error(
+        `refusing to destroy stage ${invocation.stage}, whose state holds a sandbox Worker; pass ` +
+          `--allow-destroy=${invocation.stage} to destroy it`
+      )
+    }
+    if (hasSandbox && invocation.cacheOnly && !invocation.destroy) {
       throw new Error(
         `stage ${invocation.stage} has a sandbox Worker, which a --cache-only run would delete; deploy it without ` +
           `--cache-only, or destroy the stage`
@@ -420,28 +492,32 @@ export const deploy = async (
     activeChild = undefined
     clearEscalation()
 
-    try {
-      // Only the deployed stage's directory: another stage's verifiers derive
-      // from tokens this shell does not hold, and rewriting them would be
-      // published as that stage's state.
-      const redactedFiles = await redact({ directory: stageDirectory, ownership })
-      process.stdout.write(`Redacted ${redactedFiles} Alchemy Worker state file(s).\n`)
-    } catch (error) {
-      redactionFailure = error
-    }
-
-    if (redactionFailure === undefined) {
+    // A plan holds no session: it wrote no state, so there is nothing to
+    // redact or publish.
+    if (remote !== undefined) {
       try {
-        const published = await remote.push()
-        process.stdout.write(`Remote Alchemy state ${published}.\n`)
+        // Only the deployed stage's directory: another stage's verifiers derive
+        // from tokens this shell does not hold, and rewriting them would be
+        // published as that stage's state.
+        const redactedFiles = await redact({ directory: stageDirectory, ownership })
+        process.stdout.write(`Redacted ${redactedFiles} Alchemy Worker state file(s).\n`)
       } catch (error) {
-        publicationFailure = error
+        redactionFailure = error
+      }
+
+      if (redactionFailure === undefined) {
+        try {
+          const published = await remote.push()
+          process.stdout.write(`Remote Alchemy state ${published}.\n`)
+        } catch (error) {
+          publicationFailure = error
+        }
       }
     }
   } finally {
     clearEscalation()
     try {
-      await remote.release()
+      await remote?.release()
     } catch (error) {
       publicationFailure ??= error
     } finally {

@@ -639,8 +639,12 @@ export interface LockHolder {
  * @since 0.1.0
  */
 export interface RemoteStateSession {
-  /** Publishes local state when it differs from what was pulled. */
-  readonly push: () => Promise<"published" | "unchanged">
+  /**
+   * Publishes local state when it differs from what was pulled. State that
+   * holds no file any more, as Alchemy leaves a destroyed stage, deletes the
+   * object instead (`removed`), still on the version that was pulled.
+   */
+  readonly push: () => Promise<"published" | "unchanged" | "removed">
   /** Deletes the remote lock. */
   readonly release: () => Promise<void>
 }
@@ -756,6 +760,58 @@ const lockRemoteState = async (
   return release
 }
 
+/** The version local state was pulled from, and the digest it is compared with. */
+interface PulledState {
+  readonly pulled: StateObject | undefined
+  readonly baseline: string
+}
+
+/**
+ * Pulls a snapshot over the local state directory unless local state holds
+ * changes a run never published. With `record`, a marker notes the version
+ * pulled until a push succeeds; without it, a marker left from an earlier
+ * pull is removed with the state it described.
+ */
+const pullRemoteState = async (
+  remote: RemoteState,
+  directory: string,
+  options: RemoteStateRequestOptions,
+  record: boolean
+): Promise<PulledState> => {
+  const markerPath = NodePath.join(directory, unpublishedMarker)
+  const marker = await readMarker(markerPath)
+  const pulled = await remoteStateRequest(
+    "remote state snapshot GET",
+    (signal) => remote.bucket.get(remote.key, signal),
+    options
+  )
+  const unpublished = marker !== undefined && digest(await readStateSnapshot(directory)) !== marker.baseline
+  if (unpublished) {
+    if ((pulled?.etag ?? null) !== marker.etag) {
+      throw new Error(
+        `local Alchemy state in ${directory} holds changes a run never published, and remote state ${remote.key} ` +
+          `changed since it was pulled; reconcile them by hand, then delete ${markerPath}`
+      )
+    }
+    options.signal?.throwIfAborted()
+    return { pulled, baseline: marker.baseline }
+  }
+  if (pulled !== undefined) await writeStateSnapshot(directory, pulled.body)
+  const baseline = digest(pulled === undefined ? renderSnapshot({}) : await readStateSnapshot(directory))
+  if (record) {
+    await Fs.mkdir(directory, { recursive: true })
+    await Fs.writeFile(
+      markerPath,
+      JSON.stringify({ format: markerFormat, etag: pulled?.etag ?? null, baseline }),
+      { encoding: "utf8", mode: 0o600 }
+    )
+  } else {
+    await Fs.rm(markerPath, { force: true })
+  }
+  options.signal?.throwIfAborted()
+  return { pulled, baseline }
+}
+
 /**
  * Locks the remote state and pulls it over the local state directory.
  *
@@ -793,35 +849,9 @@ export const openRemoteState = async (
   const release = await lockRemoteState(remote, holder, options)
   const cleanup = { timeoutMs: options.timeoutMs }
   const markerPath = NodePath.join(directory, unpublishedMarker)
-  let pulled: StateObject | undefined
-  let baseline: string
+  let state: PulledState
   try {
-    const marker = await readMarker(markerPath)
-    pulled = await remoteStateRequest(
-      "remote state snapshot GET",
-      (signal) => remote.bucket.get(remote.key, signal),
-      options
-    )
-    const unpublished = marker !== undefined && digest(await readStateSnapshot(directory)) !== marker.baseline
-    if (unpublished) {
-      if ((pulled?.etag ?? null) !== marker.etag) {
-        throw new Error(
-          `local Alchemy state in ${directory} holds changes a run never published, and remote state ${remote.key} ` +
-            `changed since it was pulled; reconcile them by hand, then delete ${markerPath}`
-        )
-      }
-      baseline = marker.baseline
-    } else {
-      if (pulled !== undefined) await writeStateSnapshot(directory, pulled.body)
-      baseline = digest(pulled === undefined ? renderSnapshot({}) : await readStateSnapshot(directory))
-      await Fs.mkdir(directory, { recursive: true })
-      await Fs.writeFile(
-        markerPath,
-        JSON.stringify({ format: markerFormat, etag: pulled?.etag ?? null, baseline }),
-        { encoding: "utf8", mode: 0o600 }
-      )
-    }
-    options.signal?.throwIfAborted()
+    state = await pullRemoteState(remote, directory, options, true)
   } catch (error) {
     try {
       await release()
@@ -830,12 +860,58 @@ export const openRemoteState = async (
     }
     throw error
   }
+  const { pulled, baseline } = state
+  const changed = (): Error =>
+    new Error(`remote Alchemy state ${remote.key} changed during this deployment; local state was kept in ${directory}`)
   return {
     push: async () => {
       const snapshot = await readStateSnapshot(directory)
       if (digest(snapshot) === baseline) {
         await Fs.rm(markerPath, { force: true })
         return "unchanged"
+      }
+      if (snapshot === renderSnapshot({})) {
+        // The stage holds no state, so its object goes rather than an empty
+        // snapshot. The lock fences other wrappers; the version check refuses
+        // a writer that ignored it. Alchemy's destroy deleted the stage
+        // directory and the marker in it, so the marker is recorded again
+        // first: if the object is not deleted, the next run keeps the empty
+        // stage instead of pulling back state whose resources are gone, and
+        // deletes the object then.
+        await Fs.mkdir(directory, { recursive: true })
+        await Fs.writeFile(
+          markerPath,
+          JSON.stringify({ format: markerFormat, etag: pulled?.etag ?? null, baseline }),
+          { encoding: "utf8", mode: 0o600 }
+        )
+        if (pulled !== undefined) {
+          const current = await remoteStateRequest(
+            "remote state snapshot GET",
+            (signal) => remote.bucket.get(remote.key, signal),
+            cleanup
+          )
+          if (current?.etag !== pulled.etag) {
+            throw new Error(
+              `the stage's state is gone, but remote Alchemy state ${remote.key} changed during this run, so it ` +
+                `was not deleted; reconcile it by hand, then delete ${markerPath}`
+            )
+          }
+          try {
+            await remoteStateRequest(
+              "remote state snapshot DELETE",
+              (signal) => remote.bucket.delete(remote.key, signal),
+              cleanup
+            )
+          } catch (error) {
+            throw new Error(
+              `the stage's state is gone, but deleting remote Alchemy state ${remote.key} failed: ` +
+                `${failureMessage(error)}; run the destroy again to delete it`,
+              { cause: error }
+            )
+          }
+        }
+        await Fs.rm(markerPath, { force: true })
+        return "removed"
       }
       const condition: PutCondition = pulled === undefined ? { ifAbsent: true } : { ifMatch: pulled.etag }
       if (
@@ -845,15 +921,36 @@ export const openRemoteState = async (
           cleanup
         ))
       ) {
-        throw new Error(
-          `remote Alchemy state ${remote.key} changed during this deployment; local state was kept in ${directory}`
-        )
+        throw changed()
       }
       await Fs.rm(markerPath, { force: true })
       return "published"
     },
     release
   }
+}
+
+/**
+ * Pulls the remote state over the local state directory without its lock,
+ * for a plan, which writes no state and publishes nothing.
+ *
+ * The rules are the session's: unpublished local state is kept and planned
+ * against, and refused once the remote moved on. No unpublished-state marker
+ * is recorded; a stale one is removed with the state it described, so the
+ * next deployment pulls cleanly. A snapshot is one object, so a read without
+ * the lock still sees one whole version.
+ *
+ * @throws As {@link openRemoteState} does, except for a held lock.
+ * @category constructors
+ * @since 0.1.0
+ */
+export const previewRemoteState = async (
+  remote: RemoteState,
+  directory: string,
+  options: RemoteStateRequestOptions = {}
+): Promise<void> => {
+  await resolveStateRoot(directory)
+  await pullRemoteState(remote, directory, options, false)
 }
 
 const isMigrationMarker = (body: string): boolean => {

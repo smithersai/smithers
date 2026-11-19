@@ -490,16 +490,52 @@ export const workerStageOptions = (
 export const cacheDatabaseOptions = { migrations: "./worker/migrations" } as const
 
 /**
- * The R2 resource configuration: the artifact lifecycle.
+ * The stages that are never throwaway, whatever a run asks: production, and
+ * `vibelang`, the development stage VibeLang's CI runs on. The deploy wrapper
+ * refuses to destroy one without `--allow-destroy=<stage>`, and its cache
+ * bucket never gets `forceDestroy`.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const protectedStages: ReadonlyArray<string> = ["prod", "vibelang"]
+
+/**
+ * The R2 resource configuration for one stage: the artifact lifecycle and,
+ * for a throwaway stage only, `forceDestroy`.
  *
  * The Worker's scheduled sweep prunes D1 entries; R2 has no scheduled reader,
  * so artifact retention is the bucket's own lifecycle. Without it the store
  * keeps every artifact ever published, forever.
  *
- * @category constants
+ * R2 refuses to delete a bucket that still holds objects, and that refusal is
+ * what keeps a cache's objects through a mistaken destroy or replacement. A
+ * throwaway stage, a {@link cacheOnly} run of a stage outside
+ * {@link protectedStages}, opts out of it so destroying the stage empties its
+ * bucket. Alchemy reads the flag from the props a deployment recorded, so a
+ * full deployment of the same stage takes it away again. Every other bucket
+ * keeps the props production always had.
+ *
+ * @category constructors
  * @since 0.1.0
  */
-export const cacheBucketOptions = { lifecycleRules: [...artifactLifecycleRules] }
+export const cacheBucketOptions = (stack: { readonly stage: string; readonly throwaway: boolean }) => ({
+  lifecycleRules: [...artifactLifecycleRules],
+  ...(stack.throwaway && !protectedStages.includes(stack.stage) ? { forceDestroy: true } : {})
+})
+
+/**
+ * {@link cacheBucketOptions} for the stage a stack deploys, with the run's
+ * {@link cacheOnly} switch as `throwaway`. The stack program reads the same
+ * switch before any resource, so it cannot fail here.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const cacheBucketProps = (stack: { readonly stage: string }) =>
+  Effect.gen(function*() {
+    return cacheBucketOptions({ stage: stack.stage, throwaway: yield* cacheOnly })
+  }).pipe(Effect.orDie)
 
 /**
  * The Worker's entry module, relative to this directory.

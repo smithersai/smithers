@@ -24,9 +24,11 @@ import { stackName } from "../deployment.ts"
 import {
   memoryStateBucket,
   openRemoteState,
+  previewRemoteState,
   r2CredentialsFromApiToken,
   r2StateBucket,
   readStateSnapshot,
+  type StateBucket,
   stateBucketFromEnvironment,
   stateBucketName,
   stateObjectKey,
@@ -537,6 +539,159 @@ const recordingFetch = (respond: (request: RecordedRequest) => Response) => {
 }
 
 const r2Options = { accountId: "acct", bucket: "state", accessKeyId: "key-id", secretAccessKey: "secret" }
+
+describe("a stage whose state is gone", () => {
+  const remote = (bucket = memoryStateBucket()) => ({ bucket, key: "alchemy/Stack/dev.json" })
+
+  it("loses its object, deleted on the version it pulled, so a destroyed stage leaves nothing in R2", async () => {
+    const { bucket, key } = remote()
+    const publisher = await openRemoteState({ bucket, key }, directory, holder)
+    await put("CacheWorker.json", `{"live":true}`)
+    await publisher.push()
+    await publisher.release()
+
+    const session = await openRemoteState({ bucket, key }, directory, holder)
+    // Alchemy's destroy deletes the stage directory once every resource is gone.
+    await rm(directory, { recursive: true, force: true })
+    expect(await session.push()).toBe("removed")
+    await session.release()
+
+    expect(bucket.objects.size).toBe(0)
+  })
+
+  it("refuses to remove an object another writer changed during the run", async () => {
+    const { bucket, key } = remote()
+    await bucket.put(key, JSON.stringify({ format: "smithers-alchemy-state/1", files: { "A.json": "{}" } }), {
+      ifAbsent: true
+    })
+    const session = await openRemoteState({ bucket, key }, directory, holder)
+    await bucket.put(key, JSON.stringify({ format: "smithers-alchemy-state/1", files: { "B.json": "{}" } }), {
+      ifMatch: bucket.objects.get(key)!.etag
+    })
+    // Alchemy's destroy removes the stage directory, unpublished marker and all.
+    await rm(directory, { recursive: true, force: true })
+
+    const refusal = session.push()
+    await expect(refusal).rejects.toThrow(
+      `the stage's state is gone, but remote Alchemy state ${key} changed during this run, so it was not deleted`
+    )
+    await expect(refusal).rejects.not.toThrow("local state was kept")
+    await session.release()
+    expect(JSON.parse(bucket.objects.get(key)!.body).files).toEqual({ "B.json": "{}" })
+    // The next run sees the empty stage and the version it pulled, so it
+    // refuses rather than pull the newer object over the destroyed stage.
+    expect(existsSync(NodePath.join(directory, ".smithers-unpublished-state"))).toBe(true)
+    await expect(openRemoteState({ bucket, key }, directory, holder)).rejects.toThrow("changed since it was pulled")
+  })
+
+  /**
+   * A destroy deletes the stage's resources, then its state, then the R2
+   * object. If that last delete fails, the object still describes resources
+   * that are gone; pulling it back would make the next run plan against them.
+   */
+  it("converges after a failed delete: the next run keeps the empty stage and deletes the object", async () => {
+    const { bucket, key } = remote()
+    const publisher = await openRemoteState({ bucket, key }, directory, holder)
+    await put("CacheWorker.json", `{"live":true}`)
+    await publisher.push()
+    await publisher.release()
+    let refuseDelete = true
+    const flaky: StateBucket = {
+      ...bucket,
+      delete: async (target, signal) => {
+        if (target === key && refuseDelete) throw new Error("R2 state DELETE answered 503")
+        return bucket.delete(target, signal)
+      }
+    }
+
+    const destroying = await openRemoteState({ bucket: flaky, key }, directory, holder)
+    await rm(directory, { recursive: true, force: true })
+    await expect(destroying.push()).rejects.toThrow(
+      `the stage's state is gone, but deleting remote Alchemy state ${key} failed: R2 state DELETE answered 503; ` +
+        "run the destroy again to delete it"
+    )
+    await destroying.release()
+    expect(bucket.objects.has(key)).toBe(true)
+
+    refuseDelete = false
+    const rerun = await openRemoteState({ bucket: flaky, key }, directory, holder)
+    expect(existsSync(NodePath.join(directory, "CacheWorker.json"))).toBe(false)
+    expect(await rerun.push()).toBe("removed")
+    await rerun.release()
+    expect(bucket.objects.size).toBe(0)
+  })
+
+  it("removes nothing for a stage whose unpublished state never reached R2", async () => {
+    const { bucket, key } = remote()
+    // A run with no remote object created state and could not publish it.
+    await put("CacheWorker.json", "{}")
+    await put(".smithers-unpublished-state", JSON.stringify({
+      format: "smithers-unpublished-state/1",
+      etag: null,
+      baseline: "an earlier, empty pull"
+    }))
+    const session = await openRemoteState({ bucket, key }, directory, holder)
+    await rm(NodePath.join(directory, "CacheWorker.json"))
+
+    expect(await session.push()).toBe("removed")
+    await session.release()
+    expect(bucket.objects.size).toBe(0)
+    expect(existsSync(NodePath.join(directory, ".smithers-unpublished-state"))).toBe(false)
+  })
+})
+
+describe("previewing remote state", () => {
+  const key = "alchemy/Stack/dev.json"
+  const snapshot = (files: Record<string, string>): string =>
+    JSON.stringify({ format: "smithers-alchemy-state/1", files })
+
+  it("pulls the snapshot without the lock and records no marker", async () => {
+    const bucket = memoryStateBucket()
+    await bucket.put(key, snapshot({ "CacheWorker.json": `{"live":true}` }), { ifAbsent: true })
+    await put("Stale.json", "{}")
+
+    await previewRemoteState({ bucket, key }, directory)
+
+    expect(await readdir(directory)).toEqual(["CacheWorker.json"])
+    expect([...bucket.objects.keys()]).toEqual([key])
+  })
+
+  it("drops a stale marker it pulls over, so the next deployment pulls cleanly", async () => {
+    const bucket = memoryStateBucket()
+    const session = await openRemoteState({ bucket, key }, directory, holder)
+    await session.release()
+    // The run that wrote the marker was killed; the remote moved on since.
+    await bucket.put(key, snapshot({ "CacheWorker.json": `{"newer":true}` }), { ifAbsent: true })
+
+    await previewRemoteState({ bucket, key }, directory)
+    expect(existsSync(NodePath.join(directory, ".smithers-unpublished-state"))).toBe(false)
+
+    const next = await openRemoteState({ bucket, key }, directory, holder)
+    expect(read("CacheWorker.json")).toBe(`{"newer":true}`)
+    await next.release()
+  })
+
+  it("keeps unpublished local state and plans against it", async () => {
+    const bucket = memoryStateBucket()
+    const session = await openRemoteState({ bucket, key }, directory, holder)
+    await put("CacheWorker.json", `{"created":"by a run that could not publish"}`)
+    await session.release()
+
+    await previewRemoteState({ bucket, key }, directory)
+
+    expect(read("CacheWorker.json")).toBe(`{"created":"by a run that could not publish"}`)
+    expect(existsSync(NodePath.join(directory, ".smithers-unpublished-state"))).toBe(true)
+  })
+
+  it("refuses a state directory reached through a symbolic link", async () => {
+    const outside = NodePath.join(directory, "outside")
+    await mkdir(outside)
+    await symlink(outside, NodePath.join(directory, "linked"))
+
+    await expect(previewRemoteState({ bucket: memoryStateBucket(), key }, NodePath.join(directory, "linked")))
+      .rejects.toThrow(/symbolic links are not allowed/)
+  })
+})
 
 describe("the R2 state bucket", () => {
   it("reads an object and its ETag over the signed S3 API", async () => {

@@ -1,0 +1,5 @@
+---
+"@smthrs/build-infra": patch
+---
+
+A deploy-wrapper `--dry-run` is a read-only plan: it runs `alchemy plan`, pulls the stage's state object without taking its lock, and runs no redaction and no publication. `pnpm run plan:dev` plans a cache-only development stage. `--destroy` (`pnpm run destroy:dev`) runs `alchemy destroy` through the same lock, pull, redaction and publication as a deployment, and deletes the stage's state object once Alchemy has deleted the stage's state. If that delete fails, the stage's unpublished-state marker records it, so running the destroy again deletes the object instead of pulling back state whose resources are gone. A protected stage (`prod`, `vibelang`) or a stage whose state records a sandbox Worker is destroyed only with `--allow-destroy=<stage>` naming it. Only a throwaway stage, a `--cache-only` deployment of an unprotected stage, declares its cache bucket with `forceDestroy`, so destroying it empties the bucket instead of stopping at R2's refusal to delete a non-empty one; every other bucket keeps production's props. The wrapper refuses `--dry-run=<value>` and `--no-dry-run`, which Alchemy would read as a real deployment.

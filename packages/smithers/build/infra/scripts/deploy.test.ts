@@ -87,6 +87,30 @@ process.exit(Number(process.argv[5] ?? "0"))
 `
   )
   await write("exit-seven", "process.exit(7)\n")
+  // A plan: records what it was given and the stage directory it saw
+  // (argv[4]), and writes no state.
+  await write(
+    "plans",
+    `import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+const stage = process.argv[4]
+const worker = join(stage, "CacheWorker.json")
+writeFileSync(process.env.SMITHERS_DEPLOY_ARGV_FILE, JSON.stringify({
+  argv: process.argv.slice(2),
+  cacheOnly: process.env[${JSON.stringify(cacheOnlyVariable)}],
+  pulled: existsSync(worker) ? readFileSync(worker, "utf8") : null,
+  entries: existsSync(stage) ? readdirSync(stage).sort() : []
+}))
+`
+  )
+  // A destroy that converged: Alchemy deletes the stage directory (argv[4]).
+  await write(
+    "destroys",
+    `import { rmSync, writeFileSync } from "node:fs"
+writeFileSync(process.env.SMITHERS_DEPLOY_ARGV_FILE, JSON.stringify(process.argv.slice(2)))
+rmSync(process.argv[4], { recursive: true, force: true })
+`
+  )
   // Records the argv the wrapper hands Alchemy, after the script path.
   await write(
     "record-argv",
@@ -309,7 +333,9 @@ describe("deploy wrapper", () => {
       expect(await recorded(["--", "--yes"])).toEqual(["deploy", "alchemy.run.ts", "--yes", "--stage", "dev_ada"])
       // A stage the caller named is the only one Alchemy sees, in either spelling.
       expect(await recorded(["--stage", "pr-1347"])).toEqual(["deploy", "alchemy.run.ts", "--stage", "pr-1347"])
-      expect(await recorded(["--stage=prod", "--dry-run"])).toEqual(["deploy", "alchemy.run.ts", "--stage=prod", "--dry-run"])
+      // A dry run is Alchemy's read-only `plan`, never a `deploy` that a
+      // stray `--dry-run false` could turn into a real one.
+      expect(await recorded(["--stage=prod", "--dry-run"])).toEqual(["plan", "alchemy.run.ts", "--stage=prod"])
     } finally {
       vi.unstubAllEnvs()
       stdout.mockRestore()
@@ -323,7 +349,16 @@ describe("deploy wrapper", () => {
     [["--stage=a/b"], "stage \"a/b\" must be"],
     [["--yes", "--stage"], "stage \"\" must be"],
     [["--stage", "--yes"], "stage \"--yes\" must be"],
-    [["--stage", "prod", "--stage=dev"], "name one --stage, not several"]
+    [["--stage", "prod", "--stage=dev"], "name one --stage, not several"],
+    // Alchemy reads these as a real deployment; the wrapper would plan it.
+    [["--dry-run=false"], "pass --dry-run alone, not --dry-run=false"],
+    [["--no-dry-run"], "pass --dry-run alone, not --no-dry-run"],
+    [["--destroy", "--stage", "prod"], "refusing to destroy stage prod, which is protected; pass --allow-destroy=prod"],
+    [["--destroy", "--stage=prod", "--dry-run"], "refusing to destroy stage prod, which is protected"],
+    // Protection is a property of the stage, not of the name `prod`.
+    [["--destroy", "--stage", "vibelang"], "refusing to destroy stage vibelang, which is protected"],
+    [["--destroy", "--stage", "vibelang", "--allow-destroy=prod"], "refusing to destroy stage vibelang, which is protected"],
+    [["--destroy", "--stage", "vibelang", "--allow-destroy"], "name the stage: --allow-destroy=<stage>"]
   ])("refuses %j before it touches any state", async (args, message) => {
     const state = stateDirectory(`refused-stage-${message.length}-${args.length}`)
     const bucket = memoryStateBucket()
@@ -443,7 +478,10 @@ describe("deploy wrapper", () => {
       readonly scripts: Record<string, string>
     }).scripts
     expect(scripts["deploy:dev"]).toBe("node scripts/deploy.ts --cache-only")
+    expect(scripts["plan:dev"]).toBe("node scripts/deploy.ts --cache-only --dry-run")
+    expect(scripts["destroy:dev"]).toBe("node scripts/deploy.ts --destroy")
     expect(scripts["deploy"]).toBe("node scripts/deploy.ts --stage prod")
+    expect(scripts["plan"]).toBe("node scripts/deploy.ts --stage prod --dry-run")
   })
 
   it("derives the development stage from the deploying user", () => {
@@ -1186,6 +1224,182 @@ describe("deploy wrapper remote state", () => {
       expect(existsSync(lockFileIn(state))).toBe(false)
     } finally {
       stderr.mockRestore()
+    }
+  })
+
+  /**
+   * A plan reads the stage's object to plan against durable state, and must
+   * still own the local working copy it pulls into. It takes no remote lock,
+   * runs no redaction, and publishes nothing.
+   */
+  it("plans a stage against its pulled state without its lock, and publishes nothing", async () => {
+    const memory = memoryStateBucket()
+    const touched: Array<string> = []
+    const bucket: StateBucket = {
+      ...memory,
+      get: async (target) => (touched.push(`GET ${target}`), memory.get(target)),
+      put: async (target, body, condition) => (touched.push(`PUT ${target}`), memory.put(target, body, condition)),
+      delete: async (target) => (touched.push(`DELETE ${target}`), memory.delete(target))
+    }
+    const stage = stateObjectKey("needlefish_poc")
+    await memory.put(stage, snapshotOf({ "CacheWorker.json": `{"live":true}` }), { ifAbsent: true })
+    const root = await realpath(await mkdtemp(NodePath.join(directory, "plan-")))
+    const state = NodePath.join(root, "state")
+    const argvFile = NodePath.join(root, "plan.json")
+    vi.stubEnv("SMITHERS_DEPLOY_ARGV_FILE", argvFile)
+    let redactions = 0
+    try {
+      const code = await deployWrapper(
+        [NodePath.join(state, "needlefish_poc"), "--cache-only", "--dry-run", "--stage", "needlefish_poc"],
+        {
+          cli: script("plans"),
+          cwd: directory,
+          stateDirectory: state,
+          redact: async () => (redactions += 1, 0),
+          stateBucket: async () => bucket
+        }
+      )
+
+      expect(code).toBe(0)
+      expect(JSON.parse(readFileSync(argvFile, "utf8"))).toEqual({
+        argv: ["plan", "alchemy.run.ts", NodePath.join(state, "needlefish_poc"), "--stage", "needlefish_poc"],
+        cacheOnly: "1",
+        pulled: `{"live":true}`,
+        entries: ["CacheWorker.json"]
+      })
+      expect(touched).toEqual([`GET ${legacyStateObjectKey}`, `GET ${stage}`])
+      expect(redactions).toBe(0)
+      expect(existsSync(lockFileIn(state))).toBe(false)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  /**
+   * Destroy goes through the same round trip as a deployment: it pulls the
+   * stage's state under its lock so Alchemy deletes what that state records,
+   * and the object goes once Alchemy has deleted the stage's state.
+   */
+  it("destroys a stage through its state round trip and then removes its object", async () => {
+    const bucket = memoryStateBucket()
+    const stage = stateObjectKey("needlefish_poc")
+    await bucket.put(stage, snapshotOf({ "CacheWorker.json": "{}" }), { ifAbsent: true })
+    const root = await realpath(await mkdtemp(NodePath.join(directory, "destroy-")))
+    const state = NodePath.join(root, "state")
+    const stageDirectory = NodePath.join(state, "needlefish_poc")
+    const argvFile = NodePath.join(root, "destroy.json")
+    vi.stubEnv("SMITHERS_DEPLOY_ARGV_FILE", argvFile)
+    const out: Array<string> = []
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => (out.push(String(chunk)), true))
+    try {
+      // `deploy:dev -- --destroy` passes --cache-only too; destroy removes
+      // every resource whatever the program declares.
+      const code = await deployWrapper(
+        [stageDirectory, "--cache-only", "--destroy", "--stage", "needlefish_poc", "--yes"],
+        { cli: script("destroys"), cwd: directory, stateDirectory: state, stateBucket: async () => bucket }
+      )
+
+      expect(code).toBe(0)
+      expect(JSON.parse(readFileSync(argvFile, "utf8"))).toEqual([
+        "destroy",
+        "alchemy.run.ts",
+        stageDirectory,
+        "--stage",
+        "needlefish_poc",
+        "--yes"
+      ])
+      expect(out).toContain("Remote Alchemy state removed.\n")
+      expect(bucket.objects.size).toBe(0)
+      expect(existsSync(lockFileIn(state))).toBe(false)
+    } finally {
+      vi.unstubAllEnvs()
+      stdout.mockRestore()
+    }
+  })
+
+  /**
+   * A stage whose state records a sandbox Worker is serving something beyond
+   * a throwaway cache, whatever its name, so destroying it takes a flag that
+   * names it.
+   */
+  it("refuses to destroy a stage whose state holds a sandbox Worker unless the flag names that stage", async () => {
+    const bucket = memoryStateBucket()
+    const stage = stateObjectKey("needlefish_poc")
+    const snapshot = snapshotOf({ "CacheWorker.json": "{}", "SandboxWorker.json": "{}" })
+    await bucket.put(stage, snapshot, { ifAbsent: true })
+    const root = await realpath(await mkdtemp(NodePath.join(directory, "destroy-sandbox-")))
+    const state = NodePath.join(root, "state")
+    const stageDirectory = NodePath.join(state, "needlefish_poc")
+    vi.stubEnv("SMITHERS_DEPLOY_ARGV_FILE", NodePath.join(root, "destroy.json"))
+    const errors: Array<string> = []
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => (errors.push(String(chunk)), true))
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    try {
+      for (const extra of [[], ["--allow-destroy=other"]]) {
+        const refused = await deployWrapper(
+          [stageDirectory, "--destroy", "--stage", "needlefish_poc", "--yes", ...extra],
+          { cli: script("destroys"), cwd: directory, stateDirectory: state, stateBucket: async () => bucket }
+        )
+        expect(refused).toBe(1)
+        expect(bucket.objects.get(stage)!.body).toBe(snapshot)
+        expect(bucket.objects.has(`${stage}.lock`)).toBe(false)
+        expect(existsSync(lockFileIn(state))).toBe(false)
+      }
+      expect(errors.join("")).toContain(
+        "Alchemy deployment refused: refusing to destroy stage needlefish_poc, whose state holds a sandbox " +
+          "Worker; pass --allow-destroy=needlefish_poc to destroy it"
+      )
+
+      const destroyed = await deployWrapper(
+        [stageDirectory, "--destroy", "--stage", "needlefish_poc", "--yes", "--allow-destroy=needlefish_poc"],
+        { cli: script("destroys"), cwd: directory, stateDirectory: state, stateBucket: async () => bucket }
+      )
+      expect(destroyed).toBe(0)
+      expect(bucket.objects.size).toBe(0)
+    } finally {
+      vi.unstubAllEnvs()
+      stderr.mockRestore()
+      stdout.mockRestore()
+    }
+  })
+
+  it("keeps the stage's object when the destroy fails, and destroys production only when told twice", async () => {
+    const bucket = memoryStateBucket()
+    const snapshot = snapshotOf({ "CacheWorker.json": "{}" })
+    await bucket.put(key, snapshot, { ifAbsent: true })
+    const root = await realpath(await mkdtemp(NodePath.join(directory, "destroy-production-")))
+    const state = NodePath.join(root, "state")
+    const argvFile = NodePath.join(root, "destroy.json")
+    vi.stubEnv("SMITHERS_DEPLOY_ARGV_FILE", argvFile)
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    try {
+      const failed = await deployWrapper(["--destroy", "--allow-destroy=prod", "--stage", "prod"], {
+        cli: script("exit-seven"),
+        cwd: directory,
+        stateDirectory: state,
+        stateBucket: async () => bucket
+      })
+      expect(failed).toBe(7)
+      expect(bucket.objects.get(key)!.body).toBe(snapshot)
+
+      const destroyed = await deployWrapper(
+        [NodePath.join(state, "prod"), "--destroy", "--allow-destroy=prod", "--stage", "prod", "--dry-run"],
+        { cli: script("destroys"), cwd: directory, stateDirectory: state, stateBucket: async () => bucket }
+      )
+      expect(destroyed).toBe(0)
+      // A destroy plan is read-only, like any other plan: the object stays.
+      expect(JSON.parse(readFileSync(argvFile, "utf8"))).toEqual([
+        "destroy",
+        "alchemy.run.ts",
+        NodePath.join(state, "prod"),
+        "--stage",
+        "prod",
+        "--dry-run"
+      ])
+      expect(bucket.objects.get(key)!.body).toBe(snapshot)
+    } finally {
+      vi.unstubAllEnvs()
+      stdout.mockRestore()
     }
   })
 

@@ -12,6 +12,7 @@ import {
   artifactLifecycleRules,
   budgetNamespaces,
   cacheBucketOptions,
+  cacheBucketProps,
   cacheCredentialBindings,
   cacheCredentialVerifiers,
   cacheDatabaseOptions,
@@ -25,6 +26,7 @@ import {
   maxCacheTokenBytes,
   metricsDataset,
   minCacheTokenBytes,
+  protectedStages,
   retentionCron,
   sandboxTokenVariable,
   sandboxWorkerId,
@@ -415,7 +417,28 @@ describe("cache credential verification", () => {
       "0001_initial.sql",
       "0002_bound_cache_rows.sql"
     ])
-    expect(cacheBucketOptions.lifecycleRules).toEqual([...artifactLifecycleRules])
+    // R2 refuses to delete a bucket that still holds objects. Only a
+    // throwaway stage, a cache-only run of an unprotected stage, lets
+    // Alchemy empty its bucket on destroy; every other bucket keeps the
+    // props production always had, and its objects survive a destroy.
+    const kept = { lifecycleRules: [...artifactLifecycleRules] }
+    expect(cacheBucketOptions({ stage: "needlefish_poc", throwaway: true })).toStrictEqual({ ...kept, forceDestroy: true })
+    expect(cacheBucketOptions({ stage: "needlefish_poc", throwaway: false })).toStrictEqual(kept)
+    for (const stage of protectedStages) {
+      expect(cacheBucketOptions({ stage, throwaway: true })).toStrictEqual(kept)
+      expect(cacheBucketOptions({ stage, throwaway: false })).toStrictEqual(kept)
+    }
+    expect(protectedStages).toEqual(["prod", "vibelang"])
+    // The resource graph reads the run's cache-only switch as `throwaway`.
+    const props = (cacheOnly: string) =>
+      Effect.runPromise(
+        Effect.provide(
+          cacheBucketProps({ stage: "needlefish_poc" }),
+          ConfigProvider.layer(ConfigProvider.fromUnknown({ [cacheOnlyVariable]: cacheOnly }))
+        )
+      )
+    await expect(props("1")).resolves.toStrictEqual({ ...kept, forceDestroy: true })
+    await expect(props("0")).resolves.toStrictEqual(kept)
     expect(/^\d{4}-\d{2}-\d{2}$/.test(workerCompatibilityDate)).toBe(true)
   })
 

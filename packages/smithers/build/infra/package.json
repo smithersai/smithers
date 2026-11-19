@@ -17,6 +17,8 @@
     "deploy": "node scripts/deploy.ts --stage prod",
     "deploy:dev": "node scripts/deploy.ts --cache-only",
     "plan": "node scripts/deploy.ts --stage prod --dry-run",
+    "plan:dev": "node scripts/deploy.ts --cache-only --dry-run",
+    "destroy:dev": "node scripts/deploy.ts --destroy",
     "migrate-state": "node scripts/remote-state.ts migrate",
     "restore-shared-state": "node scripts/remote-state.ts restore",
     "test": "vitest run",
