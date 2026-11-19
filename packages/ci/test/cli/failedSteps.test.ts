@@ -115,11 +115,14 @@ describe("smithers-ci on a repository where one job cannot pass here", { timeout
 })
 
 describe("smithers-ci on a repository where normal mode gives another result than the CI", { timeout: 600_000 }, () => {
-  // The script passes in a fresh clone, as the baseline runs it, and fails in a copy that is kept between commits.
+  // The script passes as the baseline runs it, and fails as a target: a job is at the same paths both ways, so it
+  // looks for the `smthrs ci` that started it among the processes above it.
   const fresh = [
-    "if [ -e .flows ] || case \"$PWD\" in */normal/*|*/.flows/*) true;; *) false;; esac; then",
-    "  echo 'not a fresh clone' >&2; exit 5",
-    "fi",
+    "p=$$",
+    "while [ \"${p:-0}\" -gt 1 ]; do",
+    "  case \"$(ps -o args= -p \"$p\")\" in *--results-file*) echo 'not a fresh clone' >&2; exit 5;; esac",
+    "  p=$(ps -o ppid= -p \"$p\" | tr -d ' ')",
+    "done",
     ""
   ].join("\n")
 

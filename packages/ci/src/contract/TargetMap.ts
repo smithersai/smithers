@@ -25,7 +25,10 @@ export const path = ".smithers/ci-targets.json"
  * matrix has the empty variant. A step that was split has one entry per
  * target, each naming the original step, and `part` says which part of the
  * step the target runs: a package, a build step or a script. A report names
- * a failed part by it.
+ * a failed part by it. `machine` is the machine the target runs on
+ * (`machine:` in its target file), for a target that has one: Smithers build
+ * gives the targets of one machine a checkout, a home and a temporary
+ * directory of their own, at paths named by the machine.
  *
  * @category models
  * @since 0.1.0
@@ -35,7 +38,8 @@ export const Entry = Schema.Struct({
   job: Schema.NonEmptyString,
   step: Schema.NonEmptyString,
   variant: Schema.Record(Schema.String, Schema.String),
-  part: Schema.optionalKey(Schema.NonEmptyString)
+  part: Schema.optionalKey(Schema.NonEmptyString),
+  machine: Schema.optionalKey(Schema.NonEmptyString)
 })
 
 /**
@@ -108,3 +112,23 @@ export const labelsOf = (
  */
 export const partsOf = (map: TargetMap): ReadonlyMap<string, string> =>
   new Map(map.targets.flatMap((entry) => entry.part === undefined ? [] : [[entry.label, entry.part] as const]))
+
+/**
+ * The machine the targets of one job's variant run on, or `undefined` when
+ * they run on none.
+ *
+ * @category reading
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const machineOf = (
+  map: TargetMap,
+  job: string,
+  variant: Readonly<Record<string, string>>
+): string | undefined => {
+  const key = variantKey(variant)
+  return map.targets.find((entry) =>
+    entry.job === job && variantKey(entry.variant) === key && entry.machine !== undefined
+  )
+    ?.machine
+}

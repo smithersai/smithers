@@ -694,7 +694,8 @@ const renderTargetMap = (plan: StepPlan, serial: boolean): string => {
         step: step.step,
         variant: step.variant,
         // A split step is never one target for two jobs, so the part is the target's own.
-        ...(target.part === undefined ? {} : { part: target.part })
+        ...(target.part === undefined ? {} : { part: target.part }),
+        ...(target.machine === undefined ? {} : { machine: target.machine })
       }))
     ),
     ...(serial ? { maxJobs: 1 } : {})

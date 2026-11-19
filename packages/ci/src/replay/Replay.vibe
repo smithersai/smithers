@@ -66,6 +66,7 @@ import { cpuWatch } from "./CpuWatch.vibe"
 import {
   ambientEnvironment,
   coreCount,
+  machinesVariable,
   pushRefusal,
   searchPath,
   softwareEnvironment,
@@ -124,6 +125,7 @@ import {
   jobsCovered,
   jobsFor,
   labelsOf,
+  machinePaths,
   maxReruns,
   mismatchesOf,
   noCiBefore,
@@ -645,6 +647,29 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     const normal = try siteAt("normal", "HEAD")
     const normalCopy = normal.copy
+    // Every way keeps its jobs' machines in one directory and runs in one checkout, normal mode's. Smithers build
+    // names a job's machine by both, so a job's home, checkout and temporary directory are at the same paths in the
+    // baseline and in each mode, at every commit, as a runner's are (`machinePaths`).
+    const machines = path.join(try orFail(fs.realPath(work), "could not read a directory"), "machines")
+    try orFail(fs.makeDirectory(machines), "could not make a directory")
+    const checkoutPath = try orFail(fs.realPath(normalCopy), "could not read a directory")
+
+    /**
+     * Runs `run` with `site`'s copy in the one checkout every way runs in. Normal mode's copy waits beside it until
+     * the run ends, and each copy is back in its place after.
+     */
+    effect function atCheckout<A, E, R>(site: Site, run: (site: Site) => A!E!R) {
+      if (site.copy === normalCopy) return try run(site)
+      return try scoped(effect {
+        const aside = path.join(work, "aside", path.basename(root))
+        try orFail(fs.makeDirectory(path.dirname(aside), { recursive: true }), "could not make a directory")
+        try orFail(fs.rename(normalCopy, aside), "could not move normal mode's copy")
+        try addFinalizer(() => ignore(fs.rename(aside, normalCopy)))
+        try orFail(fs.rename(site.copy, normalCopy), "could not move a copy")
+        try addFinalizer(() => ignore(fs.rename(normalCopy, site.copy)))
+        return try run({ ...site, copy: normalCopy })
+      })
+    }
     const spawner = try ChildProcessSpawner
     /**
      * Runs a part on the normal copy, which the targets wrote: every `git` the part starts there runs as a step
@@ -783,6 +808,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const startEnv = (site: Site) => ({
       ...stepEnvironment({ ...software, ...site.place.daemon }, site.place),
       ...jobHomes(site.place),
+      [machinesVariable]: machines,
       ...(request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }),
       ...compiledCaches(site.cache, site.place.jail !== undefined)
     })
@@ -816,7 +842,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const file = path.join(records, `run-${runs}.json`)
       // With a token to give, Smithers build is started by the program that reads it from a pipe.
       const starter = token === undefined ? undefined : options.smthrsWithToken
-      const [command, ...args] = held(site.place, [site.copy, records, site.cache], [
+      const [command, ...args] = held(site.place, [site.copy, records, site.cache, machines], [
         ...(starter ?? options.smthrs),
         "ci",
         ...selected,
@@ -910,27 +936,22 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return try scoped(effect {
         const start = try Clock.currentTimeMillis
         try progress.say(`${at} with the files apply writes`)
-        // The run starts in the checkout normal mode's runs started in, as a person's next CI run does: Smithers build
-        // names a job's machine by its workspace's path, and a tool that wrote a path of that machine into a cache
-        // normal mode saved finds it again. Normal mode's copy waits beside it until the run ends.
-        const site = normal
-        const aside = path.join(work, "applied", path.basename(root))
-        try orFail(fs.makeDirectory(path.dirname(aside), { recursive: true }), "could not make a directory")
-        try orFail(fs.rename(normalCopy, aside), "could not move normal mode's copy")
-        try addFinalizer(() => ignore(fs.rename(aside, normalCopy)))
-        try orFail(fresh(normalCopy), "could not make a directory")
-        try cloneAt(site.copy, commit, site.place)
-        const seen = try commitApplied(site.copy, commit, own, site.place)
+        const copy = try orFail(fresh(path.join(work, "applied", path.basename(root))), "could not make a directory")
+        try cloneAt(copy, commit, normal.place)
+        const seen = try commitApplied(copy, commit, own, normal.place)
         const causes = new Map<string, string>()
-        // Its reruns are not the replay's: they are in no count of the report.
-        const second = try measure(
-          Effect.void,
-          Effect.void,
-          smithers(commit, site, own, { causes, seen }),
-          passed,
-          reruns,
-          new Map(),
-          { count: 0, ms: 0 }
+        // It runs in the checkout every way runs in, as a person's next CI run does: a tool that wrote a path of its
+        // job's machine into a cache normal mode saved finds that path again. Its reruns are in no count of the report.
+        const second = try atCheckout({ ...normal, copy }, (site) =>
+          measure(
+            Effect.void,
+            Effect.void,
+            smithers(commit, site, own, { causes, seen }),
+            passed,
+            reruns,
+            new Map(),
+            { count: 0, ms: 0 }
+          )
         )
         const failed = new Map(second.results.flatMap((result) => result.status === "failed" ? [[result.label, result] as const] : []))
         // A step that names none of the files still fails only beside them: the line says so and lists them.
@@ -985,8 +1006,21 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       if (later !== undefined) later.push(own)
       const steps = Scope.provide(effect {
         // A job is a machine: its home and its temporary directory are its own, and gone when it ends.
-        const place = try orFail(machine(way, name), "could not make the home of a job")
-        const directory = try orFail(fresh(path.join(work, `${path.basename(way.home)}-copy-${name}`)), "could not make a directory")
+        // A job with a machine runs where Smithers build puts that machine in each mode; one with none beside the way.
+        const named = sequence[0]?.machine
+        const at = named === undefined ? undefined : machinePaths(machines, checkoutPath, named)
+        const home = at?.home ?? path.join(path.dirname(way.home), `${path.basename(way.home)}-job-${name}`)
+        const tmp = at?.tmp ?? path.join(path.dirname(way.tmp), `${path.basename(way.tmp)}-job-${name}`)
+        const place = try orFail(machine(way, home, tmp), "could not make the home of a job")
+        const directory = try orFail(fresh(at?.tree ?? path.join(work, `${path.basename(way.home)}-copy-${name}`)), "could not make a directory")
+        // What Smithers build tells a target on a machine of its temporary directory, and where git stops looking.
+        const onMachine = at === undefined ? {} : {
+          TMPDIR: tmp,
+          TMP: tmp,
+          TEMP: tmp,
+          [jobTemporaryVariable]: tmp,
+          GIT_CEILING_DIRECTORIES: at.tree
+        }
         const copy = path.join(directory, path.basename(root))
         try cloneAt(copy, commit, place)
         const results: Array<TargetResult> = []
@@ -997,7 +1031,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             continue
           }
           const start = try Clock.currentTimeMillis
-          const [program, ...argv] = held(place, [copy, store], [...shell, step.command])
+          // The job's temporary directory is its `/tmp` and, by its own path, its `TMPDIR`.
+          const [program, ...argv] = held(place, [copy, store, place.tmp], [...shell, step.command])
           // Only a step whose text names the variable is given it: the text takes it away before the step's own
           // script starts, and a step with no such text would hand it on.
           const told = step.command.includes(stateVariable) ? { [stateVariable]: store } : {}
@@ -1010,7 +1045,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           // told its own, or every job would write the person's.
           const temporary = place.jail === undefined ? { TMPDIR: place.tmp } : {}
           const environment = stepEnvironment(
-            { ...temporary, ...found, ...place.daemon, ...run, ...step.env, ...told },
+            { ...temporary, ...onMachine, ...found, ...place.daemon, ...run, ...step.env, ...told },
             place
           )
           // A step that cannot start, for example because its directory does not exist at this commit, has failed.
@@ -1169,14 +1204,16 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       effect function mode(way: "normal" | "fast", site: Site | undefined) {
         if (own === undefined || site === undefined) return undefined
         try progress.say(`first run ${short} ${way}`)
-        const run = measure(
-          checkout(site.copy, at, site.place),
-          equip(site, own),
-          smithers(at, site, own),
-          undefined,
-          0,
-          last[way],
-          tally
+        const run = atCheckout(site, (staged) =>
+          measure(
+            checkout(staged.copy, at, staged.place),
+            equip(staged, own),
+            smithers(at, staged, own),
+            undefined,
+            0,
+            last[way],
+            tally
+          )
         ) catch effect (cause) => {
           try progress.say(`the first run in ${way} mode did not finish: ${firstLine(cause.message)}`)
           return undefined
@@ -1300,15 +1337,17 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           const labels = ran.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
           try progress.say(`${at} fast`)
           try orFail(renew(places.fast), "could not empty the home of fast mode")
-          const sped = try measure(
-            checkout(fast.copy, commit, fast.place),
-            equip(fast, own),
-            smithers(commit, fast, own),
-            labels,
-            reruns,
-            last.fast,
-            tally,
-            counting
+          const sped = try atCheckout(fast, (site) =>
+            measure(
+              checkout(site.copy, commit, site.place),
+              equip(site, own),
+              smithers(commit, site, own),
+              labels,
+              reruns,
+              last.fast,
+              tally,
+              counting
+            )
           )
           const run = fastRunOf(
             ran.results,

@@ -198,3 +198,38 @@ describe("the jobs of a workflow, as the targets the generator writes", () => {
     }, 900_000)
   }
 })
+
+describe("a job's machine", () => {
+  // The third ship review's blocker 6: pre-commit keeps absolute paths of its home in what `actions/cache` saves.
+  // A runner gives a job the same paths at every run, so the baseline and each mode must too. Each job fails with
+  // one of its paths as its error, which a report keeps.
+  const shown = { home: "$HOME", work: "$PWD", temp: "$TMPDIR" }
+  const jobs = Object.entries(shown).map(([name, value]) => job(name, `echo "${value}" >&2; exit 1`))
+  const ends = { home: "home", work: "w/[^/]+", temp: "tmp" }
+  for (
+    const { place, asked, runs } of [
+      { place: "in the jail", asked: jailed, runs: jailable },
+      { place: "on a machine with no jail", asked: unconfined, runs: true }
+    ]
+  ) {
+    it.skipIf(!runs)(`is at the same paths at every commit, in the baseline and in each mode, ${place}`, async () => {
+      const report = await replay(
+        repository([...jobs, job("passes", "true")], two),
+        2,
+        asked,
+        ["normal", "fast"],
+        generating
+      )
+      for (const [name, end] of Object.entries(ends)) {
+        const said = report.commits.flatMap((commit) =>
+          [commit.baseline, commit.normal, commit.fast].map((totals) =>
+            totals?.failures?.find((failure) => failure.step.startsWith(name))?.reason
+          )
+        )
+        expect(said).toHaveLength(6)
+        expect(new Set(said).size).toBe(1)
+        expect(said[0]).toMatch(new RegExp(`^/\\S+/machines/[0-9a-f]{16}/${name}-[0-9a-f]{8}/${end}$`))
+      }
+    }, 900_000)
+  }
+})

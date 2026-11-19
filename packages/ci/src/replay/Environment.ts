@@ -42,6 +42,16 @@ export interface Place {
 export const jobHomeVariable = "SMTHRS_MACHINE_HOME"
 
 /**
+ * The variable that names, to Smithers build, the directory it keeps the
+ * machines of its jobs in. Every way of a replay names the same one, so a
+ * job's machine is at the same paths in the baseline and in each mode.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const machinesVariable = "SMTHRS_MACHINES"
+
+/**
  * The programs no step of a replay can start by name: each has a stand-in
  * that refuses, first on the step's `PATH`.
  *

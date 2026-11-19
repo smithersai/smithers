@@ -711,6 +711,8 @@ describe("a step two jobs both run", () => {
     expect(map.targets.map((entry) => entry.step)).toEqual(["lint:1", "lint:2", "test:1", "test:2"])
     expect(labelsOf(map, "test", "test:1", {})).toEqual(["//:test-1"])
     expect(labelsOf(map, "lint", "lint:1", {})).toEqual(["//:lint-1"])
+    // The target map names each target's machine, so a replay runs the job's baseline at the machine's paths.
+    expect(map.targets.map((entry) => entry.machine)).toEqual(["lint", "lint", "test", "test"])
   })
 
   it("gives each matrix variant a machine of its own, named for the variant", () => {
@@ -726,6 +728,10 @@ describe("a step two jobs both run", () => {
     const recipe = (name: string): Job =>
       job(`justfile:${name}`, [step(`${name}:1`, "make")], { source: "justfile", file: "justfile", triggers: [] })
     expect(targetsOf(inventory([recipe("build"), recipe("test")]))).not.toContain("machine: \"")
+    expect(mapOf(inventory([recipe("build"), recipe("test")])).targets.map((entry) => entry.machine)).toEqual([
+      undefined,
+      undefined
+    ])
   })
 
   it("runs once for two jobs held to the files they name, and names no machine for them", () => {
@@ -1115,9 +1121,9 @@ describe("a step that names what it reads", () => {
     expect(labelsOf(map, "a", "a:2", {})).toEqual(["//:a-2-lint", "//:a-2-types"])
     // Each says which part of the step it is, so a report can name the script that failed.
     expect(map.targets).toEqual([
-      { label: "//:a-1", job: "a", step: "a:1", variant: {} },
-      { label: "//:a-2-lint", job: "a", step: "a:2", variant: {}, part: "lint" },
-      { label: "//:a-2-types", job: "a", step: "a:2", variant: {}, part: "types" }
+      { label: "//:a-1", job: "a", step: "a:1", variant: {}, machine: "a" },
+      { label: "//:a-2-lint", job: "a", step: "a:2", variant: {}, part: "lint", machine: "a" },
+      { label: "//:a-2-types", job: "a", step: "a:2", variant: {}, part: "types", machine: "a" }
     ])
     // A step whose id says nothing after the step it came from is no part of it.
     const unnamed = Schema.decodeUnknownSync(Schema.fromJsonString(TargetMap))(

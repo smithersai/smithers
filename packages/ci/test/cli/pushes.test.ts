@@ -130,19 +130,21 @@ describe("smithers-ci on a repository whose CI pushes", () => {
     expect(refs()).toEqual(before)
     const lines = readFileSync(log, "utf8").trim().split("\n")
     const homes = new Set(lines.map((line) => /home=(.*)$/.exec(line)?.[1]))
-    // Every step ran with a home the replay made for its job: beside the baseline's own home for a baseline job,
-    // and under normal mode's home, where Smithers build keeps a job's machine, for a target.
-    const made = new Set(
-      [...homes].map((home) =>
-        home?.replace(/^.*\/smithers-ci-replay-[^/]*\/home\//, "").split("/")[0]?.replace(/-job-.*$/, "-job")
-      )
-    )
-    expect([...made].sort()).toEqual(["baseline-job", "normal"])
+    // Every step ran in the home of its job's machine, where Smithers build keeps that machine: at the same path in
+    // the baseline and in normal mode, as a runner gives a job one home.
     expect(
-      [...homes].filter((home) => home?.includes("/home/normal/") !== true).every((home) =>
-        /\/home\/baseline-job-[^/]+$/.test(home ?? "")
+      [...homes].every((home) =>
+        /\/smithers-ci-replay-[^/]+\/machines\/[0-9a-f]{16}\/[^/]+-[0-9a-f]{8}\/home$/.test(home ?? "")
       )
     ).toBe(true)
+    const byStep = new Map<string, Set<string>>()
+    for (const line of lines) {
+      const [step, home] = line.split(" ran; home=") as [string, string]
+      byStep.set(step, new Set([...(byStep.get(step) ?? []), home]))
+    }
+    expect([...byStep.values()].map((each) => each.size)).toEqual([...byStep.values()].map(() => 1))
+    // Each job has a home of its own.
+    expect(new Set([...byStep.values()].flatMap((each) => [...each])).size).toBe(byStep.size)
     expect(homes).not.toContain(homedir())
     expect(homes).not.toContain(environment.HOME)
     expect(homes).not.toContain(undefined)

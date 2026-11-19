@@ -54,7 +54,7 @@ import {
   verdictOf
 } from "../contract/RunRecord.ts"
 import { type Metrics, metrics, type Row, type Score, select, type Settings } from "../contract/Selection.ts"
-import { labelsOf as targetsOfStep, partsOf, type TargetMap } from "../contract/TargetMap.ts"
+import { labelsOf as targetsOfStep, machineOf, partsOf, type TargetMap } from "../contract/TargetMap.ts"
 import { failuresOf, notReusedOf, type StepNames } from "./Failures.ts"
 
 /**
@@ -262,6 +262,8 @@ export interface Unit {
   readonly tree?: string | undefined
   /** The matrix variant, for a job that has a matrix. */
   readonly variant?: Readonly<Record<string, string>> | undefined
+  /** The machine its targets run on in each mode (`TargetMap.machineOf`), for a job that has one. */
+  readonly machine?: string | undefined
 }
 
 /**
@@ -400,6 +402,7 @@ export const replayable = (inventory: Ci, map: TargetMap, host: string): Replaya
       needs: job.needs,
       tree: treeOf(job),
       ...(job.matrix.length === 0 ? {} : { variant }),
+      machine: machineOf(map, job.id, variant),
       steps: job.steps.map((step) => {
         const filled = withVariant(step, variant)
         const targets = targetsOfStep(map, job.id, step.id, variant)
@@ -767,6 +770,29 @@ export const runNames = (runs: ReadonlyArray<ReadonlyArray<Unit>>): ReadonlyArra
     seen.set(name, earlier + 1)
     return earlier === 0 ? name : `${name}-${earlier}`
   })
+}
+
+/**
+ * Where Smithers build puts the machine `name` of the workspace at
+ * `checkout`, a real path, when it keeps its machines in `machines`: a
+ * directory named by the checkout's path, and in it one named by the machine,
+ * which holds the machine's home, its temporary directory, and its copy of
+ * the checkout under the checkout's own name. A baseline job with a machine
+ * runs at these paths, so every way runs the job at the same ones.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const machinePaths = (machines: string, checkout: string, name: string) => {
+  const readable = name.replaceAll(/[^A-Za-z0-9._-]+/g, "-").slice(0, 40)
+  const directory = `${machines}/${digestSync(checkout).slice(0, 16)}/${readable}-${digestSync(name).slice(0, 8)}`
+  return {
+    directory,
+    home: `${directory}/home`,
+    tmp: `${directory}/tmp`,
+    tree: `${directory}/w`
+  }
 }
 
 /**

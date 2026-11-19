@@ -690,6 +690,13 @@ describe("contract 11: target map", () => {
     expect(TargetMap.labelsOf(map, "ci.yml:test", "ci.yml:test:1", {})).toEqual([])
   })
 
+  it("names the machine a job's variant runs on, and none for a job with no machine", () => {
+    expect(TargetMap.machineOf(map, "ci.yml:test", { os: "macos-latest" })).toBe("ci.yml:test (os=macos-latest)")
+    expect(TargetMap.machineOf(map, "ci.yml:test", { os: "windows-latest" })).toBeUndefined()
+    expect(TargetMap.machineOf(map, "justfile:build", {})).toBeUndefined()
+    expect(() => Schema.decodeUnknownSync(TargetMap.Entry)({ ...map.targets[0], machine: "" })).toThrow()
+  })
+
   it("reads a variant the same whatever order its keys are in", () => {
     expect(TargetMap.variantKey({ os: "linux", node: "22" })).toBe(TargetMap.variantKey({ node: "22", os: "linux" }))
     expect(TargetMap.variantKey({ os: "linux" })).not.toBe(TargetMap.variantKey({ os: "macos" }))

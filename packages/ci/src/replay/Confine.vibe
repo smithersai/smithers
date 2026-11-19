@@ -343,22 +343,22 @@ export effect function fresh(directory: string) {
 }
 
 /**
- * The place of one job: a home and a temporary directory of its own beside
- * those of `place`, its way, named `name`. A runner gives every job the same
- * home, so a job is given the same paths at every commit (`Summary.runNames`):
- * a tool that wrote one of them into what a cache step saved finds it again
- * when a later job restores it. Both are empty but for the hook, as a CI
- * runner starts each job, and both are removed when the scope closes: no
- * other job and no other commit finds what the job wrote there. The
- * stand-ins, the daemon and what the jail hides are those of the way.
+ * The place of one job: the home `home` and the temporary directory `tmp`,
+ * beside the stand-ins, the daemon and what the jail hides of `place`, its
+ * way. A runner gives every job the same paths, so a job is given the same
+ * ones at every commit and in every way (`Summary.machinePaths`): a tool that
+ * wrote one of them into what a cache step saved finds it again when a later
+ * job restores it. Both are empty but for the hook, as a CI runner starts each
+ * job, and both are removed when the scope closes: no other job and no other
+ * commit finds what the job wrote there.
  *
  * @category constructors
  * @since 0.1.0
  */
-export effect function machine(place: Confined, name: string) {
+export effect function machine(place: Confined, home: string, tmp: string) {
   const path = try Path.Path
-  const home = try fresh(path.join(path.dirname(place.home), `${path.basename(place.home)}-job-${name}`))
-  const tmp = try fresh(path.join(path.dirname(place.tmp), `${path.basename(place.tmp)}-job-${name}`))
+  try fresh(home)
+  try fresh(tmp)
   try furnish(home, place.links)
   return {
     ...place,

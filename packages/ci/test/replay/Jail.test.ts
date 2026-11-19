@@ -313,13 +313,12 @@ describe("a step on a machine with no jail", () => {
       expect(lines.length).toBeGreaterThanOrEqual(4)
       expect(readFileSync(join(out, name), "utf8")).not.toContain("Everything up-to-date")
     }
-    // The baseline's step saw the home of its own job, and the target's saw the home of its job's machine, which
-    // Smithers build keeps under normal mode's home: two homes the replay made, both gone with the replay.
-    const homes = [...new Set(readFileSync(join(out, "home"), "utf8").trim().split("\n"))].sort()
-    const work = /^(.*\/smithers-ci-replay-[^/]+)\/home\//.exec(homes[0] as string)?.[1] as string
-    expect(homes.map((home) => home.slice(work.length + "/home/".length).split("/")[0]?.replace(/-job-.*$/, "-job")))
-      .toEqual(["baseline-job", "normal"])
-    expect(basename(homes[1] as string)).toBe("home")
+    // The baseline's step and the target's saw one home: the home of the job's machine, where Smithers build keeps
+    // it, which the replay made and which is gone with the replay.
+    const homes = [...new Set(readFileSync(join(out, "home"), "utf8").trim().split("\n"))]
+    expect(homes).toHaveLength(1)
+    const work = /^(.*\/smithers-ci-replay-[^/]+)\/machines\//.exec(homes[0] as string)?.[1] as string
+    expect(basename(homes[0] as string)).toBe("home")
     expect(existsSync(work)).toBe(false)
     expect(existsSync(join(out, "written"))).toBe(true)
     expect(said.filter((line) => line.includes("jail"))).toEqual([unjailed(refusal)])

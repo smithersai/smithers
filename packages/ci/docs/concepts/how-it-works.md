@@ -176,10 +176,11 @@ The steps of one job share its checkout, its home and its temporary directory,
 in order, as they share a runner. No other job sees what they write. A matrix
 makes one job for each variant, so each variant has a machine of its own.
 
-A job's machine is at the same paths at every commit, as every job on GitHub
-runs in `/home/runner`. A tool that writes a path into what `actions/cache`
-keeps, as pre-commit writes where it cloned each hook, finds that path again
-when a later commit's job restores the cache.
+A job's machine is at the same paths at every commit, in the baseline and in
+each mode, as every job on GitHub runs in `/home/runner`: its home, its
+checkout and its temporary directory. A tool that writes a path into what
+`actions/cache` keeps, as pre-commit writes where it cloned each hook, finds
+that path again when a later commit's job restores the cache.
 
 It is the same in a replay, in the workflow `apply` writes, and when you run
 `smthrs ci '//...'` yourself: the checkout you run it in is left as it was.
