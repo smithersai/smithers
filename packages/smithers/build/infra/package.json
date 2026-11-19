@@ -17,6 +17,8 @@
     "deploy": "node scripts/deploy.ts --stage prod",
     "deploy:dev": "node scripts/deploy.ts",
     "plan": "node scripts/deploy.ts --stage prod --dry-run",
+    "migrate-state": "node scripts/remote-state.ts migrate",
+    "restore-shared-state": "node scripts/remote-state.ts restore",
     "test": "vitest run",
     "lint": "eslint worker scripts deployment.ts alchemy.run.ts --max-warnings=0 && dprint check"
   },

@@ -27,7 +27,7 @@ import {
   r2CredentialsFromApiToken,
   r2StateBucket,
   readStateSnapshot,
-  remoteStateFromEnvironment,
+  stateBucketFromEnvironment,
   stateBucketName,
   stateObjectKey,
   WeakEtagError,
@@ -162,12 +162,14 @@ describe("state snapshots", () => {
         const { outside, state } = await linkedState(shape)
         const before = await contents(outside)
         const bucket = memoryStateBucket()
-        await bucket.put(stateObjectKey, snapshot, { ifAbsent: true })
+        await bucket.put(stateObjectKey("prod"), snapshot, { ifAbsent: true })
 
-        await expect(openRemoteState({ bucket, key: stateObjectKey }, state, holder)).rejects.toThrow(refusal(state))
+        await expect(openRemoteState({ bucket, key: stateObjectKey("prod") }, state, holder)).rejects.toThrow(
+          refusal(state)
+        )
 
         expect(await contents(outside)).toEqual(before)
-        expect([...bucket.objects.keys()]).toEqual([stateObjectKey])
+        expect([...bucket.objects.keys()]).toEqual([stateObjectKey("prod")])
       }
     )
   })
@@ -704,25 +706,26 @@ describe("R2 credentials", () => {
     )
   })
 
-  it("builds the production remote state from the deploying shell", async () => {
+  it("reaches the production state bucket from the deploying shell", async () => {
     const { fetch, requests } = recordingFetch((request) =>
       request.url.startsWith("https://api.cloudflare.com")
         ? Response.json({ success: true, result: { id: "token-id" } })
         : new Response("", { status: 404 })
     )
 
-    const remote = await remoteStateFromEnvironment({ CLOUDFLARE_API_TOKEN: "t", CLOUDFLARE_ACCOUNT_ID: "acct" }, fetch)
-    expect(remote.key).toBe(stateObjectKey)
-    expect(await remote.bucket.get(remote.key)).toBeUndefined()
+    const bucket = await stateBucketFromEnvironment({ CLOUDFLARE_API_TOKEN: "t", CLOUDFLARE_ACCOUNT_ID: "acct" }, fetch)
+    expect(await bucket.get(stateObjectKey("prod"))).toBeUndefined()
 
-    expect(stateObjectKey).toBe(`alchemy/${stackName}.json`)
-    expect(requests[1]!.url).toBe(`https://acct.r2.cloudflarestorage.com/${stateBucketName}/${stateObjectKey}`)
+    expect(stateObjectKey("prod")).toBe(`alchemy/${stackName}/prod.json`)
+    expect(requests[1]!.url).toBe(
+      `https://acct.r2.cloudflarestorage.com/${stateBucketName}/alchemy/${stackName}/prod.json`
+    )
   })
 
   it.each([
     [{ CLOUDFLARE_ACCOUNT_ID: "acct" }, /CLOUDFLARE_API_TOKEN/],
     [{ CLOUDFLARE_API_TOKEN: "t" }, /CLOUDFLARE_ACCOUNT_ID/]
   ])("refuses a deploying shell without Cloudflare credentials", async (env, message) => {
-    await expect(remoteStateFromEnvironment(env, globalThis.fetch)).rejects.toThrow(message)
+    await expect(stateBucketFromEnvironment(env, globalThis.fetch)).rejects.toThrow(message)
   })
 })

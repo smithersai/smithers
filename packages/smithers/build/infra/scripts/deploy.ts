@@ -14,11 +14,14 @@ import { failureMessage } from "./failure-message.ts"
 import { defaultStateDirectory, redactAlchemyState, type RedactAlchemyStateOptions } from "./redact-state.ts"
 import {
   openRemoteState,
-  type RemoteState,
-  remoteStateFromEnvironment,
+  refuseSharedState,
   remoteStateRequest,
   type RemoteStateSession,
-  remoteStateTimeoutMs
+  remoteStateTimeoutMs,
+  stagePattern,
+  type StateBucket,
+  stateBucketFromEnvironment,
+  stateObjectKey
 } from "./remote-state.ts"
 import { acquireStateOwnership, type StateOwnership } from "./state-ownership.ts"
 import { resolveStateRoot } from "./state-root.ts"
@@ -83,12 +86,15 @@ const processGroupExists = (pid: number): boolean => {
 export interface DeployOptions {
   readonly cli?: string | undefined
   readonly cwd?: string | undefined
-  /** The Alchemy state directory the wrapper owns for the whole run. */
+  /**
+   * The stack's Alchemy state directory, which the wrapper owns for the whole
+   * run. Each stage's working copy is the directory named after it inside.
+   */
   readonly stateDirectory?: string | undefined
   readonly redact?: ((options: RedactAlchemyStateOptions) => Promise<number>) | undefined
   readonly escalationDelayMs?: number | undefined
-  /** Where the durable copy of the state lives; defaults to the production R2 bucket. */
-  readonly remoteState?: ((signal?: AbortSignal) => Promise<RemoteState>) | undefined
+  /** Where the durable copies of the stages' state live; defaults to the production R2 bucket. */
+  readonly stateBucket?: ((signal?: AbortSignal) => Promise<StateBucket>) | undefined
   /** Deadline for each remote operation, including independent lock cleanup. */
   readonly remoteStateTimeoutMs?: number | undefined
 }
@@ -105,7 +111,7 @@ export interface ResolvedDeployOptions {
   readonly stateDirectory: string
   readonly redact: (options: RedactAlchemyStateOptions) => Promise<number>
   readonly escalationDelayMs: number
-  readonly remoteState: (signal?: AbortSignal) => Promise<RemoteState>
+  readonly stateBucket: (signal?: AbortSignal) => Promise<StateBucket>
   readonly remoteStateTimeoutMs: number
 }
 
@@ -123,8 +129,8 @@ export const resolveDeployOptions = (options: DeployOptions): ResolvedDeployOpti
   stateDirectory: options.stateDirectory ?? defaultStateDirectory,
   redact: options.redact ?? redactAlchemyState,
   escalationDelayMs: options.escalationDelayMs ?? escalationDelayMs,
-  remoteState: options.remoteState ??
-    ((signal) => remoteStateFromEnvironment(process.env, globalThis.fetch, { signal })),
+  stateBucket: options.stateBucket ??
+    ((signal) => stateBucketFromEnvironment(process.env, globalThis.fetch, { signal })),
   remoteStateTimeoutMs: options.remoteStateTimeoutMs ?? remoteStateTimeoutMs
 })
 
@@ -143,13 +149,6 @@ export const developmentStage = (environment: NodeJS.ProcessEnv = process.env): 
   `dev_${environment["USER"] || environment["USERNAME"] || "unknown"}`
 
 /**
- * The stage names the wrapper accepts: Alchemy's own `--stage` rule, a letter
- * or digit followed by letters, digits, `-` and `_`. The stage names a
- * directory under the state directory, so nothing else may reach a path.
- */
-const stagePattern = /^[A-Za-z0-9][-_A-Za-z0-9]*$/
-
-/**
  * The stage one wrapper invocation acts on, and the arguments Alchemy gets.
  *
  * pnpm forwards the `--` in `pnpm run deploy -- --yes` literally, and Alchemy
@@ -158,7 +157,7 @@ const stagePattern = /^[A-Za-z0-9][-_A-Za-z0-9]*$/
  * arguments keep their positions.
  *
  * @throws An `Error` for a stage named twice, a `--stage` with no value, or a
- * name {@link stagePattern} refuses.
+ * name `stagePattern` refuses.
  */
 const stageArguments = (
   args: ReadonlyArray<string>
@@ -222,15 +221,17 @@ const runAlchemy = (
  * match Alchemy's stage rule; a stage named twice or an unsafe name is refused
  * before anything else happens. Redaction walks only that stage's directory.
  *
- * The local state directory is a working copy. Before Alchemy starts, the
- * wrapper takes the remote lock and pulls the R2 snapshot over it; after
- * redaction it publishes the snapshot back, conditioned on the version it
- * pulled, whether or not Alchemy succeeded, because a failed run can still
- * have created resources that only its state records. A state directory that
- * is relative or reached through a symbolic link, a held remote lock, or any
- * failure to reach R2 refuses the run before Alchemy starts, and the linked
- * directory is refused before anything is created or pulled into its target.
- * State that failed redaction is never published.
+ * The stage's local state directory is a working copy of the stage's own R2
+ * object. Before Alchemy starts, the wrapper takes that object's lock and
+ * pulls its snapshot over the directory; after redaction it publishes the
+ * snapshot back, conditioned on the version it pulled, whether or not Alchemy
+ * succeeded, because a failed run can still have created resources that only
+ * its state records. No other stage's object is read, locked, or published.
+ * A state directory that is relative or reached through a symbolic link, a
+ * held remote lock, state still in the shared layout from before per-stage
+ * objects, or any failure to reach R2 refuses the run before Alchemy starts,
+ * and the linked directory is refused before anything is created or pulled
+ * into its target. State that failed redaction is never published.
  *
  * The wrapper owns the state directory from before Alchemy starts until
  * redaction has published its last file, so no other deployment or standalone
@@ -256,8 +257,8 @@ export const deploy = async (
     cwd,
     escalationDelayMs: escalationDelay,
     redact,
-    remoteState,
     remoteStateTimeoutMs: timeoutMs,
+    stateBucket,
     stateDirectory
   } = resolveDeployOptions(
     options
@@ -273,13 +274,18 @@ export const deploy = async (
     // refusal would come only after they were lost.
     await resolveStateRoot(stateDirectory)
     // Alchemy creates the state directory on first use; creating it here lets
-    // ownership exist before Alchemy writes anything into it.
+    // ownership exist before Alchemy writes anything into it. Ownership is the
+    // stack directory's, not the stage's: Alchemy's destroy deletes the stage
+    // directory, and the ownership database must never be deleted while held.
     await Fs.mkdir(stateDirectory, { recursive: true })
     ownership = await acquireStateOwnership(stateDirectory)
   } catch (error) {
     process.stderr.write(`Alchemy deployment refused: ${failureMessage(error)}\n`)
     return 1
   }
+  // Alchemy keeps a stage's state in `<stack state directory>/<stage>`, so that
+  // directory is the stage's working copy of its own R2 object.
+  const stageDirectory = NodePath.join(stateDirectory, invocation.stage)
   const initialization = new AbortController()
   let activeChild: ChildProcess | undefined
   let requestedSignal: NodeJS.Signals | undefined
@@ -329,12 +335,13 @@ export const deploy = async (
   let remote: RemoteStateSession
   try {
     const requestOptions = { signal: initialization.signal, timeoutMs }
-    const state = await remoteStateRequest(
+    const bucket = await remoteStateRequest(
       "remote state initialization",
-      (signal) => remoteState(signal),
+      (signal) => stateBucket(signal),
       requestOptions
     )
-    remote = await openRemoteState(state, stateDirectory, {
+    await refuseSharedState(bucket, stateDirectory, invocation.stage, requestOptions)
+    remote = await openRemoteState({ bucket, key: stateObjectKey(invocation.stage) }, stageDirectory, {
       host: NodeOs.hostname(),
       pid: process.pid,
       startedAt: new Date().toISOString()
@@ -379,7 +386,7 @@ export const deploy = async (
       // Only the deployed stage's directory: another stage's verifiers derive
       // from tokens this shell does not hold, and rewriting them would be
       // published as that stage's state.
-      const redactedFiles = await redact({ directory: NodePath.join(stateDirectory, invocation.stage), ownership })
+      const redactedFiles = await redact({ directory: stageDirectory, ownership })
       process.stdout.write(`Redacted ${redactedFiles} Alchemy Worker state file(s).\n`)
     } catch (error) {
       redactionFailure = error

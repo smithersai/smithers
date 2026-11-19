@@ -9,7 +9,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import { stateSyncVariable } from "../deployment.ts"
 import { deploy as deployWrapper, type DeployOptions, developmentStage, resolveDeployOptions } from "./deploy.ts"
 import { defaultStateDirectory, redactAlchemyState } from "./redact-state.ts"
-import { memoryStateBucket, r2StateBucket, type StateBucket } from "./remote-state.ts"
+import {
+  legacyStateObjectKey,
+  memoryStateBucket,
+  migrateSharedState,
+  r2StateBucket,
+  type StateBucket,
+  stateObjectKey
+} from "./remote-state.ts"
 import { acquireStateOwnership } from "./state-ownership.ts"
 
 const infraRoot = NodePath.resolve(fileURLToPath(new URL("..", import.meta.url).href))
@@ -22,7 +29,7 @@ let directory: string
  */
 const deploy = (args: ReadonlyArray<string>, options: DeployOptions): Promise<number> =>
   deployWrapper(args, {
-    remoteState: async () => ({ bucket: memoryStateBucket(), key: "alchemy/Test.json" }),
+    stateBucket: async () => memoryStateBucket(),
     ...options
   })
 
@@ -316,7 +323,7 @@ describe("deploy wrapper", () => {
         cwd: directory,
         stateDirectory: state,
         redact: async () => (redactions += 1, 0),
-        remoteState: async () => ({ bucket, key: "alchemy/Test.json" })
+        stateBucket: async () => bucket
       })
 
       expect(code).toBe(1)
@@ -393,7 +400,7 @@ describe("deploy wrapper", () => {
     // the deploying shell's Cloudflare credentials.
     vi.stubEnv("CLOUDFLARE_API_TOKEN", "")
     try {
-      await expect(resolved.remoteState()).rejects.toThrow("CLOUDFLARE_API_TOKEN is required")
+      await expect(resolved.stateBucket()).rejects.toThrow("CLOUDFLARE_API_TOKEN is required")
     } finally {
       vi.unstubAllEnvs()
     }
@@ -617,7 +624,7 @@ process.exitCode = await deploy([], {
   cli: ${JSON.stringify(script("writes-state"))},
   cwd: ${JSON.stringify(directory)},
   stateDirectory: ${JSON.stringify(state)},
-  remoteState: async () => { throw new WeakEtagError(${JSON.stringify({ key, etag })}) }
+  stateBucket: async () => { throw new WeakEtagError(${JSON.stringify({ key, etag })}) }
 })
 `
     ], { cwd: infraRoot, encoding: "utf8", timeout: 10_000 })
@@ -890,6 +897,9 @@ describe("deploy wrapper remote state", () => {
   const snapshotOf = (files: Record<string, string>): string =>
     JSON.stringify({ format: "smithers-alchemy-state/1", files }, null, 2)
 
+  /** The production stage's own state object; `run` deploys that stage. */
+  const key = stateObjectKey("prod")
+
   const run = async (
     bucket: StateBucket,
     exitCode: string,
@@ -904,12 +914,12 @@ describe("deploy wrapper remote state", () => {
       return true
     })
     try {
-      const code = await deployWrapper([state, exitCode], {
+      const code = await deployWrapper([state, exitCode, "--stage", "prod"], {
         cli: script("writes-state"),
         cwd: directory,
         stateDirectory: state,
         redact: async () => 0,
-        remoteState: async () => ({ bucket, key: "alchemy/Test.json" }),
+        stateBucket: async () => bucket,
         ...extra
       })
       const seenFile = NodePath.join(root, "seen.json")
@@ -926,39 +936,47 @@ describe("deploy wrapper remote state", () => {
 
   it("pulls production state before Alchemy runs and publishes what it wrote", async () => {
     const bucket = memoryStateBucket()
-    await bucket.put("alchemy/Test.json", snapshotOf({ "prod/CacheWorker.json": `{"live":true}` }), { ifAbsent: true })
+    await bucket.put(key, snapshotOf({ "CacheWorker.json": `{"live":true}` }), { ifAbsent: true })
 
     const { code, seen } = await run(bucket, "0")
 
     expect(code).toBe(0)
     expect(seen).toEqual({ synced: "1", pulled: `{"live":true}` })
-    expect(JSON.parse(bucket.objects.get("alchemy/Test.json")!.body).files).toEqual({
-      "prod/CacheWorker.json": `{"deployed":true}`
+    expect(JSON.parse(bucket.objects.get(key)!.body).files).toEqual({
+      "CacheWorker.json": `{"deployed":true}`
     })
-    expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(false)
+    expect(bucket.objects.has(`${key}.lock`)).toBe(false)
   })
 
   /**
    * A stage's credential verifiers derive from that stage's tokens, which the
-   * deploying shell holds only for the stage it deploys. Redaction that walked
-   * every stage replaced the others' verifiers with the sentinel, and redaction
-   * that read only `CacheWorker.json` left the sandbox bearer in place.
+   * deploying shell holds only for the stage it deploys. One shared object
+   * made every deployment lock, pull and republish every stage, and redaction
+   * that walked every stage replaced the others' verifiers with the sentinel.
    */
-  it("redacts only the stage it deploys, including its sandbox Worker's bearer", async () => {
-    const bucket = memoryStateBucket()
-    const root = await realpath(await mkdtemp(NodePath.join(directory, "stage-redaction-")))
+  it("reads, locks and publishes only the stage it deploys, and redacts that stage's sandbox bearer", async () => {
+    const memory = memoryStateBucket()
+    const touched: Array<string> = []
+    const bucket: StateBucket = {
+      get: async (target) => (touched.push(`GET ${target}`), memory.get(target)),
+      put: async (target, body, condition) => (touched.push(`PUT ${target}`), memory.put(target, body, condition)),
+      delete: async (target) => (touched.push(`DELETE ${target}`), memory.delete(target))
+    }
+    const root = await realpath(await mkdtemp(NodePath.join(directory, "stage-isolation-")))
     const sha256 = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex")
     const workerState = (name: string, value: string): string =>
       JSON.stringify({
         props: { env: { [name]: { __redacted__: value } } },
         bindings: [{ sid: name, data: { bindings: [{ type: "secret_text", name, text: value }] } }]
       })
-    const production = workerState("CACHE_READ_TOKEN", sha256("production-read-credential-2026"))
+    const production = snapshotOf({ "CacheWorker.json": workerState("CACHE_READ_TOKEN", sha256("production-read-2026")) })
+    await memory.put(key, production, { ifAbsent: true })
+    const productionEtag = memory.objects.get(key)!.etag
+    const stage = stateObjectKey("needlefish_poc")
     const sandboxBearer = "needlefish-sandbox-bearer-2026"
-    await bucket.put("alchemy/Test.json", snapshotOf({
-      "prod/CacheWorker.json": production,
-      "needlefish_poc/SandboxWorker.json": workerState("SANDBOX_TOKEN", sandboxBearer)
-    }), { ifAbsent: true })
+    await memory.put(stage, snapshotOf({ "SandboxWorker.json": workerState("SANDBOX_TOKEN", sandboxBearer) }), {
+      ifAbsent: true
+    })
     vi.stubEnv("SMITHERS_CACHE_TOKEN", "")
     vi.stubEnv("SMITHERS_CACHE_READ_TOKEN", "needlefish-read-credential-2026")
     vi.stubEnv("SMITHERS_CACHE_WRITE_TOKEN", "needlefish-write-credential-2026")
@@ -968,19 +986,85 @@ describe("deploy wrapper remote state", () => {
         cli: script("exit-zero"),
         cwd: directory,
         stateDirectory: NodePath.join(root, "state"),
-        remoteState: async () => ({ bucket, key: "alchemy/Test.json" })
+        stateBucket: async () => bucket
       })
 
       expect(code).toBe(0)
-      const files = JSON.parse(bucket.objects.get("alchemy/Test.json")!.body).files
-      expect(files["prod/CacheWorker.json"]).toBe(production)
-      expect(files["needlefish_poc/SandboxWorker.json"]).not.toContain(sandboxBearer)
-      expect(JSON.parse(files["needlefish_poc/SandboxWorker.json"]).props.env.SANDBOX_TOKEN.__redacted__).toBe(
-        "__SMITHERS_CACHE_TOKEN_REDACTED__"
-      )
+      expect(touched).toEqual([
+        `GET ${legacyStateObjectKey}`,
+        `PUT ${stage}.lock`,
+        `GET ${stage}`,
+        `PUT ${stage}`,
+        `DELETE ${stage}.lock`
+      ])
+      expect(memory.objects.get(key)).toEqual({ body: production, etag: productionEtag })
+      const published = JSON.parse(JSON.parse(memory.objects.get(stage)!.body).files["SandboxWorker.json"])
+      expect(JSON.stringify(published)).not.toContain(sandboxBearer)
+      expect(published.props.env.SANDBOX_TOKEN.__redacted__).toBe("__SMITHERS_CACHE_TOKEN_REDACTED__")
+      // The working copy is the stage's own directory under the stack's.
+      expect(existsSync(NodePath.join(root, "state", "needlefish_poc", "SandboxWorker.json"))).toBe(true)
+      expect(existsSync(NodePath.join(root, "state", "prod"))).toBe(false)
     } finally {
       vi.unstubAllEnvs()
       stdout.mockRestore()
+    }
+  })
+
+  it("refuses to deploy while the shared object still holds every stage, and names the migration", async () => {
+    const bucket = memoryStateBucket()
+    await bucket.put(legacyStateObjectKey, snapshotOf({ "prod/CacheWorker.json": `{"live":true}` }), {
+      ifAbsent: true
+    })
+
+    const { code, seen, stderr } = await run(bucket, "0")
+
+    expect(code).toBe(1)
+    expect(seen).toBeUndefined()
+    expect(stderr).toContain(`still the shared object smithers-build-infra-state/${legacyStateObjectKey}`)
+    expect(stderr).toContain("pnpm run migrate-state -- --dry-run")
+    expect([...bucket.objects.keys()]).toEqual([legacyStateObjectKey])
+  })
+
+  it("deploys from the stage's own object once the shared object is migrated", async () => {
+    const bucket = memoryStateBucket()
+    await bucket.put(legacyStateObjectKey, snapshotOf({ "prod/CacheWorker.json": `{"live":true}` }), {
+      ifAbsent: true
+    })
+    // The migration runs from a machine with no unpublished shared-layout state.
+    await migrateSharedState(bucket, directory, { host: "operator", pid: 1, startedAt: "now" })
+
+    const { code, seen } = await run(bucket, "0")
+
+    expect(code).toBe(0)
+    expect(seen).toEqual({ synced: "1", pulled: `{"live":true}` })
+    expect(JSON.parse(bucket.objects.get(key)!.body).files).toEqual({ "CacheWorker.json": `{"deployed":true}` })
+  })
+
+  it("refuses local state a deployment from before per-stage state never published", async () => {
+    const bucket = memoryStateBucket()
+    const root = await realpath(await mkdtemp(NodePath.join(directory, "shared-marker-")))
+    const state = NodePath.join(root, "state")
+    const marker = NodePath.join(state, ".smithers-unpublished-state")
+    await mkdir(state)
+    await writeFile(marker, JSON.stringify({ format: "smithers-unpublished-state/1", etag: null, baseline: "x" }))
+    const errors: Array<string> = []
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => (errors.push(String(chunk)), true))
+    try {
+      const code = await deployWrapper([state, "0", "--stage", "prod"], {
+        cli: script("writes-state"),
+        cwd: directory,
+        stateDirectory: state,
+        redact: async () => 0,
+        stateBucket: async () => bucket
+      })
+
+      expect(code).toBe(1)
+      expect(errors.join("")).toContain(`${marker} records state a deployment from before per-stage state`)
+      expect(bucket.objects.size).toBe(0)
+      expect(existsSync(NodePath.join(root, "seen.json"))).toBe(false)
+      expect(existsSync(lockFileIn(state))).toBe(false)
+    } finally {
+      stderr.mockRestore()
     }
   })
 
@@ -990,8 +1074,8 @@ describe("deploy wrapper remote state", () => {
     const { code } = await run(bucket, "7")
 
     expect(code).toBe(7)
-    expect(bucket.objects.has("alchemy/Test.json")).toBe(true)
-    expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(false)
+    expect(bucket.objects.has(key)).toBe(true)
+    expect(bucket.objects.has(`${key}.lock`)).toBe(false)
   })
 
   it.each([
@@ -1008,7 +1092,7 @@ describe("deploy wrapper remote state", () => {
     const { link, state } = shape(root)
     await symlink(outside, link)
     const bucket = memoryStateBucket()
-    await bucket.put("alchemy/Test.json", snapshotOf({ "prod/CacheWorker.json": `{"live":true}` }), { ifAbsent: true })
+    await bucket.put(key, snapshotOf({ "CacheWorker.json": `{"live":true}` }), { ifAbsent: true })
     const marker = NodePath.join(root, "refused")
     const errors: Array<string> = []
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
@@ -1017,12 +1101,12 @@ describe("deploy wrapper remote state", () => {
     })
     let redactions = 0
     try {
-      const code = await deployWrapper([marker], {
+      const code = await deployWrapper([marker, "--stage", "prod"], {
         cli: script("ignores-sigterm"),
         cwd: directory,
         stateDirectory: state,
         redact: async () => (redactions += 1, 0),
-        remoteState: async () => ({ bucket, key: "alchemy/Test.json" })
+        stateBucket: async () => bucket
       })
 
       expect(code).toBe(1)
@@ -1033,7 +1117,7 @@ describe("deploy wrapper remote state", () => {
       // the link's target holds exactly the bytes it held before.
       expect(existsSync(`${marker}.ready`)).toBe(false)
       expect(redactions).toBe(0)
-      expect([...bucket.objects.keys()]).toEqual(["alchemy/Test.json"])
+      expect([...bucket.objects.keys()]).toEqual([key])
       expect(await readdir(outside, { recursive: true })).toEqual(["important.json"])
       expect(readFileSync(NodePath.join(outside, "important.json"), "utf8")).toBe(`{"keep":"me"}`)
     } finally {
@@ -1043,7 +1127,7 @@ describe("deploy wrapper remote state", () => {
 
   it("refuses to start Alchemy while another deployment holds the remote lock", async () => {
     const bucket = memoryStateBucket()
-    await bucket.put("alchemy/Test.json.lock", JSON.stringify({ host: "ci", pid: 9, startedAt: "then" }), {
+    await bucket.put(`${key}.lock`, JSON.stringify({ host: "ci", pid: 9, startedAt: "then" }), {
       ifAbsent: true
     })
 
@@ -1052,13 +1136,13 @@ describe("deploy wrapper remote state", () => {
     expect(code).toBe(1)
     expect(seen).toBeUndefined()
     expect(stderr).toContain("locked by ci pid 9")
-    expect(bucket.objects.has("alchemy/Test.json")).toBe(false)
+    expect(bucket.objects.has(key)).toBe(false)
   })
 
   it("refuses to start Alchemy when R2 cannot be reached, and frees local ownership", async () => {
     const bucket = memoryStateBucket()
     const { code, seen, stderr } = await run(bucket, "0", {
-      remoteState: async () => {
+      stateBucket: async () => {
         throw new Error("CLOUDFLARE_API_TOKEN is required to reach the R2 state bucket")
       }
     })
@@ -1074,10 +1158,10 @@ describe("deploy wrapper remote state", () => {
       const bucket = memoryStateBucket()
       const interrupting: StateBucket = {
         ...bucket,
-        get: async (key) => {
+        get: async (target) => {
           // The lock is taken; the operator presses Ctrl-C during the pull.
-          process.emit(signal)
-          return bucket.get(key)
+          if (target === key) process.emit(signal)
+          return bucket.get(target)
         }
       }
 
@@ -1085,8 +1169,8 @@ describe("deploy wrapper remote state", () => {
 
       expect(code).toBe(exitCode)
       expect(seen).toBeUndefined()
-      expect(bucket.objects.has("alchemy/Test.json")).toBe(false)
-      expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(false)
+      expect(bucket.objects.has(key)).toBe(false)
+      expect(bucket.objects.has(`${key}.lock`)).toBe(false)
       expect(process.listenerCount(signal)).toBe(0)
     }
   )
@@ -1100,7 +1184,8 @@ describe("deploy wrapper remote state", () => {
       let pullSignal: AbortSignal | undefined
       const stuck: StateBucket = {
         ...bucket,
-        get: async (_key, signal) => {
+        get: async (target, signal) => {
+          if (target === legacyStateObjectKey) return bucket.get(target)
           pullSignal = signal
           pulling = true
           await new Promise<void>(resolve => { resume = resolve })
@@ -1111,7 +1196,7 @@ describe("deploy wrapper remote state", () => {
         const pending = run(stuck, "0", { stateDirectory: state })
         try {
           await vi.waitFor(() => expect(pulling).toBe(true))
-          expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(true)
+          expect(bucket.objects.has(`${key}.lock`)).toBe(true)
           process.emit(signal)
           process.emit(signal)
           const result = await Promise.race([
@@ -1122,7 +1207,7 @@ describe("deploy wrapper remote state", () => {
           expect(result?.seen).toBeUndefined()
           expect(existsSync(NodePath.join(state, "prod", "CacheWorker.json"))).toBe(false)
           expect(pullSignal?.aborted).toBe(true)
-          expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(false)
+          expect(bucket.objects.has(`${key}.lock`)).toBe(false)
           const ownership = await acquireStateOwnership(state)
           await ownership.release()
         } finally {
@@ -1158,6 +1243,8 @@ describe("deploy wrapper remote state", () => {
             deleted = true
             return new Response(null, { status: 204 })
           }
+          // No shared object from before per-stage state exists.
+          if (new URL(request.url).pathname.endsWith(legacyStateObjectKey)) return new Response(null, { status: 404 })
           expect(new URL(request.url).pathname.endsWith(".lock")).toBe(true)
           return new Response(lockBody, { headers: { etag: '"lock"' } })
         }
@@ -1195,6 +1282,7 @@ describe("deploy wrapper remote state", () => {
           locked = false
           return new Response(null, { status: 204 })
         }
+        if (new URL(request.url).pathname.endsWith(legacyStateObjectKey)) return new Response(null, { status: 404 })
         reading = true
         requestSignal = request.signal
         return new Response(new ReadableStream({ cancel() { cancelled = true } }), { headers: { etag: '"v1"' } })
@@ -1221,7 +1309,8 @@ describe("deploy wrapper remote state", () => {
       let signal: AbortSignal | undefined
       const bucket: StateBucket = {
         ...memory,
-        get: async (_key, s) => {
+        get: async (target, s) => {
+          if (target === legacyStateObjectKey) return memory.get(target)
           if (stage === "interrupted-cleanup") process.emit("SIGTERM")
           if (stage === "final-cleanup") return undefined
           signal = s
@@ -1237,8 +1326,8 @@ describe("deploy wrapper remote state", () => {
       const result = await withIsolatedSignals(() => run(bucket, "0", {
         stateDirectory: state,
         remoteStateTimeoutMs: 20,
-        remoteState: async s => {
-          if (stage !== "initialization") return { bucket, key: "alchemy/Test.json" }
+        stateBucket: async s => {
+          if (stage !== "initialization") return bucket
           signal = s
           return new Promise(() => {})
         }
@@ -1246,7 +1335,7 @@ describe("deploy wrapper remote state", () => {
       expect(result.code).toBe(1)
       expect(result.stderr).toContain("timed out after 20ms")
       expect(signal?.aborted).toBe(true)
-      expect(memory.objects.has("alchemy/Test.json.lock")).toBe(stage.endsWith("cleanup"))
+      expect(memory.objects.has(`${key}.lock`)).toBe(stage.endsWith("cleanup"))
       const ownership = await acquireStateOwnership(state)
       await ownership.release()
       for (const signal of ["SIGHUP", "SIGINT", "SIGTERM"]) expect(process.listenerCount(signal)).toBe(0)
@@ -1257,7 +1346,7 @@ describe("deploy wrapper remote state", () => {
     const bucket = memoryStateBucket()
     let signal: AbortSignal | undefined
     const result = await withIsolatedSignals(() => run(bucket, "0", {
-      remoteState: async s => {
+      stateBucket: async s => {
         signal = s
         process.emit("SIGTERM")
         return new Promise(() => {})
@@ -1273,9 +1362,9 @@ describe("deploy wrapper remote state", () => {
     const bucket = memoryStateBucket()
     const stuck: StateBucket = {
       ...bucket,
-      get: async (key) => {
-        process.emit("SIGTERM")
-        return bucket.get(key)
+      get: async (target) => {
+        if (target === key) process.emit("SIGTERM")
+        return bucket.get(target)
       },
       delete: async () => {
         throw new Error("R2 state DELETE answered 503")
@@ -1299,15 +1388,15 @@ describe("deploy wrapper remote state", () => {
     })
 
     expect(code).toBe(1)
-    expect(bucket.objects.has("alchemy/Test.json")).toBe(false)
-    expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(false)
+    expect(bucket.objects.has(key)).toBe(false)
+    expect(bucket.objects.has(`${key}.lock`)).toBe(false)
   })
 
   it("fails the run when remote state changed underneath it", async () => {
     const bucket = memoryStateBucket()
     const racing: StateBucket = {
       ...bucket,
-      put: async (key, body, condition) => key.endsWith(".lock") ? bucket.put(key, body, condition) : false
+      put: async (target, body, condition) => target.endsWith(".lock") ? bucket.put(target, body, condition) : false
     }
 
     const { code, stderr } = await run(racing, "0")

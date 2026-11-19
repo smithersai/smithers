@@ -16,6 +16,8 @@ import { errorCode } from "@smthrs/targets/SafeFs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 
+const comparable = (path: string): string => path.normalize("NFC").toLowerCase()
+
 /**
  * Resolves an Alchemy state directory to its canonical root.
  *
@@ -26,7 +28,8 @@ import * as NodePath from "node:path"
  *
  * @returns The canonical root, which is the directory itself, or `null` when
  * the directory does not exist.
- * @throws {TypeError} For a relative directory, a symbolic link in the root or
+ * @throws {TypeError} For a relative directory, another spelling of an
+ * existing directory on a case-insensitive filesystem, a symbolic link in the root or
  * an ancestor, or a root that is not a directory. Other filesystem failures
  * also reject.
  * @category utilities
@@ -50,6 +53,15 @@ export const resolveStateRoot = async (directory: string): Promise<string | null
     throw error
   }
   if (root !== requestedRoot) {
+    // A case-insensitive or normalizing filesystem resolves another spelling
+    // of an existing directory, such as stage `Prod` beside `prod`, to that
+    // directory's own name. That is an alias, not a link.
+    if (comparable(root) === comparable(requestedRoot)) {
+      throw new TypeError(
+        `Alchemy state directory ${directory} is the existing directory ${root} spelled differently; names that ` +
+          `differ only in case or Unicode form share one directory on this filesystem, so use the existing spelling`
+      )
+    }
     throw new TypeError(`symbolic links are not allowed in the Alchemy state root: ${directory}`)
   }
   if (!(await Fs.lstat(root)).isDirectory()) throw new TypeError(`Alchemy state root is not a directory: ${root}`)
