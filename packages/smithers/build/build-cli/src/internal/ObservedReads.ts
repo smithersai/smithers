@@ -1555,6 +1555,12 @@ export const observe = (
     readonly limits?: typeof keptLimits | undefined
     /** The host variables the run was given, whose values are in the record only when the run could have used them. */
     readonly variables?: Variables | undefined
+    /**
+     * Measures a path outside the workspace; {@link measure} unless given. A build gives one that remembers what
+     * it measured ({@link remembering}): a compiler or an interpreter that every step reads is read and hashed
+     * once in a build, and not once for every step.
+     */
+    readonly outside?: ((path: string) => string) | undefined
   }
 ): Observation | { readonly refusal: string; readonly outside?: string | undefined } => {
   if (trace.refusals.length > 0) {
@@ -1566,9 +1572,10 @@ export const observe = (
   const variableNames = Object.keys(variables?.values ?? {}).sort(byCodeUnit)
   /** The files of the workspace the run read that hold each variable's name. */
   const naming = new Map<string, Array<string>>()
+  const beyond = options.outside ?? ((path: string): string => measure(path, io))
   /** Measures a path, and looks for the variables' names in a file of the workspace as it is read. */
   const measured = (path: string): string =>
-    variableNames.length === 0 || !under(path, options.root) ? measure(path, io) : measure(path, {
+    !under(path, options.root) ? beyond(path) : variableNames.length === 0 ? measure(path, io) : measure(path, {
       ...io,
       readFile: (file) => {
         const data = io.readFile(file)

@@ -3367,6 +3367,9 @@ const executeWith = (
                     ...(machine === undefined ? [] : ObservedReads.ignored(root, machine.home, cacheDirectory, []))
                   ],
                   startedMs,
+                  // A tool every step reads is measured once in a build: the build remembers a file that has not
+                  // changed since it was measured.
+                  outside: stateOf,
                   // What a run left in its machine's home or temporary directory is the machine's, wherever machines
                   // are kept: it is kept with what the run left in the tree, and put back on the next machine.
                   temporary: machine === undefined ? temporary() : [...temporary(), machine.home, machine.tmp],

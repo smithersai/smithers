@@ -1016,6 +1016,29 @@ describe("recording what a run read", () => {
     expect(ObservedReads.changed(stored, root, ObservedReads.remembering())).toBeUndefined()
   })
 
+  it("measures a path outside the workspace as its caller says, and a path inside it itself", async () => {
+    const { outside, root } = await setup()
+    const asked: Array<string> = []
+    const trace = ObservedReads.read(() => [open(root, outside), open(root, "src/a.txt")], root)
+    const options = { root, ignore: [], startedMs: Date.now() + 60_000 }
+    // A build remembers what it measured of a tool: it is asked for the path outside, and its answer is the record's.
+    const remembered = ObservedReads.record(trace, {
+      ...options,
+      outside: (path) => {
+        asked.push(path)
+        return "f:remembered"
+      }
+    })
+    expect(asked).toEqual([outside])
+    expect("refusal" in remembered ? [] : remembered.reads).toEqual([
+      [outside, "f:remembered"],
+      ["src/a.txt", ObservedReads.measure(Path.join(root, "src", "a.txt"))]
+    ])
+    // With nobody to ask, every path is measured where it is.
+    const plain = ObservedReads.record(trace, options)
+    expect("refusal" in plain ? [] : plain.reads[0]).toEqual([outside, ObservedReads.measure(outside)])
+  })
+
   it("holds the commit's own files first, then the workspace's smallest, and reads no more once one differs", async () => {
     const { outside, record, root, rows } = await setup()
     await Fs.writeFile(Path.join(root, "src", "large.txt"), "l".repeat(4096))

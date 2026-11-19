@@ -21,17 +21,36 @@ import type { Table, TableHost } from "./Stall.vibe"
 export const defaultCpuTick: Duration.Input = "2 seconds"
 
 /**
- * How often the processes under each step are read where the machine says
- * which processes a process started (`Table.under`). Reading one step's
- * processes costs the same however busy the machine is, so they are read
- * often: of a step's last moments, a quarter of a second at most is not
- * seen, where every two seconds lost a third of the CPU time of a job of
- * four 10 s steps.
+ * The longest time between two readings of the processes under one step,
+ * where the machine says which processes a process started (`Table.under`).
+ * Reading one step's processes costs the same however busy the machine is,
+ * so they are read often: every two seconds lost a third of the CPU time of
+ * a job of four 10 s steps.
  *
  * @category constants
  * @since 0.1.0
  */
 export const nearTick: Duration.Input = "250 millis"
+
+/**
+ * The shortest time between two readings of the processes under one step.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const leastTick: Duration.Input = "50 millis"
+
+/**
+ * A step's processes are read again when this share of the time the step has
+ * run has passed, between {@link leastTick} and {@link nearTick}. What a
+ * step uses after its last reading is not seen, so a step that takes half a
+ * second and one that takes a minute each lose a twentieth of their time at
+ * most, and a step under a second is not lost whole between two readings.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const shareOfAge = 1 / 20
 
 /**
  * Counts the CPU time of process trees. `track` starts counting the tree
@@ -48,16 +67,18 @@ export interface CpuWatch {
 
 /**
  * A watch that reads `table` until its scope closes: the processes under
- * each step every {@link nearTick}, or every `tick` when that is shorter,
- * and where the table cannot read one step's processes, every process of the
- * machine every `tick`.
+ * each step as often as {@link shareOfAge} says, never less often than every
+ * `tick`, and where the table cannot read one step's processes, every
+ * process of the machine every `tick`.
  *
  * @category constructors
  * @since 0.1.0
  */
 export effect function cpuWatch(table: Table, tick: Duration.Input = defaultCpuTick) {
-  const meters = new Map<CpuMeter, { read: boolean }>()
-  const often = Duration.min(Duration.fromInputUnsafe(tick), Duration.fromInputUnsafe(nearTick))
+  const clock = try Clock.Clock
+  const meters = new Map<CpuMeter, { read: boolean; readonly started: number; last: number }>()
+  const most = Duration.toMillis(Duration.min(Duration.fromInputUnsafe(tick), Duration.fromInputUnsafe(nearTick)))
+  const least = Math.min(most, Duration.toMillis(Duration.fromInputUnsafe(leastTick)))
   // Whether one step's processes can be read alone: a table that has the reader may still find that this kernel
   // lists no process's children, and says so the first time it is asked.
   let alone = table.under
@@ -71,6 +92,9 @@ export effect function cpuWatch(table: Table, tick: Duration.Input = defaultCpuT
   }
   effect function each(under: NonNullable<Table["under"]>) {
     for (const [meter, state] of [...meters]) {
+      const now = clock.currentTimeMillisUnsafe()
+      const due = Math.min(most, Math.max(least, (now - state.started) * shareOfAge))
+      if (now - state.last < due) continue
       const entries = try under(meter.root)
       if (entries === undefined) {
         alone = undefined
@@ -78,12 +102,13 @@ export effect function cpuWatch(table: Table, tick: Duration.Input = defaultCpuT
       }
       observe(meter, entries)
       state.read = true
+      state.last = now
     }
   }
   effect function reading() {
     while (true) {
       const under = alone
-      try sleep(under === undefined ? tick : often)
+      try sleep(under === undefined ? tick : Duration.millis(least))
       // Nothing is read while no step runs.
       if (meters.size === 0) continue
       if (under === undefined) try whole()
@@ -94,7 +119,8 @@ export effect function cpuWatch(table: Table, tick: Duration.Input = defaultCpuT
   return {
     track: (pid) => {
       const meter = meterOf(pid)
-      const state = { read: false }
+      const now = clock.currentTimeMillisUnsafe()
+      const state = { read: false, started: now, last: now }
       meters.set(meter, state)
       return () => {
         meters.delete(meter)
