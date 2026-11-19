@@ -180,9 +180,9 @@ export effect function exec(
 /**
  * Runs a past commit's command, a CI step or an install, in the shell's place.
  * `env` is its whole environment, and it is stopped, and has failed, when it
- * runs longer than `limit` or makes no progress for `stall`. The start of its error output and the end of what
- * it printed are kept: the first says why it failed, and the second does when
- * it wrote no error. `count` is told the process when it starts, and when it
+ * runs longer than `limit` or makes no progress for `stall`. The end of its error output and of what it
+ * printed are kept: the last line that reports an error says why it failed,
+ * wherever a tool printed it. `count` is told the process when it starts, and when it
  * has ended.
  *
  * @category running
@@ -214,7 +214,7 @@ export effect function runStep(
     const stdout = try Ref.make("")
     const watch = try watchFor(stall.minutes, stall.table)
     const readers = fork all([
-      keep(touching(handle.stderr, watch), stderr, (text, chunk) => text.length < outputLimit ? (text + chunk).slice(0, outputLimit) : text),
+      keep(touching(handle.stderr, watch), stderr, (text, chunk) => (text + chunk).slice(-outputLimit)),
       keep(touching(handle.stdout, watch), stdout, (text, chunk) => (text + chunk).slice(-outputLimit))
     ], { concurrency: "unbounded" })
     const waited = try timeoutOption(exitOrStall(handle, watch), limit)

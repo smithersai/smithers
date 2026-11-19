@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import type { TargetResult } from "../../src/contract/RunRecord.ts"
 import {
@@ -49,9 +50,21 @@ describe("why a command failed", () => {
     expect(reasonOf({ stderr: "docker: command not found", stdout: "" })).toBe("docker: command not found")
   })
 
-  it("is the first line of the error output, without its colors", () => {
-    expect(reasonOf({ exitCode: 1, stderr: "\n\u001b[31;1mfirst\u001b[0m problem\nsecond\n", stdout: "ignored" }))
-      .toBe("first problem")
+  it("is the last line of the error output that reports an error, without its colors", () => {
+    expect(reasonOf({ exitCode: 1, stderr: "\n\u001b[31;1mfirst\u001b[0m failed\nsecond\n", stdout: "ignored" }))
+      .toBe("first failed")
+    expect(reasonOf({ exitCode: 1, stderr: "error: first\nnote\nerror: second\nnote\n", stdout: "" }))
+      .toBe("error: second")
+    // A line that reports an error is the reason though it holds a percentage.
+    expect(reasonOf({ exitCode: 1, stderr: "error: 100% of the checks failed\nDownloading 5%\n", stdout: "" }))
+      .toBe("error: 100% of the checks failed")
+  })
+
+  it("is the last lines of the output as they are when no line reports an error", () => {
+    expect(reasonOf({ exitCode: 1, stderr: "\nfirst problem\nsecond\n", stdout: "" })).toBe("second")
+    expect(reasonOf({ exitCode: 1, stderr: "\nfirst problem\nsecond\n", stdout: "printed last\n" }))
+      .toBe("printed last")
+    expect(reasonOf({ exitCode: 1, stderr: "", stdout: "running\nthe check broke\n" })).toBe("the check broke")
   })
 
   it("is the line that names the error when a heading comes first, as a test runner prints the file's name", () => {
@@ -69,10 +82,11 @@ describe("why a command failed", () => {
       .toBe("ValueError: no")
     expect(reasonOf({ exitCode: 1, stderr: "\u001b[31mTypeError\u001b[0m: x is not a function\n", stdout: "" }))
       .toBe("TypeError: x is not a function")
-    expect(reasonOf({ exitCode: 1, stderr: "results:\nerrors: 0\nerror_log off\n", stdout: "" })).toBe("results:")
-    // A first line that is no heading is the reason, though a line that names an error follows.
+    // A count of errors reports none.
+    expect(reasonOf({ exitCode: 1, stderr: "results:\nerrors: 0\nerror_log off\n", stdout: "" })).toBe("error_log off")
+    // The last line that reports an error is the reason, though another came first.
     expect(reasonOf({ exitCode: 1, stderr: "push refused\nerror: failed to push some refs\n", stdout: "" }))
-      .toBe("push refused")
+      .toBe("error: failed to push some refs")
   })
 
   it("is the last printed line when the command wrote no error, and says when it printed nothing", () => {
@@ -91,6 +105,95 @@ describe("why a command failed", () => {
     expect(reasonOf({ exitCode: 1, stderr: "API_TOKEN=abc123 was refused", stdout: "" }))
       .toBe("[withheld] was refused")
     expect(commandLine(`curl -H "Authorization: Bearer ${token}" x\nsecond`)).not.toContain(token)
+  })
+})
+
+/** Real output of failed steps: the reviewer's ni step, and npm, cargo and pytest. */
+const steps = JSON.parse(readFileSync(new URL("../fixtures/failed-steps.json", import.meta.url), "utf8")) as Record<
+  "ni" | "npm" | "cargo" | "pytest",
+  { readonly exitCode: number; readonly stderr: string; readonly stdout: string }
+>
+
+describe("a reason that is never a progress line", () => {
+  it("is the line that says what failed when pnpm prints its progress around it", () => {
+    expect(reasonOf(steps.ni)).toBe(
+      `Check failed (404): {"url":"/check","statusCode":404,"statusMessage":"Not Found","message":"There is no workflow defined for RlitinZTAm","stack":""}`
+    )
+  })
+
+  it("is npm's last line that reports an error, not where its log is or a bare code", () => {
+    expect(reasonOf(steps.npm)).toBe(
+      "npm error 404  The requested resource 'no-such-package-smithers-ci-xyz@1.0.0' could not be found or you do not have permission to access it."
+    )
+  })
+
+  it("is cargo's last error, without its colors, past its progress and its warnings", () => {
+    expect(reasonOf(steps.cargo)).toBe(
+      `error: could not compile \`cr\` (bin "cr") due to 1 previous error; 1 warning emitted`
+    )
+  })
+
+  it("is pytest's failed test, not its line of counts or its row of dots", () => {
+    expect(reasonOf(steps.pytest)).toBe("FAILED test_x.py::test_y - assert 2 == 3")
+  })
+
+  it.each([
+    ["pnpm", "Progress: resolved 12, reused 10, downloaded 2, added 12, done"],
+    ["pnpm's packages", "Packages: +12"],
+    ["a bar", "++++++++++++"],
+    ["cargo's progress", "   Compiling cr v0.1.0 (/home/runner/work/cr/cr)"],
+    ["a spinner", "⠋ Installing dependencies"],
+    ["a percentage", "Unpacking objects:  45% (9/20)"],
+    ["npm's bar", "[##########........] / reify:typescript: timing reifyNode"],
+    ["counts", "Tests: 1 failed, 3 passed, 4 total"],
+    ["a summary", "=== 1 failed, 3 passed in 0.12s ==="],
+    ["a line rewritten in place", "Receiving objects:  10%\rReceiving objects:  90%"]
+  ])("passes over %s for the line before it", (_kind, line) => {
+    expect(reasonOf({ exitCode: 1, stderr: `error: the real cause\n${line}\n`, stdout: "" })).toBe(
+      "error: the real cause"
+    )
+    expect(reasonOf({ exitCode: 1, stderr: `still going\n${line}\n`, stdout: "" })).toBe("still going")
+  })
+
+  it("is the script's own error under npm's account of it, not npm's echo of the script", () => {
+    const stdout = `\n> c@1.0.0 test\n> node -e "console.error('c fails here'); process.exit(3)"\n\n`
+    const stderr = [
+      "c fails here",
+      "npm error Lifecycle script `test` failed with error:",
+      "npm error code 3",
+      "npm error path /home/runner/work/c",
+      "npm error workspace c@1.0.0",
+      "npm error location /home/runner/work/c",
+      "npm error command failed",
+      `npm error command sh -c node -e "console.error('c fails here'); process.exit(3)"`
+    ].join("\n")
+    expect(reasonOf({ exitCode: 3, stderr, stdout })).toBe("c fails here")
+  })
+
+  it("is the line the replay wrote for a step it stopped, though git reports an error after it", () => {
+    const stderr = [
+      "smithers-ci: a replayed step may not push; nothing was sent",
+      "error: failed to push some refs to 'https://example.com/r'"
+    ].join("\n")
+    expect(reasonOf({ exitCode: 1, stderr, stdout: "" })).toBe(
+      "smithers-ci: a replayed step may not push; nothing was sent"
+    )
+  })
+
+  it("is the last line as it is when the output holds nothing but progress", () => {
+    const stderr = "Progress: resolved 1, reused 0\nProgress: resolved 2, reused 0\n"
+    expect(reasonOf({ exitCode: 1, stderr, stdout: "" })).toBe("Progress: resolved 2, reused 0")
+  })
+
+  it("reads the end of a long error output, where the last error is", () => {
+    const stderr = `${"Progress: resolved 1, reused 0\n".repeat(400)}error: at the end\n`
+    expect(reasonOf({ exitCode: 1, stderr, stdout: "" })).toBe("error: at the end")
+  })
+
+  it("reads the error output and then what the step printed, as smthrs prints a failed target", () => {
+    expect(reasonOf({ exitCode: 1, stderr: "warming up\n", stdout: "3 tests failed\ndone\n" })).toBe("3 tests failed")
+    expect(reasonOf({ exitCode: 1, stderr: "error: here\n", stdout: "3 tests failed\n" })).toBe("3 tests failed")
+    expect(reasonOf({ exitCode: 1, stderr: "error: here\n", stdout: "done\n" })).toBe("error: here")
   })
 })
 
@@ -153,8 +256,8 @@ describe("what smthrs printed for a failed target", () => {
 
   it("finds the output after a command of many lines", () => {
     const quoted =
-      "command failed (exit 7): /bin/sh -c bash -e -c 'one\ntwo '\\''three'\\''\nfour'\nthe check broke\nmore"
-    expect(printedFailure(quoted)).toEqual({ error: "the check broke", exitCode: 7, command: "bash -e -c 'one" })
+      "command failed (exit 7): /bin/sh -c bash -e -c 'one\ntwo '\\''three'\\''\nfour'\nthe check failed\nmore"
+    expect(printedFailure(quoted)).toEqual({ error: "the check failed", exitCode: 7, command: "bash -e -c 'one" })
     const doubled = `command failed (exit 2): sh -c echo "a\nb 'c" \\\nd\nreal error`
     expect(printedFailure(doubled).error).toBe("real error")
   })
@@ -170,30 +273,31 @@ describe("what smthrs printed for a failed target", () => {
       "set +e",
       "}",
       "__smithers_ci_step '\\''echo \"middle starts\"",
-      "echo \"the middle broke\" >&2",
+      "echo \"the middle failed\" >&2",
       "exit 7'\\'''",
-      "the middle broke",
+      "the middle failed",
       "middle starts"
     ].join("\n")
-    expect(printedFailure(middle)).toMatchObject({ error: "the middle broke", exitCode: 7 })
+    expect(printedFailure(middle)).toMatchObject({ error: "the middle failed", exitCode: 7 })
     // A script on one line ends at its line break, whatever a later line quotes.
-    const oneLine = "command failed (exit 1): /bin/sh -c bash -c 'exit 1' now\nit said 'no\nand' more\nlast"
-    expect(printedFailure(oneLine).error).toBe("it said 'no")
+    const oneLine = "command failed (exit 1): /bin/sh -c bash -c 'exit 1' now\nit failed: 'no\nand' more\nlast"
+    expect(printedFailure(oneLine).error).toBe("it failed: 'no")
     // Only a command's first lines can hold its script: later, a quoted word over lines is what it printed.
     const late = [
       "command failed (exit 1): make",
-      ...Array.from({ length: 9 }, (_, n) => `line ${n}`),
+      "error: line 0",
+      ...Array.from({ length: 8 }, (_, n) => `line ${n + 1}`),
       "sh -c 'a",
       "b'"
     ]
-    expect(printedFailure(late.join("\n")).error).toBe("line 0")
+    expect(printedFailure(late.join("\n")).error).toBe("error: line 0")
   })
 
   it("ends a command whose quotes never close at its first line break", () => {
     expect(printedFailure("command failed (exit 1): sh -c echo 'open\nthe error")).toMatchObject({ error: "the error" })
     expect(printedFailure("command failed (exit 1): sh -c echo 'open")).toMatchObject({ error: "it printed nothing" })
-    expect(printedFailure("command failed (exit 1): true\nsh -c 'open\nthe error")).toMatchObject({
-      error: "sh -c 'open"
+    expect(printedFailure("command failed (exit 1): true\nsh -c 'open fails\nmore")).toMatchObject({
+      error: "sh -c 'open fails"
     })
   })
 

@@ -213,7 +213,7 @@ a step is given its value, in the baseline and in your new CI:
 
 A step that sets one of them itself keeps its own value. Smithers CI installs
 none of this software. A job that needs what your machine lacks fails in the
-first run, and the report lists it with the first line of its error. Install
+first run, and the report lists it with the line of its output that says what failed. Install
 the software and set its variable, then run again.
 
 ## Actions

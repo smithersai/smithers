@@ -396,7 +396,7 @@ cost you the whole measurement. The baseline's first run finds them.
   run reads. If it passes there, it was flaky or broken at that one commit, and
   it is replayed. If it fails again, it runs at no commit, in no way. The report
   lists it as failing on this machine, with the step that failed, its exit code,
-  the first line of its error and the commits it failed at, and every job that
+  the line of its output that says what failed and the commits it failed at, and every job that
   needs it as left out with it. In a matrix job, this holds for each variant.
 - In a Justfile, Makefile or `package.json`, where jobs share one working tree,
   the jobs after a failed one run again without it, as they will in the replay.

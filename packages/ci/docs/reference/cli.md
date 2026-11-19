@@ -269,7 +269,10 @@ Exit `3` also means the repository's CI does not pass on this machine: no job
 passed the first run or the run after it, or, with `--no-trial`, no
 step passed in the baseline of any replayed commit. The program then prints no
 report and no speedup. Standard error gives the first failure: the step, its
-command, its exit code and the first line of its error. When only some jobs
+command, its exit code and the line of its output that says what failed. That
+line is the replay's own when it stopped the step, as it stops a push, else the
+last one that reports an error, never a progress line or a line of
+counts; when no line reports one, it is the last line the step printed. When only some jobs
 fail, the program exits `0`, the report lists them, and the speedup covers the
 others. When only some commits fail, the program exits `0`, the report names each
 failed step, and the speedup covers the commits where the CI passed.

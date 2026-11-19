@@ -92,7 +92,7 @@ time. Under them it lists:
 - every commit it did not replay because that commit had no CI it can run,
   with the reason;
 - every step that failed, with its commit, the ways it failed in, its exit code
-  and the first line of its error output, or
+  and the line of its output that says what failed, or
   `` `golangci-lint` is not installed on this machine `` when its program is
   missing. A value shaped like a credential is withheld;
 - every step normal mode ran and did not reuse, with its command, the reason,
@@ -115,8 +115,8 @@ time. Under them it lists:
 
 `--json` also gives, for each commit and each way, its CPU time, its work time
 (the sum of every target's own time), how many targets were cache hits, ran, failed or
-were skipped, each failed step's name, exit code, first error line and
-command, and each step that was not reused with its reason. The HTML page has a line for each commit with its times, `fail` beside
+were skipped, each failed step's name, exit code, command and the line that
+says what failed, and each step that was not reused with its reason. The HTML page has a line for each commit with its times, `fail` beside
 the time of a run that failed, its mismatches and its failed steps.
 
 To keep a copy or feed it to another program:
@@ -180,7 +180,7 @@ says fast mode was not measured and why, and the command exits `4`.
 Code `3` also means your CI does not pass on this machine: no job passed the
 first run or the run after it, so there is nothing to measure. The
 program prints no speedup. It prints the first failure, with the step, its
-command, its exit code and the first line of its error:
+command, its exit code and the line of its output that says what failed:
 
 ```text
 smithers-ci: replay: this repository's CI does not pass on this machine, so there is no speedup to measure. No job passed at adbc881.

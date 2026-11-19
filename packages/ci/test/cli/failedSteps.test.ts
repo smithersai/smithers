@@ -161,14 +161,14 @@ describe("smithers-ci on a job whose middle step fails", { timeout: 600_000 }, (
   it("gives the step's own error as the reason, in the baseline and in normal mode, on one line", async () => {
     const file = ".github/workflows/ci.yml"
     const root = repositoryOf({
-      [file]: steps("sh check.sh", "echo 'the middle starts'; echo 'the middle broke' >&2; exit 7", "sh check.sh"),
+      [file]: steps("sh check.sh", "echo 'the middle starts'; echo 'the middle failed' >&2; exit 7", "sh check.sh"),
       "check.sh": "exit 0\n"
     })
     const json = await spawn(bin, ["--commits", "1", "--no-apply-check", "--no-trial", "--json"], root)
     const report = JSON.parse(json.stdout) as {
       readonly commits: ReadonlyArray<Record<"baseline" | "normal", { readonly failures?: ReadonlyArray<unknown> }>>
     }
-    const failure = expect.objectContaining({ reason: "the middle broke", exitCode: 7 })
+    const failure = expect.objectContaining({ reason: "the middle failed", exitCode: 7 })
     expect(report.commits[0]?.baseline.failures).toEqual([failure])
     // Not the first line of what stands around the step in the generated build file.
     expect(report.commits[0]?.normal.failures).toEqual([failure])

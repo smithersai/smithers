@@ -1,6 +1,6 @@
 /**
  * Why a CI step failed, as a person reads it: the step's name, its exit code
- * and the first line of its error output. Both replays use it, the one that
+ * and the line of its output that says what failed. Both replays use it, the one that
  * generates targets and the one of a repository's own targets, so a failure
  * reads the same in each.
  *
@@ -47,6 +47,9 @@ export const firstLine = (text: string): string => {
   return (line ?? "").slice(0, lineLimit)
 }
 
+/** A terminal's color code: the escape character or its one-character form, then the code. */
+const colors = new RegExp(`(?:${String.fromCharCode(0x1b)}\\[|${String.fromCharCode(0x9b)})[0-9;?]*[ -/]*[@-~]`, "gu")
+
 /**
  * Output without its terminal colors and without anything shaped like a
  * credential.
@@ -55,29 +58,98 @@ export const firstLine = (text: string): string => {
  * @category accessors
  * @since 0.1.0
  */
-export const readable = (text: string): string => scrub(text.replace(/\p{Cc}\[[0-9;?]*[ -/]*[@-~]/gu, ""))
-
-/** A line that starts by naming an error, as `error: …`, `fatal: …`, `TypeError: …` and `ValueError: …` do. */
-const namesError = /^(?:error|fatal|panic)\b|^[\w.$]*(?:Error|Exception)\b/
+export const readable = (text: string): string => scrub(text.replace(colors, ""))
 
 /**
- * The line of an error output that says why: its first line, unless that is
- * a heading that ends with a colon, such as the test file's name a test
- * runner prints or Python's `Traceback (most recent call last):`. Then it is
- * the first line that starts by naming an error, when one does.
+ * Words that report an error, as `error`, `failed`, `cannot`, `not found`
+ * and `TypeError` do. npm's level word, which heads every line it writes on a
+ * failure, says nothing by itself: `npm error A complete log of this run can
+ * be found in: …` reports none.
+ */
+const reportsError =
+  /\b(?:errors?|fail(?:s|ed|ing|ures?)?|fatal|panic(?:ked)?|exceptions?|refused|denied|cannot|can't|could ?n(?:o|')t|unable|not found|no such|invalid|missing|abort(?:ed)?|timed out)\b|[a-z](?:Error|Exception)\b|\bERR(?:!|_[A-Z0-9_]+)|\bE\d{3,4}\b/i
+
+/** The level word npm and Yarn head a line with, and the HTTP status after it. */
+const levelWord = /^(?:npm|yarn) (?:error|ERR!)(?: \d{3}(?!\d))?/
+
+/**
+ * What npm adds under a script that failed: that it failed, and its exit
+ * code, directory, workspace and command. The script's own output above it
+ * says what failed.
+ */
+const npmAccount =
+  /^(?:npm|yarn) (?:error|ERR!) (?:Lifecycle script|code|path|workspace|location|command|errno|signal)\b/
+
+/** A package manager's echo of the script it runs, as npm prints `> node test.js`. */
+const echo = /^> /
+
+/**
+ * A line the replay wrote for a step it stopped, as the hook that refuses a
+ * push does. It says why the step failed, whatever git printed after it.
+ */
+const ownLine = /^smithers-ci: /
+
+/** One count of a line of counts: `3 passed`, `resolved 12`, `+1`, `45%`, `done`, `in 0.12s`. */
+const oneCount =
+  /^(?:[+-]?\d[\d.,]*%?(?:\s+[a-z][\w-]*)?|[a-z][\w-]*\s+[+-]?\d[\d.,]*%?|done)(?:\s+in\s+[\d.]+\s*m?s)?$/i
+
+/** The marks a line of progress or a heading is drawn with. */
+const marks = /[\s=*_#+~.|<>()[\]-]/g
+
+/** What a build tool prints as it goes, as cargo's `Compiling cr v0.1.0` is. */
+const statusWord =
+  /^(?:Compiling|Checking|Downloading|Downloaded|Fresh|Finished|Blocking|Updating|Updated|Locking|Adding|Running|Documenting|Building|Installing|Resolving|Fetching)\b/
+
+/**
+ * True for a line that is never the reason a step failed: a progress line,
+ * as pnpm's `Progress: resolved 1, reused 0`, a bar or a percentage, a
+ * spinner, a status a build tool prints as it goes, or a line of only counts,
+ * such as pytest's `1 failed, 3 passed in 0.12s`, which says how many failed
+ * but not what.
+ */
+const isProgress = (line: string): boolean => {
+  if (line.replace(marks, "") === "" || /^[\u2800-\u28ff\u25d0-\u25d3]/.test(line)) return true
+  if (/^\[[#=>.\s-]+\]/.test(line) || statusWord.test(line)) return true
+  if (/\d%/.test(line) && !reportsError.test(line)) return true
+  const counts = line.replace(/^[\s=*_#~|-]+|[\s=*_#~|-]+$/g, "").replace(
+    /^(?!(?:error|fatal|panic):)[A-Za-z][\w ]*:\s*/i,
+    ""
+  )
+  return /\d/.test(counts) && counts.split(/[,;]\s*/).every((count) => oneCount.test(count.trim()))
+}
+
+/**
+ * The lines of an output as a terminal shows them: a line rewritten in place
+ * with a carriage return shows what was written last, with no control
+ * character.
+ */
+const shownLines = (text: string): ReadonlyArray<string> =>
+  text.split("\n").map((line) => (line.split("\r").at(-1) as string).replace(/\p{Cc}/gu, " ").trim())
+    .filter((line) => line !== "")
+
+/**
+ * The line of an output that says why the command failed: the last line the
+ * replay wrote for a step it stopped, else the last line that reports an
+ * error. Never a progress line, a line of only counts, a package manager's
+ * echo of its script or npm's account of a script that failed. Empty when no
+ * line reports an error.
  *
  * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
 export const errorLine = (text: string): string => {
-  const first = firstLine(text)
-  if (!first.endsWith(":")) return first
-  const named = text.split("\n").find((line) => namesError.test(line.replace(/\p{Cc}/gu, " ").trim()))
-  return named === undefined ? first : firstLine(named)
+  const shown = shownLines(text)
+  const reports = (line: string): boolean =>
+    !isProgress(line) && !echo.test(line) && !npmAccount.test(line) && reportsError.test(line.replace(levelWord, ""))
+  return firstLine(shown.findLast((line) => ownLine.test(line)) ?? shown.findLast(reports) ?? "")
 }
 
-const lastLine = (text: string): string => text.split("\n").findLast((line) => line.trim() !== "") ?? ""
+/** The last line of an output that is no progress line, else its last line as it is. */
+const lastLine = (text: string): string => {
+  const shown = shownLines(text)
+  return firstLine(shown.findLast((line) => !isProgress(line)) ?? shown.at(-1) ?? "")
+}
 
 /** How a shell, or `env` on a script's first line, says a program does not exist. */
 const missingProgramLines = [
@@ -111,9 +183,11 @@ export interface StepOutput {
 
 /**
  * Why a command failed, in one line: that a program is not installed, when
- * that is what its exit code and error output say; else the line of its
- * error output that says why ({@link errorLine}); else the last line it printed, where a test runner puts its
- * result.
+ * that is what its exit code and error output say; else, reading its error
+ * output and then what it printed, the last line that reports an error
+ * ({@link errorLine}); else the last line that is no progress line; else its
+ * last line as it is. Each output is read from its end, where the last error
+ * is.
  *
  * @throws {never}
  * @category accessors
@@ -122,9 +196,9 @@ export interface StepOutput {
 export const reasonOf = (output: StepOutput): string => {
   const program = output.exitCode === notFound ? missingProgram(readable(output.stderr.slice(-sampleLimit))) : undefined
   if (program !== undefined) return firstLine(`\`${program}\` is not installed on this machine`)
-  return errorLine(readable(output.stderr.slice(0, sampleLimit)))
-    || firstLine(lastLine(readable(output.stdout.slice(-sampleLimit))))
-    || noOutput
+  // Error output first, then what it printed: the order `smthrs` prints a failed target's output in.
+  const text = `${readable(output.stderr.slice(-sampleLimit))}\n${readable(output.stdout.slice(-sampleLimit))}`
+  return errorLine(text) || lastLine(text) || noOutput
 }
 
 const stallPrefix = "it made no progress for "

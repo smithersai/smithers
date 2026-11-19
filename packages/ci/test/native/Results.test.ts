@@ -63,7 +63,7 @@ describe("the reasons smthrs prints", () => {
   it("keep what a failed command printed under its line, up to the next target", () => {
     const output = [
       "//:a  failed  1ms  command failed (exit 7): /bin/sh -c bash -e -c 'sh check.sh'",
-      "the check broke",
+      "the check failed",
       "more",
       "//:b  failed  1ms  command failed (exit 127): /bin/sh -c bash -e -c 'docker run x'",
       "bash: line 1: docker: command not found",
@@ -72,7 +72,7 @@ describe("the reasons smthrs prints", () => {
       "code: targets_failed"
     ].join("\n")
     expect(withReasons([result("//:a", "failed"), result("//:b", "failed")], output)).toEqual([
-      { ...result("//:a", "failed", "the check broke"), exitCode: 7, command: "bash -e -c 'sh check.sh'" },
+      { ...result("//:a", "failed", "the check failed"), exitCode: 7, command: "bash -e -c 'sh check.sh'" },
       {
         ...result("//:b", "failed", "`docker` is not installed on this machine"),
         exitCode: 127,
@@ -81,7 +81,7 @@ describe("the reasons smthrs prints", () => {
     ])
   })
 
-  it("give a failed command's exit code, command and first error line, never the rest of its output", () => {
+  it("give a failed command's exit code, command and the line that says what failed, never the rest of its output", () => {
     const printed = JSON.stringify({
       _tag: "smithers-build/ExecError",
       argv: ["bash", "-e", "-c", "./deploy --token=abc123"],
