@@ -250,16 +250,22 @@ const answered = (errors: Ref.Ref<string>) => (handle: ChildProcessHandle) =>
  * Runs git and returns what it printed on standard output. With `place`, `cwd`
  * is a copy a step may have written, hooks and configuration included, so git
  * runs there as a step does: in the jail, with a step's environment.
+ * `variables` are given to git beside it, such as who commits and when.
  *
  * @category running
  * @since 0.1.0
  */
-export effect function git(cwd: string, args: ReadonlyArray<string>, place: Confined | undefined = undefined) {
+export effect function git(
+  cwd: string,
+  args: ReadonlyArray<string>,
+  place: Confined | undefined = undefined,
+  variables: Readonly<Record<string, string>> = {}
+) {
   const [command, ...rest] = place === undefined ? ["git", ...args] : held(place, [cwd], ["git", ...args])
   const errors = try Ref.make("")
   const output = place === undefined
-    ? try exec(command, rest, cwd, {}, Number.POSITIVE_INFINITY, answered(errors))
-    : try exec(command, rest, cwd, stepEnvironment({}, place), Number.POSITIVE_INFINITY, answered(errors), true)
+    ? try exec(command, rest, cwd, variables, Number.POSITIVE_INFINITY, answered(errors))
+    : try exec(command, rest, cwd, stepEnvironment(variables, place), Number.POSITIVE_INFINITY, answered(errors), true)
   if (output.exitCode !== 0) {
     throw failure("command-failed", `git ${args[0]} failed: ${try Ref.get(errors)}`)
   }

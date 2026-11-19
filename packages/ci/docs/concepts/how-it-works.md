@@ -326,8 +326,8 @@ A copy holds the commit's files and nothing else: the cache, the files Smithers
 CI generates and its records are kept beside the copy, never in it. A step
 that lists its checkout, with `git status --ignored`, `git clean -n`, `find`
 or `ls`, sees what a fresh clone holds, in the baseline and in each mode.
-At the newest commit the steps run once more in a copy that holds the files
-`apply` writes, committed: a step that fails only there is a mismatch, and
+The steps run once more on the newest commit with the files `apply` writes
+in it, the commit you push after `apply`: a step that fails only there is a mismatch, and
 the report says why, naming the tool and the file when a tool of yours read
 one of them as its own. The run's time is on a line of its own and in no
 total; `--no-apply-check` leaves the run out.

@@ -14,17 +14,19 @@ import { commit, node, program, project, removeProjects, run, write } from "./pr
 
 afterAll(removeProjects)
 
-const workflow = (jobs: Readonly<Record<string, string>>): string =>
+const workflow = (jobs: Readonly<Record<string, string | ReadonlyArray<string>>>): string =>
   [
     "name: CI",
     "on: [push, pull_request]",
     "jobs:",
-    ...Object.entries(jobs).flatMap(([id, command]) => [
+    ...Object.entries(jobs).flatMap(([id, commands]) => [
       `  ${id}:`,
       "    runs-on: ubuntu-latest",
       "    steps:",
       "      - uses: actions/checkout@v4",
-      `      - run: ${JSON.stringify(command)}`
+      ...(typeof commands === "string" ? [commands] : commands).map((command) =>
+        `      - run: ${JSON.stringify(command)}`
+      )
     ]),
     ""
   ].join("\n")
@@ -121,6 +123,57 @@ describe("a repository with a tool that reads every file", () => {
     expect(report.commits[0]?.normal.counts).toMatchObject({ failed: 0, skipped: 0 })
     expect(report.mismatches).toBe(0)
     expect(report.appliedMs).toBeGreaterThan(0)
+  }, 3_600_000)
+
+  it("gives every step the commit a person pushes after apply: its id, its message, its place in the history", () => {
+    // A program that writes down the commit it is given, by a name no shell text holds.
+    const writes = (file: string): string =>
+      `require("fs").writeFileSync(${JSON.stringify(file)}, process.env["GITHUB" + "_SHA"])\n`
+    const kept = `/tmp/smithers-ci-as-applied-${process.pid}`
+    const head = `"$(git rev-parse HEAD)"`
+    const root = project({
+      "docs/r.md": "1\n",
+      "count.txt": "1\n",
+      "w.js": writes(kept),
+      "w2.js": writes("sha.out"),
+      ".github/workflows/ci.yml": workflow({
+        // The commit a step is given is the one checked out, as a variable and in the workflow's own words.
+        shaeq: `test "$GITHUB_SHA" = ${head}`,
+        expression: `test "\${{ github.sha }}" = ${head}`,
+        // The newest message is the person's own, and so is the number of commits.
+        message: "git log -1 --format=%s | grep -qE '^(feat|fix|docs|chore)(\\(.+\\))?: '",
+        count: `test "$(git rev-list --count HEAD)" = "$(cat count.txt)"`,
+        // A step writes down the commit it was given, and the next compares it with the one checked out.
+        shatmp: ["node w.js", `test "$(cat ${kept})" = ${head}`],
+        shafile: ["node w2.js", `test "$(cat sha.out)" = ${head}`],
+        // A step that truly fails beside the files: the repository then holds `.smithers`.
+        layout: `test -z "$(ls -A | grep -E '^\\.smithers$')"`
+      })
+    }, false)
+    write(root, { "docs/r.md": "2\n", "count.txt": "2\n" })
+    commit(root, "docs: the readme")
+    write(root, { "docs/r.md": "3\n", "count.txt": "3\n" })
+    commit(root, "fix: a word")
+    const replayed = node(root, program, ["--commits", "2", "--json"])
+    const report = Schema.decodeUnknownSync(Schema.fromJsonString(ReplayReport))(replayed.stdout)
+    expect(report.commits).toHaveLength(2)
+    for (const entry of report.commits) {
+      expect(entry.baseline.failures ?? [], entry.commit).toEqual([])
+      expect(entry.normal.failures ?? [], entry.commit).toEqual([])
+    }
+    expect(replayed.output).toMatch(/smithers-ci: 2\/2 [0-9a-f]{7} with the files apply writes\n/)
+    expect(report.commits[0]?.mismatches).toEqual([])
+    // Every step that reads the commit passes in that run too. The one that fails is the one the files break.
+    expect(report.commits[1]?.mismatches.map((entry) => entry.label)).toEqual(["//:ci.yml-layout-1"])
+    expect(report.commits[1]?.mismatches[0]?.cause).toMatch(
+      /^This step passes on the commit's files and fails once the files smithers-ci apply writes are committed: /
+    )
+    expect(report.mismatches).toBe(1)
+    expect(replayed.status, replayed.output).toBe(1)
+    expect(report.speedupCommits).toBe(2)
+    // The replay wrote nothing to the repository.
+    expect(run(root, "git", ["status", "--porcelain", "--ignored"]).stdout).toBe("")
+    expect(run(root, "git", ["log", "-1", "--format=%s"]).stdout).toBe("fix: a word\n")
   }, 3_600_000)
 
   it("has nothing more to run in a repository that holds what apply writes", () => {

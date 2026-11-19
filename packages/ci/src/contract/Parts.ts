@@ -151,8 +151,9 @@ export interface ReplayRequest {
   readonly trial?: boolean | undefined
   /**
    * Runs the newest commit once more, in normal mode, in a copy made as
-   * `apply` leaves the repository: the generated files written and
-   * committed. A step that passes on the commit's files and fails there is a
+   * `apply` leaves the repository: the generated files in the commit
+   * itself, which keeps its parents, message, author and dates and is the
+   * commit every step of that run is given. A step that passes on the commit's files and fails there is a
    * mismatch of normal mode at that commit, with `Mismatch.cause`. The run
    * is in no time but `ReplayReport.appliedMs`. A commit that already holds
    * the files has nothing more to run.

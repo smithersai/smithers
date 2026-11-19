@@ -242,8 +242,9 @@ check the same one; the workflow does.
 A tool told to read every file, dot directories included, reads the files
 above. `cspell --dot` is one.
 
-The replay finds it before `apply` does. At the newest commit it runs your
-steps once more with those files committed, as `apply` leaves your repository.
+The replay finds it before `apply` does. It runs your steps once more on your
+newest commit with the files `apply` writes in it: the same message, author,
+date and place in the history, and each step is given that commit.
 A step that passes in your CI and fails there is a mismatch, and the report
 says why under it:
 

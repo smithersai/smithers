@@ -287,6 +287,12 @@ interface Prepared {
   readonly jobs: number | undefined
 }
 
+/** The run in the copy that holds the files `apply` writes: the commit its steps see, and why a step failed there. */
+interface Applied {
+  readonly seen: string
+  readonly causes: Map<string, string>
+}
+
 /**
  * Where one mode runs a commit: its copy of the repository, and, beside the copy and never in it, the directory
  * Smithers build keeps its cache in and the directory of the generated workspace file.
@@ -448,7 +454,10 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * After `apply` the repository holds the generated files, committed. With
  * `request.applied` the newest commit runs once more, in normal mode, in a
  * copy of its own made as `apply` leaves the repository: the files written
- * and committed. A step that passed and fails there is a mismatch of normal
+ * and committed, as one commit in the replayed commit's place, with its
+ * parents, message, author and dates: the commit a person pushes after
+ * `apply`, which every step of that run is given as its commit. A step that
+ * passed and fails there is a mismatch of normal
  * mode at that commit, and says why (`Mismatch.cause`): which tool read
  * which file as one of the repository's own, or that the step fails once
  * those files are committed. A step that read none of them is answered from
@@ -699,17 +708,18 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * What a run gives the steps of `commit` in one way of running it, as a runner gives it to every step: the
      * commit, the run's id, number and attempt, and where the event files of the commit are. The files are written
      * here, outside every step, so a step that opens one has read a file that is another at the next commit, and a
-     * step that opens none has read nothing of the commit.
+     * step that opens none has read nothing of the commit. `seen` is the commit the steps find checked out, where
+     * that is another than `commit`: the one that holds the files `apply` writes, in `commit`'s place.
      */
-    effect function givenAt(commit: string, place: Confined, own: Prepared) {
+    effect function givenAt(commit: string, place: Confined, own: Prepared, seen: string = commit) {
       const count = Number(try git(source, ["rev-list", "--count", commit]))
       const [, parent] = (lines(try git(source, ["rev-list", "--parents", "--max-count=1", commit]))[0] as string).split(" ")
       const directory = path.join(work, "events", path.basename(place.home))
       try orFail(fs.makeDirectory(directory, { recursive: true }), "could not write the event files")
-      for (const [name, text] of eventFiles(own.inventory.events ?? {}, commit, parent)) {
+      for (const [name, text] of eventFiles(own.inventory.events ?? {}, seen, parent)) {
         try orFail(fs.writeFileString(path.join(directory, name), text), "could not write the event files")
       }
-      return { ...runValues(commit, count), [eventsVariable]: directory }
+      return { ...runValues(seen, count), [eventsVariable]: directory }
     }
 
     const startEnv = (site: Site) => ({
@@ -730,16 +740,17 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     /**
-     * Runs the targets of `commit` at a site, in the place of the way the site belongs to. With `causes` the
-     * site's copy is as `apply` leaves it, and `causes` gains, by label, why a target failed over a file `apply`
-     * wrote.
+     * Runs the targets of `commit` at a site, in the place of the way the site belongs to. With `applied` the
+     * site's copy holds the files `apply` writes, in the commit `applied.seen`, which every step is given as its
+     * commit; and `applied.causes` gains, by label, why a target failed over a file `apply` wrote.
      */
     const smithers = (
       commit: string,
       site: Site,
       own: Prepared,
-      causes?: Map<string, string>
+      applied?: Applied
     ): Execute<Host> => (targets) => effect {
+      const causes = applied?.causes
       const selected = targets ?? own.labels
       if (selected.length === 0) return []
       runs += 1
@@ -758,7 +769,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         ...(own.jobs === undefined ? [] : ["--jobs", String(own.jobs)])
       ])
       const watch = try watchFor(stall.minutes, stall.table)
-      const environment = { ...startEnv(site), ...(try givenAt(commit, site.place, own)), ...printsNotes }
+      const given = try givenAt(commit, site.place, own, applied?.seen)
+      const environment = { ...startEnv(site), ...given, ...printsNotes }
       const handed = starter === undefined ? undefined : token
       const output = try exec(command, args, site.copy, environment, printedLimit, undefined, true, heard, watch, handed, count)
       const stalled = try Ref.get(watch.stalled)
@@ -786,12 +798,40 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return results
     }
 
-    /** Who commits the generated files in a copy, as a person commits what `apply` wrote. */
-    const applier = ["-c", "user.name=smithers-ci", "-c", "user.email=smithers-ci@example.invalid", "-c", "commit.gpgsign=false"]
+    /**
+     * Puts the files `apply` writes into the commit checked out in `copy`: one commit in `commit`'s place, with
+     * its parents, message, author, committer and both dates, whose tree is the commit's with those files in it
+     * and the former ones out. It is the commit a person pushes after `apply`, so what reads the commit itself,
+     * such as `git log -1`, a count of the commits or a check of the newest message, finds what it finds in that
+     * person's CI. Gives the new commit.
+     */
+    effect function commitApplied(copy: string, commit: string, own: Prepared, place: Confined) {
+      for (const file of own.generated) {
+        const target = path.resolve(copy, file.path)
+        try orFail(fs.makeDirectory(path.dirname(target), { recursive: true }), `could not write ${file.path}`)
+        try orFail(fs.writeFileString(target, file.content), `could not write ${file.path}`)
+      }
+      for (const former of own.former) {
+        try orFail(fs.remove(path.resolve(copy, former)), `could not remove ${former}`)
+      }
+      const paths = [...own.generated.map((file) => file.path), ...own.former]
+      try git(copy, ["add", "--all", "--force", "--", ...paths], place)
+      // Amending keeps the parents, the author and the author's date. Who committed, and when, are given.
+      const [name, email, date] = lines(try git(source, ["show", "--no-patch", "--format=%cn%n%ce%n%cI", commit]))
+      const committer = {
+        GIT_COMMITTER_NAME: name as string,
+        GIT_COMMITTER_EMAIL: email as string,
+        GIT_COMMITTER_DATE: date as string
+      }
+      const amend = ["commit", "--amend", "--no-edit", "--cleanup=verbatim", "--quiet", "--no-verify", "--allow-empty"]
+      try git(copy, ["-c", "commit.gpgsign=false", ...amend], place, committer)
+      return (try git(copy, ["rev-parse", "HEAD"], place)).trim()
+    }
 
     /**
-     * The newest commit once more, in normal mode, in a copy made as `apply` leaves a repository: the generated
-     * files written and committed. It is a copy of its own, so the copies the three ways run in hold the commit's
+     * The newest commit once more, in normal mode, in a copy that holds the files `apply` writes: the commit a
+     * person pushes after `apply`, which every step of the run is given as its commit. It is a copy of its own, so
+     * the copies the three ways run in hold the commit's
      * files and nothing else. A step that read none of the files is answered from normal mode's cache. It gives
      * how long the run took, and the mismatches of normal mode that only this run shows: every step that passed
      * on the commit's files and fails here, each with the line that says why. It gives nothing when the request
@@ -810,24 +850,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       try progress.say(`${at} with the files apply writes`)
       const site = { ...normal, copy: path.join(work, "applied", path.basename(root)) } satisfies Site
       try cloneAt(site.copy, commit, site.place)
-      for (const file of own.generated) {
-        const target = path.resolve(site.copy, file.path)
-        try orFail(fs.makeDirectory(path.dirname(target), { recursive: true }), `could not write ${file.path}`)
-        try orFail(fs.writeFileString(target, file.content), `could not write ${file.path}`)
-      }
-      for (const former of own.former) {
-        try orFail(fs.remove(path.resolve(site.copy, former)), `could not remove ${former}`)
-      }
-      const paths = [...own.generated.map((file) => file.path), ...own.former]
-      try git(site.copy, ["add", "--all", "--force", "--", ...paths], site.place)
-      const commits = ["commit", "--quiet", "--no-verify", "--allow-empty", "--message", "smithers-ci apply"]
-      try git(site.copy, [...applier, ...commits], site.place)
+      const seen = try commitApplied(site.copy, commit, own, site.place)
       const causes = new Map<string, string>()
       // Its reruns are not the replay's: they are in no count of the report.
       const second = try measure(
         Effect.void,
         Effect.void,
-        smithers(commit, site, own, causes),
+        smithers(commit, site, own, { causes, seen }),
         passed,
         reruns,
         new Map(),
