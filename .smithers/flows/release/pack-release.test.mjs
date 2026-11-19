@@ -481,10 +481,9 @@ test("every published library takes Effect as a ranged peer and every executable
 test("published adapters remain optional while executable SQL and Bun host prerequisites are required", () => {
   const byName = new Map([...readWorkspaceManifests().values()].map((manifest) => [manifest.name, publicationManifest(manifest)]))
   const optional = {
-    "@smthrs/database": {
-      "@effect/sql-sqlite-node": EXPECTED_EFFECT_VERSION, "@effect/sql-sqlite-bun": EXPECTED_EFFECT_VERSION,
-      "@effect/sql-pg": EXPECTED_EFFECT_VERSION
-    },
+    // Bun opens its store through the bundled bun:sqlite client, so the
+    // package names no Bun SQL adapter (#4506).
+    "@smthrs/database": { "@effect/sql-sqlite-node": EXPECTED_EFFECT_VERSION, "@effect/sql-pg": EXPECTED_EFFECT_VERSION },
     "@smthrs/kernel": { "@effect/vitest": EXPECTED_EFFECT_VERSION },
     "@smthrs/testing": { "@effect/vitest": EXPECTED_EFFECT_VERSION },
     // The CLI loads its Bun control host only under Bun.
@@ -496,14 +495,14 @@ test("published adapters remain optional while executable SQL and Bun host prere
     }
   }
   const peerRanges = {
-    // An optional Effect adapter has no range: the application picks it with
-    // its own Effect, and npm --strict-peer-deps refused a pinned application
-    // over a ranged one (packages/repo-targets/contracts/check-single-effect-version.mjs). The tested
-    // release is what the package itself develops against.
-    "@effect/sql-sqlite-node": undefined,
-    "@effect/sql-sqlite-bun": EXPECTED_EFFECT_VERSION,
-    "@effect/sql-pg": undefined,
-    "@effect/vitest": undefined,
+    // An optional Effect adapter peer is the tested release exactly
+    // (optionalAdapterPeerProblems in
+    // packages/repo-targets/contracts/check-single-effect-version.mjs): never a
+    // range, which npm --strict-peer-deps refused under a pinned application,
+    // and never peerDependenciesMeta alone.
+    "@effect/sql-sqlite-node": EXPECTED_EFFECT_VERSION,
+    "@effect/sql-pg": EXPECTED_EFFECT_VERSION,
+    "@effect/vitest": EXPECTED_EFFECT_VERSION,
     "@opentelemetry/exporter-logs-otlp-http": ">=0.222.0 <0.300.0",
     "@opentelemetry/exporter-metrics-otlp-http": ">=0.222.0 <0.300.0",
     "@opentelemetry/exporter-trace-otlp-http": ">=0.222.0 <0.300.0",
@@ -515,7 +514,7 @@ test("published adapters remain optional while executable SQL and Bun host prere
     const manifest = byName.get(name)
     for (const [peer, version] of Object.entries(peers)) {
       assert.equal(manifest.dependencies?.[peer], undefined, name + " must not force " + peer)
-      const expectedPeer = name === "@smthrs/testing" && peer === "@effect/vitest" ? version : peer in peerRanges ? peerRanges[peer] : version
+      const expectedPeer = peer in peerRanges ? peerRanges[peer] : version
       assert.equal(manifest.peerDependencies[peer], expectedPeer, name + " " + peer)
       assert.deepEqual(manifest.peerDependenciesMeta[peer], { optional: true })
       assert.equal(manifest.devDependencies[peer], version)

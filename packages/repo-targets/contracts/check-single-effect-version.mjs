@@ -121,21 +121,24 @@ export const assertNodeSharedPins = (manifests) => {
 }
 
 /**
- * Optional adapters either pin the tested release at their owning package or
- * leave selection to the application through `peerDependenciesMeta` alone.
- * A caret on an optional peer lets npm select a newer adapter whose Effect
- * floor excludes the tested runtime, even when that adapter is not installed.
- * Exact peers constrain selected adapters without installing them by default.
+ * An optional Effect adapter peer names the tested release exactly, in
+ * `peerDependencies` beside its `peerDependenciesMeta` entry. A caret lets npm
+ * select a newer adapter whose Effect floor excludes the tested runtime, even
+ * when that adapter is not installed. An exact peer constrains the adapter an
+ * application selects without installing it. A name in `peerDependenciesMeta`
+ * alone states no version, so it is refused too: every published package
+ * declares one form, and the release manifest test holds that form.
  */
 export const optionalAdapterPeerProblems = (manifests) => {
   const problems = []
   for (const [directory, manifest] of manifests) {
     if (manifest.private === true || manifest.peerDependencies?.effect === undefined) continue
-    for (const [name, version] of Object.entries(manifest.peerDependencies)) {
-      if (name === "effect" || !isFamily(name) || manifest.peerDependenciesMeta?.[name]?.optional !== true) continue
+    for (const [name, meta] of Object.entries(manifest.peerDependenciesMeta ?? {})) {
+      if (name === "effect" || !isFamily(name) || meta?.optional !== true) continue
+      const version = manifest.peerDependencies[name]
       if (version !== EXPECTED_EFFECT_VERSION) {
         problems.push(
-          `${directory} (${manifest.name}): optional peer ${name}@${version} must be pinned to ${EXPECTED_EFFECT_VERSION} or declared in peerDependenciesMeta only`
+          `${directory} (${manifest.name}): optional peer ${name}@${version ?? "(no version)"} must be pinned to ${EXPECTED_EFFECT_VERSION}`
         )
       }
     }
@@ -190,7 +193,7 @@ export const checkEffectVersions = (root = repoRoot) => {
   assertNodeSharedPins(published)
   const optional = optionalAdapterPeerProblems(published)
   if (optional.length > 0) {
-    throw new Error(`Published libraries range an optional Effect adapter peer:\n  ${optional.join("\n  ")}`)
+    throw new Error(`Published libraries leave an optional Effect adapter peer off the tested release:\n  ${optional.join("\n  ")}`)
   }
   const installed = installedEffectResolutions(root, published)
   assertEffectPins(installed)

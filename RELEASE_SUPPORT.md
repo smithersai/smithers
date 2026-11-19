@@ -46,8 +46,8 @@ and tested on `effect@4.1.1`, and the published packages declare it this way:
 - Every published library declares `effect` as a peer at exactly `4.1.1`.
   An application must use that same version. A wider supported range is tracked
   in [#4238](https://github.com/smithersai/smithers/issues/4238).
-- Required Effect adapters and explicit optional adapter peers are pinned to
-  `4.1.1`. Metadata-only optional peers leave adapter selection to the application.
+- Required Effect adapters and optional adapter peers are pinned to `4.1.1`.
+  An application that selects an optional adapter installs it at that version.
 - Development dependencies, workspace overrides and both lockfiles use exactly
   `4.1.1`. Privately bundled adapters use that cohort too.
 - Executables and authoring libraries require the same physical Effect runtime.
