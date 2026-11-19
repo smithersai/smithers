@@ -22,8 +22,14 @@ const settleDelays = Array(30).fill(30)
 
 /**
  * Packages people run by bare name. `bunx smithers-ci` installs what `latest`
- * names, and npm leaves `latest` on a package's first version, so `latest`
- * follows every release of these, prereleases included.
+ * names, so `latest` follows every release of these, prereleases included.
+ *
+ * Every version is published under `staging` and then given its consumer tags
+ * with `npm dist-tag add`. npm's documentation says "Publishing a package sets
+ * the `latest` tag to the published version unless the `--tag` option is used"
+ * (https://docs.npmjs.com/cli/v11/commands/npm-dist-tag), and says nothing of
+ * a first version published under another tag, so the release sets `latest`
+ * itself rather than rely on what the registry does then.
  */
 export const runByName = new Set(["smithers-ci"])
 

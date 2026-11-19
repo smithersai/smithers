@@ -9,6 +9,7 @@
  */
 import { createHash } from "node:crypto"
 import { integrity } from "./publish-release.mjs"
+import { publishedPackages } from "./published-packages.mjs"
 import { execFileSync, spawn } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { access, chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
@@ -34,69 +35,7 @@ import { nativeHelperFiles } from "./release-native-helpers.mjs"
  */
 export const releaseGroups = new Set(["engine", "agent", "tooling"])
 
-/**
- * The package names published by the current release candidate.
- *
- * Group membership alone would let a new or newly public package join the
- * release by declaring a group, and it would let a package leave by flipping
- * `private`. Both are release decisions, so the roster is restated here and
- * checked against what the workspace actually declares.
- */
-export const publishedPackages = [
-  "@smthrs/agent",
-  "@smthrs/artifacts",
-  "@smthrs/build",
-  "@smthrs/build-cli",
-  "@smthrs/canonical",
-  "@smthrs/capability",
-  "@smthrs/cli",
-  "@smthrs/control",
-  "@smthrs/core",
-  "@smthrs/crypto",
-  "@smthrs/database",
-  "@smthrs/engine",
-  "@smthrs/engine-store",
-  "@smthrs/errors",
-  "@smthrs/evals",
-  "@smthrs/flow",
-  "@smthrs/flows",
-  "@smthrs/fuzz",
-  "@smthrs/gateway",
-  "@smthrs/harness",
-  "@smthrs/integrations",
-  "@smthrs/jj",
-  "@smthrs/journal",
-  "@smthrs/kernel",
-  "@smthrs/keys",
-  "@smthrs/mcp",
-  "@smthrs/memory",
-  "@smthrs/migrate",
-  "@smthrs/model",
-  "@smthrs/notifications",
-  "@smthrs/observability",
-  "@smthrs/patterns",
-  "@smthrs/plan",
-  "@smthrs/plan-store",
-  "@smthrs/platform-browser",
-  "@smthrs/platform-bun",
-  "@smthrs/platform-cloudflare",
-  "@smthrs/platform-node",
-  "@smthrs/plugin",
-  "@smthrs/registry",
-  "@smthrs/run-store",
-  "@smthrs/sandbox",
-  "@smthrs/scorers",
-  "@smthrs/std",
-  "@smthrs/step-cache",
-  "@smthrs/sync",
-  "@smthrs/targets",
-  "@smthrs/testing",
-  "@smthrs/time-travel",
-  "@smthrs/triggers",
-  "@smthrs/views",
-  "smithers-ci",
-  "smthrs"
-]
+export { publishedPackages }
 
 /**
  * Reads every publishable workspace under `packages/`, keyed by its
@@ -132,7 +71,7 @@ export const readWorkspaceManifests = (root = repoRoot) => {
       "the publishable workspace set does not match publishedPackages" +
         (missing.length > 0 ? `\n  missing: ${missing.join(", ")}` : "") +
         (unexpected.length > 0 ? `\n  unexpected: ${unexpected.join(", ")}` : "") +
-        "\nEither restore the manifest's `private` flag and group or update publishedPackages in this file."
+        "\nEither restore the manifest's `private` flag and group or update publishedPackages in published-packages.mjse."
     )
   }
   return manifests

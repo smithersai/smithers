@@ -864,7 +864,8 @@ const packManifest = Smithers.NodeTest({
   srcs: [
     ...releaseSources,
     Smithers.file("//.github/workflows/ci.yml"),
-    Smithers.file("//.github/workflows/release.yml")
+    Smithers.file("//.github/workflows/release.yml"),
+    Smithers.file("//.github/workflows/npm-dist-tag.yml")
   ],
   deps: []
 })

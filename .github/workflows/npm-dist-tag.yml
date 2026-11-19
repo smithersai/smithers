@@ -1,18 +1,22 @@
-# Point an npm dist-tag of one @smthrs package at a version already on npm.
+# Point an npm dist-tag of one package this repository publishes at a version
+# already on npm.
 #
-# release.yml publishes a prerelease under `next` and never moves `latest`.
-# When `latest` must follow a published prerelease, a maintainer runs:
+# A release publishes a prerelease under `next`, and moves `latest` only for
+# the packages people run by bare name (`smithers-ci`; see runByName in
+# .smithers/flows/release/publish-release.mjs). When `latest` of another
+# package must follow a published prerelease, a maintainer runs:
 #
 #   gh workflow run npm-dist-tag.yml -f package=@smthrs/flows -f version=1.0.0-rc.8 -f tag=latest
 #
-# It checks out nothing and publishes nothing. Its only write is
+# It checks out the release scripts and publishes nothing. Its only write is
 # `npm dist-tag add`, made with the NPM_TOKEN repository secret, the npm
 # credential release-auth.yml verifies.
 #
 # GUARDS, all checked before the write:
-# - `package` is a scoped @smthrs/<name>. The unscoped `smthrs` and
-#   `smithers-orchestrator` names keep 0.x users on `latest`, so this workflow
-#   cannot move them.
+# - `package` is one a release publishes: the list in
+#   .smithers/flows/release/published-packages.mjs, which the release packs
+#   from. `smithers-orchestrator`, a 0.x name the release does not publish,
+#   is refused.
 # - `version` is an exact version, published under that package.
 # - `tag` is a lowercase word.
 # - `tag: latest` is refused while the package's current `latest` is a 0.x
@@ -30,7 +34,7 @@ on:
   workflow_dispatch:
     inputs:
       package:
-        description: "Package, as @smthrs/<name>"
+        description: "A package a release publishes, such as smithers-ci or @smthrs/cli"
         required: true
         type: string
       version:
@@ -66,6 +70,11 @@ jobs:
       TAG: ${{ inputs.tag }}
       REPLACE_ZERO_LATEST: ${{ inputs.replaceZeroLatest }}
     steps:
+      # The release scripts only: the package list and the request check.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          sparse-checkout: .smithers/flows/release
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 26.4.0
@@ -78,18 +87,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          if [[ ! "$PACKAGE" =~ ^@smthrs/[a-z0-9-]+$ ]]; then
-            echo "::error::package must be @smthrs/<name> in lowercase letters, digits and hyphens; got '$PACKAGE'."
-            exit 1
-          fi
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::version must be an exact version such as 1.0.0-rc.8; got '$VERSION'."
-            exit 1
-          fi
-          if [[ ! "$TAG" =~ ^[a-z][a-z0-9-]{0,63}$ ]]; then
-            echo "::error::tag must be a lowercase word such as latest or next; got '$TAG'."
-            exit 1
-          fi
+          node .smithers/flows/release/dist-tag-request.mjs
 
           published="$(npm view "$PACKAGE@$VERSION" version --registry https://registry.npmjs.org --loglevel error)"
           if [ "$published" != "$VERSION" ]; then

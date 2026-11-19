@@ -529,6 +529,8 @@ test("the supported Node floor packs and smokes the tarballs and retains its rec
       'else if (command === ".smithers/flows/release/smoke-release.mjs") {',
       '  const bytes = fs.readFileSync(path.join(directory, "package.tgz"), "utf8")',
       '  fs.writeFileSync(path.join(directory, "smoke-evidence.json"), JSON.stringify({ bytes, node: process.env.MOCK_NODE_VERSION }))',
+      '} else if (command === "packages/ci/test/package/tarball.e2e.mjs" || command === "packages/smithers/test/published-layout.e2e.mjs") {',
+      '  fs.readFileSync(path.join(directory, "package.tgz"), "utf8")',
       '} else throw new Error("unexpected release command")'
     ].join("\n"))
     writeFileSync(join(bin, "node"), '#!/bin/sh\nexec "$ACTUAL_NODE" "$MOCK_NODE_DRIVER" "$@"\n')
@@ -545,7 +547,13 @@ test("the supported Node floor packs and smokes the tarballs and retains its rec
     assert.equal(floor.status, 0, floor.stderr)
     assert.deepEqual(JSON.parse(readFileSync(join(env.SMOKE_EVIDENCE_DIR, "node26.json"), "utf8")), { bytes: "fixed candidate bytes", node: "v26.4.0" })
     const calls = readFileSync(env.TRACE, "utf8").trim().split("\n").map((line) => JSON.parse(line))
-    assert.deepEqual(calls, [[".smithers/flows/release/pack-release.mjs", env.PACK_DIR, "v26.4.0"], [".smithers/flows/release/smoke-release.mjs", env.PACK_DIR, "v26.4.0"]])
+    // The installed packages are proved on the same pack: `smithers-ci` from its tarball, and `smthrs` as one file.
+    assert.deepEqual(calls, [
+      [".smithers/flows/release/pack-release.mjs", env.PACK_DIR, "v26.4.0"],
+      [".smithers/flows/release/smoke-release.mjs", env.PACK_DIR, "v26.4.0"],
+      ["packages/ci/test/package/tarball.e2e.mjs", env.PACK_DIR, "v26.4.0"],
+      ["packages/smithers/test/published-layout.e2e.mjs", env.PACK_DIR, "v26.4.0"]
+    ])
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 

@@ -205,7 +205,7 @@ test("importing the release scripts reads no workspace tree", async () => {
   // roster error before the importer could call anything.
   const fixture = await mkdtemp(join(tmpdir(), "smithers-pack-release-import-"))
   try {
-    for (const file of ["packages/repo-targets/scripts/workspace-packages.mjs", "packages/repo-targets/scripts/workspace-root.mjs", ...["pack-release.mjs", "publish-release.mjs", "packed-export-targets.mjs", "build-release.mjs", "release-native-helpers.mjs"].map((name) => `.smithers/flows/release/${name}`)]) {
+    for (const file of ["packages/repo-targets/scripts/workspace-packages.mjs", "packages/repo-targets/scripts/workspace-root.mjs", ...["pack-release.mjs", "published-packages.mjs", "publish-release.mjs", "packed-export-targets.mjs", "build-release.mjs", "release-native-helpers.mjs"].map((name) => `.smithers/flows/release/${name}`)]) {
       await mkdir(dirname(join(fixture, file)), { recursive: true })
       await cp(join(repoRoot, file), join(fixture, file))
     }
@@ -1353,4 +1353,57 @@ test("native verifier validates aliased CLI paths but remains inert on import", 
     assert.equal(verified.status, 1)
     assert.match(verified.stderr, /OpenTUI native source patch does not match its manifest/)
   } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+const distTagRequest = new URL("./dist-tag-request.mjs", import.meta.url)
+
+/** Runs the request check the dist-tag workflow runs, as that workflow runs it. */
+const requestDistTag = (name, version, tag) =>
+  spawnSync(process.execPath, [distTagRequest.pathname], {
+    env: { PATH: process.env.PATH, PACKAGE: name, VERSION: version, TAG: tag },
+    encoding: "utf8"
+  })
+
+test("a dist-tag request may name any package a release publishes, and no other", () => {
+  for (const name of ["smithers-ci", "@smthrs/cli", "smthrs"]) {
+    assert.ok(publishedPackages.includes(name))
+    const accepted = requestDistTag(name, "1.0.0-rc.19", "latest")
+    assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr)
+    assert.equal(accepted.stdout, "")
+  }
+  for (const [name, version, tag, reason] of [
+    ["smithers-orchestrator", "1.0.0", "latest", /package must be one a release publishes .*got 'smithers-orchestrator'/],
+    ["@smthrs/not-published", "1.0.0", "latest", /package must be one a release publishes/],
+    ["smithers-ci", "1.0", "latest", /version must be an exact version .*got '1\.0'/],
+    ["smithers-ci", "1.0.0", "Latest", /tag must be a lowercase word .*got 'Latest'/]
+  ]) {
+    const refused = requestDistTag(name, version, tag)
+    assert.equal(refused.status, 1, name)
+    assert.match(refused.stdout, /^::error::/)
+    assert.match(refused.stdout, reason)
+  }
+})
+
+test("npm-dist-tag.yml checks a request against the release's package list before it reads the registry", () => {
+  const workflow = parse(readFileSync(join(repoRoot, ".github/workflows/npm-dist-tag.yml"), "utf8"))
+  const steps = workflow.jobs.move.steps
+  const checkout = steps.findIndex((step) => step.uses?.startsWith("actions/checkout@"))
+  const check = steps.findIndex((step) => step.run?.includes("node .smithers/flows/release/dist-tag-request.mjs"))
+  const write = steps.findIndex((step) => step.run?.includes("npm dist-tag add"))
+  assert.ok(checkout >= 0, "the workflow checks out the release scripts")
+  assert.match(steps[checkout].with["sparse-checkout"], /\.smithers\/flows\/release/)
+  assert.ok(check > checkout, "the request is checked after the checkout")
+  assert.ok(check < write, "the request is checked before the write")
+  assert.ok(steps[check].run.indexOf("dist-tag-request.mjs") < steps[check].run.indexOf("npm view"), "before the registry is read")
+  // One list: no second rule for which names may move.
+  assert.doesNotMatch(JSON.stringify(steps), /@smthrs\/\[a-z0-9-\]/)
+})
+
+test("the release's package list loads with no dependencies installed", () => {
+  for (const file of ["published-packages.mjs", "dist-tag-request.mjs"]) {
+    const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8")
+    for (const [, specifier] of source.matchAll(/^import .* from "([^"]+)"$/gm)) {
+      assert.ok(specifier.startsWith("node:") || specifier === "./published-packages.mjs", `${file} imports ${specifier}`)
+    }
+  }
 })
