@@ -809,6 +809,62 @@ describe("the run's own directories", () => {
   })
 })
 
+describe("a runtime path that is a link", () => {
+  it.skipIf(
+    process.platform !== "linux" || !NodeFs.lstatSync("/etc/localtime", { throwIfNoEntry: false })?.isSymbolicLink()
+  )(
+    "is that link in the run, as the host has it",
+    () => {
+      const { base, workspaceRoot } = writeFixture()
+      try {
+        const tmp = NodePath.join(workspaceRoot, ".tmp")
+        NodeFs.mkdirSync(NodePath.join(tmp, "home"), { recursive: true })
+        const facts = ProcessSandbox.host()
+        const result = ProcessSandbox.plan(
+          { network: "none", reads: [], writes: [] },
+          { workspaceRoot, cwd: workspaceRoot, tmp },
+          facts
+        )
+        if (result === undefined || ProcessSandbox.isUnenforceable(result)) {
+          throw new Error("native sandbox unavailable")
+        }
+        const wrapped = ProcessSandbox.wrap(result, ["/bin/sh", "-c", "readlink /etc/localtime"], {}, facts)
+        const ran = spawnSync(wrapped.argv[0]!, wrapped.argv.slice(1), {
+          encoding: "utf8",
+          timeout: 10_000,
+          env: { ...process.env, ...wrapped.env }
+        })
+        expect(ran.status, ran.stderr).toBe(0)
+        expect(ran.stdout.trim()).toBe(NodeFs.readlinkSync("/etc/localtime"))
+      } finally {
+        NodeFs.rmSync(base, { recursive: true, force: true })
+      }
+    }
+  )
+
+  it("is placed as the link where what it leads to is shown", () => {
+    const facts: ProcessSandbox.Host = {
+      ...linux,
+      exists: (path) => linux.exists(path) || path === "/usr" || path === "/etc/localtime",
+      isDirectory: (path) => linux.isDirectory(path) || path === "/usr",
+      isSymbolicLink: (path) => path === "/etc/localtime",
+      readlink: (path) => path === "/etc/localtime" ? "../usr/share/zoneinfo/UTC" : undefined,
+      realpath: (path) => path === "/etc/localtime" ? "/usr/share/zoneinfo/UTC" : path
+    }
+    const text = ProcessSandbox.bubblewrap(planned(facts), ["true"], facts).join(" ")
+    expect(text).toContain("--symlink ../usr/share/zoneinfo/UTC /etc/localtime")
+    expect(text).toContain("--ro-bind /usr /usr")
+    expect(text).not.toContain("--ro-bind /etc/localtime /etc/localtime")
+    // A host that cannot read the link's text, tell a link, or say where it leads gets its bytes bound, as before.
+    const { isSymbolicLink: _isSymbolicLink, ...plain } = facts
+    const unresolved = { ...facts, realpath: (path: string) => path === "/etc/localtime" ? undefined : path }
+    for (const host of [{ ...facts, readlink: () => undefined }, plain as ProcessSandbox.Host, unresolved]) {
+      expect(ProcessSandbox.bubblewrap(planned(facts), ["true"], host).join(" "))
+        .toContain("--ro-bind /etc/localtime /etc/localtime")
+    }
+  })
+})
+
 describe("the run's own user", () => {
   it.skipIf(process.platform !== "linux")("is named inside the jail, and no other user of the host is", () => {
     const { base, workspaceRoot } = writeFixture()

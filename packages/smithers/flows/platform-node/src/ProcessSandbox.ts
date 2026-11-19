@@ -1523,7 +1523,16 @@ export const bubblewrap = (
     "/"
   ]
   const runtime = runtimeReads(hostFacts)
-  for (const read of runtime) out.push("--ro-bind", read, read)
+  for (const read of runtime) {
+    // A link is placed as that link, as the host has it; what it leads to is
+    // shown, under `/usr`. A program reads `/etc/localtime`'s zone from
+    // where it leads, and given a copy of the zone's bytes it scans every zone.
+    const target = hostFacts.isSymbolicLink?.(read) === true ? hostFacts.readlink?.(read) : undefined
+    const real = hostFacts.realpath?.(read)
+    if (target !== undefined && real !== undefined && runtime.some((other) => insideRoot(other, real))) {
+      out.push("--symlink", target, read)
+    } else out.push("--ro-bind", read, read)
+  }
   const users = userEntries(confinement)
   if (users !== undefined) out.push("--file", "8", "/etc/passwd", "--file", "9", "/etc/group")
   out.push(
