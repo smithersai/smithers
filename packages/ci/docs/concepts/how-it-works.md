@@ -227,6 +227,12 @@ when a file it read changed, when a file appeared in a directory it listed, or
 when a path it looked for now exists. A change to a file it never read, the
 docs for one, does not run it.
 
+A step that asks git about the commit, as `git describe` and `pre-commit` do,
+read `.git`, which every commit changes, so it runs at every commit. `cargo
+build`, `cargo test` and `cargo doc` open `.git` only to list a package's
+files, so what cargo itself reads there is not counted; a build script or a
+test that reads `.git` is counted as any step is.
+
 The steps of a job follow each other in one checkout: an install leaves a
 tree, a build leaves its files, and the step after reads them. Each step is
 recorded the same way, and what each step left is kept with its record. A

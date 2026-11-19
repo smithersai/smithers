@@ -474,6 +474,7 @@ const lockedBuilds: ReadonlyMap<
     readonly commands: ReadonlyArray<string>
     readonly pins: ReadonlyArray<string>
     readonly rewrites: ReadonlyArray<string>
+    readonly own?: RegExp
   }
 > = new Map([
   ["cargo", {
@@ -496,7 +497,11 @@ const lockedBuilds: ReadonlyMap<
       "tree"
     ],
     pins: ["Cargo.lock"],
-    rewrites: ["Cargo.lock"]
+    rewrites: ["Cargo.lock"],
+    // For these commands cargo asks git only which files a package holds, to tell whether a build it kept is
+    // older than a source, and keeps what it asked the compiler in `.rustc_info.json`, which it checks against
+    // the compiler before it uses it and writes with its entries in another order at every run.
+    own: /\/\.git(?:\/|$)|\/\.rustc_info\.json$/
   }],
   ["go", {
     commands: ["build", "test", "vet"],
@@ -515,17 +520,27 @@ const lockedBuilds: ReadonlyMap<
  * command, so a flag that takes a value (`cargo --config x test`) is not
  * read past.
  *
+ * `own`, when the tool has one, matches the paths the tool reads for its own
+ * bookkeeping under these commands. What the tool itself reads there is no
+ * input of the run: `cargo doc` opens the repository's git store to list a
+ * package's files, and a record that held `.git/HEAD` would never match at
+ * another commit. A program the tool starts that reads the same paths, a
+ * build script or a test, did read them.
+ *
  * @category tracing
  * @since 1.0.0
  */
 export const lockedBuild = (
   argv: ReadonlyArray<string>
-): { readonly pins: ReadonlyArray<string>; readonly rewrites: ReadonlyArray<string> } | undefined => {
+):
+  | { readonly pins: ReadonlyArray<string>; readonly rewrites: ReadonlyArray<string>; readonly own?: RegExp }
+  | undefined =>
+{
   const first = argv[0] ?? ""
   const known = lockedBuilds.get(first.slice(first.lastIndexOf("/") + 1))
   const command = argv.slice(1).find((word) => !word.startsWith("-") && !word.startsWith("+"))
   return known !== undefined && command !== undefined && known.commands.includes(command)
-    ? { pins: known.pins, rewrites: known.rewrites }
+    ? { pins: known.pins, rewrites: known.rewrites, ...(known.own === undefined ? {} : { own: known.own }) }
     : undefined
 }
 
@@ -539,6 +554,8 @@ interface Build {
   readonly lock: string
   readonly pins: ReadonlySet<string>
   readonly rewrites: ReadonlySet<string>
+  /** The paths the tool reads for its own bookkeeping. */
+  readonly own: RegExp | undefined
   pinned: boolean
 }
 
@@ -737,14 +754,17 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       }
       return named
     }
+    /** Whether a path is one a build tool reads for its own bookkeeping, read by the tool itself. */
+    const own = (path: string): boolean => building.get(pid)?.own?.test(path) === true
     const saw = (path: string): void => {
+      if (own(path)) return
       if (!found.has(path)) ended.set(path, at)
       first(found, path, entered)
     }
     const looked = (path: string | undefined): void => {
       if (path === undefined) return
-      if (gone) first(missing, path, entered)
-      else saw(path)
+      if (!gone) saw(path)
+      else if (!own(path)) first(missing, path, entered)
     }
     /**
      * Notes a write. `creates` says the call would have made the name: when it
@@ -838,7 +858,7 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       case "getdents64": {
         const path = baseOf(args[0])
         if (path === undefined) refusals.add("its trace does not name a directory it listed")
-        else first(listed, path, entered)
+        else if (!own(path)) first(listed, path, entered)
         return
       }
       case "execve":
@@ -872,6 +892,7 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
               lock: build.pins[0]!,
               pins: beside(build.pins),
               rewrites: beside(build.rewrites),
+              own: build.own,
               pinned: false
             })
           }
@@ -2012,7 +2033,10 @@ const interpreters = (path: string, io: Io): ReadonlyArray<string> => {
 /**
  * Says what a record's run read that is no longer the same, or `undefined`
  * when every path it read still holds what the run left there and every
- * variable it could have used holds, in `values`, the value it had.
+ * variable it could have used holds, in `values`, the value it had. A path a
+ * step before the run left is named with that step: `target/a.o, which
+ * //:build left, changed` says the build ran again and left other bytes,
+ * where `src/a.c changed` names a file of the commit.
  *
  * `answered` gives, for a step the run read files from, the ids of the
  * records that step is answered from while it has written nothing in this
@@ -2055,8 +2079,10 @@ export const changed = (
   for (const [path, state, place] of stored.given ?? []) {
     const now = measured(absolute(path))
     if (now === state) continue
-    if (now !== absent) return state === absent ? `${path} now exists` : `${path} changed`
-    if (!again(place)) return `${path} is gone`
+    // A file a step before this one left is no file of the commit: the line names the step, which ran again.
+    const left = `${path}, which ${stored.from![place]![0]} left,`
+    if (now !== absent) return state === absent ? `${path} now exists` : `${left} changed`
+    if (!again(place)) return `${left} is gone`
     pending.add(path)
   }
   for (const [path, digest, own, added = []] of stored.lists) {

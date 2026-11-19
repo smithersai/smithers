@@ -733,6 +733,10 @@ describe("reading a trace", () => {
     )
     expect(trace.refusals).toEqual([])
     expect(paths(trace.found)).toEqual(["/w/q\"uote\\back\n\t\r\v\f\u0007\b\u001bé" + "A, >x"])
+    // A tracer told to print bytes as they are leaves a letter outside ASCII unescaped, beside an escape.
+    const plain = read("100 stat(\"/w/caf\u00e9\\n\", {st_mode=S_IFREG|0644, ...}) = 0")
+    expect(plain.refusals).toEqual([])
+    expect(paths(plain.found)).toEqual(["/w/caf\u00e9\n"])
     const answered = read("100 stat(\"/w/unknown\", {st_mode=S_IFREG|0644, ...}) = ?")
     expect(paths(answered.found)).toEqual(["/w/unknown"])
     const wrote = read("100 unlink(\"/w/unknown\") = ?")
@@ -1344,10 +1348,12 @@ describe("what a run read that an earlier step wrote", () => {
     )
     expect(ObservedReads.changed(record, root)).toBeUndefined()
     await write("node_modules/pkg/index.js", "another package")
-    expect(ObservedReads.changed(record, root)).toBe("node_modules/pkg/index.js changed")
+    expect(ObservedReads.changed(record, root)).toBe("node_modules/pkg/index.js, which //:install left, changed")
     // A step answered from the record this run read it under does not make a changed file its own.
     const all = (label: string): ReadonlySet<string> => new Set([label === "//:install" ? "install-1" : "build-1"])
-    expect(ObservedReads.changed(record, root, undefined, undefined, all)).toBe("node_modules/pkg/index.js changed")
+    expect(ObservedReads.changed(record, root, undefined, undefined, all)).toBe(
+      "node_modules/pkg/index.js, which //:install left, changed"
+    )
     await write("node_modules/pkg/index.js", "package")
     // A step answered from another of its runs would write other files than this run read: what is at the paths
     // now, the same bytes or not, is not what the run would find.
@@ -1382,9 +1388,9 @@ describe("what a run read that an earlier step wrote", () => {
     await Fs.rm(Path.join(root, "stamp.txt"))
     expect(ObservedReads.changed(record, root, undefined, undefined, both)).toBeUndefined()
     // No step is answered, one is, or one is answered from another record: the path is gone.
-    expect(ObservedReads.changed(record, root)).toBe("node_modules is gone")
+    expect(ObservedReads.changed(record, root)).toBe("node_modules, which //:install left, is gone")
     expect(ObservedReads.changed(record, root, undefined, undefined, answered({ "//:install": "install-1" })))
-      .toBe("src/generated.js is gone")
+      .toBe("src/generated.js, which //:build left, is gone")
     expect(
       ObservedReads.changed(
         record,
@@ -1412,7 +1418,9 @@ describe("what a run read that an earlier step wrote", () => {
     expect(ObservedReads.changed(probing, root)).toBeUndefined()
     // What a step wrote where something already was is still an input when it changes.
     await write("src/generated.js", "written by hand")
-    expect(ObservedReads.changed(record, root, undefined, undefined, both)).toBe("src/generated.js changed")
+    expect(ObservedReads.changed(record, root, undefined, undefined, both)).toBe(
+      "src/generated.js, which //:build left, changed"
+    )
   })
 
   it("keeps the names the run itself added apart from the names a step added", async () => {
@@ -1894,7 +1902,7 @@ describe("a build tool that fetches what a lockfile pins", () => {
     "with no Cargo.lock to say what it fetches"
 
   it("is known by its command line", () => {
-    const cargo = { pins: ["Cargo.lock"], rewrites: ["Cargo.lock"] }
+    const cargo = { pins: ["Cargo.lock"], rewrites: ["Cargo.lock"], own: /\/\.git(?:\/|$)|\/\.rustc_info\.json$/ }
     const go = { pins: ["go.sum"], rewrites: ["go.sum", "go.mod", "go.work.sum", "go.work"] }
     for (
       const line of [
@@ -2006,6 +2014,71 @@ describe("a build tool that fetches what a lockfile pins", () => {
       "it opened a network connection (go to 151.101.2.137 port 443), and wrote go.mod: " +
       "no lockfile fixed what it fetched"
     ])
+  })
+
+  it("leaves out what cargo itself reads to list a package's files and to remember the compiler", () => {
+    // `cargo doc` opens the repository's store, as it does at every commit, and its own note of the compiler.
+    const store = [
+      "100 statx(AT_FDCWD</w/crate>, \"/w/crate/.git\", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mode=S_IFDIR|0775}) = 0",
+      open(100, "/w/crate/.git/HEAD"),
+      "100 openat(AT_FDCWD</w/crate>, \"/w/crate/.git/commondir\", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)",
+      open(100, "/w/crate/.git/index"),
+      "100 openat(AT_FDCWD</w/crate>, \"/w/crate/.git/objects/pack\", O_RDONLY|O_DIRECTORY) = 10",
+      "100 getdents64(10</w/crate/.git/objects/pack>, 0x55 /* 4 entries */, 32768) = 120",
+      open(100, "/w/crate/target/.rustc_info.json"),
+      // A write that failed is a look at the path.
+      "100 openat(AT_FDCWD</w/crate>, \"/w/crate/.git/index.lock\", O_WRONLY|O_CREAT|O_EXCL, 0666) = -1 EACCES (Permission denied)"
+    ]
+    const rest = [
+      open(100, "/w/crate/.gitignore"),
+      open(100, "/w/crate/src/lib.rs"),
+      "100 openat(AT_FDCWD</w/crate>, \"/w/crate/.github\", O_RDONLY|O_DIRECTORY) = 11",
+      "100 getdents64(11</w/crate/.github>, 0x55 /* 3 entries */, 32768) = 80"
+    ]
+    const seen = (...lines: ReadonlyArray<string>) => {
+      const trace = read(lines.join("\n"), "/w/crate")
+      return {
+        found: [...trace.found.keys()].filter((path) => path.startsWith("/w/")).sort(),
+        missing: [...trace.missing.keys()].sort(),
+        listed: [...trace.listed.keys()].sort()
+      }
+    }
+    expect(seen(start(100, "cargo", "doc", "--verbose"), thread(100, 101), ...store, ...rest)).toEqual({
+      found: ["/w/crate/.github", "/w/crate/.gitignore", "/w/crate/src/lib.rs"],
+      missing: [],
+      listed: ["/w/crate/.github"]
+    })
+    // A thread of cargo is cargo.
+    expect(
+      seen(start(100, "cargo", "doc"), thread(100, 101), open(101, "/w/crate/.git/HEAD"), open(101, "/w/crate/a.rs"))
+        .found
+    ).toEqual(["/w/crate/a.rs"])
+    // The same reads by a program cargo started, by `cargo package`, which writes the commit into what it
+    // packs, and by any other program are reads.
+    const all = {
+      found: [
+        "/w/crate/.git",
+        "/w/crate/.git/HEAD",
+        "/w/crate/.git/index",
+        "/w/crate/.git/index.lock",
+        "/w/crate/.git/objects/pack",
+        "/w/crate/target/.rustc_info.json"
+      ],
+      missing: ["/w/crate/.git/commondir"],
+      listed: ["/w/crate/.git/objects/pack"]
+    }
+    const child = store.map((line) => line.replace(/^100 /, "102 "))
+    expect(
+      seen(
+        start(100, "cargo", "test"),
+        process(100, 102),
+        start(102, "build-script-build"),
+        ...child
+      )
+    )
+      .toEqual(all)
+    expect(seen(start(100, "cargo", "package"), ...store)).toEqual(all)
+    expect(seen(start(100, "git", "status"), ...store)).toEqual(all)
   })
 
   it("covers the tool alone: not a program it starts, and not the program it becomes", () => {

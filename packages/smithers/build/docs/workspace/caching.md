@@ -361,6 +361,10 @@ The structured summary carries the same text on the target's row as
 `notReused`, and `--results-file` writes it, so a program that reads a run can
 say which file made a step run again.
 
+A file a step before it left is named with that step: `deps/built.txt, which
+//:build left, changed` says the build ran again and left other bytes, where
+`src/a.txt changed` names a file of the workspace.
+
 A record holds every path its run read, and a change to any of them makes the
 run happen. The workspace's own files are compared first, smallest first, and
 the tools and installed packages last: a commit changes the first kind, so a
@@ -542,6 +546,17 @@ Only the tool itself is covered. A compiler, a build script or a test it
 starts that connects still stores nothing, and so does the program `cargo run`
 becomes. `cargo install`, `cargo update`, `go get` and `go run` choose
 versions and are not covered.
+
+**What cargo reads for its own bookkeeping is no input.** Under the commands
+above, cargo opens the repository's git store (`.git/HEAD`, `.git/index`) to
+list a package's files, which tells it whether a build it kept is older than
+a source. It also keeps what it asked the compiler in `.rustc_info.json`,
+which it checks against the compiler before use and writes with its entries
+in another order at every run. Neither is recorded when cargo itself reads
+it, so a `cargo doc` step is reused at a commit that changes nothing else it
+read. The directories cargo lists and the sources the compiler reads are
+recorded as always. A build script or a test that reads `.git` did read it,
+and so did `cargo package`, which writes the commit into what it packs.
 
 **Variables that differ from run to run.** A CI run is given the commit it is
 for, a run id and a run number, and each is another at the next run. In the
