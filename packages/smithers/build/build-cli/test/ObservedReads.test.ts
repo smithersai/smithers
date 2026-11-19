@@ -1016,6 +1016,43 @@ describe("recording what a run read", () => {
     expect(ObservedReads.changed(stored, root, ObservedReads.remembering())).toBeUndefined()
   })
 
+  it("holds the commit's own files first, then the workspace's smallest, and reads no more once one differs", async () => {
+    const { outside, record, root, rows } = await setup()
+    await Fs.writeFile(Path.join(root, "src", "large.txt"), "l".repeat(4096))
+    await Fs.writeFile(Path.join(root, "src", "small.txt"), "s")
+    await Fs.writeFile(Path.join(root, "src", "own.txt"), "o".repeat(8192))
+    const stored = rows(record([
+      open(root, outside),
+      open(root, "src/large.txt"),
+      open(root, "src/small.txt"),
+      open(root, "src/own.txt"),
+      absent(root, "src/missing.txt")
+    ]))
+    /** The paths that were measured, in order. */
+    const measured: Array<string> = []
+    const measuring = (path: string): string => {
+      measured.push(Path.relative(root, path))
+      return ObservedReads.measure(path)
+    }
+    const held = (own?: (path: string) => boolean): string | undefined => {
+      measured.length = 0
+      return ObservedReads.changed(stored, root, measuring, ObservedReads.defaultIo, undefined, {}, own)
+    }
+    // Nothing differs: every path is measured, the workspace's before the one outside it, the smallest first.
+    expect(held()).toBeUndefined()
+    expect(measured).toEqual(["src/missing.txt", "src/small.txt", "src/large.txt", "src/own.txt", "../outside.txt"])
+    // Every file differs. The first one found is named, and nothing after it is read.
+    for (const name of ["src/large.txt", "src/small.txt", "src/own.txt"]) {
+      await Fs.appendFile(Path.join(root, name), "changed")
+    }
+    await Fs.appendFile(outside, "changed")
+    expect(held()).toBe("src/small.txt changed")
+    expect(measured).toEqual(["src/missing.txt", "src/small.txt"])
+    // A caller that knows the commit's own files has them held first: the tools and packages are never read.
+    expect(held((path) => path === "src/own.txt")).toBe("src/own.txt changed")
+    expect(measured).toEqual(["src/own.txt"])
+  })
+
   it("leaves out what the run made, and accepts a path it found missing and then made", async () => {
     const { record, root, rows } = await setup()
     await Fs.writeFile(Path.join(root, "src", "out.txt"), "output")

@@ -2068,13 +2068,14 @@ export const changed = (
   measured: (path: string) => string = measure,
   io: Io = defaultIo,
   answered: (label: string) => ReadonlySet<string> | undefined = () => undefined,
-  values: Variables["values"] = {}
+  values: Variables["values"] = {},
+  own: (path: string) => boolean = () => false
 ): string | undefined => {
   for (const [name, held] of stored.variables ?? []) {
     if (heldAs(values[name]) !== held) return `the variable ${name} has another value`
   }
   const absolute = (path: string): string => path === "." ? root : path.startsWith("/") ? path : `${root}/${path}`
-  for (const [path, state, other] of cheapestFirst(stored.reads, absolute, io)) {
+  for (const [path, state, other] of cheapestFirst(stored.reads, absolute, io, own)) {
     const now = measured(absolute(path))
     if (now === state || now === other) continue
     if (now === absent) return `${path} is gone`
@@ -2116,15 +2117,17 @@ export const changed = (
 
 /**
  * The paths a run read, in the order they are held against the host: the
- * workspace's own before the rest, and the smallest files first. A change
- * makes a run happen whichever path shows it, and a commit changes the
- * workspace's small files, never the tools or the packages a step installed:
- * held last, those are not read at all when the run has to happen.
+ * files `own` names first, which are the commit's own where the caller knows
+ * them, then the rest of the workspace before what is outside it, and the
+ * smallest files first. A change makes a run happen whichever path shows it,
+ * and a commit changes its own files, never the tools or the packages a step
+ * installed: held last, those are not read at all when the run has to happen.
  */
 const cheapestFirst = (
   reads: Record["reads"],
   absolute: (path: string) => string,
-  io: Io
+  io: Io,
+  own: (path: string) => boolean
 ): ReadonlyArray<Record["reads"][number]> => {
   const cost = (path: string): number => {
     try {
@@ -2135,7 +2138,7 @@ const cheapestFirst = (
     }
   }
   return reads
-    .map((read, index) => [read, read[0].startsWith("/") ? 1 : 0, cost(read[0]), index] as const)
+    .map((read, index) => [read, own(read[0]) ? 0 : read[0].startsWith("/") ? 2 : 1, cost(read[0]), index] as const)
     .sort((left, right) => left[1] - right[1] || left[2] - right[2] || left[3] - right[3])
     .map(([read]) => read)
 }

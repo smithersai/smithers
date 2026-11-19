@@ -366,10 +366,11 @@ A file a step before it left is named with that step: `deps/built.txt, which
 `src/a.txt changed` names a file of the workspace.
 
 A record holds every path its run read, and a change to any of them makes the
-run happen. The workspace's own files are compared first, smallest first, and
-the tools and installed packages last: a commit changes the first kind, so a
-run that has to happen is known before a large file is read. When several
-paths changed, the line names the first one found.
+run happen. For a target on a machine, the files a fresh checkout holds are
+compared first: they are what a commit changes. Then come the other paths of
+the workspace, smallest first, and the tools and installed packages last. So a
+run that has to happen is known before an installed package is read. When
+several paths changed, the line names the first one found.
 
 **Where the time went.** A target's row also carries `parts`: the milliseconds
 its run spent on each part, as `ms`, and the CPU time of each part, as `cpuMs`,

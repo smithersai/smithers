@@ -2812,6 +2812,12 @@ const executeWith = (
             .map((directory) => NodeFs.realpathSync(directory))
         )
       ]
+    /**
+     * The files a fresh checkout holds, where the build makes machines: what a commit changes. A stored record is
+     * held against these first, so a step that has to run is known before a tool or an installed package is read.
+     */
+    let commitFiles: ReadonlySet<string> | undefined
+    const commitFile = (path: string): boolean => commitFiles?.has(path) === true
     /** The host as a machine that is not made yet would find it; set when the targets are answered together. */
     let unmade: ReturnType<typeof Machine.unmade> | undefined
     /**
@@ -3124,6 +3130,7 @@ const executeWith = (
         // A machine is made only for a target that has to run. Until then its record is held against what the
         // machine would start with: a fresh checkout, an empty home and an empty temporary directory.
         if (machinesKept !== undefined) unmade = Machine.unmade(yield* joined(startOf), stateOf)
+        if (machinesKept !== undefined) commitFiles = (yield* joined(startOf)).held?.files
         /** A dependency that runs nothing, as a group of files does, holds nobody back. */
         const still = (label: string): boolean => kept.has(label) || byLabel.get(label)?.rule === "Filegroup"
         for (let settled = false; !settled;) {
@@ -3143,7 +3150,8 @@ const executeWith = (
                       seen.measured,
                       seen.io,
                       (label) => kept.get(label),
-                      node.observed!.variables
+                      node.observed!.variables,
+                      commitFile
                     ) === undefined
                 )
               )
@@ -3218,7 +3226,8 @@ const executeWith = (
               seen.measured,
               seen.io,
               undefined,
-              observed.variables
+              observed.variables,
+              commitFile
             )
           )
           if (moved !== undefined) {
