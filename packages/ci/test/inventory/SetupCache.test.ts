@@ -81,7 +81,7 @@ describe("actions/setup-node with cache: npm", () => {
     // setup-node: `core.setOutput('cache-hit', Boolean(cacheKey))`, so a miss is `false`, where actions/cache leaves
     // the output empty.
     expect(first[1]?.output).toBe("hit=[false]")
-    expect(first[2]?.output).toMatch(/^Cache saved with key: node-cache-npm-/)
+    expect(first[2]?.output).toMatch(/\nCache saved with key: node-cache-npm-/)
     // A new machine: the home is empty but for the store.
     rmSync(join(repo.temp, ".npm"), { recursive: true })
     const second = run(repo)
@@ -130,7 +130,7 @@ jobs:
     const ran = run(repo)
     expect(ran.map((step) => step.status)).toEqual([0, 0, 0])
     expect(ran[0]?.output).toMatch(/^Cache not found for input keys: node-cache-npm-/)
-    expect(ran[2]?.output).toMatch(/^Cache saved with key: node-cache-npm-/)
+    expect(ran[2]?.output).toMatch(/\nCache saved with key: node-cache-npm-/)
   })
 
   it("keeps no cache, and runs the job, when cache-dependency-path holds a matrix value", () => {
@@ -176,7 +176,7 @@ describe("actions/setup-go", () => {
     expect(run(repo, path).map((step) => step.output)).toEqual([
       expect.stringMatching(/^Cache not found for input keys: setup-go-1\.24-(Linux|macOS)-(X64|ARM64)-[0-9a-f]{64}$/),
       "cold",
-      expect.stringMatching(/^Cache saved with key: setup-go-1\.24-/)
+      expect.stringMatching(/\nCache saved with key: setup-go-1\.24-/)
     ])
     rmSync(join(repo.temp, "go"), { recursive: true })
     rmSync(join(repo.temp, ".cache", "go-build"), { recursive: true })
@@ -294,7 +294,7 @@ describe("actions/setup-python with cache: pip", () => {
         /^Cache not found for input keys: setup-python-3\.13-pip-(Linux|macOS)-(X64|ARM64)-[0-9a-f]{64}$/
       ),
       "cold",
-      expect.stringMatching(/^Cache saved with key: setup-python-3\.13-pip-/)
+      expect.stringMatching(/\nCache saved with key: setup-python-3\.13-pip-/)
     ])
     rmSync(join(repo.temp, ".cache", "pip"), { recursive: true })
     expect(run(repo, path)[1]?.output).toBe("wheel")

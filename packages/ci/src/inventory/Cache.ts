@@ -98,7 +98,22 @@ const common = [
   `    esac`,
   `  done`,
   `}`,
-  `__key=\${${variables.key}-}`
+  `__key=\${${variables.key}-}`,
+  // What an entry holds, in the step's log: how many files, directories and links, how many bytes, and from where.
+  `__told() {`,
+  `  __count=0; __bytes=0`,
+  `  for __name in work home temp; do`,
+  `    [ -f "$__entry/$__name.tar" ] || continue`,
+  `    __count=$((__count + $(tar -tf "$__entry/$__name.tar" | wc -l)))`,
+  `    __bytes=$((__bytes + $(wc -c < "$__entry/$__name.tar")))`,
+  `  done`,
+  `  echo "Cache Size: ~$(((__bytes + 524288) / 1048576)) MB ($__bytes B)"`,
+  `  __where=`,
+  `  for __path in \${__work[@]+"\${__work[@]}"}; do __where="$__where $GITHUB_WORKSPACE/$__path"; done`,
+  `  for __path in \${__home[@]+"\${__home[@]}"}; do __where="$__where $HOME/$__path"; done`,
+  `  for __path in \${__temp[@]+"\${__temp[@]}"}; do __where="$__where $RUNNER_TEMP/$__path"; done`,
+  `  echo "smithers-ci: $1 $__count entries, $__bytes bytes, key $2, at$__where"`,
+  `}`
 ].join("\n")
 
 /** The lines that read the step's `path` and name the directory of the entries saved for it. */
@@ -139,7 +154,7 @@ export const restoreScript = [
   `    done`,
   `  done <<< "\${${variables.restoreKeys}-}"`,
   `fi`,
-  `__unpack() { [ ! -f "$__entry/$1.tar" ] || tar -xf "$__entry/$1.tar" -C "$2"; }`,
+  `__unpack() { [ ! -f "$__entry/$1.tar" ] || tar -xpf "$__entry/$1.tar" -C "$2"; }`,
   `if [ -n "$__found" ] && [ "\${${variables.lookupOnly}-}" != true ]; then`,
   `  if ! { __unpack work "$GITHUB_WORKSPACE" && __unpack home "$HOME" && __unpack temp "$RUNNER_TEMP"; }; then`,
   `    echo "::warning::Failed to restore: the cache $__found could not be unpacked"`,
@@ -154,7 +169,7 @@ export const restoreScript = [
   `  echo "Cache not found for input keys: $__key"`,
   `  exit 0`,
   `fi`,
-  `[ "\${${variables.lookupOnly}-}" != true ] || echo "Lookup only - skipping download"`,
+  `if [ "\${${variables.lookupOnly}-}" = true ]; then echo "Lookup only - skipping download"; else __told restored "$__found"; fi`,
   `echo "cache-matched-key=$__found" >> "$GITHUB_OUTPUT"`,
   `if [ "$__found" = "$__key" ]; then echo "cache-hit=true"; else echo "cache-hit=false"; fi >> "$GITHUB_OUTPUT"`,
   `echo "Cache restored from key: $__found"`
@@ -188,16 +203,20 @@ export const saveScript = [
   `  for __path in "$@"; do`,
   `    if [ -e "$__from/$__path" ] || [ -L "$__from/$__path" ]; then __have+=("./$__path"); fi`,
   `  done`,
-  `  [ "\${#__have[@]}" -eq 0 ] || tar -cf "$__entry/$__name.tar" -C "$__from" -- "\${__have[@]}"`,
+  `  [ "\${#__have[@]}" -eq 0 ] || tar --format=pax -cf "$__entry/$__name.tar" -C "$__from" -- "\${__have[@]}"`,
   `}`,
-  `__pack work "$GITHUB_WORKSPACE" \${__work[@]+"\${__work[@]}"}`,
-  `__pack home "$HOME" \${__home[@]+"\${__home[@]}"}`,
-  `__pack temp "$RUNNER_TEMP" \${__temp[@]+"\${__temp[@]}"}`,
+  `if ! { __pack work "$GITHUB_WORKSPACE" \${__work[@]+"\${__work[@]}"} &&`,
+  `  __pack home "$HOME" \${__home[@]+"\${__home[@]}"} &&`,
+  `  __pack temp "$RUNNER_TEMP" \${__temp[@]+"\${__temp[@]}"}; }; then`,
+  `  echo "::warning::Failed to save: the cache $__key could not be packed"`,
+  `  exit 0`,
+  `fi`,
   `if [ -z "$(ls "$__entry")" ]; then`,
   `  echo "Path Validation Error: Path(s) specified in the action for caching do(es) not exist, hence no cache is being saved."`,
   `  exit 0`,
   `fi`,
   `printf %s "$__key" > "$__entry/key"`,
+  `__told saved "$__key"`,
   `echo "Cache saved with key: $__key"`
 ].join("\n")
 

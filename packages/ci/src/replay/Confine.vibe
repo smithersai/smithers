@@ -321,29 +321,44 @@ export const held = (
 ): readonly [string, ...Array<string>] => jailed(place.jail, [place.home, ...writable], [place.hooks], argv)
 
 /**
- * The place of one job: a home and a temporary directory of its own beside
- * those of `place`, its way. Both are empty but for the hook, as a CI runner
- * starts each job, and both are removed when the scope closes: no other job
- * and no other commit finds what the job wrote there. The stand-ins, the
- * daemon and what the jail hides are those of the way.
+ * An empty directory at `directory`, made writable and removed when the scope
+ * closes. What an earlier run left there is removed first: a step can leave a
+ * directory nothing can be removed from, so everything is made writable before.
  *
  * @category constructors
  * @since 0.1.0
  */
-export effect function machine(place: Confined) {
+export effect function fresh(directory: string) {
   const fs = try FileSystem.FileSystem
-  const path = try Path.Path
   const spawner = try ChildProcessSpawner
-  const home = try fs.makeTempDirectory({ directory: path.dirname(place.home), prefix: `${path.basename(place.home)}-job-` })
-  const tmp = try fs.makeTempDirectory({ directory: path.dirname(place.tmp), prefix: `${path.basename(place.tmp)}-job-` })
-  // A step can leave a directory nothing can be removed from, so both are made writable first.
-  try addFinalizer(() =>
-    ignore(effect {
-      try unlock(spawner, [home, tmp])
-      try fs.remove(home, { recursive: true, force: true })
-      try fs.remove(tmp, { recursive: true, force: true })
-    })
-  )
+  const clear = effect {
+    if (!(try fs.exists(directory))) return
+    try unlock(spawner, [directory])
+    try fs.remove(directory, { recursive: true, force: true })
+  }
+  try clear
+  try fs.makeDirectory(directory, { recursive: true })
+  try addFinalizer(() => ignore(clear))
+  return directory
+}
+
+/**
+ * The place of one job: a home and a temporary directory of its own beside
+ * those of `place`, its way, named `name`. A runner gives every job the same
+ * home, so a job is given the same paths at every commit (`Summary.runNames`):
+ * a tool that wrote one of them into what a cache step saved finds it again
+ * when a later job restores it. Both are empty but for the hook, as a CI
+ * runner starts each job, and both are removed when the scope closes: no
+ * other job and no other commit finds what the job wrote there. The
+ * stand-ins, the daemon and what the jail hides are those of the way.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function machine(place: Confined, name: string) {
+  const path = try Path.Path
+  const home = try fresh(path.join(path.dirname(place.home), `${path.basename(place.home)}-job-${name}`))
+  const tmp = try fresh(path.join(path.dirname(place.tmp), `${path.basename(place.tmp)}-job-${name}`))
   try furnish(home, place.links)
   return {
     ...place,

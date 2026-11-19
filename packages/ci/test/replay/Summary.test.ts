@@ -27,6 +27,7 @@ import {
   recovered,
   replayable,
   reportOf,
+  runNames,
   seenIn,
   selectionOf,
   splitOf,
@@ -248,6 +249,28 @@ describe("replayable", () => {
       [["m"], 1]
     ])
     expect(stationsOf(units, new Set(["//:gone"]))).toEqual([])
+  })
+
+  it("names each run's machine the same at every commit, and apart from every other run", () => {
+    const units = unitsOf(inventory([job("m", { matrix: [{ a: "1" }, { a: "2" }] }), job("n/x y")]))
+    const runs = stationsOf(units).flatMap((station) => station.runs)
+    const names = runNames(runs)
+    expect(names).toEqual(runNames(
+      unitsOf(inventory([job("m", { matrix: [{ a: "1" }, { a: "2" }] }), job("n/x y")]))
+        .map((unit) => [unit])
+    ))
+    expect(names.map((name) => name.replace(/-[0-9a-f]{12}$/, ""))).toEqual(["m", "m", "n-x-y"])
+    expect(new Set(names).size).toBe(3)
+    // Two runs of the same units are two machines.
+    const first = runs[0] ?? []
+    expect(runNames([first, first])).toEqual([names[0], `${names[0]}-1`])
+    // The jobs of one shared tree are one run, named by the tree.
+    const tree = unitsOf(inventory([
+      job("justfile:ci", { source: "justfile", file: "Justfile", needs: ["justfile:build"], triggers: [] }),
+      job("justfile:build", { source: "justfile", file: "Justfile", triggers: [] })
+    ]))
+    const [shared] = stationsOf(tree).flatMap((station) => station.runs)
+    expect(runNames([shared ?? []])[0]).toMatch(/^Justfile-Justfile-[0-9a-f]{12}$/)
   })
 
   it("runs the jobs of one shared tree as one run, in order, and reruns a job after the jobs before it", () => {

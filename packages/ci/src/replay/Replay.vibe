@@ -46,6 +46,7 @@ import { withReasons } from "../native/Results.ts"
 import {
   type Confined,
   confine,
+  fresh,
   held,
   jobHomes,
   machine,
@@ -126,6 +127,7 @@ import {
   recordOf,
   recovered,
   replayable,
+  runNames,
   seenIn,
   splitOf,
   type Station,
@@ -846,33 +848,43 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         (result.status === "ran" || result.status === "hit") && steps.has(result.label) ? [result.label] : []
       )
       if (request.applied !== true || !own.applies || passed.length === 0) return undefined
-      const start = try Clock.currentTimeMillis
-      try progress.say(`${at} with the files apply writes`)
-      const site = { ...normal, copy: path.join(work, "applied", path.basename(root)) } satisfies Site
-      try cloneAt(site.copy, commit, site.place)
-      const seen = try commitApplied(site.copy, commit, own, site.place)
-      const causes = new Map<string, string>()
-      // Its reruns are not the replay's: they are in no count of the report.
-      const second = try measure(
-        Effect.void,
-        Effect.void,
-        smithers(commit, site, own, { causes, seen }),
-        passed,
-        reruns,
-        new Map(),
-        { count: 0, ms: 0 }
-      )
-      const failed = new Map(second.results.flatMap((result) => result.status === "failed" ? [[result.label, result] as const] : []))
-      // A step that names none of the files still fails only beside them: the line says so and lists them.
-      const written = own.generated.map((file) => file.path)
-      for (const label of failed.keys()) {
-        if (!causes.has(label)) causes.set(label, failsApplied(written))
-      }
-      const results = normalRecord.results.map((result) => failed.get(result.label) ?? result)
-      // A step that this run failed carries its line; a mismatch normal mode already had carries none.
-      const mismatches = mismatchesOf("normal", baseRecord, { ...normalRecord, results }, own.splits, causes)
-        .filter((entry) => entry.cause !== undefined)
-      return { mismatches, ms: (try Clock.currentTimeMillis) - start }
+      return try scoped(effect {
+        const start = try Clock.currentTimeMillis
+        try progress.say(`${at} with the files apply writes`)
+        // The run starts in the checkout normal mode's runs started in, as a person's next CI run does: Smithers build
+        // names a job's machine by its workspace's path, and a tool that wrote a path of that machine into a cache
+        // normal mode saved finds it again. Normal mode's copy waits beside it until the run ends.
+        const site = normal
+        const aside = path.join(work, "applied", path.basename(root))
+        try orFail(fs.makeDirectory(path.dirname(aside), { recursive: true }), "could not make a directory")
+        try orFail(fs.rename(normalCopy, aside), "could not move normal mode's copy")
+        try addFinalizer(() => ignore(fs.rename(aside, normalCopy)))
+        try orFail(fresh(normalCopy), "could not make a directory")
+        try cloneAt(site.copy, commit, site.place)
+        const seen = try commitApplied(site.copy, commit, own, site.place)
+        const causes = new Map<string, string>()
+        // Its reruns are not the replay's: they are in no count of the report.
+        const second = try measure(
+          Effect.void,
+          Effect.void,
+          smithers(commit, site, own, { causes, seen }),
+          passed,
+          reruns,
+          new Map(),
+          { count: 0, ms: 0 }
+        )
+        const failed = new Map(second.results.flatMap((result) => result.status === "failed" ? [[result.label, result] as const] : []))
+        // A step that names none of the files still fails only beside them: the line says so and lists them.
+        const written = own.generated.map((file) => file.path)
+        for (const label of failed.keys()) {
+          if (!causes.has(label)) causes.set(label, failsApplied(written))
+        }
+        const results = normalRecord.results.map((result) => failed.get(result.label) ?? result)
+        // A step that this run failed carries its line; a mismatch normal mode already had carries none.
+        const mismatches = mismatchesOf("normal", baseRecord, { ...normalRecord, results }, own.splits, causes)
+          .filter((entry) => entry.cause !== undefined)
+        return { mismatches, ms: (try Clock.currentTimeMillis) - start }
+      })
     }
 
     const stepLimit = options.stepTimeout ?? Duration.hours(stepTimeoutHours)
@@ -900,6 +912,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      */
     effect function runSequence(
       sequence: ReadonlyArray<Unit>,
+      name: string,
       commit: string,
       wanted: ReadonlySet<string> | undefined,
       way: Confined,
@@ -908,8 +921,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     ) {
       return try scoped(effect {
         // A job is a machine: its home and its temporary directory are its own, and gone when it ends.
-        const place = try orFail(machine(way), "could not make the home of a job")
-        const directory = try orFail(fs.makeTempDirectoryScoped({ directory: work }), "could not make a directory")
+        const place = try orFail(machine(way, name), "could not make the home of a job")
+        const directory = try orFail(fresh(path.join(work, `${path.basename(way.home)}-copy-${name}`)), "could not make a directory")
         const copy = path.join(directory, path.basename(root))
         try cloneAt(copy, commit, place)
         const results: Array<TargetResult> = []
@@ -961,6 +974,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const given = try givenAt(commit, place, own)
       const plan: Array<Station & { readonly gate: Deferred.Deferred<boolean> }> = []
       for (const station of chosen) plan.push({ ...station, gate: try Deferred.make<boolean>() })
+      const runs = plan.flatMap((station) => station.runs)
+      const names = new Map(runNames(runs).map((name, index) => [runs[index] as ReadonlyArray<Unit>, name]))
       const collected: Array<TargetResult> = []
       for concurrent (const station of plan) {
         let needsPassed = true
@@ -970,7 +985,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const results: Array<TargetResult> = []
         for concurrent (const sequence of station.runs) {
           if (needsPassed) {
-            results.push(...(try limit.withPermits(1)(runSequence(sequence, commit, wanted, place, store, given))))
+            results.push(...(try limit.withPermits(1)(runSequence(sequence, names.get(sequence) as string, commit, wanted, place, store, given))))
           } else {
             const waiting = sequence.flatMap((unit) => labelsOf(unit, wanted))
             results.push(...waiting.map((label) => blocked(label, station.needs.join(", "))))

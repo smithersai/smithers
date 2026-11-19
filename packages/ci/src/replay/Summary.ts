@@ -6,6 +6,7 @@
  * @since 0.1.0
  */
 
+import { digestSync } from "@smthrs/crypto"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import {
@@ -734,6 +735,34 @@ export const stationsOf = (
       .filter((run) => run.some((unit) => labelsOf(unit, wanted).length > 0))
     const needs = [...new Set(members.flatMap((unit) => unit.needs))].filter((need) => !jobs.includes(need))
     return runs.length === 0 ? [] : [{ jobs, needs, runs }]
+  })
+}
+
+/**
+ * The name of each run's machine in the baseline: the same at every commit
+ * for the same job, variant and shared tree, and different for every run.
+ * A CI runner starts every job at the same paths (`/home/runner`), and a tool
+ * that writes a path into its cache, as pre-commit writes where it cloned a
+ * hook's repository, finds that path again when a later job restores the
+ * cache. So the baseline gives a job the same home, temporary directory and
+ * checkout at every commit, as Smithers build does in normal mode.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const runNames = (runs: ReadonlyArray<ReadonlyArray<Unit>>): ReadonlyArray<string> => {
+  const seen = new Map<string, number>()
+  return runs.map((run) => {
+    const places = run.map((unit) => unit.tree ?? unit.job)
+    const identity = JSON.stringify(
+      run.map((unit, index) => [places[index], unit.job, variantText(unit.variant ?? {})])
+    )
+    const readable = places.join("-").replaceAll(/[^A-Za-z0-9._-]+/g, "-").slice(0, 40)
+    const name = `${readable}-${digestSync(identity).slice(0, 12)}`
+    const earlier = seen.get(name) ?? 0
+    seen.set(name, earlier + 1)
+    return earlier === 0 ? name : `${name}-${earlier}`
   })
 }
 

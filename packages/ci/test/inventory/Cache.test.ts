@@ -1,4 +1,21 @@
-import { existsSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs"
+import { execFileSync, spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync
+} from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import type { Job } from "../../src/contract/Inventory.ts"
@@ -104,12 +121,12 @@ describe("a cache step", () => {
     const first = run(repo)
     expect(first[0]).toMatch(/^Cache not found for input keys: build-[0-9a-f]{64}$/)
     expect(first[1]).toBe("hit=[]\nnothing")
-    expect(first[2]).toMatch(/^Cache saved with key: build-[0-9a-f]{64}$/)
+    expect(first[2]).toMatch(/\nCache saved with key: build-[0-9a-f]{64}$/)
     expect(saved(repo)).toHaveLength(1)
 
     forget(repo)
     const second = run(repo)
-    expect(second[0]).toMatch(/^Cache restored from key: build-[0-9a-f]{64}$/)
+    expect(second[0]).toMatch(/\nCache restored from key: build-[0-9a-f]{64}$/)
     // From the checkout, the home and the job's temporary directory, which the job emptied when it started.
     expect(second[1]).toBe("hit=[true]\none\ntool\ndownload")
     expect(second[2]).toMatch(/^Cache hit occurred on the primary key build-[0-9a-f]{64}, not saving cache\.$/)
@@ -128,9 +145,9 @@ describe("a cache step", () => {
       writeFileSync(join(repo.root, "lock.txt"), lock)
       const outputs = run(repo)
       // `other-` comes first and matches nothing; `build-` matches every entry, and the newest is taken.
-      expect(outputs[0]).toMatch(/^Cache restored from key: build-[0-9a-f]{64}$/)
+      expect(outputs[0]).toMatch(/\nCache restored from key: build-[0-9a-f]{64}$/)
       expect(outputs[1]).toBe(`hit=[false]\n${found}\ntool\ndownload`)
-      expect(outputs[2]).toMatch(/^Cache saved with key: /)
+      expect(outputs[2]).toMatch(/\nCache saved with key: build-[0-9a-f]{64}$/)
     }
     expect(saved(repo)).toHaveLength(3)
   })
@@ -165,7 +182,7 @@ describe("a cache step", () => {
     )
     expect(saved(repo)).toEqual([])
     rmSync(join(repo.root, "skip"))
-    expect(run(repo)[2]).toBe("Cache saved with key: fixed")
+    expect(run(repo)[2]).toMatch(/\nCache saved with key: fixed$/)
     rmSync(join(repo.root, "more"), { recursive: true })
     run(repo)
     expect(readFileSync(join(repo.root, "more", "file"), "utf8")).toBe("x\n")
@@ -309,7 +326,7 @@ runs:
       expect.stringMatching(/^Cache not found for input keys: (Linux|macOS)-deps-v2$/),
       "inside []",
       "action said []",
-      expect.stringMatching(/^Cache saved with key: (Linux|macOS)-deps-v2$/)
+      expect.stringMatching(/\nCache saved with key: (Linux|macOS)-deps-v2$/)
     ])
     rmSync(join(repo.root, "vendor"), { recursive: true })
     expect(run(repo).slice(2, 4)).toEqual(["inside [true] lib", "action said [true]"])
@@ -339,7 +356,10 @@ runs:
         with: { path: two, key: second }`,
       `      - run: echo 1 > one; echo 2 > two`
     ))
-    expect(run(repo).slice(3)).toEqual(["Cache saved with key: second", "Cache saved with key: first"])
+    expect(run(repo).slice(3).map((output) => output.split("\n").at(-1))).toEqual([
+      "Cache saved with key: second",
+      "Cache saved with key: first"
+    ])
   })
 })
 
@@ -370,7 +390,7 @@ describe("a step that only restores, and one that only saves", () => {
     expect(job.steps).toHaveLength(4)
     const first = run(repo)
     expect(first[1]).toMatch(/^\[\] \[kept-[0-9a-f]{64}\] \[\]$/)
-    expect(first[2]).toMatch(/^Cache saved with key: kept-[0-9a-f]{64}$/)
+    expect(first[2]).toMatch(/\nCache saved with key: kept-[0-9a-f]{64}$/)
     expect(first[3]).toBe("after")
     rmSync(join(repo.root, "kept"))
     writeFileSync(join(repo.root, "lock.txt"), "two\n")
@@ -407,7 +427,7 @@ describe("a cache key that hashes the files a pattern names", () => {
     expect(jobOf(repo).unsupported).toEqual([])
     const first = run(repo)
     expect(first[0]).toMatch(/^Cache not found for input keys: deps-[0-9a-f]{64}$/)
-    expect(first[2]).toMatch(/^Cache saved with key: deps-[0-9a-f]{64}$/)
+    expect(first[2]).toMatch(/\nCache saved with key: deps-[0-9a-f]{64}$/)
     rmSync(join(repo.root, "node_modules"), { recursive: true })
     expect(run(repo)[1]).toBe("hit=[true]")
     // A file the pattern leaves out, and one it does not name, change nothing.
@@ -417,7 +437,7 @@ describe("a cache key that hashes the files a pattern names", () => {
     writeFileSync(join(repo.root, "packages/a/package-lock.json"), "changed\n")
     const changed = run(repo)
     expect(changed[1]).toBe("hit=[]")
-    expect(changed[2]).toMatch(/^Cache saved with key: deps-[0-9a-f]{64}$/)
+    expect(changed[2]).toMatch(/\nCache saved with key: deps-[0-9a-f]{64}$/)
     expect(saved(repo)).toHaveLength(2)
   })
 
@@ -543,5 +563,116 @@ describe("the store", () => {
     const [paths] = readdirSync(store) as [string]
     const [entry] = readdirSync(join(store, paths)) as [string]
     expect(readdirSync(join(store, paths, entry)).sort()).toEqual(["key", "work.tar"])
+  })
+})
+
+describe("what a cache step restores", () => {
+  const places: Array<string> = []
+  afterEach(() => {
+    for (const place of places.splice(0)) {
+      spawnSync("chmod", ["-R", "u+rwX", place])
+      rmSync(place, { recursive: true, force: true })
+    }
+  })
+  const place = (): string => {
+    const made = mkdtempSync(join(tmpdir(), "smithers-ci-cache-"))
+    places.push(made)
+    return made
+  }
+
+  /** Runs one of the two scripts as a job whose home is `home`, with the store `store`. */
+  const script = (text: string, home: string, store: string, outputs: Readonly<Record<string, string>> = {}) => {
+    const temp = place()
+    const ran = spawnSync(shell[0] as string, [...shell.slice(1), "-c", `umask 022\n${text}`], {
+      cwd: temp,
+      encoding: "utf8",
+      env: {
+        PATH: process.env["PATH"] ?? "",
+        HOME: home,
+        GITHUB_WORKSPACE: temp,
+        RUNNER_TEMP: temp,
+        GITHUB_OUTPUT: join(temp, "output"),
+        SMITHERS_CI_CACHE_STORE: store,
+        [variables.path]: "~/.cache/tool",
+        [variables.key]: "tool-1",
+        ...outputs
+      }
+    })
+    return { status: ran.status, output: `${ran.stdout}${ran.stderr}`.trim() }
+  }
+
+  /** Every entry under `root`, as a person compares two directories: kind, mode, size, time, link and content. */
+  const entries = (root: string): ReadonlyArray<string> => {
+    const found: Array<string> = []
+    const walk = (relative: string): void => {
+      const full = join(root, relative)
+      const stat = lstatSync(full, { bigint: true })
+      const kind = stat.isSymbolicLink() ? `link ${readlinkSync(full)}` : stat.isDirectory() ? "directory" : "file"
+      const content = stat.isFile() ? createHash("sha256").update(readFileSync(full)).digest("hex") : ""
+      found.push(`${relative} ${kind} ${(stat.mode & 0o7777n).toString(8)} ${stat.size} ${stat.mtimeNs} ${content}`)
+      if (stat.isDirectory()) { for (const name of readdirSync(full).sort()) walk(join(relative, name)) }
+    }
+    walk(".")
+    return found
+  }
+
+  it("is every entry it saved as it was: nested repositories, dot-files, modes, links, empty directories, times", () => {
+    const first = place()
+    const kept = join(first, ".cache", "tool")
+    const repo = join(kept, "repo")
+    mkdirSync(repo, { recursive: true })
+    mkdirSync(join(kept, "empty"))
+    const git = (...args: ReadonlyArray<string>) =>
+      execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.test", ...args])
+    git("init", "--quiet")
+    writeFileSync(join(repo, ".pre-commit-hooks.yaml"), "hooks: []\n")
+    git("add", "--all")
+    git("commit", "--quiet", "-m", "hooks")
+    writeFileSync(join(kept, "read-only"), "fixed\n")
+    chmodSync(join(kept, "read-only"), 0o444)
+    // A mode no umask of a job would give, as a tool sets one itself.
+    writeFileSync(join(kept, "shared"), "shared\n")
+    chmodSync(join(kept, "shared"), 0o666)
+    symlinkSync(join(first, "outside"), join(kept, "out"))
+    // Times a second apart would hide a restore that keeps whole seconds only.
+    for (const [index, name] of ["read-only", "shared", "empty", "repo", "."].entries()) {
+      const at = new Date(1_700_000_000_123 + index)
+      utimesSync(join(kept, name), at, at)
+    }
+    const store = place()
+    const saved = script(saveScript, first, store)
+    expect(saved.status).toBe(0)
+    const second = place()
+    const restored = script(restoreScript, second, store)
+    expect(restored.status).toBe(0)
+    expect(entries(join(second, ".cache", "tool"))).toEqual(entries(kept))
+    const count = entries(kept).length
+    expect(saved.output).toMatch(
+      new RegExp(
+        `^Cache Size: ~\\d+ MB \\((\\d+) B\\)\\nsmithers-ci: saved ${count} entries, \\1 bytes, key tool-1, at ${kept}\\n` +
+          "Cache saved with key: tool-1$"
+      )
+    )
+
+    expect(restored.output).toMatch(
+      new RegExp(
+        `^Cache Size: ~\\d+ MB \\(\\d+ B\\)\\nsmithers-ci: restored ${count} entries, \\d+ bytes, key tool-1, ` +
+          `at ${join(second, ".cache", "tool")}\\nCache restored from key: tool-1$`
+      )
+    )
+  })
+
+  it.skipIf(process.getuid?.() === 0)("is nothing when a file could not be read, and the job still passes", () => {
+    const home = place()
+    const kept = join(home, ".cache", "tool")
+    mkdirSync(kept, { recursive: true })
+    writeFileSync(join(kept, "secret"), "x\n")
+    chmodSync(join(kept, "secret"), 0o200)
+    const store = place()
+    const saved = script(saveScript, home, store)
+    expect(saved.status).toBe(0)
+    expect(saved.output).toContain("::warning::Failed to save: the cache tool-1 could not be packed")
+    expect(readdirSync(store).flatMap((paths) => readdirSync(join(store, paths)))).toEqual([])
+    expect(script(restoreScript, place(), store).output).toBe("Cache not found for input keys: tool-1")
   })
 })

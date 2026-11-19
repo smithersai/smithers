@@ -254,6 +254,9 @@ saves.
 | `path`                              | Files and directories of the checkout, of the home (`~/...`) and of `RUNNER_TEMP`.                                                                               |
 | `fail-on-cache-miss`, `lookup-only` | As on GitHub.                                                                                                                                                    |
 | An entry that cannot be unpacked    | A warning and a miss, as on GitHub. The job goes on.                                                                                                             |
+| A file that cannot be read          | A warning, and nothing is saved, as on GitHub. The job passes.                                                                                                   |
+| What is restored                    | Every file, directory and link that was saved, with its mode and modification time, at the path the job saved it from.                                           |
+| The step's log                      | How many entries and bytes it restored or saved, the key, and the paths.                                                                                         |
 
 In a cache step's `key`, `hashFiles` also takes patterns, such as
 `hashFiles('**/package-lock.json', '!vendor/**')`: the files they name are
