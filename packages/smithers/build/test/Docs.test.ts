@@ -362,8 +362,11 @@ describe("packages/smithers/build prose", () => {
     expect(page).toContain("CI=1 pnpm exec alchemy plan alchemy.run.ts --stage prod")
     expect(page).toContain("CI=1 pnpm run deploy -- --yes")
     // `npx` matches in command position only: `Runtime.npx` is an accessor
-    // `targets/docs/reference/targets.md` documents, not a recipe step.
-    for (const file of proseFiles()) {
+    // `targets/docs/reference/targets.md` documents, not a recipe step. Only
+    // pages that name `infra/` or alchemy describe running infra; the others
+    // name `npm ci` and `npx` as a user's own commands, such as the lockfile
+    // install a cached job runs and the default `cli` of a remote machine.
+    for (const file of proseFiles().filter((file) => /alchemy|infra\//.test(read(file)))) {
       expect(read(file), `${file} runs infra through npm`).not.toMatch(/\bnpm ci\b|(?<![.\w-])npx\b/)
     }
   })
