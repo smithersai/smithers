@@ -524,6 +524,19 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
   const ended = new Map<string, number>()
   /** Where the call began that made each name the run made where nothing was: a directory, a link, a new file. */
   const began = new Map<string, number>()
+  /**
+   * The directories the run made with a call that only succeeds where nothing
+   * was, and that are still the ones it made: a directory it removed or moved,
+   * or moved another onto, is no longer one. Such a directory held nothing
+   * when it was made, so whatever is in it the run put there.
+   */
+  const built = new Set<string>()
+  /** A name is taken away or given to something else: neither it nor anything under it is a directory the run made. */
+  const unbuilt = (path: string): void => {
+    for (const directory of [...built]) {
+      if (directory === path || directory.startsWith(`${path}/`)) built.delete(directory)
+    }
+  }
   /** Names the run removed or moved away. */
   const removed = new Set<string>()
   /** The calls that take a name away. */
@@ -644,7 +657,15 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       if (fresh) first(began, path, entered)
       // A name the run found missing and then opened to write, making it if need be, is one the run made.
       else if (creates && how === "changed" && missing.has(path)) first(made, path, at)
-      if (how === "changed" && removers.has(name)) removed.add(path)
+      if (how === "changed" && removers.has(name)) {
+        removed.add(path)
+        unbuilt(path)
+      }
+    }
+    /** Notes a directory the run made. */
+    const madeDirectory = (path: string | undefined): void => {
+      wrote(path, "made", true)
+      if (path !== undefined && ok) built.add(path)
     }
 
     switch (name) {
@@ -660,7 +681,12 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
         else if (/O_TRUNC/.test(flags)) wrote(path, "emptied", creates)
         // Opened to write without reading: the run learns only that the path can be opened.
         else if (/O_WRONLY/.test(flags)) wrote(path, "changed", creates)
-        else {
+        // Opened to read, making it if need be, in a directory the run made: the directory held nothing when
+        // it was made, so the run finds there only what it put there. The name is the run's own and nothing it
+        // read, as a lock or a manifest a tool opens in its own new cache directory is.
+        else if (creates && ok && path !== undefined && built.has(NodePath.posix.dirname(path))) {
+          wrote(path, "made", true)
+        } else {
           looked(path)
           if (/O_RDWR/.test(flags)) wrote(path, "changed", creates)
         }
@@ -738,9 +764,9 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       case "fchown":
         return wrote(baseOf(args[0]), "changed")
       case "mkdir":
-        return wrote(pathOf(args[0], cell.path), "made", true)
+        return madeDirectory(pathOf(args[0], cell.path))
       case "mkdirat":
-        return wrote(pathOf(args[1], baseOf(args[0])), "made", true)
+        return madeDirectory(pathOf(args[1], baseOf(args[0])))
       case "symlink":
         return wrote(pathOf(args[1], cell.path), "made", true)
       case "symlinkat":
@@ -753,6 +779,7 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
         looked(from)
         if (name === "rename") wrote(from, "changed")
         else if (from !== undefined && ok) write(from)
+        if (to !== undefined && ok) unbuilt(to)
         wrote(to, "made", false, name === "link")
         if (name === "rename" && ok && from !== undefined && to !== undefined && from !== to) carry(from, to, at)
         return
@@ -766,6 +793,7 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
         if (name === "linkat") {
           if (from !== undefined && ok) write(from)
         } else wrote(from, "changed")
+        if (to !== undefined && ok) unbuilt(to)
         wrote(to, "made", false, name === "linkat")
         if (name !== "linkat" && ok && from !== undefined && to !== undefined && from !== to) carry(from, to, at)
         return

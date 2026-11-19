@@ -478,6 +478,58 @@ describe("reading a trace", () => {
     expect([...trace.changed].sort()).toEqual(["/w/both", "/w/index", "/w/log", "/w/other"])
   })
 
+  // What zig does in the cache directory it makes in a fresh checkout, and SQLite with a new database: the file
+  // is opened to read and write, and made if it is not there, with nothing asked about it first.
+  it("takes a name opened to read or made, in a directory the run made, for one the run made", () => {
+    const open = (directory: string, name: string): string =>
+      `100 openat(7<${directory}>, "${name}", O_RDWR|O_CREAT|O_CLOEXEC, 0666) = 10<${directory}/${name}>`
+    const trace = read([
+      "100 mkdirat(AT_FDCWD</w>, \".cache\", 0777) = 0",
+      "100 mkdir(\"/w/.cache/h\", 0777)       = 0",
+      open("/w/.cache/h", "manifest"),
+      // A directory that was there may hold a file from before the run.
+      "100 mkdir(\"/w/kept\", 0777)           = -1 EEXIST (File exists)",
+      open("/w/kept", "manifest"),
+      open("/w", "plain"),
+      // A file the call could not open is no file the run made.
+      "100 mkdir(\"/w/locked\", 0777)         = 0",
+      "100 openat(7</w/locked>, \"manifest\", O_RDWR|O_CREAT, 0666) = -1 EACCES (Permission denied)",
+      // A directory moved onto the one the run made brings its own files, from before the run.
+      "100 mkdir(\"/w/swapped\", 0777)        = 0",
+      "100 mkdir(\"/w/swapped/in\", 0777)     = 0",
+      "100 rename(\"/w/old\", \"/w/swapped\") = 0",
+      open("/w/swapped", "manifest"),
+      open("/w/swapped/in", "manifest"),
+      "100 mkdir(\"/w/replaced\", 0777)       = 0",
+      "100 renameat(AT_FDCWD</w>, \"old2\", AT_FDCWD</w>, \"replaced\") = 0",
+      open("/w/replaced", "manifest"),
+      // So does a directory the run removed and something else put back, and one the run moved away.
+      "100 mkdir(\"/w/removed\", 0777)        = 0",
+      "100 rmdir(\"/w/removed\")              = 0",
+      open("/w/removed", "manifest"),
+      "100 mkdir(\"/w/moved\", 0777)          = 0",
+      "100 rename(\"/w/moved\", \"/w/elsewhere\") = 0",
+      open("/w/moved", "manifest")
+    ].join("\n"))
+    expect(trace.refusals).toEqual([])
+    expect(paths(trace.found)).toEqual([
+      "/w/kept",
+      "/w/kept/manifest",
+      "/w/locked/manifest",
+      "/w/moved",
+      "/w/moved/manifest",
+      "/w/old",
+      "/w/old2",
+      "/w/plain",
+      "/w/removed/manifest",
+      "/w/replaced/manifest",
+      "/w/swapped/in/manifest",
+      "/w/swapped/manifest"
+    ])
+    expect(paths(trace.made)).toContain("/w/.cache/h/manifest")
+    expect([...trace.changed]).toContain("/w/.cache/h/manifest")
+  })
+
   it("stores nothing for a run that changed its view of the file system", () => {
     expect(read("100 chroot(\"/w/jail\")                = 0").refusals).toEqual(["it changed its root directory"])
     expect(read("100 mount(\"none\", \"/mnt\", \"tmpfs\", 0, NULL) = 0").refusals)

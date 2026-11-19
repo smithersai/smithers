@@ -370,7 +370,11 @@ product and never an input. Two threads' calls can overlap in a trace: a call
 that found a name the run made where nothing was (a directory, a link, a new
 file) and that ended after the making began came after the making. So is what the run wrote in a directory it then
 moved into place, as a package manager fills a directory under a temporary name
-and renames it into its cache. A path it found missing and then made, or opened to write, matches when
+and renames it into its cache. So is a file the run opened to read, making it if
+need be, in a directory the run itself made with `mkdir`: the directory held
+nothing when it was made, as the manifest `zig build` opens in the cache
+directory of a fresh checkout shows. A directory the run then removed, moved,
+or moved another directory onto is no longer one it made. A path it found missing and then made, or opened to write, matches when
 it is missing again or still as the run left it. A file the run read and then
 rewrote is compared with what the run wrote, because what it held before is
 gone. A new mode or time the run gave a file counts as such a write. A step is therefore taken to give the same verdict when it runs again on

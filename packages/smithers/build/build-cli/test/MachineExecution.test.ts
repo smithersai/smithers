@@ -441,6 +441,28 @@ describe("an observed target on a machine", () => {
     expect(made()).toEqual(["reads"])
   })
 
+  // What `zig build` does in a fresh checkout: it makes `.zig-cache/h` and opens a manifest there to read and
+  // write, making it if it is not there. The manifest was recorded as a file the run read, so in the next fresh
+  // checkout the step ran again: `.zig-cache/h/<digest> is gone`.
+  tracedIt(
+    "is answered in a fresh checkout after it opened a file, to read or to make, in a directory it made",
+    async () => {
+      const { logs, run, write } = await fixture(() => ({
+        build: on(
+          "job",
+          "mkdir -p .cache/h && : 1<> .cache/h/manifest && echo built >> .cache/h/manifest && grep -q a a.txt"
+        )
+      }))
+      expect(await run(["build"])).toEqual({ build: "ran" })
+      logs.length = 0
+      expect(await run(["build"])).toEqual({ build: "hit" })
+      expect(logs.filter((line) => line.includes("runs again"))).toEqual([])
+      await write("a.txt", "a, changed\n")
+      expect(await run(["build"])).toEqual({ build: "ran" })
+      expect(logs).toContain("//:build  runs again: a.txt changed")
+    }
+  )
+
   tracedIt("finds what an answered step of its machine left, put back in the machine's tree", async () => {
     const { logs, made, root, run, write } = await fixture(() => {
       const install = on("job", "mkdir -p deps && cp a.txt deps/a")
