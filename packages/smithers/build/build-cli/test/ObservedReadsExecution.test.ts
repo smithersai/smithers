@@ -57,7 +57,7 @@ const check = [
 
 interface FixtureOptions {
   readonly check?: string
-  readonly observe?: boolean | { readonly ignore: ReadonlyArray<string> }
+  readonly observe?: boolean | { readonly ignore?: ReadonlyArray<string>; readonly quiet?: ReadonlyArray<string> }
 }
 
 const fixture = async (settings: FixtureOptions = {}) => {
@@ -201,7 +201,13 @@ describe("a plan", () => {
     const ignoring = await fixture({ observe: { ignore: ["volatile.txt"] } })
     const declared = await ignoring.node("check")
     expect(declared.observed?.ignore).toEqual(["volatile.txt"])
+    expect(declared.observed?.quiet).toEqual([])
     expect(declared.observed?.key).not.toBe(original.observed?.key)
+    expect(original.observed?.quiet).toEqual([])
+    const quiet = await (await fixture({ observe: { quiet: ["asks.commit=1"] } })).node("check")
+    expect(quiet.observed?.quiet).toEqual(["asks.commit=1"])
+    expect(quiet.observed?.ignore).toEqual([])
+    expect(quiet.observed?.key).not.toBe(original.observed?.key)
   })
 })
 
@@ -342,6 +348,21 @@ describe("an observed test", () => {
     expect(await strict.run()).toEqual({ check: "ran" })
     await strict.write("volatile.txt", "2\n")
     expect(await strict.run()).toEqual({ check: "ran" })
+  })
+
+  tracedIt("leaves out what a program it starts with a quiet word reads", async () => {
+    // The command asks a program marked by the word for a value, as a CI runner's text asks git for the commit.
+    const asking = "/bin/sh -c '/bin/cat volatile.txt > /dev/null' asks.commit=1; /bin/cat input.txt > /dev/null"
+    const quiet = await fixture({ check: asking, observe: { quiet: ["asks.commit=1"] } })
+    expect(await quiet.run()).toEqual({ check: "ran" })
+    await quiet.write("volatile.txt", "2\n")
+    expect(await quiet.run()).toEqual({ check: "hit" })
+    await quiet.write("input.txt", "pass, changed\n")
+    expect(await quiet.run()).toEqual({ check: "ran" })
+    const loud = await fixture({ check: asking })
+    expect(await loud.run()).toEqual({ check: "ran" })
+    await loud.write("volatile.txt", "2\n")
+    expect(await loud.run()).toEqual({ check: "ran" })
   })
 
   tracedIt("is not traced for a day once it passed only untraced", async () => {

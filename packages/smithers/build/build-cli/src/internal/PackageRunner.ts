@@ -3334,7 +3334,11 @@ const executeWith = (
             "reads",
             Effect.exit(joined(async () =>
               ObservedReads.observe(
-                ObservedReads.read(listener.lines(ObservedReads.linesOf(traceFile)), NodePath.resolve(place, node.cwd)),
+                ObservedReads.read(
+                  listener.lines(ObservedReads.linesOf(traceFile)),
+                  NodePath.resolve(place, node.cwd),
+                  observed.quiet
+                ),
                 {
                   variables: {
                     values: observed.variables,

@@ -16,6 +16,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
+  commitQuestion,
   eventsVariable,
   expand,
   readsCommit,
@@ -887,6 +888,11 @@ describe("write", () => {
     expect(pass({ first: true, cwd: "link" }, `printf '%s\\n' "$GITHUB_WORKSPACE" "$PWD"`, options)).toBe(
       `${tree}\n${join(tree, "real", "deep")}\n`
     )
+    // The runner text asks which commit is checked out with a git marked as its own: what it reads is no step's.
+    expect(readFileSync(asked, "utf8")).toBe(`-c ${commitQuestion} -C ${tree} rev-parse --verify --quiet HEAD\n`)
+    // A step that names the commit asks git itself: what it reads is the step's.
+    rmSync(asked)
+    expect(run({ first: true, cwd: "link", commit: true }, "echo $GITHUB_SHA", options).status).toBe(1)
     expect(readFileSync(asked, "utf8")).toBe(`-C ${tree} rev-parse --verify --quiet HEAD\n`)
     const outside = run({ first: true, cwd: "packages/app" }, "echo ran", { cwd: at.tmp })
     expect(outside.status).toBe(1)

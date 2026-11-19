@@ -3694,6 +3694,7 @@ const visit = async (
         capabilities: keyMaterial.capabilities
       }),
       ignore: observe === true ? [] : (observe as { readonly ignore?: ReadonlyArray<string> }).ignore ?? [],
+      quiet: observe === true ? [] : (observe as { readonly quiet?: ReadonlyArray<string> }).quiet ?? [],
       variables: Object.fromEntries(
         observedVariables.map((name) => [name, spawnEnvironment[name]])
       )

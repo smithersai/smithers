@@ -332,6 +332,19 @@ export const runnerSoftware: ReadonlyArray<string> = [
 ]
 
 /**
+ * The word that marks the `git` a step's `runner` text starts to ask which
+ * commit is checked out, where no runner said. The commit is handed to the
+ * step as a runner hands it on, so the question is no read of the step's:
+ * an observed target names the word in `observe.quiet`, and Smithers build
+ * leaves out of its record what that `git` reads. A step that names the
+ * commit is asked it with no word: what it reads is its own.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const commitQuestion = "smithers-ci.asks=commit"
+
+/**
  * The shell function a step's `runner` text defines.
  *
  * @category constants

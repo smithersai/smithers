@@ -33,6 +33,7 @@
 import * as Contract from "../contract/Inventory.ts"
 import {
   commitNote,
+  commitQuestion,
   eventsVariable,
   jobTemporaryVariable,
   noParent,
@@ -296,14 +297,18 @@ const library = (job: JobFacts): string =>
     `    [ -z "$__events" ] || export "\${__g}EVENT_PATH=$__events/${job.eventName ?? "push"}.json"`,
     `    return 0`,
     `  fi`,
-    `  __sha=$(git -C "$__root" rev-parse --verify --quiet HEAD) || {`,
+    // A runner says which commit it is, and a step that does not name the commit reads nothing to learn it. So
+    // where nobody said, the question is asked by a git marked as this text's own (`Inventory.commitQuestion`),
+    // whose reads are none of the step's, and a step reuses at the next commit what it reuses on a runner.
+    `  __ask=(git -c ${commitQuestion}); [ -z "$1" ] || __ask=(git)`,
+    `  __sha=$("\${__ask[@]}" -C "$__root" rev-parse --verify --quiet HEAD) || {`,
     `    [ -n "$1" ] || return 0`,
     `    __ci_fail "this step reads the commit, and git cannot be read in $__root"`,
     `  }`,
-    `  __count=$(git -C "$__root" rev-list --count HEAD) || __count=1`,
+    `  __count=$("\${__ask[@]}" -C "$__root" rev-list --count HEAD) || __count=1`,
     `  export "\${__g}SHA=$__sha" "\${__g}WORKFLOW_SHA=$__sha" "\${__g}RUN_ID=$((16#\${__sha:0:9}))"`,
     `  export "\${__g}RUN_NUMBER=$__count" "\${__g}RUN_ATTEMPT=1" "\${__g}EVENT_PATH=$__state/event.json"`,
-    `  __parent=$(git -C "$__root" rev-parse --verify --quiet 'HEAD^') || __parent=${noParent}`,
+    `  __parent=$("\${__ask[@]}" -C "$__root" rev-parse --verify --quiet 'HEAD^') || __parent=${noParent}`,
     `  printf '%s\\n' ${eventText(job.event)} > "$__state/event.json"`,
     `}`,
     // What the steps before this one wrote to GITHUB_ENV and GITHUB_PATH, step by step in the order they ran. A

@@ -598,10 +598,15 @@ const reached = (program: string | undefined, address: string): string => {
  * cut short, a relative path whose directory is unknown, a call whose
  * arguments do not parse.
  *
+ * `quiet` holds words that mark a question the command asks for itself: a
+ * process started with one of them among its arguments, and every process it
+ * starts, reads nothing the trace holds. What such a process writes is the
+ * run's, as any write is.
+ *
  * @category tracing
  * @since 1.0.0
  */
-export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
+export const read = (lines: () => Iterable<string>, cwd: string, quiet: ReadonlyArray<string> = []): Trace => {
   const found = new Map<string, number>()
   const missing = new Map<string, number>()
   const listed = new Map<string, number>()
@@ -676,6 +681,8 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
   const installed = new Set<number>()
   /** What those processes wrote. */
   const fetched = new Set<string>()
+  /** Processes started with a word of `quiet`, and the processes started under one: none of their reads is the run's. */
+  const hushed = new Set<number>()
   /** Processes that are a build tool fetching what a lockfile pins, each with its threads. Never what it starts. */
   const building = new Map<number, Build>()
   /** The first connection of each such build that a lockfile it had read pinned: who reached what. */
@@ -758,12 +765,13 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
     /** Whether a path is one a build tool reads for its own bookkeeping, read by the tool itself. */
     const own = (path: string): boolean => building.get(pid)?.own?.test(path) === true
     const saw = (path: string): void => {
+      if (hushed.has(pid)) return
       if (own(path)) return
       if (!found.has(path)) ended.set(path, at)
       first(found, path, entered)
     }
     const looked = (path: string | undefined): void => {
-      if (path === undefined) return
+      if (path === undefined || hushed.has(pid)) return
       if (!gone) saw(path)
       else if (!own(path)) first(missing, path, entered)
     }
@@ -859,12 +867,15 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       case "getdents64": {
         const path = baseOf(args[0])
         if (path === undefined) refusals.add("its trace does not name a directory it listed")
-        else if (!own(path)) first(listed, path, entered)
+        else if (!own(path) && !hushed.has(pid)) first(listed, path, entered)
         return
       }
       case "execve":
       case "execveat": {
         const path = name === "execve" ? pathOf(args[0], cell.path) : pathOf(args[1], baseOf(args[0]))
+        const words = ok ? wordsOf(args[name === "execve" ? 1 : 2]) : undefined
+        // A question the command asks for itself is no read of the run's, nor is the program that answers it.
+        if (words !== undefined && words.some((word) => quiet.includes(word))) hushed.add(pid)
         looked(path)
         // Any other answer is not this call's. The tracer lost its place, as it does when a thread other than
         // the first starts a program, and the first call the new program made is then in no line.
@@ -872,10 +883,9 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
           refusals.add(`the tracer lost its place when a thread started ${path ?? "a program"}`)
         }
         if (path !== undefined && !failed) {
-          first(started, path, entered)
+          if (!hushed.has(pid)) first(started, path, entered)
           programs.set(pid, path.slice(path.lastIndexOf("/") + 1))
           // A process that goes on to run another program is that program from here on.
-          const words = ok ? wordsOf(args[name === "execve" ? 1 : 2]) : undefined
           if (words !== undefined && lockedInstall(words)) installing.add(pid)
           else installing.delete(pid)
           // A build tool finds its lockfile in the directory it starts in, or in one above it.
@@ -1085,6 +1095,9 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       const program = programs.get(pid)
       if (program !== undefined) programs.set(start.child, program)
       if (installing.has(pid) || installed.has(pid)) installed.add(start.child)
+      // A process id comes round again, so a child is quiet only under a quiet parent.
+      if (hushed.has(pid)) hushed.add(start.child)
+      else hushed.delete(start.child)
       // A thread of a build tool is the tool. A process it starts is a compiler or a test, and is not.
       const build = start.thread ? building.get(pid) : undefined
       if (build === undefined) building.delete(start.child)

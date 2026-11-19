@@ -6,7 +6,7 @@
  */
 
 import * as Result from "effect/Result"
-import { type Inventory, stepTimeoutHours, toolCache, type Toolchain } from "../contract/Inventory.ts"
+import { commitQuestion, type Inventory, stepTimeoutHours, toolCache, type Toolchain } from "../contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.ts"
 import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.ts"
 import { variantKey } from "./Expressions.ts"
@@ -231,10 +231,13 @@ const given = (target: StepTarget): string =>
 
 // What an observed target asks Smithers build to record. The variables a run gives are passed on with their values
 // out of the key: a result holds the value of each one its run could have used, and is reused at another commit
-// when it used none.
+// when it used none. Where no run gives them, as when a person runs the targets, the runner text asks git, and
+// what that git reads is none of the step's (`Inventory.commitQuestion`).
 const observation = (target: StepTarget): string =>
   `observe: { ignore: ${JSON.stringify(bookkeeping)}${
-    target.runEnv.length === 0 ? "" : `, env: ${JSON.stringify(target.runEnv)}`
+    target.runEnv.length === 0
+      ? ""
+      : `, env: ${JSON.stringify(target.runEnv)}, quiet: ${JSON.stringify([commitQuestion])}`
   } }`
 
 const renderTarget = (

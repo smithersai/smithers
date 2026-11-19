@@ -422,6 +422,53 @@ describe("reading a trace", () => {
     expect(paths(trace.made)).not.toContain("/w/elsewhere")
   })
 
+  it("leaves out what a quiet process and the processes it starts read, and keeps what they write", () => {
+    const quiet = (text: string, words: ReadonlyArray<string>): ObservedReads.Trace =>
+      ObservedReads.read(() => text.split("\n"), "/w", words)
+    const text = [
+      "100 execve(\"/bin/bash\", [\"bash\", \"-c\", \"x\"], 0x7ffd0 /* 3 vars */) = 0",
+      "100 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 101",
+      "101 execve(\"/usr/bin/git\", [\"git\", \"-c\", \"asks.commit=1\", \"rev-parse\", \"HEAD\"], 0x7ffd0 /* 3 vars */) = 0",
+      "101 openat(AT_FDCWD</w>, \".git/HEAD\", O_RDONLY) = 3</w/.git/HEAD>",
+      "101 openat(AT_FDCWD</w>, \".git/packed-refs\", O_RDONLY) = -1 ENOENT (No such file or directory)",
+      "101 getdents64(3</w/.git/refs>, 0x55 /* 4 entries */, 32768) = 112",
+      "101 openat(AT_FDCWD</w>, \"asked.log\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 4</w/asked.log>",
+      "101 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 102",
+      "102 execve(\"/usr/bin/cat\", [\"cat\", \".git/refs/heads/main\"], 0x7ffd0 /* 3 vars */) = 0",
+      "102 openat(AT_FDCWD</w>, \".git/refs/heads/main\", O_RDONLY) = 3</w/.git/refs/heads/main>",
+      "102 +++ exited with 0 +++",
+      "101 +++ exited with 0 +++",
+      // The process id comes round again for a process the command itself starts: its reads are the run's.
+      "100 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 101",
+      "101 execve(\"/usr/bin/git\", [\"git\", \"log\", \"-1\"], 0x7ffd0 /* 3 vars */) = 0",
+      "101 openat(AT_FDCWD</w>, \".git/HEAD\", O_RDONLY) = 3</w/.git/HEAD>",
+      "100 openat(AT_FDCWD</w>, \"a.txt\", O_RDONLY) = 3</w/a.txt>"
+    ].join("\n")
+    const hushed = quiet(text, ["asks.commit=1"])
+    expect(hushed.refusals).toEqual([])
+    expect(paths(hushed.found)).toEqual(["/bin/bash", "/usr/bin/git", "/w/.git/HEAD", "/w/a.txt"])
+    // The command's own git found HEAD after the quiet one: the read is placed where the command made it.
+    expect(hushed.found.get("/w/.git/HEAD")).toBe(15)
+    expect(paths(hushed.missing)).toEqual([])
+    expect(paths(hushed.listed)).toEqual([])
+    expect(paths(hushed.started)).toEqual(["/bin/bash", "/usr/bin/git"])
+    expect(paths(hushed.made)).toEqual([])
+    expect([...hushed.changed]).toEqual(["/w/asked.log"])
+    // Without the word, every read is the run's.
+    const loud = quiet(text, [])
+    expect(paths(loud.found)).toEqual([
+      "/bin/bash",
+      "/usr/bin/cat",
+      "/usr/bin/git",
+      "/w/.git/HEAD",
+      "/w/.git/refs/heads/main",
+      "/w/a.txt"
+    ])
+    expect(paths(loud.missing)).toEqual(["/w/.git/packed-refs"])
+    expect(paths(loud.listed)).toEqual(["/w/.git/refs"])
+    expect(loud.found.get("/w/.git/HEAD")).toBe(4)
+  })
+
   it("places a call that found a name the run made where nothing was after the making", () => {
     const stat = "{st_mode=S_IFDIR|0755, st_size=4096, ...}"
     const trace = read([

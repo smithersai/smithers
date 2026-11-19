@@ -645,6 +645,15 @@ directory as `$TMPDIR/...`. Use it for what a tool writes on every run and never
 reads to decide its result, such as a log directory, or the compiled code Node
 keeps in `$TMPDIR/node-compile-cache`.
 
+`observe: { quiet: [...] }` names words that mark a question the command asks
+for itself. A program the run starts with one of them among its arguments, and
+every program that one starts, reads nothing the record holds; what it writes
+is the run's. A wrapper that asks git which commit is checked out, where no CI
+runner said, and hands it to the command in `GITHUB_SHA` marks that `git`, as
+in `git -c ci.asks=commit rev-parse HEAD` with `quiet: ["ci.asks=commit"]`. The
+command is then reused at the next commit as it is on a runner, and a `git` the
+command starts itself is recorded as any program is.
+
 **When nothing is stored.** A green run stores nothing when what it read cannot
 all be known, and says why on its own line:
 

@@ -215,6 +215,12 @@ export const TestAttrs = Schema.Struct({
    * variables holds the same value. A value shorter than six characters is
    * found by its name alone.
    *
+   * `quiet` names words that mark a question the command asks for itself,
+   * such as a wrapper asking git which commit is checked out to hand it on
+   * in a variable, as a CI runner hands it on. A program the run starts with
+   * one of them among its arguments, and every program that one starts,
+   * reads nothing the record holds; what it writes is the run's.
+   *
    * The run needs `sandbox: "none"` and a host that can trace it: Linux with
    * `strace`. On any other host the target is keyed by its `data` and by the
    * value of every variable `env` names.
@@ -224,6 +230,7 @@ export const TestAttrs = Schema.Struct({
       Schema.Boolean,
       Schema.Struct({
         ignore: Schema.optional(Schema.Array(Schema.NonEmptyString)),
+        quiet: Schema.optional(Schema.Array(Schema.NonEmptyString)),
         env: Schema.optional(Attr.InheritEnv)
       })
     ])
