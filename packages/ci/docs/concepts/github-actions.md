@@ -288,6 +288,15 @@ is removed when the replay ends. When you run the generated targets yourself,
 in the directory Smithers build keeps its cache in, so the generated workflow
 carries it from one run to the next with that cache.
 
+## On a self-hosted runner
+
+The workflow `apply` writes installs bubblewrap and strace, and lifts Ubuntu's
+restriction on the namespaces bubblewrap makes
+(`kernel.apparmor_restrict_unprivileged_userns`), only on a runner GitHub
+hosts and removes after the job. On a self-hosted runner it changes nothing:
+where bubblewrap is missing or cannot start, the job stops with one line that
+names what the machine's owner must install or set, and why.
+
 ## What leaves a job out
 
 `smithers-ci inventory` shows each of these under its job, and the report lists

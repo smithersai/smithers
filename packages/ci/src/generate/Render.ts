@@ -385,11 +385,60 @@ const liftRestriction: ReadonlyArray<string> = [
   `fi`
 ]
 
+// Where a step installs or changes anything on the machine: a runner GitHub makes for the job and removes after it.
+// A self-hosted runner is the machine of somebody who keeps it, and the job changes nothing there.
+const hosted = "runner.environment == 'github-hosted'"
+const selfHosted = "runner.environment != 'github-hosted'"
+
 const linuxStep = (name: string, run: string, condition = "runner.os == 'Linux'"): ReadonlyArray<Yaml.Entry> => [
   Yaml.entry("name", name),
   Yaml.entry("if", condition),
   Yaml.entry("shell", "bash"),
   Yaml.entry("run", run)
+]
+
+/**
+ * What a self-hosted runner is asked before the steps run in bubblewrap, which changes nothing on it: that bubblewrap
+ * is installed and can make the namespace a step runs in. Each failure stops the job with one line that names what
+ * the machine's owner must do, and `why` the job needs it.
+ *
+ * @category workflow
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const selfHostedCheck = (why: string): string =>
+  script([
+    `if ! command -v bwrap >/dev/null 2>&1; then`,
+    `  echo "::error::smithers-ci: install bubblewrap (bwrap) on this" \\`,
+    `    "self-hosted runner:" \\`,
+    `    "${why}." >&2`,
+    `  exit 1`,
+    `fi`,
+    `if ! bwrap --ro-bind / / true >/dev/null 2>&1; then`,
+    `  echo "::error::smithers-ci: set" \\`,
+    `    "kernel.apparmor_restrict_unprivileged_userns=0 on this" \\`,
+    `    "self-hosted runner, or otherwise allow unprivileged user" \\`,
+    `    "namespaces: bubblewrap needs one to start, and" \\`,
+    `    "${why}." >&2`,
+    `  exit 1`,
+    `fi`
+  ])
+
+/**
+ * A step that sets bubblewrap up on a GitHub-hosted runner, and the step that checks a self-hosted one for it in
+ * its place, each under `condition` too.
+ */
+const jailSteps = (
+  name: string,
+  run: string,
+  why: string,
+  comments: ReadonlyArray<string>,
+  condition = "runner.os == 'Linux'"
+): ReadonlyArray<Yaml.Item> => [
+  step(linuxStep(name, run, `${condition} && ${hosted}`), comments),
+  step(linuxStep(`${name} on a self-hosted runner`, selfHostedCheck(why), `${condition} && ${selfHosted}`), [
+    "A self-hosted runner is left as it is: the job stops, with what to change, where bubblewrap cannot start."
+  ])
 ]
 
 // What the read sandbox needs on a GitHub runner, as Smithers' own workflow installs it. Linux targets are confined
@@ -404,41 +453,46 @@ const bubblewrapScript = script([
   `fi`
 ])
 
-const sandboxSetup = step(linuxStep("Install the read sandbox", bubblewrapScript), [
-  "A target that declares its inputs is held to them, on Linux by bubblewrap."
-])
+const sandboxSetup = jailSteps(
+  "Install the read sandbox",
+  bubblewrapScript,
+  "it holds each step that names its inputs to them",
+  ["A target that declares its inputs is held to them, on Linux by bubblewrap."]
+)
 
 // What keeps a step from the shared cache's token on a GitHub runner. A step can read what every process of its
 // user was started with, and the shell that starts `smthrs` holds the token. So `smthrs` runs the steps where they
 // see no other process, which on Linux takes bubblewrap: an Ubuntu runner lacks it, and Ubuntu 24.04 lets it make
 // its namespace only once AppArmor's restriction is lifted. Nothing is installed where the repository names no
 // cache. macOS and Windows have no such program: there a step can read the token.
-const tokenSetup = (cache: string | undefined): Yaml.Item =>
-  step(
-    linuxStep(
-      "Keep the cache's token from the steps",
-      script([
-        `if ! command -v bwrap >/dev/null 2>&1 &&`,
-        `  command -v apt-get >/dev/null 2>&1; then`,
-        `  sudo apt-get update -qq &&`,
-        `    sudo apt-get install -y -qq --no-install-recommends bubblewrap`,
-        `fi`,
-        ...liftRestriction
-      ]),
-      `runner.os == 'Linux'${cache === undefined ? " && vars.SMITHERS_CACHE_URL != ''" : ""}`
-    ),
+const tokenSetup = (cache: string | undefined): ReadonlyArray<Yaml.Item> =>
+  jailSteps(
+    "Keep the cache's token from the steps",
+    script([
+      `if ! command -v bwrap >/dev/null 2>&1 &&`,
+      `  command -v apt-get >/dev/null 2>&1; then`,
+      `  sudo apt-get update -qq &&`,
+      `    sudo apt-get install -y -qq --no-install-recommends bubblewrap`,
+      `fi`,
+      ...liftRestriction
+    ]),
+    "it keeps each step from the cache's token",
     [
       "With a shared cache, a step runs where it sees no other process and reads the cache's token from none. " +
       "That takes bubblewrap, on Linux. On macOS and Windows a step can read the token it runs beside."
-    ]
+    ],
+    `runner.os == 'Linux'${cache === undefined ? " && vars.SMITHERS_CACHE_URL != ''" : ""}`
   )
 
 // What a job's own `/tmp` needs on a GitHub runner: the same bubblewrap, and the same restriction lifted. Smithers
 // build runs each job's targets with the job's temporary directory in place of `/tmp`, through a mount of its own.
 // A hosted runner has passwordless `sudo`, and Smithers' own workflow lifts the restriction the same way.
-const ownTmpSetup = step(linuxStep("Give each job its own /tmp", bubblewrapScript), [
-  "Each job has a /tmp of its own, as it has a runner of its own in the original CI."
-])
+const ownTmpSetup = jailSteps(
+  "Give each job its own /tmp",
+  bubblewrapScript,
+  "it gives each job a /tmp of its own",
+  ["Each job has a /tmp of its own, as it has a runner of its own in the original CI."]
+)
 
 // The variable that tells Smithers build two jobs must never share a `/tmp`. A runner that gives no private
 // `/tmp` runs one job's targets and fails the others with the reason, where it would otherwise let a job find
@@ -447,7 +501,8 @@ const ownTmpSetup = step(linuxStep("Give each job its own /tmp", bubblewrapScrip
 const ownTmpVariable = "SMTHRS_MACHINE_OWN_TMP"
 
 // What observing a step needs on a GitHub runner: the tracer that records what its run reads, which an Ubuntu
-// runner lacks. Without it the step still runs, and reruns on every change. macOS has no such tracer.
+// runner lacks. Without it the step still runs, and reruns on every change. macOS has no such tracer. A self-hosted
+// runner is left as it is: a step there is traced when the machine has the tracer.
 const tracerSetup = step(
   linuxStep(
     "Install the tracer",
@@ -457,7 +512,8 @@ const tracerSetup = step(
       `  sudo apt-get update -qq &&`,
       `    sudo apt-get install -y -qq --no-install-recommends strace`,
       `fi`
-    ])
+    ]),
+    `runner.os == 'Linux' && ${hosted}`
   ),
   ["A step that names no inputs is traced, so it runs again only when a file it read changes."]
 )
@@ -618,7 +674,7 @@ const renderWorkflow = (
                 ...plan.toolchains.map((toolchain) => renderSetup(toolchain, varying)),
                 // The read sandbox's step installs what keeps the token from a step, and what gives a job its own
                 // `/tmp`, too. With no target held to its inputs, each has a step of its own.
-                ...(confined ? [sandboxSetup] : [...(machines.size > 0 ? [ownTmpSetup] : []), tokenSetup(cache)]),
+                ...(confined ? sandboxSetup : [...(machines.size > 0 ? ownTmpSetup : []), ...tokenSetup(cache)]),
                 ...(observed ? [tracerSetup] : []),
                 step(
                   [

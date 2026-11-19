@@ -493,10 +493,10 @@ describe("generated files under the real smthrs", () => {
     ) as { readonly jobs: { readonly ci: { readonly steps: ReadonlyArray<Record<string, string>> } } }
     const steps = workflow.jobs.ci.steps
     const install = steps.findIndex((step) => step["name"] === "Install the read sandbox")
-    // The step runs on Linux runners only, before the targets, and is a script bash reads.
+    // The step runs on Linux runners GitHub hosts only, before the targets, and is a script bash reads.
     expect(install).toBeGreaterThan(-1)
     expect(install).toBeLessThan(steps.findIndex((step) => step["run"]?.includes("smthrs ci")))
-    expect(steps[install]?.["if"]).toBe("runner.os == 'Linux'")
+    expect(steps[install]?.["if"]).toBe("runner.os == 'Linux' && runner.environment == 'github-hosted'")
     expect(steps[install]?.["run"]).toContain("--no-install-recommends bubblewrap")
     expect(run(tmpdir(), "bash", ["-n", "-c", steps[install]?.["run"] as string]).status).toBe(0)
     // What the step prevents, on a Linux machine that has bubblewrap: take it off PATH, as on a fresh runner.

@@ -808,7 +808,8 @@ describe("the /tmp of a job in the workflow", () => {
       "Each job has a /tmp of its own, as it has a runner of its own in the original CI."
     )
     expect(workflow).toContain(
-      "original CI.\n      - name: Give each job its own /tmp\n        if: runner.os == 'Linux'\n"
+      "original CI.\n      - name: Give each job its own /tmp\n        if: runner.os == 'Linux'" +
+        " && runner.environment == 'github-hosted'\n"
     )
     expect(workflow).toContain("apt-get install -y -qq --no-install-recommends bubblewrap")
     expect(workflow).toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0")
@@ -1565,7 +1566,7 @@ describe("the workspace and workflow", () => {
     const workflow = content(generate(held), workflowPath)
     expect(content(generate(held), packagePath)).toContain("sandbox: { network: true }")
     // Linux targets are confined by bubblewrap, which an Ubuntu runner does not have.
-    expect(workflow).toContain("        if: runner.os == 'Linux'\n")
+    expect(workflow).toContain("        if: runner.os == 'Linux' && runner.environment == 'github-hosted'\n")
     expect(workflow).toContain("apt-get install -y -qq --no-install-recommends bubblewrap")
     expect(workflow).toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0")
     expect(workflow.indexOf("bubblewrap\n")).toBeLessThan(workflow.indexOf("smthrs ci"))
@@ -1578,7 +1579,9 @@ describe("the workspace and workflow", () => {
     )
     expect(open).not.toContain("Install the read sandbox")
     expect(open).not.toContain("Give each job its own /tmp")
-    expect(open).toContain("      - name: Install the tracer\n        if: runner.os == 'Linux'\n")
+    expect(open).toContain(
+      "      - name: Install the tracer\n        if: runner.os == 'Linux' && runner.environment == 'github-hosted'\n"
+    )
     expect(open).toContain("apt-get install -y -qq --no-install-recommends strace")
     expect(open.indexOf("strace\n")).toBeLessThan(open.indexOf("smthrs ci"))
     // Inputs too large for the one file: every target runs in the open, so the step is left out.
@@ -1610,7 +1613,8 @@ describe("the workspace and workflow", () => {
     const open = content(generate(steps), workflowPath)
     expect(open).toContain(
       "      - name: Keep the cache's token from the steps\n" +
-        "        if: runner.os == 'Linux' && vars.SMITHERS_CACHE_URL != ''\n" + installs
+        "        if: >-\n          runner.os == 'Linux' && vars.SMITHERS_CACHE_URL != '' &&\n" +
+        "          runner.environment == 'github-hosted'\n" + installs
     )
     // The workflow says where a step can still read the token.
     expect(commentsOf(open)).toContain(
@@ -1620,7 +1624,8 @@ describe("the workspace and workflow", () => {
     // The cache was named when the files were written: the step always runs.
     const named = content(generate(steps, { cache: "https://cache.example.com" }), workflowPath)
     expect(named).toContain(
-      "      - name: Keep the cache's token from the steps\n        if: runner.os == 'Linux'\n" + installs
+      "      - name: Keep the cache's token from the steps\n        if: runner.os == 'Linux' && runner.environment == 'github-hosted'\n" +
+        installs
     )
     // A workflow that installs the read sandbox has bubblewrap already.
     const held = inventory([job("a", [step("a:1", "x", { inputs: ["src/**"], from: "a:1" })])])
