@@ -146,7 +146,14 @@ just ci:  tidy, then  zig build test
 2. **Nothing but the build.** The split replaces the command, so the command
    must be only `zig build <step>`: alone, after `set` lines, or as the whole
    script of a `bash -c`. `zig build test || true` passes where a build fails,
-   so it keeps its command.
+   so it keeps its command. A flag that only changes how the run is reported
+   or how much runs at once goes to every step made from it:
+   `zig build test --summary all` becomes `zig build test-core --summary all`
+   and the others. Those are `--summary`, `--color`, `--error-style`,
+   `--multiline-errors`, `--verbose`, `--test-timeout`, `--seed`, `-j<N>` and
+   `-freference-trace`. Any other flag keeps the step whole:
+   `-Doptimize=ReleaseSafe` changes what is built, `--maxrss` skips steps by
+   what runs beside them, and what follows `--` goes to a program.
 3. **No list of inputs.** A step held to a list of files gets a tree it cannot
    write, and Zig's tests write where they start: `std.testing.tmpDir` makes
    `.zig-cache/tmp` beside `build.zig` and stops the test when it cannot. So a

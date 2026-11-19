@@ -564,11 +564,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
         step("justfile:test:1", "set -euo pipefail\nzig build test", { name: "test" }),
         step("justfile:check:1", "zig build check"),
         step("justfile:soft:1", "zig build test || true"),
-        step("justfile:both:1", "zig build test && zig build bench")
+        step("justfile:both:1", "zig build test && zig build bench"),
+        step("ci.yml:test:1", "zig build test --summary all"),
+        step("ci.yml:safe:1", "zig build test -Doptimize=ReleaseSafe"),
+        step("ci.yml:gen:1", "zig build test", { cwd: "tools/gen" })
       ])
       const after = try splitWith({ zigGroups: groups })(root, before)
       try Effect.try(() => {
-        // Only a step that is nothing but one build is asked about, each build step once.
+        // Only a step that is nothing but one build in the root is asked about, each build step once.
         expect(asked).toEqual([["check", "test"]])
         expect(stepsOf(after).map((found) => [found.id, found.command, found.inputs, found.from])).toEqual([
           ["justfile:test:1:test-core", "zig build test-core", undefined, "justfile:test:1"],
@@ -577,12 +580,20 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
           ["justfile:check:1", "zig build check", undefined, undefined],
           // `|| true` passes where a build fails, and two builds are more than one: the commands stay as they are.
           ["justfile:soft:1", "zig build test || true", undefined, undefined],
-          ["justfile:both:1", "zig build test && zig build bench", undefined, undefined]
+          ["justfile:both:1", "zig build test && zig build bench", undefined, undefined],
+          // A flag that only changes the report goes to each named step.
+          ["ci.yml:test:1:test-core", "zig build test-core --summary all", undefined, "ci.yml:test:1"],
+          ["ci.yml:test:1:test-cli", "zig build test-cli --summary all", undefined, "ci.yml:test:1"],
+          // A flag that changes the build, and a build in another directory, keep their command.
+          ["ci.yml:safe:1", "zig build test -Doptimize=ReleaseSafe", undefined, undefined],
+          ["ci.yml:gen:1", "zig build test", undefined, undefined]
         ])
         expect(stepsOf(after)[0]).toMatchObject({ name: "test (test-core)", env: ZigSteps.environment })
         // Only the steps one build ran at the same time say so.
-        expect(stepsOf(after).map((found) => found.atOnce)).toEqual([true, true, undefined, undefined, undefined])
-        for (const found of stepsOf(after)) expect(found.env).toEqual(ZigSteps.environment)
+        expect(stepsOf(after).map((found) => found.atOnce)).toEqual(
+          [true, true, undefined, undefined, undefined, true, true, undefined, undefined]
+        )
+        for (const found of stepsOf(after).slice(0, 8)) expect(found.env).toEqual(ZigSteps.environment)
       })
       // Without the groups, or when reading them fails, the step keeps its command.
       const kept = [["justfile:test:1", "set -euo pipefail\nzig build test", ZigSteps.environment]]

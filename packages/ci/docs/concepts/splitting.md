@@ -29,7 +29,7 @@ the step whole.
 | A root script that is one of the commands above, as `pnpm test`        | The same, from the root script's own command and the words the step adds |
 | One package's script, as `bun run --cwd packages/core test`            | The same command, with its inputs named                                  |
 | A command that starts `zig`                                            | The same command, told to keep Zig's cache between runs                  |
-| `zig build <step>` alone, where the build step only groups named steps | One `zig build <name>` per named step                                    |
+| `zig build <step>` alone, where the build step only groups named steps | One `zig build <name>` per named step, with the step's report flags      |
 | `npm run <script>`, where the script is `npm run a && npm run b`       | One step per script the chain runs, in order                             |
 
 The packages come from the workspace the package manager reads:
@@ -315,6 +315,14 @@ When the step is nothing but `zig build <step>` and that build step only
 groups named steps, it becomes one step per named step. Each has a record of
 its own, so a change runs again only the steps whose own run read it. Zig ran
 those named steps at the same time, and the steps still run at the same time.
+
+A flag that only changes how the run is reported or how much runs at once is
+given to each of them: `zig build test --summary all` becomes
+`zig build test-core --summary all` and the others. Those flags are
+`--summary`, `--color`, `--error-style`, `--multiline-errors`, `--verbose`,
+`--test-timeout`, `--seed`, `-j<N>` and `-freference-trace`. Any other flag
+keeps the step whole: `-Doptimize=ReleaseSafe` changes what is built, and a
+build can name other steps for it.
 
 A Zig step keeps Zig's two caches in `.flows/tools/zig`. They last from one
 run to the next, and the generated workflow saves them with the results: a

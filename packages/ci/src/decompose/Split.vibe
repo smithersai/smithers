@@ -151,9 +151,9 @@ const replaced = (
     // A Zig step names no inputs: its tests write where they start, so it runs in the open and is observed.
     return Zig.split(step, groups) ?? [Zig.dress(step)]
   }
-  // Zig with a flag, another of its commands, or beside a program this reader does not know: the step stays whole
-  // and keeps Zig's caches where a fresh checkout still has them.
-  if (understood === undefined && !relied && Zig.runs(step)) return [Zig.dress(step)]
+  // Zig with a flag, another of its commands, or beside a program this reader does not know: the step keeps Zig's
+  // caches where a fresh checkout still has them. One build whose flags only change the report is still split.
+  if (understood === undefined && !relied && Zig.runs(step)) return Zig.split(step, groups) ?? [Zig.dress(step)]
   const decision = understood === undefined ? { kind: "whole" as const } : decide(step, understood, facts)
   if (decision.kind === "whole") return [step]
   if (decision.kind === "scope") return [{ ...step, inputs: decision.inputs, from: step.id }]
@@ -248,10 +248,8 @@ export const splitWith = <R = never>(
       : undefined
     // Only a step that is nothing but one build can be split by the named steps its build step groups.
     const builds = [...new Set(steps.flatMap((step) => {
-      const read = understood.get(step)
-      const sole = read === undefined || read.zig.length === 0 || relied.has(step)
-        ? undefined
-        : Zig.soleBuild(step.command)
+      // The named steps are read from the root's build, so only a step that starts there is asked about.
+      const sole = relied.has(step) || !Zig.atRoot(step) ? undefined : Zig.soleBuild(step.command)
       return sole === undefined ? [] : [sole]
     }))].sort()
     const grouped = options.zigGroups === undefined || builds.length === 0

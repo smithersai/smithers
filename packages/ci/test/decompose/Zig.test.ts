@@ -45,12 +45,48 @@ describe("Zig.soleBuild", () => {
     ) expect([command, Zig.soleBuild(command)]).toEqual([command, undefined])
   })
 
-  it("refuses shell it does not read, a build with a flag, a step from a variable, and another program", () => {
+  it("refuses shell it does not read, a step from a variable, and another program", () => {
     expect(Zig.soleBuild("zig build $(cat step)")).toBeUndefined()
-    expect(Zig.soleBuild("zig build test -Doptimize=ReleaseSafe")).toBeUndefined()
-    expect(Zig.soleBuild("zig build -Doptimize=ReleaseSafe")).toBeUndefined()
     expect(Zig.soleBuild("zig build $STEP")).toBeUndefined()
     expect(Zig.soleBuild("cargo test")).toBeUndefined()
+    expect(Zig.soleBuild("zig test src/main.zig")).toBeUndefined()
+  })
+})
+
+describe("Zig.sole", () => {
+  it("keeps the flags that only change how the run is reported or how much runs at once", () => {
+    expect(Zig.sole("zig build test")).toEqual({ step: "test", flags: [] })
+    expect(Zig.sole("zig build test --summary all")).toEqual({ step: "test", flags: ["--summary", "all"] })
+    // A flag may come before the step, and a build with no step is `install`.
+    expect(Zig.sole("zig build --summary all test")).toEqual({ step: "test", flags: ["--summary", "all"] })
+    expect(Zig.sole("zig build --color off")).toEqual({ step: "install", flags: ["--color", "off"] })
+    expect(Zig.sole("set -e\nzig build test -j4 --verbose --error-style minimal --multiline-errors newline")).toEqual({
+      step: "test",
+      flags: ["-j4", "--verbose", "--error-style", "minimal", "--multiline-errors", "newline"]
+    })
+    expect(Zig.sole("zig build test --test-timeout 30s --seed 7 -freference-trace=8 -fno-reference-trace")).toEqual({
+      step: "test",
+      flags: ["--test-timeout", "30s", "--seed", "7", "-freference-trace=8", "-fno-reference-trace"]
+    })
+    expect(Zig.sole("zig build -freference-trace check")).toEqual({ step: "check", flags: ["-freference-trace"] })
+  })
+
+  it("refuses a flag that can change what is built or which steps run", () => {
+    for (
+      const command of [
+        "zig build test -Doptimize=ReleaseSafe",
+        "zig build -Doptimize=ReleaseSafe",
+        "zig build test --release=fast",
+        "zig build test --maxrss 1000000",
+        "zig build test --skip-oom-steps",
+        "zig build test --fuzz",
+        "zig build run -- --port 80",
+        // Two build steps are two builds, and a flag that needs a value has none.
+        "zig build test docs",
+        "zig build test --summary",
+        "zig build test --summary=all"
+      ]
+    ) expect([command, Zig.sole(command)]).toEqual([command, undefined])
   })
 })
 
@@ -175,6 +211,19 @@ describe("Zig.split", () => {
     ])
     // A step with no name of its own gets none.
     expect(Zig.split(step("zig build test"), groups)?.map((part) => "name" in part)).toEqual([false, false])
+  })
+
+  it("gives each named step the flags the step gave", () => {
+    const parts = Zig.split(step("zig build --color off test --summary all"), groups)
+    expect(parts?.map((part) => part.command)).toEqual([
+      "zig build test-core --color off --summary all",
+      "zig build 'test cli' --color off --summary all"
+    ])
+  })
+
+  it("leaves a step that starts under the root alone: the named steps are those of the root's build", () => {
+    expect(Zig.split(step("zig build test", { cwd: "tools/gen" }), groups)).toBeUndefined()
+    expect(Zig.split(step("zig build test", { cwd: "." }), groups)?.length).toBe(2)
   })
 
   it("leaves the step alone when it is more than one build, or its build step groups fewer than two", () => {

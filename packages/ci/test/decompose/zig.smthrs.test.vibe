@@ -12,7 +12,7 @@ import { read } from "../../src/inventory/index.ts"
 import { observes } from "../cli/repo.ts"
 
 /**
- * The whole path on a real Zig repository: its Justfile is read, its `zig build test` is split by the real Zig
+ * The whole path on a real Zig repository: its Justfile is read, its `zig build test --summary all` is split by the real Zig
  * strategy, the targets are generated and the real `smthrs` runs them. Needs Zig 0.17 and git, and a host that
  * can record what a step reads (Linux with `strace`): on any other host a step that names no inputs runs on every
  * change, so there is nothing to see.
@@ -27,7 +27,7 @@ const fixture = new URL("../fixtures/closure-zig/project", import.meta.url).path
 const smthrs = new URL("../../../smithers/bin/smithers.mjs", import.meta.url).pathname
 const prefix = "//:"
 
-const justfile = "tidy:\n    ./tidy.sh\n\ntest:\n    zig build test\n\nci: tidy test\n"
+const justfile = "tidy:\n    ./tidy.sh\n\ntest:\n    zig build test --summary all\n\nci: tidy test\n"
 /** A workflow whose one job tests the Zig project in `project`. */
 const workflow = [
   "name: ci",
@@ -180,9 +180,10 @@ describe.skipIf(!observes)("zig build test on a real repository", () => {
         const from = "justfile:test:1"
         expect(steps.map(brief)).toEqual([
           ["justfile:tidy:1", "./tidy.sh", undefined, undefined, undefined, {}],
-          [`${from}:test-alpha`, "zig build test-alpha", undefined, from, true, ZigSteps.environment],
-          [`${from}:test-beta`, "zig build test-beta", undefined, from, true, ZigSteps.environment],
-          [`${from}:test-gamma`, "zig build test-gamma", undefined, from, true, ZigSteps.environment]
+          // The flag only changes what Zig prints, so each root's build is given it.
+          [`${from}:test-alpha`, "zig build test-alpha --summary all", undefined, from, true, ZigSteps.environment],
+          [`${from}:test-beta`, "zig build test-beta --summary all", undefined, from, true, ZigSteps.environment],
+          [`${from}:test-gamma`, "zig build test-gamma --summary all", undefined, from, true, ZigSteps.environment]
         ])
         // One build ran the three roots at the same time, so nothing holds the targets to one at a time.
         expect(maxJobs).toBeUndefined()
