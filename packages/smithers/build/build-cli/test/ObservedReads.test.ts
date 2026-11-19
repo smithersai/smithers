@@ -250,7 +250,7 @@ describe("reading a trace", () => {
       "100 execve(\"/usr/local/bin/tool\", [\"tool\"], 0x7ffd0 /* 3 vars */) = -1 ENOENT (No such file or directory)",
       "100 execveat(AT_FDCWD</w>, \"tool\", [\"tool\"], 0x7ffd0 /* 3 vars */, 0) = 0"
     ].join("\n"))
-    expect(paths(trace.started)).toEqual(["/w/./run.sh", "/w/tool"])
+    expect(paths(trace.started)).toEqual(["/w/run.sh", "/w/tool"])
     expect(paths(trace.missing)).toEqual(["/usr/local/bin/tool"])
   })
 
@@ -993,6 +993,80 @@ describe("recording what a run read", () => {
     })
   })
 
+  it("holds a file the run found and changed as the run left it or as it found it", async () => {
+    const { root } = await setup()
+    // What mypy does with a cache a cache step put back: reads it, then writes it again.
+    const db = Path.join(root, "cache.db")
+    await Fs.writeFile(db, "as put back")
+    const found = ObservedReads.measure(db)
+    await Fs.writeFile(db, "as the run left it")
+    const left = ObservedReads.measure(db)
+    const lines = [open(root, "cache.db", "O_RDWR"), open(root, "src/a.txt")]
+    const observed = (given?: ReadonlyMap<string, string>) => {
+      const value = ObservedReads.record(ObservedReads.read(() => lines, root), {
+        root,
+        ignore: [],
+        startedMs: Date.now() + 60_000,
+        ...(given === undefined ? {} : { found: given })
+      })
+      if ("refusal" in value) throw new Error(value.refusal)
+      return value
+    }
+    const stored = observed(new Map([[db, found]]))
+    expect(stored.reads).toEqual([["cache.db", left, found], ["src/a.txt", ObservedReads.measure(`${root}/src/a.txt`)]])
+    // The next run finds the file as this one found it: nothing it reads changed.
+    await Fs.writeFile(db, "as put back")
+    expect(ObservedReads.changed(stored, root)).toBeUndefined()
+    // Or as this one left it, as before.
+    await Fs.writeFile(db, "as the run left it")
+    expect(ObservedReads.changed(stored, root)).toBeUndefined()
+    await Fs.writeFile(db, "another")
+    expect(ObservedReads.changed(stored, root)).toBe("cache.db changed")
+    // Measured as it is now, or not measured, or gone before the run: what the run left is all it is held to,
+    // and the row still marks a file the run changes, to be measured before the next run.
+    await Fs.writeFile(db, "as the run left it")
+    expect(observed(new Map([[db, left]])).reads[0]).toEqual(["cache.db", left, left])
+    expect(observed().reads[0]).toEqual(["cache.db", left, left])
+    expect(observed(new Map([[db, "-"]])).reads[0]).toEqual(["cache.db", left, left])
+    // A file the run only read is held as it is, whatever was measured.
+    expect(observed(new Map([[`${root}/src/a.txt`, found]])).reads[1]).toHaveLength(2)
+  })
+
+  it("takes a file the run moved into place for the run's own however the run spelled its directory", async () => {
+    const { record, root, rows } = await setup()
+    // What uv leaves in its cache: it names each directory it makes with a slash at the end, `pkg/`.
+    await Fs.mkdir(Path.join(root, "cache", "pkg"), { recursive: true })
+    await Fs.writeFile(Path.join(root, "cache", "pkg", "RECORD"), "written by the run")
+    await Fs.writeFile(Path.join(root, "cache", "pkg", "WHEEL"), "written by the run")
+    await Fs.writeFile(Path.join(root, "cache", "pkg", "METADATA"), "written by the run")
+    const filled = [
+      `100 mkdir("${root}/.tmp1", 0777) = 0`,
+      `100 mkdir("${root}/.tmp1/pkg/", 0777) = 0`,
+      open(root, `${root}/.tmp1/pkg/RECORD`, "O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC"),
+      open(root, `${root}/.tmp1//pkg/WHEEL`, "O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC"),
+      open(root, ".tmp1/./pkg/METADATA", "O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC"),
+      `100 rename("${root}/.tmp1", "${root}/cache") = 0`,
+      open(root, "cache/pkg/RECORD"),
+      open(root, "cache/pkg/WHEEL"),
+      open(root, "cache/pkg/METADATA")
+    ]
+    expect(rows(record(filled, [], 0))).toEqual({ reads: [], lists: [], left: true })
+    // Each spelling names the one path the kernel resolves.
+    const trace = ObservedReads.read(() => filled, root)
+    expect([...trace.made.keys()].filter((path) => path.startsWith(`${root}/cache`)).sort()).toEqual([
+      `${root}/cache`,
+      `${root}/cache/pkg`,
+      `${root}/cache/pkg/METADATA`,
+      `${root}/cache/pkg/RECORD`,
+      `${root}/cache/pkg/WHEEL`
+    ])
+    expect([...ObservedReads.read(() => [`100 mkdir("/", 0777) = -1 EEXIST (File exists)`], root).found.keys()])
+      .toEqual(["/"])
+    expect([...ObservedReads.read(() => [`100 openat(AT_FDCWD</>, "/.", O_RDONLY) = 3`], root).found.keys()])
+      .toEqual(["/"])
+    expect([...ObservedReads.read(() => [open(root, "src/.")], root).found.keys()]).toEqual([`${root}/src`])
+  })
+
   it("keeps a name the run found missing and then made a link apart from where the link leads", async () => {
     const { record, root, rows } = await setup()
     // What an install does for each program of a package: asks whether the link is there, then makes it.
@@ -1127,7 +1201,7 @@ describe("recording what a run read", () => {
       `100 getdents64(3<${root}/dist>, 0x55 /* 3 entries */, 32768) = 80`,
       // A directory it lists and writes into is compared without the names it wrote.
       `100 getdents64(3<${root}/src>, 0x55 /* 4 entries */, 32768) = 100`,
-      // Read and then rewritten: compared with what the run left.
+      // Read and then rewritten: compared with what the run left, and marked as a file the run changes.
       open(root, "src/b.txt"),
       open(root, "src/b.txt", "O_WRONLY|O_TRUNC"),
       // Removed without ever being read, and made at the top of the file system: neither is an input.
@@ -1135,9 +1209,10 @@ describe("recording what a run read", () => {
       "100 mkdir(\"/smithers-observed-reads-made\", 0777) = 0"
     ]))
     const cache = ObservedReads.measure(Path.join(root, "src", "cache.json"))
+    const rewritten = ObservedReads.measure(Path.join(root, "src", "b.txt"))
     expect(stored.reads).toEqual([
       ["src", "d"],
-      ["src/b.txt", ObservedReads.measure(Path.join(root, "src", "b.txt"))],
+      ["src/b.txt", rewritten, rewritten],
       ["src/cache.json", cache, "-"]
     ])
     expect(stored.lists).toEqual([
@@ -1293,7 +1368,7 @@ describe("recording what a run read", () => {
     expect(remade.lists.map(([path, , own]) => [path, own])).toEqual([["src", []]])
     expect(record([open(root, "src/a.txt"), open(root, "src/a.txt", "O_RDWR")], [], Date.now() - 60_000))
       .toEqual({
-        reads: [["src/a.txt", ObservedReads.measure(Path.join(root, "src", "a.txt"))]],
+        reads: [["src/a.txt", ...Array(2).fill(ObservedReads.measure(Path.join(root, "src", "a.txt")))]],
         lists: [],
         left: true
       })

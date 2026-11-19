@@ -12,9 +12,12 @@
  * Three rules keep that answer honest:
  *
  * - A path the run made before it looked at it is the run's own product and
- *   never an input. A path it found missing and then made matches when it is
- *   missing again or still as the run left it. Any other path is compared
- *   with what the run left there.
+ *   never an input, under whatever name the run moved it to. A path it found
+ *   missing and then made matches when it is missing again or still as the
+ *   run left it. A file it found and then changed matches when it is as the
+ *   run found it or as the run left it: the build measures, before a run, the
+ *   files earlier runs wrote. Any other path is compared with what the run
+ *   left there.
  * - A run whose reads cannot all be known stores nothing: it reached a
  *   program or a network the trace does not cover, changed its own view of
  *   the file system, or left a trace that cannot be read in full.
@@ -591,6 +594,16 @@ const reached = (program: string | undefined, address: string): string => {
 }
 
 /**
+ * A path as the run wrote it, in one spelling: `a//b/` and `a/./b` both name
+ * `a/b`. A tool that makes `dir/` and then writes `dir/file` wrote both into
+ * one directory, and moving that directory must carry both along.
+ */
+const spelled = (path: string): string => {
+  const text = path.replaceAll(/\/(?:\.?\/)+/g, "/").replace(/\/\.$/, "").replace(/(?<=.)\/+$/, "")
+  return text === "" ? "/" : text
+}
+
+/**
  * Reads a trace. `lines` is called twice and gives the trace's lines each
  * time; `cwd` is the directory the traced command started in.
  *
@@ -743,14 +756,14 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
         refusals.add(`its trace holds a path that cannot be read: ${argument.slice(0, 80)}`)
         return undefined
       }
-      if (text.startsWith("/")) return text
+      if (text.startsWith("/")) return spelled(text)
       // An empty path names the descriptor itself, which the run already opened.
       if (text === "") return base
       if (base === undefined) {
         refusals.add(`its trace does not say which directory ${JSON.stringify(text)} was read from`)
         return undefined
       }
-      return `${base}/${text}`
+      return spelled(`${base}/${text}`)
     }
     /** The directory a descriptor argument stands for. */
     const baseOf = (argument: string | undefined): string | undefined => {
@@ -1251,7 +1264,11 @@ export const listing = (path: string, own: ReadonlyArray<string>, io: Io = defau
  * @since 1.0.0
  */
 export interface Record {
-  /** Each path with what the run left there, and `-` after it when the run found the path missing and made it. */
+  /**
+   * Each path with what the run left there. A third state is another the path may hold, and marks a path the
+   * run wrote: `-` when the run found the path missing and made it; when it changed a file it found there, what
+   * it found, or what it left again when what it found was not measured.
+   */
   readonly reads: ReadonlyArray<readonly [path: string, state: string] | readonly [string, string, string]>
   /**
    * Each directory the run listed: its listing's digest, the names the run
@@ -1598,6 +1615,13 @@ export const observe = (
      * once in a build, and not once for every step.
      */
     readonly outside?: ((path: string) => string) | undefined
+    /**
+     * Paths measured just before the run began, by their real paths, each with what was there. A file the run
+     * found there and then changed is held as the run left it or as it found it: the next run that finds it as
+     * this one found it reads what this one read. A build measures the paths an earlier run wrote. A file a cache step puts back at every run, which the step
+     * reads and rewrites, is the same input each time, though never what the step left.
+     */
+    readonly found?: ReadonlyMap<string, string> | undefined
   }
 ): Observation | { readonly refusal: string; readonly outside?: string | undefined } => {
   if (trace.refusals.length > 0) {
@@ -1827,8 +1851,13 @@ export const observe = (
       if (state !== "d" && moved(path)) return { refusal: `${inside(path)} changed while it ran` }
     }
     const place = producers.length === 0 ? undefined : placeOf(path)
-    if (place === undefined) reads.push([inside(path), state])
-    else given.push([inside(path), state, place])
+    // A file the run found, changed and left is held as it left it or as it found it. Where what it found was not
+    // measured, the third state repeats the first: the row still says the run changes the file, so the next
+    // run measures it before it begins.
+    const before = entry.changed && state !== "d" && state !== absent ? options.found?.get(path) ?? state : undefined
+    if (place !== undefined) given.push([inside(path), state, place])
+    else if (before === undefined) reads.push([inside(path), state])
+    else reads.push([inside(path), state, before === absent ? state : before])
     if (!entry.listed) continue
     const names = [...(own.get(path) ?? [])].sort(byCodeUnit)
     // In a directory no step made, the names a step added are that step's: each is checked on its own.

@@ -426,6 +426,39 @@ describe("an observed test", () => {
     expect(await run()).toEqual({ check: "ran" })
   })
 
+  tracedIt("is reused when it finds a file it rewrites as an earlier run found it", async () => {
+    // What mypy does with `.mypy_cache/cache.db`, which a cache step puts back from one entry at every commit:
+    // reads it and writes it again. `scratch` is a file it makes when it is missing.
+    const rewriting = [
+      "/bin/cat input.txt > /dev/null",
+      "/bin/mkdir -p cache",
+      "if [ -f cache/db ]; then /bin/cat cache/db > /dev/null; fi",
+      "/bin/date +%s%N >> cache/db",
+      "if [ ! -f scratch ]; then echo made > scratch; fi",
+      "if [ ! -f ../outside/scratch ]; then echo made > ../outside/scratch; fi"
+    ].join("\n")
+    const { root, run, write, reasons } = await fixture({ check: rewriting })
+    // `scratch` and the file outside the workspace are gone again before each run.
+    const putBack = async (): Promise<void> => {
+      await write("cache/db", "the entry\n")
+      await Fs.rm(Path.join(root, "scratch"), { force: true })
+      await Fs.rm(Path.join(root, "..", "outside", "scratch"), { force: true })
+    }
+    await Fs.mkdir(Path.join(root, "..", "outside"))
+    await putBack()
+    expect(await run()).toEqual({ check: "ran" })
+    await putBack()
+    await write("input.txt", "pass, changed\n")
+    expect(await run()).toEqual({ check: "ran" })
+    // As the cache step puts it back again: what the run read is what the earlier run read.
+    await putBack()
+    expect(await run()).toEqual({ check: "hit" })
+    // Another entry is another input.
+    await write("cache/db", "another entry\n")
+    expect(await run()).toEqual({ check: "ran" })
+    expect(reasons).toEqual(["cache/db changed"])
+  })
+
   tracedIt("ends when its command ends, and stops a process the command left running", async () => {
     const leaving = "sleep 600 > /dev/null 2>&1 &\necho $! > left.pid\n/bin/cat input.txt > /dev/null"
     const { root, run, traceFiles } = await fixture({ check: leaving })

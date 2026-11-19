@@ -2833,15 +2833,46 @@ const executeWith = (
      */
     const seenBy = (
       node: PackageNode
-    ): { readonly measured: (path: string) => string; readonly io: ObservedReads.Io | undefined } => {
-      if (node.machine === undefined) return { measured: stateOf, io: undefined }
+    ): {
+      readonly measured: (path: string) => string
+      readonly io: ObservedReads.Io | undefined
+      readonly place: (path: string) => string
+    } => {
+      if (node.machine === undefined) return { measured: stateOf, io: undefined, place: (path) => path }
       const made = machineOf(node)
       const place = Machine.actual(made ?? Machine.named(machinesKept!, NodeFs.realpathSync(root), node.machine))
       const measured = made === undefined ? unmade!.measured : stateOf
       return {
         measured: (path) => measured(place(path)),
-        io: Machine.through(place, made === undefined ? unmade!.io : undefined)
+        io: Machine.through(place, made === undefined ? unmade!.io : undefined),
+        place
       }
+    }
+    /**
+     * What each file that an earlier run of a target wrote holds now, by its real path, measured just before the
+     * target runs: a file the run finds there and changes is held as it found it too (`found` of
+     * {@link ObservedReads.observe}). Only those files are measured, and most were measured already, by
+     * the paths the run sees: the tree's real path and the machine's directories.
+     */
+    const foundBefore = (
+      node: PackageNode,
+      place: string,
+      earlier: ReadonlyArray<ObservedReads.Record>
+    ): ReadonlyMap<string, string> => {
+      const seen = seenBy(node)
+      const real = NodeFs.realpathSync(place)
+      const found = new Map<string, string>()
+      for (const stored of earlier) {
+        for (const row of stored.reads) {
+          if (row.length !== 3) continue
+          const path = row[0].startsWith("/") ? row[0] : NodePath.join(real, row[0])
+          const state = seen.measured(path)
+          // `-`: nothing is there now, so a run finds nothing there to change. A path the run names through a
+          // link elsewhere matches no key: it is held as the run left it, as it was before any was measured.
+          if (state !== "-") found.set(seen.place(path), state)
+        }
+      }
+      return found
     }
     /** Whether two targets run in one tree, so that one can read what the other leaves. */
     const together = (one: PackageNode, other: PackageNode): boolean => one.machine === other.machine
@@ -3308,6 +3339,7 @@ const executeWith = (
         yield* joined(() => Fs.mkdir(directory, { recursive: true }))
         const traceFile = NodePath.join(directory, "trace")
         return yield* Effect.gen(function*() {
+          const found = yield* joined(async () => foundBefore(node, place, earlier))
           // The trace file is made first: its time on the file system's clock is when the run began.
           yield* joined(() => Fs.writeFile(traceFile, ""))
           const startedMs = (yield* joined(() => Fs.stat(traceFile))).ctimeMs
@@ -3376,6 +3408,7 @@ const executeWith = (
                   // A tool every step reads is measured once in a build: the build remembers a file that has not
                   // changed since it was measured.
                   outside: stateOf,
+                  found,
                   // What a run left in its machine's home or temporary directory is the machine's, wherever machines
                   // are kept: it is kept with what the run left in the tree, and put back on the next machine.
                   temporary: machine === undefined ? temporary() : [...temporary(), machine.home, machine.tmp],
