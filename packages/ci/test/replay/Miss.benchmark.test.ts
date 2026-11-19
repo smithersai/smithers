@@ -1,6 +1,10 @@
 /**
  * Benchmark: what a commit costs when nothing can be reused.
  *
+ * **How to run.** `pnpm run benchmark` in `packages/ci`. It is no part of the
+ * suite: it holds one time against another, and the suite must not fail for
+ * the machine's load.
+ *
  * **Shape.** Two GitHub Actions jobs, `lint` and `test`, each an install
  * followed by one check. The install takes 0.4 s, `lint` 0.4 s and `test`
  * 3 s; each is a `sleep`, so its time does not move with the machine's load.
