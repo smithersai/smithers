@@ -419,7 +419,7 @@ Other repositories were measured before a job became a machine (`0607101fad66`),
 
 | Repository | Speedup then | Record | Why |
 | --- | ---: | --- | --- |
-| `highlightjs/highlight.js` | 1.60, 4 mismatches | `build/lib is gone` | its matrix variants each build into `build/` and shared one checkout: a wrong result, which a checkout per job is for. On `main` its replay did not finish four commits in 45 minutes: each of 12 variants runs `npm install`, 59 to 82 s, never stored (`it opened a network connection (node to 8.8.8.8 port 53)`): only an install of exactly what a lockfile pins is |
+| `highlightjs/highlight.js` | 1.60, 4 mismatches | `build/lib is gone` | its matrix variants each build into `build/` and shared one checkout: a wrong result, which a checkout per job is for. On `main` its replay did not finish four commits in 45 minutes: each of 10 variants runs `npm install`, 59 to 82 s, never stored (`it opened a network connection (node to 8.8.8.8 port 53)`): only an install of exactly what a lockfile pins is |
 | `t3-oss/t3-env` | 0.33 | `it opened a network connection (bun to 8.8.8.8 port 53)`, `(turbo to 64.239.123.65 port 443)` | `bun install` without `--frozen-lockfile`; turbo calls its vendor at every run |
 | `BurntSushi/toml`, `google/uuid` | 0.49, 0.20 | `README.md changed`, `CONTRIBUTING.md changed` | `go` asks about every file of a package directory, so a docs commit there reruns the tests; a suite of 3 to 15 s is shorter than the start of `smthrs` |
 | `pallets/click`, `yargs/yargs` | 0.19, none | `.git/HEAD changed` | `pre-commit run --all-files` and yargs' tests read the commit. A traced `tox` step takes 22 to 28 s against 9 s |
