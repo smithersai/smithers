@@ -534,7 +534,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     effect function siteAt(way: Way, commit: string) {
       const copy = path.join(work, way, path.basename(root))
       try cloneAt(copy, commit, places[way])
-      const cache = path.join(work, "kept", way)
+      // Not under `kept`, which a baseline step may write: no way reads what another way keeps.
+      const cache = path.join(work, "state", way)
       const declared = path.join(work, "declared", way)
       try orFail(fs.makeDirectory(cache, { recursive: true }), "could not make a directory")
       try orFail(fs.makeDirectory(declared, { recursive: true }), "could not make a directory")

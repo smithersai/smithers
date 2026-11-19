@@ -119,7 +119,7 @@ describe("a replay's copy of the repository", () => {
       ).toEqual([])
 
       // What Smithers build keeps, and the generated workspace file, are beside the copy.
-      expect(readdirSync(join(work, "kept", mode)), mode).toEqual(expect.arrayContaining(["cache", compiledCode]))
+      expect(readdirSync(join(work, "state", mode)), mode).toEqual(expect.arrayContaining(["cache", compiledCode]))
       expect(readdirSync(join(work, "declared", mode)), mode).toEqual(
         expect.arrayContaining(["WORKSPACE.smithers", "node_modules"])
       )

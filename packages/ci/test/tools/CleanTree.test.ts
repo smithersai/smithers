@@ -4,8 +4,9 @@
  * has: `git status` with and without ignored files, `git clean`, the files
  * on disk against `git ls-files`, a listing of the root, and what git itself
  * keeps beside the files: stashes, worktrees, refs, local configuration,
- * hooks, the bits of the index. Each check passes in a fresh clone, so each
- * passes in a replay both ways, and in the CI `apply` writes.
+ * hooks, the bits of the index, whether the history is whole. Each check
+ * passes in a fresh clone on a CI machine, so each passes in a replay both
+ * ways, and in the CI `apply` writes.
  */
 
 import * as Schema from "effect/Schema"
@@ -42,9 +43,14 @@ const checks: Readonly<Record<string, string>> = {
   cleangit: `test -z "$(git clean -ndx)"`,
   cleanfind:
     `diff <(find . -path ./.git -prune -o -type f -print -o -type l -print | sed 's#^./##' | sort) <(git ls-files | sort)`,
+  // A directory with nothing in it is in no listing of files: none is left behind either.
+  emptydirs: `test -z "$(find . -path ./.git -prune -o -type d -empty -print)"`,
   // What git keeps beside the files.
   stash: `test -z "$(git stash list)"`,
-  worktrees: `test "$(git worktree list --porcelain | grep -c '^worktree ')" = 1 && test ! -e .git/worktrees`,
+  worktrees:
+    `test -d .git && test "$(git worktree list --porcelain | grep -c '^worktree ')" = 1 && test ! -e .git/worktrees`,
+  // The history is whole, as in the clone a baseline step runs in: no copy is cut short.
+  shallow: `test "$(git rev-parse --is-shallow-repository)" = false && test ! -e .git/shallow`,
   refs: `test -z "$(git for-each-ref --format='%(refname)' | grep -vE '^refs/(heads|tags|remotes/origin)/')"`,
   config:
     `test -z "$(git config --local --name-only --list | grep -viE '^(core\\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks)|remote\\.origin\\.(url|fetch|pushurl)|branch\\..*)$')"`,
@@ -54,6 +60,8 @@ const checks: Readonly<Record<string, string>> = {
   exclude: `test -z "$(grep -v '^#' .git/info/exclude 2>/dev/null | grep .)"`,
   // No variable of Smithers build or Smithers CI reaches a step, and none that the generated workflow sets for it.
   variables: `test -z "$(env | grep -E '^(SMITHERS|SMTHRS)_|^NODE_COMPILE_CACHE=|^VIBELANG_CACHE_DIR=')"`,
+  // What a CI machine says of itself is said everywhere a step runs, whatever the shell that started the program holds.
+  runner: `test "$CI" = true && test "$GITHUB_ACTIONS" = true`,
   // A step that leaves an ignored file finds the tree as clean as the commit says, at the next commit too.
   leavesignored: `test ! -e out/seen && mkdir -p out && touch out/seen`
 }

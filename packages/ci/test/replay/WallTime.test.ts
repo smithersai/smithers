@@ -63,10 +63,10 @@ describe("a start of smthrs in a copy", () => {
       expect(starts.length).toBeGreaterThanOrEqual(3)
       for (const line of starts) {
         const [node, source] = line.split(" ")
-        expect(node).toMatch(new RegExp(`/kept/(normal|fast)/${compiledCode}$`))
+        expect(node).toMatch(new RegExp(`/state/(normal|fast)/${compiledCode}$`))
         expect(source).toBe(`${node?.slice(0, -compiledCode.length)}${compiledSource}`)
       }
-      expect(new Set(starts.map((line) => /\/kept\/(normal|fast)\//.exec(line)?.[1]))).toEqual(
+      expect(new Set(starts.map((line) => /\/state\/(normal|fast)\//.exec(line)?.[1]))).toEqual(
         new Set(["normal", "fast"])
       )
       const commit = report.commits[0]
