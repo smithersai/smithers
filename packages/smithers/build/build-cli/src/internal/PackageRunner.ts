@@ -2786,12 +2786,21 @@ export const executeEffect = (
     const keptPath = (real: string, path: string): string =>
       path === real ? "." : path.startsWith(`${real}/`) ? path.slice(real.length + 1) : path
     const fromKept = (real: string, name: string): string => name.startsWith("/") ? name : NodePath.join(real, name)
-    /** Whether a record's kept files are there, and what its run left outside the workspace still as it left it. */
-    const restorable = (node: PackageNode, stored: ObservedReads.Record): boolean => {
-      if (stored.kept === undefined || !ObservedReads.outsideHolds(stored, seenBy(node).measured)) return false
+    /**
+     * Why what a record's run left cannot be put back, or `undefined` when it can: its kept files are there, and
+     * what the run left outside the workspace is still as it left it.
+     */
+    const unrestorable = (node: PackageNode, stored: ObservedReads.Record): string | undefined => {
+      if (stored.kept === undefined) return "what it left is not kept"
+      const changed = ObservedReads.outsideChanged(stored, seenBy(node).measured)
+      if (changed !== undefined) return `${changed}, which it left outside the workspace, is not as it left it`
       const stem = keptStem(node.observed!, stored.kept.archive)
       return NodeFs.existsSync(`${stem}.tar`) && NodeFs.existsSync(`${stem}.json`)
+        ? undefined
+        : "the files kept for it are not in the cache directory"
     }
+    const restorable = (node: PackageNode, stored: ObservedReads.Record): boolean =>
+      unrestorable(node, stored) === undefined
     /**
      * Keeps what a run left in the workspace and in the temporary directory:
      * one archive beside the cache, and beside it the paths the run wrote,
@@ -2819,17 +2828,27 @@ export const executeEffect = (
         const machine = machineOf(node)
         const written = machine === undefined ? (path: string): string => path : Machine.neutral(machine)
         const stem = keptStem(observed, record.id!)
-        const names = (absolute: boolean): string =>
-          left.keep.filter((name) => name.startsWith("/") === absolute).map((name) => `${name}\0`).join("")
+        /** Where a kept name is: in the workspace, in the machine's home or temporary directory, or beside both. */
+        const placed = (name: string): "inside" | "machine" | "beside" =>
+          !name.startsWith("/") ? "inside" : Machine.own(name) ? "machine" : "beside"
+        const names = (place: ReturnType<typeof placed>): string =>
+          left.keep
+            .filter((name) => placed(name) === place)
+            // A path of the machine is kept from the machine's directory, so a machine kept anywhere puts it back.
+            .map((name) => `${place === "machine" ? name.slice(Machine.anchor.length + 1) : name}\0`)
+            .join("")
+        const ofMachine = names("machine")
         yield* joined(async () => {
           await Fs.mkdir(keptDirectory, { recursive: true })
-          await Fs.writeFile(`${stem}.inside`, names(false))
-          await Fs.writeFile(`${stem}.beside`, names(true))
+          await Fs.writeFile(`${stem}.inside`, names("inside"))
+          await Fs.writeFile(`${stem}.beside`, names("beside"))
+          await Fs.writeFile(`${stem}.machine`, ofMachine)
           await Fs.writeFile(
             `${stem}.json`,
             JSON.stringify({
               made: [...observation.made].map((path) => keptPath(real, written(path))),
-              touched: [...observation.touched].map((path) => keptPath(real, written(path)))
+              touched: [...observation.touched].map((path) => keptPath(real, written(path))),
+              ...(ofMachine === "" ? {} : { machine: true })
             })
           )
         })
@@ -2838,17 +2857,24 @@ export const executeEffect = (
           "/bin/sh",
           "-c",
           "\"$1\" -C \"$3\" --no-recursion --null -T \"$2.inside\" -cf \"$2.part\" && " +
-          "\"$1\" -P --no-recursion --null -T \"$2.beside\" -rf \"$2.part\" && mv \"$2.part\" \"$2.tar\"",
+          "\"$1\" -P --no-recursion --null -T \"$2.beside\" -rf \"$2.part\" && " +
+          "{ [ -z \"$4\" ] || \"$1\" -C \"$4\" --no-recursion --null -T \"$2.machine\" -cf \"$2.machine.tar\"; } && " +
+          "mv \"$2.part\" \"$2.tar\"",
           "sh",
           tar,
           stem,
-          real
+          real,
+          ofMachine === "" ? "" : machine!.directory
         ])
         yield* joined(() =>
-          Promise.all([".inside", ".beside", ".part"].map((suffix) => Fs.rm(`${stem}${suffix}`, { force: true })))
+          Promise.all(
+            [".inside", ".beside", ".machine", ".part"].map((suffix) => Fs.rm(`${stem}${suffix}`, { force: true }))
+          )
         )
         if (!archived.ok) {
-          yield* joined(() => Fs.rm(`${stem}.json`, { force: true }))
+          yield* joined(() =>
+            Promise.all([".json", ".machine.tar"].map((suffix) => Fs.rm(`${stem}${suffix}`, { force: true })))
+          )
           log(`${node.label}  what it left could not be kept; it runs again when a step after it runs`)
           return record
         }
@@ -2889,7 +2915,8 @@ export const executeEffect = (
         const listed = yield* spawnNode(node, root, [
           "/bin/sh",
           "-c",
-          "exec \"$1\" -tf \"$2.tar\" > \"$2.names\"",
+          "\"$1\" -tf \"$2.tar\" > \"$2.names\" && " +
+          "{ [ ! -e \"$2.machine.tar\" ] || \"$1\" -tf \"$2.machine.tar\" > \"$2.machine.names\"; }",
           "sh",
           tar,
           stem
@@ -2897,39 +2924,56 @@ export const executeEffect = (
         const wrote = yield* joined(async () => {
           try {
             if (!listed.ok) return undefined
-            const names = (await Fs.readFile(`${stem}.names`, "utf8")).split("\n").filter((name) => name !== "")
-            // Nothing is put back outside the workspace and the temporary directory, whatever an archive holds.
-            if (
-              ![...names.map((name) => name.replace(/\/$/, "")), ...gone].every((name) =>
-                ObservedReads.keptName(name, temporary())
-              )
-            ) return undefined
             const paths = JSON.parse(await Fs.readFile(`${stem}.json`, "utf8")) as {
               readonly made: ReadonlyArray<string>
               readonly touched: ReadonlyArray<string>
+              readonly machine?: true
             }
-            for (const name of gone) await Fs.rm(fromKept(real, name), { recursive: true, force: true })
+            const namesIn = async (file: string): Promise<ReadonlyArray<string>> =>
+              (await Fs.readFile(file, "utf8")).split("\n").filter((name) => name !== "").map((name) =>
+                name.replace(/\/$/, "")
+              )
+            const names = await namesIn(`${stem}.names`)
+            // The files of the machine's home and temporary directory, named from the machine. They are there
+            // when the run left any, and only a machine has them.
+            const ofMachine = paths.machine !== true
+              ? []
+              : (await namesIn(`${stem}.machine.names`)).map((name) => `${Machine.anchor}/${name}`)
+            if (ofMachine.length > 0 && machine === undefined) return undefined
+            // Nothing is put back outside the workspace, the temporary directory and the machine's own two,
+            // whatever an archive holds.
+            if (
+              !ofMachine.every(Machine.own) ||
+              ![...names, ...gone].every((name) =>
+                ObservedReads.keptName(name, temporary()) || (machine !== undefined && Machine.own(name))
+              )
+            ) return undefined
+            for (const name of gone) await Fs.rm(found(fromKept(real, name)), { recursive: true, force: true })
             return {
               made: new Set(paths.made.map((name) => found(fromKept(real, name)))),
-              touched: new Set(paths.touched.map((name) => found(fromKept(real, name))))
+              touched: new Set(paths.touched.map((name) => found(fromKept(real, name)))),
+              machine: ofMachine.length > 0
             }
           } catch {
             return undefined
           } finally {
-            await Fs.rm(`${stem}.names`, { force: true })
+            await Promise.all([".names", ".machine.names"].map((suffix) => Fs.rm(`${stem}${suffix}`, { force: true })))
           }
         })
         if (wrote === undefined) return false
         const unpacked = yield* spawnNode(node, root, [
+          "/bin/sh",
+          "-c",
+          "\"$1\" -C \"$3\" -xpPf \"$2.tar\" --delay-directory-restore && " +
+          "{ [ -z \"$4\" ] || \"$1\" -C \"$4\" -xpf \"$2.machine.tar\" --delay-directory-restore; }",
+          "sh",
           tar,
-          "-C",
+          stem,
           real,
-          "-xpPf",
-          `${stem}.tar`,
-          "--delay-directory-restore"
+          wrote.machine ? machine!.directory : ""
         ])
         if (!unpacked.ok) return false
-        wroteHere.set(node.label, { label: node.label, id: stored.id!, ...wrote })
+        wroteHere.set(node.label, { label: node.label, id: stored.id!, made: wrote.made, touched: wrote.touched })
         // The tree holds other files than the plan measured: a target that waits for this one is measured again.
         wroteBy.set(node.label, ++writes)
         return true
@@ -3094,12 +3138,15 @@ export const executeEffect = (
           }
           // A target that waits for it is about to run or be compared with what it left: that is put back, or
           // the step runs again.
-          if (
-            stored.left === true && awaited &&
-            !(restorable(node, stored) && (yield* restore(node, observed, stored)))
-          ) {
-            why ??= "a step after it runs, and may read what this one leaves"
-            continue
+          if (stored.left === true && awaited) {
+            const declined = unrestorable(node, stored) ??
+              ((yield* restore(node, observed, stored)) ? undefined : "the files kept for it could not be unpacked")
+            if (declined !== undefined) {
+              why ??= stored.kept === undefined
+                ? "a step after it runs, and may read what this one leaves"
+                : `a step after it runs, and what this one left cannot be put back: ${declined}`
+              continue
+            }
           }
           // The steps it read from ran again here and left what it read: its record now holds for their new records.
           const anchored = ObservedReads.anchored(stored, (label) => wroteHere.get(label)?.id)
@@ -3195,7 +3242,9 @@ export const executeEffect = (
                   ...(machine === undefined ? [] : ObservedReads.ignored(root, machine.home, cacheDirectory, []))
                 ],
                 startedMs,
-                temporary: temporary(),
+                // What a run left in its machine's home or temporary directory is the machine's, wherever machines
+                // are kept: it is kept with what the run left in the tree, and put back on the next machine.
+                temporary: machine === undefined ? temporary() : [...temporary(), machine.home, machine.tmp],
                 mounts,
                 // In the order they ran or would have run: the last to write a path is the one it came from.
                 producers: inOrder.flatMap((earlier) => {

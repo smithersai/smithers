@@ -690,6 +690,21 @@ export const neutral = (machine: Machine) => (path: string): string =>
     : path
 
 /**
+ * Whether a name written from a machine is one the machine keeps for its
+ * later targets: a path under its home or its temporary directory. What a
+ * run left there is kept with what it left in its tree, and put back on the
+ * next machine of that name, which starts with neither.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const own = (name: string): boolean => {
+  const parts = name.split("/")
+  return (name.startsWith(`${anchor}/home/`) || name.startsWith(`${anchor}/tmp/`)) && !name.includes("\0") &&
+    !parts.includes("..") && !parts.slice(1).includes("")
+}
+
+/**
  * The path on this host that a record's path names: one written from the
  * machine is under the machine's directory, and the directory the machine is
  * kept in is the one above it.
@@ -724,7 +739,9 @@ export const through = (
 /**
  * What a run on a machine read and left, with the machine's own paths
  * written from the machine ({@link neutral}). The record then holds no path
- * of this checkout, so it answers in another one that restored the cache.
+ * of this checkout, so it answers in another one that restored the cache,
+ * and what the run left in the machine's home and temporary directory is
+ * put back on a machine kept anywhere ({@link own}).
  *
  * @category recording
  * @since 1.0.0
@@ -742,9 +759,15 @@ export const recorded = (observation: ObservedReads.Observation, machine: Machin
     lists: written(read.lists),
     ...(read.given === undefined ? {} : { given: written(read.given) })
   }
+  /** A path the run left or removed, as it is kept: one of the machine's home or temporary directory from the machine. */
+  const kept = (path: string): string => own(name(path)) ? name(path) : path
   const left = observation.left === undefined || "refusal" in observation.left
     ? observation.left
-    : { ...observation.left, outside: written(observation.left.outside) }
+    : {
+      keep: observation.left.keep.map(kept),
+      gone: observation.left.gone.map(kept),
+      outside: written(observation.left.outside)
+    }
   return {
     ...observation,
     record: { ...body, id: ObservedReads.idOf(body) },

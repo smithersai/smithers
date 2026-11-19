@@ -431,6 +431,13 @@ says so:
 //:install  runs again: a step after it runs, and may read what this one leaves
 ```
 
+When it is kept and cannot be put back, the line says what stands in the way:
+
+```text
+//:install  runs again: a step after it runs, and what this one left cannot be put back: /opt/tools/bin/tool, which it left outside the workspace, is not as it left it
+//:install  runs again: a step after it runs, and what this one left cannot be put back: the files kept for it are not in the cache directory
+```
+
 The archives of a declaration's four records are the only ones kept; an older
 one is removed with its record. A CI machine that carries the cache directory
 from one run to the next carries `kept` with it.
@@ -651,11 +658,14 @@ as in `/smthrs-machine/home/.npmrc`, the directory its machines are kept in as
 path of the checkout it was made in, so it answers in another checkout that
 restored the cache directory, as a CI machine does between runs.
 
-What a step left in its machine's home or temporary directory is not kept with
-what it left in the copy. When a step after it has to run, the step runs again
-and leaves it again. What a locked install fetched into its own cache is left
-out, as it is without a machine: the install is answered, and its files in the
-copy are put back.
+What a step left in its machine's home or temporary directory is kept with
+what it left in the copy, in a second archive beside the first that names each
+path from the machine. A machine starts with an empty home and an empty
+temporary directory wherever machines are kept, so when a step after it has to
+run, the files are put back in all three places: a tool the step installed
+under the home, a file it left under `/tmp` for the next step, and what it
+wrote in the copy. A build whose machines are kept under `/tmp` and one whose
+machines are kept under a home directory keep and put back the same files.
 
 Machines are kept under the user's cache directory
 (`$XDG_CACHE_HOME/smthrs/machines`, else `~/.cache/smthrs/machines`), outside

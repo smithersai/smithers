@@ -220,9 +220,10 @@ describe("the /tmp of a machine", () => {
       // Both are answered, and no machine is made: the record names the note from the machine, not from this host.
       expect(await run(["reads"])).toEqual({ writes: "hit", reads: "hit" })
       expect(made()).toEqual(["job"])
-      // The reader has to run: the note is not kept with the copy's files, so the writer runs again and leaves it.
+      // The reader has to run: the note is kept with what the writer left, and put back in the temporary
+      // directory of the reader's machine. The writer does not run.
       await write("a.txt", "a, changed\n")
-      expect(await run(["reads"])).toEqual({ writes: "ran", reads: "ran" })
+      expect(await run(["reads"])).toEqual({ writes: "hit", reads: "ran" })
       expect(made()).toEqual(["job", "job"])
       expect(NodeFs.existsSync(note)).toBe(false)
     }
@@ -470,28 +471,91 @@ describe("an observed target on a machine", () => {
     expect(logs.filter((line) => line.includes("put back"))).toEqual([])
   })
 
-  tracedIt("runs again when a target after it runs and needs what it left in its home", async () => {
-    const { run, write } = await fixture(() => {
-      const tool = on("job", "mkdir -p ~/bin && printf '#!/bin/sh\\nexit 0\\n' > ~/bin/tool && chmod +x ~/bin/tool")
-      return { tool, uses: on("job", "~/bin/tool && grep -q b b.txt", [tool]) }
-    })
-    expect(await run(["uses"])).toEqual({ tool: "ran", uses: "ran" })
-    expect(await run(["uses"])).toEqual({ tool: "hit", uses: "hit" })
-    // A machine starts with an empty home, so the tool is installed again for the step that needs it.
-    await write("b.txt", "b, changed\n")
-    expect(await run(["uses"])).toEqual({ tool: "ran", uses: "ran" })
-  })
+  // The machines of this fixture are kept beside the temporary directory, as a runner keeps them under its home.
+  // The third ship review's blocker 2: there every step of a generated CI ran again, because what a step left in
+  // its machine's temporary directory was never kept.
+  tracedIt(
+    "finds what an answered step left in its machine's home, put back on a machine that starts empty",
+    async () => {
+      const { logs, root, run, write } = await fixture(() => {
+        const tool = on("job", "mkdir -p ~/bin && printf '#!/bin/sh\\nexit 0\\n' > ~/bin/tool && chmod +x ~/bin/tool")
+        return { tool, uses: on("job", "~/bin/tool && grep -q b b.txt", [tool]) }
+      })
+      expect(await run(["uses"])).toEqual({ tool: "ran", uses: "ran" })
+      expect(await run(["uses"])).toEqual({ tool: "hit", uses: "hit" })
+      // A machine starts with an empty home. The tool is kept with what its step left, and put back, as a program
+      // that can run, for the step that needs it.
+      await write("b.txt", "b, changed\n")
+      expect(await run(["uses"])).toEqual({ tool: "hit", uses: "ran" })
+      expect(logs).toContain("//:tool  what it left is put back for //:uses")
+      // The files kept from the home are lost: the step runs in their place.
+      const kept = Path.join(root, ".flows/kept")
+      const lose = async (suffix: string): Promise<void> => {
+        for (const name of await Fs.readdir(kept)) if (name.endsWith(suffix)) await Fs.rm(Path.join(kept, name))
+      }
+      await lose(".machine.tar")
+      logs.length = 0
+      await write("b.txt", "b, changed again\n")
+      expect((await run(["uses"]))["uses"]).toBe("ran")
+      expect(logs).toContain("//:tool  what it left could not be put back; it runs for //:uses")
+      // Every kept file is lost: the step is not answered, and its row says why.
+      await lose("")
+      logs.length = 0
+      await write("b.txt", "b, changed once more\n")
+      expect(await run(["uses"])).toEqual({ tool: "ran", uses: "ran" })
+      expect(logs).toContain(
+        "//:tool  runs again: a step after it runs, and what this one left cannot be put back: " +
+          "the files kept for it are not in the cache directory"
+      )
+    }
+  )
 
-  tracedIt("runs again when a target after it runs and needs what it left in its temporary directory", async () => {
-    const { run, write } = await fixture(() => {
-      const fetch = on("job", "echo fetched > \"$TMPDIR/fetched\"")
-      return { fetch, uses: on("job", "grep -q fetched \"$TMPDIR/fetched\" && grep -q b b.txt", [fetch]) }
-    })
-    expect(await run(["uses"])).toEqual({ fetch: "ran", uses: "ran" })
-    expect(await run(["uses"])).toEqual({ fetch: "hit", uses: "hit" })
-    await write("b.txt", "b, changed\n")
-    expect(await run(["uses"])).toEqual({ fetch: "ran", uses: "ran" })
-  })
+  tracedIt(
+    "finds what an answered step left in its machine's temporary directory, put back on a machine that starts empty",
+    async () => {
+      const { logs, run, write } = await fixture(() => {
+        const fetch = on("job", "echo fetched > \"$TMPDIR/fetched\" && : > \"$TMPDIR/old\" && rm \"$TMPDIR/old\"")
+        return { fetch, uses: on("job", "grep -q fetched \"$TMPDIR/fetched\" && grep -q b b.txt", [fetch]) }
+      })
+      expect(await run(["uses"])).toEqual({ fetch: "ran", uses: "ran" })
+      expect(await run(["uses"])).toEqual({ fetch: "hit", uses: "hit" })
+      await write("b.txt", "b, changed\n")
+      expect(await run(["uses"])).toEqual({ fetch: "hit", uses: "ran" })
+      expect(logs).toContain("//:fetch  what it left is put back for //:uses")
+    }
+  )
+
+  tracedIt(
+    "puts back what a step left in its home and temporary directory where machines are kept elsewhere",
+    async () => {
+      // What a runner does between two runs, on another host: another checkout, another home, machines kept under
+      // that home, and the cache directory carried over.
+      const targets = () => {
+        const install = on(
+          "job",
+          "mkdir deps ~/bin \"$TMPDIR/state\" && cp a.txt deps/a && echo tool > ~/bin/tool && " +
+            "echo done > \"$TMPDIR/state/outcome\""
+        )
+        return {
+          install,
+          test: on(
+            "job",
+            "grep -q a deps/a && grep -q tool ~/bin/tool && grep -q done \"$TMPDIR/state/outcome\" && grep -q b b.txt",
+            [install]
+          )
+        }
+      }
+      const first = await fixture(targets)
+      expect(await first.run(["test"])).toEqual({ install: "ran", test: "ran" })
+      const second = await fixture(targets)
+      expect(second.kept).not.toBe(first.kept)
+      await Fs.cp(Path.join(first.root, ".flows"), Path.join(second.root, ".flows"), { recursive: true })
+      expect(await second.run(["test"])).toEqual({ install: "hit", test: "hit" })
+      await second.write("b.txt", "b, changed\n")
+      expect(await second.run(["test"])).toEqual({ install: "hit", test: "ran" })
+      expect(second.logs).toContain("//:install  what it left is put back for //:test")
+    }
+  )
 
   tracedIt("leaves out of its record what the declaration names under the machine's temporary directory", async () => {
     // What Node does: a step fills a cache of compiled code under TMPDIR, with other bytes on every run, and the

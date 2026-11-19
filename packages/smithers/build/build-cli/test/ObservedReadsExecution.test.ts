@@ -807,7 +807,11 @@ describe("a job of observed steps", () => {
     await Fs.rm(Path.join(outside, "tool"))
     await write("tests/t.txt", "test 3\n")
     expect(await run()).toEqual({ install: "ran", build: "hit", lint: "hit", test: "ran" })
-    expect(reasons["install"]).toBe("a step after it runs, and may read what this one leaves")
+    // The record says which path keeps the kept files from standing for the install.
+    expect(reasons["install"]).toBe(
+      "a step after it runs, and what this one left cannot be put back: " +
+        `${Path.join(outside, "tool")}, which it left outside the workspace, is not as it left it`
+    )
     expect(await ran()).toEqual(["install", "test"])
     expect(NodeFs.readFileSync(Path.join(outside, "tool"), "utf8")).toBe("locked 1\n")
     expect(logs.filter((line) => line.includes("is not kept"))).toEqual([])

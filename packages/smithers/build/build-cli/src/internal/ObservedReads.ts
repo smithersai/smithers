@@ -1082,7 +1082,9 @@ export interface Observation {
  * What a run left behind, sorted so that a directory comes before what it
  * holds. `keep` is every file, directory and link it wrote that is still
  * there, in the workspace (written from its root) or under a temporary
- * directory (absolute). `gone` is every path in those places it removed.
+ * directory (absolute). A machine's home and its temporary directory count
+ * as temporary directories: the caller names them. `gone` is every path in
+ * those places it removed.
  * `outside` is what it wrote anywhere else and left there, with what is
  * there now, apart from what a locked install fetched: a package manager's
  * own cache, which it fills again when a file is missing.
@@ -1666,7 +1668,18 @@ export const observe = (
  * @since 1.0.0
  */
 export const outsideHolds = (stored: Record, measured: (path: string) => string = measure): boolean =>
-  (stored.kept?.outside ?? []).every(([path, state]) => measured(path) === state)
+  outsideChanged(stored, measured) === undefined
+
+/**
+ * The first path a kept record's run left outside the workspace that is no
+ * longer as the run left it, or `undefined` when all of them are: why the
+ * kept files cannot stand for the run.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const outsideChanged = (stored: Record, measured: (path: string) => string = measure): string | undefined =>
+  (stored.kept?.outside ?? []).find(([path, state]) => measured(path) !== state)?.[0]
 
 /**
  * Whether a name in a kept archive may be put back: a path inside the

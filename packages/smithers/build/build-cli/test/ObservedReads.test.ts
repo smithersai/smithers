@@ -1596,6 +1596,7 @@ describe("what a run left behind", () => {
       kept: { archive: "a".repeat(64), outside: [[tool, ObservedReads.measure(tool)]], gone: [] }
     }
     expect(ObservedReads.outsideHolds(stored)).toBe(true)
+    expect(ObservedReads.outsideChanged(stored)).toBeUndefined()
     expect(ObservedReads.outsideHolds({ reads: [], lists: [], id: "2" })).toBe(true)
     await Fs.writeFile(tool, "another tool")
     expect(ObservedReads.outsideHolds(stored)).toBe(false)

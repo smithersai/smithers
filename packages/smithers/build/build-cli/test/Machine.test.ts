@@ -561,6 +561,23 @@ describe("a record of a run on a machine", () => {
     expect(found("/smthrs-machines/x")).toBe("/smthrs-machines/x")
   })
 
+  it("keeps for its later targets what is under its home or its temporary directory, and nothing else", () => {
+    expect(Machine.own("/smthrs-machine/home/.npmrc")).toBe(true)
+    expect(Machine.own("/smthrs-machine/tmp/state/outcome")).toBe(true)
+    // The two directories themselves are every machine's, and the tree is kept from its root.
+    expect(Machine.own("/smthrs-machine/home")).toBe(false)
+    expect(Machine.own("/smthrs-machine/tmp")).toBe(false)
+    expect(Machine.own("/smthrs-machine/w/repo/a.txt")).toBe(false)
+    expect(Machine.own("/smthrs-machine/other/a")).toBe(false)
+    expect(Machine.own("/tmp/a")).toBe(false)
+    expect(Machine.own("home/a")).toBe(false)
+    // A name that leaves the machine, or is no one path, is never put back.
+    expect(Machine.own("/smthrs-machine/home/../../elsewhere")).toBe(false)
+    expect(Machine.own("/smthrs-machine/home//a")).toBe(false)
+    expect(Machine.own("/smthrs-machine/tmp/a/")).toBe(false)
+    expect(Machine.own("/smthrs-machine/tmp/a\0b")).toBe(false)
+  })
+
   posixIt("reads each path where it is placed", async () => {
     const real = await directory("placed")
     await write(real, "home/file", "content\n")
@@ -601,6 +618,38 @@ describe("a record of a run on a machine", () => {
     expect(written.record.given).toEqual([["/smthrs-machine/home/bin/tool", "f:4:x", 0]])
     expect(written.record.from).toEqual(body.from)
     expect(written.left).toEqual({ keep: ["deps/a"], gone: [], outside: [["/smthrs-machine/home/bin/tool", "f:4:x"]] })
+    // What the run left and removed in the machine's home and temporary directory is kept from the machine. A
+    // path beside them, as the host's own temporary directory is, stays where it is.
+    const kept = Machine.recorded(
+      {
+        ...observation,
+        left: {
+          keep: [
+            "deps/a",
+            home("bin"),
+            home("bin/tool"),
+            Path.join(machine.tmp, "state"),
+            "/tmp/elsewhere",
+            machine.home
+          ],
+          gone: [Path.join(machine.tmp, "old"), "deps/old", `${machine.directory}/other`],
+          outside: []
+        }
+      },
+      machine
+    )
+    expect(kept.left).toEqual({
+      keep: [
+        "deps/a",
+        "/smthrs-machine/home/bin",
+        "/smthrs-machine/home/bin/tool",
+        "/smthrs-machine/tmp/state",
+        "/tmp/elsewhere",
+        machine.home
+      ],
+      gone: ["/smthrs-machine/tmp/old", "deps/old", `${machine.directory}/other`],
+      outside: []
+    })
     // The paths the run wrote stay the host's: the targets after it in this build read them there.
     expect(written.made).toBe(observation.made)
     const { id, ...rest } = written.record
