@@ -16,6 +16,7 @@ import {
   hooksDirectory,
   type Place,
   prePush,
+  softwareEnvironment,
   standIns,
   stepEnvironment
 } from "./Environment.ts"
@@ -25,6 +26,7 @@ import {
   type Jail,
   jailed,
   keyringFilter,
+  type Link,
   type Mask,
   type Probe,
   temporaryOf,
@@ -78,7 +80,9 @@ export type Places = Readonly<Record<Way, Confined>>
  *
  * A jailed step finds the person's home directory empty. What is put back,
  * read-only, is what it has a use for: the tools on `PATH` that are installed
- * there, the installs of `programs`, and `checkout`, the person's repository.
+ * there, the installs of `programs`, `checkout`, the person's repository, and
+ * the software a GitHub runner comes with where the person's variables say it
+ * is (`Inventory.runnerSoftware`).
  * A version manager looks for its versions under `HOME`, so each step's home
  * holds a link to where they are. Nothing else of the home is there: no
  * directory of settings, no history, no file a program keeps a token in,
@@ -197,6 +201,16 @@ export effect function confine(
     const repository = fs.realPath(checkout) catch () => undefined
     if (repository !== undefined) readable.push(repository)
   }
+  // The software a GitHub runner comes with, where this machine has it: a step is told these paths, and an SDK often
+  // lies in the home, as `~/Android/Sdk` does. A path that is a link stays a link.
+  const softwareLinks: Array<Link> = []
+  for (const value of Object.values(softwareEnvironment(environment))) {
+    if (!path.isAbsolute(value)) continue
+    const real = fs.realPath(value) catch () => undefined
+    if (real === undefined) continue
+    readable.push(real)
+    if (real !== value) softwareLinks.push({ path: value, target: real })
+  }
   const masks: Array<Mask> = []
   const hidden = [
     found.home,
@@ -224,7 +238,8 @@ export effect function confine(
     // A path put back inside another that is put back is there already.
     const inside = [...new Set(readable.filter((each) => within(real, each)))]
     const reads = inside.filter((each) => !inside.some((other) => within(other, each)))
-    const links = found.tools.links.filter((link) => within(real, link.path) && !reads.some((read) => within(read, link.path)))
+    const links = [...found.tools.links, ...softwareLinks]
+      .filter((link) => within(real, link.path) && !reads.some((read) => within(read, link.path)))
     masks.push({
       path: real,
       directory,

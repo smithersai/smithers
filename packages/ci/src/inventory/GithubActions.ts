@@ -22,6 +22,7 @@ import {
   hostActions,
   hostOf,
   releaseTrigger,
+  runnerSoftware,
   secret as receivesSecret,
   type Toolchain,
   triggerFilter,
@@ -600,9 +601,10 @@ const addRun = (
   ])
   const missing = [...new Set(command.match(/\b(?:GITHUB|RUNNER)_[A-Z0-9_]+\b/g))].filter((name) => !given.has(name))
   if (missing.length > 0) return note(job, "runner-variable", `${where} reads ${missing.join(", ")}`)
-  // A variable a setup action sets on GitHub, such as JAVA_HOME, is not set here.
+  // A variable a setup action sets on GitHub, such as GOROOT, is not set here. One a runner has anyway, such as
+  // JAVA_HOME, is this machine's (`Inventory.runnerSoftware`).
   const unset = [...state.setupNames].filter((name) =>
-    !env.entries.has(name) && new RegExp(`\\$\\{?${name}\\b`).test(command)
+    !runnerSoftware.includes(name) && !env.entries.has(name) && new RegExp(`\\$\\{?${name}\\b`).test(command)
   )
   if (unset.length > 0) {
     return note(job, "runner-variable", `${where} reads ${unset.join(", ")}, which a setup action sets on GitHub`)
@@ -800,9 +802,16 @@ const readCache = (context: StepContext, raw: Record<string, unknown>, uses: str
 
 /**
  * Adds the commands of a cache to the job. `first` is shell text that runs before the restoring script, as a setup
- * action's cache asks its tool where the cache is (`SetupCache.ts`).
+ * action's cache asks its tool where the cache is (`SetupCache.ts`). `known` is the outputs a reader may have of a
+ * step that does more than keep a cache; every other one stays unknown, for all the step does is not run here.
  */
-const keepCache = (context: StepContext, uses: string, use: CacheUse, first: string): StepRecord | undefined => {
+const keepCache = (
+  context: StepContext,
+  uses: string,
+  use: CacheUse,
+  first: string,
+  known?: ReadonlyArray<string>
+): StepRecord | undefined => {
   const { state, where } = context
   const { job } = state
   const reads = { ...context.reads, hashFiles: hashFilesForKey }
@@ -835,7 +844,9 @@ const keepCache = (context: StepContext, uses: string, use: CacheUse, first: str
     state.after.push(() => addRun(post, [saveScript], cacheShell, ""))
   }
   const outputs = fields((name) =>
-    /^[a-z0-9_-]+$/.test(name)
+    known !== undefined && !known.includes(name)
+      ? unknown(`an output of ${uses}, which a replay does not run`)
+      : /^[a-z0-9_-]+$/.test(name)
       ? { kind: "residual", residual: { kind: "variable", variable: output(name) } }
       : unknown(`an output of ${where} with a name a replay does not keep`)
   )
@@ -876,7 +887,8 @@ const readUses = (context: StepContext, raw: Record<string, unknown>, uses: stri
       { ...context, key: `${context.key}.CACHE` },
       uses,
       { kind: "cache", env: { [cacheVariables.key]: cache.key, [lockVariable]: cache.lock } },
-      `${beforeSetupCache(cache)}\n`
+      `${beforeSetupCache(cache)}\n`,
+      ["cache-hit"]
     )
     // An input can make the action run a command too, such as installing what a lockfile names.
     if (setup.command === undefined) return kept ?? recordOf(ran, notRun, undefined)

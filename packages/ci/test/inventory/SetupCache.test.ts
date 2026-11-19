@@ -1,4 +1,5 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import type { Job } from "../../src/contract/Inventory.ts"
@@ -77,7 +78,9 @@ describe("actions/setup-node with cache: npm", () => {
     expect(first[0]?.output).toMatch(
       /^Cache not found for input keys: node-cache-npm-(Linux|macOS)-(X64|ARM64)-[0-9a-f]{64}$/
     )
-    expect(first[1]?.output).toBe("hit=[]")
+    // setup-node: `core.setOutput('cache-hit', Boolean(cacheKey))`, so a miss is `false`, where actions/cache leaves
+    // the output empty.
+    expect(first[1]?.output).toBe("hit=[false]")
     expect(first[2]?.output).toMatch(/^Cache saved with key: node-cache-npm-/)
     // A new machine: the home is empty but for the store.
     rmSync(join(repo.temp, ".npm"), { recursive: true })
@@ -86,37 +89,69 @@ describe("actions/setup-node with cache: npm", () => {
     // Another lockfile is another key.
     writeFileSync(join(repo.root, "package-lock.json"), "{\"lockfileVersion\": 3, \"packages\": {}}\n")
     rmSync(join(repo.temp, ".npm"), { recursive: true })
-    expect(run(repo)[1]?.output).toBe("hit=[]")
+    expect(run(repo)[1]?.output).toBe("hit=[false]")
   })
 
-  it("stops, as the action does, when the repository has no lockfile", () => {
-    const repo = withWorkflow(workflow)
-    const ran = run(repo)
-    expect(ran).toHaveLength(1)
-    expect(ran[0]?.status).toBe(1)
-    expect(ran[0]?.output).toBe(
-      `Dependencies lock file is not found in ${repo.root}. Supported file patterns: package-lock.json,npm-shrinkwrap.json,yarn.lock`
-    )
-  })
-
-  it("hashes the files cache-dependency-path names", () => {
+  it("knows only cache-hit of what the action gives: another output leaves the job out", () => {
     const repo = withWorkflow(
       job(
-        `      - uses: actions/setup-node@v4
+        `      - id: node
+        uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }`,
+        `      - if: steps.node.outputs.node-version != ''
+        run: exit 1`
+      ),
+      { "package-lock.json": "{}\n" }
+    )
+    const read = jobOf(repo)
+    expect(read.unsupported.map((entry) => entry.detail).join("\n")).toContain(
+      "an output of actions/setup-node@v4, which a replay does not run"
+    )
+  })
+
+  it("reads an expression in cache-dependency-path", () => {
+    const repo = withWorkflow(
+      `
+on: pull_request
+env: { DIR: web }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           cache: npm
-          cache-dependency-path: |
-            apps/*/package-lock.json
-            !apps/old/**`,
-        `      - run: mkdir -p "$(npm config get cache)" && echo x > "$(npm config get cache)/fetched"`
-      ),
-      { "apps/web/package-lock.json": "web\n", "apps/old/package-lock.json": "old\n" }
+          cache-dependency-path: \${{ env.DIR }}/package-lock.json
+      - run: mkdir -p "$(npm config get cache)" && echo x > "$(npm config get cache)/fetched"
+`,
+      { "web/package-lock.json": "web\n" }
     )
-    expect(run(repo).at(-1)?.output).toMatch(/^Cache saved with key: /)
-    writeFileSync(join(repo.root, "apps/old/package-lock.json"), "changed\n")
-    expect(run(repo)[0]?.output).toMatch(/^Cache restored from key: /)
-    writeFileSync(join(repo.root, "apps/web/package-lock.json"), "changed\n")
-    expect(run(repo)[0]?.output).toMatch(/^Cache not found for input keys: /)
+    const ran = run(repo)
+    expect(ran.map((step) => step.status)).toEqual([0, 0, 0])
+    expect(ran[0]?.output).toMatch(/^Cache not found for input keys: node-cache-npm-/)
+    expect(ran[2]?.output).toMatch(/^Cache saved with key: node-cache-npm-/)
+  })
+
+  it("keeps no cache, and runs the job, when cache-dependency-path holds a matrix value", () => {
+    const repo = withWorkflow(
+      `
+on: pull_request
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy: { matrix: { dir: [web] } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          cache: npm
+          cache-dependency-path: \${{ matrix.dir }}/package-lock.json
+      - run: echo ran
+`,
+      { "web/package-lock.json": "web\n" }
+    )
+    expect(runJob(repo, jobOf(repo), { dir: "web" }).map((step) => step.output.trim())).toEqual(["ran"])
   })
 })
 
@@ -146,6 +181,70 @@ describe("actions/setup-go", () => {
     rmSync(join(repo.temp, "go"), { recursive: true })
     rmSync(join(repo.temp, ".cache", "go-build"), { recursive: true })
     expect(run(repo, path)[1]?.output).toBe("module\nobject")
+  })
+
+  // A Go module cache is read-only, and a home can already hold it. `@actions/cache` (`restoreCache`): a failure to
+  // restore is a warning and the step goes on as after a miss.
+  it("goes on as after a miss when a cache cannot be unpacked over what is there", () => {
+    const repo = withWorkflow(
+      job(
+        `      - id: go
+        uses: actions/setup-go@v5
+        with: { go-version: "1.24" }`,
+        `      - run: |
+          echo "hit=[\${{ steps.go.outputs.cache-hit }}]"
+          [ -e "$HOME/go/pkg/mod/a@v1" ] && exit 0
+          mkdir -p "$HOME/go/pkg/mod/a@v1"; echo module > "$HOME/go/pkg/mod/a@v1/a.go"; chmod -R a-w "$HOME/go/pkg/mod/a@v1"`
+      ),
+      { "go.sum": "a\n" }
+    )
+    const path = tools(repo, { go })
+    try {
+      expect(run(repo, path)[1]?.output).toBe("hit=[false]")
+      const again = run(repo, path)
+      expect(again.map((step) => step.status)).toEqual([0, 0, 0])
+      expect(again[0]?.output).toContain("::warning::Failed to restore: the cache setup-go-1.24-")
+      expect(again[0]?.output).toContain("Cache not found for input keys: setup-go-1.24-")
+      expect(again[1]?.output).toBe("hit=[false]")
+    } finally {
+      execFileSync("chmod", ["-R", "u+w", join(repo.temp, "go")])
+    }
+  })
+
+  // actions/setup-go, `src/package-managers.ts`: `dependencyFilePattern` is `go.sum` up to v6.2.0, `go.mod` from v6.3.0.
+  it.each<[string, string]>([
+    ["actions/setup-go@v5", "go.sum"],
+    ["actions/setup-go@v6.2.0", "go.sum"],
+    ["actions/setup-go@v6.3.0", "go.mod"],
+    ["actions/setup-go@v6.10", "go.mod"],
+    ["actions/setup-go@v6", "go.mod"],
+    ["actions/setup-go@v7", "go.mod"],
+    ["actions/setup-go@v10", "go.mod"]
+  ])("%s hashes %s", (uses, file) => {
+    const cache = setupCache(uses, {})
+    expect(cache?.lock).toBe(`\${{ hashFiles('${file}') }}`)
+    expect(cache?.missing.said).toContain(`Supported file pattern: ${file}`)
+  })
+
+  it("takes a version range out of the key, which may hold no comma", () => {
+    const repo = withWorkflow(
+      `
+on: pull_request
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy: { matrix: { go: [">=1.22, <1.24"] } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "\${{ matrix.go }}" }
+      - run: mkdir -p "$HOME/go/pkg/mod" && echo module > "$HOME/go/pkg/mod/fetched"
+`,
+      { "go.sum": "a\n" }
+    )
+    const ran = runJob(repo, jobOf(repo), { go: ">=1.22, <1.24" }, tools(repo, { go }))
+    expect(ran.map((step) => step.status)).toEqual([0, 0, 0])
+    expect(ran[0]?.output).toContain("Cache not found for input keys: setup-go->=1.22_ <1.24-")
   })
 
   it("goes on without a cache, as the action does, when the repository has no go.sum", () => {
@@ -199,6 +298,42 @@ describe("actions/setup-python with cache: pip", () => {
     ])
     rmSync(join(repo.temp, ".cache", "pip"), { recursive: true })
     expect(run(repo, path)[1]?.output).toBe("wheel")
+  })
+
+  it("finds pyproject.toml when the files it is told of match nothing, as the action does", () => {
+    const repo = withWorkflow(
+      job(
+        `      - uses: actions/setup-python@v5
+        with: { python-version: "3.13", cache: pip, cache-dependency-path: reqs/dev.txt }`,
+        `      - run: echo ran`
+      ),
+      { "pyproject.toml": "[project]\n" }
+    )
+    const ran = run(repo, tools(repo, { pip }))
+    expect(ran.map((step) => step.status)).toEqual([0, 0, 0])
+    expect(ran[0]?.output).toMatch(/^Cache not found for input keys: setup-python-3\.13-pip-/)
+  })
+
+  it("names the files it was told of when nothing matches, as text the shell leaves alone", () => {
+    const repo = withWorkflow(job(
+      `      - uses: actions/setup-python@v5
+        with: { python-version: "3.13", cache: pip, cache-dependency-path: "reqs/$(touch made)\`x\`.txt" }`,
+      `      - run: echo ran`
+    ))
+    const ran = run(repo, tools(repo, { pip }))
+    expect(ran[0]?.status).toBe(1)
+    expect(ran[0]?.output).toContain("matched to [reqs/$(touch made)`x`.txt or **/pyproject.toml]")
+    expect(existsSync(join(repo.root, "made"))).toBe(false)
+  })
+
+  it("restores nothing and goes on when the tool cannot say where its cache is", () => {
+    const repo = withWorkflow(workflow, { "requirements.txt": "flask\n" })
+    for (const script of ["exit 127", "exit 0"]) {
+      const ran = run(repo, tools(repo, { pip: script }))
+      expect(ran.map((step) => step.status)).toEqual([0, 0, 0])
+      expect(ran[0]?.output).toBe("smithers-ci: nothing is restored, this machine cannot say where the cache is kept")
+      expect(ran[2]?.output).toBe("smithers-ci: no cache is saved, the step that restores it did not run")
+    }
   })
 
   it("stops, as the action does, when no requirements file is there", () => {
@@ -256,8 +391,20 @@ describe("setupCache", () => {
       `  echo "Restore cache failed: Dependencies file is not found in $GITHUB_WORKSPACE. Supported file pattern: go.sum" >&2`,
       `  exit 0`,
       `fi`,
-      `${variables.path}=$(go env GOMODCACHE; go env GOCACHE)`
+      `echo "cache-hit=false" >> "$GITHUB_OUTPUT"`,
+      `${variables.key}=\${${variables.key}//,/_}`,
+      `if ! ${variables.path}=$({ go env GOMODCACHE; go env GOCACHE; } 2>/dev/null) || [ -z "$${variables.path}" ]; then`,
+      `  echo "smithers-ci: nothing is restored, this machine cannot say where the cache is kept"`,
+      `  exit 0`,
+      `fi`
     ].join("\n"))
-    expect(readFileSync(new URL("../../src/inventory/SetupCache.ts", import.meta.url), "utf8")).toContain("exit ${")
+  })
+
+  it("builds a pattern that holds an expression with format, keeping its braces and quotes as text", () => {
+    const cache = setupCache("actions/setup-node@v4", {
+      cache: "npm",
+      "cache-dependency-path": "it's/{a}/${{ matrix.dir }}/${{matrix.lock}}"
+    })
+    expect(cache?.lock).toBe("${{ hashFiles(format('it''s/{{a}}/{0}/{1}', matrix.dir, matrix.lock)) }}")
   })
 })

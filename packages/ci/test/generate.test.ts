@@ -86,10 +86,13 @@ const content = (generated: ReadonlyArray<GeneratedFile>, path: string): string 
   generated.find((file) => file.path === path)?.content ?? ""
 
 /** The targets, followed by the notes written as the comments the tests look for. */
-// What a target with runner text passes on with its value in the key: where the event file is and where the
-// machine has a runner's software, with `more`.
+// What a target with runner text passes on with its value in the key: where the event file is, with `more`.
 const passedOn = (more: ReadonlyArray<string> = []): ReadonlyArray<string> =>
-  [...new Set(["GITHUB_EVENT_PATH", eventsVariable, ...runnerSoftware, ...more])].sort()
+  [...new Set(["GITHUB_EVENT_PATH", eventsVariable, ...more])].sort()
+
+// What it passes on with its value out of the key, unless its run used one: what a run gives, and where the machine
+// has a runner's software.
+const runGiven: ReadonlyArray<string> = [...runVariables, ...runnerSoftware].sort()
 
 const targetsOf = (document: InventoryDocument): string => {
   const generated = generate(document)
@@ -407,7 +410,8 @@ describe("what a step becomes", () => {
     const own = step("a:1", "java -version", { runner, env: { JAVA_HOME: "/own" } })
     const target = declaration(targetsOf(inventory([job("a", [own])])), "a-1")
     expect(target).toContain(`env: {"JAVA_HOME":"/own"}`)
-    expect(target).toContain(`inheritEnv: ${JSON.stringify(passedOn().filter((name) => name !== "JAVA_HOME"))}`)
+    expect(target).toContain(JSON.stringify(runGiven.filter((name) => name !== "JAVA_HOME")))
+    expect(target).not.toContain(JSON.stringify(runGiven))
   })
 
   // A runner gives every step the commit, the run's id, number and attempt, and the event file. A target passes
@@ -421,7 +425,7 @@ describe("what a step becomes", () => {
       step("a:3", "npm run lint", { runner, env: { GITHUB_SHA: "pinned", [eventsVariable]: "/elsewhere" } }),
       step("a:4", "true")
     ])]))
-    const run = JSON.stringify(runVariables)
+    const run = JSON.stringify(runGiven)
     expect(runVariables).toEqual([
       "GITHUB_RUN_ATTEMPT",
       "GITHUB_RUN_ID",
@@ -430,12 +434,12 @@ describe("what a step becomes", () => {
       "GITHUB_WORKFLOW_SHA"
     ])
     // A step the steps after it wait for always runs and is not observed: every value is part of its key.
-    expect(declaration(source, "a-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn(runVariables))}`)
+    expect(declaration(source, "a-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn(runGiven))}`)
     expect(declaration(source, "a-1")).not.toContain("observe")
     // Smithers build refuses a variable a target both sets and passes on, and the step's value is the one it means.
     expect(declaration(source, "a-3")).toContain(
       `inheritEnv: ${
-        JSON.stringify(passedOn(runVariables).filter((name) => name !== "GITHUB_SHA" && name !== eventsVariable))
+        JSON.stringify(passedOn(runGiven).filter((name) => name !== "GITHUB_SHA" && name !== eventsVariable))
       }`
     )
     // A step without runner text is given no runner variable it does not name.
@@ -465,7 +469,7 @@ describe("what a step becomes", () => {
     // A held step is given what a run gives every step. Smithers build keys it on the values only when its text
     // or one of its inputs names one, or names where the event file is.
     expect(declaration(source, "first-1")).toContain(
-      `given: { env: ${JSON.stringify(runVariables)}, names: ["GITHUB_EVENT_PATH"] }`
+      `given: { env: ${JSON.stringify(runGiven)}, names: ["GITHUB_EVENT_PATH"] }`
     )
     expect(declaration(source, "first-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn())}`)
     expect(declaration(source, "first-1")).not.toContain("observe")
@@ -475,7 +479,7 @@ describe("what a step becomes", () => {
     // It reads what the step before it left for the job, which is in no input.
     expect(declaration(source, "later-2")).toContain(`sandbox: "none"`)
     for (const label of ["commit-1", "later-2"]) {
-      expect(declaration(source, label)).toContain(`env: ${JSON.stringify(runVariables)} }`)
+      expect(declaration(source, label)).toContain(`env: ${JSON.stringify(runGiven)} }`)
       expect(declaration(source, label)).not.toContain("given:")
     }
     // No runner starts it, so no run gives it anything.

@@ -224,9 +224,10 @@ the software and set its variable, then run again.
 | A local workflow, `./.github/workflows/x.yml`, called by a job      | Its jobs, with its `inputs`. The calling job waits for all of them. A matrix of calls is not read, and its job is left out.                                     |
 | Any other action, `actions/download-artifact` included              | Nothing: the job is left out.                                                                                                                                   |
 
-A setup action also sets variables for the steps after it, such as
-`JAVA_HOME`. Smithers CI sets none of them, so a job with a step that reads
-one is left out.
+A setup action also sets variables for the steps after it, such as `GOROOT`.
+Smithers CI sets none of them, so a job with a step that reads one is left out.
+`JAVA_HOME` is the exception: a runner has one anyway, so a step gets your
+machine's, as [above](#software-a-runner-comes-with).
 
 ## Caches
 
@@ -248,6 +249,7 @@ saves.
 | An entry is saved                   | Once. A job that restored its own `key` saves nothing, and neither does a job with a failed step.                                                                |
 | `path`                              | Files and directories of the checkout, of the home (`~/...`) and of `RUNNER_TEMP`.                                                                               |
 | `fail-on-cache-miss`, `lookup-only` | As on GitHub.                                                                                                                                                    |
+| An entry that cannot be unpacked    | A warning and a miss, as on GitHub. The job goes on.                                                                                                             |
 
 In a cache step's `key`, `hashFiles` also takes patterns, such as
 `hashFiles('**/package-lock.json', '!vendor/**')`: the files they name are
@@ -266,9 +268,13 @@ with the same store. `actions/setup-node` with `cache: npm`, `pnpm` or `yarn`,
 `cache: pip` restore the cache when the step starts and save it after the job.
 The directory is asked of the tool, as the action asks it (`npm config get
 cache`, `go env GOMODCACHE`, `pip cache dir`), and the key holds the hash of
-the lockfile, or of the files `cache-dependency-path` names. With no lockfile
-the step does what the action does: `setup-node` and `setup-python` stop, and
-`setup-go` goes on without a cache.
+the lockfile, or of the files `cache-dependency-path` names: `go.sum` for
+`setup-go`, or `go.mod` from version 6.3 on, and for `setup-python` also
+`pyproject.toml`. With no lockfile the step does what the action does:
+`setup-node` and `setup-python` stop, and `setup-go` goes on without a cache.
+Their `cache-hit` is `true` or `false`. A tool that cannot say where its cache
+is gives no cache, and the job goes on. Any other output of a setup action is
+unknown, so what reads one leaves the job out.
 
 Where the store is: in a replay, in the replay's own working directory, which
 is removed when the replay ends. When you run the generated targets yourself,

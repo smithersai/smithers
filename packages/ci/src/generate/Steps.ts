@@ -83,10 +83,11 @@ export interface StepTarget {
   readonly env: Readonly<Record<string, string>>
   readonly inheritEnv: ReadonlyArray<string>
   /**
-   * The variables a run gives the step whose values are another at every run (`Inventory.runVariables`): the
-   * commit, and the run's id, number and attempt. A step with runner text is given all of them, as a runner gives
-   * them to every step. Their values are no part of an observed target's key: its result is reused at another
-   * commit unless its run used one of them. Nor are they part of the key of a target held to its inputs, unless
+   * The variables a step is given whose values say nothing of what it did unless it used them: the commit and the
+   * run's id, number and attempt (`Inventory.runVariables`), which are another at every run, and where the machine
+   * has a runner's software (`Inventory.runnerSoftware`), which an image update moves. A step with runner text is
+   * given all of them, as a runner gives them to every step. Their values are no part of an observed target's key:
+   * its result is reused at another commit unless its run used one of them. Nor are they part of the key of a target held to its inputs, unless
    * its text or one of those inputs names one.
    */
   readonly runEnv: ReadonlyArray<string>
@@ -448,15 +449,16 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     // Without runner text, the runner's own variables reach a step only when it names them. They enter its key,
     // so a step that reads the commit reruns on every commit. Runner text gives its step every runner variable
     // itself, but three things. What a run alone knows: the commit and the run's numbers, which the target passes
-    // on from the run (`runEnv`). The event file, which the runner names or a replay wrote: its place is the same
-    // at every run, and what it holds is one more file the step may read. And where the machine has the software a
-    // runner comes with: a step reads that from the machine, and an unset name is left out.
+    // on from the run (`runEnv`). Where the machine has the software a runner comes with, passed on the same way: a
+    // new image moves an SDK, and only a step that used it should run again. And the event file, which the runner
+    // names or a replay wrote: its place is the same at every run, and what it holds is one more file the step may
+    // read. An unset name is left out.
     const unset = (name: string): boolean => !Object.hasOwn(env, name)
     const inheritEnv = step.runner !== undefined
-      ? sorted([eventsVariable, eventPath, ...runnerSoftware]).filter(unset)
+      ? sorted([eventsVariable, eventPath]).filter(unset)
       : sorted([...command.matchAll(runnerVariable)].map((match) => match[1] as string))
         .filter((name) => name !== "GITHUB_TOKEN" && unset(name))
-    const runEnv = step.runner === undefined ? [] : runVariables.filter(unset)
+    const runEnv = step.runner === undefined ? [] : sorted([...runVariables, ...runnerSoftware]).filter(unset)
     const title = `${job.name} / ${step.name ?? step.id}`
     // A step with runner text reads what the steps before it in its job left for it, which no input names, so it
     // is held to its inputs only as the first step of its tree. One that reads the commit is never held to them:

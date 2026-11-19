@@ -583,6 +583,41 @@ describe("confine", () => {
     expect(new Uint8Array(readFileSync(join(work, "keyring-filter")))).toEqual(keyringFilter())
   })
 
+  // `Inventory.runnerSoftware`: an SDK often lies in the home, and a JDK is often reached through a link there.
+  it("puts back the software a person's variables name in the home, and a link to it as a link", async () => {
+    const owner = person()
+    const sdk = join(owner.home, "Android", "Sdk")
+    const jdk = join(owner.home, ".jdks", "21")
+    mkdirSync(sdk, { recursive: true })
+    mkdirSync(jdk, { recursive: true })
+    const current = join(owner.home, ".jdks", "current")
+    symlinkSync(jdk, current)
+    const asked = () => ({
+      bwrap: "/usr/bin/bwrap",
+      home: owner.home,
+      hidden: [],
+      daemons: [],
+      tmp: "/tmp",
+      caches: [],
+      tools: { reads: [], links: [], homes: [] }
+    })
+    const places = await scoped(confine(directory("work"), asked, () => Effect.void, [], false, {
+      ANDROID_HOME: sdk,
+      JAVA_HOME: current,
+      // Neither names a place on this machine, so neither puts anything back.
+      CONDA: "relative/conda",
+      VCPKG_INSTALLATION_ROOT: join(owner.home, "not-there"),
+      // Not a variable of a runner's software.
+      SOMETHING_ELSE: join(owner.home, ".ssh")
+    }))
+    expect(places.normal.jail?.masks[0]).toEqual({
+      path: owner.home,
+      directory: true,
+      readable: [sdk, jdk],
+      links: [{ path: current, target: jdk }]
+    })
+  })
+
   it("hides the home with nothing put back when no tool, program or repository is in it", async () => {
     const owner = person()
     const asked = () => ({

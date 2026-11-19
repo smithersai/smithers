@@ -22,7 +22,8 @@
  *
  * The scripts print the lines the action prints, and set its outputs:
  * `cache-hit` is `true` for the key itself, `false` for one of `restore-keys`,
- * and empty when nothing was found.
+ * and empty when nothing was found. An entry that cannot be unpacked is a
+ * warning and a miss, as `@actions/cache` treats a failed restore.
  *
  * @since 0.1.0
  */
@@ -138,6 +139,13 @@ export const restoreScript = [
   `    done`,
   `  done <<< "\${${variables.restoreKeys}-}"`,
   `fi`,
+  `__unpack() { [ ! -f "$__entry/$1.tar" ] || tar -xf "$__entry/$1.tar" -C "$2"; }`,
+  `if [ -n "$__found" ] && [ "\${${variables.lookupOnly}-}" != true ]; then`,
+  `  if ! { __unpack work "$GITHUB_WORKSPACE" && __unpack home "$HOME" && __unpack temp "$RUNNER_TEMP"; }; then`,
+  `    echo "::warning::Failed to restore: the cache $__found could not be unpacked"`,
+  `    __found=`,
+  `  fi`,
+  `fi`,
   `if [ -z "$__found" ]; then`,
   `  if [ "\${${variables.failOnMiss}-}" = true ]; then`,
   `    echo "Failed to restore cache entry. Exiting as fail-on-cache-miss is set. Input key: $__key" >&2`,
@@ -146,13 +154,7 @@ export const restoreScript = [
   `  echo "Cache not found for input keys: $__key"`,
   `  exit 0`,
   `fi`,
-  `if [ "\${${variables.lookupOnly}-}" = true ]; then`,
-  `  echo "Lookup only - skipping download"`,
-  `else`,
-  `  [ ! -f "$__entry/work.tar" ] || tar -xf "$__entry/work.tar" -C "$GITHUB_WORKSPACE"`,
-  `  [ ! -f "$__entry/home.tar" ] || tar -xf "$__entry/home.tar" -C "$HOME"`,
-  `  [ ! -f "$__entry/temp.tar" ] || tar -xf "$__entry/temp.tar" -C "$RUNNER_TEMP"`,
-  `fi`,
+  `[ "\${${variables.lookupOnly}-}" != true ] || echo "Lookup only - skipping download"`,
   `echo "cache-matched-key=$__found" >> "$GITHUB_OUTPUT"`,
   `if [ "$__found" = "$__key" ]; then echo "cache-hit=true"; else echo "cache-hit=false"; fi >> "$GITHUB_OUTPUT"`,
   `echo "Cache restored from key: $__found"`

@@ -1085,17 +1085,26 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-go@v3
         if: env.USE_JAVA == '1'
         env: { USE_JAVA: ${use} }
-      - run: echo "$JAVA_HOME"
+      - run: echo "$GOROOT"
 `
       // Left out, the action sets nothing, so the script reads whatever the machine has.
       const without = jobOf(withWorkflow(workflow("0")), "ci.yml:test")
       expect(features(without)).toEqual(["condition-false"])
-      expect(without.steps.map((step) => step.command)).toEqual([`echo "$JAVA_HOME"`])
+      expect(without.steps.map((step) => step.command)).toEqual([`echo "$GOROOT"`])
       const used = jobOf(withWorkflow(workflow("1")), "ci.yml:test")
-      expect(details(used).at(-1)).toBe("test step 2 reads JAVA_HOME, which a setup action sets on GitHub")
+      expect(details(used).at(-1)).toBe("test step 2 reads GOROOT, which a setup action sets on GitHub")
+      // A runner has a JAVA_HOME anyway: the step is given this machine's (`Inventory.runnerSoftware`).
+      const java = jobOf(
+        withWorkflow(
+          workflow("1").replace("actions/setup-go@v3", "actions/setup-java@v4").replace("$GOROOT", "$JAVA_HOME")
+        ),
+        "ci.yml:test"
+      )
+      expect(details(java).filter((detail) => detail.includes("JAVA_HOME"))).toEqual([])
+      expect(java.steps.map((step) => step.command)).toEqual([`echo "$JAVA_HOME"`])
       const unread = jobOf(withWorkflow(workflow(`"\${{ github.retention_days }}"`)), "ci.yml:test")
       expect(details(unread)[0]).toBe(
         "test step 1 runs only if env.USE_JAVA == '1': github.retention_days: github.retention_days is known only on GitHub"
@@ -1109,17 +1118,17 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-java@v4
-      - run: ls "$JAVA_HOME/bin" "\${JAVA_HOME}"
-      - run: echo "$JAVA_HOME_17_X64 $MY_JAVA_HOME"
-      - env: { JAVA_HOME: /opt/java }
-        run: echo "$JAVA_HOME"
+      - uses: actions/setup-go@v3
+      - run: ls "$GOROOT/bin" "\${GOROOT}"
+      - run: echo "$GOROOT_1_22_X64 $MY_GOROOT"
+      - env: { GOROOT: /opt/go }
+        run: echo "$GOROOT"
 `)
       const job = jobOf(repo, "ci.yml:test")
-      expect(details(job).at(-1)).toBe("test step 2 reads JAVA_HOME, which a setup action sets on GitHub")
+      expect(details(job).at(-1)).toBe("test step 2 reads GOROOT, which a setup action sets on GitHub")
       expect(job.steps.map((step) => step.command)).toEqual([
-        `echo "$JAVA_HOME_17_X64 $MY_JAVA_HOME"`,
-        `echo "$JAVA_HOME"`
+        `echo "$GOROOT_1_22_X64 $MY_GOROOT"`,
+        `echo "$GOROOT"`
       ])
     })
 
