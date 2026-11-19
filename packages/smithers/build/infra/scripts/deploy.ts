@@ -142,22 +142,51 @@ export const resolveDeployOptions = (options: DeployOptions): ResolvedDeployOpti
 export const developmentStage = (environment: NodeJS.ProcessEnv = process.env): string =>
   `dev_${environment["USER"] || environment["USERNAME"] || "unknown"}`
 
-const namesStage = (args: ReadonlyArray<string>): boolean =>
-  args.some((arg) => arg === "--stage" || arg.startsWith("--stage="))
+/**
+ * The stage names the wrapper accepts: Alchemy's own `--stage` rule, a letter
+ * or digit followed by letters, digits, `-` and `_`. The stage names a
+ * directory under the state directory, so nothing else may reach a path.
+ */
+const stagePattern = /^[A-Za-z0-9][-_A-Za-z0-9]*$/
+
+/**
+ * The stage one wrapper invocation acts on, and the arguments Alchemy gets.
+ *
+ * pnpm forwards the `--` in `pnpm run deploy -- --yes` literally, and Alchemy
+ * reads every argument after it as a positional, so it is dropped. A command
+ * that names no stage gets `--stage dev_$USER` appended, so the caller's own
+ * arguments keep their positions.
+ *
+ * @throws An `Error` for a stage named twice, a `--stage` with no value, or a
+ * name {@link stagePattern} refuses.
+ */
+const stageArguments = (
+  args: ReadonlyArray<string>
+): { readonly stage: string; readonly alchemyArgs: ReadonlyArray<string> } => {
+  const forwarded = args.filter((arg) => arg !== "--")
+  const named: Array<string | undefined> = []
+  forwarded.forEach((arg, index) => {
+    if (arg === "--stage") named.push(forwarded[index + 1])
+    else if (arg.startsWith("--stage=")) named.push(arg.slice("--stage=".length))
+  })
+  if (named.length > 1) throw new Error("name one --stage, not several")
+  const stage = named.length === 0 ? developmentStage() : named[0]
+  if (stage === undefined || !stagePattern.test(stage)) {
+    throw new Error(
+      `stage ${JSON.stringify(stage ?? "")} must be a letter or digit followed by letters, digits, "-" or "_"`
+    )
+  }
+  return { stage, alchemyArgs: named.length === 0 ? [...forwarded, "--stage", stage] : forwarded }
+}
 
 const runAlchemy = (
   command: { readonly cli: string; readonly cwd: string },
-  args: ReadonlyArray<string>,
+  alchemyArgs: ReadonlyArray<string>,
   onSpawn: (child: ChildProcess) => void
 ): Promise<CommandResult> =>
   new Promise((resolve, reject) => {
     let child: ChildProcess
     try {
-      // pnpm forwards the `--` in `pnpm run deploy -- --yes` literally, and
-      // Alchemy reads every argument after it as a positional, so drop it.
-      const forwarded = args.filter((arg) => arg !== "--")
-      // Appended, so the caller's own arguments keep their positions.
-      const alchemyArgs = namesStage(forwarded) ? forwarded : [...forwarded, "--stage", developmentStage()]
       child = spawn(process.execPath, [command.cli, "deploy", "alchemy.run.ts", ...alchemyArgs], {
         cwd: command.cwd,
         detached: process.platform !== "win32",
@@ -186,8 +215,12 @@ const runAlchemy = (
   })
 
 /**
- * Runs Alchemy against state synced with R2, and always scrubs local state
- * before returning.
+ * Runs Alchemy against state synced with R2, and always scrubs the deployed
+ * stage's local state before returning.
+ *
+ * The stage comes from `--stage` (or `dev_$USER` when none is named) and must
+ * match Alchemy's stage rule; a stage named twice or an unsafe name is refused
+ * before anything else happens. Redaction walks only that stage's directory.
  *
  * The local state directory is a working copy. Before Alchemy starts, the
  * wrapper takes the remote lock and pulls the R2 snapshot over it; after
@@ -230,8 +263,10 @@ export const deploy = async (
     options
   )
   const target = { cli, cwd }
+  let invocation: ReturnType<typeof stageArguments>
   let ownership: StateOwnership
   try {
+    invocation = stageArguments(args)
     // A state directory reached through a symbolic link, in the root or an
     // ancestor, is refused before anything is created or pulled: the pull
     // would otherwise replace the link target's files, and redaction's own
@@ -324,7 +359,7 @@ export const deploy = async (
       // same synchronous run, so no signal can arrive before `onSpawn`.
       command = await runAlchemy(
         target,
-        args,
+        invocation.alchemyArgs,
         (child) => {
           activeChild = child
         }
@@ -341,7 +376,10 @@ export const deploy = async (
     clearEscalation()
 
     try {
-      const redactedFiles = await redact({ directory: stateDirectory, ownership })
+      // Only the deployed stage's directory: another stage's verifiers derive
+      // from tokens this shell does not hold, and rewriting them would be
+      // published as that stage's state.
+      const redactedFiles = await redact({ directory: NodePath.join(stateDirectory, invocation.stage), ownership })
       process.stdout.write(`Redacted ${redactedFiles} Alchemy Worker state file(s).\n`)
     } catch (error) {
       redactionFailure = error

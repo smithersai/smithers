@@ -58,7 +58,7 @@ export const maximumStateFileBytes = 16 * 1024 * 1024
 
 const maximumRenderedStateBytes = 32 * 1024 * 1024
 const maximumDirectoryEntries = 100_000
-const maximumWorkerStateFiles = 1_024
+const maximumStateFiles = 1_024
 const maximumJsonDepth = 128
 const maximumJsonMembers = 100_000
 
@@ -304,6 +304,12 @@ const readStateFile = async (file: string): Promise<{ readonly identity: FileIde
     return buffer.subarray(0, total)
   })
 
+  // Alchemy writes `<file>.<pid>.<random>.tmp` and renames it into place, so
+  // an interrupted write leaves an incomplete sibling Alchemy never reads, and
+  // a write from before those atomic writes can leave an empty state file it
+  // reads as absent. Neither can be audited, so each is refused by name.
+  const interrupted = "an interrupted Alchemy write leaves one; check what it held, delete it, then run again"
+  if (bytes.length === 0) throw new TypeError(`Alchemy state file is empty: ${file}; ${interrupted}`)
   let text: string
   try {
     text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes)
@@ -314,7 +320,11 @@ const readStateFile = async (file: string): Promise<{ readonly identity: FileIde
   try {
     state = JSON.parse(text) as unknown
   } catch {
-    throw new TypeError(`Alchemy state file is not valid JSON: ${file}`)
+    throw new TypeError(
+      file.endsWith(".tmp")
+        ? `Alchemy state file is incomplete: ${file}; ${interrupted}`
+        : `Alchemy state file is not valid JSON: ${file}`
+    )
   }
   validateJsonBudget(state)
   // Parsed values alone cannot expose credentials hidden in members that
@@ -330,6 +340,18 @@ const isCredentialBinding = (name: unknown): name is string =>
 
 const unrecognizedCredentialBinding = (name: string): TypeError =>
   new TypeError(`Alchemy state holds an unrecognized shape for credential binding ${name}`)
+
+/**
+ * Alchemy persists every `Redacted` value as `{ "__redacted__": <plaintext> }`
+ * (`encodeState` in alchemy's `State/StateEncoding.ts`), whatever it is for.
+ */
+const isRedactedEnvelope = (value: unknown): boolean => isRecord(value) && Object.hasOwn(value, "__redacted__")
+
+const unrecognizedRedactedValue = (where: string): TypeError =>
+  new TypeError(
+    `Alchemy state holds a redacted value under ${where}, a name redaction does not recognize; it is refused ` +
+      `rather than published in clear`
+  )
 
 const assertNoUnhandledCredentialBindings = (
   root: unknown,
@@ -354,11 +376,17 @@ const assertNoUnhandledCredentialBindings = (
     const inner = candidate["__redacted__"]
     return typeof inner === "string" && permitted.has(inner)
   }
+  // A secret under any name but the credential bindings above is one this
+  // scrubber cannot classify, so it fails the publish closed.
+  if (isRedactedEnvelope(root)) throw unrecognizedRedactedValue("the state root")
   const pending: Array<unknown> = [root]
   while (pending.length > 0) {
     const current = pending.pop()
     if (Array.isArray(current)) {
-      for (const member of current) pending.push(member)
+      for (const member of current) {
+        if (isRedactedEnvelope(member)) throw unrecognizedRedactedValue("an array element")
+        pending.push(member)
+      }
       continue
     }
     if (!isRecord(current)) continue
@@ -377,6 +405,7 @@ const assertNoUnhandledCredentialBindings = (
       if (key === "sid" && isCredentialBinding(member) && !handledSidRecords.has(current)) {
         throw unrecognizedCredentialBinding(member)
       }
+      if (isRedactedEnvelope(member) && !isCredentialBinding(key)) throw unrecognizedRedactedValue(key)
       pending.push(member)
     }
   }
@@ -558,7 +587,15 @@ const redactFile = async (
   return true
 }
 
-const discoverWorkerStates = async (root: string): Promise<ReadonlyArray<string>> => {
+/**
+ * Whether a directory entry is Alchemy state: a resource's `<logical id>.json`,
+ * the stack output, or a temporary sibling such as `<logical id>.json.<pid>.<random>.tmp`
+ * that an interrupted write leaves. The ownership lock, its database, and the
+ * unpublished-state marker carry no `.json` and are not state.
+ */
+const isStateFileName = (name: string): boolean => name.includes(".json")
+
+const discoverStateFiles = async (root: string): Promise<ReadonlyArray<string>> => {
   const directories = [root]
   const files: Array<string> = []
   let entries = 0
@@ -575,15 +612,15 @@ const discoverWorkerStates = async (root: string): Promise<ReadonlyArray<string>
       const candidate = NodePath.join(current, entry.name)
       if (entry.isSymbolicLink()) throw new TypeError(`symbolic links are not allowed in Alchemy state: ${candidate}`)
       // The name is checked before the kind: a directory or a device named
-      // like Worker state is a state file the read path cannot scrub, and
-      // walking past it would report success over whatever it hides.
-      if (entry.name.startsWith("CacheWorker.json")) {
-        if (!entry.isFile()) throw new TypeError(`Alchemy Worker state is not a regular file: ${candidate}`)
+      // like state is a state file the read path cannot scrub, and walking
+      // past it would report success over whatever it hides.
+      if (isStateFileName(entry.name)) {
+        if (!entry.isFile()) throw new TypeError(`Alchemy state is not a regular file: ${candidate}`)
         const resolved = await Fs.realpath(candidate)
-        if (!inside(root, resolved)) throw new TypeError(`Alchemy Worker state escapes its root: ${candidate}`)
+        if (!inside(root, resolved)) throw new TypeError(`Alchemy state escapes its root: ${candidate}`)
         files.push(resolved)
-        if (files.length > maximumWorkerStateFiles) {
-          throw new RangeError(`Alchemy state tree exceeds ${maximumWorkerStateFiles} Worker state files`)
+        if (files.length > maximumStateFiles) {
+          throw new RangeError(`Alchemy state tree exceeds ${maximumStateFiles} state files`)
         }
       } else if (entry.isDirectory()) {
         const resolved = await Fs.realpath(candidate)
@@ -597,7 +634,14 @@ const discoverWorkerStates = async (root: string): Promise<ReadonlyArray<string>
 }
 
 /**
- * Removes a raw Worker bearer value from legacy Alchemy local state.
+ * Removes a raw Worker bearer value from Alchemy local state.
+ *
+ * Every state file under the directory is read: a credential is recognized by
+ * the binding that holds it (`CACHE_READ_TOKEN`, `SANDBOX_TOKEN`, ...), never
+ * by the resource file it sits in, so the sandbox Worker's `SandboxWorker.json`
+ * is scrubbed like the cache Worker's. The deploy wrapper passes only the
+ * directory of the stage it deployed, so another stage's verifiers, which
+ * derive from tokens this shell does not hold, are never rewritten.
  *
  * State discovery and reads are bounded, links are refused, and each changed
  * file is published with the same write-sync-rename-directory-sync sequence
@@ -608,13 +652,14 @@ const discoverWorkerStates = async (root: string): Promise<ReadonlyArray<string>
  *
  * Options default as described by {@link resolveRedactionOptions}. The directory
  * must be absolute and resolve to a canonical directory without symbolic links.
+ * Supplied ownership must be for that directory or one that encloses it.
  * Each file is published independently: rejection can follow earlier file
  * replacements and does not roll them back.
  *
  * @returns The count of changed files, or zero when the directory is missing
- * or all discovered Worker state is already clean.
+ * or all discovered state is already clean.
  * @throws {TypeError} Rejects invalid options, unsafe paths or state shapes,
- * or ownership for a different directory.
+ * or ownership for a directory that does not enclose this one.
  * @throws {RangeError} Rejects state exceeding discovery, JSON, or byte bounds.
  * Changed file identities, filesystem, and ownership failures also reject
  * the promise.
@@ -631,7 +676,9 @@ export const redactAlchemyState = async (options: RedactAlchemyStateOptions = {}
   const { directory, ownership: held, permitted } = resolveRedactionOptions(options)
   const root = await resolveStateRoot(directory)
   if (root === null) return 0
-  if (held !== undefined && held.directory !== root) {
+  // The deploy wrapper owns the stack's state directory and redacts the one
+  // stage directory inside it that it deployed.
+  if (held !== undefined && !inside(held.directory, root)) {
     throw new TypeError(`Alchemy state ownership is for another directory: ${held.directory}`)
   }
   // Ownership fences every writer of this state, Alchemy included through
@@ -640,7 +687,7 @@ export const redactAlchemyState = async (options: RedactAlchemyStateOptions = {}
   const ownership = held ?? await acquireStateOwnership(root)
   let changed = 0
   try {
-    for (const file of await discoverWorkerStates(root)) {
+    for (const file of await discoverStateFiles(root)) {
       if (await redactFile(root, file, permitted)) changed += 1
     }
   } catch (error) {

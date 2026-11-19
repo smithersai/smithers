@@ -87,9 +87,17 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
    * `CACHE_READ_TOKEN` and `CACHE_WRITE_TOKEN`. Redaction that still looked
    * only for `CACHE_TOKEN` would silently stop scrubbing anything.
    */
-  it.each(["CACHE_READ_TOKEN", "CACHE_WRITE_TOKEN", "SANDBOX_TOKEN"])("redacts the %s binding too", async (name) => {
+  it.each([
+    ["CACHE_READ_TOKEN", "CacheWorker.json"],
+    ["CACHE_WRITE_TOKEN", "CacheWorker.json"],
+    // Alchemy names a resource's state file after its logical id, so the
+    // sandbox Worker's bearer lives in `SandboxWorker.json`, never in the
+    // cache Worker's file.
+    ["SANDBOX_TOKEN", "SandboxWorker.json"],
+    ["SANDBOX_TOKEN", "SandboxWorker.json.4242.k3x9.tmp"]
+  ])("redacts the %s binding in %s", async (name, fileName) => {
     await withFixture(async (root) => {
-      const file = NodePath.join(root, "CacheWorker.json")
+      const file = NodePath.join(root, fileName)
       const token = "this-is-a-raw-secret-token"
       await Fs.writeFile(
         file,
@@ -104,6 +112,44 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
 
       expect(await redactAlchemyState({ directory: root, bearerToken: token })).toBe(1)
       expect(await Fs.readFile(file, "utf8")).not.toContain(token)
+    })
+  })
+
+  /**
+   * A credential is recognized by the binding that holds it, not by the file
+   * it sits in. Any resource file of the stage can carry a Worker binding.
+   */
+  it("redacts a credential binding in any resource file and leaves files without one untouched", async () => {
+    await withFixture(async (root) => {
+      const token = "this-is-a-raw-secret-token"
+      const future = NodePath.join(root, "FutureWorker.json")
+      const output = NodePath.join(root, "__stack_output__.json")
+      await Fs.writeFile(future, workerState("SANDBOX_TOKEN", token))
+      await Fs.writeFile(output, JSON.stringify({ url: "https://cache.workers.dev" }))
+      const before = await Fs.stat(output, { bigint: true })
+
+      expect(await redactAlchemyState({ directory: root, bearerToken: "token" })).toBe(1)
+
+      expect(await Fs.readFile(future, "utf8")).not.toContain(token)
+      const after = await Fs.stat(output, { bigint: true })
+      expect(after.ino).toBe(before.ino)
+      expect(after.mtimeNs).toBe(before.mtimeNs)
+    })
+  })
+
+  it("redacts a stage directory under ownership of the stack directory that encloses it", async () => {
+    await withFixture(async (root) => {
+      const stage = NodePath.join(root, "needlefish_poc")
+      const file = NodePath.join(stage, "SandboxWorker.json")
+      await Fs.mkdir(stage)
+      await Fs.writeFile(file, workerState("SANDBOX_TOKEN", "raw-token"))
+      const held = await acquireStateOwnership(root)
+      try {
+        expect(await redactAlchemyState({ directory: stage, bearerToken: "token", ownership: held })).toBe(1)
+      } finally {
+        await held.release()
+      }
+      expect(await Fs.readFile(file, "utf8")).not.toContain("raw-token")
     })
   })
 
@@ -227,12 +273,71 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
     }
   )
 
-  it("refuses an unreadable Alchemy temporary sibling", async () => {
+  /**
+   * An interrupted Alchemy write leaves a truncated temporary sibling, and a
+   * write from before Alchemy's atomic writes can leave an empty state file.
+   * Neither can be audited, so each is refused with the file and the remedy
+   * named rather than a bare parse failure.
+   */
+  it.each([
+    ["a truncated temporary sibling", "SandboxWorker.json.123.abc.tmp", "{\"props\":", "is incomplete"],
+    ["an empty state file", "SandboxWorker.json", "", "is empty"],
+    ["an empty temporary sibling", "SandboxWorker.json.123.abc.tmp", "", "is empty"]
+  ])("refuses %s, naming the file and the remedy", async (_case, name, contents, problem) => {
     await withFixture(async (root) => {
       await Fs.writeFile(NodePath.join(root, "CacheWorker.json"), "{}")
-      await Fs.writeFile(NodePath.join(root, "CacheWorker.json.123.abc.tmp"), "{")
+      const file = NodePath.join(root, name)
+      await Fs.writeFile(file, contents)
 
-      await expect(redactAlchemyState({ directory: root, bearerToken: "token" })).rejects.toThrow(/not valid JSON/)
+      const refusal = redactAlchemyState({ directory: root, bearerToken: "token" })
+      await expect(refusal).rejects.toThrow(`Alchemy state file ${problem}: ${file}`)
+      await expect(refusal).rejects.toThrow("an interrupted Alchemy write leaves one")
+      await expect(refusal).rejects.toThrow("delete it, then run again")
+    })
+  })
+
+  it("names a state file that is complete but not JSON", async () => {
+    await withFixture(async (root) => {
+      const file = NodePath.join(root, "CacheWorker.json")
+      await Fs.writeFile(file, "not json")
+
+      await expect(redactAlchemyState({ directory: root, bearerToken: "token" })).rejects.toThrow(
+        `Alchemy state file is not valid JSON: ${file}`
+      )
+    })
+  })
+
+  /**
+   * Alchemy writes every `Redacted` value as `{ "__redacted__": <plaintext> }`.
+   * One under a name redaction does not know is a secret it cannot classify,
+   * so the publish fails closed instead of sending it to R2 in clear.
+   */
+  it.each([
+    ["a Worker environment entry", { props: { env: { DATABASE_PASSWORD: { __redacted__: "raw-secret" } } } }, "DATABASE_PASSWORD"],
+    ["a nested attribute", { attr: { credentials: { password: { __redacted__: "raw-secret" } } } }, "password"],
+    ["an array element", { attr: { secrets: [{ __redacted__: "raw-secret" }] } }, "an array element"],
+    ["the state root", { __redacted__: "raw-secret" }, "the state root"]
+  ])("refuses a redacted value in %s under a name it does not recognize", async (_case, state, name) => {
+    await withFixture(async (root) => {
+      const file = NodePath.join(root, "FutureWorker.json")
+      const input = JSON.stringify(state)
+      await Fs.writeFile(file, input)
+
+      const refusal = redactAlchemyState({ directory: root, bearerToken: "token" })
+      await expect(refusal).rejects.toThrow(`Alchemy state holds a redacted value under ${name}`)
+      await expect(refusal).rejects.not.toThrow("raw-secret")
+      expect(await Fs.readFile(file, "utf8")).toBe(input)
+    })
+  })
+
+  it("accepts a redacted value under a credential name once it holds the placeholder", async () => {
+    await withFixture(async (root) => {
+      const file = NodePath.join(root, "SandboxWorker.json")
+      const input = JSON.stringify({ attr: { echo: { SANDBOX_TOKEN: { __redacted__: sentinel } } } })
+      await Fs.writeFile(file, input)
+
+      expect(await redactAlchemyState({ directory: root, bearerToken: "token" })).toBe(0)
+      expect(await Fs.readFile(file, "utf8")).toBe(input)
     })
   })
 
@@ -557,7 +662,7 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
       // Walking past a directory by that name would report success over
       // whatever it hides.
       await expect(redactAlchemyState({ directory: root, bearerToken: "token" })).rejects.toThrow(
-        /Alchemy Worker state is not a regular file/
+        /Alchemy state is not a regular file/
       )
     })
   })
@@ -648,7 +753,7 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
     })
   })
 
-  it("bounds the number of Worker state files", async () => {
+  it("bounds the number of state files", async () => {
     await withFixture(async (root) => {
       // Batches of 128 keep open descriptors under macOS's default 256 limit.
       for (let offset = 0; offset < 1_025; offset += 128) {
@@ -662,7 +767,7 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
       }
 
       await expect(redactAlchemyState({ directory: root, bearerToken: "token" })).rejects.toThrow(
-        /exceeds 1024 Worker state files/
+        /exceeds 1024 state files/
       )
     })
   })

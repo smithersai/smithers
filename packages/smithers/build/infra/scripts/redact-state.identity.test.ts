@@ -419,7 +419,7 @@ describe("Alchemy state file identity", () => {
 
   it.each([
     ["a subdirectory", "nested", /state directory escapes its root/],
-    ["Worker state", "CacheWorker.json", /Worker state escapes its root/]
+    ["state", "SandboxWorker.json", /Alchemy state escapes its root/]
   ])("refuses %s whose real path leaves the root", async (_case, name, expected) => {
     await withFixture(async (root) => {
       const candidate = NodePath.join(root, name)

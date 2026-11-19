@@ -1,4 +1,5 @@
 import { ChildProcess, spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -289,6 +290,42 @@ describe("deploy wrapper", () => {
     } finally {
       vi.unstubAllEnvs()
       stdout.mockRestore()
+    }
+  })
+
+  // The stage names a directory under the state directory, so a name Alchemy
+  // would refuse anyway must not reach a path, a lock, or redaction first.
+  it.each([
+    [["--stage", "../prod"], "stage \"../prod\" must be"],
+    [["--stage=a/b"], "stage \"a/b\" must be"],
+    [["--yes", "--stage"], "stage \"\" must be"],
+    [["--stage", "--yes"], "stage \"--yes\" must be"],
+    [["--stage", "prod", "--stage=dev"], "name one --stage, not several"]
+  ])("refuses %j before it touches any state", async (args, message) => {
+    const state = stateDirectory(`refused-stage-${message.length}-${args.length}`)
+    const bucket = memoryStateBucket()
+    const errors: Array<string> = []
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      errors.push(String(chunk))
+      return true
+    })
+    let redactions = 0
+    try {
+      const code = await deploy(args, {
+        cli: script("exit-zero"),
+        cwd: directory,
+        stateDirectory: state,
+        redact: async () => (redactions += 1, 0),
+        remoteState: async () => ({ bucket, key: "alchemy/Test.json" })
+      })
+
+      expect(code).toBe(1)
+      expect(errors.join("")).toContain(`Alchemy deployment refused: ${message}`)
+      expect(redactions).toBe(0)
+      expect(existsSync(state)).toBe(false)
+      expect(bucket.objects.size).toBe(0)
+    } finally {
+      stderr.mockRestore()
     }
   })
 
@@ -640,7 +677,9 @@ process.exitCode = await deploy([], {
             escalationDelayMs: 300,
             redact: async (options) => {
               lockDuringRedaction = readFileSync(lockFileIn(state), "utf8")
-              expect(options.directory).toBe(state)
+              // Redaction walks the deployed stage's directory, under the
+              // ownership the wrapper holds for the whole state directory.
+              expect(options.directory).toBe(NodePath.join(state, developmentStage()))
               expect(options.ownership?.directory).toBe(state)
               return 0
             }
@@ -671,8 +710,8 @@ process.exitCode = await deploy([], {
 
   it("hands its ownership to the real redaction", async () => {
     const state = stateDirectory("state-real")
-    const file = NodePath.join(state, "CacheWorker.json")
-    await mkdir(state, { recursive: true })
+    const file = NodePath.join(state, developmentStage(), "CacheWorker.json")
+    await mkdir(NodePath.dirname(file), { recursive: true })
     await writeFile(file, JSON.stringify({ props: { env: { CACHE_TOKEN: { __redacted__: "raw-token" } } } }))
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
     try {
@@ -897,6 +936,52 @@ describe("deploy wrapper remote state", () => {
       "prod/CacheWorker.json": `{"deployed":true}`
     })
     expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(false)
+  })
+
+  /**
+   * A stage's credential verifiers derive from that stage's tokens, which the
+   * deploying shell holds only for the stage it deploys. Redaction that walked
+   * every stage replaced the others' verifiers with the sentinel, and redaction
+   * that read only `CacheWorker.json` left the sandbox bearer in place.
+   */
+  it("redacts only the stage it deploys, including its sandbox Worker's bearer", async () => {
+    const bucket = memoryStateBucket()
+    const root = await realpath(await mkdtemp(NodePath.join(directory, "stage-redaction-")))
+    const sha256 = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex")
+    const workerState = (name: string, value: string): string =>
+      JSON.stringify({
+        props: { env: { [name]: { __redacted__: value } } },
+        bindings: [{ sid: name, data: { bindings: [{ type: "secret_text", name, text: value }] } }]
+      })
+    const production = workerState("CACHE_READ_TOKEN", sha256("production-read-credential-2026"))
+    const sandboxBearer = "needlefish-sandbox-bearer-2026"
+    await bucket.put("alchemy/Test.json", snapshotOf({
+      "prod/CacheWorker.json": production,
+      "needlefish_poc/SandboxWorker.json": workerState("SANDBOX_TOKEN", sandboxBearer)
+    }), { ifAbsent: true })
+    vi.stubEnv("SMITHERS_CACHE_TOKEN", "")
+    vi.stubEnv("SMITHERS_CACHE_READ_TOKEN", "needlefish-read-credential-2026")
+    vi.stubEnv("SMITHERS_CACHE_WRITE_TOKEN", "needlefish-write-credential-2026")
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    try {
+      const code = await deployWrapper(["--stage", "needlefish_poc"], {
+        cli: script("exit-zero"),
+        cwd: directory,
+        stateDirectory: NodePath.join(root, "state"),
+        remoteState: async () => ({ bucket, key: "alchemy/Test.json" })
+      })
+
+      expect(code).toBe(0)
+      const files = JSON.parse(bucket.objects.get("alchemy/Test.json")!.body).files
+      expect(files["prod/CacheWorker.json"]).toBe(production)
+      expect(files["needlefish_poc/SandboxWorker.json"]).not.toContain(sandboxBearer)
+      expect(JSON.parse(files["needlefish_poc/SandboxWorker.json"]).props.env.SANDBOX_TOKEN.__redacted__).toBe(
+        "__SMITHERS_CACHE_TOKEN_REDACTED__"
+      )
+    } finally {
+      vi.unstubAllEnvs()
+      stdout.mockRestore()
+    }
   })
 
   it("publishes the state a failed run left, because only it records what was created", async () => {
