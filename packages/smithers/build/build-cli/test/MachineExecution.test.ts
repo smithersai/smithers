@@ -371,7 +371,12 @@ describe("an observed target on a machine", () => {
     // What a CI machine does between two runs: a fresh checkout somewhere, and the cache directory carried over.
     const targets = () => {
       const install = on("job", "mkdir -p deps && cp a.txt deps/a && test ! -e ~/.toolrc && : > ~/.seen && rm ~/.seen")
-      return { install, test: on("job", "grep -q a deps/a && grep -q b b.txt && test ! -e ~/.toolrc", [install]) }
+      // `mkdir -p` looks at every directory above the one it makes, the one the machines are kept in among them.
+      const scratch = "mkdir -p ~/.work/x \"$TMPDIR/work/x\" && rm -r ~/.work \"$TMPDIR/work\""
+      return {
+        install,
+        test: on("job", `${scratch} && grep -q a deps/a && grep -q b b.txt && test ! -e ~/.toolrc`, [install])
+      }
     }
     const first = await fixture(targets)
     const shared = { home: first.environment["HOME"]!, kept: first.kept }

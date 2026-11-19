@@ -529,25 +529,46 @@ export const relocated = (
 export const anchor = "/smthrs-machine"
 
 /**
+ * How a record names the directory a workspace's machines are kept in, the
+ * one above a machine's own. Its name on a host holds the workspace's path,
+ * and a run looks at it whenever it makes a directory and its parents under
+ * the machine's home or temporary directory, as `mkdir -p` does.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const holder = "/smthrs-machines"
+
+/**
  * A path of a machine written from the machine: `/smthrs-machine/home/.npmrc`
- * for a file of its home. Any other path is as it is. A path of the copy is
+ * for a file of its home, and `/smthrs-machines` for the directory the
+ * machine is kept in. Any other path is as it is. A path of the copy is
  * never given here: a record writes those from the copy's root.
  *
  * @category rendering
  * @since 1.0.0
  */
 export const neutral = (machine: Machine) => (path: string): string =>
-  under(path, machine.directory) ? `${anchor}${path.slice(machine.directory.length)}` : path
+  under(path, machine.directory)
+    ? `${anchor}${path.slice(machine.directory.length)}`
+    : path === NodePath.dirname(machine.directory)
+    ? holder
+    : path
 
 /**
  * The path on this host that a record's path names: one written from the
- * machine is under the machine's directory.
+ * machine is under the machine's directory, and the directory the machine is
+ * kept in is the one above it.
  *
  * @category rendering
  * @since 1.0.0
  */
 export const actual = (machine: Machine) => (path: string): string =>
-  under(path, anchor) ? `${machine.directory}${path.slice(anchor.length)}` : path
+  under(path, anchor)
+    ? `${machine.directory}${path.slice(anchor.length)}`
+    : path === holder
+    ? NodePath.dirname(machine.directory)
+    : path
 
 /**
  * Reads that take each path through `place` first.

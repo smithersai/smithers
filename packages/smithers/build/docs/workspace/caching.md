@@ -625,9 +625,10 @@ smthrs: machine ci.yml:test has a fresh checkout, made in 412 ms
 ```
 
 A record of a run on a machine names the machine's own paths from the machine,
-as in `/smthrs-machine/home/.npmrc`, and the copy's paths from the copy's root.
-It holds no path of the checkout it was made in, so it answers in another
-checkout that restored the cache directory, as a CI machine does between runs.
+as in `/smthrs-machine/home/.npmrc`, the directory its machines are kept in as
+`/smthrs-machines`, and the copy's paths from the copy's root. It holds no
+path of the checkout it was made in, so it answers in another checkout that
+restored the cache directory, as a CI machine does between runs.
 
 What a step left in its machine's home or temporary directory is not kept with
 what it left in the copy. When a step after it has to run, the step runs again

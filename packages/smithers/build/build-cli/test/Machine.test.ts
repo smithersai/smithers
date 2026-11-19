@@ -448,11 +448,15 @@ describe("a record of a run on a machine", () => {
     expect(name(machine.directory)).toBe("/smthrs-machine")
     expect(name("/usr/lib/node")).toBe("/usr/lib/node")
     expect(name(`${machine.directory}-other/home`)).toBe(`${machine.directory}-other/home`)
+    // The directory the machine is kept in holds the workspace's path in its name: it has a name of its own.
+    expect(name("/kept/abc")).toBe("/smthrs-machines")
+    expect(name("/kept")).toBe("/kept")
     const elsewhere = Machine.named("/other/kept/def", "/elsewhere/repo", "job")
     const found = Machine.actual(elsewhere)
     expect(found("/smthrs-machine/home/.npmrc")).toBe(Path.join(elsewhere.home, ".npmrc"))
     expect(found("/smthrs-machine")).toBe(elsewhere.directory)
     expect(found("/usr/lib/node")).toBe("/usr/lib/node")
+    expect(found("/smthrs-machines")).toBe("/other/kept/def")
     expect(found("/smthrs-machines/x")).toBe("/smthrs-machines/x")
   })
 
