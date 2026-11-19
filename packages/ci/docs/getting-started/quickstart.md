@@ -257,7 +257,9 @@ fails there without naming a file, such as one that counts the files at your
 root, is listed the same way, with the files `apply` writes.
 
 That run is one more run of your steps at one commit. Its time is on a line
-of its own in the report and in none of the totals. To leave it out:
+of its own in the report and in none of the totals, and such a mismatch takes
+no speedup away: the speedup is measured on your files as they are. To leave
+the run out:
 
 ```bash
 bunx smithers-ci --no-apply-check

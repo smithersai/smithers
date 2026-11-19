@@ -245,13 +245,17 @@ export const noSpeedupMismatch =
 
 /**
  * True when normal mode's result differs from the baseline's at a commit of
- * the report.
+ * the report. A mismatch that says why (`Mismatch.cause`) is of the run as
+ * `apply` leaves the repository: normal mode gave the baseline's result on
+ * the commit's files.
  *
  * @category formatting
  * @since 0.1.0
  */
 export const normalDiffers = (report: ReplayReport): boolean =>
-  report.commits.some((commit) => commit.mismatches.some((mismatch) => mismatch.mode === "normal"))
+  report.commits.some((commit) =>
+    commit.mismatches.some((mismatch) => mismatch.mode === "normal" && mismatch.cause === undefined)
+  )
 
 /**
  * How many of the CI's jobs the numbers cover, or nothing when they cover

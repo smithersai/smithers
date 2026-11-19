@@ -844,6 +844,10 @@ describe("reportOf", () => {
       mismatches: [{ label: "//:a", mode: "fast", baseline: "fail", got: "skipped" } as const]
     }
     expect(reportOf(read, [entry, missed], nothing)).toMatchObject({ mismatches: 1, speedup: 3, speedupCommits: 2 })
+    // A step that fails only once the files `apply` writes are committed says why. Normal mode gave the CI's result
+    // on the commit's files, so its numbers stand too.
+    const applied = { ...entry, mismatches: [{ ...mismatch, cause: "cspell read a file Smithers CI wrote." }] }
+    expect(reportOf(read, [entry, applied], nothing)).toMatchObject({ mismatches: 1, speedup: 3, speedupCommits: 2 })
   })
 
   it("carries a run's CPU time when it could be read", () => {

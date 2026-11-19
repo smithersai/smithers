@@ -726,7 +726,9 @@ the baseline is a mismatch. Skipping one that passed is not.
 A report where normal mode's result differs from your CI's at any commit has no
 speedup: a mode that gives another result has not measured your CI. The report
 leads with the number of mismatches, says there is no speedup and what to do,
-and lists each mismatch with its commit.
+and lists each mismatch with its commit. A step that fails only with the files
+`apply` writes committed is listed too, with its reason, and takes no speedup
+away: on your files as they are, normal mode gave your CI's result.
 
 ## 4. Report
 

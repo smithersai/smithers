@@ -1106,7 +1106,9 @@ export const withoutFast = ({ fast: _fast, ...commit }: ReplayCommit): ReplayCom
  * baseline stops at its failure, so its time says nothing about the CI, and
  * `speedupCommits` counts the commits covered. A report with a mismatch of
  * normal mode covers none: a mode that gave another result than the CI at
- * any commit has no speedup. Fast mode skips what it predicts, so a failure
+ * any commit has no speedup. A mismatch with a `cause` is not such a one:
+ * normal mode gave the CI's result on the commit's files, and the step fails
+ * only once the files `apply` writes are committed. Fast mode skips what it predicts, so a failure
  * it missed is a mismatch that its recall counts, and takes no number away. What the inventory could not
  * read is listed as `notRead`, and each tool this machine has at another
  * version than a job asks for as `toolVersions`. The cache credentials a kept
@@ -1122,7 +1124,10 @@ export const reportOf = (
   found: Findings
 ): ReplayReport => {
   // Normal mode with another result than the CI's has not measured it: one such mismatch, and no commit is counted.
-  const differs = commits.some((commit) => commit.mismatches.some((mismatch) => mismatch.mode === "normal"))
+  // A mismatch that says why is of the run as `apply` leaves the repository: it takes no number away.
+  const differs = commits.some((commit) =>
+    commit.mismatches.some((mismatch) => mismatch.mode === "normal" && mismatch.cause === undefined)
+  )
   const measured = differs ? [] : commits.filter((commit) => commit.baseline.ok)
   const sum = (wall: (commit: ReplayCommit) => number): number =>
     measured.reduce((total, commit) => total + wall(commit), 0)

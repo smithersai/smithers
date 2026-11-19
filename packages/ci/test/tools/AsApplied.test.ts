@@ -80,8 +80,11 @@ describe("a repository with a tool that reads every file", () => {
     expect(counted?.cause).toContain(workflowPath)
     expect(others).toEqual([])
     expect(report.mismatches).toBe(2)
-    // The run's time is its own number, beside the ways' times.
+    // The run's time is its own number, beside the ways' times, and the speedup is as measured on the commit's
+    // files: both commits count.
     expect(report.appliedMs).toBeGreaterThan(0)
+    expect(report.speedupCommits).toBe(2)
+    expect(report.speedup).toBeGreaterThan(0)
     // What the replay is running is said as it starts.
     expect(replayed.output).toMatch(/smithers-ci: 2\/2 [0-9a-f]{7} with the files apply writes\n/)
     expect(replayed.output).not.toMatch(/smithers-ci: 1\/2 [0-9a-f]{7} with the files apply writes\n/)

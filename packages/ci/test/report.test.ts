@@ -727,6 +727,30 @@ describe("failed steps", () => {
     expect(page).not.toContain("class=\"hero\"")
   })
 
+  it("keeps the speedup when the one mismatch is a step that fails with the files apply writes", () => {
+    const cause = "cspell read .smithers/WORKSPACE.smithers, which Smithers CI wrote."
+    const mismatch = { label: "//:check", mode: "normal", baseline: "pass", got: "fail", cause } as const
+    const measured = normalOnly()
+    const report: ReplayReport = {
+      ...measured,
+      mismatches: 1,
+      commits: measured.commits.map((commit) => ({ ...commit, mismatches: [mismatch] }))
+    }
+    const shown = text(report)
+    expect(shown.split("\n").slice(0, 3)).toEqual(["✗ 1 mismatch", "", "5.5× faster"])
+    expect(shown).toContain(`normal  //:check  pass → fail\n  ${cause}`)
+    expect(body(html(report))).toContain("<p class=\"hero\">5.5× faster</p>")
+    // With no baseline that passed there is no speedup, and the reason given is that one: normal mode's result
+    // differs from no CI result.
+    const failed: ReplayReport = {
+      ...none,
+      mismatches: 1,
+      commits: [{ ...plainGreen, commit: "d".repeat(40), mismatches: [mismatch] }]
+    }
+    expect(text(failed)).not.toContain("normal mode gave another result")
+    expect(body(html(failed))).not.toContain("normal mode gave another result")
+  })
+
   it("prints no speedup and no bars in the text when no commit's baseline passed", () => {
     const shown = text(none)
     expect(shown).toContain("no speedup: the CI failed at every replayed commit")

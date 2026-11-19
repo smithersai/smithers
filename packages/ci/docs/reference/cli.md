@@ -257,7 +257,8 @@ failed step, and the speedup covers the commits where the CI passed.
 A mismatch is defined in [How it works](../concepts/how-it-works.md#3-replay).
 A report where normal mode's result differs from the baseline's has no speedup:
 it leads with the number of mismatches and what to do, and `speedup` is 0 over 0
-commits under `--json`.
+commits under `--json`. A mismatch of the run with the files `apply` writes
+says why (`cause` under `--json`) and leaves the speedup as measured.
 A target that failed and then passed on a rerun is `flaky`. The report counts
 flaky verdicts apart from mismatches, and they never make the exit code `1`.
 
