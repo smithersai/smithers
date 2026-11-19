@@ -464,6 +464,9 @@ describe("a target on a machine", () => {
     expect(Machine.environment(machine)).toEqual({
       HOME: machine.home,
       XDG_CACHE_HOME: Path.join(machine.home, ".cache"),
+      XDG_CONFIG_HOME: Path.join(machine.home, ".config"),
+      XDG_DATA_HOME: Path.join(machine.home, ".local", "share"),
+      XDG_STATE_HOME: Path.join(machine.home, ".local", "state"),
       TMPDIR: machine.tmp,
       TMP: machine.tmp,
       TEMP: machine.tmp,

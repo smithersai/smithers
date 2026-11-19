@@ -533,8 +533,11 @@ export const make = async (
 
 /**
  * What a target that runs on a machine is told in place of the host's
- * values: its home, its cache directory, its temporary directory, and where
- * git stops looking for a repository above its tree. The temporary directory
+ * values: its home, its cache, configuration, data and state directories
+ * (under that home, where a tool looks when none is named), its temporary
+ * directory, and where git stops looking for a repository above its tree. A
+ * host's own `XDG_CONFIG_HOME` would otherwise reach every machine, and what
+ * one machine's tool wrote there another would read. The temporary directory
  * is also named by `temporaryVariable`, which a target has no reason to set.
  *
  * @category rendering
@@ -543,6 +546,9 @@ export const make = async (
 export const environment = (machine: Machine): Readonly<Record<string, string>> => ({
   HOME: machine.home,
   XDG_CACHE_HOME: NodePath.join(machine.home, ".cache"),
+  XDG_CONFIG_HOME: NodePath.join(machine.home, ".config"),
+  XDG_DATA_HOME: NodePath.join(machine.home, ".local", "share"),
+  XDG_STATE_HOME: NodePath.join(machine.home, ".local", "state"),
   TMPDIR: machine.tmp,
   TMP: machine.tmp,
   TEMP: machine.tmp,

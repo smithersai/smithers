@@ -173,6 +173,18 @@ describe("targets on two machines", () => {
     expect(await run(all, untraced, 4)).toEqual({ mutate: "ran", pristine: "ran", homea: "ran", homeb: "ran" })
   })
 
+  posixIt("are each told a configuration, data and state directory in their own home", async () => {
+    // A tool keeps its settings where these name; a host's own would be shared by every machine.
+    const writes = [
+      "for d in \"$XDG_CONFIG_HOME\" \"$XDG_DATA_HOME\" \"$XDG_STATE_HOME\"; do",
+      "case \"$d\" in \"$HOME\"/*) ;; *) exit 1 ;; esac",
+      "test ! -e \"$d/seen\" && mkdir -p \"$d\" && touch \"$d/seen\" || exit 1",
+      "done"
+    ].join("\n")
+    const { run } = await fixture(() => ({ toola: on("toola", writes), toolb: on("toolb", `${writes}\n# b`) }))
+    expect(await run(["toola", "toolb"], untraced)).toEqual({ toola: "ran", toolb: "ran" })
+  })
+
   posixIt("are gone when the build ends, with what was left where they are kept", async () => {
     const { environment, kept, run } = await fixture(() => ({
       locked: on("locked", "mkdir -p ~/go/pkg/mod/x && : > ~/go/pkg/mod/x/file && chmod -R a-w ~/go")
