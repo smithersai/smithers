@@ -11,7 +11,11 @@
  * With a directory, as the release passes it, the packages must already be
  * built and the pack rebuilds each one. With none, it builds every library
  * through the build graph, packs what it built into a temporary directory and
- * removes that directory afterwards.
+ * removes that directory afterwards. A pack made here carries no native
+ * helpers (the release downloads them for every platform), so the installed
+ * CLI is given the `smithers-jj-export` this checkout builds, as ci.yml gives
+ * its tests: unless `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` or
+ * `SMITHERS_NATIVE_HELPERS_DIR` already names one, it is built with cargo.
  *
  * Each gate runs on the `node` the path names, so the release's floor check
  * holds for all of them. The first red gate stops the rest, with its exit code.
@@ -38,7 +42,7 @@ const step = (command, args) => {
   const result = spawnSync(command, args, { cwd: repositoryRoot, stdio: "inherit" })
   if (result.error !== undefined) throw result.error
   if (result.status === 0) return 0
-  console.error(`pack-gates: ${args[0] === "exec" ? args.slice(1).join(" ") : args[0]} failed with exit ${result.status ?? result.signal}`)
+  console.error(`pack-gates: ${command === "node" ? args[0] : [command, ...args].join(" ")} failed with exit ${result.status ?? result.signal}`)
   return result.status ?? 1
 }
 
@@ -48,8 +52,19 @@ if (rest.length > 0) {
   process.exit(2)
 }
 const directory = given === undefined ? mkdtempSync(join(tmpdir(), "smithers-pack-gates-")) : resolve(given)
+const helperNamed = process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"] !== undefined ||
+  process.env["SMITHERS_NATIVE_HELPERS_DIR"] !== undefined
+const buildsHelper = given === undefined && !helperNamed
+if (buildsHelper) {
+  process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"] = join(
+    repositoryRoot,
+    "target/debug",
+    process.platform === "win32" ? "smithers-jj-export.exe" : "smithers-jj-export"
+  )
+}
 const steps = [
   ...(given === undefined ? [["pnpm", ["exec", "smthrs", "build", "//packages/...:lib"]]] : []),
+  ...(buildsHelper ? [["cargo", ["build", "--locked", "-p", "smithers-ffi", "--bin", "smithers-jj-export"]]] : []),
   ...packGates.map((gate, index) => ["node", index === 0 && given === undefined ? [gate, directory, "--built"] : [gate, directory]])
 ]
 let status = 0

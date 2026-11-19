@@ -574,6 +574,59 @@ test("the supported Node floor packs and smokes the tarballs and retains its rec
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
+test("a checkout of main runs every pack gate with one command, building what the release would download", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers-pack-gates-main-")))
+  try {
+    const bin = join(root, "bin")
+    mkdirSync(bin)
+    const temporary = join(root, "tmp")
+    mkdirSync(temporary)
+    const driver = join(root, "record.cjs")
+    // Each stand-in records its name, its arguments, the helper it was given, and whether its pack directory exists.
+    writeFileSync(driver, [
+      'const fs = require("node:fs")',
+      'const [name, ...args] = process.argv.slice(2)',
+      'const directory = args.find((arg) => arg.startsWith(process.env.TMPDIR))',
+      'fs.appendFileSync(process.env.TRACE, JSON.stringify({ name, args, helper: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY,',
+      '  directory: directory === undefined ? undefined : fs.existsSync(directory) }) + "\\n")'
+    ].join("\n"))
+    for (const name of ["node", "pnpm", "cargo"]) {
+      writeFileSync(join(bin, name), `#!/bin/sh\nexec "$ACTUAL_NODE" "$RECORD" ${name} "$@"\n`)
+      chmodSync(join(bin, name), 0o755)
+    }
+    const trace = join(root, "trace.jsonl")
+    const gates = (env) => {
+      rmSync(trace, { force: true })
+      const result = spawnSync(process.execPath, [join(repoRoot, ".smithers/flows/release/pack-gates.mjs")], {
+        env: { PATH: `${bin}:/usr/bin:/bin`, TMPDIR: temporary, ACTUAL_NODE: process.execPath, RECORD: driver, TRACE: trace, ...env },
+        encoding: "utf8"
+      })
+      assert.equal(result.status, 0, result.stderr)
+      return readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line))
+    }
+
+    const built = join(repoRoot, "target/debug/smithers-jj-export")
+    const calls = gates({})
+    const directory = calls[2].args[1]
+    assert.ok(directory.startsWith(join(temporary, "smithers-pack-gates-")), directory)
+    assert.deepEqual(calls, [
+      { name: "pnpm", args: ["exec", "smthrs", "build", "//packages/...:lib"], helper: built },
+      { name: "cargo", args: ["build", "--locked", "-p", "smithers-ffi", "--bin", "smithers-jj-export"], helper: built },
+      { name: "node", args: [".smithers/flows/release/pack-release.mjs", directory, "--built"], helper: built, directory: true },
+      { name: "node", args: [".smithers/flows/release/smoke-release.mjs", directory], helper: built, directory: true },
+      { name: "node", args: ["packages/ci/test/package/tarball.e2e.mjs", directory], helper: built, directory: true },
+      { name: "node", args: ["packages/smithers/test/published-layout.e2e.mjs", directory], helper: built, directory: true }
+    ])
+    // The temporary pack is removed afterwards.
+    assert.equal(existsSync(directory), false)
+
+    // A helper the caller names is used as it is, and nothing is built for it.
+    const named = gates({ SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: "/opt/helper" })
+    assert.deepEqual(named.map((call) => call.name), ["pnpm", "node", "node", "node", "node"])
+    assert.ok(named.every((call) => call.helper === "/opt/helper"))
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
 test("archived retries restore an explicit immutable artifact without rebuilding or replacing smoke evidence", () => {
   for (const restore of [false, true]) {
     for (const dryRun of [false, true]) {
