@@ -339,6 +339,32 @@ const sandboxSetup: ReadonlyArray<string> = [
   `          fi`
 ]
 
+// What keeps a step from the shared cache's token on a GitHub runner. A step can read what every process of its
+// user was started with, and the shell that starts `smthrs` holds the token. So `smthrs` runs the steps where they
+// see no other process, which on Linux takes bubblewrap: an Ubuntu runner lacks it, and Ubuntu 24.04 lets it make
+// its namespace only once AppArmor's restriction is lifted. Nothing is installed where the repository names no
+// cache. macOS and Windows have no such program: there a step can read the token.
+const tokenSetup = (cache: string | undefined): ReadonlyArray<string> => [
+  `      ${
+    yamlComment(
+      "With a shared cache, a step runs where it sees no other process and reads the cache's token from none."
+    )
+  }`,
+  `      ${
+    yamlComment("That takes bubblewrap, on Linux. On macOS and Windows a step can read the token it runs beside.")
+  }`,
+  `      - name: Keep the cache's token from the steps`,
+  `        if: runner.os == 'Linux'${cache === undefined ? " && vars.SMITHERS_CACHE_URL != ''" : ""}`,
+  `        shell: bash`,
+  `        run: |`,
+  `          if ! command -v bwrap >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then`,
+  `            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends bubblewrap`,
+  `          fi`,
+  `          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then`,
+  `            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`,
+  `          fi`
+]
+
 // What observing a step needs on a GitHub runner: the tracer that records what its run reads, which an Ubuntu
 // runner lacks. Without it the step still runs, and reruns on every change. macOS has no such tracer.
 const tracerSetup: ReadonlyArray<string> = [
@@ -475,7 +501,8 @@ const renderWorkflow = (
     `          node-version: "24"`,
     ...upToDate(cache, allowDocker),
     ...plan.toolchains.flatMap((toolchain) => renderSetup(toolchain, varying)),
-    ...(confined ? sandboxSetup : []),
+    // The read sandbox's step installs what keeps the token from a step, too.
+    ...(confined ? sandboxSetup : tokenSetup(cache)),
     ...(observed ? tracerSetup : []),
     `      ${yamlComment("Unconfined results never reach a remote cache, so the runner keeps its own.")}`,
     `      ${yamlComment("It also keeps the compiled code of smthrs, so the next run starts sooner.")}`,

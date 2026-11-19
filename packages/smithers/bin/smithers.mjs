@@ -29,6 +29,15 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { danglingWorkspaceLinkHint } from "./dangling-workspace-links.mjs"
 
+// A start that holds the shared cache's token and runs targets starts again where they see no other process.
+// A start with no token loads nothing for this.
+if (process.env.SMITHERS_CACHE_TOKEN || process.env.SMITHERS_START_PIPE) {
+  const { receive, startApart } = await import("./apart.mjs")
+  const ended = await startApart()
+  if (ended !== undefined) process.exit(ended)
+  receive()
+}
+
 const built = new URL("../dist/esm/bin.js", import.meta.url)
 const bundle = new URL("../dist/bundle/bin.js", import.meta.url)
 // A checkout may also have old build output; only registry installations use it.

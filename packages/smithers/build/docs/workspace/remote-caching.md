@@ -103,6 +103,17 @@ export SMITHERS_CACHE_TOKEN='<token>'
 smithers-build ci //...
 ```
 
+A process can read what every other process of its user was started with, so
+a target's commands could read the token from `smthrs` itself or from the
+shell that started it. When `smthrs` is started with `SMITHERS_CACHE_TOKEN`
+for a command that runs targets (`ci`, `build`, `test`, `lint`, `docs`,
+`review` or `run`) on Linux with bubblewrap, it starts itself again in a
+process table of its own. What it runs there sees no other process, `sudo`
+gains no privilege, and no process in sight was started with the token. On
+macOS and Windows, as `root`, where bubblewrap is missing or cannot start, and
+for a token under another name, a target's commands can read the token from
+the process that runs them.
+
 `SMITHERS_CACHE_URL` is an optional process override and has precedence over
 the declared endpoint. It requires HTTPS except for `http://localhost`,
 `http://127.0.0.1`, and `http://[::1]`, which are admitted for a cache running

@@ -1311,7 +1311,7 @@ describe("the workspace and workflow", () => {
     expect(workflow).not.toContain("strace")
     // No target is confined: nothing to install for the sandbox. The step is observed, which needs the tracer.
     const open = content(generate(inventory([job("a", [step("a:1", "x")])])), workflowPath)
-    expect(open).not.toContain("bubblewrap")
+    expect(open).not.toContain("Install the read sandbox")
     expect(open).toContain("      - name: Install the tracer\n        if: runner.os == 'Linux'\n")
     expect(open).toContain("apt-get install -y -qq --no-install-recommends strace")
     expect(open.indexOf("strace\n")).toBeLessThan(open.indexOf("smthrs ci"))
@@ -1320,8 +1320,43 @@ describe("the workspace and workflow", () => {
     const large = generate(inventory([job("a", [step("a:1", "x", { inputs, from: "a:1" })])]))
     expect(content(large, packagePath)).not.toContain("sandbox: {")
     expect(content(large, packagePath)).toContain("observe: {")
-    expect(content(large, workflowPath)).not.toContain("bubblewrap")
+    expect(content(large, workflowPath)).not.toContain("Install the read sandbox")
     expect(content(large, workflowPath)).toContain("strace")
+  })
+
+  it("installs what keeps the cache's token from a step on a Linux runner, when the repository names a cache", () => {
+    const steps = inventory([job("a", [step("a:1", "x")])])
+    const installs = [
+      "        shell: bash",
+      "        run: |",
+      "          if ! command -v bwrap >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then",
+      "            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends bubblewrap",
+      "          fi",
+      "          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then",
+      "            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0",
+      "          fi",
+      ""
+    ].join("\n")
+    // The cache is named in the repository's settings: the step runs only when it is.
+    const open = content(generate(steps), workflowPath)
+    expect(open).toContain(
+      "      - name: Keep the cache's token from the steps\n" +
+        "        if: runner.os == 'Linux' && vars.SMITHERS_CACHE_URL != ''\n" + installs
+    )
+    // The workflow says where a step can still read the token.
+    expect(open).toContain(
+      "      # That takes bubblewrap, on Linux. On macOS and Windows a step can read the token it runs beside.\n"
+    )
+    expect(open.indexOf("Keep the cache's token")).toBeLessThan(open.indexOf("smthrs ci"))
+    // The cache was named when the files were written: the step always runs.
+    const named = content(generate(steps, { cache: "https://cache.example.com" }), workflowPath)
+    expect(named).toContain(
+      "      - name: Keep the cache's token from the steps\n        if: runner.os == 'Linux'\n" + installs
+    )
+    // A workflow that installs the read sandbox has bubblewrap already.
+    const held = inventory([job("a", [step("a:1", "x", { inputs: ["src/**"], from: "a:1" })])])
+    expect(content(generate(held), workflowPath)).not.toContain("Keep the cache's token from the steps")
+    expect(content(generate(held), workflowPath)).toContain("Install the read sandbox")
   })
 
   it("uses the repository's Node and defaults its triggers and runner", () => {

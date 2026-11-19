@@ -135,6 +135,30 @@ never fails a run:
 GitHub gives a pull request from a fork no secrets, so it runs without the
 cache.
 
+### Who can read a token
+
+A token is a secret of the job, and the steps of the job are your repository's
+code. What keeps a step from the token depends on the runner:
+
+| Runner                                 | A step                                                                                                                                                                 |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux                                  | cannot read the token. `smthrs` runs the steps where they see no process but their own and where `sudo` gains no privilege. The workflow installs bubblewrap for this. |
+| macOS, Windows                         | can read the token from the program that runs it.                                                                                                                      |
+| Linux without bubblewrap, or as `root` | can read the token.                                                                                                                                                    |
+
+So give each run the least it needs:
+
+- The read token reuses results and stores none. A step that reads it can
+  fetch what your CI has stored.
+- The write token also stores results. A step that reads it can store a
+  result that later runs reuse, a wrong one included.
+- Set `SMITHERS_CACHE_READ_TOKEN`. A pull request then never holds the write
+  token, on any runner.
+- A pull request from a fork is given no token.
+
+A token opens the cache and nothing else. It is not a GitHub token and reaches
+no other service.
+
 A URL that can never work is a mistake to fix, not a cache that is down: a
 run given a URL that is not HTTPS, or one with a query, stops before its first
 step and says why.
