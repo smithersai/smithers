@@ -118,6 +118,55 @@ describe("score", () => {
     }
   })
 
+  it.live("lets one call return while another call on the same host still asks", () => effect {
+    // The first call asks in two waves: as many requests as run at once, then one more. The judge holds each
+    // request until the test lets it go: requests 1 to 4 are the first wave, 5 is the other call's, 6 the last.
+    const asked = { first: try Deferred.make<void>(), other: try Deferred.make<void>(), last: try Deferred.make<void>() }
+    const release = { first: try Deferred.make<void>(), other: try Deferred.make<void>(), last: try Deferred.make<void>() }
+    let arrived = 0
+    const held = Layer.succeed(Evaluator.Evaluator, Evaluator.Evaluator.of({
+      evaluate: (request) => effect {
+        arrived += 1
+        const mine = arrived
+        if (mine === Scoring.concurrency) try Deferred.succeed(asked.first, undefined)
+        if (mine === Scoring.concurrency + 1) try Deferred.succeed(asked.other, undefined)
+        if (mine === Scoring.concurrency + 2) try Deferred.succeed(asked.last, undefined)
+        try Deferred.await(
+          mine <= Scoring.concurrency ? release.first : mine === Scoring.concurrency + 1 ? release.other : release.last
+        )
+        return {
+          answers: Object.fromEntries(Object.keys(request.questions).map((id) => [
+            id,
+            id.startsWith("fails") ? { type: "boolean" as const, probability: 0.25 } : { type: "choice" as const, choice: "none" }
+          ])),
+          latencyMs: 0
+        }
+      }
+    }))
+    const many = Array.from(
+      { length: Scoring.batchSize * Scoring.concurrency + 1 },
+      (_, index) => row("c1", `//t${index}:test`, false, { testCount: index })
+    )
+    provide host(held) {
+      const first = fork score(many)
+      try Deferred.await(asked.first)
+      const other = fork score([row("c2", "//other:test", false, { testCount: 100_000 })])
+      try Deferred.await(asked.other)
+      // The first call's last request starts while the other call runs, and the other call returns before it ends.
+      try Deferred.succeed(release.first, undefined)
+      try Deferred.await(asked.last)
+      try Deferred.succeed(release.other, undefined)
+      const others = try join other
+      try Deferred.succeed(release.last, undefined)
+      const ended = try Fiber.await(first)
+      try Effect.try(() => {
+        expect(others.map((each) => each.score)).toEqual([0.25])
+        // The engine once ran this call's last request in the other call's registration, which closed with it.
+        expect(Exit.isSuccess(ended)).toBe(true)
+      })
+    }
+  })
+
   it.live("scores no rows without asking", () => effect {
     const asked: Asked = { requests: 0, questions: 0 }
     provide host(judge(asked)) {
