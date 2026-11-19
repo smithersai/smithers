@@ -252,9 +252,11 @@ that fetches exactly what a lockfile pins is the exception, because the
 lockfile it read fixes what it fetches: `npm ci`, `pnpm install
 --frozen-lockfile`, `yarn install --immutable`, `bun install
 --frozen-lockfile`, `uv sync --locked`, `pip install --require-hashes`, `go mod
-download` and `cargo fetch --locked` are stored like any other step. `npm
-install` and `pip install -r requirements.txt` may pick a version when they
-run, so they run every time. A step that restores or saves a cache, such as
+download` and `cargo fetch --locked` are stored like any other step. So is a
+`cargo` or `go` build or test that downloads what `Cargo.lock` or `go.sum`
+pins and leaves that file as it was. `npm install`, `pip install -r
+requirements.txt`, and `cargo build` in a repository with no `Cargo.lock`
+pick a version when they run, so they run every time. A step that restores or saves a cache, such as
 `actions/cache`, also runs every time: what it keeps lives from one run to the
 next, and the record of a run does not hold it. Recording
 needs Linux with `strace`, which the generated workflow installs on its

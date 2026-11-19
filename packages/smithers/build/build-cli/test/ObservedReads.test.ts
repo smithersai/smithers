@@ -1875,6 +1875,183 @@ describe("a package manager that installs what a lockfile pins", () => {
   })
 })
 
+describe("a build tool that fetches what a lockfile pins", () => {
+  const remote = (pid: number): string =>
+    `${pid} connect(3<socket:[9]>, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("151.101.2.137")}, 16) = 0`
+  const start = (pid: number, ...argv: ReadonlyArray<string>): string =>
+    `${pid} execve(${JSON.stringify(`/usr/bin/${argv[0]}`)}, [${
+      argv.map((word) => JSON.stringify(word)).join(", ")
+    }], 0x7ffc /* 9 vars */) = 0`
+  const open = (pid: number, path: string, flags = "O_RDONLY|O_CLOEXEC"): string =>
+    `${pid} openat(AT_FDCWD</w/crate>, ${JSON.stringify(path)}, ${flags}) = 3`
+  const thread = (pid: number, child: number): string =>
+    `${pid} clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD, stack=0x7f}, 88) = ${child}`
+  const process = (pid: number, child: number): string =>
+    `${pid} clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = ${child}`
+  const refusals = (...lines: ReadonlyArray<string>): ReadonlyArray<string> =>
+    read(lines.join("\n"), "/w/crate").refusals
+  const unpinned = "it opened a network connection (cargo to 151.101.2.137 port 443), " +
+    "with no Cargo.lock to say what it fetches"
+
+  it("is known by its command line", () => {
+    const cargo = { pins: ["Cargo.lock"], rewrites: ["Cargo.lock"] }
+    const go = { pins: ["go.sum"], rewrites: ["go.sum", "go.mod", "go.work.sum", "go.work"] }
+    for (
+      const line of [
+        "cargo test",
+        "cargo t --all-features",
+        "cargo +nightly build --release",
+        "/home/u/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo doc --verbose",
+        "cargo --locked check",
+        "cargo metadata --format-version 1",
+        "cargo fetch"
+      ]
+    ) expect([line, ObservedReads.lockedBuild(line.split(" "))]).toEqual([line, cargo])
+    for (const line of ["go test ./...", "/usr/local/go/bin/go build -v ./...", "go vet ./..."]) {
+      expect([line, ObservedReads.lockedBuild(line.split(" "))]).toEqual([line, go])
+    }
+    for (
+      const line of [
+        "cargo install ripgrep",
+        "cargo update",
+        "cargo publish",
+        "cargo package",
+        "cargo generate-lockfile",
+        // A flag that takes a value: the value is read as the command, and it is none.
+        "cargo --config net.retry=3 test",
+        "cargo",
+        "cargo --version",
+        "go get example.com/x",
+        "go run example.com/x@latest",
+        "go install example.com/x@latest",
+        "go mod tidy",
+        "go list -m -u all",
+        "rustc src/lib.rs",
+        "npm test",
+        ""
+      ]
+    ) expect([line, ObservedReads.lockedBuild(line.split(" "))]).toEqual([line, undefined])
+    expect(ObservedReads.lockedBuild([])).toBeUndefined()
+  })
+
+  it("may open a connection once it has read its lockfile, and so may its threads", () => {
+    expect(refusals(start(100, "cargo", "test"), open(100, "Cargo.lock"), remote(100), remote(100))).toEqual([])
+    // The rustup link starts the toolchain's cargo, which reads the lockfile of the workspace above it.
+    expect(
+      refusals(
+        start(100, "cargo", "test"),
+        start(100, "/home/u/.rustup/toolchains/stable/bin/cargo", "test"),
+        open(100, "/w/Cargo.lock"),
+        thread(100, 101),
+        remote(101)
+      )
+    ).toEqual([])
+    expect(
+      refusals(start(100, "go", "test", "./..."), open(100, "/w/crate/go.sum"), thread(100, 101), remote(101))
+    ).toEqual([])
+  })
+
+  it("stores nothing when no lockfile said what to fetch", () => {
+    // No lockfile: cargo chooses versions and writes one.
+    expect(
+      refusals(
+        start(100, "cargo", "build"),
+        "100 openat(AT_FDCWD</w/crate>, \"Cargo.lock\", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)",
+        remote(100),
+        open(100, "Cargo.lock", "O_RDWR|O_CREAT|O_CLOEXEC, 0666")
+      )
+    ).toEqual([unpinned])
+    // A lockfile of some other crate, such as one a registry unpacked, is not this build's.
+    expect(
+      refusals(start(100, "cargo", "build"), open(100, "/home/u/.cargo/registry/src/x-1.0.0/Cargo.lock"), remote(100))
+    ).toEqual([unpinned])
+    // A lockfile the run itself wrote first was chosen by the run.
+    expect(
+      refusals(
+        open(100, "Cargo.lock", "O_WRONLY|O_CREAT|O_TRUNC, 0666"),
+        start(100, "cargo", "build"),
+        open(100, "Cargo.lock"),
+        remote(100)
+      )
+    ).toEqual([unpinned])
+    // A command that chooses versions, and a tool started where the trace does not say.
+    expect(refusals(start(100, "cargo", "update"), open(100, "Cargo.lock"), remote(100))).toEqual([
+      "it opened a network connection (cargo to 151.101.2.137 port 443)"
+    ])
+    expect(refusals(start(100, "sh"), start(200, "cargo", "test"), open(200, "/w/crate/Cargo.lock"), remote(200)))
+      .toEqual(["it opened a network connection (cargo to 151.101.2.137 port 443)"])
+  })
+
+  it("stores nothing when the lockfile it read was written afterwards", () => {
+    expect(
+      refusals(
+        start(100, "cargo", "test"),
+        open(100, "Cargo.lock"),
+        remote(100),
+        open(100, "Cargo.lock", "O_WRONLY|O_CREAT|O_TRUNC, 0666")
+      )
+    ).toEqual([
+      "it opened a network connection (cargo to 151.101.2.137 port 443), and wrote Cargo.lock: " +
+      "no lockfile fixed what it fetched"
+    ])
+    // `go` with `-mod=mod` adds what it chose to go.mod.
+    expect(
+      refusals(
+        start(100, "go", "build", "-mod=mod", "./..."),
+        open(100, "go.sum"),
+        remote(100),
+        "100 rename(\"/w/crate/go.mod.tmp\", \"/w/crate/go.mod\") = 0"
+      )
+    ).toEqual([
+      "it opened a network connection (go to 151.101.2.137 port 443), and wrote go.mod: " +
+      "no lockfile fixed what it fetched"
+    ])
+  })
+
+  it("covers the tool alone: not a program it starts, and not the program it becomes", () => {
+    // A test that reaches the network.
+    expect(
+      refusals(
+        start(100, "cargo", "test"),
+        open(100, "Cargo.lock"),
+        remote(100),
+        process(100, 102),
+        start(102, "/w/crate/target/debug/deps/t-0a1b"),
+        remote(102)
+      )
+    ).toEqual(["it opened a network connection (t-0a1b to 151.101.2.137 port 443)"])
+    // A process it started before it started a thread under the same number, as a process id comes round.
+    expect(
+      refusals(
+        start(100, "cargo", "test"),
+        open(100, "Cargo.lock"),
+        thread(100, 102),
+        start(100, "sh"),
+        process(100, 102),
+        remote(102)
+      )
+    ).toEqual(["it opened a network connection (sh to 151.101.2.137 port 443)"])
+    // `cargo run` becomes the program it built.
+    expect(
+      refusals(
+        start(100, "cargo", "run"),
+        open(100, "Cargo.lock"),
+        remote(100),
+        start(100, "/w/crate/target/debug/app"),
+        remote(100)
+      )
+    ).toEqual(["it opened a network connection (app to 151.101.2.137 port 443)"])
+    // A socket of the machine is no registry.
+    expect(
+      refusals(
+        start(100, "cargo", "test"),
+        open(100, "Cargo.lock"),
+        "100 connect(4<socket:[10]>, {sa_family=AF_UNIX, sun_path=\"/run/daemon.sock\"}, 110) = 0"
+      )
+    ).toEqual(["it reached a program outside the run through the socket \"/run/daemon.sock\""])
+  })
+})
+
 describe("the variables of the host a run could have used", () => {
   const commit = "0123456789abcdef0123456789abcdef01234567"
   const values = { COMMIT: commit, RUN: "1658821493", ATTEMPT: "1", UNSET: undefined }

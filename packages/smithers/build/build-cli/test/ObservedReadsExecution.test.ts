@@ -1187,6 +1187,50 @@ describe("a job of observed steps", () => {
       await new Promise((resolve) => server.close(resolve))
     }
   })
+  // `cargo build` downloads the crates Cargo.lock pins. With no Cargo.lock it asks the registry which versions
+  // there are and writes one: the same program, the same connection, and nothing fixed what it fetched.
+  tracedIt(
+    "stores a build that fetches what the lockfile it read pins, and none that writes its lockfile",
+    async () => {
+      const server = Net.createServer((socket) => socket.end())
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      try {
+        const port = (server.address() as Net.AddressInfo).port
+        // A build tool: it reads its lockfile, making one when there is none, fetches, and builds what was pinned.
+        const cargo = `#!${process.execPath}\n` +
+          "const fs = require('fs')\n" +
+          "let lock\n" +
+          "try { lock = fs.readFileSync('Cargo.lock', 'utf8') } catch { lock = 'chosen now\\n' }\n" +
+          `require('net').connect(${port}, '127.0.0.1').on('connect', function () {\n` +
+          "  this.end()\n" +
+          "  if (!fs.existsSync('Cargo.lock')) fs.writeFileSync('Cargo.lock', lock)\n" +
+          "  fs.mkdirSync('deps', { recursive: true })\n" +
+          "  fs.writeFileSync('deps/installed.txt', lock)\n" +
+          "})\n"
+        const locked = await job({ install: "cargo build" })
+        await locked.write(Path.join(locked.base, "tools", "cargo"), cargo, 0o755)
+        await locked.write("Cargo.lock", "pinned 1\n")
+        expect(await locked.run()).toEqual(all("ran"))
+        expect(locked.unstored).toEqual({})
+        await locked.checkout()
+        expect(await locked.run()).toEqual(all("hit"))
+        // Another lockfile is another build.
+        await locked.write("Cargo.lock", "pinned 2\n")
+        expect(await locked.run()).toEqual({ install: "ran", build: "ran", lint: "hit", test: "ran" })
+        expect(locked.reasons["install"]).toBe("Cargo.lock changed")
+        expect(locked.read("deps/built.txt")).toBe("pinned 2\nsource 1\n")
+        // No lockfile: the tool chose, and wrote what it chose.
+        const open = await job({ install: "cargo build" })
+        await open.write(Path.join(open.base, "tools", "cargo"), cargo, 0o755)
+        expect(await open.run()).toEqual(all("ran"))
+        expect(open.unstored).toEqual({
+          install: `it reached a program outside the run on local port ${port}`
+        })
+      } finally {
+        await new Promise((resolve) => server.close(resolve))
+      }
+    }
+  )
 })
 
 describe("a host that cannot observe a run", () => {

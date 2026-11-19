@@ -521,6 +521,23 @@ depend on what the network answers.
 `npm install`, `pip install -r requirements.txt` and every other command that
 may resolve a version at run time still store nothing when they connect.
 
+**A build may fetch what its lockfile pins.** `cargo test` downloads the crates
+`Cargo.lock` names, and `go test` the modules `go.sum` names. The tool's own
+connections do not stop the result from being stored when the run read that
+lockfile, in the directory the tool started in or one above it, and nothing
+wrote it afterwards. A tool that makes or changes its lockfile chose a
+version, and that run stores nothing.
+
+| Tool    | Commands                                                                                         | Pinned by    | Chose a version when it wrote                  |
+| ------- | ------------------------------------------------------------------------------------------------ | ------------ | ---------------------------------------------- |
+| `cargo` | `build`, `check`, `test`, `doc`, `run`, `bench`, `rustc`, `rustdoc`, `fetch`, `metadata`, `tree` | `Cargo.lock` | `Cargo.lock`                                   |
+| `go`    | `build`, `test`, `vet`                                                                           | `go.sum`     | `go.sum`, `go.mod`, `go.work.sum` or `go.work` |
+
+Only the tool itself is covered. A compiler, a build script or a test it
+starts that connects still stores nothing, and so does the program `cargo run`
+becomes. `cargo install`, `cargo update`, `go get` and `go run` choose
+versions and are not covered.
+
 **Variables that differ from run to run.** A CI run is given the commit it is
 for, a run id and a run number, and each is another at the next run. In the
 key, each would make every run a new declaration. Left out of everything, a

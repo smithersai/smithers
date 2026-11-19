@@ -36,6 +36,14 @@
  * cache, is no input of the run: it rewrites entries of that cache at every
  * run, and a cache restored from another run would never match.
  *
+ * A build tool fetches the same way when a lockfile is there: `cargo test`
+ * downloads the crates `Cargo.lock` pins, `go test` the modules `go.sum`
+ * pins. Its own connections do not stop a result from being stored when the
+ * run read that lockfile and nothing wrote it afterwards: a lockfile the tool
+ * made or changed is the sign that it chose a version, and such a run stores
+ * nothing. Only the tool's own connections are covered. A test it starts
+ * that reaches the network still stores nothing.
+ *
  * A run is also given variables of the host whose values differ from one
  * run to the next, such as the commit a CI run is for. No trace shows a
  * process reading its environment: every shell copies all of it when it
@@ -459,6 +467,81 @@ export const lockedInstall = (argv: ReadonlyArray<string>): boolean => {
   }
 }
 
+/** The build tools that fetch what a lockfile pins, the commands that do, and the files that pin and are rewritten. */
+const lockedBuilds: ReadonlyMap<
+  string,
+  {
+    readonly commands: ReadonlyArray<string>
+    readonly pins: ReadonlyArray<string>
+    readonly rewrites: ReadonlyArray<string>
+  }
+> = new Map([
+  ["cargo", {
+    commands: [
+      "build",
+      "b",
+      "check",
+      "c",
+      "test",
+      "t",
+      "doc",
+      "d",
+      "run",
+      "r",
+      "bench",
+      "rustc",
+      "rustdoc",
+      "fetch",
+      "metadata",
+      "tree"
+    ],
+    pins: ["Cargo.lock"],
+    rewrites: ["Cargo.lock"]
+  }],
+  ["go", {
+    commands: ["build", "test", "vet"],
+    pins: ["go.sum"],
+    rewrites: ["go.sum", "go.mod", "go.work.sum", "go.work"]
+  }]
+])
+
+/**
+ * The lockfile of a build tool's command line, when the command builds what a
+ * lockfile of that name pins: `pins` are the names that fix what it fetches,
+ * `rewrites` the names it writes when it chooses a version instead. `cargo
+ * test` and `go build` are such commands; `cargo install`, `cargo update`, `go
+ * get` and `go run` choose versions and are not. A word before the command
+ * that is no flag and no toolchain (`cargo +nightly test`) names another
+ * command, so a flag that takes a value (`cargo --config x test`) is not
+ * read past.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const lockedBuild = (
+  argv: ReadonlyArray<string>
+): { readonly pins: ReadonlyArray<string>; readonly rewrites: ReadonlyArray<string> } | undefined => {
+  const first = argv[0] ?? ""
+  const known = lockedBuilds.get(first.slice(first.lastIndexOf("/") + 1))
+  const command = argv.slice(1).find((word) => !word.startsWith("-") && !word.startsWith("+"))
+  return known !== undefined && command !== undefined && known.commands.includes(command)
+    ? { pins: known.pins, rewrites: known.rewrites }
+    : undefined
+}
+
+/**
+ * A build tool's process, and its threads: the lockfiles that would pin what
+ * it fetches, by path, the paths whose writing says it chose a version, and
+ * whether it has read one of the first.
+ */
+interface Build {
+  /** The lockfile's name, for the line that says why a run stores nothing. */
+  readonly lock: string
+  readonly pins: ReadonlySet<string>
+  readonly rewrites: ReadonlySet<string>
+  pinned: boolean
+}
+
 /** One process's working directory. Threads that share it share the cell. */
 interface Cell {
   path: string | undefined
@@ -575,9 +658,13 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
   const installed = new Set<number>()
   /** What those processes wrote. */
   const fetched = new Set<string>()
+  /** Processes that are a build tool fetching what a lockfile pins, each with its threads. Never what it starts. */
+  const building = new Map<number, Build>()
+  /** The first connection of each such build that a lockfile it had read pinned: who reached what. */
+  const pinnedConnections = new Map<Build, string>()
 
   // Which line starts each process, and whether it shares its parent's directory.
-  const children = new Map<number, { readonly child: number; readonly shared: boolean }>()
+  const children = new Map<number, { readonly child: number; readonly shared: boolean; readonly thread: boolean }>()
   {
     const open = new Map<string, { readonly at: number; readonly text: string }>()
     let at = 0
@@ -596,7 +683,8 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       if (entered === undefined || child === null) continue
       children.set(entered.at, {
         child: Number(child[1]),
-        shared: /CLONE_FS|CLONE_THREAD/.test(entered.text) || /CLONE_FS|CLONE_THREAD/.test(line)
+        shared: /CLONE_FS|CLONE_THREAD/.test(entered.text) || /CLONE_FS|CLONE_THREAD/.test(line),
+        thread: /CLONE_THREAD/.test(entered.text) || /CLONE_THREAD/.test(line)
       })
     }
   }
@@ -715,6 +803,11 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
         } else {
           looked(path)
           if (/O_RDWR/.test(flags)) wrote(path, "changed", creates)
+          // A lockfile a build tool read that nothing in the run had written says what the tool fetches.
+          else if (ok && path !== undefined && !changed.has(path)) {
+            const build = building.get(pid)
+            if (build?.pins.has(path) === true) build.pinned = true
+          }
         }
         return
       }
@@ -764,6 +857,24 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
           const words = ok ? wordsOf(args[name === "execve" ? 1 : 2]) : undefined
           if (words !== undefined && lockedInstall(words)) installing.add(pid)
           else installing.delete(pid)
+          // A build tool finds its lockfile in the directory it starts in, or in one above it.
+          const build = words === undefined ? undefined : lockedBuild(words)
+          if (build === undefined || cell.path === undefined) building.delete(pid)
+          else {
+            const beside = (names: ReadonlyArray<string>): ReadonlySet<string> => {
+              const paths = new Set<string>()
+              for (let directory = cell.path!;; directory = NodePath.posix.dirname(directory)) {
+                for (const lock of names) paths.add(NodePath.posix.join(directory, lock))
+                if (directory === "/") return paths
+              }
+            }
+            building.set(pid, {
+              lock: build.pins[0]!,
+              pins: beside(build.pins),
+              rewrites: beside(build.rewrites),
+              pinned: false
+            })
+          }
         }
         return
       }
@@ -844,6 +955,12 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
         if (failed && errno !== "EINPROGRESS") return
         // What a locked install fetches, and whom it asks for an address, is fixed by the lockfile it read.
         if (installing.has(pid) || installed.has(pid)) return
+        // So is what a build tool fetches once it has read its lockfile, while nothing writes that lockfile.
+        const build = building.get(pid)
+        if (build?.pinned === true && (family === "AF_INET" || family === "AF_INET6")) {
+          if (!pinnedConnections.has(build)) pinnedConnections.set(build, reached(programs.get(pid), address))
+          return
+        }
         if (family === "AF_UNIX") {
           if (key === undefined || !bound.has(key)) {
             reach(`it reached a program outside the run through the socket ${unix ?? "it was given"}`)
@@ -851,7 +968,13 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
         } else if (family === "AF_INET" || family === "AF_INET6") {
           if (!loopback(address)) {
             // The first connection is named; a run that opened one usually opened many.
-            if (!networked) reach(`it opened a network connection (${reached(programs.get(pid), address)})`)
+            if (!networked) {
+              reach(
+                `it opened a network connection (${reached(programs.get(pid), address)})${
+                  build === undefined ? "" : `, with no ${build.lock} to say what it fetches`
+                }`
+              )
+            }
             networked = true
           } else if (!ephemeral && !bound.has(key!)) {
             reach(`it reached a program outside the run on local port ${portOf(address)}`)
@@ -940,6 +1063,10 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
       const program = programs.get(pid)
       if (program !== undefined) programs.set(start.child, program)
       if (installing.has(pid) || installed.has(pid)) installed.add(start.child)
+      // A thread of a build tool is the tool. A process it starts is a compiler or a test, and is not.
+      const build = start.thread ? building.get(pid) : undefined
+      if (build === undefined) building.delete(start.child)
+      else building.set(start.child, build)
     }
     if (detached) {
       cutOff(pid, { at: entered, text: rest })
@@ -968,6 +1095,16 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
   // Every traced run starts a program, so a trace without a line is not a run's trace.
   if (root === undefined) refusals.add("its trace is empty")
   for (const [pid, open] of pending) cutOff(pid, open)
+  // A build tool that wrote its lockfile chose a version: the lockfile it read did not fix what it fetched.
+  for (const [build, connection] of pinnedConnections) {
+    const lock = [...build.rewrites].find((path) => changed.has(path))
+    if (lock !== undefined) {
+      reach(
+        `it opened a network connection (${connection}), and wrote ${lock.slice(lock.lastIndexOf("/") + 1)}: ` +
+          "no lockfile fixed what it fetched"
+      )
+    }
+  }
   return {
     found,
     missing,
