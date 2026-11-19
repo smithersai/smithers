@@ -1,0 +1,87 @@
+/**
+ * What the jobs of one baseline run keep with `actions/cache`, as jobs that
+ * start together see it.
+ *
+ * On GitHub the jobs of a run start at the same time, each on a machine of
+ * its own, and a cache is saved when its job ends. So a job restores what was
+ * saved before the run began, or by a job it waited for (`needs`), and never
+ * what a job beside it saves minutes later. A replay runs those jobs one
+ * after another against one store. Left alone, the second job of a matrix
+ * restores what the first has just saved: at a commit that changes a
+ * lockfile, one job installs from the network and the others from the first
+ * one's cache, where in CI every one of them installs from the network. The
+ * baseline would then be faster than the CI it stands for.
+ *
+ * So each job has a view of the store: the entries the store held when the
+ * run began and those of the jobs it waited for, as hard links. The job
+ * restores from its view and saves into it. When the run has ended, what the
+ * views hold that the store does not is added to the store, the first job's
+ * entry first, as the first job to save a key keeps it.
+ *
+ * An entry is a directory that holds a file named `key`, which a save writes
+ * last (`inventory/Cache.ts`). A directory without one is a save that did
+ * not end, and is left out.
+ *
+ * @since 0.1.0
+ */
+
+/** The file a save writes last: a directory that holds it is a finished entry. */
+const finished = "key"
+
+/**
+ * Adds to `to` every finished entry under `from` that `to` does not hold, as
+ * hard links. An entry keeps its time: a restore takes the newest entry a
+ * prefix matches. A `from` that does not exist adds nothing.
+ *
+ * @category store
+ * @since 0.1.0
+ */
+export effect function addEntries(from: string, to: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  if (!(try fs.exists(from))) return
+  for (const name of try fs.readDirectory(from)) {
+    const source = path.join(from, name)
+    const target = path.join(to, name)
+    const info = try fs.stat(source)
+    if (info.type !== "Directory") continue
+    const files = try fs.readDirectory(source)
+    if (!files.includes(finished)) {
+      try addEntries(source, target)
+      continue
+    }
+    if (try fs.exists(target)) continue
+    try fs.makeDirectory(target, { recursive: true })
+    // The key last: an entry counts as saved once it holds one.
+    for (const file of [...files.filter((file) => file !== finished), finished]) {
+      try fs.link(path.join(source, file), path.join(target, file))
+    }
+    const saved = Option.getOrUndefined(info.mtime)
+    if (saved !== undefined) try fs.utimes(target, saved, saved)
+  }
+}
+
+/**
+ * A job's view of `store`, made at `view`: the entries `store` holds and
+ * those of each view in `waitedFor`, the views of the jobs this one waited
+ * for.
+ *
+ * @category store
+ * @since 0.1.0
+ */
+export effect function viewOf(store: string, waitedFor: ReadonlyArray<string>, view: string) {
+  const fs = try FileSystem.FileSystem
+  try fs.makeDirectory(view, { recursive: true })
+  for (const from of [store, ...waitedFor]) try addEntries(from, view)
+}
+
+/**
+ * Adds to `store` what the jobs of a run saved into their `views`, the first
+ * view's entry first.
+ *
+ * @category store
+ * @since 0.1.0
+ */
+export effect function keep(views: ReadonlyArray<string>, store: string) {
+  for (const view of views) try addEntries(view, store)
+}

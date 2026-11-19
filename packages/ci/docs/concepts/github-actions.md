@@ -242,6 +242,14 @@ one commit's run saved is there for the next commit, as on GitHub, so a build
 tool finds its own cache and the baseline takes the time your CI takes. Each
 way of running a commit, the baseline and each mode, has a store of its own.
 
+The jobs of a run start together on GitHub, each on its own machine, and a
+cache is saved when its job ends. So a job restores what an earlier run saved,
+or what a job it waits for (`needs`) saved, and never what a job beside it
+saves in the same run. A replay runs your jobs one after another and holds
+them to the same rule. At a commit that changes a lockfile, every job of a
+matrix installs from the network, as in your CI; without the rule only the
+first would, and the baseline would be faster than the CI it stands for.
+
 `actions/cache` restores where the step stands and saves after the job's other
 steps. `actions/cache/restore` only restores, and `actions/cache/save` only
 saves.
@@ -250,6 +258,7 @@ saves.
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | An entry is found                   | Under `key` itself, or else the newest entry whose key starts with one of `restore-keys`, in the order written. Only entries saved for the same `path` are read. |
 | `cache-hit`                         | `true` for `key` itself, `false` for one of `restore-keys`, empty when nothing was found. `cache-primary-key` and `cache-matched-key` are set too.               |
+| What a job sees                     | The entries saved before its run began, and those of the jobs it waits for. What a run's jobs saved is there for the next run.                                   |
 | An entry is saved                   | Once. A job that restored its own `key` saves nothing, and neither does a job with a failed step.                                                                |
 | `path`                              | Files and directories of the checkout, of the home (`~/...`) and of `RUNNER_TEMP`.                                                                               |
 | `fail-on-cache-miss`, `lookup-only` | As on GitHub.                                                                                                                                                    |

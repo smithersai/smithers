@@ -105,6 +105,7 @@ import {
   stdoutOf
 } from "./Process.vibe"
 import { readyHistory } from "./History.vibe"
+import { keep, viewOf } from "./Kept.vibe"
 import { printsNotes, readsListener } from "./Reads.ts"
 import { defaultStallMinutes, type StallLimit, type Table, tableFor, watchFor } from "./Stall.vibe"
 import {
@@ -467,6 +468,9 @@ export effect function askModel<R>(parts: Pick<ReplayParts<R>, "asked" | "score"
  * step's verdict is the combined verdict of its targets.
  *
  * Each baseline job gets a fresh checkout, as each gets its own machine in CI.
+ * The jobs of a run start together in CI, so a job restores the caches earlier
+ * runs saved and those of the jobs it waited for, never what a job beside it
+ * saved in the same run (`Kept.vibe`).
  * At most as many jobs run at once as normal mode runs targets: `request.jobs`,
  * never above the target map's `maxJobs`, and the machine's core count when
  * neither says. The jobs of one shared tree (`Inventory.treeOf`: the recipes of a Justfile, the scripts of a
@@ -599,7 +603,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const records = path.join(work, "records")
     try orFail(fs.makeDirectory(records), "could not make a directory")
     // Where a baseline step keeps files from one run to the next, as a cache step does: outside every checkout and
-    // every home, so a job that starts on a new machine finds what an earlier commit's job saved. A target keeps
+    // every home, so a job that starts on a new machine finds what an earlier commit's job saved. A job reads and
+    // writes it through a view of its own, so it never finds what a job beside it saved in the same run. A target keeps
     // them in the cache directory of its own copy, so each way of running a commit has a store of its own.
     const kept = path.join(work, "kept")
     try orFail(fs.makeDirectory(kept), "could not make a directory")
@@ -1092,16 +1097,27 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       for (const station of chosen) plan.push({ ...station, gate: try Deferred.make<boolean>() })
       const runs = plan.flatMap((station) => station.runs)
       const names = new Map(runNames(runs).map((name, index) => [runs[index] as ReadonlyArray<Unit>, name]))
+      // The jobs of a run start together in CI, each on its own machine, and a cache is saved when its job ends. So
+      // no job restores what a job beside it saves in the same run: each restores from, and saves into, a view of
+      // the store that holds what earlier runs saved and what the jobs it waited for saved (`Kept.vibe`).
+      const views = try orFail(fs.makeTempDirectory({ directory: work, prefix: "kept-run-" }), "could not make a directory")
+      const viewAt = (sequence: ReadonlyArray<Unit>): string => path.join(views, names.get(sequence) as string)
       const collected: Array<TargetResult> = []
       for concurrent (const station of plan) {
         let needsPassed = true
-        for (const need of plan.filter((other) => other.jobs.some((job) => station.needs.includes(job)))) {
+        const needed = plan.filter((other) => other.jobs.some((job) => station.needs.includes(job)))
+        for (const need of needed) {
           needsPassed = (try Deferred.await(need.gate)) && needsPassed
         }
+        const waitedFor = needed.flatMap((need) => need.runs.map(viewAt))
         const results: Array<TargetResult> = []
         for concurrent (const sequence of station.runs) {
           if (needsPassed) {
-            results.push(...(try limit.withPermits(1)(runSequence(sequence, names.get(sequence) as string, commit, wanted, place, store, given, later))))
+            const view = viewAt(sequence)
+            results.push(...(try limit.withPermits(1)(effect {
+              try orFail(viewOf(store, waitedFor, view), "could not show a job what earlier runs kept")
+              return try runSequence(sequence, names.get(sequence) as string, commit, wanted, place, view, given, later)
+            })))
           } else {
             const waiting = sequence.flatMap((unit) => labelsOf(unit, wanted))
             results.push(...waiting.map((label) => blocked(label, station.needs.join(", "))))
@@ -1110,6 +1126,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         collected.push(...results)
         try Deferred.succeed(station.gate, needsPassed && results.every((result) => result.status === "ran"))
       }
+      // What the jobs saved is there for the next run, the first job's entry first.
+      try orFail(keep(runs.map(viewAt), store), "could not keep what the jobs saved")
+      try orFail(fs.remove(views, { recursive: true, force: true }), "could not remove a directory")
       // Jobs finish in any order; a report lists their steps in the order of the CI.
       const order = new Map(own.units.flatMap((unit) => unit.steps).map((step, index) => [step.label, index]))
       return collected.toSorted((a, b) => (order.get(a.label) as number) - (order.get(b.label) as number))
