@@ -40,6 +40,7 @@ import * as DigestIndexFile from "./internal/DigestIndexFile.ts"
 import * as GoCache from "./internal/GoCache.ts"
 import type { TreeInputReads } from "./internal/PackageOptions.ts"
 import * as PackagePlanner from "./internal/PackagePlanner.ts"
+import * as Parts from "./internal/Parts.ts"
 import * as RemoteCi from "./internal/RemoteCi.ts"
 import * as Shards from "./internal/Shards.ts"
 import { requireRecorded } from "./internal/UnrecordedGates.ts"
@@ -1299,7 +1300,7 @@ const writeResults = async (
   config: RuntimeConfig
 ): Promise<string | undefined> => {
   const results = summary.results.map((
-    { durationMs, key, label, status, blocking, failureDigest, notStored, notReused }
+    { durationMs, key, label, status, blocking, failureDigest, notStored, notReused, parts }
   ) => ({
     label,
     status,
@@ -1309,7 +1310,8 @@ const writeResults = async (
     ...(failureDigest === undefined ? {} : { failureDigest }),
     // Absent from the record when the result was stored, or reused: JSON drops an undefined member.
     notStored,
-    notReused
+    notReused,
+    parts
   }))
   try {
     await writeReceipt(
@@ -1319,6 +1321,7 @@ const writeResults = async (
           ok: summary.ok,
           counts: summary.counts,
           notStored: summary.notStored,
+          parts: summary.parts,
           results,
           version: 1,
           ...((summary as ShardedSummary).shard === undefined ? {} : { shard: (summary as ShardedSummary).shard })
@@ -1368,6 +1371,7 @@ const executeCommand = async <A extends Outcome>(
   body: (reporter: Reporter.Reporter) => Promise<A>
 ): Promise<A | undefined> => {
   const options = context.options
+  Parts.commandBegan()
   const resultsFile = resultsPath(options)
   // Open (create) the results file before any target runs, so an existing one refuses up front.
   let results: FileHandle | undefined

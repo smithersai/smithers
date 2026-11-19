@@ -1323,6 +1323,21 @@ describe("what a report says about a failure", () => {
     expect(() => Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...report, speedupCommits: -1 })).toThrow()
   })
 
+  it("lets a run record, a result and a run's totals say what the time was spent on", () => {
+    const parts = { ms: { step: 1200.5, reads: 40 }, cpuMs: { step: 900 } }
+    const result = { label: "//:a", status: "ran", key: "", durationMs: 1300, parts }
+    expect(Schema.decodeUnknownSync(RunRecord.TargetResult)(result)).toEqual(result)
+    const record = { ok: true, counts: { hit: 0, ran: 1, failed: 0, skipped: 0 }, results: [result] }
+    const whole = { ...record, parts: { ms: { start: 900, plan: 100 } } }
+    expect(Schema.decodeUnknownSync(RunRecord.RunRecord)(whole)).toEqual(whole)
+    // A record of a Smithers build that times nothing holds none.
+    expect(Schema.decodeUnknownSync(RunRecord.RunRecord)(record)).not.toHaveProperty("parts")
+    const totals = { ok: true, wallMs: 2300, workMs: 1300, counts: record.counts, parts }
+    expect(Schema.decodeUnknownSync(ReplayReport.RunTotals)(totals)).toEqual(totals)
+    expect(() => Schema.decodeUnknownSync(RunRecord.Parts)({ ms: { step: "long" } })).toThrow()
+    expect(() => Schema.decodeUnknownSync(RunRecord.Parts)({ cpuMs: { step: 1 } })).toThrow()
+  })
+
   it("lets a run record's result say how its command ended", () => {
     const result = { label: "//:a", status: "failed", key: "", durationMs: 1, exitCode: 127, command: "docker" }
     expect(Schema.decodeUnknownSync(RunRecord.TargetResult)(result)).toEqual(result)

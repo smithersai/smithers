@@ -356,6 +356,51 @@ The structured summary carries the same text on the target's row as
 `notReused`, and `--results-file` writes it, so a program that reads a run can
 say which file made a step run again.
 
+A record holds every path its run read, and a change to any of them makes the
+run happen. The workspace's own files are compared first, smallest first, and
+the tools and installed packages last: a commit changes the first kind, so a
+run that has to happen is known before a large file is read. When several
+paths changed, the line names the first one found.
+
+**Where the time went.** A target's row also carries `parts`: the milliseconds
+its run spent on each part, as `ms`, and the CPU time of each part, as `cpuMs`,
+on Linux.
+
+| Part      | What it times                                               |
+| --------- | ----------------------------------------------------------- |
+| `machine` | Making the machine of the target's job, in its first target |
+| `putBack` | Putting back what earlier steps left                        |
+| `check`   | Comparing the stored records with the files as they are     |
+| `step`    | The command, under the tracer when its reads are recorded   |
+| `reads`   | Reading the trace and measuring every path the command read |
+| `keep`    | Keeping what the command left                               |
+| `store`   | Storing the record                                          |
+
+The summary itself carries the parts of the run that belong to no target:
+`start`, from the start of the program to its command; `plan`, loading the
+workspace and deciding what to run; `answer`, finding the targets answered
+without running; and `machinesRemoved`. The CPU time is the build's own and
+that of every process it waited for, so it is exact while one target runs at a
+time. `--results-file` writes both:
+
+```json
+{
+  "parts": { "ms": { "start": 2690, "plan": 480, "answer": 150, "machinesRemoved": 1120 } },
+  "results": [
+    {
+      "label": "//:test",
+      "status": "ran",
+      "durationMs": 14970,
+      "notReused": "package.json changed",
+      "parts": {
+        "ms": { "check": 450, "step": 11640, "reads": 2340, "keep": 140, "store": 130 },
+        "cpuMs": { "check": 720, "step": 12220, "reads": 2570, "keep": 380, "store": 70 }
+      }
+    }
+  ]
+}
+```
+
 **The declaration's key.** The records are stored under a key of the
 declaration alone: the command, the environment, the executables it names, the
 platform and the labels it depends on. No file is in it. A run sees only its
@@ -580,6 +625,18 @@ A tracer changes what a few programs can do: one that gains privileges, as
 therefore followed by an untraced run, and the untraced run is the verdict. When
 it passes, nothing is stored and the declaration is not traced again for a day;
 until then it is keyed by its `data`.
+
+A run that opened a network connection, or reached a program outside the run,
+stores nothing whether its reads are recorded or not. Recording it again would
+cost time and store nothing, so for a day after such a run the declaration runs
+without the tracer. It still runs every time, and its line says why:
+
+```text
+//:install  not cached: it opened a network connection (npm to 104.16.4.34 port 443), when its reads were last recorded; they are recorded again a day after that run
+```
+
+The first run after that day is recorded again, and is stored when it no
+longer reaches outside.
 
 **Hosts.** Observation needs Linux and `strace` 5.3 or newer. Only file-system
 calls stop the traced process: one lint command that makes 1,000 of them took

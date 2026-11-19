@@ -18,6 +18,8 @@ import * as Net from "node:net"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
+import type * as Executor from "../src/Executor.ts"
+import * as CacheEvidence from "../src/internal/CacheEvidence.ts"
 import * as ObservedReads from "../src/internal/ObservedReads.ts"
 import { executeEffect, ExecutionServices, executionServicesLive } from "../src/internal/PackageRunner.ts"
 import { plan } from "../src/PackageExec.ts"
@@ -135,10 +137,13 @@ const fixture = async (settings: FixtureOptions = {}) => {
         )
       ))
     reasons.splice(0, reasons.length, ...summary.results.map((result) => result.notReused))
+    summaries.push(summary)
     return Object.fromEntries(summary.results.map((result) => [result.label.split(":")[1]!, result.status]))
   }
   /** Why each target of the last run was not reused, in the run's order. */
   const reasons: Array<string | undefined> = []
+  /** Every run's summary, in order. */
+  const summaries: Array<Executor.Summary> = []
   /** A program that stands where the tracer does and runs `body` with the command in `"$@"` and the trace file in `$out`. */
   const tracer = async (body: string): Promise<ExecutionServices> => {
     const file = Path.join(base, "tools", "tracer")
@@ -160,7 +165,7 @@ const fixture = async (settings: FixtureOptions = {}) => {
   /** What a run's traces left behind: nothing, once the run is over. */
   const traceFiles = async (): Promise<ReadonlyArray<string>> =>
     (await Fs.readdir(Path.join(root, ".flows", "tmp")).catch(() => [])).filter((name) => name.startsWith("reads-"))
-  return { root, write, run, node, logs, reasons, tracer, attempts, traceFiles }
+  return { base, root, write, run, node, logs, reasons, summaries, tracer, attempts, traceFiles }
 }
 
 describe("a plan", () => {
@@ -437,6 +442,93 @@ describe("an observed test", () => {
       await new Promise((resolve) => server.close(resolve))
     }
   })
+
+  tracedIt("runs without the recording for a day after a run that reached outside it", async () => {
+    const server = Net.createServer((socket) => socket.end())
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    try {
+      const port = (server.address() as Net.AddressInfo).port
+      const connecting =
+        `${process.execPath} -e "require('net').connect(${port}, '127.0.0.1').on('connect', function () { this.end() })"\n` +
+        "case \"$(/bin/cat input.txt)\" in *fail*) exit 1 ;; esac"
+      const { base, logs, root, run, tracer, write } = await fixture({ check: connecting })
+      const reason = `it reached a program outside the run on local port ${port}`
+      expect(await run()).toEqual({ check: "ran" })
+      const evidence = Path.join(root, ".flows", "evidence")
+      const [name] = (await Fs.readdir(evidence)).filter((entry) => entry.endsWith(".outside.json"))
+      const file = Path.join(evidence, name!)
+      const remembered = JSON.parse(await Fs.readFile(file, "utf8")) as { readonly at: number }
+      expect(remembered).toEqual({
+        format: "smthrs-reached-outside/1",
+        at: expect.any(Number),
+        label: "//:check",
+        reason
+      })
+      // A tracer that says when it is started: the next run starts none, and stores nothing as before.
+      const marker = Path.join(base, "traced")
+      const telling = await tracer(`: > ${marker}\n"$@"`)
+      expect(await run(["check"], telling)).toEqual({ check: "ran" })
+      expect(NodeFs.existsSync(marker)).toBe(false)
+      expect(logs).toContain(
+        `//:check  not cached: ${reason}, when its reads were last recorded; they are recorded again a day after that run`
+      )
+      // The run is the verdict, recorded or not.
+      await write("input.txt", "fail\n")
+      expect(await run(["check"], telling)).toEqual({ check: "failed" })
+      expect(NodeFs.existsSync(marker)).toBe(false)
+      await write("input.txt", "pass\n")
+      // A day after the recorded run its reads are recorded again.
+      await Fs.writeFile(file, JSON.stringify({ ...remembered, at: remembered.at - CacheEvidence.attemptMemoryMs }))
+      expect(await run(["check"], telling)).toEqual({ check: "ran" })
+      expect(NodeFs.existsSync(marker)).toBe(true)
+    } finally {
+      await new Promise((resolve) => server.close(resolve))
+    }
+  })
+
+  tracedIt("records a run that reached outside it again when that could not be remembered", async () => {
+    const server = Net.createServer((socket) => socket.end())
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    try {
+      const port = (server.address() as Net.AddressInfo).port
+      const connecting =
+        `${process.execPath} -e "require('net').connect(${port}, '127.0.0.1').on('connect', function () { this.end() })"`
+      const { logs, root, run, write } = await fixture({ check: connecting })
+      // The place it is remembered is taken by a file.
+      await write(Path.join(root, ".flows", "evidence"), "in the way\n")
+      expect(await run()).toEqual({ check: "ran" })
+      expect(await run()).toEqual({ check: "ran" })
+      const line = `//:check  not cached: it reached a program outside the run on local port ${port}`
+      expect(logs.filter((entry) => entry === line).length).toBe(2)
+    } finally {
+      await new Promise((resolve) => server.close(resolve))
+    }
+  })
+
+  tracedIt("says what each part of its run took", async () => {
+    const { run, summaries, write } = await fixture()
+    expect(await run()).toEqual({ check: "ran" })
+    const first = summaries[0]!
+    const ran = first.results[0]!.parts!
+    // The command, reading what it read and storing the record are timed; so is the look at the records before.
+    expect(Object.keys(ran.ms).sort()).toEqual(["check", "keep", "reads", "step", "store"])
+    for (const ms of Object.values(ran.ms)) expect(ms).toBeGreaterThanOrEqual(0)
+    expect(ran.ms["step"]).toBeGreaterThan(0)
+    expect(ran.ms["reads"]).toBeGreaterThan(0)
+    // The parts are within the target's own time.
+    expect(Object.values(ran.ms).reduce((sum, ms) => sum + ms, 0)).toBeLessThanOrEqual(first.results[0]!.durationMs + 1)
+    // Linux says what the command's processes used.
+    expect(ran.cpuMs?.["step"]).toBeGreaterThan(0)
+    expect(Object.keys(first.parts!.ms)).toContain("answer")
+    // A run answered from its record ran no command and read no trace.
+    expect(await run()).toEqual({ check: "hit" })
+    expect(summaries[1]!.results[0]!.parts).toBeUndefined()
+    expect(Object.keys(summaries[1]!.parts!.ms)).toContain("answer")
+    // One that has to run again says what holding its record against the files took.
+    await write("input.txt", "pass, changed\n")
+    expect(await run()).toEqual({ check: "ran" })
+    expect(summaries[2]!.results[0]!.parts!.ms["check"]).toBeGreaterThanOrEqual(0)
+  })
 })
 
 /**
@@ -533,6 +625,8 @@ const job = async (
   })
   const reasons: Record<string, string | undefined> = {}
   const unstored: Record<string, string | undefined> = {}
+  /** What each step of the last run spent its time on, where the run timed any part. */
+  const spent: Record<string, Executor.Parts | undefined> = {}
   /** Plans and executes the named targets; answers each step's status by name. */
   const run = async (
     names: ReadonlyArray<string> = ["test"],
@@ -546,9 +640,11 @@ const job = async (
       ))
     for (const name of Object.keys(reasons)) delete reasons[name]
     for (const name of Object.keys(unstored)) delete unstored[name]
+    for (const name of Object.keys(spent)) delete spent[name]
     const steps = summary.results.filter((result) => result.target === "Shell.Test")
     for (const result of steps) {
       const name = result.label.split(":")[1]!
+      if (result.parts !== undefined) spent[name] = result.parts
       if (result.notReused !== undefined) reasons[name] = result.notReused
       if (result.notStored !== undefined) unstored[name] = result.notStored
     }
@@ -568,7 +664,7 @@ const job = async (
   /** The archives kept beside the cache, by name. */
   const kept = async (): Promise<ReadonlyArray<string>> =>
     (await Fs.readdir(Path.join(root, ".flows", "kept")).catch(() => [])).filter((name) => name.endsWith(".tar")).sort()
-  return { base, outside, root, write, run, ran, checkout, exists, read, kept, logs, reasons, unstored }
+  return { base, outside, root, write, run, ran, checkout, exists, read, kept, logs, reasons, spent, unstored }
 }
 
 const all = (status: string) => ({ install: status, build: status, lint: status, test: status })
@@ -656,7 +752,7 @@ describe("a job of observed steps", () => {
   })
 
   tracedIt("puts back what the steps before left when a step after them runs, and runs only that step", async () => {
-    const { checkout, exists, kept, logs, ran, read, reasons, run, write } = await job()
+    const { checkout, exists, kept, logs, ran, read, reasons, run, spent, write } = await job()
     expect(await run()).toEqual(all("ran"))
     await ran()
     // What the install and the build left is kept beside the cache; the lint and the test left nothing.
@@ -667,6 +763,9 @@ describe("a job of observed steps", () => {
     expect(await run()).toEqual({ install: "hit", build: "hit", lint: "hit", test: "ran" })
     expect(await ran()).toEqual(["test"])
     expect(reasons).toEqual({ test: "tests/t.txt changed" })
+    // The step that ran says what putting those files back took; the steps that did not run timed nothing.
+    expect(Object.keys(spent)).toEqual(["test"])
+    expect(spent["test"]?.ms["putBack"]).toBeGreaterThan(0)
     expect([read("deps/installed.txt"), read("deps/built.txt")]).toEqual(["locked 1\n", "locked 1\nsource 1\n"])
     expect(logs).toContain("//:install  what it left is put back for //:test")
     expect(logs).toContain("//:build  what it left is put back for //:test")

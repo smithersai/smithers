@@ -84,6 +84,7 @@ import {
   takesExclusiveTreePermit,
   workspaceRootToken
 } from "./PackagePlanner.ts"
+import * as Parts from "./Parts.ts"
 import * as Path from "./Path.ts"
 import * as PathTools from "./PathTools.ts"
 import * as RulePolicy from "./RulePolicy.ts"
@@ -825,6 +826,12 @@ type SpawnOutcome = Extract<ExecOutcome, { readonly ok: false }> | {
 export const executeEffect = (
   planned: PackagePlan,
   options: ExecuteOptions
+): Effect.Effect<Executor.Summary, unknown> => Effect.suspend(() => executeWith(planned, options, Parts.ledger()))
+
+const executeWith = (
+  planned: PackagePlan,
+  options: ExecuteOptions,
+  parts: Parts.Ledger
 ): Effect.Effect<Executor.Summary, unknown> =>
   Effect.scoped(Effect.gen(function*() {
     const services = yield* ExecutionServices
@@ -836,6 +843,17 @@ export const executeEffect = (
     const reporter = Reporter.of(options)
     const log = reporter.note
     const startedAt = performance.now()
+    Parts.beforeRun(parts)
+    /** Times a part of a target's run, or of the run itself when `label` is undefined. */
+    const timed = <A, E, R>(
+      label: string | undefined,
+      part: string,
+      body: Effect.Effect<A, E, R>
+    ): Effect.Effect<A, E, R> =>
+      Effect.suspend(() => {
+        const end = parts.begin(label, part)
+        return Effect.ensuring(body, Effect.sync(end))
+      })
     // Stable across consumers and candidate trees, fresh for each execute call,
     // including concurrent commands embedded in the same Node process.
     const serviceInvocationId = randomUUID()
@@ -906,7 +924,7 @@ export const executeEffect = (
     const machinesKept = planned.workList.some((node) => node.machine !== undefined)
       ? yield* Effect.acquireRelease(
         joined(() => Machine.prepare(NodeFs.realpathSync(root), hostEnvironment)),
-        (kept) => joined(() => Machine.remove(kept)).pipe(Effect.ignore)
+        (kept) => timed(undefined, "machinesRemoved", joined(() => Machine.remove(kept)).pipe(Effect.ignore))
       )
       : undefined
     /** The machines made so far, by name, and the ones being made. */
@@ -936,9 +954,11 @@ export const executeEffect = (
         const pending = makingMachines.get(name)
         if (pending !== undefined) return pending
         const began = performance.now()
+        const made = parts.begin(node.label, "machine")
         const making = startOf()
           .then((start) => Machine.make({ ...start, machine: Machine.named(start.kept, start.root, name) }))
           .then((machine) => {
+            made()
             madeMachines.set(name, machine)
             log(`smthrs: machine ${name} has a fresh checkout, made in ${Math.round(performance.now() - began)} ms`)
             return machine
@@ -3031,15 +3051,25 @@ export const executeEffect = (
           // A target on another machine reads nothing this one left.
           if (!together(producer, node)) continue
           putBack.add(producer.label)
-          yield* onMachine(producer)
-          if (yield* restore(producer, producer.observed!, stored)) {
-            log(`${producer.label}  what it left is put back for ${node.label}`)
-            continue
-          }
-          log(`${producer.label}  what it left could not be put back; it runs for ${node.label}`)
-          const ran = yield* spawnConsumer(producer)
-          if (!ran.ok) return `${producer.label}, which this target waits for, failed when it ran again: ${ran.error}`
-          wroteBy.set(producer.label, ++writes)
+          const failed = yield* timed(
+            node.label,
+            "putBack",
+            Effect.gen(function*() {
+              yield* onMachine(producer)
+              if (yield* restore(producer, producer.observed!, stored)) {
+                log(`${producer.label}  what it left is put back for ${node.label}`)
+                return undefined
+              }
+              log(`${producer.label}  what it left could not be put back; it runs for ${node.label}`)
+              const ran = yield* spawnConsumer(producer)
+              if (!ran.ok) {
+                return `${producer.label}, which this target waits for, failed when it ran again: ${ran.error}`
+              }
+              wroteBy.set(producer.label, ++writes)
+              return undefined
+            })
+          )
+          if (failed !== undefined) return failed
         }
         return undefined
       })
@@ -3153,6 +3183,7 @@ export const executeEffect = (
         if (answered.has(node.label)) return green("hit")
         const machine = yield* onMachine(node)
         const place = machine?.tree ?? root
+        const checked = parts.begin(node.label, "check")
         const earlier = ObservedReads.decode((yield* cacheGet(node, observed.key))?.output)
         const awaited = awaitedBy(node)
         let why: string | undefined
@@ -3198,8 +3229,10 @@ export const executeEffect = (
               false
             )
           }
+          checked()
           return green("hit")
         }
+        checked()
         if (why !== undefined) {
           unreusedReasons.set(node.label, why)
           log(`${node.label}  runs again: ${why}`)
@@ -3213,6 +3246,20 @@ export const executeEffect = (
               `they are recorded again a day after that run. That run's output is in ${attemptPath}`
           )
           return undefined
+        }
+        // A run that reached the network, or a program it did not start, stores nothing whether its reads are
+        // recorded or not: for a day after such a run the declaration runs without the recording.
+        const outside = yield* joined(() => CacheEvidence.reachedOutside(root, cacheDirectory, observed.key))
+        if (outside !== undefined) {
+          const plain = yield* timed(node.label, "step", spawnConsumer(node))
+          if (!plain.ok) return fail(plain.error)
+          wroteHere.delete(node.label)
+          unstored(
+            node,
+            outside,
+            ", when its reads were last recorded; they are recorded again a day after that run"
+          )
+          return green("ran")
         }
         // One directory for a run's trace, removed with whatever the run left in it.
         const directory = NodePath.join(
@@ -3229,11 +3276,15 @@ export const executeEffect = (
           const startedMs = (yield* joined(() => Fs.stat(traceFile))).ctimeMs
           // The values of the variables the run is given are looked for in what it prints and in what it starts.
           const listener = ObservedReads.listening(observed.variables)
-          const attempt = yield* spawnConsumer(
-            node,
-            undefined,
-            (argv) => ObservedReads.command(host.tracer, traceFile, argv),
-            listener.hear
+          const attempt = yield* timed(
+            node.label,
+            "step",
+            spawnConsumer(
+              node,
+              undefined,
+              (argv) => ObservedReads.command(host.tracer, traceFile, argv),
+              listener.hear
+            )
           )
           if (!attempt.ok) {
             log(`${node.label}  failed while its reads were recorded; it runs again without the recording`)
@@ -3256,60 +3307,74 @@ export const executeEffect = (
             machine === undefined || (yield* joined(ownTmp)) === undefined
               ? []
               : Machine.mountsOf(NodeFs.realpathSync(machine.tmp), sightOf(machine, hostEnvironment["PATH"]))
-          const read = yield* Effect.exit(joined(async () =>
-            ObservedReads.observe(
-              ObservedReads.read(listener.lines(ObservedReads.linesOf(traceFile)), NodePath.resolve(place, node.cwd)),
-              {
-                variables: {
-                  values: observed.variables,
-                  text: (node.argv ?? []).join("\n"),
-                  shown: listener.names
-                },
-                root: NodeFs.realpathSync(place),
-                ignore: [
-                  ...ObservedReads.ignored(
-                    place,
-                    machine?.home ?? NodeOs.homedir(),
-                    cacheDirectory,
-                    observed.ignore,
-                    machine?.tmp
-                  ),
-                  // The cache is the build's own wherever a target runs.
-                  ...(machine === undefined ? [] : ObservedReads.ignored(root, machine.home, cacheDirectory, []))
-                ],
-                startedMs,
-                // What a run left in its machine's home or temporary directory is the machine's, wherever machines
-                // are kept: it is kept with what the run left in the tree, and put back on the next machine.
-                temporary: machine === undefined ? temporary() : [...temporary(), machine.home, machine.tmp],
-                mounts,
-                // In the order they ran or would have run: the last to write a path is the one it came from.
-                producers: inOrder.flatMap((earlier) => {
-                  const producer = before.has(earlier.label) ? wroteHere.get(earlier.label) : undefined
-                  return producer === undefined ? [] : [producer]
-                })
-              }
-            )
-          ))
+          const read = yield* timed(
+            node.label,
+            "reads",
+            Effect.exit(joined(async () =>
+              ObservedReads.observe(
+                ObservedReads.read(listener.lines(ObservedReads.linesOf(traceFile)), NodePath.resolve(place, node.cwd)),
+                {
+                  variables: {
+                    values: observed.variables,
+                    text: (node.argv ?? []).join("\n"),
+                    shown: listener.names
+                  },
+                  root: NodeFs.realpathSync(place),
+                  ignore: [
+                    ...ObservedReads.ignored(
+                      place,
+                      machine?.home ?? NodeOs.homedir(),
+                      cacheDirectory,
+                      observed.ignore,
+                      machine?.tmp
+                    ),
+                    // The cache is the build's own wherever a target runs.
+                    ...(machine === undefined ? [] : ObservedReads.ignored(root, machine.home, cacheDirectory, []))
+                  ],
+                  startedMs,
+                  // What a run left in its machine's home or temporary directory is the machine's, wherever machines
+                  // are kept: it is kept with what the run left in the tree, and put back on the next machine.
+                  temporary: machine === undefined ? temporary() : [...temporary(), machine.home, machine.tmp],
+                  mounts,
+                  // In the order they ran or would have run: the last to write a path is the one it came from.
+                  producers: inOrder.flatMap((earlier) => {
+                    const producer = before.has(earlier.label) ? wroteHere.get(earlier.label) : undefined
+                    return producer === undefined ? [] : [producer]
+                  })
+                }
+              )
+            ))
+          )
           if (Exit.isFailure(read)) {
             unstored(node, "what it read could not be recorded", `: ${Diagnostic.describe(Cause.squash(read.cause))}`)
             return green("ran")
           }
           if ("refusal" in read.value) {
+            const reason = read.value.outside
+            if (reason !== undefined) {
+              yield* joined(() =>
+                CacheEvidence.rememberReachedOutside(root, cacheDirectory, observed.key, { label: node.label, reason })
+                  .catch(() => undefined)
+              )
+            }
             unstored(node, read.value.refusal)
             return green("ran")
           }
           const { made, touched } = read.value
           // What the run read and left on its machine, outside the copy, is written from the machine.
-          const record = yield* keep(
-            node,
-            observed,
-            machine === undefined ? read.value : Machine.recorded(read.value, machine)
+          const record = yield* timed(
+            node.label,
+            "keep",
+            keep(node, observed, machine === undefined ? read.value : Machine.recorded(read.value, machine))
           )
           const stored = ObservedReads.store(record, earlier)
           if (stored === undefined) unstored(node, "it read more paths than one record holds")
           else {
-            yield* cachePut(node, stored, observed.key, false)
-            yield* prune(observed, stored)
+            yield* timed(
+              node.label,
+              "store",
+              Effect.andThen(cachePut(node, stored, observed.key, false), prune(observed, stored))
+            )
             wroteHere.set(node.label, { label: node.label, id: record.id!, made, touched })
           }
           return green("ran")
@@ -5289,10 +5354,11 @@ export const executeEffect = (
           ...(outcome.error === undefined ? {} : { error: outcome.error }),
           ...(outcome.blockedBy === undefined ? {} : { blockedBy: outcome.blockedBy }),
           ...(notStored === undefined ? {} : { notStored }),
-          ...(unreusedReasons.has(label) ? { notReused: unreusedReasons.get(label) } : {})
+          ...(unreusedReasons.has(label) ? { notReused: unreusedReasons.get(label) } : {}),
+          ...(parts.of(label) === undefined ? {} : { parts: parts.of(label) })
         })
       })
-    answered = yield* answerTogether()
+    answered = yield* timed(undefined, "answer", answerTogether())
     yield* Executor.scheduleEffect(planned.workList, jobs, runOne, options.signal, {
       stop: () => stoppedBy !== undefined
     })
@@ -5326,14 +5392,18 @@ export const executeEffect = (
     }
     reporter.summary(summary)
     return summary
-  })).pipe(Effect.provideService(ServiceSupervisor.Output, (spec) =>
-    OutputStream.make({
-      write: (stream, text) => Reporter.of(options).toolOutput(spec.key, stream, text),
-      environment: { ...(options.environment ?? process.env), ...spec.env },
-      sensitiveNames: options.remoteCache === undefined
-        ? []
-        : Workspace.credentialEnvNames(options.remoteCache.credentials)
-    })))
+  })).pipe(
+    // The machines are removed as the scope closes, so the run's own parts are read after it.
+    Effect.map((summary) => ({ ...summary, parts: parts.of(undefined) })),
+    Effect.provideService(ServiceSupervisor.Output, (spec) =>
+      OutputStream.make({
+        write: (stream, text) => Reporter.of(options).toolOutput(spec.key, stream, text),
+        environment: { ...(options.environment ?? process.env), ...spec.env },
+        sensitiveNames: options.remoteCache === undefined
+          ? []
+          : Workspace.credentialEnvNames(options.remoteCache.credentials)
+      }))
+  )
 
 /**
  * Promise boundary for the CLI host. The Effect owns all invocation resources.

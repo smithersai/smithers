@@ -44,6 +44,7 @@ import type {
 import {
   combine,
   type Mode,
+  type Parts,
   type RunRecord,
   type StatusCounts,
   type TargetResult,
@@ -949,7 +950,8 @@ export const recordOf = (
   results: ReadonlyArray<TargetResult>,
   commit: string,
   durationMs: number,
-  mode?: Mode
+  mode?: Mode,
+  parts?: Parts | undefined
 ): RunRecord => {
   const counts = countsOf(results)
   return {
@@ -960,8 +962,50 @@ export const recordOf = (
     commit,
     durationMs,
     cache: mode !== undefined,
-    ...(mode === undefined ? {} : { mode })
+    ...(mode === undefined ? {} : { mode }),
+    ...(parts === undefined ? {} : { parts })
   }
+}
+
+/** Adds every part of `more` to `into`. */
+const addParts = (into: Record<string, number>, more: Readonly<Record<string, number>> | undefined): void => {
+  for (const [part, ms] of Object.entries(more ?? {})) into[part] = (into[part] ?? 0) + ms
+}
+
+/**
+ * What a run of Smithers build spent beside its targets, with the time the
+ * replay spent checking the commit out before it (`checkout`). Nothing when
+ * Smithers build timed no part.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const withCheckout = (run: Parts | undefined, checkoutMs: number): Parts | undefined =>
+  run === undefined ? undefined : { ...run, ms: { checkout: checkoutMs, ...run.ms } }
+
+/**
+ * Where one run's wall time went: the parts of the run and of each of its
+ * targets, added up by name, and `rest`, the wall time no part holds, which
+ * is 0 when targets ran at once and their parts add up to more. Nothing when
+ * the record holds no part: a baseline, or a Smithers build that timed none.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const spentBy = (record: RunRecord): Parts | undefined => {
+  if (record.parts === undefined) return undefined
+  const ms: Record<string, number> = {}
+  const cpuMs: Record<string, number> = {}
+  for (const parts of [record.parts, ...record.results.map((result) => result.parts)]) {
+    addParts(ms, parts?.ms)
+    addParts(cpuMs, parts?.cpuMs)
+  }
+  const named = Object.values(ms).reduce((sum, part) => sum + part, 0)
+  // Targets that ran at once have parts that add up to more than the time that passed.
+  ms["rest"] = Math.max(0, Math.round((record.durationMs ?? 0) - named))
+  return { ms, ...(Object.keys(cpuMs).length === 0 ? {} : { cpuMs }) }
 }
 
 /**
@@ -980,13 +1024,15 @@ export const totalsOf = (
   cpuMs?: number | undefined
 ): RunTotals => {
   const failures = failuresOf(record.results, names)
+  const parts = spentBy(record)
   return {
     ok: record.ok,
     wallMs: record.durationMs ?? 0,
     workMs: record.results.reduce((sum, result) => sum + result.durationMs, 0),
     counts: record.counts,
     ...(failures.length === 0 ? {} : { failures }),
-    ...(cpuMs === undefined ? {} : { cpuMs })
+    ...(cpuMs === undefined ? {} : { cpuMs }),
+    ...(parts === undefined ? {} : { parts })
   }
 }
 

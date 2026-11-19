@@ -110,5 +110,13 @@ describe("the wall time of one commit", () => {
       expect(wallMs).toBeGreaterThanOrEqual(hour)
       expect(wallMs).toBeLessThan(2 * hour)
     }
+    // Normal mode says where its time went: the checkout, then what Smithers build timed, and what is left.
+    const spent = commit?.normal.parts?.ms ?? {}
+    expect(spent["checkout"]).toBeGreaterThanOrEqual(hour)
+    for (const part of ["start", "plan", "answer", "rest"]) expect(spent[part]).toBeGreaterThanOrEqual(0)
+    expect(spent["start"]).toBeGreaterThan(0)
+    const named = Object.values(spent).reduce((sum, ms) => sum + ms, 0)
+    expect(Math.abs(named - (commit?.normal.wallMs ?? 0))).toBeLessThan(50)
+    expect(commit?.baseline).not.toHaveProperty("parts")
   }, 600_000)
 })

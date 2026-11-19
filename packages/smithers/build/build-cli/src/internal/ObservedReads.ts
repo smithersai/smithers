@@ -296,17 +296,27 @@ export interface Trace {
   readonly fetched: ReadonlySet<string>
   /** Why what the run read cannot all be known, when it cannot. */
   readonly refusals: ReadonlyArray<string>
+  /**
+   * Of those, the ones that say the run reached outside itself: the network,
+   * or a program it did not start. Such a run stores nothing however it is
+   * read, so the next runs of its declaration need no trace.
+   */
+  readonly outside?: ReadonlyArray<string> | undefined
 }
 
 /** Decodes a quoted string as the tracer prints it; `undefined` when it is cut short or malformed. */
 const unquote = (text: string): string | undefined => {
   if (!text.startsWith("\"") || !text.endsWith("\"") || text.length < 2) return undefined
-  const bytes: Array<number> = []
   const body = text.slice(1, -1)
+  // The tracer escapes every byte that is not printable ASCII, so a string with no escape is itself. Nearly every
+  // path of a trace is one, and a trace holds hundreds of thousands.
+  if (!body.includes("\\")) return body
+  const bytes: Array<number> = []
   for (let index = 0; index < body.length; index += 1) {
-    const character = body[index]!
-    if (character !== "\\") {
-      for (const byte of Buffer.from(character, "utf8")) bytes.push(byte)
+    const code = body.charCodeAt(index)
+    if (code !== backslash) {
+      if (code < 0x80) bytes.push(code)
+      else for (const byte of Buffer.from(body[index]!, "utf8")) bytes.push(byte)
       continue
     }
     index += 1
@@ -316,19 +326,23 @@ const unquote = (text: string): string | undefined => {
       bytes.push(simple)
       continue
     }
-    const hex = /^x([0-9a-fA-F]{2})/.exec(body.slice(index))
-    if (hex !== null) {
-      bytes.push(Number.parseInt(hex[1]!, 16))
+    if (next === "x" && hexDigits.test(body.slice(index + 1, index + 3))) {
+      bytes.push(Number.parseInt(body.slice(index + 1, index + 3), 16))
       index += 2
       continue
     }
-    const octal = /^[0-7]{1,3}/.exec(body.slice(index))
-    if (octal === null) return undefined
-    bytes.push(Number.parseInt(octal[0], 8) & 0xff)
-    index += octal[0].length - 1
+    let end = index
+    while (end < index + 3 && end < body.length && isOctal(body.charCodeAt(end))) end += 1
+    if (end === index) return undefined
+    bytes.push(Number.parseInt(body.slice(index, end), 8) & 0xff)
+    index = end - 1
   }
   return Buffer.from(bytes).toString("utf8")
 }
+
+const backslash = 0x5c
+const hexDigits = /^[0-9a-fA-F]{2}$/
+const isOctal = (code: number): boolean => code >= 0x30 && code <= 0x37
 
 const escapes: { readonly [character: string]: number } = {
   "\"": 0x22,
@@ -343,6 +357,8 @@ const escapes: { readonly [character: string]: number } = {
   "e": 0x1b
 }
 
+const space = /\s/
+
 /** Splits a call's arguments at the commas that are not inside a string, a structure or a descriptor's path. */
 const split = (text: string): ReadonlyArray<string> => {
   const parts: Array<string> = []
@@ -355,9 +371,13 @@ const split = (text: string): ReadonlyArray<string> => {
         if (text[index] === "\\") index += 1
       }
     } else if (character === "<" && depth === 0 && /^(?:\d+|AT_FDCWD)$/.test(text.slice(start, index).trim())) {
-      // A descriptor's path ends at the `>` that closes the argument.
-      const close = /^>(?:,\s|$)/
-      for (index += 1; index < text.length && !close.test(text.slice(index)); index += 1);
+      // A descriptor's path ends at the `>` that closes the argument: the last character, or the one before a
+      // comma and a space.
+      for (index += 1; index < text.length; index += 1) {
+        if (text[index] !== ">") continue
+        if (index + 1 === text.length) break
+        if (text[index + 1] === "," && index + 2 < text.length && space.test(text[index + 2]!)) break
+      }
     } else if (character === "{" || character === "[" || character === "(") depth += 1
     else if (character === "}" || character === "]" || character === ")") depth -= 1
     else if (character === "," && depth === 0) {
@@ -489,6 +509,12 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
   const changed = new Set<string>()
   const started = new Map<string, number>()
   const refusals = new Set<string>()
+  const outside = new Set<string>()
+  /** Refuses a run that reached outside itself. */
+  const reach = (how: string): void => {
+    refusals.add(how)
+    outside.add(how)
+  }
   const first = (map: Map<string, number>, path: string, at: number): void => {
     if (!map.has(path)) map.set(path, at)
   }
@@ -820,15 +846,15 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
         if (installing.has(pid) || installed.has(pid)) return
         if (family === "AF_UNIX") {
           if (key === undefined || !bound.has(key)) {
-            refusals.add(`it reached a program outside the run through the socket ${unix ?? "it was given"}`)
+            reach(`it reached a program outside the run through the socket ${unix ?? "it was given"}`)
           }
         } else if (family === "AF_INET" || family === "AF_INET6") {
           if (!loopback(address)) {
             // The first connection is named; a run that opened one usually opened many.
-            if (!networked) refusals.add(`it opened a network connection (${reached(programs.get(pid), address)})`)
+            if (!networked) reach(`it opened a network connection (${reached(programs.get(pid), address)})`)
             networked = true
           } else if (!ephemeral && !bound.has(key!)) {
-            refusals.add(`it reached a program outside the run on local port ${portOf(address)}`)
+            reach(`it reached a program outside the run on local port ${portOf(address)}`)
           }
         }
         return
@@ -942,7 +968,19 @@ export const read = (lines: () => Iterable<string>, cwd: string): Trace => {
   // Every traced run starts a program, so a trace without a line is not a run's trace.
   if (root === undefined) refusals.add("its trace is empty")
   for (const [pid, open] of pending) cutOff(pid, open)
-  return { found, missing, listed, made, emptied, changed, started, removed, fetched, refusals: [...refusals] }
+  return {
+    found,
+    missing,
+    listed,
+    made,
+    emptied,
+    changed,
+    started,
+    removed,
+    fetched,
+    refusals: [...refusals],
+    outside: [...outside]
+  }
 }
 
 /**
@@ -1346,8 +1384,11 @@ export const observe = (
     /** The host variables the run was given, whose values are in the record only when the run could have used them. */
     readonly variables?: Variables | undefined
   }
-): Observation | { readonly refusal: string } => {
-  if (trace.refusals.length > 0) return { refusal: trace.refusals[0]! }
+): Observation | { readonly refusal: string; readonly outside?: string | undefined } => {
+  if (trace.refusals.length > 0) {
+    const outside = trace.outside?.[0]
+    return { refusal: trace.refusals[0]!, ...(outside === undefined ? {} : { outside }) }
+  }
   const io = options.io ?? defaultIo
   const variables = options.variables
   const variableNames = Object.keys(variables?.values ?? {}).sort(byCodeUnit)
@@ -1858,7 +1899,7 @@ export const changed = (
     if (heldAs(values[name]) !== held) return `the variable ${name} has another value`
   }
   const absolute = (path: string): string => path === "." ? root : path.startsWith("/") ? path : `${root}/${path}`
-  for (const [path, state, other] of stored.reads) {
+  for (const [path, state, other] of cheapestFirst(stored.reads, absolute, io)) {
     const now = measured(absolute(path))
     if (now === state || now === other) continue
     if (now === absent) return `${path} is gone`
@@ -1894,6 +1935,32 @@ export const changed = (
     }
   }
   return undefined
+}
+
+/**
+ * The paths a run read, in the order they are held against the host: the
+ * workspace's own before the rest, and the smallest files first. A change
+ * makes a run happen whichever path shows it, and a commit changes the
+ * workspace's small files, never the tools or the packages a step installed:
+ * held last, those are not read at all when the run has to happen.
+ */
+const cheapestFirst = (
+  reads: Record["reads"],
+  absolute: (path: string) => string,
+  io: Io
+): ReadonlyArray<Record["reads"][number]> => {
+  const cost = (path: string): number => {
+    try {
+      const stats = io.lstat(absolute(path))
+      return stats.isFile() ? stats.size : 0
+    } catch {
+      return 0
+    }
+  }
+  return reads
+    .map((read, index) => [read, read[0].startsWith("/") ? 1 : 0, cost(read[0]), index] as const)
+    .sort((left, right) => left[1] - right[1] || left[2] - right[2] || left[3] - right[3])
+    .map(([read]) => read)
 }
 
 /**

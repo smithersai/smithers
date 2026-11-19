@@ -150,7 +150,9 @@ reason; see
 
 The structured result on standard output reports the verb, pattern, jobs,
 duration, counts, verdict, one report per target, and `notStored` when a green
-result was not stored.
+result was not stored. Each report carries `parts`, the time its run spent on
+each part of the work, when the run timed any; see
+[Where the time went](caching.md#results-reused-from-what-a-run-read).
 
 ## Planning only
 

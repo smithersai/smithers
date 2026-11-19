@@ -37,6 +37,7 @@ import {
   stepsThrough,
   targetsOf,
   totalsOf,
+  withCheckout,
   withoutCredentials,
   withoutFast
 } from "../../src/replay/Summary.ts"
@@ -877,6 +878,35 @@ describe("reportOf", () => {
     const record = recordOf([ran("//:b")], "c", 4)
     expect(totalsOf(record, new Map(), 250).cpuMs).toBe(250)
     expect(totalsOf(record)).not.toHaveProperty("cpuMs")
+  })
+
+  it("say where a run's wall time went, when Smithers build timed its parts", () => {
+    // The run's own parts, the replay's checkout before it, and each target's parts, by name; the rest is `rest`.
+    const run = withCheckout({ ms: { start: 900, plan: 100 }, cpuMs: { start: 1200, plan: 80 } }, 50)
+    expect(run).toEqual({ ms: { checkout: 50, start: 900, plan: 100 }, cpuMs: { start: 1200, plan: 80 } })
+    const results: ReadonlyArray<TargetResult> = [
+      { ...ran("//:a", 1300), parts: { ms: { step: 1200, reads: 60 }, cpuMs: { step: 1000, reads: 55 } } },
+      { ...ran("//:b", 700), parts: { ms: { step: 650 } } },
+      ran("//:c", 5)
+    ]
+    const timed = recordOf(results, "c", 3200, "normal", run)
+    expect(timed.parts).toEqual(run)
+    expect(totalsOf(timed).parts).toEqual({
+      ms: { checkout: 50, start: 900, plan: 100, step: 1850, reads: 60, rest: 240 },
+      cpuMs: { start: 1200, plan: 80, step: 1000, reads: 55 }
+    })
+    // Targets that ran at once add up to more than the time that passed: nothing is left over.
+    expect(totalsOf(recordOf(results, "c", 2000, "normal", run)).parts?.ms["rest"]).toBe(0)
+    // With no CPU time read anywhere, the totals hold none.
+    const wallOnly = recordOf([results[1] as TargetResult], "c", 1000, "normal", { ms: { start: 100 } })
+    expect(totalsOf(wallOnly).parts).toEqual({ ms: { start: 100, step: 650, rest: 250 } })
+    // A Smithers build that timed nothing leaves nothing to say, whatever the checkout took; so does a baseline.
+    expect(withCheckout(undefined, 50)).toBeUndefined()
+    expect(totalsOf(recordOf(results, "c", 3200, "normal"))).not.toHaveProperty("parts")
+    expect(recordOf(results, "c", 3200, "normal")).not.toHaveProperty("parts")
+    // A record with no duration has no time to split.
+    const { durationMs: _durationMs, ...timeless } = timed
+    expect(totalsOf(timeless).parts?.ms["rest"]).toBe(0)
   })
 
   it("adds up each way's CPU time over the commits the wall times cover, when each has one", () => {

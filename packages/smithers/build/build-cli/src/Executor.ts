@@ -68,6 +68,28 @@ export interface TargetReport {
    * that had a stored result and ran again.
    */
   readonly notReused?: string | undefined
+  /**
+   * What the target's run spent its time on, part by part, where the run
+   * timed any: making its machine (`machine`), putting back what earlier
+   * steps left (`putBack`), holding stored records against the checkout
+   * (`check`), the command (`step`), reading what the command read
+   * (`reads`), keeping what it left (`keep`) and storing its record
+   * (`store`). The rest of `durationMs` is in none of them.
+   */
+  readonly parts?: Parts | undefined
+}
+
+/**
+ * Wall time by part, in milliseconds, and CPU time by part where the host's
+ * processes can be read. The CPU time is the build's own and that of every
+ * process it waited for; it is exact while one target runs at a time.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Parts {
+  readonly ms: Readonly<Record<string, number>>
+  readonly cpuMs?: Readonly<Record<string, number>> | undefined
 }
 
 /**
@@ -136,6 +158,14 @@ export interface Summary {
    * every green result was stored.
    */
   readonly notStored?: ReadonlyArray<NotStoredCount> | undefined
+  /**
+   * What the run itself spent outside its targets: the start of the program
+   * up to its command (`start`), loading the workspace and deciding what to
+   * run (`plan`), finding the targets answered without running (`answer`)
+   * and removing the machines it made (`machinesRemoved`). `start` and
+   * `plan` are present for the first run of a `smthrs` process.
+   */
+  readonly parts?: Parts | undefined
 }
 
 /**

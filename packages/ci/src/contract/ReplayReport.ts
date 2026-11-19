@@ -12,7 +12,7 @@
 
 import * as Schema from "effect/Schema"
 import { NotReplayed, ToolVersion, Unsupported } from "./Inventory.ts"
-import { Mode, StatusCounts, Verdict } from "./RunRecord.ts"
+import { Mode, Parts, StatusCounts, Verdict } from "./RunRecord.ts"
 import { Metrics } from "./Selection.ts"
 
 /**
@@ -55,7 +55,8 @@ export const RunTotals = Schema.Struct({
   workMs: Schema.Finite,
   counts: StatusCounts,
   failures: Schema.optionalKey(Schema.Array(StepFailure)),
-  cpuMs: Schema.optionalKey(Schema.Finite)
+  cpuMs: Schema.optionalKey(Schema.Finite),
+  parts: Schema.optionalKey(Parts)
 })
 
 /**

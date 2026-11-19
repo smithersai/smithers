@@ -195,17 +195,80 @@ export const rememberFailedAttempt = async (
   },
   now: number = Date.now()
 ): Promise<void> => {
-  const file = attemptPath(root, cacheDirectory, identity)
+  await remember(attemptPath(root, cacheDirectory, identity), { format, at: now, ...record })
+}
+
+/** Writes one remembered fact whole: a reader finds the earlier one or this one, never a part. */
+const remember = async (file: string, fact: object): Promise<void> => {
   await Fs.mkdir(NodePath.dirname(file), { recursive: true })
   const temporary = `${file}.${randomBytes(8).toString("hex")}.tmp`
   try {
-    await Fs.writeFile(temporary, JSON.stringify({ format, at: now, ...record }), { flag: "wx" })
+    await Fs.writeFile(temporary, JSON.stringify(fact), { flag: "wx" })
     await Fs.rename(temporary, file)
   } catch (cause) {
     await Fs.rm(temporary, { force: true })
     throw cause
   }
 }
+
+/** The format tag a remembered reach outside carries; any other tag is ignored. */
+const outsideFormat = "smthrs-reached-outside/1"
+
+/**
+ * Where it is remembered that a declaration's recorded run reached outside
+ * itself: `<cache directory>/evidence/<identity>.outside.json`.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const outsidePath = (root: string, cacheDirectory: string, identity: string): string =>
+  NodePath.join(root, ...cacheDirectory.split("/"), "evidence", `${identity}.outside.json`)
+
+/**
+ * Why a recorded run of this declaration stored nothing within
+ * {@link attemptMemoryMs}: it reached the network or a program outside the
+ * run, and `reason` says which. A run that does so stores nothing whether its
+ * reads are recorded or not, so for a day it runs without the recording.
+ * `undefined` when nothing is remembered: the record is missing, unreadable,
+ * malformed, expired, or from a clock that has since moved back.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const reachedOutside = async (
+  root: string,
+  cacheDirectory: string,
+  identity: string,
+  now: number = Date.now()
+): Promise<string | undefined> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(await Fs.readFile(outsidePath(root, cacheDirectory, identity), "utf8"))
+  } catch {
+    return undefined
+  }
+  if (typeof parsed !== "object" || parsed === null) return undefined
+  const record = parsed as { readonly format?: unknown; readonly at?: unknown; readonly reason?: unknown }
+  return record.format === outsideFormat && typeof record.at === "number" && typeof record.reason === "string" &&
+      now >= record.at && now - record.at < attemptMemoryMs
+    ? record.reason
+    : undefined
+}
+
+/**
+ * Remembers that a recorded run of this declaration reached outside itself,
+ * and how. A later remembering replaces it.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const rememberReachedOutside = (
+  root: string,
+  cacheDirectory: string,
+  identity: string,
+  record: { readonly label: string; readonly reason: string },
+  now: number = Date.now()
+): Promise<void> => remember(outsidePath(root, cacheDirectory, identity), { format: outsideFormat, at: now, ...record })
 
 /**
  * The lines of a failed confined run's output that name a path its

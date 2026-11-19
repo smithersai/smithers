@@ -69,6 +69,30 @@ export const Attempt = Schema.Struct({
 export type Attempt = typeof Attempt.Type
 
 /**
+ * What a run spent its time on, part by part: wall time in milliseconds by
+ * the part's name (`ms`), and CPU time the same way (`cpuMs`) where the
+ * machine's processes can be read. Smithers build times the parts of a
+ * target's run (`machine`, `putBack`, `check`, `step`, `reads`, `keep`,
+ * `store`) and of the run itself (`start`, `plan`, `answer`,
+ * `machinesRemoved`); a replay adds its own (`checkout`, `around`).
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const Parts = Schema.Struct({
+  ms: Schema.Record(Schema.String, Schema.Finite),
+  cpuMs: Schema.optionalKey(Schema.Record(Schema.String, Schema.Finite))
+})
+
+/**
+ * A decoded `Parts`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Parts = typeof Parts.Type
+
+/**
  * One target's outcome in a run. `tests` is how many tests the target ran,
  * when its runner reports that. A failed target can say why: `error` is the
  * reason, `exitCode` what its command exited with, and `command` what it ran.
@@ -89,7 +113,8 @@ export const TargetResult = Schema.Struct({
   exitCode: Schema.optionalKey(Schema.Int),
   command: Schema.optionalKey(Schema.String),
   failureDigest: Schema.optionalKey(Schema.String),
-  tests: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
+  tests: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  parts: Schema.optionalKey(Parts)
 })
 
 /**
@@ -158,6 +183,7 @@ export const RunRecord = Schema.Struct({
   mode: Schema.optionalKey(Mode),
   cache: Schema.optionalKey(Schema.Boolean),
   machine: Schema.optionalKey(Schema.String),
+  parts: Schema.optionalKey(Parts),
   shard: Schema.optionalKey(Schema.Struct({ index: Schema.Int, count: Schema.Int }))
 })
 

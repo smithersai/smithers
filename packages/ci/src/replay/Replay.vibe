@@ -37,7 +37,7 @@ import {
   writtenFiles
 } from "../contract/Parts.ts"
 import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport, StepFailure } from "../contract/ReplayReport.ts"
-import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
+import { type Parts, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
 import { check } from "../apply/index.ts"
@@ -138,6 +138,7 @@ import {
   tooFewLeft,
   totalsOf,
   trialOf,
+  withCheckout,
   type Unit,
   unitKey
 } from "./Summary.ts"
@@ -259,6 +260,13 @@ interface Measured {
   readonly wallMs: number
   /** The CPU time the first pass's steps used, when their processes could be read. */
   readonly cpuMs: number | undefined
+  /** How much of `wallMs` the checkout took. */
+  readonly checkoutMs: number
+}
+
+/** Where a first pass of Smithers build leaves what it spent beside its targets. */
+interface Spent {
+  parts?: Parts | undefined
 }
 
 /**
@@ -380,7 +388,7 @@ effect function measure<R>(
   const wallMs = (try Clock.currentTimeMillis) - equipped + (checkedOut - start)
   const results = try settle(execute, first, reruns, first.length, last, tally)
   remember(last, results)
-  return { results, wallMs, cpuMs: usedBy(used) } satisfies Measured
+  return { results, wallMs, cpuMs: usedBy(used), checkoutMs: checkedOut - start } satisfies Measured
 }
 
 /**
@@ -750,7 +758,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       commit: string,
       site: Site,
       own: Prepared,
-      applied?: Applied
+      applied?: Applied,
+      spent?: Spent
     ): Execute<Host> => (targets) => effect {
       const causes = applied?.causes
       const selected = targets ?? own.labels
@@ -783,6 +792,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       if (record === undefined && !stalled) {
         throw failure("command-failed", `smthrs ci wrote no run record: ${output.text.slice(-outputLimit)}`)
       }
+      // The first pass is the run a wall time covers: its parts are the ones kept.
+      if (spent !== undefined && spent.parts === undefined) spent.parts = record?.parts
       const recorded = record === undefined ? undefined : withReasons(record.results, output.text)
       const results = stalled
         ? stoppedResults(recorded, selected, watch.limitMs, noProgress(stall.minutes))
@@ -1190,17 +1201,18 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       try progress.say(`${at} normal`)
       // A mode starts each commit as a CI run starts: with a home and a temporary directory nothing wrote to.
       try orFail(renew(places.normal), "could not empty the home of normal mode")
+      const spent: Spent = {}
       const ran = try measure(
         checkout(normalCopy, commit, normal.place),
         equip(normal, own),
-        smithers(commit, normal, own),
+        smithers(commit, normal, own, undefined, spent),
         undefined,
         reruns,
         last.normal,
         tally,
         counting
       )
-      const normalRecord = recordOf(ran.results, commit, ran.wallMs, "normal")
+      const normalRecord = recordOf(ran.results, commit, ran.wallMs, "normal", withCheckout(spent.parts, ran.checkoutMs))
       let fastPart: Pick<ReplayCommit, "fast"> = {}
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
       flaky += flakyOf([baseRecord, normalRecord])
