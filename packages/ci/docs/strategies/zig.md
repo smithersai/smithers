@@ -267,6 +267,54 @@ name more only for `build.zig`: the edit added a blank line, the build graph
 came out the same, and Zig rebuilt nothing. Every closure holds `build.zig`
 because another edit to it can change any step.
 
+### Five commits replayed
+
+`smithers-ci replay --commits 5` on needlefish's five commits up to `06d8113`,
+on the same machine with a fixed share of its processors. Its CI is
+`just ci`: `tidy`, then `zig build test`, which runs 3,180 unit tests in one
+test binary and three small ones. Each way first runs once at the commit
+before, which fills its cache and is not counted. No step's result differed
+from CI's.
+
+| Commit    | Changed           |     As CI | As targets | What ran again                         |
+| --------- | ----------------- | --------: | ---------: | -------------------------------------- |
+| `c9950af` | two docs files    |  49.7 min |    0.8 min | nothing                                |
+| `55590ed` | `bin/base`        |  50.8 min |    2.3 min | `test`: Zig rebuilt one binary of four |
+| `a66baf9` | one file in `src` |  48.1 min |   34.3 min | `test`, every binary                   |
+| `2aee274` | one docs file     |  42.1 min |    0.4 min | nothing                                |
+| `06d8113` | 38 files          |  42.5 min |   46.5 min | `test`, every binary                   |
+| Total     |                   | 233.4 min |   84.4 min | 2.76 times faster                      |
+
+`tidy` takes a second and runs every time, because `test` follows it. On the
+second commit the step ran again and Zig, with its cache kept, rebuilt and
+ran only the binary `bin/base` is in. A change under `src` runs all 3,180
+tests again, because one binary holds them: that is what bounds the number.
+
+The same five commits with [a test binary per directory](#one-test-binary-or-several),
+89 lines in `build.zig` and nine root files of five lines, become eleven
+steps:
+
+| Commit    | Changed           |    As CI | As targets | What ran again           |
+| --------- | ----------------- | -------: | ---------: | ------------------------ |
+| `bc48eec` | two docs files    | 22.4 min |    1.0 min | nothing                  |
+| `e4c5840` | `bin/base`        | 20.0 min |    2.3 min | `test-bin`               |
+| `6cfd640` | one file in `src` | 21.7 min |   10.3 min | `test-infra`, `test-bin` |
+| `66f3db9` | one docs file     | 12.6 min |    0.5 min | nothing                  |
+| `2f113ac` | 38 files          | 13.0 min |   13.8 min | all ten test steps       |
+| Total     |                   | 89.8 min |   27.8 min | 3.22 times faster        |
+
+The build is faster before Smithers CI touches it: Zig runs the ten binaries
+at once, so `zig build test` takes 13 to 22 minutes where the one binary took
+42 to 51. The one-file change then runs two test steps of ten.
+
+Both replays count from the cache of the commit before, as a CI run finds it.
+Counted from an empty cache (`--cold`), the first commit costs one more full
+run, which by the time of the uncounted first run gives 1.7 times for both.
+The machine was shared and busy: the same full run of the one binary took
+between 34 and 54 minutes. One test in `bin/base/log_relay.zig` was made to
+skip when the kernel refuses a larger pipe, which that machine does under
+load; nothing else in the repository was changed for the first table.
+
 ## What it cannot see
 
 - **What a test reads when it runs.** A test that opens a file at run time,
