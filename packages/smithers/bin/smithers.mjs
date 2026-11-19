@@ -14,7 +14,8 @@
  * its compiled code between starts (see `keepCompiledCode`). The separate
  * modules run when the installation has no bundle, and on a Node older than
  * the supported one, which is how that Node still gets the line that names
- * the Node it needs.
+ * the Node it needs. `--version` alone needs neither: the launcher prints the
+ * version in the manifest, as `src/bin.ts` does, and loads no program.
  *
  * A source checkout always runs `src/bin.ts`, even when stale `dist`
  * output is present, through Node's type stripping — the same path the tests use. That
@@ -132,11 +133,16 @@ const keepCompiledCode = () => {
 }
 
 if (await bundled()) {
-  keepCompiledCode()
-  // The bundle's imports of packages left outside it resolve from the package that imports them.
-  const { resolveHooks } = await import("./bundle-origin.mjs")
-  Module.registerHooks(resolveHooks(bundle.href))
-  await start(bundle.href)
+  if (process.argv.length === 3 && process.argv[2] === "--version") {
+    const { packageVersion } = await import(new URL("../dist/esm/Version.js", import.meta.url).href)
+    process.stdout.write(`${packageVersion}\n`)
+  } else {
+    keepCompiledCode()
+    // The bundle's imports of packages left outside it resolve from the package that imports them.
+    const { resolveHooks } = await import("./bundle-origin.mjs")
+    Module.registerHooks(resolveHooks(bundle.href))
+    await start(bundle.href)
+  }
 } else if (!checkout && existsSync(fileURLToPath(built))) {
   await start(built.href)
 } else {

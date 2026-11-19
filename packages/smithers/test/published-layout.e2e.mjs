@@ -20,9 +20,11 @@
  * ## Benchmark: how long `smthrs` takes to start
  *
  * **Shape.** Two commands an agent's feedback loop is made of. `smthrs
- * --version`: the least a start can do. `smthrs ci //...` in a workspace of
- * four shell checks whose results are all in the cache: everything a run does
- * except the checks themselves, which is the part Smithers adds to any CI.
+ * --version`: the least a start can do, which the launcher answers from the
+ * manifest without loading the program. `smthrs ci //...` in a workspace of
+ * four shell checks whose results are all in the cache: the whole program
+ * loaded, and everything a run does except the checks themselves, which is the
+ * part Smithers adds to any CI.
  *
  * **Method.** Each command runs once to warm up (Node writes its compile cache
  * and the four results are stored), then five times; the best wall time of the
@@ -189,7 +191,8 @@ describe("the installed program", () => {
     assert.equal(JSON.parse(readFileSync(join(installed, "package.json"), "utf8")).version, version)
   })
 
-  it("starts from the one file and loads none of the separate modules of the command tree", () => {
+  /** The URLs of every module a start of the installed program loads. */
+  const loadedBy = (args) => {
     const receipt = join(root, "loaded.json")
     const observe = "data:text/javascript," + encodeURIComponent([
       "import { registerHooks } from \"node:module\"",
@@ -198,9 +201,12 @@ describe("the installed program", () => {
       "registerHooks({ load(url, context, next) { loaded.add(url); return next(url, context) } })",
       `process.on("exit", () => writeFileSync(${JSON.stringify(receipt)}, JSON.stringify([...loaded])))`
     ].join("\n"))
-    const result = spawnSync(process.execPath, ["--import", observe, shim, "--help"], { cwd: consumer, env: environment, encoding: "utf8" })
-    passed(result, "smthrs --help")
-    const loaded = JSON.parse(readFileSync(receipt, "utf8"))
+    passed(spawnSync(process.execPath, ["--import", observe, shim, ...args], { cwd: consumer, env: environment, encoding: "utf8" }), `smthrs ${args.join(" ")}`)
+    return JSON.parse(readFileSync(receipt, "utf8"))
+  }
+
+  it("starts from the one file and loads none of the separate modules of the command tree", () => {
+    const loaded = loadedBy(["--help"])
     assert.ok(loaded.some((url) => url.endsWith("/@smthrs/cli/dist/bundle/bin.js")))
     assert.deepEqual(loaded.filter((url) => /\/@smthrs\/[^/]+\/dist\/esm\/(?!internal\/NodeVersion\.js$)/.test(url)), [])
     // A start loads the launcher, the bundle and the few packages left outside it.
@@ -211,6 +217,7 @@ describe("the installed program", () => {
     const one = smthrs(consumer, ["--version"])
     assert.equal(passed(one, "smthrs --version"), `${version}\n`)
     assert.equal(one.stderr, "")
+    assert.ok(!loadedBy(["--version"]).some((url) => url.endsWith("/dist/bundle/bin.js")), "--version loaded the program")
     const separate = separateModules(consumer, ["--version"])
     assert.equal(passed(separate, "smthrs --version, separate modules"), `${version}\n`)
   })

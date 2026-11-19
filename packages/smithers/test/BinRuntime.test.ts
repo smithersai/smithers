@@ -397,6 +397,7 @@ describe("the smithers bin shim", processBudget, () => {
       minimum === undefined ? nodeVersion : nodeVersion.replace(/minimum = "[^"]+"/, `minimum = "${minimum}"`)
     )
     writeFileSync(join(root, "dist", "esm", "bin.js"), "process.stdout.write(\"separate modules ran\\n\")\n")
+    writeFileSync(join(root, "dist", "esm", "Version.js"), "export const packageVersion = \"9.8.7-staged\"\n")
     writeFileSync(
       join(root, "dist", "bundle", "bin.js"),
       [
@@ -421,10 +422,11 @@ describe("the smithers bin shim", processBudget, () => {
    */
   const startStaged = (
     root: string,
-    environment: Readonly<Record<string, string>> = { NODE_COMPILE_CACHE: join(root, "compile-cache") }
+    environment: Readonly<Record<string, string>> = { NODE_COMPILE_CACHE: join(root, "compile-cache") },
+    args: ReadonlyArray<string> = ["--help"]
   ) => {
     mkdirSync(join(root, "tmp"), { recursive: true })
-    return spawnSync(process.execPath, [join(root, "bin", "smithers.mjs"), "--version"], {
+    return spawnSync(process.execPath, [join(root, "bin", "smithers.mjs"), ...args], {
       cwd: root,
       encoding: "utf8",
       timeout: 180_000,
@@ -587,6 +589,23 @@ describe("the smithers bin shim", processBudget, () => {
       expect(result.status, result.stderr).toBe(0)
       expect(result.stdout).toBe("one file ran with the importer's own inner, compile cache off\n")
       expect(existsSync(ownCompiledCode(root))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("answers --version alone from the manifest, without loading the program or keeping compiled code", () => {
+    const root = mkdtempSync(temporaryDirectoryPrefix)
+    try {
+      stageInstallation(root)
+      const result = startStaged(root, {}, ["--version"])
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout).toBe("9.8.7-staged\n")
+      expect(result.stderr).toBe("")
+      expect(existsSync(ownCompiledCode(root))).toBe(false)
+      // With anything beside it, the flag is the program's to answer.
+      expect(startStaged(root, {}, ["--version", "--json"]).stdout).toContain("one file ran")
+      expect(existsSync(ownCompiledCode(root))).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
