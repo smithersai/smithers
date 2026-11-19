@@ -12,6 +12,16 @@ import { failuresOf, firstLine, printedFailure, readable, sentenceOf } from "../
 const printedWhileRunning = /^\/\/\S*:\S+: /
 
 /**
+ * A line of `smthrs` that is no part of what a failed command printed: the
+ * line of another target, the `code:` line that closes a run, or a line of
+ * the frame a person gets, which is a mark alone or a mark and two spaces.
+ * A tool's own line may start with such a mark, as esbuild's `▲ [WARNING]`
+ * and Turborepo's `│ > tsc` do: one space follows it, and the line is the
+ * step's.
+ */
+const ownLine = /^(?:\/\/\S+ {2}|code: [a-z_]+$|[│┌└◇●◆▲■](?: {2}|$))/
+
+/**
  * What `smthrs` printed for each failed target, by label. Its plain output
  * gives a failure a line with the label, `failed`, the time and the reason,
  * and then what the command printed, up to the next target or the closing
@@ -32,7 +42,7 @@ export const reasonsIn = (output: string): ReadonlyMap<string, string> => {
     if (header !== null) {
       open = [header[2] as string]
       found.set(header[1] as string, open)
-    } else if (/^(?:\/\/\S+ {2}|code: |[│┌└◇●◆▲■])/.test(line)) open = undefined
+    } else if (ownLine.test(line)) open = undefined
     else open?.push(line)
   }
   return new Map([...found].map(([label, lines]) => [label, lines.join("\n").trimEnd()]))

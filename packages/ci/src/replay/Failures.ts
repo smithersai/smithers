@@ -13,6 +13,7 @@
 
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import { constants } from "node:os"
 import { runnerEntry } from "../contract/Inventory.ts"
 import type { StepFailure, StepNotReused } from "../contract/ReplayReport.ts"
 import type { RunRecord, TargetResult } from "../contract/RunRecord.ts"
@@ -407,15 +408,34 @@ const endOfCommand = (text: string): number => {
   return quote === undefined || firstBreak === -1 ? text.length : firstBreak
 }
 
+/**
+ * The exit code a shell gives for a program a signal ended: 128 and the
+ * signal's number, or 128 alone for a name this machine has no signal for.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const signalExit = (signal: string): number =>
+  128 + ((constants.signals as Readonly<Record<string, number | undefined>>)[signal] ?? 0)
+
+/** The line `smthrs` adds under the error output of a command a signal ended. The command did not print it. */
+const endedBySignal = /^the tool was terminated by (SIG[A-Z0-9]+)$/m
+
 const failedWith = (
   output: StepOutput & { readonly exitCode: number },
   command: string
-): Pick<TargetResult, "command" | "error" | "exitCode"> => ({
-  error: reasonOf(output),
-  command: commandLine(command),
-  // A command that was stopped or never started has no exit code; `smthrs` writes -1.
-  ...(Number.isInteger(output.exitCode) && output.exitCode >= 0 ? { exitCode: output.exitCode } : {})
-})
+): Pick<TargetResult, "command" | "error" | "exitCode"> => {
+  const signal = endedBySignal.exec(output.stderr)?.[1]
+  // A command that was stopped or never started has no exit code; `smthrs` writes -1. One a signal ended has the
+  // code a shell gives for the signal, as it has in the baseline.
+  const exitCode = signal === undefined ? output.exitCode : signalExit(signal)
+  return {
+    error: reasonOf({ ...output, stderr: output.stderr.replace(endedBySignal, "") }),
+    command: commandLine(command),
+    ...(Number.isInteger(exitCode) && exitCode >= 0 ? { exitCode } : {})
+  }
+}
 
 /**
  * What `smthrs` printed for a failed target, as the fields of its result. A

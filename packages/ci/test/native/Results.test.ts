@@ -104,6 +104,38 @@ describe("the reasons smthrs prints", () => {
     expect([...reasonsIn(output).keys()]).toEqual(["//:quiet", "//:says", "//:loud"])
   })
 
+  it("keep a line a tool starts with a mark of its own, as esbuild and Turborepo do", () => {
+    // `smthrs` frames its own lines with a mark and two spaces, or the mark alone.
+    const output = [
+      "◇  Running //:build",
+      "//:build  failed  1ms  command failed (exit 1): /bin/sh -c bash -e -c 'sh build.sh'",
+      "▲ [WARNING] an import is unused",
+      "┌─ web#build > cache miss, executing",
+      "│ > tsc",
+      "code: E404",
+      "✘ [ERROR] Could not resolve \"x\"",
+      "└─>",
+      "│",
+      "│  smthrs: machine ci.yml:build has a fresh checkout, made in 98 ms",
+      "not part of anything",
+      "//:lint  failed  1ms  command failed (exit 1): /bin/sh -c bash -e -c 'sh lint.sh'",
+      "error: lint broke",
+      "▲  the cache is off",
+      "not part of anything",
+      "//:test  failed  1ms  command failed (exit 1): /bin/sh -c bash -e -c 'sh test.sh'",
+      "error: test broke",
+      "code: targets_failed",
+      "not part of anything"
+    ].join("\n")
+    const results = [result("//:build", "failed"), result("//:lint", "failed"), result("//:test", "failed")]
+    expect(withReasons(results, output).map((entry) => entry.error)).toEqual([
+      "✘ [ERROR] Could not resolve \"x\"",
+      "error: lint broke",
+      "error: test broke"
+    ])
+    expect(reasonsIn(output).get("//:build")?.split("\n")).toHaveLength(7)
+  })
+
   it("give a failed command's exit code, command and the line that says what failed, never the rest of its output", () => {
     const printed = JSON.stringify({
       _tag: "smithers-build/ExecError",

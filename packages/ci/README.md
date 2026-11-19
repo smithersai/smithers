@@ -39,7 +39,14 @@ changed.
 - **Another job's line is never a step's reason** (`Results.reasonsIn`): jobs that run at once print between each
   other's lines, and a line one job printed while it ran (`//label: ...`) was read as the output of the failed step
   printed before it.
-  Tests: `test/replay/Reasons.test.ts`, `test/native/Results.test.ts`, `test/cli/failedSteps.test.ts`.
+- **A tool's own framed line stays the step's** (`Results.reasonsIn`): a line that starts with a mark of the frame
+  `smthrs` draws, as esbuild's `▲ [WARNING]` and Turborepo's `│ > tsc` do, ended what the step printed, and the
+  line that says what failed was lost. Only a line `smthrs` frames ends a failure: a mark alone or with two spaces.
+- **A signal that ends a step's shell adds no words** (`Process.runStep`, `Failures.signalExit`): the baseline's
+  reason was a slice of the step's command, and normal mode's was `the tool was terminated by SIGKILL`. Both give
+  what the step printed, or `it printed nothing`, and the exit code a shell gives for the signal.
+  Tests: `test/replay/Reasons.test.ts`, `test/native/Results.test.ts`, `test/replay/Process.test.ts`,
+  `test/replay/FailedSteps.test.ts`, `test/cli/failedSteps.test.ts`.
 
 **Seventeenth round, 2026-11-19.** A short CI says what starting costs beside it (`sci-overhead`, decided by the lead).
 

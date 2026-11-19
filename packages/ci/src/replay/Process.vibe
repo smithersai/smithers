@@ -12,7 +12,7 @@ import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/Chi
 import { type Confined, held } from "./Confine.vibe"
 import { type Count, uncounted } from "./Cpu.ts"
 import { noPushUrl, stepEnvironment } from "./Environment.ts"
-import type { StepOutput } from "./Failures.ts"
+import { signalExit, type StepOutput } from "./Failures.ts"
 import {
   defaultStall,
   exitOrStall,
@@ -66,6 +66,10 @@ export interface StepRun extends StepOutput {
 
 /** The exit code of a step stopped at its time limit, as `timeout` reports it. */
 const timedOut = 124
+
+/** The signal that ended a process, from the cause its exit code is refused with. Empty for any other cause. */
+const signalOf = (error: PlatformError.PlatformError): string =>
+  String((error.reason as { readonly cause?: unknown }).cause).replace(/^.*?(?:receipt of signal: '(\w+)')?$/s, "$1")
 
 /**
  * The words for a cause a person reads.
@@ -217,7 +221,9 @@ export effect function runStep(
       keep(touching(handle.stderr, watch), stderr, (text, chunk) => (text + chunk).slice(-outputLimit)),
       keep(touching(handle.stdout, watch), stdout, (text, chunk) => (text + chunk).slice(-outputLimit))
     ], { concurrency: "unbounded" })
-    const waited = try timeoutOption(exitOrStall(handle, watch), limit)
+    // A step a signal ended has the exit code a shell gives for the signal. What it printed says why it failed,
+    // as for any other step: the words its exit is refused with hold its whole command.
+    const waited = timeoutOption(exitOrStall(handle, watch), limit) catch (cause) => Option.some(signalExit(signalOf(cause)))
     // Leaving the scope stops a step that is still running.
     if (Option.isNone(waited)) {
       return { timedOut: true, stalled: false, exitCode: timedOut, stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun

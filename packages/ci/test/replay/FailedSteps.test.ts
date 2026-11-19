@@ -161,6 +161,14 @@ describe("what a failure says", () => {
     expect(failure).not.toHaveProperty("exitCode")
   }, 600_000)
 
+  it("says a step a signal ended printed nothing, with the signal's exit code and no word of its command", async () => {
+    const root = track(makeSmallRepository([job("ok", "sh a.sh"), job("shot", "kill -KILL $$")]))
+    const commit = (await replay(root)).commits[0]
+    const expected = [{ step: "shot0", reason: "it printed nothing", exitCode: 137, command: "kill -KILL $$" }]
+    expect(commit?.baseline.failures).toEqual(expected)
+    expect(commit?.normal.failures).toEqual(expected)
+  }, 600_000)
+
   it("says a step ran past its time limit", async () => {
     // The limit is far above what the passing step costs on a loaded host: with a limit of 1 second, `sh a.sh` itself
     // ran past it in a check run (its machine was made slowly), and the replay then had no step that passed.

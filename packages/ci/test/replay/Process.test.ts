@@ -65,3 +65,23 @@ describe("a command that ignores the signal to stop", { timeout: 120_000 }, () =
     expect(await ended(file)).toBe(true)
   })
 })
+
+describe("a command a signal ended", { timeout: 120_000 }, () => {
+  const step = (script: string) =>
+    onNode(
+      runStep("bash", ["-c", script], directory(), environment, "30 seconds").pipe(
+        Effect.provide(NodeServices.layer)
+      ) as never
+    ) as Promise<Record<string, unknown>>
+
+  it("has the exit code a shell gives for the signal, and what it printed, with no word of its command", async () => {
+    expect(await step("echo out; echo 'the widget failed' >&2; kill -KILL $$")).toEqual({
+      timedOut: false,
+      stalled: false,
+      exitCode: 137,
+      stderr: "the widget failed\n",
+      stdout: "out\n"
+    })
+    expect(await step("kill -TERM $$")).toMatchObject({ exitCode: 143, stderr: "", stdout: "" })
+  })
+})

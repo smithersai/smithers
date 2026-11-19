@@ -350,6 +350,30 @@ describe("what smthrs printed for a failed target", () => {
     expect(printedFailure(`${cut}\nmore of the command`).error).toBe("it printed nothing")
   })
 
+  it("leaves out the line smthrs adds for a command a signal ended: the command did not print it", () => {
+    const ended = "command failed (exit -1): /bin/sh -c bash -e -c 'sh check.sh'\n"
+    expect(printedFailure(`${ended}\nthe tool was terminated by SIGKILL`)).toEqual({
+      error: "it printed nothing",
+      exitCode: 137,
+      command: "bash -e -c 'sh check.sh'"
+    })
+    // A signal this machine has no number for.
+    expect(printedFailure(`${ended}\nthe tool was terminated by SIGNOPE`)).toEqual({
+      error: "it printed nothing",
+      exitCode: 128,
+      command: "bash -e -c 'sh check.sh'"
+    })
+    expect(printedFailure(`${ended}the check failed\nthe tool was terminated by SIGTERM\nit printed this`).error).toBe(
+      "the check failed"
+    )
+    const json = printed({ exitCode: -1, code: "signal", stderr: "\nthe tool was terminated by SIGKILL" })
+    expect(printedFailure(json)).toEqual({ error: "it printed nothing", exitCode: 137, command: "docker run x" })
+    // A line that only holds those words is the command's own.
+    expect(printedFailure(`${ended}error: the tool was terminated by SIGKILL, said the log`).error).toBe(
+      "error: the tool was terminated by SIGKILL, said the log"
+    )
+  })
+
   it("ends a command whose quotes never close at its first line break", () => {
     expect(printedFailure("command failed (exit 1): sh -c echo 'open\nthe error")).toMatchObject({ error: "the error" })
     expect(printedFailure("command failed (exit 1): sh -c echo 'open")).toMatchObject({ error: "it printed nothing" })
