@@ -37,7 +37,10 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
     "bin/*.mjs",
     "test/**/*.mjs",
     "test/fixtures/*.json",
-    "test/fixtures/closure-zig/**"
+    "test/fixtures/closure-zig/**",
+    // test/replay runs keyring.py in the jail and smithers.sh as the replay's smthrs.
+    "test/**/*.py",
+    "test/**/*.sh"
   ],
   // The suite starts real builds. On a build server at load 100 to 220 it passed the default 20 minutes every time.
   testTimeoutMs: 2_400_000,
