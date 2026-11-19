@@ -105,6 +105,15 @@ export interface Options {
    * confined run is shown only these beside the system's own.
    */
   readonly testTools?: ReadonlyArray<Reference.HostBin> | undefined
+  /**
+   * Variables the suite runs with, keyed by their values. A value may name
+   * `{smthrs:cache-directory}`, the build's cache directory, which a confined
+   * run may write: a tool's own content-addressed cache kept there between
+   * runs, as `ZIG_GLOBAL_CACHE_DIR`.
+   */
+  readonly testEnv?: Readonly<Record<string, string>> | undefined
+  /** Targets only the suite waits for, such as one that fills a tool's cache before the suite starts. */
+  readonly testDeps?: ReadonlyArray<Target.AnyTarget> | undefined
   readonly eslintConfigs?: ReadonlyArray<Input.File> | undefined
   readonly dprintConfig?: Input.File | undefined
   readonly readme?: Input.File | undefined
@@ -280,6 +289,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
       ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
       ...(options.testTimeoutMs === undefined ? {} : { timeoutMs: options.testTimeoutMs }),
       ...(options.testTools === undefined ? {} : { tools: options.testTools }),
+      ...(options.testEnv === undefined ? {} : { env: options.testEnv }),
       tests: [tests],
       sources: [
         sources,
@@ -297,7 +307,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
         Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
         ...(options.testData ?? []).map((pattern) => Input.glob(pattern))
       ],
-      deps: [lib, ...deps, ...reads],
+      deps: [lib, ...deps, ...reads, ...(options.testDeps ?? [])],
       config: vitestConfig,
       environment: "node",
       passWithNoTests: false,

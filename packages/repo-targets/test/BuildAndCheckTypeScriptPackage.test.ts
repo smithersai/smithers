@@ -174,6 +174,22 @@ describe("BuildAndCheckTypeScriptPackage", () => {
     expect(Target.metadata(declared.check).attrs).toEqual(Target.metadata(standard.check).attrs)
   })
 
+  it("makes the suite alone wait for the targets it names", () => {
+    const standard = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example" })
+    const warm = Filegroup.Filegroup({ srcs: [Input.file("warm.txt")], cwd: "packages/example" })
+    const declared = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example", testDeps: [warm] })
+    expect(Target.metadata(declared.test).dependencies).toEqual([...Target.metadata(standard.test).dependencies, warm])
+    expect(Target.metadata(declared.lint).dependencies).toEqual(Target.metadata(standard.lint).dependencies)
+  })
+
+  it("gives the suite the variables it declares, on the test target alone", () => {
+    const standard = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example" })
+    const env = { ZIG_GLOBAL_CACHE_DIR: "{smthrs:cache-directory}/tools/zig/global" }
+    const declared = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example", testEnv: env })
+    expect(Target.metadata(declared.test).attrs).toEqual({ ...attrsOf<Vitest.Attrs>(standard.test), env })
+    expect(Target.metadata(declared.lint).attrs).toEqual(Target.metadata(standard.lint).attrs)
+  })
+
   it("emits a docs target beside lib, test, and lint", () => {
     expect(Target.metadata(targets.docs).target).toBe("DocsParity")
     expect(Target.metadata(targets.docs).kinds).toEqual(["docs"])
