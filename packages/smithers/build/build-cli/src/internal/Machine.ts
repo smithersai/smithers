@@ -589,16 +589,24 @@ export const sharedTmp = "/tmp"
  * tools under `/tmp`, as a program that works in a temporary directory does,
  * and a target that finds another directory at `/tmp` must still find them.
  *
+ * An entry that is not there is left out: bubblewrap refuses to put back a
+ * path it cannot find, and a `PATH` can name one. npx puts the
+ * `node_modules/.bin` of every directory above the one it starts in on
+ * `PATH`, so a build started under `/tmp` names `/tmp/node_modules`.
+ *
  * @category resolution
  * @since 1.0.0
  */
-export const inSight = (paths: ReadonlyArray<string>): ReadonlyArray<string> =>
+export const inSight = (
+  paths: ReadonlyArray<string>,
+  exists: (path: string) => boolean = NodeFs.existsSync
+): ReadonlyArray<string> =>
   [
     ...new Set(paths.flatMap((path) => {
       const name = path.startsWith(`${sharedTmp}/`) ? path.slice(sharedTmp.length + 1).split("/")[0]! : ""
       return name === "" ? [] : [`${sharedTmp}/${name}`]
     }))
-  ].sort(byCodeUnit)
+  ].filter(exists).sort(byCodeUnit)
 
 /**
  * The command that runs `argv` with the machine's temporary directory in

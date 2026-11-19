@@ -539,7 +539,7 @@ describe("the temporary directory of a machine as /tmp", () => {
       "/tmp/",
       "/tmpfile/x",
       ""
-    ])
+    ], () => true)
     expect(sight).toEqual(["/tmp/bunx-1000", "/tmp/work"])
     expect(Machine.withOwnTmp("/usr/bin/bwrap", machine, ["true"], sight)).toEqual([
       "/usr/bin/bwrap",
@@ -566,6 +566,26 @@ describe("the temporary directory of a machine as /tmp", () => {
       ["/tmp", "/real/tmp"]
     ])
   })
+
+  posixIt(
+    "leaves out an entry of /tmp that is not there, as the node_modules/.bin npx names above where it starts",
+    () => {
+      const here = NodeFs.realpathSync(NodeFs.mkdtempSync("/tmp/smthrs-sight-"))
+      try {
+        // npx starts in `<here>/repository` and puts `<here>/node_modules/.bin`, `/tmp/node_modules/.bin` and
+        // `/node_modules/.bin` on PATH; of the entries of /tmp they name, only `<here>` is there.
+        const missing = `${here}-not-there`
+        expect(Machine.inSight([
+          `${here}/repository/node_modules/.bin`,
+          `${here}/node_modules/.bin`,
+          `${missing}/node_modules/.bin`,
+          "/node_modules/.bin"
+        ])).toEqual([here])
+      } finally {
+        NodeFs.rmSync(here, { recursive: true, force: true })
+      }
+    }
+  )
 
   posixIt("is asked of the host: a bubblewrap on PATH that starts, or the reason there is none", async () => {
     const base = await directory("mounting")
