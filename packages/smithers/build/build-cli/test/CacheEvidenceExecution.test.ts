@@ -498,19 +498,26 @@ describe("a confined run", () => {
     300_000
   )
 
-  confinedIt("refuses a write to a declared file of a run over the limit, and hides undeclared files", async () => {
-    const written = await fixture({
-      confinement: "default",
-      data: overTheLimit,
-      behaviour: "echo changed > many/f0.txt"
-    })
-    await writeAll(written.write, written.inPackage)
-    expect(await written.run("test")).toEqual({ test: "failed" })
-    expect(await Fs.readFile(Path.join(written.root, "pkg/many/f0.txt"), "utf8")).toBe("many/f0.txt\n")
-    const hidden = await fixture({ confinement: "default", data: overTheLimit, behaviour: "/bin/cat data.txt" })
-    await writeAll(hidden.write, hidden.inPackage)
-    expect(await hidden.run("test")).toEqual({ test: "failed" })
-  }, 300_000)
+  confinedIt(
+    "keeps a write to a declared file of a run over the limit in the run, and hides undeclared files",
+    async () => {
+      // A copy of a declared file keeps its mode, so the copy is as editable as the file is.
+      const written = await fixture({
+        confinement: "default",
+        data: overTheLimit,
+        behaviour: "/bin/cp many/f0.txt many/copy.txt && echo edited >> many/copy.txt\necho changed > many/f0.txt"
+      })
+      await writeAll(written.write, written.inPackage)
+      expect(await written.run("test")).toEqual({ test: "ran" })
+      // Nothing the run wrote reached the workspace.
+      expect(await Fs.readFile(Path.join(written.root, "pkg/many/f0.txt"), "utf8")).toBe("many/f0.txt\n")
+      expect(NodeFs.existsSync(Path.join(written.root, "pkg/many/copy.txt"))).toBe(false)
+      const hidden = await fixture({ confinement: "default", data: overTheLimit, behaviour: "/bin/cat data.txt" })
+      await writeAll(hidden.write, hidden.inPackage)
+      expect(await hidden.run("test")).toEqual({ test: "failed" })
+    },
+    300_000
+  )
 
   confinedIt("keys a format check on the plugins its configuration pins, and shows the run only those", async () => {
     const { write, run, logs, dprintCache, node } = await fixture({

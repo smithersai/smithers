@@ -120,14 +120,15 @@ describe.skipIf(process.platform === "win32")("a stage", () => {
     prepared.release()
   })
 
-  it("holds copies the run may not write under a scratch layer, with each file's times", () => {
+  it("holds copies under a scratch layer, with each file's mode and times", () => {
     const plan = workspace(true)
     const prepared = ExecStage.prepare(plan)
     const source = NodePath.join(plan.workspaceRoot, "src/deep/b.ts")
     const copy = NodeFs.statSync(inStage(prepared, plan, source))
     expect(prepared.stage.writable).toBe(true)
     expect(copy.ino).not.toBe(NodeFs.statSync(source).ino)
-    expect(copy.mode & 0o777).toBe(0o555)
+    // As the workspace has it: a test that copies this file can edit its copy.
+    expect(copy.mode & 0o777).toBe(0o755)
     expect(copy.mtimeMs).toBe(1_000_000_000)
     prepared.release()
   })

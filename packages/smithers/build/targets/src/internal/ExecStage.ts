@@ -11,8 +11,11 @@
  * Without a scratch layer the mount is read-only and the files are hard links
  * to the workspace's own, or copies where a link cannot be made (another
  * filesystem). With one the mount is writable, so a tool's stray write lands
- * in the directory and goes with it, and the files are copies without write
- * permission: a link there would let a write reach the workspace's file.
+ * in the directory and goes with it, and the files are copies, never links: a
+ * link there would let a write reach the workspace's file. Each copy keeps
+ * its file's mode, so a test that copies a declared fixture and edits its
+ * copy can, as it can outside; a write to the copy itself goes with the
+ * directory too.
  *
  * The directory lives outside the workspace: every confined run can write the
  * cache directory, and a copy there would let one run read another's files. A
@@ -232,7 +235,6 @@ const place = (io: Io, from: string, to: string, writable: boolean, status: Node
   }
   io.copy(from, to)
   NodeFs.utimesSync(to, status.atime, status.mtime)
-  if (writable) NodeFs.chmodSync(to, status.mode & 0o7555)
 }
 
 /** An empty directory or file where a later bind mounts, unless something is already there. */

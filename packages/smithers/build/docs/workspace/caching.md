@@ -241,8 +241,9 @@ directory instead. It holds each declared file at its own path and is mounted
 at the workspace root, so the run sees what the binds would have shown it.
 Without the scratch layer the directory is read-only and its files are hard
 links to the workspace's own, or copies on another filesystem. With the layer
-its files are copies the run may not write, and a stray write lands beside them
-and goes with the directory. The directory is in the host's temporary
+its files are copies with their own modes: a write to one, or beside one, stays
+in the directory and goes with it, so a test that copies a declared fixture and
+edits its copy runs as it does outside. The directory is in the host's temporary
 directory, which no confined run can see, and it is removed when the run ends,
 also when the program is killed.
 

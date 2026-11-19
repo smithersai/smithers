@@ -350,7 +350,8 @@ export interface Stage {
   /**
    * Whether the mount is writable. A run with a scratch layer needs it: its
    * stray writes land in the directory and go with it. Its files are then
-   * copies the run may not write. Otherwise the mount is read-only.
+   * copies, so a write to one never reaches the workspace. Otherwise the
+   * mount is read-only.
    */
   readonly writable: boolean
   /** The declared files the directory holds; bubblewrap binds none of them on its own. */
