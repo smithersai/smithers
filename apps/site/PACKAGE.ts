@@ -538,7 +538,7 @@ const supportMatrixTest = Smithers.Shell.Test({
     Smithers.file("//.github/workflows/ci.yml"),
     Smithers.file("//.github/workflows/release.yml"),
     Smithers.file("//pnpm-workspace.yaml"),
-    ...["pack-release", "packed-export-targets", "publish-release", "release-rehearsal"].map(
+    ...["pack-gates", "pack-release", "packed-export-targets", "publish-release", "release-rehearsal"].map(
       (name) => Smithers.file(`//.smithers/flows/release/${name}.mjs`)
     ),
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),

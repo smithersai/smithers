@@ -59,8 +59,13 @@ test("the support reference states every released Node engine range and current 
 
 test("the release smoke row names the exact runtimes that certify the candidate tarballs", () => {
   const workflow = parseWorkflow(read(".github/workflows/release.yml"))
+  // The publish job runs the smoke through pack-gates.mjs, on the node its step asserts.
+  assert.ok(
+    read(".smithers/flows/release/pack-gates.mjs").includes('".smithers/flows/release/smoke-release.mjs"'),
+    "pack-gates.mjs runs the install smoke"
+  )
   const smokeSteps = workflow.jobs.publish.steps.filter((step) =>
-    step.run?.includes("node .smithers/flows/release/smoke-release.mjs ")
+    step.run?.includes("node .smithers/flows/release/pack-gates.mjs ")
   )
   assert.equal(smokeSteps.length, 1, "the release requires one smoke receipt on the supported Node floor")
   const pins = smokeSteps.map((step) => {

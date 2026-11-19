@@ -91,6 +91,7 @@ The release roster comes from [readWorkspaceManifests and publishedPackages](htt
 | `@smthrs/evals`               | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/package.json)               |
 | `@smthrs/flow`                | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/package.json)                |
 | `@smthrs/flows`               | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/package.json)                     |
+| `@smthrs/fuzz`                | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/fuzz/package.json)                               |
 | `@smthrs/gateway`             | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/gateway/package.json)                   |
 | `@smthrs/harness`             | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/package.json)             |
 | `@smthrs/integrations`        | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/package.json)        |
@@ -124,4 +125,5 @@ The release roster comes from [readWorkspaceManifests and publishedPackages](htt
 | `@smthrs/time-travel`         | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/package.json)         |
 | `@smthrs/triggers`            | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/package.json)            |
 | `@smthrs/views`               | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/package.json)                  |
+| `smithers-ci`                 | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/ci/package.json)                                 |
 | `smthrs`                      | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smthrs-deprecation/package.json)                 |
