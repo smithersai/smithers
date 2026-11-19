@@ -200,8 +200,9 @@ export effect function confine(
   // the command that removes them ends with the build when the build runs in a jail.
   try addFinalizer(() => unlockWork(work))
   const found = probe(environment)
-  // Where a version manager looks for its versions: under the home, which is the step's own.
-  const links = "refusal" in found ? [] : found.tools.homes
+  // Where a version manager looks for its versions: under the home, which is the step's own with a jail and
+  // without one.
+  const links = "refusal" in found ? found.homes ?? [] : found.tools.homes
   // What Smithers build starts the home of each job's machine from, in normal and fast mode.
   const template = path.join(homes, "template")
   try furnish(template, links)

@@ -95,7 +95,8 @@ export type Parts = typeof Parts.Type
 /**
  * One target's outcome in a run. `tests` is how many tests the target ran,
  * when its runner reports that. A failed target can say why: `error` is the
- * reason, `exitCode` what its command exited with, and `command` what it ran.
+ * reason, `exitCode` what its command exited with, `command` what it ran, and
+ * `fix` what a person does about it, when whoever ran the target knows.
  * A target that ran can say why no earlier result answered it: `notReused` is
  * what differed from the stored result (`src/a.ts changed`), and `notStored`
  * why this run's result is not stored either.
@@ -115,6 +116,7 @@ export const TargetResult = Schema.Struct({
   error: Schema.optionalKey(Schema.String),
   exitCode: Schema.optionalKey(Schema.Int),
   command: Schema.optionalKey(Schema.String),
+  fix: Schema.optionalKey(Schema.String),
   failureDigest: Schema.optionalKey(Schema.String),
   tests: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   parts: Schema.optionalKey(Parts),

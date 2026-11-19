@@ -245,6 +245,7 @@ of the home directory.
 | A linked program's install | `bin/npm` links into `lib/node_modules/npm`; `~/.local/bin/zig` links to `~/.local/zig-0.17.1/zig`, and that directory holds Zig's `lib` |
 | The prefix above `bin`     | `~/.local/node` for `~/.local/node/bin`, when it holds `lib`                                                                             |
 | A version manager's home   | `~/.volta`, `~/.asdf`, `~/.local/share/mise`, `~/.pyenv`; `~/.rustup` for rustup's proxies                                               |
+| A tool's own directory     | `~/.vm` for `~/.vm/shims`, when a script there runs another file of `~/.vm` through the home: `exec "$HOME/.vm/toolchains/1/bin/tool"`   |
 | The links on the way       | fnm's per-shell link to its installation; `/etc/alternatives/awk`                                                                        |
 
 This covers nvm, fnm, Volta, asdf, mise, a plain `~/.local/<tool>/bin`, Bun
@@ -257,10 +258,13 @@ the list above) or a directory that holds one. A program linked from a
 directory that cannot be opened is readable as that one file.
 
 A confined run has a private `HOME`, and a shim looks for its versions under
-`HOME`. Each version manager's home is linked at the same place under the
+`HOME`. Each version manager's home, and each directory a tool's script was
+found to run its own files from, is linked at the same place under the
 private one (`$HOME/.volta`, `$XDG_DATA_HOME/mise`), with `~/.tool-versions`
 beside it when asdf or mise is on `PATH`, so a shim chooses the version it
-chooses outside. A version pinned only in `~/.config/mise/config.toml` is not
+chooses outside. A script that runs a file kept in another directory of the
+home brings nothing: that directory may hold anything, so the file is missing
+in the run. Put the tool's own directory on `PATH`. A version pinned only in `~/.config/mise/config.toml` is not
 read: pin it in the repository.
 
 The target's key holds the tools its command names. Each program the text

@@ -181,6 +181,12 @@ export interface Host {
    * other file. Optional: a host without it treats a shim as the program.
    */
   readonly shimTarget?: ((path: string) => string | undefined) | undefined
+  /**
+   * The text of a script: a file that starts with `#!` and is no larger than
+   * a page of shell, or `undefined` for any other file. Optional: a host
+   * without it reads no script.
+   */
+  readonly scriptText?: ((path: string) => string | undefined) | undefined
   readonly uid: number | undefined
   readonly gid: number | undefined
 }
@@ -476,6 +482,7 @@ export const host = (env?: Readonly<Record<string, string | undefined>>): Host =
     },
     readlink,
     shimTarget,
+    scriptText,
     uid: typeof process.getuid === "function" ? process.getuid() : undefined,
     gid: typeof process.getgid === "function" ? process.getgid() : undefined
   }
@@ -489,19 +496,22 @@ const readlink = (path: string): string | undefined => {
   }
 }
 
-/** A cmd-shim is a page of shell; a larger file is some other program. */
-const shimLimit = 64 * 1024
+/** A shim is a page of shell; a larger file is some other program. */
+const scriptLimit = 64 * 1024
 
-const shimTarget = (path: string): string | undefined => {
+const scriptText = (path: string): string | undefined => {
   try {
-    if (NodeFs.statSync(path).size > shimLimit) return undefined
+    if (NodeFs.statSync(path).size > scriptLimit) return undefined
     const text = NodeFs.readFileSync(path, "utf8")
-    if (!text.startsWith("#!")) return undefined
-    const target = /^# cmd-shim-target=(.+)$/m.exec(text)?.[1]
-    return target !== undefined && NodePath.isAbsolute(target) ? target : undefined
+    return text.startsWith("#!") ? text : undefined
   } catch {
     return undefined
   }
+}
+
+const shimTarget = (path: string): string | undefined => {
+  const target = /^# cmd-shim-target=(.+)$/m.exec(scriptText(path) ?? "")?.[1]
+  return target !== undefined && NodePath.isAbsolute(target) ? target : undefined
 }
 
 const isExecutable = (path: string): boolean => {
@@ -1208,7 +1218,8 @@ export interface Toolchain {
    */
   readonly links: ReadonlyArray<Link>
   /**
-   * Links that put a version manager's home where its shims look for it once
+   * Links that put a version manager's home, or the directory a tool's
+   * script runs its own files from, where its programs look for it once
    * `HOME` is the run's private directory. Each path is relative to the
    * private temporary directory: `home/.volta`, `data/mise`.
    */
@@ -1234,6 +1245,13 @@ const managerMarkers: ReadonlyArray<string> = ["installs", "versions", "tools/im
 const companionHomes: ReadonlyArray<{ readonly program: string; readonly home: string; readonly selection: string }> = [
   { program: "rustup", home: ".rustup", selection: "settings.toml" }
 ]
+
+/**
+ * A path in the home as a script writes it through `HOME`: `$HOME/x`,
+ * `${HOME}/x`, `"$HOME"/x` and `~/x`. The path ends where the script's own
+ * words do: at a quote, a space, or a variable it adds as it runs.
+ */
+const throughHome = /(?:\$HOME|\$\{HOME\})"?\/([\w.@%+=:,/-]+)|(?<![\w/.~])~\/([\w.@%+=:,/-]+)/g
 
 /** Home directories many programs share; never opened as one tool's prefix. */
 const sharedHomeDirectories: ReadonlyArray<string> = [
@@ -1302,8 +1320,16 @@ const followed = (path: string, hostFacts: Host): ReadonlyArray<Link> | undefine
  * plain `~/.local/<tool>/bin`, Bun and Zig, under the home directory or
  * anywhere else. rustup's proxies bring `~/.rustup`, which no link leads to.
  *
+ * A tool's own directory is known by its paths too, whatever it holds: when
+ * a script in a `bin` or `shims` directory on `PATH` names another path of
+ * the directory above it through the home (`$HOME/.vm/versions/1/bin/tool`,
+ * or the home's own path), that directory is read. A script that names a
+ * path in any other directory of the home brings nothing: that directory may
+ * hold anything.
+ *
  * A shim finds its versions under `HOME`, and a confined run's `HOME` is
- * private. {@link Toolchain.privateLinks} puts each version manager's home at
+ * private. {@link Toolchain.privateLinks} puts each version manager's home,
+ * and each directory a tool's script was found to run its own files from, at
  * the same place under the private one, and `~/.tool-versions` beside it when
  * asdf or mise is there, so the shim chooses what it chooses on the host.
  *
@@ -1343,13 +1369,42 @@ export const toolchain = (
   const shared = home === undefined ? [] : sharedHomeDirectories.map((relative) => api.join(home, relative))
   const holds = (directory: string, markers: ReadonlyArray<string>): boolean =>
     markers.some((marker) => hostFacts.exists(api.join(directory, marker)))
+  // Where a script's words lead in the home: the longest part of each path it names there that exists. A script
+  // adds the version it chose as it runs, so the path it names in full is often not there.
+  const namedBy = (text: string): ReadonlyArray<string> => {
+    if (home === undefined) return []
+    const byPath = new RegExp(`${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/([\\w.@%+=:,/-]+)`, "g")
+    const found: Array<string> = []
+    for (const match of [...text.matchAll(throughHome), ...text.matchAll(byPath)]) {
+      let path = api.join(home, (match[1] ?? match[2]) as string)
+      while (insideRoot(home, path) && path !== home && !hostFacts.exists(path)) path = api.dirname(path)
+      if (insideRoot(home, path) && path !== home) found.push(real(path))
+    }
+    return found
+  }
+  // A tool's own directory, shown by two of its paths: its program directory is on `PATH`, and a script there
+  // names another path in the directory, outside the program directory, through the home.
+  const itsOwn = new Set<string>()
+  const runsItsOwn = (directory: string, prefix: string): boolean =>
+    (hostFacts.entries?.(directory) ?? []).some((name) => {
+      const text = hostFacts.scriptText?.(real(api.join(directory, name)))
+      return text !== undefined &&
+        namedBy(text).some((path) => path !== prefix && insideRoot(prefix, path) && !insideRoot(directory, path))
+    })
   // The install prefix above a program directory, or the directory itself.
+  const roots = new Map<string, string>()
   const rootOf = (directory: string): string => {
+    const known = roots.get(directory)
+    if (known !== undefined) return known
     const prefix = api.dirname(directory)
-    return programDirectories.includes(api.basename(directory)) && api.dirname(prefix) !== api.parse(prefix).root &&
-        !shared.includes(prefix) && admissible(prefix) && holds(prefix, ["lib", ...managerMarkers])
-      ? prefix
-      : directory
+    const candidate = programDirectories.includes(api.basename(directory)) &&
+      api.dirname(prefix) !== api.parse(prefix).root && !shared.includes(prefix) && admissible(prefix)
+    const structured = candidate && holds(prefix, ["lib", ...managerMarkers])
+    const named = candidate && !structured && runsItsOwn(directory, prefix)
+    if (named) itsOwn.add(prefix)
+    const root = structured || named ? prefix : directory
+    roots.set(directory, root)
+    return root
   }
   // What a program outside its `PATH` directory is installed as.
   const installed = (file: string): string => {
@@ -1393,7 +1448,7 @@ export const toolchain = (
     // A version manager's shims look for its home under `HOME`.
     let shims = false
     for (const root of collapse(reads)) {
-      if (!insideRoot(home, root) || !holds(root, managerMarkers)) continue
+      if (!insideRoot(home, root) || !(holds(root, managerMarkers) || itsOwn.has(root))) continue
       const relative = toPosix(api.relative(home, root))
       privateLinks.push({ path: `home/${relative}`, target: root })
       for (const [under, name] of privateDirectories) {

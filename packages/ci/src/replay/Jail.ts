@@ -78,7 +78,9 @@ export const daemonSockets = (
 
 /**
  * What a machine answers when asked whether it can jail a step: why it
- * cannot, or the bubblewrap program with what the jail is built around. `home`
+ * cannot, or the bubblewrap program with what the jail is built around. A
+ * machine that cannot still says which links a step's own home needs
+ * (`homes`), because a step has a home of its own there too. `home`
  * is the person's home directory, which a step finds empty but for `tools`,
  * and `hidden` the other paths a step must find empty. `daemons` are the sockets of the container daemons, which a
  * step finds empty too unless the person allows Docker. `tmp` is the
@@ -101,7 +103,7 @@ export type Probe =
     readonly tools: Tools
     readonly scope?: string | undefined
   }
-  | { readonly refusal: string }
+  | { readonly refusal: string; readonly homes?: ReadonlyArray<Link> | undefined }
 
 /**
  * A link: where it is and what it names.
@@ -225,7 +227,8 @@ const answer = (
   scoped: (perl: string) => boolean
 ): Probe => {
   const refusal = refuses(facts)
-  if (refusal !== undefined) return { refusal }
+  // With no jail a step still has a home of its own, where a tool looks for its versions.
+  if (refusal !== undefined) return { refusal, homes: toolsOn(environment["PATH"], facts).homes }
   const perl = facts.executable("perl")
   return {
     bwrap: facts.executable("bwrap") as string,

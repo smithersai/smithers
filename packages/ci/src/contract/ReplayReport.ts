@@ -20,6 +20,8 @@ import { Metrics } from "./Selection.ts"
  * and its command. `reason` is the first line of the step's error output, or
  * that a program it runs is not installed. A value shaped like a credential is
  * withheld from `reason` and `command`.
+ * `fix` is what a person does about the failure, in one line, when the replay
+ * knows: which directory to put on `PATH`, for a tool a step did not find.
  *
  * @category models
  * @since 0.1.0
@@ -28,7 +30,8 @@ export const StepFailure = Schema.Struct({
   step: Schema.NonEmptyString,
   reason: Schema.NonEmptyString,
   exitCode: Schema.optionalKey(Schema.Int),
-  command: Schema.optionalKey(Schema.String)
+  command: Schema.optionalKey(Schema.String),
+  fix: Schema.optionalKey(Schema.String)
 })
 
 /**

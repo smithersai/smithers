@@ -946,7 +946,14 @@ export const addRerun = (result: TargetResult, rerun: TargetResult | undefined):
   const passed = rerun?.status === "ran" || rerun?.status === "hit"
   const attempts = [...(result.attempts ?? []), { passed, durationMs: rerun?.durationMs ?? 0 }]
   if (!passed) return { ...result, attempts }
-  const { command: _command, error: _error, exitCode: _exitCode, failureDigest: _failureDigest, ...rest } = result
+  const {
+    command: _command,
+    error: _error,
+    exitCode: _exitCode,
+    failureDigest: _failureDigest,
+    fix: _fix,
+    ...rest
+  } = result
   return { ...rest, status: "ran", attempts }
 }
 

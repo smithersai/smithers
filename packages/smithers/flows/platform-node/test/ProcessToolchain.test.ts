@@ -55,7 +55,9 @@ const secrets = (): ReadonlyArray<string> => [
   `${home}/.local/share/keyrings/login.keyring`,
   `${home}/.local/notes.txt`,
   `${home}/Documents/plan.md`,
-  `${home}/.secret`
+  `${home}/.secret`,
+  `${home}/elsewhere/notes.txt`,
+  `${home}/plain/notes.txt`
 ]
 
 beforeAll(() => {
@@ -132,6 +134,28 @@ beforeAll(() => {
   link("rustup", `${home}/.cargo/bin/cargo`)
   write(`${home}/.rustup/settings.toml`, "stable")
   program(`${home}/.rustup/toolchains/stable/bin/cargo`, "echo cargo-stable")
+
+  // A tool no layout above describes: its shim runs another file of its own directory, through the home.
+  program(`${home}/.vm/shims/tool`, "exec \"$HOME/.vm/toolchains/1/bin/tool\" \"$@\"")
+  program(`${home}/.vm/toolchains/1/bin/tool`, "echo tool-1 $(cat \"$(dirname \"$0\")/../share/words.txt\")")
+  write(`${home}/.vm/toolchains/1/share/words.txt`, "words")
+  // The same by the home's own path, with the version added as the script runs.
+  program(
+    `${home}/.byname/bin/tool`,
+    `exec "${home}/.byname/kept/$(cat "${home}/.byname/chosen")/tool" "$@"`
+  )
+  write(`${home}/.byname/chosen`, "2")
+  program(`${home}/.byname/kept/2/tool`, "echo tool-2")
+  // A wrapper that runs a tool kept in another directory of the home, where other things are kept too.
+  program(`${home}/wrappers/bin/far`, "exec \"$HOME/elsewhere/tool\" \"$@\"")
+  program(`${home}/elsewhere/tool`, "echo far")
+  // A script that names its own program directory, the directory above it, what is not there, and a path outside
+  // the home: none of them shows that the directory above is one tool's.
+  program(
+    `${home}/plain/bin/one`,
+    "exec \"$HOME/plain/bin/two\" \"$@\"\n: \"${HOME}/plain\" ~/plain/gone/x \"$HOME\"/../outside a~/plain/notes.txt"
+  )
+  program(`${home}/plain/bin/two`, "echo two")
 
   // What a PATH directory may hold beside programs, and links that lead where no run may read.
   NodeFs.mkdirSync(`${base}/opt/odd/bin/subdirectory`, { recursive: true })
@@ -240,6 +264,22 @@ interface Layout {
 }
 
 const layouts: ReadonlyArray<Layout> = [
+  {
+    name: "a tool whose shim runs another file of its own directory",
+    path: [".vm/shims"],
+    reads: ["home/.vm"],
+    privateLinks: [["home/.vm", "home/.vm"]],
+    script: "tool",
+    prints: "tool-1 words\n"
+  },
+  {
+    name: "a tool whose script names its own directory by the home's path",
+    path: [".byname/bin"],
+    reads: ["home/.byname"],
+    privateLinks: [["home/.byname", "home/.byname"]],
+    script: "tool",
+    prints: "tool-2\n"
+  },
   {
     name: "a plain ~/.local/<tool>/bin",
     path: [".local/node/bin"],
@@ -417,6 +457,36 @@ describe("what the toolchain never opens", () => {
       `${workspace}/linked-bin`
     ]
     expect(found(closed.join(":"))).toEqual({ reads: [], links: [], privateLinks: [], selections: [] })
+  })
+
+  it("brings nothing for a script that runs a file in another directory of the home", () => {
+    const far = found(`${home}/wrappers/bin`)
+    expect(far.reads).toEqual([`${home}/wrappers/bin`])
+    expect(far.privateLinks).toEqual([])
+  })
+
+  it.skipIf(!sandboxed)("leaves that file missing in a confined run, and what lies beside it unread", () => {
+    const searchPath = `${home}/wrappers/bin`
+    const run = confined(searchPath, "far")
+    expect(run.status).not.toBe(0)
+    expect(run.stdout).toBe("")
+    expect(run.stderr).toContain("/home/elsewhere/tool")
+    expect(confined(searchPath, `cat '${home}/elsewhere/notes.txt'`).status).not.toBe(0)
+  })
+
+  it("takes no directory for one tool's on a script that names only its program directory, the directory itself, what is not there, or a path outside the home", () => {
+    const plain = found(`${home}/plain/bin`)
+    expect(plain.reads).toEqual([`${home}/plain/bin`])
+    expect(plain.privateLinks).toEqual([])
+  })
+
+  it("reads no script on a host that cannot read or list one, and names no path of a home it does not know", () => {
+    const shims = `${home}/.vm/shims`
+    expect(found(shims, { scriptText: undefined }).reads).toEqual([shims])
+    expect(found(shims, { entries: undefined }).reads).toEqual([shims])
+    const homeless = found(shims, { home: undefined })
+    expect(homeless.reads).toEqual([shims])
+    expect(homeless.privateLinks).toEqual([])
   })
 
   it("reads nothing a system directory already holds", () => {

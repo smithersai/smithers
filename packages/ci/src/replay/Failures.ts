@@ -541,7 +541,8 @@ export const failuresOf = (
       step: firstLine(named?.step ?? result.label) || result.label,
       reason: firstLine(readable(result.error ?? "")) || noReason,
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
-      ...(command === "" ? {} : { command })
+      ...(command === "" ? {} : { command }),
+      ...(result.fix === undefined ? {} : { fix: firstLine(readable(result.fix)) })
     }
   })
 
@@ -613,7 +614,8 @@ const detailsOf = (failure: StepFailure): ReadonlyArray<string> => [
   `  step     ${failure.step}`,
   ...(failure.command === undefined ? [] : [`  command  ${failure.command}`]),
   ...(failure.exitCode === undefined ? [] : [`  exit     ${failure.exitCode}`]),
-  `  error    ${failure.reason}`
+  `  error    ${failure.reason}`,
+  ...(failure.fix === undefined ? [] : [`  fix      ${failure.fix}`])
 ]
 
 /**

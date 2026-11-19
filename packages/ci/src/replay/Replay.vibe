@@ -106,6 +106,7 @@ import {
   stdoutOf
 } from "./Process.vibe"
 import { readyHistory } from "./History.vibe"
+import { couldNotStart, fixesOf, homeOf, namedInStepHome, putOnPath } from "./HomeTools.ts"
 import { keep, viewOf } from "./Kept.vibe"
 import { printsNotes, readsListener } from "./Reads.ts"
 import { defaultStallMinutes, type StallLimit, type Table, tableFor, watchFor } from "./Stall.vibe"
@@ -677,6 +678,27 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const checkoutPath = try orFail(fs.realPath(normalCopy), "could not read a directory")
 
     /**
+     * The results with what a person does about a failure, where the replay knows. A step whose command could not
+     * be started, and whose error names a path of its own home, gains one line when the person's home holds that
+     * path: a program on `PATH` started a tool kept in a directory of the home that a step is not given, and
+     * putting the tool's own directory on `PATH` gives it to the step.
+     */
+    effect function advised(results: ReadonlyArray<TargetResult>) {
+      const home = homeOf(person)
+      const advice: Array<TargetResult> = []
+      for (const result of results) {
+        const named = couldNotStart(result) ? namedInStepHome(result.error, [work, path.dirname(machines)]) : []
+        const kept: Array<string> = []
+        for (const relative of named) {
+          if (try orFail(fs.exists(path.join(home, relative)), "could not read a directory")) kept.push(relative)
+        }
+        const [first] = kept
+        advice.push(first === undefined ? result : { ...result, fix: putOnPath(first) })
+      }
+      return advice
+    }
+
+    /**
      * Runs `run` with `site`'s copy in the one checkout every way runs in. Normal mode's copy waits beside it until
      * the run ends, and each copy is back in its place after.
      */
@@ -904,7 +926,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           if (cause !== undefined) causes.set(result.label, cause)
         }
       }
-      return results
+      return try advised(results)
     }
 
     /**
@@ -1153,7 +1175,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       try orFail(fs.remove(views, { recursive: true, force: true }), "could not remove a directory")
       // Jobs finish in any order; a report lists their steps in the order of the CI.
       const order = new Map(own.units.flatMap((unit) => unit.steps).map((step, index) => [step.label, index]))
-      return collected.toSorted((a, b) => (order.get(a.label) as number) - (order.get(b.label) as number))
+      return try advised(collected.toSorted((a, b) => (order.get(a.label) as number) - (order.get(b.label) as number)))
     }
 
     /**
@@ -1215,6 +1237,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           waiting.some((unit) => unitKey(unit) === unitKey(entry) && unit.steps.some((step) => twice.has(step.label)))
         const named = found.failed.map((entry) => failedAt(entry, ranAgain(entry) ? [at, tip] : [at]))
         for (const entry of named) try progress.say(`fails here: ${entry.job}: ${entry.reason}`)
+        // What to do about it, where the replay knows, each thing once.
+        for (const fix of fixesOf(results)) try progress.say(fix)
         failedHere.push(...named)
         // With what failed left out, nothing may be left to replay: then no job can pass here.
         try checkout(normalCopy, tip, normal.place)

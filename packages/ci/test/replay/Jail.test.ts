@@ -743,11 +743,16 @@ describe("the jail", () => {
 
   it("is asked of the machine: Linux with a bubblewrap that starts, or the reason", () => {
     const facts = ExecSandbox.host()
-    expect(probe({ ...facts, platform: "darwin" })).toEqual({
-      refusal: "write protection needs bubblewrap, which runs only on Linux; this host is darwin"
+    // A machine that cannot jail a step still says which links a step's own home needs.
+    const mac = { ...facts, platform: "darwin" as const }
+    expect(probe(mac)).toEqual({
+      refusal: "write protection needs bubblewrap, which runs only on Linux; this host is darwin",
+      homes: toolsOn(process.env["PATH"], mac).homes
     })
-    expect(probe({ ...facts, platform: "linux", executable: () => undefined })).toEqual({
-      refusal: "write protection needs bubblewrap, and bwrap is not on PATH (install the bubblewrap package)"
+    const bare = { ...facts, platform: "linux" as const, executable: () => undefined }
+    expect(probe(bare)).toEqual({
+      refusal: "write protection needs bubblewrap, and bwrap is not on PATH (install the bubblewrap package)",
+      homes: toolsOn(process.env["PATH"], bare).homes
     })
     // A machine whose bubblewrap starts, whatever machine the test runs on.
     const starts = {

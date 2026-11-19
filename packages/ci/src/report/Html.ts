@@ -184,7 +184,7 @@ const mismatchItem = (mismatch: Mismatch): string =>
 const failureItem = ({ failure, ways }: FailedStep): string =>
   `<li><code>${escape(failure.step)}</code> <span class="sub">${ways.join(", ")}: ${
     escape(failureText(failure))
-  }</span></li>`
+  }</span>${failure.fix === undefined ? "" : `<br>${escape(failure.fix)}`}</li>`
 
 /**
  * A commit's times on one row, and its mismatches and failed steps on a

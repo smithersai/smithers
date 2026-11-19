@@ -22,6 +22,26 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Twentieth round, 2026-11-19.** A tool kept under the home runs in a step (`sci-exit-13`). Two optional fields.
+
+- **A step's home has its links with no jail too** (`Jail.Probe`, `Confine.confine`): on macOS, and on Linux
+  without bubblewrap, a step's home got no link at all, so no shim of rustup, asdf, mise or pyenv found its
+  versions there. A machine that cannot jail a step now says which links a step's home needs (`homes`, optional,
+  beside `refusal`).
+- **A tool's own directory is known by its paths** (`ProcessSandbox.toolchain` in `@smthrs/platform-node`, which
+  Smithers build uses for a confined run): a `bin` or `shims` directory on `PATH` brings the directory above it
+  when a script in it names another path of that directory through the home (`$HOME/.vm/toolchains/1/bin/tool`).
+  Before, only a directory that holds `lib`, `installs`, `versions` or `tools/image` was taken.
+- **A wrapper that starts a tool kept in another directory of the home fails with what to do**
+  (`replay/HomeTools.ts`): that directory may hold anything, so a step is not given it. A step that could not
+  start its command (exit 126 or 127, or no exit code), and whose error names a path of its own home that the person's home holds,
+  gains `fix`: `put ~/b on PATH: ~/b/tool is in your home directory and not in the step's, and a step gets a tool
+  whose own directory is on PATH`.
+- **Contracts 1 and 5.** `TargetResult.fix` and `StepFailure.fix` (optional): what a person does about a failure,
+  in one line, when the replay knows. The text prints it under the failed step, the page too, the lines for a CI
+  that does not pass here end with it, and the first run says it once after the jobs it leaves out. A step that
+  passed when it ran again loses it (`Summary.addRerun`).
+
 **Nineteenth round, 2026-11-19.** A tool of a job keeps no cache that outlives the run of its job (`sci-tool-cache`).
 
 - **`Step.shares`** (added, optional, 2026-11-19): the directories the steps split from one command write at the same

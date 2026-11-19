@@ -340,7 +340,8 @@ the steps that read a changed file run, and a job whose every step would read
 what it read before runs no step.
 A package manager told to install exactly what a lockfile pins (`npm ci`,
 `pnpm install --frozen-lockfile`, `uv sync --locked`) may open a connection
-and still be stored.
+and still be stored. So may `cargo` and `go` when they build or test with a
+`Cargo.lock` or `go.sum` the run read and nothing wrote afterwards.
 
 `Shell.Test` and `Shell.Build` accept `machine: "<name>"`. Targets that name
 the same machine run one at a time in one private copy of the workspace, with a

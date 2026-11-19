@@ -201,11 +201,13 @@ export const text: RenderReport = (report) => {
   if (failed.length > 0) {
     sections.push([
       "failed steps",
-      ...failed.map(({ commit, failure, ways }) =>
+      ...failed.flatMap(({ commit, failure, ways }) => [
         [clean(shortCommit(commit.commit)), ways.join(", "), clean(failure.step), clean(failureText(failure))].join(
           "  "
-        )
-      )
+        ),
+        // What to do about it, on a line of its own under the step.
+        ...(failure.fix === undefined ? [] : [`  ${clean(firstLine(failure.fix))}`])
+      ])
     ])
   }
   const again = notReused(report)

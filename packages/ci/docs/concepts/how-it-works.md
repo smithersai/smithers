@@ -534,7 +534,9 @@ such as Node under nvm or Rust under rustup; the files `smithers-ci` itself
 runs from; and your repository. Nothing else is there: no directory of
 settings, no shell history, no file a program keeps a token in, whatever its
 name. A tool that looks for its versions under `HOME`, as rustup, asdf and
-mise do, finds them under the step's own.
+mise do, finds them under the step's own. A program on your `PATH` that starts
+a tool kept in another directory of your home does not find it there: the step
+fails, and its failure names the directory to put on `PATH`.
 
 Also empty are the homes of the machine's other users and of root, the mail
 and the scheduled commands of its users, the secrets a container platform
