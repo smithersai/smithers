@@ -100,8 +100,12 @@ describe("publication conformance", () => {
     const publish = release.indexOf("Publish packages in dependency order")
     assert.ok(smoke > -1)
     assert.ok(publish > smoke)
-    assert.ok(release.includes("node .smithers/flows/release/pack-release.mjs \"$PACK_DIR\""))
-    assert.ok(release.includes("node .smithers/flows/release/smoke-release.mjs \"$PACK_DIR\""))
+    // The step runs the release's one list of pack gates, which packs and then smoke-tests what it packed.
+    assert.ok(release.includes("node .smithers/flows/release/pack-gates.mjs \"$PACK_DIR\""))
+    const gates = readFileSync(join(packagesDir, "..", ".smithers", "flows", "release", "pack-gates.mjs"), "utf8")
+    const pack = gates.indexOf("\".smithers/flows/release/pack-release.mjs\"")
+    assert.ok(pack > -1)
+    assert.ok(gates.indexOf("\".smithers/flows/release/smoke-release.mjs\"") > pack)
     // Both workflows install the pnpm version pinned once in package.json.
     const root = JSON.parse(readFileSync(join(packagesDir, "..", "package.json"), "utf8")) as {
       readonly packageManager?: string
