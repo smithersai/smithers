@@ -162,6 +162,8 @@ interface JobState extends Shape {
   ran: boolean
   /** Variables a setup action that ran would have set. */
   readonly setupNames: Set<string>
+  /** True once a step of the job set Python up: the steps after it find `python` and `pip` (`Runner.StepFacts`). */
+  python: boolean
   /** How many commands of the job have a place among its steps: every one but those a replay may leave out. */
   placed: number
   /** The keys of those commands, in the order they run: a later step reads what each wrote for the steps after it. */
@@ -653,7 +655,8 @@ const addRun = (
     ownCi: env.entries.has("CI"),
     action: context.action,
     limit: secondsOf(context.limit),
-    store: context.store
+    store: context.store,
+    ...(state.python ? { python: true } : {})
   }
   const written = write(state.runner, facts, command)
   if ("problem" in written) return note(job, "expression", `${where}: ${written.problem}`)
@@ -891,6 +894,9 @@ const readUses = (context: StepContext, raw: Record<string, unknown>, uses: stri
       `${beforeSetupCache(cache)}\n`,
       ["cache-hit"]
     )
+    // An action that sets Python up leaves `python` and `pip` on the PATH of the steps after it. Its own cache
+    // step, which is part of it, asks the machine's tools.
+    if (setup.tools[0]?.name === "python") state.python = true
     // An input can make the action run a command too, such as installing what a lockfile names.
     if (setup.command === undefined) return kept ?? recordOf(ran, notRun, undefined)
     addRun({ ...context, name: context.name ?? uses }, [setup.command], ["bash", "-e"], "")
@@ -1250,6 +1256,7 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     mark: undefined,
     only: undefined,
     setupNames: new Set(),
+    python: false,
     keeps: [],
     actions: 0,
     after: []

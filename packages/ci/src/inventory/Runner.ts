@@ -112,6 +112,9 @@ export interface JobFacts {
  *   under the one `Inventory.stateVariable` names in a baseline, and else in the user's own cache directory.
  * - `limit`: the most seconds the step may run, from `timeout-minutes`. A step that runs longer is stopped with
  *   every program it started, and has failed.
+ * - `python`: a step before this one set Python up, as `actions/setup-python` does. The step finds `python`,
+ *   `python3`, `pip` and `pip3` first on its `PATH`, each running the machine's Python 3, as the action leaves them
+ *   on a runner. They are made in the job's tool directory (`RUNNER_TOOL_CACHE`), which is the job's own.
  *
  * @category models
  * @since 0.1.0
@@ -137,6 +140,7 @@ export interface StepFacts {
   readonly action?: string | undefined
   readonly limit?: number | undefined
   readonly store?: boolean | undefined
+  readonly python?: boolean | undefined
 }
 
 /**
@@ -759,6 +763,22 @@ const compileInShell = (node: Residual, emitter: Emitter): number => {
 }
 
 /**
+ * The lines that put `python`, `python3`, `pip` and `pip3` first on `PATH`, as a setup action leaves them. A machine
+ * may have only `python3`: each runs the Python 3 the machine has, and `pip` runs its `-m pip`. They are made once
+ * in the job's tool directory, which is under the job's own state, and nowhere else.
+ */
+const python = (fail: (why: string) => string): ReadonlyArray<string> => [
+  `__py=$RUNNER_TOOL_CACHE/python/bin`,
+  `if [ ! -x "$__py/pip3" ]; then`,
+  `  __p=$(command -v python3 || command -v python) || ${fail("this job sets up Python, and this machine has none")}`,
+  `  mkdir -p -- "$__py" && ln -sf -- "$__p" "$__py/python" && ln -sf -- "$__p" "$__py/python3" &&`,
+  `    printf '#!/bin/sh\\nexec %q -m pip "$@"\\n' "$__p" > "$__py/pip" && chmod +x -- "$__py/pip" &&`,
+  `    cp -- "$__py/pip" "$__py/pip3" || exit 1`,
+  `fi`,
+  `export PATH="$__py:$PATH"`
+]
+
+/**
  * The runner text of one step: the shell function `Inventory.runnerEntry`,
  * which takes the step's command.
  *
@@ -831,7 +851,8 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
     step.start,
     step.job,
     commit,
-    command
+    command,
+    ...(step.python === true ? ["python"] : [])
   ])
   const mark = step.after ??
     `${shardOf(work, 0x1_0000_0000).toString(36)}-${shardOf(`${work}\n`, 0x1_0000_0000).toString(36)}`
@@ -982,6 +1003,7 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       `[ -f "$__state/lib.sh" ] || ${fail("the steps before this one have not run in $__root")}`,
       `. "$__state/lib.sh" || exit 1`,
       `__ci_start`,
+      ...(step.python === true ? python(fail) : []),
       // A runner sets CI to true. What the machine holds under that name is the person's, not the workflow's.
       ...(step.ownCi === true ? [] : [`export CI=true`]),
       ...(step.job === undefined ? [] : [`export GITHUB_JOB=${quote(step.job)}`]),
