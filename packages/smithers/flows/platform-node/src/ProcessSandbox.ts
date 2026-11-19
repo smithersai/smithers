@@ -327,6 +327,11 @@ export interface Plan {
   readonly tmp: string
   readonly uid: number | undefined
   readonly gid: number | undefined
+  /**
+   * An open descriptor holding a seccomp filter, which bubblewrap loads with
+   * `--seccomp`. The caller opens it in the process that starts the argv.
+   */
+  readonly seccomp?: number | undefined
 }
 
 /**
@@ -1519,6 +1524,8 @@ export const bubblewrap = (
   ]
   const runtime = runtimeReads(hostFacts)
   for (const read of runtime) out.push("--ro-bind", read, read)
+  const users = userEntries(confinement)
+  if (users !== undefined) out.push("--file", "8", "/etc/passwd", "--file", "9", "/etc/group")
   out.push(
     "--dev",
     "/dev",
@@ -1682,8 +1689,41 @@ export const bubblewrap = (
     throw new Error("bubblewrap cannot render loopback-only networking")
   }
   if (confinement.network === "open") out.push("--share-net")
+  if (confinement.seccomp !== undefined) out.push("--seccomp", String(confinement.seccomp))
   out.push("--", ...(launch === undefined ? argv : [launch.program, ...args]))
-  return out
+  if (users === undefined) return out
+  // The shell hands bubblewrap the two files as here-documents on descriptors
+  // 8 and 9 (`--file FD DEST` in bwrap(1)); bubblewrap writes each into the
+  // empty root and closes the descriptor, so the run never inherits them.
+  return ["/bin/sh", "-c", usersScript, "smithers-users", users.passwd, users.group, ...out]
+}
+
+const usersScript = [
+  "passwd=$1 group=$2",
+  "shift 2",
+  "exec \"$@\" 8<<PASSWD 9<<GROUP",
+  "$passwd",
+  "PASSWD",
+  "$group",
+  "GROUP",
+  ""
+].join("\n")
+
+/**
+ * The run's own `/etc/passwd` and `/etc/group`: one line each, for the uid and
+ * gid it runs as, home in its private `/tmp`. A program that looks its user up
+ * (Postgres's `initdb`, `ssh`) finds it; no other user of the host is named,
+ * and no byte of the host's files is read.
+ */
+const userEntries = (
+  confinement: Plan
+): { readonly passwd: string; readonly group: string } | undefined => {
+  if (confinement.uid === undefined || confinement.gid === undefined) return undefined
+  const name = confinement.uid === 0 ? "root" : "smithers"
+  return {
+    passwd: `${name}:x:${confinement.uid}:${confinement.gid}::/tmp/home:/bin/sh`,
+    group: `${name}:x:${confinement.gid}:`
+  }
 }
 
 /** Escapes one string for a seatbelt profile literal. */

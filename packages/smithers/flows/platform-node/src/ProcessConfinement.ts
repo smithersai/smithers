@@ -125,6 +125,17 @@ const argvOf = (command: ChildProcess.StandardCommand): ReadonlyArray<string> =>
   return [shell === true ? "/bin/sh" : shell, "-c", [command.command, ...args].join(" ")]
 }
 
+/**
+ * The descriptor bubblewrap reads the seccomp filter from: the lowest from 3
+ * the command does not pass on itself. 8 and 9 carry the run's own user files
+ * (`ProcessSandbox.bubblewrap`).
+ */
+const seccompDescriptor = (command: ChildProcess.StandardCommand): number => {
+  let fd = 3
+  while (fd === 8 || fd === 9 || command.options.additionalFds?.[`fd${fd}`] !== undefined) fd++
+  return fd
+}
+
 const failure = (
   tag: "NotFound" | "PermissionDenied" | "Unknown",
   command: ChildProcess.StandardCommand,
@@ -414,7 +425,11 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
     const wrapped = yield* Effect.try({
       try: () =>
         ProcessSandbox.wrap(
-          { ...confinement, externalReads: [...confinement.externalReads, ...launch.reads, script] },
+          {
+            ...confinement,
+            externalReads: [...confinement.externalReads, ...launch.reads, script],
+            seccomp: selected._tag === "bubblewrap" ? seccompDescriptor(command) : undefined
+          },
           targetArgv,
           targetEnvironment,
           hostFacts
@@ -434,8 +449,7 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
         },
         catch: (cause) => failure("PermissionDenied", command, messageOf(cause), cause)
       })
-      let fd = 3
-      while (command.options.additionalFds?.[`fd${fd}`] !== undefined) fd++
+      const fd = seccompDescriptor(command)
       // A regular file avoids a filter-input pipe whose early closure can
       // surface as an unhandled ECONNRESET before bwrap reports its refusal.
       args = [
@@ -444,8 +458,6 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
         "smithers-seccomp",
         filter,
         executable!,
-        "--seccomp",
-        String(fd),
         ...args
       ]
       executable = "/bin/sh"

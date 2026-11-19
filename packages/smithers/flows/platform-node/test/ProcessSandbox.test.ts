@@ -745,11 +745,62 @@ describe("native host read confinement", () => {
   )
 })
 
+describe("the run's own user", () => {
+  it.skipIf(process.platform !== "linux")("is named inside the jail, and no other user of the host is", () => {
+    const { base, workspaceRoot } = writeFixture()
+    try {
+      const tmp = NodePath.join(workspaceRoot, ".tmp")
+      NodeFs.mkdirSync(NodePath.join(tmp, "home"), { recursive: true })
+      const facts = ProcessSandbox.host()
+      const result = ProcessSandbox.plan(
+        { network: "none", reads: [], writes: [] },
+        { workspaceRoot, cwd: workspaceRoot, tmp },
+        facts
+      )
+      if (result === undefined || ProcessSandbox.isUnenforceable(result)) throw new Error("native sandbox unavailable")
+      const script = "id -un; id -gn; cat /etc/passwd /etc/group; ls /proc/self/fd"
+      const wrapped = ProcessSandbox.wrap(result, ["/bin/sh", "-c", script], {}, facts)
+      const ran = spawnSync(wrapped.argv[0]!, wrapped.argv.slice(1), {
+        encoding: "utf8",
+        timeout: 10_000,
+        env: { ...process.env, ...wrapped.env }
+      })
+      expect(ran.status, ran.stderr).toBe(0)
+      const uid = process.getuid!()
+      const gid = process.getgid!()
+      const name = uid === 0 ? "root" : "smithers"
+      const lines = ran.stdout.trim().split("\n")
+      expect(lines.slice(0, 4)).toEqual([name, name, `${name}:x:${uid}:${gid}::/tmp/home:/bin/sh`, `${name}:x:${gid}:`])
+      // The host's own entries (root, the operator's name) are nowhere in the jail.
+      if (uid !== 0) expect(ran.stdout).not.toContain("root")
+      // Bubblewrap closed the two descriptors the files came on.
+      expect(lines.slice(4)).not.toContain("8")
+      expect(lines.slice(4)).not.toContain("9")
+    } finally {
+      NodeFs.rmSync(base, { recursive: true, force: true })
+    }
+  })
+
+  it("is left out when the host has no uid to name", () => {
+    const argv = ProcessSandbox.bubblewrap({ ...planned(linux), uid: undefined }, ["true"], linux)
+    expect(argv[0]).toBe("/usr/bin/bwrap")
+    expect(argv).not.toContain("/etc/passwd")
+  })
+})
+
 describe("bubblewrap argv", () => {
   it("starts with an empty root, shadows the workspace, binds the declared set, and remounts read-only last", () => {
     const argv = ProcessSandbox.bubblewrap(planned(linux), ["node", "build.js"], linux)
     const text = argv.join(" ")
-    expect(argv[0]).toBe("/usr/bin/bwrap")
+    // A shell opens the run's own user files on descriptors 8 and 9 and starts bubblewrap.
+    expect(argv.slice(0, 2)).toEqual(["/bin/sh", "-c"])
+    expect(argv.slice(3, 7)).toEqual([
+      "smithers-users",
+      "smithers:x:501:20::/tmp/home:/bin/sh",
+      "smithers:x:20:",
+      "/usr/bin/bwrap"
+    ])
+    expect(text).toContain("--file 8 /etc/passwd --file 9 /etc/group")
     expect(text).toContain("--tmpfs / ")
     expect(text).not.toContain("--ro-bind / /")
     expect(text).toContain("--tmpfs /work/ws")
@@ -1117,9 +1168,21 @@ describe("every mechanism renders the same text on any host", () => {
 
   it("emits the bubblewrap argv verbatim", () => {
     expect(ProcessSandbox.bubblewrap(planned(linux), ["node", "build.js"], linux)).toEqual([
+      "/bin/sh",
+      "-c",
+      "passwd=$1 group=$2\nshift 2\nexec \"$@\" 8<<PASSWD 9<<GROUP\n$passwd\nPASSWD\n$group\nGROUP\n",
+      "smithers-users",
+      "smithers:x:501:20::/tmp/home:/bin/sh",
+      "smithers:x:20:",
       "/usr/bin/bwrap",
       "--tmpfs",
       "/",
+      "--file",
+      "8",
+      "/etc/passwd",
+      "--file",
+      "9",
+      "/etc/group",
       "--dev",
       "/dev",
       "--proc",
