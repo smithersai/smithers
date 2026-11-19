@@ -799,8 +799,11 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * `apply` leaves it.
      */
     effect function asApplied(at: string, commit: string, own: Prepared, baseRecord: RunRecord, normalRecord: RunRecord) {
+      // A run record also holds the group of files every step names, when the steps are many enough to share
+      // one. It is no step: `smthrs ci` refuses it when it is asked for by name.
+      const steps = new Set(own.labels)
       const passed = normalRecord.results.flatMap((result) =>
-        result.status === "ran" || result.status === "hit" ? [result.label] : []
+        (result.status === "ran" || result.status === "hit") && steps.has(result.label) ? [result.label] : []
       )
       if (request.applied !== true || !own.applies || passed.length === 0) return undefined
       const start = try Clock.currentTimeMillis

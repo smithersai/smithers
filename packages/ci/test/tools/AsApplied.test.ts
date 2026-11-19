@@ -110,6 +110,19 @@ describe("a repository with a tool that reads every file", () => {
     expect(plain.appliedMs).toBeUndefined()
   }, 3_600_000)
 
+  // More than 32 steps share one group of the repository's files, and a run record lists the group beside them.
+  it("runs the steps once more in a repository whose steps share one group of files", () => {
+    const jobs = Object.fromEntries(Array.from({ length: 33 }, (_, index) => [`unit${index}`, "grep -q ok src/m"]))
+    const root = project({ "src/m": "ok\n", ".github/workflows/ci.yml": workflow(jobs) }, false)
+    const replayed = node(root, program, ["--commits", "1", "--json"])
+    expect(replayed.status, replayed.output).toBe(0)
+    expect(replayed.output).toMatch(/smithers-ci: 1\/1 [0-9a-f]{7} with the files apply writes\n/)
+    const report = Schema.decodeUnknownSync(Schema.fromJsonString(ReplayReport))(replayed.stdout)
+    expect(report.commits[0]?.normal.counts).toMatchObject({ failed: 0, skipped: 0 })
+    expect(report.mismatches).toBe(0)
+    expect(report.appliedMs).toBeGreaterThan(0)
+  }, 3_600_000)
+
   it("has nothing more to run in a repository that holds what apply writes", () => {
     const root = project({
       "src/m": "ok\n",
