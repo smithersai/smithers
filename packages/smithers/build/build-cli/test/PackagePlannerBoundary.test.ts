@@ -180,6 +180,19 @@ export const Package=S.Package({targets:{command:S.Api.Compat({baseline:${baseli
       expect(node.cacheable).toBe(cacheable)
     }
   )
+
+  it("says why a test that asserts its reads is not reused over a registry baseline", async () => {
+    const { options } = await fixture(
+      `const published=S.Npm.Published({manifest:S.file("//package.json")})
+const runner=S.testRunner([S.file("//t.mjs")])
+export const Package=S.Package({targets:{published,command:S.NodeTest({runner,srcs:[],deps:[published],cache:true})}})`,
+      { "t.mjs": "" }
+    )
+    const node = (await PackageExec.plan(options)).nodes.get("//:command")!
+    expect(node.refusal).toBeUndefined()
+    expect(node.cacheable).toBe(false)
+    expect(node.uncachedBecause).toBe("NodeTest results are not reused")
+  })
 })
 
 describe("manifest-selected binary names", () => {

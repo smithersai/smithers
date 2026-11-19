@@ -123,7 +123,8 @@ const fixture = async (options: FixtureOptions = {}) => {
   // A test file the runtime's runner executes: it starts the same launcher.
   await write("pkg/first.test.ts", `${firstUse(options.tolerant ?? true)}/bin/cat source.ts > /dev/null\n`)
   const sources = [S.file("source.ts")]
-  const fmt = S.Dprint({ sources, deps: [], config: S.file("config.json"), fix: false, cwd: "pkg" })
+  // A format check that rewrites its sources is never reused, so it runs as the workspace declares: unconfined.
+  const fmt = S.Dprint({ sources, deps: [], config: S.file("config.json"), fix: true, cwd: "pkg" })
   const one = S.NodeTest({
     runner: S.testRunner([S.file("first.test.ts")]),
     srcs: sources,
@@ -262,7 +263,7 @@ const unheld = "; installed trees are not held read-only on this host: " +
 describe("a tool that links its binary into its installed directory on first use", () => {
   confinedIt("leaves the tree the plan measured, so the next run of the same tree hits", async () => {
     const { run, linked, notCached, toolState } = await fixture()
-    // A format check is never reused; the lint and the type check that share its launcher are.
+    // A format check that rewrites its sources is never reused; the lint and the type check that share its launcher are.
     expect(await run("fmt", "lint", "check")).toEqual({ fmt: "ran", lint: "ran", check: "ran" })
     expect(linked()).toBe(false)
     expect(notCached()).toEqual([])
@@ -370,12 +371,12 @@ describe("the entries of a tree a run finds read-only", () => {
 })
 
 describe("the results a run does not store", () => {
-  confinedIt("are counted by reason: a rule that reuses nothing, and a declaration that asks for none", async () => {
+  confinedIt("are counted by reason: a mode that reuses nothing, and a declaration that asks for none", async () => {
     const { summarize, statuses } = await fixture()
     const summary = await summarize(["fmt", "fresh", "lint"])
     expect(statuses(summary)).toEqual({ fmt: "ran", fresh: "ran", lint: "ran" })
     expect(summary.notStored).toEqual([
-      { reason: "Dprint results are not reused", count: 1 },
+      { reason: "fix mode rewrites its sources", count: 1 },
       { reason: "the target declares cache: false", count: 1 }
     ])
     // Neither is news about one run, so no row carries a reason.

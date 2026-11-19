@@ -73,6 +73,7 @@ import * as CacheEvidence from "./CacheEvidence.ts"
 import * as CoreRuleSelection from "./CoreRuleSelection.ts"
 import { declarationLabels } from "./DeclarationLabels.ts"
 import * as DigestIndexFile from "./DigestIndexFile.ts"
+import * as DprintPlugins from "./DprintPlugins.ts"
 import { gitPathspecBatches } from "./GitPathspecBatches.ts"
 import * as HostProbes from "./HostProbes.ts"
 import * as HostTools from "./HostTools.ts"
@@ -2009,6 +2010,8 @@ const visit = async (
   // the tree holding it is what is measured.
   const installedTrees: Array<string> = []
   let installedProblem: string | undefined
+  // Links a tool finds its own host state through, in the run's private directories.
+  const toolLinks: Array<{ readonly path: string; readonly target: string }> = []
   if (catalogToolBody || rule === "NodeTest") {
     // A catalog rule declares the directory its tool starts in. A custom
     // target that borrows a catalog name may not, and starts in its package.
@@ -2037,6 +2040,21 @@ const visit = async (
       }
       toolchain.push({ _tag: "InstalledTree", path: directory, digest: identity.digest })
       installedTrees.push(directory)
+    }
+    // A format check runs the plugins its configuration pins, which dprint
+    // keeps in its own cache outside the workspace; see DprintPlugins.
+    const config = attrMember(attrs, "config") as { readonly path?: unknown } | undefined
+    if (rule === "Dprint" && typeof config?.path === "string") {
+      const measured = DprintPlugins.measure(
+        NodePath.join(context.root, ...Input.resolvePath(inputPackage(metadata, packagePath), config.path).split("/")),
+        DprintPlugins.cacheDirectory(context.environment, process.platform, NodeOs.homedir())
+      )
+      if (typeof measured === "string") installedProblem ??= measured
+      else {
+        toolchain.push({ _tag: "DprintPlugins", digest: measured.digest })
+        for (const file of measured.files) if (!externalReads.includes(file)) externalReads.push(file)
+        toolLinks.push({ path: DprintPlugins.privateCachePath(process.platform), target: measured.cache })
+      }
     }
     const manifest = Input.resolvePath(toolCwd, "package.json")
     if (NodeFs.existsSync(NodePath.join(context.root, ...manifest.split("/")))) {
@@ -3425,6 +3443,9 @@ const visit = async (
     if (tools.selections.length > 0) executable.push({ _tag: "ToolVersions", selections: tools.selections })
     externalReads.push(...tools.reads.filter((read) => !externalReads.includes(read)))
     hostTools = { links: tools.links, privateLinks: tools.privateLinks }
+  }
+  if (toolLinks.length > 0) {
+    hostTools = { links: hostTools?.links ?? [], privateLinks: [...(hostTools?.privateLinks ?? []), ...toolLinks] }
   }
   // Native tools can live under the host's /tmp, which bubblewrap hides.
   // Admit both the launcher and its real installation, including shebang

@@ -47,10 +47,11 @@ export type Attrs = typeof Attrs.Type
  * The plan records one {@link Exec.Exec} run of `dprint` from `cwd` with the
  * declared configuration passed as `--config`, mirroring the repository's
  * package lint scripts (`... && dprint check`). Key material contains the
- * source and configuration digests, dependency keys, and the fix mode. The
- * target remains non-cacheable until the external dprint toolchain is
- * complete key material, matching {@link EsLint}'s posture. Executing the
- * plan requires {@link Exec.ExecLive}.
+ * source and configuration digests, dependency keys, and the fix mode. Like
+ * {@link EsLint}, the declaration asserts no cacheability of its own: the
+ * executor reuses a check-mode result after a confined run proves its reads,
+ * with the plugins its configuration pins measured into the key. Executing
+ * the plan requires {@link Exec.ExecLive}.
  *
  * @category targets
  * @since 0.1.0

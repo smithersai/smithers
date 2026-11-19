@@ -1,6 +1,6 @@
 /** Shared package assembly. Resolve tools from the package being built. */
 import { spawnSync } from "node:child_process"
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { buildPrivateEffectAdapters } from "./private-effect-adapters.mjs"
@@ -199,6 +199,26 @@ export const compilePackage = (packageRoot, { timeoutMs = 90_000 } = {}) => {
   return compiler
 }
 
+/**
+ * Removes `directory` and everything in it, but leaves in place, empty, any
+ * directory something is mounted on, and each directory holding one: a
+ * confined build is given its output directories as mounts, and a mount point
+ * cannot be removed (`EBUSY`), nor its parent while it is there (`ENOTEMPTY`).
+ */
+export const emptyDirectory = (directory) => {
+  if (!existsSync(directory)) return
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) emptyDirectory(path)
+    else rmSync(path, { force: true })
+  }
+  try {
+    rmdirSync(directory)
+  } catch (cause) {
+    if (cause?.code !== "EBUSY" && cause?.code !== "ENOTEMPTY") throw cause
+  }
+}
+
 export const buildLibrary = async (packageRoot, { esmOnly = [], declarationTimeoutMs = 90_000, commonJsPlatform = "neutral" } = {}) => {
   const require = createRequire(join(packageRoot, "package.json"))
   const { build } = require("esbuild")
@@ -208,7 +228,7 @@ export const buildLibrary = async (packageRoot, { esmOnly = [], declarationTimeo
   // CommonJS from the ESM vibelang emitted. A TypeScript package keeps
   // esbuild over its sources, whichever compiler emitted its ESM.
   const vibe = hasVibeSources(src)
-  rmSync(join(packageRoot, "dist"), { recursive: true, force: true })
+  emptyDirectory(join(packageRoot, "dist"))
   compilePackage(packageRoot, { timeoutMs: declarationTimeoutMs })
   const cjs = join(packageRoot, "dist/cjs")
   copyInputDeclarations(src, esm)

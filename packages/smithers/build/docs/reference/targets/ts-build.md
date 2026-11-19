@@ -93,7 +93,7 @@ zero without creating it fails the target.
 |           |                                                                                                                             |
 | --------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Kinds     | `build`                                                                                                                     |
-| Cacheable | Never |
+| Cacheable | After a confined run proves its reads, with its outputs; see [Caching](../../workspace/caching.md#results-reused-with-evidence) |
 | Executes  | Yes, through `ExecLive`                                                                                                     |
 
 ## See also

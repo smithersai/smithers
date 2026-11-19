@@ -24,7 +24,7 @@ import * as NodePath from "node:path"
  * @category policies
  * @since 1.0.0
  */
-export const rules: ReadonlySet<string> = new Set(["Vitest", "NodeTest", "Typecheck", "EsLint"])
+export const rules: ReadonlySet<string> = new Set(["Vitest", "NodeTest", "Typecheck", "EsLint", "Dprint", "TsBuild"])
 
 /**
  * How a run gets its evidence.
@@ -54,7 +54,7 @@ export const incomplete = (rule: string, attrs: unknown): string | undefined => 
   if (rule === "Typecheck" && (value.buildMode === true || value.incremental === true)) {
     return "build and incremental modes write build info that is not a declared output"
   }
-  if (rule === "EsLint" && value.fix === true) return "fix mode rewrites its sources"
+  if ((rule === "EsLint" || rule === "Dprint") && value.fix === true) return "fix mode rewrites its sources"
   return undefined
 }
 

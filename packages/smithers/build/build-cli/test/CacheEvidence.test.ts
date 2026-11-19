@@ -31,8 +31,8 @@ const node = {
 } as const
 
 describe("rules", () => {
-  it("covers the test runners, the type checker and the linter, and nothing that writes", () => {
-    expect([...CacheEvidence.rules].sort()).toEqual(["EsLint", "NodeTest", "Typecheck", "Vitest"])
+  it("covers the test runners, the type checker, the linter, the formatter and the build", () => {
+    expect([...CacheEvidence.rules].sort()).toEqual(["Dprint", "EsLint", "NodeTest", "TsBuild", "Typecheck", "Vitest"])
   })
 })
 
@@ -43,6 +43,8 @@ describe("incomplete", () => {
     expect(CacheEvidence.incomplete("Typecheck", { buildMode: false, incremental: false })).toBeUndefined()
     expect(CacheEvidence.incomplete("EsLint", { fix: true })).toContain("rewrites its sources")
     expect(CacheEvidence.incomplete("EsLint", { fix: false })).toBeUndefined()
+    expect(CacheEvidence.incomplete("Dprint", { fix: true })).toContain("rewrites its sources")
+    expect(CacheEvidence.incomplete("Dprint", { fix: false })).toBeUndefined()
     // The flags mean nothing on a rule that does not have them.
     expect(CacheEvidence.incomplete("Vitest", { fix: true, buildMode: true })).toBeUndefined()
   })

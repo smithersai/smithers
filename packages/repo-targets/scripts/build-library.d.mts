@@ -46,3 +46,4 @@ export declare const buildLibrary: (
     readonly commonJsPlatform?: "neutral" | "node"
   }
 ) => Promise<void>
+export const emptyDirectory: (directory: string) => void

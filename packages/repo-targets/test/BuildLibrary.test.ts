@@ -1,7 +1,10 @@
+import { spawnSync } from "node:child_process"
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -17,6 +20,7 @@ import {
   buildLibrary,
   copyCommonJsDeclarations,
   copyInputDeclarations,
+  emptyDirectory,
   packageCompiler,
   portableEffectDeclarations,
   vibeSourcePackages
@@ -428,5 +432,45 @@ it("emits Schema.Json fields in declarations without the patched-only JsonValueS
     expect(declarations).toContain("readonly payload: (typeof Schema.Json);")
     expect(declarations).toContain("readonly items: Schema.$Array<(typeof Schema.Json)>;")
     expect(declarations).toContain("export declare const json: (typeof Schema.Json);")
+  }
+})
+
+const bwrap = process.platform === "linux"
+  ? (process.env["PATH"] ?? "").split(":").map((directory) => join(directory, "bwrap")).find((path) => existsSync(path))
+  : undefined
+
+it.skipIf(bwrap === undefined)("empties an output directory something is mounted on, as a confined build has it", () => {
+  const root = scratch()
+  const dist = join(root, "dist")
+  for (const file of ["esm/a.js", "esm/deep/b.js", "cjs/c.js", "stray/d.txt", "top.txt"]) write(join(dist, file), "x")
+  const script = join(import.meta.dirname, "../scripts/build-library.mjs")
+  const esm = join(dist, "esm")
+  const run = spawnSync(bwrap!, [
+    "--ro-bind", "/", "/", "--dev", "/dev", "--bind", root, root, "--bind", esm, esm, "--die-with-parent", "--",
+    process.execPath, "--input-type=module", "-e",
+    `import { emptyDirectory } from ${JSON.stringify(pathToFileURL(script).href)}; emptyDirectory(${JSON.stringify(dist)})`
+  ], { encoding: "utf8" })
+  expect(run.stderr).toBe("")
+  expect(run.status).toBe(0)
+  expect(readdirSync(dist)).toEqual(["esm"])
+  expect(readdirSync(esm)).toEqual([])
+})
+
+it("removes an output directory nothing is mounted on, and is no failure when there is none", () => {
+  const root = scratch()
+  write(join(root, "dist/esm/a.js"), "x")
+  emptyDirectory(join(root, "dist"))
+  expect(existsSync(join(root, "dist"))).toBe(false)
+  emptyDirectory(join(root, "dist"))
+})
+
+it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("raises any other failure to remove", () => {
+  const root = scratch()
+  write(join(root, "dist/locked/a.js"), "x")
+  chmodSync(join(root, "dist/locked"), 0o555)
+  try {
+    expect(() => emptyDirectory(join(root, "dist"))).toThrow(/EACCES/)
+  } finally {
+    chmodSync(join(root, "dist/locked"), 0o755)
   }
 })

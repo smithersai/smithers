@@ -82,11 +82,11 @@ Each row was a stale hit waiting to happen: an edit to a fixture did not re-key
 the test that read it. A package whose `test` still runs prints the paths its
 confined attempt could not read; declaring them is what makes it hit.
 
-`TsBuild` and `Dprint` remain non-cacheable, so a `test` that hits still waits
-for its package's `lib` to build. A declared
-[Nix environment](../concepts/environments.md) contributes identity but does
-not make these targets cacheable. See
-[What is not reused yet](caching.md#what-is-not-reused-yet).
+`TsBuild` and `Dprint` are reused after a confined run, like tests, type checks
+and lints, so a `test` that hits does not wait for its package's `lib` to build.
+A declared [Nix environment](../concepts/environments.md) contributes identity
+but does not make these targets cacheable. See
+[What is not reused](caching.md#what-is-not-reused).
 
 **Clean-slate builds are not reproduced.** The pipeline used to wipe every
 `dist` tree before building. The graph rebuilds from declared inputs instead, so

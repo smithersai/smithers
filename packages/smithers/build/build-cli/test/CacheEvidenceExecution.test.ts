@@ -58,14 +58,23 @@ const withPath = async <A>(path: string, body: () => Promise<A>): Promise<A> => 
   }
 }
 
-const rules = ["test", "node", "check", "lint"] as const
+const rules = ["test", "node", "check", "lint", "fmt"] as const
 type Rule = typeof rules[number]
 
 /** The installed program each rule's tool run starts. */
 /** The start of every test file: the verdict comes from the declared source, and a source without a value fails. */
 const verdict = "set -e\ncase \"$(/bin/cat source.ts)\" in *value*) ;; *) exit 1 ;; esac\n"
 
-const toolOf: Record<Rule, string> = { test: "vitest", node: "runner/lib.txt", check: "vibelang", lint: "eslint" }
+const toolOf: Record<Rule, string> = {
+  test: "vitest",
+  node: "runner/lib.txt",
+  check: "vibelang",
+  lint: "eslint",
+  fmt: "dprint"
+}
+
+/** A dprint plugin pinned by its checksum, as a `dprint.json` names one. */
+const pinnedPlugin = `https://plugins.dprint.dev/typescript-0.93.4.wasm@${"a".repeat(64)}`
 
 interface FixtureOptions {
   /** `off` declares `S.Sandbox.None()`; `default` declares nothing, so the platform's mechanism confines. */
@@ -80,6 +89,8 @@ interface FixtureOptions {
   readonly patchesInstalledTree?: boolean
   /** Where the tools start; the root package when `.`. */
   readonly cwd?: string
+  /** Whether `fmt` runs under a `dprint.json` that pins a plugin, fetched into a dprint cache of the fixture's own. */
+  readonly plugins?: boolean
   /** Files the test target reaches through a file group, and through a group nested in it. */
   readonly grouped?: ReadonlyArray<string>
 }
@@ -107,7 +118,8 @@ const fixture = async (options: FixtureOptions = {}) => {
   // The runtime's own test runner runs the files it is handed.
   await write(
     Path.join(tools, "node"),
-    "#!/bin/sh\nif [ \"$1\" = --test ]; then shift; exec /bin/sh \"$@\"; fi\nprintf '26.4.0\\n'\n",
+    "#!/bin/sh\ncase \"$1\" in --test) shift; exec /bin/sh \"$@\" ;; *.sh) exec /bin/sh \"$@\" ;; esac\n" +
+      "printf '26.4.0\\n'\n",
     0o755
   )
   await write("package.json", "{\"name\":\"fixture\",\"private\":true}\n")
@@ -118,7 +130,7 @@ const fixture = async (options: FixtureOptions = {}) => {
   await write(inPackage("data.txt"), "data\n")
   await write(inPackage("README.md"), "unrelated\n")
   await write(inPackage("case.test.ts"), `${verdict}${options.behaviour ?? ""}\n`)
-  for (const tool of ["vitest", "vibelang", "eslint"]) {
+  for (const tool of ["vitest", "vibelang", "eslint", "dprint"]) {
     await write(inPackage(`node_modules/.bin/${tool}`), "#!/bin/sh\nset -e\n. ./case.test.ts\n", 0o755)
   }
   await write(inPackage("node_modules/runner/lib.txt"), "installed\n")
@@ -131,6 +143,18 @@ const fixture = async (options: FixtureOptions = {}) => {
     cache: false,
     sandbox: "none"
   })
+  // A build program writes the module and its declaration where `format: "esm"` says they go.
+  await write(
+    inPackage("build.sh"),
+    "set -e\n/bin/mkdir -p dist/esm\n/bin/cat source.ts > dist/esm/source.js\necho 'export {}' > dist/esm/source.d.ts\n"
+  )
+  const dprintCache = Path.join(base, "dprint-cache")
+  if (options.plugins === true) {
+    const source = pinnedPlugin.slice(0, pinnedPlugin.lastIndexOf("@"))
+    await write(Path.join(dprintCache, "plugins", "1.json"), JSON.stringify({ source: `remote:${source}` }))
+    await write(Path.join(dprintCache, "plugins", "1.cwasm"), "compiled\n")
+    await write(inPackage("dprint.json"), JSON.stringify({ plugins: [pinnedPlugin] }))
+  }
   const deps = options.unstableDependency === true ? [unstable] : []
   const sources = [S.file("source.ts"), ...data]
   const inner = S.Filegroup({ srcs: (options.grouped ?? []).map((name) => S.file(name)), cwd })
@@ -156,6 +180,23 @@ const fixture = async (options: FixtureOptions = {}) => {
       tsconfig: S.file("config.json"),
       buildMode: false,
       incremental: false,
+      cwd
+    }),
+    fmt: S.Dprint({
+      sources: [S.file("case.test.ts"), ...sources],
+      deps: [],
+      config: S.file(options.plugins === true ? "dprint.json" : "config.json"),
+      fix: false,
+      cwd
+    }),
+    build: S.TsBuild({
+      srcs: [S.file("source.ts")],
+      entries: [S.file("source.ts")],
+      deps: [],
+      tsconfig: S.file("config.json"),
+      tool: { name: "program", entry: S.file("build.sh") },
+      format: "esm",
+      outDir: "dist",
       cwd
     }),
     lint: S.EsLint({
@@ -190,7 +231,8 @@ const fixture = async (options: FixtureOptions = {}) => {
     }]
   })
   const environment = {
-    PATH: [tools, ...(mechanismDirectory === undefined ? [] : [mechanismDirectory])].join(Path.delimiter)
+    PATH: [tools, ...(mechanismDirectory === undefined ? [] : [mechanismDirectory])].join(Path.delimiter),
+    ...(options.plugins === true ? { DPRINT_CACHE_DIR: dprintCache } : {})
   }
   const label = (name: string): string => `//${packagePath}:${name}`
   const planned = (names: ReadonlyArray<string>) =>
@@ -215,7 +257,7 @@ const fixture = async (options: FixtureOptions = {}) => {
     const names = await Fs.readdir(directory).catch(() => [])
     return Promise.all(names.map(async (name) => JSON.parse(await Fs.readFile(Path.join(directory, name), "utf8"))))
   }
-  return { root, tools, write, inPackage, run, node, planned, logs, attempts, label, index, environment }
+  return { root, tools, write, inPackage, run, node, planned, logs, attempts, label, index, environment, dprintCache }
 }
 
 describe("a plan", () => {
@@ -437,6 +479,48 @@ describe("a confined run", () => {
     await writeAll(hidden.write, hidden.inPackage)
     expect(await hidden.run("test")).toEqual({ test: "failed" })
   }, 300_000)
+
+  confinedIt("keys a format check on the plugins its configuration pins, and shows the run only those", async () => {
+    const { write, run, logs, dprintCache, node } = await fixture({
+      plugins: true,
+      behaviour: "/bin/cat \"$XDG_CACHE_HOME/dprint/cache/plugins/1.cwasm\" > /dev/null\n" +
+        "test ! -e \"$XDG_CACHE_HOME/dprint/cache/plugins/2.cwasm\""
+    })
+    // A plugin no configuration names is neither shown nor measured.
+    await write(
+      Path.join(dprintCache, "plugins", "2.json"),
+      JSON.stringify({ source: "remote:https://x.invalid/y.wasm" })
+    )
+    await write(Path.join(dprintCache, "plugins", "2.cwasm"), "other\n")
+    expect(await run("fmt")).toEqual({ fmt: "ran" })
+    expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+    expect(await run("fmt")).toEqual({ fmt: "hit" })
+    await write(Path.join(dprintCache, "plugins", "2.cwasm"), "other, recompiled\n")
+    expect(await run("fmt")).toEqual({ fmt: "hit" })
+    // The named plugin's bytes are in the key.
+    await write(Path.join(dprintCache, "plugins", "1.cwasm"), "compiled again\n")
+    expect(await run("fmt")).toEqual({ fmt: "ran" })
+    expect(await run("fmt")).toEqual({ fmt: "hit" })
+    // A plugin dprint has not fetched leaves the check unreused, and says why.
+    await Fs.rm(Path.join(dprintCache, "plugins", "1.json"))
+    expect((await node("fmt")).uncachedBecause).toBe(
+      "dprint has not fetched https://plugins.dprint.dev/typescript-0.93.4.wasm; one run of dprint on this host fetches it"
+    )
+  })
+
+  confinedIt("stores a build with its outputs, and puts them back on a hit", async () => {
+    const { write, inPackage, run, root, logs } = await fixture()
+    expect(await run("build")).toEqual({ build: "ran" })
+    expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+    await Fs.rm(Path.join(root, "pkg", "dist"), { recursive: true })
+    expect(await run("build")).toEqual({ build: "hit" })
+    expect(await Fs.readFile(Path.join(root, "pkg", "dist", "esm", "source.js"), "utf8")).toBe(
+      "export const value = 1\n"
+    )
+    await write(inPackage("source.ts"), "export const value = 2\n")
+    expect(await run("build")).toEqual({ build: "ran" })
+    expect(await run("build")).toEqual({ build: "hit" })
+  })
 
   confinedIt("never reuses a failed run, and reuses the green one again once the failure is gone", async () => {
     const { write, inPackage, run, attempts } = await fixture()

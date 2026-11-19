@@ -142,11 +142,11 @@ describe("packages/smithers/build prose", () => {
     }
     const cacheableRow = (target: string): string | undefined =>
       read(`docs/reference/targets/${target}.md`).split("\n").find((line) => /^\|\s*Cacheable\s*\|/.test(line))
-    for (const target of ["ts-build", "dts-build", "vitest-coverage", "biome-check", "deps-lint", "package-lint"]) {
+    for (const target of ["dts-build", "vitest-coverage", "biome-check", "deps-lint", "package-lint"]) {
       expect(cacheableRow(target), target).toMatch(/^\|\s*Cacheable\s*\|\s*Never\s*\|/)
     }
-    // These three are reused on the evidence of a confined run, and on nothing else.
-    for (const target of ["typecheck", "vitest", "es-lint"]) {
+    // These are reused on the evidence of a confined run, and on nothing else.
+    for (const target of ["typecheck", "vitest", "es-lint", "dprint", "ts-build"]) {
       const row = cacheableRow(target)
       expect(row, target).toMatch(/after a confined run proves its reads/i)
       expect(row, target).not.toMatch(/nix|environment/i)

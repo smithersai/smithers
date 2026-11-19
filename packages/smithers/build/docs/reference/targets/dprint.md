@@ -63,7 +63,7 @@ Collected from the attrs: every declaration in `sources`, plus `config`.
 |           |                                                                                                 |
 | --------- | ----------------------------------------------------------------------------------------------- |
 | Kinds     | `lint`                                                                                          |
-| Cacheable | Never, the external dprint toolchain is not complete key material                               |
+| Cacheable | With `fix: false`, after a confined run proves its reads; its pinned plugins are in the key; see [Caching](../../workspace/caching.md#results-reused-with-evidence) |
 | Executes  | Yes, through `ExecLive`                                                                         |
 
 ## Notes
@@ -84,6 +84,6 @@ declare a second target with `fix: true`.
 
 ## See also
 
-- [EsLint](es-lint.md), the lint target that is reused after a confined run
+- [EsLint](es-lint.md), the lint target, also reused after a confined run
 - [BiomeCheck](biome-check.md), which formats and lints in one tool
 - [buildAndCheckPackage](standard-package.md), which emits a `Dprint` `fmt` target

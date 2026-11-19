@@ -126,9 +126,9 @@ transitively when it changes the resolved store path. A target whose capabilitie
 file write because a compiler changed would be work for nothing.
 
 **Cacheability.** Nix contributes tool identity, but does not by itself make
-a target cacheable or override its cache policy. A test, a type check and a
-lint are reused after a run confined to their declared inputs; a build and a
-formatter are not reused yet. Reuse requires complete identities for the
+a target cacheable or override its cache policy. A test, a type check, a lint,
+a format check and a build are reused after a run confined to their declared
+inputs. Reuse requires complete identities for the
 executed toolchain, declared environment, dependency inputs, and produced
 outputs; mutation remains non-cacheable. See
 [Caching](../workspace/caching.md#cacheability).

@@ -150,17 +150,16 @@ boolean or a function of decoded attrs. This fails safe for custom targets and f
 catalog targets that invoke an external tool whose complete toolchain identity is
 not yet key material.
 
-| Target                                      | Cacheable                                                                                               |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `DocsParity`, `Filegroup`                   | Always; each is a bounded in-process check over declared content                                        |
-| `PackageJsonCheck`                          | Only with no generated fields; generated-field checks consult host-local state                          |
-| `GithubCiGen`                               | In `check` mode; never in `write` mode                                                                  |
-| `Vitest`, `NodeTest`, `Typecheck`, `EsLint` | After a confined run; see [Results reused with evidence](#results-reused-with-evidence)                 |
-| `ToolBuild`, `NodeTest`                     | Also when the declaration sets `cache: true`                                                            |
-| Rules the executor runs natively            | As their rule policy says; `Shell.Test` caches in `execute` mode                                        |
-| `Shell.Test` with `observe`                 | From what its run read; see [Results reused from what a run read](#results-reused-from-what-a-run-read) |
-| `TsBuild`, `Dprint`                         | Never; see [What is not reused yet](#what-is-not-reused-yet)                                            |
-| Every other catalog target                  | Never                                                                                                   |
+| Target                                                           | Cacheable                                                                                               |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `DocsParity`, `Filegroup`                                        | Always; each is a bounded in-process check over declared content                                        |
+| `PackageJsonCheck`                                               | Only with no generated fields; generated-field checks consult host-local state                          |
+| `GithubCiGen`                                                    | In `check` mode; never in `write` mode                                                                  |
+| `Vitest`, `NodeTest`, `Typecheck`, `EsLint`, `Dprint`, `TsBuild` | After a confined run; see [Results reused with evidence](#results-reused-with-evidence)                 |
+| `ToolBuild`, `NodeTest`                                          | Also when the declaration sets `cache: true`                                                            |
+| Rules the executor runs natively                                 | As their rule policy says; `Shell.Test` caches in `execute` mode                                        |
+| `Shell.Test` with `observe`                                      | From what its run read; see [Results reused from what a run read](#results-reused-from-what-a-run-read) |
+| Every other catalog target                                       | Never                                                                                                   |
 
 Mutation, long-lived processes, model calls, and external publication are never
 cached. `cache: true` on a `NodeTest` is the declaration's assertion that `srcs`
@@ -178,12 +177,14 @@ only; it never publishes to a remote cache.
 
 ### Results reused with evidence
 
-A test runner, a type checker and a linter each start a program that can read
-any file it can reach. The declared inputs key the result, so a read the
-declaration does not name leaves the key unchanged while the verdict moves. A
-stale green test is the worst thing a build cache can return. `Vitest`,
-`NodeTest`, `Typecheck` and `EsLint` are therefore reused on one condition: the
-run that produced the result was confined to what its key covers.
+A test runner, a type checker, a linter, a formatter and a build each start a
+program that can read any file it can reach. The declared inputs key the result,
+so a read the declaration does not name leaves the key unchanged while the
+verdict moves. A stale green test is the worst thing a build cache can return.
+`Vitest`, `NodeTest`, `Typecheck`, `EsLint`, `Dprint` and `TsBuild` are
+therefore reused on one condition: the run that produced the result was confined
+to what its key covers. A build's declared outputs are stored with its result
+and put back on a hit.
 
 **What the key covers.** Beside the declared inputs, the dependency keys, the
 lockfile, the package manager, the runtime and the declared environment:
@@ -197,6 +198,12 @@ lockfile, the package manager, the runtime and the declared environment:
   The tree of a package the target declares no file of is not shown to the run.
 - The `package.json` of the directory the tool starts in, which the package
   manager and the tool resolve the package from.
+- For `Dprint`, the bytes of each plugin its configuration pins, from dprint's
+  own cache outside the workspace. The run is shown those files and nothing else
+  of the cache, through a link where dprint looks for its cache. A plugin dprint
+  has not fetched, a configuration that extends another or is not plain JSON,
+  and a plugin that is not a remote `.wasm` pinned by its checksum each leave the
+  result unreused, with the reason.
 
 A tree is measured as units: its `.bin` directory, each child of a pnpm store
 (`.pnpm/<id>`), and each other entry whose name does not start with a dot. A
@@ -300,8 +307,8 @@ outputs still measure the same.
   each is a miss.
 
 **What declares a target out.** `cache: false`, `sandbox: "none"`, an opened
-network, `services`, `Typecheck` in build or incremental mode, and `EsLint` with
-`fix: true` are never reused. The planned node carries the reason as
+network, `services`, `Typecheck` in build or incremental mode, and `EsLint` or
+`Dprint` with `fix: true` are never reused. The planned node carries the reason as
 `uncachedBecause`.
 
 [Affected selection](affected.md) does not change. A result that is never
@@ -923,13 +930,8 @@ A stored result that is not reused prints a line too:
 //packages/app:test  not reused: its stored result read dependency outputs that have changed: packages/app/dist
 ```
 
-### What is not reused yet
+### What is not reused
 
-- **`TsBuild`.** Its outputs are declared and restored, but the package build
-  programs remove and recreate their output directory, which a bind mount
-  refuses, so a confined build fails before it can prove anything.
-- **`Dprint`.** The native binary and its downloaded plugins are not key
-  material. It is under 1% of this repository's CI time.
 - **macOS and Docker.** Seatbelt and Docker have no scratch layer, so no
   evidence is gathered under them.
 - **A check that a confined run really ran every case.** A suite that skips
