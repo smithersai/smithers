@@ -106,6 +106,7 @@ forked there, runs its steps with that implementation's services. When the run
 belongs to another composition, start it in that composition's own context,
 captured where the composition is built:
 
+<!-- dprint-ignore -->
 ```ts
 const own = yield* Effect.context<never>()
 // Later, inside another flow's implementation:
