@@ -111,6 +111,11 @@ describe("declarationIdentity", () => {
     differs({ dependencies: ["//pkg:lib"] })
     differs({ reads: [] })
     differs({ installedTrees: ["node_modules"] })
+    // Declaring a program the confined run was not shown tries again too.
+    differs({ tools: ["zig"] })
+    expect(CacheEvidence.declarationIdentity({ ...declaration, tools: [] })).toBe(identity)
+    const tools = CacheEvidence.declarationIdentity({ ...declaration, tools: ["zig", "strace"] })
+    expect(CacheEvidence.declarationIdentity({ ...declaration, tools: ["strace", "zig"] })).toBe(tools)
   })
 })
 

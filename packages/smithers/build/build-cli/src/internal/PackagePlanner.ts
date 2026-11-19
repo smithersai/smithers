@@ -15,6 +15,7 @@ import type * as Docker from "@smthrs/targets/Docker"
 import type * as DocsCheck from "@smthrs/targets/DocsCheck"
 import * as DocsPage from "@smthrs/targets/DocsPage"
 import * as Exec from "@smthrs/targets/Exec"
+import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import type * as GitTarget from "@smthrs/targets/GitTarget"
 import * as Input from "@smthrs/targets/Input"
 import type * as NodeArtifact from "@smthrs/targets/NodeArtifact"
@@ -1971,6 +1972,60 @@ const visit = async (
     }
     pathTools.push({ name, path: planned })
     if (relative !== undefined && !readSet.includes(posix(relative))) readSet.push(posix(relative))
+  }
+  // The programs a suite starts by name. Each keys by the bytes of the file
+  // that runs: a link is followed to its file and a package-manager shim to
+  // the program it starts, so one replaced in place moves the key. The run
+  // finds each by its name in a directory that leads its `PATH`.
+  if (rule === "Vitest") {
+    const searched = new Set(
+      String(toolContext.environment["PATH"] ?? "").split(NodePath.delimiter)
+        .filter((entry) => NodePath.isAbsolute(entry) && NodeFs.existsSync(entry))
+        .map((entry) => NodeFs.realpathSync(entry))
+    )
+    // A program that sits in a `PATH` directory is shown alone: the rest of
+    // that directory is other programs, which the suite did not declare. A
+    // link that leads into an installation of its own shows that installation
+    // (Zig's `lib` beside `zig`), and a shim the package it starts.
+    const show = (file: string): void => {
+      // A workspace file is keyed and shown as one of the suite's reads.
+      if (!NodePath.isAbsolute(file)) return
+      const installedPackage = /^(.*[\\/]node_modules[\\/](?:@[^\\/]+[\\/])?[^\\/]+)[\\/]/.exec(file)?.[1]
+      const directory = installedPackage ?? NodePath.dirname(file)
+      const read = searched.has(directory) || Path.contains(directory, context.root) ? file : directory
+      if (!externalReads.includes(read)) externalReads.push(read)
+    }
+    for (const reference of (attrs as { readonly tools?: ReadonlyArray<Record<string, unknown>> }).tools ?? []) {
+      // A host program: its path is absolute, through PATH or its variable.
+      const outcome = await resolveTool(toolContext, reference)
+      if (outcome._tag === "refused") {
+        toolchain.push({ slot: "tool", identity: JSON.stringify(outcome.tool.identity) })
+        // A suite runs where a program it starts is not on `PATH`, as a test
+        // that looks it up and skips does; the key holds the absence, so the
+        // result is never answered on a host that has it. A variable that
+        // names no program is a mistake in the run's environment.
+        const variable = reference["env"]
+        const chosen = typeof variable === "string" ? toolContext.environment[variable] : undefined
+        if (chosen !== undefined && chosen !== "") noteRefusal(outcome.tool.refusal)
+        continue
+      }
+      // The identity holds the bytes of the file the name resolves to and of
+      // each interpreter it names; a shim adds the program it starts.
+      const file = await Fs.realpath(outcome.tool.path)
+      const started = ExecSandbox.host(toolContext.environment).shimTarget?.(file)
+      const starts = started === undefined ? undefined : await binaryIdentity(toolContext, started)
+      const executables: Array<Record<string, unknown>> = []
+      collectTagged([outcome.tool.identity, starts], "Executable", executables, new Set())
+      for (const executable of executables) show(String(executable["path"]))
+      // Kept as text: in its tagged form the admission below would show each
+      // executable's whole directory.
+      toolchain.push({
+        slot: "tool",
+        identity: JSON.stringify(outcome.tool.identity),
+        ...(starts === undefined ? {} : { starts: JSON.stringify(starts) })
+      })
+      notePathTool(reference, file)
+    }
   }
   // A declared install opens its `node_modules` to the confined tool. The
   // manifest and lockfiles expanded above are the key; the tree is the grant.

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
@@ -72,5 +73,40 @@ describe("the tool directory", () => {
     await expect(PathTools.directory(NodePath.join(file, "tmp"), "id", tools)).rejects.toMatchObject({
       code: "ENOTDIR"
     })
+  })
+})
+
+describe("the directory of undeclared programs", () => {
+  it("holds one failing program for each name on the search path the suite did not declare", async () => {
+    const root = await temporary()
+    const first = NodePath.join(root, "first")
+    const second = NodePath.join(root, "second")
+    for (
+      const [directory, names] of [[first, ["zig", "strace", ".hidden"]], [second, ["strace", "other's"]]] as const
+    ) {
+      await Fs.mkdir(directory, { recursive: true })
+      for (const name of names) await Fs.writeFile(NodePath.join(directory, name), "#!/bin/sh\n", { mode: 0o755 })
+    }
+    const parent = NodePath.join(root, "tmp")
+    // A relative entry and a missing directory add nothing.
+    const searchPath = ["relative", NodePath.join(root, "missing"), first, second].join(NodePath.delimiter)
+    const directory = await PathTools.undeclared(parent, searchPath, ["zig"])
+    expect((await Fs.readdir(directory)).sort()).toEqual(["other's", "strace"])
+    const ran = spawnSync(NodePath.join(directory, "other's"), [], { encoding: "utf8" })
+    expect(ran.status).toBe(127)
+    expect(ran.stderr).toBe(`${PathTools.undeclaredLine("other's")}\n`)
+    expect(ran.stderr).toBe("sandbox: other's is not declared: declare it in tools\n")
+    // The same names give the same directory, made once.
+    const before = await Fs.stat(directory)
+    expect(await PathTools.undeclared(parent, searchPath, ["zig"])).toBe(directory)
+    expect((await Fs.stat(directory)).ino).toBe(before.ino)
+    // Two runs that make it at once both answer it, and nothing is left beside it.
+    const [left, right] = await Promise.all([
+      PathTools.undeclared(parent, first, []),
+      PathTools.undeclared(parent, first, [])
+    ])
+    expect(left).toBe(right)
+    expect((await Fs.readdir(left)).sort()).toEqual(["strace", "zig"])
+    expect((await Fs.readdir(parent)).filter((name) => name.includes("."))).toEqual([])
   })
 })

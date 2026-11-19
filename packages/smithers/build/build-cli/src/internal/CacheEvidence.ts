@@ -99,9 +99,10 @@ export const isEvidence = (decision: Evidence | { readonly reason: string }): de
 /**
  * The identity of what a node declares: its label, rule, sandbox policy,
  * declared inputs as written (a glob's pattern, never the files it matches),
- * dependencies and installed trees. A confined attempt that failed is
- * remembered under it, so adding a file under a declared glob or editing a
- * source does not try again, and declaring the missing input does.
+ * dependencies, installed trees and the programs a suite declares it starts.
+ * A confined attempt that failed is remembered under it, so adding a file
+ * under a declared glob or editing a source does not try again, and declaring
+ * the missing input or program does.
  *
  * @category attempts
  * @since 1.0.0
@@ -116,6 +117,8 @@ export const declarationIdentity = (declaration: {
   /** Paths the rule itself reads beside its declared inputs. */
   readonly reads: ReadonlyArray<string>
   readonly installedTrees: ReadonlyArray<string>
+  /** The names of the programs a suite declares it starts (`Vitest` `tools`). */
+  readonly tools?: ReadonlyArray<string> | undefined
 }): string =>
   createHash("sha256").update(JSON.stringify([
     declaration.label,
@@ -124,7 +127,9 @@ export const declarationIdentity = (declaration: {
     declaration.inputs,
     [...declaration.dependencies].sort(),
     [...declaration.reads].sort(),
-    [...declaration.installedTrees].sort()
+    [...declaration.installedTrees].sort(),
+    // Absent, the identity is the one a declaration without programs always had.
+    ...(declaration.tools === undefined || declaration.tools.length === 0 ? [] : [[...declaration.tools].sort()])
   ])).digest("hex")
 
 /**
@@ -284,6 +289,11 @@ export const deniedLines = (text: string, limit = 5): ReadonlyArray<string> => {
     const match = /^sandbox: (.+ (?:is outside the declared (?:read|write) set|was denied inside the declared set))/
       .exec(line.trim())
     if (match !== null) lines.add(match[1]!)
+    // A program the run did not declare says so on its own error output,
+    // which a tool's failure may quote anywhere in a line.
+    for (const undeclared of line.matchAll(/sandbox: ([^\s"'\\]+ is not declared: declare it in tools)/g)) {
+      lines.add(undeclared[1]!)
+    }
   }
   return [...lines].slice(0, limit)
 }

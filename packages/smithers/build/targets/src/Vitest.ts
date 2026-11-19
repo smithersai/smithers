@@ -10,6 +10,7 @@ import * as Attr from "./Attr.ts"
 import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as PackageManager from "./PackageManager.ts"
+import * as Reference from "./Reference.ts"
 import * as Runtime from "./Runtime.ts"
 import * as Target from "./Target.ts"
 
@@ -93,6 +94,16 @@ export const Attrs = Schema.Struct({
   services: Schema.optional(Attr.Services),
   /** The sandbox policy, as for `Shell.Test`. */
   sandbox: Schema.optional(Attr.Sandbox),
+  /**
+   * The host programs the suite starts by name that its packages do not
+   * install: `[S.Host.bin("zig"), S.Host.bin("strace")]`. Each is found on `PATH` when
+   * the run is planned and keyed by the bytes of the file it resolves to,
+   * through any link or package-manager shim, so a program replaced in place
+   * runs the suite again. A confined run is shown these and the system's own
+   * programs; a program the suite starts that is not declared fails, naming
+   * itself.
+   */
+  tools: Schema.optional(Schema.Array(Reference.HostBin)),
   /**
    * How long the run may take before the tool is killed.
    *

@@ -94,6 +94,12 @@ interface FixtureOptions {
   readonly plugins?: boolean
   /** Files the test target reaches through a file group, and through a group nested in it. */
   readonly grouped?: ReadonlyArray<string>
+  /** Programs the suite declares it starts, found in the fixture's host directory. */
+  readonly tools?: ReadonlyArray<string>
+  /** The host variable that selects each declared program before PATH does. */
+  readonly toolVariable?: string
+  /** More of the environment the run is planned and run under, given the workspace root. */
+  readonly variables?: (root: string) => Readonly<Record<string, string>>
 }
 
 const fixture = async (options: FixtureOptions = {}) => {
@@ -101,6 +107,9 @@ const fixture = async (options: FixtureOptions = {}) => {
   temporary.push(base)
   const root = Path.join(base, "ws")
   const tools = Path.join(base, "tools", "bin")
+  // Programs of the host's own, on its search path, outside the workspace and the runtime's directory.
+  const host = Path.join(base, "host", "bin")
+  await Fs.mkdir(host, { recursive: true })
   const cwd = options.cwd ?? "pkg"
   const write = async (name: string, text: string, mode = 0o644): Promise<void> => {
     const file = Path.isAbsolute(name) ? name : Path.join(root, name)
@@ -171,7 +180,12 @@ const fixture = async (options: FixtureOptions = {}) => {
       config: S.file("config.json"),
       environment: "node",
       passWithNoTests: false,
-      cwd
+      cwd,
+      ...(options.tools === undefined ? {} : {
+        tools: options.tools.map((name) =>
+          S.Host.bin(name, options.toolVariable === undefined ? {} : { env: options.toolVariable })
+        )
+      })
     }),
     node: S.NodeTest({ runner: S.testRunner([S.file("case.test.ts")]), srcs: sources, deps: [], cwd }),
     asserted: S.NodeTest({ runner: S.testRunner([S.file("case.test.ts")]), srcs: sources, deps: [], cwd, cache: true }),
@@ -222,6 +236,7 @@ const fixture = async (options: FixtureOptions = {}) => {
         version: "11.21.0"
       }),
       nodeModules: S.Npm.NodeModules({ packageJson: S.file("//package.json") }),
+      ...(options.tools === undefined ? {} : { host: S.Host({ bins: options.tools }) }),
       ...(options.confinement === "default" ? {} : { sandboxes: S.Sandboxes({ default: S.Sandbox.None() }) })
     }),
     factory: undefined,
@@ -232,7 +247,8 @@ const fixture = async (options: FixtureOptions = {}) => {
     }]
   })
   const environment = {
-    PATH: [tools, ...(mechanismDirectory === undefined ? [] : [mechanismDirectory])].join(Path.delimiter),
+    PATH: [tools, host, ...(mechanismDirectory === undefined ? [] : [mechanismDirectory])].join(Path.delimiter),
+    ...options.variables?.(root),
     ...(options.plugins === true ? { DPRINT_CACHE_DIR: dprintCache } : {})
   }
   const label = (name: string): string => `//${packagePath}:${name}`
@@ -258,7 +274,22 @@ const fixture = async (options: FixtureOptions = {}) => {
     const names = await Fs.readdir(directory).catch(() => [])
     return Promise.all(names.map(async (name) => JSON.parse(await Fs.readFile(Path.join(directory, name), "utf8"))))
   }
-  return { root, tools, write, inPackage, run, node, planned, logs, attempts, label, index, environment, dprintCache }
+  return {
+    root,
+    tools,
+    host,
+    write,
+    inPackage,
+    run,
+    node,
+    planned,
+    logs,
+    attempts,
+    label,
+    index,
+    environment,
+    dprintCache
+  }
 }
 
 describe("a plan", () => {
@@ -644,6 +675,92 @@ describe("a confined run", () => {
     const lint = await fixture({ behaviour: reports })
     expect(await lint.run("lint")).toEqual({ lint: "ran" })
     expect(lines(lint.logs)).toEqual(["//pkg:lint: runs-all"])
+  })
+
+  confinedIt(
+    "stores a suite that starts a program it declares, and runs it again when that program is replaced",
+    async () => {
+      const { write, run, host, logs } = await fixture({ tools: ["greet"], behaviour: "test \"$(greet)\" = hello" })
+      await write(Path.join(host, "greet"), "#!/bin/sh\necho hello\n", 0o755)
+      expect(await run("test")).toEqual({ test: "ran" })
+      expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+      expect(await run("test")).toEqual({ test: "hit" })
+      // Replaced in place: the same name, the same version line, other bytes.
+      await write(Path.join(host, "greet"), "#!/bin/sh\necho hello\n# rebuilt\n", 0o755)
+      expect(await run("test")).toEqual({ test: "ran" })
+      expect(await run("test")).toEqual({ test: "hit" })
+    }
+  )
+
+  confinedIt(
+    "stores a suite whose declared program is missing, and runs it again once the program is there",
+    async () => {
+      const lookup = "if command -v later > /dev/null; then test \"$(later)\" = here; fi"
+      const { write, run, host, logs } = await fixture({ tools: ["later"], behaviour: lookup })
+      expect(await run("test")).toEqual({ test: "ran" })
+      expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+      expect(await run("test")).toEqual({ test: "hit" })
+      await write(Path.join(host, "later"), "#!/bin/sh\necho here\n", 0o755)
+      expect(await run("test")).toEqual({ test: "ran" })
+      expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+      expect(await run("test")).toEqual({ test: "hit" })
+    }
+  )
+
+  confinedIt("keys a suite on the program a shim starts, and shows a linked program alone", async () => {
+    const { write, run, host, root, logs } = await fixture({
+      tools: ["greet", "hello"],
+      behaviour: "test \"$(greet)\" = hi\ntest \"$(hello)\" = hello"
+    })
+    const base = Path.dirname(root)
+    // `greet` is a package manager's shim: the program it starts is elsewhere.
+    const started = Path.join(base, "opt", "greet.sh")
+    await write(started, "echo hi\n")
+    await write(
+      Path.join(host, "greet"),
+      `#!/bin/sh\n# cmd-shim-target=${started}\nexec /bin/sh ${started} "$@"\n`,
+      0o755
+    )
+    // `hello` is a link to a program in a directory that also holds the workspace: only the program is shown.
+    await write(Path.join(base, "hello.sh"), "#!/bin/sh\necho hello\n", 0o755)
+    await Fs.symlink(Path.join(base, "hello.sh"), Path.join(host, "hello"))
+    expect(await run("test")).toEqual({ test: "ran" })
+    expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+    expect(await run("test")).toEqual({ test: "hit" })
+    // The shim is unchanged; the program it starts is not.
+    await write(started, "echo hi\n# rebuilt\n")
+    expect(await run("test")).toEqual({ test: "ran" })
+    expect(await run("test")).toEqual({ test: "hit" })
+  })
+
+  confinedIt("runs a declared program its variable selects in the workspace, and refuses one it cannot", async () => {
+    const { write, run, root, logs } = await fixture({
+      tools: ["greet"],
+      toolVariable: "GREET_PROGRAM",
+      variables: (root) => ({ GREET_PROGRAM: Path.join(root, "pkg", "greet.sh") }),
+      behaviour: "test \"$(greet)\" = here"
+    })
+    await write(Path.join(root, "pkg", "greet.sh"), "#!/bin/sh\necho here\n", 0o755)
+    expect(await run("test")).toEqual({ test: "ran" })
+    expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+    expect(await run("test")).toEqual({ test: "hit" })
+    const relative = await fixture({
+      tools: ["greet"],
+      toolVariable: "GREET_PROGRAM",
+      variables: () => ({ GREET_PROGRAM: "greet.sh" })
+    })
+    expect((await relative.node("test")).refusal).toBe("GREET_PROGRAM must name an absolute path to \"greet\"")
+  })
+
+  confinedIt("names a program the suite starts and does not declare, even one beside a declared program", async () => {
+    const { write, run, host, logs, attempts } = await fixture({ tools: ["greet"], behaviour: "greet\nother" })
+    await write(Path.join(host, "greet"), "#!/bin/sh\necho hello\n", 0o755)
+    await write(Path.join(host, "other"), "#!/bin/sh\nexit 0\n", 0o755)
+    // The workspace's own run finds both on its search path and passes; the confined one is shown only `greet`.
+    expect(await run("test")).toEqual({ test: "ran" })
+    const line = logs.find((entry) => entry.includes("not cached"))!
+    expect(line).toContain("failed when confined to its declared inputs: other is not declared: declare it in tools")
+    expect((await attempts())[0]).toMatchObject({ denied: ["other is not declared: declare it in tools"] })
   })
 
   confinedIt("says nothing was denied when a confined run fails for another reason", async () => {

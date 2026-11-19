@@ -56,7 +56,9 @@ export const runTarget = (
   packageName?: string | undefined,
   nixEnvironment?: Planner.PlannedEnvironment | undefined,
   sandbox?: ExecSandbox.Request | undefined,
-  output?: OutputStream.Observer | undefined
+  output?: OutputStream.Observer | undefined,
+  /** Turns the `PATH` the body's tools search into the one its run is given: a suite's declared tools lead it. */
+  searchPath?: ((path: string) => string) | undefined
 ): Effect.Effect<unknown, unknown> =>
   Effect.suspend(() => {
     // Decode and lower before acquiring services or probing executables. The
@@ -76,20 +78,22 @@ export const runTarget = (
     const usesPnpm = declared.packageManager?.name === "pnpm"
     // Catalog bodies use ExecLive rather than the native planner's argv/env.
     // Give both routes the same Install store and prevent consumer-side installs.
-    const environment: Exec.ToolEnvironment | undefined = nixEnvironment === undefined && !usesPnpm
-      ? undefined
-      : {
-        path: nixEnvironment?.path.join(NodePath.delimiter) ?? Exec.toolEnvironment({}, sensitiveEnv)["PATH"] ?? "",
-        variables: {
-          ...nixEnvironment?.variables,
-          ...(usesPnpm ?
-            {
-              pnpm_config_store_dir: NodePath.resolve(workspaceRoot, PackageManager.storeRoot, "pnpm"),
-              pnpm_config_verify_deps_before_run: "false"
-            } :
-            {})
+    const path = nixEnvironment?.path.join(NodePath.delimiter) ?? Exec.toolEnvironment({}, sensitiveEnv)["PATH"] ?? ""
+    const environment: Exec.ToolEnvironment | undefined =
+      nixEnvironment === undefined && !usesPnpm && searchPath === undefined
+        ? undefined
+        : {
+          path: searchPath === undefined ? path : searchPath(path),
+          variables: {
+            ...nixEnvironment?.variables,
+            ...(usesPnpm ?
+              {
+                pnpm_config_store_dir: NodePath.resolve(workspaceRoot, PackageManager.storeRoot, "pnpm"),
+                pnpm_config_verify_deps_before_run: "false"
+              } :
+              {})
+          }
         }
-      }
     const cwd = Exec.resolveWorkspacePath(
       workspaceRoot,
       "cwd" in validated && typeof validated.cwd === "string" ? validated.cwd : "."

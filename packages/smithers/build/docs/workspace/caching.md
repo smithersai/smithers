@@ -198,6 +198,11 @@ lockfile, the package manager, the runtime and the declared environment:
   The tree of a package the target declares no file of is not shown to the run.
 - The `package.json` of the directory the tool starts in, which the package
   manager and the tool resolve the package from.
+- For `Vitest`, the bytes of each program its `tools` declares, which the
+  suite starts by name. A confined run is shown those programs and the system's
+  own; any other program on the host's `PATH` fails with
+  `<name> is not declared: declare it in tools`. See
+  [Programs the suite starts](../reference/targets/vitest.md#programs-the-suite-starts).
 - For `Dprint`, the bytes of each plugin its configuration pins, from dprint's
   own cache outside the workspace. The run is shown those files and nothing else
   of the cache, through a link where dprint looks for its cache. A plugin dprint

@@ -1139,6 +1139,26 @@ const executeWith = (
         return { argv: argv as [string, ...Array<string>], env: spawnEnv, secrets: node.secrets }
       })
 
+    /**
+     * The `PATH` a suite runs on: its declared tools first, then the one it
+     * would have had, then a program for each one it did not declare, which
+     * fails naming itself where a confined run is not shown the host's own.
+     */
+    const suitePath = (node: PackageNode): Effect.Effect<((path: string) => string) | undefined, unknown> =>
+      node.rule !== "Vitest" ? Effect.succeed(undefined) : Effect.gen(function*() {
+        const parent = NodePath.join(root, ...cacheDirectory.split("/"), "tmp")
+        const tools = (node.pathTools ?? []).map((tool) => ({
+          name: tool.name,
+          path: tool.path.split(workspaceRootToken).join(root)
+        }))
+        const first = tools.length === 0
+          ? []
+          : [yield* joined(() => PathTools.directory(parent, node.keyPreview.slice(0, 16), tools))]
+        const host = (options.environment ?? process.env)["PATH"] ?? ""
+        const last = yield* joined(() => PathTools.undeclared(parent, host, tools.map((tool) => tool.name)))
+        return (path: string) => [...first, path, last].filter((entry) => entry !== "").join(NodePath.delimiter)
+      })
+
     /** Prepares the cache seal and explicit dependency read grants for any tool-running rule. */
     const sandboxFor = (
       node: PackageNode,
@@ -1811,7 +1831,8 @@ const executeWith = (
           ],
           dependencies: node.dependencies,
           reads: node.readSet,
-          installedTrees: node.installedTrees ?? []
+          installedTrees: node.installedTrees ?? [],
+          tools: node.pathTools?.map((tool) => tool.name)
         })
         const evidencePath = posix(NodePath.relative(root, CacheEvidence.attemptPath(root, cacheDirectory, identity)))
         if (yield* joined(() => CacheEvidence.attemptFailed(root, cacheDirectory, identity))) {
@@ -5048,18 +5069,24 @@ const executeWith = (
                   environment: { ...(options.environment ?? process.env), ...node.env },
                   sensitiveNames: credentialNames
                 })
-                return Effect.exit(services.target(
-                  root,
-                  cacheDirectory,
-                  node.declaration,
-                  attrs,
-                  `smithers-build-target-${node.keyPreview.slice(0, 24)}`,
-                  credentialNames,
-                  options.packageName,
-                  node.nixEnvironment,
-                  sandbox,
-                  output
-                )).pipe(Effect.ensuring(Effect.sync(output.close)))
+                return suitePath(node).pipe(
+                  Effect.flatMap((searchPath) =>
+                    Effect.exit(services.target(
+                      root,
+                      cacheDirectory,
+                      node.declaration,
+                      attrs,
+                      `smithers-build-target-${node.keyPreview.slice(0, 24)}`,
+                      credentialNames,
+                      options.packageName,
+                      node.nixEnvironment,
+                      sandbox,
+                      output,
+                      searchPath
+                    ))
+                  ),
+                  Effect.ensuring(Effect.sync(output.close))
+                )
               }
               const evidenceNode = node.evidence === undefined
                 ? undefined

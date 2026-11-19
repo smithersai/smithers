@@ -11,6 +11,7 @@ import { Filegroup } from "@smthrs/targets/Filegroup"
 import * as Input from "@smthrs/targets/Input"
 import { entrypoint, NodeTest } from "@smthrs/targets/NodeTest"
 import type * as PackageManager from "@smthrs/targets/PackageManager"
+import type * as Reference from "@smthrs/targets/Reference"
 import type * as Target from "@smthrs/targets/Target"
 import { TsBuild } from "@smthrs/targets/TsBuild"
 import { Typecheck } from "@smthrs/targets/Typecheck"
@@ -98,6 +99,12 @@ export interface Options {
    * thresholds remain owned by the selected Vitest config.
    */
   readonly testTimeoutMs?: number | undefined
+  /**
+   * The programs the suite starts by name that its packages do not install,
+   * such as `Host.bin("zig")`. Each is keyed by the bytes it runs, and a
+   * confined run is shown only these beside the system's own.
+   */
+  readonly testTools?: ReadonlyArray<Reference.HostBin> | undefined
   readonly eslintConfigs?: ReadonlyArray<Input.File> | undefined
   readonly dprintConfig?: Input.File | undefined
   readonly readme?: Input.File | undefined
@@ -272,6 +279,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     Vitest({
       ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
       ...(options.testTimeoutMs === undefined ? {} : { timeoutMs: options.testTimeoutMs }),
+      ...(options.testTools === undefined ? {} : { tools: options.testTools }),
       tests: [tests],
       sources: [
         sources,

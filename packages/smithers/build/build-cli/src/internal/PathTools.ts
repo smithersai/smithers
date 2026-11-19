@@ -12,6 +12,7 @@
  */
 
 import * as Data from "effect/Data"
+import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import { errorCode } from "./Fs.ts"
@@ -77,4 +78,51 @@ export const directory = async (parent: string, id: string, tools: ReadonlyArray
   throw new ToolDirectoryClash({
     message: `tool directory ${final} holds other tools than this target declares; remove it and run again`
   })
+}
+
+/**
+ * The line a program prints when a run starts it without declaring it;
+ * `CacheEvidence.deniedLines` reads it.
+ *
+ * @category execution
+ * @since 1.0.0
+ */
+export const undeclaredLine = (name: string): string => `sandbox: ${name} is not declared: declare it in tools`
+
+const answer = (name: string): string =>
+  ["#!/bin/sh", `echo '${undeclaredLine(name).replaceAll("'", "'\\''")}' >&2`, "exit 127", ""].join("\n")
+
+/**
+ * Materializes the directory that ends a confined suite's `PATH`: one script
+ * for each program a host `PATH` directory holds and the suite does not
+ * declare, which fails naming that program. A confined run is not shown the
+ * host's own tool directories, so without it a test that looks a program up
+ * would skip, or take another path, where the workspace's run starts it.
+ * Programs the run is shown come earlier on `PATH` and answer first.
+ *
+ * @category execution
+ * @since 1.0.0
+ */
+export const undeclared = async (
+  parent: string,
+  searchPath: string,
+  declared: ReadonlyArray<string>
+): Promise<string> => {
+  const names = new Set<string>()
+  for (const entry of searchPath.split(NodePath.delimiter)) {
+    if (!NodePath.isAbsolute(entry)) continue
+    for (const name of await Fs.readdir(entry).catch(() => [])) {
+      if (!name.startsWith(".") && !declared.includes(name)) names.add(name)
+    }
+  }
+  const sorted = [...names].sort()
+  const id = createHash("sha256").update(sorted.join("\0")).digest("hex").slice(0, 16)
+  const final = NodePath.join(parent, `undeclared-${id}`)
+  if (await Fs.stat(final).then(() => true, () => false)) return final
+  await Fs.mkdir(parent, { recursive: true })
+  const staging = await Fs.mkdtemp(NodePath.join(parent, `undeclared-${id}.`))
+  for (const name of sorted) await Fs.writeFile(NodePath.join(staging, name), answer(name), { mode: 0o755 })
+  // Another run with the same names may have renamed its copy first; it holds the same scripts.
+  await Fs.rename(staging, final).catch(() => Fs.rm(staging, { recursive: true, force: true }))
+  return final
 }

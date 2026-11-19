@@ -164,6 +164,16 @@ describe("BuildAndCheckTypeScriptPackage", () => {
     })
   })
 
+  it("names the programs the suite starts on the test target alone", () => {
+    const standard = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example" })
+    const tools = [{ _tag: "HostBin", name: "zig" }, { _tag: "HostBin", name: "strace" }] as const
+    const declared = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example", testTools: tools })
+    expect(attrsOf<Vitest.Attrs>(standard.test).tools).toBeUndefined()
+    expect(Target.metadata(declared.test).attrs).toEqual({ ...attrsOf<Vitest.Attrs>(standard.test), tools })
+    expect(plannedArgv(declared.test)).toEqual(plannedArgv(standard.test))
+    expect(Target.metadata(declared.check).attrs).toEqual(Target.metadata(standard.check).attrs)
+  })
+
   it("emits a docs target beside lib, test, and lint", () => {
     expect(Target.metadata(targets.docs).target).toBe("DocsParity")
     expect(Target.metadata(targets.docs).kinds).toEqual(["docs"])

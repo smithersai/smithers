@@ -39,6 +39,7 @@ export const Package = Smithers.Package({
 | `passWithNoTests` | `boolean`                       | required | Succeed when the suite matches no files.                                                                                                                        |
 | `bail`            | `number`                        | none     | Stop once this many cases have failed, as `--bail`. The executor sets 1 on a confined attempt whose failure it discards.                                        |
 | `cache`           | `false`                         | none     | `false` never reuses the result and runs the target as the workspace declares, with no confined attempt. Set it when the run must leave a report behind.                                                                                                              |
+| `tools` | `Array<Reference.HostBin>` | none | The host programs the suite starts by name that its packages do not install, such as `S.Host.bin("zig")`. Each is keyed by the bytes it runs. See [Programs the suite starts](#programs-the-suite-starts). |
 | `units` | `"target" \| "file"` | `"target"` | The unit of work. `"file"` makes each test file a unit that `smithers-build units` runs on its own. See [test units](../../concepts/test-units.md). |
 | `cwd`             | `string`                        | `"."`    | Workspace-relative directory the runner starts in.                                                                                                              |
 
@@ -63,6 +64,34 @@ adds to the same arguments:
 
 and merges every unit with `--merge-reports=<blobs>`, which judges the coverage
 thresholds. `test` and `ci` still run the target whole.
+
+## Programs the suite starts
+
+A suite that starts a program by name, such as a test that builds a fixture with
+`zig` or traces a process with `strace`, declares it:
+
+```ts
+const test = S.Vitest({
+  // ...
+  tools: [S.Host.bin("zig"), S.Host.bin("strace")]
+})
+```
+
+A host program is also named in the workspace's `S.Host({ bins })`.
+
+- Each name is found on `PATH` when the run is planned. The key holds the bytes
+  of the file it resolves to, through any link, and of the program a package
+  manager's shim starts. A program replaced in place under the same name and
+  version runs the suite again.
+- The run finds each by its name in a directory that leads its `PATH`.
+- A confined run is shown each declared program and the system's own. A program
+  that sits in a `PATH` directory is shown alone; one a link leads into its own
+  installation, such as Zig's `lib` beside `zig`, is shown with that
+  installation.
+- Every other program on the host's `PATH` answers with
+  `sandbox: <name> is not declared: declare it in tools` and exit status 127. A
+  test that looks the program up does not skip: it fails, and the reason the
+  result was not stored names the program.
 
 ## Inputs
 
