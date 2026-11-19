@@ -710,6 +710,23 @@ describe("failed steps", () => {
     expect(html(twoLines).match(/build: test/g)).toHaveLength(1)
   })
 
+  it("prints no speedup when normal mode gave another result than the CI, and says what to do", () => {
+    const mismatch = { label: "//:check", mode: "normal", baseline: "pass", got: "fail" } as const
+    const differing: ReplayReport = {
+      ...none,
+      mismatches: 1,
+      commits: [{ ...plainGreen, commit: "d".repeat(40), mismatches: [mismatch] }]
+    }
+    const sentence =
+      "no speedup: normal mode gave another result than your CI, so its time measures nothing. Each mismatch is listed below with its commit; fix what it names, or report it, and run this again."
+    expect(text(differing).split("\n").slice(0, 3)).toEqual(["✗ 1 mismatch", "", sentence])
+    expect(text(differing)).not.toMatch(/faster|slower|█/)
+    expect(text(differing)).toContain("ddddddd  normal  //:check  pass → fail")
+    const page = body(html(differing))
+    expect(page).toContain(`<p class="alert" role="alert">${sentence}</p>`)
+    expect(page).not.toContain("class=\"hero\"")
+  })
+
   it("prints no speedup and no bars in the text when no commit's baseline passed", () => {
     const shown = text(none)
     expect(shown).toContain("no speedup: the CI failed at every replayed commit")

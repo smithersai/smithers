@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { rmSync } from "node:fs"
 import { afterAll, describe, expect, it } from "vitest"
-import { failsHere, needsLeftOut } from "../../src/contract/Inventory.ts"
+import { failsHere } from "../../src/contract/Inventory.ts"
 import type { Failure, ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { read } from "../../src/inventory/index.ts"
@@ -64,7 +64,7 @@ describe("a target that cannot pass on this machine", { timeout: 600_000 }, () =
     const report = await replay(root, { commits: 2 })
     expect(report.notReplayed).toContainEqual({
       job: "//:c",
-      reasons: [{ feature: failsHere, detail: `broken ${at(root, "HEAD^", "HEAD")}` }]
+      reasons: [{ feature: failsHere, detail: `exit 1: broken ${at(root, "HEAD^", "HEAD")}` }]
     })
     expect(report.jobs).toEqual({ replayed: 2, total: 3 })
     expect(report.trialMs).toBeGreaterThan(0)
@@ -76,18 +76,17 @@ describe("a target that cannot pass on this machine", { timeout: 600_000 }, () =
     }
   })
 
-  it("takes the targets that wait on it with it", async () => {
+  it("takes the targets that wait on it with it, and is not measured when that is half of them or more", async () => {
+    // `b` waits on `a`: two of the three targets cannot pass here.
     const root = keep(repository({ ...ownFiles(), "a.sh": broken }))
-    const report = await replay(root)
-    expect(report.notReplayed).toEqual(expect.arrayContaining([
-      { job: "//:a", reasons: [{ feature: failsHere, detail: `broken ${at(root, "HEAD")}` }] },
-      {
-        job: "//:b",
-        reasons: [{ feature: needsLeftOut, detail: "//:b needs a target that fails here, which is not replayed" }]
-      }
-    ]))
-    expect(report.jobs).toEqual({ replayed: 1, total: 3 })
-    expect(report.commits[0]?.baseline.counts.ran).toBe(1)
+    const { code, message } = await refusal(root)
+    expect(code).toBe("unsupported")
+    expect(message.split("\n")).toEqual([
+      "this replay cannot measure your CI on this machine: 2 of its 3 targets do not pass here, and a speedup over the rest would not be your CI's.",
+      `  //:a  fails on this machine: exit 1: broken ${at(root, "HEAD")}`,
+      expect.stringMatching(/^ {2}\/\/:b {2}\S/),
+      "Fix what a line names and run it again, or pass --no-trial to compare every target as it is."
+    ])
   })
 
   it("is left out without a second run when it stopped making progress, with the one commit it ran at", async () => {

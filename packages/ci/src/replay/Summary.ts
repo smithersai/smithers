@@ -405,6 +405,52 @@ export const replayable = (inventory: Ci, map: TargetMap, host: string): Replaya
 }
 
 /**
+ * How a step failed, as a reason reads: its exit code when it has one, and
+ * the first line of its error, as in `exit 127: \`golangci-lint\` is not
+ * installed on this machine`.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const exitAndError = (failure: Pick<StepFailure, "exitCode" | "reason">): string =>
+  `${failure.exitCode === undefined ? "" : `exit ${failure.exitCode}: `}${failure.reason}`
+
+/**
+ * A step that failed the first run, as its job's reason reads: the step,
+ * then how it failed (`exitAndError`).
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const failedStep = (failure: StepFailure): string => `${failure.step}: ${exitAndError(failure)}`
+
+/**
+ * Why a replay does not measure a CI of which the first run left out half or
+ * more: the count, each job left out with its reason, and what to do.
+ * `undefined` when more than half of the jobs that could run here are left.
+ * `could` is how many jobs the reader found runnable, and `left` the jobs the
+ * first run took out of them, with those that need one. `what` is what a
+ * repository's own build calls a job.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const tooFewLeft = (could: number, left: ReadonlyArray<NotReplayed>, what = "job"): string | undefined => {
+  if (left.length === 0 || left.length * 2 < could) return undefined
+  const width = Math.max(...left.map((entry) => entry.job.length))
+  return [
+    `this replay cannot measure your CI on this machine: ${left.length} of its ${could} ${what}s ${
+      left.length === 1 ? "does" : "do"
+    } not pass here, and a speedup over the rest would not be your CI's.`,
+    ...left.map((entry) => `  ${entry.job.padEnd(width)}  ${reasonsSentence(entry.reasons)}`),
+    `Fix what a line names and run it again, or pass --no-trial to compare every ${what} as it is.`
+  ].join("\n")
+}
+
+/**
  * What names a unit among the units of a CI: its job and its matrix variant.
  *
  * @category baseline
@@ -455,8 +501,10 @@ export const trialOf = (
     if (failure !== undefined) {
       first ??= failure
       const variant = unit.variant === undefined ? {} : { variant: unit.variant }
-      const prefix = unit.variant === undefined ? "" : `${stepKey("", unit.variant).trim()} `
-      failed.push({ job: unit.job, ...variant, reason: `${prefix}${failure.reason}` })
+      // A step's name carries its variant; a name that does not is led by it.
+      const tag = unit.variant === undefined ? "" : stepKey("", unit.variant).trim()
+      const prefix = failure.step.endsWith(tag) ? "" : `${tag} `
+      failed.push({ job: unit.job, ...variant, reason: `${prefix}${failedStep(failure)}` })
     } else if (own.length === unit.steps.length && own.every((result) => result.status === "ran")) {
       passed.push(unitKey(unit))
     }
@@ -1046,7 +1094,10 @@ export const withoutFast = ({ fast: _fast, ...commit }: ReplayCommit): ReplayCom
  * time over normal-mode wall time, and 0 when nothing ran in normal mode. It
  * and the wall times cover the commits whose baseline passed: a failed
  * baseline stops at its failure, so its time says nothing about the CI, and
- * `speedupCommits` counts the commits covered. What the inventory could not
+ * `speedupCommits` counts the commits covered. A report with a mismatch of
+ * normal mode covers none: a mode that gave another result than the CI at
+ * any commit has no speedup. Fast mode skips what it predicts, so a failure
+ * it missed is a mismatch that its recall counts, and takes no number away. What the inventory could not
  * read is listed as `notRead`, and each tool this machine has at another
  * version than a job asks for as `toolVersions`. The cache credentials a kept
  * job ran without are named in `withheld`.
@@ -1060,7 +1111,9 @@ export const reportOf = (
   commits: ReadonlyArray<ReplayCommit>,
   found: Findings
 ): ReplayReport => {
-  const measured = commits.filter((commit) => commit.baseline.ok)
+  // Normal mode with another result than the CI's has not measured it: one such mismatch, and no commit is counted.
+  const differs = commits.some((commit) => commit.mismatches.some((mismatch) => mismatch.mode === "normal"))
+  const measured = differs ? [] : commits.filter((commit) => commit.baseline.ok)
   const sum = (wall: (commit: ReplayCommit) => number): number =>
     measured.reduce((total, commit) => total + wall(commit), 0)
   const baselineWallMs = sum((commit) => commit.baseline.wallMs)

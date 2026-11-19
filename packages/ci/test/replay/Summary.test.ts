@@ -820,6 +820,26 @@ describe("reportOf", () => {
     })
   })
 
+  it("has no speedup when normal mode gave another result than the CI at any commit", () => {
+    const mismatch = { label: "//:a", mode: "normal", baseline: "pass", got: "fail" } as const
+    const differing = { ...entry, normal: { ...totals(1), ok: false }, mismatches: [mismatch] }
+    // One mismatch, and no commit is counted: not the one it is at, and not the others.
+    expect(reportOf(read, [entry, differing, entry], nothing)).toMatchObject({
+      mismatches: 1,
+      speedup: 0,
+      speedupCommits: 0,
+      baselineWallMs: 0,
+      normalWallMs: 0
+    })
+    expect(reportOf(read, [entry, entry], nothing)).toMatchObject({ mismatches: 0, speedup: 3, speedupCommits: 2 })
+    // A failure fast mode skipped is its own miss, counted in its recall: normal mode's numbers stand.
+    const missed = {
+      ...entry,
+      mismatches: [{ label: "//:a", mode: "fast", baseline: "fail", got: "skipped" } as const]
+    }
+    expect(reportOf(read, [entry, missed], nothing)).toMatchObject({ mismatches: 1, speedup: 3, speedupCommits: 2 })
+  })
+
   it("carries a run's CPU time when it could be read", () => {
     const record = recordOf([ran("//:b")], "c", 4)
     expect(totalsOf(record, new Map(), 250).cpuMs).toBe(250)

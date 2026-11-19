@@ -171,23 +171,24 @@ describe("the baseline's first run", () => {
 
   it("leaves out a job that fails it and fails again at the newest commit, and names both commits", async () => {
     const log = join(scratch(), "runs")
-    const root = track(makeSmallRepository([job("ok", "sh a.sh"), job("docker", failing(log, "no docker here"))]))
+    const jobs = [job("ok", "sh a.sh"), job("fine", "sh a.sh"), job("docker", failing(log, "no docker here"))]
+    const root = track(makeSmallRepository(jobs))
     const before = git(root, "rev-parse", "HEAD")
     commit(root, { "a.sh": "# changed\nexit 0\n" })
     const newest = commit(root, { "README.md": "# docs\n" })
     const report = await start(root, 2, { trial: true })
     const at = `(at ${before.slice(0, 7)} and ${newest.slice(0, 7)})`
     expect(report.notReplayed).toEqual([
-      { job: "docker", reasons: [{ feature: failsHere, detail: `no docker here ${at}` }] }
+      { job: "docker", reasons: [{ feature: failsHere, detail: `docker0: exit 1: no docker here ${at}` }] }
     ])
-    expect(report.jobs).toEqual({ replayed: 1, total: 2 })
+    expect(report.jobs).toEqual({ replayed: 2, total: 3 })
     expect(report.commits.map((entry) => entry.baseline.counts)).toEqual([
-      { hit: 0, ran: 1, failed: 0, skipped: 0 },
-      { hit: 0, ran: 1, failed: 0, skipped: 0 }
+      { hit: 0, ran: 2, failed: 0, skipped: 0 },
+      { hit: 0, ran: 2, failed: 0, skipped: 0 }
     ])
     // The modes' first runs left it out too: it ran in the baseline's first run, once more, and never again.
     expect(readFileSync(log, "utf8").trim().split("\n")).toHaveLength(2)
-    expect(said).toContain(`fails here: docker: no docker here ${at}`)
+    expect(said).toContain(`fails here: docker: docker0: exit 1: no docker here ${at}`)
   }, 600_000)
 
   it("keeps a job that was broken at the commit before and is fixed since", async () => {
@@ -204,13 +205,13 @@ describe("the baseline's first run", () => {
   it("leaves a job added since to its own commits, when nothing else of the commit before can pass", async () => {
     const bad = job("bad", "echo broken >&2; exit 1")
     const root = track(makeSmallRepository([bad]))
-    commit(root, { "ci.json": ciOf([bad, job("ok", "sh a.sh")]) })
+    commit(root, { "ci.json": ciOf([bad, job("ok", "sh a.sh"), job("fine", "sh a.sh")]) })
     const report = await start(root, 1, { trial: true })
     expect(report.notReplayed?.map((entry) => entry.job)).toEqual(["bad"])
     // Nothing of the commit before is left for the modes to run first.
     expect(report.firstRun?.baselineMs).toBeGreaterThan(0)
     expect(report.firstRun?.normalMs).toBeUndefined()
-    expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+    expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
     expect(report.commits[0]?.normal.ok).toBe(true)
   }, 600_000)
 })

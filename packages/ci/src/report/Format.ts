@@ -234,6 +234,26 @@ export const speedupCommits = (report: ReplayReport): number => report.speedupCo
 export const noSpeedup = "no speedup: the CI failed at every replayed commit"
 
 /**
+ * What stands in the place of the speedup when normal mode's result differed
+ * from the CI's: why there is none, and what to do.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const noSpeedupMismatch =
+  "no speedup: normal mode gave another result than your CI, so its time measures nothing. Each mismatch is listed below with its commit; fix what it names, or report it, and run this again."
+
+/**
+ * True when normal mode's result differs from the baseline's at a commit of
+ * the report.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const normalDiffers = (report: ReplayReport): boolean =>
+  report.commits.some((commit) => commit.mismatches.some((mismatch) => mismatch.mode === "normal"))
+
+/**
  * How many of the CI's jobs the numbers cover, or nothing when they cover
  * them all: `3 of 5 jobs`.
  *

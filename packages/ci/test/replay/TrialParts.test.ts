@@ -13,7 +13,16 @@ import {
 import type { Plan } from "../../src/contract/Plan.ts"
 import type { TargetResult } from "../../src/contract/RunRecord.ts"
 import { madeNoProgress, noJobPassed, noProgress, stoppedResults } from "../../src/replay/Failures.ts"
-import { jobsCovered, rootsWithout, trialOf, type Unit, unitKey } from "../../src/replay/Summary.ts"
+import {
+  exitAndError,
+  failedStep,
+  jobsCovered,
+  rootsWithout,
+  tooFewLeft,
+  trialOf,
+  type Unit,
+  unitKey
+} from "../../src/replay/Summary.ts"
 
 const jobOf = (id: string, matrix: ReadonlyArray<Readonly<Record<string, string>>> = []): Job => ({
   id,
@@ -125,10 +134,46 @@ describe("what one run says of each unit", () => {
     ], new Map())
     expect(found.passed).toEqual(["ok"])
     expect(found.failed).toEqual([
-      { job: "bad", reason: "broken" },
-      { job: "m", variant: { size: "2" }, reason: "(size=2) too big" }
+      { job: "bad", reason: "c: broken" },
+      { job: "m", variant: { size: "2" }, reason: "(size=2) d: too big" }
     ])
     expect(found.first?.reason).toBe("broken")
+  })
+
+  it("gives a job left out the step that failed, its exit code and the first line of its error", () => {
+    const units = [unit("lint", ["a"]), unit("m", ["b"], { size: "2" })]
+    const names = new Map([
+      ["a", { step: "lint: golangci-lint", command: "golangci-lint run" }],
+      ["b", { step: "m: test (size=2)", command: "make test" }]
+    ])
+    const found = trialOf(units, [
+      { ...result("a", "failed", "`golangci-lint` is not installed on this machine"), exitCode: 127 },
+      { ...result("b", "failed", "too big"), exitCode: 1 }
+    ], names)
+    expect(found.failed.map((entry) => entry.reason)).toEqual([
+      "lint: golangci-lint: exit 127: `golangci-lint` is not installed on this machine",
+      // The step's name says which variant: it is not said twice.
+      "m: test (size=2): exit 1: too big"
+    ])
+    expect(exitAndError({ reason: "it made no progress for 10 minutes" })).toBe("it made no progress for 10 minutes")
+    expect(failedStep({ step: "build", reason: "boom", exitCode: 2 })).toBe("build: exit 2: boom")
+  })
+
+  it("refuses to measure a CI of which the first run left out half or more, and says what and why", () => {
+    const fails = (job: string, detail: string) => ({ job, reasons: [{ feature: failsHere, detail }] })
+    const needs = { job: "e2e", reasons: [{ feature: "needs", detail: "e2e needs lint, which is not replayed" }] }
+    // Under half: the report covers the rest and says how many.
+    expect(tooFewLeft(3, [fails("lint", "x")])).toBeUndefined()
+    expect(tooFewLeft(4, [])).toBeUndefined()
+    expect(tooFewLeft(2, [fails("lint", "lint: exit 127: no linter")])).toBe([
+      "this replay cannot measure your CI on this machine: 1 of its 2 jobs does not pass here, and a speedup over the rest would not be your CI's.",
+      "  lint  fails on this machine: lint: exit 127: no linter",
+      "Fix what a line names and run it again, or pass --no-trial to compare every job as it is."
+    ].join("\n"))
+    const most = tooFewLeft(4, [fails("lint", "x"), needs], "target") as string
+    expect(most.split("\n")[0]).toContain("2 of its 4 targets do not pass here")
+    expect(most).toContain("\n  lint  fails on this machine: x\n  e2e   ")
+    expect(most).toContain("to compare every target as it is.")
   })
 
   it("has no first failure when nothing failed", () => {

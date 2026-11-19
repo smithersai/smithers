@@ -32,7 +32,9 @@ import {
   leftEmpty,
   leftOut,
   mismatches,
+  normalDiffers,
   noSpeedup,
+  noSpeedupMismatch,
   ownTargets,
   percent,
   ratio,
@@ -272,7 +274,7 @@ export const html: RenderReport = (report) => {
       body.push(`<p class="summary"><code>${escape(ownTargets(report.targets))}</code></p>`)
     }
     if (speedupCommits(report) === 0) {
-      body.push(`<p class="alert" role="alert">${noSpeedup}</p>`)
+      body.push(`<p class="alert" role="alert">${normalDiffers(report) ? noSpeedupMismatch : noSpeedup}</p>`)
     } else {
       body.push(`<p class="hero">${speedup(report.speedup)}</p>`)
       if (coverage(report) !== "") body.push(`<p class="summary">${coverage(report)}</p>`)

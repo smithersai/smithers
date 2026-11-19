@@ -65,20 +65,21 @@ const failing = (log: string, message: string): string => `echo ran >> ${log}; e
 describe("a job that cannot pass on this machine", () => {
   it("is left out and listed, and the speedup covers the job that passes, at every commit", async () => {
     const log = join(scratch(), "runs")
-    const root = track(makeSmallRepository([job("ok", "sh a.sh"), job("docker", failing(log, "no docker here"))]))
+    const jobs = [job("ok", "sh a.sh"), job("fine", "sh a.sh"), job("docker", failing(log, "no docker here"))]
+    const root = track(makeSmallRepository(jobs))
     another(root)
     const report = await start(root, 2)
-    expect(report.notReplayed).toEqual([
-      { job: "docker", reasons: [{ feature: failsHere, detail: `no docker here ${at(root, "HEAD^", "HEAD")}` }] }
-    ])
-    expect(report.jobs).toEqual({ replayed: 1, total: 2 })
+    // The step that failed, its exit code, the first line of its error, and the commits it failed at.
+    const why = `docker0: exit 1: no docker here ${at(root, "HEAD^", "HEAD")}`
+    expect(report.notReplayed).toEqual([{ job: "docker", reasons: [{ feature: failsHere, detail: why }] }])
+    expect(report.jobs).toEqual({ replayed: 2, total: 3 })
     expect(report.speedupCommits).toBe(2)
     expect(report.speedup).toBeGreaterThan(0)
     expect(report.trialMs).toBeGreaterThan(0)
     for (const commit of report.commits) {
       expect(commit.baseline.ok).toBe(true)
       expect(commit.normal.ok).toBe(true)
-      expect(commit.baseline.counts.ran).toBe(1)
+      expect(commit.baseline.counts.ran).toBe(2)
     }
     // Run once at the oldest commit and once more at the newest, and at no counted commit.
     expect(readFileSync(log, "utf8").trim().split("\n")).toHaveLength(2)
@@ -87,15 +88,17 @@ describe("a job that cannot pass on this machine", () => {
   it("takes the jobs that need it with it", async () => {
     const root = track(makeSmallRepository([
       job("ok", "sh a.sh"),
+      job("fine", "sh a.sh"),
+      job("well", "sh a.sh"),
       job("first", "echo broken >&2; exit 1"),
       job("after", "sh a.sh", { needs: ["first"] })
     ]))
     const report = await start(root, 1)
     expect(report.notReplayed).toEqual([
-      { job: "first", reasons: [{ feature: failsHere, detail: `broken ${at(root, "HEAD")}` }] },
+      { job: "first", reasons: [{ feature: failsHere, detail: `first0: exit 1: broken ${at(root, "HEAD")}` }] },
       { job: "after", reasons: [{ feature: needsLeftOut, detail: "after needs first, which is not replayed" }] }
     ])
-    expect(report.jobs).toEqual({ replayed: 1, total: 3 })
+    expect(report.jobs).toEqual({ replayed: 3, total: 5 })
   }, 600_000)
 
   it("is judged per matrix variant: the variants that pass stay", async () => {
@@ -108,7 +111,7 @@ describe("a job that cannot pass on this machine", () => {
     ]))
     const report = await start(root, 1)
     expect(report.notReplayed).toEqual([
-      { job: "m", reasons: [{ feature: failsHere, detail: `(size=2) too big ${at(root, "HEAD")}` }] }
+      { job: "m", reasons: [{ feature: failsHere, detail: `m0 (size=2): exit 1: too big ${at(root, "HEAD")}` }] }
     ])
     expect(report.jobs).toEqual({ replayed: 2, total: 2 })
     expect(report.commits[0]?.baseline.counts.ran).toBe(2)
@@ -121,13 +124,17 @@ describe("a job that cannot pass on this machine", () => {
       source: "justfile",
       file: "justfile"
     })
-    const root = track(makeSmallRepository([inTree("broken", "echo broken >&2; exit 1"), inTree("later", "sh a.sh")]))
+    const root = track(makeSmallRepository([
+      inTree("broken", "echo broken >&2; exit 1"),
+      inTree("later", "sh a.sh"),
+      inTree("last", "sh a.sh")
+    ]))
     const report = await start(root, 1)
     expect(report.notReplayed).toEqual([
-      { job: "broken", reasons: [{ feature: failsHere, detail: `broken ${at(root, "HEAD")}` }] }
+      { job: "broken", reasons: [{ feature: failsHere, detail: `broken0: exit 1: broken ${at(root, "HEAD")}` }] }
     ])
     expect(report.commits[0]?.baseline.ok).toBe(true)
-    expect(report.commits[0]?.baseline.counts.ran).toBe(1)
+    expect(report.commits[0]?.baseline.counts.ran).toBe(2)
   }, 600_000)
 
   it("is kept when a second run passes: one failure is a flake", async () => {
@@ -155,6 +162,38 @@ describe("a job that passes at the newest commit and fails at an older one", () 
     expect(report.notReplayed).toBeUndefined()
     expect(report.commits[0]?.baseline.failures?.[0]?.reason).toBe("old break")
     expect(report.speedupCommits).toBe(1)
+  }, 600_000)
+})
+
+describe("a CI of which half or more cannot pass here", () => {
+  it("is not measured: the replay says which jobs it left out and why, and what to do", async () => {
+    const root = track(makeSmallRepository([job("ok", "sh a.sh"), job("bad", "echo broken >&2; exit 1")]))
+    const { code, message } = await refusal(root)
+    expect(code).toBe("unsupported")
+    expect(message.split("\n")).toEqual([
+      "this replay cannot measure your CI on this machine: 1 of its 2 jobs does not pass here, and a speedup over the rest would not be your CI's.",
+      `  bad  fails on this machine: bad0: exit 1: broken ${at(root, "HEAD")}`,
+      "Fix what a line names and run it again, or pass --no-trial to compare every job as it is."
+    ])
+  }, 600_000)
+
+  it("counts the jobs that need one that cannot pass", async () => {
+    const root = track(makeSmallRepository([
+      job("ok", "sh a.sh"),
+      job("fine", "sh a.sh"),
+      job("first", "echo broken >&2; exit 1"),
+      job("after", "sh a.sh", { needs: ["first"] })
+    ]))
+    const { message } = await refusal(root)
+    expect(message).toContain("2 of its 4 jobs do not pass here")
+    expect(message).toContain("\n  after  ")
+  }, 600_000)
+
+  it("is measured with --no-trial, which compares every job as it is", async () => {
+    const root = track(makeSmallRepository([job("ok", "sh a.sh"), job("bad", "echo broken >&2; exit 1")]))
+    const report = await start(root, 1, { trial: false })
+    expect(report.jobs).toEqual({ replayed: 2, total: 2 })
+    expect(report.commits[0]?.baseline.failures?.[0]?.reason).toBe("broken")
   }, 600_000)
 })
 
@@ -196,14 +235,15 @@ describe("the run that finds what passes", () => {
       reruns: 0,
       prepare: (directory: string) => Effect.sync(() => linkTargets(directory))
     })
-    const root = track(makeSmallRepository([job("ok", "sh a.sh"), job("bad", "echo broken >&2; exit 1")]))
+    const jobs = [job("ok", "sh a.sh"), job("fine", "sh a.sh"), job("bad", "echo broken >&2; exit 1")]
+    const root = track(makeSmallRepository(jobs))
     const report = await Effect.runPromise(
       run({ root, commits: 1, modes: ["normal"], trial: true }, base).pipe(
         Effect.provide(Layer.provideMerge(jailed as never, NodeServices.layer))
       ) as Effect.Effect<ReplayReport, Failure>
     )
     expect(report.notReplayed).toEqual([
-      { job: "bad", reasons: [{ feature: failsHere, detail: `broken ${at(root, "HEAD")}` }] }
+      { job: "bad", reasons: [{ feature: failsHere, detail: `bad0: exit 1: broken ${at(root, "HEAD")}` }] }
     ])
   }, 600_000)
 

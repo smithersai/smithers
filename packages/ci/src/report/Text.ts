@@ -1,7 +1,9 @@
 /**
  * The replay report as `smithers-ci` prints it: numbers and a bar chart, no
  * sentences. A mismatch is the first line whenever there is one, and every
- * mismatch is listed; nothing about a wrong verdict is summarised away. Each
+ * mismatch is listed; nothing about a wrong verdict is summarised away. A
+ * report where normal mode's result differs from the CI's has no speedup,
+ * and a line says so and what to do. Each
  * commit has a line that says whether the CI passed or failed there, in the
  * baseline and in each mode; a commit whose own CI could not be replayed is
  * listed with the reason. A CI
@@ -47,7 +49,9 @@ import {
   leftEmpty,
   leftOut,
   mismatches,
+  normalDiffers,
   noSpeedup,
+  noSpeedupMismatch,
   ownTargets,
   ratio,
   reasons,
@@ -132,7 +136,7 @@ export const text: RenderReport = (report) => {
   const ratioWidth = Math.max(...modes.map((mode) => (mode.ratio === undefined ? "" : times(mode.ratio)).length))
   if (report.targets !== undefined) sections.push([clean(ownTargets(report.targets))])
   if (speedupCommits(report) === 0) {
-    sections.push([noSpeedup])
+    sections.push([normalDiffers(report) ? noSpeedupMismatch : noSpeedup])
   } else {
     sections.push([`${speedup(report.speedup)} ${coverage(report)}`.trimEnd()])
     sections.push(modes.map((mode) =>

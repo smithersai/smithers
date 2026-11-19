@@ -174,7 +174,8 @@ export type FirstRun = typeof FirstRun.Type
  * commits whose baseline passed, because a failed baseline stops early and its
  * time measures nothing; `speedupCommits` says how many that is, and when it
  * is 0 there is no speedup and `speedup` is 0. A document without it covers
- * every commit. `flaky` is how many verdicts were
+ * every commit. A report where normal mode's verdict differs from the
+ * baseline's at any commit covers none: it has mismatches and no speedup. `flaky` is how many verdicts were
  * `flaky`, in the baseline and in every mode; they are counted apart from
  * `mismatches`. `notReplayed` lists the CI jobs, or matrix variants, that
  * were not run, and `notRead` what the inventory could not read at all, both

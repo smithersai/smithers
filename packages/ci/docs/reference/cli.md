@@ -134,11 +134,18 @@ The baseline's first run finds the jobs that cannot pass on this machine. A job
 that fails it runs once more, at the newest commit, in a home no counted run
 reads. One that passes there was flaky, or broken at that one commit, and is
 replayed. One that fails again is not replayed at any commit: the report lists it
-as failing on this machine with the first line of its error and the commits it
-failed at (`fails-here` under `--json`), and says the same of every job that
-needs it. For a matrix job this holds per variant. The speedup says how many
-jobs it covers, such as `over 3 of 5 jobs`. On a repository with
-[its own targets](../concepts/own-targets.md), the same holds for each target.
+as failing on this machine with the step that failed, its exit code, the first
+line of its error and the commits it failed at (`fails-here` under `--json`), and
+says the same of every job that needs it. For a matrix job this holds per variant.
+On a repository with [its own targets](../concepts/own-targets.md), the same
+holds for each target.
+
+`fails-here` means the job did not pass on this machine in two runs, and so is
+compared in no way: it says nothing of whether Smithers CI runs that job right.
+The speedup always says how many jobs it covers, such as `over 3 of 5 jobs`
+(`jobs` under `--json`). When half or more of the jobs that could run here are
+left out, the program prints no report: standard error lists each of them with
+why, and it exits `3`.
 
 With `--cold`, or when there is no commit to run first, the baseline runs once
 more for this, at the oldest replayed commit, in a home of its own. A line gives
@@ -146,7 +153,8 @@ the time that run took, which is in no other number.
 
 A job that passes the first run and fails at a later commit is a failed baseline
 at that commit. `smithers-ci apply` writes every job, those left out here too:
-they pass on your runners. `--no-trial` leaves no job out and replays every one.
+they pass on your runners. `--no-trial` leaves no job out: it runs every job at
+every commit, in the baseline and in each mode, and compares them all.
 
 ### Steps that fail
 
@@ -246,6 +254,9 @@ others. When only some commits fail, the program exits `0`, the report names eac
 failed step, and the speedup covers the commits where the CI passed.
 
 A mismatch is defined in [How it works](../concepts/how-it-works.md#3-replay).
+A report where normal mode's result differs from the baseline's has no speedup:
+it leads with the number of mismatches and what to do, and `speedup` is 0 over 0
+commits under `--json`.
 A target that failed and then passed on a rerun is `flaky`. The report counts
 flaky verdicts apart from mismatches, and they never make the exit code `1`.
 

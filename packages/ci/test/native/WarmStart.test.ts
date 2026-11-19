@@ -148,19 +148,22 @@ describe("a replay of own targets with no commit to run first", { timeout: 900_0
 
 describe("the first run of the baseline of own targets", { timeout: 900_000 }, () => {
   it("leaves out a target that fails it and fails again at the newest commit, and names both commits", async () => {
-    const root = threeCommits({ "a.sh": broken })
+    const root = keep(repository({ ...ownFiles(), "c.sh": broken }))
+    commit(root, "change a", { "a.sh": "# changed\nexit 0\n" })
+    commit(root, "docs", { "README.md": "# docs\n" })
     const report = await replay(root, 2, { trial: true })
-    const at = `(at ${short(root, "HEAD~2")} and ${short(root, "HEAD")})`
+    // Its exit code, the first line of its error, and the commits it failed at.
+    const why = `exit 1: broken (at ${short(root, "HEAD~2")} and ${short(root, "HEAD")})`
     expect(report.notReplayed).toEqual(expect.arrayContaining([
-      { job: "//:a", reasons: [{ feature: failsHere, detail: `broken ${at}` }] }
+      { job: "//:c", reasons: [{ feature: failsHere, detail: why }] }
     ]))
-    expect(report.jobs).toEqual({ replayed: 1, total: 3 })
+    expect(report.jobs).toEqual({ replayed: 2, total: 3 })
     // The modes' first runs left it out too, so the first counted commit reruns only what changed.
     expect(report.commits.map((entry) => entry.normal.counts)).toEqual([
-      { hit: 0, ran: 1, failed: 0, skipped: 0 },
-      { hit: 1, ran: 0, failed: 0, skipped: 0 }
+      { hit: 0, ran: 2, failed: 0, skipped: 0 },
+      { hit: 2, ran: 0, failed: 0, skipped: 0 }
     ])
-    expect(said).toContain(`fails here: //:a: broken ${at}`)
+    expect(said).toContain(`fails here: //:c: ${why}`)
   })
 
   it("keeps a target that was broken at the commit before and is fixed since", async () => {
@@ -178,7 +181,7 @@ describe("the first run of the baseline of own targets", { timeout: 900_000 }, (
     commit(root, "fix the install", { "tools/install.mjs": installScript(smthrs) })
     const report = await replay(root, 1, { trial: true })
     expect(report.notReplayed).toEqual(expect.arrayContaining([
-      { job: "//:c", reasons: [{ feature: failsHere, detail: `broken (at ${short(root, "HEAD")})` }] }
+      { job: "//:c", reasons: [{ feature: failsHere, detail: `exit 1: broken (at ${short(root, "HEAD")})` }] }
     ]))
     expect(report.jobs).toEqual({ replayed: 2, total: 3 })
     expect(report.firstRun?.baselineMs).toBeGreaterThanOrEqual(0)

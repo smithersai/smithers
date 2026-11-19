@@ -123,6 +123,7 @@ import {
   stepNames,
   stepsThrough,
   targetsOf,
+  tooFewLeft,
   totalsOf,
   trialOf,
   type Unit,
@@ -372,8 +373,11 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * run at the oldest commit in a home and a store of its own, which warms
  * nothing a counted run reads. A job that fails it runs once more, at the
  * newest commit. One that fails again is left out at every commit and listed
- * (`Inventory.failsHere`) with both commits; one that passes was flaky or
- * broken at that one commit, and stays.
+ * (`Inventory.failsHere`) with its step, its exit code, the first line of
+ * its error and both commits; one that passes was flaky or broken at that one
+ * commit, and stays. When the first run leaves out half or more of the jobs
+ * that could run here, the replay fails `unsupported` with each of them and
+ * its reason: a speedup over the rest would not be this CI's.
  *
  * The baseline, normal mode and fast mode each have a home and a temporary
  * directory of their own, empty at the start and kept until the replay ends.
@@ -942,8 +946,14 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return { firstRun: try warmed(before, own) }
     }
 
+    // The jobs that could run here before the first run took any out.
+    const could = new Set(newest.units.map((unit) => unit.job))
     const started: { readonly firstRun?: FirstRun; readonly cold?: string } = try start()
     const trialMs = started.firstRun === undefined && request.trial === true ? try trial() : undefined
+    // A speedup over less than half of a CI is not that CI's: the replay says what it left out, and stops.
+    const stayed = new Set(newest.units.map((unit) => unit.job))
+    const few = tooFewLeft(could.size, newest.left.filter((entry) => could.has(entry.job) && !stayed.has(entry.job)))
+    if (few !== undefined) throw failure("unsupported", few)
 
     const commitsDone: Array<ReplayCommit> = []
     const commitsLeft: Array<NotReplayedCommit> = []

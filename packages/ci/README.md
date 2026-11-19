@@ -55,6 +55,15 @@ directly, so the parts are built at the same time.
   off. `ReplayReport.reruns` (`{ count, ms }`, optional) says how many steps ran again and how long that took,
   which is in no other time. Measured cause: on eliza a failed step cost three runs of its 25-minute job, in each
   way.
+- **No speedup beside a wrong result** (`sci-warm-start`, the second reviewer's finding). A report where normal
+  mode's result differs from the baseline's at any commit has `speedup` 0 over 0 commits and prints none: it
+  leads with the number of mismatches and what to do. One rule, in `Summary.reportOf`. A failure fast mode skipped
+  is counted in its recall and takes no number away.
+- **What the first run leaves out is in plain sight** (`sci-warm-start`, the second reviewer's finding). A job left
+  out as `fails-here` is compared in no way, so its reason now holds the step that failed, its exit code, the first
+  line of its error and the commits; the headline says the share (`over 3 of 5 jobs`, `ReplayReport.jobs`); and
+  when the first run leaves out half or more of the jobs that could run here, the replay fails `unsupported`
+  (exit 3) with each of them and why, and prints no speedup. `--no-trial` compares every job.
 - **CPU time beside wall time** (`sci-warm-start`). `RunTotals.cpuMs` (optional) is the CPU time a run's steps
   used, every process they started included, over the run its wall time covers; `ReplayReport.baselineCpuMs`,
   `normalCpuMs` and `fastCpuMs` (optional) add it up over the commits the wall times cover. The report prints one

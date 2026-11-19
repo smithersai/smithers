@@ -296,13 +296,21 @@ cost you the whole measurement. The baseline's first run finds them.
 - A job that fails is run once more, at the newest commit, in a home no counted
   run reads. If it passes there, it was flaky or broken at that one commit, and
   it is replayed. If it fails again, it runs at no commit, in no way. The report
-  lists it as failing on this machine, with the first line of its error and the
-  commits it failed at, and every job that needs it as left out with it. In a
-  matrix job, this holds for each variant.
+  lists it as failing on this machine, with the step that failed, its exit code,
+  the first line of its error and the commits it failed at, and every job that
+  needs it as left out with it. In a matrix job, this holds for each variant.
 - In a Justfile, Makefile or `package.json`, where jobs share one working tree,
   the jobs after a failed one run again without it, as they will in the replay.
 - When no job passes, there is nothing to measure: the command prints the first
   failure and exits `3`.
+- When half or more of the jobs that could run here are left out, a speedup over
+  the rest would not be your CI's. The command prints no report: it lists each
+  job it left out with why, and exits `3`.
+
+A job that is left out is compared in no way: a fault of Smithers CI in that job
+would not show. So the headline always says how much of your CI the number
+covers, such as `over 3 of 5 jobs`, each job left out is listed with what
+failed, and `--no-trial` compares every job as it is.
 
 A job is tried at the first commit the replay runs, with what a CI has there.
 So a job that needs what an earlier commit's run saved with `actions/cache`
@@ -315,7 +323,8 @@ took, and that time is in no other number.
 
 A job that passes the first run and fails at a later commit is an ordinary failed
 baseline at that commit. `apply` still writes every job, because a job that cannot
-pass on your machine passes on your runners. `--no-trial` leaves no job out.
+pass on your machine passes on your runners. `--no-trial` leaves no job out: every
+job runs at every commit, in the baseline and in each mode, and is compared.
 
 ### Steps that stop making progress
 
@@ -636,6 +645,11 @@ its baseline verdict. `pass` and `flaky` agree: the step passed in the end.
 Flaky verdicts are counted apart. Fast mode skipping a target that failed in
 the baseline is a mismatch. Skipping one that passed is not.
 
+A report where normal mode's result differs from your CI's at any commit has no
+speedup: a mode that gives another result has not measured your CI. The report
+leads with the number of mismatches, says there is no speedup and what to do,
+and lists each mismatch with its commit.
+
 ## 4. Report
 
 The report compares the three ways. For each commit it gives the number of
@@ -686,7 +700,8 @@ time. A failed baseline stops at its failure, so its time says nothing about
 your CI. Such a commit is shown with its failure and left out of these numbers,
 and the report says how many commits they cover, and how many jobs:
 `over 4 of 5 commits and 3 of 5 jobs`. It also gives the number of mismatches and
-the number of flaky verdicts over every commit.
+the number of flaky verdicts over every commit. With a mismatch of normal mode,
+these numbers cover no commit and no speedup is printed.
 
 When no job passes the first run or the run after it, or, with `--no-trial`, no
 step passes in the baseline of any commit, your CI does not pass on this machine and there is

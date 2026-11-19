@@ -54,6 +54,7 @@ import { type Execute, Options, Progress, scoresOrReason, settle } from "../repl
 import { defaultStall, defaultStallMinutes, type StallLimit, tableFor, watchFor } from "../replay/Stall.vibe"
 import {
   choose,
+  exitAndError,
   failedAt,
   failedTwice,
   failure,
@@ -68,6 +69,7 @@ import {
   ranAgainAt,
   recordOf,
   rootsWithout,
+  tooFewLeft,
   totalsOf
 } from "../replay/Summary.ts"
 import {
@@ -230,8 +232,9 @@ interface CommitCi {
  * pass on this machine: the warm run at the parent, or, when there is none, a
  * run at the oldest commit in a copy and a home of its own. A target that
  * fails it runs once more, at the newest commit. One that fails again, and
- * every target that waits on it, is left out at every commit and listed. When
- * none passes, the replay fails `unsupported`. A first run at a commit that
+ * every target that waits on it, is left out at every commit and listed with
+ * its exit code and the first line of its error. When none passes, or half or
+ * more of the targets are left out, the replay fails `unsupported`. A first run at a commit that
  * cannot be installed or planned says nothing of the targets, so they run
  * once at the newest commit instead.
  *
@@ -489,20 +492,26 @@ export const own = <R>(
         throw failure("unsupported", noJobPassed(judged, failures[0], ranAgainAt(again, judged, head)))
       }
       const twice = failedTwice(results)
+      const taken: Array<NotReplayed> = []
       for (const failed of failures) {
         const where = twice.has(failed.step) ? [judged, head] : [judged]
-        const { reason } = failedAt({ job: failed.step, reason: failed.reason }, where)
+        // The target is the step: its reason is its exit code and the first line of its error.
+        const { reason } = failedAt({ job: failed.step, reason: exitAndError(failed) }, where)
         try progress.say(`fails here: ${failed.step}: ${reason}`)
         leftHere.add(failed.step)
-        left.push({ job: failed.step, reasons: [{ feature: failsHere, detail: reason }] })
+        taken.push({ job: failed.step, reasons: [{ feature: failsHere, detail: reason }] })
       }
       for (const result of results.filter((entry) => entry.status === "skipped")) {
         leftHere.add(result.label)
-        left.push({
+        taken.push({
           job: result.label,
           reasons: [{ feature: needsLeftOut, detail: `${result.label} needs a target that fails here, which is not replayed` }]
         })
       }
+      // A speedup over less than half of the targets is not this build's: the replay says what it left out, and stops.
+      const few = tooFewLeft(results.length, taken, "target")
+      if (few !== undefined) throw failure("unsupported", few)
+      left.push(...taken)
       covered = { replayed: passed.length, total: results.length }
     }
 
