@@ -173,9 +173,11 @@ describe("barrel", () => {
     // `smithers-build`; it is a member nested under `packages/smithers/build`, and the
     // universe descends now, so it is named here like every other tooling
     // package. The private repo-targets package owns repository policy macros,
-    // the private agent regression suite is an evaluation tool, and the private
-    // vendored LemmaScript generates Dafny and Lean proofs from annotated source.
+    // the private agent regression suite is an evaluation tool, the private
+    // vendored LemmaScript generates Dafny and Lean proofs from annotated source,
+    // and `ci` is the smithers-ci executable.
     expect(packageNamesForGroup("tooling").sort()).toEqual([
+      "ci",
       "lemmascript",
       "repo-targets",
       "rpc",
