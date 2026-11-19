@@ -43,7 +43,7 @@ export * as UnsupportedBackend from "./UnsupportedBackend.ts"
 
 /**
  * @category fragments
- * @since 1.0.0-rc.18
+ * @since 1.0.0
  */
 export * as Dialect from "./Dialect.ts"
 
