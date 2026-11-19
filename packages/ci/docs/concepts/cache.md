@@ -140,11 +140,15 @@ cache.
 A token is a secret of the job, and the steps of the job are your repository's
 code. What keeps a step from the token depends on the runner:
 
-| Runner                                 | A step                                                                                                                                                                 |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Linux                                  | cannot read the token. `smthrs` runs the steps where they see no process but their own and where `sudo` gains no privilege. The workflow installs bubblewrap for this. |
-| macOS, Windows                         | can read the token from the program that runs it.                                                                                                                      |
-| Linux without bubblewrap, or as `root` | can read the token.                                                                                                                                                    |
+- **Linux.** A step cannot read the token from another process. `smthrs` runs
+  the steps where they see no process but their own and where `sudo` gains no
+  privilege. The workflow installs bubblewrap for this.
+- **Linux with a container daemon the step can reach**, as on a GitHub
+  runner. A step that talks to the daemon can have it read any process of the
+  machine, the token with it.
+- **macOS and Windows.** A step can read the token from the program that runs
+  it.
+- **Linux without bubblewrap, or as `root`.** A step can read the token.
 
 So give each run the least it needs:
 

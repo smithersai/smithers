@@ -112,7 +112,8 @@ process table of its own. What it runs there sees no other process, `sudo`
 gains no privilege, and no process in sight was started with the token. On
 macOS and Windows, as `root`, where bubblewrap is missing or cannot start, and
 for a token under another name, a target's commands can read the token from
-the process that runs them.
+the process that runs them. A target that can talk to a container daemon can
+have the daemon read any process, whatever `smthrs` does.
 
 `SMITHERS_CACHE_URL` is an optional process override and has precedence over
 the declared endpoint. It requires HTTPS except for `http://localhost`,
