@@ -28,7 +28,7 @@ the step whole.
 | `npm run <script> --workspaces`, `--workspace <name>`                  | One `npm run <script> --workspace=<package>…` per package                |
 | A root script that is one of the commands above, as `pnpm test`        | The same, from the root script's own command and the words the step adds |
 | One package's script, as `bun run --cwd packages/core test`            | The same command, with its inputs named                                  |
-| A command that starts `zig` in the repository's root                   | The same command, told to keep Zig's cache between runs                  |
+| A command that starts `zig`                                            | The same command, told to keep Zig's cache between runs                  |
 | `zig build <step>` alone, where the build step only groups named steps | One `zig build <name>` per named step                                    |
 | `npm run <script>`, where the script is `npm run a && npm run b`       | One step per script the chain runs, in order                             |
 
@@ -322,21 +322,23 @@ step that does run again compiles and reruns only the binaries the change
 reaches, by Zig's own rules. What Zig reads and writes in its cache is left
 out of the step's record.
 
-Every step that starts `zig` in the repository's root keeps its caches there,
-whatever else the step does:
+Every step that starts `zig` keeps its caches there, whatever else the step
+does:
 
 ```text
 zig build test --summary all            a flag
 zig test src/main.zig                   another Zig command
 make deps && zig build test             beside another program
+working-directory: tools/gen            a project in a directory under the root
 ```
 
 Zig's usual cache is `.zig-cache` beside `build.zig`. A step reads it, and a
 fresh checkout does not have it, so with the cache left there the step would
-run again on every CI run. Three steps keep Zig's usual place: one that starts
-in another directory or changes directory, because Zig takes the cache
-directory from where it starts; one whose command names `.zig-cache`; and one
-whose shell holds a loop, a subshell or a program named by a variable.
+run again on every CI run. Zig takes a cache directory from where it starts,
+so a step that starts in `tools/gen` is given `../../.flows/tools/zig`. Three
+steps keep Zig's usual place: one that changes directory with `cd` or starts
+outside the repository; one whose command names `.zig-cache`; and one whose
+shell holds a loop, a subshell or a program named by a variable.
 
 A Zig step that a later step follows keeps its command as it is, and Zig
 keeps its cache where it always does: the later step may read what it built.

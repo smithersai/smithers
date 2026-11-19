@@ -522,7 +522,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       const before = separately([
         step("ci.yml:test:1", "zig build test --summary all"),
         step("ci.yml:unit:1", "make deps && zig test src/main.zig"),
-        step("ci.yml:gen:1", "zig build test --summary all", { cwd: "tools/gen" })
+        step("ci.yml:gen:1", "zig build test --summary all", { cwd: "tools/gen" }),
+        step("ci.yml:out:1", "zig build test --summary all", { cwd: "../sibling" })
       ])
       const after = try splitWith()(root, before)
       try Effect.try(() => {
@@ -530,8 +531,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
           // Left beside build.zig, Zig's cache is a file the step read that a fresh checkout does not have.
           { ...stepsOf(before)[0], env: ZigSteps.environment },
           { ...stepsOf(before)[1], env: ZigSteps.environment },
-          // Zig starts in another directory, where a path from the root names another place.
-          stepsOf(before)[2]
+          // Zig starts two directories down and takes the cache directory from there.
+          {
+            ...stepsOf(before)[2],
+            env: {
+              ZIG_GLOBAL_CACHE_DIR: `../../${ZigSteps.environment["ZIG_GLOBAL_CACHE_DIR"]}`,
+              ZIG_LOCAL_CACHE_DIR: `../../${ZigSteps.environment["ZIG_LOCAL_CACHE_DIR"]}`
+            }
+          },
+          // Zig starts outside the repository: the step stays as it was.
+          stepsOf(before)[3]
         ])
       })
       // One job: a later step follows the first and may read what it built, so the first stays as it was.

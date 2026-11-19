@@ -427,9 +427,13 @@ const renderWorkflow = (
   observed: boolean,
   allowDocker: boolean
 ): string => {
-  // A step that keeps a tool's own cache names a directory under the tool cache in its environment.
+  // A step that keeps a tool's own cache names a directory under the tool cache in its environment: from the
+  // root, or from the directory under it where the step starts (`../../.flows/tools/zig`).
   const keepsTools = plan.targets.some((target) =>
-    Object.values(target.env).some((value) => value === toolCache || value.startsWith(`${toolCache}/`))
+    Object.values(target.env).some((value) => {
+      const fromRoot = value.replace(/^(?:\.\.\/)+/, "")
+      return fromRoot === toolCache || fromRoot.startsWith(`${toolCache}/`)
+    })
   )
   const apart = plan.legs.length > 0
   const varying = varyingTools(plan.legs)

@@ -71,8 +71,10 @@ describe("Zig.runs", () => {
         "zig build test -Doptimize=$MODE"
       ]
     ) expect([command, Zig.runs(step(command))]).toEqual([command, true])
-    // The root can be written as the directory the step starts in.
-    expect(Zig.runs(step("zig build test --summary all", { cwd: "." }))).toBe(true)
+    // The step may start in the root under another spelling, or in a directory under it.
+    for (const cwd of [".", "./", "tools/gen", "./tools/gen/"]) {
+      expect([cwd, Zig.runs(step("zig build test --summary all", { cwd }))]).toEqual([cwd, true])
+    }
   })
 
   it("is false when no command is zig", () => {
@@ -87,8 +89,10 @@ describe("Zig.runs", () => {
     ) expect([command, Zig.runs(step(command))]).toEqual([command, false])
   })
 
-  it("is false when Zig starts somewhere else, so a path from its start would name another place", () => {
-    expect(Zig.runs(step("zig build test --summary all", { cwd: "tools/gen" }))).toBe(false)
+  it("is false when where Zig starts cannot be named from the root", () => {
+    for (const cwd of ["/opt/project", "~/project", "../sibling", "tools/../..", "${{ matrix.directory }}", "$DIR"]) {
+      expect([cwd, Zig.runs(step("zig build test --summary all", { cwd }))]).toEqual([cwd, false])
+    }
     expect(Zig.runs(step("cd tools/gen && zig build test"))).toBe(false)
     expect(Zig.runs(step("pushd tools/gen; zig build; popd"))).toBe(false)
     expect(Zig.runs(step("bash -c 'cd tools/gen && zig build test'"))).toBe(false)
@@ -114,6 +118,19 @@ describe("Zig.dress", () => {
       ...step("zig build test"),
       env: { ZIG_GLOBAL_CACHE_DIR: `${toolCache}/zig/global`, ZIG_LOCAL_CACHE_DIR: `${toolCache}/zig/local` }
     })
+  })
+
+  it("gives a step that starts under the root the way back up to the tool cache", () => {
+    expect(Zig.dress(step("zig build test", { cwd: "tools/gen" })).env).toEqual({
+      ZIG_GLOBAL_CACHE_DIR: `../../${toolCache}/zig/global`,
+      ZIG_LOCAL_CACHE_DIR: `../../${toolCache}/zig/local`
+    })
+    expect(Zig.dress(step("zig build test", { cwd: "./project/" })).env).toEqual({
+      ZIG_GLOBAL_CACHE_DIR: `../${toolCache}/zig/global`,
+      ZIG_LOCAL_CACHE_DIR: `../${toolCache}/zig/local`
+    })
+    // Where the step starts cannot be named: the caches are given as from the root, as for any other step.
+    expect(Zig.dress(step("zig build test", { cwd: "$DIR" })).env).toEqual(Zig.environment)
   })
 
   it("keeps what the step already sets", () => {

@@ -5,10 +5,10 @@ import { toolCache } from "../src/contract/Inventory.ts"
 import { files } from "../src/generate/index.ts"
 import { packagePath, workflowPath } from "../src/generate/Render.ts"
 
-const step = (id: string, command: string, env: Readonly<Record<string, string>> = {}): Step => ({
+const step = (id: string, command: string, env: Readonly<Record<string, string>> = {}, cwd = ""): Step => ({
   id,
   command,
-  cwd: "",
+  cwd,
   env,
   secrets: []
 })
@@ -52,12 +52,25 @@ describe("a step that keeps a tool's cache", () => {
     expect(generated([job("a", [step("a:1", "true", { CACHE: toolCache })])], workflowPath)).toContain(
       `            .flows/cache\n            ${toolCache}\n`
     )
+    // A step that starts under the root names it from there.
+    const nested = step("a:1", "zig build test", { ZIG_LOCAL_CACHE_DIR: `../../${toolCache}/zig/local` }, "tools/gen")
+    expect(generated([job("a", [nested])], workflowPath)).toContain(
+      `            .flows/cache\n            ${toolCache}\n`
+    )
+    expect(generated([job("a", [step("a:1", "true", { CACHE: `../${toolCache}` }, "tools")])], workflowPath)).toContain(
+      `            .flows/cache\n            ${toolCache}\n`
+    )
   })
 
   it("leaves the workflow as it was for every other step", () => {
     const plain = generated([job("a", [step("a:1", "true", { CACHE: `${toolCache}-other`, CI: "1" })])], workflowPath)
     expect(plain).toContain(`            .flows/cache\n`)
     expect(plain).not.toContain(`            ${toolCache}\n`)
+    const beside = generated(
+      [job("a", [step("a:1", "true", { CACHE: `../${toolCache}-other` }, "tools")])],
+      workflowPath
+    )
+    expect(beside).not.toContain(`            ${toolCache}\n`)
   })
 
   it("runs the step in the open and observed, with the tool told where its cache is", () => {

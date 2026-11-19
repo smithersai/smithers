@@ -22,11 +22,11 @@
  * what the change reaches, by Zig's own rules; and they stay out of what the
  * step is seen to read, so Zig's cache never makes it run again.
  *
- * That holds for every step that starts `zig` where the repository's root
- * is, whatever else is in it: `zig build test --summary all`, `zig test
- * src/main.zig`, a build after another command. Left beside `build.zig`, the
- * cache is a file the step read that a fresh checkout does not have, and the
- * step would run again on every one.
+ * That holds for every step that starts `zig`, whatever else is in it:
+ * `zig build test --summary all`, `zig test src/main.zig`, a build after
+ * another command, a build in a directory under the root. Left beside
+ * `build.zig`, the cache is a file the step read that a fresh checkout does
+ * not have, and the step would run again on every one.
  *
  * @since 0.1.0
  */
@@ -73,6 +73,17 @@ const only = (list: ReadonlyArray<Command> | undefined): string | undefined => {
  */
 export const soleBuild = (command: string): string | undefined => only(commands(command))
 
+/**
+ * How many directories under the repository's root a step starts in, or
+ * `undefined` when where it starts is not a plain path under the root: a
+ * path from `/` or the home directory, one that climbs out, one with a
+ * variable in it.
+ */
+const depth = (cwd: string): number | undefined => {
+  const parts = cwd.split("/").filter((part) => part !== "" && part !== ".")
+  return /^[/~]|\$/.test(cwd) || parts.includes("..") ? undefined : parts.length
+}
+
 /** Commands after which a path that does not start at `/` names another place. */
 const moves: ReadonlySet<string> = new Set(["cd", "pushd", "popd"])
 
@@ -94,33 +105,40 @@ const programs = (list: ReadonlyArray<Command> | undefined): ReadonlyArray<strin
 }
 
 /**
- * True when the step starts `zig` in the repository's root: one of its
- * commands is `zig`, alone or beside others, straight or inside a `bash -c`.
+ * True when the step starts `zig` in a directory this reader can name from
+ * the repository's root: one of its commands is `zig`, alone or beside
+ * others, straight or inside a `bash -c`.
  *
- * False when the step starts somewhere else or changes directory, because
- * the cache directories are given from where Zig starts; when it names
- * Zig's cache itself, which it then expects beside `build.zig`; and when its
- * shell is more than this reader reads.
+ * False when the step changes directory or starts outside the repository,
+ * because the cache directories are given from where Zig starts; when it
+ * names Zig's cache itself, which it then expects beside `build.zig`; and
+ * when its shell is more than this reader reads.
  *
  * @throws {never}
  * @category reading
  * @since 0.1.0
  */
 export const runs = (step: Step): boolean => {
-  if ((step.cwd !== "" && step.cwd !== ".") || step.command.includes("zig-cache")) return false
+  if (depth(step.cwd) === undefined || step.command.includes("zig-cache")) return false
   const started = programs(commands(step.command))
   return started !== undefined && started.includes("zig") && !started.some((program) => moves.has(program))
 }
 
 /**
- * A step that runs Zig, told where Zig keeps its caches. What the step
- * already sets wins. The step names no inputs: it is observed.
+ * A step that runs Zig, told where Zig keeps its caches. Zig takes a cache
+ * directory from where it starts, so a step that starts under the root is
+ * given the way back up: `../../.flows/tools/zig/local` from `tools/gen`.
+ * What the step already sets wins. The step names no inputs: it is observed.
  *
  * @throws {never}
  * @category planning
  * @since 0.1.0
  */
-export const dress = (step: Step): Step => ({ ...step, env: { ...environment, ...step.env } })
+export const dress = (step: Step): Step => {
+  const up = "../".repeat(depth(step.cwd) ?? 0)
+  const caches = Object.fromEntries(Object.entries(environment).map(([name, directory]) => [name, `${up}${directory}`]))
+  return { ...step, env: { ...caches, ...step.env } }
+}
 
 /**
  * The steps a CI step becomes when it is nothing but `zig build <step>` and
