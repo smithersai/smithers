@@ -6,7 +6,14 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:
 import { basename, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { main, rootOf, run } from "../../src/cli/main.vibe"
-import { deaf, exitCodes as signalExitCodes, type Listen, listenTo, type Signal } from "../../src/cli/Signals.ts"
+import {
+  deaf,
+  exitCodes as signalExitCodes,
+  type Heard,
+  type Listen,
+  listenTo,
+  type Signal
+} from "../../src/cli/Signals.ts"
 import { exitCodes } from "../../src/contract/Command.ts"
 import { footer, uncommittedFooter } from "../../src/native/Workspace.ts"
 import { ownWorkspace } from "../native/repo.ts"
@@ -286,7 +293,7 @@ describe("a signal", () => {
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     it(`${signal} interrupts the program in this process: its directory is removed and its child stopped`, async () => {
       const marker = join(scratch(), "marker.json")
-      const listeners = new Map<Signal, () => void>()
+      const listeners = new Map<Heard, () => void>()
       const listen: Listen = (name, listener) => {
         listeners.set(name, listener)
         return () => void listeners.delete(name)
@@ -306,7 +313,7 @@ describe("a signal", () => {
   }
 
   it("leaves a program that ends by itself with its own exit code, and stops listening", async () => {
-    const listeners = new Map<Signal, () => void>()
+    const listeners = new Map<Heard, () => void>()
     const listen: Listen = (name, listener) => {
       listeners.set(name, listener)
       return () => void listeners.delete(name)

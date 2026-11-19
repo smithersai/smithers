@@ -1,0 +1,102 @@
+/**
+ * Parts and faulty services for the tests of a program whose work stops
+ * before it has an exit code of its own: a service that never answers, an
+ * error no part answers for, and a build that leaves a directory nothing can
+ * be removed from.
+ */
+
+import type { ReplayParts, ReplayRequest } from "../../src/contract/Parts.ts"
+import type { Parts } from "../../src/cli/Cli.vibe"
+import { type Environment, type Host, replayOptions } from "../../src/cli/Host.vibe"
+import { parts as onMain } from "../../src/cli/parts.ts"
+import { Progress, WorkDirectory } from "../../src/replay/index.ts"
+import { parts as answering, run as replayed } from "./parts.vibe"
+import { throwLater } from "./stray.ts"
+
+/**
+ * The real file system, except that it never answers when asked for the text
+ * of a file named `name`: the request holds no file, no timer and no process,
+ * so nothing is left that could wake whoever waits for it.
+ */
+export const silentFor = (name: string) =>
+  Layer.effect(FileSystem.FileSystem, effect {
+    const fs = try FileSystem.FileSystem
+    const silent: FileSystem.FileSystem = {
+      ...fs,
+      readFileString: (path: string, encoding?: string) =>
+        path.endsWith(`/${name}`) ? callback<string>(() => undefined) : fs.readFileString(path, encoding)
+    }
+    return silent
+  })
+
+/** The file a replay of {@link stopping} waits for. */
+const unanswered = "answer.txt"
+
+/**
+ * How a replay of {@link stopping} stops: it waits for the file system, it
+ * waits where it cannot be interrupted, it dies of an error, or an error is
+ * thrown where nothing catches it.
+ */
+export type How = "waits" | "waits uninterruptibly" | "dies" | "throws elsewhere"
+
+/** The commit the replay of {@link stopping} says it runs. */
+export const stoppedAt = "0123abc"
+
+/** The error a replay of {@link stopping} dies of: its address holds a user name and a password. */
+export const died = "the store at https://someone:hunter2@cache.example.invalid/ac\n  refused"
+
+/** The error thrown where nothing catches it. */
+export const stray = "a listener threw"
+
+/**
+ * A replay that stops before it has a report. In a scope it makes a
+ * directory, tells the program it keeps its copies there, says a note and
+ * that it runs the baseline at {@link stoppedAt}, writes the directory to
+ * the file `marker` as JSON, and then stops as `how` says.
+ */
+export const stopping = (marker: string, how: How) =>
+  effect function <R>(request: ReplayRequest, given: ReplayParts<R>) {
+    const stopped = scoped(effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const directory = try fs.makeTempDirectoryScoped({ prefix: "smithers-ci-stopping-" })
+      try (try WorkDirectory).at(directory)
+      const progress = try Progress
+      // A note begins no run: the stage is the run announced after it.
+      try progress.say("steps run without a file-system jail")
+      try progress.say(`1/1 ${stoppedAt} baseline`)
+      try fs.writeFileString(marker, JSON.stringify({ directory }))
+      const answer = fs.readFileString(path.join(directory, unanswered))
+      if (how === "dies") try die(new Error(died))
+      if (how === "throws elsewhere") try sync(() => throwLater(stray))
+      if (how === "waits uninterruptibly") try Effect.uninterruptible(answer)
+      try answer
+    })
+    provide silentFor(unanswered) {
+      stopped catch () => undefined
+    }
+    return try replayed(request, given)
+  }
+
+/**
+ * Every part on `main`, reading the repository through a file system that
+ * never answers for a file named `name`.
+ */
+export const readingSilently = (name: string): Parts<Host> => ({
+  ...onMain,
+  read: (root) => Effect.provide(onMain.read(root), silentFor(name))
+})
+
+/**
+ * The parts the tests run with, with a replay that stops as `how` says.
+ */
+export const stoppingParts = (marker: string, how: How): Parts<Host> => ({ ...answering, run: stopping(marker, how) })
+
+/**
+ * Every part on `main`, with `smthrs` in the place of this install's Smithers
+ * build in a replay.
+ */
+export const replayingWith = (smthrs: readonly [string, ...Array<string>], environment: Environment): Parts<Host> => ({
+  ...onMain,
+  run: (request, given) => Effect.provide(onMain.run(request, given), replayOptions(smthrs, true, environment))
+})

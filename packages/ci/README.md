@@ -22,6 +22,25 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Nineteenth round, 2026-11-19.** A replay always ends with a listed exit code and a line (`sci-exit-13`). No
+contract changed.
+
+- **A replay removes its directory whatever a step left in it** (`Confine.confine`): Smithers build sets a run's
+  machines aside and removes them with a command nobody waits for, and the replay's jail ends that command with the
+  build. What it had not removed held Go's read-only module cache, the replay made only its homes and temporary
+  directories writable, and removing its directory failed. Everything in the directory is made writable now, but
+  the clone of the repository (`Confine.sourceDirectory`): git links its objects to the repository's own files.
+- **The program never ends with an exit code of Node's, and never without a line** (`cli/main.vibe`,
+  `cli/Stage.ts`): that failed removal ended a replay of spf13/cobra with exit 13 and nothing printed, because the
+  program waited for a signal after its work had died. Now an error no part answers for, an error nothing caught,
+  and work that still waits when nothing is left that could wake it each end with exit 4 and one line,
+  `smithers-ci: replay: stopped without an answer while running normal mode at 3f2a1c9`, with the steps stopped and
+  the replay's directory removed. `Signals.Listen` hears `beforeExit`, `uncaughtException` and
+  `unhandledRejection` beside the two signals.
+- **A replay says where it keeps its copies** (`replay.WorkDirectory`, a service like `Progress`, silent unless
+  provided): the program removes that directory when a replay cannot. `Stage.stageOf` reads the stage and the
+  commit from a `Progress` line, so a new kind of run needs a line there to be named when it stops.
+
 **Eighteenth round, 2026-11-19.** A failed step's reason is a line the step printed (`sci-mac-fast`). No contract
 changed.
 

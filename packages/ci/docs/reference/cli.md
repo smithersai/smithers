@@ -304,6 +304,16 @@ Ctrl-C (`SIGINT`) and `SIGTERM` stop the program: the step it is running is
 stopped, its temporary copies are removed, and it exits `130` or `143`, as a
 shell reports a program ended by that signal. A second signal ends it at once.
 
+The program always ends with a line and one of the codes on this page. When
+its own work stops before it has a result, because it waits for an answer that
+never comes or meets an error of its own, it stops the step it is running,
+removes its temporary copies, says on standard error where it was, and exits
+`4`:
+
+```text
+smithers-ci: replay: stopped without an answer while running normal mode at 3f2a1c9
+```
+
 ## Why a job is not replayed
 
 The report and the exit-`3` line give one of these sentences for each job left

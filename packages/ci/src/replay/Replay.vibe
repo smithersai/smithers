@@ -59,6 +59,7 @@ import {
   machine,
   reading,
   renew,
+  sourceDirectory,
   type Way
 } from "./Confine.vibe"
 import { addTo, type Count, type CpuBucket, uncounted, usedBy } from "./Cpu.ts"
@@ -255,6 +256,21 @@ export service Progress {
   readonly say: (line: string) => void!!
   static readonly defaultValue = () => ({
     say: (_line: string): void!! => Effect.void
+  })
+}
+
+/**
+ * Where a replay says which directory it keeps its copies in, as soon as it
+ * has made it. Whoever runs the replay removes the directory when the replay
+ * cannot. Silent unless provided.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export service WorkDirectory {
+  readonly at: (directory: string) => void!!
+  static readonly defaultValue = () => ({
+    at: (_directory: string): void!! => Effect.void
   })
 }
 
@@ -578,7 +594,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const options = try Options
     const progress = try Progress
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-replay-" }), "could not make a directory")
-    const source = path.join(work, "source")
+    try (try WorkDirectory).at(work)
+    const source = path.join(work, sourceDirectory)
     const root = path.resolve(request.root)
     // The variables of the person who runs the replay. The token of the shared cache `--cache` names is one: it
     // reaches Smithers build alone, on a pipe.

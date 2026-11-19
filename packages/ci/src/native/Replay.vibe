@@ -17,7 +17,7 @@ import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract
 import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
 import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
-import { type Confined, confine, held, jobHomes, reading, type Way } from "../replay/Confine.vibe"
+import { type Confined, confine, held, jobHomes, reading, sourceDirectory, type Way } from "../replay/Confine.vibe"
 import { addTo, type Count, type CpuBucket, uncounted, usedBy } from "../replay/Cpu.ts"
 import { cpuWatch } from "../replay/CpuWatch.vibe"
 import { gitConfig, pushesGoNowhere, searchPath, stepEnvironment } from "../replay/Environment.ts"
@@ -51,7 +51,7 @@ import {
 } from "../replay/Process.vibe"
 import { readyHistory } from "../replay/History.vibe"
 import { printsNotes, readsListener } from "../replay/Reads.ts"
-import { type Execute, Options, Progress, scoresOrReason, settle } from "../replay/Replay.vibe"
+import { type Execute, Options, Progress, scoresOrReason, settle, WorkDirectory } from "../replay/Replay.vibe"
 import { defaultStall, defaultStallMinutes, type StallLimit, tableFor, watchFor } from "../replay/Stall.vibe"
 import {
   choose,
@@ -296,7 +296,8 @@ export const own = <R>(
       return () => addTo(bucket, ended())
     }
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-own-" }), "could not make a directory")
-    const source = path.join(work, "source")
+    try (try WorkDirectory).at(work)
+    const source = path.join(work, sourceDirectory)
     const root = path.resolve(request.root)
     // Each mode has a home of its own: none finds a cache another mode filled. The files this program runs from
     // stay in sight where the person's home is hidden.

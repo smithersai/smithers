@@ -6,10 +6,12 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { discard } from "../replay/index.ts"
 import { cli, type Parts } from "./Cli.vibe"
 import { type Environment, type Host, layer } from "./Host.vibe"
 import { parts } from "./parts.ts"
-import { deaf, exitCodes, type Listen, type Signal } from "./Signals.ts"
+import { deaf, exitCodes, idle, type Listen, type Signal, uncaught } from "./Signals.ts"
+import { broken, nothingTold, stoppedCode, type Told, unanswered } from "./Stage.ts"
 
 /**
  * The top directory of the repository that holds `directory`, as git names
@@ -45,6 +47,41 @@ const signalled = (listen: Listen) =>
   })
 
 /**
+ * Ends with the first error nothing caught, wherever it was thrown. It stops
+ * listening then, and when it is interrupted.
+ */
+const thrown = (listen: Listen) =>
+  callback<unknown>((resume) => {
+    const stops: Array<() => void> = []
+    const stop = () => stops.forEach((each) => each())
+    for (const event of uncaught) {
+      stops.push(listen(event, (cause) => {
+        stop()
+        resume(succeed(cause))
+      }))
+    }
+    return sync(stop)
+  })
+
+/**
+ * Ends when nothing is left that could wake the program: what it still
+ * waits for will never answer. It stops listening when it is interrupted.
+ */
+const drained = (listen: Listen) => callback<void>((resume) => sync(listen(idle, () => resume(Effect.void))))
+
+/**
+ * Ends the program's work and leaves the machine as a program that ended by
+ * itself does: its steps are stopped and its temporary copies removed. Work
+ * that will not end, because it waits where it cannot be interrupted, is
+ * left where it is, and the directories its replay kept its copies in are
+ * removed here.
+ */
+effect function ended(working: Fiber.Fiber<number>, told: Ref.Ref<Told>, listen: Listen) {
+  try.race [Fiber.interrupt(working), drained(listen)]
+  for (const directory of (try Ref.get(told)).directories) try discard(directory)
+}
+
+/**
  * Runs the program with `args` from `directory`, a directory of the
  * repository, over the given parts, and resolves to the exit code.
  * `environment` chooses fast mode's judge.
@@ -52,6 +89,12 @@ const signalled = (listen: Listen) =>
  * A signal `listen` hears interrupts the program: its steps are stopped and
  * its temporary copies removed before this resolves, to the signal's exit
  * code.
+ *
+ * The program always ends with an exit code of its own and a line. Work that
+ * stops before it has an answer is ended the same way, with one line on
+ * standard error that says where it was, and the exit code `failed`: an error
+ * no part answers for, an error nothing caught, and work that waits for an
+ * answer when `listen` hears that nothing is left that could give one.
  *
  * @category running
  * @since 0.1.0
@@ -66,7 +109,31 @@ export async function run(
   const program = effect {
     return try cli(args, try rootOf(directory), chosen, directory)
   }
-  return await runPromise(race(Effect.provide(program, layer(environment)), signalled(listen)))
+  return await runPromise(effect {
+    const told = try Ref.make<Told>(nothingTold)
+    provide layer(environment, told) {
+      const working = fork.detached program
+      const first = try.race [
+        map(Fiber.await(working), (exit) =>
+          Exit.isSuccess(exit)
+            ? ({ _tag: "answered", code: exit.value }) as const
+            : ({ _tag: "broken", cause: Cause.squash(exit.cause) }) as const
+        ),
+        map(signalled(listen), (code) => ({ _tag: "signalled", code }) as const),
+        map(thrown(listen), (cause) => ({ _tag: "broken", cause }) as const),
+        as(drained(listen), { _tag: "drained" } as const)
+      ]
+      if (first._tag === "answered") return first.code
+      if (first._tag === "signalled") {
+        try ended(working, told, listen)
+        return first.code
+      }
+      const said = try Ref.get(told)
+      try Console.error(first._tag === "drained" ? unanswered(said) : broken(said, first.cause))
+      try ended(working, told, listen)
+      return stoppedCode
+    }
+  })
 }
 
 /**

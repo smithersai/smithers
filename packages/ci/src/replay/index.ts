@@ -5,6 +5,16 @@
  * @since 0.1.0
  */
 
+export { discard } from "./Confine.vibe"
 export { type Probe } from "./Jail.ts"
-export { compiledCaches, compiledCode, compiledSource, type Host, Options, Progress, run } from "./Replay.vibe"
+export {
+  compiledCaches,
+  compiledCode,
+  compiledSource,
+  type Host,
+  Options,
+  Progress,
+  run,
+  WorkDirectory
+} from "./Replay.vibe"
 export { maxReruns } from "./Summary.ts"

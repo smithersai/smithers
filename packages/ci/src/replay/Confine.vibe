@@ -83,6 +83,29 @@ const unlock = (spawner: ChildProcessSpawner["Service"], directories: ReadonlyAr
   }))
 
 /**
+ * The name, in a replay's directory, of its clone of the person's repository.
+ * git makes the objects of a clone on the same disk links to the repository's
+ * own files, so a mode changed there is changed in the repository: nothing in
+ * it is made writable, and nothing in it needs to be.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const sourceDirectory = "source"
+
+/**
+ * Makes everything in `work`, a replay's directory, writable again, but its
+ * clone of the person's repository ({@link sourceDirectory}).
+ */
+effect function unlockWork(work: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const names = fs.readDirectory(work) catch (): ReadonlyArray<string> => []
+  const own = names.filter((name) => name !== sourceDirectory).map((name) => path.join(work, name))
+  if (own.length > 0) try unlock(try ChildProcessSpawner, own)
+}
+
+/**
  * Makes `home` a home for steps: the hook that refuses a push, the configuration that names it, `links`, and
  * nothing else. A version manager looks for its versions under the home, so each link leads to where they are.
  */
@@ -136,8 +159,11 @@ effect function furnish(home: string, links: Confined["links"]) {
  * otherwise hidden whole.
  *
  * A step can leave a directory nothing can be removed from, as Go leaves its
- * module cache, so before `work` is removed everything under the homes and
- * the temporary directories is made writable again.
+ * module cache, so before `work` is removed everything in it is made
+ * writable again: the homes, the temporary directories, and the machines of a
+ * run that Smithers build set aside and had not removed when it ended. Only
+ * the clone of the person's repository is left as it is
+ * ({@link sourceDirectory}).
  *
  * `person` holds the variables of the person who runs the replay. The program
  * keeps them out of its own process, so without `person` they are read from
@@ -170,7 +196,9 @@ export effect function confine(
     try fs.writeFileString(standIn, script)
     try fs.chmod(standIn, 0o755)
   }
-  try addFinalizer(() => unlock(spawner, [homes, tmps]))
+  // Not the homes and the temporary directories alone: the machines Smithers build set aside are there too, and
+  // the command that removes them ends with the build when the build runs in a jail.
+  try addFinalizer(() => unlockWork(work))
   const found = probe(environment)
   // Where a version manager looks for its versions: under the home, which is the step's own.
   const links = "refusal" in found ? [] : found.tools.homes
@@ -346,6 +374,21 @@ export effect function fresh(directory: string) {
   try fs.makeDirectory(directory, { recursive: true })
   try addFinalizer(() => ignore(clear))
   return directory
+}
+
+/**
+ * Removes `directory`, a replay's directory, and everything in it, also
+ * where a step left a directory nothing can be removed from. What still
+ * cannot be removed stays, without a word: this is the last thing a replay
+ * that could not end by itself is owed.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function discard(directory: string) {
+  const fs = try FileSystem.FileSystem
+  try unlockWork(directory)
+  try ignore(fs.remove(directory, { recursive: true, force: true }))
 }
 
 /**

@@ -11,7 +11,7 @@
  * - How a replay runs in a stranger's checkout: this install's `smthrs`,
  *   which finds the package the generated files import by itself.
  * - What a replay is running, one line on standard error as each mode of each
- *   commit starts.
+ *   commit starts, kept with the replay's directory for the program's end.
  *
  * @since 0.1.0
  */
@@ -23,10 +23,11 @@ import { Evaluator } from "@smthrs/model"
 import { NodeHost } from "@smthrs/platform-node"
 import type { Failure } from "../contract/Parts.ts"
 import { environment as documented, name } from "../contract/Command.ts"
-import { Options, Progress } from "../replay/index.ts"
+import { Options, Progress, WorkDirectory } from "../replay/index.ts"
 import { Ledger, Repository, Score } from "../select/index.ts"
 import { nodeProgram, smthrsCommand, smthrsWithToken } from "./Install.ts"
 import { machine, runtime } from "./Restart.ts"
+import { nothingTold, stageOf, type Told } from "./Stage.ts"
 
 /** An environment, read once at the composition root and never printed. */
 export type Environment = Readonly<Record<string, string | undefined>>
@@ -119,21 +120,36 @@ export const replayOptions = (
 
 /**
  * Prints what a replay is running on standard error, which leaves standard
- * output to the report.
+ * output to the report, and keeps in `told` the stage each line begins and
+ * the directory the replay says it keeps its copies in: what the program
+ * says, and removes, when a replay stops before it has an answer.
  *
  * @category layers
  * @since 0.1.0
  */
-export const replayProgress = Layer.succeed(Progress, { say: (line: string) => Console.error(`${name}: ${line}`) })
+export const replayProgress = (told: Ref.Ref<Told>) =>
+  Layer.mergeAll(
+    Layer.succeed(Progress, {
+      say: effect (line: string) => {
+        const stage = stageOf(line)
+        if (stage !== undefined) try Ref.update(told, (was) => ({ ...was, stage }))
+        try Console.error(`${name}: ${line}`)
+      }
+    }),
+    Layer.succeed(WorkDirectory, {
+      at: (directory: string) => Ref.update(told, (was) => ({ ...was, directories: [...was.directories, directory] }))
+    })
+  )
 
 /**
  * Every service the program and its parts may ask for, with the judge read
- * from `environment`.
+ * from `environment`. `told` is where a replay's stage and directory are
+ * kept for whoever runs the program.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layer = (environment: Environment) => {
+export const layer = (environment: Environment, told: Ref.Ref<Told> = Ref.makeUnsafe(nothingTold)) => {
   const runtime = nodeProgram(environment["PATH"])
   return Layer.provideMerge(
     Layer.mergeAll(
@@ -150,7 +166,7 @@ export const layer = (environment: Environment) => {
         environment,
         smthrsWithToken(undefined, runtime)
       ),
-      replayProgress
+      replayProgress(told)
     ),
     node
   )
