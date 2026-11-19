@@ -367,6 +367,7 @@ it reaches the model.
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `PATH`                            | Where the program finds Node.js to run Smithers build, and `claude` for fast mode.                                                        |
 | `HOME`                            | Where fast mode finds this machine's Claude Code and Codex logins.                                                                        |
+| `USER`                            | The user whose Claude Code login fast mode uses. On macOS Claude Code keeps its login in that user's keychain.                            |
 | `SMITHERS_CACHE_TOKEN`            | The token sent to the shared cache that `--cache` names.                                                                                  |
 | `AI_GATEWAY_API_KEY`              | The key for the model that predicts which tests a change cannot break. Without it, fast mode uses the model this machine is signed in to. |
 | `AI_GATEWAY_API_KEY_FILE`         | A file that holds that key, read when `AI_GATEWAY_API_KEY` is empty.                                                                      |

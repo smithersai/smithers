@@ -1,4 +1,6 @@
 import * as Effect from "effect/Effect"
+import { readFileSync, writeFileSync } from "node:fs"
+import { delimiter, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Parts } from "../../src/cli/Cli.vibe"
 import { type Host, layer } from "../../src/cli/Host.vibe"
@@ -54,6 +56,33 @@ describe("fast mode asks for the model before it works", () => {
         expect(outcome.stderr).not.toMatch(/judge|scorer|rows|select:/i)
       }
     )
+  })
+
+  it("starts Claude Code with the user's name, which it finds its sign-in under on macOS, and no other variable", async () => {
+    // A real `claude` on the path: it writes down two of the variables it was started with and says it is signed out.
+    const programs = keep(temporary("claude"))
+    writeFileSync(
+      join(programs, "claude"),
+      [
+        "#!/bin/sh",
+        "printf '%s|%s\\n' \"${USER-}\" \"${GITHUB_TOKEN-}\" > \"${0%/*}/started-with\"",
+        "printf '{\"loggedIn\":false,\"authMethod\":\"none\"}\\n'",
+        "exit 1",
+        ""
+      ].join("\n"),
+      { mode: 0o755 }
+    )
+    const started = {
+      HOME: keep(temporary("home")),
+      PATH: `${programs}${delimiter}${process.env["PATH"]}`,
+      USER: "the-person",
+      GITHUB_TOKEN: "another program's"
+    }
+    const sink = recorder()
+    const code = await inProcess(["--mode", "fast"], keep(repository()), asking, sink.service as never, started)
+    expect(code).toBe(exitCodes.failed)
+    expect(sink.stderr()).toBe(`smithers-ci: ${words("unconfigured")} ${Preflight.withoutTheModel}\n`)
+    expect(readFileSync(join(programs, "started-with"), "utf8")).toBe("the-person|\n")
   })
 
   it("says the model could not be reached when it is configured and does not answer", async () => {

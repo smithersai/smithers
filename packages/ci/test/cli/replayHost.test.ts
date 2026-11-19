@@ -65,6 +65,7 @@ describe("what fast mode's model is given", () => {
     expect(modelEnvironment({
       PATH: "/bin",
       HOME: "/home/me",
+      USER: "me",
       TERM: "xterm",
       AI_GATEWAY_API_KEY: "a key",
       CLAUDE_CONFIG_DIR: "/home/me/.claude-work",
@@ -76,6 +77,7 @@ describe("what fast mode's model is given", () => {
     })).toEqual({
       PATH: "/bin",
       HOME: "/home/me",
+      USER: "me",
       TERM: "xterm",
       AI_GATEWAY_API_KEY: "a key",
       CLAUDE_CONFIG_DIR: "/home/me/.claude-work",
