@@ -38,6 +38,13 @@ takes a while. `--commits` sets how many commits to replay:
 bunx smithers-ci --commits 5
 ```
 
+A partial or shallow clone works too. In a clone made with
+`git clone --filter=blob:none`, the replay fetches the files the replayed
+commits need from the clone's remote, says how many, and leaves your clone as it
+was. In a shallow clone, such as the one `actions/checkout` makes, it replays
+the commits the clone holds, says how many that is, and prints the
+`git fetch --deepen` command that gets the rest.
+
 ## What it needs on your machine
 
 The replay runs your CI's commands here, with the tools you have. It downloads

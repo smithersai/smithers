@@ -10,6 +10,9 @@ smithers-ci [command] [flags]
 Run it with `bunx smithers-ci` in any directory of a Git repository. It works on
 the whole repository: the root is the repository's top directory, found from
 the directory you run it in.
+A partial clone (`--filter`) and a shallow clone (`--depth`) work too: the
+replay fetches what a partial clone lacks from its remote, and replays the
+commits a shallow clone holds.
 
 The four tables on this page are checked against the command surface in
 `src/contract/Command.ts` by `test/docs.test.ts`: a command, flag, default or

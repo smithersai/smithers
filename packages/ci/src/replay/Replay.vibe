@@ -96,6 +96,7 @@ import {
   type StepRun,
   stdoutOf
 } from "./Process.vibe"
+import { readyHistory } from "./History.vibe"
 import { printsNotes, readsListener } from "./Reads.ts"
 import { defaultStallMinutes, type StallLimit, type Table, tableFor, watchFor } from "./Stall.vibe"
 import {
@@ -564,6 +565,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     if (head.exitCode !== 0) throw failure("not-a-repository", `${root} is a git repository with no commit to replay`)
     const history = lines(try git(source, ["rev-list", "--first-parent", `--max-count=${request.commits}`, "HEAD"]))
     const commits = [...history].reverse()
+    // A partial clone lacks the files of past commits, and a shallow clone the commits before its oldest.
+    try readyHistory(root, source, request.commits, request.warm === true, progress.say)
 
     // A copy has the repository's directory name and remote, so a reader names it as it does in place.
     const origin = try originOf(root)

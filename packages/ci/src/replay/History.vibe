@@ -1,0 +1,196 @@
+/**
+ * The history a replay reads, when the clone it runs in holds less of it than
+ * a full clone. A partial clone (`git clone --filter=blob:none`) lacks the
+ * files of past commits until something asks for them; a shallow clone
+ * (`git clone --depth 1`, the default of `actions/checkout`) lacks the commits
+ * before its oldest.
+ *
+ * @since 0.1.0
+ */
+
+import { exec, git, lines, outputLimit, stdoutOf } from "./Process.vibe"
+import { failure, withoutCredentials } from "./Summary.ts"
+
+/** "1 object", "2 objects". */
+const counted = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`
+
+/**
+ * What a replay says before it fetches the objects a partial clone lacks.
+ *
+ * @category messages
+ * @since 0.1.0
+ */
+export const fetching = (count: number, remote: string): string =>
+  `this partial clone lacks ${counted(count, "object")} the replayed commits check out: fetching them from ${remote}`
+
+/**
+ * Why a replay of a partial clone stops: what it lacks could not be fetched.
+ * `why` is the line git failed with. It names the Git command that fetches every
+ * object, for a person who wants the clone whole.
+ *
+ * @category messages
+ * @since 0.1.0
+ */
+export const cannotFetch = (count: number, remote: string, why: string): string =>
+  `this partial clone lacks ${counted(count, "object")} the replayed commits check out, and fetching them failed (${why}): ` +
+  `run \`git -c remote.${remote}.partialclonefilter= fetch --refetch ${remote}\` where ${remote} can be reached, ` +
+  "or replay a full clone"
+
+/**
+ * Why a replay of a partial clone stops when it has no remote to fetch from.
+ *
+ * @category messages
+ * @since 0.1.0
+ */
+export const noRemote = (count: number, remote: string): string =>
+  `this partial clone lacks ${counted(count, "object")} the replayed commits check out, and it has no remote ` +
+  `${remote} to fetch them from: run \`git remote add ${remote} <the address it was cloned from>\`, or replay a full clone`
+
+/**
+ * What a replay says when a shallow clone holds fewer commits than it was
+ * asked to replay: it replays those it holds. `more` is how many more commits
+ * a whole replay needs, the one its first run uses included.
+ *
+ * @category messages
+ * @since 0.1.0
+ */
+export const shallow = (held: number, asked: number, more: number): string =>
+  `this shallow clone holds ${counted(held, "commit")} of the ${asked} asked for: replaying what it holds; ` +
+  `\`git fetch --deepen=${more}\` gets the rest`
+
+/**
+ * The objects among those of `commits` that `source` lacks.
+ *
+ * @category history
+ * @since 0.1.0
+ */
+export effect function missingIn(source: string, commits: ReadonlyArray<string>) {
+  const listed = try git(source, ["rev-list", "--objects", "--missing=print", "--no-walk", ...commits])
+  return lines(listed).filter((line) => line.startsWith("?")).map((line) => line.slice(1))
+}
+
+/** A configuration value of `root`, or nothing when it is not set. */
+effect function configOf(root: string, args: ReadonlyArray<string>) {
+  const read = try exec("git", ["config", ...args], root, {}, outputLimit, stdoutOf)
+  const value = read.text.trim()
+  return read.exitCode === 0 && value !== "" ? value : undefined
+}
+
+/**
+ * The remote a partial clone fetches what it lacks from: the one its
+ * configuration names, else the first that promises objects, else `origin`.
+ *
+ * @category history
+ * @since 0.1.0
+ */
+export effect function promisorOf(root: string) {
+  const named = try configOf(root, ["--get", "extensions.partialClone"])
+  if (named !== undefined) return named
+  const promising = try configOf(root, ["--type=bool", "--get-regexp", "^remote\\..*\\.promisor$"])
+  const first = lines(promising ?? "").find((line) => line.endsWith(" true"))
+  return first === undefined ? "origin" : first.slice("remote.".length, first.lastIndexOf(".promisor "))
+}
+
+/** An address git reads as a path relative to the repository, made absolute. */
+const fromRoot = (url: string, root: string, resolve: (from: string, to: string) => string): string =>
+  url.includes("://") || url.startsWith("/") || /^[^/]*:/.test(url) ? url : resolve(root, url)
+
+/**
+ * Fetches into `source` every object it lacks that a checkout of `commits`
+ * needs, from the remote of `root`, the person's clone, and says how many.
+ * A full clone lacks none and fetches nothing. It fails `command-failed` with
+ * one line naming the cause and the Git command that fixes it when the remote
+ * is missing or cannot be reached. The person's clone is not written. A
+ * fetch that succeeds brings what it asked for, so each round lacks less.
+ *
+ * @category history
+ * @since 0.1.0
+ */
+export effect function fetchMissing(
+  root: string,
+  source: string,
+  commits: ReadonlyArray<string>,
+  say: (line: string) => void!!
+) {
+  const path = try Path.Path
+  let missing = try missingIn(source, commits)
+  if (missing.length === 0) return
+  const remote = try promisorOf(root)
+  const address = try configOf(root, ["--get", `remote.${remote}.url`])
+  if (address === undefined) throw failure("command-failed", noRemote(missing.length, remote))
+  const url = fromRoot(address, root, path.resolve)
+  while (missing.length > 0) {
+    try say(fetching(missing.length, remote))
+    const done = try exec(
+      "git",
+      [
+        "-c",
+        "fetch.negotiationAlgorithm=noop",
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--no-write-fetch-head",
+        "--recurse-submodules=no",
+        "--stdin",
+        url
+      ],
+      source,
+      { GIT_TERMINAL_PROMPT: "0" },
+      outputLimit,
+      undefined,
+      false,
+      undefined,
+      undefined,
+      `${missing.join("\n")}\n`
+    )
+    if (done.exitCode !== 0) {
+      const why = (done.text.trim().split(/\r?\n/)[0] as string).replaceAll(url, withoutCredentials(url))
+      throw failure("command-failed", cannotFetch(missing.length, remote, why))
+    }
+    // A fetched directory names the objects in it: a clone made with `--filter=tree:0` lacks those next.
+    missing = try missingIn(source, commits)
+  }
+}
+
+/**
+ * Says so when `source`, a copy of a shallow clone, holds fewer commits than
+ * `asked`: the replay replays the `held` it has. `warm` is whether the replay
+ * also runs the commit before its oldest.
+ *
+ * @category history
+ * @since 0.1.0
+ */
+export effect function sayShallow(
+  source: string,
+  held: number,
+  asked: number,
+  warm: boolean,
+  say: (line: string) => void!!
+) {
+  if (held >= asked) return
+  const answer = try git(source, ["rev-parse", "--is-shallow-repository"])
+  if (answer.trim() === "true") try say(shallow(held, asked, asked - held + (warm ? 1 : 0)))
+}
+
+/**
+ * Readies the history of a replay of `asked` commits in `source`, the
+ * replay's clone of `root`: says how many a shallow clone holds when it holds
+ * fewer, and fetches what a partial clone lacks of those commits and of the
+ * one before them. A replay that starts `warm` runs that one, and every
+ * replay compares the oldest commit with it to name the files it changed.
+ *
+ * @category history
+ * @since 0.1.0
+ */
+export effect function readyHistory(
+  root: string,
+  source: string,
+  asked: number,
+  warm: boolean,
+  say: (line: string) => void!!
+) {
+  const wanted = lines(try git(source, ["rev-list", "--first-parent", `--max-count=${asked + 1}`, "HEAD"]))
+  const held = Math.min(wanted.length, asked)
+  try sayShallow(source, held, asked, warm, say)
+  try fetchMissing(root, source, wanted, say)
+}
