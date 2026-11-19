@@ -670,6 +670,42 @@ describe("what measuring again costs", () => {
   })
 })
 
+describe("a test whose finished dependency reads a group of files", () => {
+  posixIt("is measured again before its run, through the group that dependency reads", async () => {
+    // The group is reached only through `built`. A runtime test is keyed on the installed trees above every file
+    // it can reach, so measuring it again walks into the group as well.
+    const group = S.Filegroup({ srcs: [S.glob("//lib/**")] })
+    const built = S.Shell.Build({
+      shell: "mkdir -p out && /bin/cat lib/a.txt > out/built",
+      outFiles: ["//out/built"],
+      sandbox: "none",
+      data: [group]
+    })
+    const test = S.NodeTest({
+      runner: S.testRunner([S.file("//check.test.mjs")]),
+      srcs: [S.file("//check.test.mjs")],
+      deps: [built, rewrite],
+      runtime: S.Runtime.Node({ version: ">=26.4.0" })
+    })
+    const { key, run } = await fixture({ rewrite, built, test }, {
+      "config.txt": "one\n",
+      "src/a.txt": "one\n",
+      "lib/a.txt": "lib\n",
+      "check.test.mjs": "import { readFileSync } from \"node:fs\"\n" +
+        "if (readFileSync(\"out/built\", \"utf8\") !== \"lib\\n\") process.exit(1)\n"
+    })
+    const { calls, services } = counting()
+    const results = await run(["test"], { services })
+    expect({ status: results["test"]!.status, error: results["test"]!.error }).toEqual({
+      status: "ran",
+      error: undefined
+    })
+    expect(calls).toContain("//:test afresh")
+    // Measured again, the test keeps the key a plan gives it: the group still counts toward it as planned.
+    expect(results["test"]!.key).toBe(await key("test"))
+  })
+})
+
 describe("a run that cannot measure again", () => {
   posixIt("fails a target it could not measure before its run", async () => {
     const test = reads("true", [S.glob("//src/**"), rewrite])

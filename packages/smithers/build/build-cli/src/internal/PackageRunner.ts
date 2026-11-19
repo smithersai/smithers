@@ -1540,9 +1540,21 @@ export const executeEffect = (
         // A target on a machine reads its machine's copy of the workspace, so that is the tree measured.
         const place = placeOf(node)
         if (when === "afresh") measuredAt.set(place, writes)
+        // A group of files `node` reads, directly or through other groups, is planned again with it. A group only a
+        // finished target reads keeps its plan: planning `node` stops at that target, yet its key still names the
+        // directories of every file the target can reach.
+        const replanned = new Set<string>()
+        const through = (label: string): void => {
+          for (const dependency of byLabel.get(label)!.dependencies) {
+            if (replanned.has(dependency) || !treeValues.has(byLabel.get(dependency)!.rule)) continue
+            replanned.add(dependency)
+            through(dependency)
+          }
+        }
+        through(node.label)
         const settled = [...dependenciesOf(node.label)]
+          .filter((label) => !replanned.has(label))
           .map((label) => byLabel.get(label)!)
-          .filter((dependency) => !treeValues.has(dependency.rule))
         return joined(() => replanning!.plan(node, settled, when, place))
       })
 
