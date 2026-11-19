@@ -16,9 +16,16 @@
  * `peerDependencies` of each package reached. Membership is
  * `pnpm-workspace.yaml`'s, through `scripts/workspace-packages.mjs`.
  *
+ * A file group that names a directory holding no file is refused where every
+ * declared input is resolved (`smthrs target //:targetIndex --write`, which a
+ * release cut runs: `declared_input_missing`). So a `<directory>/**` pattern
+ * is kept only for a package that has that directory; most have no `bin/`.
+ *
  * @since 0.1.0
  */
 
+import { existsSync } from "node:fs"
+import { join } from "node:path"
 import { Filegroup } from "@smthrs/targets/Filegroup"
 import * as Input from "@smthrs/targets/Input"
 import { repoRoot, workspacePackages } from "../scripts/workspace-packages.mjs"
@@ -56,7 +63,8 @@ type Member = ReturnType<typeof workspacePackages>[number]
  * @since 0.1.0
  */
 export const WorkspaceSources = (options: Options): Readonly<Record<string, ReturnType<typeof Filegroup>>> => {
-  const members = workspacePackages(options.root ?? repoRoot)
+  const root = options.root ?? repoRoot
+  const members = workspacePackages(root)
   const byName = new Map(members.map((member) => [member.name, member]))
   const own = members.find((member) => member.dir === options.cwd)
   if (own === undefined) throw new TypeError(`WorkspaceSources: ${options.cwd} is not a workspace package`)
@@ -73,11 +81,16 @@ export const WorkspaceSources = (options: Options): Readonly<Record<string, Retu
   }
   visit(own.manifest, ["dependencies", "devDependencies", "peerDependencies"])
   const files = options.files ?? ["src/**", "bin/**", "package.json", "{tsconfig,jsconfig,vibe.config}.json"]
+  const present = (member: Member, file: string): boolean => {
+    const directory = /^([^*?{[]+)\/\*\*$/.exec(file)?.[1]
+    return directory === undefined || existsSync(join(root, member.dir, directory))
+  }
   return Object.fromEntries(
     [...reached.values()].sort((left, right) => left.dir < right.dir ? -1 : 1).map((member) => [
       `sources-${member.dir.replaceAll("/", "-")}`,
       Filegroup({
-        srcs: files.map((file) => /[*?{[]/.test(file) ? Input.glob(file) : Input.file(file)),
+        srcs: files.filter((file) => present(member, file))
+          .map((file) => /[*?{[]/.test(file) ? Input.glob(file) : Input.file(file)),
         cwd: member.dir
       })
     ])
