@@ -681,8 +681,9 @@ export const splitOf = (units: ReadonlyArray<Unit>): ReadonlyMap<string, Readonl
   )
 
 /**
- * What each comparison name and target of the units is called in a report, and
- * the command behind it. A target of a step that was split is called by the
+ * What each comparison name and target of the units is called in a report, the
+ * command behind it, how many steps follow it in its job, and its name
+ * without the matrix variant it ran in. A target of a step that was split is called by the
  * step's name and the part it runs, as in `Check (check:lint)`.
  *
  * @category baseline
@@ -691,16 +692,23 @@ export const splitOf = (units: ReadonlyArray<Unit>): ReadonlyMap<string, Readonl
  */
 export const stepNames = (units: ReadonlyArray<Unit>): StepNames =>
   new Map(
-    units.flatMap((unit) =>
-      unit.steps.flatMap((step) =>
+    units.flatMap((unit) => {
+      // A step's name ends with the matrix variant it ran in.
+      const variant = unit.variant === undefined ? "" : variantText(unit.variant)
+      return unit.steps.flatMap((step, index) =>
         [step.label, ...step.targets].map((label) => {
           // A target of a split step is called by the part it runs: the package or the script that failed.
           const part = step.parts?.[label]
-          const name = part === undefined ? step.name : `${step.name} (${part})`
-          return [label, { step: name, command: step.written }] as const
+          const called = (name: string): string => part === undefined ? name : `${name} (${part})`
+          return [label, {
+            step: called(step.name),
+            command: step.written,
+            after: unit.steps.length - 1 - index,
+            ...(variant === "" ? {} : { variantOf: called(step.name.slice(0, -variant.length)) })
+          }] as const
         })
       )
-    )
+    })
   )
 
 /**

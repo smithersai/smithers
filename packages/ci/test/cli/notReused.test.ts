@@ -72,8 +72,11 @@ describe("a step that was not reused", () => {
       expect(outcome.code).toBe(0)
       // The same lines in the report a person reads.
       const shown = await spawn(bin, ["--commits", "2", "--no-trial", "--no-apply-check"], root)
-      expect(shown.stdout).toContain("steps not reused\n2 of 2 commits  ci.yml:test: fetch  never reused: " + reached)
-      expect(shown.stdout).toContain("\n1 of 2 commits  ci.yml:test: read  data.txt changed")
+      const fetch = `node -e "require('net').connect(${port}, '127.0.0.1').on('connect', function () { this.end() })"`
+      expect(shown.stdout).toContain(
+        `steps not reused\n2 of 2 commits  ci.yml:test: fetch  ${fetch}  never reused: ${reached}`
+      )
+      expect(shown.stdout).toContain("\n1 of 2 commits  ci.yml:test: read  cat data.txt  data.txt changed")
     } finally {
       await new Promise((resolve) => server.close(resolve))
     }

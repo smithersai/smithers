@@ -338,12 +338,21 @@ export const printedFailure = (printed: string): Pick<TargetResult, "command" | 
 
 /**
  * The name a person knows a result by, and the command behind it, by the
- * result's label.
+ * result's label. `after` is how many steps follow it in its job, and
+ * `variantOf` its name without the matrix variant it ran in.
  *
  * @category models
  * @since 0.1.0
  */
-export type StepNames = ReadonlyMap<string, { readonly step: string; readonly command: string }>
+export type StepNames = ReadonlyMap<
+  string,
+  {
+    readonly step: string
+    readonly command: string
+    readonly after?: number | undefined
+    readonly variantOf?: string | undefined
+  }
+>
 
 /**
  * Every failed result as a report states it, in order.
@@ -367,6 +376,28 @@ export const failuresOf = (
     }
   })
 
+/** `npm install` or `npm i` with flags and no package: the install of what `package.json` names. */
+const npmInstall = /^\s*npm\s+(?:install|i)(?:\s+-\S+)*\s*$/
+
+/**
+ * What a person does about a step that is never kept for want of a lockfile.
+ * Smithers build says so itself for `cargo` and `go` (`..., with no Cargo.lock
+ * to say what it fetches`). `npm install` reaches the registry whatever the
+ * repository holds, and only `npm ci` installs exactly what a lockfile pins.
+ * `after` steps follow it in its job; they read what it leaves, so they run
+ * when it ran.
+ */
+const fixOf = (reason: string, command: string, after: number): string | undefined => {
+  const named = /, with no (\S+) to say what it fetches/.exec(reason)?.[1]
+  const lockfile = named !== undefined
+    ? `commit ${named}`
+    : reason.startsWith("it opened a network connection") && npmInstall.test(command)
+    ? "commit package-lock.json, install with `npm ci`,"
+    : undefined
+  if (lockfile === undefined) return undefined
+  return `${lockfile} and this step${after === 0 ? "" : ` and the ${after} after it`} can be reused`
+}
+
 /**
  * Every step that ran and whose run says why an earlier result of it was not
  * used, in order. The reason a result is never kept comes first: a step that
@@ -383,10 +414,17 @@ export const notReusedOf = (
   results.flatMap((result) => {
     const reason = firstLine(readable(result.notStored ?? result.notReused ?? ""))
     if (result.status === "hit" || result.status === "skipped" || reason === "") return []
+    const named = names.get(result.label)
+    const fix = result.notStored === undefined ? undefined : fixOf(reason, named?.command ?? "", named?.after ?? 0)
+    const command = commandLine(named?.command ?? "")
+    const variantOf = firstLine(named?.variantOf ?? "")
     return [{
-      step: firstLine(names.get(result.label)?.step ?? result.label) || result.label,
+      step: firstLine(named?.step ?? result.label) || result.label,
       reason,
-      kept: result.notStored === undefined
+      kept: result.notStored === undefined,
+      ...(fix === undefined ? {} : { fix }),
+      ...(command === "" ? {} : { command }),
+      ...(variantOf === "" ? {} : { variantOf })
     }]
   })
 

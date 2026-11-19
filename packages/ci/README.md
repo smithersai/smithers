@@ -53,6 +53,10 @@ directly, so the parts are built at the same time.
 - `ReplayReport.StepNotReused` (`{ step, reason, kept }`) and `RunTotals.notReused` (optional): every step a mode
   ran where an earlier result was not used, with the reason. `kept: false` marks a step whose result is never kept,
   so it runs at every commit. The text report lists them under `steps not reused` with the number of commits.
+- `StepNotReused.fix`, `command` and `variantOf` (optional): what a person does about a step that is never kept for
+  want of a lockfile (`commit Cargo.lock and this step and the 2 after it can be reused`), the first line of the
+  step's command, and the step's name without its matrix variant, by which the report puts the variants of one
+  step on one line.
   Tests: `test/contract.test.ts`, `test/replay/Summary.test.ts`, `test/report.test.ts`, `test/cli/notReused.test.ts`.
 
 **Fifteenth round, 2026-11-19.** A run says where its time went (`sci-overhead`).

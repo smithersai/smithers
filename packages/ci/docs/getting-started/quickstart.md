@@ -95,6 +95,18 @@ time. Under them it lists:
   and the first line of its error output, or
   `` `golangci-lint` is not installed on this machine `` when its program is
   missing. A value shaped like a credential is withheld;
+- every step normal mode ran and did not reuse, with its command, the reason,
+  and how many commits it ran at for that reason. A reason is a file the step
+  read that those commits changed, or, after `never reused`, what keeps the
+  step's result from ever being used again. A step that lacks a lockfile says
+  what to commit:
+
+  ```text
+  steps not reused
+  2 of 2 commits  ci.yml:test:1 (4 variants)  cargo build --verbose  never reused: it opened a network connection (cargo to 8.8.8.8 port 53), with no Cargo.lock to say what it fetches; commit Cargo.lock and this step and the 2 after it can be reused
+  1 of 2 commits  ci.yml:rustfmt: Check formatting  cargo fmt --all -- --check  src/lib.rs changed
+  ```
+
 - every mismatch: a target whose pass or fail in normal mode differs from the
   baseline, with its commit;
 - every CI job it did not replay, with the reason, and every file it could not
@@ -103,8 +115,8 @@ time. Under them it lists:
 
 `--json` also gives, for each commit and each way, its CPU time, its work time
 (the sum of every target's own time), how many targets were cache hits, ran, failed or
-were skipped, and each failed step's name, exit code, first error line and
-command. The HTML page has a line for each commit with its times, `fail` beside
+were skipped, each failed step's name, exit code, first error line and
+command, and each step that was not reused with its reason. The HTML page has a line for each commit with its times, `fail` beside
 the time of a run that failed, its mismatches and its failed steps.
 
 To keep a copy or feed it to another program:

@@ -163,10 +163,11 @@ describe("replayable", () => {
     )
     expect(units[0]?.steps.map((entry) => entry.name)).toEqual(["j: Run tests", "t"])
     expect([...stepNames(units)]).toEqual([
-      ["s", { step: "j: Run tests", command: "make test" }],
-      ["//:s-a", { step: "j: Run tests", command: "make test" }],
-      ["//:s-b", { step: "j: Run tests", command: "make test" }],
-      ["//:t", { step: "t", command: "true" }]
+      // One step follows the first in its job, and none the last.
+      ["s", { step: "j: Run tests", command: "make test", after: 1 }],
+      ["//:s-a", { step: "j: Run tests", command: "make test", after: 1 }],
+      ["//:s-b", { step: "j: Run tests", command: "make test", after: 1 }],
+      ["//:t", { step: "t", command: "true", after: 0 }]
     ])
   })
 
@@ -185,10 +186,44 @@ describe("replayable", () => {
     expect(units[0]?.steps[1]?.parts).toBeUndefined()
     // The step itself, which the baseline's verdict is compared under, keeps its name.
     expect([...stepNames(units)]).toEqual([
-      ["s", { step: "j: Check", command: "npm run check" }],
-      ["//:s-lint", { step: "j: Check (lint)", command: "npm run check" }],
-      ["//:s-types", { step: "j: Check (types)", command: "npm run check" }],
-      ["//:t", { step: "t", command: "true" }]
+      ["s", { step: "j: Check", command: "npm run check", after: 1 }],
+      ["//:s-lint", { step: "j: Check (lint)", command: "npm run check", after: 1 }],
+      ["//:s-types", { step: "j: Check (types)", command: "npm run check", after: 1 }],
+      ["//:t", { step: "t", command: "true", after: 0 }]
+    ])
+  })
+
+  it("knows a step of a matrix job by its name without the variant too", () => {
+    const named = { ...step("s", "npm run check"), name: "Check" }
+    const matrix = job("j", { steps: [named, step("t", "npm test")], matrix: [{ node: "22" }, { node: "24" }] })
+    const split: TargetMap = {
+      version: 1,
+      targets: [
+        { label: "//:s-22-lint", job: "j", step: "s", variant: { node: "22" }, part: "lint" },
+        { label: "//:s-22-types", job: "j", step: "s", variant: { node: "22" }, part: "types" },
+        { label: "//:t-22", job: "j", step: "t", variant: { node: "22" } },
+        { label: "//:s-24", job: "j", step: "s", variant: { node: "24" } },
+        { label: "//:t-24", job: "j", step: "t", variant: { node: "24" } }
+      ]
+    }
+    const names = stepNames(unitsOf(inventory([matrix]), split))
+    expect(names.get("//:t-22")).toEqual({ step: "t (node=22)", command: "npm test", after: 0, variantOf: "t" })
+    expect(names.get("//:s-24")).toEqual({
+      step: "j: Check (node=24)",
+      command: "npm run check",
+      after: 1,
+      variantOf: "j: Check"
+    })
+    // A part of a split step keeps its part in both names.
+    expect(names.get("//:s-22-lint")).toEqual({
+      step: "j: Check (node=22) (lint)",
+      command: "npm run check",
+      after: 1,
+      variantOf: "j: Check (lint)"
+    })
+    const totals = totalsOf(record([{ ...ran("//:t-22"), notReused: "src/a.ts changed" }]), names)
+    expect(totals.notReused).toEqual([
+      { step: "t (node=22)", reason: "src/a.ts changed", kept: true, command: "npm test", variantOf: "t" }
     ])
   })
 
@@ -197,7 +232,7 @@ describe("replayable", () => {
     const [unit] = unitsOf(inventory([job("j", { steps: [wrapped] })]))
     expect(unit?.steps[0]?.command).toContain("prepare_the_job")
     expect(unit?.steps[0]?.written).toBe("make test")
-    expect(stepNames([unit!]).get("//:s")).toEqual({ step: "s", command: "make test" })
+    expect(stepNames([unit!]).get("//:s")).toEqual({ step: "s", command: "make test", after: 0 })
   })
 
   it("compares a split step under its own id, and runs every target it became", () => {
@@ -516,7 +551,7 @@ describe("records and totals", () => {
 
   it("names each step that ran and says why it was not reused", () => {
     const names = new Map([
-      ["//:b", { step: "test (node 22)\nsecond line", command: "npm test" }],
+      ["//:b", { step: "test (node 22)\nsecond line", command: "npm test\nnpm run more" }],
       // A name of nothing but space is no name: the label stands.
       ["//:c", { step: " \n", command: "npm run c" }]
     ])
@@ -536,10 +571,51 @@ describe("records and totals", () => {
     )
     expect(totals.notReused).toEqual([
       { step: "//:a", reason: "src/a.ts changed", kept: true },
-      { step: "test (node 22)", reason: "it opened a network connection", kept: false },
-      { step: "//:c", reason: "it failed", kept: false }
+      { step: "test (node 22)", reason: "it opened a network connection", kept: false, command: "npm test" },
+      { step: "//:c", reason: "it failed", kept: false, command: "npm run c" }
     ])
     expect(totalsOf(record([ran("//:d")]))).not.toHaveProperty("notReused")
+  })
+
+  it("says what a person does about a step that is never kept for want of a lockfile", () => {
+    const network = "it opened a network connection (node to 104.16.4.34 port 443)"
+    const cargo = "it opened a network connection (cargo to 8.8.8.8 port 53), with no Cargo.lock to say what it fetches"
+    const names = new Map([
+      ["//:build", { step: "test: cargo build", command: "cargo build --verbose", after: 2 }],
+      ["//:install", { step: "test: npm install", command: "npm install --no-audit", after: 1 }],
+      ["//:last", { step: "test: npm i", command: "npm i", after: 0 }],
+      ["//:add", { step: "test: add", command: "npm install left-pad" }],
+      ["//:both", { step: "test: both", command: "npm install && npm test" }],
+      ["//:curl", { step: "test: curl", command: "curl https://example.invalid" }]
+    ])
+    const fixes = (results: ReadonlyArray<TargetResult>) =>
+      totalsOf(record(results), names).notReused?.map((entry) => entry.fix)
+    expect(
+      fixes([
+        { ...ran("//:build"), notStored: cargo },
+        // The line Smithers build gives for a day after such a run still names the lockfile.
+        { ...ran("//:build"), notStored: `${cargo}, when its reads were last recorded` },
+        { ...ran("//:install"), notStored: network },
+        { ...ran("//:last"), notStored: network }
+      ])
+    ).toEqual([
+      "commit Cargo.lock and this step and the 2 after it can be reused",
+      "commit Cargo.lock and this step and the 2 after it can be reused",
+      "commit package-lock.json, install with `npm ci`, and this step and the 1 after it can be reused",
+      "commit package-lock.json, install with `npm ci`, and this step can be reused"
+    ])
+    // An install of a package it names, a step that does more than install, another program, a step with no
+    // name, and a step whose result is kept: nothing a lockfile mends, so no line says it would.
+    expect(
+      fixes([
+        { ...ran("//:add"), notStored: network },
+        { ...ran("//:both"), notStored: network },
+        { ...ran("//:curl"), notStored: network },
+        { ...ran("//:unnamed"), notStored: network },
+        { ...ran("//:install"), notStored: "it changed its root directory" },
+        { ...ran("//:build"), notReused: cargo }
+      ])
+    ).toEqual([undefined, undefined, undefined, undefined, undefined, undefined])
   })
 
   it("sums work and reads wall time from the record", () => {

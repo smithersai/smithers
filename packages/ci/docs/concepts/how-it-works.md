@@ -827,19 +827,23 @@ tool versions
 tests.yml:test  asks for node 22.x; this machine has node 26.5.0
 ```
 
-Under `steps not reused` it lists each step normal mode ran, with the reason
-and the number of commits it ran at:
+Under `steps not reused` it lists each step normal mode ran: how many commits
+it ran at, its name, its command, and the reason. The matrix variants of one
+step that ran for one reason are one line:
 
 ```text
 steps not reused
-4 of 4 commits  ci.yml:test: npm install  never reused: it opened a network connection (node to 104.16.4.34 port 443)
-1 of 4 commits  ci.yml:test: npm test  source/index.js changed
+2 of 2 commits  ci.yml:test:1 (4 variants)  cargo build --verbose  never reused: it opened a network connection (cargo to 8.8.8.8 port 53), with no Cargo.lock to say what it fetches; commit Cargo.lock and this step and the 2 after it can be reused
+1 of 2 commits  ci.yml:test:2 (4 variants)  cargo doc --verbose  src/lib.rs changed
+1 of 2 commits  ci.yml:rustfmt: Check formatting  cargo fmt --all -- --check  src/lib.rs changed
 ```
 
 A reason that names a file is a file the step read, changed by those commits.
 `never reused` marks a step whose result is not kept at all, so it runs at
-every commit: the line says what it did, such as reaching the network with no
-lockfile to say what it fetches.
+every commit, and the line says what it did. When what it lacks is a lockfile,
+the line ends with what to do: which file to commit, and how many steps after
+it in its job can then be reused with it. For `npm install` it says to commit
+`package-lock.json` and install with `npm ci`.
 
 With fast mode, it also gives fast mode's selection metrics; see
 [Normal mode and fast mode](modes.md#how-fast-mode-is-measured).

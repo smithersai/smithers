@@ -690,6 +690,38 @@ describe("steps not reused", () => {
     ].join("\n"))
   })
 
+  it("ends the line of a step that wants a lockfile with what a person does", () => {
+    const fix = "commit Cargo.lock and this step and the 2 after it can be reused"
+    const shown = text({ ...reused, commits: [at("a", [{ ...network, fix }, changed])] })
+    expect(shown).toContain(
+      `1 of 1 commit  install  never reused: ${network.reason}; ${fix}\n1 of 1 commit  test (node 22)  src/a.ts changed`
+    )
+  })
+
+  it("puts a step's command on its line, and the variants of one step that ran for one reason on one line", () => {
+    const build = (variant: string, reason = network.reason) => ({
+      step: `ci.yml:test:1 (rust=${variant})`,
+      reason,
+      kept: false,
+      command: "cargo build --verbose",
+      variantOf: "ci.yml:test:1"
+    })
+    const shown = text({
+      ...reused,
+      commits: [
+        at("a", [build("stable"), build("beta"), build("nightly", "it changed its root directory")]),
+        at("b", [build("stable"), build("beta"), { ...changed, command: "npm test" }])
+      ]
+    })
+    expect(shown).toContain([
+      "steps not reused",
+      `2 of 2 commits  ci.yml:test:1 (2 variants)  cargo build --verbose  never reused: ${network.reason}`,
+      // One variant alone is called by its own name.
+      "1 of 2 commits  ci.yml:test:1 (rust=nightly)  cargo build --verbose  never reused: it changed its root directory",
+      "1 of 2 commits  test (node 22)  npm test  src/a.ts changed"
+    ].join("\n"))
+  })
+
   it("has no such section when every step was reused or gave no reason", () => {
     expect(text({ ...reused, commits: [at("d", undefined)] })).not.toContain("steps not reused")
     expect(text(example)).not.toContain("steps not reused")

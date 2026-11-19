@@ -45,7 +45,13 @@ export type StepFailure = typeof StepFailure.Type
  * or what the step did that keeps any result of it from being used again
  * (`it opened a network connection (npm to 104.16.4.34 port 443)`). `kept`
  * says which: false means the step's result is never kept, so the step runs
- * at every commit.
+ * at every commit. `fix` is what a person does about it, when the step is
+ * never kept for want of a lockfile: which file to commit, and that this
+ * step and the steps after it in its job can then be reused. `command` is
+ * the first line of what the step runs, as its CI file writes it. `variantOf`
+ * is the step's name without its matrix variant, for a step of a job that
+ * has a matrix: the variants of one step that ran for one reason are one
+ * line of a report.
  *
  * @category models
  * @since 0.1.0
@@ -53,7 +59,10 @@ export type StepFailure = typeof StepFailure.Type
 export const StepNotReused = Schema.Struct({
   step: Schema.NonEmptyString,
   reason: Schema.NonEmptyString,
-  kept: Schema.Boolean
+  kept: Schema.Boolean,
+  fix: Schema.optionalKey(Schema.NonEmptyString),
+  command: Schema.optionalKey(Schema.NonEmptyString),
+  variantOf: Schema.optionalKey(Schema.NonEmptyString)
 })
 
 /**

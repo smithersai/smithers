@@ -559,11 +559,14 @@ export const failedSteps = (commit: ReplayCommit): ReadonlyArray<FailedStep> => 
  */
 export interface NotReused extends StepNotReused {
   readonly commits: number
+  /** How many matrix variants of the step the line stands for; 1 for a step that is no variant. */
+  readonly variants: number
 }
 
 /**
  * The steps normal mode ran and did not reuse, each with its reason and the
- * number of commits it ran at for that reason. A step whose result is
+ * number of commits it ran at for that reason. The matrix variants of one
+ * step that ran for one reason are one entry, which says how many. A step whose result is
  * never kept comes first: it runs at every commit. The rest follow by how
  * many commits they ran at. A step split into targets that give one reason
  * is one entry.
@@ -572,27 +575,38 @@ export interface NotReused extends StepNotReused {
  * @since 0.1.0
  */
 export const notReused = (report: ReplayReport): ReadonlyArray<NotReused> => {
-  const found = new Map<string, NotReused>()
+  const found = new Map<string, { readonly entry: StepNotReused; commits: number; readonly steps: Set<string> }>()
   for (const commit of report.commits) {
     const here = new Set<string>()
     for (const entry of commit.normal.notReused ?? []) {
-      const key = JSON.stringify([entry.step, entry.reason])
-      if (here.has(key)) continue
+      // The variants of one step that ran for one reason are one line.
+      const key = JSON.stringify([entry.variantOf ?? entry.step, entry.reason])
+      const line = found.get(key) ?? { entry, commits: 0, steps: new Set<string>() }
+      line.steps.add(entry.step)
+      if (!here.has(key)) line.commits += 1
       here.add(key)
-      found.set(key, { ...entry, commits: (found.get(key)?.commits ?? 0) + 1 })
+      found.set(key, line)
     }
   }
-  return [...found.values()].sort((one, other) => Number(one.kept) - Number(other.kept) || other.commits - one.commits)
+  return [...found.values()]
+    .map(({ commits, entry, steps }) => ({ ...entry, commits, variants: steps.size }))
+    .sort((one, other) => Number(one.kept) - Number(other.kept) || other.commits - one.commits)
 }
 
 /**
- * One step that was not reused on a line: `2 of 4 commits  test  src/a.ts changed`.
+ * One step that was not reused on a line, with its command when it is known:
+ * `2 of 4 commits  test  npm test  src/a.ts changed`.
  *
  * @category formatting
  * @since 0.1.0
  */
 export const notReusedText = (entry: NotReused, commits: number): string =>
-  `${entry.commits} of ${count(commits, "commit")}  ${entry.step}  ${entry.kept ? "" : "never reused: "}${entry.reason}`
+  [
+    `${entry.commits} of ${count(commits, "commit")}`,
+    entry.variants > 1 ? `${entry.variantOf} (${entry.variants} variants)` : entry.step,
+    ...(entry.command === undefined ? [] : [entry.command]),
+    `${entry.kept ? "" : "never reused: "}${entry.reason}${entry.fix === undefined ? "" : `; ${entry.fix}`}`
+  ].join("  ")
 
 /**
  * A failure's exit code and reason: `exit 127: docker is not installed`.

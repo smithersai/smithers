@@ -1392,6 +1392,17 @@ describe("what a report says about a failure", () => {
     // A run that reused nothing, as the baseline, names none.
     expect(Schema.decodeUnknownSync(ReplayReport.RunTotals)(totals)).not.toHaveProperty("notReused")
     const decode = Schema.decodeUnknownSync(ReplayReport.StepNotReused)
+    const mended = {
+      ...step,
+      kept: false,
+      fix: "commit Cargo.lock and this step can be reused",
+      command: "cargo build",
+      variantOf: "test"
+    }
+    expect(decode(mended)).toEqual(mended)
+    expect(() => decode({ ...mended, fix: "" })).toThrow()
+    expect(() => decode({ ...mended, command: "" })).toThrow()
+    expect(() => decode({ ...mended, variantOf: "" })).toThrow()
     expect(() => decode({ step: "test", reason: "src/a.ts changed" })).toThrow()
     expect(() => decode({ ...step, reason: "" })).toThrow()
     expect(() => decode({ ...step, step: "" })).toThrow()
