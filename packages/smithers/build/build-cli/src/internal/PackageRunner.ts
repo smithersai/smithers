@@ -843,6 +843,8 @@ export const executeEffect = (
     const notStoredReasons: Array<string> = []
     /** Label → the node as it ran, where an installation it waited for replaced the planned one. */
     const refreshedNodes = new Map<string, PackageNode>()
+    /** What a plan made while the run is under way is told to write its notes with: the run's plan gave them. */
+    const unsaid = (): void => {}
     /** How many times this run has written to the tree: a target that ran, or the files of an answered one put back. */
     let writes = 0
     /** Label → `writes` when that target last finished a run or had its files put back; absent when neither happened. */
@@ -1433,7 +1435,7 @@ export const executeEffect = (
           plan: false,
           readCache: false,
           reporter: undefined,
-          log: () => {}
+          log: unsaid
         }
         const installations = installationDependencies(node.dependencies, planned.nodes)
         if (installations.length > 0) {
@@ -4914,7 +4916,7 @@ export const executeEffect = (
             plan: false,
             readCache: false,
             reporter: undefined,
-            log: () => {},
+            log: unsaid,
             signal
           })
         ))
@@ -4953,7 +4955,7 @@ export const executeEffect = (
               plan: false,
               readCache: false,
               reporter: undefined,
-              log: () => {},
+              log: unsaid,
               signal
             },
             new Set(installations),

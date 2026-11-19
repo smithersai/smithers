@@ -4110,6 +4110,10 @@ export const wildcardOmits = (
 export const attended = (target: Target.AnyTarget): boolean =>
   RulePolicy.of(Target.metadata(target).target).attended === true
 
+/** Resolves the child repositories of a plan's workspace under the variables the plan runs with. */
+const repoResolverOf = (options: RunOptions): RepoResolution.Resolver =>
+  RepoResolution.resolver(options.index, options.environment ?? process.env)
+
 /**
  * What one plan knows before it walks a target: the host, the declared
  * toolchain, the ambient key material, and its empty memos.
@@ -4250,7 +4254,7 @@ const planWithServices = async (
   const reporter = Reporter.of(options)
   const log = reporter.note
   const verb = options.verb
-  const repoResolutions = RepoResolution.resolver(index, options.environment ?? process.env)
+  const repoResolutions = repoResolverOf(options)
   if (options.patterns.length === 0) throw new Error("no target pattern given")
   // Each pattern selects on its own terms; the plan roots are their union,
   // first selection first, so a target two patterns name is planned once.
@@ -4515,7 +4519,7 @@ export const replanner = (
       completedInstallations: new Set(),
       rootModes: new Map([...nodes.values()].map((node) => [node.label, node.mode])),
       planningKinds: new Map([...nodes.values()].map((node) => [node.label, (node as PlannedKindNode).planningKind])),
-      repoResolutions: RepoResolution.resolver(index, options.environment ?? process.env)
+      repoResolutions: repoResolverOf(options)
     })
   }
   const retire = async (place: string): Promise<void> => {
