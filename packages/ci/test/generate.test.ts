@@ -84,6 +84,19 @@ const given = (document: InventoryDocument): Ci => document as Ci
 const generate = (document: InventoryDocument, options?: GenerateOptions): ReadonlyArray<GeneratedFile> =>
   Effect.runSync(files(given(document), options))
 
+// The workflow's comments as one text, as a person reads them across the lines they are wrapped on.
+const commentsOf = (workflow: string): string =>
+  workflow.split("\n").filter((line) => line.trimStart().startsWith("#")).map((line) => line.trim().replace(/^# ?/, ""))
+    .join(" ")
+
+// The command of the workflow's step that runs smthrs.
+const smthrsRun = (workflow: string): string =>
+  String(
+    (parseYaml(workflow) as { jobs: { ci: { steps: ReadonlyArray<Record<string, unknown>> } } }).jobs.ci.steps.find((
+      entry
+    ) => String(entry["run"]).includes("smthrs ci"))?.["run"]
+  )
+
 const content = (generated: ReadonlyArray<GeneratedFile>, path: string): string =>
   generated.find((file) => file.path === path)?.content ?? ""
 
@@ -223,7 +236,7 @@ describe("files", () => {
       SMITHERS_CACHE_TOKEN: token
     })
     expect(stepsOf(cached).map((entry) => entry["name"])).not.toContain("Shared cache")
-    for (const workflow of [plain, cached]) expect(workflow).not.toMatch(/TOKEN: (?!\$\{\{ )/)
+    for (const workflow of [plain, cached]) expect(workflow).not.toMatch(/TOKEN: (?!\$\{\{ |>-\n +\$\{\{ )/)
   })
 
   it("checks first that the generated files are what apply writes, with the cache apply was given", () => {
@@ -242,7 +255,7 @@ describe("files", () => {
     // cache: a pull request that changes the repository's shape fails here, before anything else runs.
     expect(stepsOf(content(generate(document), workflowPath)).slice(0, 4)).toEqual([
       { uses: "actions/checkout@v4" },
-      { uses: "actions/setup-node@v4", with: { "node-version": "24" } },
+      { uses: "actions/setup-node@v4", with: { "node-version": 24 } },
       { name: "Generated files are up to date", run: check },
       { uses: "pnpm/action-setup@v4", with: { version: "9.0.0" } }
     ])
@@ -598,7 +611,7 @@ describe("what counts as CI", () => {
     expect(labels(document)).toEqual(["ci-1"])
     expect(targetsOf(ci(document))).not.toContain("publish")
     expect(content(generate(ci(document)), workflowPath)).toContain(
-      "on:\n  pull_request:\n# prettier-ignore\npermissions:"
+      "on:\n  - pull_request\n# prettier-ignore\npermissions:"
     )
   })
 
@@ -778,9 +791,11 @@ describe("the /tmp of a job in the workflow", () => {
   it("is the job's own on a Linux runner, and two jobs are never let share one", () => {
     const workflow = content(generate(inventory([one, two])), workflowPath)
     // Each job's targets run with a mount of their own, by bubblewrap, which an Ubuntu runner lacks.
+    expect(commentsOf(workflow)).toContain(
+      "Each job has a /tmp of its own, as it has a runner of its own in the original CI."
+    )
     expect(workflow).toContain(
-      "      # Each job has a /tmp of its own, as it has a runner of its own in the original CI.\n" +
-        "      - name: Give each job its own /tmp\n        if: runner.os == 'Linux'\n"
+      "original CI.\n      - name: Give each job its own /tmp\n        if: runner.os == 'Linux'\n"
     )
     expect(workflow).toContain("apt-get install -y -qq --no-install-recommends bubblewrap")
     expect(workflow).toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0")
@@ -815,9 +830,9 @@ describe("the /tmp of a job in the workflow", () => {
       readonly jobs: { readonly ci: { readonly strategy: { readonly matrix: { readonly include: unknown } } } }
     }).jobs.ci.strategy.matrix.include
     expect(include).toEqual([
-      { os: "macos-latest", leg: "1", tools: "job lint" },
-      { os: "macos-latest", leg: "2", tools: "job test" },
-      { os: "ubuntu-latest", leg: "3", tools: "" }
+      { os: "macos-latest", leg: 1, tools: "job lint" },
+      { os: "macos-latest", leg: 2, tools: "job test" },
+      { os: "ubuntu-latest", leg: 3 }
     ])
     // Each macOS job runs its own targets and no other job's; the Linux jobs share one runner, each with a mount.
     const legs = content(generated, legsPath).split("\n").slice(1, -1)
@@ -839,8 +854,8 @@ describe("the /tmp of a job in the workflow", () => {
     const variants = generate(inventory([
       mac("unit", "npm test", { matrix: [{ node: "18" }, { node: "20" }] })
     ]))
-    expect(content(variants, workflowPath)).toContain(`tools: "job unit (node 18)"`)
-    expect(content(variants, workflowPath)).toContain(`tools: "job unit (node 20)"`)
+    expect(content(variants, workflowPath)).toContain(`tools: job unit (node 18)\n`)
+    expect(content(variants, workflowPath)).toContain(`tools: job unit (node 20)\n`)
   })
 
   it("is installed once where a target is also held to its inputs", () => {
@@ -890,7 +905,7 @@ describe("how many targets run at once", () => {
     // One chain: each target runs after the one before it.
     const chain = inventory([job("a", [step("a:1", "npm ci"), step("a:2", "npm test")])])
     expect(mapOf(chain).maxJobs).toBeUndefined()
-    expect(workflowOf(chain)).toMatch(/smthrs ci '\/\/\.\.\.' --cache-dir /)
+    expect(smthrsRun(workflowOf(chain))).toMatch(/smthrs ci '\/\/\.\.\.' --cache-dir /)
     expect(workflowOf(chain)).not.toContain("one at a time")
     // Targets held to their inputs cannot write the working tree, so they run beside each other.
     const held = inventory([job("a", [part("a:1:ui", "ui"), part("a:1:web", "web")])])
@@ -910,8 +925,10 @@ describe("how many targets run at once", () => {
     ])
     expect(mapOf(two).maxJobs).toBe(1)
     expect(workflowOf(two)).toContain(
-      "      # Targets that can write the same files run one at a time.\n" +
-        `      - run: npx --yes --package=@smthrs/cli@${releaseVersion} smthrs ci '//...' --jobs 1 --cache-dir "${stateDirectory}"\n`
+      "      # Targets that can write the same files run one at a time.\n      - run: >-\n"
+    )
+    expect(smthrsRun(workflowOf(two))).toBe(
+      `npx --yes --package=@smthrs/cli@${releaseVersion} smthrs ci '//...' --jobs 1 --cache-dir "${stateDirectory}"`
     )
     // A target that can write the tree beside one held to its inputs: the held one could read a half-written file.
     const beside = inventory([job("a", [part("a:1:ui", "ui")]), job("b", [step("b:1", "make")])])
@@ -937,7 +954,7 @@ describe("how many targets run at once", () => {
     const zig = inventory([job("t", [tidy, root("test-a"), root("test-b"), root("test-c")])])
     expect(mapOf(zig).targets).toHaveLength(4)
     expect(mapOf(zig).maxJobs).toBeUndefined()
-    expect(workflowOf(zig)).toMatch(/smthrs ci '\/\/\.\.\.' --cache-dir /)
+    expect(smthrsRun(workflowOf(zig))).toMatch(/smthrs ci '\/\/\.\.\.' --cache-dir /)
     expect(workflowOf(zig)).not.toContain("one at a time")
     // Split steps that do not say so can write the same files, and so can one that says so beside one that does not.
     const silent = { atOnce: false }
@@ -1342,7 +1359,7 @@ describe("matrix and systems", () => {
   it("leaves a runner it does not recognise unrestricted", () => {
     const generated = generate(inventory([job("a", [step("a:1", "t")], { runsOn: "self-hosted" })]))
     expect(declaration(content(generated, packagePath), "a-1")).not.toContain("hosts:")
-    expect(content(generated, workflowPath)).toContain(`os: ["self-hosted"]`)
+    expect(content(generated, workflowPath)).toContain(`os:\n          - self-hosted\n`)
   })
 
   it("keeps every label of a self-hosted runner, as the job names them", () => {
@@ -1354,7 +1371,7 @@ describe("matrix and systems", () => {
       workflowPath
     )
     expect(parseYaml(workflow).jobs.ci.strategy.matrix.os).toEqual([["self-hosted", "linux", "gpu"], "ubuntu-latest"])
-    expect(workflow).toContain("key: smithers-ci-${{ join(matrix.os, '-') }}-${{ github.sha }}")
+    expect(workflow).toContain("key: smithers-ci-${{ join(matrix.os, '-') }}-${{ github.sha }}\n")
   })
 
   it("waits only for needed work on the same system", () => {
@@ -1438,15 +1455,17 @@ describe("the workspace and workflow", () => {
       })),
       workflowPath
     )
-    expect(workflow).toContain("on:\n  push:\n# prettier-ignore\npermissions:")
-    expect(workflow).toContain(`os: ["ubuntu-24.04"]`)
-    expect(workflow).toContain(`mlugg/setup-zig@v2\n        with:\n          version: "0.14.0"`)
+    expect(workflow).toContain("on:\n  - push\n# prettier-ignore\npermissions:")
+    expect(workflow).toContain(`os:\n          - ubuntu-24.04\n`)
+    expect(workflow).toContain(`mlugg/setup-zig@v2\n        with:\n          version: 0.14.0\n`)
     expect(workflow.indexOf("oven-sh/setup-bun@v2")).toBeLessThan(workflow.indexOf("mlugg/setup-zig@v2"))
     expect(workflow).toContain("# turbo (turbo.json) has no known setup action.")
-    expect(workflow).toContain(`node-version: "24"`)
+    expect(workflow).toContain(`node-version: 24\n`)
     // Smithers build keeps its cache in a directory of the runner, outside the checkout.
     expect(stateDirectory).toBe("${{ runner.temp }}/smithers-ci")
-    expect(workflow).toContain(`smthrs ci '//...' --cache-dir "${stateDirectory}"\n`)
+    expect(smthrsRun(workflow)).toMatch(
+      new RegExp(`smthrs ci '//\\.\\.\\.' --cache-dir "\\$\\{\\{ runner\\.temp }}/smithers-ci"$`)
+    )
     // The runner keeps its results, what each step left and the compiled code of smthrs, and the run reads them.
     expect(workflow).toContain(
       `          path: |\n            ${stateDirectory}/cache\n            ${stateDirectory}/${keptFiles}\n            ${stateDirectory}/${compiledCode}\n`
@@ -1470,7 +1489,7 @@ describe("the workspace and workflow", () => {
       ]
     }))
     expect(content(generated, workflowPath)).toContain(
-      `      - uses: actions/setup-node@v4\n        with:\n          node-version: "20"\n`
+      `      - uses: actions/setup-node@v4\n        with:\n          node-version: 20\n`
     )
     expect(content(generated, notesPath)).toContain(
       "- node: ci.yml:test sets it up with no version smithers-ci can read, so its steps run with node 20 (.nvmrc).\n"
@@ -1498,9 +1517,9 @@ describe("the workspace and workflow", () => {
     }))
     const workflow = content(generated, workflowPath)
     expect(workflow).toContain(`      - uses: oven-sh/setup-bun@v2\n      - uses: actions/setup-go@v5\n`)
-    expect(workflow).toContain(`          go-version: "1.22"\n      - uses: actions/setup-node@v4\n`)
-    expect(workflow).toContain(`          node-version: "18"\n`)
-    expect(workflow).toContain(`          version: "0.14.0"\n`)
+    expect(workflow).toContain(`          go-version: >-\n            1.22\n      - uses: actions/setup-node@v4\n`)
+    expect(workflow).toContain(`          node-version: 18\n`)
+    expect(workflow).toContain(`          version: 0.14.0\n`)
     expect(content(generated, notesPath).split("\n").filter((line) => line.startsWith("- "))).toEqual([
       "- zig 0.15.1 (build.zig.zon) is not installed: a step whose job names no version runs with zig 0.14.0 " +
       "(a-later-file)."
@@ -1522,8 +1541,8 @@ describe("the workspace and workflow", () => {
     }))
     expect(second).toEqual(first)
     expect(content(first, workflowPath)).toContain(
-      `          node-version: "24"\n      - name: Generated files are up to date\n` +
-        `        run: npx --yes --package=smithers-ci@${releaseVersion} smithers-ci apply --check\n` +
+      `          node-version: 24\n      - name: Generated files are up to date\n` +
+        `        run: >-\n          npx --yes --package=smithers-ci@${releaseVersion} smithers-ci apply --check\n` +
         `      - uses: extractions/setup-just@v3\n`
     )
   })
@@ -1563,10 +1582,13 @@ describe("the workspace and workflow", () => {
     const installs = [
       "        shell: bash",
       "        run: |",
-      "          if ! command -v bwrap >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then",
-      "            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends bubblewrap",
+      "          if ! command -v bwrap >/dev/null 2>&1 &&",
+      "            command -v apt-get >/dev/null 2>&1; then",
+      "            sudo apt-get update -qq &&",
+      "              sudo apt-get install -y -qq --no-install-recommends bubblewrap",
       "          fi",
-      "          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then",
+      "          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]",
+      "          then",
       "            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0",
       "          fi",
       ""
@@ -1578,8 +1600,8 @@ describe("the workspace and workflow", () => {
         "        if: runner.os == 'Linux' && vars.SMITHERS_CACHE_URL != ''\n" + installs
     )
     // The workflow says where a step can still read the token.
-    expect(open).toContain(
-      "      # That takes bubblewrap, on Linux. On macOS and Windows a step can read the token it runs beside.\n"
+    expect(commentsOf(open)).toContain(
+      "That takes bubblewrap, on Linux. On macOS and Windows a step can read the token it runs beside."
     )
     expect(open.indexOf("Keep the cache's token")).toBeLessThan(open.indexOf("smthrs ci"))
     // The cache was named when the files were written: the step always runs.
@@ -1600,12 +1622,12 @@ describe("the workspace and workflow", () => {
       })),
       workflowPath
     )
-    expect(workflow).toContain("on:\n  pull_request:\n  push:\n")
-    expect(workflow).toContain(`os: ["ubuntu-latest"]`)
+    expect(workflow).toContain("on:\n  - pull_request\n  - push\n")
+    expect(workflow).toContain(`os:\n          - ubuntu-latest\n`)
     // smithers-ci checks the generated files on its own Node; the repository's Node is set up after that.
-    const versions = [...workflow.matchAll(/node-version: "([^"]+)"/g)].map((match) => match[1])
+    const versions = [...workflow.matchAll(/node-version: (.+)/g)].map((match) => match[1])
     expect(versions).toEqual(["24", "22.20.0"])
-    expect(workflow.indexOf("apply --check")).toBeLessThan(workflow.indexOf(`node-version: "22.20.0"`))
+    expect(workflow.indexOf("apply --check")).toBeLessThan(workflow.indexOf(`node-version: 22.20.0`))
   })
 })
 
@@ -1626,12 +1648,12 @@ describe("tool versions", () => {
   it("runs each matrix variant under its own version, on its own machine, with its own key", () => {
     const generated = generate(inventory([test], { toolchains: [matrixNode] }))
     expect(include(generated)).toEqual([
-      { os: "ubuntu-latest", leg: "1", tools: "node 18", "version-node": "18" },
-      { os: "ubuntu-latest", leg: "2", tools: "node 20", "version-node": "20" }
+      { os: "ubuntu-latest", leg: 1, tools: "node 18", "version-node": 18 },
+      { os: "ubuntu-latest", leg: 2, tools: "node 20", "version-node": 20 }
     ])
     const workflow = content(generated, workflowPath)
     expect(workflow).toContain("          node-version: ${{ matrix.version-node }}\n")
-    expect(workflow).toContain(`$(sed -n 's/^\${{ matrix.leg }} //p' ${legsPath}) --jobs 1`)
+    expect(smthrsRun(workflow)).toContain(`$(sed -n 's/^\${{ matrix.leg }} //p' ${legsPath}) --jobs 1`)
     expect(workflow).not.toContain("'//...'")
     // Each machine restores only results made under its own versions.
     expect(workflow).toContain("key: smithers-ci-${{ matrix.os }}-${{ matrix.leg }}-${{ github.sha }}")
@@ -1649,8 +1671,8 @@ describe("tool versions", () => {
     const generated = generate(inventory([{ ...test, matrix: [{ node: "20" }] }], { toolchains: [matrixNode] }))
     expect(include(generated)).toBeUndefined()
     const workflow = content(generated, workflowPath)
-    expect(workflow).toContain(`          node-version: "20"\n`)
-    expect(workflow).toContain("smthrs ci '//...'")
+    expect(workflow).toContain(`          node-version: 20\n`)
+    expect(smthrsRun(workflow)).toContain("smthrs ci '//...'")
     expect(workflow).toContain("key: smithers-ci-${{ matrix.os }}-${{ github.sha }}")
     expect(generated.some((entry) => entry.path === legsPath)).toBe(false)
     expect(content(generated, packagePath)).not.toContain("# Runs under")
@@ -1755,15 +1777,15 @@ describe("tool versions", () => {
       ]
     }, job("ci.yml:any", [step("ci.yml:any:1", "x")])], { toolchains: [matrixNode] }))
     expect(include(generated)).toEqual([
-      { os: "macos-latest", leg: "1", tools: "node 18", "version-node": "18" },
+      { os: "macos-latest", leg: 1, tools: "node 18", "version-node": 18 },
       // A job on macOS is a runner job of its own: a macOS runner gives two jobs one `/tmp`.
       {
         os: "macos-latest",
-        leg: "2",
+        leg: 2,
         tools: "node 20, job ci.yml:test (node 20, os macos-latest)",
-        "version-node": "20"
+        "version-node": 20
       },
-      { os: "ubuntu-latest", leg: "3", tools: "node 18", "version-node": "18" }
+      { os: "ubuntu-latest", leg: 3, tools: "node 18", "version-node": 18 }
     ])
     expect(content(generated, legsPath).split("\n").slice(1, -1)).toEqual([
       "1 //:ci.yml-any-1",
@@ -1783,12 +1805,12 @@ describe("tool versions", () => {
       ]
     }))
     const workflow = content(generated, workflowPath)
-    expect(workflow).toContain(`          python-version: "3.12"\n`)
+    expect(workflow).toContain(`          python-version: >-\n            3.12\n`)
     expect(workflow).toContain("      - uses: pnpm/action-setup@v4\n      - uses: actions/setup-python@v5\n")
     expect(workflow).toContain(`# ruby (${file}) has no known setup action.`)
     expect(include(generated)).toEqual([
-      { os: "ubuntu-latest", leg: "1", tools: "node 18, python 3.12, ruby 18", "version-node": "18" },
-      { os: "ubuntu-latest", leg: "2", tools: "node 20, python 3.12, ruby 20", "version-node": "20" }
+      { os: "ubuntu-latest", leg: 1, tools: "node 18, python 3.12, ruby 18", "version-node": 18 },
+      { os: "ubuntu-latest", leg: 2, tools: "node 20, python 3.12, ruby 20", "version-node": 20 }
     ])
   })
 
@@ -1813,7 +1835,7 @@ describe("tool versions", () => {
     const generated = generate(inventory([recipe], {
       toolchains: [{ name: "node", source: "justfile", version: "18", job: "justfile:test" }]
     }))
-    expect(content(generated, workflowPath)).toContain(`          node-version: "18"\n`)
+    expect(content(generated, workflowPath)).toContain(`          node-version: 18\n`)
     expect(generated.some((entry) => entry.path === legsPath)).toBe(false)
   })
 })

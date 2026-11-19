@@ -202,8 +202,9 @@ Nothing is written at the repository's root or beside your sources, and no
 file `apply` writes is one your own tools read as theirs. `tsc`, ESLint,
 Prettier, Biome, dprint, Vitest, Jest, Mocha, `node --test`, knip, cspell and
 `npm pack` give the same result with these files as without them. The workflow
-is the one file whose place GitHub fixes; it tells Prettier and Biome to leave
-it as written.
+is the one file whose place GitHub fixes. It is written as the YAML rules of
+ESLint, Prettier, Biome and yamllint accept it, and it tells Prettier and Biome
+to leave it as written.
 
 `apply` never replaces a file it did not generate: it names the file and writes
 nothing. Review the files as you would any change, and commit them.

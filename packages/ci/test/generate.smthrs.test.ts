@@ -549,24 +549,24 @@ jobs:
       const generated = parseYaml(readFileSync(join(root, workflowPath), "utf8")) as {
         readonly jobs: {
           readonly ci: {
-            readonly strategy: { readonly matrix: { readonly include: ReadonlyArray<Record<string, string>> } }
+            readonly strategy: { readonly matrix: { readonly include: ReadonlyArray<Record<string, string | number>> } }
             readonly steps: ReadonlyArray<{ readonly run?: string }>
           }
         }
       }
       const { include } = generated.jobs.ci.strategy.matrix
       expect(include.map((leg) => [leg["tools"], leg["version-node"]])).toEqual([
-        ["node 18", "18"],
-        ["node 20", "20"],
-        ["node 22", "22"]
+        ["node 18", 18],
+        ["node 20", 20],
+        ["node 22", 22]
       ])
       // The workflow's own command, as a runner would run it for each machine.
       const command = generated.jobs.ci.steps.flatMap((step) =>
         step.run?.includes(" smthrs ci ") ? [step.run] : []
       )[0] as string
       const selection = /\$\(sed .*\)/.exec(command)?.[0] as string
-      const runLeg = (leg: Record<string, string>, name: string) => {
-        const script = `set -- ${selection.replace("${{ matrix.leg }}", leg["leg"] as string)}; printf '%s\n' "$@"`
+      const runLeg = (leg: Record<string, string | number>, name: string) => {
+        const script = `set -- ${selection.replace("${{ matrix.leg }}", String(leg["leg"]))}; printf '%s\n' "$@"`
         const labels = run(root, "bash", ["-c", script]).stdout.trim().split("\n")
         const resultsFile = join(stateOf(root), `${name}.json`)
         const outcome = run(root, process.execPath, [

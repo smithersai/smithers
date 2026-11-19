@@ -66,7 +66,7 @@ describe("the real program, applied twice", () => {
       // The workflow installs the Node smithers-ci runs on and checks the generated files, before the repository's
       // tools. The files apply wrote twice pass that check.
       expect(first[workflowPath]).toContain(
-        `node-version: "24"\n      - name: Generated files are up to date\n        run: npx --yes --package=smithers-ci@`
+        `node-version: 24\n      - name: Generated files are up to date\n        run: >-\n          npx --yes --package=smithers-ci@`
       )
       expect(first[workflowPath]).toMatch(/ apply --check\n      - uses: extractions\/setup-just@v3\n/)
       expect(run(root, process.execPath, [program, "apply", "--check"]).status).toBe(0)

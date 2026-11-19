@@ -7,6 +7,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import { parse as parseYaml } from "yaml"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { bin, commit, git, remove, spawn, temporary } from "../cli/repo.ts"
 
@@ -139,7 +140,14 @@ jobs:
     expect(existsSync(join(root, ".smithers", "WORKSPACE.smithers"))).toBe(true)
     // The workflow checks its files as they were written: with the flag, they are up to date.
     const workflow = readFileSync(join(root, ".github", "workflows", "smithers-ci.yml"), "utf8")
-    expect(workflow).toContain(" smithers-ci apply --check --allow-docker\n")
+    const steps = (parseYaml(workflow) as {
+      readonly jobs: {
+        readonly ci: { readonly steps: ReadonlyArray<{ readonly name?: string; readonly run?: string }> }
+      }
+    }).jobs.ci.steps
+    expect(steps.find((one) => one.name === "Generated files are up to date")?.run).toMatch(
+      / smithers-ci apply --check --allow-docker$/
+    )
     expect((await spawn(bin, ["apply", "--check", "--allow-docker"], root, env)).code).toBe(0)
     expect((await spawn(bin, ["apply", "--check"], root, env)).code).toBe(3)
   }, replayLimit)

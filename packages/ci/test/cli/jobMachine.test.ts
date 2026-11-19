@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
+import { parse as parseYaml } from "yaml"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { stateDirectory } from "../../src/generate/Render.ts"
 import { probe } from "../../src/replay/Jail.ts"
@@ -99,7 +100,10 @@ describe("a workflow whose jobs pass only on machines of their own", () => {
     commit(root, "apply")
     // The command of the generated workflow, with the `smthrs` of this checkout in place of the published one.
     const generated = readFileSync(join(root, ".github/workflows/smithers-ci.yml"), "utf8")
-    const command = /smthrs ci (.*)$/m.exec(generated)?.[1]
+    const steps = (parseYaml(generated) as {
+      readonly jobs: { readonly ci: { readonly steps: ReadonlyArray<{ readonly run?: string }> } }
+    }).jobs.ci.steps
+    const command = /smthrs ci (.*)$/.exec(String(steps.find((one) => String(one.run).includes("smthrs ci"))?.run))?.[1]
     // The workflow keeps the cache in a directory of the runner's, outside the checkout.
     expect(command).toBe(`'//...' --jobs 1 --cache-dir "${stateDirectory}"`)
     const state = join(keep(temporary("job-machine-state")), "smithers-ci")

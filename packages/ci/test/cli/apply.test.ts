@@ -5,6 +5,7 @@ import type * as Path from "effect/Path"
 import { existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import { parse as parseYaml } from "yaml"
 import { besidePaths, besideRefusal, check, formerPaths } from "../../src/apply/index.ts"
 import { exitCodes } from "../../src/contract/Command.ts"
 import { type Failure, type GeneratedFile, writtenFiles } from "../../src/contract/Parts.ts"
@@ -200,7 +201,14 @@ describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
       })
       expect((await exec(["apply", "--check", "--cache", cache], root)).code).toBe(exitCodes.ok)
       // The workflow runs the check with the cache it names, so it passes on the files apply wrote.
-      expect(read(`${root}/${workflow}`)).toContain(`smithers-ci apply --check --cache '${cache}'`)
+      const steps = (parseYaml(read(`${root}/${workflow}`)) as {
+        readonly jobs: {
+          readonly ci: { readonly steps: ReadonlyArray<{ readonly name?: string; readonly run?: string }> }
+        }
+      }).jobs.ci.steps
+      expect(steps.find((one) => one.name === "Generated files are up to date")?.run).toContain(
+        `smithers-ci apply --check --cache '${cache}'`
+      )
     })
   })
 

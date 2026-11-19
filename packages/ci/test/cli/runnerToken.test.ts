@@ -11,6 +11,7 @@ import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import { parse as parseYaml } from "yaml"
 import { cli } from "../../src/cli/Cli.vibe"
 import { layer } from "../../src/cli/Host.vibe"
 import { smthrsCommand } from "../../src/cli/Install.ts"
@@ -104,8 +105,12 @@ const cache = async () => {
 const asTheWorkflowRuns = (root: string, url: string, searchPath: string) => {
   const written = readFileSync(join(root, ".github", "workflows", "smithers-ci.yml"), "utf8")
   // The workflow gives the step the token in its environment, and runs every target.
-  expect(written).toContain("smthrs ci '//...'")
-  expect(written).toContain("          SMITHERS_CACHE_TOKEN: ${{")
+  const steps = (parseYaml(written) as {
+    readonly jobs: { readonly ci: { readonly steps: ReadonlyArray<{ readonly run?: string; readonly env?: object }> } }
+  }).jobs.ci.steps
+  const ci = steps.find((one) => String(one.run).includes("smthrs ci"))
+  expect(ci?.run).toContain("smthrs ci '//...'")
+  expect((ci?.env as Record<string, string>)["SMITHERS_CACHE_TOKEN"]).toMatch(/^\$\{\{ /)
   return spawn(smthrsCommand()[1] as string, ["ci", "//...", "--ui", "plain"], root, {
     HOME: home.HOME,
     PATH: searchPath,

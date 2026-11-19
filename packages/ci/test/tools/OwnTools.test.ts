@@ -102,6 +102,19 @@ const cases: ReadonlyArray<Case> = [
     files: { "tsconfig.json": tsconfig(["**/*.ts"]), "eslint.config.js": typed(`projectService: true`) },
     check: (root) => node(root, eslint, [".", "--max-warnings", "0"])
   },
+  // These lint YAML, the generated workflow among it: the workflow is written as their rules accept it.
+  ...([
+    ["@antfu/eslint-config", `import antfu from "@antfu/eslint-config";\n\nexport default antfu();\n`],
+    [
+      "eslint-plugin-yml standard",
+      `import yml from "eslint-plugin-yml";\n\nexport default [...yml.configs["flat/standard"]];\n`
+    ]
+  ] as const).map(([name, config]): Case => ({
+    name: `ESLint, flat config, ${name}`,
+    files: { "eslint.config.js": config },
+    format: (root) => node(root, eslint, [".", "--fix"]),
+    check: (root) => node(root, eslint, [".", "--max-warnings", "0"])
+  })),
   {
     name: "ESLint 8, .eslintrc",
     files: {

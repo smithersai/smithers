@@ -17,6 +17,7 @@ import { mkdirSync, mkdtempSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
+import { parse as parseYaml } from "yaml"
 import { stateDirectory } from "../../src/generate/Render.ts"
 import { probe } from "../../src/replay/Jail.ts"
 import { bin, commit, git, head, observes, remove, spawn } from "./repo.ts"
@@ -68,7 +69,11 @@ describe("the CI `apply` writes, run as a runner runs it", () => {
     commit(source, "apply")
     const generated = readFileSync(join(source, ".github/workflows/smithers-ci.yml"), "utf8")
     // The command of the generated workflow, with the `smthrs` of this checkout in place of the published one.
-    expect(/smthrs ci (.*)$/m.exec(generated)?.[1]).toBe(`'//...' --cache-dir "${stateDirectory}"`)
+    const generatedSteps = (parseYaml(generated) as {
+      readonly jobs: { readonly ci: { readonly steps: ReadonlyArray<{ readonly run?: string }> } }
+    }).jobs.ci.steps
+    const command = String(generatedSteps.find((one) => String(one.run).includes("smthrs ci"))?.run)
+    expect(/smthrs ci (.*)$/.exec(command)?.[1]).toBe(`'//...' --cache-dir "${stateDirectory}"`)
     const before = head(source)
     commit(source, "data changed", { "data.txt": "ok 2\n" })
     const after = head(source)

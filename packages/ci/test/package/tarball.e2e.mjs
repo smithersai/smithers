@@ -19,6 +19,7 @@ import { tmpdir } from "node:os"
 import { delimiter, dirname, join, resolve } from "node:path"
 import { after, before, describe, it } from "node:test"
 import { fileURLToPath } from "node:url"
+import { parse } from "yaml"
 import { releaseRegistry } from "../../../../.smithers/flows/release/release-registry.mjs"
 
 const repositoryRoot = fileURLToPath(new URL("../../../../", import.meta.url))
@@ -210,7 +211,9 @@ for (const way of ways) {
         git(repository, "add", "--all")
         git(repository, "commit", "-q", "-m", "apply")
         const workflow = readFileSync(join(repository, ".github/workflows/smithers-ci.yml"), "utf8")
-        const command = /^\s*- run: (npx .*)$/m.exec(workflow)?.[1]
+        const command = parse(workflow).jobs.ci.steps.map((step) => step.run).find((run) =>
+          typeof run === "string" && run.startsWith("npx ") && run.includes(" smthrs ci ")
+        )
         assert.ok(command?.includes(`--package=@smthrs/cli@${packed.version} `), workflow)
         const result = await run("bash", ["-c", command], { cwd: repository, env: environment })
         assert.equal(result.status, 0, `${command}\n${result.stdout}\n${result.stderr}`)

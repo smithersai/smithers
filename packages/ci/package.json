@@ -78,6 +78,7 @@
     }
   },
   "devDependencies": {
+    "@antfu/eslint-config": "9.2.0",
     "@biomejs/biome": "2.6.8",
     "@effect/language-service": "0.87.2",
     "@effect/platform-node": "4.1.1",
@@ -97,6 +98,7 @@
     "eslint-plugin-import": "2.32.0",
     "eslint-plugin-jsdoc": "64.3.4",
     "eslint-plugin-unicorn": "65.0.0",
+    "eslint-plugin-yml": "3.10.0",
     "jest": "30.5.2",
     "knip": "6.34.0",
     "madge": "8.0.0",

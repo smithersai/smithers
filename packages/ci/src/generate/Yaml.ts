@@ -1,0 +1,301 @@
+/**
+ * The one writer of the YAML files Smithers CI generates. It writes what the
+ * YAML rules of the common linters and formatters accept as written: ESLint's
+ * `eslint-plugin-yml` (in `@antfu/eslint-config` and in its own `standard` and
+ * `prettier` sets), Prettier with double or single quotes, Biome and yamllint.
+ *
+ * - A string is plain wherever YAML reads it back as the same string, under
+ *   YAML 1.2 and 1.1 alike, so no rule that asks for plain style fires.
+ * - A string that cannot be plain is a block scalar: `>-` for one line,
+ *   folded at spaces to fit the width, and `|` for several lines. A quote
+ *   would fail one of two presets: `eslint-plugin-yml` asks for double quotes
+ *   by default and `@antfu/eslint-config` for single ones.
+ * - Quotes are left for what a block scalar cannot hold: the empty string and
+ *   a string that starts or ends with a space take single quotes, or double
+ *   quotes when the text holds a single quote; a control character or an
+ *   irregular space takes double quotes and an escape.
+ * - Two spaces of indentation, a list indented under its key, no flow
+ *   collection but an empty `{}` or `[]`, no trailing space, comments wrapped
+ *   to the width, `---` before the content and one final newline.
+ *
+ * @since 0.1.0
+ */
+
+import { parseDocument } from "yaml"
+
+/**
+ * The longest line the writer writes, as yamllint's default allows. A comment
+ * word or a folded word longer than the line still overflows it.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const width = 80
+
+/**
+ * A value the writer writes.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Value = string | number | boolean | Mapping | Sequence
+
+/**
+ * A key, its value and the comments written before it.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Entry {
+  readonly key: string
+  readonly value: Value
+  readonly comments: ReadonlyArray<string>
+}
+
+/**
+ * A value of a list and the comments written before it.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Item {
+  readonly value: Value
+  readonly comments: ReadonlyArray<string>
+}
+
+/**
+ * A block mapping, in the order of its entries.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Mapping {
+  readonly _tag: "Mapping"
+  readonly entries: ReadonlyArray<Entry>
+}
+
+/**
+ * A block sequence, in the order of its items.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Sequence {
+  readonly _tag: "Sequence"
+  readonly items: ReadonlyArray<Item>
+}
+
+/**
+ * A mapping of `entries`. A key is written as given: it is a name the caller
+ * chose, such as a GitHub keyword.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const mapping = (entries: ReadonlyArray<Entry>): Mapping => ({ _tag: "Mapping", entries })
+
+/**
+ * One entry of a mapping, with the comments written before it.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const entry = (key: string, value: Value, comments: ReadonlyArray<string> = []): Entry => ({
+  key,
+  value,
+  comments
+})
+
+/**
+ * A sequence of `items`.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const sequence = (items: ReadonlyArray<Item>): Sequence => ({ _tag: "Sequence", items })
+
+/**
+ * One item of a sequence, with the comments written before it.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const item = (value: Value, comments: ReadonlyArray<string> = []): Item => ({ value, comments })
+
+/**
+ * A sequence of plain values.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const list = (values: ReadonlyArray<Value>): Sequence => sequence(values.map((value) => item(value)))
+
+// Characters no plain or block scalar holds as they are: control characters, and the spaces ESLint's
+// `yml/no-irregular-whitespace` reports outside a quoted string. A double-quoted string holds each as an escape.
+// The line feed is not among them: a block scalar holds it.
+const spaces = new Set([0x1680, 0x180e, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff])
+
+const escapes = (char: string): boolean => {
+  const code = char.charCodeAt(0)
+  return (code <= 0x1f && code !== 0x0a) || (code >= 0x7f && code <= 0xa0) || (code >= 0x2000 && code <= 0x200b) ||
+    spaces.has(code)
+}
+
+const needsEscape = (value: string): boolean => [...value].some(escapes)
+
+const named: Readonly<Record<string, string>> = { "\t": "\\t", "\r": "\\r", "\n": "\\n", "\"": "\\\"", "\\": "\\\\" }
+
+const doubleQuoted = (value: string): string =>
+  `"${
+    [...value].map((char) =>
+      named[char] ?? (escapes(char) ? `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}` : char)
+    ).join("")
+  }"`
+
+const singleQuoted = (value: string): string => `'${value.replaceAll("'", "''")}'`
+
+// A quoted string, for what no block scalar holds. Double quotes when the text needs an escape or holds a single
+// quote, which both presets accept; single quotes otherwise.
+const quoted = (value: string): string =>
+  needsEscape(value) || value.includes("\n") || value.includes("'") ? doubleQuoted(value) : singleQuoted(value)
+
+// The first characters that start something else than a plain scalar. `-`, `?` and `:` do only before a space.
+const indicators = new Set([",", "[", "]", "{", "}", "#", "&", "*", "!", "|", ">", "'", "\"", "%", "@", "`"])
+
+// True when a parser of either YAML version reads `value`, written plain, as that same string. The checks before
+// it leave out what would make a parser stop at an error.
+const readsBack = (value: string): boolean =>
+  (["1.2", "1.1"] as const).every((version) => parseDocument(value, { version, logLevel: "silent" }).toJS() === value)
+
+/**
+ * True when `value` can be written as a plain scalar in block context: YAML
+ * 1.2 and 1.1 both read it back as the same string, so it is no number, no
+ * boolean and no null under either.
+ *
+ * @category predicates
+ * @since 0.1.0
+ */
+export const isPlain = (value: string): boolean => {
+  if (value === "" || value.trim() !== value || value.includes("\n") || needsEscape(value)) return false
+  const first = value[0] as string
+  if (indicators.has(first)) return false
+  if ((first === "-" || first === "?" || first === ":") && (value.length === 1 || value[1] === " ")) return false
+  if (value.includes(": ") || value.includes(" #") || value.endsWith(":")) return false
+  return readsBack(value)
+}
+
+// The words of a single-line string between the spaces it can be folded at: a space between two characters that
+// are not spaces, as a folded scalar reads each line break back as one space. With `outside`, only the spaces outside
+// a GitHub `${{ }}` expression, so an expression stays on one line where it fits.
+const words = (value: string, outside: boolean): ReadonlyArray<string> => {
+  const found: Array<string> = []
+  let word = ""
+  let inside = false
+  let index = 0
+  while (index < value.length) {
+    if (value.startsWith("${{", index)) inside = true
+    if (value.startsWith("}}", index)) inside = false
+    const char = value[index] as string
+    if (char === " " && value[index - 1] !== " " && value[index + 1] !== " " && !(outside && inside)) {
+      found.push(word)
+      word = ""
+    } else word += char
+    index += 1
+  }
+  return [...found, word]
+}
+
+// A single-line string as the lines of a folded scalar, each at most `room` long where its words allow. A word too
+// long for a line is folded inside its expressions too.
+const fold = (value: string, room: number): ReadonlyArray<string> => {
+  const lines: Array<string> = []
+  let line = ""
+  for (const word of words(value, true).flatMap((one) => one.length > room ? words(one, false) : [one])) {
+    if (line === "") line = word
+    else if (line.length + 1 + word.length <= room) line = `${line} ${word}`
+    else {
+      lines.push(line)
+      line = word
+    }
+  }
+  return [...lines, line]
+}
+
+// The lines of a string written after `head`, such as `  key:` or `  -`, with its own lines at `indent`.
+const scalarLines = (head: string, value: string, indent: number): ReadonlyArray<string> => {
+  const pad = " ".repeat(indent)
+  if (isPlain(value) && head.length + 1 + value.length <= width) return [`${head} ${value}`]
+  if (!value.includes("\n")) {
+    // A block scalar starts its text on a line of its own, so it cannot keep a space at either end.
+    if (value === "" || value.trim() !== value || needsEscape(value)) return [`${head} ${quoted(value)}`]
+    return [`${head} >-`, ...fold(value, width - indent).map((line) => `${pad}${line}`)]
+  }
+  const body = value.replace(/\n+$/, "")
+  const lines = body.split("\n")
+  const literal = body.trim() !== "" && !needsEscape(body) && !lines.some((line) => line.trimEnd() !== line) &&
+    !(lines.find((line) => line !== "") as string).startsWith(" ")
+  if (!literal) return [`${head} ${quoted(value)}`]
+  const ending = value.length - body.length
+  const chomp = ending === 0 ? "-" : ending === 1 ? "" : "+"
+  return [
+    `${head} |${chomp}`,
+    ...lines.map((line) => line === "" ? "" : `${pad}${line}`),
+    ...Array.from({ length: Math.max(0, ending - 1) }, () => "")
+  ]
+}
+
+// A comment's lines at `indent`, wrapped at spaces to the width.
+const commentLines = (text: string, indent: number): ReadonlyArray<string> => {
+  const pad = " ".repeat(indent)
+  const words = text.split(/\s+/).filter((word) => word !== "")
+  if (words.length === 0) return [`${pad}#`]
+  return fold(words.join(" "), width - indent - 2).map((line) => `${pad}# ${line}`)
+}
+
+// The lines of `value` after `head`; a collection's own lines start at `indent`.
+const valueLines = (head: string, value: Value, indent: number): ReadonlyArray<string> => {
+  if (typeof value === "number" || typeof value === "boolean") return [`${head} ${String(value)}`]
+  if (typeof value === "string") return scalarLines(head, value, indent)
+  if (value._tag === "Mapping") {
+    return value.entries.length === 0 ? [`${head} {}`] : [head, ...mappingLines(value, indent)]
+  }
+  return value.items.length === 0 ? [`${head} []`] : [head, ...sequenceLines(value, indent)]
+}
+
+const mappingLines = (value: Mapping, indent: number): ReadonlyArray<string> =>
+  value.entries.flatMap((one) => [
+    ...one.comments.flatMap((text) => commentLines(text, indent)),
+    ...valueLines(`${" ".repeat(indent)}${one.key}:`, one.value, indent + 2)
+  ])
+
+// An item that is a collection starts on its dash's line: its first line loses the indentation the dash takes.
+const sequenceLines = (value: Sequence, indent: number): ReadonlyArray<string> =>
+  value.items.flatMap((one) => {
+    const pad = " ".repeat(indent)
+    const comments = one.comments.flatMap((text) => commentLines(text, indent))
+    const inner = one.value
+    if (typeof inner !== "object" || (inner._tag === "Mapping" ? inner.entries : inner.items).length === 0) {
+      return [...comments, ...valueLines(`${pad}-`, inner, indent + 2)]
+    }
+    // The comments of the collection's first entry or item go before the dash: after it there is no room.
+    const first = inner._tag === "Mapping" ? (inner.entries[0] as Entry).comments : (inner.items[0] as Item).comments
+    const [head, ...rest] = inner._tag === "Mapping"
+      ? mappingLines(mapping([{ ...(inner.entries[0] as Entry), comments: [] }, ...inner.entries.slice(1)]), indent + 2)
+      : sequenceLines(sequence([{ ...(inner.items[0] as Item), comments: [] }, ...inner.items.slice(1)]), indent + 2)
+    return [
+      ...comments,
+      ...first.flatMap((text) => commentLines(text, indent)),
+      `${pad}- ${(head as string).slice(indent + 2)}`,
+      ...rest
+    ]
+  })
+
+/**
+ * The text of a YAML file holding `root`: the `header` comments, `---`, the
+ * mapping, and a final newline.
+ *
+ * @category rendering
+ * @since 0.1.0
+ */
+export const document = (root: Mapping, header: ReadonlyArray<string> = []): string =>
+  [...header.flatMap((text) => commentLines(text, 0)), "---", ...mappingLines(root, 0), ""].join("\n")
