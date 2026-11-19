@@ -306,7 +306,7 @@ jobs:
       - name: Install system packages
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'strace'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -511,14 +511,12 @@ jobs:
           test "$(node --version)" = 'v26.4.0'
           test "$(npm --version)" = '11.16.0'
           mkdir -p "$SMOKE_EVIDENCE_DIR"
-          # The supported Node floor runs the pack and smoke modules itself,
-          # so the tarballs are proved on exactly that runtime.
-          node .smithers/flows/release/pack-release.mjs "$PACK_DIR"
-          node .smithers/flows/release/smoke-release.mjs "$PACK_DIR"
-          # `bunx smithers-ci` is the first command on its page: run it from the tarball.
-          node packages/ci/test/package/tarball.e2e.mjs "$PACK_DIR"
-          # An installed `smthrs` runs as one file: prove it behaves as the separate modules do, and how fast it starts.
-          node packages/smithers/test/published-layout.e2e.mjs "$PACK_DIR"
+          # The supported Node floor runs the pack and every gate on the
+          # tarballs, so they are proved on exactly that runtime: the install
+          # smoke, `smithers-ci` from its tarball (`bunx smithers-ci` is the
+          # first command on its page), and the installed `smthrs` as one file.
+          # A checkout of main runs the same file between releases.
+          node .smithers/flows/release/pack-gates.mjs "$PACK_DIR"
           cp "$PACK_DIR/smoke-evidence.json" "$SMOKE_EVIDENCE_DIR/node26.json"
       - name: Restore and verify archived release candidate
         if: env.CANDIDATE_RUN_ID != '' && matrix.lane != 'gates'

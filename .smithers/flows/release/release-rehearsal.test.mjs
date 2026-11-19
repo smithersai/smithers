@@ -524,7 +524,12 @@ test("the supported Node floor packs and smokes the tarballs and retains its rec
       'const fs = require("node:fs"), path = require("node:path")',
       'const [command, directory] = process.argv.slice(2)',
       'if (command === "--version") { console.log(process.env.MOCK_NODE_VERSION); process.exit(0) }',
+      'if (command === ".smithers/flows/release/pack-gates.mjs") {',
+      '  const gates = require("node:child_process").spawnSync(process.env.ACTUAL_NODE, [path.join(process.env.REPOSITORY_ROOT, command), directory], { stdio: "inherit" })',
+      '  process.exit(gates.status ?? 1)',
+      '}',
       'fs.appendFileSync(process.env.TRACE, JSON.stringify([command, directory, process.env.MOCK_NODE_VERSION]) + "\\n")',
+      'if (command === process.env.MOCK_RED_GATE) process.exit(7)',
       'if (command === ".smithers/flows/release/pack-release.mjs") { fs.mkdirSync(directory, { recursive: true }); fs.writeFileSync(path.join(directory, "package.tgz"), "fixed candidate bytes") }',
       'else if (command === ".smithers/flows/release/smoke-release.mjs") {',
       '  const bytes = fs.readFileSync(path.join(directory, "package.tgz"), "utf8")',
@@ -538,7 +543,8 @@ test("the supported Node floor packs and smokes the tarballs and retains its rec
     chmodSync(join(bin, "node"), 0o755)
     chmodSync(join(bin, "npm"), 0o755)
     const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, ACTUAL_NODE: process.execPath,
-      MOCK_NODE_DRIVER: driver, PACK_DIR: join(root, "packs"), SMOKE_EVIDENCE_DIR: join(root, "receipts"), TRACE: join(root, "trace.jsonl") }
+      MOCK_NODE_DRIVER: driver, PACK_DIR: join(root, "packs"), SMOKE_EVIDENCE_DIR: join(root, "receipts"), TRACE: join(root, "trace.jsonl"),
+      REPOSITORY_ROOT: repoRoot }
     const run = (body, version) => spawnSync("bash", ["-e", "-c", body], { cwd: root,
       env: { ...env, MOCK_NODE_VERSION: version }, encoding: "utf8" })
     assert.notEqual(run(smoke.run, "v26.5.0").status, 0, "a skipped setup action cannot mislabel another Node as the floor")
@@ -553,6 +559,17 @@ test("the supported Node floor packs and smokes the tarballs and retains its rec
       [".smithers/flows/release/smoke-release.mjs", env.PACK_DIR, "v26.4.0"],
       ["packages/ci/test/package/tarball.e2e.mjs", env.PACK_DIR, "v26.4.0"],
       ["packages/smithers/test/published-layout.e2e.mjs", env.PACK_DIR, "v26.4.0"]
+    ])
+    // A red gate fails the step with its exit code, and the gates after it do not run.
+    rmSync(env.TRACE)
+    const red = spawnSync("bash", ["-e", "-c", smoke.run], { cwd: root,
+      env: { ...env, MOCK_NODE_VERSION: "v26.4.0", MOCK_RED_GATE: "packages/ci/test/package/tarball.e2e.mjs" }, encoding: "utf8" })
+    assert.equal(red.status, 7, red.stderr)
+    assert.match(red.stderr, /packages\/ci\/test\/package\/tarball\.e2e\.mjs failed with exit 7/)
+    assert.deepEqual(readFileSync(env.TRACE, "utf8").trim().split("\n").map((line) => JSON.parse(line)[0]), [
+      ".smithers/flows/release/pack-release.mjs",
+      ".smithers/flows/release/smoke-release.mjs",
+      "packages/ci/test/package/tarball.e2e.mjs"
     ])
   } finally { rmSync(root, { recursive: true, force: true }) }
 })

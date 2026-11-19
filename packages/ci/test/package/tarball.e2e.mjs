@@ -136,6 +136,23 @@ const repositoryIn = (root) => {
   return repository
 }
 
+/**
+ * A workflow step's command and environment as a runner runs them: each `${{ }}`
+ * expression replaced by its value in `values`. An expression with no value
+ * fails here, by name, before any of it reaches a shell.
+ */
+const runnerStep = (step, values) => {
+  const fill = (text) =>
+    String(text).replace(/\$\{\{\s*(.*?)\s*\}\}/g, (_, expression) => {
+      assert.ok(Object.hasOwn(values, expression), `the step uses \${{ ${expression} }}, which this test gives no value`)
+      return values[expression]
+    })
+  return {
+    run: fill(step.run),
+    env: Object.fromEntries(Object.entries(step.env ?? {}).map(([name, value]) => [name, fill(value)]))
+  }
+}
+
 let registry
 before(async () => {
   registry = await releaseRegistry(packs, entries)
@@ -211,12 +228,21 @@ for (const way of ways) {
         git(repository, "add", "--all")
         git(repository, "commit", "-q", "-m", "apply")
         const workflow = readFileSync(join(repository, ".github/workflows/smithers-ci.yml"), "utf8")
-        const command = parse(workflow).jobs.ci.steps.map((step) => step.run).find((run) =>
-          typeof run === "string" && run.startsWith("npx ") && run.includes(" smthrs ci ")
+        const step = parse(workflow).jobs.ci.steps.find((each) =>
+          typeof each.run === "string" && each.run.startsWith("npx ") && each.run.includes(" smthrs ci ")
         )
-        assert.ok(command?.includes(`--package=@smthrs/cli@${packed.version} `), workflow)
-        const result = await run("bash", ["-c", command], { cwd: repository, env: environment })
-        assert.equal(result.status, 0, `${command}\n${result.stdout}\n${result.stderr}`)
+        assert.ok(step?.run.includes(`--package=@smthrs/cli@${packed.version} `), workflow)
+        const temporary = join(root, "runner-temp")
+        mkdirSync(temporary)
+        const filled = runnerStep(step, {
+          "runner.temp": temporary,
+          // A repository that has set neither the variable nor the secrets, as after `apply`.
+          "vars.SMITHERS_CACHE_URL": "",
+          "github.event_name == 'pull_request' && secrets.SMITHERS_CACHE_READ_TOKEN || secrets.SMITHERS_CACHE_TOKEN": ""
+        })
+        const result = await run("bash", ["-e", "-c", filled.run], { cwd: repository, env: { ...environment, ...filled.env } })
+        assert.equal(result.status, 0, `${filled.run}\n${result.stdout}\n${result.stderr}`)
+        assert.ok(existsSync(join(temporary, "smithers-ci", "cache")), "the run keeps its results under the runner's temporary directory")
       })
     }
   })
