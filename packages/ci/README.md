@@ -22,6 +22,15 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**2026-11-19, why a step was not reused** (optional additions by `sci-outside-gain`).
+
+- `RunRecord.TargetResult.notReused` and `notStored` (optional): Smithers build's own lines for a target that ran:
+  what differed from the stored result, and why this run's result is not stored.
+- `ReplayReport.StepNotReused` (`{ step, reason, kept }`) and `RunTotals.notReused` (optional): every step a mode
+  ran where an earlier result was not used, with the reason. `kept: false` marks a step whose result is never kept,
+  so it runs at every commit. The text report lists them under `steps not reused` with the number of commits.
+  Tests: `test/contract.test.ts`, `test/replay/Summary.test.ts`, `test/report.test.ts`, `test/cli/notReused.test.ts`.
+
 **Fifteenth round, 2026-11-19.** A run says where its time went (`sci-overhead`).
 
 - **`RunRecord.Parts`, `TargetResult.parts`, `RunRecord.parts`, `RunTotals.parts`** (added, all optional): wall time

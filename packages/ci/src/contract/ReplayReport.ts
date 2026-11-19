@@ -40,11 +40,39 @@ export const StepFailure = Schema.Struct({
 export type StepFailure = typeof StepFailure.Type
 
 /**
+ * One step that ran in a mode that reuses results, and why it was not reused. `reason` is the
+ * build's own line: the file the step read that changed (`src/a.ts changed`),
+ * or what the step did that keeps any result of it from being used again
+ * (`it opened a network connection (npm to 104.16.4.34 port 443)`). `kept`
+ * says which: false means the step's result is never kept, so the step runs
+ * at every commit.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const StepNotReused = Schema.Struct({
+  step: Schema.NonEmptyString,
+  reason: Schema.NonEmptyString,
+  kept: Schema.Boolean
+})
+
+/**
+ * A decoded `StepNotReused`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type StepNotReused = typeof StepNotReused.Type
+
+/**
  * One way of running one commit. `wallMs` is elapsed time; `workMs` is the
  * sum of every target's own time. `failures` names every step that failed in
  * the end, and is absent when none did. `cpuMs` is the CPU time the run's
  * steps used, every process they started included, over the run `wallMs`
  * times; it is absent when this machine's processes could not be read.
+ * `notReused` names every step that ran where an earlier result of it was not
+ * used, with the reason, and is absent when the build gave none: the baseline
+ * reuses nothing and has none.
  *
  * @category models
  * @since 0.1.0
@@ -56,7 +84,8 @@ export const RunTotals = Schema.Struct({
   counts: StatusCounts,
   failures: Schema.optionalKey(Schema.Array(StepFailure)),
   cpuMs: Schema.optionalKey(Schema.Finite),
-  parts: Schema.optionalKey(Parts)
+  parts: Schema.optionalKey(Parts),
+  notReused: Schema.optionalKey(Schema.Array(StepNotReused))
 })
 
 /**

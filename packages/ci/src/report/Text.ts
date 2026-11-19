@@ -19,7 +19,10 @@
  * exit code and the first line of its error output. The run of each way
  * before the first counted commit has one line with its times, or a line
  * that says why that commit started with an empty cache. When failed steps
- * ran again, a line says how many and how long that took. A line gives the
+ * ran again, a line says how many and how long that took. Every step
+ * normal mode ran and did not reuse is listed with the build's reason and
+ * the number of commits it ran at: a file it read that changed, or what keeps its result
+ * from ever being used again. A line gives the
  * CPU time each way's steps used, when this machine's processes could be read.
  *
  * Labels, reasons and commit ids come from the repository being replayed, so control
@@ -53,6 +56,8 @@ import {
   normalDiffers,
   noSpeedup,
   noSpeedupMismatch,
+  notReused,
+  notReusedText,
   ownTargets,
   ratio,
   reasons,
@@ -174,6 +179,13 @@ export const text: RenderReport = (report) => {
           "  "
         )
       )
+    ])
+  }
+  const again = notReused(report)
+  if (again.length > 0) {
+    sections.push([
+      "steps not reused",
+      ...again.map((entry) => clean(notReusedText(entry, report.commits.length)))
     ])
   }
   if (commitsLeft.length > 0) {

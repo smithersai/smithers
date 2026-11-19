@@ -13,7 +13,7 @@
 
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import type { StepFailure } from "../contract/ReplayReport.ts"
+import type { StepFailure, StepNotReused } from "../contract/ReplayReport.ts"
 import type { RunRecord, TargetResult } from "../contract/RunRecord.ts"
 import { scrub } from "../inventory/Secrets.ts"
 
@@ -365,6 +365,29 @@ export const failuresOf = (
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
       ...(command === "" ? {} : { command })
     }
+  })
+
+/**
+ * Every step that ran and whose run says why an earlier result of it was not
+ * used, in order. The reason a result is never kept comes first: a step that
+ * reaches the network runs at every commit, whatever else changed.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const notReusedOf = (
+  results: ReadonlyArray<TargetResult>,
+  names: StepNames = new Map()
+): ReadonlyArray<StepNotReused> =>
+  results.flatMap((result) => {
+    const reason = firstLine(readable(result.notStored ?? result.notReused ?? ""))
+    if (result.status === "hit" || result.status === "skipped" || reason === "") return []
+    return [{
+      step: firstLine(names.get(result.label)?.step ?? result.label) || result.label,
+      reason,
+      kept: result.notStored === undefined
+    }]
   })
 
 /**

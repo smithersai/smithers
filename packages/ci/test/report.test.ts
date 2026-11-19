@@ -644,6 +644,51 @@ describe("a report whose fast mode could not be measured", () => {
   })
 })
 
+describe("steps not reused", () => {
+  const { fast: _fast, ...plain } = green
+  const network = {
+    step: "install",
+    reason: "it opened a network connection (npm to 104.16.4.34 port 443)",
+    kept: false
+  }
+  const changed = { step: "test (node 22)", reason: "src/a.ts changed", kept: true }
+  const docs = { step: "lint", reason: "readme.md changed", kept: true }
+  const at = (commit: string, notReused: ReplayCommit["normal"]["notReused"]): ReplayCommit => ({
+    ...plain,
+    commit: commit.repeat(40),
+    normal: { ...plain.normal, ...(notReused === undefined ? {} : { notReused }) }
+  })
+  const reused: ReplayReport = {
+    ...normalOnly(),
+    commits: [
+      // A step split into two targets that give one reason is one line.
+      at("a", [docs, changed, changed, network]),
+      at("b", [network, changed]),
+      at("c", [network]),
+      at("d", undefined)
+    ]
+  }
+
+  it("lists each step with the build's reason and the commits it ran at, the never reused first", () => {
+    expect(text(reused)).toContain([
+      "steps not reused",
+      "3 of 4 commits  install  never reused: it opened a network connection (npm to 104.16.4.34 port 443)",
+      "2 of 4 commits  test (node 22)  src/a.ts changed",
+      "1 of 4 commits  lint  readme.md changed"
+    ].join("\n"))
+  })
+
+  it("has no such section when every step was reused or gave no reason", () => {
+    expect(text({ ...reused, commits: [at("d", undefined)] })).not.toContain("steps not reused")
+    expect(text(example)).not.toContain("steps not reused")
+  })
+
+  it("replaces a control character of a step's name before it reaches a terminal", () => {
+    const shown = text({ ...reused, commits: [at("a", [{ ...changed, step: "te\u001bst" }])] })
+    expect(shown).toContain("1 of 1 commit  te\uFFFDst  src/a.ts changed")
+  })
+})
+
 describe("failed steps", () => {
   const failure = { step: "lint <job>", reason: "`docker` is not installed on this machine", exitCode: 127 }
   const failedTotals = { ...green.baseline, ok: false, failures: [failure] }

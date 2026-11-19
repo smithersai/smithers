@@ -53,7 +53,7 @@ import {
 } from "../contract/RunRecord.ts"
 import { type Metrics, metrics, type Row, type Score, select, type Settings } from "../contract/Selection.ts"
 import { labelsOf as targetsOfStep, partsOf, type TargetMap } from "../contract/TargetMap.ts"
-import { failuresOf, type StepNames } from "./Failures.ts"
+import { failuresOf, notReusedOf, type StepNames } from "./Failures.ts"
 
 /**
  * A tool that walks a repository's tree, how its output is told from another
@@ -1012,7 +1012,8 @@ export const spentBy = (record: RunRecord): Parts | undefined => {
  * Wall time, work time, counts and failures of one run. The reruns that label
  * flaky targets are measurement, not CI, so neither time includes them. `names`
  * says what the failed results are called in the report, and `cpuMs` is the
- * CPU time the run's steps used, when it could be read.
+ * CPU time the run's steps used, when it could be read. `notReused` is every
+ * step whose run says why an earlier result of it was not used.
  *
  * @category report
  * @throws {never}
@@ -1024,6 +1025,7 @@ export const totalsOf = (
   cpuMs?: number | undefined
 ): RunTotals => {
   const failures = failuresOf(record.results, names)
+  const notReused = notReusedOf(record.results, names)
   const parts = spentBy(record)
   return {
     ok: record.ok,
@@ -1032,7 +1034,8 @@ export const totalsOf = (
     counts: record.counts,
     ...(failures.length === 0 ? {} : { failures }),
     ...(cpuMs === undefined ? {} : { cpuMs }),
-    ...(parts === undefined ? {} : { parts })
+    ...(parts === undefined ? {} : { parts }),
+    ...(notReused.length === 0 ? {} : { notReused })
   }
 }
 

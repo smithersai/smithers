@@ -826,14 +826,29 @@ tool versions
 tests.yml:test  asks for node 22.x; this machine has node 26.5.0
 ```
 
+Under `steps not reused` it lists each step normal mode ran, with the reason
+and the number of commits it ran at:
+
+```text
+steps not reused
+4 of 4 commits  ci.yml:test: npm install  never reused: it opened a network connection (node to 104.16.4.34 port 443)
+1 of 4 commits  ci.yml:test: npm test  source/index.js changed
+```
+
+A reason that names a file is a file the step read, changed by those commits.
+`never reused` marks a step whose result is not kept at all, so it runs at
+every commit: the line says what it did, such as reaching the network with no
+lockfile to say what it fetches.
+
 With fast mode, it also gives fast mode's selection metrics; see
 [Normal mode and fast mode](modes.md#how-fast-mode-is-measured).
 
 The report prints as text: the totals, one line for each commit that says
-whether each way passed, with its wall time, and the failed steps. `--out` also
-writes it as an HTML file with a line for each commit. `--json` prints it as
-JSON, which also holds work time, the target counts and each failed step's
-command.
+whether each way passed, with its wall time, the failed steps, and the steps
+not reused. `--out` also writes it as an HTML file with a line for each
+commit. `--json` prints it as JSON, which also holds work time, the target
+counts, each failed step's command, and for each commit the steps normal mode
+did not reuse with their reasons.
 
 ## See also
 

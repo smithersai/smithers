@@ -511,6 +511,34 @@ describe("records and totals", () => {
     expect(red).toMatchObject({ ok: false, mode: "fast", cache: true })
   })
 
+  it("names each step that ran and says why it was not reused", () => {
+    const names = new Map([
+      ["//:b", { step: "test (node 22)\nsecond line", command: "npm test" }],
+      // A name of nothing but space is no name: the label stands.
+      ["//:c", { step: " \n", command: "npm run c" }]
+    ])
+    const totals = totalsOf(
+      record([
+        // A file it read changed: the result is kept for the next commit.
+        { ...ran("//:a"), notReused: "src/a.ts changed" },
+        // It reached the network: no result of it is ever kept, whatever else changed.
+        { ...ran("//:b"), notReused: "package.json changed", notStored: "it opened a network connection\nmore" },
+        { ...failed("//:c"), notStored: "it failed" },
+        // A step with no earlier result gives no reason, and a reused or skipped step did not run.
+        ran("//:d"),
+        { ...ran("//:e"), status: "hit", notReused: "never read" },
+        { ...ran("//:f"), status: "skipped", notStored: "never read" }
+      ]),
+      names
+    )
+    expect(totals.notReused).toEqual([
+      { step: "//:a", reason: "src/a.ts changed", kept: true },
+      { step: "test (node 22)", reason: "it opened a network connection", kept: false },
+      { step: "//:c", reason: "it failed", kept: false }
+    ])
+    expect(totalsOf(record([ran("//:d")]))).not.toHaveProperty("notReused")
+  })
+
   it("sums work and reads wall time from the record", () => {
     expect(totalsOf(record([ran("a", 2), ran("b", 3)]))).toMatchObject({ ok: true, wallMs: 10, workMs: 5 })
     const { durationMs: _durationMs, ...timeless } = record([])

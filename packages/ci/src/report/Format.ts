@@ -7,7 +7,7 @@
 
 import type { NotReplayed, ToolVersion, Unsupported } from "../contract/Inventory.ts"
 import { reasonsSentence } from "../contract/Reasons.ts"
-import type { FirstRun, ReplayCommit, ReplayReport, StepFailure } from "../contract/ReplayReport.ts"
+import type { FirstRun, ReplayCommit, ReplayReport, StepFailure, StepNotReused } from "../contract/ReplayReport.ts"
 
 /**
  * Elapsed time in the largest units that keep it short: `850ms`, `12.3s`,
@@ -421,6 +421,50 @@ export const failedSteps = (commit: ReplayCommit): ReadonlyArray<FailedStep> => 
   }
   return [...found.values()]
 }
+
+/**
+ * A step normal mode ran and did not reuse, why, and at how many of the
+ * replayed commits.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface NotReused extends StepNotReused {
+  readonly commits: number
+}
+
+/**
+ * The steps normal mode ran and did not reuse, each with its reason and the
+ * number of commits it ran at for that reason. A step whose result is
+ * never kept comes first: it runs at every commit. The rest follow by how
+ * many commits they ran at. A step split into targets that give one reason
+ * is one entry.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const notReused = (report: ReplayReport): ReadonlyArray<NotReused> => {
+  const found = new Map<string, NotReused>()
+  for (const commit of report.commits) {
+    const here = new Set<string>()
+    for (const entry of commit.normal.notReused ?? []) {
+      const key = JSON.stringify([entry.step, entry.reason])
+      if (here.has(key)) continue
+      here.add(key)
+      found.set(key, { ...entry, commits: (found.get(key)?.commits ?? 0) + 1 })
+    }
+  }
+  return [...found.values()].sort((one, other) => Number(one.kept) - Number(other.kept) || other.commits - one.commits)
+}
+
+/**
+ * One step that was not reused on a line: `2 of 4 commits  test  src/a.ts changed`.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const notReusedText = (entry: NotReused, commits: number): string =>
+  `${entry.commits} of ${count(commits, "commit")}  ${entry.step}  ${entry.kept ? "" : "never reused: "}${entry.reason}`
 
 /**
  * A failure's exit code and reason: `exit 127: docker is not installed`.

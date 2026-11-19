@@ -1338,6 +1338,31 @@ describe("what a report says about a failure", () => {
     expect(() => Schema.decodeUnknownSync(RunRecord.Parts)({ cpuMs: { step: 1 } })).toThrow()
   })
 
+  it("lets a result say why it was not reused, and a run's totals name each such step", () => {
+    const result = {
+      label: "//:a",
+      status: "ran",
+      key: "",
+      durationMs: 1,
+      notReused: "src/a.ts changed",
+      notStored: "it opened a network connection (npm to 104.16.4.34 port 443)"
+    }
+    expect(Schema.decodeUnknownSync(RunRecord.TargetResult)(result)).toEqual(result)
+    expect(() => Schema.decodeUnknownSync(RunRecord.TargetResult)({ ...result, notReused: 1 })).toThrow()
+    const step = { step: "test", reason: "src/a.ts changed", kept: true }
+    const totals = { ok: true, wallMs: 1, workMs: 1, counts: { hit: 0, ran: 1, failed: 0, skipped: 0 } }
+    expect(Schema.decodeUnknownSync(ReplayReport.RunTotals)({ ...totals, notReused: [step] })).toEqual({
+      ...totals,
+      notReused: [step]
+    })
+    // A run that reused nothing, as the baseline, names none.
+    expect(Schema.decodeUnknownSync(ReplayReport.RunTotals)(totals)).not.toHaveProperty("notReused")
+    const decode = Schema.decodeUnknownSync(ReplayReport.StepNotReused)
+    expect(() => decode({ step: "test", reason: "src/a.ts changed" })).toThrow()
+    expect(() => decode({ ...step, reason: "" })).toThrow()
+    expect(() => decode({ ...step, step: "" })).toThrow()
+  })
+
   it("lets a run record's result say how its command ended", () => {
     const result = { label: "//:a", status: "failed", key: "", durationMs: 1, exitCode: 127, command: "docker" }
     expect(Schema.decodeUnknownSync(RunRecord.TargetResult)(result)).toEqual(result)
