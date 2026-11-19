@@ -132,6 +132,19 @@ on this machine, the replay starts with an empty cache and the report says so
 (`cold` under `--json`). On a repository with
 [its own targets](../concepts/own-targets.md), the same holds.
 
+### A short CI
+
+Smithers CI starts once for each commit. When that start is more than a
+twentieth of your CI's time for a commit, the report gives both times on one
+line (`startCost` under `--json`, with `commitMs` and `startMs`):
+
+```text
+your CI takes 5.8s for a commit and Smithers CI takes 3.2s to start, so only a commit that reuses results is faster here
+```
+
+Both times are a mean over the commits the speedup covers. The speedup and
+every wall time still count each start.
+
 ### Jobs that cannot pass here
 
 The baseline's first run finds the jobs that cannot pass on this machine. A job

@@ -25,7 +25,7 @@ export default defineConfig({
     testTimeout: 120_000,
     hookTimeout: 120_000,
     include: [...configDefaults.include, "test/**/*.test.vibe"],
-    // The wall-time benchmarks run on their own (`pnpm run benchmark`, vitest.benchmark.config.ts): a bound on a time
+    // The wall-time benchmarks run on their own (`//packages/ci:bench`, vitest.benchmark.config.ts): a bound on a time
     // fails with the machine's load, not with the code, and the suite must not.
     exclude: [...configDefaults.exclude, "test/**/*.benchmark.test.ts"],
     coverage: {

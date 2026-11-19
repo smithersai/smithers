@@ -1349,6 +1349,15 @@ describe("what a report says about a failure", () => {
     expect(request.reruns).toBe(0)
   })
 
+  it("holds what starting costs beside a short CI", () => {
+    const startCost = { commitMs: 5800, startMs: 3200 }
+    expect(Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...report, startCost }).startCost).toEqual(startCost)
+    // A report of a CI the start is small beside has none.
+    expect(Schema.decodeUnknownSync(ReplayReport.ReplayReport)(report)).not.toHaveProperty("startCost")
+    expect(() => Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...report, startCost: { commitMs: 5800 } }))
+      .toThrow()
+  })
+
   it("refuses a failure with no step or no reason, and a negative count of commits", () => {
     const decode = Schema.decodeUnknownSync(ReplayReport.StepFailure)
     expect(decode({ step: "a", reason: "b" })).toEqual({ step: "a", reason: "b" })

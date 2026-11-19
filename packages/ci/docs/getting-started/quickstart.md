@@ -85,7 +85,11 @@ commit, the report prints no speedup. A line gives the time of each way's first
 run, which is in no other number:
 `the first run, with an empty cache, took 4m 10s as the baseline and 5m 02s in normal mode; it happens once and is in none of these times`.
 A line gives the CPU time each way's steps used, which on a busy machine says
-more than the time on the clock. Then it gives one line for each
+more than the time on the clock. Smithers CI starts once for each commit; when
+that start is more than a twentieth of your CI's time for a commit, a line
+gives both times:
+`your CI takes 5.8s for a commit and Smithers CI takes 3.2s to start, so only a commit that reuses results is faster here`.
+The speedup counts every start all the same. Then it gives one line for each
 commit: the files it changed, and whether each way passed, with its wall
 time. Under them it lists:
 

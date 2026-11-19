@@ -22,6 +22,17 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Seventeenth round, 2026-11-19.** A short CI says what starting costs beside it (`sci-overhead`, decided by the lead).
+
+- **`ReplayReport.startCost`, `ReplayReport.StartCost`** (added, optional): `commitMs`, the baseline's wall time for a
+  commit, and `startMs`, the time Smithers build takes to start and to decide what to run for a commit, each a mean
+  over the commits the wall times cover. It is present when the start is more than a twentieth of the CI's time for
+  a commit (`Summary.startCostOf`). The text report and the page say it on one line; no number changes.
+- The comments on `TargetMap` and `TargetMap.Entry` say what the generator writes: `maxJobs` 1 only when two targets
+  that are not ordered could write the same files, and one target for two steps that do the same work at the same
+  point of two jobs.
+- Not a contract: the wall-time benchmarks are the target `//packages/ci:bench`, which a wildcard leaves out.
+
 **Sixteenth round, 2026-11-19.** Fast mode on macOS, with a real model (`sci-mac-fast`).
 
 - **`ReplayCommit.skipped`, `ReplayCommit.model`, `ReplayReport.model`** (added, optional), with the schemas

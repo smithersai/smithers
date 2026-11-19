@@ -54,6 +54,33 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   cwd
 })
 
+// The wall-time benchmarks, test/**/*.benchmark.test.ts. Each holds a time against another time of the same run, so
+// the machine's load decides it as much as the code does. The target is exclusive: `smthrs ci "//..."` leaves it out,
+// its label runs it, and it runs alone, after every other target of the run has ended.
+const bench = Smithers.Vitest({
+  tests: [Smithers.glob("test/**/*.benchmark.test.ts")],
+  sources: [
+    Smithers.glob("src/**/*.{ts,vibe}"),
+    Smithers.glob("test/**/*.{ts,vibe}"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("tsconfig.test.json"),
+    Smithers.file("//packages/repo-targets/test-utils/test-process-environment.mjs"),
+    Smithers.glob("bin/*.mjs"),
+    Smithers.glob("test/**/*.mjs"),
+    Smithers.glob("test/**/*.sh"),
+    Smithers.glob("test/fixtures/*.json")
+  ],
+  deps: [lib, ...Object.values(sources), cacheModule],
+  config: Smithers.file("vitest.benchmark.config.ts"),
+  environment: "node",
+  coverage: false,
+  exclusive: true,
+  passWithNoTests: false,
+  timeoutMs: 2_400_000,
+  tools: ["strace", "bwrap", "npm"].map((name) => Smithers.Host.bin(name)),
+  cwd
+})
+
 export const Package = Smithers.Package({
-  targets: { cacheModule, check, circular, docs, docsFiles, fmt, lib, lint, test, zigCache, ...sources }
+  targets: { bench, cacheModule, check, circular, docs, docsFiles, fmt, lib, lint, test, zigCache, ...sources }
 })

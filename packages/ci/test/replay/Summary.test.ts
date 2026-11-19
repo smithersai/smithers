@@ -34,6 +34,7 @@ import {
   seenIn,
   selectionOf,
   splitOf,
+  startCostOf,
   stationsOf,
   stepKey,
   stepNames,
@@ -1033,6 +1034,32 @@ describe("reportOf", () => {
     expect(reportOf(read, [fast, fast], { ...nothing, selection: metrics }).fastCpuMs).toBe(30)
     expect(reportOf(read, [fast, counted], { ...nothing, selection: metrics })).not.toHaveProperty("fastCpuMs")
     expect(reportOf(read, [fast, fast], nothing)).not.toHaveProperty("fastCpuMs")
+  })
+
+  it("says what starting costs when it is more than a twentieth of the CI's time for a commit", () => {
+    const timed = (wallMs: number, ms: Record<string, number>) => ({ ...totals(wallMs), parts: { ms } })
+    const short = (baselineMs: number, startMs: number, planMs: number) => ({
+      ...entry,
+      baseline: totals(baselineMs),
+      normal: timed(baselineMs + startMs + planMs, { start: startMs, plan: planMs, step: baselineMs })
+    })
+    // A CI of 6 s for a commit and a start of 3.2 s with its planning: both times, each a mean over the commits.
+    expect(reportOf(read, [short(5000, 2500, 500), short(7000, 3000, 400)], nothing).startCost).toEqual({
+      commitMs: 6000,
+      startMs: 3200
+    })
+    // A start with no planning timed beside it counts alone.
+    expect(startCostOf([{ ...entry, normal: timed(40, { start: 10 }) }])).toEqual({ commitMs: 30, startMs: 10 })
+    // A twentieth of the CI's time or less says nothing: 3 s beside a minute, and just over it.
+    expect(reportOf(read, [short(60_000, 2500, 500)], nothing)).not.toHaveProperty("startCost")
+    expect(startCostOf([short(60_000, 2500, 501)])).toEqual({ commitMs: 60_000, startMs: 3001 })
+    // Only the commits the wall times cover count: a failed baseline's time measures nothing.
+    const failing = { ...short(100, 3000, 0), baseline: { ...totals(100), ok: false } }
+    expect(reportOf(read, [short(60_000, 2500, 500), failing], nothing)).not.toHaveProperty("startCost")
+    // No commit, or a commit whose start was not timed, gives no number.
+    expect(startCostOf([])).toBeUndefined()
+    expect(startCostOf([short(5000, 2500, 500), entry])).toBeUndefined()
+    expect(startCostOf([{ ...entry, normal: timed(40, { step: 30 }) }])).toBeUndefined()
   })
 
   it("is 0 when nothing ran, and sums fast mode when it ran", () => {

@@ -12,6 +12,7 @@ import type {
   ModelUse,
   ReplayCommit,
   ReplayReport,
+  StartCost,
   StepFailure,
   StepNotReused
 } from "../contract/ReplayReport.ts"
@@ -376,6 +377,19 @@ export const cpuTime = (report: ReplayReport): string | undefined => {
     modes.join(" and ")
   }`
 }
+
+/**
+ * What starting costs beside a short CI, as one line: `your CI takes 5.8s for
+ * a commit and Smithers CI takes 3.2s to start, so only a commit that reuses
+ * results is faster here`.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const startCost = (cost: StartCost): string =>
+  `your CI takes ${duration(cost.commitMs)} for a commit and Smithers CI takes ${
+    duration(cost.startMs)
+  } to start, so only a commit that reuses results is faster here`
 
 /**
  * How many times failed steps ran again and what that took, as one line:

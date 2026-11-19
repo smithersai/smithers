@@ -48,6 +48,7 @@ import {
   skippedLabels,
   speedup,
   speedupCommits,
+  startCost,
   times,
   toolVersion,
   trialTime,
@@ -309,6 +310,7 @@ export const html: RenderReport = (report) => {
     if (report.trialMs !== undefined) body.push(`<p class="summary">${trialTime(report.trialMs)}</p>`)
     if (report.appliedMs !== undefined) body.push(`<p class="summary">${appliedTime(report.appliedMs)}</p>`)
     if (report.firstRun !== undefined) body.push(`<p class="summary">${firstRunTime(report.firstRun)}</p>`)
+    if (report.startCost !== undefined) body.push(`<p class="summary">${startCost(report.startCost)}</p>`)
     if (report.cold !== undefined) body.push(`<p class="summary">${escape(coldStart(report.cold))}</p>`)
     if (report.reruns !== undefined) body.push(`<p class="summary">${rerunTime(report.reruns)}</p>`)
     if (report.selection !== undefined) body.push(selection(report))

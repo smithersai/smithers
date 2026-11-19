@@ -25,7 +25,9 @@ export const path = ".smithers/ci-targets.json"
  * matrix has the empty variant. A step that was split has one entry per
  * target, each naming the original step, and `part` says which part of the
  * step the target runs: a package, a build step or a script. A report names
- * a failed part by it. `machine` is the machine the target runs on
+ * a failed part by it. Two steps that do the same work at the same point of
+ * two jobs share one target: each has its own entry, with that target's
+ * label. `machine` is the machine the target runs on
  * (`machine:` in its target file), for a target that has one: Smithers build
  * gives the targets of one machine a checkout, a home and a temporary
  * directory of their own, at paths named by the machine.
@@ -52,8 +54,9 @@ export type Entry = typeof Entry.Type
 
 /**
  * Every step the generator turned into a target. `maxJobs` is the most of
- * these targets that may run at once; a caller never exceeds it. It is 1
- * while generated targets share one working tree.
+ * these targets that may run at once; a caller never exceeds it. The
+ * generator writes 1 when two targets that are not ordered could write the
+ * same files, and leaves it out when none could.
  *
  * @category models
  * @since 0.1.0

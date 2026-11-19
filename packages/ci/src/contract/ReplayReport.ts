@@ -260,6 +260,28 @@ export const FirstRun = Schema.Struct({
 export type FirstRun = typeof FirstRun.Type
 
 /**
+ * What starting costs beside a short CI. `commitMs` is the baseline's wall
+ * time for a commit and `startMs` the time Smithers build takes to start and
+ * to decide what to run for a commit, each a mean over the commits the wall
+ * times cover.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const StartCost = Schema.Struct({
+  commitMs: Schema.Finite,
+  startMs: Schema.Finite
+})
+
+/**
+ * A decoded `StartCost`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type StartCost = typeof StartCost.Type
+
+/**
  * The whole replay. Each commit in `commits` ran its own CI, read from its
  * own tree; a commit whose CI could not be replayed is in
  * `notReplayedCommits` and in no time. `speedup` is baseline wall time
@@ -311,6 +333,11 @@ export type FirstRun = typeof FirstRun.Type
  * Without it the first counted commit started with an empty cache. `cold`
  * says why when that was not asked for: there was no commit before it to run.
  *
+ * `startCost` is present when the start is more than a twentieth of the CI's
+ * time for a commit (`StartCost`). A commit where nothing is reused then
+ * takes longer than the CI by that start, and only a commit that reuses
+ * results is faster. It is absent when Smithers build did not time its start.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -327,6 +354,7 @@ export const ReplayReport = Schema.Struct({
   appliedMs: Schema.optionalKey(Schema.Finite),
   reruns: Schema.optionalKey(Schema.Struct({ count: Schema.Int, ms: Schema.Finite })),
   firstRun: Schema.optionalKey(FirstRun),
+  startCost: Schema.optionalKey(StartCost),
   cold: Schema.optionalKey(Schema.NonEmptyString),
   mismatches: Schema.Int,
   fastWallMs: Schema.optionalKey(Schema.Finite),

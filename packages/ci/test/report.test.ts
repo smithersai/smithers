@@ -887,6 +887,17 @@ describe("failed steps", () => {
     expect(html(normalOnly())).not.toContain("the first run")
   })
 
+  it("says on one line when starting is more than a twentieth of the CI, in the text and on the page", () => {
+    const report: ReplayReport = { ...normalOnly(), startCost: { commitMs: 5800, startMs: 3200 } }
+    const line =
+      "your CI takes 5.8s for a commit and Smithers CI takes 3.2s to start, so only a commit that reuses results is faster here"
+    expect(text(report).split("\n")).toContain(line)
+    expect(body(html(report))).toContain(`<p class="summary">${line}</p>`)
+    // A CI the start is small beside has no such line.
+    expect(text(normalOnly())).not.toContain("to start")
+    expect(html(normalOnly())).not.toContain("to start")
+  })
+
   it("gives the CPU time each way's steps used on one line, in the text and on the page", () => {
     const report: ReplayReport = { ...normalOnly(), baselineCpuMs: 1_570_000, normalCpuMs: 242_000 }
     const line = "the steps used 26m 10s of CPU time as the baseline and 4m 02s in normal mode (6.5× less)"

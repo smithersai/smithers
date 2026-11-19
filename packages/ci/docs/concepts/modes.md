@@ -24,7 +24,7 @@ key means an equal verdict.
 
 ### A first run
 
-With nothing to reuse, normal mode runs every command your CI runs. Three
+With nothing to reuse, normal mode runs every command your CI runs. Four
 things differ from your CI:
 
 - Each job gets a checkout, a home and a temporary directory of its own on
@@ -33,13 +33,15 @@ things differ from your CI:
   once.
 - Starting Smithers build takes a few seconds, once per run.
 - A step whose result can be reused runs under a recording of the files it
-  reads. Each file it opens or looks for costs about 40 millionths of a
-  second, so a test run that touches 35,000 files takes about a second
-  longer. A step that reaches the network is never reused, and after its
-  first run it is not recorded.
+  reads. A step that has to run and reads tens of thousands of files costs
+  about a sixth more than in your CI; a step that is reused costs none of it.
+  A step that reaches the network is never reused, and after its first run it
+  is not recorded.
 
 So the first run of a short CI can take longer than the baseline. The runs
-after it reuse every result whose inputs did not change.
+after it reuse every result whose inputs did not change. When the start is
+more than a twentieth of your CI's time for a commit,
+[the report says so](../getting-started/quickstart.md#what-it-prints).
 
 ## Fast mode
 

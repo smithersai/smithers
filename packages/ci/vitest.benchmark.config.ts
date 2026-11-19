@@ -3,7 +3,8 @@ import vibelang from "vibelang-vite"
 import { defineConfig } from "vitest/config"
 
 /**
- * The wall-time benchmarks, `test/**\/*.benchmark.test.ts`: `pnpm run benchmark` in this package.
+ * The wall-time benchmarks, `test/**\/*.benchmark.test.ts`: `pnpm exec smthrs test "//packages/ci:bench"` from the
+ * repository root, or `pnpm run benchmark` in this package.
  *
  * They are no part of the suite (`vitest.config.ts` leaves them out). Each holds a time against another time
  * measured in the same run, and on a build server under load one run in three was over the bound with no change to

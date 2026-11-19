@@ -1,9 +1,11 @@
 /**
  * Benchmark: what a first run costs, when no result can be reused.
  *
- * **How to run.** `pnpm run benchmark` in `packages/ci`. It is no part of the
- * suite: it holds one time against another, and the suite must not fail for
- * the machine's load.
+ * **How to run.** `pnpm exec smthrs test "//packages/ci:bench"` from the
+ * repository root, or `pnpm run benchmark` in `packages/ci`. It is no part of
+ * the suite: it holds one time against another, and the suite must not fail
+ * for the machine's load. A wildcard such as `smthrs ci "//..."` leaves the
+ * target out; its label runs it, alone.
  *
  * **Shape.** The most common CI: two GitHub Actions jobs, `lint` and `test`,
  * each an install followed by one check. The install takes 0.4 s, `lint`

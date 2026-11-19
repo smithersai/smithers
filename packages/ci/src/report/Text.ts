@@ -18,7 +18,9 @@
  * when that is not all of them, and every step that failed is listed with its
  * exit code and the first line of its error output. The run of each way
  * before the first counted commit has one line with its times, or a line
- * that says why that commit started with an empty cache. When failed steps
+ * that says why that commit started with an empty cache. When starting
+ * Smithers CI is more than a twentieth of the CI's time for a commit, a line
+ * gives both times and says only reuse is faster there. When failed steps
  * ran again, a line says how many and how long that took. Every step
  * normal mode ran and did not reuse is listed with the build's reason and
  * the number of commits it ran at: a file it read that changed, or what keeps its result
@@ -75,6 +77,7 @@ import {
   skippedLabels,
   speedup,
   speedupCommits,
+  startCost,
   times,
   toolVersion,
   trialTime,
@@ -177,6 +180,7 @@ export const text: RenderReport = (report) => {
   if (report.trialMs !== undefined) sections.push([trialTime(report.trialMs)])
   if (report.appliedMs !== undefined) sections.push([appliedTime(report.appliedMs)])
   if (report.firstRun !== undefined) sections.push([firstRunTime(report.firstRun)])
+  if (report.startCost !== undefined) sections.push([startCost(report.startCost)])
   if (report.cold !== undefined) sections.push([clean(coldStart(report.cold))])
   if (report.reruns !== undefined) sections.push([rerunTime(report.reruns)])
   if (report.selection !== undefined) {

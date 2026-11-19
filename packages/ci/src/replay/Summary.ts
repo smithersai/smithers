@@ -41,6 +41,7 @@ import type {
   ReplayCommit,
   ReplayReport,
   RunTotals,
+  StartCost,
   StepFailure
 } from "../contract/ReplayReport.ts"
 import {
@@ -1216,6 +1217,31 @@ export const withoutFast = (
 })
 
 /**
+ * What starting costs beside the CI, when it is more than a twentieth of the
+ * CI's time for a commit: the baseline's wall time for a commit and the time
+ * Smithers build took to start and to decide what to run (`start` and `plan`
+ * of the run's parts), each a mean over `commits`. Nothing when the start is
+ * a twentieth or less, when there is no commit, or when a commit's normal
+ * mode has no timed start.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const startCostOf = (commits: ReadonlyArray<ReplayCommit>): StartCost | undefined => {
+  const starts = commits.map((commit) => {
+    const ms = commit.normal.parts?.ms
+    return ms?.["start"] === undefined ? undefined : ms["start"] + (ms["plan"] ?? 0)
+  })
+  if (starts.length === 0 || starts.includes(undefined)) return undefined
+  const mean = (values: ReadonlyArray<number>): number =>
+    values.reduce((total, each) => total + each, 0) / values.length
+  const startMs = mean(starts as ReadonlyArray<number>)
+  const commitMs = mean(commits.map((commit) => commit.baseline.wallMs))
+  return startMs * 20 > commitMs ? { commitMs, startMs } : undefined
+}
+
+/**
  * The replay report of `inventory`'s repository. `speedup` is baseline wall
  * time over normal-mode wall time, and 0 when nothing ran in normal mode. It
  * and the wall times cover the commits whose baseline passed: a failed
@@ -1228,7 +1254,8 @@ export const withoutFast = (
  * it missed is a mismatch that its recall counts, and takes no number away. What the inventory could not
  * read is listed as `notRead`, and each tool this machine has at another
  * version than a job asks for as `toolVersions`. The cache credentials a kept
- * job ran without are named in `withheld`.
+ * job ran without are named in `withheld`. `startCost` says what starting
+ * costs when the CI is short beside it (`startCostOf`).
  *
  * @category report
  * @throws {never}
@@ -1262,6 +1289,7 @@ export const reportOf = (
   const normalCpuMs = cpu((commit) => commit.normal)
   const fastCpuMs = found.selection === undefined ? undefined : cpu((commit) => commit.fast)
   const model = found.selection === undefined ? undefined : modelOf(commits)
+  const startCost = startCostOf(measured)
   return {
     version: 1,
     repository: inventory.repository,
@@ -1277,6 +1305,7 @@ export const reportOf = (
       ? {}
       : { reruns: { count: found.reruns.count, ms: found.reruns.ms } }),
     ...(found.firstRun === undefined ? {} : { firstRun: found.firstRun }),
+    ...(startCost === undefined ? {} : { startCost }),
     ...(found.cold === undefined ? {} : { cold: found.cold }),
     mismatches: commits.reduce((total, commit) => total + commit.mismatches.length, 0),
     flaky: found.flaky,
