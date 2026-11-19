@@ -22,6 +22,20 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Thirteenth round, 2026-11-18 (open).** A promise that changed; made by the runner-variables lane
+(`sci-runner-env`), accepted by the lead.
+
+- **Two jobs that start with the same step each run it.** Until `0ebe391f39ae` one target ran such a step for both
+  jobs, and a job's first step was told its job only when its script named `GITHUB_JOB`. A runner tells every step
+  its job, and one run of a step has one job, so every step is now told it and each job runs its own first step.
+  `docs/concepts/modes.md` and `docs/concepts/how-it-works.md` say so, and
+  `test/replay/FirstRun.benchmark.test.ts` holds four targets and four installs for two jobs. It costs only where
+  nothing can be reused: at a first run, or at a commit that changes a lockfile, N jobs that start with the same
+  install run N installs, as the baseline does.
+- **`CI` is the runner's.** A step is given `CI=true` whatever the shell that started `smithers-ci` holds, unless
+  the workflow, the job or the step sets `CI`. A step's own script finds no variable of the program that runs it:
+  the runner text reads `Inventory.eventsVariable` and takes it away, as it does `Inventory.stateVariable`.
+
 **Twelfth round, 2026-11-18 (open).** Asked for by lanes; made by the lead.
 
 - **A job is a machine** (`sci-job-machine`). `Inventory.jobTemporaryVariable` (`SMTHRS_MACHINE_TMP`) names a job's

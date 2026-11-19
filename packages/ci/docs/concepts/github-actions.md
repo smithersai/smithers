@@ -144,6 +144,9 @@ finds the commit, as it does on GitHub.
 | `RUNNER_TEMP`, `RUNNER_TOOL_CACHE`                                                                                               | Directories of the job under `/tmp`, emptied when the job starts                       |
 | `GITHUB_ENV`, `GITHUB_PATH`, `GITHUB_OUTPUT`, `GITHUB_STEP_SUMMARY`, `GITHUB_STATE`, `GITHUB_ARTIFACTS`, `GITHUB_ARTIFACTS_LIST` | A fresh file for each step                                                             |
 
+What your own shell holds under one of these names never reaches a step: with
+`CI=1` in your shell, a step still finds `CI=true`.
+
 No step is given a token: `GITHUB_TOKEN` and the `ACTIONS_` credentials are not
 set. `GITHUB_ACTION_REPOSITORY` and `RUNNER_DEBUG` are not set either, as a
 runner leaves them for a script with debug logging off. `GITHUB_ACTION_PATH` is

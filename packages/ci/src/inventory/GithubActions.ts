@@ -650,6 +650,7 @@ const addRun = (
     env: decided.filter(([, , own]) => own).map(([name, entry]) => [name, entry] as const),
     fills: [...fills],
     commit: /\bGITHUB_(?:SHA|WORKFLOW_SHA|EVENT_PATH|RUN_ID|RUN_NUMBER|RUN_ATTEMPT)\b/.test(command),
+    ownCi: env.entries.has("CI"),
     action: context.action,
     limit: secondsOf(context.limit),
     store: context.store

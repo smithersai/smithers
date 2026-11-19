@@ -658,10 +658,16 @@ describe("write", () => {
   })
 
   // "Variables: Default environment variables": CI is always true, and a workflow may set it to something else.
-  it("sets CI to true unless the workflow sets it", () => {
+  // What the machine holds under that name is the person's, and Smithers build passes the machine's `CI` on to
+  // every step: the step is told `true` all the same.
+  it("sets CI to true whatever the machine holds, unless the workflow sets it", () => {
     pass({ first: true }, `test "$CI" = true`)
-    expect(pass({}, `echo "[$CI]"`, { env: { CI: "false" } })).toBe("[false]\n")
-    expect(pass({}, `echo "[$CI]"`, { env: { CI: "" } })).toBe("[]\n")
+    expect(pass({}, `echo "[$CI]"`, { env: { CI: "1" } })).toBe("[true]\n")
+    expect(pass({}, `echo "[$CI]"`, { env: { CI: "" } })).toBe("[true]\n")
+    // The workflow's own value is in the step's environment when it starts, and stays.
+    expect(pass({ ownCi: true }, `echo "[$CI]"`, { env: { CI: "false" } })).toBe("[false]\n")
+    expect(pass({ ownCi: true }, `echo "[$CI]"`, { env: { CI: "" } })).toBe("[]\n")
+    expect(pass({ ownCi: true }, `echo "[$CI]"`)).toBe("[true]\n")
   })
 
   // GitHub fills every `${{ }}` of a script in one pass: a value that holds the text of another is left as it is.
@@ -1171,6 +1177,17 @@ describe("write", () => {
         `${numbers}\n{"event":"a push"}\n`
       )
       expect(existsSync(asked)).toBe(false)
+    })
+
+    // The directory a replay wrote the event files to is told to the runner text and to nothing after it.
+    it("gives the step's own script the event file and no variable of the program that runs it", () => {
+      const events = join(at.tmp, "events")
+      mkdirSync(events)
+      writeFileSync(join(events, "push.json"), "{\"event\":\"a push\"}\n")
+      const env = { ...runValues("c".repeat(40), 7), [eventsVariable]: events }
+      const show = "env | grep -E '^(SMITHERS_|SMTHRS_)' || echo none; cat \"$GITHUB_EVENT_PATH\""
+      expect(pass({ first: true }, show, { env })).toBe("none\n{\"event\":\"a push\"}\n")
+      expect(pass({}, show, { env })).toBe("none\n{\"event\":\"a push\"}\n")
     })
 
     // Smithers build reuses a step's result at another commit unless the step's own text names one of the

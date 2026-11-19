@@ -104,6 +104,8 @@ export interface JobFacts {
  * - `env`: the step's own variables whose values are decided while the job runs.
  * - `fills`: the `${{ }}` texts left in the script, each with the expression that replaces it.
  * - `commit`: the step's script names the commit or the run, so its verdict belongs to one commit.
+ * - `ownCi`: the workflow, the job or the step sets `CI`, and the step keeps that value. Any other step is given
+ *   `CI=true`, as a runner gives it, whatever the machine it runs on holds under that name.
  * - `action`: the step's own name, given as `GITHUB_ACTION`: its `id`, or `__run` and its place in the job.
  * - `store`: the step keeps files from one run to the next, as a cache step does. It is told where in
  *   `SMITHERS_CI_CACHE_STORE`: under the directory Smithers build keeps its cache in when the step is a target,
@@ -131,6 +133,7 @@ export interface StepFacts {
   readonly env: ReadonlyArray<readonly [name: string, parts: ReadonlyArray<Part>]>
   readonly fills: ReadonlyArray<readonly [written: string, residual: Residual]>
   readonly commit: boolean
+  readonly ownCi?: boolean | undefined
   readonly action?: string | undefined
   readonly limit?: number | undefined
   readonly store?: boolean | undefined
@@ -277,13 +280,16 @@ const library = (job: JobFacts): string =>
     // The names of these variables, and of the one that says where the event file is, are put together here and
     // never written out. Smithers build reuses a result at another commit unless the step's own text names one of
     // them, and this text is every step's.
+    //
+    // Where the replay wrote the event files is the replay's to know: the step's own script finds the event file
+    // and no variable of the program that runs it.
     `__ci_commit() {`,
     `  __g=GITHUB_`,
+    `  __events=\${${eventsVariable}-}`,
+    `  unset ${eventsVariable}`,
     `  eval "__sha=\\\${\${__g}SHA-}"`,
     `  if [ -n "$__sha" ]; then`,
-    `    [ -z "\${${eventsVariable}-}" ] || export "\${__g}EVENT_PATH=$${eventsVariable}/${
-      job.eventName ?? "push"
-    }.json"`,
+    `    [ -z "$__events" ] || export "\${__g}EVENT_PATH=$__events/${job.eventName ?? "push"}.json"`,
     `    return 0`,
     `  fi`,
     `  __sha=$(git -C "$__root" rev-parse --verify --quiet HEAD) || {`,
@@ -976,6 +982,8 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       `[ -f "$__state/lib.sh" ] || ${fail("the steps before this one have not run in $__root")}`,
       `. "$__state/lib.sh" || exit 1`,
       `__ci_start`,
+      // A runner sets CI to true. What the machine holds under that name is the person's, not the workflow's.
+      ...(step.ownCi === true ? [] : [`export CI=true`]),
       ...(step.job === undefined ? [] : [`export GITHUB_JOB=${quote(step.job)}`]),
       ...(step.action === undefined ? [] : [`export GITHUB_ACTION=${quote(step.action)}`]),
       `__ci_commit ${commit ? "1" : "''"}`,
