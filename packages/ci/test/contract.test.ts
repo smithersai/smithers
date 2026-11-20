@@ -916,6 +916,10 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
     // A step split from a command that ran its parts at the same time may say so.
     expect(Schema.decodeUnknownSync(Inventory.Step)({ ...split, atOnce: true }).atOnce).toBe(true)
     expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, atOnce: "yes" })).toThrow()
+    // Such a step may name the directories it writes at the same time as the steps beside it.
+    expect(Schema.decodeUnknownSync(Inventory.Step)({ ...split, atOnce: true, shares: ["~/.cache/zig"] }).shares)
+      .toEqual(["~/.cache/zig"])
+    expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, shares: [""] })).toThrow()
     // A step split from a command that ran its parts in order may say so.
     expect(Schema.decodeUnknownSync(Inventory.Step)({ ...split, inOrder: true }).inOrder).toBe(true)
     expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...split, inOrder: "yes" })).toThrow()
@@ -926,9 +930,6 @@ describe("contract changes, fourth round: what is CI, and splitting a step", () 
       "stays one step: the script has the hook `precheck`, which the package manager runs with it"
     )
     expect(() => Schema.decodeUnknownSync(Inventory.Step)({ ...whole, whole: { feature: "", detail: "" } })).toThrow()
-    // A tool's cache is kept inside Smithers build's cache directory, which is outside the checkout: the constant
-    // starts with the text Smithers build replaces with that directory.
-    expect(Inventory.toolCache).toBe("{smthrs:cache-directory}/tools")
     const failure = { code: "command-failed", message: "bun pm ls exited 1", part: "decompose" }
     expect(Schema.decodeUnknownSync(Parts.Failure)(failure)).toEqual(failure)
   })

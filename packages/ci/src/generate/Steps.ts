@@ -127,6 +127,11 @@ export interface StepTarget {
    */
   readonly atOnce: boolean
   /**
+   * The directories the target writes at the same time as the targets split from the same command (`Step.shares`):
+   * left out of what its run is seen to read.
+   */
+  readonly shares: ReadonlyArray<string>
+  /**
    * The machine the target runs on: one for each GitHub job and matrix variant, as each starts on a runner of its
    * own. Smithers build gives the targets of one machine a private checkout, home and temporary directory.
    * `undefined` for a job whose every step is held to the files it names, which reads and writes nothing else, and
@@ -533,6 +538,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       ...files,
       also: [],
       atOnce: step.atOnce === true,
+      shares: step.shares ?? [],
       machine,
       job,
       command,

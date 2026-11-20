@@ -166,28 +166,33 @@ just ci:  tidy, then  zig build test
 4. **The toolchain counts.** The Zig executable and the library files a build
    reads are among the recorded files, so another Zig release runs every Zig
    step again. The build mode (`-Doptimize=…`) is part of the command.
-5. **Zig keeps its own cache.** The step sets `ZIG_LOCAL_CACHE_DIR` and
-   `ZIG_GLOBAL_CACHE_DIR` to a directory beside Smithers CI's own cache,
-   outside your checkout. The directory lasts between runs, and nothing in it
-   is part of the record. When a step does run again,
-   Zig rebuilds only the compile steps whose files changed and reruns only the
-   test binaries that came out different.
+5. **Zig's caches stay Zig's.** No step is told where Zig keeps its two
+   caches. They are where Zig puts them, `.zig-cache` beside `build.zig` and
+   one in the home directory, in the step's own job: empty when the job
+   starts and gone when it ends, as on a runner. Nothing keeps them for a
+   later run, because Zig would answer from them: it runs a test binary again
+   only when the binary changed, and does not see what a test reads when it
+   runs. `test/decompose/zig.smthrs.test.vibe` changes a file a test reads at
+   run time: the step runs again and the test fails.
 6. **Any Zig command, not only a bare build.** `zig build test --summary all`,
    `zig build -Doptimize=ReleaseSafe test`, `zig test src/main.zig` and
-   `make deps && zig build test` stay one step with their command as written,
-   and keep Zig's caches in the same place (`Zig.runs`). It matters on every
-   CI run: left in `.zig-cache` beside `build.zig`, the cache is a file the
-   step read that a fresh checkout does not have, so the step would run again
-   each time. A step that starts in a directory under the root
-   (`working-directory: tools/gen`) is given the same cache directory as a
-   step at the root. `test/decompose/zig.smthrs.test.vibe` runs
-   `zig build test --summary all` in such a directory, removes `.zig-cache`
-   and runs it again: a hit. A step that changes directory with `cd`, starts
-   outside the repository or names `.zig-cache` in its command keeps Zig's
-   usual cache.
+   `make deps && zig build test` stay one step with their command as written.
+   What a step's own run wrote in Zig's caches is not among the files it
+   read, so a fresh checkout without them does not make it run again. The
+   same test runs `zig build test --summary all` in a directory under the
+   root (`working-directory: tools/gen`) on a new machine twice: the second
+   is a hit.
+7. **Named steps share the caches.** The named steps of one `zig build` run
+   at the same time and write both caches at the same time. What each reads
+   and writes there is left out of its record (`Zig.caches`): a step beside
+   it changes those files while it runs. A step that takes a library another
+   step compiled still records the library's source: the compiler it starts
+   opens every source file of a cached result before it uses the result. The
+   same test changes a library two test roots link, which only one of them
+   compiled: both run again.
 
-A Zig step that a later step follows keeps its command, its place and Zig's
-usual cache directory: the later step may read what it built.
+A Zig step that a later step follows keeps its command and its place: the
+later step may read what it built.
 
 ### One test binary or several
 
@@ -266,54 +271,6 @@ For every source file the closures name exactly the steps Zig rebuilt. They
 name more only for `build.zig`: the edit added a blank line, the build graph
 came out the same, and Zig rebuilt nothing. Every closure holds `build.zig`
 because another edit to it can change any step.
-
-### Five commits replayed
-
-`smithers-ci replay --commits 5` on needlefish's five commits up to `06d8113`,
-on the same machine with a fixed share of its processors. Its CI is
-`just ci`: `tidy`, then `zig build test`, which runs 3,180 unit tests in one
-test binary and three small ones. Each way first runs once at the commit
-before, which fills its cache and is not counted. No step's result differed
-from CI's.
-
-| Commit    | Changed           |     As CI | As targets | What ran again                         |
-| --------- | ----------------- | --------: | ---------: | -------------------------------------- |
-| `c9950af` | two docs files    |  49.7 min |    0.8 min | nothing                                |
-| `55590ed` | `bin/base`        |  50.8 min |    2.3 min | `test`: Zig rebuilt one binary of four |
-| `a66baf9` | one file in `src` |  48.1 min |   34.3 min | `test`, every binary                   |
-| `2aee274` | one docs file     |  42.1 min |    0.4 min | nothing                                |
-| `06d8113` | 38 files          |  42.5 min |   46.5 min | `test`, every binary                   |
-| Total     |                   | 233.4 min |   84.4 min | 2.76 times faster                      |
-
-`tidy` takes a second and runs every time, because `test` follows it. On the
-second commit the step ran again and Zig, with its cache kept, rebuilt and
-ran only the binary `bin/base` is in. A change under `src` runs all 3,180
-tests again, because one binary holds them: that is what bounds the number.
-
-The same five commits with [a test binary per directory](#one-test-binary-or-several),
-89 lines in `build.zig` and nine root files of five lines, become eleven
-steps:
-
-| Commit    | Changed           |    As CI | As targets | What ran again           |
-| --------- | ----------------- | -------: | ---------: | ------------------------ |
-| `bc48eec` | two docs files    | 22.4 min |    1.0 min | nothing                  |
-| `e4c5840` | `bin/base`        | 20.0 min |    2.3 min | `test-bin`               |
-| `6cfd640` | one file in `src` | 21.7 min |   10.3 min | `test-infra`, `test-bin` |
-| `66f3db9` | one docs file     | 12.6 min |    0.5 min | nothing                  |
-| `2f113ac` | 38 files          | 13.0 min |   13.8 min | all ten test steps       |
-| Total     |                   | 89.8 min |   27.8 min | 3.22 times faster        |
-
-The build is faster before Smithers CI touches it: Zig runs the ten binaries
-at once, so `zig build test` takes 13 to 22 minutes where the one binary took
-42 to 51. The one-file change then runs two test steps of ten.
-
-Both replays count from the cache of the commit before, as a CI run finds it.
-Counted from an empty cache (`--cold`), the first commit costs one more full
-run, which by the time of the uncounted first run gives 1.7 times for both.
-The machine was shared and busy: the same full run of the one binary took
-between 34 and 54 minutes. One test in `bin/base/log_relay.zig` was made to
-skip when the kernel refuses a larger pipe, which that machine does under
-load; nothing else in the repository was changed for the first table.
 
 ## What it cannot see
 

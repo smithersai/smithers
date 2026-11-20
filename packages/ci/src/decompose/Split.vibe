@@ -149,11 +149,12 @@ const replaced = (
     // A step a later step relies on keeps its command and its place: where Zig writes is what that step may read.
     if (relied) return [step]
     // A Zig step names no inputs: its tests write where they start, so it runs in the open and is observed.
-    return Zig.split(step, groups) ?? [Zig.dress(step)]
+    return Zig.split(step, groups) ?? [step]
   }
-  // Zig with a flag, another of its commands, or beside a program this reader does not know: the step keeps Zig's
-  // caches where a fresh checkout still has them. One build whose flags only change the report is still split.
-  if (understood === undefined && !relied && Zig.runs(step)) return Zig.split(step, groups) ?? [Zig.dress(step)]
+  // Zig with a flag, another of its commands, or beside a program this reader does not know stays as written. One
+  // build whose flags only change the report is still split.
+  const builds = understood === undefined && !relied ? Zig.split(step, groups) : undefined
+  if (builds !== undefined) return builds
   const decision = understood === undefined ? { kind: "whole" as const } : decide(step, understood, facts)
   if (decision.kind === "whole") return [step]
   if (decision.kind === "scope") return [{ ...step, inputs: decision.inputs, from: step.id }]

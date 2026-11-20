@@ -1,17 +1,16 @@
-import { cacheDirectoryToken } from "@smthrs/targets/Exec"
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
 import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
-import { toolCache } from "../src/contract/Inventory.ts"
 import { files } from "../src/generate/index.ts"
 import { packagePath, stateDirectory, workflowPath } from "../src/generate/Render.ts"
 
-const step = (id: string, command: string, env: Readonly<Record<string, string>> = {}, cwd = ""): Step => ({
+const step = (id: string, command: string, extra: Partial<Step> = {}): Step => ({
   id,
   command,
-  cwd,
-  env,
-  secrets: []
+  cwd: "",
+  env: {},
+  secrets: [],
+  ...extra
 })
 
 const job = (id: string, steps: ReadonlyArray<Step>): Job => ({
@@ -38,53 +37,59 @@ const generated = (jobs: ReadonlyArray<Job>, path: string): string => {
   return Effect.runSync(files(document as Ci)).find((file) => file.path === path)?.content ?? ""
 }
 
-/** A step that runs Zig, as the splitter writes it: no inputs, and Zig's caches in the tool cache. */
-const zig = step("a:1", "zig build test", {
-  ZIG_GLOBAL_CACHE_DIR: `${toolCache}/zig/global`,
-  ZIG_LOCAL_CACHE_DIR: `${toolCache}/zig/local`
-})
+/** The directories the workflow saves when a job ends and restores at the next. */
+const carried = (workflow: string): ReadonlyArray<string> => {
+  const paths = /uses: actions\/cache@v4\n {8}with:\n {10}path: \|\n((?: {12}.*\n)+)/.exec(workflow)?.[1] ?? ""
+  return paths.split("\n").filter((line) => line !== "").map((line) => line.trim())
+}
 
-describe("a step that keeps a tool's cache", () => {
-  it("has the workflow save the tool cache with the results", () => {
-    expect(generated([job("a", [zig])], workflowPath)).toContain(
-      `          path: |\n            ${stateDirectory}/cache\n            ${stateDirectory}/kept\n            ${stateDirectory}/tools\n`
-    )
-    // A step can name the tool cache itself.
-    expect(generated([job("a", [step("a:1", "true", { CACHE: toolCache })])], workflowPath)).toContain(
-      `            ${stateDirectory}/cache\n            ${stateDirectory}/kept\n            ${stateDirectory}/tools\n`
-    )
-    expect(generated([job("a", [step("a:1", "true", { CACHE: toolCache })])], packagePath)).toContain(
-      `env: {"CACHE":"${toolCache}"}`
-    )
-    // A step that starts under the root names the same directory: it is named whole.
-    const nested = step("a:1", "zig build test", { ZIG_LOCAL_CACHE_DIR: `${toolCache}/zig/local` }, "tools/gen")
-    expect(generated([job("a", [nested])], workflowPath)).toContain(
-      `            ${stateDirectory}/cache\n            ${stateDirectory}/kept\n            ${stateDirectory}/tools\n`
-    )
+/** The steps of a Zig build, as the splitter writes them: the named steps one build ran at the same time. */
+const zig = ["test-a", "test-b"].map((name) =>
+  step(`a:1:${name}`, `zig build ${name}`, { from: "a:1", atOnce: true, shares: [".zig-cache", "~/.cache/zig"] })
+)
+
+describe("what the generated workflow carries from one run to the next", () => {
+  const own = [`${stateDirectory}/cache`, `${stateDirectory}/kept`, `${stateDirectory}/node-compile-cache`]
+
+  it("is Smithers build's own: its records, what each step left, and its compiled code", () => {
+    expect(carried(generated([job("a", [step("a:1", "npm test")])], workflowPath))).toEqual(own)
   })
 
-  it("leaves the workflow as it was for every other step", () => {
-    const plain = generated([job("a", [step("a:1", "true", { CACHE: `${toolCache}-other`, CI: "1" })])], workflowPath)
-    expect(plain).toContain(`            ${stateDirectory}/cache\n`)
-    expect(plain).not.toContain(`${stateDirectory}/tools`)
-    // A value that only starts like the tool cache is the step's own and stays as written.
-    expect(generated([job("a", [step("a:1", "true", { CACHE: `${toolCache}-other`, CI: "1" })])], packagePath))
-      .toContain(`env: {"CACHE":"${toolCache}-other","CI":"1"}`)
+  it("holds no cache of a tool a step starts, whatever the step runs", () => {
+    for (
+      const steps of [
+        zig,
+        [step("a:1", "zig build test --summary all", { cwd: "tools/gen" })],
+        [step("a:1", "go vet ./... && go test -race ./...")],
+        [step("a:1", "cargo test --locked"), step("a:2", "pnpm install --frozen-lockfile")],
+        // A step that sets where its tool keeps a cache keeps its own value, and the workflow carries no more.
+        [step("a:1", "zig build test", { env: { ZIG_LOCAL_CACHE_DIR: "/mnt/cache/zig" } })]
+      ]
+    ) {
+      const workflow = generated([job("a", steps)], workflowPath)
+      expect([steps.map((one) => one.command), carried(workflow)]).toEqual([steps.map((one) => one.command), own])
+      // No step is told to keep a tool's cache in the directory the workflow carries.
+      const source = generated([job("a", steps)], packagePath)
+      for (const name of ["GOCACHE", "GOMODCACHE", "GOFLAGS", "CARGO_HOME", "npm_config_cache", "XDG_CACHE_HOME"]) {
+        expect([name, source.includes(name)]).toEqual([name, false])
+      }
+      expect(source).not.toContain("{smthrs:cache-directory}/tools")
+      expect(source).toContain(`cache: S.Cache({ directory: ".flows", outside: true, goBuild: false })`)
+    }
+    // The one Zig variable in a generated file is the one the step set itself.
+    const set = generated([
+      job("a", [step("a:1", "zig build test", { env: { ZIG_LOCAL_CACHE_DIR: "/mnt/cache/zig" } })])
+    ], packagePath)
+    expect(set).toContain(`env: {"ZIG_LOCAL_CACHE_DIR":"/mnt/cache/zig"}`)
+    expect(generated([job("a", zig)], packagePath)).not.toContain("ZIG_")
   })
 
-  it("runs the step in the open and observed, with the tool told where its cache is", () => {
-    const source = generated([job("a", [zig])], packagePath)
+  it("runs a Zig step in the open and observed, with Zig's caches where Zig puts them", () => {
+    const source = generated([job("a", [step("a:1", "zig build test")])], packagePath)
     // Nobody names what a Zig build reads: it runs again only when a file its last run read has changed.
     expect(source).toContain(`shell: "bash -e -c 'zig build test'"`)
-    // The tool's cache is in Smithers build's cache directory, outside the checkout: Smithers build fills in where
-    // that is when the step starts, and a key holds the text, never the directory. A GitHub job runs in a copy of
-    // the checkout, and is given the same directory there.
-    expect(toolCache).toBe(`${cacheDirectoryToken}/tools`)
-    expect(source).toContain(
-      `env: {"ZIG_GLOBAL_CACHE_DIR":"{smthrs:cache-directory}/tools/zig/global","ZIG_LOCAL_CACHE_DIR":"{smthrs:cache-directory}/tools/zig/local"}`
-    )
-    expect(source).toContain(`cache: S.Cache({ directory: ".flows", outside: true, goBuild: false })`)
     expect(source).toContain(`sandbox: "none"`)
     expect(source).toMatch(/observe: \{ ignore: \[.*\] \}/)
+    expect(source).not.toContain("env:")
   })
 })

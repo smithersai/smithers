@@ -49,6 +49,13 @@ export type Source = typeof Source.Type
  * groups. Steps with the same `from` and `atOnce` may run at once though
  * each can write the tree: the command they came from already ran them so.
  *
+ * `shares` names the directories such steps write at the same time, as the
+ * named steps of one `zig build` write Zig's two caches: a path from the
+ * repository root, or `~/...` for one in the step's home. What a step reads
+ * and writes there is left out of what it is seen to read: a step beside it
+ * changes those files while it runs. The directories are the job's own,
+ * where its tool puts them, and are kept for no later run.
+ *
  * `inOrder` marks a step split from a command that ran its parts one after
  * another and stopped at the first that failed, as a script that is
  * `npm run lint && npm run test` does. Steps with the same `from` and
@@ -94,6 +101,7 @@ export const Step = Schema.Struct({
   outputs: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   from: Schema.optionalKey(Schema.NonEmptyString),
   atOnce: Schema.optionalKey(Schema.Boolean),
+  shares: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   inOrder: Schema.optionalKey(Schema.Boolean),
   whole: Schema.optionalKey(Schema.Struct({ feature: Schema.NonEmptyString, detail: Schema.String })),
   withheld: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
@@ -254,23 +262,6 @@ export type Inventory = typeof Inventory.Type
  * @since 0.1.0
  */
 export const shell = ["bash", "-e", "-c"] as const
-
-/**
- * Where a tool a step starts keeps its own cache between runs: a directory
- * inside Smithers build's cache directory, which is outside the checkout. It
- * starts with the text Smithers build replaces, in a target's `env`, with
- * that directory when the step starts (`cacheDirectoryToken` of
- * `@smthrs/targets/Exec`), so a key holds the text and never the place. A
- * step names a directory under it in its `env`, such as
- * `ZIG_LOCAL_CACHE_DIR`. The generated workflow saves it with the results
- * and a replay keeps it between commits. What a step reads and writes there
- * is left out of what an observed step read, so the tool's own cache never
- * makes the step run again.
- *
- * @category constants
- * @since 0.1.0
- */
-export const toolCache = "{smthrs:cache-directory}/tools"
 
 /**
  * The variable that tells a baseline step where files are kept from one run to

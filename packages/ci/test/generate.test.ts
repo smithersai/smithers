@@ -882,29 +882,42 @@ describe("the /tmp of a job in the workflow", () => {
   })
 })
 
-describe("a step that keeps a tool's own cache", () => {
-  // The tool cache is named whole, from Smithers build's own cache directory, which is outside every checkout.
-  const zig = (cwd: string): Step =>
-    step("z:1", "zig build test", {
-      cwd,
-      env: {
-        ZIG_LOCAL_CACHE_DIR: "{smthrs:cache-directory}/tools/zig/local",
-        MODE: "../release",
-        OTHER: ".flows/toolsmith"
-      }
-    })
-  const env =
-    `env: {"MODE":"../release","OTHER":".flows/toolsmith","ZIG_LOCAL_CACHE_DIR":"{smthrs:cache-directory}/tools/zig/local"}`
+describe("a tool's own cache", () => {
+  const split = (name: string): Step =>
+    step(`z:1:${name}`, `zig build ${name}`, { from: "z:1", atOnce: true, shares: [".zig-cache", "~/.cache/zig"] })
+  const whole = step("z:1", "zig build test", { env: { MODE: "../release" } })
 
-  it("gives a job on a machine and a recipe in the repository the same tool cache, with every variable as written", () => {
-    // A GitHub job runs in a copy of the checkout that goes when the run ends: the cache is not in it.
-    const source = targetsOf(inventory([job("z", [zig("project")])]))
-    expect(declaration(source, "z-1")).toContain(`machine: "z"`)
-    expect(declaration(source, "z-1")).toContain(env)
-    // A recipe of a Justfile runs in the repository itself: the cache is not in that checkout either.
-    const tree = targetsOf(inventory([job("z", [zig("")], { source: "justfile", file: "Justfile" })]))
+  it("is left where the tool puts it: no target is told where to keep one", () => {
+    // A GitHub job runs on a machine of its own, and a recipe of a Justfile in the repository itself. Either way the
+    // step's variables are the step's own, and nothing in them names Smithers build's cache directory.
+    const machine = targetsOf(inventory([job("z", [whole])]))
+    expect(declaration(machine, "z-1")).toContain(`machine: "z"`)
+    expect(declaration(machine, "z-1")).toContain(`env: {"MODE":"../release"}`)
+    const tree = targetsOf(inventory([job("z", [whole], { source: "justfile", file: "Justfile" })]))
     expect(declaration(tree, "z-1")).not.toContain("machine")
-    expect(declaration(tree, "z-1")).toContain(env)
+    expect(declaration(tree, "z-1")).toContain(`env: {"MODE":"../release"}`)
+    for (const source of [machine, tree]) {
+      expect(source).not.toContain("ZIG_")
+      expect(source).not.toContain("GOCACHE")
+      expect(source).not.toContain("{smthrs:cache-directory}/tools")
+    }
+    // The workspace leaves `go` its own cache too.
+    expect(machine).toContain(`cache: S.Cache({ directory: ".flows", outside: true, goBuild: false })`)
+  })
+
+  it("is left out of what a step is seen to read where the steps beside it write it at the same time", () => {
+    const source = targetsOf(
+      inventory([job("z", [split("test-a"), split("test-b")], { source: "justfile", file: "Justfile" })])
+    )
+    for (const label of ["z-1-test-a", "z-1-test-b"]) {
+      expect(declaration(source, label)).toContain(
+        `observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache","~/.config/go/telemetry",".zig-cache","~/.cache/zig"] }`
+      )
+    }
+    // A step that runs alone reads only what it made there itself, which is no input of it: nothing more is left out.
+    expect(declaration(targetsOf(inventory([job("z", [whole])])), "z-1")).toContain(
+      `observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache","~/.config/go/telemetry"]`
+    )
   })
 })
 

@@ -28,7 +28,7 @@ the step whole.
 | `npm run <script> --workspaces`, `--workspace <name>`                  | One `npm run <script> --workspace=<package>…` per package                |
 | A root script that is one of the commands above, as `pnpm test`        | The same, from the root script's own command and the words the step adds |
 | One package's script, as `bun run --cwd packages/core test`            | The same command, with its inputs named                                  |
-| A command that starts `zig`                                            | The same command, told to keep Zig's cache between runs                  |
+| A command that starts `zig`                                            | The same command, run in the open with what it reads recorded            |
 | `zig build <step>` alone, where the build step only groups named steps | One `zig build <name>` per named step, with the step's report flags      |
 | `npm run <script>`, where the script is `npm run a && npm run b`       | One step per script the chain runs, in order                             |
 
@@ -329,16 +329,19 @@ given to each of them: `zig build test --summary all` becomes
 keeps the step whole: `-Doptimize=ReleaseSafe` changes what is built, and a
 build can name other steps for it.
 
-A Zig step keeps Zig's two caches with Smithers CI's own, outside your
-checkout (see [Where the cache is on a machine](cache.md#where-the-cache-is-on-a-machine)).
-They last from one run to the next, and the generated workflow saves them with
-the results: a
-step that does run again compiles and reruns only the binaries the change
-reaches, by Zig's own rules. What Zig reads and writes in its cache is left
-out of the step's record.
+Zig keeps two caches: `.zig-cache` beside `build.zig`, and one in the home
+directory. A Zig step is told nothing about them. Both are where Zig puts
+them, in the step's own job: empty when the job starts and gone when it ends,
+as on a runner. A step that runs so compiles and tests everything it names.
 
-Every step that starts `zig` keeps its caches there, whatever else the step
-does:
+Smithers CI keeps neither cache for a later run, because Zig would answer
+from it. Zig runs a test binary again only when the binary changed, and does
+not see what a test reads when it runs. With the cache of an earlier run, a
+test whose data file changed would pass without running.
+
+What a step's own run wrote in the two caches is not among the files it read.
+A fresh checkout has neither cache, and the step is still reused there while
+the files it read are unchanged:
 
 ```text
 zig build test --summary all            a flag
@@ -347,16 +350,16 @@ make deps && zig build test             beside another program
 working-directory: tools/gen            a project in a directory under the root
 ```
 
-Zig's usual cache is `.zig-cache` beside `build.zig`. A step reads it, and a
-fresh checkout does not have it, so with the cache left there the step would
-run again on every CI run. A step that starts in `tools/gen` is given the
-same cache directory as a step at the root. Three
-steps keep Zig's usual place: one that changes directory with `cd` or starts
-outside the repository; one whose command names `.zig-cache`; and one whose
-shell holds a loop, a subshell or a program named by a variable.
+The named steps of one `zig build` run at the same time and write both caches
+at the same time. What each of them reads and writes there is left out of its
+record: a step beside it changes those files while it runs. The source files
+stay in it. A step that finds a library in the cache, compiled by the step
+beside it, still opened the library's source, because Zig checks a cached
+result against every file it was built from. A change to that source runs
+both steps again.
 
-A Zig step that a later step follows keeps its command as it is, and Zig
-keeps its cache where it always does: the later step may read what it built.
+A Zig step that a later step follows keeps its command as it is: the later
+step may read what it built.
 
 ## One cost
 

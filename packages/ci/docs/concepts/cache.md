@@ -22,6 +22,14 @@ it read is unchanged. The generated workflow carries those results from one
 run to the next with `actions/cache`. It carries the compiled code of Smithers
 build the same way, so each run starts sooner than the first.
 
+With each such result it carries what the step left for the steps after it,
+in its job's checkout and home. When a later step of the job has to run and
+this one is reused, those files are put back and the later step finds what it
+would have found on a runner. A step's own files are never put back for the
+step itself. They include what a tool wrote in its own cache while the step
+ran: a step that runs `go test` in a Go module with no dependencies leaves
+about 58 MB, most of it the standard library `go` compiled.
+
 The cache never holds:
 
 - **A failed step.** It runs again.
@@ -29,6 +37,12 @@ The cache never holds:
   reported as skipped and never becomes a cache hit.
 - **A secret's value.** Smithers CI records the secrets a CI step uses by name
   only.
+- **A tool's own cache.** Go, Zig, npm and Cargo each keep a cache in the home
+  directory or beside the build file. Each stays where its tool puts it, in
+  the step's own job: empty when the job starts and gone when it ends, as on
+  a runner. A step that runs so builds and tests for real. What your CI saves
+  itself, with a cache step or a setup action, is there at the next run, as on
+  GitHub: see [Caches](github-actions.md#caches).
 
 ## When a result is reused
 

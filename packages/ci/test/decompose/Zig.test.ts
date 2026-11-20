@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { type Step, toolCache } from "../../src/contract/Inventory.ts"
+import type { Step } from "../../src/contract/Inventory.ts"
 import * as Zig from "../../src/decompose/Zig.ts"
 
 const step = (command: string, extra: Partial<Step> = {}): Step => ({
@@ -90,92 +90,10 @@ describe("Zig.sole", () => {
   })
 })
 
-describe("Zig.runs", () => {
-  it("is true for a step that starts zig in the root, whatever else it runs", () => {
-    for (
-      const command of [
-        "zig build test",
-        "zig build test --summary all",
-        "zig build -Doptimize=ReleaseSafe test",
-        "zig test src/main.zig",
-        "zig fmt --check . && zig build test -Dtest-filter=rlp",
-        "make deps; zig build",
-        "CI=1 zig build test",
-        "zig build test | tee log",
-        "set -euo pipefail\nzig build test --summary all",
-        `bash -c 'set -euo pipefail\nif [ -n "rlp" ]; then zig build test -Dtest-filter="rlp"; else zig build test; fi'`,
-        "zig build test -Doptimize=$MODE"
-      ]
-    ) expect([command, Zig.runs(step(command))]).toEqual([command, true])
-    // The step may start in the root under another spelling, or in a directory under it.
-    for (const cwd of [".", "./", "tools/gen", "./tools/gen/"]) {
-      expect([cwd, Zig.runs(step("zig build test --summary all", { cwd }))]).toEqual([cwd, true])
-    }
-  })
-
-  it("is false when no command is zig", () => {
-    for (
-      const command of [
-        "cargo test",
-        "echo zig build test",
-        "./zig-out/bin/app --version",
-        "CI=1",
-        "bash -c 'npm test'"
-      ]
-    ) expect([command, Zig.runs(step(command))]).toEqual([command, false])
-  })
-
-  it("is false when where Zig starts cannot be named from the root", () => {
-    for (const cwd of ["/opt/project", "~/project", "../sibling", "tools/../..", "${{ matrix.directory }}", "$DIR"]) {
-      expect([cwd, Zig.runs(step("zig build test --summary all", { cwd }))]).toEqual([cwd, false])
-    }
-    expect(Zig.runs(step("cd tools/gen && zig build test"))).toBe(false)
-    expect(Zig.runs(step("pushd tools/gen; zig build; popd"))).toBe(false)
-    expect(Zig.runs(step("bash -c 'cd tools/gen && zig build test'"))).toBe(false)
-  })
-
-  it("is false when the step names Zig's cache, which it expects beside build.zig", () => {
-    expect(Zig.runs(step("zig build test --summary all && ls .zig-cache/o"))).toBe(false)
-    expect(Zig.runs(step("zig build --cache-dir .zig-cache test"))).toBe(false)
-  })
-
-  it("is false when a program is named by a variable, or the shell is more than is read", () => {
-    expect(Zig.runs(step("$ZIG build test"))).toBe(false)
-    expect(Zig.runs(step("zig build test; $AFTER"))).toBe(false)
-    expect(Zig.runs(step("for mode in Debug ReleaseSafe; do zig build test -Doptimize=$mode; done"))).toBe(false)
-    expect(Zig.runs(step("bash -c 'zig build $(cat step)'"))).toBe(false)
-  })
-})
-
-describe("Zig.dress", () => {
-  it("keeps both of Zig's caches in the tool cache, and names no inputs", () => {
-    const dressed = Zig.dress(step("zig build test"))
-    expect(dressed).toEqual({
-      ...step("zig build test"),
-      env: { ZIG_GLOBAL_CACHE_DIR: `${toolCache}/zig/global`, ZIG_LOCAL_CACHE_DIR: `${toolCache}/zig/local` }
-    })
-  })
-
-  it("gives a step that starts under the root the same directories: each is named whole, outside the checkout", () => {
-    expect(Zig.dress(step("zig build test", { cwd: "tools/gen" })).env).toEqual(Zig.environment)
-    expect(Zig.dress(step("zig build test", { cwd: "./project/" })).env).toEqual(Zig.environment)
-    expect(Zig.dress(step("zig build test", { cwd: "$DIR" })).env).toEqual(Zig.environment)
-  })
-
-  it("keeps what the step already sets", () => {
-    const dressed = Zig.dress(step("zig build test", { env: { ZIG_LOCAL_CACHE_DIR: "mine", CI: "1" } }))
-    expect(dressed.env).toEqual({
-      CI: "1",
-      ZIG_GLOBAL_CACHE_DIR: `${toolCache}/zig/global`,
-      ZIG_LOCAL_CACHE_DIR: "mine"
-    })
-  })
-})
-
 describe("Zig.split", () => {
   const groups = new Map([["test", ["test-core", "test cli"]], ["check", ["check-a"]], ["docs", []]])
 
-  it("makes one step per named step, each with Zig's caches, no inputs and leave to run beside the others", () => {
+  it("makes one step per named step, each with the step's own variables, no inputs and leave to run beside the others", () => {
     const parts = Zig.split(step("set -e\nzig build test", { name: "Test", env: { CI: "1" } }), groups)
     expect(parts).toEqual([
       {
@@ -183,11 +101,13 @@ describe("Zig.split", () => {
         command: "zig build test-core",
         name: "Test (test-core)",
         cwd: "",
-        env: { CI: "1", ...Zig.environment },
+        env: { CI: "1" },
         secrets: [],
         from: "justfile:test:1",
-        // One build ran the named steps at the same time, so the steps still may.
-        atOnce: true
+        // One build ran the named steps at the same time, so the steps still may. They write Zig's two caches at
+        // the same time too.
+        atOnce: true,
+        shares: [".zig-cache", "~/.cache/zig"]
       },
       {
         id: "justfile:test:1:test cli",
@@ -195,13 +115,17 @@ describe("Zig.split", () => {
         command: "zig build 'test cli'",
         name: "Test (test cli)",
         cwd: "",
-        env: { CI: "1", ...Zig.environment },
+        env: { CI: "1" },
         secrets: [],
         from: "justfile:test:1",
-        // One build ran the named steps at the same time, so the steps still may.
-        atOnce: true
+        // One build ran the named steps at the same time, so the steps still may. They write Zig's two caches at
+        // the same time too.
+        atOnce: true,
+        shares: [".zig-cache", "~/.cache/zig"]
       }
     ])
+    // Zig is told nothing of where its caches go: they are beside `build.zig` and in the job's home, as on a runner.
+    expect(Zig.split(step("zig build test"), groups)?.map((part) => part.env)).toEqual([{}, {}])
     // A step with no name of its own gets none.
     expect(Zig.split(step("zig build test"), groups)?.map((part) => "name" in part)).toEqual([false, false])
   })

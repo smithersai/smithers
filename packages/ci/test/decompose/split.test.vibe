@@ -7,7 +7,6 @@ import { WebCrypto } from "@smthrs/crypto"
 import { type Ci, ci as ciOf, Inventory, type Job, type Step } from "../../src/contract/Inventory.ts"
 import { combine, type Verdict } from "../../src/contract/RunRecord.ts"
 import { split, splitWith } from "../../src/decompose/index.ts"
-import * as ZigSteps from "../../src/decompose/Zig.ts"
 
 effect function run(root: string, command: string, args: ReadonlyArray<string>) {
   const spawner = try ChildProcessSpawner
@@ -97,6 +96,9 @@ const pnpmWorkspace = {
 }
 
 const pnpmOutside = ["*", "packages/*", "scripts/**", "tools/**"]
+
+/** Zig's two caches, as the steps one `zig build` ran at once name them. */
+const zigCaches = [".zig-cache", "~/.cache/zig"]
 
 it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
   it.effect("splits a pnpm run into one step per package that has the task, and leaves the rest whole", () =>
@@ -495,7 +497,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       }
     })
 
-  it.effect("gives a step that runs a Zig build Zig's caches and no inputs", () =>
+  it.effect("leaves a step that runs a Zig build its command, its own variables and no inputs", () =>
     effect {
       const root = try repository({ "build.zig": "", "src/main.zig": "", "Justfile": "test:\n  zig build test\n" })
       // Each recipe is its own job, so none follows another.
@@ -508,15 +510,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       try Effect.try(() => {
         expect(stepsOf(after)).toEqual([
           // The command is kept and no input is named: Zig's tests write where they start, so the step is observed.
-          { ...stepsOf(before)[0], env: ZigSteps.environment },
-          { ...stepsOf(before)[1], env: { ...ZigSteps.environment, ZIG_LOCAL_CACHE_DIR: "mine" } },
+          // Zig is told nothing of its caches: they are in the job's own checkout and home, as on a runner.
+          stepsOf(before)[0],
+          // What a step sets itself is the step's.
+          stepsOf(before)[1],
           // A program nobody recognizes stays as it was.
           stepsOf(before)[2]
         ])
       })
     })
 
-  it.effect("gives a step that starts Zig with a flag, or beside another program, Zig's caches and nothing else", () =>
+  it.effect("leaves a step that starts Zig with a flag, or beside another program, as it was written", () =>
     effect {
       const root = try repository({ "build.zig": "", "src/main.zig": "" })
       const before = separately([
@@ -528,12 +532,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       const after = try splitWith()(root, before)
       try Effect.try(() => {
         expect(stepsOf(after)).toEqual([
-          // Left beside build.zig, Zig's cache is a file the step read that a fresh checkout does not have.
-          { ...stepsOf(before)[0], env: ZigSteps.environment },
-          { ...stepsOf(before)[1], env: ZigSteps.environment },
-          // Zig starts two directories down. The tool cache is named whole, so it is the same one from there.
-          { ...stepsOf(before)[2], env: ZigSteps.environment },
-          // Zig starts outside the repository: the step stays as it was.
+          stepsOf(before)[0],
+          stepsOf(before)[1],
+          // Zig starts two directories down, or outside the repository.
+          stepsOf(before)[2],
           stepsOf(before)[3]
         ])
       })
@@ -541,7 +543,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       const steps = [step("s:1", "zig build --summary all"), step("s:2", "zig build test --summary all")]
       const together = try splitWith()(root, ci(steps))
       try Effect.try(() => {
-        expect(stepsOf(together)).toEqual([steps[0], { ...steps[1], env: ZigSteps.environment }])
+        expect(stepsOf(together)).toEqual(steps)
       })
     })
 
@@ -582,15 +584,19 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
           ["ci.yml:safe:1", "zig build test -Doptimize=ReleaseSafe", undefined, undefined],
           ["ci.yml:gen:1", "zig build test", undefined, undefined]
         ])
-        expect(stepsOf(after)[0]).toMatchObject({ name: "test (test-core)", env: ZigSteps.environment })
+        expect(stepsOf(after)[0]).toMatchObject({ name: "test (test-core)", env: {} })
         // Only the steps one build ran at the same time say so.
         expect(stepsOf(after).map((found) => found.atOnce)).toEqual(
           [true, true, undefined, undefined, undefined, true, true, undefined, undefined]
         )
-        for (const found of stepsOf(after).slice(0, 8)) expect(found.env).toEqual(ZigSteps.environment)
+        // No step is told where Zig keeps its caches. The steps one build ran at once name them as what they share.
+        for (const found of stepsOf(after)) expect(found.env).toEqual({})
+        expect(stepsOf(after).map((found) => found.shares)).toEqual(
+          [zigCaches, zigCaches, undefined, undefined, undefined, zigCaches, zigCaches, undefined, undefined]
+        )
       })
       // Without the groups, or when reading them fails, the step keeps its command.
-      const kept = [["justfile:test:1", "set -euo pipefail\nzig build test", ZigSteps.environment]]
+      const kept = [["justfile:test:1", "set -euo pipefail\nzig build test", {}]]
       const failing = () => fail({ code: "command-failed" as const, message: "zig is not installed", part: "closure" as const })
       const ungrouped = try splitWith()(root, before)
       const failed = try splitWith({ zigGroups: failing })(root, before)
@@ -619,8 +625,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
       try Effect.try(() => {
         expect(stepsOf(after)).toEqual([
           stepsOf(before)[0],
-          // A later step follows it and may read what it built: it keeps its command, and Zig keeps its cache
-          // where it always does.
+          // A later step follows it and may read what it built: it keeps its command.
           stepsOf(before)[1],
           stepsOf(before)[2],
           // The last step is only a Zig build: one step per named step, whatever ran before it.
@@ -630,14 +635,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, WebCrypto.layer))("split", (it) => {
             command: `zig build ${name}`,
             from: "s:4",
             atOnce: true,
-            env: ZigSteps.environment
+            shares: [".zig-cache", "~/.cache/zig"]
           }))
         ])
       })
       // The same steps each in a job of its own: a step that also runs a script keeps its command too.
       const apart = try splitWith({ zigGroups: groups })(root, separately([step("m:1", "pnpm -r run test && zig build check")]))
       try Effect.try(() => {
-        expect(stepsOf(apart)).toEqual([step("m:1", "pnpm -r run test && zig build check", { env: ZigSteps.environment })])
+        expect(stepsOf(apart)).toEqual([step("m:1", "pnpm -r run test && zig build check")])
       })
     })
 

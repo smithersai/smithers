@@ -19,35 +19,20 @@
  * all`, is given to each of them; any other flag keeps the step whole.
  *
  * Zig writes a cache beside `build.zig` and another in the home directory.
- * The step is told to keep both in the tool cache. There they last from one
- * run to the next, so a step that does run again compiles and reruns only
- * what the change reaches, by Zig's own rules; and they stay out of what the
- * step is seen to read, so Zig's cache never makes it run again.
- *
- * That holds for every step that starts `zig`, whatever else is in it:
- * `zig build test --summary all`, `zig test src/main.zig`, a build after
- * another command, a build in a directory under the root. Left beside
- * `build.zig`, the cache is a file the step read that a fresh checkout does
- * not have, and the step would run again on every one.
+ * A step is told nothing about either: both are where Zig puts them, in the
+ * job's own checkout and home, empty when the job starts and gone when it
+ * ends, as on a runner. Zig reruns a test binary only when the binary
+ * changed, and does not see what a test reads when it runs: from a cache
+ * that outlived the job it would pass a test whose file had changed. What a
+ * step's own run made in the two caches is its own product and no input of
+ * the step, so a fresh checkout without them is no reason to run it again.
  *
  * @since 0.1.0
  */
 
-import { type Step, toolCache } from "../contract/Inventory.ts"
+import type { Step } from "../contract/Inventory.ts"
 import { innerScript } from "./Plan.ts"
 import { type Command, commands, quote } from "./Shell.ts"
-
-/**
- * Where a Zig step keeps the caches Zig would write beside `build.zig` and
- * in the home directory.
- *
- * @category constants
- * @since 0.1.0
- */
-export const environment: Readonly<Record<string, string>> = {
-  ZIG_GLOBAL_CACHE_DIR: `${toolCache}/zig/global`,
-  ZIG_LOCAL_CACHE_DIR: `${toolCache}/zig/local`
-}
 
 const plain = (command: Command): boolean =>
   (command.joint === "first" || command.joint === ";") && !command.piped && !command.background && !command.conditional
@@ -150,66 +135,25 @@ const depth = (cwd: string): number | undefined => {
  */
 export const atRoot = (step: Step): boolean => depth(step.cwd) === 0
 
-/** Commands after which a path that does not start at `/` names another place. */
-const moves: ReadonlySet<string> = new Set(["cd", "pushd", "popd"])
-
-/** The program of every command a script can run, or `undefined` when one of them cannot be told. */
-const programs = (list: ReadonlyArray<Command> | undefined): ReadonlyArray<string> | undefined => {
-  if (list === undefined) return undefined
-  const found: Array<string> = []
-  for (const command of list) {
-    const head = command.words[0]
-    // Only variables are set: no program starts.
-    if (head === undefined) continue
-    const script = innerScript(command)
-    const inner = script === undefined ? [head.text] : programs(commands(script))
-    // A program named by a variable could be `zig`, or `cd`.
-    if (inner === undefined || !head.literal) return undefined
-    found.push(...inner)
-  }
-  return found
-}
-
 /**
- * True when the step starts `zig` in a directory this reader can name from
- * the repository's root: one of its commands is `zig`, alone or beside
- * others, straight or inside a `bash -c`.
+ * Where Zig keeps its two caches for a build in the repository's root, as
+ * `Step.shares` names a directory: the one beside `build.zig`, and the one
+ * in the home directory. The named steps of one `zig build` write both at
+ * the same time.
  *
- * False when the step changes directory or starts outside the repository,
- * where this reader cannot say which project Zig builds; when it names Zig's
- * cache itself, which it then expects beside `build.zig`; and when its shell
- * is more than this reader reads.
- *
- * @throws {never}
- * @category reading
+ * @category constants
  * @since 0.1.0
  */
-export const runs = (step: Step): boolean => {
-  if (depth(step.cwd) === undefined || step.command.includes("zig-cache")) return false
-  const started = programs(commands(step.command))
-  return started !== undefined && started.includes("zig") && !started.some((program) => moves.has(program))
-}
-
-/**
- * A step that runs Zig, told where Zig keeps its caches. The tool cache is in
- * Smithers build's cache directory, outside the checkout, and each directory
- * is named whole, so a step that starts in a directory under the root is
- * given the same ones as a step at the root.
- * What the step already sets wins. The step names no inputs: it is observed.
- *
- * @throws {never}
- * @category planning
- * @since 0.1.0
- */
-export const dress = (step: Step): Step => ({ ...step, env: { ...environment, ...step.env } })
+export const caches: ReadonlyArray<string> = [".zig-cache", "~/.cache/zig"]
 
 /**
  * The steps a CI step becomes when it is nothing but `zig build <step>` in
  * the repository's root and that build step only groups named steps: one
  * `zig build <name>` per named step, with the flags the step gave, each
- * marked `atOnce`, as one build runs them. `undefined` when the command is
- * more than that, the step starts elsewhere, or the build step groups fewer
- * than two.
+ * marked `atOnce`, as one build runs them, and each naming Zig's
+ * {@link caches} as what they share. `undefined` when the command is more
+ * than that, the step starts elsewhere, or the build step groups fewer than
+ * two.
  *
  * @param step - The CI step.
  * @param groups - The named steps each build step of the root's build groups.
@@ -225,14 +169,13 @@ export const split = (
   const names = build === undefined ? [] : groups.get(build.step) ?? []
   if (build === undefined || names.length < 2) return undefined
   const flags = build.flags.map((flag) => ` ${quote(flag)}`).join("")
-  return names.map((name) =>
-    dress({
-      ...step,
-      id: `${step.id}:${name}`,
-      command: `zig build ${quote(name)}${flags}`,
-      ...(step.name === undefined ? {} : { name: `${step.name} (${name})` }),
-      from: step.id,
-      atOnce: true
-    })
-  )
+  return names.map((name) => ({
+    ...step,
+    id: `${step.id}:${name}`,
+    command: `zig build ${quote(name)}${flags}`,
+    ...(step.name === undefined ? {} : { name: `${step.name} (${name})` }),
+    from: step.id,
+    atOnce: true,
+    shares: caches
+  }))
 }

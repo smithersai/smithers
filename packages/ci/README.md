@@ -22,6 +22,12 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Nineteenth round, 2026-11-19.** A tool of a job keeps no cache that outlives the run of its job (`sci-tool-cache`).
+
+- **`Step.shares`** (added, optional, 2026-11-19): the directories the steps split from one command write at the same
+  time, as the named steps of one `zig build` write Zig's two caches. A generated target leaves them out of what its
+  run is seen to read. `Inventory.toolCache` is removed in the same round (fourteenth round, below).
+
 **Nineteenth round, 2026-11-19.** A replay always ends with a listed exit code and a line (`sci-exit-13`). No
 contract changed.
 
@@ -136,9 +142,7 @@ changed.
 
 - **`Command.applyIgnores` is empty.** `apply` adds no line to `.gitignore`: Smithers build keeps its cache outside
   the checkout, so there is nothing to ignore. `apply --check` no longer names `.gitignore`.
-- **`Inventory.toolCache` is `{smthrs:cache-directory}/tools`.** A tool's own cache is a directory of Smithers build's
-  cache directory, outside the checkout. The value starts with the text Smithers build replaces, in a target's `env`,
-  with that directory when the step starts; a key holds the text, never the place.
+- **`Inventory.toolCache` is removed (2026-11-19): a tool of a job keeps no cache that outlives the run of its job.**
 - **`Command.declarationOf(files)`** (added): the generated file Smithers build reads as the workspace declaration,
   the written one at a place of `applyRefuses`. A replay writes that one file beside its copy of the repository and
   names it to Smithers build (`--workspace-file`). No other generated file is written in a replay.
@@ -402,9 +406,6 @@ and none removes):
 
 **2026-11-18, eleventh round** (the needlefish lane, for a step that runs `zig build`):
 
-- `Inventory.toolCache` (`.flows/tools`): where a tool a step starts keeps its own cache between runs. A step names
-  a directory under it in its `env`; the generated workflow then saves it with the results. What a step reads and
-  writes there is no part of what an observed step read.
 - `Step.tools` and `Step.sealed`, added earlier the same day, are gone. They held a Zig build to its closure; Zig's
   tests write where they start, so a Zig step names no inputs and is observed.
 - `Parts.Decompose` no longer takes the Zig closures: `splitWith({ zigGroups })` reads only the named steps a build

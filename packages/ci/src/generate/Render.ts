@@ -6,7 +6,7 @@
  */
 
 import * as Result from "effect/Result"
-import { commitQuestion, type Inventory, stepTimeoutHours, toolCache, type Toolchain } from "../contract/Inventory.ts"
+import { commitQuestion, type Inventory, stepTimeoutHours, type Toolchain } from "../contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.ts"
 import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.ts"
 import { variantKey } from "./Expressions.ts"
@@ -234,9 +234,11 @@ const given = (target: StepTarget): string =>
 // What an observed target asks Smithers build to record. The variables a run gives are passed on with their values
 // out of the key: a result holds the value of each one its run could have used, and is reused at another commit
 // when it used none. Where no run gives them, as when a person runs the targets, the runner text asks git, and
-// what that git reads is none of the step's (`Inventory.commitQuestion`).
+// what that git reads is none of the step's (`Inventory.commitQuestion`). What the target writes at the same time
+// as the targets beside it (`Step.shares`) is left out with the bookkeeping: one of them changes it while another
+// runs, and a run stores nothing over a file somebody else changed.
 const observation = (target: StepTarget): string =>
-  `observe: { ignore: ${JSON.stringify(bookkeeping)}${
+  `observe: { ignore: ${JSON.stringify([...bookkeeping, ...target.shares])}${
     target.runEnv.length === 0
       ? ""
       : `, env: ${JSON.stringify(target.runEnv)}, quiet: ${JSON.stringify([commitQuestion])}`
@@ -257,8 +259,6 @@ const renderTarget = (
   const fields = [
     `shell: ${text(target.script)}`,
     ...(build ? outputsOf(target) : target.keeps ? [`cache: false`] : []),
-    // A step that keeps a tool's own cache names a directory under the tool cache, which is named whole, from
-    // Smithers build's own cache directory: the same one on a machine and from any directory a step starts in.
     ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(target.env)}`]),
     ...(inheritEnv.length === 0 ? [] : [`inheritEnv: ${JSON.stringify(inheritEnv)}`]),
     ...(target.host === undefined ? [] : [`hosts: [${text(target.host)}]`]),
@@ -619,12 +619,6 @@ const renderWorkflow = (
   observed: boolean,
   allowDocker: boolean
 ): string => {
-  // A step that keeps a tool's own cache names a directory under the tool cache in its environment. The tool cache
-  // is a directory of Smithers build's cache directory, which the workflow puts in `stateDirectory`: the same
-  // one from whichever directory the step starts in.
-  const keepsTools = plan.targets.some((target) =>
-    Object.values(target.env).some((value) => value === toolCache || value.startsWith(`${toolCache}/`))
-  )
   // The jobs that run on a machine of their own: each has a checkout, a home and a temporary directory.
   const machines = new Set(plan.targets.flatMap((target) => target.machine === undefined ? [] : [target.machine]))
   const apart = plan.legs.length > 0
@@ -638,12 +632,10 @@ const renderWorkflow = (
   const selection = apart
     ? `$(sed -n 's/^\${{ matrix.leg }} //p' ${legsPath})`
     : `'//...'`
-  const kept = [
-    `${stateDirectory}/cache`,
-    `${stateDirectory}/${keptFiles}`,
-    ...(keepsTools ? [`${stateDirectory}/tools`] : []),
-    `${stateDirectory}/${compiledCode}`
-  ]
+  // What the workflow carries from one run to the next is Smithers build's own: its records, what each step left
+  // for the steps after it, and its compiled code. No tool of a step keeps a cache there. A tool's cache is in the
+  // step's own job, where the tool puts it, and is gone with the job, as on the runner of the original CI.
+  const kept = [`${stateDirectory}/cache`, `${stateDirectory}/${keptFiles}`, `${stateDirectory}/${compiledCode}`]
   const matrix = apart
     ? Yaml.entry("include", Yaml.sequence(plan.legs.map((leg) => renderLeg(leg, varying))))
     : Yaml.entry("os", Yaml.list(plan.runners.map(runnerValue)))
