@@ -8,7 +8,7 @@
  */
 import * as Schema from "effect/Schema"
 import { execFileSync } from "node:child_process"
-import { copyFileSync, cpSync, existsSync, mkdirSync, realpathSync, symlinkSync } from "node:fs"
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, realpathSync, symlinkSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { afterAll, expect, it } from "vitest"
 import { exitCodes } from "../../src/contract/Command.ts"
@@ -38,14 +38,19 @@ const install = (home: string): string => {
   return join(prefix, "bin")
 }
 
-/** The system directories, and the sandbox's own program when this machine keeps it elsewhere. */
+/**
+ * The system directories, and a copy of the sandbox's own program when this machine keeps it elsewhere. A copy,
+ * not a link: kept in another home than the temporary one, as `~/.local/bin` holds it, the program a link leads
+ * to is out of a step's sight.
+ */
 const systemPath = (): string => {
   const entries = ["/usr/bin", "/bin"]
   if (process.platform !== "linux") return entries.join(":")
   const bwrap = execFileSync("sh", ["-c", "command -v bwrap"], { encoding: "utf8" }).trim()
   if (bwrap.startsWith("/usr/") || bwrap.startsWith("/bin/")) return entries.join(":")
   const directory = keep(temporary("sandbox"))
-  symlinkSync(bwrap, join(directory, "bwrap"))
+  copyFileSync(realpathSync(bwrap), join(directory, "bwrap"))
+  chmodSync(join(directory, "bwrap"), 0o755)
   return [...entries, directory].join(":")
 }
 
