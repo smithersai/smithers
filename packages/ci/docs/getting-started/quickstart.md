@@ -22,8 +22,8 @@ With no command, `smithers-ci` does four things:
 4. Prints the report.
 
 Smithers CI records the files each CI command reads, so a command runs again
-only when one of them changes. On x86_64 Linux 5.19 or newer it needs
-nothing more. In a Docker container, run it with `--cap-add SYS_PTRACE`:
+only when one of them changes. On x86_64 or aarch64 Linux 5.19 or newer it
+needs nothing more. In a Docker container, run it with `--cap-add SYS_PTRACE`:
 Docker's default profile refuses the recorder a call it needs without that
 capability. On other Linux hosts, or in a container you cannot change, install
 `strace` first (`sudo apt-get install strace`). Where nothing can record, on

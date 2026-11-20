@@ -130,12 +130,20 @@ describe("picking the recorder", () => {
       .toEqual(ObservedReads.command("/usr/bin/strace", "/t/trace", ["true"]))
   })
 
-  it("finds smthrs-observe only on Linux, for x86_64 unless strace is asked for, and for aarch64 when asked for", () => {
+  it("finds smthrs-observe only on Linux, for x86_64 and aarch64 unless strace is asked for", () => {
     expect(ObservedReads.supervisorPath("darwin", "arm64", asked)).toBeUndefined()
     expect(ObservedReads.supervisorPath("linux", "ia32", asked)).toBeUndefined()
     expect(ObservedReads.supervisorPath("linux", "x64", { SMTHRS_OBSERVE_WITH: "strace" })).toBeUndefined()
-    expect(ObservedReads.supervisorPath("linux", "arm64", {})).toBeUndefined()
+    expect(ObservedReads.supervisorPath("linux", "arm64", { SMTHRS_OBSERVE_WITH: "strace" })).toBeUndefined()
   })
+
+  const builtArm64 = Path.resolve(import.meta.dirname, "..", "native", "out", "linux-arm64", "smthrs-observe")
+  it.skipIf(!NodeFs.existsSync(builtArm64))(
+    "records with the one this package built on aarch64 when no recorder is asked for",
+    () => {
+      expect(ObservedReads.supervisorPath("linux", "arm64", {})).toBe(builtArm64)
+    }
+  )
 
   it.skipIf(process.platform !== "linux" || !NodeFs.existsSync(built))("finds the one this package built", () => {
     expect(ObservedReads.supervisorPath("linux", process.arch, asked)).toBe(built)

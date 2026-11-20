@@ -281,9 +281,9 @@ export type Observer =
 
 /**
  * The variable that picks the recorder: `SMTHRS_OBSERVE_WITH=strace` records
- * with strace; `SMTHRS_OBSERVE_WITH=smthrs-observe` records with
- * `smthrs-observe` on aarch64 too. Unset, a build records with
- * `smthrs-observe` on x86_64 Linux where it runs, and with strace elsewhere.
+ * with strace. Unset, or `smthrs-observe`, a build records with
+ * `smthrs-observe` on x86_64 and aarch64 Linux where it runs, and with strace
+ * elsewhere.
  *
  * @category constants
  * @since 1.0.0
@@ -292,10 +292,9 @@ export const recorderVariable = "SMTHRS_OBSERVE_WITH"
 
 /**
  * Where this package holds `smthrs-observe` for this host, built for Linux on
- * x86_64 and aarch64 (`native/out/linux-<arch>/smthrs-observe`): on x86_64
- * unless `SMTHRS_OBSERVE_WITH=strace` asks for strace, on aarch64 only when
- * `SMTHRS_OBSERVE_WITH=smthrs-observe` asks for it; `undefined` on any other
- * host or where the package holds none.
+ * x86_64 and aarch64 (`native/out/linux-<arch>/smthrs-observe`), unless
+ * `SMTHRS_OBSERVE_WITH=strace` asks for strace; `undefined` on any other host
+ * or where the package holds none.
  *
  * @category tracing
  * @since 1.0.0
@@ -306,8 +305,7 @@ export const supervisorPath = (
   environment: { readonly [name: string]: string | undefined } = Environment.ambientEnvironment()
 ): string | undefined => {
   if (platform !== "linux" || (arch !== "x64" && arch !== "arm64")) return undefined
-  const asked = environment[recorderVariable]
-  if (asked === "strace" || (arch === "arm64" && asked !== "smthrs-observe")) return undefined
+  if (environment[recorderVariable] === "strace") return undefined
   // The installed `smthrs` is one file of another package, which has this one installed beside it.
   for (const manifest of [packageOf("@smthrs/build-cli"), packageOf(import.meta.url)]) {
     if (manifest === undefined) continue

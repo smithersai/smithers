@@ -727,14 +727,14 @@ without the tracer. It still runs every time, and its line says why:
 The first run after that day is recorded again, and is stored when it no
 longer reaches outside.
 
-**Hosts.** Observation needs Linux. On x86_64 with Linux 5.19 or newer, a run
-is recorded by `smthrs-observe`, a program this package holds: a system-call
+**Hosts.** Observation needs Linux. On x86_64 and aarch64 with Linux 5.19 or
+newer, a run is recorded by `smthrs-observe`, a program this package holds: a system-call
 filter hands each file-system call to it, only the thread that made the call
 waits while the line is written, and the call then goes on in the kernel. A
 process that sets a signal handler a signal could cut a waiting call short
 through is also traced, so a signal never cuts short a call it would not cut
-short unrecorded. Elsewhere on Linux (aarch64, an older kernel, a host where
-the program cannot listen, a container without `CAP_SYS_PTRACE`, where
+short unrecorded. Elsewhere on Linux (an older kernel, a host where the
+program cannot listen, a container without `CAP_SYS_PTRACE`, where
 Docker's default profile refuses it `pidfd_getfd`) a run is recorded by
 `strace` 5.3 or newer, which stops the traced thread at each file-system call;
 `SMTHRS_OBSERVE_WITH=strace` asks for it anywhere. click's pre-commit hooks,
