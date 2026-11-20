@@ -323,7 +323,7 @@ is traced, and the stored result holds every path it looked at: files, directory
 listings, and paths it did not find. The next run is a cache hit when each of
 them is unchanged, whatever else in `data` changed. `ignore` names paths left
 out of the record. It requires `sandbox: "none"` and cannot be combined with
-`shards` or `services`. It needs Linux with `strace`; on any other host the
+`shards` or `services`. It needs Linux: x86_64 with Linux 5.19 or newer, or `strace`; on any other host the
 target is keyed by its `data`. The build's caching page describes the record,
 what stores nothing, and the hosts. An observed test may
 name another observed test in `data`, as a job's steps follow each other: what

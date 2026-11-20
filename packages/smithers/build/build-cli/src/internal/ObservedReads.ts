@@ -278,9 +278,10 @@ export type Observer =
   | { readonly reason: string }
 
 /**
- * The variable that picks the recorder: `SMTHRS_OBSERVE_WITH=smthrs-observe`
- * records with `smthrs-observe` where it runs; unset, a build records with
- * strace.
+ * The variable that picks the recorder: `SMTHRS_OBSERVE_WITH=strace` records
+ * with strace; `SMTHRS_OBSERVE_WITH=smthrs-observe` records with
+ * `smthrs-observe` on aarch64 too. Unset, a build records with
+ * `smthrs-observe` on x86_64 Linux where it runs, and with strace elsewhere.
  *
  * @category constants
  * @since 1.0.0
@@ -289,9 +290,12 @@ export const recorderVariable = "SMTHRS_OBSERVE_WITH"
 
 /**
  * Where this package holds `smthrs-observe` for this host, built for Linux on
- * x86_64 and aarch64 (`native/out/linux-<arch>/smthrs-observe`), when
- * `SMTHRS_OBSERVE_WITH=smthrs-observe` asks for it; `undefined` on any other
- * host, where the package holds none, or where it is not asked for.
+ * x86_64 and aarch64 (`native/out/linux-<arch>/smthrs-observe`): on x86_64
+ * unless `SMTHRS_OBSERVE_WITH=strace` asks for strace, on aarch64 only when
+ * `SMTHRS_OBSERVE_WITH=smthrs-observe` asks for it (a signal stop there does
+ * not show which call it cut short, so a signal could cut a call short that
+ * it would not unrecorded); `undefined` on any other host or where the
+ * package holds none.
  *
  * @category tracing
  * @since 1.0.0
@@ -302,7 +306,8 @@ export const supervisorPath = (
   environment: { readonly [name: string]: string | undefined } = Environment.ambientEnvironment()
 ): string | undefined => {
   if (platform !== "linux" || (arch !== "x64" && arch !== "arm64")) return undefined
-  if (environment[recorderVariable] !== "smthrs-observe") return undefined
+  const asked = environment[recorderVariable]
+  if (asked === "strace" || (arch === "arm64" && asked !== "smthrs-observe")) return undefined
   // The installed `smthrs` is one file of another package, which has this one installed beside it.
   for (const manifest of [packageOf("@smthrs/build-cli"), packageOf(import.meta.url)]) {
     if (manifest === undefined) continue

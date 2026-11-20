@@ -711,15 +711,25 @@ without the tracer. It still runs every time, and its line says why:
 The first run after that day is recorded again, and is stored when it no
 longer reaches outside.
 
-**Hosts.** Observation needs Linux and `strace` 5.3 or newer. Only file-system
-calls stop the traced process: one lint command that makes 1,000 of them took
-0.1 s longer, and one test file that makes 17,000 took 1.6 s longer, on a
-48-core host at load 50. The run is refused `io_uring`, as it is in a
-container, because a read submitted through a ring is in no trace. A traced
-run ends when its command ends: a process the command left running is stopped a
-second later, as a sandbox stops it. On macOS and
-Windows, without `strace`, or where the host forbids tracing, the target is
-keyed by its `data` as any other `Shell.Test`, and one line says why:
+**Hosts.** Observation needs Linux. On x86_64 with Linux 5.19 or newer, a run
+is recorded by `smthrs-observe`, a program this package holds: a system-call
+filter hands each file-system call to it, only the thread that made the call
+waits while the line is written, and the call then goes on in the kernel. A
+process that sets a signal handler a signal could cut a waiting call short
+through is also traced, so a signal never cuts short a call it would not cut
+short unrecorded. Elsewhere on Linux (aarch64, an older kernel, a host where
+the program cannot listen) a run is recorded by `strace` 5.3 or newer, which
+stops the traced thread at each file-system call;
+`SMTHRS_OBSERVE_WITH=strace` asks for it anywhere. click's pre-commit hooks,
+83,000 such calls, take 1.6 s recorded by `smthrs-observe` and 2.6 s by
+`strace`, against 1.2 s unrecorded. Under `strace` the run is refused
+`io_uring`, as it is in a container, because a read submitted through a ring
+is in no trace; under `smthrs-observe` a ring request that names a path makes
+the run unrecorded, with the reason. A recorded run ends when its command
+ends: a process the command left running is stopped a second later, as a
+sandbox stops it. On macOS and Windows, where neither recorder can run, or
+where the host forbids it, the target is keyed by its `data` as any other
+`Shell.Test`, and one line says why:
 
 ```text
 smthrs: reads are not observed on this host: strace is not installed; a target that asks for it is keyed by its declared inputs

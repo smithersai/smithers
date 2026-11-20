@@ -268,8 +268,9 @@ requirements.txt`, and `cargo build` in a repository with no `Cargo.lock`
 pick a version when they run, so they run every time. A step that restores or saves a cache, such as
 `actions/cache`, also runs every time: what it keeps lives from one run to the
 next, and the record of a run does not hold it. Recording
-needs Linux with `strace`, which the generated workflow installs on its
-runners. On any other system such a step runs on every change, as it does in
+needs Linux: on x86_64 with Linux 5.19 or newer Smithers CI records with a
+program of its own, and elsewhere with `strace`, which the generated workflow
+installs on its runners. On any other system such a step runs on every change, as it does in
 the repository's CI today, and a replay says once on standard error that this
 machine cannot record what a step reads, and why.
 
@@ -325,7 +326,8 @@ when its script or one of those files names one of the variables, or
 `GITHUB_EVENT_PATH`. Any other held step is reused at another commit, from a
 shared cache too.
 
-Where reads are not recorded, on macOS or without `strace`, nothing says
+Where reads are not recorded, on macOS or on a Linux host with neither
+recorder, nothing says
 whether a step used a variable, so every step that is not held to its files
 runs again at every commit.
 

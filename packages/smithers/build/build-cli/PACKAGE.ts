@@ -120,6 +120,9 @@ const test = Smithers.Vitest({
   deps: [lib, observe],
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
+  // Recorded steps record with strace here, as on a host where smthrs-observe cannot run; `testObserve` runs the
+  // suites that record steps end to end with smthrs-observe.
+  env: { SMTHRS_OBSERVE_WITH: "strace" },
   passWithNoTests: false,
   // One unit per test file: `smithers-build units` reruns only the files a
   // change reaches. See docs/concepts/test-units.md in @smthrs/build.

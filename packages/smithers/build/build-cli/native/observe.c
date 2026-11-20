@@ -24,6 +24,15 @@
  * - A socket counts as bound only once the socket itself says so at the end of the run (`getsockname` on a copy
  *   taken at the stop).
  *
+ * A signal must never cut a call short where it would not unrecorded. A call waiting for this supervisor can be
+ * cut short until the call is received (`SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV`), and a process whose handler
+ * lacks `SA_RESTART` would then see `EINTR` from a `stat` or a `fork`. So a process that sets such a handler is
+ * traced (ptrace, every thread, its children until they start another program). When a signal cuts a watched
+ * call short, the signal is kept and the kernel restarts the call; once the restarted call is received the signal
+ * is sent again and is delivered, with what it first said, when the call ends (a fork: once it made its process).
+ * A call that waits in the kernel itself (a FIFO, a device) is cut short there as it would be unrecorded. On
+ * aarch64 the stop shows neither the call nor its answer, so the build records with strace there.
+ *
  * Each line carries the process (the thread group), not the thread: the lines of a process are complete, never
  * interrupted, so a reader needs no thread to pair them.
  *
@@ -57,6 +66,8 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/prctl.h>
+#include <sys/ptrace.h>
+#include <sys/user.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -123,6 +134,7 @@ enum kind {
   K_RING_ENTER,/* io_uring_enter: what the ring is told to do */
   K_HANDLE,    /* open_by_handle_at */
   K_FILTER,    /* seccomp: a filter of the run's own */
+  K_HANDLER,   /* rt_sigaction: a handler that lets a signal cut a waiting call short */
 };
 
 /* Where a call's arguments are: `dir` is the argument index of a directory descriptor (-1: the working
@@ -256,6 +268,7 @@ static const struct call calls[] = {
   {SYS_io_uring_enter, "io_uring_enter", K_RING_ENTER, NONE, NONE, NONE, NONE, NONE, 0},
   {SYS_open_by_handle_at, "open_by_handle_at", K_HANDLE, NONE, NONE, NONE, NONE, NONE, 0},
   {SYS_seccomp, "seccomp", K_FILTER, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_rt_sigaction, "rt_sigaction", K_HANDLER, NONE, NONE, NONE, NONE, NONE, 0},
 };
 #define NCALLS ((int)(sizeof calls / sizeof calls[0]))
 
@@ -657,22 +670,63 @@ static int parentThere(const char *path) {
 
 static const char *errnoName(int error) {
   switch (error) {
-    case ENOENT: return "ENOENT";
-    case ENOTDIR: return "ENOTDIR";
-    case EEXIST: return "EEXIST";
-    case EACCES: return "EACCES";
     case EPERM: return "EPERM";
-    case ELOOP: return "ELOOP";
-    case ENAMETOOLONG: return "ENAMETOOLONG";
-    case EFAULT: return "EFAULT";
+    case ENOENT: return "ENOENT";
+    case ESRCH: return "ESRCH";
+    case EINTR: return "EINTR";
+    case EIO: return "EIO";
+    case ENXIO: return "ENXIO";
+    case E2BIG: return "E2BIG";
+    case ENOEXEC: return "ENOEXEC";
     case EBADF: return "EBADF";
-    case EINVAL: return "EINVAL";
-    case ENOTEMPTY: return "ENOTEMPTY";
-    case EISDIR: return "EISDIR";
-    case EROFS: return "EROFS";
+    case ECHILD: return "ECHILD";
+    case EAGAIN: return "EAGAIN";
+    case ENOMEM: return "ENOMEM";
+    case EACCES: return "EACCES";
+    case EFAULT: return "EFAULT";
+    case EBUSY: return "EBUSY";
+    case EEXIST: return "EEXIST";
     case EXDEV: return "EXDEV";
-    case ECONNREFUSED: return "ECONNREFUSED";
+    case ENODEV: return "ENODEV";
+    case ENOTDIR: return "ENOTDIR";
+    case EISDIR: return "EISDIR";
+    case EINVAL: return "EINVAL";
+    case ENFILE: return "ENFILE";
+    case EMFILE: return "EMFILE";
+    case ENOTTY: return "ENOTTY";
+    case ETXTBSY: return "ETXTBSY";
+    case EFBIG: return "EFBIG";
+    case ENOSPC: return "ENOSPC";
+    case ESPIPE: return "ESPIPE";
+    case EROFS: return "EROFS";
+    case EMLINK: return "EMLINK";
+    case EPIPE: return "EPIPE";
+    case ENAMETOOLONG: return "ENAMETOOLONG";
+    case ENOSYS: return "ENOSYS";
+    case ENOTEMPTY: return "ENOTEMPTY";
+    case ELOOP: return "ELOOP";
     case EOVERFLOW: return "EOVERFLOW";
+    case ENOTSOCK: return "ENOTSOCK";
+    case EDESTADDRREQ: return "EDESTADDRREQ";
+    case EPROTOTYPE: return "EPROTOTYPE";
+    case EAFNOSUPPORT: return "EAFNOSUPPORT";
+    case EADDRINUSE: return "EADDRINUSE";
+    case EADDRNOTAVAIL: return "EADDRNOTAVAIL";
+    case ENETDOWN: return "ENETDOWN";
+    case ENETUNREACH: return "ENETUNREACH";
+    case ECONNABORTED: return "ECONNABORTED";
+    case ECONNRESET: return "ECONNRESET";
+    case ENOBUFS: return "ENOBUFS";
+    case EISCONN: return "EISCONN";
+    case ENOTCONN: return "ENOTCONN";
+    case ETIMEDOUT: return "ETIMEDOUT";
+    case ECONNREFUSED: return "ECONNREFUSED";
+    case EHOSTUNREACH: return "EHOSTUNREACH";
+    case EALREADY: return "EALREADY";
+    case EINPROGRESS: return "EINPROGRESS";
+    case EDQUOT: return "EDQUOT";
+    case ESTALE: return "ESTALE";
+    case EOPNOTSUPP: return "EOPNOTSUPP";
     default: return "EIO";
   }
 }
@@ -806,6 +860,248 @@ static void bornOf(pid_t tgid, pid_t parent) {
   free(f);
 }
 
+/* ---- Signals: a process whose handler would let a signal cut a waiting call short ---------------------------- */
+
+static pthread_t mainThread;
+static pthread_mutex_t seizing = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t seized = PTHREAD_COND_INITIALIZER;
+static pid_t seizeAsked;
+static int seizeServed;
+#define WATCHED 4096
+static pid_t watchedPids[WATCHED];
+
+static int isWatched(pid_t tgid) {
+  for (int i = 0; i < WATCHED; i++)
+    if (watchedPids[i] == tgid) return 1;
+  return 0;
+}
+static void setWatched(pid_t tgid, int on) {
+  for (int i = 0; i < WATCHED; i++) {
+    if (on && watchedPids[i] == 0) {
+      watchedPids[i] = tgid;
+      return;
+    }
+    if (!on && watchedPids[i] == tgid) watchedPids[i] = 0;
+  }
+}
+
+/* Asks the main thread, which alone may trace, to watch a process: answered before the handler is set. */
+static void expose(pid_t tgid) {
+  pthread_mutex_lock(&seizing);
+  if (!isWatched(tgid)) {
+    seizeAsked = tgid;
+    seizeServed = 0;
+    pthread_kill(mainThread, SIGUSR2);
+    while (!seizeServed) pthread_cond_wait(&seized, &seizing);
+  }
+  pthread_mutex_unlock(&seizing);
+}
+
+/* Seizes every thread of a process; new threads and children come by the events. */
+static void seizeAll(pid_t tgid) {
+  long options = PTRACE_O_TRACECLONE | PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACEEXEC;
+  for (int round = 0, added = 1; added && round < 50; round++) {
+    added = 0;
+    char name[64];
+    snprintf(name, sizeof name, "/proc/%d/task", tgid);
+    DIR *d = opendir(name);
+    if (d == NULL) return;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+      if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
+      pid_t tid = (pid_t)atoi(e->d_name);
+      /* EPERM: already ours; ESRCH: gone. */
+      if (ptrace(PTRACE_SEIZE, tid, 0, options) == 0) added = 1;
+    }
+    closedir(d);
+  }
+  setWatched(tgid, 1);
+}
+
+static void serveSeizes(void) {
+  pthread_mutex_lock(&seizing);
+  if (seizeAsked != 0 && !seizeServed) {
+    seizeAll(seizeAsked);
+    seizeServed = 1;
+    seizeAsked = 0;
+    pthread_cond_broadcast(&seized);
+  }
+  pthread_mutex_unlock(&seizing);
+}
+
+static int restartable(enum kind k) {
+  return k == K_OPEN || k == K_LOOK || k == K_EXEC || k == K_CHDIR || k == K_MKDIR || k == K_REMOVE ||
+         k == K_CHANGE || k == K_CHANGE_FD || k == K_RENAME || k == K_LINK || k == K_SYMLINK || k == K_FORK ||
+         k == K_HANDLER;
+}
+
+/* A signal held back from a thread whose watched call it cut short in the wait for the supervisor. */
+struct kept {
+  pid_t tid, tgid;
+  int sig;
+  siginfo_t info;
+  int sent;              /* sent again */
+  int received;          /* sent again once the restarted call was received: that wait cannot be cut short */
+  int afterCall;         /* a fork: sent at its event, once it made the process (a fork gives way to any signal) */
+  struct timespec since; /* when it was kept */
+  struct kept *next;
+};
+static struct kept *keptSignals;
+static pthread_mutex_t keeping = PTHREAD_MUTEX_INITIALIZER;
+
+/* At a signal stop: whether the thread was cut short in a watched call that the kernel restarts when no signal is
+ * delivered. Only reads: the call's number and its answer. */
+static int cutShort(pid_t tid, int *fork) {
+#if defined(__x86_64__)
+  struct user_regs_struct r;
+  if (ptrace(PTRACE_GETREGS, tid, 0, &r) != 0) return 0;
+  long nr = (long)r.orig_rax, ret = (long)r.rax;
+#else
+  /* aarch64 shows neither the call nor its answer at this stop: the build does not choose this program there. */
+  long nr = -1, ret = 0;
+  (void)tid;
+#endif
+  if (nr < 0 || (ret != -512 && ret != -513 && ret != -514)) return 0;
+  const struct call *c = callOf((int)nr);
+  if (c == NULL || !restartable(c->kind)) return 0;
+  *fork = c->kind == K_FORK;
+  return 1;
+}
+
+/* The serving thread, at a call it received: a signal kept for this thread is sent again now, while the wait can
+ * only be killed; it is delivered when the call ends. */
+static void sendKept(pid_t tid, pid_t tgid) {
+  pthread_mutex_lock(&keeping);
+  for (struct kept *k = keptSignals; k != NULL; k = k->next) {
+    if (k->tid != tid || k->sent || k->afterCall) continue;
+    k->sent = 1;
+    k->received = 1;
+    syscall(SYS_tgkill, tgid, tid, k->sig);
+  }
+  pthread_mutex_unlock(&keeping);
+}
+
+/* The main thread, at the event of a fork that made its process: the signals kept for that fork are sent now. */
+static void sendAfterFork(pid_t tid) {
+  pthread_mutex_lock(&keeping);
+  for (struct kept *k = keptSignals; k != NULL; k = k->next) {
+    if (k->tid != tid || k->sent || !k->afterCall) continue;
+    k->sent = 1;
+    syscall(SYS_tgkill, k->tgid, tid, k->sig);
+  }
+  pthread_mutex_unlock(&keeping);
+}
+
+/* The main thread, at a signal stop: answers the signal to deliver (0 for none). A watched call cut short comes
+ * first: the signal is kept and the call runs again, unless the signal was sent again after the restarted call was
+ * received. Otherwise a kept signal sent again is put back as it first came. */
+static int atSignal(pid_t tid, int sig) {
+  int fork = 0;
+  if (cutShort(tid, &fork)) {
+    pthread_mutex_lock(&keeping);
+    /* Sent once the call was received, so the call itself waited (a FIFO, a device) and was cut short there, as
+     * it would be unrecorded: delivered, with what it first said. */
+    for (struct kept **at = &keptSignals; *at != NULL; at = &(*at)->next) {
+      struct kept *k = *at;
+      if (k->tid != tid || !k->received || k->sig != sig) continue;
+      ptrace(PTRACE_SETSIGINFO, tid, 0, &k->info);
+      *at = k->next;
+      free(k);
+      pthread_mutex_unlock(&keeping);
+      return sig;
+    }
+    pthread_mutex_unlock(&keeping);
+    siginfo_t info;
+    if (ptrace(PTRACE_GETSIGINFO, tid, 0, &info) != 0) return sig;
+    pthread_mutex_lock(&keeping);
+    /* A signal of the first 31 is pending once however often it is sent: one kept is enough. */
+    for (struct kept *k = keptSignals; k != NULL; k = k->next) {
+      if (k->tid == tid && k->sig == sig && sig < SIGRTMIN && !k->sent) {
+        k->afterCall = k->afterCall || fork;
+        pthread_mutex_unlock(&keeping);
+        return 0;
+      }
+    }
+    struct kept *k = calloc(1, sizeof *k);
+    if (k == NULL) {
+      pthread_mutex_unlock(&keeping);
+      return sig;
+    }
+    k->info = info;
+    k->afterCall = fork;
+    k->tid = tid;
+    k->tgid = tgidOf(tid);
+    k->sig = sig;
+    clock_gettime(CLOCK_MONOTONIC, &k->since);
+    k->next = keptSignals;
+    keptSignals = k;
+    pthread_mutex_unlock(&keeping);
+    return 0; /* nothing delivered: the kernel restarts the call */
+  }
+  pthread_mutex_lock(&keeping);
+  for (struct kept **at = &keptSignals; *at != NULL; at = &(*at)->next) {
+    struct kept *k = *at;
+    if (k->tid != tid || !k->sent || k->sig != sig) continue;
+    /* The signal it was sent: delivered with what it first said. */
+    ptrace(PTRACE_SETSIGINFO, tid, 0, &k->info);
+    *at = k->next;
+    free(k);
+    pthread_mutex_unlock(&keeping);
+    return sig;
+  }
+  pthread_mutex_unlock(&keeping);
+  return sig;
+}
+
+/* Whether a thread waits in a call for the supervisor: a kept signal sent now would cut that call short again. */
+static int waitingForUs(pid_t tid) {
+  char name[64], wchan[64];
+  snprintf(name, sizeof name, "/proc/%d/wchan", tid);
+  int fd = open(name, O_RDONLY | O_CLOEXEC);
+  if (fd < 0) return 0;
+  ssize_t n = read(fd, wchan, sizeof wchan - 1);
+  close(fd);
+  if (n <= 0) return 0;
+  wchan[n] = 0;
+  return strncmp(wchan, "seccomp_do_user_notification", 28) == 0;
+}
+
+/* A kept signal whose call never came back to the supervisor within 50 ms is sent again, once the thread no longer
+ * waits for the supervisor. */
+static void sendStale(void) {
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  pthread_mutex_lock(&keeping);
+  for (struct kept **at = &keptSignals; *at != NULL;) {
+    struct kept *k = *at;
+    long ms = (now.tv_sec - k->since.tv_sec) * 1000 + (now.tv_nsec - k->since.tv_nsec) / 1000000;
+    if (!k->sent && !k->afterCall && ms >= 50 && !waitingForUs(k->tid)) {
+      k->sent = 1;
+      if (syscall(SYS_tgkill, k->tgid, k->tid, k->sig) != 0) {
+        /* The thread is gone: so is the signal, as the kernel would have it. */
+        *at = k->next;
+        free(k);
+        continue;
+      }
+    }
+    at = &k->next;
+  }
+  pthread_mutex_unlock(&keeping);
+}
+
+/* A thread that ended takes its kept signals with it. */
+static void dropKept(pid_t tid) {
+  pthread_mutex_lock(&keeping);
+  for (struct kept **at = &keptSignals; *at != NULL;) {
+    if ((*at)->tid == tid) {
+      struct kept *k = *at;
+      *at = k->next;
+      free(k);
+    } else at = &(*at)->next;
+  }
+  pthread_mutex_unlock(&keeping);
+}
+
 /* ---- One stop ------------------------------------------------------------------------------------------------ */
 
 /* A process whose program was to change: a later stop shows whether it did. Its arguments are the ones the call
@@ -868,6 +1164,7 @@ static void serve(const struct seccomp_notif *req) {
   const struct call *c = callOf(req->data.nr);
   if (c == NULL) return;
   pid_t tgid = tgidOf(tid);
+  sendKept(tid, tgid);
   startedYet(tid, tgid);
   char path[PATH_MAX + 1], other[PATH_MAX + 1];
   const char *why = NULL;
@@ -1222,6 +1519,15 @@ static void serve(const struct seccomp_notif *req) {
     case K_FILTER:
       if (req->data.args[0] == SECCOMP_SET_MODE_FILTER) unrecorded("it filtered its own system calls");
       return;
+    case K_HANDLER: {
+      int sig = (int)req->data.args[0];
+      if (req->data.args[1] == 0) return;
+      uint64_t act[2] = {0, 0}; /* the handler, the flags */
+      if (!bytesAt(tid, req->data.args[1], act, sizeof act)) return;
+      int fault = sig == SIGSEGV || sig == SIGBUS || sig == SIGFPE || sig == SIGILL || sig == SIGTRAP || sig == SIGSYS;
+      if (act[0] > 1 /* neither SIG_DFL nor SIG_IGN */ && !fault && !(act[1] & SA_RESTART)) expose(tgid);
+      return;
+    }
   }
   if (why != NULL) {
     free(t.data);
@@ -1466,6 +1772,12 @@ int main(int argc, char **argv) {
     return 126;
   }
   memcpy(&listener, CMSG_DATA(CMSG_FIRSTHDR(&m)), sizeof listener);
+  mainThread = pthread_self();
+  sigset_t waits;
+  sigemptyset(&waits);
+  sigaddset(&waits, SIGCHLD);
+  sigaddset(&waits, SIGUSR2);
+  pthread_sigmask(SIG_BLOCK, &waits, NULL);
   struct sigaction woken;
   memset(&woken, 0, sizeof woken);
   woken.sa_handler = wake; /* no SA_RESTART: a receive it interrupts returns */
@@ -1478,30 +1790,53 @@ int main(int argc, char **argv) {
   if (write(sv[0], "g", 1) != 1) return 125;
   close(sv[0]);
 
-  int status = 0, code = 125;
+  int status = 0, code = 125, rootDone = 0;
+  struct timespec deadline = {0, 0};
   for (;;) {
-    pid_t ended = waitpid(-1, &status, 0);
-    if (ended < 0 && errno == EINTR) continue;
-    if (ended < 0) break;
-    if (ended == child) {
-      code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
-      commandPid = 0;
-      break;
+    serveSeizes();
+    pid_t pid;
+    while ((pid = waitpid(-1, &status, __WALL | WNOHANG)) > 0) {
+      if (WIFEXITED(status) || WIFSIGNALED(status)) {
+        if (pid == child) {
+          code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+          commandPid = 0;
+          rootDone = 1;
+          clock_gettime(CLOCK_MONOTONIC, &deadline);
+          deadline.tv_sec += 1;
+        }
+        setWatched(pid, 0);
+        dropKept(pid);
+        continue;
+      }
+      if (!WIFSTOPPED(status)) continue;
+      int sig = WSTOPSIG(status), event = status >> 16;
+      if (event == PTRACE_EVENT_STOP) {
+        if (sig == SIGSTOP || sig == SIGTSTP || sig == SIGTTIN || sig == SIGTTOU) ptrace(PTRACE_LISTEN, pid, 0, 0);
+        else ptrace(PTRACE_CONT, pid, 0, 0);
+      } else if (event == PTRACE_EVENT_EXEC) {
+        /* A new program starts with every handler at its default: nothing to watch until it sets one. */
+        setWatched(pid, 0);
+        ptrace(PTRACE_DETACH, pid, 0, 0);
+      } else if (event == PTRACE_EVENT_FORK || event == PTRACE_EVENT_VFORK || event == PTRACE_EVENT_CLONE) {
+        sendAfterFork(pid);
+        ptrace(PTRACE_CONT, pid, 0, 0);
+      } else if (event != 0) {
+        ptrace(PTRACE_CONT, pid, 0, 0);
+      } else {
+        int give = atSignal(pid, sig);
+        ptrace(PTRACE_CONT, pid, 0, give);
+      }
     }
-  }
-  /* A process the command left running is given a second to end, then stopped, as a sandbox stops it. */
-  for (int round = 0; round < 10; round++) {
-    pid_t ended;
-    while ((ended = waitpid(-1, &status, WNOHANG)) > 0) {
+    if (pid < 0 && errno == ECHILD) break;
+    if (rootDone) {
+      struct timespec now;
+      clock_gettime(CLOCK_MONOTONIC, &now);
+      /* A process the command left running is given a second to end, then stopped, as a sandbox stops it. */
+      if (now.tv_sec > deadline.tv_sec || (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) endLeft();
     }
-    if (ended < 0 && errno == ECHILD) break;
-    struct timespec tenth = {0, 100000000};
-    nanosleep(&tenth, NULL);
-  }
-  for (;;) {
-    endLeft();
-    pid_t ended = waitpid(-1, &status, 0);
-    if (ended < 0 && errno == ECHILD) break;
+    sendStale();
+    struct timespec tick = {0, 5000000};
+    sigtimedwait(&waits, NULL, &tick);
   }
   /* No process of the run is left, so no call waits: the serving threads end. */
   __atomic_store_n(&stopping, 1, __ATOMIC_RELEASE);

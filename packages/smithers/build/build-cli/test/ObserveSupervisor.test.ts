@@ -238,3 +238,54 @@ describe("smthrs-observe", () => {
     expect(ObservedReads.read(() => lines, root).refusals).toEqual([])
   })
 })
+
+/**
+ * A shell sets its handlers without `SA_RESTART`, so a signal that came while
+ * one of its calls waited for the supervisor would cut that call short where
+ * it never would unrecorded: `fork` would fail ("Cannot fork"), and `[ -f x ]`
+ * would be false for a file that is there. Background jobs that end send the
+ * shell `SIGCHLD` all the time.
+ */
+const shell = (base: string, script: string, traced: boolean) => {
+  const command = traced ? [supervisor!, Path.join(base, "trace"), "--", "sh", "-c", script] : ["sh", "-c", script]
+  const done = spawnSync(command[0]!, command.slice(1), { cwd: base, encoding: "utf8", timeout: 20_000 })
+  return { status: done.status, stdout: done.stdout, stderr: done.stderr }
+}
+
+const signalRoot = async () => {
+  const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-signals-")))
+  temporary.push(base)
+  await Fs.writeFile(Path.join(base, "x"), "")
+  return base
+}
+
+describe("smthrs-observe and signals", () => {
+  supervised("never lets a signal cut short a call it would not cut short unrecorded", async () => {
+    const base = await signalRoot()
+    const script = [
+      "i=0; n=0",
+      "while [ $i -lt 40 ]; do",
+      "  ( : ) &",
+      "  if [ -f x ]; then n=$((n+1)); fi",
+      "  if command -v ls > /dev/null; then n=$((n+1)); fi",
+      "  i=$((i+1))",
+      "done",
+      "wait; echo $n"
+    ].join("\n")
+    const wrong: Array<ReturnType<typeof shell>> = []
+    for (let run = 0; run < 300; run++) {
+      const done = shell(base, script, true)
+      if (done.status !== 0 || done.stdout !== "80\n" || done.stderr !== "") wrong.push(done)
+    }
+    expect(wrong).toEqual([])
+  }, 180_000)
+
+  supervised("lets a signal cut short a call that waits in the kernel, as it does unrecorded", async () => {
+    const base = await signalRoot()
+    expect(spawnSync("mkfifo", [Path.join(base, "fifo")]).status).toBe(0)
+    const script = "trap 'echo trapped' USR1; (sleep 0.3; kill -USR1 $$) & exec 3< fifo; echo opened"
+    const plain = shell(base, script, false)
+    expect(plain.stderr).toContain("Interrupted system call")
+    expect(shell(base, script, true)).toEqual(plain)
+  }, 60_000)
+})

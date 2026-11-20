@@ -1249,8 +1249,9 @@ describe("a job of observed steps", () => {
   // The fourth ship review's xid replay: the recorded run of a step failed once, the plain run passed, and for a
   // day every row of the step read as on a host that cannot record a run.
   tracedIt("says that its recorded run failed where a step another waits for runs unrecorded", async () => {
-    // The install refuses to run under a tracer, as a debugger or a privileged program does.
-    const refusing = "if /bin/grep -q '^TracerPid:[[:space:]]*[1-9]' /proc/self/status; then exit 1; fi\n" +
+    // The install refuses to run under a recorder, as a debugger or a privileged program does.
+    const refusing = "if /bin/grep -q -e '^TracerPid:[[:space:]]*[1-9]' -e '^Seccomp_filters:[[:space:]]*[1-9]' " +
+      "/proc/self/status; then exit 1; fi\n" +
       "/bin/cat registry.cfg > /dev/null\n/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt"
     const { logs, ran, run, unstored } = await job({ install: refusing })
     const before = Date.now()
