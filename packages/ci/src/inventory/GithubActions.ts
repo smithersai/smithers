@@ -653,6 +653,7 @@ const addRun = (
     fills: [...fills],
     commit: /\bGITHUB_(?:SHA|WORKFLOW_SHA|EVENT_PATH|RUN_ID|RUN_NUMBER|RUN_ATTEMPT)\b/.test(command),
     ownCi: env.entries.has("CI"),
+    ownDoNotTrack: env.entries.has("DO_NOT_TRACK"),
     action: context.action,
     limit: secondsOf(context.limit),
     store: context.store,

@@ -671,6 +671,17 @@ describe("write", () => {
     expect(pass({ ownCi: true }, `echo "[$CI]"`)).toBe("[true]\n")
   })
 
+  // Turbo reports its use to a server unless `DO_NOT_TRACK` is 1 (turbo.build/repo/docs/telemetry). The call decides
+  // nothing a step does, but a step that made it cannot be reused. A runner does not set the variable: a workflow
+  // that sets it keeps its own value, and the machine's own value never reaches a step.
+  it("tells every tool not to report its use, unless the workflow says otherwise", () => {
+    pass({ first: true }, `test "$DO_NOT_TRACK" = 1`)
+    expect(pass({}, `echo "[$DO_NOT_TRACK]"`)).toBe("[1]\n")
+    expect(pass({}, `echo "[$DO_NOT_TRACK]"`, { env: { DO_NOT_TRACK: "0" } })).toBe("[1]\n")
+    expect(pass({ ownDoNotTrack: true }, `echo "[$DO_NOT_TRACK]"`, { env: { DO_NOT_TRACK: "0" } })).toBe("[0]\n")
+    expect(pass({ ownDoNotTrack: true }, `echo "[\${DO_NOT_TRACK-unset}]"`)).toBe("[unset]\n")
+  })
+
   // GitHub fills every `${{ }}` of a script in one pass: a value that holds the text of another is left as it is.
   it("puts each value in its place once, even one that holds another's text or a slash", () => {
     pass({ key: "SET", first: true }, `printf 'A=\${{ b }}\\nB=second\\nS=a/b\\n' >> "$GITHUB_OUTPUT"`)

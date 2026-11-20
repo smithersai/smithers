@@ -147,6 +147,12 @@ finds the commit, as it does on GitHub.
 What your own shell holds under one of these names never reaches a step: with
 `CI=1` in your shell, a step still finds `CI=true`.
 
+A step is also given `DO_NOT_TRACK=1`, which a GitHub runner does not set. A
+tool that reports its use over the network, as Turborepo does, then sends
+nothing. A step that reaches the network runs again at every commit, and a
+report of a tool's use decides nothing the step does. A workflow, job or step
+that sets `DO_NOT_TRACK` keeps its own value.
+
 No step is given a token: `GITHUB_TOKEN` and the `ACTIONS_` credentials are not
 set. `GITHUB_ACTION_REPOSITORY` and `RUNNER_DEBUG` are not set either, as a
 runner leaves them for a script with debug logging off. `GITHUB_ACTION_PATH` is

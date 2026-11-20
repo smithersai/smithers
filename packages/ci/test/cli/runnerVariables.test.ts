@@ -11,6 +11,10 @@
  *
  * The program is started from a shell that holds variables of its own under a runner's names. None reaches a
  * step: `CI` is `true` unless the workflow sets it, and a step's script finds no variable of the program.
+ *
+ * A step whose tool reports its use over the network unless `DO_NOT_TRACK` is 1, as Turbo does
+ * (turbo.build/repo/docs/telemetry), is reused as one that makes no call: every step is given `DO_NOT_TRACK=1`
+ * unless its workflow sets the variable.
  */
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
@@ -38,19 +42,22 @@ const workflow = [
   ...job("parity", "node test/parity.js"),
   ...job("plain", "node test/plain.js"),
   ...job("dump", "sh tools/dump.sh"),
+  ...job("telemetry", "node tools/telemetry.js"),
   "  own:",
   "    runs-on: ubuntu-latest",
   "    steps:",
   "      - uses: actions/checkout@v4",
-  "      - run: test \"$CI\" = false",
+  "      - run: test \"$CI\" = false && test \"$DO_NOT_TRACK\" = 0",
   "        env:",
   "          CI: \"false\"",
+  "          DO_NOT_TRACK: \"0\"",
   ""
 ].join("\n")
 
 /** What the shell that starts the program holds under a runner's names. */
 const persons: Readonly<Record<string, string>> = {
   CI: "1",
+  DO_NOT_TRACK: "0",
   GITHUB_ACTOR: "zz-persons-own",
   GITHUB_REPOSITORY: "zz-persons-own/repository",
   GITHUB_TOKEN: "zz-persons-own-token",
@@ -84,7 +91,17 @@ const files: Readonly<Record<string, string>> = {
     "mkdir -p out",
     "env > out/env.txt",
     "grep -qx 'CI=true' out/env.txt",
+    "grep -qx 'DO_NOT_TRACK=1' out/env.txt",
     "! grep -E '^(SMITHERS_|SMTHRS_|RUNNER_DEBUG=)|zz-persons-own' out/env.txt",
+    ""
+  ].join("\n"),
+  // A tool that reports its use unless told not to, as Turbo does: it opens a socket to an address of the
+  // documentation range (RFC 5737). A UDP socket sends nothing when it connects.
+  "tools/telemetry.js": [
+    "if (process.env.DO_NOT_TRACK !== \"1\") {",
+    "  const socket = require(\"node:dgram\").createSocket(\"udp4\")",
+    "  socket.connect(9, \"192.0.2.1\", () => socket.close())",
+    "}",
     ""
   ].join("\n")
 }
@@ -124,7 +141,8 @@ describe("a workflow whose steps read a runner's variables from their own code",
       const parity = at("base").baselineFailed
       // The first commit is run 1: the test that passes at an even number fails, in the baseline and as a target.
       // Every other test passes: the one that needs the commit, the one that looks for `CI=true` and for anything
-      // of the shell that started the program, and the one whose workflow sets `CI` itself.
+      // of the shell that started the program, the one whose workflow sets `CI` itself, and the tool that reports
+      // its use unless told not to.
       expect(parity).toHaveLength(1)
       expect(parity?.[0]).toContain("parity")
       expect(at("base")).toEqual({
@@ -132,36 +150,36 @@ describe("a workflow whose steps read a runner's variables from their own code",
         baselineFailed: parity,
         hit: 0,
         failed: parity,
-        steps: 5,
+        steps: 6,
         mismatches: []
       })
-      // Nothing a step read changed. The two tests that read no variable of the run are answered from the first
-      // commit's run. The three that used the commit or the run's number ran again: run 2 is even, so that test
-      // now passes.
+      // Nothing a step read changed. The two tests that read no variable of the run and the tool that was told not
+      // to report its use are answered from the first commit's run. The three that used the commit or the run's
+      // number ran again: run 2 is even, so that test now passes.
       expect(at("docs only")).toEqual({
         baseline: true,
         baselineFailed: [],
-        hit: 2,
+        hit: 3,
         failed: [],
-        steps: 5,
+        steps: 6,
         mismatches: []
       })
       // Run 3: it fails again, as it does in the baseline. An answer from run 2 would have been a pass.
       expect(at("docs again")).toEqual({
         baseline: false,
         baselineFailed: parity,
-        hit: 2,
+        hit: 3,
         failed: parity,
-        steps: 5,
+        steps: 6,
         mismatches: []
       })
-      // The file the plain test reads is another, so it runs too. The test of `CI` reads no file.
+      // The file the plain test reads is another, so it runs too. The test of `CI` and the tool read no file of it.
       expect(at("the file a test reads changes")).toEqual({
         baseline: true,
         baselineFailed: [],
-        hit: 1,
+        hit: 2,
         failed: [],
-        steps: 5,
+        steps: 6,
         mismatches: []
       })
       expect(report.mismatches).toBe(0)

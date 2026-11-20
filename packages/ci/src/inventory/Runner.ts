@@ -107,6 +107,9 @@ export interface JobFacts {
  * - `commit`: the step's script names the commit or the run, so its verdict belongs to one commit.
  * - `ownCi`: the workflow, the job or the step sets `CI`, and the step keeps that value. Any other step is given
  *   `CI=true`, as a runner gives it, whatever the machine it runs on holds under that name.
+ * - `ownDoNotTrack`: the workflow, the job or the step sets `DO_NOT_TRACK`, and the step keeps that value. Any other
+ *   step is given `DO_NOT_TRACK=1`, whatever the machine holds: a tool that reports its use over the network (Turbo
+ *   does, unless told not to) makes a step that cannot be reused, and what it sends decides nothing the step does.
  * - `action`: the step's own name, given as `GITHUB_ACTION`: its `id`, or `__run` and its place in the job.
  * - `store`: the step keeps files from one run to the next, as a cache step does. It is told where in
  *   `SMITHERS_CI_CACHE_STORE`: under the directory Smithers build keeps its cache in when the step is a target,
@@ -138,6 +141,7 @@ export interface StepFacts {
   readonly fills: ReadonlyArray<readonly [written: string, residual: Residual]>
   readonly commit: boolean
   readonly ownCi?: boolean | undefined
+  readonly ownDoNotTrack?: boolean | undefined
   readonly action?: string | undefined
   readonly limit?: number | undefined
   readonly store?: boolean | undefined
@@ -1015,6 +1019,8 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       ...(step.python === true ? python(fail) : []),
       // A runner sets CI to true. What the machine holds under that name is the person's, not the workflow's.
       ...(step.ownCi === true ? [] : [`export CI=true`]),
+      // A tool that reports its use calls a server that decides nothing the step does. Told not to, it calls none.
+      ...(step.ownDoNotTrack === true ? [] : [`export DO_NOT_TRACK=1`]),
       ...(step.job === undefined ? [] : [`export GITHUB_JOB=${quote(step.job)}`]),
       ...(step.action === undefined ? [] : [`export GITHUB_ACTION=${quote(step.action)}`]),
       `__ci_commit ${commit ? "1" : "''"}`,
