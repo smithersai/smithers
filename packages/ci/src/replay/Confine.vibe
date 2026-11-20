@@ -60,6 +60,11 @@ export interface Confined extends Place {
   readonly hooks: string
   readonly daemon: Readonly<Record<string, string>>
   readonly jail: Jail | undefined
+  /**
+   * What the jail keeps in sight for the replay's own `smthrs` alone: where one started from source keeps its
+   * compiled code, in the machine's temporary directory. A step has no use for it.
+   */
+  readonly caches?: ReadonlyArray<string> | undefined
 }
 
 /**
@@ -337,10 +342,10 @@ export effect function confine(
     ...(found.scope === undefined ? {} : { scope: found.scope })
   })
   return {
-    baseline: { ...made.baseline, jail: jailOf(made.baseline.tmp) },
-    normal: { ...made.normal, jail: jailOf(made.normal.tmp) },
-    fast: { ...made.fast, jail: jailOf(made.fast.tmp) },
-    trial: { ...made.trial, jail: jailOf(made.trial.tmp) }
+    baseline: { ...made.baseline, jail: jailOf(made.baseline.tmp), caches },
+    normal: { ...made.normal, jail: jailOf(made.normal.tmp), caches },
+    fast: { ...made.fast, jail: jailOf(made.fast.tmp), caches },
+    trial: { ...made.trial, jail: jailOf(made.trial.tmp), caches }
   } satisfies Places
 }
 
@@ -405,20 +410,30 @@ export effect function discard(directory: string) {
  * job, and both are removed when the scope closes: no other job and no other
  * commit finds what the job wrote there.
  *
+ * `alone` is true for a job that has a machine of its own in every mode. Its
+ * target finds in `/tmp` what the job wrote and nothing else, so its baseline
+ * step is shown the same: the compiled code the replay's own `smthrs` keeps
+ * in the machine's temporary directory (`Confined.caches`) is out of sight.
+ * The steps of a job with no machine run beside that `smthrs` in a mode, and
+ * see what it sees in both.
+ *
  * @category constructors
  * @since 0.1.0
  */
-export effect function machine(place: Confined, home: string, tmp: string) {
+export effect function machine(place: Confined, home: string, tmp: string, alone: boolean = false) {
   const path = try Path.Path
   try fresh(home)
   try fresh(tmp)
   try furnish(home, place.links)
+  const own = alone ? place.caches ?? [] : []
   return {
     ...place,
     home,
     tmp,
     hooks: path.join(home, hooksDirectory),
-    jail: place.jail === undefined ? undefined : { ...place.jail, tmp }
+    jail: place.jail === undefined
+      ? undefined
+      : { ...place.jail, tmp, visible: place.jail.visible.filter((each) => !own.includes(each)) }
   } satisfies Confined
 }
 

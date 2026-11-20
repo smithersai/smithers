@@ -7,6 +7,7 @@
  */
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { probe } from "../../src/replay/Jail.ts"
 import { bin, commit, git, remove, spawn, temporary } from "./repo.ts"
 
 const made: Array<string> = []
@@ -34,6 +35,45 @@ const workflow = [
   `      - run: ${JSON.stringify(checks.join(" && "))}`,
   ""
 ].join("\n")
+
+/** A machine that gives a step a `/tmp` of its own: Linux with a bubblewrap that starts. */
+const mounts = !("refusal" in probe())
+
+/** A workflow whose one job runs `command`. */
+const jobOf = (command: string): string =>
+  [
+    "name: CI",
+    "on: [push]",
+    "jobs:",
+    "  home:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - uses: actions/checkout@v4",
+    `      - run: ${JSON.stringify(command)}`,
+    ""
+  ].join("\n")
+
+describe("a job's own /tmp", () => {
+  // The program that replays keeps its compiled code under the machine's `/tmp`, and its own `smthrs` reads it
+  // there. A baseline step of a job was shown those directories too, where its target, on the job's machine, is
+  // shown what the job wrote and nothing else.
+  it.skipIf(!mounts)("holds nothing of the machine that replays it, in the baseline as in normal mode", async () => {
+    const root = temporary("job-tmp")
+    made.push(root)
+    git(root, "init", "--quiet", "--initial-branch=main")
+    // A runner's `/tmp` holds no compiled code of TypeScript's or VibeLang's runner when a job starts.
+    const none = "test -z \"$(ls -A /tmp | grep -E '^(tsx|vibelang-cache)-' || true)\""
+    commit(root, "base", { ".github/workflows/ci.yml": jobOf(none), "notes.txt": "one\n" })
+    commit(root, "notes", { "notes.txt": "two\n" })
+    const outcome = await spawn(bin, ["--commits", "1", "--no-trial", "--no-apply-check", "--json"], root)
+    expect(outcome.code, outcome.stderr).toBe(0)
+    const report = JSON.parse(outcome.stdout) as ReplayReport
+    const [replayed] = report.commits
+    expect([replayed!.baseline.failures ?? [], replayed!.normal.failures ?? []]).toEqual([[], []])
+    expect([replayed!.baseline.ok, replayed!.normal.ok]).toEqual([true, true])
+    expect(report.mismatches).toBe(0)
+  }, 540_000)
+})
 
 describe("the variables that say where a job's home keeps things", () => {
   it("are the same in the baseline and in normal mode", async () => {

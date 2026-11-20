@@ -34,7 +34,7 @@ import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import type { Mode } from "../../src/contract/RunRecord.ts"
 import { files } from "../../src/generate/index.ts"
-import { confine, held, reading } from "../../src/replay/Confine.vibe"
+import { confine, type Confined, held, machine as jobPlace, reading } from "../../src/replay/Confine.vibe"
 import {
   containerPrograms,
   gitConfig,
@@ -588,6 +588,18 @@ describe("confine", () => {
     }
     // The filter that refuses a step the keys of the person's session is written once, beside the homes.
     expect(new Uint8Array(readFileSync(join(work, "keyring-filter")))).toEqual(keyringFilter())
+
+    // The compiled code of the replay's own `smthrs` is in sight for that `smthrs`. A job with a machine of its own
+    // is shown none of it in the baseline, as its target is shown none: both find in `/tmp` what the job wrote.
+    const baseline: Confined = places.baseline
+    expect(baseline.caches).toEqual([cache])
+    const bunxInstall = join(machine, "bunx-1000-smithers-ci@latest")
+    const own = await scoped(jobPlace(baseline, join(work, "job-home"), join(work, "job-tmp"), true))
+    expect(own.jail?.visible).toEqual([bunxInstall, work])
+    expect(own.jail?.tmp).toBe(join(work, "job-tmp"))
+    // The steps of a job with no machine run beside that `smthrs` in a mode, and see what it sees in both.
+    const shared = await scoped(jobPlace(baseline, join(work, "shared-home"), join(work, "shared-tmp")))
+    expect(shared.jail?.visible).toEqual([bunxInstall, cache, work])
   })
 
   // `Inventory.runnerSoftware`: an SDK often lies in the home, and a JDK is often reached through a link there.

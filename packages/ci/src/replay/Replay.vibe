@@ -1070,7 +1070,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const at = named === undefined ? undefined : machinePaths(machines, checkoutPath, named)
         const home = at?.home ?? path.join(path.dirname(way.home), `${path.basename(way.home)}-job-${name}`)
         const tmp = at?.tmp ?? path.join(path.dirname(way.tmp), `${path.basename(way.tmp)}-job-${name}`)
-        const place = try orFail(machine(way, home, tmp), "could not make the home of a job")
+        const place = try orFail(machine(way, home, tmp, at !== undefined), "could not make the home of a job")
         const directory = try orFail(fresh(at?.tree ?? path.join(work, `${path.basename(way.home)}-copy-${name}`)), "could not make a directory")
         // What Smithers build tells a target on a machine: where its home keeps configuration, data and state, its
         // temporary directory, and where git stops looking. A baseline step is told the same, so a tool finds each
