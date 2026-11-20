@@ -30,6 +30,7 @@ import { labelsOf, path as targetMapPath, TargetMap } from "../src/contract/Targ
 import { forShell, forText } from "../src/generate/Expressions.ts"
 import { files } from "../src/generate/index.ts"
 import {
+  actionRefs,
   compiledCode,
   keptFiles,
   legsPath,
@@ -1520,6 +1521,50 @@ describe("the workspace and workflow", () => {
     expect(workflow).not.toContain(".flows")
     // A replay starts smthrs with the directory the workflow names, in the cache directory it gives Smithers build.
     expect(compiledCode).toBe(replayed)
+  })
+
+  it("pins each setup action where the repository's own jobs pin it", () => {
+    // eliza's Bun pin check refuses any oven-sh/setup-bun that is not at a reviewed commit, and read the generated
+    // workflow's `@v2` as a violation. The generated workflow now uses each action at the ref the CI's jobs use most.
+    const bun = "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+    const node = "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1"
+    const workflow = content(
+      generate(inventory([job("ci.yml:test", [step("t:1", "bun test")])], {
+        toolchains: [
+          { name: "bun", source: ".github/workflows/ci.yml", version: "1.4.2", job: "ci.yml:test", action: bun },
+          { name: "bun", source: ".github/workflows/b.yml", version: "1.4.2", job: "b.yml:b", action: bun },
+          {
+            name: "bun",
+            source: ".github/workflows/c.yml",
+            version: "1.4.2",
+            job: "c.yml:c",
+            action: "oven-sh/setup-bun@v2"
+          },
+          { name: "node", source: ".github/workflows/ci.yml", version: "24.15.0", job: "ci.yml:test", action: node },
+          { name: "python", source: ".python-version", version: "3.12" }
+        ]
+      })),
+      workflowPath
+    )
+    expect(workflow).toContain(`      - uses: ${bun}\n        with:\n          bun-version: 1.4.2\n`)
+    expect(workflow).not.toContain("oven-sh/setup-bun@v2")
+    // smithers-ci's own Node is set up with the same action, so it is pinned the same way.
+    expect(workflow).not.toContain("actions/setup-node@v4")
+    expect(workflow.split(`uses: ${node}`).length - 1).toBe(2)
+    // An action no job of the repository uses is written as smithers-ci knows it.
+    expect(workflow).toContain("      - uses: actions/setup-python@v5\n")
+  })
+
+  it("chooses the ref most of the repository's setup steps use, the first in order among equals", () => {
+    const tool = (action: string | undefined) => ({
+      name: "bun",
+      source: "x",
+      ...(action === undefined ? {} : { action })
+    })
+    expect(actionRefs([tool("a/b@2"), tool("a/b@1"), tool("a/b@2"), tool(undefined), tool("@1"), tool("a/b/sub@3")]))
+      .toEqual(new Map([["a/b", "2"], ["a/b/sub", "3"]]))
+    expect(actionRefs([tool("a/b@2"), tool("a/b@1")])).toEqual(new Map([["a/b", "1"]]))
+    expect(actionRefs([tool("a/b@1"), tool("a/b@2")])).toEqual(new Map([["a/b", "1"]]))
   })
 
   it("installs the version a file pins for a job that sets the tool up with none it can read", () => {

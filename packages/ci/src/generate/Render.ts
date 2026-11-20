@@ -339,15 +339,64 @@ const githubText = (value: string): Yaml.Value => /^(0|[1-9][0-9]{0,14})$/.test(
 const step = (entries: ReadonlyArray<Yaml.Entry>, comments: ReadonlyArray<string> = []): Yaml.Item =>
   Yaml.item(Yaml.mapping(entries), comments)
 
+/**
+ * The ref at which a repository's own jobs use each action, by the action's
+ * name before `@`: the ref most of its setup steps write, the first in code
+ * unit order among equals. A repository that pins its actions to reviewed
+ * commits, and checks that every workflow does, finds the generated workflow
+ * pinned the same way.
+ *
+ * @category rendering
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const actionRefs = (toolchains: ReadonlyArray<Toolchain>): ReadonlyMap<string, string> => {
+  const counts = new Map<string, Map<string, number>>()
+  for (const { action } of toolchains) {
+    const at = action === undefined ? -1 : action.lastIndexOf("@")
+    if (action === undefined || at <= 0) continue
+    const name = action.slice(0, at)
+    const ref = action.slice(at + 1)
+    const refs = counts.get(name) ?? new Map<string, number>()
+    refs.set(ref, (refs.get(ref) ?? 0) + 1)
+    counts.set(name, refs)
+  }
+  /** The ref with the most uses; in code unit order, the first among equals. */
+  const first = (refs: ReadonlyMap<string, number>): string => {
+    let best = ""
+    let most = 0
+    for (const ref of [...refs.keys()].sort((left, right) => left < right ? -1 : 1)) {
+      const count = refs.get(ref) as number
+      if (count > most) {
+        best = ref
+        most = count
+      }
+    }
+    return best
+  }
+  return new Map([...counts].map(([name, refs]) => [name, first(refs)]))
+}
+
+// An action as the repository's own jobs pin it, else as written.
+const pinned = (uses: string, refs: ReadonlyMap<string, string>): string => {
+  const name = uses.slice(0, uses.lastIndexOf("@"))
+  const ref = refs.get(name)
+  return ref === undefined ? uses : `${name}@${ref}`
+}
+
 // The setup step of a tool, or the comment that says it has no known setup action.
-const renderSetup = (toolchain: Toolchain, varying: ReadonlySet<string>): Yaml.Item | string => {
+const renderSetup = (
+  toolchain: Toolchain,
+  varying: ReadonlySet<string>,
+  refs: ReadonlyMap<string, string>
+): Yaml.Item | string => {
   const action = setupActions.get(toolchain.name)
   if (action === undefined) return `${toolchain.name} (${toolchain.source}) has no known setup action.`
   const version = varying.has(toolchain.name)
     ? `\${{ matrix.${versionKey(toolchain.name)} }}`
     : toolchain.version
   return step([
-    Yaml.entry("uses", action.uses),
+    Yaml.entry("uses", pinned(action.uses, refs)),
     ...(version === undefined
       ? []
       : [Yaml.entry("with", Yaml.mapping([Yaml.entry(action.input, githubText(version))]))])
@@ -634,7 +683,8 @@ const renderWorkflow = (
   confined: boolean,
   serial: boolean,
   observed: boolean,
-  allowDocker: boolean
+  allowDocker: boolean,
+  refs: ReadonlyMap<string, string>
 ): string => {
   // The jobs that run on a machine of their own: each has a checkout, a home and a temporary directory.
   const machines = new Set(plan.targets.flatMap((target) => target.machine === undefined ? [] : [target.machine]))
@@ -678,11 +728,11 @@ const renderWorkflow = (
                 // smithers-ci runs on this Node. A repository that sets up its own Node gets its version in the next
                 // steps.
                 step([
-                  Yaml.entry("uses", "actions/setup-node@v4"),
+                  Yaml.entry("uses", pinned("actions/setup-node@v4", refs)),
                   Yaml.entry("with", Yaml.mapping([Yaml.entry("node-version", 24)]))
                 ]),
                 upToDate(cache, allowDocker),
-                ...plan.toolchains.map((toolchain) => renderSetup(toolchain, varying)),
+                ...plan.toolchains.map((toolchain) => renderSetup(toolchain, varying, refs)),
                 // The read sandbox's step installs what keeps the token from a step, and what gives a job its own
                 // `/tmp`, too. With no target held to its inputs, each has a step of its own.
                 ...(confined ? sandboxSetup : [...(machines.size > 0 ? ownTmpSetup : []), ...tokenSetup(cache)]),
@@ -834,7 +884,8 @@ export const renderFiles = (
         plan.targets.some((target) => narrows(target, held)),
         serial,
         plan.targets.some((target) => observes(target, held)),
-        options?.allowDocker === true
+        options?.allowDocker === true,
+        actionRefs(inventory.toolchains)
       )
     },
     { path: workspacePath, content: targets },
