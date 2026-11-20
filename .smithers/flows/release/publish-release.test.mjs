@@ -5,10 +5,10 @@ import { join } from "node:path"
 import test from "node:test"
 import { consumerTags, maintainerReleasePlan, integrity, preflight, publishCandidate, recordSmokeSuccess, registryPublisher } from "./publish-release.mjs"
 
-const fixture = async (body) => {
+const fixture = async (body, names = ["a", "b"]) => {
   const directory = await mkdtemp(join(tmpdir(), "smithers-publish-"))
   try {
-    const packages = [{ name: "a", version: "1.0.0-rc.0", filename: "a.tgz", integrity: integrity(Buffer.from("a")) }, { name: "b", version: "1.0.0-rc.0", filename: "b.tgz", integrity: integrity(Buffer.from("b")) }]
+    const packages = names.map((name) => ({ name, version: "1.0.0-rc.0", filename: `${name}.tgz`, integrity: integrity(Buffer.from(name)) }))
     for (const entry of packages) await writeFile(join(directory, entry.filename), entry.name)
     const candidate = { schemaVersion: 1, source: { sha: "tested-sha", tag: "v1.0.0-rc.0", dirty: false }, packages }
     await writeFile(join(directory, "manifest.json"), JSON.stringify(packages))
@@ -63,7 +63,7 @@ test("a publication the registry never serves fails the run once the train has s
   assert.deepEqual(JSON.parse(await readFile(join(directory, "publish-receipt.json"), "utf8")), { schemaVersion: 1, source: candidate.source, published: [], promoted: [], awaiting: ["a", "b"] })
 }))
 
-test("a publication the registry has not served yet is re-read through the retry ladder", () => fixture(async (directory, candidate, options) => {
+test("a publication the registry has not served yet is re-read with the train", () => fixture(async (directory, candidate, options) => {
   const registry = new Map()
   const lag = new Map()
   const pauses = []
@@ -81,10 +81,10 @@ test("a publication the registry has not served yet is re-read through the retry
     }
   })
   assert.deepEqual(result, ["a", "b"])
-  assert.deepEqual(pauses, [10, 2, 10, 30, 60])
+  assert.deepEqual(pauses, [2, 30, 30])
 }))
 
-test("a publication still absent after its ladder is settled with the train for 15 minutes", () => fixture(async (directory, candidate, options) => {
+test("a publication still absent is re-read for 30 minutes after the last upload", () => fixture(async (directory, candidate, options) => {
   const calls = []
   const pauses = []
   const reads = []
@@ -94,12 +94,12 @@ test("a publication still absent after its ladder is settled with the train for 
     publish: async (_path, entry) => calls.push(entry.name)
   }), /Published integrity could not be verified: a/)
   assert.deepEqual(calls, ["a", "b"])
-  assert.deepEqual(pauses, [10, 30, 60, 2, 10, 30, 60, ...Array(30).fill(30)])
-  assert.equal(pauses.slice(7).reduce((sum, seconds) => sum + seconds, 0), 900)
-  // Preflight reads both once; each ladder reads its package four times; each
-  // settle round reads every package still absent.
+  assert.deepEqual(pauses, [2, ...Array(60).fill(30)])
+  assert.equal(pauses.slice(1).reduce((sum, seconds) => sum + seconds, 0), 1800)
+  // Preflight reads both once; each upload is read once; each settle round
+  // reads every package still absent.
   const both = ["a@1.0.0-rc.0", "b@1.0.0-rc.0"]
-  assert.deepEqual(reads, [...both, ...Array(4).fill(both[0]), ...Array(4).fill(both[1]), ...Array(31).fill(both).flat()])
+  assert.deepEqual(reads, [...both, ...both, ...Array(61).fill(both).flat()])
 }))
 
 // A brand-new npm name took about 200 s to be served on the v1.0.0-rc.2 tag run
@@ -125,8 +125,40 @@ test("a new name the registry serves late does not hold the rest of the train", 
   })
   assert.deepEqual(calls, ["a", "b"])
   assert.deepEqual(result, ["b", "a"])
-  assert.deepEqual(pauses, [10, 30, 60, 2, 30])
+  assert.deepEqual(pauses, [2, 30, 30, 30, 30])
   assert.deepEqual(JSON.parse(await readFile(join(directory, "publish-receipt.json"), "utf8")).awaiting, [])
+}))
+
+// Seconds from upload to the registry's `time` of each version on the
+// v1.0.0-rc.18 tag run (44620940500), in its plan order. A 100 s read ladder per
+// package outlasted 45 of them and the train took 95 minutes.
+const servedAfter = [125, 141, 138, 168, 225, 283, 129, 126, 183, 119, 387, 205, 91, 111, 143, 260, 166, 101, 129, 249, 125, 93, 125, 124, 314, 102, 99, 190, 189, 157, 249, 158, 125, 123, 100, 311, 249, 95, 249, 129, 94, 92, 156, 254, 129, 128, 95, 82, 372, 373, 498]
+
+test("a train the registry serves minutes late uploads every package before it waits", () => fixture(async (directory, candidate, options) => {
+  let now = 0
+  const uploadedAt = new Map()
+  const pauses = []
+  const uploads = []
+  const lag = new Map(candidate.packages.map((entry, index) => [`${entry.name}@${entry.version}`, servedAfter[index]]))
+  const result = await publishCandidate(directory, candidate, { ...options,
+    pause: async (seconds) => { pauses.push(seconds); now += seconds },
+    readRegistry: async (spec) => uploadedAt.has(spec) && now >= uploadedAt.get(spec) + lag.get(spec) ? candidate.packages.find((entry) => `${entry.name}@${entry.version}` === spec).integrity : undefined,
+    publish: async (_path, entry) => { uploads.push(now); uploadedAt.set(`${entry.name}@${entry.version}`, now) }
+  })
+  assert.equal(result.length, servedAfter.length)
+  assert.deepEqual(uploads, servedAfter.map((_lag, index) => index * 2))
+  // The last upload starts at 100 s and is served 498 s later; the train ends
+  // with the first 30 s settle round after that, not 51 ladders later.
+  assert.equal(now, 610)
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "publish-receipt.json"), "utf8")).awaiting, [])
+}, servedAfter.map((_lag, index) => `p${index}`)))
+
+test("the receipt names only uploads the registry accepted", () => fixture(async (directory, candidate, options) => {
+  await assert.rejects(publishCandidate(directory, candidate, { ...options,
+    readRegistry: async () => undefined,
+    publish: async (_path, entry) => { if (entry.name === "b") throw new Error("403 Forbidden - PUT https://registry.npmjs.org/b") }
+  }), /403 Forbidden/)
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "publish-receipt.json"), "utf8")), { schemaVersion: 1, source: candidate.source, published: [], promoted: [], awaiting: ["a"] })
 }))
 
 test("different bytes found while settling fail at once", () => fixture(async (directory, candidate, options) => {
@@ -138,13 +170,13 @@ test("different bytes found while settling fail at once", () => fixture(async (d
     readRegistry: async (spec) => {
       const count = (reads.get(spec) ?? 0) + 1
       reads.set(spec, count)
-      // a: absent at preflight and through its ladder, then different bytes.
-      if (spec.startsWith("a@") && count > 5) return integrity(Buffer.from("different candidate"))
+      // a: absent at preflight and after its upload, then different bytes.
+      if (spec.startsWith("a@") && count > 2) return integrity(Buffer.from("different candidate"))
       return registry.get(spec)
     },
     publish: async (_path, entry) => { if (entry.name === "b") registry.set(`${entry.name}@${entry.version}`, entry.integrity) }
   }), /Published integrity could not be verified: a/)
-  assert.deepEqual(pauses, [10, 30, 60, 2])
+  assert.deepEqual(pauses, [2])
 }))
 
 test("a publication with different registry integrity fails closed without waiting", () => fixture(async (directory, candidate, options) => {
@@ -359,9 +391,9 @@ for (const eventuallyServed of [true, false]) {
       assert.deepEqual(pauses, [2, 10, 30, 60])
     } else {
       await assert.rejects(publish(), /Published version is not served: a@/)
-      assert.equal(reads, 34)
+      assert.equal(reads, 64)
       assert.deepEqual(promotions, [])
-      assert.deepEqual(pauses, [2, 10, 30, 60, ...Array(30).fill(30)])
+      assert.deepEqual(pauses, [2, 10, 30, 60, ...Array(60).fill(30)])
     }
   }))
 }

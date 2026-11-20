@@ -11,14 +11,16 @@ export const integrity = (bytes) => `sha512-${createHash("sha512").update(bytes)
 
 export const candidateIntegrity = (candidate) => integrity(Buffer.from(JSON.stringify(candidate)))
 
-/** Seconds between registry attempts, shared by transient failures and post-publish reads. */
+/** Seconds between registry attempts after a transient failure, and between version reads. */
 const retryDelays = [10, 30, 60]
 
-/** A brand-new name can take minutes before the registry serves it: @smthrs/canonical
- * took about 200 s on the v1.0.0-rc.2 tag run. A version still absent after its
- * ladder is re-read with the whole train for up to 15 minutes, so one slow name
- * does not hold the rest. Different bytes still fail at once. */
-const settleDelays = Array(30).fill(30)
+/** npm accepts an upload minutes before it serves the version. On the v1.0.0-rc.18
+ * tag run (44620940500) the registry recorded each version 82 to 498 s (median
+ * 138 s) after its upload started, out of upload order, so 45 of 51 outlasted a
+ * 100 s read ladder per package and the train took 95 minutes. The train therefore
+ * uploads every package without waiting, then re-reads every name not yet served
+ * for up to 30 minutes after the last upload. Different bytes fail at once. */
+const settleDelays = Array(60).fill(30)
 
 /**
  * Packages people run by bare name. `bunx smithers-ci` installs what `latest`
@@ -144,13 +146,9 @@ export const publishCandidate = async (directory, candidate, options) => {
     // instead of relying on the earlier train preflight across that interval.
     if (integrity(await readFile(join(directory, entry.filename))) !== entry.integrity) throw new Error(`Local tarball integrity mismatch: ${entry.name}`)
     await options.publish(join(directory, entry.filename), entry)
-    let verified = await served(entry)
-    for (const delay of retryDelays) {
-      if (verified) break
-      await options.pause?.(delay)
-      verified = await served(entry)
-    }
-    if (verified) published.push(entry.name)
+    // One read catches different bytes before the next upload; an absent
+    // version waits with the train instead of holding the next upload.
+    if (await served(entry)) published.push(entry.name)
     else awaiting.push(entry)
     await record()
     if (index < pending.length - 1) await options.pause?.(2)
