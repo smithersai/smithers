@@ -659,10 +659,10 @@ describe("placing host links", () => {
     expect(none).not.toHaveProperty("privateLinks")
   })
 
-  it("has bubblewrap create each link no bind holds, and the private links under its own /tmp", () => {
+  it("has bubblewrap create each link no bind holds, and the private links in its own home", () => {
     const argv = ProcessSandbox.bubblewrap(planned(linux), ["true"], linux)
     const symlinks = argv.flatMap((entry, index) => entry === "--symlink" ? [argv.slice(index + 1, index + 3)] : [])
-    expect(symlinks).toEqual([["/opt/real", "/opt/link"], ["/home/u/.volta", "/tmp/home/.volta"]])
+    expect(symlinks).toEqual([["/opt/real", "/opt/link"], ["/home/u/.volta", "/smthrs/home/.volta"]])
     // After the binds, before the root is closed.
     expect(argv.indexOf("--symlink")).toBeGreaterThan(argv.indexOf("/opt/real"))
     expect(argv.indexOf("--symlink")).toBeLessThan(argv.lastIndexOf("--remount-ro"))

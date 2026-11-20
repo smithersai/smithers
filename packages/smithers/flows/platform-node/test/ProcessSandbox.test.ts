@@ -790,7 +790,7 @@ describe("the run's own directories", () => {
       if (result === undefined || ProcessSandbox.isUnenforceable(result)) throw new Error("native sandbox unavailable")
       const named = ["HOME", "TMPDIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"]
       const each = named.map((name) => `"$${name}"`).join(" ")
-      const script = `ls /tmp; for d in ${each}; do test -d "$d" || echo "missing $d"; done`
+      const script = `ls /smthrs; for d in ${each}; do test -d "$d" || echo "missing $d"; done; ls /tmp`
       const wrapped = ProcessSandbox.wrap(result, ["/bin/sh", "-c", script], {}, facts)
       const ran = spawnSync(wrapped.argv[0]!, wrapped.argv.slice(1), {
         encoding: "utf8",
@@ -798,11 +798,11 @@ describe("the run's own directories", () => {
         env: { ...process.env, ...wrapped.env }
       })
       expect(ran.status, ran.stderr).toBe(0)
-      // Beside them is only the directory that holds this test's workspace.
-      expect(ran.stdout.trim().split("\n")).toEqual(
-        expect.arrayContaining(["cache", "config", "data", "home", "state"])
-      )
+      const lines = ran.stdout.trim().split("\n")
+      expect(lines.slice(0, 5)).toEqual(["cache", "config", "data", "home", "state"])
       expect(ran.stdout).not.toContain("missing")
+      // None is in /tmp, which a program may replace for what it starts; beside them is only this test's workspace.
+      for (const name of ["cache", "config", "data", "home", "state"]) expect(lines.slice(5)).not.toContain(name)
     } finally {
       NodeFs.rmSync(base, { recursive: true, force: true })
     }
@@ -890,7 +890,12 @@ describe("the run's own user", () => {
       const gid = process.getgid!()
       const name = uid === 0 ? "root" : "smithers"
       const lines = ran.stdout.trim().split("\n")
-      expect(lines.slice(0, 4)).toEqual([name, name, `${name}:x:${uid}:${gid}::/tmp/home:/bin/sh`, `${name}:x:${gid}:`])
+      expect(lines.slice(0, 4)).toEqual([
+        name,
+        name,
+        `${name}:x:${uid}:${gid}::/smthrs/home:/bin/sh`,
+        `${name}:x:${gid}:`
+      ])
       // The host's own entries (root, the operator's name) are nowhere in the jail.
       if (uid !== 0) expect(ran.stdout).not.toContain("root")
       // Bubblewrap closed the two descriptors the files came on.
@@ -916,7 +921,7 @@ describe("bubblewrap argv", () => {
     expect(argv.slice(0, 2)).toEqual(["/bin/sh", "-c"])
     expect(argv.slice(3, 7)).toEqual([
       "smithers-users",
-      "smithers:x:501:20::/tmp/home:/bin/sh",
+      "smithers:x:501:20::/smthrs/home:/bin/sh",
       "smithers:x:20:",
       "/usr/bin/bwrap"
     ])
@@ -1292,7 +1297,7 @@ describe("every mechanism renders the same text on any host", () => {
       "-c",
       "passwd=$1 group=$2\nshift 2\nexec \"$@\" 8<<PASSWD 9<<GROUP\n$passwd\nPASSWD\n$group\nGROUP\n",
       "smithers-users",
-      "smithers:x:501:20::/tmp/home:/bin/sh",
+      "smithers:x:501:20::/smthrs/home:/bin/sh",
       "smithers:x:20:",
       "/usr/bin/bwrap",
       "--tmpfs",
@@ -1311,16 +1316,18 @@ describe("every mechanism renders the same text on any host", () => {
       "/tmp",
       "--tmpfs",
       "/var/tmp",
+      "--tmpfs",
+      "/smthrs",
       "--dir",
-      "/tmp/home",
+      "/smthrs/home",
       "--dir",
-      "/tmp/cache",
+      "/smthrs/cache",
       "--dir",
-      "/tmp/config",
+      "/smthrs/config",
       "--dir",
-      "/tmp/data",
+      "/smthrs/data",
       "--dir",
-      "/tmp/state",
+      "/smthrs/state",
       "--tmpfs",
       "/work/ws",
       "--dir",
@@ -1471,7 +1478,7 @@ describe("wrap and environment", () => {
       XDG_STATE_HOME: "/host/home/.local/state"
     }
     const wrapped = ProcessSandbox.wrap(confinement, ["true"], inherited, linux)
-    const tmp = mechanism === "seatbelt" ? confinement.tmp : "/tmp"
+    const tmp = mechanism === "seatbelt" ? confinement.tmp : mechanism === "bubblewrap" ? "/smthrs" : "/tmp"
     for (
       const [name, suffix] of [["XDG_CONFIG_HOME", "config"], ["XDG_DATA_HOME", "data"], [
         "XDG_STATE_HOME",
@@ -1494,8 +1501,9 @@ describe("wrap and environment", () => {
     expect(seatbelt.env["HOME"]).toBe("/work/ws/.flows/sandbox/run1/home")
     const bubblewrap = ProcessSandbox.wrap(planned(linux), ["true"], {}, linux)
     expect(bubblewrap.env["TMPDIR"]).toBe("/tmp")
-    expect(bubblewrap.env["HOME"]).toBe("/tmp/home")
-    expect(bubblewrap.env["XDG_CACHE_HOME"]).toBe("/tmp/cache")
+    // Beside /tmp, never in it, as on a host.
+    expect(bubblewrap.env["HOME"]).toBe("/smthrs/home")
+    expect(bubblewrap.env["XDG_CACHE_HOME"]).toBe("/smthrs/cache")
   })
 
   it("keeps corepack's binary cache where the host has it, so a shim still finds its package manager", () => {

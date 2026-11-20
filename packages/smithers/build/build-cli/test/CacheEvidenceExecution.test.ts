@@ -792,7 +792,7 @@ describe("a confined run", () => {
 
   confinedIt("says nothing was denied when a confined run fails for another reason", async () => {
     // The confined run gets a private home; the workspace's own run does not.
-    const { run, logs, attempts } = await fixture({ behaviour: "test \"$HOME\" != /tmp/home" })
+    const { run, logs, attempts } = await fixture({ behaviour: "test \"$HOME\" != /smthrs/home" })
     expect(await run("test")).toEqual({ test: "ran" })
     const line = logs.find((entry) => entry.includes("not cached"))!
     expect(line).toContain(

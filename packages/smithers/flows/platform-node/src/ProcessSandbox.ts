@@ -940,19 +940,29 @@ export const environment = (
   hostHome: string = NodeOs.homedir()
 ): Readonly<Record<string, string>> => {
   const tmp = confinement.mechanism._tag === "seatbelt" ? confinement.tmp : "/tmp"
-  const home = NodePath.posix.join(toPosix(tmp), "home")
+  const own = confinement.mechanism._tag === "seatbelt" ? confinement.tmp : privateRoot(confinement.mechanism)
+  const home = NodePath.posix.join(toPosix(own), "home")
   return {
     COREPACK_HOME: corepackHome(hostEnv, hostHome),
     HOME: home,
     TMPDIR: tmp,
     TMP: tmp,
     TEMP: tmp,
-    XDG_CACHE_HOME: NodePath.posix.join(toPosix(tmp), "cache"),
-    XDG_CONFIG_HOME: NodePath.posix.join(toPosix(tmp), "config"),
-    XDG_DATA_HOME: NodePath.posix.join(toPosix(tmp), "data"),
-    XDG_STATE_HOME: NodePath.posix.join(toPosix(tmp), "state")
+    XDG_CACHE_HOME: NodePath.posix.join(toPosix(own), "cache"),
+    XDG_CONFIG_HOME: NodePath.posix.join(toPosix(own), "config"),
+    XDG_DATA_HOME: NodePath.posix.join(toPosix(own), "data"),
+    XDG_STATE_HOME: NodePath.posix.join(toPosix(own), "state")
   }
 }
+
+/**
+ * Where a confined run's own home and its cache, configuration, data and state
+ * directories are: beside `/tmp` under bubblewrap, never in it, as on a host.
+ * A program that gives what it starts a `/tmp` of its own (a job machine, a
+ * replay's jail) then still reaches the home, and a first use of one of them
+ * changes nothing in `/tmp`. Docker keeps them in the container's `/tmp`.
+ */
+const privateRoot = (mechanism: Mechanism): string => mechanism._tag === "bubblewrap" ? "/smthrs" : "/tmp"
 
 /** The system part of the runtime surface: the same on every `PATH`. */
 const systemPaths = (hostFacts: Host): Array<string> => {
@@ -1572,7 +1582,7 @@ export const bubblewrap = (
 ): ReadonlyArray<string> => {
   if (confinement.mechanism._tag !== "bubblewrap") throw new Error("bubblewrap argv needs a bubblewrap plan")
   validateWrites(confinement, hostFacts)
-  const home = "/tmp/home"
+  const own = privateRoot(confinement.mechanism)
   const out: Array<string> = [
     confinement.mechanism.executable,
     "--tmpfs",
@@ -1602,18 +1612,12 @@ export const bubblewrap = (
     // as `/tmp` is: a tool that keeps work apart from `/tmp` makes it here.
     "--tmpfs",
     "/var/tmp",
-    // Every directory the run's variables name is there from the start, so
-    // a program's first use of one changes nothing a later step sees in `/tmp`.
-    "--dir",
-    home,
-    "--dir",
-    "/tmp/cache",
-    "--dir",
-    "/tmp/config",
-    "--dir",
-    "/tmp/data",
-    "--dir",
-    "/tmp/state"
+    // The run's own home and its cache, configuration, data and state
+    // directories, each there from the start: a program's first use of one
+    // changes nothing another process of the run sees.
+    "--tmpfs",
+    own,
+    ...["home", "cache", "config", "data", "state"].flatMap((name) => ["--dir", `${own}/${name}`])
   )
   // A staged run's declared files are one mount: a bind each would pass the
   // argument limit. Every other grant is still bound on top of it.
@@ -1652,7 +1656,7 @@ export const bubblewrap = (
     if (bound.some((path) => insideRoot(path, link.path))) continue
     out.push("--symlink", link.target, link.path)
   }
-  for (const link of confinement.privateLinks ?? []) out.push("--symlink", link.target, `/tmp/${link.path}`)
+  for (const link of confinement.privateLinks ?? []) out.push("--symlink", link.target, `${own}/${link.path}`)
   // A link inside a bound read or write is already there as the host's own
   // link. Every other one is created in the workspace tmpfs, with its parent
   // directories, before the tmpfs is remounted read-only.
@@ -1798,7 +1802,7 @@ const userEntries = (
   if (confinement.uid === undefined || confinement.gid === undefined) return undefined
   const name = confinement.uid === 0 ? "root" : "smithers"
   return {
-    passwd: `${name}:x:${confinement.uid}:${confinement.gid}::/tmp/home:/bin/sh`,
+    passwd: `${name}:x:${confinement.uid}:${confinement.gid}::${privateRoot(confinement.mechanism)}/home:/bin/sh`,
     group: `${name}:x:${confinement.gid}:`
   }
 }
