@@ -22,6 +22,13 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Twenty-first round, 2026-11-19.** A job's machine is at the same paths at every commit and in every way
+(`sci-cache-step`).
+
+- **`TargetMap.Entry.machine`** (added, optional, 2026-11-19): the name of the machine Smithers build runs the
+  entry's job on; the generator writes it, and the baseline reads it (`TargetMap.machineOf`) to run each job at that
+  machine's home, temporary directory and checkout.
+
 **Twentieth round, 2026-11-19.** A tool kept under the home runs in a step (`sci-exit-13`). Two optional fields.
 
 - **A step's home has its links with no jail too** (`Jail.Probe`, `Confine.confine`): on macOS, and on Linux
