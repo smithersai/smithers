@@ -1,5 +1,5 @@
 {
-  "comment": "Real output of failed CI steps, as each tool printed it on standard output and standard error (nyc-01, 2026-11-19). Home and work paths are written as a runner names them. is-plain-obj ran on a job's machine of a replay, which names its work directory under the home. managers: npm 11, pnpm 12.15.0, Yarn 1.22.22 and Bun 1.4.2 each running a script that prints an error with a frame of its stack, and one that prints nothing.",
+  "comment": "Real output of failed CI steps, as each tool printed it on standard output and standard error (nyc-01, 2026-11-19). Home and work paths are written as a runner names them. is-plain-obj ran on a job's machine of a replay, which names its work directory under the home. managers: npm 11, pnpm 12.15.0, Yarn 1.22.22 and Bun 1.4.2 each running a script that prints an error with a frame of its stack, and one that prints nothing. nodeAssert: npm 11 running a script whose `assert.equal` fails under Node 26.",
   "ni": {
     "command": "pnpm dlx pkg-pr-new publish --pnpm",
     "exitCode": 1,
@@ -79,5 +79,11 @@
         "stderr": "$ node silent.js\nerror: script \"test\" exited with code 1\n"
       }
     }
+  },
+  "nodeAssert": {
+    "command": "npm test",
+    "exitCode": 1,
+    "stdout": "\n> a@1.0.0 test\n> node test.js\n\n",
+    "stderr": "node:internal/assert/utils:146\n  throw error;\n  ^\n\nAssertionError [ERR_ASSERTION]: a\n    at Object.<anonymous> (/home/runner/work/a/a/test.js:2:8)\n    at Module._compile (node:internal/modules/cjs/loader:1934:14)\n    at Object..js (node:internal/modules/cjs/loader:2074:10)\n    at Module.load (node:internal/modules/cjs/loader:1656:32)\n    at Module._load (node:internal/modules/cjs/loader:1448:12)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)\n    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)\n    at node:internal/main/run_main_module:33:47 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: 'broken',\n  expected: 'ok',\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v26.5.0\n"
   }
 }

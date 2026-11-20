@@ -131,6 +131,29 @@ const managerAccount =
  */
 const stackFrame = /^(?:at\s|File "[^"]*", line \d)/
 
+/** The most lines of an error's properties Node prints under its stack, as `code: 'ERR_ASSERTION',`. */
+const propertyLimit = 50
+
+/**
+ * The lines without the properties Node prints of an error under its stack:
+ * after a frame that ends with `{`, up to the line `}`. A property names a
+ * code or a value, as `code: 'ERR_ASSERTION',` does; the error's own line above
+ * says what failed.
+ */
+const withoutProperties = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const kept: Array<string> = []
+  let inside = 0
+  for (const line of lines) {
+    if (inside > 0) {
+      inside = line === "}" ? 0 : inside - 1
+      continue
+    }
+    if (stackFrame.test(line) && line.endsWith(" {")) inside = propertyLimit
+    kept.push(line)
+  }
+  return kept
+}
+
 /** True for a line a package manager wrote around a script, or a frame of a stack trace: never a reason. */
 const isAround = (line: string): boolean => echo.test(line) || managerAccount.test(line) || stackFrame.test(line)
 
@@ -182,15 +205,15 @@ const shownLines = (text: string): ReadonlyArray<string> =>
  * The line of an output that says why the command failed: the last line the
  * replay wrote for a step it stopped, else the last line that reports an
  * error. Never a progress line, a line of only counts, a frame of a stack
- * trace, a package manager's echo of its script or its account of a script
- * that failed. Empty when no line reports an error.
+ * trace or a property Node prints under it, a package manager's echo of its
+ * script or its account of a script that failed. Empty when no line reports an error.
  *
  * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
 export const errorLine = (text: string): string => {
-  const shown = shownLines(text)
+  const shown = withoutProperties(shownLines(text))
   const reports = (line: string): boolean =>
     !isProgress(line) && !isAround(line) && !npmAccount.test(line) && reportsError.test(line.replace(levelWord, ""))
   return firstLine(shown.findLast((line) => ownLine.test(line)) ?? shown.findLast(reports) ?? "")

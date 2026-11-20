@@ -120,7 +120,7 @@ interface Output {
  * manager running a script that fails.
  */
 const steps = JSON.parse(readFileSync(new URL("../fixtures/failed-steps.json", import.meta.url), "utf8")) as
-  & Record<"ni" | "npm" | "cargo" | "pytest" | "isPlainObj", Output>
+  & Record<"ni" | "npm" | "cargo" | "pytest" | "isPlainObj" | "nodeAssert", Output>
   & { readonly managers: Record<"npm" | "pnpm" | "yarn" | "bun", Record<"error" | "silent", Output>> }
 
 describe("a reason that is never a progress line", () => {
@@ -212,6 +212,13 @@ describe("a reason that is never what a package manager writes around a script",
     // smthrs prints the error output and then what the step printed, as one text.
     const printed = { exitCode: 1, stderr: `${steps.isPlainObj.stderr}${steps.isPlainObj.stdout}`, stdout: "" }
     expect(reasonOf(printed)).toBe("TypeError: util.isDate is not a function")
+  })
+
+  it("is Node's failed assertion, not a property Node prints of the error under its stack", () => {
+    expect(reasonOf(steps.nodeAssert)).toBe("AssertionError [ERR_ASSERTION]: a")
+    // A property block that never closes ends after its most lines, and the lines after it are read again.
+    const open = `TypeError: first\n    at f (/w/a.js:1:1) {\n${"  code: 'ERR_X',\n".repeat(60)}`
+    expect(reasonOf({ exitCode: 1, stderr: open, stdout: "" })).toBe("code: 'ERR_X',")
   })
 
   it.each(["npm", "pnpm", "yarn", "bun"] as const)(
