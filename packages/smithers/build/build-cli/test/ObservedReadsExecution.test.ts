@@ -33,6 +33,15 @@ afterEach(async () => {
 /** The host's tracer, when it has one that can trace a process here. */
 const host = ObservedReads.observer(ExecSandbox.host())
 const tracedIt = it.skipIf("reason" in host)
+/**
+ * The recorder a build here records with, as a failure memo names it:
+ * `smthrs-observe` and its digest where the package holds one that runs
+ * here and `SMTHRS_OBSERVE_WITH` does not ask for strace, else strace.
+ */
+const recorderHere = (): string => {
+  const used = ObservedReads.observer({ ...ExecSandbox.host(), supervisor: ObservedReads.supervisorPath() })
+  return "supervisor" in used && used.supervisor === true ? ObservedReads.recorder() : "strace"
+}
 const posixIt = it.skipIf(process.platform === "win32")
 
 const withPath = async <A>(path: string, body: () => Promise<A>): Promise<A> => {
@@ -438,7 +447,7 @@ describe("an observed test", () => {
     const remembered = await attempts()
     expect(remembered.map((attempt) => attempt.label)).toEqual(["//:check"])
     // It names the build and the recorder the run failed under.
-    expect(remembered[0]).toMatchObject({ build: expect.stringMatching(/./), recorder: "strace" })
+    expect(remembered[0]).toMatchObject({ build: expect.stringMatching(/./), recorder: recorderHere() })
     // The next runs are keyed by the declared inputs, as any other shell test.
     expect(await run()).toEqual({ check: "ran" })
     expect(logs.some((line) => line.startsWith("//:check  its reads are not recorded: it passed, but failed while")))
@@ -460,12 +469,14 @@ describe("an observed test", () => {
     const failedRecorded = "//:check  failed while its reads were recorded; it runs again without the recording"
     expect(await run()).toEqual({ check: "ran" })
     const [first] = await attempts()
+    const recorder = recorderHere()
+    expect(first).toMatchObject({ recorder })
     const evidence = Path.join(root, ".flows", "evidence")
     const [name] = await Fs.readdir(evidence)
     for (
       const other of [
         { ...first, build: "another build" },
-        { ...first, recorder: "smthrs-observe:another" },
+        { ...first, recorder: recorder === "strace" ? "smthrs-observe:another" : "strace" },
         { ...first, build: undefined, recorder: undefined }
       ]
     ) {
@@ -475,7 +486,7 @@ describe("an observed test", () => {
       const before = logs.length
       expect(await run()).toEqual({ check: "ran" })
       expect(logs.slice(before)).toContain(failedRecorded)
-      expect((await attempts())[0]).toMatchObject({ build: first!.build, recorder: "strace" })
+      expect((await attempts())[0]).toMatchObject({ build: first!.build, recorder })
     }
     await write("input.txt", "pass again\n")
     const before = logs.length
