@@ -106,8 +106,10 @@ changed.
   commit, and `startMs`, the time Smithers build takes to start and to decide what to run for a commit, each a mean
   over the commits the wall times cover. It is present when the start is more than a twentieth of the CI's time for
   a commit and normal mode took longer than the baseline (`Summary.startCostOf`): a CI that came out faster has
-  nothing to account for, and google/go-cmp is 1.5 times faster with nothing reused. The text report and the page
-  say it on one line; no number changes.
+  nothing to account for. google/go-cmp is 0.54 times as fast with nothing reused (74.9 s against 137.8 s, four
+  commits, 2026-11-19, `sci-tool-cache`) and gets the line; the 1.5 times faster it read before was Go's cache,
+  which a replay kept between commits for normal mode alone. The text report and the page say it on one line; no
+  number changes.
 - The comments on `TargetMap` and `TargetMap.Entry` say what the generator writes: `maxJobs` 1 only when two targets
   that are not ordered could write the same files, and one target for two steps that do the same work at the same
   point of two jobs.
@@ -231,8 +233,7 @@ changed.
   (`ReplayRequest.trial`): a job that fails it runs once more at the newest commit, and one that fails again is
   left out, its `fails-here` reason ending in the commits, as in `no docker here (at 3f2a1c9 and 8d1e0b2)`. Added:
   `ReplayReport.FirstRun`, `ReplayReport.firstRun`, `ReplayReport.cold`, `ReplayRequest.warm`,
-  `Command.flags.cold`. Measured cause: on needlefish's five commits the cold count is 1.67 and the count with the
-  cache of the commit before is 2.5.
+  `Command.flags.cold`.
 - **A failure costs one rerun** (`sci-warm-start`). A failed step runs once more, not twice, and not at all when
   the same step failed with the same exit code and first error line in the same way's run of the commit before or
   in the first run. `--reruns <n>` sets the number (`Command.flags.reruns`, `ReplayRequest.reruns`); 0 turns it
