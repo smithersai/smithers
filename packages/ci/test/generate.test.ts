@@ -1643,26 +1643,23 @@ describe("the workspace and workflow", () => {
     expect(workflow).toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0")
     expect(workflow.indexOf("bubblewrap\n")).toBeLessThan(workflow.indexOf("smthrs ci"))
     expect(workflow).not.toContain("strace")
-    // No target is confined, and no job has a machine: nothing to install for either. The step is observed, which
-    // needs the tracer.
-    const open = content(
-      generate(inventory([job("a", [step("a:1", "x")], { source: "justfile", file: "Justfile" })])),
-      workflowPath
-    )
+    // No target is confined, and no job has a machine: nothing to install for either. The step is observed, and
+    // smithers-ci records it with its own program on a GitHub-hosted runner, so nothing is installed for that
+    // either.
+    const opened = generate(inventory([job("a", [step("a:1", "x")], { source: "justfile", file: "Justfile" })]))
+    const open = content(opened, workflowPath)
+    expect(content(opened, packagePath)).toContain("observe: {")
     expect(open).not.toContain("Install the read sandbox")
     expect(open).not.toContain("Give each job its own /tmp")
-    expect(open).toContain(
-      "      - name: Install the tracer\n        if: runner.os == 'Linux' && runner.environment == 'github-hosted'\n"
-    )
-    expect(open).toContain("apt-get install -y -qq --no-install-recommends strace")
-    expect(open.indexOf("strace\n")).toBeLessThan(open.indexOf("smthrs ci"))
+    expect(open).not.toContain("tracer")
+    expect(open).not.toContain("strace")
     // Inputs too large for the one file: every target runs in the open, so the step is left out.
     const inputs = Array.from({ length: 4000 }, (_, index) => `packages/${"p".repeat(300)}-${index}/**`)
     const large = generate(inventory([job("a", [step("a:1", "x", { inputs, from: "a:1" })])]))
     expect(content(large, packagePath)).not.toContain("sandbox: {")
     expect(content(large, packagePath)).toContain("observe: {")
     expect(content(large, workflowPath)).not.toContain("Install the read sandbox")
-    expect(content(large, workflowPath)).toContain("strace")
+    expect(content(large, workflowPath)).not.toContain("strace")
   })
 
   it("installs what keeps the cache's token from a step on a Linux runner, when the repository names a cache", () => {

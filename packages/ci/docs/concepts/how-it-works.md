@@ -283,8 +283,8 @@ pick a version when they run, so they run every time. A step that restores or sa
 `actions/cache`, also runs every time: what it keeps lives from one run to the
 next, and the record of a run does not hold it. Recording
 needs Linux: on x86_64 and aarch64 with Linux 5.19 or newer Smithers CI records
-with a program of its own, and elsewhere with `strace`, which the generated workflow
-installs on its runners. In a container the program needs `CAP_SYS_PTRACE`
+with a program of its own, which the generated workflow needs nothing installed
+for, and elsewhere with `strace`. In a container the program needs `CAP_SYS_PTRACE`
 (`docker run --cap-add SYS_PTRACE`, or `options: --cap-add SYS_PTRACE` under a
 GitHub job's `container`); without it Smithers CI records with `strace` if the
 container has it. On any other system such a step runs on every change, as it

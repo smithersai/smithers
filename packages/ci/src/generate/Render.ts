@@ -569,24 +569,6 @@ const ownTmpVariable = "SMTHRS_MACHINE_OWN_TMP"
  */
 export const machinesDirectory = "${{ runner.temp }}/smthrs-machines"
 
-// What observing a step needs on a GitHub runner: the tracer that records what its run reads, which an Ubuntu
-// runner lacks. Without it the step still runs, and reruns on every change. macOS has no such tracer. A self-hosted
-// runner is left as it is: a step there is traced when the machine has the tracer.
-const tracerSetup = step(
-  linuxStep(
-    "Install the tracer",
-    script([
-      `if command -v apt-get >/dev/null 2>&1 &&`,
-      `  ! command -v strace >/dev/null 2>&1; then`,
-      `  sudo apt-get update -qq &&`,
-      `    sudo apt-get install -y -qq --no-install-recommends strace`,
-      `fi`
-    ]),
-    `runner.os == 'Linux' && ${hosted}`
-  ),
-  ["A step that names no inputs is traced, so it runs again only when a file it read changes."]
-)
-
 // The shared cache's settings in a GitHub repository, as `docs/concepts/cache.md` names them: a variable for the URL
 // and secrets for the tokens. The URL given to `apply --cache` is used until the variable is set. A pull request
 // reads with the read token when the repository has one, so it reuses results and stores none.
@@ -683,7 +665,6 @@ const renderWorkflow = (
   cache: string | undefined,
   confined: boolean,
   serial: boolean,
-  observed: boolean,
   allowDocker: boolean,
   refs: ReadonlyMap<string, string>
 ): string => {
@@ -737,7 +718,6 @@ const renderWorkflow = (
                 // The read sandbox's step installs what keeps the token from a step, and what gives a job its own
                 // `/tmp`, too. With no target held to its inputs, each has a step of its own.
                 ...(confined ? sandboxSetup : [...(machines.size > 0 ? ownTmpSetup : []), ...tokenSetup(cache)]),
-                ...(observed ? [tracerSetup] : []),
                 step(
                   [
                     Yaml.entry("uses", "actions/cache@v4"),
@@ -887,10 +867,10 @@ export const renderFiles = (
       content: renderWorkflow(
         plan,
         options?.cache,
-        // The runner needs the sandbox only when a target runs under it, and the tracer only when one is observed.
+        // The runner needs the sandbox only when a target runs under it. An observed target needs nothing installed:
+        // smithers-ci records it with its own program on a GitHub-hosted Linux runner, x86_64 or arm64.
         plan.targets.some((target) => narrows(target, held)),
         serial,
-        plan.targets.some((target) => observes(target, held)),
         options?.allowDocker === true,
         actionRefs(inventory.toolchains)
       )

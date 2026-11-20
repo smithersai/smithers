@@ -305,12 +305,19 @@ carries it from one run to the next with that cache.
 
 ## On a self-hosted runner
 
-The workflow `apply` writes installs bubblewrap and strace, and lifts Ubuntu's
+The workflow `apply` writes installs bubblewrap, and lifts Ubuntu's
 restriction on the namespaces bubblewrap makes
 (`kernel.apparmor_restrict_unprivileged_userns`), only on a runner GitHub
 hosts and removes after the job. On a self-hosted runner it changes nothing:
 where bubblewrap is missing or cannot start, the job stops with one line that
 names what the machine's owner must install or set, and why.
+
+Recording what a step reads needs nothing installed on a Linux runner, x86_64
+or arm64: Smithers CI records with a program of its own, which ships in its
+package. A self-hosted runner that runs jobs in a Docker container needs
+`--cap-add SYS_PTRACE` on that container, or `strace` in it. Where neither is
+there, the run says which recorder it used and why, and a step that names no
+inputs runs on every change.
 
 ## What leaves a job out
 
