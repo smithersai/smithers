@@ -33,6 +33,7 @@ import {
   compiledCode,
   keptFiles,
   legsPath,
+  machinesDirectory,
   noSharedCache,
   notesPath,
   packagePath,
@@ -211,6 +212,7 @@ describe("files", () => {
     const plain = content(generate(document), workflowPath)
     expect(runOf(plain).env).toEqual({
       NODE_COMPILE_CACHE: `${stateDirectory}/${compiledCode}`,
+      SMTHRS_MACHINES: machinesDirectory,
       SMITHERS_CACHE_URL: "${{ vars.SMITHERS_CACHE_URL }}",
       SMITHERS_CACHE_TOKEN: token
     })
@@ -233,6 +235,7 @@ describe("files", () => {
     )
     expect(runOf(cached).env).toEqual({
       NODE_COMPILE_CACHE: `${stateDirectory}/${compiledCode}`,
+      SMTHRS_MACHINES: machinesDirectory,
       SMITHERS_CACHE_URL: "${{ vars.SMITHERS_CACHE_URL || 'https://cache.example.com/it''s' }}",
       SMITHERS_CACHE_TOKEN: token
     })
@@ -815,6 +818,8 @@ describe("the /tmp of a job in the workflow", () => {
     expect(workflow).toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0")
     expect(workflow.indexOf("bubblewrap\n")).toBeLessThan(workflow.indexOf("smthrs ci"))
     expect(workflow).toContain("          SMTHRS_MACHINE_OWN_TMP: required\n")
+    // The jobs' checkouts are under no directory named .cache, where Biome skips a project's nested biome.json.
+    expect(workflow).toContain("          SMTHRS_MACHINES: ${{ runner.temp }}/smthrs-machines\n")
     // One job has nobody to share with, and still gets its own `/tmp`.
     const single = content(generate(inventory([one])), workflowPath)
     expect(single).toContain("      - name: Give each job its own /tmp\n")
@@ -826,6 +831,7 @@ describe("the /tmp of a job in the workflow", () => {
     )
     expect(tree).not.toContain("Give each job its own /tmp")
     expect(tree).not.toContain("SMTHRS_MACHINE_OWN_TMP")
+    expect(tree).not.toContain("SMTHRS_MACHINES")
   })
 
   it("is the runner's own on macOS, where each job is a runner job of its own", () => {

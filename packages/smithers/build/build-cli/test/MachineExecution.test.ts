@@ -65,7 +65,7 @@ const mounts: ReadonlyArray<string> = "bwrap" in mount ? [Path.dirname(mount.bwr
 
 const fixture = async (
   targets: (base: string) => Targets,
-  host?: { readonly home: string; readonly kept: string },
+  host?: { readonly home: string; readonly kept: string | undefined },
   tools: ReadonlyArray<string> = []
 ) => {
   // Beside the temporary directory, as a user's cache directory is: what a run leaves in a machine's home is then
@@ -103,7 +103,8 @@ const fixture = async (
       Path.delimiter
     ),
     HOME: host?.home ?? Path.join(base, "home"),
-    [Machine.holdingVariable]: kept
+    // A host that names no directory for machines keeps them where a person's build keeps them.
+    ...(host !== undefined && host.kept === undefined ? {} : { [Machine.holdingVariable]: kept })
   }
   await Fs.mkdir(environment["HOME"]!, { recursive: true })
   const logs: Array<string> = []
@@ -191,6 +192,27 @@ describe("targets on two machines", () => {
     }))
     expect(await run(["locked"], untraced)).toEqual({ locked: "ran" })
     expect(NodeFs.existsSync(Machine.holding(await Fs.realpath(Path.dirname(kept) + "/ws"), environment))).toBe(false)
+  })
+})
+
+describe("where a machine's checkout is", () => {
+  posixIt("is under no directory a tool skips the configuration of a project under, by default", async () => {
+    // Biome 2.6.6 skips every nested biome.json of a project under a directory named .cache, so a lint the CI passes
+    // failed on a machine kept under ~/.cache/smthrs/machines. This tool refuses such a path as Biome misreads it.
+    const home = await Fs.realpath(await Fs.mkdtemp(Path.join("/var/tmp", "smithers-machine-home-")))
+    temporary.push(home)
+    const refuses = [
+      "case \"$PWD\" in */.cache/*|*/.output/*|*/node_modules/*|*/.git/*) echo \"misread under $PWD\" >&2; exit 1;; esac",
+      `case "$PWD" in ${home}/.local/state/smthrs/machines/*) ;; *) echo "not kept in the state directory" >&2; exit 1;; esac`
+    ].join("\n")
+    const { failures, root, run } = await fixture(() => ({ lint: on("lint", refuses) }), { home, kept: undefined })
+    // What a build kept in the old place is removed.
+    const former = Machine.formerHolding(root, { HOME: home })!
+    await Fs.mkdir(Path.join(`${former}.gone-1-00000000`, "job"), { recursive: true })
+    await Fs.mkdir(Path.join(former, "job"), { recursive: true })
+    expect(await run(["lint"], untraced)).toEqual({ lint: "ran" })
+    expect(failures).toEqual(new Map())
+    expect(await Fs.readdir(Path.dirname(former))).toEqual([])
   })
 })
 

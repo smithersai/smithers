@@ -61,14 +61,74 @@ const checkout = async (): Promise<string> => {
 const sorted = (names: Iterable<string>): ReadonlyArray<string> => [...names].sort()
 
 describe("where machines are kept", () => {
-  it("is the directory the variable names, else the user's cache directory, by the workspace's path", () => {
+  it("is the directory the variable names, else the user's state directory, by the workspace's path", () => {
     const named = Machine.holding("/work/repo", { [Machine.holdingVariable]: "/kept" })
     expect(Path.dirname(named)).toBe("/kept")
     expect(Path.basename(named)).toMatch(/^[0-9a-f]{16}$/)
     expect(Machine.holding("/work/other", { [Machine.holdingVariable]: "/kept" })).not.toBe(named)
+    expect(Path.dirname(Machine.holding("/work/repo", { XDG_STATE_HOME: "/state", HOME: "/home/me" })))
+      .toBe("/state/smthrs/machines")
+    // Never the cache directory: Biome skips a project's nested biome.json under a directory named .cache.
     expect(Path.dirname(Machine.holding("/work/repo", { XDG_CACHE_HOME: "/cache", HOME: "/home/me" })))
+      .toBe("/home/me/.local/state/smthrs/machines")
+    // A relative XDG_STATE_HOME is ignored, as the XDG Base Directory Specification asks.
+    expect(Path.dirname(Machine.holding("/work/repo", { XDG_STATE_HOME: "state", HOME: "/home/me" })))
+      .toBe("/home/me/.local/state/smthrs/machines")
+  })
+
+  it("names the part of a path under which a tool skips a project's own configuration", () => {
+    expect(Machine.skippedPart("/home/me/.local/state/smthrs/machines/abc/job/w/repo")).toBeUndefined()
+    expect(Machine.skippedPart("/home/me/.cache/smthrs/machines/abc/job/w/repo")).toBe(".cache")
+    expect(Machine.skippedPart("/srv/app/node_modules/x")).toBe("node_modules")
+    // A name that only starts like one is not one.
+    expect(Machine.skippedPart("/srv/.cachex/cache/.temp/tmp/dist/build")).toBeUndefined()
+  })
+
+  it("was the user's cache directory before, where the environment names one", () => {
+    expect(Path.dirname(Machine.formerHolding("/work/repo", { HOME: "/home/me" })!))
+      .toBe("/home/me/.cache/smthrs/machines")
+    expect(Path.dirname(Machine.formerHolding("/work/repo", { XDG_CACHE_HOME: "/cache", HOME: "/home/me" })!))
       .toBe("/cache/smthrs/machines")
-    expect(Path.dirname(Machine.holding("/work/repo", { HOME: "/home/me" }))).toBe("/home/me/.cache/smthrs/machines")
+    expect(Path.basename(Machine.formerHolding("/work/repo", { HOME: "/home/me" })!))
+      .toBe(Path.basename(Machine.holding("/work/repo", { HOME: "/home/me" })))
+    expect(Machine.formerHolding("/work/repo", { [Machine.holdingVariable]: "/kept" })).toBeUndefined()
+  })
+
+  posixIt("removes what builds left where machines were kept before, and only this workspace's", async () => {
+    const home = await directory("home")
+    const environment = { HOME: home }
+    const former = Machine.formerHolding("/work/repo", environment)!
+    const other = Machine.formerHolding("/work/other", environment)!
+    await write(former, "job/home/left", "left\n")
+    await write(`${former}.gone-1-00000000`, "job/home/left", "left\n")
+    await write(other, "job/home/left", "left\n")
+    const kept = await Machine.prepare("/work/repo", environment)
+    expect(kept).toBe(Path.join(await Fs.realpath(home), ".local/state/smthrs/machines", Path.basename(kept)))
+    expect(await Fs.readdir(Path.dirname(former))).toEqual([Path.basename(other)])
+  })
+
+  posixIt(
+    "refuses a directory under one a tool skips the configuration of a project under, and removes nothing",
+    async () => {
+      const base = await directory("kept")
+      const under = Path.join(base, ".cache", "machines")
+      const environment = { [Machine.holdingVariable]: under }
+      await write(Machine.holding("/work/repo", environment), "job/home/left", "left\n")
+      await expect(Machine.prepare("/work/repo", environment)).rejects.toThrow(
+        `under a directory named .cache, where tools such as Biome skip a project's own configuration files. ` +
+          `Set ${Machine.holdingVariable} to a directory with no part named .cache, .git, .hg, .output, .svn, .yarn, ` +
+          `node_modules.`
+      )
+      expect(await Fs.readdir(Machine.holding("/work/repo", environment))).toEqual(["job"])
+    }
+  )
+
+  posixIt("refuses a directory whose real path is under one a tool skips", async () => {
+    const base = await directory("kept")
+    await Fs.mkdir(Path.join(base, "node_modules", "real"), { recursive: true })
+    await Fs.symlink(Path.join(base, "node_modules", "real"), Path.join(base, "link"))
+    const environment = { [Machine.holdingVariable]: Path.join(base, "link") }
+    await expect(Machine.prepare("/work/repo", environment)).rejects.toThrow("under a directory named node_modules")
   })
 
   it("gives each machine a directory of its own with its tree under the workspace's name", () => {

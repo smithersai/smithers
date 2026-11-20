@@ -502,6 +502,17 @@ const ownTmpSetup = jailSteps(
 // there (`Steps.ts`), and the one job that runs has the runner's `/tmp` to itself.
 const ownTmpVariable = "SMTHRS_MACHINE_OWN_TMP"
 
+/**
+ * Where the generated workflow tells Smithers build to keep its jobs'
+ * machines: a directory of the runner with no part named `.cache`. Under
+ * `~/.cache`, where earlier releases kept them, Biome skips a project's
+ * nested `biome.json`, so a lint the original CI passes would fail.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const machinesDirectory = "${{ runner.temp }}/smthrs-machines"
+
 // What observing a step needs on a GitHub runner: the tracer that records what its run reads, which an Ubuntu
 // runner lacks. Without it the step still runs, and reruns on every change. macOS has no such tracer. A self-hosted
 // runner is left as it is: a step there is traced when the machine has the tracer.
@@ -710,6 +721,7 @@ const renderWorkflow = (
                         Yaml.entry("NODE_COMPILE_CACHE", `${stateDirectory}/${compiledCode}`),
                         // Two jobs on one runner: neither finds what the other left in `/tmp`.
                         ...(machines.size > 1 ? [Yaml.entry(ownTmpVariable, "required")] : []),
+                        ...(machines.size > 0 ? [Yaml.entry("SMTHRS_MACHINES", machinesDirectory)] : []),
                         Yaml.entry("SMITHERS_CACHE_URL", cacheUrl(cache)),
                         Yaml.entry("SMITHERS_CACHE_TOKEN", cacheToken)
                       ])

@@ -162,8 +162,14 @@ let runs = 0
  */
 const run = (root: string, settings: Settings) => {
   const step = stepsOf(root).find((entry) => entry.run?.includes("smthrs ci")) as WorkflowStep
-  // Beside the cache's two settings, the step names where Node keeps the compiled code of smthrs.
-  expect(Object.keys(step.env ?? {})).toEqual(["NODE_COMPILE_CACHE", "SMITHERS_CACHE_URL", "SMITHERS_CACHE_TOKEN"])
+  // Beside the cache's two settings, the step names where Node keeps the compiled code of smthrs, and where Smithers
+  // build keeps the jobs' machines.
+  expect(Object.keys(step.env ?? {})).toEqual([
+    "NODE_COMPILE_CACHE",
+    "SMTHRS_MACHINES",
+    "SMITHERS_CACHE_URL",
+    "SMITHERS_CACHE_TOKEN"
+  ])
   const given = Object.fromEntries(
     ["SMITHERS_CACHE_URL", "SMITHERS_CACHE_TOKEN"].map((name) => [name, evaluate(step.env?.[name] as string, settings)])
   )
@@ -178,7 +184,14 @@ const run = (root: string, settings: Settings) => {
   )
   expect(command).toContain(`--cache-dir "${runner}/smithers-ci"`)
   expect(command).toContain("$SMTHRS")
-  const environment: NodeJS.ProcessEnv = { ...process.env, NODE: process.execPath, SMTHRS: smthrs, ...given }
+  const machines = (step.env?.["SMTHRS_MACHINES"] as string).replaceAll("${{ runner.temp }}", runner)
+  const environment: NodeJS.ProcessEnv = {
+    ...process.env,
+    NODE: process.execPath,
+    SMTHRS: smthrs,
+    SMTHRS_MACHINES: machines,
+    ...given
+  }
   delete environment["SMITHERS_CACHE_READ_TOKEN"]
   delete environment["SMITHERS_CACHE_WRITE_TOKEN"]
   delete environment["SMITHERS_CACHE_NAMESPACE"]

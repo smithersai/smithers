@@ -42,6 +42,28 @@ export interface Place {
 export const jobHomeVariable = "SMTHRS_MACHINE_HOME"
 
 /**
+ * The names of directories under which a tool run in a checkout no longer
+ * reads the checkout as written: Biome 2.6.6 skips every nested `biome.json`
+ * of a project under a directory with one of these names. Smithers build
+ * refuses to keep its machines under one, and a replay, whose checkouts are
+ * in the temporary directory, refuses to start under one.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const skippedNames: ReadonlyArray<string> = [".cache", ".git", ".hg", ".output", ".svn", ".yarn", "node_modules"]
+
+/**
+ * The first part of `path` that is one of {@link skippedNames}, if any.
+ *
+ * @category environment
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const skippedPart = (path: string): string | undefined =>
+  path.split("/").find((part) => skippedNames.includes(part))
+
+/**
  * The variable that names, to Smithers build, the directory it keeps the
  * machines of its jobs in. Every way of a replay names the same one, so a
  * job's machine is at the same paths in the baseline and in each mode.

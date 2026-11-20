@@ -88,28 +88,108 @@ export const homeVariable = "SMTHRS_MACHINE_HOME"
 export const temporaryVariable = "SMTHRS_MACHINE_TMP"
 
 /**
+ * The names of directories under which a tool run in a checkout no longer
+ * reads the checkout as written. Biome 2.6.6 skips every nested `biome.json`
+ * of a project that lies under a directory with one of these names, so a lint
+ * a CI passes fails on a machine kept there. No part of the path of a
+ * machine's checkout has one of them.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const skippedNames: ReadonlyArray<string> = [".cache", ".git", ".hg", ".output", ".svn", ".yarn", "node_modules"]
+
+/**
+ * The first part of `path` that is one of {@link skippedNames}, if any.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const skippedPart = (path: string): string | undefined =>
+  path.split(/[\\/]+/).find((part) => skippedNames.includes(part))
+
+/** The XDG base directory the variable `name` names, when it names an absolute one. */
+const xdg = (environment: Readonly<Record<string, string | undefined>>, name: string): string | undefined => {
+  const value = environment[name]
+  return value !== undefined && NodePath.isAbsolute(value) ? value : undefined
+}
+
+/** The directory inside `base`, named by the workspace's path, that holds the workspace's machines. */
+const forWorkspace = (base: string, root: string): string =>
+  NodePath.join(base, createHash("sha256").update(root).digest("hex").slice(0, 16))
+
+/**
  * Where the machines of the workspace at `root` are kept: one directory for
  * the workspace, named by its path, outside the workspace. A tool that walks
  * up from a machine's copy so never finds a file of the workspace itself.
  * The directory is the same in every build of the workspace, because a
  * record of what a run read names the paths of its home.
  *
+ * It is under the user's state directory (`$XDG_STATE_HOME/smthrs/machines`,
+ * else `~/.local/state/smthrs/machines`), never the cache directory: Biome
+ * does not read a checkout under `~/.cache` as written ({@link skippedNames}).
+ *
  * @category resolution
  * @since 1.0.0
  */
-export const holding = (root: string, environment: Readonly<Record<string, string | undefined>>): string => {
-  const base = environment[holdingVariable] ??
-    NodePath.join(
-      environment["XDG_CACHE_HOME"] ?? NodePath.join(environment["HOME"] as string, ".cache"),
-      "smthrs",
-      "machines"
-    )
-  return NodePath.join(base, createHash("sha256").update(root).digest("hex").slice(0, 16))
+export const holding = (root: string, environment: Readonly<Record<string, string | undefined>>): string =>
+  forWorkspace(
+    environment[holdingVariable] ??
+      NodePath.join(
+        xdg(environment, "XDG_STATE_HOME") ?? NodePath.join(environment["HOME"] as string, ".local", "state"),
+        "smthrs",
+        "machines"
+      ),
+    root
+  )
+
+/**
+ * Where builds kept the machines of the workspace at `root` before they
+ * moved out of the user's cache directory, when the environment names one.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const formerHolding = (
+  root: string,
+  environment: Readonly<Record<string, string | undefined>>
+): string | undefined => {
+  const cache = xdg(environment, "XDG_CACHE_HOME") ??
+    (environment["HOME"] === undefined ? undefined : NodePath.join(environment["HOME"], ".cache"))
+  return cache === undefined ? undefined : forWorkspace(NodePath.join(cache, "smthrs", "machines"), root)
+}
+
+/** A directory of machines with a part in its path under which a tool skips a project's configuration. */
+class MachinesUnderSkipped extends Data.TaggedError("smithers-build/MachinesUnderSkipped")<{
+  readonly message: string
+}> {}
+
+/** Fails when a part of `path`, the directory machines would be kept in, is one of {@link skippedNames}. */
+const refuseSkipped = (path: string): void => {
+  const part = skippedPart(path)
+  if (part === undefined) return
+  throw new MachinesUnderSkipped({
+    message: `machines would be kept in ${path}, under a directory named ${part}, where tools such as Biome ` +
+      `skip a project's own configuration files. Set ${holdingVariable} to a directory with no part named ` +
+      `${skippedNames.join(", ")}.`
+  })
+}
+
+/** Removes `kept`, and what a build set aside of it to be removed whose removal was stopped with the build's host. */
+const clear = async (kept: string): Promise<void> => {
+  await remove(kept)
+  const beside = NodePath.dirname(kept)
+  for (const name of await Fs.readdir(beside).catch(() => [])) {
+    if (name.startsWith(`${NodePath.basename(kept)}${setAside}`)) await remove(NodePath.join(beside, name))
+  }
 }
 
 /**
  * Makes the directory the machines of the workspace at `root` are kept in,
- * empty: what an earlier build left there is removed. Answers its real path.
+ * empty: what an earlier build left there, or in the place builds kept them
+ * before ({@link formerHolding}), is removed. Answers its real path. Fails,
+ * before anything is removed, when a part of the path is one of
+ * {@link skippedNames}.
  *
  * @category lifecycle
  * @since 1.0.0
@@ -119,14 +199,14 @@ export const prepare = async (
   environment: Readonly<Record<string, string | undefined>>
 ): Promise<string> => {
   const kept = holding(root, environment)
-  await remove(kept)
-  // What a build set aside to be removed, and whose removal was stopped with the build's host.
-  const beside = NodePath.dirname(kept)
-  for (const name of await Fs.readdir(beside).catch(() => [])) {
-    if (name.startsWith(`${NodePath.basename(kept)}${setAside}`)) await remove(NodePath.join(beside, name))
-  }
+  refuseSkipped(kept)
+  const former = formerHolding(root, environment)
+  if (former !== undefined) await clear(former)
+  await clear(kept)
   await Fs.mkdir(kept, { recursive: true })
-  return Fs.realpath(kept)
+  const real = await Fs.realpath(kept)
+  refuseSkipped(real)
+  return real
 }
 
 /**

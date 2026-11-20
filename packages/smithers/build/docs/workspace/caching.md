@@ -787,12 +787,17 @@ under the home, a file it left under `/tmp` for the next step, and what it
 wrote in the copy. A build whose machines are kept under `/tmp` and one whose
 machines are kept under a home directory keep and put back the same files.
 
-Machines are kept under the user's cache directory
-(`$XDG_CACHE_HOME/smthrs/machines`, else `~/.cache/smthrs/machines`), outside
-the workspace, so a tool that walks up from the copy finds no file of the
-workspace. `SMTHRS_MACHINES` names another directory. They are removed when the
-build ends, and what an earlier build left there is removed before the first
-target runs. One build at a time uses a workspace's machines.
+Machines are kept under the user's state directory
+(`$XDG_STATE_HOME/smthrs/machines`, else `~/.local/state/smthrs/machines`),
+outside the workspace, so a tool that walks up from the copy finds no file of
+the workspace. `SMTHRS_MACHINES` names another directory. No part of that path
+may be named `.cache`, `.git`, `.hg`, `.output`, `.svn`, `.yarn` or
+`node_modules`: Biome skips a project's nested `biome.json` under such a
+directory, so a lint that passes in the workspace would fail on the machine,
+and the build stops before the first target with that reason. Machines are
+removed when the build ends, and what an earlier build left there, or under
+`~/.cache/smthrs/machines` where builds kept them before, is removed before the
+first target runs. One build at a time uses a workspace's machines.
 
 `machine` requires `sandbox: "none"`. A `Shell.Build` on a machine also
 declares `cache: false`: what it builds stays on its machine for the targets

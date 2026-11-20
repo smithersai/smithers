@@ -70,6 +70,8 @@ import {
   machinesVariable,
   pushRefusal,
   searchPath,
+  skippedNames,
+  skippedPart,
   softwareEnvironment,
   stepEnvironment,
   thisHost
@@ -596,6 +598,17 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const progress = try Progress
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-replay-" }), "could not make a directory")
     try (try WorkDirectory).at(work)
+    // Every checkout of the replay is in this directory. Under one Biome skips, a lint the CI passes would fail here.
+    const workPath = try orFail(fs.realPath(work), "could not read a directory")
+    const skipped = skippedPart(workPath)
+    if (skipped !== undefined) {
+      throw failure(
+        "unsupported",
+        `the replay's directory ${workPath} is under a directory named ${skipped}, where tools such as Biome skip a ` +
+          `project's own configuration files, so a check the CI passes could fail here. Set TMPDIR to a directory ` +
+          `with no part named ${skippedNames.join(", ")}.`
+      )
+    }
     const source = path.join(work, sourceDirectory)
     const root = path.resolve(request.root)
     // The variables of the person who runs the replay. The token of the shared cache `--cache` names is one: it
