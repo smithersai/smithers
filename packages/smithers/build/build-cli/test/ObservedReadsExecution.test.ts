@@ -1214,6 +1214,38 @@ describe("a job of observed steps", () => {
     expect(last).not.toContain(first[0])
   })
 
+  // What a step left is put back for a target that waits for it. Where no target waits for a step, in the build
+  // or in the declarations, the archive would only be carried from run to run, and what a tool wrote in its own
+  // cache while the step ran is most of it.
+  tracedIt("keeps nothing of a step that no target waits for, and still answers it from its record", async () => {
+    // One step that leaves a file, as a test leaves a report. No target is declared after it.
+    const last = await fixture({ check: "/bin/cat input.txt > report.txt" })
+    const archives = async (root: string): Promise<ReadonlyArray<string>> =>
+      (await Fs.readdir(Path.join(root, ".flows", "kept")).catch(() => [])).sort()
+    expect(await last.run()).toEqual({ check: "ran" })
+    expect(await archives(last.root)).toEqual([])
+    expect(last.logs.filter((line) => line.includes("not kept") || line.includes("could not be kept"))).toEqual([])
+    // Its record answers it, in a fresh checkout too, where the file it left is gone.
+    await Fs.rm(Path.join(last.root, "report.txt"))
+    expect(await last.run()).toEqual({ check: "hit" })
+    await last.write("input.txt", "pass, changed\n")
+    expect(await last.run()).toEqual({ check: "ran" })
+    expect(await archives(last.root)).toEqual([])
+
+    // A step other targets are declared after keeps what it left, also in a build that runs it alone: the build
+    // of the others comes later and puts it back.
+    const waited = await job()
+    expect(await waited.run(["install"])).toEqual({ install: "ran" })
+    expect(await waited.kept()).toHaveLength(1)
+    await waited.checkout()
+    await waited.ran()
+    expect(await waited.run()).toEqual({ install: "hit", build: "ran", lint: "ran", test: "ran" })
+    expect(await waited.ran()).toEqual(["build", "lint", "test"])
+    expect(waited.logs).toContain("//:install  what it left is put back for //:build")
+    // The build left a file and the lint and the test wait for it; the test left none and nothing waits for it.
+    expect(await waited.kept()).toHaveLength(2)
+  })
+
   // The fourth ship review's xid replay: the recorded run of a step failed once, the plain run passed, and for a
   // day every row of the step read as on a host that cannot record a run.
   tracedIt("says that its recorded run failed where a step another waits for runs unrecorded", async () => {

@@ -449,7 +449,8 @@ const test = S.Shell.Test({ shell: "npm test", sandbox: "none", observe: true, d
 What a step left is kept, so a step after it can run without it. After a run,
 the files, directories and links the run wrote that are still there, in the
 workspace and under the temporary directory, are packed into one archive in
-`<cache directory>/kept`. The build decides for all the steps at once, before
+`<cache directory>/kept`. Nothing is packed for a step that no declared target
+waits for: its files would be put back for nobody. The build decides for all the steps at once, before
 the first target starts, which of them are answered from their records. When
 one that is not answered is about to run, what each answered step it waits for
 left is put back first: what the run removed is removed, and its files are

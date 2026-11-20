@@ -22,13 +22,15 @@ it read is unchanged. The generated workflow carries those results from one
 run to the next with `actions/cache`. It carries the compiled code of Smithers
 build the same way, so each run starts sooner than the first.
 
-With each such result it carries what the step left for the steps after it,
-in its job's checkout and home. When a later step of the job has to run and
-this one is reused, those files are put back and the later step finds what it
-would have found on a runner. A step's own files are never put back for the
-step itself. They include what a tool wrote in its own cache while the step
-ran: a step that runs `go test` in a Go module with no dependencies leaves
-about 58 MB, most of it the standard library `go` compiled.
+With the result of a step that another step of its job comes after, it
+carries what the step left in the job's checkout and home. When the later
+step has to run and this one is reused, those files are put back and the
+later step finds what it would have found on a runner. A step's own files are
+never put back for the step itself, and nothing is carried for a step that no
+step comes after. What is carried includes what a tool wrote in its own cache
+while the step ran: a `go vet` step before a `go test` step, in a Go module
+with no dependencies, leaves about 42 MB, most of it the standard library `go`
+compiled.
 
 The cache never holds:
 

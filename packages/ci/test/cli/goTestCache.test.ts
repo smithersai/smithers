@@ -15,12 +15,12 @@
  * and tracer.
  */
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { compiledCode, keptFiles } from "../../src/generate/Render.ts"
+import { compiledCode } from "../../src/generate/Render.ts"
 import { probe } from "../../src/replay/Jail.ts"
 import { bin, commit, git, head, observes, remove, spawn } from "./repo.ts"
 
@@ -35,17 +35,19 @@ const hasGo = spawnSync("go", ["version"]).status === 0
 /** A machine that can give a step a `/tmp` of its own: Linux with a bubblewrap that starts. */
 const mounts = !("refusal" in probe())
 
-const workflow = [
-  "name: CI",
-  "on: [push]",
-  "jobs:",
-  "  test:",
-  "    runs-on: ubuntu-latest",
-  "    steps:",
-  "      - uses: actions/checkout@v4",
-  "      - run: go test ./...",
-  ""
-].join("\n")
+/** A workflow whose one job runs `commands`, one step each. */
+const workflowOf = (commands: ReadonlyArray<string>): string =>
+  [
+    "name: CI",
+    "on: [push]",
+    "jobs:",
+    "  test:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - uses: actions/checkout@v4",
+    ...commands.map((command) => `      - run: ${command}`),
+    ""
+  ].join("\n")
 
 const test = [
   "package x",
@@ -70,8 +72,14 @@ const test = [
 
 const step = "//:ci.yml-test-1"
 
-/** The repository: the value is right, then a file no step reads changes, then the value is wrong. */
-const repository = (prefix: string): { readonly base: string; readonly source: string } => {
+/** Where a tool was once told to keep a cache in the directory the workflow carries. */
+const ofATool: ReadonlyArray<string> = ["go-build", "tools"]
+
+/** The repository, with the value right: a job of one step, `go test ./...`, unless `commands` names its steps. */
+const repository = (
+  prefix: string,
+  commands: ReadonlyArray<string> = ["go test ./..."]
+): { readonly base: string; readonly source: string } => {
   // Beside the temporary directory, as a runner's work directory and home are.
   const base = mkdtempSync(`/var/tmp/smithers-ci-${prefix}-`)
   made.push(base)
@@ -79,7 +87,7 @@ const repository = (prefix: string): { readonly base: string; readonly source: s
   mkdirSync(source)
   git(source, "init", "--quiet", "--initial-branch=main")
   commit(source, "base", {
-    ".github/workflows/ci.yml": workflow,
+    ".github/workflows/ci.yml": workflowOf(commands),
     "go.mod": "module example.test/stale\n\ngo 1.22\n",
     "x.go": "package x\n",
     "x_test.go": test,
@@ -99,6 +107,63 @@ const filesUnder = (root: string): ReadonlyArray<string> =>
 /** A file of `go`'s cache: an action or an output entry in its shard, or anything under a `go-build`. */
 const ofGoCache = (name: string): boolean =>
   /(?:^|\/)[0-9a-f]{2}\/[0-9a-f]{64}-[ad]$/.test(name) || name.split("/").includes("go-build")
+
+/**
+ * The workflow `apply` wrote for the repository at `source`, as a runner runs it: `run` is one run at a commit,
+ * with how it ended, each step's status by its label, and what it printed. `state` is the directory the workflow
+ * carries from one run to the next.
+ */
+const runner = (base: string, source: string) => {
+  const state = join(base, "state", "smithers-ci")
+  let runs = 0
+  const run = (sha: string) => {
+    // A fresh clone at the same path and an empty home, with the variables a runner sets.
+    const checkout = join(base, "run")
+    const home = join(base, "home")
+    remove(checkout)
+    remove(home)
+    mkdirSync(home)
+    git(base, "clone", "--quiet", source, checkout)
+    git(checkout, "checkout", "--quiet", "-B", "main", sha)
+    runs += 1
+    // A run that fails prints why and no list of steps: the list is read from the file the run writes.
+    const results = join(base, `results-${runs}.json`)
+    const command = [smthrs, "ci", "//...", "--ui", "plain", "--results-file", results, "--cache-dir", state]
+    const ran = spawnSync(process.execPath, command, {
+      cwd: checkout,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      env: {
+        ...process.env,
+        HOME: home,
+        CI: "true",
+        GITHUB_ACTIONS: "true",
+        GITHUB_SHA: sha,
+        GITHUB_REF: "refs/heads/main",
+        GITHUB_REF_NAME: "main",
+        GITHUB_EVENT_NAME: "push",
+        GITHUB_RUN_ID: String(9_000 + runs),
+        GITHUB_RUN_NUMBER: String(runs),
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_REPOSITORY: "example/go-stale",
+        GITHUB_WORKSPACE: checkout,
+        RUNNER_TEMP: join(base, "runner-temp"),
+        RUNNER_OS: "Linux",
+        NODE_COMPILE_CACHE: join(state, compiledCode),
+        ...(mounts ? { SMTHRS_MACHINE_OWN_TMP: "required" } : {})
+      }
+    })
+    const record = JSON.parse(readFileSync(results, "utf8")) as {
+      readonly results: ReadonlyArray<{ readonly label: string; readonly status: string }>
+    }
+    return {
+      code: ran.status,
+      statuses: Object.fromEntries(record.results.map((result) => [result.label, result.status])),
+      printed: `${ran.stdout}${ran.stderr}`
+    }
+  }
+  return { state, run }
+}
 
 describe.skipIf(!hasGo)("a Go test that reads a file through a child process", () => {
   it("fails in normal mode at the commit that breaks the file, as in the baseline", async () => {
@@ -130,68 +195,20 @@ describe.skipIf(!hasGo)("a Go test that reads a file through a child process", (
     commit(source, "value broken", { "testdata/value.txt": "bad\n" })
     const after = head(source)
 
-    // What the workflow carries from run to run.
-    const state = join(base, "state", "smithers-ci")
-    let runs = 0
-    /** One run of the workflow at a commit: how it ended, each step's status by its label, and what it printed. */
-    const run = (sha: string) => {
-      // A fresh clone at the same path and an empty home, with the variables a runner sets.
-      const checkout = join(base, "run")
-      const home = join(base, "home")
-      remove(checkout)
-      remove(home)
-      mkdirSync(home)
-      git(base, "clone", "--quiet", source, checkout)
-      git(checkout, "checkout", "--quiet", "-B", "main", sha)
-      runs += 1
-      // A run that fails prints why and no list of steps: the list is read from the file the run writes.
-      const results = join(base, `results-${runs}.json`)
-      const command = [smthrs, "ci", "//...", "--ui", "plain", "--results-file", results, "--cache-dir", state]
-      const ran = spawnSync(process.execPath, command, {
-        cwd: checkout,
-        encoding: "utf8",
-        maxBuffer: 64 * 1024 * 1024,
-        env: {
-          ...process.env,
-          HOME: home,
-          CI: "true",
-          GITHUB_ACTIONS: "true",
-          GITHUB_SHA: sha,
-          GITHUB_REF: "refs/heads/main",
-          GITHUB_REF_NAME: "main",
-          GITHUB_EVENT_NAME: "push",
-          GITHUB_RUN_ID: String(9_000 + runs),
-          GITHUB_RUN_NUMBER: String(runs),
-          GITHUB_RUN_ATTEMPT: "1",
-          GITHUB_REPOSITORY: "example/go-stale",
-          GITHUB_WORKSPACE: checkout,
-          RUNNER_TEMP: join(base, "runner-temp"),
-          RUNNER_OS: "Linux",
-          NODE_COMPILE_CACHE: join(state, compiledCode),
-          ...(mounts ? { SMTHRS_MACHINE_OWN_TMP: "required" } : {})
-        }
-      })
-      const record = JSON.parse(readFileSync(results, "utf8")) as {
-        readonly results: ReadonlyArray<{ readonly label: string; readonly status: string }>
-      }
-      return {
-        code: ran.status,
-        statuses: Object.fromEntries(record.results.map((result) => [result.label, result.status])),
-        printed: `${ran.stdout}${ran.stderr}`
-      }
-    }
+    const { state, run } = runner(base, source)
 
     const first = run(before)
     expect([first.code, first.statuses], first.printed).toEqual([0, { [step]: "ran" }])
-    // The directory the workflow carries holds Smithers build's own files: its records, what each step left for
-    // the steps after it, and its compiled code. No tool was told to keep a cache there, so nothing of `go`'s
-    // lies in it.
+    // The directory the workflow carries holds Smithers build's own files: its records and its compiled code. No
+    // tool was told to keep a cache there, and no step of the job comes after this one, so what it left in its
+    // home is kept for nobody: nothing of `go`'s lies in the directory, loose or in an archive.
     const carried = filesUnder(state)
     expect(carried.filter((name) => name.startsWith("cache/")).length).toBeGreaterThan(0)
     expect(carried.filter((name) => ofGoCache(name))).toEqual([])
-    expect([...new Set(carried.map((name) => name.split("/")[0]))].sort()).toEqual(
-      ["cache", keptFiles, compiledCode, "plan"].sort()
-    )
+    expect(carried.filter((name) => name.endsWith(".tar"))).toEqual([])
+    const top = [...new Set(carried.map((name) => name.split("/")[0] as string))]
+    expect(top).toEqual(expect.arrayContaining(["cache", compiledCode]))
+    expect(top.filter((name) => ofATool.includes(name))).toEqual([])
     // The next run restores that directory. Its step reads the changed file, so it runs, and `go` tests.
     const second = run(after)
     expect(second.statuses, second.printed).toEqual({ [step]: "failed" })
@@ -199,4 +216,51 @@ describe.skipIf(!hasGo)("a Go test that reads a file through a child process", (
     expect(second.printed).toContain("value is")
     expect(second.printed).not.toContain("(cached)")
   }, 540_000)
+  it(
+    "puts back what a reused step left in its home for the step after it, and carries nothing of the last",
+    async () => {
+      // Two steps in one job: the first compiles, the second tests. Only the test reads the value.
+      // The second step starts only where the first has left `go`'s cache in the job's home, as it has on a runner.
+      const { base, source } = repository("go-stale-two", [
+        "go vet ./...",
+        "test -f ~/.cache/go-build/README && go test ./..."
+      ])
+      const applied = await spawn(bin, ["apply"], source)
+      expect(applied.code, applied.stderr).toBe(0)
+      commit(source, "apply")
+      const before = head(source)
+      commit(source, "value broken", { "testdata/value.txt": "bad\n" })
+      const after = head(source)
+      const { state, run } = runner(base, source)
+      const vet = "//:ci.yml-test-1"
+      const tests = "//:ci.yml-test-2"
+
+      const first = run(before)
+      expect([first.code, first.statuses], first.printed).toEqual([0, { [vet]: "ran", [tests]: "ran" }])
+      // The test step comes after the vet step, so what the vet step left is carried: one archive of the job's
+      // home, which holds what `go` compiled for it. Nothing comes after the test step: nothing of it is carried,
+      // and no archive holds a result of a test.
+      const archives = filesUnder(state).filter((name) => name.endsWith(".tar"))
+      const ofHome = archives.filter((name) => name.endsWith(".machine.tar"))
+      expect(ofHome).toHaveLength(1)
+      const listed = spawnSync("tar", ["-tf", join(state, ofHome[0]!)], {
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024
+      })
+      expect(listed.status, listed.stderr).toBe(0)
+      expect(listed.stdout.split("\n").filter((name) => name.includes(".cache/go-build/")).length).toBeGreaterThan(0)
+      expect(statSync(join(state, ofHome[0]!)).size).toBeGreaterThan(1024 * 1024)
+      // The next run restores the directory. The vet step read nothing that changed and is reused. The job's new
+      // home is empty until its files are put back: the test step finds `go`'s cache there, so it starts, and
+      // `go` tests, and the test fails on the value.
+      const second = run(after)
+      expect(second.statuses, second.printed).toEqual({ [vet]: "hit", [tests]: "failed" })
+      expect(second.code).not.toBe(0)
+      expect(second.printed).toContain("value is")
+      expect(second.printed).not.toContain("(cached)")
+      // Still nothing of the last step is carried.
+      expect(filesUnder(state).filter((name) => name.endsWith(".machine.tar"))).toHaveLength(1)
+    },
+    540_000
+  )
 })

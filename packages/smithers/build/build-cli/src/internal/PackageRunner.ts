@@ -2902,6 +2902,39 @@ const executeWith = (
     /** Whether a target that runs in the same tree waits for this one. */
     const awaitedBy = (node: PackageNode, counts: (label: string) => boolean = () => true): boolean =>
       [...dependentsOf(node.label)].some((label) => counts(label) && together(node, byLabel.get(label)!))
+    /**
+     * Whether a declared target that runs in the same tree waits for this one, through other targets too,
+     * whether or not this build runs it: a build of some targets is followed by a build of the others.
+     */
+    const declaredWaiter = (() => {
+      let waiters: Map<string, Array<string>> | undefined
+      const machines = new Map<string, unknown>()
+      return (node: PackageNode): boolean => {
+        if (waiters === undefined) {
+          waiters = new Map()
+          const rows = index.targets()
+          for (const row of rows) {
+            machines.set(row.label, (Target.metadata(row.target).attrs as { readonly machine?: unknown }).machine)
+          }
+          for (const edge of index.edges(rows)) {
+            const waiting = waiters.get(edge.to)
+            if (waiting === undefined) waiters.set(edge.to, [edge.from])
+            else waiting.push(edge.from)
+          }
+        }
+        const seen = new Set<string>()
+        const reached = [node.label]
+        for (let at = 0; at < reached.length; at += 1) {
+          for (const waiter of waiters.get(reached[at]!) ?? []) {
+            if (seen.has(waiter)) continue
+            seen.add(waiter)
+            if (machines.get(waiter) === node.machine) return true
+            reached.push(waiter)
+          }
+        }
+        return false
+      }
+    })()
     /** A path as the kept files name it, and back. */
     const keptPath = (real: string, path: string): string =>
       path === real ? "." : path.startsWith(`${real}/`) ? path.slice(real.length + 1) : path
@@ -2937,6 +2970,10 @@ const executeWith = (
       Effect.gen(function*() {
         const { left, record } = observation
         if (left === undefined) return record
+        // What a run left is put back for a target that waits for it. Where no target waits for this one, in
+        // this build or in the declarations, the archive would only be carried from run to run, and what a tool
+        // wrote in its own cache while the step ran is most of it: nothing is kept.
+        if (!awaitedBy(node) && !declaredWaiter(node)) return record
         if ("refusal" in left) {
           log(`${node.label}  what it left is not kept: ${left.refusal}; it runs again when a step after it runs`)
           return record
