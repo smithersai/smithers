@@ -436,6 +436,8 @@ export interface Trace {
    * call's own answer says it opened: the two are the same file only when the trace placed the descriptor right.
    */
   readonly reached?: ReadonlyArray<readonly [path: string, named: string, opened: string]> | undefined
+  /** The programs `smthrs-observe` saw the run start whose file asks for rights the run did not have. */
+  readonly rights?: ReadonlyArray<string> | undefined
 }
 
 /** Decodes a quoted string as the tracer prints it; `undefined` when it is cut short or malformed. */
@@ -1039,6 +1041,7 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
   /** The process each thread belongs to, for a thread that is not the process's first. */
   const leaders = new Map<number, number>()
   const reachedThrough: Array<readonly [path: string, named: string, opened: string]> = []
+  const rights = new Set<string>()
 
   /**
    * A path as the process that named it found it: through a link the kernel makes for a process
@@ -1458,6 +1461,11 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
       refusals.add(unseen[1]!)
       continue
     }
+    const asking = /^\+\+\+ rights: (.*) \+\+\+$/s.exec(rest)
+    if (asking !== null) {
+      rights.add(asking[1]!)
+      continue
+    }
     if (rest.startsWith("+++") || rest.startsWith("---")) continue
     // The tracer writes `???` for a call it could not ask the thread about: the thread was killed where it stopped
     // before the call, by a thread that ended the process or started another program. The call never ran.
@@ -1559,9 +1567,58 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
     fetched,
     refusals: [...refusals],
     outside: [...outside],
-    ...(reachedThrough.length === 0 ? {} : { reached: reachedThrough })
+    ...(reachedThrough.length === 0 ? {} : { reached: reachedThrough }),
+    ...(supervised ? { rights: [...rights] } : {})
   }
 }
+
+/** The mode bits that make a program run as its file's owner or group. */
+const setIdBits = 0o6000
+
+/**
+ * Which of some programs ask for rights in their file: what `smthrs-observe
+ * --rights` answers where this package holds one for this host (`supervisor`,
+ * `false` for none), and otherwise which are set-user-id or set-group-id. A
+ * program that cannot be looked at asks for none.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const askingRights = (
+  programs: ReadonlyArray<string>,
+  supervisor?: string | false
+): ReadonlyArray<string> => {
+  if (programs.length === 0) return []
+  const asking = supervisor ?? supervisorPath(process.platform, process.arch, { [recorderVariable]: "smthrs-observe" })
+  if (typeof asking === "string") {
+    const asked = spawnSync(asking, ["--rights", ...programs], { encoding: "utf8", timeout: 30_000 })
+    if (asked.status === 0) return asked.stdout.split("\n").filter((line) => line !== "")
+  }
+  return programs.filter((program) => {
+    try {
+      const stats = NodeFs.statSync(program)
+      return stats.isFile() && (stats.mode & setIdBits) !== 0
+    } catch {
+      return false
+    }
+  })
+}
+
+/**
+ * The programs a recorded run started whose file asks for rights
+ * (set-user-id, set-group-id, file capabilities). Either recorder gives a run
+ * no new privileges, so each one ran without what its file asks for, as it
+ * would not on a CI runner: the run's verdict is not the step's.
+ * `smthrs-observe` names them in its trace, read at each start; for a trace
+ * strace wrote, the programs the run started are asked ({@link askingRights}).
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const rightsIn = (
+  trace: Trace,
+  ask: (programs: ReadonlyArray<string>) => ReadonlyArray<string> = askingRights
+): ReadonlyArray<string> => trace.rights ?? ask([...trace.started.keys()].sort(byCodeUnit))
 
 /**
  * The file-system reads a measurement makes; a test supplies a failing one.

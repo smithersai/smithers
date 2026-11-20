@@ -22,6 +22,15 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Twenty-second round, 2026-11-20.** A job with a step that needs rights the replay's jail takes away is left out
+(`sci-recorder-holes`).
+
+- **`RunRecord.TargetResult.rights`** (added, optional, 2026-11-20): the programs a target started whose files ask
+  for rights (set-user-id, set-group-id or a file capability, as `/usr/bin/ping` has), by path. Smithers build writes
+  it whatever the status. A replay leaves the target's job, or its matrix variant, out as `fails-here` with
+  ``runs `ping`, which needs rights this machine's jail takes away``, from the commit whose run found it on; that
+  commit runs again without it. `apply` still writes the job: a runner gives it the rights.
+
 **Twenty-first round, 2026-11-19.** A job's machine is at the same paths at every commit and in every way
 (`sci-cache-step`).
 

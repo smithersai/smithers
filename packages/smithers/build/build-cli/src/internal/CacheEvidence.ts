@@ -325,6 +325,79 @@ export const rememberReachedOutside = (
   now: number = Date.now()
 ): Promise<void> => remember(outsidePath(root, cacheDirectory, identity), { format: outsideFormat, at: now, ...record })
 
+/** The format tag a remembered need for rights carries; any other tag is ignored. */
+const rightsFormat = "smthrs-rights/1"
+
+/**
+ * Where it is remembered that a declaration's run started a program whose
+ * file asks for rights its jail takes away:
+ * `<cache directory>/evidence/<identity>.rights.json`.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const rightsPath = (root: string, cacheDirectory: string, identity: string): string =>
+  NodePath.join(root, ...cacheDirectory.split("/"), "evidence", `${identity}.rights.json`)
+
+/**
+ * The programs a run of this declaration made by `writer` started whose file
+ * asks for rights (set-user-id, set-group-id, file capabilities): such a
+ * declaration runs with no jail and no recorder, as a CI runner runs it. The
+ * memory ends with the declaration, whose identity is another, and answers
+ * only the build and the recorder that wrote it. `undefined` when nothing is
+ * remembered: the record is missing, unreadable, malformed, or another build
+ * or recorder wrote it.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const rightsNeeded = async (
+  root: string,
+  cacheDirectory: string,
+  identity: string,
+  writer: Writer
+): Promise<ReadonlyArray<string> | undefined> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(await Fs.readFile(rightsPath(root, cacheDirectory, identity), "utf8"))
+  } catch {
+    return undefined
+  }
+  if (typeof parsed !== "object" || parsed === null) return undefined
+  const record = parsed as {
+    readonly format?: unknown
+    readonly build?: unknown
+    readonly recorder?: unknown
+    readonly programs?: unknown
+  }
+  const programs = record.programs
+  return record.format === rightsFormat && record.build === writer.build && record.recorder === writer.recorder &&
+      Array.isArray(programs) && programs.length > 0 && programs.every((program) => typeof program === "string")
+    ? programs
+    : undefined
+}
+
+/**
+ * Remembers the programs a run of this declaration started whose file asks
+ * for rights its jail takes away. A later remembering replaces it.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const rememberRights = (
+  root: string,
+  cacheDirectory: string,
+  identity: string,
+  writer: Writer,
+  record: { readonly label: string; readonly programs: ReadonlyArray<string> }
+): Promise<void> =>
+  remember(rightsPath(root, cacheDirectory, identity), {
+    format: rightsFormat,
+    build: writer.build,
+    ...(writer.recorder === undefined ? {} : { recorder: writer.recorder }),
+    ...record
+  })
+
 /**
  * The lines of a failed confined run's output that name a path its
  * confinement closed, at most `limit` of them. The text may be a rendered

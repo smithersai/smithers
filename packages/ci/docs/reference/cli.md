@@ -165,6 +165,14 @@ says the same of every job that needs it. For a matrix job this holds per varian
 On a repository with [its own targets](../concepts/own-targets.md), the same
 holds for each target.
 
+A step that starts a program whose file asks for rights, as `/usr/bin/ping` asks
+for `cap_net_raw`, gets none of them in the replay's jail and fails, where a
+runner gives them. When a run of `smthrs ci` names such a program, its job, or
+its matrix variant, is not replayed from that commit on, and the report lists it
+as failing on this machine: ``runs `ping`, which needs rights this machine's jail
+takes away``. That commit runs again without it, in every way, and earlier
+commits keep their numbers. `apply` still writes the job.
+
 `fails-here` means the job did not pass on this machine in two runs, and so is
 compared in no way: it says nothing of whether Smithers CI runs that job right.
 The speedup always says how many jobs it covers, such as `over 3 of 5 jobs`

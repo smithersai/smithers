@@ -62,6 +62,12 @@ export interface TargetReport {
    */
   readonly notStored?: string | undefined
   /**
+   * The programs this target's run started whose file asks for rights
+   * (set-user-id, set-group-id, file capabilities) that its jail and its
+   * recorder take away. Its verdict is then the one of a run with neither.
+   */
+  readonly rights?: ReadonlyArray<string> | undefined
+  /**
    * Why a stored result of this target was not reused: the first thing its
    * run read that no longer holds what the run left there, such as
    * `src/a.ts changed`. Present for a target reused from what its run read

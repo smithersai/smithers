@@ -882,8 +882,28 @@ it in its job can then be reused with it. For `npm install` it says to commit
 as `uvx` and `uv run` without `--locked` do, it says to commit `uv.lock` and
 run the step with `uv run --locked`.
 
-A few programs do other things while their reads are recorded: one that
-traces another program, or one that gains privileges. When a step fails with
+A program whose file asks for rights, as `ping` does with a file capability
+or any program with a set-user-id bit, gets none while a step is recorded: the
+recording, and the jail that gives a step its own `/tmp`, give a step no new
+privileges. The recording sees every program a step starts, so a step that
+starts such a program runs again with no jail and no recording, as your runner
+runs it, and that run is the verdict, pass or fail. The second run starts in
+the checkout the first run left, as any second run does, so a step that cannot
+run twice in one checkout fails there. Nothing of either run is stored, and
+until the step's command changes it runs only that second way:
+
+```text
+2 of 2 commits  ci.yml:ping:1  ping -c1 127.0.0.1  never reused: it started /usr/bin/ping, which needs rights its jail takes away
+```
+
+A replay runs every step inside a jail of its own that no step can leave, so a
+job with such a step is left out of the replay from the commit where the step
+first starts the program, and that commit is replayed again without it. The CI
+`apply` writes keeps the job, and on your runner the job gets the verdict
+above.
+
+A program that traces another program also works otherwise while its reads
+are recorded. When a step fails with
 the recording and passes without it, the run without it is the verdict, and
 the step is run that way for a day. Another release of Smithers CI, or another
 recorder, tries the recording once more at once, since an upgrade may have

@@ -99,7 +99,10 @@ export type Parts = typeof Parts.Type
  * `fix` what a person does about it, when whoever ran the target knows.
  * A target that ran can say why no earlier result answered it: `notReused` is
  * what differed from the stored result (`src/a.ts changed`), and `notStored`
- * why this run's result is not stored either.
+ * why this run's result is not stored either. `rights` names, by path, the
+ * programs the target started whose files ask for rights (set-user-id,
+ * set-group-id or a file capability, as `/usr/bin/ping` has) that a jail with
+ * no new privileges takes away; Smithers build writes it whatever the status.
  *
  * @category models
  * @since 0.1.0
@@ -121,7 +124,8 @@ export const TargetResult = Schema.Struct({
   tests: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   parts: Schema.optionalKey(Parts),
   notReused: Schema.optionalKey(Schema.String),
-  notStored: Schema.optionalKey(Schema.String)
+  notStored: Schema.optionalKey(Schema.String),
+  rights: Schema.optionalKey(Schema.Array(Schema.String))
 })
 
 /**

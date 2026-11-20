@@ -1300,7 +1300,7 @@ const writeResults = async (
   config: RuntimeConfig
 ): Promise<string | undefined> => {
   const results = summary.results.map((
-    { durationMs, key, label, status, blocking, failureDigest, notStored, notReused, parts }
+    { durationMs, key, label, status, blocking, failureDigest, notStored, notReused, parts, rights }
   ) => ({
     label,
     status,
@@ -1311,7 +1311,8 @@ const writeResults = async (
     // Absent from the record when the result was stored, or reused: JSON drops an undefined member.
     notStored,
     notReused,
-    parts
+    parts,
+    ...(rights === undefined ? {} : { rights })
   }))
   try {
     await writeReceipt(

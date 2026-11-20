@@ -85,3 +85,34 @@ export effect function viewOf(store: string, waitedFor: ReadonlyArray<string>, v
 export effect function keep(views: ReadonlyArray<string>, store: string) {
   for (const view of views) try addEntries(view, store)
 }
+
+/**
+ * Every path under `directory`, from it: what a way keeps there now. A
+ * commit that runs again starts from it ({@link backTo}).
+ *
+ * @category between commits
+ * @since 0.1.0
+ */
+export effect function pathsIn(directory: string) {
+  const fs = try FileSystem.FileSystem
+  return new Set(try fs.readDirectory(directory, { recursive: true }))
+}
+
+/**
+ * Removes from `directory` every path that is not in `before`, which
+ * {@link pathsIn} gave: a commit that runs again finds what the run before
+ * it kept, and nothing its own first run added. Smithers build writes an
+ * entry of its cache whole under its name, and {@link keep} adds an entry
+ * only where none is, so a path that was there holds what it held. A path
+ * under one removed is gone already.
+ *
+ * @category between commits
+ * @since 0.1.0
+ */
+export effect function backTo(directory: string, before: ReadonlySet<string>) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  for (const name of try fs.readDirectory(directory, { recursive: true })) {
+    if (!before.has(name)) try fs.remove(path.join(directory, name), { recursive: true, force: true })
+  }
+}

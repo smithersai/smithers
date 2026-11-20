@@ -581,6 +581,90 @@ export const failedTwice = (results: ReadonlyArray<TargetResult>): ReadonlySet<s
   )
 
 /**
+ * Why a job, or one matrix variant of it, is left out when a step of it
+ * started programs whose files ask for rights (set-user-id, set-group-id or
+ * a file capability) that the replay's jail takes away: each program by the
+ * last part of its path, once, as in
+ * ``runs `ping`, which needs rights this machine's jail takes away``.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const rightsTaken = (programs: ReadonlyArray<string>): string => {
+  const names = [...new Set(programs.map((program) => program.slice(program.lastIndexOf("/") + 1)))]
+    .map((name) => `\`${name}\``)
+  const listed = names.length === 1
+    ? names.join("")
+    : `${names.slice(0, -1).join(", ")} and ${names.slice(-1).join("")}`
+  return `runs ${listed}, which ${names.length === 1 ? "needs" : "need"} rights this machine's jail takes away`
+}
+
+/**
+ * A job, or with `variant` one matrix variant of it, a step of which started
+ * `programs`: programs whose files ask for rights the replay's jail takes away.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface NeedsRights {
+  readonly job: string
+  readonly variant?: Readonly<Record<string, string>> | undefined
+  readonly programs: ReadonlyArray<string>
+}
+
+/**
+ * The units of `units` with a target whose result in a run of Smithers build
+ * names programs that ask for rights (`TargetResult.rights`), whatever its
+ * status, each with those programs. A result of no unit's step, such as the
+ * group of files every step names, is nobody's.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const rightsOf = (
+  units: ReadonlyArray<Unit>,
+  results: ReadonlyArray<TargetResult>
+): ReadonlyArray<NeedsRights> => {
+  const asked = new Map(
+    results.flatMap((result) =>
+      result.rights === undefined || result.rights.length === 0 ? [] : [[result.label, result.rights] as const]
+    )
+  )
+  return units.flatMap((unit) => {
+    const programs = unit.steps.flatMap((step) => step.targets.flatMap((target) => asked.get(target) ?? []))
+    if (programs.length === 0) return []
+    return [{ job: unit.job, ...(unit.variant === undefined ? {} : { variant: unit.variant }), programs }]
+  })
+}
+
+/**
+ * What to leave out for what {@link rightsOf} found, as the first run leaves
+ * out what fails here: each job or matrix variant once, with every program
+ * any run found it start. A variant's reason is led by the variant, as
+ * {@link trialOf} leads it.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const leftForRights = (found: ReadonlyArray<NeedsRights>): ReadonlyArray<FailedHere> => {
+  const units = new Map<string, NeedsRights>()
+  for (const entry of found) {
+    const before = units.get(unitKey(entry))
+    const programs = before === undefined ? entry.programs : [...before.programs, ...entry.programs]
+    units.set(unitKey(entry), { ...entry, programs })
+  }
+  return [...units.values()].map((entry) => {
+    const reason = rightsTaken(entry.programs)
+    return entry.variant === undefined
+      ? { job: entry.job, reason }
+      : { job: entry.job, variant: entry.variant, reason: `${stepKey("", entry.variant).trim()} ${reason}` }
+  })
+}
+
+/**
  * Why a replay that was asked to start warm starts with an empty cache when
  * its oldest commit has no commit before it in the repository.
  *

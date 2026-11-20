@@ -109,7 +109,7 @@ import {
 } from "./Process.vibe"
 import { readyHistory } from "./History.vibe"
 import { couldNotStart, fixesOf, homeOf, namedInStepHome, putOnPath } from "./HomeTools.ts"
-import { keep, viewOf } from "./Kept.vibe"
+import { backTo, keep, pathsIn, viewOf } from "./Kept.vibe"
 import { printsNotes, readsListener } from "./Reads.ts"
 import { defaultStallMinutes, type StallLimit, type Table, tableFor, watchFor } from "./Stall.vibe"
 import {
@@ -130,9 +130,11 @@ import {
   jobsCovered,
   jobsFor,
   labelsOf,
+  leftForRights,
   machinePaths,
   maxReruns,
   mismatchesOf,
+  type NeedsRights,
   noCiBefore,
   noCommitBefore,
   nothingToReplay,
@@ -142,6 +144,7 @@ import {
   recordOf,
   recovered,
   replayable,
+  rightsOf,
   runNames,
   seenIn,
   splitOf,
@@ -526,6 +529,18 @@ export effect function askModel<R>(parts: Pick<ReplayParts<R>, "asked" | "score"
  * that could run here, the replay fails `unsupported` with each of them and
  * its reason: a speedup over the rest would not be this CI's.
  *
+ * A step that starts a program whose file asks for rights (set-user-id,
+ * set-group-id or a file capability, as `/usr/bin/ping` has) gets none of
+ * them in the jail, and `smthrs` names the program in its results
+ * (`TargetResult.rights`); on a runner the step has them. Whenever a run of
+ * `smthrs` says so, the step's job, or its matrix variant, is left out from
+ * then on as what fails here is, with the reason
+ * ``runs `ping`, which needs rights this machine's jail takes away``. The
+ * time of a commit cannot be split by job, so the commit whose run found it
+ * runs again without it, in every way, from what each way kept before that
+ * commit; an earlier commit keeps its numbers. Such a job is not among the
+ * half that makes a replay fail `unsupported`, and `apply` still writes it.
+ *
  * A copy holds the commit's files and nothing else. What Smithers build keeps
  * between commits (its cache, and the compiled code of `smthrs`), the
  * generated workspace file and the run records are in the replay's own
@@ -739,8 +754,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       }
     }
 
-    // What the first run found does not pass on this machine.
+    // What the first run found does not pass on this machine, and what needs rights this machine's jail takes away.
     const failedHere: Array<FailedHere> = []
+    // What the runs of `smthrs` found started a program whose file asks for rights, and is not left out yet.
+    const needingRights: Array<NeedsRights> = []
 
     /**
      * What the CI of the commit checked out in the normal copy gives the replay: read, split and generated from that
@@ -931,6 +948,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const results = stalled
         ? stoppedResults(recorded, selected, watch.limitMs, noProgress(stall.minutes))
         : recorded as ReadonlyArray<TargetResult>
+      // A step that started a program whose file asks for rights gets none of them in the jail, and passes on a
+      // runner: its job is left out once this commit's runs end.
+      needingRights.push(...rightsOf(own.units, results))
       if (causes !== undefined) {
         // What a failed target printed may name a file `apply` wrote: a tool of the repository read it as one of
         // its own. A mismatch of that target then says so.
@@ -1342,14 +1362,32 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return { firstRun: try warmed(before, own) }
     }
 
+    /**
+     * Leaves out, at every run from now on, each job or matrix variant a run of `smthrs` found starts a program whose
+     * file asks for rights: this machine's jail takes them away, so its step fails here and passes on a runner. It
+     * is left out as what fails here is, and the newest commit's CI is read again without it. Gives what it left out.
+     */
+    effect function leftForRightsNow() {
+      const found = leftForRights(needingRights.splice(0))
+      if (found.length === 0) return found
+      for (const entry of found) try progress.say(`fails here: ${entry.job}: ${entry.reason}`)
+      failedHere.push(...found)
+      try checkout(normalCopy, tip, normal.place)
+      newest = try prepared()
+      return found
+    }
+
     // The jobs that could run here before the first run took any out.
     const could = new Set(newest.units.map((unit) => unit.job))
     const started: { readonly firstRun?: FirstRun; readonly cold?: string } = try start()
     const trialMs = started.firstRun === undefined && request.trial === true ? try trial() : undefined
-    // A speedup over less than half of a CI is not that CI's: the replay says what it left out, and stops.
+    // A speedup over less than half of a CI is not that CI's: the replay says what it left out, and stops. A job
+    // that needs rights the jail takes away is left out after: it is no failure of this CI.
     const stayed = new Set(newest.units.map((unit) => unit.job))
     const few = tooFewLeft(could.size, newest.left.filter((entry) => could.has(entry.job) && !stayed.has(entry.job)))
     if (few !== undefined) throw failure("unsupported", few)
+    // What the first run of each way found needs rights is left out before any commit is counted.
+    try leftForRightsNow()
 
     const commitsDone: Array<ReplayCommit> = []
     const commitsLeft: Array<NotReplayedCommit> = []
@@ -1361,15 +1399,27 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // How long the run as `apply` leaves the repository took, when there was one.
     let appliedMs: number | undefined = undefined
     const selected = new Map<string, ReadonlyArray<string>>()
+    // What each way keeps from one commit to the next: a commit that runs again starts from what it held before.
+    const keeping = [kept, normal.cache, ...(fast === undefined ? [] : [fast.cache])]
 
-    for (const [index, commit] of commits.entries()) {
+    let index = 0
+    while (index < commits.length) {
+      const commit = commits[index] as string
       const at = `${index + 1}/${commits.length} ${commit.slice(0, 7)}`
       const own = index === commits.length - 1 ? newest : try preparedAt(commit)
       if ("reason" in own) {
         try progress.say(`${at} not replayed`)
         commitsLeft.push({ commit, reason: own.reason })
+        index += 1
         continue
       }
+      // Where each way stands before the commit runs, for a commit that runs again.
+      const stood: Array<readonly [string, ReadonlySet<string>]> = []
+      for (const directory of keeping) {
+        stood.push([directory, try orFail(pathsIn(directory), "could not read what a way keeps")])
+      }
+      const lastBefore = { baseline: new Map(last.baseline), normal: new Map(last.normal), fast: new Map(last.fast) }
+      const tallyBefore = { ...tally }
       const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
       try progress.say(`${at} baseline`)
       const left: Array<Scope.Closeable> = []
@@ -1385,7 +1435,6 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         removing(left)
       )
       const baseRecord = recordOf(base.results, commit, base.wallMs)
-      baselines.push(baseRecord)
       const names = stepNames(own.units)
       try progress.say(`${at} normal`)
       // A mode starts each commit as a CI run starts: with a home and a temporary directory nothing wrote to.
@@ -1404,7 +1453,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const normalRecord = recordOf(ran.results, commit, ran.wallMs, "normal", withCheckout(spent.parts, ran.checkoutMs))
       let fastPart: Pick<ReplayCommit, "fast" | "skipped" | "model"> = {}
       let fastMismatches: ReturnType<typeof mismatchesOf> = []
-      flaky += flakyOf([baseRecord, normalRecord])
+      let fastFlakyHere = 0
+      let rowsHere: ReadonlyArray<Row> = []
+      let chosen: ReadonlyArray<string> | undefined = undefined
       if (fast !== undefined && fastNotMeasured === undefined) {
         const rows = try onNormalCopy(parts.rows(normalCopy, normalRecord, try planOf(normal, own)))
         const answered = try askModel(parts, rows)
@@ -1443,15 +1494,32 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           )
           fastPart = run.part
           fastMismatches = run.mismatches
-          fastFlaky += run.flaky
-          allRows.push(...rows)
-          selected.set(commit, choice.selected)
+          fastFlakyHere = run.flaky
+          rowsHere = rows
+          chosen = choice.selected
         }
       }
       // The newest commit is the one `apply` is run on.
       const applied = index === commits.length - 1
         ? try asApplied(at, commit, own, baseRecord, normalRecord)
         : undefined
+      // A job found to need rights is in this commit's times, which cannot be split by job: the commit runs again
+      // without it, from where each way stood before, and no number of this run is kept.
+      const without = try leftForRightsNow()
+      if (without.length > 0) {
+        try progress.say(`${at} again without ${[...new Set(without.map((entry) => entry.job))].join(", ")}`)
+        for (const [directory, paths] of stood) {
+          try orFail(backTo(directory, paths), "could not put back what a way keeps")
+        }
+        Object.assign(last, lastBefore)
+        Object.assign(tally, tallyBefore)
+        continue
+      }
+      baselines.push(baseRecord)
+      flaky += flakyOf([baseRecord, normalRecord])
+      fastFlaky += fastFlakyHere
+      allRows.push(...rowsHere)
+      if (chosen !== undefined) selected.set(commit, chosen)
       if (applied !== undefined) appliedMs = applied.ms
       commitsDone.push({
         commit,
@@ -1465,6 +1533,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         ],
         ...fastPart
       })
+      index += 1
     }
     // One commit where nothing passes is a failed commit. When nothing passes at any, the CI does not run here.
     const nothing = nothingPassed(baselines, stepNames(newest.units))

@@ -44,12 +44,6 @@
  * Each line carries the process (the thread group), not the thread: the lines of a process are complete, never
  * interrupted, so a reader needs no thread to pair them.
  *
- * A lookup or an open to read that says again what a line already said is not written: the same process, running
- * the same program, asked for the same path in the same way and had the same answer, and no call of the run has
- * made, removed, moved, linked or changed the rights of a name since. A reader keeps the first time a process
- * found a path or found it missing, so such a line changes nothing it keeps, and a compiler that looks up the
- * same header in each of its search paths a thousand times writes each line once.
- *
  * Lines are written in the order the kernel numbered the calls, after the command and every process it left have
  * ended. The trace starts with `<pid> +++ smthrs-observe 1 +++` and ends with `<pid> +++ complete +++`; a trace
  * without the last line was cut short. A run this program cannot see whole gets a line
@@ -87,7 +81,6 @@
 #include <sys/user.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/statvfs.h>
 #include <sys/xattr.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -469,8 +462,9 @@ static void unrecorded(const char *reason) {
 
 /*
  * Programs the run started whose file asks for rights a process with no new privileges never gets: set-user-id,
- * set-group-id, or file capabilities (`security.capability`), on a mount that honors them. This program sets no new
- * privileges for the run, so each one ran without what its file asks for, as it would not on a CI runner.
+ * set-group-id, or file capabilities (`security.capability`). This program sets no new privileges for the run, so
+ * each one ran without what its file asks for, as it would not on a CI runner. The mount the file is on is not
+ * asked: a jail that holds this program mounts every path `nosuid` itself.
  */
 static char *rightsNeeded[16];
 static int rightsCount;
@@ -479,8 +473,6 @@ static int rightsCount;
 static int asksRights(const char *program) {
   struct stat st;
   if (stat(program, &st) != 0 || !S_ISREG(st.st_mode)) return 0;
-  struct statvfs mount;
-  if (statvfs(program, &mount) == 0 && (mount.f_flag & ST_NOSUID)) return 0;
   if (st.st_mode & (S_ISUID | S_ISGID)) return 1;
   return getxattr(program, "security.capability", NULL, 0) > 0;
 }
@@ -608,62 +600,6 @@ static unsigned *generationOf(pid_t tgid) {
     }
   }
   return NULL;
-}
-
-/* Calls that make, remove, move, link a name or change its rights: a lookup after one may be answered otherwise. */
-static unsigned long namesChanged;
-
-/* A lookup or an open to read already written: by which process and program, how, and what it was told. */
-struct asked {
-  struct asked *next;
-  pid_t tgid;
-  unsigned generation;
-  unsigned long changed;
-  int error;
-  uint64_t how;
-  char path[];
-};
-#define ASKED_BUCKETS 65536
-#define ASKED_MOST 1000000
-static struct asked *asked[ASKED_BUCKETS];
-static unsigned askedCount;
-static pthread_mutex_t askedLock = PTHREAD_MUTEX_INITIALIZER;
-
-/*
- * Whether a line with this answer would say again what a line already said: the same process, running the same
- * program, asked for `path` the same way (`how`) and had the same answer, and no name changed since. Notes the
- * question otherwise, so the next one that says the same is not written.
- */
-static int askedAgain(pid_t tgid, uint64_t how, const char *path, int error) {
-  unsigned *generation = generationOf(tgid);
-  if (generation == NULL) return 0;
-  unsigned long changed = __atomic_load_n(&namesChanged, __ATOMIC_ACQUIRE);
-  uint64_t hash = 1469598103934665603ull ^ (uint64_t)tgid ^ (how << 32);
-  for (const char *at = path; *at != 0; at++) hash = (hash ^ (unsigned char)*at) * 1099511628211ull;
-  struct asked **bucket = &asked[hash % ASKED_BUCKETS];
-  int again = 0;
-  pthread_mutex_lock(&askedLock);
-  struct asked *found = *bucket;
-  while (found != NULL && !(found->tgid == tgid && found->how == how && strcmp(found->path, path) == 0)) {
-    found = found->next;
-  }
-  if (found != NULL) {
-    again = found->generation == *generation && found->changed == changed && found->error == error;
-    found->generation = *generation;
-    found->changed = changed;
-    found->error = error;
-  } else if (askedCount < ASKED_MOST) {
-    size_t length = strlen(path) + 1;
-    struct asked *made = malloc(sizeof *made + length);
-    if (made != NULL) {
-      *made = (struct asked){*bucket, tgid, *generation, changed, error, how};
-      memcpy(made->path, path, length);
-      *bucket = made;
-      askedCount++;
-    }
-  }
-  pthread_mutex_unlock(&askedLock);
-  return again;
 }
 
 /* A socket a process asked to bind, with a copy of it, until the socket says it is bound or the run ends. */
@@ -1436,10 +1372,6 @@ static void serve(const struct seccomp_notif *req) {
   char path[PATH_MAX + 1], other[PATH_MAX + 1];
   const char *why = NULL;
   struct text t = {0};
-  if (c->kind == K_MKDIR || c->kind == K_REMOVE || c->kind == K_RENAME || c->kind == K_LINK || c->kind == K_SYMLINK ||
-      c->kind == K_CHANGE) {
-    __atomic_add_fetch(&namesChanged, 1, __ATOMIC_ACQ_REL);
-  }
   switch (c->kind) {
     case K_OPEN: {
       uint64_t flags = 0;
@@ -1452,8 +1384,6 @@ static void serve(const struct seccomp_notif *req) {
       }
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
       int error, directory = 0;
-      int reading = (flags & (O_ACCMODE | O_CREAT | O_TRUNC | O_TMPFILE)) == O_RDONLY;
-      if (!reading) __atomic_add_fetch(&namesChanged, 1, __ATOMIC_ACQ_REL);
       if ((flags & O_TMPFILE) == O_TMPFILE) {
         /* An unnamed file in a directory: the directory is looked at, and no name is made. */
         error = look(path, 0);
@@ -1469,7 +1399,6 @@ static void serve(const struct seccomp_notif *req) {
       } else {
         error = lookKind(path, (flags & O_NOFOLLOW) != 0, &directory);
       }
-      if (reading && askedAgain(tgid, 2 | (flags << 2), path, error)) break;
       begin(&t, tgid, "openat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
@@ -1493,13 +1422,11 @@ static void serve(const struct seccomp_notif *req) {
       int nofollow = c->nofollow;
       if (c->flags >= 0 && (req->data.args[(int)c->flags] & AT_SYMLINK_NOFOLLOW)) nofollow = 1;
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
-      int error = look(path, nofollow);
-      if (askedAgain(tgid, (uint64_t)nofollow, path, error)) break;
       begin(&t, tgid, "newfstatat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
       puts_(&t, nofollow ? ", {...}, AT_SYMLINK_NOFOLLOW)" : ", {...}, 0)");
-      answer(&t, error);
+      answer(&t, look(path, nofollow));
       break;
     }
     case K_EXEC: {

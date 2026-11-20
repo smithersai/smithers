@@ -1382,6 +1382,19 @@ describe("what a report says about a failure", () => {
     expect(() => Schema.decodeUnknownSync(RunRecord.Parts)({ cpuMs: { step: 1 } })).toThrow()
   })
 
+  it("lets a result name the programs it started that ask for rights a jail takes away, whatever its status", () => {
+    const decode = Schema.decodeUnknownSync(RunRecord.TargetResult)
+    const result = { label: "//:ping", status: "failed", key: "", durationMs: 1 }
+    expect(decode(result)).toEqual(result)
+    expect(decode(result)).not.toHaveProperty("rights")
+    for (const status of ["failed", "ran"] as const) {
+      const asked = { ...result, status, rights: ["/usr/bin/ping", "/usr/bin/traceroute"] }
+      expect(decode(asked)).toEqual(asked)
+    }
+    expect(() => decode({ ...result, rights: "/usr/bin/ping" })).toThrow()
+    expect(() => decode({ ...result, rights: [1] })).toThrow()
+  })
+
   it("lets a result say why it was not reused, and a run's totals name each such step", () => {
     const result = {
       label: "//:a",

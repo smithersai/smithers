@@ -699,14 +699,24 @@ all be known, and says why on its own line:
 | `<path> changed while it ran`, `was removed while it ran`                  | Something else wrote a file the run read, so what the run saw can no longer be measured      |
 | `its trace ...`                                                            | A line of the trace could not be read in full                                                |
 | `its trace does not say where /proc/self/fd/3/x led`                       | With strace, a path below a descriptor is followed only for a call that opened a file there  |
+| `it started /usr/bin/ping, which needs rights its jail takes away`         | See below: it ran again with no jail and no tracer, and that run is the verdict              |
 | `<path> leads through a link of a process ...`, `... goes back up ...`     | A link of the workspace, or a `..`, leads into `/proc/self`, which only the run could follow |
 | `it read more paths than one record holds`                                 | The record passed 64 MiB, about 400,000 paths                                                |
 | `it passed, but failed while its reads were recorded`                      | See below                                                                                    |
 | `its recorded run failed and its plain run passed; it runs unrecorded ...` | See below: the run after such a one, of a target another waits for                           |
 | `a step after it may read what it leaves, and its reads are not recorded`  | The host cannot record reads, and another target waits for this one                          |
 
-A tracer changes what a few programs can do: one that gains privileges, as
-`sudo` does, or one that traces another program. A traced run that fails is
+A program whose file asks for rights (set-user-id, set-group-id, a file
+capability, as `ping` has) gets none in a traced run, nor in the jail that gives
+a machine its own `/tmp`: both give the run no new privileges. The trace names
+each such program the run started. The target then runs again with no jail and
+no tracer, in the tree the traced run left, and that run is the verdict, pass or
+fail. Nothing is stored, and until the declaration changes it runs that way
+only. Where no run of the build can have the rights, the target fails and says
+so: the build itself has no new privileges, or another machine of the build
+has the host's `/tmp`.
+
+A tracer also changes what a program that traces another can do. A traced run that fails is
 therefore followed by an untraced run, and the untraced run is the verdict. When
 it passes, nothing is stored and the declaration is not traced again for a day
 by the same build of Smithers build with the same recorder; until then it is

@@ -23,7 +23,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { addEntries, keep, viewOf } from "../../src/replay/Kept.vibe"
+import { addEntries, backTo, keep, pathsIn, viewOf } from "../../src/replay/Kept.vibe"
 import { bin, commit, git, spawn, temporary } from "../cli/repo.ts"
 
 const made: Array<string> = []
@@ -54,6 +54,28 @@ const entriesOf = (store: string): ReadonlyArray<string> =>
       readdirSync(join(store, "actions-cache", paths)).map((name) => `${paths}/${name}`)
     ).toSorted()
     : []
+
+describe("what a way keeps, for a commit that runs again", () => {
+  it("is put back: what the first run added is gone, and what was there before stays with its bytes", async () => {
+    const kept = scratch()
+    mkdirSync(join(kept, "cache", "ab"), { recursive: true })
+    writeFileSync(join(kept, "cache", "ab", "entry"), "before")
+    writeFileSync(join(kept, "record.json"), "{}")
+    const before = await run(pathsIn(kept))
+    expect([...before].sort()).toEqual(["cache", "cache/ab", "cache/ab/entry", "record.json"])
+    // The run that is thrown away adds a file beside an old one, and a new directory with files under it.
+    writeFileSync(join(kept, "cache", "ab", "other"), "new")
+    mkdirSync(join(kept, "cache", "cd", "deep"), { recursive: true })
+    writeFileSync(join(kept, "cache", "cd", "deep", "entry"), "new")
+    mkdirSync(join(kept, "machine"))
+    await run(backTo(kept, before))
+    expect([...(await run(pathsIn(kept)))].sort()).toEqual([...before].sort())
+    expect(readFileSync(join(kept, "cache", "ab", "entry"), "utf8")).toBe("before")
+    // Nothing added, nothing removed.
+    await run(backTo(kept, before))
+    expect([...(await run(pathsIn(kept)))].sort()).toEqual([...before].sort())
+  })
+})
 
 describe("what a job sees of the store", () => {
   it("is every finished entry the store holds, as hard links that keep the entry's time", async () => {

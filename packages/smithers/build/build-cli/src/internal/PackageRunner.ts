@@ -136,6 +136,8 @@ export interface ExecutionServices {
   readonly observer: (host: ExecSandbox.Host) => ObservedReads.Observer
   /** Plans single targets again while the run is under way. */
   readonly replanner: typeof replanner
+  /** Whether this build itself runs with no new privileges, as inside another program's jail. */
+  readonly noNewPrivileges: () => boolean
 }
 
 /**
@@ -161,7 +163,9 @@ export const executionServicesLive: ExecutionServices = {
   sandboxHost: () => ExecSandbox.host(),
   writeProtection: (host) => ExecSandbox.writeProtectionRefusal(host),
   observer: (host) => ObservedReads.observer({ ...host, supervisor: ObservedReads.supervisorPath() }),
-  replanner
+  replanner,
+  // Asked only where a recorder ran, which is Linux, where every process has the file.
+  noNewPrivileges: () => /^NoNewPrivs:\s*1$/m.test(NodeFs.readFileSync("/proc/self/status", "utf8"))
 }
 
 /**
@@ -976,6 +980,12 @@ const executeWith = (
     let noOwnTmp: string | undefined
     /** The machine whose targets use the host's `/tmp`, where a build must not let two machines share it. */
     let usesHostTmp: string | undefined
+    /** The programs each target's run started whose file asks for rights its jail takes away, by label. */
+    const rightsLost = new Map<string, ReadonlyArray<string>>()
+    /** One run with no jail at a time: it finds the host's `/tmp`, which two machines' runs never share at once. */
+    const unjailedTurn = yield* Semaphore.make(1)
+    /** What each machine's runs with no jail added to the host's `/tmp`, by name, by machine. */
+    const hostTmpLeft = new Map<string, ReadonlyArray<string>>()
     const ownTmp = (): Promise<string | undefined> =>
       mounting ??= Machine.mounting(hostEnvironment, machinesKept!).then((found) => {
         if ("bwrap" in found) return found.bwrap
@@ -1228,7 +1238,9 @@ const executeWith = (
       /** Puts the resolved command under a tracer; the command, its environment and its verdict are unchanged. */
       traced?: (argv: ReadonlyArray<string>) => ReadonlyArray<string>,
       /** Hears everything the command writes to its output, before any of it is cut or redacted. */
-      heard?: (block: Uint8Array) => void
+      heard?: (block: Uint8Array) => void,
+      /** Runs the command with no jail of the build's: the host's `/tmp`, no namespace, as a CI runner runs it. */
+      unjailed = false
     ): Effect.Effect<SpawnOutcome, unknown> =>
       Effect.gen(function*() {
         const spawn = yield* resolveSpawn(node, override, archive)
@@ -1260,9 +1272,11 @@ const executeWith = (
         const ownsGoBuild = index.workspace.cache.goBuild !== false
         // A target on its machine finds the machine's temporary directory at `/tmp` too, where the host can give
         // it one. The tracer runs inside, so what it writes down is what the target saw.
-        const bwrap = onIts ? yield* joined(ownTmp) : undefined
-        // Two machines never share the host's `/tmp` in a build that was told so: the first to run has it.
-        if (onIts && bwrap === undefined && hostEnvironment[Machine.ownTmpVariable] === "required") {
+        const own = onIts ? yield* joined(ownTmp) : undefined
+        const bwrap = unjailed ? undefined : own
+        // Two machines never share the host's `/tmp` in a build that was told so: on a host that gives a machine none
+        // of its own, the first to run has it.
+        if (onIts && own === undefined && hostEnvironment[Machine.ownTmpVariable] === "required") {
           usesHostTmp ??= machine.name
           if (usesHostTmp !== machine.name) {
             return { ok: false as const, error: Machine.sharedRefusal(machine.name, usesHostTmp, noOwnTmp!) }
@@ -2742,11 +2756,15 @@ const executeWith = (
       node: PackageNode,
       argv?: ReadonlyArray<string> | undefined,
       traced?: (argv: ReadonlyArray<string>) => ReadonlyArray<string>,
-      heard?: (block: Uint8Array) => void
+      heard?: (block: Uint8Array) => void,
+      unjailed = false
     ): Effect.Effect<ExecOutcome, unknown> =>
       node.machine === undefined
-        ? runWithOverlays(node, (treeRoot) => spawnNode(node, treeRoot, argv, [], false, traced, heard))
-        : Effect.flatMap(onMachine(node), (machine) => spawnNode(node, machine!.tree, argv, [], false, traced, heard))
+        ? runWithOverlays(node, (treeRoot) => spawnNode(node, treeRoot, argv, [], false, traced, heard, unjailed))
+        : Effect.flatMap(
+          onMachine(node),
+          (machine) => spawnNode(node, machine!.tree, argv, [], false, traced, heard, unjailed)
+        )
 
     let observing: ObservedReads.Observer | undefined
     let unobservedNoted = false
@@ -2774,6 +2792,48 @@ const executeWith = (
     const unrecordedUntil = (at: number): string =>
       "its recorded run failed and its plain run passed; it runs unrecorded until " +
       `${new Date(at + CacheEvidence.attemptMemoryMs).toISOString().slice(0, 16).replace("T", " ")} UTC`
+    /**
+     * A step whose run started a program that asks for rights in its file (set-user-id, set-group-id, file
+     * capabilities). Its jail and its recorder give it no new privileges, so the program ran without them, as it
+     * never does on a CI runner, and that run's verdict is not the step's. The step runs again with no jail and no
+     * recorder, as a runner runs it, in the tree the first run left, and that run's verdict is the step's. Nothing of
+     * either run is stored. An observed step is never confined, so nothing but the jail stands between it and the
+     * rights. The run finds the host's `/tmp`: in a build whose machines must not share it, it does not start while
+     * a name another machine's run left there is still there. Where no run here can have the rights, the step fails
+     * and says what to do.
+     */
+    const withRights = (node: PackageNode, programs: ReadonlyArray<string>): Effect.Effect<Outcome, unknown> =>
+      unjailedTurn.withPermit(Effect.gen(function*() {
+        rightsLost.set(node.label, programs)
+        wroteHere.delete(node.label)
+        const why = `it started ${programs.join(", ")}, which needs rights its jail takes away`
+        const back = "write this job back into the workflow as the repository had it"
+        if (services.noNewPrivileges()) {
+          return fail(`${node.label}: ${why}, and this run has no new privileges itself: ${back}`)
+        }
+        const machine = machineOf(node)
+        if (machine !== undefined && hostEnvironment[Machine.ownTmpVariable] === "required") {
+          const other = [...hostTmpLeft].flatMap(([owner, names]) =>
+            owner === machine.name ? [] : names.flatMap((name) => {
+              const path = NodePath.join(Machine.sharedTmp, name)
+              return NodeFs.existsSync(path) ? [[owner, path] as const] : []
+            })
+          )[0]
+          if (other !== undefined) {
+            return fail(`${node.label}: ${why}, and machine ${other[0]} left ${other[1]} in this build: ${back}`)
+          }
+        }
+        const before = new Set(NodeFs.readdirSync(Machine.sharedTmp))
+        log(`${node.label}  ${why}; it runs again without the jail`)
+        const plain = yield* timed(node.label, "step", spawnConsumer(node, undefined, undefined, undefined, true))
+        const added = NodeFs.readdirSync(Machine.sharedTmp).filter((name) => !before.has(name))
+        if (machine !== undefined && added.length > 0) {
+          hostTmpLeft.set(machine.name, [...(hostTmpLeft.get(machine.name) ?? []), ...added])
+        }
+        if (!plain.ok) return fail(plain.error)
+        unstored(node, why, "; it ran without the jail")
+        return green("ran")
+      }))
     /** The targets of this run that wait for a target, directly or through another. */
     const dependentsOf = (() => {
       const direct = new Map<string, Array<string>>()
@@ -3374,6 +3434,9 @@ const executeWith = (
           build: yield* joined(() => Planner.implementationFingerprint()),
           recorder: host.supervisor === true ? ObservedReads.recorder() : "strace"
         }
+        // A declaration whose run started a program that asks for rights runs as a runner runs it, every time.
+        const asking = yield* joined(() => CacheEvidence.rightsNeeded(root, cacheDirectory, observed.key, recordedBy))
+        if (asking !== undefined) return yield* withRights(node, asking)
         const failedAt = yield* joined(() =>
           CacheEvidence.attemptFailedAt(root, cacheDirectory, observed.key, recordedBy)
         )
@@ -3443,6 +3506,28 @@ const executeWith = (
               `${node.label}: smthrs-observe stopped before the step ended, so its run says nothing about the step`
             return { status: "skipped" as const, error: brokeOn }
           }
+          const parsed = yield* timed(
+            node.label,
+            "reads",
+            Effect.exit(joined(async () =>
+              ObservedReads.read(
+                listener.lines(ObservedReads.linesOf(traceFile)),
+                NodePath.resolve(place, node.cwd),
+                observed.quiet
+              )
+            ))
+          )
+          // A program that asks for rights ran without them: whether the run passed or failed says nothing.
+          const needs = Exit.isSuccess(parsed) ? ObservedReads.rightsIn(parsed.value) : []
+          if (needs.length > 0) {
+            yield* joined(() =>
+              CacheEvidence.rememberRights(root, cacheDirectory, observed.key, recordedBy, {
+                label: node.label,
+                programs: needs
+              }).catch(() => undefined)
+            )
+            return yield* withRights(node, needs)
+          }
           if (!attempt.ok) {
             log(`${node.label}  failed while its reads were recorded; it runs again without the recording`)
             const plain = yield* timed(node.label, "step", spawnConsumer(node))
@@ -3464,16 +3549,12 @@ const executeWith = (
             machine === undefined || (yield* joined(ownTmp)) === undefined
               ? []
               : Machine.mountsOf(NodeFs.realpathSync(machine.tmp), sightOf(machine, hostEnvironment["PATH"]))
-          const read = yield* timed(
+          const read = Exit.isFailure(parsed) ? Exit.failCause(parsed.cause) : yield* timed(
             node.label,
             "reads",
             Effect.exit(joined(async () =>
               ObservedReads.observe(
-                ObservedReads.read(
-                  listener.lines(ObservedReads.linesOf(traceFile)),
-                  NodePath.resolve(place, node.cwd),
-                  observed.quiet
-                ),
+                parsed.value,
                 {
                   variables: {
                     values: observed.variables,
@@ -5526,6 +5607,7 @@ const executeWith = (
           ...(outcome.error === undefined ? {} : { error: outcome.error }),
           ...(outcome.blockedBy === undefined ? {} : { blockedBy: outcome.blockedBy }),
           ...(notStored === undefined ? {} : { notStored }),
+          ...(rightsLost.has(label) ? { rights: rightsLost.get(label) } : {}),
           ...(unreusedReasons.has(label) ? { notReused: unreusedReasons.get(label) } : {}),
           ...(parts.of(label) === undefined ? {} : { parts: parts.of(label) })
         })
