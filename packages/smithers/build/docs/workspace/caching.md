@@ -674,22 +674,29 @@ command starts itself is recorded as any program is.
 **When nothing is stored.** A green run stores nothing when what it read cannot
 all be known, and says why on its own line:
 
-| Reason                                                                    | What happened                                                                                |
-| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `it opened a network connection (uv to 151.101.0.223 port 443)`           | What a network answers is in no record. The line names the program and the first address     |
-| `it reached a program outside the run ...`                                | A daemon reads files this run's trace does not show. A server the run starts itself is in it |
-| `it changed its view of the file system`                                  | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says          |
-| `<path> changed while it ran`, `was removed while it ran`                 | Something else wrote a file the run read, so what the run saw can no longer be measured      |
-| `its trace ...`                                                           | A line of the trace could not be read in full                                                |
-| `it read more paths than one record holds`                                | The record passed 12 MiB                                                                     |
-| `it passed, but failed while its reads were recorded`                     | See below                                                                                    |
-| `a step after it may read what it leaves, and its reads are not recorded` | The host cannot record reads, and another target waits for this one                          |
+| Reason                                                                     | What happened                                                                                |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `it opened a network connection (uv to 151.101.0.223 port 443)`            | What a network answers is in no record. The line names the program and the first address     |
+| `it reached a program outside the run ...`                                 | A daemon reads files this run's trace does not show. A server the run starts itself is in it |
+| `it changed its view of the file system`                                   | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says          |
+| `<path> changed while it ran`, `was removed while it ran`                  | Something else wrote a file the run read, so what the run saw can no longer be measured      |
+| `its trace ...`                                                            | A line of the trace could not be read in full                                                |
+| `it read more paths than one record holds`                                 | The record passed 12 MiB                                                                     |
+| `it passed, but failed while its reads were recorded`                      | See below                                                                                    |
+| `its recorded run failed and its plain run passed; it runs unrecorded ...` | See below: the run after such a one, of a target another waits for                           |
+| `a step after it may read what it leaves, and its reads are not recorded`  | The host cannot record reads, and another target waits for this one                          |
 
 A tracer changes what a few programs can do: one that gains privileges, as
 `sudo` does, or one that traces another program. A traced run that fails is
 therefore followed by an untraced run, and the untraced run is the verdict. When
 it passes, nothing is stored and the declaration is not traced again for a day;
-until then it is keyed by its `data`.
+until then it is keyed by its `data`. A target that another target waits for
+cannot be keyed so, because nothing says what it leaves: it runs every time
+until then, and its line says when the recording is tried again:
+
+```text
+//:install  not cached: its recorded run failed and its plain run passed; it runs unrecorded until 2026-11-21 02:21 UTC
+```
 
 A run that opened a network connection, or reached a program outside the run,
 stores nothing whether its reads are recorded or not. Recording it again would

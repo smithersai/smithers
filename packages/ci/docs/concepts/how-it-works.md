@@ -861,6 +861,16 @@ it in its job can then be reused with it. For `npm install` it says to commit
 as `uvx` and `uv run` without `--locked` do, it says to commit `uv.lock` and
 run the step with `uv run --locked`.
 
+A few programs do other things while their reads are recorded: one that
+traces another program, or one that gains privileges. When a step fails with
+the recording and passes without it, the run without it is the verdict, and
+the step is run that way for a day. Its line says so, and when the recording
+is tried again:
+
+```text
+2 of 2 commits  ci.yml:build:1  ./debug-tests.sh  never reused: its recorded run failed and its plain run passed; it runs unrecorded until 2026-11-21 02:21 UTC
+```
+
 With fast mode, it also gives fast mode's selection metrics; see
 [Normal mode and fast mode](modes.md#how-fast-mode-is-measured).
 

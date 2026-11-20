@@ -208,6 +208,10 @@ describe("a remembered failed attempt", () => {
     expect(await CacheEvidence.attemptFailed(root, ".flows", identity, at + CacheEvidence.attemptMemoryMs - 1)).toBe(
       true
     )
+    // It says when the attempt was, so a reader can be told when the next one is.
+    expect(await CacheEvidence.attemptFailedAt(root, ".flows", identity, at + 1)).toBe(at)
+    expect(await CacheEvidence.attemptFailedAt(root, ".flows", identity, at + CacheEvidence.attemptMemoryMs))
+      .toBeUndefined()
     expect(await CacheEvidence.attemptFailed(root, ".flows", identity, at + CacheEvidence.attemptMemoryMs)).toBe(false)
     // A record from the future is a clock that moved, not a fact.
     expect(await CacheEvidence.attemptFailed(root, ".flows", identity, at - 1)).toBe(false)

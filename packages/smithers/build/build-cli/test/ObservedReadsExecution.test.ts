@@ -1214,6 +1214,37 @@ describe("a job of observed steps", () => {
     expect(last).not.toContain(first[0])
   })
 
+  // The fourth ship review's xid replay: the recorded run of a step failed once, the plain run passed, and for a
+  // day every row of the step read as on a host that cannot record a run.
+  tracedIt("says that its recorded run failed where a step another waits for runs unrecorded", async () => {
+    // The install refuses to run under a tracer, as a debugger or a privileged program does.
+    const refusing = "if /bin/grep -q '^TracerPid:[[:space:]]*[1-9]' /proc/self/status; then exit 1; fi\n" +
+      "/bin/cat registry.cfg > /dev/null\n/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt"
+    const { logs, ran, run, unstored } = await job({ install: refusing })
+    const before = Date.now()
+    expect(await run()).toEqual(all("ran"))
+    // The run that found it out says what happened to that run.
+    expect(unstored["install"]).toBe("it passed, but failed while its reads were recorded")
+    await ran()
+    // Every run after it, for a day: the step runs with no record, and its row says why and until when.
+    expect((await run())["install"]).toBe("ran")
+    const reason = unstored["install"]!
+    const said =
+      /^its recorded run failed and its plain run passed; it runs unrecorded until (\d{4}-\d\d-\d\d) (\d\d:\d\d) UTC$/
+        .exec(reason)
+    expect(said, reason).not.toBeNull()
+    const until = Date.parse(`${said![1]}T${said![2]}:00Z`)
+    // A day after the recorded run that failed, to the minute.
+    expect(until).toBeGreaterThanOrEqual(before + CacheEvidence.attemptMemoryMs - 60_000)
+    expect(until).toBeLessThanOrEqual(Date.now() + CacheEvidence.attemptMemoryMs)
+    expect(await ran()).toContain("install")
+    expect(logs).toContain(`//:install  not cached: ${reason}`)
+    // The general line is for a host that cannot record a run, and is not said here.
+    expect(Object.values(unstored)).not.toContain(
+      "a step after it may read what it leaves, and its reads are not recorded"
+    )
+  })
+
   tracedIt("is answered whole when its steps share a group of files", async () => {
     const { checkout, ran, run } = await job({ shared: true })
     expect(await run()).toEqual(all("ran"))

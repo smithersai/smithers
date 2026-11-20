@@ -156,6 +156,34 @@ export const attemptPath = (root: string, cacheDirectory: string, identity: stri
   NodePath.join(root, ...cacheDirectory.split("/"), "evidence", `${identity}.json`)
 
 /**
+ * When a confined attempt of this declaration failed, if it did within
+ * {@link attemptMemoryMs}: the attempt is made again that long after it. A
+ * missing, unreadable, malformed or expired record answers `undefined`.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const attemptFailedAt = async (
+  root: string,
+  cacheDirectory: string,
+  identity: string,
+  now: number = Date.now()
+): Promise<number | undefined> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(await Fs.readFile(attemptPath(root, cacheDirectory, identity), "utf8"))
+  } catch {
+    return undefined
+  }
+  if (typeof parsed !== "object" || parsed === null) return undefined
+  const record = parsed as { readonly format?: unknown; readonly at?: unknown }
+  return record.format === format && typeof record.at === "number" && now >= record.at &&
+      now - record.at < attemptMemoryMs
+    ? record.at
+    : undefined
+}
+
+/**
  * Whether a confined attempt of this declaration failed within
  * {@link attemptMemoryMs}. A missing, unreadable, malformed or expired record
  * answers no, and the run is attempted confined.
@@ -168,18 +196,7 @@ export const attemptFailed = async (
   cacheDirectory: string,
   identity: string,
   now: number = Date.now()
-): Promise<boolean> => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(await Fs.readFile(attemptPath(root, cacheDirectory, identity), "utf8"))
-  } catch {
-    return false
-  }
-  if (typeof parsed !== "object" || parsed === null) return false
-  const record = parsed as { readonly format?: unknown; readonly at?: unknown }
-  return record.format === format && typeof record.at === "number" && now >= record.at &&
-    now - record.at < attemptMemoryMs
-}
+): Promise<boolean> => await attemptFailedAt(root, cacheDirectory, identity, now) !== undefined
 
 /**
  * Remembers that a confined attempt of this declaration failed while the same

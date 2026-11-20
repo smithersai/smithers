@@ -2766,6 +2766,13 @@ const executeWith = (
     )
     const stateOf = ObservedReads.remembering(ObservedReads.defaultIo, Date.now, digests)
     const failedObserved = "it passed, but failed while its reads were recorded"
+    /**
+     * Why a step another waits for runs with no record, after a recorded run of it failed at `at` and the plain
+     * run passed: until the recording is tried again, nothing says what it leaves.
+     */
+    const unrecordedUntil = (at: number): string =>
+      "its recorded run failed and its plain run passed; it runs unrecorded until " +
+      `${new Date(at + CacheEvidence.attemptMemoryMs).toISOString().slice(0, 16).replace("T", " ")} UTC`
     /** The targets of this run that wait for a target, directly or through another. */
     const dependentsOf = (() => {
       const direct = new Map<string, Array<string>>()
@@ -3324,11 +3331,21 @@ const executeWith = (
         const attemptPath = posix(
           NodePath.relative(root, CacheEvidence.attemptPath(root, cacheDirectory, observed.key))
         )
-        if (yield* joined(() => CacheEvidence.attemptFailed(root, cacheDirectory, observed.key))) {
+        const failedAt = yield* joined(() => CacheEvidence.attemptFailedAt(root, cacheDirectory, observed.key))
+        if (failedAt !== undefined) {
           log(
             `${node.label}  its reads are not recorded: ${failedObserved}, on an earlier run; ` +
               `they are recorded again a day after that run. That run's output is in ${attemptPath}`
           )
+          // Nothing says what it leaves for the targets that wait for it, so it runs every time: its row says that
+          // its recorded run failed, and not that this host cannot record one.
+          if (awaitedBy(node)) {
+            const plain = yield* timed(node.label, "step", spawnConsumer(node))
+            if (!plain.ok) return fail(plain.error)
+            wroteHere.delete(node.label)
+            unstored(node, unrecordedUntil(failedAt))
+            return green("ran")
+          }
           return undefined
         }
         // A run that reached the network, or a program it did not start, stores nothing whether its reads are
