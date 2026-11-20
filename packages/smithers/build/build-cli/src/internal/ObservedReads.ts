@@ -1927,10 +1927,14 @@ const bytesHoldValue = (data: Buffer, value: string): boolean => {
   if (value.length < minimumValueLength) return false
   const whole = bytesOf(value)
   if (whole === undefined) return false
-  if (data.includes(whole)) return true
-  if (!hexId.test(value)) return false
+  if (!hexId.test(value)) return data.includes(whole)
+  // One pass for a commit id: each place its first seven characters stand is the whole id, or the short form where
+  // no other hexadecimal digit touches them.
   const short = whole.subarray(0, 7)
   for (let at = data.indexOf(short); at >= 0; at = data.indexOf(short, at + 1)) {
+    if (data.length - at >= whole.length && data.compare(whole, 0, whole.length, at, at + whole.length) === 0) {
+      return true
+    }
     if (!hexByte(data[at - 1]) && !hexByte(data[at + short.length])) return true
   }
   return false
@@ -2079,6 +2083,11 @@ const onceEach = (io: Io): Io => {
  */
 const searchedFirst = 8 * 1024 * 1024
 
+/** Whether a path is absolute and written in one spelling, with no `.`, `..` or empty name in it. */
+const plain = (path: string): boolean =>
+  path.charCodeAt(0) === slash && !path.endsWith("/") && !path.includes("//") && !path.includes("/./") &&
+  !path.includes("/../") && !path.endsWith("/.") && !path.endsWith("/..")
+
 const pseudo = (path: string): boolean => /^\/(?:proc|sys|dev)(?:\/|$)/.test(path)
 
 const slash = 47
@@ -2223,52 +2232,92 @@ export const observe = (
    * way is something the run read, so it is noted as found. `after` holds the
    * name the run wrote below it, for a path whose directory alone is resolved.
    */
+  /**
+   * Where the walk of each directory a path was written under ended, by that directory as the run wrote it. A
+   * trace names thousands of files in a few hundred directories: each directory is walked once, and every path
+   * below it starts from there. The walk is the same either way: a link on the way was noted when it was first
+   * walked, and the count of links goes on from where it stood.
+   */
+  const walked = new Map<string, { readonly shown: string; readonly current: string; readonly links: number }>()
+  /** What each path resolved to, by the path as given and the names after it: a trace names a path in several lines. */
+  const resolved = new Map<string, string | undefined>()
   const resolve = (path: string, after: ReadonlyArray<string> = []): string | undefined => {
-    const queue = path.split("/").filter((part) => part !== "" && part !== ".")
+    const asked = after.length === 0 ? path : `${path}\0${after.join("/")}`
+    if (resolved.has(asked)) return resolved.get(asked)
+    const result = walk(path, after)
+    resolved.set(asked, result)
+    return result
+  }
+  const walk = (path: string, after: ReadonlyArray<string>): string | undefined => {
     // The path as the run saw it, and where that is on the host: the two differ under a mounted directory.
     let shown = ""
     let current = ""
     let links = 0
+    /** The parts of the path walked, and how many parts of link targets wait at the front of `queue`. */
+    let key = ""
+    let pending = 0
+    let queue: Array<string>
+    let remember: boolean
+    // An absolute path in one spelling, whose directory was walked: only its last name is left to walk.
+    const slash = path.lastIndexOf("/")
+    const known = slash > 0 && plain(path) ? walked.get(path.slice(1, slash)) : undefined
+    if (known !== undefined) {
+      ;({ current, links, shown } = known)
+      key = path.slice(1, slash)
+      queue = [path.slice(slash + 1)]
+      remember = true
+    } else {
+      queue = path.split("/").filter((part) => part !== "" && part !== ".")
+      // A path that steps up is walked whole, and remembers nothing.
+      remember = !queue.includes("..")
+    }
     while (queue.length > 0) {
       const part = queue.shift()!
+      if (pending > 0) pending -= 1
+      else key = key === "" ? part : `${key}/${part}`
       if (part === "..") {
         shown = shown.slice(0, Math.max(0, shown.lastIndexOf("/")))
         current = placed(shown)
-        continue
-      }
-      const candidate = placed(`${shown}/${part}`)
-      const kind = kindOf(candidate)
-      if (kind === undefined) {
-        // Nothing is here, so nothing below it resolves any further.
-        return NodePath.posix.normalize([candidate, ...queue].join("/"))
-      }
-      if (kind.link === undefined) {
-        shown = `${shown}/${part}`
-        current = candidate
-        continue
-      }
-      links += 1
-      if (links > maximumLinks) {
-        refusal ??= `${path} passes through too many symbolic links`
-        return undefined
-      }
-      // A link into a process's own links leads where it led for the run's process, which only the run could see. A
-      // descriptor or a program alone is a file the run opened or started where its trace shows it, or no file.
-      const through = pseudo(candidate) ? processLinkOf([`${shown}/${part}`, ...queue, ...after].join("/")) : undefined
-      if (through !== undefined) {
-        if (through === "up" || through.rest.length > 0 || through.link === "root" || through.link === "cwd") {
-          refusal ??= `${path} leads through a link of a process, which its trace does not follow`
-          return undefined
+      } else {
+        const candidate = placed(`${shown}/${part}`)
+        const kind = kindOf(candidate)
+        if (kind === undefined) {
+          // Nothing is here, so nothing below it resolves any further.
+          return NodePath.posix.normalize([candidate, ...queue].join("/"))
         }
-        return NodePath.posix.normalize([candidate, ...queue].join("/"))
+        if (kind.link === undefined) {
+          shown = `${shown}/${part}`
+          current = candidate
+        } else {
+          links += 1
+          if (links > maximumLinks) {
+            refusal ??= `${path} passes through too many symbolic links`
+            return undefined
+          }
+          // A link into a process's own links leads where it led for the run's process, which only the run could
+          // see. A descriptor or a program alone is a file the run opened or started where its trace shows it, or no
+          // file.
+          const through = pseudo(candidate)
+            ? processLinkOf([`${shown}/${part}`, ...queue, ...after].join("/"))
+            : undefined
+          if (through !== undefined) {
+            if (through === "up" || through.rest.length > 0 || through.link === "root" || through.link === "cwd") {
+              refusal ??= `${path} leads through a link of a process, which its trace does not follow`
+              return undefined
+            }
+            return NodePath.posix.normalize([candidate, ...queue].join("/"))
+          }
+          if (!pseudo(candidate)) touch(candidate, "found")
+          const target = kind.link.split("/").filter((piece) => piece !== "" && piece !== ".")
+          queue.unshift(...target)
+          pending += target.length
+          if (kind.link.startsWith("/")) {
+            shown = ""
+            current = ""
+          }
+        }
       }
-      if (!pseudo(candidate)) touch(candidate, "found")
-      const target = kind.link.split("/").filter((piece) => piece !== "" && piece !== ".")
-      queue.unshift(...target)
-      if (kind.link.startsWith("/")) {
-        shown = ""
-        current = ""
-      }
+      if (remember && pending === 0) walked.set(key, { shown, current, links })
     }
     return current === "" ? "/" : current
   }
