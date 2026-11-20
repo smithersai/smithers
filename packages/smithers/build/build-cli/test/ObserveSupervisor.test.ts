@@ -635,3 +635,41 @@ describe("smthrs-observe and signals", () => {
     expect(shell(base, script, true)).toEqual(plain)
   }, 60_000)
 })
+
+describe("smthrs-observe --keep, for a step whose job keeps what it leaves running", () => {
+  supervised("ends the step with its command, and follows what it left until that ends", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "observe-keep-")))
+    temporary.push(root)
+    await Fs.writeFile(Path.join(root, "first"), "1\n")
+    await Fs.writeFile(Path.join(root, "later"), "2\n")
+    const trace = Path.join(root, "trace")
+    // The command reads `first`, leaves a program that reads `later` once told to, and exits 3.
+    const script = `cat ${root}/first > /dev/null; ` +
+      `(while [ ! -e ${root}/go ]; do sleep 0.05; done; cat ${root}/later > /dev/null) & exit 3`
+    const started = Date.now()
+    const child = spawn(supervisor!, ["--keep", trace, "--", "sh", "-c", script], { detached: true, stdio: "ignore" })
+    child.unref()
+    // The command's status comes once it has ended, beside a sealed trace of everything so far.
+    while (!NodeFs.existsSync(`${trace}.status`)) {
+      if (Date.now() - started > 20_000) throw new Error("no status")
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    expect(NodeFs.readFileSync(`${trace}.status`, "utf8")).toMatch(/^3 \d+\n$/)
+    expect(ObservedReads.whole(trace)).toBe(true)
+    const own = NodeFs.readFileSync(trace, "utf8")
+    const opened = (name: string) => new RegExp(`openat\\([^\\n]*"${root}/${name}", O_RDONLY`)
+    expect(own).toMatch(opened("first"))
+    expect(own).not.toMatch(opened("later"))
+    // What it left reads `later`: the lines come after the trace, and a request has them all written first.
+    await Fs.writeFile(Path.join(root, "go"), "")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(await ObservedReads.askFlush(trace, 10_000)).toBe(true)
+    expect(NodeFs.readFileSync(`${trace}.kept`, "utf8")).toMatch(opened("later"))
+    // Once nothing it followed is left, it answers every request.
+    while (!NodeFs.readFileSync(`${trace}.answered`, "utf8").startsWith("9223372036854775807")) {
+      if (Date.now() - started > 20_000) throw new Error("it did not end")
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    expect(NodeFs.readFileSync(trace, "utf8")).toBe(own)
+  }, 60_000)
+})

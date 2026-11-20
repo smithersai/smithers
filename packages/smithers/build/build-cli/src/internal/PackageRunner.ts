@@ -14,6 +14,7 @@ import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import * as GeneratedFile from "@smthrs/targets/GeneratedFile"
 import * as GithubTarget from "@smthrs/targets/GithubTarget"
 import * as Input from "@smthrs/targets/Input"
+import * as JobKeeper from "@smthrs/targets/JobKeeper"
 import * as LlmLint from "@smthrs/targets/LlmLint"
 import type * as Reference from "@smthrs/targets/Reference"
 import type * as Secret from "@smthrs/targets/Secret"
@@ -28,6 +29,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Semaphore from "effect/Semaphore"
 import { minimatch } from "minimatch"
+import * as NodeChildProcess from "node:child_process"
 import { randomUUID } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
@@ -1034,6 +1036,119 @@ const executeWith = (
     /** Where a target runs: its machine's copy of the workspace once that is made, or the workspace. */
     const placeOf = (node: PackageNode): string => machineOf(node)?.tree ?? root
 
+    /**
+     * The bubblewrap that holds the processes of a machine's job in a namespace of their own on this host, asked
+     * once: a program a step leaves running lives there until the machine's last target of this build has ended, as
+     * on a CI runner until its job ends. Nothing where the host cannot, and the build says so once: there a program
+     * a step leaves running ends with its step.
+     */
+    let keepingAsked: Promise<string | undefined> | undefined
+    const keeps = (): Promise<string | undefined> =>
+      keepingAsked ??= ownTmp().then(async (bwrap) => {
+        if (bwrap === undefined) return undefined
+        const refusal = await Machine.keeping(bwrap, machinesKept!, hostEnvironment)
+        if (refusal === undefined) return bwrap
+        log(`smthrs: a program a step leaves running ends with its step on this host: ${refusal}`)
+        return undefined
+      })
+    /** A machine's job: its keeper, the steps whose programs run on, and what to remove once the job has ended. */
+    interface MachineJob {
+      readonly directory: string
+      readonly keeper: NodeChildProcess.ChildProcess
+      readonly kept: Array<ObservedReads.KeptStep>
+      /** Resolves once the keeper has ended, and every process of the job with it. */
+      readonly ended: Promise<unknown>
+      readonly traces: Array<string>
+    }
+    const machineJobs = new Map<string, Promise<MachineJob | undefined>>()
+    /** The job of a machine, its keeper started the first time a target of the machine runs. */
+    const jobOf = (machine: Machine.Machine, bwrap: string): Promise<MachineJob | undefined> => {
+      const started = machineJobs.get(machine.name)
+      if (started !== undefined) return started
+      const starting = (async (): Promise<MachineJob | undefined> => {
+        const directory = NodePath.join(machine.directory, "job")
+        await Fs.mkdir(directory, { recursive: true })
+        const argv = JobKeeper.namespaced(
+          bwrap,
+          Machine.tmpBinds(machine, sightOf(machine, hostEnvironment["PATH"])),
+          JobKeeper.keeper(process.execPath)
+        )
+        // Its input stays open while this process lives: however this process ends, the job ends with it.
+        const keeper = NodeChildProcess.spawn(argv[0], argv.slice(1), {
+          cwd: directory,
+          stdio: ["pipe", "ignore", "ignore"],
+          env: { PATH: hostEnvironment["PATH"] }
+        })
+        const ended = new Promise((resolve) => keeper.once("close", resolve))
+        if (await Machine.listening(directory, JobKeeper.socketName, keeper)) {
+          return { directory, keeper, ended, kept: [], traces: [] }
+        }
+        keeper.kill("SIGKILL")
+        log(
+          `smthrs: machine ${machine.name}: a program a step leaves running ends with its step: its keeper did not start`
+        )
+        return undefined
+      })()
+      machineJobs.set(machine.name, starting)
+      return starting
+    }
+    /** Ends a machine's job: every process in its namespace, then the traces its recorders wrote. */
+    const endJob = (name: string): Promise<void> => {
+      const job = machineJobs.get(name)
+      if (job === undefined) return Promise.resolve()
+      machineJobs.set(name, Promise.resolve(undefined))
+      return job.then(async (found) => {
+        if (found === undefined) return
+        // A keeper that has ended already is sent nothing: the kill of an ended process does nothing.
+        found.keeper.kill("SIGKILL")
+        await found.ended
+        for (const trace of found.traces) await Fs.rm(trace, { force: true, recursive: true })
+      })
+    }
+    /** Why an answered step ran again before a step after it in its job. */
+    const leftAProgram = "it left a program running for the steps after it"
+    /**
+     * Says that an answered step ran again for a step after it, because it left a program running: its row is a
+     * run, with why, or a failure.
+     */
+    const rerunFor = (label: string, error: string | undefined): void => {
+      // It was answered, so its row is there.
+      const entry = reports.get(label)!
+      reports.set(label, {
+        ...entry,
+        status: error === undefined ? "ran" : "failed",
+        notReused: leftAProgram,
+        ...(error === undefined ? {} : { error })
+      })
+      if (error !== undefined) notGreen.add(label)
+    }
+    /**
+     * Once a target of a machine has finished: a step that left a program running and holds no record of its own is
+     * named among what the job keeps, so no step after it is held to files alone, and the machine's job ends with
+     * its last target here.
+     */
+    const finishedOn = async (node: PackageNode): Promise<void> => {
+      const name = node.machine!
+      const job = await (machineJobs.get(name) ?? Promise.resolve(undefined))
+      if (
+        job !== undefined && leftRunning.has(node.label) && !job.kept.some((each) => each.label === node.label)
+      ) {
+        job.kept.push(ObservedReads.unrecordedStep(node.label))
+      }
+      const remaining = unfinished.get(name)! - 1
+      unfinished.set(name, remaining)
+      if (remaining === 0) await endJob(name)
+    }
+    /** What each target that ran on a kept machine left running, by label. */
+    const leftRunning = new Map<string, ReadonlyArray<JobKeeper.Left>>()
+    let leftFiles = 0
+    /** How many targets of each machine have yet to finish in this build: its job ends when none has. */
+    const unfinished = new Map<string, number>()
+    for (const node of planned.workList) {
+      if (node.machine !== undefined) unfinished.set(node.machine, (unfinished.get(node.machine) ?? 0) + 1)
+    }
+    yield* Effect.addFinalizer(() => joined(() => Promise.all([...machineJobs.keys()].map(endJob))).pipe(Effect.ignore))
+
     /** The first target whose report stopped a fail-fast run. */
     let stoppedBy: string | undefined
     /** Why the build failed on its own side under a step: the recorder of its reads stopped before it ended. */
@@ -1255,7 +1370,9 @@ const executeWith = (
       /** Hears everything the command writes to its output, before any of it is cut or redacted. */
       heard?: (block: Uint8Array) => void,
       /** Runs the command with no jail of the build's: the host's `/tmp`, no namespace, as a CI runner runs it. */
-      unjailed = false
+      unjailed = false,
+      /** Where a recorder that follows what the command leaves running writes the command's exit status. */
+      done?: string
     ): Effect.Effect<SpawnOutcome, unknown> =>
       Effect.gen(function*() {
         const spawn = yield* resolveSpawn(node, override, archive)
@@ -1298,9 +1415,17 @@ const executeWith = (
           }
         }
         const started = traced === undefined ? resolved.argv : traced(resolved.argv) as [string, ...Array<string>]
+        // A target of a machine whose job keeps its programs starts in the job's namespace, where what it leaves
+        // running lives on for the targets after it; the namespace gives it the machine's `/tmp`.
+        const job = onIts && bwrap !== undefined && (yield* joined(keeps)) !== undefined
+          ? yield* joined(() => jobOf(machine, bwrap))
+          : undefined
+        const leftFile = job === undefined ? undefined : NodePath.join(job.directory, `left-${++leftFiles}.json`)
         const payload: Exec.Payload = {
           cwd: node.cwd,
-          argv: bwrap === undefined
+          argv: job !== undefined
+            ? JobKeeper.client(process.execPath, job.directory, started, { left: leftFile, done })
+            : bwrap === undefined
             ? started
             : Machine.withOwnTmp(
               bwrap,
@@ -1364,6 +1489,11 @@ const executeWith = (
             }
           }, payload)
         ))).pipe(Effect.ensuring(Effect.sync(output.close)))
+        if (leftFile !== undefined) {
+          const left = yield* joined(() => JobKeeper.leftAt(leftFile))
+          if (left.length === 0) leftRunning.delete(node.label)
+          else leftRunning.set(node.label, left)
+        }
         if (Exit.isSuccess(exit)) {
           if (node.stdoutPath !== undefined) {
             const destination = NodePath.join(workspaceRoot, ...node.stdoutPath.split("/"))
@@ -1420,7 +1550,9 @@ const executeWith = (
           typeof value === "object" && value !== null &&
           (value as { readonly _tag?: unknown })._tag === "smithers-build/ExecError"
         ) {
-          return { ok: false as const, error: execErrorText(value as Exec.ExecError) }
+          // A step started through its job's keeper is named by its own command, not by the client that started it.
+          const failed = value as Exec.ExecError
+          return { ok: false as const, error: execErrorText(job === undefined ? failed : { ...failed, argv: started }) }
         }
         return { ok: false as const, error: Diagnostic.describe(value, "tool run failed") }
       })
@@ -2772,13 +2904,14 @@ const executeWith = (
       argv?: ReadonlyArray<string> | undefined,
       traced?: (argv: ReadonlyArray<string>) => ReadonlyArray<string>,
       heard?: (block: Uint8Array) => void,
-      unjailed = false
+      unjailed = false,
+      done?: string
     ): Effect.Effect<ExecOutcome, unknown> =>
       node.machine === undefined
-        ? runWithOverlays(node, (treeRoot) => spawnNode(node, treeRoot, argv, [], false, traced, heard, unjailed))
+        ? runWithOverlays(node, (treeRoot) => spawnNode(node, treeRoot, argv, [], false, traced, heard, unjailed, done))
         : Effect.flatMap(
           onMachine(node),
-          (machine) => spawnNode(node, machine!.tree, argv, [], false, traced, heard, unjailed)
+          (machine) => spawnNode(node, machine!.tree, argv, [], false, traced, heard, unjailed, done)
         )
 
     let observing: ObservedReads.Observer | undefined
@@ -2914,6 +3047,8 @@ const executeWith = (
     let answered: ReadonlyMap<string, ReadonlySet<string>> = new Map()
     /** Of those, the ones that left files: the record whose kept files are put back when a target after it runs. */
     const leftBy = new Map<string, ObservedReads.Record>()
+    /** Of those, the ones whose run left a program running: they run again before a target after them that runs. */
+    const runningBy = new Map<string, ObservedReads.Record>()
     /** The answered targets whose files were put back, or that ran in their place. */
     const putBack = new Set<string>()
     /** Where what an observed run left is kept: beside the cache, never among a target's inputs. */
@@ -3284,25 +3419,39 @@ const executeWith = (
      */
     const putBackFor = (node: PackageNode): Effect.Effect<string | undefined, unknown> =>
       Effect.gen(function*() {
-        if (leftBy.size === 0 || answered.has(node.label)) return undefined
+        if ((leftBy.size === 0 && runningBy.size === 0) || answered.has(node.label)) return undefined
         const before = dependenciesOf(node.label)
+        // From the first step of its job that left a program running, every step before this one runs again, in
+        // order, that was answered: what it left running is no file a record holds, and a step after it may have
+        // talked to it. A step that ran in this build left its programs running already.
+        let again = false
         for (const producer of inOrder) {
+          if (!before.has(producer.label) || !together(producer, node)) continue
+          if (!answered.has(producer.label)) {
+            again ||= leftRunning.has(producer.label)
+            continue
+          }
+          again ||= runningBy.has(producer.label)
           const stored = leftBy.get(producer.label)
-          if (stored === undefined || !before.has(producer.label) || putBack.has(producer.label)) continue
-          // A target on another machine reads nothing this one left.
-          if (!together(producer, node)) continue
+          if ((stored === undefined && !again) || putBack.has(producer.label)) continue
           putBack.add(producer.label)
+          const running = again
           const failed = yield* timed(
             node.label,
             "putBack",
             Effect.gen(function*() {
               yield* onMachine(producer)
-              if (yield* restore(producer, producer.observed!, stored)) {
+              if (!running && (yield* restore(producer, producer.observed!, stored!))) {
                 log(`${producer.label}  what it left is put back for ${node.label}`)
                 return undefined
               }
-              log(`${producer.label}  what it left could not be put back; it runs for ${node.label}`)
-              const ran = yield* spawnConsumer(producer)
+              log(
+                running
+                  ? `${producer.label}  runs again for ${node.label}: ${leftAProgram}`
+                  : `${producer.label}  what it left could not be put back; it runs for ${node.label}`
+              )
+              const ran = running ? yield* runKept(producer) : yield* spawnConsumer(producer)
+              if (running) rerunFor(producer.label, ran.ok ? undefined : ran.error)
               if (!ran.ok) {
                 return `${producer.label}, which this target waits for, failed when it ran again: ${ran.error}`
               }
@@ -3313,6 +3462,71 @@ const executeWith = (
           if (failed !== undefined) return failed
         }
         return undefined
+      })
+    /**
+     * Runs an answered step again for a step after it in its job, recorded as its run was: what it leaves running
+     * is followed, and the steps after it are held to the record that answered it, which this run repeats.
+     */
+    const runKept = (producer: PackageNode): Effect.Effect<ExecOutcome, unknown> =>
+      Effect.gen(function*() {
+        // It ran under the recorder in an earlier build, on a machine whose job kept its programs.
+        const host = (observing ??= services.observer(services.sandboxHost())) as Exclude<
+          ObservedReads.Observer,
+          { readonly reason: string }
+        >
+        const machine = (yield* onMachine(producer))!
+        const keptOn = yield* joined(keeps)
+        const job = keptOn === undefined ? undefined : yield* joined(() => jobOf(machine, keptOn))
+        // Where its programs cannot be kept now, it runs as any step does, and what it leaves ends with it.
+        if (job === undefined) return yield* spawnConsumer(producer)
+        const directory = NodePath.join(
+          root,
+          ...cacheDirectory.split("/"),
+          "tmp",
+          `reads-${producer.observed!.key.slice(0, 16)}-${process.pid}-${traces++}`
+        )
+        const traceFile = NodePath.join(directory, "trace")
+        yield* joined(() => Fs.mkdir(directory, { recursive: true }))
+        yield* joined(() => Fs.writeFile(traceFile, ""))
+        const ran = yield* spawnConsumer(
+          producer,
+          undefined,
+          (argv) => ObservedReads.commandFor(host, traceFile, argv, true),
+          undefined,
+          false,
+          `${traceFile}.status`
+        )
+        const cut = host.supervisor === true ? undefined : ObservedReads.stepLength(traceFile)
+        // What it wrote is the answered run's again: a step after it reads those files as that run's.
+        const id = runningBy.get(producer.label)!.id!
+        const startedMs = (yield* joined(() => Fs.stat(traceFile))).ctimeMs
+        const mounts = Machine.mountsOf(NodeFs.realpathSync(machine.tmp), sightOf(machine, hostEnvironment["PATH"]))
+        const seen = yield* joined(async () =>
+          ObservedReads.observe(
+            ObservedReads.read(
+              host.supervisor === true
+                ? ObservedReads.linesOf(traceFile)
+                : ObservedReads.wholeLinesOf(traceFile, 0, cut),
+              NodePath.resolve(machine.tree, producer.cwd),
+              producer.observed!.quiet
+            ),
+            observing_(producer, producer.observed!, machine, machine.tree, startedMs, new Map(), new Set(), mounts)
+          )
+        )
+        wroteHere.set(producer.label, { label: producer.label, id, ...ObservedReads.wrote(seen) })
+        // The steps after it are held to the record that answered it, which this run repeats.
+        job.traces.push(directory)
+        job.kept.push(
+          ObservedReads.keptStep(
+            producer.label,
+            ran.ok ? id : undefined,
+            NodePath.resolve(machine.tree, producer.cwd),
+            traceFile,
+            host.supervisor === true,
+            cut
+          )
+        )
+        return ran
       })
     /**
      * Finds the observed targets that are answered without any of them
@@ -3373,7 +3587,11 @@ const executeWith = (
             const awaited = awaitedBy(node, (label) => !kept.has(label))
             const answering = !awaited ?
               holding :
-              yield* joined(async () => holding.filter((record) => record.left !== true || restorable(node, record)))
+              // A step that left a program running runs again before any step after it that runs: what it left
+              // is not put back.
+              yield* joined(async () =>
+                holding.filter((record) => record.left !== true || record.running === true || restorable(node, record))
+              )
             if (answering.length === 0) {
               kept.delete(node.label)
               settled = false
@@ -3387,9 +3605,64 @@ const executeWith = (
           const ids = kept.get(node.label)
           const left = records.get(node.label)?.find((record) => ids?.has(record.id!) === true && record.left === true)
           if (left !== undefined) leftBy.set(node.label, left)
+          const running = records.get(node.label)?.find((record) =>
+            ids?.has(record.id!) === true && record.running === true
+          )
+          if (running !== undefined) runningBy.set(node.label, running)
         }
         return kept
       })
+    /**
+     * What a recorded run of `node` is read with, beside its trace: the variables it was given, where it ran, what
+     * it ignores, the temporary directories and the mounts it ran with, and the steps before it, whose files it
+     * read as theirs.
+     */
+    const observing_ = (
+      node: PackageNode,
+      observed: NonNullable<PackageNode["observed"]>,
+      machine: Machine.Machine | undefined,
+      place: string,
+      startedMs: number,
+      found: ReadonlyMap<string, string>,
+      shown: ReadonlySet<string>,
+      mounts: ReadonlyArray<readonly [string, string]>
+    ) => {
+      const before = dependenciesOf(node.label)
+      return {
+        variables: {
+          values: observed.variables,
+          text: (node.argv ?? []).join("\n"),
+          shown,
+          readAsData: observed.readAsData
+        },
+        root: NodeFs.realpathSync(place),
+        ignore: [
+          ...ObservedReads.ignored(
+            place,
+            machine?.home ?? NodeOs.homedir(),
+            cacheDirectory,
+            observed.ignore,
+            machine?.tmp
+          ),
+          // The cache is the build's own wherever a target runs.
+          ...(machine === undefined ? [] : ObservedReads.ignored(root, machine.home, cacheDirectory, []))
+        ],
+        startedMs,
+        // A tool every step reads is measured once in a build: the build remembers a file that has not changed
+        // since it was measured.
+        outside: stateOf,
+        found,
+        // What a run left in its machine's home or temporary directory is the machine's, wherever machines are kept:
+        // it is kept with what the run left in the tree, and put back on the next machine.
+        temporary: machine === undefined ? temporary() : [...temporary(), machine.home, machine.tmp],
+        mounts,
+        // In the order they ran or would have run: the last to write a path is the one it came from.
+        producers: inOrder.flatMap((earlier) => {
+          const producer = before.has(earlier.label) ? wroteHere.get(earlier.label) : undefined
+          return producer === undefined ? [] : [producer]
+        })
+      }
+    }
     /**
      * Runs a shell test that asks to be observed, or answers it from what an
      * earlier run read.
@@ -3440,11 +3713,17 @@ const executeWith = (
               seen.io,
               undefined,
               observed.variables,
-              commitFile
+              commitFile,
+              (label) => answered.get(label)
             )
           )
           if (moved !== undefined) {
             why ??= moved
+            continue
+          }
+          // A target that waits for it runs: what it left running is no file to put back, so it runs again.
+          if (stored.running === true && awaited) {
+            why ??= leftAProgram
             continue
           }
           // A target that waits for it is about to run or be compared with what it left: that is put back, or
@@ -3536,6 +3815,19 @@ const executeWith = (
         )
         yield* joined(() => Fs.mkdir(directory, { recursive: true }))
         const traceFile = NodePath.join(directory, "trace")
+        // On a machine whose job keeps its programs, the recorder follows what the step leaves running, and the
+        // trace stays until the job ends: the steps after it read what those programs read while they ran.
+        const keptOn = machine === undefined ? undefined : yield* joined(keeps)
+        const job = machine === undefined || keptOn === undefined
+          ? undefined
+          : yield* joined(() => jobOf(machine, keptOn))
+        const following = job !== undefined
+        // The programs earlier steps of the job left running, which this step may talk to.
+        const servers = job?.kept.slice() ?? []
+        // What the step left running, where its trace ends, and the id of the record that holds its run.
+        let left: ReadonlyArray<JobKeeper.Left> = []
+        let cut: number | undefined
+        let keptId: string | undefined
         return yield* Effect.gen(function*() {
           // What earlier runs wrote is measured before the run, as part of holding its records against the files.
           const found = yield* timed(node.label, "check", joined(async () => foundBefore(node, place, earlier)))
@@ -3550,10 +3842,15 @@ const executeWith = (
             spawnConsumer(
               node,
               undefined,
-              (argv) => ObservedReads.commandFor(host, traceFile, argv),
-              listener.hear
+              (argv) => ObservedReads.commandFor(host, traceFile, argv, following),
+              listener.hear,
+              false,
+              following ? `${traceFile}.status` : undefined
             )
           )
+          // strace writes on into the trace while what the step left runs: the step's own lines end here.
+          cut = following && host.supervisor !== true ? ObservedReads.stepLength(traceFile) : undefined
+          left = following ? leftRunning.get(node.label) ?? [] : []
           // smthrs-observe writes its last line once every process of the run has ended. Without it the recorder
           // stopped first, and the step's file calls failed for want of it: neither its verdict nor its reads say
           // anything about the step. That is the build's failure, never the step's, and nothing is stored.
@@ -3562,16 +3859,26 @@ const executeWith = (
               `${node.label}: smthrs-observe stopped before the step ended, so its run says nothing about the step`
             return { status: "skipped" as const, error: brokeOn }
           }
+          // What the programs earlier steps of the job left running read while this step ran counts for this step,
+          // and talking to them is talking to the job: once their recorders have written every line they hold.
+          const flushed = yield* joined(() => Promise.all(servers.map((server) => server.flush())))
+          const unheard = servers.find((server, at) => server.id === undefined || !flushed[at])
+          const servedTraces = servers.map((server) =>
+            ObservedReads.servedBy(server.step, server.after, server.cwd, observed.quiet)
+          )
+          const inside = new Set(servedTraces.flatMap((trace) => [...trace.bound]))
+          // strace writes on into the trace while what the step left runs: the step's own lines end at `cut`.
+          const ownLines = following && host.supervisor !== true
+            ? ObservedReads.wholeLinesOf(traceFile, 0, cut)
+            : ObservedReads.linesOf(traceFile)
           const parsed = yield* timed(
             node.label,
             "reads",
-            Effect.exit(joined(async () =>
-              ObservedReads.read(
-                listener.lines(ObservedReads.linesOf(traceFile)),
-                NodePath.resolve(place, node.cwd),
-                observed.quiet
+            Effect.exit(
+              joined(async () =>
+                ObservedReads.read(listener.lines(ownLines), NodePath.resolve(place, node.cwd), observed.quiet, inside)
               )
-            ))
+            )
           )
           // A program that asks for rights ran without them: whether the run passed or failed says nothing.
           const needs = Exit.isSuccess(parsed) ? ObservedReads.rightsIn(parsed.value) : []
@@ -3593,7 +3900,12 @@ const executeWith = (
                 ? `${node.label}  its recording was ended: ${ObservedReads.signalStorm}; it runs again without it`
                 : `${node.label}  failed while its reads were recorded; it runs again without the recording`
             )
+            // What the failed run left running would stand in the way of what the plain run starts.
+            if (job !== undefined && left.length > 0) {
+              yield* joined(() => JobKeeper.end(process.execPath, job.directory, left))
+            }
             const plain = yield* timed(node.label, "step", spawnConsumer(node))
+            left = leftRunning.get(node.label) ?? []
             if (!plain.ok) return fail(plain.error)
             yield* joined(() =>
               CacheEvidence.rememberFailedAttempt(root, cacheDirectory, observed.key, recordedBy, {
@@ -3607,7 +3919,6 @@ const executeWith = (
             return green("ran")
           }
           wroteHere.delete(node.label)
-          const before = dependenciesOf(node.label)
           // The run named the machine's temporary directory `/tmp` where the host gave it one.
           const mounts: ReadonlyArray<readonly [string, string]> =
             machine === undefined || (yield* joined(ownTmp)) === undefined
@@ -3618,40 +3929,11 @@ const executeWith = (
             "reads",
             Effect.exit(joined(async () =>
               ObservedReads.observe(
-                parsed.value,
+                ObservedReads.withServed(parsed.value, servedTraces),
                 {
-                  variables: {
-                    values: observed.variables,
-                    text: (node.argv ?? []).join("\n"),
-                    shown: listener.names,
-                    readAsData: observed.readAsData
-                  },
-                  root: NodeFs.realpathSync(place),
-                  ignore: [
-                    ...ObservedReads.ignored(
-                      place,
-                      machine?.home ?? NodeOs.homedir(),
-                      cacheDirectory,
-                      observed.ignore,
-                      machine?.tmp
-                    ),
-                    // The cache is the build's own wherever a target runs.
-                    ...(machine === undefined ? [] : ObservedReads.ignored(root, machine.home, cacheDirectory, []))
-                  ],
-                  startedMs,
-                  // A tool every step reads is measured once in a build: the build remembers a file that has not
-                  // changed since it was measured.
-                  outside: stateOf,
-                  found,
-                  // What a run left in its machine's home or temporary directory is the machine's, wherever machines
-                  // are kept: it is kept with what the run left in the tree, and put back on the next machine.
-                  temporary: machine === undefined ? temporary() : [...temporary(), machine.home, machine.tmp],
-                  mounts,
-                  // In the order they ran or would have run: the last to write a path is the one it came from.
-                  producers: inOrder.flatMap((earlier) => {
-                    const producer = before.has(earlier.label) ? wroteHere.get(earlier.label) : undefined
-                    return producer === undefined ? [] : [producer]
-                  })
+                  running: left.length > 0,
+                  served: unheard === undefined ? servers.map((server) => [server.label, server.id!] as const) : [],
+                  ...observing_(node, observed, machine, place, startedMs, found, listener.names, mounts)
                 }
               )
             ))
@@ -3678,8 +3960,15 @@ const executeWith = (
             "keep",
             keep(node, observed, machine === undefined ? read.value : Machine.recorded(read.value, machine))
           )
-          const stored = ObservedReads.store(record, earlier)
-          if (stored === undefined) {
+          // A program an earlier step left running answered this run, and nothing holds what that program did: the
+          // run is the step's verdict, and nothing is stored.
+          const stored = unheard !== undefined ? undefined : ObservedReads.store(record, earlier)
+          if (unheard !== undefined) {
+            unstored(
+              node,
+              `a program ${unheard.label} left running may have answered it, and what that program read is not recorded`
+            )
+          } else if (stored === undefined) {
             unstored(
               node,
               `it read ${ObservedReads.pathsOf(record).toLocaleString("en-US")} paths, more than the ` +
@@ -3692,10 +3981,29 @@ const executeWith = (
               Effect.andThen(putRecords(node, stored, observed.key), prune(observed, stored))
             )
             wroteHere.set(node.label, { label: node.label, id: record.id!, made, touched })
+            keptId = record.id!
           }
           return green("ran")
         }).pipe(
-          Effect.ensuring(joined(() => Fs.rm(directory, { force: true, recursive: true })).pipe(Effect.ignore))
+          // A step that left a program running keeps its trace until its job ends: the steps after it read what
+          // that program reads. Without a record that holds its run, they cannot be held to it, and store nothing.
+          Effect.ensuring(Effect.suspend(() => {
+            if (job === undefined || left.length === 0) {
+              return joined(() => Fs.rm(directory, { force: true, recursive: true })).pipe(Effect.ignore)
+            }
+            job.traces.push(directory)
+            job.kept.push(
+              ObservedReads.keptStep(
+                node.label,
+                keptId,
+                NodePath.resolve(place, node.cwd),
+                traceFile,
+                host.supervisor === true,
+                cut
+              )
+            )
+            return Effect.void
+          }))
         )
       })
 
@@ -5660,6 +5968,7 @@ const executeWith = (
           )
           : undefined
         const outcome: Outcome = buildsOwn === undefined ? settled : { status: "failed", error: buildsOwn }
+        if (node.machine !== undefined) yield* joined(() => finishedOn(node))
         if (outcome.status === "failed" || outcome.status === "skipped") notGreen.add(label)
         // What a run wrote is known only for the outputs it declares, so every
         // target that waits for one that ran is measured again when it starts.

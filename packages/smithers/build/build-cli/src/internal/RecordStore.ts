@@ -73,6 +73,8 @@ interface Head {
   readonly left?: true
   readonly kept?: ObservedReads.Record["kept"]
   readonly variables?: ObservedReads.Record["variables"]
+  readonly running?: ObservedReads.Record["running"]
+  readonly served?: ObservedReads.Record["served"]
 }
 
 const sorted = <A extends ReadonlyArray<unknown>>(rows: ReadonlyArray<A>): ReadonlyArray<A> =>
@@ -90,7 +92,9 @@ function* linesOf(record: ObservedReads.Record): Generator<string> {
     ...(record.from === undefined ? {} : { from: record.from }),
     ...(record.left === undefined ? {} : { left: record.left }),
     ...(record.kept === undefined ? {} : { kept: record.kept }),
-    ...(record.variables === undefined ? {} : { variables: record.variables })
+    ...(record.variables === undefined ? {} : { variables: record.variables }),
+    ...(record.running === undefined ? {} : { running: record.running }),
+    ...(record.served === undefined ? {} : { served: record.served })
   }
   yield `${JSON.stringify(head)}\n`
   for (const row of sorted(record.reads)) yield `${JSON.stringify(row)}\n`
@@ -217,6 +221,8 @@ export const read = async (cas: string, reference: Reference): Promise<ObservedR
     ...(head.left === undefined ? {} : { left: head.left }),
     ...(head.kept === undefined ? {} : { kept: head.kept }),
     ...(head.variables === undefined ? {} : { variables: head.variables }),
+    ...(head.running === undefined ? {} : { running: head.running }),
+    ...(head.served === undefined ? {} : { served: head.served }),
     id: head.id
   })
   return record !== undefined && ObservedReads.pathsOf(record) === reference.paths ? record : undefined

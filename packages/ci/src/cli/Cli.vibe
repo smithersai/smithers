@@ -17,6 +17,8 @@ import {
   changesMachine,
   ci,
   Inventory,
+  keepingPrograms,
+  keptOnRunner,
   notReplayed,
   ownWorkspace,
   refusal
@@ -409,14 +411,16 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
   }
   const generate = (inventory: Inventory, cache: Option.Option<string>, allowDocker: boolean) =>
     effect {
-      const why = Native.refusal(inventory) ?? refusal(inventory)
+      // A job on a Linux runner keeps what its steps leave running until it ends; one on macOS stays as it is.
+      const kept = keepingPrograms(inventory, keptOnRunner)
+      const why = Native.refusal(kept) ?? refusal(kept)
       if (why !== undefined) throw { code: "unsupported", message: why, part: "inventory" } satisfies Failure
-      const split = try parts.decompose(root, ci(inventory))
+      const split = try parts.decompose(root, ci(kept))
       // The workflow's own check runs `apply` as it was run here.
       // A job left out stays in the repository's own workflow, and the notes name it with why.
       const options = {
         cache: Option.getOrUndefined(cache),
-        left: notReplayed(inventory),
+        left: notReplayed(kept),
         ...(allowDocker ? { allowDocker } : {})
       }
       const all = try checkPaths(try parts.files(split, options))

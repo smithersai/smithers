@@ -176,6 +176,49 @@ The steps of one job share its checkout, its home and its temporary directory,
 in order, as they share a runner. No other job sees what they write. A matrix
 makes one job for each variant, so each variant has a machine of its own.
 
+### A program a step leaves running
+
+On GitHub a program a step starts and does not wait for, such as
+`python3 -m http.server 8000 &`, `npm start &` or
+`redis-server --daemonize yes`, runs until the job's last step has ended, and
+the runner ends it then. A later step of the job talks to it on its port or
+its socket.
+
+A job's steps run the same way here. On Linux with bubblewrap every step of a
+job starts in one process tree of the job's own: what a step leaves running
+lives there until the job's last step has ended, and then all of it ends,
+however it detached from its step. No other job sees it. It is so in a
+replay, in the baseline and in each mode, in the workflow `apply` writes, and
+when you run `smthrs ci '//...'` yourself.
+
+A step that leaves a program running did something no file holds, so:
+
+- When a later step of the job has to run, every step of the job from the
+  first one that left a program running runs again before it, in order: the
+  program is there when the later step starts. The report gives the reason,
+  `it left a program running for the steps after it`.
+- When every later step reuses its result, nothing runs and nothing starts.
+- What the program reads while a later step runs, such as the file a web
+  server sends, counts as read by that step. A step that talked to the program
+  is reused only while the steps that started it are reused from the same
+  run: change the server's own code, and the step that asked it runs again.
+- Talking to the program on its port or its socket is talking to the job,
+  not to the network.
+
+On macOS, and on a Linux machine where bubblewrap cannot start a process tree
+of its own, a program a step leaves running ends with its step. There a job
+with a step that puts a program in the background and never waits for it, or
+starts one with a flag that keeps it running on its own (`--daemonize yes`,
+`mongod --fork`, `pg_ctl start`), is left out, and the report names the step:
+
+```text
+ci.yml:e2e  leaves a program running for its later steps, which this machine cannot keep until the job ends: "Start the server" leaves python3 running; the job stays in your CI as it is
+```
+
+The workflow `apply` writes keeps such a job of a macOS runner out of its
+build steps, so it runs in your own workflow as before, and
+`.smithers/ci/NOT-REPRODUCED.txt` names it with the same sentence.
+
 A job's machine is at the same paths at every commit, in the baseline and in
 each mode, as every job on GitHub runs in `/home/runner`: its home, its
 checkout and its temporary directory. A tool that writes a path into what
@@ -590,9 +633,12 @@ machine's own temporary files, and your session's runtime directory under
 to another place is empty there too.
 
 A step sees no
-process but its own, and the kernel gives it none of the keys it holds for
-your session, such as a Kerberos ticket. The step's processes end when the
-step does. The network stays open, as it is in your CI.
+process but its job's, and the kernel gives it none of the keys it holds for
+your session, such as a Kerberos ticket. A program a step leaves running lives
+until its job's last step has ended, as on a runner, and then ends with
+everything the job started: see
+[A program a step leaves running](#a-program-a-step-leaves-running). The
+network stays open, as it is in your CI.
 
 A socket with a name and no file, an abstract socket, is in no directory, so
 no jail of files hides it. An older D-Bus session bus listens on one and takes
@@ -615,7 +661,8 @@ What a step can do depends on the machine:
 | writes any other file, such as a repository beside it            | no                    | yes              | yes   |
 | reads a file of your home that is not a tool                     | no                    | yes              | yes   |
 | talks to a container daemon's socket by its path                 | no                    | yes              | yes   |
-| leaves a process running after it ends                           | no                    | yes              | yes   |
+| keeps a program it leaves running until its job ends             | yes                   | no               | no    |
+| leaves a process running after its job ends                      | no                    | yes              | yes   |
 | sees your other programs and what they were started with         | no                    | yes              | yes   |
 | reads the keys the Linux kernel holds for your session           | no                    | yes              | no    |
 | connects to an abstract socket of one of your programs           | no, from Linux 6.12   | yes              | no    |
@@ -844,8 +891,9 @@ second. On macOS, and on a Linux kernel that does not list the processes a
 process started, it reads every process of the machine every two seconds.
 What a step uses after the last reading is not seen: at most a quarter of a
 second of each process on Linux, and up to two seconds elsewhere, which is
-most of a step that takes a second. A process that leaves its step where no
-jail holds it is not counted. On a machine whose processes cannot be read,
+most of a step that takes a second. A program a step leaves running in its
+job counts for its job. A process that leaves its step where no jail holds it
+is not counted. On a machine whose processes cannot be read,
 the report has no CPU time.
 
 The report names what recorded the files the steps read, on one line

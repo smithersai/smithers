@@ -866,3 +866,29 @@ describe("a record of a run on a machine", () => {
     expect(Machine.recorded(nothingLeft, machine).left).toBeUndefined()
   })
 })
+
+describe("holding a job's processes", () => {
+  it("is refused where no bubblewrap starts, and says which", async () => {
+    const directory = await Fs.mkdtemp(Path.join(Os.tmpdir(), "machine-keeping-"))
+    try {
+      expect(await Machine.keeping("/nonexistent/bwrap", directory, process.env)).toBe(
+        "/nonexistent/bwrap cannot give a process a process namespace of its own here"
+      )
+    } finally {
+      await Fs.rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it("waits for its keeper to listen, and not for one that ended or never listens", async () => {
+    const directory = await Fs.mkdtemp(Path.join(Os.tmpdir(), "machine-listening-"))
+    try {
+      const alive = { exitCode: null, signalCode: null }
+      expect(await Machine.listening(directory, "keeper.sock", alive, 30)).toBe(false)
+      expect(await Machine.listening(directory, "keeper.sock", { exitCode: 1, signalCode: null })).toBe(false)
+      await Fs.writeFile(Path.join(directory, "keeper.sock"), "")
+      expect(await Machine.listening(directory, "keeper.sock", alive)).toBe(true)
+    } finally {
+      await Fs.rm(directory, { recursive: true, force: true })
+    }
+  })
+})

@@ -323,6 +323,15 @@ is removed when the replay ends. When you run the generated targets yourself,
 in the directory Smithers build keeps its cache in, so the generated workflow
 carries it from one run to the next with that cache.
 
+## A program a step leaves running
+
+A server a step starts in the background lives until the job's last step has
+ended, as on a runner, and the job's later steps reach it on its port or its
+socket. Everything the job started ends when the job does. On macOS such a job
+stays in your workflow as it is.
+[A program a step leaves running](how-it-works.md#a-program-a-step-leaves-running)
+has the rules.
+
 ## On a self-hosted runner
 
 The workflow `apply` writes installs bubblewrap, and lifts Ubuntu's

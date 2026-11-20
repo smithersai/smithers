@@ -1,0 +1,100 @@
+/**
+ * A baseline job's process namespace. On a CI runner a program a step leaves
+ * running, as a server started in the background, lives until the job's last
+ * step has ended, and the job's next step talks to it. A baseline job whose
+ * steps run in a jail runs them all in one jail, held by a keeper
+ * (`@smthrs/targets/JobKeeper`): what a step leaves there lives on for the
+ * steps after it, no other job sees it, and it ends with the job.
+ *
+ * @since 0.1.0
+ */
+
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { keeper, socketName } from "@smthrs/targets/JobKeeper"
+import { type Confined, held } from "./Confine.vibe"
+import { nodePath, searchPath } from "./Environment.ts"
+import { exec, outputLimit } from "./Process.vibe"
+
+/**
+ * A baseline job's keeper: the directory it listens in, and the process
+ * whose tree holds every process of the job.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Keeper {
+  readonly directory: string
+  readonly pid: number
+}
+
+/**
+ * Starts the keeper of a job whose steps run in `place`'s jail and write
+ * `writable`, listening in a new directory under `parent`, and waits until it
+ * listens. When the scope closes the keeper is ended, and every process of
+ * the job with it, and its directory is removed. Nothing where the job has no
+ * jail, or the keeper does not listen within ten seconds: there a program a
+ * step leaves running ends with its step.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function keeperIn(place: Confined, writable: ReadonlyArray<string>, parent: string) {
+  if (place.jail === undefined) return undefined
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const spawner = try ChildProcessSpawner
+  try fs.makeDirectory(parent, { recursive: true })
+  // A directory of this job's own: a socket another job's keeper left is never this job's.
+  const directory = try fs.makeTempDirectoryScoped({ directory: parent, prefix: "job-" })
+  const [program, ...args] = held(place, [...writable, directory], keeper(nodePath()))
+  const handle = try spawner.spawn(
+    ChildProcess.make(program, args, {
+      cwd: directory,
+      env: { PATH: searchPath().join(":") },
+      extendEnv: false,
+      // Its input stays open while this process lives: however this process ends, the job ends with it.
+      stdin: "pipe",
+      stdout: "ignore",
+      stderr: "ignore",
+      forceKillAfter: "1 second"
+    })
+  )
+  // The jail ends when the process that holds it does, and every process of the job with it.
+  try addFinalizer(() => ignore(handle.kill({ killSignal: "SIGKILL" })))
+  for (let waited = 0; waited < 10_000; waited += 20) {
+    if (try fs.exists(path.join(directory, socketName))) return { directory, pid: Number(handle.pid) } satisfies Keeper
+    try sleep("20 millis")
+  }
+  return undefined
+}
+
+/**
+ * Whether the jail of `place` can hold a job's processes: start a process
+ * namespace of its own inside it, as a keeper's jail and Smithers build's
+ * machines inside the jail of a mode do, within thirty seconds. Where it
+ * cannot, a program a step leaves running ends with its step, in every way of
+ * running a commit, and a job with a step that leaves one is left out.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function keepsPrograms(place: Confined) {
+  if (place.jail === undefined) return false
+  const [program, ...args] = held(place, [], [
+    place.jail.bwrap,
+    "--dev-bind",
+    "/",
+    "/",
+    "--unshare-pid",
+    "--proc",
+    "/proc",
+    "--die-with-parent",
+    "--",
+    "true"
+  ])
+  // Asked once, with a limit: a jail that cannot start one never holds the replay up.
+  const tried = timeoutOption(exec(program, args, "/", { PATH: searchPath().join(":") }, outputLimit), "30 seconds")
+    catch () => Option.none()
+  return Option.isSome(tried) && tried.value.exitCode === 0
+}

@@ -945,9 +945,11 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       // A state is named after the repository's place and holds it, so two checkouts that share /tmp keep
       // theirs apart and a checkout that is gone has its state removed. In the job's own directory there is no
       // other checkout: the name and the state hold no path, so a record of what a step read there answers in
-      // another checkout.
+      // another checkout. Where the job's directory is the step's own /tmp, as in its machine's namespace, it is
+      // named /tmp: a path under RUNNER_TEMP, as a Unix socket's, is then as short as on a runner, where the kernel
+      // refuses a socket path longer than 107 bytes.
       `__base=/tmp; __place=$__root`,
-      `if [ -n "\${${jobTemporaryVariable}-}" ] && [ -w "$${jobTemporaryVariable}" ]; then __base=$${jobTemporaryVariable}; __place=; fi`,
+      `if [ -n "\${${jobTemporaryVariable}-}" ] && [ -w "$${jobTemporaryVariable}" ]; then __place=; [ /tmp -ef "$${jobTemporaryVariable}" ] || __base=$${jobTemporaryVariable}; fi`,
       `unset ${jobTemporaryVariable}; [ -w "$__base" ] || __base=\${TMPDIR:-/tmp}`,
       `__base=$__base/smithers-ci-runner-$(id -u)`,
       `mkdir -p -m 700 -- "$__base" 2>/dev/null; [ -d "$__base" ] && [ -O "$__base" ] || ${

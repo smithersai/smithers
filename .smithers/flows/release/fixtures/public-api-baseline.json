@@ -1235,9 +1235,9 @@
         "internal/HostTools.d.ts": "b085bef82da0e36d718653d7c9b7fe572c9bbb0c4556758df272c6c1b93f70fd",
         "internal/InputPackage.d.ts": "b655e444fd6cb4ded8d62fbe734260896886dec59b28322d156a11e2dc281651",
         "internal/InstalledTree.d.ts": "1e7063399594bbe1a4026e8735b5d587beb1809a36ccf49d77d33dd80735ea4b",
-        "internal/Machine.d.ts": "35c4ac948bded9055ede072e2a9a2d49ba2b9536d163df83d0a0fae93966d71f",
+        "internal/Machine.d.ts": "d5117b8eea5fd677db87f080b0b033379ec5ceeef179b37a6ff4772aa53f98e5",
         "internal/MissingTool.d.ts": "da6565584fabe84a221eb9b1ba16d4c5dfa78b22415aab6e8f48978442cc5387",
-        "internal/ObservedReads.d.ts": "ccecd5842fd74d985f22858e1efdaa1ee063669c0603b44b10c167dee2637ca3",
+        "internal/ObservedReads.d.ts": "cbf2e06d9c34330bec87a355912a6241bbd005346a40595147a23662d645a5ef",
         "internal/OutputCas.d.ts": "6617f92cbfd883094ee392ba9a8353cbfdc11dda031adaa9dabd0eb1d8c4e909",
         "internal/PackageOptions.d.ts": "748658819397fd4fa2912cd24f421d074a3c47366b68c0cfdca07b2c27aa2803",
         "internal/PackagePlanner.d.ts": "01ef9c8f5c66e0771e1c37cc1c6ac450b7e09178be688690712d242a469bbb52",
@@ -11315,6 +11315,16 @@
             "default": "./dist/cjs/Input.js"
           }
         },
+        "./JobKeeper": {
+          "import": {
+            "types": "./dist/esm/JobKeeper.d.ts",
+            "default": "./dist/esm/JobKeeper.js"
+          },
+          "require": {
+            "types": "./dist/cjs/JobKeeper.d.ts",
+            "default": "./dist/cjs/JobKeeper.js"
+          }
+        },
         "./Install": {
           "import": {
             "types": "./dist/esm/Install.d.ts",
@@ -11892,6 +11902,7 @@
         "Input.d.ts": "e87c8f3ca1b3c909e3ed2f6fc90bedba5daa75180df5cb6544fc2eca8c61cce8",
         "Install.d.ts": "b0df7c1a9fbdba0b7ff9e1fd6c405c55a3b57c19103dbc7667431fc417cc2d48",
         "JevLint.d.ts": "762fc787b76e66e0c46c4fff21f165503ece27aa6d191b2ebb8ac23d0c1845c2",
+        "JobKeeper.d.ts": "84ec1e333400e0b1c76c16507d633ea05aa35e3d0c9c2c5fedc9f692773ca9d4",
         "JsrPublish.d.ts": "7ecb69813152b9bdccb410ecc410a3df3bbf8f96f4893a8701d6670e33f37a69",
         "LlmLint.d.ts": "af0b5a7c12cd1848c0a8dd1daba4138c65618cf598d1ec3e54a263a7ebaea510",
         "LocalRepository.d.ts": "c906401400aae2fef3f6d11eb7be932afbda157763c3bdd01e314a0300bfba42",
@@ -12792,7 +12803,7 @@
         "closure/zig/index.d.ts": "718783180a102c574972d18a5165958f0fd78bda675b1ea7a45a804ca66c9ec7",
         "contract/Closure.d.ts": "f7b45dee51efd8d3e46bf9c5387aa5e1024c716664f469028cc69972d9fee5f6",
         "contract/Command.d.ts": "400b03674a4e3ff20d7d925d4154acd224bc71fed6dbfde08f6000eb23dbe1ce",
-        "contract/Inventory.d.ts": "7cd773e93ba77778fd41fa6b03a581a6c74a69bc385256fe026472a600f83b4f",
+        "contract/Inventory.d.ts": "657c63c22a52832a435055f82d23b966497517b18f2d3a94c5b51c7226176421",
         "contract/Parts.d.ts": "537e2875e44aaf9c4caa7f9628870bb317e46e631a1dd03c7d1b8d296bfff13d",
         "contract/Plan.d.ts": "dbedd972b9ea4ac6a1e1aa6ff9d5cbd171e3e46c2ec993cfa1bdebbf5d1d0409",
         "contract/Reasons.d.ts": "cb734dd8524e7638bb40e113ed61fafd983b434a245f6ced12f4ae98f9f20326",
@@ -12860,14 +12871,15 @@
         "replay/CpuWatch.d.ts": "9ab10123a8b918615eef11dd224c5d32ecad67d1f17915b2a83c63ef6d83f99e",
         "replay/Disk.d.ts": "454cb1a3ce044ce58ff5ee981085872004d43bc6023d3b8fbdab3d1a52eebf37",
         "replay/DiskSpace.d.ts": "38c004c02501e45e4aeddcffc016c24c2b7b37d5db454453f5dbaf19ad7cc3d8",
-        "replay/Environment.d.ts": "bc13705cbebf9052226349d71048e0d8a38e8547df3f466a3dcded6519b81f18",
+        "replay/Environment.d.ts": "c6df2fa21cde747328c49e16a8ffe4d0d447b3f5fff0d4c1f0fa8a3ae07ac069",
         "replay/Failures.d.ts": "74aa924b0987b4c913d7d8ab5bc24c5fb9114258e3e46265fc888c51545852fe",
         "replay/History.d.ts": "c36e69b029bd89ee304bd1566d517da1b557e42e2a018a43276bea9edd42655d",
         "replay/HomeTools.d.ts": "e10f9d9b5af9f1cf59851dbd3c09ae06b609ec0f05671c0ca24d1e33f64a6351",
         "replay/Jail.d.ts": "57f76ac5f9279232219d3c961d59e85ca3df223c24e2207c7e0eacb76760b3fd",
+        "replay/Job.d.ts": "542d94ab9d1ce2c1a7077b8f8c920862af3529780da2ec063f04655b9c9a8a16",
         "replay/Kept.d.ts": "efec02fbc26c155ceed0f79f999d5a6b41276997646e19b6fb333cd1dcd04ae7",
         "replay/Names.d.ts": "64eaf4b8bff42507716e416028de70650977ea750674e72ebf7f2a823880f354",
-        "replay/Process.d.ts": "fdf14d8246d2331abc28310eb17cb6658d9eeb6431467f751006cb7abc677a35",
+        "replay/Process.d.ts": "1b110e7b41e162020fe837fecd9ead243fb09b0e4896bcb511225ff652325e38",
         "replay/ProcessTable.d.ts": "b5e7eb016e3abd0d04b949d7ba9d2d17b675d24019984dd319d538315daa3e91",
         "replay/Reads.d.ts": "a79acabf7f2e81b71f35da529233ee00c4fffb8c94a0aac21f9af3b668676007",
         "replay/Replay.d.ts": "a7d26794d595c2b23d68f3aa8d5a6f58da63309ab5e1c6509418266f58b98cc9",

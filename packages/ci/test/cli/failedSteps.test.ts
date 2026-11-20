@@ -116,8 +116,12 @@ describe("smithers-ci on a repository where one job cannot pass here", { timeout
 
 describe("smithers-ci on a repository where normal mode gives another result than the CI", { timeout: 600_000 }, () => {
   // The script passes as the baseline runs it, and fails as a target: a job is at the same paths both ways, so it
-  // looks for the `smthrs ci` that started it among the processes above it.
+  // looks for the `smthrs ci` that started it among the processes above it. A step its job's keeper starts sees
+  // only its job's processes, as on a runner: there a target's keeper is the one in its machine's directory.
   const fresh = [
+    "for d in /proc/[0-9]*; do",
+    "  case \"$(readlink \"$d/cwd\" 2>/dev/null)\" in */machines/*/job) echo 'not a fresh clone' >&2; exit 5;; esac",
+    "done",
     "p=$$",
     "while [ \"${p:-0}\" -gt 1 ]; do",
     "  case \"$(ps -o args= -p \"$p\")\" in *--results-file*) echo 'not a fresh clone' >&2; exit 5;; esac",

@@ -734,14 +734,77 @@ export const withOwnTmp = (
   "--dev-bind",
   "/",
   "/",
-  "--bind",
-  machine.tmp,
-  sharedTmp,
-  ...sight.flatMap((entry) => ["--bind", entry, entry]),
+  ...tmpBinds(machine, sight),
   "--die-with-parent",
   "--",
   ...argv
 ]
+
+/**
+ * The bubblewrap mounts that give a command the machine's temporary
+ * directory at `/tmp`, with each entry of `sight` put back where it was
+ * ({@link withOwnTmp}).
+ *
+ * @category rendering
+ * @since 1.0.0
+ */
+export const tmpBinds = (machine: Machine, sight: ReadonlyArray<string> = []): ReadonlyArray<string> => [
+  "--bind",
+  machine.tmp,
+  sharedTmp,
+  ...sight.flatMap((entry) => ["--bind", entry, entry])
+]
+
+/**
+ * Why `bwrap` cannot hold a job's processes on this host, or `undefined`
+ * when it can: start a command as the second process of a process namespace
+ * of its own, with a `/proc` of that namespace, tried once in `directory`. A
+ * container that gives no process a namespace of its own, or a jail that does
+ * not nest one, cannot.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const keeping = async (
+  bwrap: string,
+  directory: string,
+  environment: Readonly<Record<string, string | undefined>>
+): Promise<string | undefined> => {
+  const tried = [bwrap, "--dev-bind", "/", "/", "--unshare-pid", "--proc", "/proc", "--die-with-parent", "--", "true"]
+  const started = await new Promise<boolean>((resolve) => {
+    execFile(
+      tried[0]!,
+      tried.slice(1),
+      { cwd: directory, env: { PATH: environment["PATH"] }, timeout: 30_000 },
+      (error) => {
+        resolve(error === null)
+      }
+    )
+  })
+  return started ? undefined : `${bwrap} cannot give a process a process namespace of its own here`
+}
+
+/**
+ * Waits until `child` listens on the socket `name` in `directory`: `true`
+ * once the socket is there, `false` when the child ended first or did not
+ * listen within `limitMs`.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const listening = async (
+  directory: string,
+  name: string,
+  child: { readonly exitCode: number | null; readonly signalCode: string | null },
+  limitMs = 10_000
+): Promise<boolean> => {
+  const until = Date.now() + limitMs
+  for (;;) {
+    if (NodeFs.existsSync(NodePath.join(directory, name))) return true
+    if (child.exitCode !== null || child.signalCode !== null || Date.now() > until) return false
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
 
 /**
  * Where a run that was given the machine's temporary directory at `/tmp`

@@ -330,6 +330,16 @@ export const ambientEnvironment = (): Readonly<Record<string, string | undefined
 export const searchPath = (): ReadonlyArray<string> => (process.env["PATH"] as string).split(":")
 
 /**
+ * The Node this program runs on, which starts a job's keeper and each of
+ * its steps.
+ *
+ * @category environment
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const nodePath = (): string => process.execPath
+
+/**
  * This machine's operating system, in Node's names. A matrix variant for
  * another system is not replayed here.
  *

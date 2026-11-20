@@ -35,6 +35,9 @@ const full: ObservedReads.Record = {
   left: true,
   kept: { archive: "a".repeat(64), outside: [["/home/u/bin/tool", "f:00:x"]], gone: ["stale.txt"] },
   variables: [["COMMIT", "-"]],
+  // It left a server running for the steps after it, and a program //:db left running answered it.
+  running: true,
+  served: [["//:db", "7"]],
   id: "1"
 }
 const plain: ObservedReads.Record = { reads: [["b", "-"], ["a", "f:00"]], lists: [], id: "2" }
@@ -82,7 +85,9 @@ describe("the records of reads in the content store", () => {
       from: full.from,
       left: true,
       kept: full.kept,
-      variables: full.variables
+      variables: full.variables,
+      running: true,
+      served: full.served
     })
     expect(written.slice(1).map((line) => JSON.parse(line))).toEqual([
       ...sorted.reads,

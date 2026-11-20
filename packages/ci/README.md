@@ -35,6 +35,21 @@ was safe (`sci-rough-edges`).
   `smthrs-observe` or `strace`. A replay hands it to every run of Smithers build as the person set it; another value
   ends the program with exit `2` before anything runs.
 
+**2026-11-20, a program a step leaves running** (`sci-left-running`). Optional additions.
+
+- **`Inventory.leftRunning`** (`left-running`): a job with a step that leaves a program running for a later step,
+  read from the step's text (a command put in the background and never waited for, or a flag such as
+  `--daemonize yes`). It leaves the job out only where the job's programs cannot be kept until it ends.
+  **`Inventory.keepingPrograms(inventory, keeps?)`** drops it where they can; **`Inventory.keptOnRunner(job)`** is
+  where the CI `apply` writes keeps them (a Linux runner, or none named). The replay keeps them on Linux with
+  bubblewrap, in the baseline (one jail per job) and in each mode (Smithers build's machines).
+- **`Parts.GenerateOptions.left`**: the jobs `apply` leaves out, each named in `.smithers/ci/NOT-REPRODUCED.txt`
+  with the report's sentence. Before, the notes named none of them.
+- Not contracts, and changed with them: Smithers build starts every target of a machine in one process namespace
+  of the machine's job (`@smthrs/targets/JobKeeper`); a stored record says when its run left a program running
+  (`running`) and which steps' programs answered it (`served`, with their record ids); the runner text puts
+  `RUNNER_TEMP` under `/tmp` where the job's directory is the step's own `/tmp`.
+
 **Twenty-second round, 2026-11-20.** A job with a step that needs rights the replay's jail takes away is left out
 (`sci-recorder-holes`).
 

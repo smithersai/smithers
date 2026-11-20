@@ -16,6 +16,8 @@ import {
   givenTo,
   type Inventory,
   jobTemporaryVariable,
+  keepingPrograms,
+  keptOnRunner,
   type NotReplayed,
   notReplayed,
   refusal,
@@ -69,6 +71,7 @@ import {
   ambientEnvironment,
   coreCount,
   machinesVariable,
+  nodePath,
   pushRefusal,
   recorderOf,
   searchPath,
@@ -113,6 +116,8 @@ import {
 import { readableNames, readyHistory } from "./History.vibe"
 import { couldNotStart, fixesOf, homeOf, namedInStepHome, putOnPath } from "./HomeTools.ts"
 import { backTo, keep, pathsIn, viewOf } from "./Kept.vibe"
+import { keeperIn, keepsPrograms } from "./Job.vibe"
+import { client } from "@smthrs/targets/JobKeeper"
 import { printsNotes, readsListener, recorderStopped } from "./Reads.ts"
 import { defaultStallMinutes, type StallLimit, type Table, tableFor, watchFor } from "./Stall.vibe"
 import {
@@ -666,6 +671,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       ),
       "could not make the steps' homes"
     )
+    // Whether a job's programs live until its last step has ended here, as on a runner: in one jail per job.
+    const keeps = try keepsPrograms(places.baseline)
     // Where `smthrs` writes its run records: the one place it can write that a step run on its own cannot.
     const records = path.join(work, "records")
     try orFail(fs.makeDirectory(records), "could not make a directory")
@@ -791,7 +798,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      */
     effect function prepared(): Prepared!Failure!(R | Host) {
       const read: Inventory = try onNormalCopy(parts.read(normalCopy))
-      const inventory = withoutFailedHere(allowDocker ? allowingDocker(read) : read, failedHere)
+      // Where a job's programs are kept until it ends, a step that leaves one running leaves no job out.
+      const allowed = allowDocker ? allowingDocker(read) : read
+      const inventory = withoutFailedHere(keeps ? keepingPrograms(allowed) : allowed, failedHere)
       const why = ownWorkspace(inventory) ?? refusal(inventory)
       if (why !== undefined) throw failure("unsupported", why)
       const narrowed = ci(inventory)
@@ -802,7 +811,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       // where the person's container daemon is.
       const inheritEnv = [...Object.keys(pushRefusal), ...Object.keys(places.normal.daemon)]
       // The notes name what `apply` leaves out: what this machine failed is no part of them.
-      const left = notReplayed(allowDocker ? allowingDocker(read) : read)
+      const left = notReplayed(keepingPrograms(allowed, keptOnRunner))
       const generated = try parts.files(split, { cache: request.cache, inheritEnv, left })
       // A commit can hold a link, or a file its owner wrote, where a generated file goes: nothing is written then.
       const checked = check(normalCopy, generated) catch effect (cause) => {
@@ -1150,6 +1159,19 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         }
         const copy = path.join(directory, path.basename(root))
         try cloneAt(copy, commit, place)
+        // The job's steps run in one namespace: what a step leaves running lives until the last step has ended.
+        // Its processes are counted from the keeper's tree, once for the whole job: a program counts once however
+        // many steps it outlives.
+        // A child of the job's scope: a run stopped before its last step ends the job's processes too.
+        const keeping = try Scope.fork(own)
+        const job = !keeps ? undefined : try orFail(
+          Scope.provide(
+            keeperIn(place, [directory, store, place.tmp], path.join(work, "jobs", `${path.basename(way.home)}-${name}`)),
+            keeping
+          ),
+          "could not start the keeper of a job"
+        )
+        const counted = job === undefined ? undefined : try sync(() => count(job.pid))
         const results: Array<TargetResult> = []
         let failed: string | undefined = undefined
         for (const step of stepsThrough(sequence, wanted)) {
@@ -1161,7 +1183,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           // The job's temporary directory is its `/tmp` and, by its own path, its `TMPDIR`. The directory that holds
           // the checkout is the job's own and writable, as a runner's is: a step that makes a directory beside its
           // checkout, and a committed link that leads there, work as on the runner and as on a job's machine.
-          const [program, ...argv] = held(place, [directory, store, place.tmp], [...shell, step.command])
+          const [program, ...argv] = job === undefined
+            ? held(place, [directory, store, place.tmp], [...shell, step.command])
+            : client(nodePath(), job.directory, [...shell, step.command])
           // Only a step whose text names the variable is given it: the text takes it away before the step's own
           // script starts, and a step with no such text would hand it on.
           const told = step.command.includes(stateVariable) ? { [stateVariable]: store } : {}
@@ -1178,7 +1202,16 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             place
           )
           // A step that cannot start, for example because its directory does not exist at this commit, has failed.
-          const output = runStep(program, argv, path.join(copy, step.cwd), environment, stepLimit, stall, count)
+          const output = runStep(
+            program,
+            argv,
+            path.join(copy, step.cwd),
+            environment,
+            stepLimit,
+            stall,
+            job === undefined ? count : uncounted,
+            job?.pid
+          )
             catch (cause) => ({ timedOut: false, stalled: false, exitCode: undefined, stderr: `could not start: ${describe(cause)}`, stdout: "" } satisfies StepRun)
           const durationMs = (try Clock.currentTimeMillis) - start
           if (output.exitCode === 0) {
@@ -1196,6 +1229,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           })
           failed = step.label
         }
+        // The job has ended: every program its steps left running ends with it.
+        try Scope.close(keeping, Exit.void)
+        if (counted !== undefined) try sync(counted)
         return wanted === undefined ? results : results.filter((result) => wanted.has(result.label))
       }, own)
       return try (later === undefined ? ensuring(steps, Scope.close(own, Exit.void)) : steps)

@@ -8,7 +8,7 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import type * as PlatformError from "effect/PlatformError"
-import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { type ChildProcessHandle, ChildProcessSpawner, ProcessId } from "effect/process/ChildProcessSpawner"
 import { type Confined, held } from "./Confine.vibe"
 import { type Count, uncounted } from "./Cpu.ts"
 import { noPushUrl, stepEnvironment } from "./Environment.ts"
@@ -187,7 +187,8 @@ export effect function exec(
  * runs longer than `limit` or makes no progress for `stall`. The end of its error output and of what it
  * printed are kept, as much of each as a reason is searched in (`reasonOutputLimit`): the last line that
  * reports an error says why it failed, wherever a tool printed it, above however long a stack trace. `count` is told the process when it starts, and when it
- * has ended.
+ * has ended. `tree` is the process whose tree holds the step's processes when that is not the one started, as for
+ * a step its job's keeper starts: the step makes progress while that tree uses CPU.
  *
  * @category running
  * @since 0.1.0
@@ -199,7 +200,8 @@ export effect function runStep(
   env: Readonly<Record<string, string | undefined>>,
   limit: Duration.Input,
   stall: StallLimit = defaultStall(),
-  count: Count = uncounted
+  count: Count = uncounted,
+  tree?: number
 ) {
   const spawner = try ChildProcessSpawner
   return try scoped(effect {
@@ -223,7 +225,9 @@ export effect function runStep(
     ], { concurrency: "unbounded" })
     // A step a signal ended has the exit code a shell gives for the signal. What it printed says why it failed,
     // as for any other step: the words its exit is refused with hold its whole command.
-    const waited = timeoutOption(exitOrStall(handle, watch), limit) catch (cause) => Option.some(signalExit(signalOf(cause)))
+    // A step its job's keeper started is watched through the keeper's tree, where its processes are.
+    const watched = { exitCode: handle.exitCode, pid: tree === undefined ? handle.pid : ProcessId(tree) }
+    const waited = timeoutOption(exitOrStall(watched, watch), limit) catch (cause) => Option.some(signalExit(signalOf(cause)))
     // Leaving the scope stops a step that is still running.
     if (Option.isNone(waited)) {
       return { timedOut: true, stalled: false, exitCode: timedOut, stderr: try Ref.get(stderr), stdout: try Ref.get(stdout) } satisfies StepRun

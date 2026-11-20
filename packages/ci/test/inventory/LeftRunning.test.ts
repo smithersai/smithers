@@ -1,9 +1,18 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import { ci, type Inventory, type Job, leftRunning, notReplayed, reasonsText } from "../../src/contract/Inventory.ts"
+import {
+  ci,
+  type Inventory,
+  type Job,
+  keepingPrograms,
+  keptOnRunner,
+  leftRunning,
+  notReplayed,
+  reasonsText
+} from "../../src/contract/Inventory.ts"
 import { reasonsSentence } from "../../src/contract/Reasons.ts"
 import { files } from "../../src/generate/index.ts"
-import { notesPath } from "../../src/generate/Render.ts"
+import { notesPath, workspacePath } from "../../src/generate/Render.ts"
 import { leftRunningIn, markLeftRunning, stepName } from "../../src/inventory/LeftRunning.ts"
 
 const job = (commands: ReadonlyArray<string>, names: ReadonlyArray<string | undefined> = []): Job => ({
@@ -155,19 +164,48 @@ describe("a job with a step that leaves a program running", () => {
   })
 })
 
-describe("the notes of what the generated workflow does not run", () => {
-  it("name each job left out with the sentence the report gives it", () => {
-    const leaves = job(["python3 -m http.server 8767 &", "curl -sf localhost:8767/x"], ["Serve"])
-    const plain = { ...job(["make test"]), id: "ci.yml:unit" }
-    const read = inventory([leaves, plain])
-    const written = Effect.runSync(files(ci(read), { left: notReplayed(read) }))
-    expect(written.find((file) => file.path === notesPath)?.content).toContain(
-      "- ci.yml:e2e: not in this workflow: leaves a program running for its later steps, which this machine cannot " +
-        "keep until the job ends: \"Serve\" leaves python3 running; the job stays in your CI as it is\n"
-    )
-    // With no job left out and nothing else to say, there are no notes.
-    expect(Effect.runSync(files(ci(inventory([plain])), { left: [] })).some((file) => file.path === notesPath)).toBe(
+describe("a machine that keeps a job's programs until the job ends", () => {
+  it("replays the job, and every other reason stays", () => {
+    const leaves = job(["python3 -m http.server 8767 &", "curl -sf localhost:8767/x"])
+    const other = { ...leaves, id: "ci.yml:other", unsupported: [{ feature: "secret", detail: "TOKEN" }] }
+    const read = inventory([leaves, other])
+    const kept = keepingPrograms(read)
+    expect(ci(kept).jobs.map((each) => each.id)).toEqual(["ci.yml:e2e"])
+    expect(notReplayed(kept).map((each) => each.job)).toEqual(["ci.yml:other"])
+    // Only where `keeps` holds.
+    expect(ci(keepingPrograms(read, () => false)).jobs).toEqual([])
+  })
+
+  it("is a Linux runner, or none named: a macOS runner keeps nothing", () => {
+    const on = (runsOn: string | undefined): Job => {
+      const { runsOn: _, ...rest } = job(["make"])
+      return runsOn === undefined ? rest : { ...rest, runsOn }
+    }
+    expect([on("ubuntu-latest"), on(undefined), on("macos-14"), on("windows-latest")].map(keptOnRunner)).toEqual([
+      true,
+      true,
+      false,
       false
-    )
+    ])
+  })
+
+  it("is what the CI `apply` writes: the Linux job as build steps, the macOS one named in the notes with why", () => {
+    const linux = job(["python3 -m http.server 8767 &", "curl -sf localhost:8767/x"], ["Start the server"])
+    const mac: Job = {
+      ...linux,
+      id: "ci.yml:mac",
+      name: "mac",
+      runsOn: "macos-14",
+      steps: linux.steps.map((step) => ({ ...step, id: step.id.replace("e2e", "mac") }))
+    }
+    const kept = keepingPrograms(inventory([linux, mac]), keptOnRunner)
+    const left = notReplayed(kept)
+    expect(left.map((each) => each.job)).toEqual(["ci.yml:mac"])
+    const written = Effect.runSync(files(ci(kept), { left }))
+    const read = (path: string): string => written.find((file) => file.path === path)!.content
+    expect(read(notesPath)).toContain(`- ci.yml:mac: not in this workflow: ${reasonsSentence(left[0]!.reasons)}\n`)
+    expect(read(notesPath)).not.toContain("ci.yml:e2e")
+    expect(read(workspacePath)).toContain("ci.yml-e2e-2")
+    expect(read(workspacePath)).not.toContain("ci.yml-mac")
   })
 })

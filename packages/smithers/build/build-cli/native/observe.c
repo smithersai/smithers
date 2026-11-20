@@ -2,7 +2,7 @@
  * smthrs-observe: records the file-system calls of a command, as `strace -f -y` would write them, without
  * stopping the command's threads.
  *
- *     smthrs-observe <trace file> -- <command> [<argument>...]
+ *     smthrs-observe [--keep] <trace file> -- <command> [<argument>...]
  *     smthrs-observe --probe
  *     smthrs-observe --rights <program>...
  *
@@ -63,6 +63,12 @@
  *
  * The command's exit status is this program's. When this program cannot start the command it exits 125, and 126
  * when it cannot record (`--probe` answers 0 where it can, and otherwise says why on standard error).
+ *
+ * With `--keep` the command is a step of a job whose processes live until the job ends, as on a CI runner: what it
+ * leaves running is followed, never killed. When the command ends, the trace of everything so far is written,
+ * sealed, and then its exit status to the trace file's name with `.status` added (`<code> <pid>`), which ends the
+ * step. The lines of what it left come after, appended to the trace file's name with `.kept` added as they are
+ * made, until every process of the run has ended or the job's end kills this program.
  */
 #define _GNU_SOURCE
 #include <dirent.h>
@@ -2105,16 +2111,16 @@ static int byOrder(const void *a, const void *b) {
   return x->sub < y->sub ? -1 : x->sub > y->sub ? 1 : 0;
 }
 
-static int writeTrace(const char *file) {
+static int writeLines(const char *file, struct lines *lines) {
   char written[PATH_MAX + 32];
   snprintf(written, sizeof written, "%s.writing", file);
   FILE *out = fopen(written, "we");
   if (out == NULL) return 0;
   setvbuf(out, NULL, _IOFBF, 1 << 20);
-  qsort(all.items, all.count, sizeof *all.items, byOrder);
+  qsort(lines->items, lines->count, sizeof *lines->items, byOrder);
   fprintf(out, "%d +++ smthrs-observe 1 +++\n", rootPid);
-  for (size_t i = 0; i < all.count; i++) {
-    fwrite(all.items[i].text, 1, all.items[i].length, out);
+  for (size_t i = 0; i < lines->count; i++) {
+    fwrite(lines->items[i].text, 1, lines->items[i].length, out);
     fputc('\n', out);
   }
   if (dropped) unrecorded("the recorder could not keep every line");
@@ -2128,6 +2134,106 @@ static int writeTrace(const char *file) {
   }
   if (fclose(out) != 0) return 0;
   return rename(written, file) == 0;
+}
+
+static int writeTrace(const char *file) { return writeLines(file, &all); }
+
+/* Takes every line kept so far, in the order of the calls, and leaves none kept. */
+static struct lines takeLines(void) {
+  pthread_mutex_lock(&lock);
+  struct lines taken = all;
+  all = (struct lines){0};
+  pthread_mutex_unlock(&lock);
+  qsort(taken.items, taken.count, sizeof *taken.items, byOrder);
+  return taken;
+}
+
+static void freeLines(struct lines *taken) {
+  for (size_t i = 0; i < taken->count; i++) free(taken->items[i].text);
+  free(taken->items);
+  *taken = (struct lines){0};
+}
+
+/* Writes `text` to `file` whole or not at all: through a file beside it, renamed into place. */
+static int writeWhole(const char *file, const char *text) {
+  char written[PATH_MAX + 32];
+  snprintf(written, sizeof written, "%s.writing", file);
+  FILE *out = fopen(written, "we");
+  if (out == NULL) return 0;
+  int ok = fputs(text, out) >= 0 && fflush(out) == 0 && !ferror(out);
+  if (fclose(out) != 0) ok = 0;
+  if (!ok) {
+    unlink(written);
+    return 0;
+  }
+  return rename(written, file) == 0;
+}
+
+/*
+ * The trace of a step whose command has ended while what it left runs on (`--keep`): every line so far, sealed, and
+ * then the command's exit status beside it, which ends the step.
+ */
+static int writeStep(const char *file, int code) {
+  settleBindings();
+  struct lines taken = takeLines();
+  int ok = writeLines(file, &taken);
+  freeLines(&taken);
+  char status[64], statusFile[PATH_MAX + 32];
+  snprintf(status, sizeof status, "%d %d\n", code, (int)getpid());
+  snprintf(statusFile, sizeof statusFile, "%s.status", file);
+  return writeWhole(statusFile, status) && ok;
+}
+
+/* The last request to have every line on disk that was answered (`.ask`, `.answered`). */
+static long answered;
+
+/*
+ * Appends the lines made since the step's trace, or since the last time, to the trace file's name with `.kept`.
+ * A reader that has to know every line made so far is on disk writes a number to the name with `.ask`: once the
+ * lines are written, the number is written to the name with `.answered`.
+ */
+static void writeKept(const char *file) {
+  char askFile[PATH_MAX + 32], text[64];
+  snprintf(askFile, sizeof askFile, "%s.ask", file);
+  long asked = 0;
+  int fd = open(askFile, O_RDONLY | O_CLOEXEC);
+  if (fd >= 0) {
+    ssize_t n = read(fd, text, sizeof text - 1);
+    close(fd);
+    if (n > 0) {
+      text[n] = 0;
+      asked = strtol(text, NULL, 10);
+    }
+  }
+  settleBindings();
+  struct lines taken = takeLines();
+  if (taken.count == 0) {
+    freeLines(&taken);
+    if (asked > answered) {
+      char answeredFile[PATH_MAX + 32];
+      snprintf(answeredFile, sizeof answeredFile, "%s.answered", file);
+      snprintf(text, sizeof text, "%ld\n", asked);
+      if (writeWhole(answeredFile, text)) answered = asked;
+    }
+    return;
+  }
+  char keptFile[PATH_MAX + 32];
+  snprintf(keptFile, sizeof keptFile, "%s.kept", file);
+  FILE *out = fopen(keptFile, "ae");
+  if (out != NULL) {
+    for (size_t i = 0; i < taken.count; i++) {
+      fwrite(taken.items[i].text, 1, taken.items[i].length, out);
+      fputc('\n', out);
+    }
+    fclose(out);
+  }
+  freeLines(&taken);
+  if (asked > answered) {
+    char answeredFile[PATH_MAX + 32];
+    snprintf(answeredFile, sizeof answeredFile, "%s.answered", file);
+    snprintf(text, sizeof text, "%ld\n", asked);
+    if (writeWhole(answeredFile, text)) answered = asked;
+  }
 }
 
 /* Every process of the run is this program's child once its parent ended: kill those still running. */
@@ -2205,15 +2311,23 @@ static void forward(int sig) {
 }
 
 int main(int argc, char **argv) {
-  if (argc == 2 && strcmp(argv[1], "--probe") == 0) return probe();
+  /* `--probe --keep` answers as `--probe` does: a build that asks it learns this program can follow what a step
+   * leaves running (`--keep`), which one built before could not, and refused the pair. */
+  if (argc >= 2 && argc <= 3 && strcmp(argv[1], "--probe") == 0 && (argc == 2 || strcmp(argv[2], "--keep") == 0))
+    return probe();
   /* Names each program whose file asks for rights, one a line; answers 0. strace's reader asks this way. */
   if (argc >= 2 && strcmp(argv[1], "--rights") == 0) {
     for (int i = 2; i < argc; i++)
       if (asksRights(argv[i])) printf("%s\n", argv[i]);
     return fflush(stdout) == 0 ? 0 : 1;
   }
+  int keepLeft = argc > 1 && strcmp(argv[1], "--keep") == 0;
+  if (keepLeft) {
+    argv++;
+    argc--;
+  }
   if (argc < 4 || strcmp(argv[2], "--") != 0) {
-    fprintf(stderr, "usage: smthrs-observe <trace file> -- <command> [<argument>...]\n");
+    fprintf(stderr, "usage: smthrs-observe [--keep] <trace file> -- <command> [<argument>...]\n");
     return 125;
   }
   const char *traceFile = argv[1];
@@ -2311,6 +2425,8 @@ int main(int argc, char **argv) {
           rootDone = 1;
           clock_gettime(CLOCK_MONOTONIC, &deadline);
           deadline.tv_sec += 1;
+          /* A step of a job ends with its command: what it left runs on, and is followed. */
+          if (keepLeft && !writeStep(traceFile, code)) fprintf(stderr, "smthrs-observe: could not write %s\n", traceFile);
         }
         setWatched(pid, 0);
         dropKept(pid);
@@ -2347,7 +2463,8 @@ int main(int argc, char **argv) {
       struct timespec now;
       clock_gettime(CLOCK_MONOTONIC, &now);
       /* A process the command left running is given a second to end, then stopped, as a sandbox stops it. */
-      if (now.tv_sec > deadline.tv_sec || (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) endLeft();
+      if (keepLeft) writeKept(traceFile);
+      else if (now.tv_sec > deadline.tv_sec || (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) endLeft();
     }
     sendStale();
     struct timespec tick = {0, 5000000};
@@ -2380,7 +2497,13 @@ int main(int argc, char **argv) {
 #ifdef STORM_STATS
   fprintf(stderr, "storm-stats: most stops %u over %ld ms\n", mostStops, longestMs);
 #endif
-  if (!writeTrace(traceFile)) {
+  if (keepLeft && rootDone) {
+    /* Every process it followed has ended and every line is written: any request is answered, now and later. */
+    writeKept(traceFile);
+    char answeredFile[PATH_MAX + 32];
+    snprintf(answeredFile, sizeof answeredFile, "%s.answered", traceFile);
+    writeWhole(answeredFile, "9223372036854775807\n");
+  } else if (!writeTrace(traceFile)) {
     fprintf(stderr, "smthrs-observe: could not write %s\n", traceFile);
   }
   return code;

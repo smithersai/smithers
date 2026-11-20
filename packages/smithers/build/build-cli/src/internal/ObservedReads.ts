@@ -210,7 +210,14 @@ const quoted = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
 
 /**
  * Runs a command under the tracer and ends when the command ends. `$1` is
- * the tracer, `$2` the trace file, and the rest the command.
+ * the tracer, `$2` the trace file, `$3` `keep` or `end`, and the rest the
+ * command.
+ *
+ * With `keep` the command runs as a step of a job whose processes live until
+ * the job ends: what it leaves running is not killed, the tracer follows it
+ * and writes on into the trace file, and the step has ended once the status
+ * file is written. The job's keeper reads that file; the job's end ends the
+ * tracer with everything it follows.
  *
  * The tracer waits for every process it follows, so a command that leaves
  * one running would hold the run until that process ends. A shell inside the
@@ -228,9 +235,11 @@ const quoted = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
 const supervisor = [
   "tracer=$1",
   "out=$2",
-  "shift 2",
+  "keep=$3",
+  "shift 3",
   "(",
   `  while [ ! -s "$out.status" ]; do sleep 0.1; done`,
+  `  if [ "$keep" = keep ]; then exit 0; fi`,
   `  read -r status tracing < "$out.status"`,
   "  rounds=0",
   `  while kill -0 "$tracing" 2>/dev/null; do`,
@@ -271,8 +280,18 @@ const supervisor = [
 export const command = (
   tracer: string,
   traceFile: string,
-  argv: ReadonlyArray<string>
-): ReadonlyArray<string> => ["/bin/sh", "-c", supervisor, "smthrs-observe", tracer, traceFile, ...argv]
+  argv: ReadonlyArray<string>,
+  keep = false
+): ReadonlyArray<string> => [
+  "/bin/sh",
+  "-c",
+  supervisor,
+  "smthrs-observe",
+  tracer,
+  traceFile,
+  keep ? "keep" : "end",
+  ...argv
+]
 
 /**
  * The argv that runs `argv` under the recorder a host has: `smthrs-observe`
@@ -284,9 +303,12 @@ export const command = (
 export const commandFor = (
   observer: { readonly tracer: string; readonly supervisor?: true | undefined },
   traceFile: string,
-  argv: ReadonlyArray<string>
+  argv: ReadonlyArray<string>,
+  keep = false
 ): ReadonlyArray<string> =>
-  observer.supervisor === true ? [observer.tracer, traceFile, "--", ...argv] : command(observer.tracer, traceFile, argv)
+  observer.supervisor === true
+    ? [observer.tracer, ...(keep ? ["--keep"] : []), traceFile, "--", ...argv]
+    : command(observer.tracer, traceFile, argv, keep)
 
 /**
  * A host's answer to whether it can observe a run: the recorder's path, and
@@ -441,11 +463,18 @@ export const observer = (host: {
   // let it copy a descriptor of the process it watches (a container refuses that without CAP_SYS_PTRACE). Where it
   // cannot run, it says why, and that leads the reason when strace cannot record either.
   let why = host.unsupervised
+  // It is asked with `--keep`, as a step whose job keeps what it leaves running asks it: one built before it could
+  // follow such a program refuses the pair, and strace records instead of a recorder that would stop every such step.
   if (host.supervisor !== undefined) {
-    const supervised = spawnSync(host.supervisor, ["--probe"], { encoding: "utf8", timeout: 30_000 })
+    const supervised = spawnSync(host.supervisor, ["--probe", "--keep"], { encoding: "utf8", timeout: 30_000 })
     if (supervised.status === 0) return { tracer: host.supervisor, supervisor: true }
-    const said = (supervised.stderr ?? "").trim().split("\n")[0]!
-    why = said === "" ? "smthrs-observe cannot run here" : said
+    const plain = spawnSync(host.supervisor, ["--probe"], { encoding: "utf8", timeout: 30_000 })
+    const said = (plain.stderr ?? "").trim().split("\n")[0]!
+    why = plain.status === 0
+      ? "smthrs-observe was built before it could follow a program a step leaves running: build it again"
+      : said === ""
+      ? "smthrs-observe cannot run here"
+      : said
   }
   const refused = why === undefined ? "" : `${why}, and `
   const tracer = host.executable("strace")
@@ -502,6 +531,11 @@ export interface Trace {
   readonly reached?: ReadonlyArray<readonly [path: string, named: string, opened: string]> | undefined
   /** The programs `smthrs-observe` saw the run start whose file asks for rights the run did not have. */
   readonly rights?: ReadonlyArray<string> | undefined
+  /**
+   * The Unix sockets (`unix:"<path>"`) and local ports (`port:<n>`) the run
+   * listened on. A program the run left running may still listen on them.
+   */
+  readonly bound?: ReadonlySet<string> | undefined
 }
 
 /** Decodes a quoted string as the tracer prints it; `undefined` when it is cut short or malformed. */
@@ -990,10 +1024,20 @@ export const whole = (traceFile: string): boolean => {
  * starts, reads nothing the trace holds. What such a process writes is the
  * run's, as any write is.
  *
+ * `inside` holds the Unix sockets (`unix:"<path>"`) and local ports
+ * (`port:<n>`) programs of the run's job listen on that an earlier step of
+ * the job started ({@link Trace.bound}): talking to one is talking to the
+ * job, not reaching outside the run.
+ *
  * @category tracing
  * @since 1.0.0
  */
-export const read = (lines: () => Iterable<string>, cwd: string, quiet: ReadonlyArray<string> = []): Trace => {
+export const read = (
+  lines: () => Iterable<string>,
+  cwd: string,
+  quiet: ReadonlyArray<string> = [],
+  inside: ReadonlySet<string> = new Set()
+): Trace => {
   const found = new Map<string, number>()
   const missing = new Map<string, number>()
   const listed = new Map<string, number>()
@@ -1142,8 +1186,12 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
   /** Whether the supervisor wrote the trace, and whether its last line came last. */
   let supervised = false
   let sealed = false
-  /** Unix socket paths and loopback ports the run itself listens on. */
-  const bound = new Set<string>()
+  /** Unix socket paths and loopback ports the run itself listens on, and those its job's programs listen on. */
+  const bound = new Set<string>(inside)
+  /** Those the run itself listens on. */
+  const listened = new Set<string>()
+  /** The sockets and ports the run reached before anything of it listened there, with what reaching them says. */
+  const unbound: Array<readonly [key: string, how: string]> = []
   let ephemeral = false
   let root: number | undefined
   let at = 0
@@ -1485,7 +1533,10 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
         if (name === "bind") {
           if (failed) return
           if (key === "port:0") ephemeral = true
-          else if (key !== undefined) bound.add(key)
+          else if (key !== undefined) {
+            bound.add(key)
+            listened.add(key)
+          }
           return
         }
         // A connection that was refused or found nothing read nothing.
@@ -1499,8 +1550,9 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
           return
         }
         if (family === "AF_UNIX") {
-          if (key === undefined || !bound.has(key)) {
-            reach(`it reached a program outside the run through the socket ${unix ?? "it was given"}`)
+          if (key === undefined) reach("it reached a program outside the run through the socket it was given")
+          else if (!bound.has(key)) {
+            unbound.push([key, `it reached a program outside the run through the socket ${unix}`])
           }
         } else if (family === "AF_INET" || family === "AF_INET6") {
           if (!loopback(address)) {
@@ -1514,7 +1566,7 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
             }
             networked = true
           } else if (!ephemeral && !bound.has(key!)) {
-            reach(`it reached a program outside the run on local port ${portOf(address)}`)
+            unbound.push([key!, `it reached a program outside the run on local port ${portOf(address)}`])
           }
         }
         return
@@ -1665,6 +1717,9 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
   // The supervisor writes its last line when every process of the run has ended and every line is written.
   if (supervised && !sealed) refusals.add("its trace was cut short")
   for (const [pid, open] of pending) cutOff(pid, open)
+  // A program of the run that listens on a socket or a port may bind it after the run first tries to reach it, as a
+  // server started in the background is asked before it is ready: only one the run never listens on is outside it.
+  for (const [key, how] of unbound) if (!bound.has(key)) reach(how)
   // A build tool that wrote its lockfile chose a version: the lockfile it read did not fix what it fetched.
   for (const [build, connection] of pinnedConnections) {
     const lock = [...build.rewrites].find((path) => changed.has(path))
@@ -1688,7 +1743,8 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
     refusals: [...refusals],
     outside: [...outside],
     ...(reachedThrough.length === 0 ? {} : { reached: reachedThrough }),
-    ...(supervised ? { rights: [...rights] } : {})
+    ...(supervised ? { rights: [...rights] } : {}),
+    bound: listened
   }
 }
 
@@ -1739,6 +1795,209 @@ export const rightsIn = (
   trace: Trace,
   ask: (programs: ReadonlyArray<string>) => ReadonlyArray<string> = askingRights
 ): ReadonlyArray<string> => trace.rights ?? ask([...trace.started.keys()].sort(byCodeUnit))
+
+/**
+ * A step whose programs ran on after it, for the steps after it in its job:
+ * its label, the id of the record its run is held under (none where no
+ * record holds it), the directory it started in, its own trace and the lines
+ * its recorder wrote since, and how to have the recorder write every line it
+ * holds (`false` when it did not answer).
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface KeptStep {
+  readonly label: string
+  readonly id: string | undefined
+  readonly cwd: string
+  readonly step: () => Iterable<string>
+  readonly after: () => Iterable<string>
+  readonly flush: () => Promise<boolean>
+}
+
+let asked = 0
+
+/**
+ * Asks `smthrs-observe --keep`, which follows what a step left running, to
+ * write every line it holds, and waits until it has: `false` when it did not
+ * answer within `limitMs`. Once every process it followed has ended it has
+ * written them all, and answers every request.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const askFlush = async (traceFile: string, limitMs = 10_000): Promise<boolean> => {
+  const number = ++asked
+  NodeFs.writeFileSync(`${traceFile}.ask.writing`, `${number}\n`)
+  NodeFs.renameSync(`${traceFile}.ask.writing`, `${traceFile}.ask`)
+  const until = Date.now() + limitMs
+  for (;;) {
+    let text = ""
+    try {
+      text = NodeFs.readFileSync(`${traceFile}.answered`, "utf8")
+    } catch {
+      // Not answered yet.
+    }
+    if (Number.parseInt(text, 10) >= number) return true
+    if (Date.now() > until) return false
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
+
+/**
+ * A step that left a program running, as the steps after it in its job read
+ * it: `smthrs-observe` wrote the step's trace whole and writes what follows
+ * beside it ({@link askFlush}); strace writes on into the trace after `cut`
+ * ({@link stepLength}), each line as its call ends, so what a step after it
+ * caused is written once that step has ended.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const keptStep = (
+  label: string,
+  id: string | undefined,
+  cwd: string,
+  traceFile: string,
+  supervised: boolean,
+  cut = 0
+): KeptStep => ({
+  label,
+  id,
+  cwd,
+  step: supervised ? wholeLinesOf(traceFile) : wholeLinesOf(traceFile, 0, cut),
+  after: supervised ? wholeLinesOf(`${traceFile}.kept`) : wholeLinesOf(traceFile, cut),
+  flush: supervised ? () => askFlush(traceFile) : () => Promise.resolve(true)
+})
+
+/**
+ * A step that left a program running and holds no record of its own: the
+ * steps after it in its job are held to nothing it did, so none stores a
+ * record.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const unrecordedStep = (label: string): KeptStep => ({
+  label,
+  id: undefined,
+  cwd: "/",
+  step: () => [],
+  after: () => [],
+  flush: () => Promise.resolve(true)
+})
+
+/**
+ * The paths a run wrote, by what {@link observe} said of it: none where its
+ * reads could not be known.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const wrote = (
+  observed: Observation | { readonly refusal: string }
+): { readonly made: ReadonlySet<string>; readonly touched: ReadonlySet<string> } =>
+  "refusal" in observed ? { made: new Set(), touched: new Set() } : { made: observed.made, touched: observed.touched }
+
+/** The last line `smthrs-observe` writes, once every line before it is written. */
+const sealLine = / \+\+\+ complete \+\+\+$/
+
+/**
+ * What the programs a step left running read once the step's command had
+ * ended: while the later steps of its job ran. `step` gives the lines of the
+ * step's own trace and `after` the lines its recorder wrote since, which go
+ * on from it, so a path is read against the directories the step's trace
+ * leaves each process in. The trace holds the paths found, found missing and
+ * listed in `after`, with the line of the whole where each first appears
+ * there, the refusals `after` adds, and every socket and port the programs
+ * listened on (`bound`): a later step that talks to one talks to its job.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const servedBy = (
+  step: () => Iterable<string>,
+  after: () => Iterable<string>,
+  cwd: string,
+  quiet: ReadonlyArray<string> = []
+): Trace & { readonly bound: ReadonlySet<string> } => {
+  let count = 0
+  let seal: string | undefined
+  const first = function*(): Iterable<string> {
+    for (const line of step()) {
+      if (sealLine.test(line)) seal = line
+      else yield line
+    }
+  }
+  for (const _line of first()) count += 1
+  // A sealed trace is sealed again after what followed it: the recorder wrote those lines whole too.
+  const whole = read(
+    function*() {
+      yield* first()
+      yield* after()
+      if (seal !== undefined) yield seal
+    },
+    cwd,
+    quiet
+  )
+  const own = read(
+    function*() {
+      yield* first()
+      if (seal !== undefined) yield seal
+    },
+    cwd,
+    quiet
+  )
+  const later = (map: ReadonlyMap<string, number>): ReadonlyMap<string, number> =>
+    new Map([...map].filter(([, at]) => at > count))
+  const before = new Set(own.refusals)
+  const earlier = new Set(own.outside ?? [])
+  return {
+    found: later(whole.found),
+    missing: later(whole.missing),
+    listed: later(whole.listed),
+    made: new Map(),
+    emptied: new Map(),
+    changed: new Set(),
+    started: new Map(),
+    removed: new Set(),
+    fetched: new Set(),
+    refusals: whole.refusals.filter((refusal) => !before.has(refusal)),
+    outside: (whole.outside ?? []).filter((refusal) => !earlier.has(refusal)),
+    bound: whole.bound ?? new Set()
+  }
+}
+
+/**
+ * A run's trace with what the programs its job left running read while it
+ * ran ({@link servedBy}): the paths they found, found missing and listed
+ * count as the run's, placed after every line of its own, so a path the run
+ * made before they read it stays the run's own. Their refusals are the run's.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const withServed = (own: Trace, served: ReadonlyArray<Trace>): Trace => {
+  let last = 0
+  for (const map of [own.found, own.missing, own.listed, own.made, own.emptied, own.started]) {
+    for (const at of map.values()) last = Math.max(last, at)
+  }
+  const joined = (pick: (trace: Trace) => ReadonlyMap<string, number>): ReadonlyMap<string, number> => {
+    const all = new Map(pick(own))
+    for (const trace of served) {
+      for (const [path, at] of pick(trace)) if (!all.has(path)) all.set(path, last + at)
+    }
+    return all
+  }
+  return {
+    ...own,
+    found: joined((trace) => trace.found),
+    missing: joined((trace) => trace.missing),
+    listed: joined((trace) => trace.listed),
+    refusals: [...new Set([...own.refusals, ...served.flatMap((trace) => trace.refusals)])],
+    outside: [...new Set([...own.outside ?? [], ...served.flatMap((trace) => trace.outside ?? [])])]
+  }
+}
 
 /**
  * The file-system reads a measurement makes; a test supplies a failing one.
@@ -1854,6 +2113,19 @@ export interface Record {
   /** Set when the run left something behind that it wrote: a file, a directory or a link. */
   readonly left?: true
   /**
+   * Set when the run left a program running when its command ended, as a server started in the background is:
+   * a step after it in its job talks to that program, which no record of files holds. Such a step runs again,
+   * before a later step of its job that has to run.
+   */
+  readonly running?: true
+  /**
+   * The steps of the run's job whose programs were running while it ran, each with the id of the record of the run
+   * that started them. What those programs read while it ran is in `reads`; what they read before is in their own
+   * records. The run holds only while each of those steps is answered from that same record: a step that started
+   * the program anew, or another program, makes the run happen again.
+   */
+  readonly served?: ReadonlyArray<readonly [label: string, id: string]>
+  /**
    * Set when what the run left in the workspace and in the temporary
    * directory is kept beside the record, to be put back in place of running
    * the step again. `outside` holds what it left anywhere else, with what was
@@ -1953,7 +2225,11 @@ export const idOf = (record: Omit<Record, "id">): string =>
       record.given ?? [],
       record.left ?? false,
       // A record with no variable keeps the id it had before records held any.
-      ...(record.variables === undefined ? [] : [record.variables])
+      ...(record.variables === undefined ? [] : [record.variables]),
+      // A record of a run that left no program and talked to none keeps the id it had before records said so.
+      ...(record.running === undefined && record.served === undefined
+        ? []
+        : ["programs", record.running ?? false, record.served ?? []])
     ]))
     .digest("hex")
 
@@ -2270,6 +2546,10 @@ export const observe = (
      * reads and rewrites, is the same input each time, though never what the step left.
      */
     readonly found?: ReadonlyMap<string, string> | undefined
+    /** Whether the run left a program running when its command ended ({@link Record.running}). */
+    readonly running?: boolean | undefined
+    /** The steps whose programs were running while it ran, with their records' ids ({@link Record.served}). */
+    readonly served?: ReadonlyArray<readonly [label: string, id: string]> | undefined
   }
 ): Observation | { readonly refusal: string; readonly outside?: string | undefined } => {
   if (trace.refusals.length > 0) {
@@ -2666,7 +2946,9 @@ export const observe = (
     lists,
     ...(from.length === 0 ? {} : { from, given }),
     ...(survivors.length > 0 ? { left: true as const } : {}),
-    ...(held.length === 0 ? {} : { variables: held })
+    ...(held.length === 0 ? {} : { variables: held }),
+    ...(options.running === true ? { running: true as const } : {}),
+    ...(options.served === undefined || options.served.length === 0 ? {} : { served: options.served })
   }
   const record = { ...body, id: idOf(body) }
   if (survivors.length === 0) return { record, made, touched }
@@ -2875,7 +3157,9 @@ const interpreters = (path: string, io: Io): ReadonlyArray<string> => {
  * run, and `undefined` once what it left is in place: it ran, or its files
  * were put back. A step answered from another of its runs would write other
  * files than this run read, whatever is at those paths now, so the record
- * does not hold.
+ * does not hold. `served` gives the same for a step whose program answered
+ * the run ({@link Record.served}), and `undefined` for one that ran: the
+ * record holds only while that step is answered from the record it had.
  *
  * @category recording
  * @since 1.0.0
@@ -2887,8 +3171,15 @@ export const changed = (
   io: Io = defaultIo,
   answered: (label: string) => ReadonlySet<string> | undefined = () => undefined,
   values: Variables["values"] = {},
-  own: (path: string) => boolean = () => false
+  own: (path: string) => boolean = () => false,
+  served: (label: string) => ReadonlySet<string> | undefined = answered
 ): string | undefined => {
+  // A program another step started answered this run: the run holds only with that step answered as it was then.
+  for (const [label, id] of stored.served ?? []) {
+    if (served(label)?.has(id) !== true) {
+      return `the program ${label} started, which it talked to, is not the one it talked to`
+    }
+  }
   for (const [name, held] of stored.variables ?? []) {
     if (heldAs(values[name]) !== held) return `the variable ${name} has another value`
   }
@@ -2986,7 +3277,9 @@ export const anchored = (stored: Record, latest: (label: string) => string | und
     from,
     given: stored.given ?? [],
     ...(stored.left === true ? { left: true as const } : {}),
-    ...(stored.variables === undefined ? {} : { variables: stored.variables })
+    ...(stored.variables === undefined ? {} : { variables: stored.variables }),
+    ...(stored.running === true ? { running: true as const } : {}),
+    ...(stored.served === undefined ? {} : { served: stored.served })
   }
   return { ...body, id: idOf(body), ...(stored.kept === undefined ? {} : { kept: stored.kept }) }
 }
@@ -3222,6 +3515,70 @@ export const store = (added: Record, earlier: ReadonlyArray<Record>): Stored | u
   const others = earlier.filter((record) => record.id !== added.id)
   return { kind, format, records: [added, ...others].slice(0, maximumRecords) }
 }
+
+/**
+ * Where the last whole line of `file` ends: its size up to and with its last
+ * newline, or 0 when it has none or is missing. A recorder that is still
+ * writing leaves a line cut short after it.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const wholeLength = (file: string): number => {
+  let data: Buffer
+  try {
+    data = NodeFs.readFileSync(file)
+  } catch {
+    return 0
+  }
+  return data.lastIndexOf(0x0a) + 1
+}
+
+/**
+ * Where a step's own lines end in the trace strace writes on into
+ * ({@link command} with `keep`): after the line where the step's shell opens
+ * the status file to write the command's exit status, which it does once the
+ * command has ended. Every later line is of a program the step left running.
+ * Where no such line is written yet, the end of the last whole line.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const stepLength = (traceFile: string): number => {
+  let data: Buffer
+  try {
+    data = NodeFs.readFileSync(traceFile)
+  } catch {
+    return 0
+  }
+  // The shell names the file in its own command line too: the line that opens it to write is the one.
+  const at = data.indexOf(`"${traceFile}.status", O_`)
+  if (at < 0) return data.lastIndexOf(0x0a) + 1
+  const end = data.indexOf(0x0a, at)
+  return end < 0 ? data.lastIndexOf(0x0a) + 1 : end + 1
+}
+
+/**
+ * The lines of `file` from byte `from` to byte `to` (to the end of its last
+ * whole line without it), read again at each call: a file a recorder still
+ * writes gives more lines later. A missing file gives none.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const wholeLinesOf = (file: string, from = 0, to?: number): () => Iterable<string> =>
+  function*() {
+    let data: Buffer
+    try {
+      data = NodeFs.readFileSync(file)
+    } catch {
+      return
+    }
+    const end = Math.min(to ?? data.length, data.lastIndexOf(0x0a) + 1)
+    if (end <= from) return
+    const text = data.subarray(from, end - 1).toString("utf8")
+    yield* text.split("\n")
+  }
 
 /**
  * The lines of a trace file, read a block at a time so a large trace is

@@ -80,6 +80,7 @@
     "./GithubWorkflow": "./src/GithubWorkflow.ts",
     "./Go": "./src/Go.ts",
     "./Input": "./src/Input.ts",
+    "./JobKeeper": "./src/JobKeeper.ts",
     "./Install": "./src/Install.ts",
     "./JevLint": "./src/JevLint.ts",
     "./JsrPublish": "./src/JsrPublish.ts",
@@ -575,6 +576,16 @@
         "require": {
           "types": "./dist/cjs/Input.d.ts",
           "default": "./dist/cjs/Input.js"
+        }
+      },
+      "./JobKeeper": {
+        "import": {
+          "types": "./dist/esm/JobKeeper.d.ts",
+          "default": "./dist/esm/JobKeeper.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JobKeeper.d.ts",
+          "default": "./dist/cjs/JobKeeper.js"
         }
       },
       "./Install": {

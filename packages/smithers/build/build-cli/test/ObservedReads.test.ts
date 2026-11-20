@@ -57,7 +57,21 @@ describe("the tracer command", () => {
   it("runs the command under the tracer and names the trace file", () => {
     const argv = ObservedReads.command("/usr/bin/strace", "/tmp/t.trace", ["/bin/sh", "-c", "true"])
     expect(argv.slice(0, 2)).toEqual(["/bin/sh", "-c"])
-    expect(argv.slice(3)).toEqual(["smthrs-observe", "/usr/bin/strace", "/tmp/t.trace", "/bin/sh", "-c", "true"])
+    expect(argv.slice(3)).toEqual(["smthrs-observe", "/usr/bin/strace", "/tmp/t.trace", "end", "/bin/sh", "-c", "true"])
+    // A step of a job that keeps what it leaves running: the tracer follows it after the step has ended.
+    expect(ObservedReads.command("/usr/bin/strace", "/tmp/t.trace", ["true"], true).slice(3, 7)).toEqual([
+      "smthrs-observe",
+      "/usr/bin/strace",
+      "/tmp/t.trace",
+      "keep"
+    ])
+    expect(ObservedReads.commandFor({ tracer: "/o", supervisor: true }, "/tmp/t.trace", ["true"], true)).toEqual([
+      "/o",
+      "--keep",
+      "/tmp/t.trace",
+      "--",
+      "true"
+    ])
     const script = argv[2]!
     expect(script).toContain("'-f'")
     expect(script).toContain("'--seccomp-bpf'")
@@ -196,6 +210,31 @@ describe("picking the recorder", () => {
     "records with the one this package built on x86_64 when no recorder is asked for",
     () => {
       expect(ObservedReads.supervisorPath("linux", "x64", {})).toBe(built)
+    }
+  )
+
+  it.skipIf(process.platform === "win32")(
+    "records with strace where smthrs-observe was built before it could keep a program a step leaves",
+    async () => {
+      const root = await directory()
+      // As such a build answers: `--probe` alone, and a usage error for `--probe --keep`.
+      const older = Path.join(root, "smthrs-observe")
+      await Fs.writeFile(
+        older,
+        "#!/bin/sh\n[ \"$#\" = 1 ] && [ \"$1\" = --probe ] && exit 0\necho 'usage: smthrs-observe <trace file> -- <command>' >&2\nexit 125\n",
+        { mode: 0o755 }
+      )
+      const tracer = Path.join(root, "strace")
+      await Fs.writeFile(tracer, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+      expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, supervisor: older })).toEqual({
+        tracer,
+        why: "smthrs-observe was built before it could follow a program a step leaves running: build it again"
+      })
+      // One built from this package's source answers both ways.
+      if (process.platform === "linux" && NodeFs.existsSync(built)) {
+        expect(spawnSync(built, ["--probe", "--keep"]).status).toBe(spawnSync(built, ["--probe"]).status)
+        expect(spawnSync(built, ["--probe", "--other"]).status).toBe(125)
+      }
     }
   )
 

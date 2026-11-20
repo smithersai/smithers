@@ -641,9 +641,10 @@ export const docker = "docker"
  * --daemonize yes` does, where the program cannot be kept until the job
  * ends. On a GitHub runner such a program lives until the job's last step
  * has ended. The `detail` names the step and the program, as in `"Start the
- * server" leaves python3 running`. Such a job is not replayed, and
- * the CI `apply` writes keeps it as the repository has it, so it runs on the
- * runner as before.
+ * server" leaves python3 running`. Where the job's programs can be kept
+ * ({@link keepingPrograms}) the reason goes. Elsewhere the job is not
+ * replayed, and the CI `apply` writes keeps it as the repository has it, so
+ * it runs on the runner as before.
  *
  * @category constants
  * @since 0.1.0
@@ -1225,6 +1226,36 @@ export const notReplayed = (inventory: Inventory): ReadonlyArray<NotReplayed> =>
  */
 export const withheldOf = (inventory: Inventory): ReadonlyArray<string> =>
   [...new Set(sort(inventory).kept.flatMap((job) => job.steps.flatMap((step) => step.withheld ?? [])))].sort()
+
+/**
+ * Whether the CI `apply` writes keeps a job's programs until the job ends
+ * on its runner: a job on a Linux runner, or one that names no runner, as a
+ * recipe of a Justfile does, which runs on the workflow's Linux runner. A
+ * macOS runner has no process namespace to keep them in.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const keptOnRunner = (job: Job): boolean => job.runsOn === undefined || hostOf(job.runsOn) === "linux"
+
+/**
+ * The inventory as a machine that keeps a job's programs until the job ends
+ * runs it: no job for which `keeps` holds is left out because a step leaves
+ * a program running ({@link leftRunning}). A replay keeps them on Linux with
+ * bubblewrap, and so does the CI `apply` writes on a Linux runner; a job of
+ * another system keeps the reason. Every other reason stays.
+ *
+ * @throws {never}
+ * @category constructors
+ * @since 0.1.0
+ */
+export const keepingPrograms = (inventory: Inventory, keeps: (job: Job) => boolean = () => true): Inventory => ({
+  ...inventory,
+  jobs: inventory.jobs.map((job) =>
+    keeps(job) ? { ...job, unsupported: job.unsupported.filter((entry) => entry.feature !== leftRunning) } : job
+  )
+})
 
 /**
  * The inventory as a person who allows Docker has it replayed: no job is

@@ -13,6 +13,7 @@ import * as Effect from "effect/Effect"
 import { execFileSync } from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
+import * as Net from "node:net"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import * as Machine from "../src/internal/Machine.ts"
@@ -747,4 +748,280 @@ describe("an observed target on a machine", () => {
     expect(await second.run(["test"])).toEqual({ install: "hit", test: "ran" })
     expect(second.logs).toContain("//:install  what it left is put back for //:test")
   })
+})
+
+/** The bubblewrap that holds a machine's processes in a namespace of their own here, when this host has one. */
+const keeps = "bwrap" in mount ? (await Machine.keeping(mount.bwrap, "/var/tmp", process.env)) === undefined : false
+const python = NodeFs.existsSync("/usr/bin/python3")
+const keptIt = it.skipIf("reason" in tracing || !keeps || !python)
+const keepIt = it.skipIf(!keeps)
+/** strace, where this host has one that traces: a build told to record with it, and not with smthrs-observe. */
+const strace = ObservedReads.observer({
+  platform: process.platform,
+  executable: (name) => {
+    const found = (process.env["PATH"] ?? "").split(Path.delimiter).map((each) => Path.join(each, name))
+    return found.find((path) => NodeFs.existsSync(path))
+  }
+})
+const straced: ExecutionServices = { ...executionServicesLive, observer: () => strace }
+const stracedIt = it.skipIf("reason" in strace || !keeps || !python)
+
+/** The processes of this user whose whole command line is `line`. */
+const running = (line: string): ReadonlyArray<string> => {
+  try {
+    return execFileSync("pgrep", ["-u", String(process.getuid?.()), "-x", "-f", line], { encoding: "utf8" })
+      .split("\n")
+      .filter((pid) => pid !== "")
+  } catch {
+    return []
+  }
+}
+
+/** A port nothing listens on now: the system's choice, let go at once. */
+const freePort = (): Promise<number> =>
+  new Promise((resolve) => {
+    const probe = Net.createServer()
+    probe.listen(0, "127.0.0.1", () => {
+      const { port } = probe.address() as Net.AddressInfo
+      probe.close(() => resolve(port))
+    })
+  })
+
+/**
+ * A job as many CIs have it: its first step starts a web server in the background, its second asks it for a file
+ * and checks the answer. The server serves `site/`.
+ */
+const served = (port: number) => (): Targets => {
+  const serve = on("web", `python3 -m http.server ${port} --bind 127.0.0.1 --directory site > /dev/null 2>&1 &`)
+  return {
+    serve,
+    ask: on(
+      "web",
+      `for i in $(seq 1 50); do curl -sf --max-time 5 http://127.0.0.1:${port}/x.txt > got.txt && break; sleep 0.1; done; ` +
+        "grep -qx ok got.txt",
+      [serve]
+    )
+  }
+}
+
+describe("a program a step of a machine leaves running", () => {
+  const server = (port: number) => `python3 -m http.server ${port} --bind 127.0.0.1 --directory site`
+
+  for (
+    const [recorder, test, services] of [
+      ["smthrs-observe or strace", keptIt, executionServicesLive],
+      ["strace", stracedIt, straced]
+    ] as const
+  ) {
+    test(`lives for the targets after it until the machine's last target, recorded with ${recorder}`, async () => {
+      const port = await freePort()
+      const { logs, run, write } = await fixture(served(port))
+      await write("site/x.txt", "ok\n")
+      expect(await run(["ask"], services)).toEqual({ serve: "ran", ask: "ran" })
+      expect(running(server(port))).toEqual([])
+      // Nothing the server or the step that asks it read changed: both are answered, and nothing starts.
+      logs.length = 0
+      await write("docs/readme.md", "changed\n")
+      expect(await run(["ask"], services), logs.join("\n")).toEqual({ serve: "hit", ask: "hit" })
+      expect(logs.filter((line) => line.includes("runs again"))).toEqual([])
+      // Only what the server serves changed: the step that asks runs, and its server runs again before it.
+      logs.length = 0
+      await write("site/x.txt", "bad\n")
+      expect(await run(["ask"], services)).toEqual({ serve: "ran", ask: "failed" })
+      expect(logs).toContain(
+        "//:serve  runs again for //:ask: it left a program running for the steps after it"
+      )
+      expect(logs).toContain("//:ask  runs again: site/x.txt changed")
+      expect(running(server(port))).toEqual([])
+      // Back to what both read before: both are answered by the records of the first run.
+      await write("site/x.txt", "ok\n")
+      expect(await run(["ask"], services)).toEqual({ serve: "hit", ask: "hit" })
+    }, 300_000)
+  }
+
+  keptIt("lives on when it leaves its session, as a daemon does, and ends with the machine", async () => {
+    const seconds = 60_000 + (process.pid % 9_000)
+    const { run } = await fixture(() => {
+      const start = on("daemon", `setsid sh -c 'sleep ${seconds} > /dev/null 2>&1 &' && echo started`)
+      return { start, find: on("daemon", `pgrep -x -f 'sleep ${seconds}' > /dev/null`, [start]) }
+    })
+    expect(await run(["find"])).toEqual({ start: "ran", find: "ran" })
+    expect(running(`sleep ${seconds}`)).toEqual([])
+  }, 300_000)
+
+  keptIt("is no program of another machine's, which never sees it", async () => {
+    const seconds = 70_000 + (process.pid % 9_000)
+    const { run } = await fixture(() => {
+      const start = on("one", `sleep ${seconds} > /dev/null 2>&1 &`)
+      const other = on("two", `! pgrep -x -f 'sleep ${seconds}' > /dev/null`, [start])
+      return {
+        start,
+        // The other machine's step runs while the program lives: the step after it on its own machine waits for it.
+        other,
+        mine: on("one", `pgrep -x -f 'sleep ${seconds}' > /dev/null`, [start, other])
+      }
+    })
+    expect(await run(["mine", "other"])).toEqual({ start: "ran", mine: "ran", other: "ran" })
+    expect(running(`sleep ${seconds}`)).toEqual([])
+  }, 300_000)
+
+  keepIt("runs on with no record where reads are not recorded, and the target after it runs too", async () => {
+    const seconds = 80_000 + (process.pid % 9_000)
+    const { run } = await fixture(() => {
+      const start = on("plain", `sleep ${seconds} > /dev/null 2>&1 &`)
+      return { start, find: on("plain", `pgrep -x -f 'sleep ${seconds}' > /dev/null`, [start]) }
+    })
+    expect(await run(["find"], untraced)).toEqual({ start: "ran", find: "ran" })
+    expect(running(`sleep ${seconds}`)).toEqual([])
+  }, 300_000)
+})
+
+/**
+ * A bubblewrap on `PATH` before the host's own that does what `refuse` says it refuses, and is the host's own for
+ * everything else: `namespace` refuses a process namespace of its own, `keeper` starts no keeper.
+ */
+const fakeBubblewrap = async (refuse: "namespace" | "keeper"): Promise<string> => {
+  const directory = await Fs.realpath(await Fs.mkdtemp(Path.join("/var/tmp", "smithers-fake-bwrap-")))
+  temporary.push(directory)
+  const real = "bwrap" in mount ? mount.bwrap : "bwrap"
+  const refused = refuse === "namespace" ? `*" --unshare-pid "*` : `*'"use strict"'*`
+  // It refuses while the file `refuse` beside it is there.
+  await Fs.writeFile(Path.join(directory, "refuse"), "")
+  await Fs.writeFile(
+    Path.join(directory, "bwrap"),
+    `#!/bin/sh\nif [ -e ${directory}/refuse ]; then case " $* " in ${refused}) exit ${
+      refuse === "namespace" ? 1 : 0
+    };; esac; fi\nexec ${real} "$@"\n`,
+    { mode: 0o755 }
+  )
+  return directory
+}
+
+describe("a program a step leaves running, where its job cannot keep it", () => {
+  for (
+    const [refuse, said] of [
+      ["namespace", "smthrs: a program a step leaves running ends with its step on this host:"],
+      ["keeper", "smthrs: machine one: a program a step leaves running ends with its step: its keeper did not start"]
+    ] as const
+  ) {
+    keptIt(`ends with its step, and the build says why once (${refuse})`, async () => {
+      const seconds = (refuse === "namespace" ? 50_000 : 51_000) + (process.pid % 900)
+      const fake = await fakeBubblewrap(refuse)
+      const { logs, run } = await fixture(
+        () => {
+          const start = on("one", `sleep ${seconds} > /dev/null 2>&1 &`)
+          return { start, find: on("one", `pgrep -x -f 'sleep ${seconds}' > /dev/null`, [start]) }
+        },
+        undefined,
+        [fake]
+      )
+      expect(await run(["find"])).toEqual({ start: "ran", find: "failed" })
+      expect(logs.filter((line) => line.startsWith(said))).toHaveLength(1)
+      expect(running(`sleep ${seconds}`)).toEqual([])
+    }, 300_000)
+  }
+
+  for (
+    const [refuse, said] of [
+      ["namespace", "smthrs: a program a step leaves running ends with its step on this host:"],
+      ["keeper", "smthrs: machine web: a program a step leaves running ends with its step: its keeper did not start"]
+    ] as const
+  ) {
+    keptIt(
+      `runs again as any step does where its job cannot keep it now, and the step after it fails (${refuse})`,
+      async () => {
+        const port = await freePort()
+        // The same bubblewrap at every build: it refuses once told to.
+        const fake = await fakeBubblewrap(refuse)
+        await Fs.rm(Path.join(fake, "refuse"))
+        const { logs, run, write } = await fixture(served(port), undefined, [fake])
+        await write("site/x.txt", "ok\n")
+        expect(await run(["ask"])).toEqual({ serve: "ran", ask: "ran" })
+        await write("site/x.txt", "bad\n")
+        await Fs.writeFile(Path.join(fake, "refuse"), "")
+        expect(await run(["ask"])).toEqual({ serve: "ran", ask: "failed" })
+        expect(logs).toContain("//:serve  runs again for //:ask: it left a program running for the steps after it")
+        expect(logs.filter((line) => line.startsWith(said))).toHaveLength(1)
+        expect(running(`python3 -m http.server ${port} --bind 127.0.0.1 --directory site`)).toEqual([])
+      },
+      300_000
+    )
+  }
+})
+
+describe("a step that left a program running and failed only while its reads were recorded", () => {
+  keptIt("leaves the plain run's program alone: the recorded run's is ended first", async () => {
+    const seconds = 52_000 + (process.pid % 900)
+    const refusing = `sleep ${seconds} > /dev/null 2>&1 &\n` +
+      "if /bin/grep -q -e '^TracerPid:[[:space:]]*[1-9]' -e '^Seccomp_filters:[[:space:]]*[1-9]' " +
+      "/proc/self/status; then exit 1; fi"
+    const { run } = await fixture(() => {
+      const start = on("one", refusing)
+      return { start, count: on("one", `test "$(pgrep -c -x -f 'sleep ${seconds}')" = 1`, [start]) }
+    })
+    expect(await run(["count"])).toEqual({ start: "ran", count: "ran" })
+    expect(running(`sleep ${seconds}`)).toEqual([])
+  }, 300_000)
+})
+
+describe("a step that left a program running, run again for a step after it", () => {
+  keptIt("fails with why when it cannot start again, and the step after it does not run", async () => {
+    const port = await freePort()
+    const { failures, logs, run, write } = await fixture(() => {
+      // The server's step fails when the server did not start: another program holds its port.
+      const server = `require("http").createServer((q, r) => r.end("ok\\n")).listen(${port}, "127.0.0.1")`
+      const serve = on("web", `${process.execPath} -e '${server}' > /dev/null 2>&1 & sleep 0.5; kill -0 $!`)
+      return {
+        serve,
+        ask: on("web", `curl -sf --max-time 5 http://127.0.0.1:${port}/ | grep -qx ok && cat ask.txt`, [serve])
+      }
+    })
+    await write("site/x.txt", "ok\n")
+    await write("ask.txt", "one\n")
+    expect(await run(["ask"])).toEqual({ serve: "ran", ask: "ran" })
+    // Only the step that asks reads what changed: the server's step is answered, and runs again before it.
+    await write("ask.txt", "two\n")
+    const holder = await new Promise<Net.Server>((resolve) => {
+      const listening = Net.createServer()
+      listening.listen(port, "127.0.0.1", () => resolve(listening))
+    })
+    try {
+      expect(await run(["ask"])).toEqual({ serve: "failed", ask: "failed" })
+      expect(failures.get("ask")).toContain("//:serve, which this target waits for, failed when it ran again")
+      expect(logs).toContain("//:serve  runs again for //:ask: it left a program running for the steps after it")
+    } finally {
+      holder.close()
+    }
+  }, 300_000)
+})
+
+describe("a step that left a program running, after a step that is never reused", () => {
+  keptIt("runs again whenever a step after it runs, and the step after it finds its program", async () => {
+    const port = await freePort()
+    const { failures, logs, run, write } = await fixture(() => {
+      // It fails while its reads are recorded and passes plain, so it is never answered from a record.
+      const install = on(
+        "web",
+        "if /bin/grep -q -e '^TracerPid:[[:space:]]*[1-9]' -e '^Seccomp_filters:[[:space:]]*[1-9]' " +
+          "/proc/self/status; then exit 1; fi; echo installed > installed.txt"
+      )
+      const serve = on(
+        "web",
+        `grep -q installed installed.txt && python3 -m http.server ${port} --bind 127.0.0.1 --directory site > /dev/null 2>&1 &`,
+        [install]
+      )
+      const ask = on(
+        "web",
+        `for i in $(seq 1 50); do curl -sf --max-time 5 http://127.0.0.1:${port}/x.txt > got.txt && break; sleep 0.1; done; grep -qx ok got.txt`,
+        [serve]
+      )
+      return { install, serve, ask }
+    })
+    await write("site/x.txt", "ok\n")
+    expect(await run(["ask"])).toEqual({ install: "ran", serve: "ran", ask: "ran" })
+    logs.length = 0
+    await write("docs/readme.md", "changed\n")
+    expect(await run(["ask"]), [...failures.values()].join("\n")).toEqual({ install: "ran", serve: "ran", ask: "ran" })
+    expect(logs).toContain("//:serve  runs again: it left a program running for the steps after it")
+  }, 300_000)
 })
