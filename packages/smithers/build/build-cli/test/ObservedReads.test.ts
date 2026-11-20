@@ -165,8 +165,36 @@ describe("picking the recorder", () => {
     const refusing = Path.join(root, "smthrs-observe")
     await Fs.writeFile(refusing, "#!/bin/sh\nexit 126\n", { mode: 0o755 })
     expect(ObservedReads.observer({ platform: "linux", executable: () => undefined, supervisor: refusing }))
-      .toEqual({ reason: "strace is not installed" })
+      .toEqual({ reason: "smthrs-observe cannot run here, and strace is not installed" })
+    const tracer = Path.join(root, "strace")
+    await Fs.writeFile(tracer, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+    expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, supervisor: refusing }))
+      .toEqual({ tracer })
   })
+
+  it.skipIf(process.platform === "win32")(
+    "says why smthrs-observe cannot run when nothing else can record",
+    async () => {
+      const root = await directory()
+      const refusing = Path.join(root, "smthrs-observe")
+      const why = "smthrs-observe cannot run here: this machine refuses its system-call filter: Operation not permitted"
+      await Fs.writeFile(refusing, `#!/bin/sh\necho '${why}' >&2\nexit 126\n`, { mode: 0o755 })
+      expect(ObservedReads.observer({ platform: "linux", executable: () => undefined, supervisor: refusing }))
+        .toEqual({ reason: `${why}, and strace is not installed` })
+      const forbidden = Path.join(root, "strace")
+      await Fs.writeFile(
+        forbidden,
+        "#!/bin/sh\necho 'strace: ptrace(PTRACE_SEIZE): Operation not permitted' >&2\nexit 1\n",
+        {
+          mode: 0o755
+        }
+      )
+      expect(ObservedReads.observer({ platform: "linux", executable: () => forbidden, supervisor: refusing })).toEqual({
+        reason:
+          `${why}, and strace cannot trace a process on this host: strace: ptrace(PTRACE_SEIZE): Operation not permitted`
+      })
+    }
+  )
 })
 
 describe("reading a trace", () => {

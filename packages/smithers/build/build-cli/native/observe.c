@@ -34,7 +34,8 @@
  * call short, the signal is kept and the kernel restarts the call; once the restarted call is received the signal
  * is sent again and is delivered, with what it first said, when the call ends (a fork: once it made its process).
  * A call that waits in the kernel itself (a FIFO, a device) is cut short there as it would be unrecorded. On
- * aarch64 the stop shows neither the call nor its answer, so the build records with strace there.
+ * aarch64 the stop no longer shows the call's answer: a thread stopped at the `svc #0` of a watched call that
+ * restarts is taken as cut short there (cutShort).
  *
  * Each line carries the process (the thread group), not the thread: the lines of a process are complete, never
  * interrupted, so a reader needs no thread to pair them.
@@ -45,7 +46,7 @@
  * `<pid> +++ unrecorded: <reason> +++`, and the command still runs untouched.
  *
  * The command's exit status is this program's. When this program cannot start the command it exits 125, and 126
- * when it cannot record (`--probe` answers 0 where it can).
+ * when it cannot record (`--probe` answers 0 where it can, and otherwise says why on standard error).
  */
 #define _GNU_SOURCE
 #include <dirent.h>
@@ -954,16 +955,28 @@ static struct kept *keptSignals;
 static pthread_mutex_t keeping = PTHREAD_MUTEX_INITIALIZER;
 
 /* At a signal stop: whether the thread was cut short in a watched call that the kernel restarts when no signal is
- * delivered. Only reads: the call's number and its answer. */
+ * delivered. Only reads: the call's number and its answer, or on aarch64 where the thread stands. */
 static int cutShort(pid_t tid, int *fork) {
 #if defined(__x86_64__)
   struct user_regs_struct r;
   if (ptrace(PTRACE_GETREGS, tid, 0, &r) != 0) return 0;
   long nr = (long)r.orig_rax, ret = (long)r.rax;
 #else
-  /* aarch64 shows neither the call nor its answer at this stop: the build does not choose this program there. */
-  long nr = -1, ret = 0;
-  (void)tid;
+  /* aarch64 readies the restart before this stop: x0 holds the call's first argument again and pc the `svc #0`
+   * that made the call, so the answer is gone; x8 still holds the call's number. A thread found at an `svc #0` it
+   * has not made yet reads the same way: its signal is then kept until that call is received, or 50 ms
+   * (sendStale), a delay the program cannot tell from a signal sent a moment later. */
+  struct user_regs_struct r;
+  struct iovec io = {.iov_base = &r, .iov_len = sizeof r};
+  if (ptrace(PTRACE_GETREGSET, tid, (void *)1 /* NT_PRSTATUS */, &io) != 0) return 0;
+  errno = 0;
+  /* The word that holds pc, read where it is aligned so the read never reaches past pc's page. */
+  unsigned long at = (unsigned long)r.pc & ~7ul;
+  long word = ptrace(PTRACE_PEEKTEXT, tid, (void *)at, 0);
+  if (errno != 0) return 0;
+  unsigned int instruction = (unsigned int)((unsigned long)word >> (r.pc == at ? 0 : 32));
+  if (instruction != 0xd4000001u) return 0; /* svc #0 */
+  long nr = (long)r.regs[8], ret = -512;
 #endif
   if (nr < 0 || (ret != -512 && ret != -513 && ret != -514)) return 0;
   const struct call *c = callOf((int)nr);
@@ -1432,6 +1445,7 @@ static void serve(const struct seccomp_notif *req) {
       /* A bind is written at the end of the run, when the socket says it is bound. */
       int pidfd = (int)syscall(SYS_pidfd_open, tgid, 0);
       int copy = pidfd < 0 ? -1 : (int)syscall(SYS_pidfd_getfd, pidfd, (int)req->data.args[0], 0);
+      int refused = copy < 0 && errno == EPERM;
       if (pidfd >= 0) close(pidfd);
       if (copy >= 0 && !t.failed) {
         struct binding *b = calloc(1, sizeof *b);
@@ -1450,6 +1464,10 @@ static void serve(const struct seccomp_notif *req) {
         close(copy);
       } else if (copy >= 0) {
         close(copy);
+      } else if (refused && !t.failed) {
+        /* A process gone, or a descriptor that is no socket, binds nothing; a refusal would lose the line. */
+        unrecorded("this machine refuses pidfd_getfd, which reads a socket the run bound; a container allows it with "
+                   "CAP_SYS_PTRACE");
       }
       free(t.data);
       return;
@@ -1727,6 +1745,8 @@ static void endLeft(void) {
   closedir(d);
 }
 
+/* Whether this machine lets the recorder run: the filter, and a copy of a descriptor of the filtered process (how a
+ * bound socket is read). Where it does not, one line on standard error says what it refused, and it answers 126. */
 static int probe(void) {
   int sv[2];
   if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) != 0) return 126;
@@ -1734,15 +1754,38 @@ static int probe(void) {
   if (child < 0) return 126;
   if (child == 0) {
     int fd = install();
-    char ok = fd >= 0 ? 1 : 0;
-    (void)write(sv[1], &ok, 1);
-    _exit(ok ? 0 : 1);
+    int said = fd >= 0 ? 0 : errno;
+    (void)write(sv[1], &said, sizeof said);
+    /* Held open until the supervisor has tried to copy it. */
+    char go;
+    (void)read(sv[1], &go, 1);
+    _exit(said == 0 ? 0 : 1);
   }
-  char ok = 0;
-  (void)read(sv[0], &ok, 1);
+  int said = -1;
+  if (read(sv[0], &said, sizeof said) != (ssize_t)sizeof said) said = EIO;
+  int copied = 0;
+  if (said == 0) {
+    int pidfd = (int)syscall(SYS_pidfd_open, child, 0);
+    int copy = pidfd < 0 ? -1 : (int)syscall(SYS_pidfd_getfd, pidfd, sv[1], 0);
+    copied = copy >= 0 ? 0 : errno;
+    if (copy >= 0) close(copy);
+    if (pidfd >= 0) close(pidfd);
+  }
+  (void)write(sv[0], "", 1);
   int status = 0;
   waitpid(child, &status, 0);
-  return ok && WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 126;
+  if (said != 0) {
+    fprintf(stderr, "smthrs-observe cannot run here: this machine refuses its system-call filter: %s\n", strerror(said));
+    return 126;
+  }
+  if (copied != 0) {
+    fprintf(stderr,
+            "smthrs-observe cannot run here: this machine refuses pidfd_getfd, which reads a socket a step binds: %s; "
+            "a container allows it with CAP_SYS_PTRACE\n",
+            strerror(copied));
+    return 126;
+  }
+  return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 126;
 }
 
 static void wake(int sig) { (void)sig; }

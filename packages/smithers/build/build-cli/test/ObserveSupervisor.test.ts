@@ -297,6 +297,81 @@ describe("smthrs-observe and sockets", () => {
   })
 })
 
+/** bubblewrap, which can load a system-call filter of a test's own around a program. */
+const bwrap = (() => {
+  const found = spawnSync("sh", ["-c", "command -v bwrap"], { encoding: "utf8" }).stdout.trim()
+  return found === "" ? undefined : found
+})()
+
+/**
+ * A seccomp program that answers EPERM to `pidfd_getfd` (call 438 on x86_64
+ * and aarch64) and lets every other call through, as Docker's default profile
+ * does in a container without CAP_SYS_PTRACE.
+ */
+const refusingPidfdGetfd = (): Buffer => {
+  const instruction = (code: number, jt: number, jf: number, k: number) => {
+    const bytes = Buffer.alloc(8)
+    bytes.writeUInt16LE(code, 0)
+    bytes[2] = jt
+    bytes[3] = jf
+    bytes.writeUInt32LE(k >>> 0, 4)
+    return bytes
+  }
+  return Buffer.concat([
+    instruction(0x20, 0, 0, 0), // load the call's number
+    instruction(0x15, 0, 1, 438), // pidfd_getfd?
+    instruction(0x06, 0, 0, 0x00050000 | 1), // answer EPERM
+    instruction(0x06, 0, 0, 0x7fff0000) // let it through
+  ])
+}
+
+/** Runs `argv` under bubblewrap with that program loaded, the whole file system in sight. */
+const refusing = async (argv: ReadonlyArray<string>) => {
+  const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-refused-")))
+  temporary.push(base)
+  const filter = Path.join(base, "filter.bpf")
+  await Fs.writeFile(filter, refusingPidfdGetfd())
+  const descriptor = NodeFs.openSync(filter, "r")
+  try {
+    const run = spawnSync(bwrap!, ["--dev-bind", "/", "/", "--seccomp", "3", "--", ...argv], {
+      encoding: "utf8",
+      cwd: base,
+      stdio: ["ignore", "pipe", "pipe", descriptor]
+    })
+    return { base, ...run }
+  } finally {
+    NodeFs.closeSync(descriptor)
+  }
+}
+
+const refusable = it.skipIf(supervisor === undefined || bwrap === undefined || process.getuid?.() === 0)
+
+describe("smthrs-observe where pidfd_getfd is refused", () => {
+  refusable("says on probing that it cannot run, and why", async () => {
+    const probe = await refusing([supervisor!, "--probe"])
+    expect(probe.status, probe.stderr).toBe(126)
+    expect(probe.stderr.trim()).toBe(
+      "smthrs-observe cannot run here: this machine refuses pidfd_getfd, which reads a socket a step binds: " +
+        "Operation not permitted; a container allows it with CAP_SYS_PTRACE"
+    )
+    // Where nothing refuses it, it answers 0 and says nothing.
+    const plain = spawnSync(supervisor!, ["--probe"], { encoding: "utf8" })
+    expect([plain.status, plain.stderr]).toEqual([0, ""])
+  })
+
+  refusable("makes a run that binds a socket unrecorded, rather than lose the bind", async () => {
+    const script = "require('node:net').createServer().listen(0, '127.0.0.1', function () { this.close() })"
+    const run = await refusing([supervisor!, "trace", "--", process.execPath, "-e", script])
+    expect(run.status, run.stderr).toBe(0)
+    const lines = NodeFs.readFileSync(Path.join(run.base, "trace"), "utf8").split("\n").filter((line) => line !== "")
+    expect(lines.filter((line) => line.includes(" bind("))).toEqual([])
+    expect(lines.at(-2)).toMatch(
+      /^\d+ \+\+\+ unrecorded: this machine refuses pidfd_getfd, which reads a socket the run bound; a container allows it with CAP_SYS_PTRACE \+\+\+$/
+    )
+    expect(lines.at(-1)).toMatch(/^\d+ \+\+\+ complete \+\+\+$/)
+  })
+})
+
 /**
  * A shell sets its handlers without `SA_RESTART`, so a signal that came while
  * one of its calls waited for the supervisor would cut that call short where

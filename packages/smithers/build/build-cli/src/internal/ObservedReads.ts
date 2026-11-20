@@ -294,10 +294,8 @@ export const recorderVariable = "SMTHRS_OBSERVE_WITH"
  * Where this package holds `smthrs-observe` for this host, built for Linux on
  * x86_64 and aarch64 (`native/out/linux-<arch>/smthrs-observe`): on x86_64
  * unless `SMTHRS_OBSERVE_WITH=strace` asks for strace, on aarch64 only when
- * `SMTHRS_OBSERVE_WITH=smthrs-observe` asks for it (a signal stop there does
- * not show which call it cut short, so a signal could cut a call short that
- * it would not unrecorded); `undefined` on any other host or where the
- * package holds none.
+ * `SMTHRS_OBSERVE_WITH=smthrs-observe` asks for it; `undefined` on any other
+ * host or where the package holds none.
  *
  * @category tracing
  * @since 1.0.0
@@ -375,12 +373,18 @@ export const observer = (host: {
   readonly supervisor?: string | undefined
 }): Observer => {
   if (host.platform !== "linux") return { reason: `reads cannot be observed on ${host.platform}` }
-  // The kernel must give a listener that waits for the supervisor without being cut short by a signal (5.19).
-  if (host.supervisor !== undefined && spawnSync(host.supervisor, ["--probe"], { timeout: 30_000 }).status === 0) {
-    return { tracer: host.supervisor, supervisor: true }
+  // The kernel must give a listener that waits for the supervisor without being cut short by a signal (5.19), and
+  // let it copy a descriptor of the process it watches (a container refuses that without CAP_SYS_PTRACE). Where it
+  // cannot run, it says why, and that leads the reason when strace cannot record either.
+  let refused = ""
+  if (host.supervisor !== undefined) {
+    const supervised = spawnSync(host.supervisor, ["--probe"], { encoding: "utf8", timeout: 30_000 })
+    if (supervised.status === 0) return { tracer: host.supervisor, supervisor: true }
+    const said = (supervised.stderr ?? "").trim().split("\n")[0]!
+    refused = `${said === "" ? "smthrs-observe cannot run here" : said}, and `
   }
   const tracer = host.executable("strace")
-  if (tracer === undefined) return { reason: "strace is not installed" }
+  if (tracer === undefined) return { reason: `${refused}strace is not installed` }
   const probe = spawnSync(tracer, [...tracerFlags, "-o", "/dev/null", "--", tracer, "-V"], {
     encoding: "utf8",
     timeout: 30_000
@@ -388,7 +392,7 @@ export const observer = (host: {
   if (probe.status === 0) return { tracer }
   // A tracer that could not be started at all said nothing.
   const said = (probe.stderr ?? "").trim().split("\n")[0]!
-  return { reason: `strace cannot trace a process on this host${said === "" ? "" : `: ${said}`}` }
+  return { reason: `${refused}strace cannot trace a process on this host${said === "" ? "" : `: ${said}`}` }
 }
 
 /**

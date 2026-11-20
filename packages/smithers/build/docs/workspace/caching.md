@@ -734,8 +734,9 @@ waits while the line is written, and the call then goes on in the kernel. A
 process that sets a signal handler a signal could cut a waiting call short
 through is also traced, so a signal never cuts short a call it would not cut
 short unrecorded. Elsewhere on Linux (aarch64, an older kernel, a host where
-the program cannot listen) a run is recorded by `strace` 5.3 or newer, which
-stops the traced thread at each file-system call;
+the program cannot listen, a container without `CAP_SYS_PTRACE`, where
+Docker's default profile refuses it `pidfd_getfd`) a run is recorded by
+`strace` 5.3 or newer, which stops the traced thread at each file-system call;
 `SMTHRS_OBSERVE_WITH=strace` asks for it anywhere. click's pre-commit hooks,
 83,000 such calls, take 1.6 s recorded by `smthrs-observe` and 2.6 s by
 `strace`, against 1.2 s unrecorded. Under `strace` the run is refused
@@ -751,6 +752,13 @@ where the host forbids it, the target is keyed by its `data` as any other
 
 ```text
 smthrs: reads are not observed on this host: strace is not installed; a target that asks for it is keyed by its declared inputs
+```
+
+In a Docker container started without `CAP_SYS_PTRACE` and with no `strace`,
+the line names what the container refused and what lets it record:
+
+```text
+smthrs: reads are not observed on this host: smthrs-observe cannot run here: this machine refuses pidfd_getfd, which reads a socket a step binds: Operation not permitted; a container allows it with CAP_SYS_PTRACE, and strace is not installed; a target that asks for it is keyed by its declared inputs
 ```
 
 `observe` requires `sandbox: "none"`, because a confined target is already held
