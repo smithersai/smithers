@@ -784,16 +784,17 @@ describe("the jail", () => {
 
   it("is asked of the machine: Linux with a bubblewrap that starts, or the reason", () => {
     const facts = ExecSandbox.host()
+    // The tools are those of this process's variables: `COREPACK_HOME` among them names the cache of corepack.
     // A machine that cannot jail a step still says which links a step's own home needs.
     const mac = { ...facts, platform: "darwin" as const }
     expect(probe(mac)).toEqual({
       refusal: "write protection needs bubblewrap, which runs only on Linux; this host is darwin",
-      homes: toolsOn(process.env["PATH"], mac).homes
+      homes: toolsOn(process.env["PATH"], mac, process.env).homes
     })
     const bare = { ...facts, platform: "linux" as const, executable: () => undefined }
     expect(probe(bare)).toEqual({
       refusal: "write protection needs bubblewrap, and bwrap is not on PATH (install the bubblewrap package)",
-      homes: toolsOn(process.env["PATH"], bare).homes
+      homes: toolsOn(process.env["PATH"], bare, process.env).homes
     })
     // A machine whose bubblewrap starts, whatever machine the test runs on.
     const starts = {
@@ -809,7 +810,7 @@ describe("the jail", () => {
       daemons: daemonSockets(1234, process.env),
       tmp: tmpdir(),
       caches: [join(tmpdir(), "tsx-1234"), join(tmpdir(), "vibelang-cache-1234")],
-      tools: toolsOn(process.env["PATH"], starts)
+      tools: toolsOn(process.env["PATH"], starts, process.env)
     }
     // Its kernel keeps what a perl starts from the abstract sockets outside it, or it does not.
     const asked: Array<string> = []
@@ -824,7 +825,7 @@ describe("the jail", () => {
     const perlless = { ...starts, executable: (name: string) => name === "perl" ? undefined : `/usr/bin/${name}` }
     expect(probe(perlless, () => undefined, kernel(true))).toEqual({
       ...jail,
-      tools: toolsOn(process.env["PATH"], perlless)
+      tools: toolsOn(process.env["PATH"], perlless, process.env)
     })
     expect(asked).toHaveLength(2)
     if (jailable) {
@@ -836,7 +837,7 @@ describe("the jail", () => {
         daemons: daemonSockets(facts.uid, process.env),
         tmp: tmpdir(),
         caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)],
-        tools: toolsOn(process.env["PATH"], facts),
+        tools: toolsOn(process.env["PATH"], facts, process.env),
         ...(perl !== undefined && scopes(perl) ? { scope: perl } : {})
       })
     }

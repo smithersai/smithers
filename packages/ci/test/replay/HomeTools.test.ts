@@ -188,11 +188,19 @@ describe("the links a step's home starts with", () => {
     program(join(home, ".vm", "shims", "tool"), "exec \"$HOME/.vm/versions/1/bin/tool\" \"$@\"")
     program(join(home, ".vm", "versions", "1", "bin", "tool"), "echo tool")
     const searchPath = join(home, ".vm", "shims")
-    const before = process.env["PATH"]
-    // The probe reads the person's `PATH` from this process.
+    // The probe reads the person's variables from this process: `PATH`, and where corepack keeps its cache,
+    // which a confined run of this suite names. This person keeps none.
+    const names = ["PATH", "COREPACK_HOME", "XDG_CACHE_HOME"]
+    const before = names.map((name) => process.env[name])
     process.env["PATH"] = searchPath
+    delete process.env["COREPACK_HOME"]
+    delete process.env["XDG_CACHE_HOME"]
     const found = probe({ ...ExecSandbox.host({ PATH: searchPath }), home }, () => "no bubblewrap")
-    process.env["PATH"] = before
+    names.forEach((name, at) => {
+      const value = before[at]
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    })
     expect(found).toEqual({ refusal: "no bubblewrap", homes: [{ path: ".vm", target: join(home, ".vm") }] })
   })
 })
