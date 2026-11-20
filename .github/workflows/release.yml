@@ -468,8 +468,27 @@ jobs:
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
           MSYS2_ARG_CONV_EXCL: //
       # The candidate. These steps never run in the gates lane.
+      # @smthrs/build-cli ships smthrs-observe, the recorder of what a step
+      # reads, for x86_64 and aarch64 Linux, built by its package build with
+      # one pinned zig (packages/smithers/build/build-cli/scripts/build-observe.mjs).
+      # The archive is zig's own, released 2026-11-02, and is checked against
+      # the checksum zig publishes for it before anything in it runs. Without
+      # zig the build fails (SMITHERS_NATIVE=required) instead of shipping a
+      # package that records with strace.
+      - name: Install zig
+        if: env.CANDIDATE_RUN_ID == '' && matrix.lane != 'gates'
+        run: |
+          archive="$RUNNER_TEMP/zig-x86_64-linux-0.17.1.tar.xz"
+          curl --fail --silent --show-error --location --retry 3 --output "$archive" 'https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz'
+          printf '%s  %s\n' '3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a' "$archive" | sha256sum --check --strict
+          tar -xJf "$archive" -C "$RUNNER_TEMP"
+          test "$("$RUNNER_TEMP/zig-x86_64-linux-0.17.1/zig" version)" = '0.17.1'
+          printf '%s\n' "$RUNNER_TEMP/zig-x86_64-linux-0.17.1" >> "$GITHUB_PATH"
+        shell: bash
       - name: Build all workspaces from clean artifacts
         if: env.CANDIDATE_RUN_ID == '' && matrix.lane != 'gates'
+        env:
+          SMITHERS_NATIVE: required
         run: pnpm exec smthrs flow start release/build-packages --data '{}' --wait
       # A gate that needs the build above. A prerelease reports its result
       # without blocking; an unsuffixed release blocks on it.

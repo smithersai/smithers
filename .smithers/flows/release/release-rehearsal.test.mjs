@@ -256,6 +256,7 @@ const afterSetup = "${{ always() && steps.setup.conclusion == 'success' }}"
 
 /** The candidate: everything from the build to the publication report. */
 const candidateSteps = [
+  "Install zig",
   "Build all workspaces from clean artifacts",
   "Review declaration API drift",
   "Retrieve native helpers for npm",
@@ -299,6 +300,7 @@ test("only the re-run guard, the lanes, candidate preparation and publication se
     "Distribution release contracts",
     "Select the repository's pinned Node",
     "Prepare the fault matrix microVM",
+    "Install zig",
     "Build all workspaces from clean artifacts",
     "Review declaration API drift",
     "Retrieve native helpers for npm",
@@ -521,6 +523,30 @@ test("release builds the checked public graph and pins npm before smoke", () => 
   assert.match(install.run, /npm --version/)
   assert.equal(install.if, undefined)
   assert.ok(release.jobs.publish.steps.indexOf(install) < release.jobs.publish.steps.indexOf(step("Release gates")))
+})
+
+test("the candidate builds smthrs-observe with zig 0.17.1 from zig's own archive, checked before it runs", () => {
+  const names = release.jobs.publish.steps.map((candidate) => candidate.name)
+  const zig = step("Install zig")
+  const build = step("Build all workspaces from clean artifacts")
+  assert.ok(zig !== undefined, "release.yml does not install zig")
+  assert.equal(zig.if, build.if, "zig is installed exactly where the packages are built")
+  assert.ok(names.indexOf("Install zig") < names.indexOf(build.name))
+  assert.equal(zig.shell, "bash")
+  assert.match(zig.run, /'https:\/\/ziglang\.org\/download\/0\.17\.1\/zig-x86_64-linux-0\.17\.1\.tar\.xz'/)
+  // zig's published checksum for that archive (https://ziglang.org/download/index.json, released 2026-11-02).
+  const check = zig.run.indexOf("sha256sum --check --strict")
+  assert.ok(check > -1, "the archive is not checked against a pinned checksum")
+  assert.ok(zig.run.includes("'3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a'"))
+  assert.ok(check < zig.run.indexOf("tar -xJf"), "the archive is unpacked before it is checked")
+  assert.match(zig.run, />> "\$GITHUB_PATH"$/m)
+  // The build fails without zig rather than ship a package that records with strace.
+  assert.equal(build.env?.SMITHERS_NATIVE, "required")
+  // Built packages exist only in the lanes that pack; the gates lane never builds them, so it never needs zig.
+  for (const lane of ["candidate", "release"]) {
+    assert.equal(condition(zig.if, { ...dispatchContexts("v1.0.0-rc.0", true), matrix: { lane }, env: { CANDIDATE_RUN_ID: "" } }), true)
+  }
+  assert.equal(condition(zig.if, { ...dispatchContexts("v1.0.0-rc.0", true), matrix: { lane: "gates" }, env: { CANDIDATE_RUN_ID: "" } }), false)
 })
 
 test("the supported Node floor packs and smokes the tarballs and retains its receipt", () => {
