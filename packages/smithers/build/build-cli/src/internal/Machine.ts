@@ -339,12 +339,30 @@ export const unmade = (
   }
 }
 
-/** Makes every directory under `path` one its owner can list and write, so that it can be removed. */
-const unlock = async (path: string): Promise<void> => {
-  const stats = await Fs.lstat(path).catch(() => undefined)
+/**
+ * The calls that remove a directory. A caller that needs another answer from one of them passes its own.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Removal = Pick<typeof Fs, "lstat" | "chmod" | "readdir" | "rm">
+
+/** Passes over a path that is gone: whoever took it away did what was wanted. Any other failure is thrown. */
+const gone = (error: NodeJS.ErrnoException): undefined => {
+  if (error.code !== "ENOENT") throw error
+  return undefined
+}
+
+/**
+ * Makes every directory under `path` one its owner can list and write, so that it can be removed. Another
+ * remover can be at work on the same directory, as the command a build left to remove its machines is when the
+ * next build starts: a directory it takes away between two calls here is passed over.
+ */
+const unlock = async (path: string, fs: Removal): Promise<void> => {
+  const stats = await fs.lstat(path).catch(() => undefined)
   if (stats === undefined || !stats.isDirectory()) return
-  await Fs.chmod(path, stats.mode | 0o700)
-  for (const name of await Fs.readdir(path)) await unlock(NodePath.join(path, name))
+  await fs.chmod(path, stats.mode | 0o700).catch(gone)
+  for (const name of await fs.readdir(path).catch(gone) ?? []) await unlock(NodePath.join(path, name), fs)
 }
 
 /**
@@ -355,12 +373,12 @@ const unlock = async (path: string): Promise<void> => {
  * @category lifecycle
  * @since 1.0.0
  */
-export const remove = async (directory: string): Promise<void> => {
+export const remove = async (directory: string, fs: Removal = Fs): Promise<void> => {
   try {
-    await Fs.rm(directory, { recursive: true, force: true })
+    await fs.rm(directory, { recursive: true, force: true })
   } catch {
-    await unlock(directory)
-    await Fs.rm(directory, { recursive: true, force: true })
+    await unlock(directory, fs)
+    await fs.rm(directory, { recursive: true, force: true })
   }
 }
 

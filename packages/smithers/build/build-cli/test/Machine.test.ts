@@ -439,6 +439,57 @@ describe("making a machine", () => {
     }
   )
 
+  // The fourth ship review's cobra replay: a build's machines are set aside and removed by a command nobody waits
+  // for, and the next build, which removes what is left, met that command at work in Go's module cache. The
+  // directory it was about to make writable was gone, and the build stopped with `ENOENT ... chmod`.
+  posixIt("removes a directory another remover is taking away at the same time", async () => {
+    const kept = await directory("kept")
+    const locked = Path.join(kept, "home/go/pkg/mod")
+    await write(kept, "home/go/pkg/mod/cache/download/sumdb/file", "locked\n")
+    await write(kept, "home/go/pkg/mod/other/file", "locked\n")
+    for (const name of ["cache/download/sumdb", "cache/download", "cache", "other", ""]) {
+      await Fs.chmod(Path.join(locked, name), 0o555)
+    }
+    const taken: Array<string> = []
+    /** The other remover: it takes a directory away just before this one makes it writable, or lists it. */
+    const takenAway = async (path: string): Promise<void> => {
+      if (!path.endsWith("/download") && !path.endsWith("/other")) return
+      if (taken.includes(path)) return
+      taken.push(path)
+      execFileSync("sh", ["-c", "chmod -R u+rwx \"$1\" && rm -rf \"$1\"", "sh", path])
+    }
+    const racing: Machine.Removal = {
+      lstat: Fs.lstat,
+      rm: Fs.rm,
+      // `download` is gone when it is to be made writable, and `other` when it is to be listed.
+      chmod: async (path, mode) => {
+        if (String(path).endsWith("/download")) await takenAway(String(path))
+        return Fs.chmod(path, mode)
+      },
+      readdir: (async (path: string) => {
+        if (path.endsWith("/other")) await takenAway(path)
+        return Fs.readdir(path)
+      }) as typeof Fs.readdir
+    }
+    await Machine.remove(kept, racing)
+    expect(taken.map((path) => Path.relative(locked, path)).sort()).toEqual(["cache/download", "other"])
+    expect(NodeFs.existsSync(kept)).toBe(false)
+    // Any other failure is still a failure: a directory that cannot be made writable is not passed over.
+    const denied = await directory("denied")
+    await write(denied, "locked/file", "locked\n")
+    await Fs.chmod(Path.join(denied, "locked"), 0o555)
+    const refusing: Machine.Removal = {
+      ...racing,
+      chmod: (path, mode) =>
+        String(path).endsWith("/locked")
+          ? Promise.reject(Object.assign(new Error("EPERM: operation not permitted, chmod"), { code: "EPERM" }))
+          : Fs.chmod(path, mode),
+      readdir: Fs.readdir
+    }
+    await expect(Machine.remove(denied, refusing)).rejects.toMatchObject({ code: "EPERM" })
+    await Machine.remove(denied)
+  })
+
   posixIt("fails when git cannot say where the repository is", async () => {
     const root = await checkout()
     const held = await Machine.fresh(root, ".flows")
