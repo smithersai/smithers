@@ -64,6 +64,42 @@ test("missing build scripts and required dependency cycles fail before removing 
   assert.equal(readFileSync(join(root, "kernel/dist/stale"), "utf8"), "stale")
 }))
 
+/** Runs `body` with `env` set (undefined unsets), restoring the previous values after. */
+const withEnv = (env, body) => {
+  const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]))
+  const assign = (values) => {
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+  assign(env)
+  try {
+    return body()
+  } finally {
+    assign(previous)
+  }
+}
+
+test("a release that must ship smthrs-observe stops before any build when zig 0.17.1 is missing", () => fixture((root, manifests) => {
+  const missing = join(root, "no-zig")
+  withEnv({ SMITHERS_NATIVE: "required", SMITHERS_ZIG: missing }, () => {
+    assert.throws(() => buildRelease(root, manifests), new RegExp(`smthrs-observe: zig 0\\.17\\.1 is not installed \\(${missing}\\)`))
+  })
+  assert.equal(readFileSync(join(root, "kernel/dist/stale"), "utf8"), "stale")
+  assert.equal(existsSync(join(root, "order")), false)
+  // Another zig is refused the same way.
+  const other = join(root, "zig")
+  writeFileSync(other, "#!/bin/sh\necho 0.16.0\n", { mode: 0o755 })
+  withEnv({ SMITHERS_NATIVE: "required", SMITHERS_ZIG: other }, () => {
+    assert.throws(() => buildRelease(root, manifests), /smthrs-observe: .*zig is zig 0\.16\.0, and smthrs-observe is built with zig 0\.17\.1/)
+  })
+  // Without the requirement the same missing zig builds every package, as a build in the workspace does.
+  withEnv({ SMITHERS_NATIVE: undefined, SMITHERS_ZIG: missing }, () => {
+    assert.deepEqual(buildRelease(root, manifests), ["kernel", "browser"])
+  })
+}))
+
 test("the actual release build graph covers exactly the public roster", () => {
   const manifests = readWorkspaceManifests()
   const order = dependencyOrder(workspaceDependencies(manifests))

@@ -29,18 +29,24 @@ export const observeTargets = [
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 
+/** Why `zig` cannot build smthrs-observe, or `undefined` when it is the pinned release. */
+export const zigProblem = (zig = process.env.SMITHERS_ZIG ?? "zig") => {
+  const version = spawnSync(zig, ["version"], { encoding: "utf8" })
+  const found = version.status === 0 ? version.stdout.trim() : undefined
+  if (found === zigVersion) return undefined
+  return found === undefined
+    ? `zig ${zigVersion} is not installed (${zig})`
+    : `${zig} is zig ${found}, and smthrs-observe is built with zig ${zigVersion}`
+}
+
 export const buildObserve = ({
   root = packageRoot,
   zig = process.env.SMITHERS_ZIG ?? "zig",
   required = process.env.SMITHERS_NATIVE === "required",
   log = (line) => console.log(line)
 } = {}) => {
-  const version = spawnSync(zig, ["version"], { encoding: "utf8" })
-  const found = version.status === 0 ? version.stdout.trim() : undefined
-  if (found !== zigVersion) {
-    const why = found === undefined
-      ? `zig ${zigVersion} is not installed (${zig})`
-      : `${zig} is zig ${found}, and smthrs-observe is built with zig ${zigVersion}`
+  const why = zigProblem(zig)
+  if (why !== undefined) {
     if (required) throw new Error(`smthrs-observe: ${why}`)
     log(`smthrs-observe not built: ${why}; reads are recorded with strace`)
     return []

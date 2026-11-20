@@ -930,7 +930,8 @@ const releaseSuite = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/release/release-registry.test.mjs"),
     Smithers.file("//.smithers/flows/release/release-process.test.mjs"),
     Smithers.file("//.smithers/flows/release/runtime-node-support.test.mjs"),
-    Smithers.file("//.smithers/flows/release/release-mcp-handshake.test.mjs")
+    Smithers.file("//.smithers/flows/release/release-mcp-handshake.test.mjs"),
+    Smithers.file("//.smithers/flows/release/observe-gate.test.mjs")
   ]),
   srcs: [
     ...releaseSources,

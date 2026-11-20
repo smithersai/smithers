@@ -550,7 +550,7 @@ test("the supported Node floor packs and smokes the tarballs and retains its rec
       'else if (command === ".smithers/flows/release/smoke-release.mjs") {',
       '  const bytes = fs.readFileSync(path.join(directory, "package.tgz"), "utf8")',
       '  fs.writeFileSync(path.join(directory, "smoke-evidence.json"), JSON.stringify({ bytes, node: process.env.MOCK_NODE_VERSION }))',
-      '} else if (command === "packages/ci/test/package/tarball.e2e.mjs" || command === "packages/smithers/test/published-layout.e2e.mjs") {',
+      '} else if (["packages/ci/test/package/tarball.e2e.mjs", "packages/smithers/test/published-layout.e2e.mjs", ".smithers/flows/release/observe-gate.mjs"].includes(command)) {',
       '  fs.readFileSync(path.join(directory, "package.tgz"), "utf8")',
       '} else throw new Error("unexpected release command")'
     ].join("\n"))
@@ -572,6 +572,7 @@ test("the supported Node floor packs and smokes the tarballs and retains its rec
     // The installed packages are proved on the same pack: `smithers-ci` from its tarball, and `smthrs` as one file.
     assert.deepEqual(calls, [
       [".smithers/flows/release/pack-release.mjs", env.PACK_DIR, "v26.4.0"],
+      [".smithers/flows/release/observe-gate.mjs", env.PACK_DIR, "v26.4.0"],
       [".smithers/flows/release/smoke-release.mjs", env.PACK_DIR, "v26.4.0"],
       ["packages/ci/test/package/tarball.e2e.mjs", env.PACK_DIR, "v26.4.0"],
       ["packages/smithers/test/published-layout.e2e.mjs", env.PACK_DIR, "v26.4.0"]
@@ -584,6 +585,7 @@ test("the supported Node floor packs and smokes the tarballs and retains its rec
     assert.match(red.stderr, /packages\/ci\/test\/package\/tarball\.e2e\.mjs failed with exit 7/)
     assert.deepEqual(readFileSync(env.TRACE, "utf8").trim().split("\n").map((line) => JSON.parse(line)[0]), [
       ".smithers/flows/release/pack-release.mjs",
+      ".smithers/flows/release/observe-gate.mjs",
       ".smithers/flows/release/smoke-release.mjs",
       "packages/ci/test/package/tarball.e2e.mjs"
     ])
@@ -603,7 +605,7 @@ test("a checkout of main runs every pack gate with one command, building what th
       'const fs = require("node:fs")',
       'const [name, ...args] = process.argv.slice(2)',
       'const directory = args.find((arg) => arg.startsWith(process.env.TMPDIR))',
-      'fs.appendFileSync(process.env.TRACE, JSON.stringify({ name, args, helper: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY,',
+      'fs.appendFileSync(process.env.TRACE, JSON.stringify({ name, args, helper: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY, native: process.env.SMITHERS_NATIVE,',
       '  directory: directory === undefined ? undefined : fs.existsSync(directory) }) + "\\n")'
     ].join("\n"))
     for (const name of ["node", "pnpm", "cargo"]) {
@@ -623,12 +625,15 @@ test("a checkout of main runs every pack gate with one command, building what th
 
     const built = join(repoRoot, "target/debug/smithers-jj-export")
     const calls = gates({})
-    const directory = calls[2].args[1]
+    const directory = calls[3].args[1]
     assert.ok(directory.startsWith(join(temporary, "smithers-pack-gates-")), directory)
     assert.deepEqual(calls, [
       { name: "pnpm", args: ["exec", "smthrs", "build", "//packages/...:lib"], helper: built },
+      // The recorder is built with the pinned zig or the run stops: the observe gate refuses a pack without it.
+      { name: "node", args: ["packages/smithers/build/build-cli/scripts/build-observe.mjs"], helper: built, native: "required" },
       { name: "cargo", args: ["build", "--locked", "-p", "smithers-ffi", "--bin", "smithers-jj-export"], helper: built },
       { name: "node", args: [".smithers/flows/release/pack-release.mjs", directory, "--built"], helper: built, directory: true },
+      { name: "node", args: [".smithers/flows/release/observe-gate.mjs", directory], helper: built, directory: true },
       { name: "node", args: [".smithers/flows/release/smoke-release.mjs", directory], helper: built, directory: true },
       { name: "node", args: ["packages/ci/test/package/tarball.e2e.mjs", directory], helper: built, directory: true },
       { name: "node", args: ["packages/smithers/test/published-layout.e2e.mjs", directory], helper: built, directory: true }
@@ -638,7 +643,7 @@ test("a checkout of main runs every pack gate with one command, building what th
 
     // A helper the caller names is used as it is, and nothing is built for it.
     const named = gates({ SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: "/opt/helper" })
-    assert.deepEqual(named.map((call) => call.name), ["pnpm", "node", "node", "node", "node"])
+    assert.deepEqual(named.map((call) => call.name), ["pnpm", "node", "node", "node", "node", "node", "node"])
     assert.ok(named.every((call) => call.helper === "/opt/helper"))
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
