@@ -1,0 +1,87 @@
+name: Recorder
+# smthrs-observe, the recorder of what an observed step reads, against a real
+# kernel on each machine it ships for: the suites that record steps end to end
+# (ObserveSupervisor, ObservedReadsExecution, MachineExecution) with it, and
+# the last two with strace. The binaries are built here with the zig release
+# the package pins, as the release builds them.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/recorder.yml
+      - "packages/smithers/build/build-cli/native/**"
+      - "packages/smithers/build/build-cli/scripts/build-observe.mjs"
+      - "packages/smithers/build/build-cli/src/internal/ObservedReads.ts"
+      - "packages/smithers/build/build-cli/test/ObserveSupervisor.test.ts"
+      - "packages/smithers/build/build-cli/test/ObservedReadsExecution.test.ts"
+      - "packages/smithers/build/build-cli/test/MachineExecution.test.ts"
+  pull_request:
+    paths:
+      - .github/workflows/recorder.yml
+      - "packages/smithers/build/build-cli/native/**"
+      - "packages/smithers/build/build-cli/scripts/build-observe.mjs"
+      - "packages/smithers/build/build-cli/src/internal/ObservedReads.ts"
+      - "packages/smithers/build/build-cli/test/ObserveSupervisor.test.ts"
+      - "packages/smithers/build/build-cli/test/ObservedReadsExecution.test.ts"
+      - "packages/smithers/build/build-cli/test/MachineExecution.test.ts"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: recorder-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  recorder:
+    name: Recorder (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      # zig's own archive for this machine, released 2026-11-02, checked against
+      # the checksum zig publishes for it before anything in it runs.
+      - name: Install zig
+        run: |
+          case "$(uname -m)" in
+            x86_64) machine=x86_64; sum=3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a ;;
+            aarch64) machine=aarch64; sum=a1546d5646eb184437918d6635ca6b762a0e889eac09cef720ee7a1ed3fe7795 ;;
+            *) echo "no zig 0.17.1 is pinned for $(uname -m)" >&2; exit 1 ;;
+          esac
+          archive="$RUNNER_TEMP/zig-$machine-linux-0.17.1.tar.xz"
+          curl --fail --silent --show-error --location --retry 3 --output "$archive" "https://ziglang.org/download/0.17.1/zig-$machine-linux-0.17.1.tar.xz"
+          printf '%s  %s\n' "$sum" "$archive" | sha256sum --check --strict
+          tar -xJf "$archive" -C "$RUNNER_TEMP"
+          test "$("$RUNNER_TEMP/zig-$machine-linux-0.17.1/zig" version)" = '0.17.1'
+          printf '%s\n' "$RUNNER_TEMP/zig-$machine-linux-0.17.1" >> "$GITHUB_PATH"
+        shell: bash
+      - name: Install strace and bubblewrap
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends strace bubblewrap
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build smthrs-observe
+        run: SMITHERS_NATIVE=required node packages/smithers/build/build-cli/scripts/build-observe.mjs
+      - name: Record with smthrs-observe
+        env:
+          SMTHRS_OBSERVE_WITH: smthrs-observe
+        run: |
+          uname -srm
+          "packages/smithers/build/build-cli/native/out/linux-$(node -p process.arch)/smthrs-observe" --probe
+          pnpm --dir packages/smithers/build/build-cli exec vitest run test/ObserveSupervisor.test.ts test/ObservedReadsExecution.test.ts test/MachineExecution.test.ts --coverage.enabled=false
+      - name: Record with strace
+        env:
+          SMTHRS_OBSERVE_WITH: strace
+        run: pnpm --dir packages/smithers/build/build-cli exec vitest run test/ObservedReadsExecution.test.ts test/MachineExecution.test.ts --coverage.enabled=false
