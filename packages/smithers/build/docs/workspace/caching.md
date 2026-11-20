@@ -668,8 +668,11 @@ The values are always in the key where the declared files are not all the test
 can read: with `sandbox: "none"`, with a dependency, whose outputs it may read,
 and with an `S.link` among `data`.
 
-**What is left out.** `/proc`, `/sys` and `/dev` are the machine, not files. The
-workspace cache directory is the build's own. `observe: { ignore: [...] }` names
+**What is left out.** A path through a link the kernel makes for the run's
+own process, such as `/proc/self/cwd/x`, `/proc/<pid>/root/...` or
+`/dev/fd/3/x`, is recorded as the file it leads to for that process. What is
+left under `/proc`, `/sys` and `/dev` is the machine, not files. The workspace
+cache directory is the build's own. `observe: { ignore: [...] }` names
 more: a file, or a directory with all it holds, from the workspace root,
 absolute, under the home directory as `~/...`, or under the run's temporary
 directory as `$TMPDIR/...`. Use it for what a tool writes on every run and never
@@ -695,6 +698,8 @@ all be known, and says why on its own line:
 | `it changed its view of the file system`                                   | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says          |
 | `<path> changed while it ran`, `was removed while it ran`                  | Something else wrote a file the run read, so what the run saw can no longer be measured      |
 | `its trace ...`                                                            | A line of the trace could not be read in full                                                |
+| `its trace does not say where /proc/self/fd/3/x led`                       | With strace, a path below a descriptor is followed only for a call that opened a file there  |
+| `<path> leads through a link of a process ...`, `... goes back up ...`     | A link of the workspace, or a `..`, leads into `/proc/self`, which only the run could follow |
 | `it read more paths than one record holds`                                 | The record passed 64 MiB, about 400,000 paths                                                |
 | `it passed, but failed while its reads were recorded`                      | See below                                                                                    |
 | `its recorded run failed and its plain run passed; it runs unrecorded ...` | See below: the run after such a one, of a target another waits for                           |

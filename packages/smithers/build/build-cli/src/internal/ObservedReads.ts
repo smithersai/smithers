@@ -123,6 +123,9 @@ const calls: ReadonlyArray<string> = [
   "clone3",
   "connect",
   "creat",
+  "dup",
+  "dup2",
+  "dup3",
   "execve",
   "execveat",
   "faccessat",
@@ -428,6 +431,11 @@ export interface Trace {
    * read, so the next runs of its declaration need no trace.
    */
   readonly outside?: ReadonlyArray<string> | undefined
+  /**
+   * Paths a run named through a directory descriptor of a process (`/proc/self/fd/3/x`), each with the file the
+   * call's own answer says it opened: the two are the same file only when the trace placed the descriptor right.
+   */
+  readonly reached?: ReadonlyArray<readonly [path: string, named: string, opened: string]> | undefined
 }
 
 /** Decodes a quoted string as the tracer prints it; `undefined` when it is cut short or malformed. */
@@ -761,6 +769,85 @@ const spelled = (path: string): string => {
   return text === "" ? "/" : text
 }
 
+/** Where a path passes through a link the kernel makes for a process: which link, and the parts after it. */
+interface ProcessLink {
+  readonly process: "self" | "thread-self" | number
+  readonly thread: number | undefined
+  readonly link: "root" | "cwd" | "exe" | "fd"
+  readonly fd: number | undefined
+  readonly rest: ReadonlyArray<string>
+}
+
+const wholeNumber = /^\d{1,9}$/
+
+/**
+ * The link the kernel makes for a process that an absolute path passes
+ * through: `/proc/self`, `/proc/thread-self` or `/proc/<pid>`, also under
+ * `task/<tid>`, then `root`, `cwd`, `exe` or `fd/<n>`; and `/dev/fd/<n>`,
+ * `/dev/stdin`, `/dev/stdout` and `/dev/stderr`, which are
+ * `/proc/self/fd/<n>`. `undefined` for any other path, and `"up"` for one that
+ * goes back up (`..`) before it reaches its link, which cannot be followed as
+ * it ran.
+ */
+const processLinkOf = (path: string): ProcessLink | "up" | undefined => {
+  const parts = path.split("/").filter((part) => part !== "" && part !== ".")
+  let at = 0
+  const next = (): string | undefined => parts[at++]
+  /** The link a descriptor number names, or why it names none. */
+  const descriptor = (
+    process: ProcessLink["process"],
+    thread: number | undefined,
+    fd: string | undefined
+  ): ProcessLink | "up" | undefined =>
+    fd === ".."
+      ? "up"
+      : fd !== undefined && wholeNumber.test(fd)
+      ? { process, thread, link: "fd", fd: Number(fd), rest: parts.slice(at) }
+      : undefined
+  const first = next()
+  if (first === "dev") {
+    const second = next()
+    const standard = ["stdin", "stdout", "stderr"].indexOf(String(second))
+    if (standard >= 0) return { process: "self", thread: undefined, link: "fd", fd: standard, rest: parts.slice(at) }
+    return second === ".." ? "up" : second === "fd" ? descriptor("self", undefined, next()) : undefined
+  }
+  if (first !== "proc") return undefined
+  const named = next()
+  if (named === "..") return "up"
+  const process = named === "self" || named === "thread-self"
+    ? named
+    : named !== undefined && wholeNumber.test(named)
+    ? Number(named)
+    : undefined
+  if (process === undefined) return undefined
+  let link = next()
+  let thread: number | undefined
+  if (process !== "thread-self" && link === "task") {
+    const task = next()
+    if (task === "..") return "up"
+    if (task === undefined || !wholeNumber.test(task)) return undefined
+    thread = Number(task)
+    link = next()
+  }
+  if (link === "..") return "up"
+  if (link === "root" || link === "cwd" || link === "exe") {
+    return { process, thread, link, fd: undefined, rest: parts.slice(at) }
+  }
+  return link === "fd" ? descriptor(process, thread, next()) : undefined
+}
+
+/** A directory with no link in it and the parts that follow it: a `..` right after it goes up from there. */
+const joinedFrom = (directory: string, rest: ReadonlyArray<string>): string => {
+  let base = directory
+  let index = 0
+  for (; rest[index] === ".."; index += 1) base = NodePath.posix.dirname(base)
+  const tail = rest.slice(index).join("/")
+  return tail === "" ? base : base === "/" ? `/${tail}` : `${base}/${tail}`
+}
+
+/** A descriptor as the tracer prints it with the file it names: `3</tmp/x>`, `1<pipe:[123]>`. */
+const decorated = /^(\d+)<(.*)>$/s
+
 /**
  * Whether a trace `smthrs-observe` wrote is whole: it ends with the line the
  * supervisor writes once every process of the run has ended.
@@ -899,7 +986,10 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
   const pinnedConnections = new Map<Build, string>()
 
   // Which line starts each process, and whether it shares its parent's directory.
-  const children = new Map<number, { readonly child: number; readonly shared: boolean; readonly thread: boolean }>()
+  const children = new Map<
+    number,
+    { readonly child: number; readonly shared: boolean; readonly thread: boolean; readonly files: boolean }
+  >()
   {
     const open = new Map<string, { readonly at: number; readonly text: string }>()
     let at = 0
@@ -919,7 +1009,8 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
       children.set(entered.at, {
         child: Number(child[1]),
         shared: /CLONE_FS|CLONE_THREAD/.test(entered.text) || /CLONE_FS|CLONE_THREAD/.test(line),
-        thread: /CLONE_THREAD/.test(entered.text) || /CLONE_THREAD/.test(line)
+        thread: /CLONE_THREAD/.test(entered.text) || /CLONE_THREAD/.test(line),
+        files: /CLONE_FILES/.test(entered.text) || /CLONE_FILES/.test(line)
       })
     }
   }
@@ -935,6 +1026,66 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
   let root: number | undefined
   let at = 0
 
+  /**
+   * What each thread's descriptors were last seen to name, as the tracer printed them beside a call. Threads that
+   * share their descriptors share one table.
+   */
+  const tables = new Map<number, Map<number, string>>()
+  const tableOf = (pid: number): Map<number, string> => {
+    let table = tables.get(pid)
+    if (table === undefined) tables.set(pid, table = new Map())
+    return table
+  }
+  /** The process each thread belongs to, for a thread that is not the process's first. */
+  const leaders = new Map<number, number>()
+  const reachedThrough: Array<readonly [path: string, named: string, opened: string]> = []
+
+  /**
+   * A path as the process that named it found it: through a link the kernel makes for a process
+   * ({@link processLinkOf}), the rest of the path goes on from where that link led for that process, as the trace
+   * shows it. `smthrs-observe` writes each such path as it led, read at the call; strace writes it as the run
+   * named it, and the trace says where `root` and `cwd` led. A descriptor alone (`/dev/stdin`, `/proc/self/exe`)
+   * is a file the run opened or started where its trace shows it, or no file at all (a pipe, a socket): it adds
+   * nothing. A path below a descriptor's directory is followed only where the call opened a file and its answer
+   * names it: a descriptor's number is used again by calls no trace shows, so what the trace last saw it name is
+   * held against that answer. Any other such path, and one that goes back up (`..`) before its link, leaves
+   * `undefined` with a refusal.
+   */
+  const viewed = (pid: number, path: string, opened: string | undefined): string | undefined => {
+    let current = path
+    for (let hop = 0; hop < maximumLinks; hop += 1) {
+      if (supervised || !(current.startsWith("/proc/") || current.startsWith("/dev/"))) return current
+      const link = processLinkOf(current)
+      if (link === undefined) return current
+      if (link === "up") {
+        refusals.add(`it named ${path}, which goes back up inside /proc or /dev and cannot be followed as it ran`)
+        return undefined
+      }
+      const thread = link.thread ??
+        (link.process === "self" ? leaders.get(pid) ?? pid : link.process === "thread-self" ? pid : link.process)
+      if (!cells.has(thread)) {
+        refusals.add(`it named ${path}, a file of a process outside the run`)
+        return undefined
+      }
+      if (link.link === "exe" || (link.link === "fd" && link.rest.length === 0)) return current
+      const target = link.link === "root"
+        ? "/"
+        : link.link === "cwd"
+        ? cells.get(thread)!.path
+        : opened === undefined
+        ? undefined
+        : tables.get(thread)?.get(link.fd!)
+      if (target === undefined || !target.startsWith("/") || target.endsWith(" (deleted)")) {
+        refusals.add(`its trace does not say where ${path} led`)
+        return undefined
+      }
+      current = spelled(joinedFrom(target, link.rest))
+      if (link.link === "fd") reachedThrough.push([path, current, opened!])
+    }
+    refusals.add(`${path} passes through too many links`)
+    return undefined
+  }
+
   const handle = (pid: number, name: string, body: string, result: string | undefined, entered: number): void => {
     const cell = cells.get(pid)!
     const args = split(body)
@@ -943,6 +1094,16 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
     const gone = errno === "ENOENT" || errno === "ENOTDIR"
     // An answer that starts with `?` is no answer: the thread ended inside the call.
     const ok = result !== undefined && !failed && !result.startsWith("?")
+    // Every descriptor the tracer printed says what it named at that call.
+    if (!supervised) {
+      for (const argument of args) {
+        const seen = decorated.exec(argument)
+        if (seen !== null) tableOf(pid).set(Number(seen[1]), seen[2]!)
+      }
+    }
+    const answered = ok && !supervised && result !== undefined ? decorated.exec(result) : null
+    if (answered !== null) tableOf(pid).set(Number(answered[1]), answered[2]!)
+    const opened = answered === null ? undefined : answered[2]!
 
     /** The absolute path an argument names from a directory, or `undefined` when it names none. */
     const pathOf = (argument: string | undefined, base: string | undefined): string | undefined => {
@@ -956,14 +1117,14 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
         refusals.add(`its trace holds a path that cannot be read: ${argument.slice(0, 80)}`)
         return undefined
       }
-      if (text.startsWith("/")) return spelled(text)
+      if (text.startsWith("/")) return viewed(pid, spelled(text), opened)
       // An empty path names the descriptor itself, which the run already opened.
       if (text === "") return base
       if (base === undefined) {
         refusals.add(`its trace does not say which directory ${JSON.stringify(text)} was read from`)
         return undefined
       }
-      return spelled(`${base}/${text}`)
+      return viewed(pid, spelled(`${base}/${text}`), opened)
     }
     /** The directory a descriptor argument stands for. */
     const baseOf = (argument: string | undefined): string | undefined => {
@@ -1329,6 +1490,10 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
       }
       const parent = cells.get(pid)!
       cells.set(start.child, start.shared ? parent : { path: parent.path })
+      const table = tableOf(pid)
+      tables.set(start.child, start.files ? table : new Map(table))
+      if (start.thread) leaders.set(start.child, leaders.get(pid) ?? pid)
+      else leaders.delete(start.child)
       const program = programs.get(pid)
       if (program !== undefined) programs.set(start.child, program)
       if (installing.has(pid) || installed.has(pid)) installed.add(start.child)
@@ -1393,7 +1558,8 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
     removed,
     fetched,
     refusals: [...refusals],
-    outside: [...outside]
+    outside: [...outside],
+    ...(reachedThrough.length === 0 ? {} : { reached: reachedThrough })
   }
 }
 
@@ -1997,9 +2163,10 @@ export const observe = (
 
   /**
    * The real path of a path as the run wrote it. Each symbolic link on the
-   * way is something the run read, so it is noted as found.
+   * way is something the run read, so it is noted as found. `after` holds the
+   * name the run wrote below it, for a path whose directory alone is resolved.
    */
-  const resolve = (path: string): string | undefined => {
+  const resolve = (path: string, after: ReadonlyArray<string> = []): string | undefined => {
     const queue = path.split("/").filter((part) => part !== "" && part !== ".")
     // The path as the run saw it, and where that is on the host: the two differ under a mounted directory.
     let shown = ""
@@ -2028,6 +2195,16 @@ export const observe = (
         refusal ??= `${path} passes through too many symbolic links`
         return undefined
       }
+      // A link into a process's own links leads where it led for the run's process, which only the run could see. A
+      // descriptor or a program alone is a file the run opened or started where its trace shows it, or no file.
+      const through = pseudo(candidate) ? processLinkOf([`${shown}/${part}`, ...queue, ...after].join("/")) : undefined
+      if (through !== undefined) {
+        if (through === "up" || through.rest.length > 0 || through.link === "root" || through.link === "cwd") {
+          refusal ??= `${path} leads through a link of a process, which its trace does not follow`
+          return undefined
+        }
+        return NodePath.posix.normalize([candidate, ...queue].join("/"))
+      }
       if (!pseudo(candidate)) touch(candidate, "found")
       const target = kind.link.split("/").filter((piece) => piece !== "" && piece !== ".")
       queue.unshift(...target)
@@ -2044,7 +2221,7 @@ export const observe = (
 
   /** The real path of a name the run wrote: only what leads to the name is followed. */
   const named = (raw: string): string | undefined => {
-    const parent = resolve(NodePath.posix.dirname(raw))
+    const parent = resolve(NodePath.posix.dirname(raw), [NodePath.posix.basename(raw)])
     if (parent === undefined) return undefined
     const name = NodePath.posix.basename(raw)
     return parent === "/" ? `/${name}` : `${parent}/${name}`
@@ -2094,6 +2271,12 @@ export const observe = (
     let names = own.get(parent)
     if (names === undefined) own.set(parent, names = new Set())
     names.add(NodePath.posix.basename(path))
+  }
+  // A file a call opened below a descriptor is the one its answer names, or the trace placed the descriptor wrong.
+  for (const [path, named, opened] of trace.reached ?? []) {
+    if (refusal === undefined && resolve(named) !== resolve(opened)) {
+      refusal = `its trace does not say where ${path} led`
+    }
   }
   if (refusal !== undefined) return { refusal }
 

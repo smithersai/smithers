@@ -4,6 +4,7 @@
  *
  *     smthrs-observe <trace file> -- <command> [<argument>...]
  *     smthrs-observe --probe
+ *     smthrs-observe --rights <program>...
  *
  * The command runs under a seccomp filter whose listener this program holds. The kernel hands each watched call
  * to one of the supervisor's threads; only the calling thread waits, and the call then goes on in the kernel as
@@ -12,8 +13,11 @@
  * Each line names the call with every path made absolute from the directory the call starts from, read at that
  * stop from `/proc/<thread>/cwd` or `/proc/<thread>/fd/<n>`, and an answer read from the file system just before
  * the call goes on: `fstatat` with `AT_NO_AUTOMOUNT`, which opens nothing, follows nothing the call would not, and
- * never blocks. Nothing under `/proc`, `/dev` or `/sys` is looked at: a record leaves those out. An answer read
- * just before may only add to what the record holds:
+ * never blocks. A path through a link the kernel makes for a process (`/proc/self/cwd`, `/proc/<pid>/fd/<n>`,
+ * `/dev/stdin`) is written as the path it leads to for the process that made the call, read at that stop with
+ * readlink on `/proc/<process>/...`. What is still under `/proc`, `/dev` or `/sys` after that is the machine's
+ * state, not a file of the run: it is never looked at, and a record leaves it out. An answer read just before may
+ * only add to what the record holds:
  *
  * - A name counts as made by the run only where this supervisor saw it absent at a stop of this run.
  * - Before a call that writes a name that is already there (a rename, a link, a symlink, an exclusive create), a
@@ -49,7 +53,10 @@
  * Lines are written in the order the kernel numbered the calls, after the command and every process it left have
  * ended. The trace starts with `<pid> +++ smthrs-observe 1 +++` and ends with `<pid> +++ complete +++`; a trace
  * without the last line was cut short. A run this program cannot see whole gets a line
- * `<pid> +++ unrecorded: <reason> +++`, and the command still runs untouched.
+ * `<pid> +++ unrecorded: <reason> +++`, and the command still runs untouched. A program the run started whose file
+ * asks for rights (set-user-id, set-group-id, file capabilities) gets a line `<pid> +++ rights: <program> +++`: the
+ * run has no new privileges, so that program ran without them. `--rights` names which of the programs it is given
+ * ask for rights, for a run recorded another way.
  *
  * The command's exit status is this program's. When this program cannot start the command it exits 125, and 126
  * when it cannot record (`--probe` answers 0 where it can, and otherwise says why on standard error).
@@ -80,6 +87,8 @@
 #include <sys/user.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <sys/xattr.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -458,6 +467,36 @@ static void unrecorded(const char *reason) {
   pthread_mutex_unlock(&lock);
 }
 
+/*
+ * Programs the run started whose file asks for rights a process with no new privileges never gets: set-user-id,
+ * set-group-id, or file capabilities (`security.capability`), on a mount that honors them. This program sets no new
+ * privileges for the run, so each one ran without what its file asks for, as it would not on a CI runner.
+ */
+static char *rightsNeeded[16];
+static int rightsCount;
+
+/* Whether a program's file asks for rights: 1 when it does, 0 when not or when it cannot be looked at. */
+static int asksRights(const char *program) {
+  struct stat st;
+  if (stat(program, &st) != 0 || !S_ISREG(st.st_mode)) return 0;
+  struct statvfs mount;
+  if (statvfs(program, &mount) == 0 && (mount.f_flag & ST_NOSUID)) return 0;
+  if (st.st_mode & (S_ISUID | S_ISGID)) return 1;
+  return getxattr(program, "security.capability", NULL, 0) > 0;
+}
+
+static void rights(const char *program) {
+  if (!asksRights(program)) return;
+  pthread_mutex_lock(&lock);
+  for (int i = 0; i < rightsCount; i++)
+    if (strcmp(rightsNeeded[i], program) == 0) {
+      pthread_mutex_unlock(&lock);
+      return;
+    }
+  if (rightsCount < 16) rightsNeeded[rightsCount++] = strdup(program);
+  pthread_mutex_unlock(&lock);
+}
+
 static void keep(uint64_t id, uint32_t sub, struct text *t) {
   if (t->failed) {
     __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
@@ -675,8 +714,157 @@ static int placeOf(pid_t tid, int fd, char *out, size_t capacity) {
   return 1;
 }
 
-/* A path a call names, made absolute from the directory it starts from. `*empty` is set for an empty path,
- * which names the descriptor itself. Answers 0 with `why` when the path cannot be known. */
+/* The next part of a path from `*at`, past slashes and `.` parts: `*at` moves to its start, and its length is
+ * answered (0 at the end). */
+static size_t partOf(const char **at) {
+  for (;;) {
+    while (**at == '/') (*at)++;
+    if ((*at)[0] == '.' && ((*at)[1] == '/' || (*at)[1] == 0)) {
+      (*at)++;
+      continue;
+    }
+    return strcspn(*at, "/");
+  }
+}
+
+static int partIs(const char *part, size_t length, const char *word) {
+  return strlen(word) == length && strncmp(part, word, length) == 0;
+}
+
+/* A part that is a decimal number below a billion, as a process id or a descriptor is. */
+static int numberOf(const char *part, size_t length, long *out) {
+  if (length == 0 || length > 9) return 0;
+  long value = 0;
+  for (size_t i = 0; i < length; i++) {
+    if (part[i] < '0' || part[i] > '9') return 0;
+    value = value * 10 + (part[i] - '0');
+  }
+  *out = value;
+  return 1;
+}
+
+/*
+ * A path through a link the kernel makes for a process leads where that link leads for the process that made the
+ * call: `/proc/self`, `/proc/thread-self` or `/proc/<pid>`, also under `task/<tid>`, then `root`, `cwd`, `exe` or
+ * `fd/<n>`; and `/dev/fd/<n>`, `/dev/stdin`, `/dev/stdout` and `/dev/stderr`, which are `/proc/self/fd/<n>`. The
+ * link is read here, at the stop, with readlink on `/proc/<process>/...`: nothing the run named is opened or
+ * followed. The rest of the path goes on from where the link leads, so the line names the file the call reaches.
+ * A link that leads to no file of the run (a pipe, a socket, a descriptor not open) leaves the path as it was,
+ * under `/proc` or `/dev`, where no record looks. Answers 0 with `why` set when the path cannot be followed so: it
+ * goes back up (`..`) inside `/proc` or `/dev`, or its link leads to a file that was removed.
+ */
+static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
+  for (int hop = 0; hop < 40; hop++) {
+    const char *at = path;
+    size_t n = partOf(&at);
+    long process = -1, thread = -1, fd = -1;
+    const char *name = "fd";
+    if (!partIs(at, n, "dev") && !partIs(at, n, "proc")) return 1;
+    pid_t tgid = tgidOf(tid);
+    if (partIs(at, n, "dev")) {
+      at += n;
+      n = partOf(&at);
+      if (partIs(at, n, "..")) break;
+      if (partIs(at, n, "fd")) {
+        at += n;
+        n = partOf(&at);
+        if (partIs(at, n, "..")) break;
+        if (!numberOf(at, n, &fd)) return 1;
+      } else if (partIs(at, n, "stdin")) {
+        fd = 0;
+      } else if (partIs(at, n, "stdout")) {
+        fd = 1;
+      } else if (partIs(at, n, "stderr")) {
+        fd = 2;
+      } else {
+        return 1;
+      }
+      at += n;
+      process = tgid;
+    } else if (partIs(at, n, "proc")) {
+      at += n;
+      n = partOf(&at);
+      if (partIs(at, n, "self")) {
+        process = tgid;
+      } else if (partIs(at, n, "thread-self")) {
+        process = tgid;
+        thread = tid;
+      } else if (partIs(at, n, "..")) {
+        break;
+      } else if (!numberOf(at, n, &process)) {
+        return 1;
+      }
+      at += n;
+      n = partOf(&at);
+      if (thread < 0 && partIs(at, n, "task")) {
+        at += n;
+        n = partOf(&at);
+        if (partIs(at, n, "..")) break;
+        if (!numberOf(at, n, &thread)) return 1;
+        at += n;
+        n = partOf(&at);
+      }
+      if (partIs(at, n, "root") || partIs(at, n, "cwd") || partIs(at, n, "exe")) {
+        name = partIs(at, n, "root") ? "root" : partIs(at, n, "cwd") ? "cwd" : "exe";
+        at += n;
+      } else if (partIs(at, n, "fd")) {
+        at += n;
+        n = partOf(&at);
+        if (partIs(at, n, "..")) break;
+        if (!numberOf(at, n, &fd)) return 1;
+        at += n;
+      } else if (partIs(at, n, "..")) {
+        break;
+      } else {
+        return 1; /* what the process is, not a file it reaches */
+      }
+    } else {
+      return 1;
+    }
+    char link[96], target[PATH_MAX + 1], rest[PATH_MAX + 1];
+    if (thread >= 0 && fd >= 0)
+      snprintf(link, sizeof link, "/proc/%ld/task/%ld/fd/%ld", process, thread, fd);
+    else if (thread >= 0)
+      snprintf(link, sizeof link, "/proc/%ld/task/%ld/%s", process, thread, name);
+    else if (fd >= 0)
+      snprintf(link, sizeof link, "/proc/%ld/fd/%ld", process, fd);
+    else
+      snprintf(link, sizeof link, "/proc/%ld/%s", process, name);
+    ssize_t got = readlink(link, target, sizeof target - 1);
+    /* No such process or descriptor: the call fails as the kernel answers it, and reads nothing. */
+    if (got <= 0) return 1;
+    target[got] = 0;
+    /* A pipe, a socket, an anonymous file the run made in memory: no file of the run. */
+    if (target[0] != '/' || strncmp(target, "/memfd:", 7) == 0) return 1;
+    if (got > 10 && strcmp(target + got - 10, " (deleted)") == 0) {
+      *why = "removed";
+      return 0;
+    }
+    snprintf(rest, sizeof rest, "%s", at);
+    size_t length = strlen(target);
+    const char *more = rest;
+    /* The link leads to a path with no link in it, so a `..` right after it goes up from there. Where that leads
+     * back into /proc or /dev, the next round follows it again. */
+    for (size_t part = partOf(&more); partIs(more, part, ".."); part = partOf(&more)) {
+      while (length > 1 && target[length - 1] != '/') length--;
+      if (length > 1) length--;
+      target[length] = 0;
+      more += part;
+    }
+    if (*more == 0)
+      snprintf(path, capacity, "%s", target);
+    else if (length == 1)
+      snprintf(path, capacity, "/%s", more);
+    else
+      snprintf(path, capacity, "%s/%s", target, more);
+  }
+  *why = "up";
+  return 0;
+}
+
+/* A path a call names, made absolute from the directory it starts from, and followed in the caller's view through
+ * any link the kernel makes for a process (stepView). `*empty` is set for an empty path, which names the
+ * descriptor itself. Answers 0 with `why` when the path cannot be known. */
 static int pathOf(pid_t tid, const struct seccomp_notif *req, int dirIndex, int pathIndex, char *out,
                   size_t capacity, const char **why) {
   char path[PATH_MAX + 1], base[PATH_MAX + 1];
@@ -686,7 +874,7 @@ static int pathOf(pid_t tid, const struct seccomp_notif *req, int dirIndex, int 
   }
   if (path[0] == '/') {
     snprintf(out, capacity, "%s", path);
-    return 1;
+    return stepView(tid, out, capacity, why);
   }
   int fd = dirIndex == CWD ? AT_FDCWD : (int)req->data.args[dirIndex];
   if (!placeOf(tid, fd, base, sizeof base) || base[0] != '/') {
@@ -699,7 +887,7 @@ static int pathOf(pid_t tid, const struct seccomp_notif *req, int dirIndex, int 
     snprintf(out, capacity, "/%s", path);
   else
     snprintf(out, capacity, "%s/%s", base, path);
-  return 1;
+  return stepView(tid, out, capacity, why);
 }
 
 static int pseudo(const char *path) {
@@ -1360,6 +1548,7 @@ static void serve(const struct seccomp_notif *req) {
         free(script.data);
         break;
       }
+      rights(path);
       pthread_mutex_lock(&lock);
       unsigned *generation = generationOf(tgid);
       if (generation != NULL) *generation += 1;
@@ -1626,6 +1815,14 @@ static void serve(const struct seccomp_notif *req) {
   if (why != NULL) {
     free(t.data);
     t = (struct text){0};
+    if (strcmp(why, "up") == 0) {
+      unrecorded("it named a path that goes back up inside /proc or /dev, which cannot be followed as it ran");
+      return;
+    }
+    if (strcmp(why, "removed") == 0) {
+      unrecorded("it reached a removed file through a link of a process");
+      return;
+    }
     if (strcmp(why, "address") == 0) {
       /* A path that cannot be read from the thread: strace writes its address, and the call fails on it. */
       printf_(&t, "%d openat(AT_FDCWD, 0x%llx, O_RDONLY) = -1 EFAULT (Bad address)", tgid,
@@ -1782,6 +1979,7 @@ static int writeTrace(const char *file) {
   }
   if (dropped) unrecorded("the recorder could not keep every line");
   for (int i = 0; i < reasonCount; i++) fprintf(out, "%d +++ unrecorded: %s +++\n", rootPid, reasons[i]);
+  for (int i = 0; i < rightsCount; i++) fprintf(out, "%d +++ rights: %s +++\n", rootPid, rightsNeeded[i]);
   fprintf(out, "%d +++ complete +++\n", rootPid);
   if (fflush(out) != 0 || ferror(out)) {
     fclose(out);
@@ -1868,6 +2066,12 @@ static void forward(int sig) {
 
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--probe") == 0) return probe();
+  /* Names each program whose file asks for rights, one a line; answers 0. strace's reader asks this way. */
+  if (argc >= 2 && strcmp(argv[1], "--rights") == 0) {
+    for (int i = 2; i < argc; i++)
+      if (asksRights(argv[i])) printf("%s\n", argv[i]);
+    return fflush(stdout) == 0 ? 0 : 1;
+  }
   if (argc < 4 || strcmp(argv[2], "--") != 0) {
     fprintf(stderr, "usage: smthrs-observe <trace file> -- <command> [<argument>...]\n");
     return 125;

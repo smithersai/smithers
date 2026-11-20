@@ -228,6 +228,16 @@ when a file it read changed, when a file appeared in a directory it listed, or
 when a path it looked for now exists. A change to a file it never read, the
 docs for one, does not run it.
 
+A path the step reaches through a link the kernel makes for its own process,
+`/proc/self/cwd/data.txt` or `/dev/fd/3/data.txt`, counts as the file it leads
+to. A read of anything else under `/proc`, `/sys` or `/dev`, such as
+`/proc/cpuinfo`, is the machine's state and not an input: a result is reused on
+any machine whose key matches, and the key names the operating system and the
+tool versions, not the processor. No such read keeps a step from being reused.
+With `strace` as the recorder, a step that looks below a descriptor's directory
+without opening a file there, as `test -e /proc/self/fd/3/data.txt` does, runs
+at every commit.
+
 A step that asks git about the commit, as `git describe` and `pre-commit` do,
 read `.git`, which every commit changes, so it runs at every commit. `cargo
 build`, `cargo test` and `cargo doc` open `.git` only to list a package's
