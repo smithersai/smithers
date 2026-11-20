@@ -1476,13 +1476,25 @@ describe("a tracer that fails", () => {
     expect(await traceFiles()).toEqual([])
   })
 
+  /** A tracer that writes, after the command, a trace of `count` missing paths of `digits` digits each. */
+  const flood = (count: number, digits: number): string =>
+    "\"$@\" || exit $?\n" +
+    `awk 'BEGIN { for (i = 0; i < ${count}; i++) printf "1 access(\\"/nonexistent-smithers-observed/%0${digits}d\\", ` +
+    `F_OK) = -1 ENOENT (No such file or directory)\\n", i }' > "$out"`
+
+  // A TypeScript build of many packages reads that many paths: 110,000 make a record of about 16 MiB.
+  posixIt("stores and reuses a run that read 110,000 paths", async () => {
+    const { logs, run, tracer } = await fixture()
+    const flooding = await tracer(flood(110000, 110))
+    expect(await run(["check"], flooding)).toEqual({ check: "ran" })
+    expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
+    expect(await run(["check"], flooding)).toEqual({ check: "hit" })
+  })
+
   posixIt("stores nothing when the run read more than a record holds", async () => {
     const { logs, run, tracer } = await fixture()
-    const flooding = await tracer(
-      "\"$@\" || exit $?\n" +
-        "awk 'BEGIN { for (i = 0; i < 110000; i++) printf \"1 access(\\\"/nonexistent-smithers-observed/%0110d\\\", F_OK) = " +
-        "-1 ENOENT (No such file or directory)\\n\", i }' > \"$out\""
-    )
+    // 150,000 paths of 440 characters: over 64 MiB.
+    const flooding = await tracer(flood(150000, 440).replace("%0440d", "%0220d/%0220d").replace(", i }", ", i, i }"))
     expect(await run(["check"], flooding)).toEqual({ check: "ran" })
     expect(logs).toContain("//:check  not cached: it read more paths than one record holds")
   })

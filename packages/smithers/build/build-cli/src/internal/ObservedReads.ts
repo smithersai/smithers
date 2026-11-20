@@ -99,12 +99,14 @@ export const format = "smthrs-observed-reads/2"
 export const maximumRecords = 4
 
 /**
- * The largest set of records stored for one declaration, in JSON bytes.
+ * The largest set of records stored for one declaration, in JSON bytes. A
+ * record takes about 150 bytes for each path its run read: a TypeScript build
+ * of 64 packages of elizaOS/eliza reads 168,000 paths, about 25 MiB.
  *
  * @category constants
  * @since 1.0.0
  */
-export const maximumBytes = 12 * 1024 * 1024
+export const maximumBytes = 64 * 1024 * 1024
 
 /** Symbolic links one path may pass through before resolving it fails. */
 const maximumLinks = 40

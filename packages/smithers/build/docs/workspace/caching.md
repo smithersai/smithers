@@ -682,7 +682,7 @@ all be known, and says why on its own line:
 | `it changed its view of the file system`                                   | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says          |
 | `<path> changed while it ran`, `was removed while it ran`                  | Something else wrote a file the run read, so what the run saw can no longer be measured      |
 | `its trace ...`                                                            | A line of the trace could not be read in full                                                |
-| `it read more paths than one record holds`                                 | The record passed 12 MiB                                                                     |
+| `it read more paths than one record holds`                                 | The record passed 64 MiB, about 400,000 paths                                                |
 | `it passed, but failed while its reads were recorded`                      | See below                                                                                    |
 | `its recorded run failed and its plain run passed; it runs unrecorded ...` | See below: the run after such a one, of a target another waits for                           |
 | `a step after it may read what it leaves, and its reads are not recorded`  | The host cannot record reads, and another target waits for this one                          |
