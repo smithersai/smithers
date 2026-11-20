@@ -218,8 +218,8 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
  * baseline step may run; without it the limit is the one generated targets
  * have (`Inventory.stepTimeoutHours`). `confine` says whether this machine can
  * hold a step in a file-system jail; without it the machine is asked. `cores`
- * is how many baseline jobs run at once when the request sets no limit; without
- * it, the machine's core count. `processes` is where a step's processes are
+ * is the machine's core count, of which a quarter of the jobs run at once when
+ * the request sets no limit; without it, the core count is read. `processes` is where a step's processes are
  * read and stopped, and `cpuTick` how often they are read for the CPU time
  * the steps use. `environment` holds the variables of the person who runs
  * the replay, which the program keeps out of its own process; without it they
@@ -323,8 +323,8 @@ interface Prepared {
   readonly labels: ReadonlyArray<string>
   readonly splits: ReadonlyMap<string, ReadonlyArray<string>>
   readonly left: ReadonlyArray<NotReplayed>
-  /** How many generated targets may run at once. */
-  readonly jobs: number | undefined
+  /** How many jobs run at once, in the baseline and as generated targets. */
+  readonly jobs: number
 }
 
 /** The run in the copy that holds the files `apply` writes: the commit its steps see, and why a step failed there. */
@@ -491,8 +491,9 @@ export effect function askModel<R>(parts: Pick<ReplayParts<R>, "asked" | "score"
  * runs saved and those of the jobs it waited for, never what a job beside it
  * saved in the same run (`Kept.vibe`).
  * At most as many jobs run at once as normal mode runs targets: `request.jobs`,
- * never above the target map's `maxJobs`, and the machine's core count when
- * neither says. The jobs of one shared tree (`Inventory.treeOf`: the recipes of a Justfile, the scripts of a
+ * else one for every four of the machine's cores and at least one, as a
+ * GitHub runner gives a job four (`jobsFor`), never above the target map's
+ * `maxJobs`. The jobs of one shared tree (`Inventory.treeOf`: the recipes of a Justfile, the scripts of a
  * `package.json`) run one after another in one checkout, and the first failure
  * stops them. A baseline step gets a target's environment and time limit, and
  * its checkout holds nothing a fresh clone does not. Every step, baseline or
@@ -787,7 +788,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         labels,
         splits: splitOf(replayed.units),
         left: [...notReplayed(inventory), ...variantsFailedHere(inventory, failedHere), ...replayed.left],
-        jobs: jobsFor(request.jobs, targetMap.maxJobs)
+        jobs: jobsFor(request.jobs, targetMap.maxJobs, options.cores ?? coreCount())
       }
     }
 
@@ -908,7 +909,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         file,
         "--ui",
         "plain",
-        ...(own.jobs === undefined ? [] : ["--jobs", String(own.jobs)])
+        "--jobs",
+        String(own.jobs)
       ])
       const watch = try watchFor(stall.minutes, stall.table)
       const given = try givenAt(commit, site.place, own, applied?.seen)
@@ -1148,7 +1150,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const wanted = targets === undefined ? undefined : new Set(targets)
       const chosen = stationsOf(own.units, wanted)
       const store = place === places.trial ? keptTrial : kept
-      const limit = try Semaphore.make(own.jobs ?? options.cores ?? coreCount())
+      const limit = try Semaphore.make(own.jobs)
       const given = try givenAt(commit, place, own)
       const plan: Array<Station & { readonly gate: Deferred.Deferred<boolean> }> = []
       for (const station of chosen) plan.push({ ...station, gate: try Deferred.make<boolean>() })

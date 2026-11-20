@@ -359,7 +359,9 @@ one of them as its own. The run's time is on a line of its own and in no
 total; `--no-apply-check` leaves the run out.
 `--jobs` caps how many jobs run at once, the same in the baseline and in each
 mode, so the times compare like with like. The default is this machine's core
-count.
+count divided by 4, at least 1: a GitHub runner gives each job 4 cores, so each
+job here gets what it gets there, and a test with a time limit is not slowed by
+the jobs beside it.
 
 ### The first run
 

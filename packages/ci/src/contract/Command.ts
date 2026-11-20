@@ -44,7 +44,8 @@ export const flags = {
   jobs: {
     on: ["", "replay"],
     default: "",
-    help: "Most jobs to run at once, in the baseline and in each mode; the default is this machine's core count."
+    help:
+      "Most jobs to run at once, in the baseline and in each mode; the default is this machine's core count divided by 4, at least 1, as a GitHub runner gives each job 4 cores."
   },
   cache: {
     on: ["", "replay", "apply"],

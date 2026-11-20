@@ -7,6 +7,7 @@ import {
   blocked,
   choose,
   cycleIn,
+  defaultJobs,
   failedAt,
   failedTwice,
   failureTexts,
@@ -464,11 +465,19 @@ describe("planOfPrinted", () => {
 
 describe("jobsFor", () => {
   it("takes the lower of the request and the target map, whichever are given", () => {
-    expect(jobsFor(undefined, undefined)).toBeUndefined()
-    expect(jobsFor(4, undefined)).toBe(4)
-    expect(jobsFor(undefined, 1)).toBe(1)
-    expect(jobsFor(4, 1)).toBe(1)
-    expect(jobsFor(1, 4)).toBe(1)
+    expect(jobsFor(4, undefined, 48)).toBe(4)
+    expect(jobsFor(undefined, 1, 48)).toBe(1)
+    expect(jobsFor(4, 1, 48)).toBe(1)
+    expect(jobsFor(1, 4, 48)).toBe(1)
+  })
+
+  it("is a job for every 4 cores when nobody asks, at least 1, as a GitHub runner gives each job 4 cores", () => {
+    // GitHub's standard hosted runner for a public repository's Linux job has 4 CPUs
+    // (docs.github.com/actions/reference/runners/github-hosted-runners, "Standard GitHub-hosted runners").
+    expect([1, 4, 7, 16, 48].map((cores) => jobsFor(undefined, undefined, cores))).toEqual([1, 1, 1, 4, 12])
+    expect([1, 4, 7, 16, 48].map(defaultJobs)).toEqual([1, 1, 1, 4, 12])
+    // The target map still caps it.
+    expect(jobsFor(undefined, 2, 48)).toBe(2)
   })
 })
 

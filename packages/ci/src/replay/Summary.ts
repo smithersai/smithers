@@ -878,15 +878,28 @@ export const planOfPrinted = (printed: typeof PrintedPlan.Type): Plan => ({
 })
 
 /**
- * How many generated targets may run at once: the request's limit, never above
- * the target map's. `undefined` leaves the choice to Smithers build.
+ * How many jobs a machine with `cores` cores runs at once when nobody says:
+ * one for every four cores, and at least one. A GitHub-hosted Linux runner
+ * gives each job a machine of four cores, so each job here gets what it gets
+ * there, and a test with a time limit is not starved by the jobs beside it.
  *
  * @category baseline
  * @throws {never}
  * @since 0.1.0
  */
-export const jobsFor = (requested: number | undefined, maxJobs: number | undefined): number | undefined =>
-  requested === undefined ? maxJobs : maxJobs === undefined ? requested : Math.min(requested, maxJobs)
+export const defaultJobs = (cores: number): number => Math.max(1, Math.floor(cores / 4))
+
+/**
+ * How many jobs run at once, in the baseline and as generated targets in each
+ * mode: the request's limit, else {@link defaultJobs} of `cores`, never above
+ * the target map's.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const jobsFor = (requested: number | undefined, maxJobs: number | undefined, cores: number): number =>
+  Math.min(requested ?? defaultJobs(cores), maxJobs ?? Number.POSITIVE_INFINITY)
 
 /**
  * A target that never ran because something before it failed.

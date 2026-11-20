@@ -89,11 +89,15 @@ describe("how many baseline jobs run at once", () => {
       cores
     })
 
-  it("is the machine's core count when nothing is asked for", async () => {
-    const log = join(track(makeEmptyDirectory()), "log")
-    await replay(track(makeSmallRepository(sixJobs(log, 2))), {}, {}, withCores(2) as never)
-    expect(peakOf(log)).toBe(2)
-  }, 600_000)
+  it(
+    "is a job for every 4 of the machine's cores when nothing is asked for, as a GitHub runner gives a job 4",
+    async () => {
+      const log = join(track(makeEmptyDirectory()), "log")
+      await replay(track(makeSmallRepository(sixJobs(log, 2))), {}, {}, withCores(8) as never)
+      expect(peakOf(log)).toBe(2)
+    },
+    600_000
+  )
 
   it("is what --jobs says, above the core count too", async () => {
     const log = join(track(makeEmptyDirectory()), "log")
