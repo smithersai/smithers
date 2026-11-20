@@ -232,7 +232,11 @@ A step that asks git about the commit, as `git describe` and `pre-commit` do,
 read `.git`, which every commit changes, so it runs at every commit. `cargo
 build`, `cargo test` and `cargo doc` open `.git` only to list a package's
 files, so what cargo itself reads there is not counted; a build script or a
-test that reads `.git` is counted as any step is.
+test that reads `.git` is counted as any step is. pnpm 11.20 to 11.25 writes
+the time it last checked `node_modules` into
+`node_modules/.pnpm-workspace-state-v1.json` before a script that installs
+first, and reads that note only to skip the check; what pnpm itself reads
+there is not counted either, so the scripts after it are reused.
 
 The steps of a job follow each other in one checkout: an install leaves a
 tree, a build leaves its files, and the step after reads them. Each step is

@@ -538,6 +538,49 @@ const wordsOf = (text: string | undefined): ReadonlyArray<string> | undefined =>
 const runners = /^(?:env|node|nodejs|corepack|python[0-9.]*)$/
 
 /**
+ * The names of a command line's words as a tool is known by them (`npm` for `npm-cli.js`), and where the program
+ * is among them: past each program that runs the program its arguments name.
+ */
+const programOf = (argv: ReadonlyArray<string>): { readonly names: ReadonlyArray<string>; readonly at: number } => {
+  const names = argv.map((word) =>
+    word.slice(word.lastIndexOf("/") + 1).replace(/\.(?:[cm]?js|exe)$/, "").replace(/-cli$/, "")
+  )
+  let at = 0
+  while (at < names.length - 1 && runners.test(names[at]!)) at += names[at + 1] === "-m" ? 2 : 1
+  return { names, at }
+}
+
+/**
+ * The files a tool keeps for its own bookkeeping under any of its commands, by the tool's name.
+ *
+ * pnpm 11.20 to 11.25 notes in `node_modules/.pnpm-workspace-state-v1.json` when it last checked that
+ * `node_modules` matches the lockfile and the manifests, with the settings it checked under. Before a script runs
+ * it reads the note only to skip that check when no manifest, lockfile, patch or pnpmfile changed since; a script
+ * that has to install first writes the note again with the time. The rest of the note is a copy of what pnpm reads
+ * from those files, which the script reads too, so no script's result depends on the note. Counted, it would run
+ * the step after such a script again at every commit, for the new time alone.
+ */
+const notes: ReadonlyMap<string, RegExp> = new Map([
+  ["pnpm", /\/node_modules\/\.pnpm-workspace-state-v1\.json$/]
+])
+
+/**
+ * The paths a tool reads for its own bookkeeping under any of its commands
+ * (`node_modules/.pnpm-workspace-state-v1.json` for `pnpm`), or `undefined`
+ * for a program that keeps none. As with the paths of {@link lockedBuild},
+ * what the tool itself reads there is no input of the run; a program it
+ * starts that reads them did read them.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const bookkeeping = (argv: ReadonlyArray<string>): RegExp | undefined => {
+  const { at, names } = programOf(argv)
+  const name = names[at]
+  return name === undefined ? undefined : notes.get(name)
+}
+
+/**
  * Whether a command line is a package manager told to install exactly what a
  * lockfile pins, and to fail when it cannot. What such an install fetches is
  * fixed by the lockfile, which the run reads, so a connection it opens does
@@ -547,11 +590,7 @@ const runners = /^(?:env|node|nodejs|corepack|python[0-9.]*)$/
  * @since 1.0.0
  */
 export const lockedInstall = (argv: ReadonlyArray<string>): boolean => {
-  const names = argv.map((word) =>
-    word.slice(word.lastIndexOf("/") + 1).replace(/\.(?:[cm]?js|exe)$/, "").replace(/-cli$/, "")
-  )
-  let at = 0
-  while (at < names.length - 1 && runners.test(names[at]!)) at += names[at + 1] === "-m" ? 2 : 1
+  const { at, names } = programOf(argv)
   const rest = argv.slice(at + 1)
   const words = rest.filter((word) => !word.startsWith("-"))
   const has = (...flags: ReadonlyArray<string>): boolean => flags.some((flag) => rest.includes(flag))
@@ -852,6 +891,8 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
   const hushed = new Set<number>()
   /** Processes that are a build tool fetching what a lockfile pins, each with its threads. Never what it starts. */
   const building = new Map<number, Build>()
+  /** Processes that are a tool with notes of its own ({@link bookkeeping}), each with its threads. */
+  const noting = new Map<number, RegExp>()
   /** The first connection of each such build that a lockfile it had read pinned: who reached what. */
   const pinnedConnections = new Map<Build, string>()
 
@@ -933,7 +974,8 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
       return named
     }
     /** Whether a path is one a build tool reads for its own bookkeeping, read by the tool itself. */
-    const own = (path: string): boolean => building.get(pid)?.own?.test(path) === true
+    const own = (path: string): boolean =>
+      building.get(pid)?.own?.test(path) === true || noting.get(pid)?.test(path) === true
     const saw = (path: string): void => {
       if (hushed.has(pid)) return
       if (own(path)) return
@@ -1062,6 +1104,9 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
           // A process that goes on to run another program is that program from here on.
           if (words !== undefined && lockedInstall(words)) installing.add(pid)
           else installing.delete(pid)
+          const kept = words === undefined ? undefined : bookkeeping(words)
+          if (kept === undefined) noting.delete(pid)
+          else noting.set(pid, kept)
           // A build tool finds its lockfile in the directory it starts in, or in one above it.
           const build = words === undefined ? undefined : lockedBuild(words)
           if (build === undefined || cell.path === undefined) building.delete(pid)
@@ -1292,6 +1337,9 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
       const build = start.thread ? building.get(pid) : undefined
       if (build === undefined) building.delete(start.child)
       else building.set(start.child, build)
+      const kept = start.thread ? noting.get(pid) : undefined
+      if (kept === undefined) noting.delete(start.child)
+      else noting.set(start.child, kept)
     }
     if (detached) {
       cutOff(pid, { at: entered, text: rest })

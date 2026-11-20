@@ -563,6 +563,16 @@ because the step before it left those notes with other bytes. The directories ca
 recorded as always. A build script or a test that reads `.git` did read it,
 and so did `cargo package`, which writes the commit into what it packs.
 
+**What pnpm reads for its own bookkeeping is no input either.** pnpm 11.20 to
+11.25 notes in `node_modules/.pnpm-workspace-state-v1.json` when it last
+checked `node_modules` against the lockfile and the manifests, and reads the
+note before a script only to skip that check when none of them changed since.
+A script with no install before it installs first and writes the note again
+with the time. The rest of the note copies settings and manifests the script
+reads too. So under any `pnpm` command the note is not recorded when pnpm
+itself reads it, and the script after one that wrote it is reused when nothing
+else it read changed. A program pnpm starts that reads the note did read it.
+
 **Variables that differ from run to run.** A CI run is given the commit it is
 for, a run id and a run number, and each is another at the next run. In the
 key, each would make every run a new declaration. Left out of everything, a

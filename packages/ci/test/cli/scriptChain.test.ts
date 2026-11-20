@@ -1,6 +1,6 @@
 /**
  * A CI step that runs a script made of other scripts, end to end, once for
- * each package manager on this machine: npm, pnpm, Yarn 1 and Bun.
+ * each package manager on this machine: npm, pnpm 10, pnpm 11, Yarn 1 and Bun.
  *
  * The repository's `check` is `format && spell && types`. The first two read
  * the docs and the last reads the source. The real program replays three
@@ -29,7 +29,10 @@ const made: Array<string> = []
 afterAll(() => made.forEach(remove))
 
 interface Manager {
+  /** The program. */
   readonly name: string
+  /** The program and the releases the case is for. */
+  readonly label: string
   /** The words a script runs another script with. */
   readonly run: string
   /** The words the workflow runs a script with. */
@@ -52,6 +55,7 @@ interface Manager {
 const managers: ReadonlyArray<Manager> = [
   {
     name: "npm",
+    label: "npm",
     run: "npm run",
     step: "npm run",
     files: {
@@ -69,16 +73,32 @@ const managers: ReadonlyArray<Manager> = [
   },
   {
     name: "pnpm",
+    label: "pnpm 10",
     run: "pnpm run",
     step: "pnpm",
     files: { "pnpm-lock.yaml": "lockfileVersion: '9.0'\n" },
-    // pnpm 10. pnpm 11 checks the install before every script and writes the time it did so into
-    // `node_modules/.pnpm-workspace-state-v1.json`, so the script after it reads a file that changed and is not kept.
     corepack: { wanted: "pnpm@10", accepts: (release) => majorOf(release) === 10 },
     kept: true
   },
   {
+    name: "pnpm",
+    label: "pnpm 11.20 to 11.25",
+    run: "pnpm run",
+    step: "pnpm",
+    files: { "pnpm-lock.yaml": "lockfileVersion: '9.0'\n" },
+    // These releases check the install before every script, and the first script, with no install before it,
+    // installs and writes the time into `node_modules/.pnpm-workspace-state-v1.json`. Each script after it reads
+    // that note, which is pnpm's own and none of their inputs: they are still reused at a commit that changes
+    // nothing they read.
+    corepack: {
+      wanted: "pnpm@11.25.0",
+      accepts: (release) => majorOf(release) === 11 && minorOf(release) >= 20 && minorOf(release) <= 25
+    },
+    kept: true
+  },
+  {
     name: "yarn",
+    label: "Yarn 1",
     run: "yarn",
     step: "yarn run",
     files: {
@@ -88,7 +108,7 @@ const managers: ReadonlyArray<Manager> = [
     corepack: { wanted: "yarn@1", accepts: (release) => majorOf(release) === 1 },
     kept: true
   },
-  { name: "bun", run: "bun run", step: "bun run", files: {}, kept: false }
+  { name: "bun", label: "Bun", run: "bun run", step: "bun run", files: {}, kept: false }
 ]
 
 const installed = (name: string): boolean => spawnSync(name, ["--version"], { cwd: "/" }).status === 0
@@ -136,6 +156,9 @@ const docsCheck = (what: string, pattern: string): string =>
 /** The first number of a release, `12` for `12.15.0`. */
 const majorOf = (release: string): number => Number(/^\d+/.exec(release)?.[0] ?? Number.NaN)
 
+/** The second number of a release, `15` for `12.15.0`. */
+const minorOf = (release: string): number => Number(/^\d+\.(\d+)/.exec(release)?.[1] ?? Number.NaN)
+
 /**
  * The newest release of a corepack-run manager this machine's corepack keeps that `accepts` takes, as
  * `packageManager` names it. A repository that names one replays with no network: a step's corepack finds it in
@@ -167,7 +190,7 @@ const byRelease = (left: string, right: string): number => {
 
 /** The repository at its first commit. */
 const repository = (manager: Manager): string => {
-  const root = temporary(`chain-${manager.name}`)
+  const root = temporary(`chain-${manager.label.replace(/\W+/g, "-")}`)
   made.push(root)
   git(root, "init", "--quiet", "--initial-branch=main")
   commit(root, "base", {
@@ -197,7 +220,7 @@ const repository = (manager: Manager): string => {
   return root
 }
 
-describe.each(managers)("a repository whose CI runs a chain of scripts with $name", (manager) => {
+describe.each(managers)("a repository whose CI runs a chain of scripts with $label", (manager) => {
   it.skipIf(!observes || !installed(manager.name))(
     "reruns only the scripts that read a changed file, and fails where the chain fails",
     async () => {

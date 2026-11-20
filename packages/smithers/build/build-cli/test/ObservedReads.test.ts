@@ -2584,6 +2584,76 @@ describe("a build tool that fetches what a lockfile pins", () => {
   })
 })
 
+describe("a tool's own notes", () => {
+  const start = (pid: number, path: string, ...argv: ReadonlyArray<string>): string =>
+    `${pid} execve(${JSON.stringify(path)}, [${
+      argv.map((word) => JSON.stringify(word)).join(", ")
+    }], 0x7ffc /* 9 vars */) = 0`
+  const open = (pid: number, path: string, flags = "O_RDONLY|O_CLOEXEC"): string =>
+    `${pid} openat(AT_FDCWD</w>, ${JSON.stringify(path)}, ${flags}) = 3`
+  const thread = (pid: number, child: number): string =>
+    `${pid} clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD, stack=0x7f}, 88) = ${child}`
+  const process = (pid: number, child: number): string =>
+    `${pid} clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = ${child}`
+  const note = "/w/node_modules/.pnpm-workspace-state-v1.json"
+  const found = (...lines: ReadonlyArray<string>): ReadonlyArray<string> =>
+    paths(read(lines.join("\n")).found).filter((path) => path.startsWith("/w/"))
+
+  it("are pnpm's note of when it last checked node_modules, under any of its commands", () => {
+    const pnpm = /\/node_modules\/\.pnpm-workspace-state-v1\.json$/
+    for (
+      const line of [
+        "pnpm run check",
+        "pnpm lint",
+        "/usr/local/bin/pnpm --filter app test",
+        "node /home/u/.local/bin/pnpm run check",
+        "/usr/bin/env node /home/u/.cache/node/corepack/v1/pnpm/11.25.0/bin/pnpm.cjs exec tsc",
+        "pnpm install --frozen-lockfile"
+      ]
+    ) expect([line, ObservedReads.bookkeeping(line.split(" "))]).toEqual([line, pnpm])
+    for (const line of ["npm run check", "yarn check", "pnpm-native run check", "node", "node -e 1"]) {
+      expect([line, ObservedReads.bookkeeping(line.split(" "))]).toEqual([line, undefined])
+    }
+    expect(ObservedReads.bookkeeping([])).toBeUndefined()
+  })
+
+  // pnpm 11.25 runs `pnpm run format && pnpm run types`: the first installs, as no install step ran, and writes the
+  // time into its note; the second reads the note. Counted, `types` ran at every commit for that time alone.
+  it("leaves out what pnpm itself reads of its note, and counts what anything else reads", () => {
+    const corepack = [
+      start(100, "/home/u/.local/bin/pnpm", "pnpm", "run", "types"),
+      start(100, "/home/u/.local/node/bin/node", "node", "/home/u/.local/bin/pnpm", "run", "types"),
+      open(100, "/w/package.json")
+    ]
+    expect(found(...corepack, open(100, note), thread(100, 101), open(101, note))).toEqual(["/w/package.json"])
+    // No note yet: pnpm looked for it, which is no input either.
+    expect(
+      read(
+        [
+          ...corepack,
+          `100 openat(AT_FDCWD</w>, ${
+            JSON.stringify(note)
+          }, O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)`
+        ].join("\n")
+      ).missing.size
+    ).toBe(0)
+    // The script pnpm starts, a program the script becomes, and any other program did read it.
+    expect(
+      found(...corepack, process(100, 102), start(102, "/usr/bin/sh", "sh", "-c", "cat note"), open(102, note))
+    ).toEqual([note, "/w/package.json"])
+    expect(found(...corepack, start(100, "/usr/bin/node", "node", "types.js"), open(100, note))).toEqual([
+      note,
+      "/w/package.json"
+    ])
+    expect(found(start(100, "/usr/bin/cat", "cat", note), open(100, note))).toEqual([note])
+    // Every other file pnpm reads in node_modules is an input.
+    expect(found(...corepack, open(100, "/w/node_modules/.modules.yaml"))).toEqual([
+      "/w/node_modules/.modules.yaml",
+      "/w/package.json"
+    ])
+  })
+})
+
 describe("the variables of the host a run could have used", () => {
   const commit = "0123456789abcdef0123456789abcdef01234567"
   const values = { COMMIT: commit, RUN: "1658821493", ATTEMPT: "1", UNSET: undefined }
