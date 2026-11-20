@@ -117,6 +117,51 @@ describe("finding the tracer", () => {
   })
 })
 
+describe("picking the recorder", () => {
+  const built = Path.resolve(import.meta.dirname, "..", "native", "out", `linux-${process.arch}`, "smthrs-observe")
+  const asked = { SMTHRS_OBSERVE_WITH: "smthrs-observe" }
+
+  it("runs a command under smthrs-observe or under strace", () => {
+    expect(
+      ObservedReads.commandFor({ tracer: "/x/smthrs-observe", supervisor: true }, "/t/trace", ["sh", "-c", "true"])
+    )
+      .toEqual(["/x/smthrs-observe", "/t/trace", "--", "sh", "-c", "true"])
+    expect(ObservedReads.commandFor({ tracer: "/usr/bin/strace" }, "/t/trace", ["true"]))
+      .toEqual(ObservedReads.command("/usr/bin/strace", "/t/trace", ["true"]))
+  })
+
+  it("finds smthrs-observe only on Linux, for x86_64 and aarch64, and only when asked for", () => {
+    expect(ObservedReads.supervisorPath("darwin", "arm64", asked)).toBeUndefined()
+    expect(ObservedReads.supervisorPath("linux", "ia32", asked)).toBeUndefined()
+    expect(ObservedReads.supervisorPath("linux", "x64", {})).toBeUndefined()
+    expect(ObservedReads.supervisorPath("linux", "x64", { SMTHRS_OBSERVE_WITH: "strace" })).toBeUndefined()
+  })
+
+  it.skipIf(process.platform !== "linux" || !NodeFs.existsSync(built))("finds the one this package built", () => {
+    expect(ObservedReads.supervisorPath("linux", process.arch, asked)).toBe(built)
+    expect(ObservedReads.observer({ platform: "linux", executable: () => undefined, supervisor: built }))
+      .toEqual({ tracer: built, supervisor: true })
+    // Another recorder is another tool: a key names the program's digest.
+    const named = spawnSync(process.execPath, [
+      "--input-type=module",
+      "-e",
+      `const m = await import(${
+        JSON.stringify(Path.resolve(import.meta.dirname, "..", "src", "internal", "ObservedReads.ts"))
+      }); console.log(m.recorder(), m.recorderKey().recorder)`
+    ], { encoding: "utf8", env: { ...process.env, ...asked } })
+    expect(named.stdout.trim()).toMatch(/^smthrs-observe:[0-9a-f]{64} smthrs-observe:[0-9a-f]{64}$/)
+    expect([ObservedReads.recorder(), ObservedReads.recorderKey()]).toEqual(["strace", {}])
+  })
+
+  it.skipIf(process.platform === "win32")("records with strace where smthrs-observe cannot listen", async () => {
+    const root = await directory()
+    const refusing = Path.join(root, "smthrs-observe")
+    await Fs.writeFile(refusing, "#!/bin/sh\nexit 126\n", { mode: 0o755 })
+    expect(ObservedReads.observer({ platform: "linux", executable: () => undefined, supervisor: refusing }))
+      .toEqual({ reason: "strace is not installed" })
+  })
+})
+
 describe("reading a trace", () => {
   it("sorts each open by what the run learned from it", () => {
     const trace = read([
@@ -691,6 +736,31 @@ describe("reading a trace", () => {
     ])
     expect(trace.found.get("/w/slow.txt")).toBe(1)
     expect(paths(trace.listed)).toEqual(["/w/dir"])
+  })
+
+  it("reads a trace the supervisor wrote only when its last line came last, and holds what it could not see", () => {
+    const lines = [
+      "100 +++ smthrs-observe 1 +++",
+      "100 openat(AT_FDCWD, \"/w/a\", O_RDONLY) = 0",
+      "100 execve(\"/usr/bin/cat\", [\"cat\"], 0x0 /* vars */) = ?",
+      "100 execve(\"/usr/bin/cat\", [\"cat\"], 0x0 /* vars */) = 0",
+      "100 +++ complete +++"
+    ]
+    const whole = read(lines.join("\n"))
+    expect(whole.refusals).toEqual([])
+    expect(paths(whole.found)).toEqual(["/usr/bin/cat", "/w/a"])
+    expect(paths(whole.started)).toEqual(["/usr/bin/cat"])
+    // Cut short: the last line is missing, or a line comes after it.
+    expect(read(lines.slice(0, -1).join("\n")).refusals).toEqual(["its trace was cut short"])
+    expect(read([...lines, "100 openat(AT_FDCWD, \"/w/b\", O_RDONLY) = 0"].join("\n")).refusals)
+      .toEqual(["its trace was cut short"])
+    // What the supervisor could not see is why the run stores nothing.
+    expect(
+      read([...lines.slice(0, -1), "100 +++ unrecorded: it made a namespace of its own +++", lines.at(-1)].join("\n"))
+        .refusals
+    ).toEqual(["it made a namespace of its own"])
+    // A trace strace wrote has neither line.
+    expect(read(lines.slice(1, -1).join("\n")).refusals).toEqual([])
   })
 
   it("stores nothing when a line of the trace cannot be followed", () => {

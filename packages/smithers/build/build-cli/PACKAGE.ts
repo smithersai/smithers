@@ -76,6 +76,19 @@ const lib = Smithers.TsBuild({
   cwd
 })
 
+/**
+ * `smthrs-observe`, the recorder of what an observed step reads, for x86_64
+ * and aarch64 Linux: `native/observe.c` built by `scripts/build-observe.mjs`
+ * with the zig release it pins. Where that zig is missing the build says so,
+ * builds nothing, and steps are recorded with strace.
+ */
+const observe = Smithers.Shell.Build({
+  shell: "node packages/smithers/build/build-cli/scripts/build-observe.mjs",
+  outDirs: ["native/out"],
+  data: [Smithers.file("native/observe.c"), Smithers.file("scripts/build-observe.mjs")],
+  sandbox: "none"
+})
+
 const check = Smithers.Typecheck({
   srcs: [sources, javascript, examples, Smithers.glob("test/**/*.ts")],
   deps: [lib],
@@ -104,7 +117,7 @@ const test = Smithers.Vitest({
     // Shards.test.ts checks --shard against the pairs smithers-ci tests its Shard contract with.
     Smithers.file("//packages/ci/test/fixtures/shard-labels.json")
   ],
-  deps: [lib],
+  deps: [lib, observe],
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
   passWithNoTests: false,
@@ -368,9 +381,32 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+/**
+ * The suites that run recorded steps end to end, run again with
+ * `smthrs-observe` as the recorder (`test` records with strace).
+ */
+const testObserve = Smithers.Vitest({
+  tests: [
+    Smithers.file("test/ObservedReadsExecution.test.ts"),
+    Smithers.file("test/MachineExecution.test.ts"),
+    Smithers.file("test/ObserveSupervisor.test.ts")
+  ],
+  sources: [sources, javascript, helpers, fixtures, Smithers.file("TestPolicy.ts"), Smithers.file("vitest.config.ts")],
+  deps: [lib, observe],
+  config: Smithers.file("vitest.observe.config.ts"),
+  environment: "node",
+  env: { SMTHRS_OBSERVE_WITH: "smthrs-observe" },
+  passWithNoTests: false,
+  coverage: false,
+  timeoutMs: 3_600_000,
+  cwd
+})
+
 export const Package = Smithers.Package({
   targets: {
     check,
+    observe,
+    testObserve,
     circular,
     docs,
     docsFiles,

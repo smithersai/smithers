@@ -3675,6 +3675,7 @@ const visit = async (
         body: keyMaterial.body,
         inputs: {
           observed: ObservedReads.format,
+          ...ObservedReads.recorderKey(),
           ambient: { ...context.ambient, lockfile: null },
           attrs: Planner.attrsValue(attrs, depLabels, new Map()),
           dependencies: dependencyRows.map((row) => row.label),

@@ -252,6 +252,33 @@ describe("an observed test", () => {
     expect(reasons).toEqual([`${cat[0]} changed`])
   })
 
+  posixIt("fails the build, and stores nothing, when smthrs-observe stops before the step ends", async () => {
+    const { base, run, write } = await fixture()
+    const stopping = Path.join(base, "tools", "smthrs-observe")
+    // Stands where smthrs-observe does: runs the command, and writes the first line of a trace and not the last.
+    await write(
+      stopping,
+      "#!/bin/sh\ntrace=$1\nshift 2\necho \"1 +++ smthrs-observe 1 +++\" > \"$trace\"\nexec \"$@\"\n",
+      0o755
+    )
+    const services = { ...executionServicesLive, observer: () => ({ tracer: stopping, supervisor: true as const }) }
+    await expect(run(["check"], services)).rejects.toThrow(
+      "//:check: smthrs-observe stopped before the step ended, so its run says nothing about the step"
+    )
+    // Nothing was stored: the step runs, under strace, as if it never had.
+    expect(await run()).toEqual({ check: "ran" })
+  })
+
+  tracedIt("fails the build when the step kills smthrs-observe", async () => {
+    const supervisor = ObservedReads.supervisorPath(process.platform, process.arch, {
+      SMTHRS_OBSERVE_WITH: "smthrs-observe"
+    })
+    if (supervisor === undefined) return
+    const { run } = await fixture({ check: "kill -9 $PPID; /bin/cat input.txt > /dev/null" })
+    const services = { ...executionServicesLive, observer: () => ({ tracer: supervisor, supervisor: true as const }) }
+    await expect(run(["check"], services)).rejects.toThrow("smthrs-observe stopped before the step ended")
+  })
+
   // A program of many threads ends while its threads are asking about files: Go's tools do at every exit. The
   // tracer then writes lines for calls it could not follow, each for a thread killed where it stopped. Here a
   // process of twenty-five threads is killed three times. The step still passes, and its result is stored.
@@ -389,8 +416,10 @@ describe("an observed test", () => {
   })
 
   tracedIt("is not traced for a day once it passed only untraced", async () => {
-    // The command refuses to run under a tracer, as a debugger or a privileged program does.
-    const refusing = "if /bin/grep -q '^TracerPid:[[:space:]]*[1-9]' /proc/self/status; then exit 1; fi\n" +
+    // The command refuses to run while it is recorded (traced, or under a filter of its calls), as a debugger or a
+    // privileged program does.
+    const refusing = "if /bin/grep -q -e '^TracerPid:[[:space:]]*[1-9]' -e '^Seccomp_filters:[[:space:]]*[1-9]' " +
+      "/proc/self/status; then exit 1; fi\n" +
       "/bin/cat input.txt > /dev/null"
     const { attempts, logs, run, write } = await fixture({ check: refusing })
     expect(await run()).toEqual({ check: "ran" })
@@ -495,7 +524,8 @@ describe("an observed test", () => {
   })
 
   tracedIt("is traced again when the failed attempt could not be remembered", async () => {
-    const refusing = "if /bin/grep -q '^TracerPid:[[:space:]]*[1-9]' /proc/self/status; then exit 1; fi"
+    const refusing = "if /bin/grep -q -e '^TracerPid:[[:space:]]*[1-9]' -e '^Seccomp_filters:[[:space:]]*[1-9]' " +
+      "/proc/self/status; then exit 1; fi"
     const { logs, root, run, write } = await fixture({ check: refusing })
     // The place attempts are remembered is taken by a file.
     await write(Path.join(root, ".flows", "evidence"), "in the way\n")

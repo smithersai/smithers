@@ -58,11 +58,16 @@
  * record answers a later run only while each of those variables holds the
  * same value.
  *
- * The tracer is `strace` with a seccomp filter, so only the file-system calls
- * stop the process. `io_uring` is refused to the run, as it is in a
- * container: a read submitted through a ring is in no trace. A traced run
- * ends when its command ends, and a process the command left running is
- * stopped, as a sandbox stops it.
+ * The recorder is `smthrs-observe` where it runs (Linux 5.19 or later, x86_64
+ * or aarch64): a seccomp filter hands each file-system call to it, only the
+ * calling thread waits, and the call then goes on in the kernel as the run
+ * made it. Elsewhere it is `strace` with a seccomp filter, which stops every
+ * thread at each file-system call and when it starts and ends; `io_uring` is
+ * refused to a run under strace, as it is in a container. `smthrs-observe`
+ * refuses nothing: a run that sets up a ring stores nothing, since a read
+ * submitted through a ring is in no trace. A traced run ends when its command
+ * ends, and a process the command left running is stopped, as a sandbox
+ * stops it.
  *
  * @since 1.0.0
  */
@@ -70,8 +75,10 @@
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import * as NodeFs from "node:fs"
+import { findPackageJSON } from "node:module"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
+import * as Environment from "../Environment.ts"
 import { byCodeUnit } from "./Text.ts"
 
 /**
@@ -246,13 +253,106 @@ export const command = (
 ): ReadonlyArray<string> => ["/bin/sh", "-c", supervisor, "smthrs-observe", tracer, traceFile, ...argv]
 
 /**
- * A host's answer to whether it can observe a run: the tracer's path, or why
- * there is none.
+ * The argv that runs `argv` under the recorder a host has: `smthrs-observe`
+ * when `supervisor` is set, else strace ({@link command}).
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const commandFor = (
+  observer: { readonly tracer: string; readonly supervisor?: true | undefined },
+  traceFile: string,
+  argv: ReadonlyArray<string>
+): ReadonlyArray<string> =>
+  observer.supervisor === true ? [observer.tracer, traceFile, "--", ...argv] : command(observer.tracer, traceFile, argv)
+
+/**
+ * A host's answer to whether it can observe a run: the recorder's path, and
+ * whether it is `smthrs-observe`, or why there is none.
  *
  * @category models
  * @since 1.0.0
  */
-export type Observer = { readonly tracer: string } | { readonly reason: string }
+export type Observer =
+  | { readonly tracer: string; readonly supervisor?: true | undefined }
+  | { readonly reason: string }
+
+/**
+ * The variable that picks the recorder: `SMTHRS_OBSERVE_WITH=smthrs-observe`
+ * records with `smthrs-observe` where it runs; unset, a build records with
+ * strace.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const recorderVariable = "SMTHRS_OBSERVE_WITH"
+
+/**
+ * Where this package holds `smthrs-observe` for this host, built for Linux on
+ * x86_64 and aarch64 (`native/out/linux-<arch>/smthrs-observe`), when
+ * `SMTHRS_OBSERVE_WITH=smthrs-observe` asks for it; `undefined` on any other
+ * host, where the package holds none, or where it is not asked for.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const supervisorPath = (
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+  environment: { readonly [name: string]: string | undefined } = Environment.ambientEnvironment()
+): string | undefined => {
+  if (platform !== "linux" || (arch !== "x64" && arch !== "arm64")) return undefined
+  if (environment[recorderVariable] !== "smthrs-observe") return undefined
+  // The installed `smthrs` is one file of another package, which has this one installed beside it.
+  for (const manifest of [packageOf("@smthrs/build-cli"), packageOf(import.meta.url)]) {
+    if (manifest === undefined) continue
+    const path = NodePath.join(NodePath.dirname(manifest), "native", "out", `linux-${arch}`, "smthrs-observe")
+    if (NodeFs.existsSync(path)) return path
+  }
+  return undefined
+}
+
+/** The package.json a module specifier or URL belongs to, as Node resolves it from this module. */
+const packageOf = (specifier: string): string | undefined => {
+  try {
+    return findPackageJSON(specifier, import.meta.url)
+  } catch {
+    return undefined
+  }
+}
+
+let identity: string | undefined
+
+/**
+ * What records the reads of an observed run on this host, as part of its
+ * key: the digest of `smthrs-observe` where the package holds one, else
+ * `strace`. Another recorder is another tool, so its records are kept apart.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const recorder = (): string => {
+  if (identity !== undefined) return identity
+  const path = supervisorPath()
+  identity = path === undefined
+    ? "strace"
+    : `smthrs-observe:${createHash("sha256").update(NodeFs.readFileSync(path)).digest("hex")}`
+  return identity
+}
+
+/**
+ * What an observed step's key holds of its recorder: nothing for strace, so
+ * the records strace made keep their keys, and the digest of
+ * `smthrs-observe` where it records. Another recorder is another tool, and a
+ * record it made is kept apart.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const recorderKey = (): { readonly recorder?: string } => {
+  const used = recorder()
+  return used === "strace" ? {} : { recorder: used }
+}
 
 /**
  * Finds the tracer on a host and proves it can trace a process here. A
@@ -264,8 +364,14 @@ export type Observer = { readonly tracer: string } | { readonly reason: string }
 export const observer = (host: {
   readonly platform: NodeJS.Platform
   readonly executable: (name: string) => string | undefined
+  /** `smthrs-observe`, when the host has one ({@link supervisorPath}). */
+  readonly supervisor?: string | undefined
 }): Observer => {
   if (host.platform !== "linux") return { reason: `reads cannot be observed on ${host.platform}` }
+  // The kernel must give a listener that waits for the supervisor without being cut short by a signal (5.19).
+  if (host.supervisor !== undefined && spawnSync(host.supervisor, ["--probe"], { timeout: 30_000 }).status === 0) {
+    return { tracer: host.supervisor, supervisor: true }
+  }
   const tracer = host.executable("strace")
   if (tracer === undefined) return { reason: "strace is not installed" }
   const probe = spawnSync(tracer, [...tracerFlags, "-o", "/dev/null", "--", tracer, "-V"], {
@@ -576,6 +682,10 @@ const address = /^0x[0-9a-f]+$/
 /** What the tracer ends a line with when a thread ends in the middle of the line. */
 const detachedMark = "<detached ...>"
 
+/** The first and the last line `smthrs-observe` writes, after the process id. */
+const supervisorFirst = "+++ smthrs-observe 1 +++"
+const supervisorLast = "+++ complete +++"
+
 /** The answers a call that starts a program can have: it started, or it did not and the answer names why. */
 const startAnswer = /^(?:0|-1 E[A-Z0-9]+\b.*)$/
 
@@ -601,6 +711,29 @@ const reached = (program: string | undefined, address: string): string => {
 const spelled = (path: string): string => {
   const text = path.replaceAll(/\/(?:\.?\/)+/g, "/").replace(/\/\.$/, "").replace(/(?<=.)\/+$/, "")
   return text === "" ? "/" : text
+}
+
+/**
+ * Whether a trace `smthrs-observe` wrote is whole: it ends with the line the
+ * supervisor writes once every process of the run has ended.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const whole = (traceFile: string): boolean => {
+  try {
+    const descriptor = NodeFs.openSync(traceFile, "r")
+    try {
+      const size = NodeFs.fstatSync(descriptor).size
+      const tail = Buffer.alloc(Math.min(size, 256))
+      NodeFs.readSync(descriptor, tail, 0, tail.length, size - tail.length)
+      return / \+\+\+ complete \+\+\+\n$/.test(tail.toString("latin1"))
+    } finally {
+      NodeFs.closeSync(descriptor)
+    }
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -743,6 +876,9 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
 
   const cells = new Map<number, Cell>()
   const pending = new Map<number, { readonly at: number; readonly text: string }>()
+  /** Whether the supervisor wrote the trace, and whether its last line came last. */
+  let supervised = false
+  let sealed = false
   /** Unix socket paths and loopback ports the run itself listens on. */
   const bound = new Set<string>()
   let ephemeral = false
@@ -1091,6 +1227,22 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
       else pending.set(pid, starting)
       continue
     }
+    // The supervisor's own lines: its first, a run it could not see whole, and its last, which every line it
+    // wrote comes before.
+    if (rest === supervisorFirst) {
+      supervised = true
+      continue
+    }
+    if (rest === supervisorLast) {
+      sealed = true
+      continue
+    }
+    sealed = false
+    const unseen = /^\+\+\+ unrecorded: (.*) \+\+\+$/s.exec(rest)
+    if (unseen !== null) {
+      refusals.add(unseen[1]!)
+      continue
+    }
     if (rest.startsWith("+++") || rest.startsWith("---")) continue
     // The tracer writes `???` for a call it could not ask the thread about: the thread was killed where it stopped
     // before the call, by a thread that ended the process or started another program. The call never ran.
@@ -1160,6 +1312,8 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
   }
   // Every traced run starts a program, so a trace without a line is not a run's trace.
   if (root === undefined) refusals.add("its trace is empty")
+  // The supervisor writes its last line when every process of the run has ended and every line is written.
+  if (supervised && !sealed) refusals.add("its trace was cut short")
   for (const [pid, open] of pending) cutOff(pid, open)
   // A build tool that wrote its lockfile chose a version: the lockfile it read did not fix what it fetched.
   for (const [build, connection] of pinnedConnections) {

@@ -118,12 +118,18 @@
     "README.md",
     "CHANGELOG.md",
     "dist/vendor/**",
-    "docs/"
+    "docs/",
+    "native/out/linux-x64/smthrs-observe",
+    "native/out/linux-arm64/smthrs-observe"
   ],
   "publishConfig": {
     "access": "public",
     "provenance": true,
     "tag": "next",
+    "executableFiles": [
+      "native/out/linux-x64/smthrs-observe",
+      "native/out/linux-arm64/smthrs-observe"
+    ],
     "exports": {
       "./package.json": "./package.json",
       ".": {

@@ -1,0 +1,1534 @@
+/*
+ * smthrs-observe: records the file-system calls of a command, as `strace -f -y` would write them, without
+ * stopping the command's threads.
+ *
+ *     smthrs-observe <trace file> -- <command> [<argument>...]
+ *     smthrs-observe --probe
+ *
+ * The command runs under a seccomp filter whose listener this program holds. The kernel hands each watched call
+ * to one of the supervisor's threads; only the calling thread waits, and the call then goes on in the kernel as
+ * the command made it (`SECCOMP_USER_NOTIF_FLAG_CONTINUE`). The supervisor never makes a call for the command.
+ *
+ * Each line names the call with every path made absolute from the directory the call starts from, read at that
+ * stop from `/proc/<thread>/cwd` or `/proc/<thread>/fd/<n>`, and an answer read from the file system just before
+ * the call goes on: `fstatat` with `AT_NO_AUTOMOUNT`, which opens nothing, follows nothing the call would not, and
+ * never blocks. Nothing under `/proc`, `/dev` or `/sys` is looked at: a record leaves those out. An answer read
+ * just before may only add to what the record holds:
+ *
+ * - A name counts as made by the run only where this supervisor saw it absent at a stop of this run.
+ * - Before a call that writes a name that is already there (a rename, a link, a symlink, an exclusive create), a
+ *   line notes that the run found it there.
+ * - A program a process starts is written with no answer (`= ?`): it counts as looked at and started, and changes
+ *   nothing a reader keeps about the process. A second line (`= 0`) follows once `/proc/<process>/cmdline` shows
+ *   the program's arguments at a later stop of that process.
+ * - A socket counts as bound only once the socket itself says so at the end of the run (`getsockname` on a copy
+ *   taken at the stop).
+ *
+ * Each line carries the process (the thread group), not the thread: the lines of a process are complete, never
+ * interrupted, so a reader needs no thread to pair them.
+ *
+ * Lines are written in the order the kernel numbered the calls, after the command and every process it left have
+ * ended. The trace starts with `<pid> +++ smthrs-observe 1 +++` and ends with `<pid> +++ complete +++`; a trace
+ * without the last line was cut short. A run this program cannot see whole gets a line
+ * `<pid> +++ unrecorded: <reason> +++`, and the command still runs untouched.
+ *
+ * The command's exit status is this program's. When this program cannot start the command it exits 125, and 126
+ * when it cannot record (`--probe` answers 0 where it can).
+ */
+#define _GNU_SOURCE
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <linux/audit.h>
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <poll.h>
+#include <pthread.h>
+#include <sched.h>
+#include <signal.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/prctl.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <sys/uio.h>
+#include <sys/un.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+
+#ifndef SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV
+#define SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV (1UL << 5)
+#endif
+#ifndef SECCOMP_USER_NOTIF_FLAG_CONTINUE
+#define SECCOMP_USER_NOTIF_FLAG_CONTINUE (1UL << 0)
+#endif
+#ifndef CLONE_NEWTIME
+#define CLONE_NEWTIME 0x00000080
+#endif
+#ifndef AT_NO_AUTOMOUNT
+#define AT_NO_AUTOMOUNT 0x800
+#endif
+#ifndef AT_EMPTY_PATH
+#define AT_EMPTY_PATH 0x1000
+#endif
+#ifndef SYS_pidfd_open
+#define SYS_pidfd_open 434
+#endif
+#ifndef SYS_pidfd_getfd
+#define SYS_pidfd_getfd 438
+#endif
+
+#if defined(__x86_64__)
+#define NATIVE_ARCH AUDIT_ARCH_X86_64
+#define X32_BIT 0x40000000u
+#elif defined(__aarch64__)
+#define NATIVE_ARCH AUDIT_ARCH_AARCH64
+#define X32_BIT 0u
+#else
+#error "smthrs-observe is built for x86_64 and aarch64 Linux"
+#endif
+
+/* ---- What each watched call is ---------------------------------------------------------------------------- */
+
+/* How the supervisor writes a call. */
+enum kind {
+  K_OPEN,      /* open, openat, openat2, creat: a path, flags */
+  K_LOOK,      /* stat, lstat, newfstatat, statx, access, faccessat(2), readlink(at): a path looked at */
+  K_EXEC,      /* execve, execveat */
+  K_CHDIR,     /* chdir */
+  K_MKDIR,     /* mkdir, mkdirat */
+  K_REMOVE,    /* unlink, unlinkat, rmdir */
+  K_CHANGE,    /* chmod, chown, lchown, utime(s), futimesat, utimensat, truncate, fchmodat(2), fchownat */
+  K_CHANGE_FD, /* fchmod, fchown: the descriptor's file */
+  K_RENAME,    /* rename, renameat, renameat2 */
+  K_LINK,      /* link, linkat */
+  K_SYMLINK,   /* symlink, symlinkat */
+  K_CONNECT,
+  K_BIND,
+  K_VIEW,      /* mount, umount2, pivot_root, chroot, setns, move_mount, open_tree, fsmount, fsopen */
+  K_SPACE,     /* unshare with a new namespace */
+  K_FORK,      /* fork, vfork, clone, clone3: a process (a thread is its process's), or a new namespace */
+  K_RING,      /* io_uring_setup */
+  K_RING_ENTER,/* io_uring_enter: what the ring is told to do */
+  K_HANDLE,    /* open_by_handle_at */
+  K_FILTER,    /* seccomp: a filter of the run's own */
+};
+
+/* Where a call's arguments are: `dir` is the argument index of a directory descriptor (-1: the working
+ * directory), `path` of the path (-1: none); `dir2`/`path2` likewise for a second path; `flags` the index of the
+ * flags (-1: none). */
+struct call {
+  int nr;
+  const char *name;
+  enum kind kind;
+  signed char dir, path, dir2, path2, flags;
+  unsigned char nofollow; /* the call does not follow a link at the end of its path */
+};
+
+#define CWD -1
+#define NONE -1
+static const struct call calls[] = {
+#ifdef SYS_open
+  {SYS_open, "open", K_OPEN, CWD, 0, NONE, NONE, 1, 0},
+#endif
+  {SYS_openat, "openat", K_OPEN, 0, 1, NONE, NONE, 2, 0},
+#ifdef SYS_openat2
+  {SYS_openat2, "openat2", K_OPEN, 0, 1, NONE, NONE, NONE, 0},
+#endif
+#ifdef SYS_creat
+  {SYS_creat, "creat", K_OPEN, CWD, 0, NONE, NONE, NONE, 0},
+#endif
+#ifdef SYS_stat
+  {SYS_stat, "stat", K_LOOK, CWD, 0, NONE, NONE, NONE, 0},
+#endif
+#ifdef SYS_lstat
+  {SYS_lstat, "lstat", K_LOOK, CWD, 0, NONE, NONE, NONE, 1},
+#endif
+#ifdef SYS_newfstatat
+  {SYS_newfstatat, "newfstatat", K_LOOK, 0, 1, NONE, NONE, 3, 0},
+#endif
+#ifdef SYS_statx
+  {SYS_statx, "statx", K_LOOK, 0, 1, NONE, NONE, 2, 0},
+#endif
+#ifdef SYS_access
+  {SYS_access, "access", K_LOOK, CWD, 0, NONE, NONE, NONE, 0},
+#endif
+  {SYS_faccessat, "faccessat", K_LOOK, 0, 1, NONE, NONE, NONE, 0},
+#ifdef SYS_faccessat2
+  {SYS_faccessat2, "faccessat2", K_LOOK, 0, 1, NONE, NONE, 3, 0},
+#endif
+#ifdef SYS_readlink
+  {SYS_readlink, "readlink", K_LOOK, CWD, 0, NONE, NONE, NONE, 1},
+#endif
+  {SYS_readlinkat, "readlinkat", K_LOOK, 0, 1, NONE, NONE, NONE, 1},
+  {SYS_execve, "execve", K_EXEC, CWD, 0, NONE, NONE, NONE, 0},
+  {SYS_execveat, "execveat", K_EXEC, 0, 1, NONE, NONE, 4, 0},
+  {SYS_chdir, "chdir", K_CHDIR, CWD, 0, NONE, NONE, NONE, 0},
+#ifdef SYS_mkdir
+  {SYS_mkdir, "mkdir", K_MKDIR, CWD, 0, NONE, NONE, NONE, 1},
+#endif
+  {SYS_mkdirat, "mkdirat", K_MKDIR, 0, 1, NONE, NONE, NONE, 1},
+#ifdef SYS_unlink
+  {SYS_unlink, "unlink", K_REMOVE, CWD, 0, NONE, NONE, NONE, 1},
+#endif
+#ifdef SYS_rmdir
+  {SYS_rmdir, "rmdir", K_REMOVE, CWD, 0, NONE, NONE, NONE, 1},
+#endif
+  {SYS_unlinkat, "unlinkat", K_REMOVE, 0, 1, NONE, NONE, NONE, 1},
+#ifdef SYS_chmod
+  {SYS_chmod, "chmod", K_CHANGE, CWD, 0, NONE, NONE, NONE, 0},
+#endif
+#ifdef SYS_chown
+  {SYS_chown, "chown", K_CHANGE, CWD, 0, NONE, NONE, NONE, 0},
+#endif
+#ifdef SYS_lchown
+  {SYS_lchown, "lchown", K_CHANGE, CWD, 0, NONE, NONE, NONE, 1},
+#endif
+#ifdef SYS_utime
+  {SYS_utime, "utime", K_CHANGE, CWD, 0, NONE, NONE, NONE, 0},
+#endif
+#ifdef SYS_utimes
+  {SYS_utimes, "utimes", K_CHANGE, CWD, 0, NONE, NONE, NONE, 0},
+#endif
+#ifdef SYS_futimesat
+  {SYS_futimesat, "futimesat", K_CHANGE, 0, 1, NONE, NONE, NONE, 0},
+#endif
+  {SYS_utimensat, "utimensat", K_CHANGE, 0, 1, NONE, NONE, 3, 0},
+  {SYS_truncate, "truncate", K_CHANGE, CWD, 0, NONE, NONE, NONE, 0},
+  {SYS_fchmodat, "fchmodat", K_CHANGE, 0, 1, NONE, NONE, NONE, 0},
+#ifdef SYS_fchmodat2
+  {SYS_fchmodat2, "fchmodat2", K_CHANGE, 0, 1, NONE, NONE, 3, 0},
+#endif
+  {SYS_fchownat, "fchownat", K_CHANGE, 0, 1, NONE, NONE, 4, 0},
+  {SYS_fchmod, "fchmod", K_CHANGE_FD, 0, NONE, NONE, NONE, NONE, 0},
+  {SYS_fchown, "fchown", K_CHANGE_FD, 0, NONE, NONE, NONE, NONE, 0},
+#ifdef SYS_rename
+  {SYS_rename, "rename", K_RENAME, CWD, 0, CWD, 1, NONE, 1},
+#endif
+#ifdef SYS_renameat
+  {SYS_renameat, "renameat", K_RENAME, 0, 1, 2, 3, NONE, 1},
+#endif
+  {SYS_renameat2, "renameat2", K_RENAME, 0, 1, 2, 3, 4, 1},
+#ifdef SYS_link
+  {SYS_link, "link", K_LINK, CWD, 0, CWD, 1, NONE, 1},
+#endif
+  {SYS_linkat, "linkat", K_LINK, 0, 1, 2, 3, 4, 1},
+#ifdef SYS_symlink
+  {SYS_symlink, "symlink", K_SYMLINK, NONE, NONE, CWD, 1, NONE, 1},
+#endif
+  {SYS_symlinkat, "symlinkat", K_SYMLINK, NONE, NONE, 1, 2, NONE, 1},
+  {SYS_connect, "connect", K_CONNECT, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_bind, "bind", K_BIND, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_mount, "mount", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_umount2, "umount2", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_pivot_root, "pivot_root", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_chroot, "chroot", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_setns, "setns", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
+#ifdef SYS_move_mount
+  {SYS_move_mount, "move_mount", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_open_tree, "open_tree", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_fsmount, "fsmount", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_fsopen, "fsopen", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
+#endif
+  {SYS_unshare, "unshare", K_SPACE, NONE, NONE, NONE, NONE, 0, 0},
+  {SYS_clone, "clone", K_FORK, NONE, NONE, NONE, NONE, 0, 0},
+#ifdef SYS_clone3
+  {SYS_clone3, "clone3", K_FORK, NONE, NONE, NONE, NONE, NONE, 0},
+#endif
+#ifdef SYS_fork
+  {SYS_fork, "fork", K_FORK, NONE, NONE, NONE, NONE, NONE, 0},
+#endif
+#ifdef SYS_vfork
+  {SYS_vfork, "vfork", K_FORK, NONE, NONE, NONE, NONE, NONE, 0},
+#endif
+  {SYS_io_uring_setup, "io_uring_setup", K_RING, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_io_uring_enter, "io_uring_enter", K_RING_ENTER, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_open_by_handle_at, "open_by_handle_at", K_HANDLE, NONE, NONE, NONE, NONE, NONE, 0},
+  {SYS_seccomp, "seccomp", K_FILTER, NONE, NONE, NONE, NONE, NONE, 0},
+};
+#define NCALLS ((int)(sizeof calls / sizeof calls[0]))
+
+#define NEW_NAMESPACES (CLONE_NEWNS | CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWIPC | CLONE_NEWUTS | \
+                        CLONE_NEWCGROUP | CLONE_NEWTIME)
+
+static const struct call *callOf(int nr) {
+  for (int i = 0; i < NCALLS; i++)
+    if (calls[i].nr == nr) return &calls[i];
+  return NULL;
+}
+
+/* ---- The filter ---------------------------------------------------------------------------------------------- */
+
+/*
+ * A call of another architecture, or an x32 call, goes to the supervisor, which marks the run unrecorded. `clone`
+ * and `unshare` go to it only with a flag that makes a namespace: the filter reads that argument. Every other
+ * watched call goes to it always; everything else passes.
+ */
+static int install(void) {
+  struct sock_filter f[16 + 4 * NCALLS];
+  int n = 0;
+#define S(code, k) (f[n++] = (struct sock_filter)BPF_STMT(code, k))
+#define J(code, k, t, e) (f[n++] = (struct sock_filter)BPF_JUMP(code, k, t, e))
+  S(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch));
+  J(BPF_JMP | BPF_JEQ | BPF_K, NATIVE_ARCH, 1, 0);
+  S(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF);
+  S(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr));
+  if (X32_BIT != 0) {
+    J(BPF_JMP | BPF_JSET | BPF_K, X32_BIT, 0, 1);
+    S(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF);
+  }
+  for (int i = 0; i < NCALLS; i++) {
+    if (calls[i].nr == SYS_unshare) {
+      /* The flags' low word holds every namespace flag. */
+      J(BPF_JMP | BPF_JEQ | BPF_K, calls[i].nr, 0, 4);
+      S(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0]));
+      J(BPF_JMP | BPF_JSET | BPF_K, NEW_NAMESPACES, 0, 1);
+      S(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF);
+      S(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
+      continue;
+    }
+    if (calls[i].nr == SYS_clone) {
+      /* A thread in no new namespace passes: its calls are its process's. A process stops. */
+      J(BPF_JMP | BPF_JEQ | BPF_K, calls[i].nr, 0, 5);
+      S(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0]));
+      J(BPF_JMP | BPF_JSET | BPF_K, NEW_NAMESPACES, 2, 0);
+      J(BPF_JMP | BPF_JSET | BPF_K, CLONE_THREAD, 0, 1);
+      S(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
+      S(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF);
+      continue;
+    }
+    J(BPF_JMP | BPF_JEQ | BPF_K, calls[i].nr, 0, 1);
+    S(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF);
+  }
+  S(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
+#undef S
+#undef J
+  struct sock_fprog prog = {.len = (unsigned short)n, .filter = f};
+  if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) return -1;
+  return (int)syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER,
+                      SECCOMP_FILTER_FLAG_NEW_LISTENER | SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV, &prog);
+}
+
+/* ---- Lines ---------------------------------------------------------------------------------------------------- */
+
+struct line {
+  uint64_t id;
+  uint32_t sub;
+  uint32_t length;
+  char *text;
+};
+
+struct lines {
+  struct line *items;
+  size_t count, capacity;
+};
+
+struct text {
+  char *data;
+  size_t length, capacity;
+  int failed;
+};
+
+static void grow(struct text *t, size_t more) {
+  if (t->failed || t->length + more + 1 <= t->capacity) return;
+  size_t capacity = t->capacity == 0 ? 256 : t->capacity;
+  while (capacity < t->length + more + 1) capacity *= 2;
+  char *data = realloc(t->data, capacity);
+  if (data == NULL) {
+    t->failed = 1;
+    return;
+  }
+  t->data = data;
+  t->capacity = capacity;
+}
+
+static void put(struct text *t, const char *s, size_t n) {
+  grow(t, n);
+  if (t->failed) return;
+  memcpy(t->data + t->length, s, n);
+  t->length += n;
+  t->data[t->length] = 0;
+}
+
+static void puts_(struct text *t, const char *s) { put(t, s, strlen(s)); }
+
+static void printf_(struct text *t, const char *format, ...) {
+  char small[512];
+  va_list v;
+  va_start(v, format);
+  int n = vsnprintf(small, sizeof small, format, v);
+  va_end(v);
+  if (n < 0) return;
+  if ((size_t)n < sizeof small) {
+    put(t, small, (size_t)n);
+    return;
+  }
+  grow(t, (size_t)n);
+  if (t->failed) return;
+  va_start(v, format);
+  vsnprintf(t->data + t->length, (size_t)n + 1, format, v);
+  va_end(v);
+  t->length += (size_t)n;
+}
+
+/* A string as strace writes it with `-s` larger than the string: printable ASCII as it is, `"` and `\` escaped,
+ * the usual control escapes, and every other byte as `\xHH`. */
+static void quoted(struct text *t, const char *s, size_t n) {
+  put(t, "\"", 1);
+  for (size_t i = 0; i < n; i++) {
+    unsigned char c = (unsigned char)s[i];
+    char e[5];
+    switch (c) {
+      case '"': put(t, "\\\"", 2); continue;
+      case '\\': put(t, "\\\\", 2); continue;
+      case '\n': put(t, "\\n", 2); continue;
+      case '\t': put(t, "\\t", 2); continue;
+      case '\r': put(t, "\\r", 2); continue;
+      case '\v': put(t, "\\v", 2); continue;
+      case '\f': put(t, "\\f", 2); continue;
+      default: break;
+    }
+    if (c >= 0x20 && c < 0x7f) {
+      put(t, (const char *)&c, 1);
+    } else {
+      snprintf(e, sizeof e, "\\x%02x", c);
+      put(t, e, 4);
+    }
+  }
+  put(t, "\"", 1);
+}
+
+static void quotedz(struct text *t, const char *s) { quoted(t, s, strlen(s)); }
+
+/* ---- State shared by the serving threads ------------------------------------------------------------------- */
+
+static int listener = -1;
+static int stopping;
+static pid_t rootPid;
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static struct lines all;
+static int dropped;
+
+/* Reasons the run cannot be recorded, each once. */
+static char *reasons[16];
+static int reasonCount;
+
+static void unrecorded(const char *reason) {
+  pthread_mutex_lock(&lock);
+  for (int i = 0; i < reasonCount; i++)
+    if (strcmp(reasons[i], reason) == 0) {
+      pthread_mutex_unlock(&lock);
+      return;
+    }
+  if (reasonCount < 16) reasons[reasonCount++] = strdup(reason);
+  pthread_mutex_unlock(&lock);
+}
+
+static void keep(uint64_t id, uint32_t sub, struct text *t) {
+  if (t->failed) {
+    __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
+    free(t->data);
+    return;
+  }
+  pthread_mutex_lock(&lock);
+  if (all.count == all.capacity) {
+    size_t capacity = all.capacity == 0 ? 65536 : all.capacity * 2;
+    struct line *items = realloc(all.items, capacity * sizeof *items);
+    if (items == NULL) {
+      dropped = 1;
+      pthread_mutex_unlock(&lock);
+      free(t->data);
+      return;
+    }
+    all.items = items;
+    all.capacity = capacity;
+  }
+  all.items[all.count++] = (struct line){id, sub, (uint32_t)t->length, t->data};
+  pthread_mutex_unlock(&lock);
+}
+
+/* A thread's process. A thread id is not given again while the thread lives, and the run's threads live while
+ * they make calls, so a thread id read once stands for its process for the run. */
+#define TGIDS 8192
+static struct {
+  pid_t tid, tgid;
+} tgids[TGIDS];
+
+static void bornOf(pid_t tgid, pid_t parent);
+
+static pid_t tgidOf(pid_t tid) {
+  unsigned slot = (unsigned)tid % TGIDS;
+  pthread_mutex_lock(&lock);
+  for (unsigned i = 0; i < 16; i++) {
+    unsigned at = (slot + i) % TGIDS;
+    if (tgids[at].tid == tid) {
+      pid_t tgid = tgids[at].tgid;
+      pthread_mutex_unlock(&lock);
+      return tgid;
+    }
+    if (tgids[at].tid == 0) break;
+  }
+  pthread_mutex_unlock(&lock);
+  char name[64], buffer[1024];
+  snprintf(name, sizeof name, "/proc/%d/status", tid);
+  int fd = open(name, O_RDONLY | O_CLOEXEC);
+  if (fd < 0) return tid;
+  ssize_t n = read(fd, buffer, sizeof buffer - 1);
+  close(fd);
+  if (n <= 0) return tid;
+  buffer[n] = 0;
+  char *at = strstr(buffer, "\nTgid:");
+  pid_t tgid = at == NULL ? tid : (pid_t)strtol(at + 6, NULL, 10);
+  char *parentAt = strstr(buffer, "\nPPid:");
+  if (tgid == tid && parentAt != NULL) bornOf(tgid, (pid_t)strtol(parentAt + 6, NULL, 10));
+  pthread_mutex_lock(&lock);
+  for (unsigned i = 0; i < 16; i++) {
+    unsigned place = (slot + i) % TGIDS;
+    if (tgids[place].tid == 0 || tgids[place].tid == tid) {
+      tgids[place].tid = tid;
+      tgids[place].tgid = tgid;
+      break;
+    }
+  }
+  pthread_mutex_unlock(&lock);
+  return tgid;
+}
+
+/* A program a process was told to start, until a later stop of the process shows it running. */
+struct starting {
+  pid_t tgid, tid;
+  uint64_t id;
+  char *argv;   /* the arguments, each ended by a zero byte, as /proc/<pid>/cmdline holds them */
+  size_t argvLength;
+  char *script; /* the path as the call gave it, then the arguments after the first: what follows an interpreter */
+  size_t scriptLength;
+  char *line;   /* the line that says it started */
+  struct starting *next;
+};
+static struct starting *startings;
+
+/* A process a process started and that has not been seen yet: where the call was, and how many programs its
+ * parent had been told to start by then. */
+struct forking {
+  pid_t parent;
+  uint64_t id;
+  unsigned generation;
+  struct forking *next;
+};
+static struct forking *forkings;
+
+/* How many programs each process has been told to start. */
+#define GENERATIONS 8192
+static struct {
+  pid_t tgid;
+  unsigned count;
+} generations[GENERATIONS];
+
+static unsigned *generationOf(pid_t tgid) {
+  unsigned slot = (unsigned)tgid % GENERATIONS;
+  for (unsigned i = 0; i < 64; i++) {
+    unsigned at = (slot + i) % GENERATIONS;
+    if (generations[at].tgid == tgid) return &generations[at].count;
+    if (generations[at].tgid == 0) {
+      generations[at].tgid = tgid;
+      return &generations[at].count;
+    }
+  }
+  return NULL;
+}
+
+/* A socket a process asked to bind, with a copy of it, until the end of the run. */
+struct binding {
+  uint64_t id;
+  int copy;
+  struct sockaddr_storage asked;
+  socklen_t askedLength;
+  char *line;
+  struct binding *next;
+};
+static struct binding *bindings;
+
+/* ---- Reading the stopped thread ------------------------------------------------------------------------------ */
+
+/* A zero-ended string at `address` in the thread's memory; 0 when it cannot be read. */
+static int stringAt(pid_t tid, uint64_t address, char *out, size_t capacity) {
+  size_t got = 0;
+  if (address == 0) return 0;
+  while (got < capacity - 1) {
+    size_t page = 4096 - ((address + got) & 4095);
+    size_t want = page < capacity - 1 - got ? page : capacity - 1 - got;
+    struct iovec local = {out + got, want}, remote = {(void *)(uintptr_t)(address + got), want};
+    ssize_t n = process_vm_readv(tid, &local, 1, &remote, 1, 0);
+    if (n <= 0) return 0;
+    if (memchr(out + got, 0, (size_t)n) != NULL) return 1;
+    got += (size_t)n;
+  }
+  return 0; /* longer than any path */
+}
+
+static int bytesAt(pid_t tid, uint64_t address, void *out, size_t length) {
+  struct iovec local = {out, length}, remote = {(void *)(uintptr_t)address, length};
+  return process_vm_readv(tid, &local, 1, &remote, 1, 0) == (ssize_t)length;
+}
+
+/* Where a directory descriptor (or the working directory, for AT_FDCWD) of the thread is. 0 when it has none. */
+static int placeOf(pid_t tid, int fd, char *out, size_t capacity) {
+  char link[64];
+  if (fd == AT_FDCWD)
+    snprintf(link, sizeof link, "/proc/%d/cwd", tid);
+  else
+    snprintf(link, sizeof link, "/proc/%d/fd/%d", tid, fd);
+  ssize_t n = readlink(link, out, capacity - 1);
+  if (n <= 0) return 0;
+  out[n] = 0;
+  return 1;
+}
+
+/* A path a call names, made absolute from the directory it starts from. `*empty` is set for an empty path,
+ * which names the descriptor itself. Answers 0 with `why` when the path cannot be known. */
+static int pathOf(pid_t tid, const struct seccomp_notif *req, int dirIndex, int pathIndex, char *out,
+                  size_t capacity, const char **why) {
+  char path[PATH_MAX + 1], base[PATH_MAX + 1];
+  if (!stringAt(tid, req->data.args[pathIndex], path, sizeof path)) {
+    *why = "address";
+    return 0;
+  }
+  if (path[0] == '/') {
+    snprintf(out, capacity, "%s", path);
+    return 1;
+  }
+  int fd = dirIndex == CWD ? AT_FDCWD : (int)req->data.args[dirIndex];
+  if (!placeOf(tid, fd, base, sizeof base) || base[0] != '/') {
+    *why = "base";
+    return 0;
+  }
+  if (path[0] == 0)
+    snprintf(out, capacity, "%s", base);
+  else if (strcmp(base, "/") == 0)
+    snprintf(out, capacity, "/%s", path);
+  else
+    snprintf(out, capacity, "%s/%s", base, path);
+  return 1;
+}
+
+static int pseudo(const char *path) {
+  return strncmp(path, "/proc", 5) == 0 && (path[5] == 0 || path[5] == '/') ? 1
+       : strncmp(path, "/dev", 4) == 0 && (path[4] == 0 || path[4] == '/')  ? 1
+       : strncmp(path, "/sys", 4) == 0 && (path[4] == 0 || path[4] == '/')  ? 1
+                                                                            : 0;
+}
+
+/* What is at a path just before the call: 0 when something is, or the error a look finds. Nothing under /proc,
+ * /dev or /sys is looked at. */
+static int lookKind(const char *path, int nofollow, int *directory) {
+  if (directory != NULL) *directory = 0;
+  if (pseudo(path)) return 0;
+  struct stat st;
+  if (fstatat(AT_FDCWD, path, &st, AT_NO_AUTOMOUNT | (nofollow ? AT_SYMLINK_NOFOLLOW : 0)) == 0) {
+    if (directory != NULL) *directory = S_ISDIR(st.st_mode);
+    return 0;
+  }
+  return errno;
+}
+
+static int look(const char *path, int nofollow) { return lookKind(path, nofollow, NULL); }
+
+/* Whether the directory a new name goes in is there. */
+static int parentThere(const char *path) {
+  char parent[PATH_MAX + 1];
+  snprintf(parent, sizeof parent, "%s", path);
+  char *slash = strrchr(parent, '/');
+  if (slash == NULL) return 1;
+  if (slash == parent) return 1;
+  *slash = 0;
+  return look(parent, 0);
+}
+
+static const char *errnoName(int error) {
+  switch (error) {
+    case ENOENT: return "ENOENT";
+    case ENOTDIR: return "ENOTDIR";
+    case EEXIST: return "EEXIST";
+    case EACCES: return "EACCES";
+    case EPERM: return "EPERM";
+    case ELOOP: return "ELOOP";
+    case ENAMETOOLONG: return "ENAMETOOLONG";
+    case EFAULT: return "EFAULT";
+    case EBADF: return "EBADF";
+    case EINVAL: return "EINVAL";
+    case ENOTEMPTY: return "ENOTEMPTY";
+    case EISDIR: return "EISDIR";
+    case EROFS: return "EROFS";
+    case EXDEV: return "EXDEV";
+    case ECONNREFUSED: return "ECONNREFUSED";
+    case EOVERFLOW: return "EOVERFLOW";
+    default: return "EIO";
+  }
+}
+
+static void answer(struct text *t, int error) {
+  if (error == 0) {
+    puts_(t, " = 0");
+    return;
+  }
+  printf_(t, " = -1 %s (%s)", errnoName(error), strerror(error));
+}
+
+static void begin(struct text *t, pid_t tgid, const char *name) { printf_(t, "%d %s(", tgid, name); }
+
+/* A line that says the run found a path there: a lookup that does not follow a link at its end. */
+static void found(pid_t tgid, uint64_t id, uint32_t sub, const char *path) {
+  struct text t = {0};
+  begin(&t, tgid, "newfstatat");
+  puts_(&t, "AT_FDCWD, ");
+  quotedz(&t, path);
+  puts_(&t, ", {...}, AT_SYMLINK_NOFOLLOW) = 0");
+  keep(id, sub, &t);
+}
+
+static void openFlags(struct text *t, uint64_t flags) {
+  int mode = (int)(flags & O_ACCMODE);
+  puts_(t, mode == O_WRONLY ? "O_WRONLY" : mode == O_RDWR ? "O_RDWR" : "O_RDONLY");
+  if (flags & O_CREAT) puts_(t, "|O_CREAT");
+  if (flags & O_EXCL) puts_(t, "|O_EXCL");
+  if (flags & O_TRUNC) puts_(t, "|O_TRUNC");
+  if (flags & O_APPEND) puts_(t, "|O_APPEND");
+  if (flags & O_DIRECTORY) puts_(t, "|O_DIRECTORY");
+  if (flags & O_NOFOLLOW) puts_(t, "|O_NOFOLLOW");
+  if ((flags & O_TMPFILE) == O_TMPFILE) puts_(t, "|O_TMPFILE");
+  if (flags & O_PATH) puts_(t, "|O_PATH");
+}
+
+/* An address as strace writes it, for the families a reader asks about. */
+static void socketAddress(struct text *t, const struct sockaddr_storage *a, socklen_t length) {
+  if (a->ss_family == AF_UNIX) {
+    const struct sockaddr_un *u = (const struct sockaddr_un *)a;
+    size_t n = length > offsetof(struct sockaddr_un, sun_path) ? length - offsetof(struct sockaddr_un, sun_path) : 0;
+    if (n > sizeof u->sun_path) n = sizeof u->sun_path;
+    puts_(t, "{sa_family=AF_UNIX, sun_path=");
+    if (n > 0 && u->sun_path[0] == 0) {
+      puts_(t, "@");
+      quoted(t, u->sun_path + 1, n - 1);
+    } else {
+      quoted(t, u->sun_path, strnlen(u->sun_path, n));
+    }
+    puts_(t, "}");
+  } else if (a->ss_family == AF_INET) {
+    const struct sockaddr_in *i = (const struct sockaddr_in *)a;
+    char host[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &i->sin_addr, host, sizeof host);
+    printf_(t, "{sa_family=AF_INET, sin_port=htons(%u), sin_addr=inet_addr(\"%s\")}", ntohs(i->sin_port), host);
+  } else if (a->ss_family == AF_INET6) {
+    const struct sockaddr_in6 *i = (const struct sockaddr_in6 *)a;
+    char host[INET6_ADDRSTRLEN];
+    inet_ntop(AF_INET6, &i->sin6_addr, host, sizeof host);
+    printf_(t, "{sa_family=AF_INET6, sin6_port=htons(%u), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, \"%s\", "
+               "&sin6_addr), sin6_scope_id=0}",
+            ntohs(i->sin6_port), host);
+  } else {
+    printf_(t, "{sa_family=%u}", (unsigned)a->ss_family);
+  }
+}
+
+/* Whether a program of the run's network namespace listens on a loopback port: the tables the kernel keeps. */
+static int listening(pid_t tid, unsigned port) {
+  static const char *tables[] = {"tcp", "tcp6", "udp", "udp6"};
+  for (int i = 0; i < 4; i++) {
+    char name[64], row[512];
+    snprintf(name, sizeof name, "/proc/%d/net/%s", tid, tables[i]);
+    FILE *f = fopen(name, "re");
+    if (f == NULL) return 1; /* cannot tell: something may be there */
+    while (fgets(row, sizeof row, f) != NULL) {
+      char *colon = strchr(row, ':');
+      if (colon == NULL) continue;
+      colon = strchr(colon + 1, ':'); /* local address ends at its port */
+      if (colon == NULL) continue;
+      unsigned local = (unsigned)strtoul(colon + 1, NULL, 16);
+      if (local == port) {
+        fclose(f);
+        return 1;
+      }
+    }
+    fclose(f);
+  }
+  return 0;
+}
+
+static int loopbackAddress(const struct sockaddr_storage *a) {
+  if (a->ss_family == AF_INET) return (ntohl(((const struct sockaddr_in *)a)->sin_addr.s_addr) >> 24) == 127;
+  if (a->ss_family == AF_INET6) {
+    const struct in6_addr *x = &((const struct sockaddr_in6 *)a)->sin6_addr;
+    if (IN6_IS_ADDR_LOOPBACK(x)) return 1;
+    return IN6_IS_ADDR_V4MAPPED(x) && x->s6_addr[12] == 127;
+  }
+  return 0;
+}
+
+/* A process seen for the first time: when every call of its parent that started a process and has no process
+ * yet was made while the parent ran one program, the earliest is where it began, and the reader is told so at
+ * that place. Otherwise nothing is said, and the process inherits nothing a reader keeps. */
+static void bornOf(pid_t tgid, pid_t parent) {
+  pthread_mutex_lock(&lock);
+  struct forking **earliest = NULL;
+  int ambiguous = 0;
+  unsigned generation = 0;
+  for (struct forking **at = &forkings; *at != NULL; at = &(*at)->next) {
+    if ((*at)->parent != parent) continue;
+    if (earliest == NULL) {
+      generation = (*at)->generation;
+    } else if ((*at)->generation != generation) {
+      ambiguous = 1;
+    }
+    if (earliest == NULL || (*at)->id < (*earliest)->id) earliest = at;
+  }
+  unsigned *now = generationOf(parent);
+  if (earliest == NULL || ambiguous || now == NULL || *now != generation) {
+    pthread_mutex_unlock(&lock);
+    return;
+  }
+  struct forking *f = *earliest;
+  *earliest = f->next;
+  pthread_mutex_unlock(&lock);
+  struct text t = {0};
+  printf_(&t, "%d clone(child_stack=NULL, flags=SIGCHLD) = %d", parent, tgid);
+  keep(f->id, 2, &t);
+  free(f);
+}
+
+/* ---- One stop ------------------------------------------------------------------------------------------------ */
+
+/* A process whose program was to change: a later stop shows whether it did. Its arguments are the ones the call
+ * gave, or, for a program started through `#!`, the interpreter's words, the path the call gave and the rest. */
+static void startedYet(pid_t tid, pid_t tgid) {
+  pthread_mutex_lock(&lock);
+  struct starting **at = &startings;
+  while (*at != NULL && (*at)->tgid != tgid) at = &(*at)->next;
+  struct starting *s = *at;
+  if (s == NULL) {
+    pthread_mutex_unlock(&lock);
+    return;
+  }
+  *at = s->next;
+  pthread_mutex_unlock(&lock);
+  char name[64];
+  snprintf(name, sizeof name, "/proc/%d/cmdline", tgid);
+  size_t capacity = s->argvLength + s->scriptLength + 8192;
+  char *now = malloc(capacity);
+  int same = 0;
+  if (now != NULL) {
+    int fd = open(name, O_RDONLY | O_CLOEXEC);
+    if (fd >= 0) {
+      size_t got = 0;
+      ssize_t n;
+      while (got < capacity && (n = read(fd, now + got, capacity - got)) > 0) got += (size_t)n;
+      close(fd);
+      same = (got == s->argvLength && memcmp(now, s->argv, got) == 0) ||
+             (got > s->scriptLength && now[got - s->scriptLength - 1] == 0 &&
+              memcmp(now + got - s->scriptLength, s->script, s->scriptLength) == 0);
+    }
+    free(now);
+  }
+  if (same) {
+    struct text t = {0};
+    puts_(&t, s->line);
+    puts_(&t, " = 0");
+    keep(s->id, 3, &t);
+  } else if (tid != s->tid && tgid != s->tid) {
+    /* Another thread of the process stopped first: the program may still be starting. */
+    pthread_mutex_lock(&lock);
+    s->next = startings;
+    startings = s;
+    pthread_mutex_unlock(&lock);
+    return;
+  }
+  free(s->argv);
+  free(s->script);
+  free(s->line);
+  free(s);
+}
+
+static void serve(const struct seccomp_notif *req) {
+  pid_t tid = (pid_t)req->pid;
+  uint64_t id = req->id;
+  if (req->data.arch != NATIVE_ARCH || (req->data.nr & (int)X32_BIT) != 0) {
+    unrecorded("a program of another architecture ran, whose calls this recorder does not read");
+    return;
+  }
+  const struct call *c = callOf(req->data.nr);
+  if (c == NULL) return;
+  pid_t tgid = tgidOf(tid);
+  startedYet(tid, tgid);
+  char path[PATH_MAX + 1], other[PATH_MAX + 1];
+  const char *why = NULL;
+  struct text t = {0};
+  switch (c->kind) {
+    case K_OPEN: {
+      uint64_t flags = 0;
+      if (c->nr == SYS_openat2) {
+        if (!bytesAt(tid, req->data.args[2], &flags, sizeof flags)) flags = 0;
+      } else if (c->flags >= 0) {
+        flags = req->data.args[(int)c->flags];
+      } else {
+        flags = O_WRONLY | O_CREAT | O_TRUNC; /* creat */
+      }
+      if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      int error, directory = 0;
+      if ((flags & O_TMPFILE) == O_TMPFILE) {
+        /* An unnamed file in a directory: the directory is looked at, and no name is made. */
+        error = look(path, 0);
+      } else if (flags & O_CREAT) {
+        error = look(path, 1);
+        if ((flags & O_EXCL) && error == 0) {
+          error = EEXIST;
+        } else if (error == ENOENT) {
+          error = parentThere(path); /* nothing there: made, when its directory is */
+        } else if (error == 0) {
+          error = look(path, (flags & O_NOFOLLOW) != 0);
+        }
+      } else {
+        error = lookKind(path, (flags & O_NOFOLLOW) != 0, &directory);
+      }
+      begin(&t, tgid, "openat");
+      puts_(&t, "AT_FDCWD, ");
+      quotedz(&t, path);
+      puts_(&t, ", ");
+      openFlags(&t, flags);
+      puts_(&t, ")");
+      answer(&t, error);
+      if (error == 0 && directory && !pseudo(path)) {
+        /* A directory opened is a directory listed: no listing is watched, and what is in it counts. */
+        keep(id, 2, &t);
+        t = (struct text){0};
+        printf_(&t, "%d getdents64(0<", tgid);
+        puts_(&t, path);
+        puts_(&t, ">, {...}, 32768) = 0");
+        keep(id, 3, &t);
+        return;
+      }
+      break;
+    }
+    case K_LOOK: {
+      int nofollow = c->nofollow;
+      if (c->flags >= 0 && (req->data.args[(int)c->flags] & AT_SYMLINK_NOFOLLOW)) nofollow = 1;
+      if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      begin(&t, tgid, "newfstatat");
+      puts_(&t, "AT_FDCWD, ");
+      quotedz(&t, path);
+      puts_(&t, nofollow ? ", {...}, AT_SYMLINK_NOFOLLOW)" : ", {...}, 0)");
+      answer(&t, look(path, nofollow));
+      break;
+    }
+    case K_EXEC: {
+      if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      int error = look(path, 0);
+      uint64_t argvAt = req->data.args[c->nr == SYS_execveat ? 2 : 1];
+      struct text words = {0}, raw = {0};
+      char given[PATH_MAX + 1];
+      if (!stringAt(tid, req->data.args[c->path], given, sizeof given)) given[0] = 0;
+      struct text script = {0};
+      put(&script, given, strlen(given) + 1);
+      puts_(&words, "[");
+      for (int i = 0; argvAt != 0 && i < 100000; i++) {
+        uint64_t word = 0;
+        if (!bytesAt(tid, argvAt + 8u * (uint64_t)i, &word, sizeof word)) break;
+        if (word == 0) break;
+        char *buffer = malloc(131072);
+        if (buffer == NULL) {
+          words.failed = 1;
+          break;
+        }
+        if (!stringAt(tid, word, buffer, 131072)) buffer[0] = 0;
+        if (i > 0) puts_(&words, ", ");
+        quotedz(&words, buffer);
+        put(&raw, buffer, strlen(buffer) + 1);
+        if (i > 0) put(&script, buffer, strlen(buffer) + 1);
+        free(buffer);
+      }
+      puts_(&words, "]");
+      if (words.failed || raw.failed || script.failed) {
+        free(words.data);
+        free(raw.data);
+        free(script.data);
+        t.failed = 1;
+        break;
+      }
+      begin(&t, tgid, "execve");
+      quotedz(&t, path);
+      puts_(&t, ", ");
+      puts_(&t, words.data);
+      puts_(&t, ", 0x0 /* vars */)");
+      free(words.data);
+      if (error != 0) {
+        answer(&t, error);
+        free(raw.data);
+        free(script.data);
+        break;
+      }
+      pthread_mutex_lock(&lock);
+      unsigned *generation = generationOf(tgid);
+      if (generation != NULL) *generation += 1;
+      pthread_mutex_unlock(&lock);
+      /* Looked at and started; what it starts as is known at a later stop. */
+      struct starting *s = calloc(1, sizeof *s);
+      if (s != NULL) {
+        s->tgid = tgid;
+        s->tid = tid;
+        s->id = id;
+        s->argv = raw.data;
+        s->argvLength = raw.length;
+        s->script = script.data;
+        s->scriptLength = script.length;
+        s->line = strdup(t.data == NULL ? "" : t.data);
+        pthread_mutex_lock(&lock);
+        s->next = startings;
+        startings = s;
+        pthread_mutex_unlock(&lock);
+      } else {
+        free(raw.data);
+        free(script.data);
+      }
+      puts_(&t, " = ?");
+      break;
+    }
+    case K_CHDIR: {
+      if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      begin(&t, tgid, "chdir");
+      quotedz(&t, path);
+      puts_(&t, ")");
+      answer(&t, look(path, 0));
+      break;
+    }
+    case K_MKDIR: {
+      if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      int error = look(path, 1);
+      error = error == 0 ? EEXIST : error == ENOENT ? parentThere(path) : error;
+      begin(&t, tgid, "mkdirat");
+      puts_(&t, "AT_FDCWD, ");
+      quotedz(&t, path);
+      puts_(&t, ", 0777)");
+      answer(&t, error);
+      break;
+    }
+    case K_REMOVE: {
+      if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      begin(&t, tgid, "unlinkat");
+      puts_(&t, "AT_FDCWD, ");
+      quotedz(&t, path);
+      puts_(&t, ", 0)");
+      answer(&t, look(path, 1));
+      break;
+    }
+    case K_CHANGE: {
+      int nofollow = c->nofollow;
+      if (c->flags >= 0 && (req->data.args[(int)c->flags] & AT_SYMLINK_NOFOLLOW)) nofollow = 1;
+      if (c->nr == SYS_utimensat && req->data.args[1] == 0) {
+        /* No path: the descriptor's own file. */
+        if (!placeOf(tid, (int)req->data.args[0], path, sizeof path)) {
+          why = "base";
+          break;
+        }
+        printf_(&t, "%d utimensat(%d<%s>, NULL, NULL, 0) = 0", tgid, (int)req->data.args[0], path);
+        break;
+      }
+      if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      begin(&t, tgid, "fchmodat");
+      puts_(&t, "AT_FDCWD, ");
+      quotedz(&t, path);
+      puts_(&t, ", 0)");
+      answer(&t, look(path, nofollow));
+      break;
+    }
+    case K_CHANGE_FD: {
+      if (!placeOf(tid, (int)req->data.args[0], path, sizeof path)) {
+        why = "base";
+        break;
+      }
+      printf_(&t, "%d %s(%d<%s>, 0) = 0", tgid, c->name, (int)req->data.args[0], path);
+      break;
+    }
+    case K_RENAME:
+    case K_LINK: {
+      if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      if (!pathOf(tid, req, c->dir2, c->path2, other, sizeof other, &why)) break;
+      int from = look(path, 1), to = look(other, 1);
+      /* A name that is there already is one the run found, whatever the call does to it. */
+      if (to == 0 && !pseudo(other)) found(tgid, id, 0, other);
+      int error = from != 0 ? from : (c->kind == K_LINK && to == 0) ? EEXIST : to == ENOENT ? parentThere(other) : 0;
+      begin(&t, tgid, c->kind == K_RENAME ? "renameat2" : "linkat");
+      puts_(&t, "AT_FDCWD, ");
+      quotedz(&t, path);
+      puts_(&t, ", AT_FDCWD, ");
+      quotedz(&t, other);
+      puts_(&t, ", 0)");
+      answer(&t, error);
+      break;
+    }
+    case K_SYMLINK: {
+      if (!stringAt(tid, req->data.args[c->nr == SYS_symlinkat ? 0 : 0], other, sizeof other)) {
+        why = "address";
+        break;
+      }
+      if (!pathOf(tid, req, c->dir2, c->path2, path, sizeof path, &why)) break;
+      int there = look(path, 1);
+      if (there == 0 && !pseudo(path)) found(tgid, id, 0, path);
+      int error = there == 0 ? EEXIST : there == ENOENT ? parentThere(path) : there;
+      begin(&t, tgid, "symlinkat");
+      quotedz(&t, other);
+      puts_(&t, ", AT_FDCWD, ");
+      quotedz(&t, path);
+      puts_(&t, ")");
+      answer(&t, error);
+      break;
+    }
+    case K_CONNECT:
+    case K_BIND: {
+      struct sockaddr_storage a;
+      memset(&a, 0, sizeof a);
+      socklen_t length = (socklen_t)req->data.args[2];
+      if (length > sizeof a) length = sizeof a;
+      if (length < sizeof(sa_family_t) || !bytesAt(tid, req->data.args[1], &a, length)) break;
+      begin(&t, tgid, c->name);
+      printf_(&t, "%d, ", (int)req->data.args[0]);
+      socketAddress(&t, &a, length);
+      printf_(&t, ", %u)", (unsigned)length);
+      if (c->kind == K_CONNECT) {
+        int error = 0;
+        if (a.ss_family == AF_UNIX) {
+          const struct sockaddr_un *u = (const struct sockaddr_un *)&a;
+          if (u->sun_path[0] != 0) {
+            char name[sizeof u->sun_path + 1];
+            snprintf(name, sizeof name, "%.*s", (int)sizeof u->sun_path, u->sun_path);
+            char full[PATH_MAX + 1];
+            if (name[0] == '/') {
+              snprintf(full, sizeof full, "%s", name);
+            } else if (placeOf(tid, AT_FDCWD, other, sizeof other)) {
+              snprintf(full, sizeof full, "%s/%s", other, name);
+            } else {
+              full[0] = 0;
+            }
+            if (full[0] != 0 && look(full, 0) == ENOENT) error = ENOENT;
+          }
+        } else if (loopbackAddress(&a)) {
+          unsigned port = a.ss_family == AF_INET ? ntohs(((struct sockaddr_in *)&a)->sin_port)
+                                                 : ntohs(((struct sockaddr_in6 *)&a)->sin6_port);
+          if (!listening(tid, port)) error = ECONNREFUSED;
+        }
+        answer(&t, error);
+        break;
+      }
+      /* A bind is written at the end of the run, when the socket says it is bound. */
+      int pidfd = (int)syscall(SYS_pidfd_open, tgid, 0);
+      int copy = pidfd < 0 ? -1 : (int)syscall(SYS_pidfd_getfd, pidfd, (int)req->data.args[0], 0);
+      if (pidfd >= 0) close(pidfd);
+      if (copy >= 0 && !t.failed) {
+        struct binding *b = calloc(1, sizeof *b);
+        if (b != NULL) {
+          b->id = id;
+          b->copy = copy;
+          b->asked = a;
+          b->askedLength = length;
+          b->line = t.data;
+          pthread_mutex_lock(&lock);
+          b->next = bindings;
+          bindings = b;
+          pthread_mutex_unlock(&lock);
+          return;
+        }
+        close(copy);
+      } else if (copy >= 0) {
+        close(copy);
+      }
+      free(t.data);
+      return;
+    }
+    case K_VIEW:
+      unrecorded("it changed its view of the file system");
+      return;
+    case K_SPACE:
+      unrecorded("it made a namespace of its own");
+      return;
+    case K_FORK: {
+      uint64_t flags = SIGCHLD;
+      if (c->nr == SYS_clone) flags = req->data.args[0];
+#ifdef SYS_clone3
+      if (c->nr == SYS_clone3 && !bytesAt(tid, req->data.args[0], &flags, sizeof flags)) return;
+#endif
+      if (flags & NEW_NAMESPACES) {
+        unrecorded("it made a namespace of its own");
+        return;
+      }
+      if (flags & CLONE_THREAD) return;
+      struct forking *f = calloc(1, sizeof *f);
+      if (f == NULL) return;
+      f->parent = tgid;
+      f->id = id;
+      pthread_mutex_lock(&lock);
+      unsigned *generation = generationOf(tgid);
+      f->generation = generation == NULL ? 0 : *generation;
+      f->next = forkings;
+      forkings = f;
+      pthread_mutex_unlock(&lock);
+      return;
+    }
+    case K_RING: {
+      /* A ring whose kernel thread takes what it is told with no call: nothing it does is seen. */
+      uint32_t setup[3] = {0, 0, 0}; /* sq_entries, cq_entries, flags */
+      if (!bytesAt(tid, req->data.args[1], setup, sizeof setup) || (setup[2] & 2u /* IORING_SETUP_SQPOLL */)) {
+        unrecorded("it set up an io_uring whose kernel thread reads files with no call a trace shows");
+      }
+      return;
+    }
+    case K_RING_ENTER: {
+      /* What the ring is about to do, as the kernel lists it: a call that names a path is one no line holds. */
+      if (req->data.args[3] & 16u /* IORING_ENTER_REGISTERED_RING */) {
+        unrecorded("it used an io_uring by a registered descriptor, whose requests cannot be read");
+        return;
+      }
+      char name[64], buffer[16384];
+      snprintf(name, sizeof name, "/proc/%d/fdinfo/%d", tid, (int)req->data.args[0]);
+      int fd = open(name, O_RDONLY | O_CLOEXEC);
+      if (fd < 0) return;
+      ssize_t n = read(fd, buffer, sizeof buffer - 1);
+      close(fd);
+      if (n <= 0) return;
+      buffer[n] = 0;
+      static const char *paths[] = {"opcode:OPENAT,", "opcode:OPENAT2,", "opcode:STATX,", "opcode:RENAMEAT,",
+                                    "opcode:UNLINKAT,", "opcode:MKDIRAT,", "opcode:SYMLINKAT,", "opcode:LINKAT,",
+                                    "opcode:GETXATTR,", "opcode:SETXATTR,", "opcode:FILES_UPDATE,"};
+      for (size_t i = 0; i < sizeof paths / sizeof paths[0]; i++) {
+        if (strstr(buffer, paths[i]) != NULL) {
+          unrecorded("it read files through io_uring, which a trace does not show");
+          return;
+        }
+      }
+      /* A list cut short by the buffer may hold more: what is not read is not known. */
+      if ((size_t)n == sizeof buffer - 1) unrecorded("it gave io_uring more requests than the recorder reads");
+      return;
+    }
+    case K_HANDLE:
+      unrecorded("it opened a file by its handle, which names no path");
+      return;
+    case K_FILTER:
+      if (req->data.args[0] == SECCOMP_SET_MODE_FILTER) unrecorded("it filtered its own system calls");
+      return;
+  }
+  if (why != NULL) {
+    free(t.data);
+    t = (struct text){0};
+    if (strcmp(why, "address") == 0) {
+      /* A path that cannot be read from the thread: strace writes its address, and the call fails on it. */
+      printf_(&t, "%d openat(AT_FDCWD, 0x%llx, O_RDONLY) = -1 EFAULT (Bad address)", tgid,
+              (unsigned long long)req->data.args[c->path >= 0 ? (int)c->path : 0]);
+    } else {
+      /* A relative path from a descriptor that names no directory: the line keeps the words, and a reader that
+       * cannot tell where they start refuses the run, as it does with strace's line. */
+      int dir = c->path2 >= 0 && c->dir2 >= 0 ? c->dir2 : c->dir;
+      int at = c->path2 >= 0 && c->dir2 >= 0 ? c->path2 : c->path;
+      char rel[PATH_MAX + 1];
+      if (at < 0 || !stringAt(tid, req->data.args[at], rel, sizeof rel)) rel[0] = 0;
+      printf_(&t, "%d openat(%d, ", tgid, dir >= 0 ? (int)req->data.args[dir] : -1);
+      quotedz(&t, rel[0] == 0 ? "." : rel);
+      puts_(&t, ", O_RDONLY) = -1 EBADF (Bad file descriptor)");
+    }
+  }
+  if (t.data == NULL && !t.failed) return;
+  keep(id, 2, &t);
+}
+
+static void *serving(void *unused) {
+  (void)unused;
+  sigset_t all_;
+  sigfillset(&all_);
+  sigdelset(&all_, SIGUSR1);
+  pthread_sigmask(SIG_SETMASK, &all_, NULL);
+  struct seccomp_notif_sizes sizes;
+  if (syscall(SYS_seccomp, SECCOMP_GET_NOTIF_SIZES, 0, &sizes) != 0) return NULL;
+  struct seccomp_notif *req = calloc(1, sizes.seccomp_notif);
+  struct seccomp_notif_resp *resp = calloc(1, sizes.seccomp_notif_resp);
+  if (req == NULL || resp == NULL) {
+    __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
+    return NULL;
+  }
+  for (;;) {
+    memset(req, 0, sizes.seccomp_notif);
+    if (ioctl(listener, SECCOMP_IOCTL_NOTIF_RECV, req) != 0) {
+      /* Woken to end, or a call whose thread ended or was interrupted before it was received. */
+      if (__atomic_load_n(&stopping, __ATOMIC_ACQUIRE)) break;
+      continue;
+    }
+    serve(req);
+    memset(resp, 0, sizes.seccomp_notif_resp);
+    resp->id = req->id;
+    resp->flags = SECCOMP_USER_NOTIF_FLAG_CONTINUE;
+    /* A call whose thread ended or was interrupted meanwhile has no one to answer. */
+    ioctl(listener, SECCOMP_IOCTL_NOTIF_SEND, resp);
+  }
+  free(req);
+  free(resp);
+  return NULL;
+}
+
+/* ---- The end of the run --------------------------------------------------------------------------------------- */
+
+static void boundSockets(void) {
+  for (struct binding *b = bindings; b != NULL; b = b->next) {
+    struct sockaddr_storage now;
+    socklen_t length = sizeof now;
+    memset(&now, 0, sizeof now);
+    int bound = 0;
+    if (getsockname(b->copy, (struct sockaddr *)&now, &length) == 0 && now.ss_family == b->asked.ss_family) {
+      if (now.ss_family == AF_UNIX) {
+        /* A path is compared as a path, whatever length each side gave; an abstract name byte for byte. */
+        const char *at = ((struct sockaddr_un *)&now)->sun_path, *asked = ((struct sockaddr_un *)&b->asked)->sun_path;
+        size_t room = sizeof ((struct sockaddr_un *)&now)->sun_path;
+        size_t nowLength = length > offsetof(struct sockaddr_un, sun_path) ? length - offsetof(struct sockaddr_un, sun_path) : 0;
+        size_t askedLength = b->askedLength > offsetof(struct sockaddr_un, sun_path)
+                               ? b->askedLength - offsetof(struct sockaddr_un, sun_path)
+                               : 0;
+        if (nowLength > 0 && at[0] != 0)
+          bound = strncmp(at, asked, room) == 0;
+        else
+          bound = nowLength > 0 && nowLength == askedLength && memcmp(at, asked, nowLength) == 0;
+      } else if (now.ss_family == AF_INET || now.ss_family == AF_INET6) {
+        unsigned asked = now.ss_family == AF_INET ? ntohs(((struct sockaddr_in *)&b->asked)->sin_port)
+                                                  : ntohs(((struct sockaddr_in6 *)&b->asked)->sin6_port);
+        unsigned port = now.ss_family == AF_INET ? ntohs(((struct sockaddr_in *)&now)->sin_port)
+                                                 : ntohs(((struct sockaddr_in6 *)&now)->sin6_port);
+        bound = port != 0 && (asked == 0 || asked == port);
+      }
+    }
+    close(b->copy);
+    if (!bound) continue;
+    struct text t = {0};
+    puts_(&t, b->line);
+    puts_(&t, " = 0");
+    keep(b->id, 2, &t);
+  }
+}
+
+static int byOrder(const void *a, const void *b) {
+  const struct line *x = a, *y = b;
+  if (x->id != y->id) return x->id < y->id ? -1 : 1;
+  return x->sub < y->sub ? -1 : x->sub > y->sub ? 1 : 0;
+}
+
+static int writeTrace(const char *file) {
+  char written[PATH_MAX + 32];
+  snprintf(written, sizeof written, "%s.writing", file);
+  FILE *out = fopen(written, "we");
+  if (out == NULL) return 0;
+  setvbuf(out, NULL, _IOFBF, 1 << 20);
+  qsort(all.items, all.count, sizeof *all.items, byOrder);
+  fprintf(out, "%d +++ smthrs-observe 1 +++\n", rootPid);
+  for (size_t i = 0; i < all.count; i++) {
+    fwrite(all.items[i].text, 1, all.items[i].length, out);
+    fputc('\n', out);
+  }
+  if (dropped) unrecorded("the recorder could not keep every line");
+  for (int i = 0; i < reasonCount; i++) fprintf(out, "%d +++ unrecorded: %s +++\n", rootPid, reasons[i]);
+  fprintf(out, "%d +++ complete +++\n", rootPid);
+  if (fflush(out) != 0 || ferror(out)) {
+    fclose(out);
+    unlink(written);
+    return 0;
+  }
+  if (fclose(out) != 0) return 0;
+  return rename(written, file) == 0;
+}
+
+/* Every process of the run is this program's child once its parent ended: kill those still running. */
+static void endLeft(void) {
+  DIR *d = opendir("/proc");
+  if (d == NULL) return;
+  struct dirent *e;
+  pid_t me = getpid();
+  while ((e = readdir(d)) != NULL) {
+    if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
+    char name[64], buffer[512];
+    snprintf(name, sizeof name, "/proc/%s/stat", e->d_name);
+    int fd = open(name, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) continue;
+    ssize_t n = read(fd, buffer, sizeof buffer - 1);
+    close(fd);
+    if (n <= 0) continue;
+    buffer[n] = 0;
+    char *end = strrchr(buffer, ')');
+    if (end == NULL) continue;
+    int parent = 0;
+    if (sscanf(end + 2, "%*c %d", &parent) == 1 && parent == me) kill((pid_t)atoi(e->d_name), SIGKILL);
+  }
+  closedir(d);
+}
+
+static int probe(void) {
+  int sv[2];
+  if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) != 0) return 126;
+  pid_t child = fork();
+  if (child < 0) return 126;
+  if (child == 0) {
+    int fd = install();
+    char ok = fd >= 0 ? 1 : 0;
+    (void)write(sv[1], &ok, 1);
+    _exit(ok ? 0 : 1);
+  }
+  char ok = 0;
+  (void)read(sv[0], &ok, 1);
+  int status = 0;
+  waitpid(child, &status, 0);
+  return ok && WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 126;
+}
+
+static void wake(int sig) { (void)sig; }
+
+static volatile pid_t commandPid;
+static void forward(int sig) {
+  if (commandPid > 0) kill(commandPid, sig);
+}
+
+int main(int argc, char **argv) {
+  if (argc == 2 && strcmp(argv[1], "--probe") == 0) return probe();
+  if (argc < 4 || strcmp(argv[2], "--") != 0) {
+    fprintf(stderr, "usage: smthrs-observe <trace file> -- <command> [<argument>...]\n");
+    return 125;
+  }
+  const char *traceFile = argv[1];
+  char **command = argv + 3;
+  /* Every process the command leaves behind comes to this program when its parent ends. */
+  prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0);
+  int sv[2];
+  if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) != 0) return 125;
+  pid_t child = fork();
+  if (child < 0) return 125;
+  if (child == 0) {
+    close(sv[0]);
+    int fd = install();
+    char c = 0;
+    struct iovec io = {&c, 1};
+    union {
+      char buffer[CMSG_SPACE(sizeof(int))];
+      struct cmsghdr align;
+    } control;
+    memset(&control, 0, sizeof control);
+    struct msghdr m = {.msg_iov = &io, .msg_iovlen = 1};
+    if (fd >= 0) {
+      m.msg_control = control.buffer;
+      m.msg_controllen = sizeof control.buffer;
+      struct cmsghdr *h = CMSG_FIRSTHDR(&m);
+      h->cmsg_level = SOL_SOCKET;
+      h->cmsg_type = SCM_RIGHTS;
+      h->cmsg_len = CMSG_LEN(sizeof(int));
+      memcpy(CMSG_DATA(h), &fd, sizeof fd);
+    }
+    if (sendmsg(sv[1], &m, 0) != 1) _exit(126);
+    if (fd < 0) _exit(126);
+    close(fd);
+    /* Starts the command once the supervisor serves: its first call is the start itself. */
+    if (read(sv[1], &c, 1) != 1) _exit(126);
+    close(sv[1]);
+    execvp(command[0], command);
+    fprintf(stderr, "smthrs-observe: %s: %s\n", command[0], strerror(errno));
+    _exit(errno == ENOENT ? 127 : 126);
+  }
+  close(sv[1]);
+  rootPid = child;
+  commandPid = child;
+  struct sigaction passOn;
+  memset(&passOn, 0, sizeof passOn);
+  passOn.sa_handler = forward;
+  passOn.sa_flags = SA_RESTART;
+  sigaction(SIGTERM, &passOn, NULL);
+  sigaction(SIGINT, &passOn, NULL);
+  sigaction(SIGHUP, &passOn, NULL);
+  sigaction(SIGQUIT, &passOn, NULL);
+  char c;
+  struct iovec io = {&c, 1};
+  union {
+    char buffer[CMSG_SPACE(sizeof(int))];
+    struct cmsghdr align;
+  } control;
+  struct msghdr m = {.msg_iov = &io, .msg_iovlen = 1, .msg_control = control.buffer,
+                     .msg_controllen = sizeof control.buffer};
+  if (recvmsg(sv[0], &m, 0) != 1 || CMSG_FIRSTHDR(&m) == NULL) {
+    int status;
+    waitpid(child, &status, 0);
+    fprintf(stderr, "smthrs-observe: this host gives no seccomp listener\n");
+    return 126;
+  }
+  memcpy(&listener, CMSG_DATA(CMSG_FIRSTHDR(&m)), sizeof listener);
+  struct sigaction woken;
+  memset(&woken, 0, sizeof woken);
+  woken.sa_handler = wake; /* no SA_RESTART: a receive it interrupts returns */
+  sigaction(SIGUSR1, &woken, NULL);
+  /* One serving thread: a call costs a thread switch either way, and more threads that take turns cost more
+   * processor time for the same wall time (measured on click's pre-commit and typing steps). */
+  int threads = 1;
+  pthread_t serving_[1];
+  for (int i = 0; i < threads; i++) pthread_create(&serving_[i], NULL, serving, NULL);
+  if (write(sv[0], "g", 1) != 1) return 125;
+  close(sv[0]);
+
+  int status = 0, code = 125;
+  for (;;) {
+    pid_t ended = waitpid(-1, &status, 0);
+    if (ended < 0 && errno == EINTR) continue;
+    if (ended < 0) break;
+    if (ended == child) {
+      code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+      commandPid = 0;
+      break;
+    }
+  }
+  /* A process the command left running is given a second to end, then stopped, as a sandbox stops it. */
+  for (int round = 0; round < 10; round++) {
+    pid_t ended;
+    while ((ended = waitpid(-1, &status, WNOHANG)) > 0) {
+    }
+    if (ended < 0 && errno == ECHILD) break;
+    struct timespec tenth = {0, 100000000};
+    nanosleep(&tenth, NULL);
+  }
+  for (;;) {
+    endLeft();
+    pid_t ended = waitpid(-1, &status, 0);
+    if (ended < 0 && errno == ECHILD) break;
+  }
+  /* No process of the run is left, so no call waits: the serving threads end. */
+  __atomic_store_n(&stopping, 1, __ATOMIC_RELEASE);
+  for (int i = 0; i < threads; i++) pthread_kill(serving_[i], SIGUSR1);
+  for (int i = 0; i < threads; i++) {
+    /* A thread between two receives misses one signal: it is sent again until the thread ends. */
+    struct timespec soon;
+    clock_gettime(CLOCK_REALTIME, &soon);
+    soon.tv_nsec += 20000000;
+    if (soon.tv_nsec >= 1000000000) {
+      soon.tv_sec += 1;
+      soon.tv_nsec -= 1000000000;
+    }
+    while (pthread_timedjoin_np(serving_[i], NULL, &soon) != 0) {
+      pthread_kill(serving_[i], SIGUSR1);
+      clock_gettime(CLOCK_REALTIME, &soon);
+      soon.tv_nsec += 20000000;
+      if (soon.tv_nsec >= 1000000000) {
+        soon.tv_sec += 1;
+        soon.tv_nsec -= 1000000000;
+      }
+    }
+  }
+  close(listener);
+  boundSockets();
+  if (!writeTrace(traceFile)) {
+    fprintf(stderr, "smthrs-observe: could not write %s\n", traceFile);
+  }
+  return code;
+}

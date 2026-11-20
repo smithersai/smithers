@@ -3,6 +3,7 @@ import { dirname, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { compilePackage, copyInputDeclarations } from "../../../../repo-targets/scripts/build-library.mjs"
 import { compileCommonJs } from "../../../scripts/compile-commonjs.mjs"
+import { buildObserve } from "./build-observe.mjs"
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const sourceRoot = resolve(packageRoot, "src")
@@ -36,3 +37,6 @@ for (
 }
 
 await compileCommonJs(sourceRoot, resolve(packageRoot, "dist/cjs"), esmRoot)
+
+// The release build ships the recorder; a build in the workspace leaves it to the `observe` target.
+if (process.env.SMITHERS_NATIVE_REQUIRED === "1") buildObserve({ root: packageRoot, required: true })

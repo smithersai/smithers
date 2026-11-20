@@ -160,7 +160,7 @@ export const executionServicesLive: ExecutionServices = {
   cache: (options) => joined(() => openCache(options)),
   sandboxHost: () => ExecSandbox.host(),
   writeProtection: (host) => ExecSandbox.writeProtectionRefusal(host),
-  observer: (host) => ObservedReads.observer(host),
+  observer: (host) => ObservedReads.observer({ ...host, supervisor: ObservedReads.supervisorPath() }),
   replanner
 }
 
@@ -1011,6 +1011,8 @@ const executeWith = (
 
     /** The first target whose report stopped a fail-fast run. */
     let stoppedBy: string | undefined
+    /** Why the build failed on its own side under a step: the recorder of its reads stopped before it ended. */
+    let brokeOn: string | undefined
     const report = (entry: Executor.TargetReport): void => {
       reports.set(entry.label, entry)
       reporter.targetFinished(entry)
@@ -3365,10 +3367,18 @@ const executeWith = (
             spawnConsumer(
               node,
               undefined,
-              (argv) => ObservedReads.command(host.tracer, traceFile, argv),
+              (argv) => ObservedReads.commandFor(host, traceFile, argv),
               listener.hear
             )
           )
+          // smthrs-observe writes its last line once every process of the run has ended. Without it the recorder
+          // stopped first, and the step's file calls failed for want of it: neither its verdict nor its reads say
+          // anything about the step. That is the build's failure, never the step's, and nothing is stored.
+          if (host.supervisor === true && !(yield* joined(async () => ObservedReads.whole(traceFile)))) {
+            brokeOn =
+              `${node.label}: smthrs-observe stopped before the step ended, so its run says nothing about the step`
+            return { status: "skipped" as const, error: brokeOn }
+          }
           if (!attempt.ok) {
             log(`${node.label}  failed while its reads were recorded; it runs again without the recording`)
             const plain = yield* spawnConsumer(node)
@@ -5458,8 +5468,9 @@ const executeWith = (
       })
     answered = yield* timed(undefined, "answer", answerTogether())
     yield* Executor.scheduleEffect(planned.workList, jobs, runOne, options.signal, {
-      stop: () => stoppedBy !== undefined
+      stop: () => stoppedBy !== undefined || brokeOn !== undefined
     })
+    if (brokeOn !== undefined) return yield* Effect.fail(new Error(brokeOn))
     for (const node of planned.workList) {
       if (stoppedBy !== undefined && !reports.has(node.label)) cancel(node, 0, "not started")
     }
