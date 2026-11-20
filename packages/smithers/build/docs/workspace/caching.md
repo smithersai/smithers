@@ -725,7 +725,9 @@ stops the traced thread at each file-system call;
 `strace`, against 1.2 s unrecorded. Under `strace` the run is refused
 `io_uring`, as it is in a container, because a read submitted through a ring
 is in no trace; under `smthrs-observe` a ring request that names a path makes
-the run unrecorded, with the reason. A recorded run ends when its command
+the run unrecorded, with the reason. A port a recorded process closes is free
+again at once, as it is unrecorded, so a program that listens on it again
+finds it free. A recorded run ends when its command
 ends: a process the command left running is stopped a second later, as a
 sandbox stops it. On macOS and Windows, where neither recorder can run, or
 where the host forbids it, the target is keyed by its `data` as any other

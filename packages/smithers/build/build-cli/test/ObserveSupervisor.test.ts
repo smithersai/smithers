@@ -240,6 +240,64 @@ describe("smthrs-observe", () => {
 })
 
 /**
+ * A program that listens on a loopback port, closes it, and listens on it
+ * again, itself and in a process it starts, as eliza's build lock takes and
+ * gives back a port (`packages/scripts/with-package-build-lock.ts`). The
+ * kernel frees a port when its last socket closes; the copy the recorder
+ * takes of a bound socket must not keep it taken.
+ */
+const relisten = String.raw`
+import * as net from "node:net"
+import { spawnSync } from "node:child_process"
+const listen = (port) => new Promise((resolve, reject) => {
+  const server = net.createServer()
+  server.once("error", reject)
+  server.listen({ host: "127.0.0.1", port, exclusive: true }, () => resolve(server))
+})
+const close = (server) => new Promise((resolve) => server.close(resolve))
+const answer = (promise) => promise.then(async (server) => { await close(server); return "0" }, (error) => error.code)
+const refused = (port) => new Promise((resolve) => {
+  const socket = net.connect({ host: "127.0.0.1", port })
+  socket.on("error", (error) => resolve(error.code))
+  socket.on("connect", () => { socket.destroy(); resolve("0") })
+})
+const first = await listen(0)
+const port = first.address().port
+await close(first)
+const again = await answer(listen(port))
+const connect = await refused(port)
+const other = spawnSync(process.execPath, ["--input-type=module", "-e",
+  "import * as net from 'node:net'; const s = net.createServer(); s.once('error', (e) => { console.log(e.code) });" +
+  " s.listen({ host: '127.0.0.1', port: " + port + ", exclusive: true }, () => { console.log('0'); s.close() })"],
+  { encoding: "utf8" }).stdout.trim()
+console.log(JSON.stringify({ port, again, connect, other }))
+`
+
+describe("smthrs-observe and sockets", () => {
+  supervised("frees a port the run closed, for the run itself and a process it starts", async () => {
+    const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-sockets-")))
+    temporary.push(base)
+    const script = Path.join(base, "relisten.mjs")
+    await Fs.writeFile(script, relisten)
+    const trace = Path.join(base, "trace")
+    const plain = spawnSync(process.execPath, [script], { encoding: "utf8" })
+    const run = spawnSync(supervisor!, [trace, "--", process.execPath, script], { encoding: "utf8" })
+    expect(run.status, run.stderr).toBe(0)
+    const unrecorded = JSON.parse(plain.stdout) as { readonly port: number }
+    const answers = JSON.parse(run.stdout) as { readonly port: number }
+    // The same answers as unrecorded: listening again works, in the run and in a process it started, and a
+    // connection to the closed port is refused.
+    expect({ ...unrecorded, port: 0 }).toEqual({ port: 0, again: "0", connect: "ECONNREFUSED", other: "0" })
+    expect({ ...answers, port: 0 }).toEqual({ port: 0, again: "0", connect: "ECONNREFUSED", other: "0" })
+    // Each bind is still written as made, and the trace is whole.
+    const lines = NodeFs.readFileSync(trace, "utf8").split("\n")
+    const binds = lines.filter((line) => line.includes(" bind(") && line.includes("127.0.0.1") && line.endsWith(" = 0"))
+    expect(binds.length).toBeGreaterThanOrEqual(3)
+    expect(lines.filter((line) => line !== "").at(-1)).toMatch(/^\d+ \+\+\+ complete \+\+\+$/)
+  })
+})
+
+/**
  * A shell sets its handlers without `SA_RESTART`, so a signal that came while
  * one of its calls waited for the supervisor would cut that call short where
  * it never would unrecorded: `fork` would fail ("Cannot fork"), and `[ -f x ]`

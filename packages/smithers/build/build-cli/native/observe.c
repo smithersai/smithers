@@ -21,8 +21,11 @@
  * - A program a process starts is written with no answer (`= ?`): it counts as looked at and started, and changes
  *   nothing a reader keeps about the process. A second line (`= 0`) follows once `/proc/<process>/cmdline` shows
  *   the program's arguments at a later stop of that process.
- * - A socket counts as bound only once the socket itself says so at the end of the run (`getsockname` on a copy
- *   taken at the stop).
+ * - A socket counts as bound only once the socket itself says so (`getsockname` on a copy taken at the stop). The
+ *   copy is let go as soon as the socket says so, at the next bind or connect of the run, before that call goes
+ *   on: held longer, it would keep the port of a socket the run closed in use, and a program that listens on a
+ *   port again (a lock made of a port, as eliza's build lock is) would find it taken. A copy whose socket is not
+ *   bound yet is asked again then, and at the end of the run.
  *
  * A signal must never cut a call short where it would not unrecorded. A call waiting for this supervisor can be
  * cut short until the call is received (`SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV`), and a process whose handler
@@ -561,7 +564,7 @@ static unsigned *generationOf(pid_t tgid) {
   return NULL;
 }
 
-/* A socket a process asked to bind, with a copy of it, until the end of the run. */
+/* A socket a process asked to bind, with a copy of it, until the socket says it is bound or the run ends. */
 struct binding {
   uint64_t id;
   int copy;
@@ -571,6 +574,7 @@ struct binding {
   struct binding *next;
 };
 static struct binding *bindings;
+static void settleBindings(void);
 
 /* ---- Reading the stopped thread ------------------------------------------------------------------------------ */
 
@@ -1390,6 +1394,7 @@ static void serve(const struct seccomp_notif *req) {
     }
     case K_CONNECT:
     case K_BIND: {
+      settleBindings();
       struct sockaddr_storage a;
       memset(&a, 0, sizeof a);
       socklen_t length = (socklen_t)req->data.args[2];
@@ -1585,14 +1590,15 @@ static void *serving(void *unused) {
   return NULL;
 }
 
-/* ---- The end of the run --------------------------------------------------------------------------------------- */
+/* ---- Bound sockets ---------------------------------------------------------------------------------------------- */
 
-static void boundSockets(void) {
-  for (struct binding *b = bindings; b != NULL; b = b->next) {
-    struct sockaddr_storage now;
-    socklen_t length = sizeof now;
-    memset(&now, 0, sizeof now);
-    int bound = 0;
+/* Whether the copy of a socket says it is bound where the process asked. */
+static int saysBound(const struct binding *b) {
+  struct sockaddr_storage now;
+  socklen_t length = sizeof now;
+  memset(&now, 0, sizeof now);
+  int bound = 0;
+  {
     if (getsockname(b->copy, (struct sockaddr *)&now, &length) == 0 && now.ss_family == b->asked.ss_family) {
       if (now.ss_family == AF_UNIX) {
         /* A path is compared as a path, whatever length each side gave; an abstract name byte for byte. */
@@ -1614,12 +1620,56 @@ static void boundSockets(void) {
         bound = port != 0 && (asked == 0 || asked == port);
       }
     }
-    close(b->copy);
-    if (!bound) continue;
+  }
+  return bound;
+}
+
+/* Writes the line of a bind the socket says was made, and lets the copy go. */
+static void written(struct binding *b, int bound) {
+  close(b->copy);
+  if (bound) {
     struct text t = {0};
     puts_(&t, b->line);
     puts_(&t, " = 0");
     keep(b->id, 2, &t);
+  } else {
+    free(b->line);
+  }
+  free(b);
+}
+
+/*
+ * Lets go of the copy of every socket that already says it is bound, writing its line: called before a bind or a
+ * connect goes on, so a port the run closed is free again for it, as it is unrecorded.
+ */
+static void settleBindings(void) {
+  struct binding *settled = NULL;
+  pthread_mutex_lock(&lock);
+  for (struct binding **at = &bindings; *at != NULL;) {
+    struct binding *b = *at;
+    if (saysBound(b)) {
+      *at = b->next;
+      b->next = settled;
+      settled = b;
+    } else {
+      at = &b->next;
+    }
+  }
+  pthread_mutex_unlock(&lock);
+  while (settled != NULL) {
+    struct binding *next = settled->next;
+    written(settled, 1);
+    settled = next;
+  }
+}
+
+/* ---- The end of the run --------------------------------------------------------------------------------------- */
+
+static void boundSockets(void) {
+  while (bindings != NULL) {
+    struct binding *b = bindings;
+    bindings = b->next;
+    written(b, saysBound(b));
   }
 }
 
