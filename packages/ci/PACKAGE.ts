@@ -42,8 +42,10 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
     "test/**/*.py",
     "test/**/*.sh"
   ],
-  // The suite starts real builds. On a build server at load 100 to 220 it passed the default 20 minutes every time.
-  testTimeoutMs: 2_400_000,
+  // The suite starts real builds. On a build server at load 100 to 220 it passed the default 20 minutes every time,
+  // and 40 minutes run as the workspace declares it. Run confined, the run whose result is stored, it is shown none of
+  // the host's compile caches and twice ran past 40 minutes under quiet-run on nyc-01 (2,597 s and 2,569 s in all).
+  testTimeoutMs: 3_600_000,
   // test/closure/zig builds with Zig; test/replay traces runs with strace and jails them with bubblewrap; the
   // decompose, cli and tools tests run npm; test/cache serves the cache with Bun; test/package starts bunx.
   testTools: ["zig", "strace", "bwrap", "npm", "bun", "bunx"].map((name) => Smithers.Host.bin(name)),
