@@ -38,5 +38,7 @@ for (
 
 await compileCommonJs(sourceRoot, resolve(packageRoot, "dist/cjs"), esmRoot)
 
-// The release build ships the recorder; a build in the workspace leaves it to the `observe` target.
-if (process.env.SMITHERS_NATIVE_REQUIRED === "1") buildObserve({ root: packageRoot, required: true })
+// A release build (SMITHERS_NATIVE=1, or =required to fail without zig) ships the recorder; a build in the workspace
+// leaves it to the `observe` target.
+const native = process.env.SMITHERS_NATIVE
+if (native === "1" || native === "required") buildObserve({ root: packageRoot, required: native === "required" })

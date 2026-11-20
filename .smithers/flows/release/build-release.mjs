@@ -25,10 +25,10 @@ export const buildRelease = (root = repoRoot, manifests = readWorkspaceManifests
     console.log(`Building ${manifests.get(directory).name}`)
     // Installation is a separate frozen gate. A build must never auto-install
     // or silently refresh the dependency graph being certified.
-    // A release ships the native programs a package builds (`smthrs-observe` in @smthrs/build-cli): a build that
-    // cannot make them fails instead of shipping without them.
+    // A release ships the native programs a package builds where their compiler is there (`smthrs-observe` in
+    // @smthrs/build-cli, with zig 0.17.1). SMITHERS_NATIVE=required makes a build without it fail.
     const result = spawnSync("pnpm", ["--dir", packageRoot, "--config.verify-deps-before-run=error", "run", "build"], {
-      cwd: root, stdio: "inherit", env: { ...process.env, SMITHERS_NATIVE_REQUIRED: "1" }
+      cwd: root, stdio: "inherit", env: { ...process.env, SMITHERS_NATIVE: process.env.SMITHERS_NATIVE ?? "1" }
     })
     if (result.error !== undefined) throw result.error
     if (result.status !== 0) {

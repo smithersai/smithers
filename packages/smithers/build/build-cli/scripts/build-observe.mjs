@@ -8,9 +8,9 @@
  * same on every machine that builds them: zig carries the C library and the
  * linker for both targets, and no cross toolchain is needed. `SMITHERS_ZIG`
  * names the zig to use; otherwise the one on `PATH`. With
- * `SMITHERS_NATIVE_REQUIRED=1` (the release build) a missing zig, or another
- * version, fails the build; otherwise the build says so and goes on, and
- * Smithers build records with strace where the program is missing.
+ * `SMITHERS_NATIVE=required` a missing zig, or another version, fails the
+ * build; otherwise the build says so and goes on, and Smithers build records
+ * with strace where the program is missing.
  */
 import { spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs"
@@ -32,7 +32,7 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 export const buildObserve = ({
   root = packageRoot,
   zig = process.env.SMITHERS_ZIG ?? "zig",
-  required = process.env.SMITHERS_NATIVE_REQUIRED === "1",
+  required = process.env.SMITHERS_NATIVE === "required",
   log = (line) => console.log(line)
 } = {}) => {
   const version = spawnSync(zig, ["version"], { encoding: "utf8" })
