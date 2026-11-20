@@ -422,6 +422,32 @@ describe("reading a trace", () => {
     expect(paths(trace.made)).not.toContain("/w/elsewhere")
   })
 
+  it("reads an install that links thousands of files into thousands of directories it made, in time", () => {
+    const lines: Array<string> = []
+    for (let index = 0; index < 60_000; index += 1) lines.push(`100 mkdir("/w/env/d${index}", 0777) = 0`)
+    for (let index = 0; index < 60_000; index += 1) {
+      lines.push(`100 linkat(AT_FDCWD</w>, "cache/f${index}", AT_FDCWD</w>, "env/d${index}/f", 0) = 0`)
+    }
+    // A move onto a directory the run made, or onto one above it, takes it away from those the run made.
+    lines.push(
+      `100 rename("/w/other", "/w/env/d7") = 0`,
+      `100 openat(AT_FDCWD</w>, "env/d7/lock", O_RDONLY|O_CREAT, 0666) = 3`,
+      `100 openat(AT_FDCWD</w>, "env/d8/lock", O_RDONLY|O_CREAT, 0666) = 3`,
+      `100 rename("/w/next", "/w/env") = 0`,
+      `100 openat(AT_FDCWD</w>, "env/d9/lock", O_RDONLY|O_CREAT, 0666) = 3`
+    )
+    const began = performance.now()
+    const trace = read(lines.join("\n"))
+    // Searching every directory made at every link took 26 s here, on the build server.
+    expect(performance.now() - began).toBeLessThan(10_000)
+    expect(trace.refusals).toEqual([])
+    expect(["/w/env/d7/lock", "/w/env/d8/lock", "/w/env/d9/lock"].map((path) => trace.made.has(path))).toEqual([
+      false,
+      true,
+      false
+    ])
+  })
+
   it("leaves out what a quiet process and the processes it starts read, and keeps what they write", () => {
     const quiet = (text: string, words: ReadonlyArray<string>): ObservedReads.Trace =>
       ObservedReads.read(() => text.split("\n"), "/w", words)

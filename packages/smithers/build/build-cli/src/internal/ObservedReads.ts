@@ -676,11 +676,25 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
    * when it was made, so whatever is in it the run put there.
    */
   const built = new Set<string>()
+  /**
+   * Every directory above one that was ever in `built`. A name not here has
+   * nothing of `built` below it, so taking it away is looked up, not searched:
+   * an install links thousands of files into the thousands of directories it
+   * made.
+   */
+  const aboveBuilt = new Set<string>()
+  const build = (path: string): void => {
+    built.add(path)
+    for (let above = NodePath.posix.dirname(path); above !== "/" && !aboveBuilt.has(above);) {
+      aboveBuilt.add(above)
+      above = NodePath.posix.dirname(above)
+    }
+  }
   /** A name is taken away or given to something else: neither it nor anything under it is a directory the run made. */
   const unbuilt = (path: string): void => {
-    for (const directory of [...built]) {
-      if (directory === path || directory.startsWith(`${path}/`)) built.delete(directory)
-    }
+    built.delete(path)
+    if (!aboveBuilt.has(path)) return
+    for (const directory of built) if (directory.startsWith(`${path}/`)) built.delete(directory)
   }
   /** Names the run removed or moved away. */
   const removed = new Set<string>()
@@ -825,7 +839,7 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
     /** Notes a directory the run made. */
     const madeDirectory = (path: string | undefined): void => {
       wrote(path, "made", true)
-      if (path !== undefined && ok) built.add(path)
+      if (path !== undefined && ok) build(path)
     }
 
     switch (name) {
