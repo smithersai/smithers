@@ -390,7 +390,7 @@ describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
         code: exitCodes.unsupported,
         stdout: "",
         stderr:
-          "smithers-ci: inventory: the repository already builds with Smithers build (.smithers/WORKSPACE.smithers); there is nothing to convert\n"
+          `smithers-ci: inventory: .smithers/WORKSPACE.smithers was not written by smithers-ci, so apply leaves it alone: run this repository's Smithers build with smthrs ci, or remove .smithers/WORKSPACE.smithers to have apply write its files\n`
       })
       expect(changed(before, snapshot(root))).toEqual([])
     })

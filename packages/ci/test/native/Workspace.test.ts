@@ -25,7 +25,7 @@ describe("a repository that already builds with Smithers build", () => {
 
   it("is refused in one line that names the file", () => {
     expect(refusal(inventory([found("WORKSPACE.ts")]))).toBe(
-      "the repository already builds with Smithers build (WORKSPACE.ts); there is nothing to convert"
+      "WORKSPACE.ts was not written by smithers-ci, so apply leaves it alone: run this repository's Smithers build with smthrs ci, or remove WORKSPACE.ts to have apply write its files"
     )
     expect(refusal(inventory())).toBeUndefined()
   })

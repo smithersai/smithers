@@ -37,7 +37,14 @@ refuses, and names the path, when:
   generated ones: a root `PACKAGE.ts` or `PACKAGE.vibe`, or
   `.smithers/WORKSPACE.ts`;
 - a link in the path leads outside the repository, or to nothing;
-- a file is where a directory must go, or a directory where the file must go.
+- a file is where a directory must go, or a directory where the file must go;
+- a Smithers workspace `smithers-ci` did not write is there: `WORKSPACE.ts`,
+  `.smithers/WORKSPACE.ts` or `.smithers/WORKSPACE.smithers`. `apply` leaves
+  it alone and says how to go on:
+
+```text
+smithers-ci: inventory: .smithers/WORKSPACE.smithers was not written by smithers-ci, so apply leaves it alone: run this repository's Smithers build with smthrs ci, or remove .smithers/WORKSPACE.smithers to have apply write its files
+```
 
 `apply` writes those files and nothing else. It adds no line to your
 `.gitignore`: the cache is never in your checkout (see

@@ -63,8 +63,9 @@ export const wrote = (path: string, text: string): boolean =>
 export const found = (file: string): Unsupported => ({ feature: smithersBuild, detail: file })
 
 /**
- * Why nothing is generated for this repository, or `undefined` when it has
- * no workspace of its own. Its CI is already its targets.
+ * Why `apply` writes nothing for this repository, or `undefined` when it has
+ * no workspace of its own: a workspace its owner wrote is left alone, run with
+ * `smthrs ci`, and `apply` writes its files once it is removed.
  *
  * @throws {never}
  * @category accessors
@@ -74,7 +75,7 @@ export const refusal = (inventory: Inventory): string | undefined => {
   const file = ownWorkspace(inventory)
   return file === undefined
     ? undefined
-    : `the repository already builds with Smithers build (${file}); there is nothing to convert`
+    : `${file} was not written by smithers-ci, so apply leaves it alone: run this repository's Smithers build with smthrs ci, or remove ${file} to have apply write its files`
 }
 
 /**

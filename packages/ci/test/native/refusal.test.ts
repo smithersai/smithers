@@ -29,7 +29,7 @@ const run = async (args: ReadonlyArray<string>, root: string): Promise<Outcome> 
 }
 
 const already = (file: string): string =>
-  `the repository already builds with Smithers build (${file}); there is nothing to convert\n`
+  `${file} was not written by smithers-ci, so apply leaves it alone: run this repository's Smithers build with smthrs ci, or remove ${file} to have apply write its files\n`
 
 describe("smithers-ci on a repository with its own Smithers workspace", { timeout: 300_000 }, () => {
   it("apply exits 3 with one line and writes nothing, as a process", async () => {
