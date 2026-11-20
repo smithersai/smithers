@@ -1035,8 +1035,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const tmp = at?.tmp ?? path.join(path.dirname(way.tmp), `${path.basename(way.tmp)}-job-${name}`)
         const place = try orFail(machine(way, home, tmp), "could not make the home of a job")
         const directory = try orFail(fresh(at?.tree ?? path.join(work, `${path.basename(way.home)}-copy-${name}`)), "could not make a directory")
-        // What Smithers build tells a target on a machine of its temporary directory, and where git stops looking.
+        // What Smithers build tells a target on a machine: where its home keeps configuration, data and state, its
+        // temporary directory, and where git stops looking. A baseline step is told the same, so a tool finds each
+        // of them at the same place both ways, and a step that reads one of the variables reads the same value.
         const onMachine = at === undefined ? {} : {
+          XDG_CONFIG_HOME: path.join(home, ".config"),
+          XDG_DATA_HOME: path.join(home, ".local", "share"),
+          XDG_STATE_HOME: path.join(home, ".local", "state"),
           TMPDIR: tmp,
           TMP: tmp,
           TEMP: tmp,
