@@ -392,6 +392,58 @@ const signalRoot = async () => {
   return base
 }
 
+/**
+ * A program that asks for one file a hundred times each way, then asks
+ * again after a name changed, after the file is gone, and from a process it
+ * starts: as a compiler looks up the same header in every search path.
+ */
+const asking = String.raw`
+import * as fs from "node:fs"
+import { spawnSync } from "node:child_process"
+const [file, made] = process.argv.slice(2)
+for (let i = 0; i < 100; i++) fs.statSync(file)
+for (let i = 0; i < 100; i++) fs.closeSync(fs.openSync(file, "r"))
+fs.mkdirSync(made)
+fs.statSync(file)
+fs.statSync(file)
+fs.rmSync(file)
+for (let i = 0; i < 3; i++) try { fs.statSync(file) } catch {}
+spawnSync(process.execPath, ["-e", "try { require('node:fs').statSync(" + JSON.stringify(file) + ") } catch {}"])
+`
+
+describe("smthrs-observe and questions asked again", () => {
+  supervised("writes a question once until something could answer it otherwise", async () => {
+    const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-again-")))
+    temporary.push(base)
+    const file = Path.join(base, "file")
+    await Fs.writeFile(file, "file\n")
+    const script = Path.join(base, "asking.mjs")
+    await Fs.writeFile(script, asking)
+    const trace = Path.join(base, "trace")
+    const run = spawnSync(supervisor!, [trace, "--", process.execPath, script, file, Path.join(base, "made")], {
+      encoding: "utf8"
+    })
+    expect(run.status, run.stderr).toBe(0)
+    const lines = NodeFs.readFileSync(trace, "utf8").split("\n").filter((line) => line.includes(JSON.stringify(file)))
+    const program = Number(lines[0]!.split(" ")[0])
+    const of = (pid: number, call: string) =>
+      lines
+        // `rmSync` looks at the file without following a link first: another question, with lines of its own.
+        .filter((line) => line.startsWith(`${pid} ${call}(`) && !line.includes("AT_SYMLINK_NOFOLLOW"))
+        .map((line) => line.slice(line.lastIndexOf(") = ") + 4))
+    // Found once, found again after a directory was made, missing once after the file was removed.
+    expect(of(program, "newfstatat")).toEqual(["0", "0", "-1 ENOENT (No such file or directory)"])
+    expect(of(program, "openat").filter((answer) => answer === "0")).toEqual(["0"])
+    // Another process asks for itself.
+    const other = [...new Set(lines.map((line) => Number(line.split(" ")[0])))].filter((pid) => pid !== program)
+    expect(other.flatMap((pid) => of(pid, "newfstatat"))).toEqual(["-1 ENOENT (No such file or directory)"])
+    // What the reader keeps is what every question would have given it: found, then missing after the run removed it.
+    const read = ObservedReads.read(() => NodeFs.readFileSync(trace, "utf8").split("\n"), base)
+    expect(read.refusals).toEqual([])
+    expect(read.found.has(file)).toBe(true)
+  })
+})
+
 describe("smthrs-observe and signals", () => {
   supervised("never lets a signal cut short a call it would not cut short unrecorded", async () => {
     const base = await signalRoot()

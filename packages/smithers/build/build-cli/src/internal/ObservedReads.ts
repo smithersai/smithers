@@ -1688,6 +1688,36 @@ export const holdsValue = (text: string, value: string): boolean => {
   return false
 }
 
+/** The bytes of a value as a file of one-byte characters holds it; none when no such file can. */
+const bytesOf = (value: string): Buffer | undefined => {
+  for (let index = 0; index < value.length; index += 1) if (value.charCodeAt(index) > 0xff) return undefined
+  return Buffer.from(value, "latin1")
+}
+
+const hexByte = (byte: number | undefined): boolean =>
+  byte !== undefined && ((byte >= 0x30 && byte <= 0x39) || (byte >= 0x61 && byte <= 0x66))
+
+/**
+ * {@link holdsValue} over the bytes of a file, each read as one character,
+ * as the text of the file is read in latin1: the file is searched where it
+ * lies, with no text made of it.
+ */
+const bytesHoldValue = (data: Buffer, value: string): boolean => {
+  if (value.length < minimumValueLength) return false
+  const whole = bytesOf(value)
+  if (whole === undefined) return false
+  if (data.includes(whole)) return true
+  if (!hexId.test(value)) return false
+  const short = whole.subarray(0, 7)
+  for (let at = data.indexOf(short); at >= 0; at = data.indexOf(short, at + 1)) {
+    if (!hexByte(data[at - 1]) && !hexByte(data[at + short.length])) return true
+  }
+  return false
+}
+
+/** The fewest bytes a file holds that holds a value: a commit id is found by its first seven characters. */
+const fewestBytes = (value: string): number => hexId.test(value) ? 7 : value.length
+
 /**
  * Whether a text holds a variable's name, as most files write it or as a
  * file of two-byte characters does.
@@ -1794,6 +1824,40 @@ export const ignoredByGit = (root: string) => (paths: ReadonlyArray<string>): Re
   return new Set(asked.status === 0 ? asked.stdout.split("\0").filter((path) => path !== "") : [])
 }
 
+/**
+ * The file system as one reading of a trace sees it: the status of each path
+ * is asked for once. The run has ended, so a second answer would say the
+ * same, and a reading that resolves, measures and checks ten thousand paths
+ * asked three times over.
+ */
+const onceEach = (io: Io): Io => {
+  const seen = new Map<string, NodeFs.Stats | { readonly failed: unknown }>()
+  return {
+    ...io,
+    lstat: (path) => {
+      let stats = seen.get(path)
+      if (stats === undefined) {
+        try {
+          stats = io.lstat(path)
+        } catch (cause) {
+          stats = { failed: cause }
+        }
+        seen.set(path, stats)
+      }
+      if ("failed" in stats) throw stats.failed
+      return stats
+    }
+  }
+}
+
+/**
+ * Bytes of workspace files to search for variable names above which git is
+ * asked first which of them it leaves out: one process start against a pass
+ * over what a tool installed in the workspace (a virtual environment, a type
+ * checker's cache).
+ */
+const searchedFirst = 8 * 1024 * 1024
+
 const pseudo = (path: string): boolean => /^\/(?:proc|sys|dev)(?:\/|$)/.test(path)
 
 const slash = 47
@@ -1845,7 +1909,7 @@ export const observe = (
      * it measured ({@link remembering}): a compiler or an interpreter that every step reads is read and hashed
      * once in a build, and not once for every step.
      */
-    readonly outside?: ((path: string) => string) | undefined
+    readonly outside?: Measuring | undefined
     /**
      * Paths measured just before the run began, by their real paths, each with what was there. A file the run
      * found there and then changed is held as the run left it or as it found it: the next run that finds it as
@@ -1859,27 +1923,37 @@ export const observe = (
     const outside = trace.outside?.[0]
     return { refusal: trace.refusals[0]!, ...(outside === undefined ? {} : { outside }) }
   }
-  const io = options.io ?? defaultIo
+  const io = onceEach(options.io ?? defaultIo)
   const variables = options.variables
   const variableNames = Object.keys(variables?.values ?? {}).sort(byCodeUnit)
   /** The files of the workspace the run read that hold each variable's name. */
   const naming = new Map<string, Array<string>>()
   const namesHeld = heldNames(variableNames)
-  const beyond = options.outside ?? ((path: string): string => measure(path, io))
+  const beyond = options.outside?.using?.(io) ?? options.outside ?? ((path: string): string => measure(path, io))
+  /**
+   * The files of the workspace whose names count, where they were found before the search: a name in a file git
+   * leaves out or in one the run reads as data says nothing (see `used`), so such a file is not searched. Unknown
+   * (every file is searched, and `used` leaves those out after) until there is enough to search to ask git first.
+   */
+  let telling: ReadonlySet<string> | undefined
   /** Measures a path, and looks for the variables' names in a file of the workspace as it is read. */
   const measured = (path: string): string =>
-    !under(path, options.root) ? beyond(path) : variableNames.length === 0 ? measure(path, io) : measure(path, {
-      ...io,
-      readFile: (file) => {
-        const data = io.readFile(file)
-        for (const name of namesHeld(data.toString("latin1"))) {
-          const files = naming.get(name)
-          if (files === undefined) naming.set(name, [path])
-          else files.push(path)
+    !under(path, options.root)
+      ? beyond(path)
+      : variableNames.length === 0 || telling?.has(path) === false
+      ? measure(path, io)
+      : measure(path, {
+        ...io,
+        readFile: (file) => {
+          const data = io.readFile(file)
+          for (const name of namesHeld(data.toString("latin1"))) {
+            const files = naming.get(name)
+            if (files === undefined) naming.set(name, [path])
+            else files.push(path)
+          }
+          return data
         }
-        return data
-      }
-    })
+      })
   const mounts = options.mounts ?? []
   /** Where on the host a path is that the run named: under a mounted directory, under where that really is. */
   const placed = (path: string): string => {
@@ -2060,10 +2134,32 @@ export const observe = (
     }
     return place
   }
+  /** The files of the workspace a name counts in, asked of git before the search when there is much to search. */
+  const toldBefore = (given: Variables): ReadonlySet<string> | undefined => {
+    const files: Array<string> = []
+    let bytes = 0
+    for (const [path, entry] of entries) {
+      if (entry.first === "made" || !under(path, options.root) || !visible(path)) continue
+      try {
+        const stats = io.lstat(path)
+        if (!stats.isFile()) continue
+        bytes += stats.size
+      } catch {
+        continue
+      }
+      files.push(path)
+    }
+    if (bytes < searchedFirst) return undefined
+    const data = (given.readAsData ?? []).map((path) => NodePath.posix.join(options.root, path))
+    const kept = files.filter((file) => !data.some((directory) => under(file, directory)))
+    const left = (given.ignored ?? ignoredByGit(options.root))(kept)
+    return new Set(kept.filter((file) => !left.has(file)))
+  }
   const reads: Array<readonly [string, string] | readonly [string, string, string]> = []
   const given: Array<readonly [string, string, number]> = []
   const lists: Array<Record["lists"][number]> = []
   const temporary = options.temporary ?? []
+  if (variables !== undefined && variableNames.length > 0) telling = toldBefore(variables)
   for (const path of [...entries.keys()].sort(byCodeUnit)) {
     const entry = entries.get(path)!
     if (!visible(path) || entry.first === "made") continue
@@ -2126,26 +2222,31 @@ export const observe = (
     const data = (given.readAsData ?? []).map((path) => NodePath.posix.join(options.root, path))
     const holders = [...new Set([...naming.values()].flat())]
       .filter((file) => !data.some((directory) => under(file, directory)))
-    const left = holders.length === 0 ? new Set<string>() : (given.ignored ?? ignoredByGit(options.root))(holders)
-    const telling = new Set(holders.filter((file) => !left.has(file)))
-    for (const [name, files] of naming) if (files.some((file) => telling.has(file))) names.add(name)
+    const left = holders.length === 0 || telling !== undefined
+      ? new Set<string>()
+      : (given.ignored ?? ignoredByGit(options.root))(holders)
+    const counted = new Set(holders.filter((file) => !left.has(file)))
+    for (const [name, files] of naming) if (files.some((file) => counted.has(file))) names.add(name)
     // A value in a file the run wrote and left. What a locked install fetched is fixed by a lockfile, not by the run.
     const sought = variableNames.flatMap((name) => {
       const value = given.values[name]
       return names.has(name) || value === undefined || value.length < minimumValueLength ? [] : [[name, value] as const]
     })
+    // A file smaller than every value, or no file, holds none of them, and is not read.
+    const fewest = Math.min(...sought.map(([, value]) => fewestBytes(value)))
     for (const path of sought.length === 0 ? [] : survivors) {
       if (wrote(path, fetched)) continue
-      let text: string
+      let data: Buffer
       try {
-        if (!io.lstat(path).isFile()) continue
-        text = io.readFile(path).toString("latin1")
+        const stats = io.lstat(path)
+        if (!stats.isFile() || stats.size < fewest) continue
+        data = io.readFile(path)
       } catch {
         // A file that cannot be read may hold any of them.
         for (const [name] of sought) names.add(name)
         break
       }
-      for (const [name, value] of sought) if (holdsValue(text, value)) names.add(name)
+      for (const [name, value] of sought) if (bytesHoldValue(data, value)) names.add(name)
     }
     return [...names].sort(byCodeUnit).map((name) => [name, heldAs(given.values[name])] as const)
   }
@@ -2430,12 +2531,12 @@ export const changed = (
  * and a commit changes its own files, never the tools or the packages a step
  * installed: held last, those are not read at all when the run has to happen.
  */
-const cheapestFirst = (
+function* cheapestFirst(
   reads: Record["reads"],
   absolute: (path: string) => string,
   io: Io,
   own: (path: string) => boolean
-): ReadonlyArray<Record["reads"][number]> => {
+): Iterable<Record["reads"][number]> {
   const cost = (path: string): number => {
     try {
       const stats = io.lstat(absolute(path))
@@ -2444,10 +2545,15 @@ const cheapestFirst = (
       return 0
     }
   }
-  return reads
-    .map((read, index) => [read, own(read[0]) ? 0 : read[0].startsWith("/") ? 2 : 1, cost(read[0]), index] as const)
-    .sort((left, right) => left[1] - right[1] || left[2] - right[2] || left[3] - right[3])
-    .map(([read]) => read)
+  const tiers: Array<Array<readonly [Record["reads"][number], number]>> = [[], [], []]
+  reads.forEach((read, index) => tiers[own(read[0]) ? 0 : read[0].startsWith("/") ? 2 : 1]!.push([read, index]))
+  // Each group is sized only once every path before it held: a commit's own file that changed is found before
+  // the status of any other path is asked for.
+  for (const tier of tiers) {
+    const sized = tier.map(([read, index]) => [read, cost(read[0]), index] as const)
+    sized.sort((left, right) => left[1] - right[1] || left[2] - right[2])
+    for (const [read] of sized) yield read
+  }
 }
 
 /**
@@ -2486,10 +2592,24 @@ export const anchored = (stored: Record, latest: (label: string) => string | und
 export type Digests = Map<string, readonly [fingerprint: string, state: string]>
 
 /**
+ * Measures a path outside the workspace. `using`, where there is one, gives
+ * the same measurement through another view of the file system.
+ *
+ * @category measuring
+ * @since 1.0.0
+ */
+export interface Measuring {
+  (path: string): string
+  readonly using?: ((io: Io) => (path: string) => string) | undefined
+}
+
+/**
  * A measurement that remembers a file's digest while its size, times, inode
  * and device stay the same, the trust Git's index places in the same fields.
  * A file changed less than two seconds ago is always read again. `memory`
- * holds what an earlier build measured, and is added to.
+ * holds what an earlier build measured, and is added to. `using` measures
+ * through another view of the file system with the same memory: a reading of
+ * a trace gives its own, which asks for each path's status once.
  *
  * @category measuring
  * @since 1.0.0
@@ -2498,8 +2618,8 @@ export const remembering = (
   io: Io = defaultIo,
   now: () => number = Date.now,
   memory: Digests = new Map()
-): (path: string) => string => {
-  return (path) => {
+): Measuring & { readonly using: (io: Io) => (path: string) => string } => {
+  const using = (io: Io) => (path: string): string => {
     let fingerprint: string | undefined
     try {
       const stats = io.lstat(path)
@@ -2520,6 +2640,7 @@ export const remembering = (
     if (fingerprint !== undefined) memory.set(path, [fingerprint, state])
     return state
   }
+  return Object.assign(using(io), { using })
 }
 
 /** One kept digest: a path, its fingerprint and what it held. */

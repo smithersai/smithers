@@ -2696,13 +2696,13 @@ const executeWith = (
         if (node.machine !== undefined) {
           // What it builds stays on its machine, for the targets there that wait for it, so it always runs.
           const machine = yield* onMachine(node)
-          const spawned = yield* spawnNode(node, machine!.tree)
+          const spawned = yield* timed(node.label, "step", spawnNode(node, machine!.tree))
           return spawned.ok ? green("ran") : fail(spawned.error)
         }
         const cached = yield* cacheGet(node)
         if (cached !== undefined && (yield* restoreBuild(node, cached.output))) return green("hit")
         if (node.overlays.length === 0) {
-          const spawned = yield* spawnNode(node, root)
+          const spawned = yield* timed(node.label, "step", spawnNode(node, root))
           if (!spawned.ok) return fail(spawned.error)
           yield* captureBuild(node, node.keyPreview)
           return green("ran")
@@ -2719,7 +2719,7 @@ const executeWith = (
             for (const outFile of node.outFiles) {
               yield* joined(() => Fs.rm(NodePath.join(scratch, ...outFile.split("/")), { force: true }))
             }
-            const spawned = yield* spawnNode(node, scratch)
+            const spawned = yield* timed(node.label, "step", spawnNode(node, scratch))
             if (!spawned.ok) return spawned
             output = yield* captureBuild(node, node.keyPreview, scratch, false)
             return { ok: true as const }
@@ -3418,7 +3418,8 @@ const executeWith = (
         yield* joined(() => Fs.mkdir(directory, { recursive: true }))
         const traceFile = NodePath.join(directory, "trace")
         return yield* Effect.gen(function*() {
-          const found = yield* joined(async () => foundBefore(node, place, earlier))
+          // What earlier runs wrote is measured before the run, as part of holding its records against the files.
+          const found = yield* timed(node.label, "check", joined(async () => foundBefore(node, place, earlier)))
           // The trace file is made first: its time on the file system's clock is when the run began.
           yield* joined(() => Fs.writeFile(traceFile, ""))
           const startedMs = (yield* joined(() => Fs.stat(traceFile))).ctimeMs
@@ -3444,7 +3445,7 @@ const executeWith = (
           }
           if (!attempt.ok) {
             log(`${node.label}  failed while its reads were recorded; it runs again without the recording`)
-            const plain = yield* spawnConsumer(node)
+            const plain = yield* timed(node.label, "step", spawnConsumer(node))
             if (!plain.ok) return fail(plain.error)
             yield* joined(() =>
               CacheEvidence.rememberFailedAttempt(root, cacheDirectory, observed.key, recordedBy, {
@@ -4384,7 +4385,7 @@ const executeWith = (
                   const cached = yield* cacheGet(shardNode)
                   if (cached !== undefined) continue
                   allHit = false
-                  const spawned = yield* spawnConsumer(shardNode)
+                  const spawned = yield* timed(node.label, "step", spawnConsumer(shardNode))
                   if (!spawned.ok) return fail(spawned.error)
                   yield* cachePut(shardNode, { kind: "shell-test-shard", shard, total: node.shards })
                 }
@@ -4395,7 +4396,7 @@ const executeWith = (
                 if (outcome !== undefined) return outcome
                 // Unobserved, nothing says what it leaves for the targets that wait for it: it runs every time.
                 if (awaitedBy(node)) {
-                  const spawned = yield* spawnConsumer(node)
+                  const spawned = yield* timed(node.label, "step", spawnConsumer(node))
                   if (!spawned.ok) return fail(spawned.error)
                   unstored(node, "a step after it may read what it leaves, and its reads are not recorded")
                   return green("ran")
@@ -4403,13 +4404,13 @@ const executeWith = (
               }
               const cached = yield* cacheGet(node)
               if (cached !== undefined) return green("hit")
-              const spawned = yield* spawnConsumer(node)
+              const spawned = yield* timed(node.label, "step", spawnConsumer(node))
               if (!spawned.ok) return fail(spawned.error)
               yield* cachePut(node, { kind: "shell-test" })
               return green("ran")
             }
             case "Shell.Run": {
-              const spawned = yield* spawnConsumer(node)
+              const spawned = yield* timed(node.label, "step", spawnConsumer(node))
               if (!spawned.ok) return fail(spawned.error)
               return green("ran")
             }

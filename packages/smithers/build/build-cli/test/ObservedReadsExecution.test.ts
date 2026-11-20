@@ -654,6 +654,18 @@ describe("an observed test", () => {
     }
   })
 
+  tracedIt("names the run of a step it does not record", async () => {
+    const { run, summaries } = await fixture()
+    // A test run with no recording, and a build that is never stored, as a job's cache step is.
+    expect(await run(["plain", "setup"])).toEqual({ plain: "ran", setup: "ran" })
+    for (const result of summaries[0]!.results) {
+      expect(Object.keys(result.parts?.ms ?? {}), result.label).toEqual(["step"])
+      expect(result.parts!.ms["step"]!, result.label).toBeGreaterThan(0)
+      // The step is the target's time: nothing of it is left unnamed but the scheduling around it.
+      expect(result.parts!.ms["step"]!, result.label).toBeLessThanOrEqual(result.durationMs + 1)
+    }
+  })
+
   tracedIt("says what each part of its run took", async () => {
     const { run, summaries, write } = await fixture()
     expect(await run()).toEqual({ check: "ran" })

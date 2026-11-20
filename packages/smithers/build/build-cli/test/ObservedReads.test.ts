@@ -1162,6 +1162,39 @@ describe("recording what a run read", () => {
   const absent = (root: string, name: string): string =>
     `100 openat(AT_FDCWD<${root}>, ${JSON.stringify(name)}, O_RDONLY) = -1 ENOENT (No such file or directory)`
 
+  it("asks for the status of each path once while it reads a trace", async () => {
+    const { outside, root } = await setup()
+    const asked = new Map<string, number>()
+    const io: ObservedReads.Io = {
+      ...ObservedReads.defaultIo,
+      lstat: (path) => {
+        asked.set(path, (asked.get(path) ?? 0) + 1)
+        return ObservedReads.defaultIo.lstat(path)
+      }
+    }
+    const lines = [
+      open(root, "src/a.txt"),
+      open(root, "src/b.txt"),
+      open(root, "src/a.txt"),
+      `100 openat(AT_FDCWD, ${JSON.stringify(outside)}, O_RDONLY) = 3`,
+      absent(root, "src/none.txt")
+    ]
+    const value = ObservedReads.record(ObservedReads.read(() => lines, root), {
+      root,
+      ignore: [],
+      startedMs: Date.now() + 60_000,
+      io,
+      // A file outside the workspace is measured with the reading's own view of the file system too.
+      outside: ObservedReads.remembering(io, () => Date.now() + 60_000)
+    })
+    if ("refusal" in value) throw new Error(value.refusal)
+    expect(value.reads.map(([path]) => path)).toEqual([outside, "src/a.txt", "src/b.txt", "src/none.txt"])
+    // Resolving each path, measuring it and checking that it did not change while the run ran take one answer.
+    expect([...asked].filter(([, count]) => count > 1)).toEqual([])
+    expect(asked.get(Path.join(root, "src", "a.txt"))).toBe(1)
+    expect(asked.get(outside)).toBe(1)
+  })
+
   it("takes a file the run moved into place inside a directory for the run's own", async () => {
     const { record, root, rows } = await setup()
     // What a package manager leaves: a directory filled under one name and moved to another.
@@ -1370,6 +1403,27 @@ describe("recording what a run read", () => {
     // A caller that knows the commit's own files has them held first: the tools and packages are never read.
     expect(held((path) => path === "src/own.txt")).toBe("src/own.txt changed")
     expect(measured).toEqual(["src/own.txt"])
+  })
+
+  it("asks nothing of the other paths when one of the commit's own files differs", async () => {
+    const { outside, record, root, rows } = await setup()
+    await Fs.writeFile(Path.join(root, "src", "own.txt"), "own")
+    const stored = rows(record([open(root, outside), open(root, "src/a.txt"), open(root, "src/own.txt")]))
+    await Fs.appendFile(Path.join(root, "src", "own.txt"), "changed")
+    const asked: Array<string> = []
+    const io: ObservedReads.Io = {
+      ...ObservedReads.defaultIo,
+      lstat: (path) => {
+        asked.push(Path.relative(root, path))
+        return ObservedReads.defaultIo.lstat(path)
+      }
+    }
+    const own = (path: string): boolean => path === "src/own.txt"
+    expect(ObservedReads.changed(stored, root, ObservedReads.measure, io, undefined, {}, own)).toBe(
+      "src/own.txt changed"
+    )
+    // Only the commit's own file is sized; the workspace's other files and the tools outside it are not.
+    expect(asked).toEqual(["src/own.txt"])
   })
 
   it("leaves out what the run made, and accepts a path it found missing and then made", async () => {
@@ -2809,6 +2863,65 @@ describe("the variables of the host a run could have used", () => {
       .toEqual(held("RUN"))
     // A value of one character is in every file: only its name shows a run used it.
     expect(observe([made, filled("out/other.txt")], { values: { ATTEMPT: "1" } }).variables).toBeUndefined()
+  })
+
+  it("asks git first which files count when there is much to search, and searches only those", async () => {
+    const { observe, open, root, write } = await places()
+    // A tool's cache in the workspace, which git leaves out, holds a name; the run's own script holds another.
+    const cache = await write("dist/cache.bin", Buffer.concat([Buffer.alloc(9 * 1024 * 1024, 120), Buffer.from("RUN")]))
+    const script = await write("src/run.sh", "echo $COMMIT\n")
+    const plain = await write("src/plain.txt", "nothing here\n")
+    await write("src/listed/a.txt")
+    const asked: Array<ReadonlyArray<string>> = []
+    const ignored = (paths: ReadonlyArray<string>): ReadonlySet<string> => {
+      asked.push([...paths].sort())
+      return ObservedReads.ignoredByGit(root)(paths)
+    }
+    const lines = [
+      open("dist/cache.bin"),
+      open("src/run.sh"),
+      open("src/plain.txt"),
+      open("src/listed"),
+      `100 openat(AT_FDCWD<${root}>, "src/absent.txt", O_RDONLY) = -1 ENOENT (No such file or directory)`
+    ]
+    const record = observe(lines, { ignored })
+    // The name in the cache says nothing, as before; the one in the script does.
+    expect(record.variables).toEqual(held("COMMIT"))
+    // Git was asked once, before the search, about every file of the workspace the run read.
+    expect(asked).toEqual([[cache, plain, script].sort()])
+    // Below the size, git is asked only about the files that held a name, after the search, as before.
+    asked.length = 0
+    await write("dist/cache.bin", "RUN")
+    expect(observe(lines, { ignored }).variables).toEqual(held("COMMIT"))
+    expect(asked).toEqual([[cache, script].sort()])
+    await write("dist/cache.bin", "nothing")
+    asked.length = 0
+    expect(observe(lines, { ignored }).variables).toEqual(held("COMMIT"))
+    expect(asked).toEqual([[script]])
+  })
+
+  it("searches what the run left as bytes, and reads no file too small to hold a value", async () => {
+    const { filled, observe, write } = await places()
+    const tiny = await write("out/tiny.txt", "abc")
+    await write("out/run.bin", Buffer.concat([Buffer.from([0, 255, 7]), Buffer.from(values.RUN), Buffer.from([0])]))
+    await write("out/wide.txt", "日本語のパスです\n")
+    const made = `100 mkdir("out", 0777) = 0`
+    const read: Array<string> = []
+    const io: ObservedReads.Io = {
+      ...ObservedReads.defaultIo,
+      readFile: (path) => {
+        read.push(path)
+        return ObservedReads.defaultIo.readFile(path)
+      }
+    }
+    // Three bytes hold neither the commit's seven characters nor the run's ten: the file is not read.
+    expect(observe([made, filled("out/tiny.txt")], {}, io).variables).toBeUndefined()
+    expect(read).not.toContain(tiny)
+    // A value among bytes that are no text is found as it is in text.
+    expect(observe([made, filled("out/run.bin")], {}, io).variables).toEqual(held("RUN"))
+    // A file is read one byte to a character: a value of wider characters is never in one, as before.
+    expect(observe([made, filled("out/wide.txt")], { values: { WIDE: "日本語のパスです" } }, io).variables)
+      .toBeUndefined()
   })
 
   it("does not look in what a locked install fetched, and takes a file it cannot read to hold every value", async () => {
