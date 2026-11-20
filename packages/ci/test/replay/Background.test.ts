@@ -4,7 +4,7 @@
  * its step, in the baseline and as a target, and nothing of it is left when the replay is over.
  */
 
-import { execFileSync } from "node:child_process"
+import { spawnSync } from "node:child_process"
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { probe } from "../../src/replay/Jail.ts"
@@ -16,17 +16,17 @@ afterAll(() => made.forEach(remove))
 const runner = process.platform === "darwin" ? "macos-latest" : "ubuntu-latest"
 
 /**
- * The programs of this user whose whole command line is `sleep <seconds>`. The list is read whole: on a build host
- * with two thousand processes it is over the megabyte `execFileSync` takes by default, and the test died of
- * `spawnSync ps ENOBUFS` with no step at fault.
+ * The programs of this user whose whole command line is `sleep <seconds>`, by process id. `pgrep` names only those:
+ * a listing of every process grew past what a test reads on a build host running many jails, and how many
+ * processes a host runs is no part of this test. It exits 1 when none matches.
  */
-const sleeping = (seconds: number): ReadonlyArray<string> =>
-  execFileSync("ps", ["-u", String(process.getuid?.()), "-o", "args="], {
-    encoding: "utf8",
-    maxBuffer: 256 * 1024 * 1024
+const sleeping = (seconds: number): ReadonlyArray<string> => {
+  const found = spawnSync("pgrep", ["-u", String(process.getuid?.()), "-x", "-f", `sleep ${seconds}`], {
+    encoding: "utf8"
   })
-    .split("\n")
-    .filter((line) => line.trim() === `sleep ${seconds}`)
+  if (found.status !== 0 && found.status !== 1) throw new Error(`pgrep failed: ${found.stderr}`)
+  return found.stdout.split("\n").filter((line) => line !== "")
+}
 
 describe.runIf(!("refusal" in probe()))("a step that leaves a program running", () => {
   it("passes alike both ways and leaves nothing behind when the replay ends", async () => {
