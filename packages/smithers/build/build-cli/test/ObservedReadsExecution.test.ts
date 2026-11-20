@@ -1541,16 +1541,22 @@ describe("a tracer that fails", () => {
     expect(await traceFiles()).toEqual([])
   })
 
-  /** A tracer that writes, after the command, a trace of `count` missing paths of `digits` digits each. */
-  const flood = (count: number, digits: number): string =>
-    "\"$@\" || exit $?\n" +
-    `awk 'BEGIN { for (i = 0; i < ${count}; i++) printf "1 access(\\"/nonexistent-smithers-observed/%0${digits}d\\", ` +
-    `F_OK) = -1 ENOENT (No such file or directory)\\n", i }' > "$out"`
+  /**
+   * A tracer that writes, after the command, a trace of `count` missing paths, each of `parts` names of `digits`
+   * digits.
+   */
+  const flood = (count: number, digits: number, parts = 1): string => {
+    const name = Array.from({ length: parts }, () => `%0${digits}d`).join("/")
+    const values = Array.from({ length: parts }, () => "i").join(", ")
+    return "\"$@\" || exit $?\n" +
+      `awk 'BEGIN { for (i = 0; i < ${count}; i++) printf "1 access(\\"/nonexistent-smithers-observed/${name}\\", ` +
+      `F_OK) = -1 ENOENT (No such file or directory)\\n", ${values} }' > "$out"`
+  }
 
-  // A TypeScript build of many packages reads that many paths: 110,000 make a record of about 16 MiB.
-  posixIt("stores and reuses a run that read 110,000 paths", async () => {
+  // Over the 12 MiB records were held to before, under what one cache entry holds: 31,000 paths of 400 characters.
+  posixIt("stores and reuses a record of 13 MiB", async () => {
     const { logs, run, tracer } = await fixture()
-    const flooding = await tracer(flood(110000, 110))
+    const flooding = await tracer(flood(31000, 200, 2))
     expect(await run(["check"], flooding)).toEqual({ check: "ran" })
     expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
     expect(await run(["check"], flooding)).toEqual({ check: "hit" })
@@ -1558,10 +1564,20 @@ describe("a tracer that fails", () => {
 
   posixIt("stores nothing when the run read more than a record holds", async () => {
     const { logs, run, tracer } = await fixture()
-    // 150,000 paths of 440 characters: over 64 MiB.
-    const flooding = await tracer(flood(150000, 440).replace("%0440d", "%0220d/%0220d").replace(", i }", ", i, i }"))
+    // 110,000 paths of 110 characters: over 15 MiB.
+    const flooding = await tracer(flood(110000, 110))
     expect(await run(["check"], flooding)).toEqual({ check: "ran" })
     expect(logs).toContain("//:check  not cached: it read more paths than one record holds")
+  })
+
+  // 170,000 short paths make 10 MiB but over 500,000 members, more than one cache entry holds: the run is refused
+  // with the reason, not stored and then refused by the cache.
+  posixIt("stores nothing when the run read more paths than a cache entry counts", async () => {
+    const { logs, run, tracer } = await fixture()
+    const flooding = await tracer(flood(170000, 8))
+    expect(await run(["check"], flooding)).toEqual({ check: "ran" })
+    expect(logs).toContain("//:check  not cached: it read more paths than one record holds")
+    expect(logs.filter((line) => line.includes("could not store"))).toEqual([])
   })
 
   posixIt("removes the trace of a run that failed", async () => {

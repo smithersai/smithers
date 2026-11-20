@@ -12,6 +12,7 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
+import * as Cache from "../src/Cache.ts"
 import * as ObservedReads from "../src/internal/ObservedReads.ts"
 
 const temporary: Array<string> = []
@@ -3090,15 +3091,31 @@ describe("the stored records", () => {
     expect(many?.records.length).toBe(ObservedReads.maximumRecords)
     // A run that read what an earlier run read takes that record's place.
     expect(ObservedReads.store(one, [full, { ...one }])?.records).toEqual([one, full])
+    // Too many bytes for one cache entry, in few members.
     const large: ObservedReads.Record = {
-      reads: Array.from({ length: 150_000 }, (_, index) => [`${"long-directory-name/".repeat(4)}${index}`, "-"]),
+      reads: Array.from({ length: 120_000 }, (_, index) => [`${"long-directory-name/".repeat(8)}${index}`, "-"]),
       lists: [],
       id: "large"
     }
     expect(Buffer.byteLength(JSON.stringify(large))).toBeGreaterThan(ObservedReads.maximumBytes)
     expect(ObservedReads.store(large, [one])).toBeUndefined()
-    const half: ObservedReads.Record = { reads: large.reads.slice(0, 90_000), lists: [], id: "half" }
+    const half: ObservedReads.Record = { reads: large.reads.slice(0, 60_000), lists: [], id: "half" }
     expect(ObservedReads.store(half, [{ ...half, id: "half-again" }, one])?.records).toEqual([half])
+    // Too many members for one cache entry, in few bytes: three for each path.
+    const short: ObservedReads.Record = {
+      reads: Array.from({ length: 170_000 }, (_, index) => [`${index}`, "-"]),
+      lists: [],
+      id: "short"
+    }
+    expect(Buffer.byteLength(JSON.stringify(short))).toBeLessThan(ObservedReads.maximumBytes)
+    expect(ObservedReads.store(short, [])).toBeUndefined()
+    expect(ObservedReads.store({ ...short, reads: short.reads.slice(0, 100_000) }, [])?.records).toHaveLength(1)
+  })
+
+  // The records are one entry of the local cache: a set the store keeps is one the cache takes.
+  it("keeps no more than one cache entry holds", () => {
+    expect(ObservedReads.maximumBytes).toBeLessThan(Cache.entryLimit)
+    expect(ObservedReads.maximumMembers).toBeLessThan(Cache.outputMemberLimit)
   })
 
   const digest = "a".repeat(64)

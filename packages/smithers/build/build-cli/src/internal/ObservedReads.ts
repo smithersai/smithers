@@ -99,14 +99,26 @@ export const format = "smthrs-observed-reads/2"
 export const maximumRecords = 4
 
 /**
- * The largest set of records stored for one declaration, in JSON bytes. A
- * record takes about 150 bytes for each path its run read: a TypeScript build
- * of 64 packages of elizaOS/eliza reads 168,000 paths, about 25 MiB.
+ * The largest set of records stored for one declaration, in JSON bytes. The
+ * records are one entry of the local cache, so they hold what one entry holds
+ * (`Cache.entryLimit`, 16 MiB), less room for the entry around them. A record
+ * takes about 150 bytes for each path its run read: about 100,000 paths.
  *
  * @category constants
  * @since 1.0.0
  */
-export const maximumBytes = 64 * 1024 * 1024
+export const maximumBytes = 15 * 1024 * 1024
+
+/**
+ * The most JSON members (array elements and object keys) the records stored
+ * for one declaration hold: what one cache entry holds
+ * (`Cache.outputMemberLimit`), less room for the entry around them. A path
+ * read takes three.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maximumMembers = 499_000
 
 /** Symbolic links one path may pass through before resolving it fails. */
 const maximumLinks = 40
@@ -3099,14 +3111,24 @@ export const decode = (output: unknown): ReadonlyArray<Record> => {
 export const store = (added: Record, earlier: ReadonlyArray<Record>): Stored | undefined => {
   const records: Array<Record> = []
   let bytes = 0
+  // The three keys of what is stored.
+  let members = 3
   // A run that read what an earlier one read replaces that one's record.
   const others = earlier.filter((record) => record.id !== added.id)
   for (const candidate of [added, ...others].slice(0, maximumRecords)) {
     bytes += Buffer.byteLength(JSON.stringify(candidate))
-    if (bytes > maximumBytes) break
+    members += 1 + membersOf(candidate)
+    if (bytes > maximumBytes || members > maximumMembers) break
     records.push(candidate)
   }
   return records.length === 0 ? undefined : { kind, format, records }
+}
+
+/** The array elements and object keys of a JSON value, counted as the cache counts them. */
+const membersOf = (value: unknown): number => {
+  if (Array.isArray(value)) return value.reduce((sum: number, item: unknown) => sum + membersOf(item), value.length)
+  if (typeof value !== "object" || value === null) return 0
+  return Object.values(value).reduce((sum: number, item: unknown) => sum + membersOf(item), Object.keys(value).length)
 }
 
 /**

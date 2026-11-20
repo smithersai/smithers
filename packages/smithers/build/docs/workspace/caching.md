@@ -701,7 +701,7 @@ all be known, and says why on its own line:
 | `its trace does not say where /proc/self/fd/3/x led`                       | With strace, a path below a descriptor is followed only for a call that opened a file there  |
 | `it started /usr/bin/ping, which needs rights its jail takes away`         | See below: it ran again with no jail and no tracer, and that run is the verdict              |
 | `<path> leads through a link of a process ...`, `... goes back up ...`     | A link of the workspace, or a `..`, leads into `/proc/self`, which only the run could follow |
-| `it read more paths than one record holds`                                 | The record passed 64 MiB, about 400,000 paths                                                |
+| `it read more paths than one record holds`                                 | The record would not fit one cache entry: 15 MiB or 499,000 JSON members, about 100,000 paths |
 | `it passed, but failed while its reads were recorded`                      | See below                                                                                    |
 | `its recorded run failed and its plain run passed; it runs unrecorded ...` | See below: the run after such a one, of a target another waits for                           |
 | `a step after it may read what it leaves, and its reads are not recorded`  | The host cannot record reads, and another target waits for this one                          |
