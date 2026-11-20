@@ -192,13 +192,65 @@ const isProgress = (line: string): boolean => {
   return /\d/.test(counts) && counts.split(/[,;]\s*/).every((count) => oneCount.test(count.trim()))
 }
 
+/** How an entry of a report Rust's miette prints starts: the error, a cause, the last cause. */
+const reportEntry = /^(×|├─▶|╰─▶)\s*(.*)$/u
+
+/** A line inside a report that is no entry's words: a frame of a source snippet, or advice. */
+const reportFrame = /^(?:[╭·╰│]|help:)/u
+
+/**
+ * The lines with each report miette prints written as one line, as pnpm 12
+ * and other Rust programs print an error and its causes: `× resolve package
+ * manager dependencies`, then `├─▶ Failed to resolve config dependency …` with
+ * its words wrapped onto lines under it, down to `╰─▶ failed to lookup address
+ * information: …`. The line is the first cause, whose words hold every cause
+ * under it. A `×` line no cause follows, as a test runner prints for a failed
+ * test, stays as it is.
+ */
+const unwrapped = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const kept: Array<string> = []
+  /** The report being read: where its line is, whether that is a cause yet, and whether more words join it. */
+  let report: { at: number; cause: boolean; joining: boolean; indent: number } | undefined
+  for (const raw of lines) {
+    const line = raw.trim()
+    const indent = raw.length - raw.trimStart().length
+    const entry = reportEntry.exec(line)
+    if (entry !== null && entry[1] === "×") {
+      report = { at: kept.length, cause: false, joining: true, indent: indent + 2 }
+      kept.push(line)
+      continue
+    }
+    if (entry !== null && report !== undefined) {
+      if (!report.cause) kept[report.at] = entry[2]!
+      report.joining = !report.cause
+      report.cause = true
+      report.indent = indent + entry[1]!.length + 1
+      continue
+    }
+    if (report !== undefined && line !== "") {
+      const words = line.startsWith("│ ")
+        ? line.slice(1).trim()
+        : report.cause && indent >= report.indent
+        ? line
+        : undefined
+      if (words !== undefined && !reportFrame.test(words)) {
+        if (report.joining) kept[report.at] = `${kept[report.at]} ${words}`
+        continue
+      }
+    }
+    report = undefined
+    kept.push(line)
+  }
+  return kept
+}
+
 /**
  * The lines of an output as a terminal shows them: a line rewritten in place
  * with a carriage return shows what was written last, with no control
- * character.
+ * character, and a report miette prints is one line ({@link unwrapped}).
  */
 const shownLines = (text: string): ReadonlyArray<string> =>
-  text.split("\n").map((line) => (line.split("\r").at(-1) as string).replace(/\p{Cc}/gu, " ").trim())
+  unwrapped(text.split("\n").map((line) => (line.split("\r").at(-1) as string).replace(/\p{Cc}/gu, " ").trimEnd()))
     .filter((line) => line !== "")
 
 /**

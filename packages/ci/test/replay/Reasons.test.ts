@@ -116,11 +116,11 @@ interface Output {
 }
 
 /**
- * Real output of failed steps: the reviewers' ni and is-plain-obj steps, npm, cargo and pytest, and each package
- * manager running a script that fails.
+ * Real output of failed steps: the reviewers' ni and is-plain-obj steps, npm, cargo and pytest, each package
+ * manager running a script that fails, and pnpm 12 with no network.
  */
 const steps = JSON.parse(readFileSync(new URL("../fixtures/failed-steps.json", import.meta.url), "utf8")) as
-  & Record<"ni" | "npm" | "cargo" | "pytest" | "isPlainObj" | "nodeAssert", Output>
+  & Record<"ni" | "npm" | "cargo" | "pytest" | "isPlainObj" | "nodeAssert" | "pnpmOffline", Output>
   & { readonly managers: Record<"npm" | "pnpm" | "yarn" | "bun", Record<"error" | "silent", Output>> }
 
 describe("a reason that is never a progress line", () => {
@@ -140,6 +140,41 @@ describe("a reason that is never a progress line", () => {
     expect(reasonOf(steps.cargo)).toBe(
       `error: could not compile \`cr\` (bin "cr") due to 1 previous error; 1 warning emitted`
     )
+  })
+
+  // pnpm 12 with no network: 70 seconds of asking for the registry's address, then miette's report, its words
+  // wrapped onto the lines under each cause.
+  it("is the cause a Rust program's report gives, whole, not the end of a wrapped line", () => {
+    expect(reasonOf(steps.pnpmOffline)).toBe(
+      "Failed to resolve config dependency pnpm@12.15.0: Failed to fetch metadata from https://registry.npmjs.org/pnpm: " +
+        "error sending request: client error (Connect): dns error: failed to lookup address info"
+    )
+    // Wrapped under the error itself, with no cause under it.
+    expect(reasonOf({ exitCode: 1, stderr: "  × could not read the\n  │ configuration file\n", stdout: "" })).toBe(
+      "× could not read the configuration file"
+    )
+    // The last cause, wrapped with no rule, before the advice under it.
+    expect(
+      reasonOf({
+        exitCode: 1,
+        stderr: [
+          "  × build failed",
+          "  ╰─▶ the linker could not find",
+          "      libssl",
+          "  help: install the library",
+          ""
+        ].join("\n"),
+        stdout: ""
+      })
+    ).toBe("the linker could not find libssl")
+  })
+
+  it("keeps a test runner's mark of a failed test as it printed it", () => {
+    expect(reasonOf({ exitCode: 1, stderr: " × sum > adds 3ms\n   → expected 2 to be 3\n", stdout: "" })).toBe(
+      "→ expected 2 to be 3"
+    )
+    // A cause with no report above it is a line like any other.
+    expect(reasonOf({ exitCode: 1, stderr: "├─▶ something failed\n", stdout: "" })).toBe("├─▶ something failed")
   })
 
   it("is pytest's failed test, not its line of counts or its row of dots", () => {
