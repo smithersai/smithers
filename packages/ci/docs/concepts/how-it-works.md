@@ -299,6 +299,11 @@ these holds:
 Such a step runs again at every commit. Every other step is reused while the
 files it read are unchanged.
 
+Your workflow files under `.github/workflows/` are read as data: GitHub runs
+them, the step does not. A step that reads a workflow naming `GITHUB_RUN_ID`, as
+a check of your CI's own pins does, is still reused, and runs again when a
+workflow file it read changes.
+
 A tool that only holds a variable's name in its own code does not make its
 step run again: Bun, Vitest and Playwright each hold `GITHUB_SHA`. When such a
 tool writes the commit into a report, the commit is in the report, and the step

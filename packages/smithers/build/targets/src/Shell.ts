@@ -215,6 +215,12 @@ export const TestAttrs = Schema.Struct({
    * variables holds the same value. A value shorter than six characters is
    * found by its name alone.
    *
+   * `readAsData` names files the run reads as data, from the workspace root:
+   * a file, or a directory with all it holds. A variable's name in one of
+   * them does not show the run used the variable, as a CI's workflow files
+   * name variables the CI sets and a check that reads them never uses. Each
+   * is still an input: a change to one runs the target again.
+   *
    * `quiet` names words that mark a question the command asks for itself,
    * such as a wrapper asking git which commit is checked out to hand it on
    * in a variable, as a CI runner hands it on. A program the run starts with
@@ -231,7 +237,8 @@ export const TestAttrs = Schema.Struct({
       Schema.Struct({
         ignore: Schema.optional(Schema.Array(Schema.NonEmptyString)),
         quiet: Schema.optional(Schema.Array(Schema.NonEmptyString)),
-        env: Schema.optional(Attr.InheritEnv)
+        env: Schema.optional(Attr.InheritEnv),
+        readAsData: Schema.optional(Schema.Array(Schema.NonEmptyString))
       })
     ])
   ),

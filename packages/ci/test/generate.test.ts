@@ -502,10 +502,14 @@ describe("what a step becomes", () => {
     const ignore = JSON.stringify(["~/.npm/_logs", "$TMPDIR/node-compile-cache", "~/.config/go/telemetry"])
     // The git the runner text asks which commit is checked out is quiet: what it reads is no step's.
     const quiet = JSON.stringify([commitQuestion])
+    // A workflow file the step reads is data: a runner variable's name in it does not run the step again.
+    const data = JSON.stringify([".github/workflows"])
     // A step the steps after it wait for is observed as the last one is: what a run gives is passed on with its
     // value out of the key.
     expect(declaration(source, "a-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn())}`)
-    expect(declaration(source, "a-1")).toContain(`observe: { ignore: ${ignore}, env: ${run}, quiet: ${quiet} }`)
+    expect(declaration(source, "a-1")).toContain(
+      `observe: { ignore: ${ignore}, env: ${run}, quiet: ${quiet}, readAsData: ${data} }`
+    )
     // Smithers build refuses a variable a target both sets and passes on, and the step's value is the one it means.
     expect(declaration(source, "a-3")).toContain(
       `inheritEnv: ${JSON.stringify(passedOn().filter((name) => name !== eventsVariable))}`
@@ -513,14 +517,16 @@ describe("what a step becomes", () => {
     expect(declaration(source, "a-3")).toContain(
       `observe: { ignore: ${ignore}, env: ${
         JSON.stringify(runGiven.filter((name) => name !== "GITHUB_SHA"))
-      }, quiet: ${quiet} }`
+      }, quiet: ${quiet}, readAsData: ${data} }`
     )
     // A step without runner text is given no runner variable it does not name.
     expect(declaration(source, "a-4")).toContain(`observe: { ignore: ${ignore} }`)
     expect(declaration(source, "a-4")).not.toContain("inheritEnv")
     const last = targetsOf(inventory([job("a", [step("a:1", "npm test", { runner })])]))
     expect(declaration(last, "a-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn())}`)
-    expect(declaration(last, "a-1")).toContain(`observe: { ignore: ${ignore}, env: ${run}, quiet: ${quiet} }`)
+    expect(declaration(last, "a-1")).toContain(
+      `observe: { ignore: ${ignore}, env: ${run}, quiet: ${quiet}, readAsData: ${data} }`
+    )
   })
 
   it("holds a step with runner text to its inputs only as its job's first step, and never when it reads the commit", () => {
@@ -553,7 +559,9 @@ describe("what a step becomes", () => {
     expect(declaration(source, "later-2")).toContain(`sandbox: "none"`)
     for (const label of ["commit-1", "later-2"]) {
       expect(declaration(source, label)).toContain(
-        `env: ${JSON.stringify(runGiven)}, quiet: ${JSON.stringify([commitQuestion])} }`
+        `env: ${JSON.stringify(runGiven)}, quiet: ${
+          JSON.stringify([commitQuestion])
+        }, readAsData: [".github/workflows"] }`
       )
       expect(declaration(source, label)).not.toContain("given:")
     }

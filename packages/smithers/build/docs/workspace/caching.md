@@ -611,6 +611,21 @@ to decide something, without printing or writing it, shows none of this. Name
 the variable in `inheritEnv` for such a command: its value is then part of the
 key at every run.
 
+`observe: { readAsData: [...] }` names files the run reads as data, from the
+workspace root: a file, or a directory with all it holds. A variable's name in
+one of them does not show the run used the variable, as a CI's workflow files
+name the variables the CI sets and a check that reads them uses none. Each is
+still an input: the target runs again when one it read changes.
+
+```ts
+S.Shell.Test({
+  shell: "node scripts/check-workflow-pins.mjs",
+  sandbox: "none",
+  observe: { env: ["GITHUB_SHA", "GITHUB_RUN_ID"], readAsData: [".github/workflows"] },
+  data: [S.glob("//**")]
+})
+```
+
 On a host that cannot record reads, every variable `env` names is part of the
 key, as with `inheritEnv`.
 

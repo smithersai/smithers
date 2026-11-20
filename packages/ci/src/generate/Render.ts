@@ -231,6 +231,10 @@ const runNames: ReadonlyArray<string> = ["GITHUB_EVENT_PATH"]
 const given = (target: StepTarget): string =>
   `given: { env: ${JSON.stringify(target.runEnv)}, names: ${JSON.stringify(runNames)} }`
 
+// The workflow files a step's program may read. GitHub runs them; the step reads them as data, so a runner
+// variable's name in one does not show the step used it. Each is still an input of the step.
+const workflowFiles: ReadonlyArray<string> = [".github/workflows"]
+
 // What an observed target asks Smithers build to record. The variables a run gives are passed on with their values
 // out of the key: a result holds the value of each one its run could have used, and is reused at another commit
 // when it used none. Where no run gives them, as when a person runs the targets, the runner text asks git, and
@@ -241,7 +245,9 @@ const observation = (target: StepTarget): string =>
   `observe: { ignore: ${JSON.stringify([...bookkeeping, ...target.shares])}${
     target.runEnv.length === 0
       ? ""
-      : `, env: ${JSON.stringify(target.runEnv)}, quiet: ${JSON.stringify([commitQuestion])}`
+      : `, env: ${JSON.stringify(target.runEnv)}, quiet: ${JSON.stringify([commitQuestion])}, readAsData: ${
+        JSON.stringify(workflowFiles)
+      }`
   } }`
 
 const renderTarget = (

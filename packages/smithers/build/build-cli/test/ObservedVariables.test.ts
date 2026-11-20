@@ -68,6 +68,9 @@ const fixture = async () => {
   await write("docs/readme.md", "nothing reads this\n")
   // A test of the repository that reads the variable from its own code.
   await write("test/own.sh", `test -n "$${commit}"\n`)
+  // A workflow that names the variable its runner sets, and a check that reads it as data and uses no variable.
+  await write(".github/workflows/ci.yml", `jobs:\n  a:\n    steps:\n      - run: echo "$${commit}"\n`)
+  await write("test/workflows.sh", "/bin/cat .github/workflows/ci.yml > /dev/null\n")
   // Tools: each names the variable in its own code, as many tools hold names they act on only sometimes.
   await write("node_modules/tool/quiet.sh", `test -n "$${commit}"\n`)
   await write("node_modules/tool/print.sh", `/usr/bin/printenv ${commit}\n`)
@@ -77,6 +80,14 @@ const fixture = async () => {
   const reads = "/bin/cat input.txt > /dev/null"
   const observed = (shell: string) =>
     S.Shell.Test({ sandbox: "none", data: [S.glob("**")], shell, observe: { env: [commit, attempt] } })
+  /** An observed test that reads the workflows as data. */
+  const reading = (shell: string) =>
+    S.Shell.Test({
+      sandbox: "none",
+      data: [S.glob("**")],
+      shell,
+      observe: { env: [commit, attempt], readAsData: [".github/workflows"] }
+    })
   const index = PackageIndex.make({
     root,
     workspace: S.Workspace("observed-variables", {
@@ -99,6 +110,10 @@ const fixture = async () => {
           passed: observed("/bin/sh node_modules/tool/pass.sh"),
           warned: observed("/bin/sh node_modules/tool/warn.sh"),
           counted: observed(`${reads}; : "\${${attempt}-}"`),
+          workflows: reading("/bin/sh test/workflows.sh"),
+          workflowsNamed: reading(`/bin/sh test/workflows.sh; test -n "$${commit}"`),
+          workflowsOwn: reading("/bin/sh test/workflows.sh; /bin/sh test/own.sh"),
+          workflowsUnmarked: observed("/bin/sh test/workflows.sh"),
           // The same variable given the way that always keys on it.
           inherited: S.Shell.Test({
             sandbox: "none",
@@ -216,6 +231,41 @@ describe("an observed test given a variable that differs from run to run", () =>
     expect(await given({ [attempt]: "1" }, () => run(["counted", "plain"]))).toEqual({ counted: "ran", plain: "hit" })
     expect(logs).toContain(`//:counted  runs again: the variable ${attempt} has another value`)
     expect(await given({ [attempt]: "1" }, () => run(["counted", "plain"]))).toEqual({ counted: "hit", plain: "hit" })
+  })
+})
+
+describe("an observed test that reads the workflows as data", () => {
+  // Lead's decision (2026-11-19): a workflow file a step's program reads is read as data. GitHub runs it; the step
+  // does not. A runner variable's name in it says nothing of the step, which is still held to its own text and to
+  // every other file it read.
+  const reused = ["workflows"]
+  const again = ["workflowsNamed", "workflowsOwn", "workflowsUnmarked"]
+  const all = [...reused, ...again]
+
+  tracedIt(
+    "is answered at another commit when nothing it read changed, and runs again when its own text names it",
+    async () => {
+      const { logs, run } = await fixture()
+      expect(await given({ [commit]: id("a") }, () => run(all))).toEqual(each(all, "ran"))
+      expect(await given({ [commit]: id("b") }, () => run(all))).toEqual({
+        ...each(reused, "hit"),
+        ...each(again, "ran")
+      })
+      // The step's own text names it, a script it runs names it, and a test that does not read the workflows as data
+      // counts the workflow's name, as before.
+      for (const name of again) {
+        expect(logs).toContain(`//:${name}  runs again: the variable ${commit} has another value`)
+      }
+    }
+  )
+
+  tracedIt("runs again when the workflow it read changes", async () => {
+    const { logs, run, write } = await fixture()
+    expect(await given({ [commit]: id("a") }, () => run(reused))).toEqual(each(reused, "ran"))
+    expect(await given({ [commit]: id("b") }, () => run(reused))).toEqual(each(reused, "hit"))
+    await write(".github/workflows/ci.yml", `jobs:\n  b:\n    steps:\n      - run: echo "$${commit}"\n`)
+    expect(await given({ [commit]: id("b") }, () => run(reused))).toEqual(each(reused, "ran"))
+    expect(logs).toContain("//:workflows  runs again: .github/workflows/ci.yml changed")
   })
 })
 

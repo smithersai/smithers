@@ -3404,7 +3404,8 @@ const executeWith = (
                   variables: {
                     values: observed.variables,
                     text: (node.argv ?? []).join("\n"),
-                    shown: listener.names
+                    shown: listener.names,
+                    readAsData: observed.readAsData
                   },
                   root: NodeFs.realpathSync(place),
                   ignore: [

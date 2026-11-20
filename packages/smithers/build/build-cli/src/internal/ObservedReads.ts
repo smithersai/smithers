@@ -1415,6 +1415,9 @@ export const idOf = (record: Omit<Record, "id">): string =>
  *   it started ({@link listening}).
  * - `ignored`: which of some absolute paths git leaves out of the workspace;
  *   {@link ignoredByGit} unless a test gives another.
+ * - `readAsData`: files the run reads as data, from the workspace root, each
+ *   a file or a directory with all it holds. A name in one of them does not
+ *   show the run used the variable.
  *
  * @category models
  * @since 1.0.0
@@ -1424,6 +1427,7 @@ export interface Variables {
   readonly text: string
   readonly shown?: ReadonlySet<string> | undefined
   readonly ignored?: ((paths: ReadonlyArray<string>) => ReadonlySet<string>) | undefined
+  readonly readAsData?: ReadonlyArray<string> | undefined
 }
 
 /**
@@ -1904,10 +1908,14 @@ export const observe = (
     const names = new Set(given.shown)
     for (const name of variableNames) if (holdsName(given.text, name)) names.add(name)
     // A name in a file git leaves out, such as an installed tool, says nothing: many tools hold names they never
-    // act on. A name in the workspace's own text is the run's to read.
+    // act on. Nor does one in a file the run reads as data, such as a workflow that names what its runner sets. A
+    // name in the rest of the workspace's own text is the run's to read.
+    const data = (given.readAsData ?? []).map((path) => NodePath.posix.join(options.root, path))
     const holders = [...new Set([...naming.values()].flat())]
+      .filter((file) => !data.some((directory) => under(file, directory)))
     const left = holders.length === 0 ? new Set<string>() : (given.ignored ?? ignoredByGit(options.root))(holders)
-    for (const [name, files] of naming) if (files.some((file) => !left.has(file))) names.add(name)
+    const telling = new Set(holders.filter((file) => !left.has(file)))
+    for (const [name, files] of naming) if (files.some((file) => telling.has(file))) names.add(name)
     // A value in a file the run wrote and left. What a locked install fetched is fixed by a lockfile, not by the run.
     const sought = variableNames.flatMap((name) => {
       const value = given.values[name]
