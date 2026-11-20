@@ -32,7 +32,7 @@
     "check": "vibelang -p tsconfig.json --noEmit && vibelang -p tsconfig.test.json --noEmit",
     "circular": "node ../repo-targets/scripts/circular.mjs",
     "test": "vitest",
-    "benchmark": "vitest run --config vitest.benchmark.config.ts",
+    "benchmark": "node ../smithers/build/build-cli/scripts/build-observe.mjs && vitest run --config vitest.benchmark.config.ts",
     "coverage": "vitest --coverage"
   },
   "dependencies": {
