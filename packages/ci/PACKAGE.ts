@@ -13,15 +13,34 @@ const cacheModule = Smithers.Filegroup({
   cwd: "packages/smithers/build"
 })
 
-// Where the suite's Zig keeps its global cache: the build's cache directory, which a confined run may write.
-const zigGlobalCache = "{smthrs:cache-directory}/tools/zig/global"
+// test/docs.test.ts checks that every page a docs page links to exists; two are Smithers build's.
+const linkedDocs = Smithers.Filegroup({
+  srcs: [Smithers.file("docs/README.md"), Smithers.file("docs/workspace/remote-caching.md")],
+  cwd: "packages/smithers/build"
+})
 
-// Zig fills an empty global cache once, in about 200 s under load, before it does anything else; then it answers in
-// under a second. The suite waits for this fill instead of paying it inside a test's two-minute limit.
-const zigCache = Smithers.Shell.Build({
-  shell:
-    "command -v zig > /dev/null || exit 0; cd \"$(mktemp -d)\" && zig build --print-configuration > /dev/null 2>&1; true",
-  env: { ZIG_GLOBAL_CACHE_DIR: zigGlobalCache },
+// The suite's tools keep their caches in the build's cache directory, which a confined run may write: a confined run is
+// shown none of the host's, and each is addressed by the content of what it built, so it changes no verdict.
+const toolCacheEnv = {
+  ZIG_GLOBAL_CACHE_DIR: "{smthrs:cache-directory}/tools/zig/global",
+  VIBELANG_CACHE_DIR: "{smthrs:cache-directory}/tools/vibelang",
+  NODE_COMPILE_CACHE: "{smthrs:cache-directory}/tools/node-compile-cache",
+  DPRINT_CACHE_DIR: "{smthrs:cache-directory}/tools/dprint"
+}
+
+// Filled before the suite starts, never inside a test's time limit. Zig fills an empty global cache once, in about
+// 200 s under load, before it does anything else; the programs the suite starts as processes (smithers-ci and smthrs)
+// compile their sources once; dprint fetches the plugins this package's configuration pins, which test/tools formats
+// with and a confined run cannot download. Then each answers in under a second.
+const toolCaches = Smithers.Shell.Build({
+  shell: [
+    "if command -v zig > /dev/null; then (cd \"$(mktemp -d)\" && zig build --print-configuration > /dev/null 2>&1); fi",
+    "node packages/ci/bin/smithers-ci.mjs --help > /dev/null 2>&1",
+    "node_modules/.bin/smthrs --help > /dev/null 2>&1",
+    "(cd packages/ci && node_modules/.bin/dprint output-file-paths > /dev/null 2>&1)",
+    "true"
+  ].join("; "),
+  env: toolCacheEnv,
   cache: false,
   sandbox: "none"
 })
@@ -40,7 +59,11 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
     "test/fixtures/closure-zig/**",
     // test/replay runs keyring.py in the jail and smithers.sh as the replay's smthrs.
     "test/**/*.py",
-    "test/**/*.sh"
+    "test/**/*.sh",
+    // test/tools formats with this package's own dprint configuration.
+    "dprint.json",
+    // docs/README.md links this package's README, and test/docs.test.ts checks that it exists.
+    "README.md"
   ],
   // The suite starts real builds. On a build server at load 100 to 220 it passed the default 20 minutes every time,
   // and 40 minutes run as the workspace declares it. Run confined, the run whose result is stored, it is shown none of
@@ -51,8 +74,8 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   testTools: ["zig", "strace", "bwrap", "npm", "bun", "bunx"].map((name) => Smithers.Host.bin(name)),
   // Zig compiles a build runner into its global cache. A confined run is shown no cache of the host's, so without one
   // of its own every test that starts `zig build` compiled it again and passed its time limit under load.
-  testEnv: { ZIG_GLOBAL_CACHE_DIR: zigGlobalCache },
-  testDeps: [zigCache],
+  testEnv: toolCacheEnv,
+  testDeps: [toolCaches, linkedDocs],
   cwd
 })
 
@@ -84,5 +107,19 @@ const bench = Smithers.Vitest({
 })
 
 export const Package = Smithers.Package({
-  targets: { bench, cacheModule, check, circular, docs, docsFiles, fmt, lib, lint, test, zigCache, ...sources }
+  targets: {
+    bench,
+    cacheModule,
+    check,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    test,
+    linkedDocs,
+    toolCaches,
+    ...sources
+  }
 })
