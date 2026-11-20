@@ -554,15 +554,21 @@ const npmInstall = /^\s*npm\s+(?:install|i)(?:\s+-\S+)*\s*$/
  * Smithers build says so itself for `cargo` and `go` (`..., with no Cargo.lock
  * to say what it fetches`). `npm install` reaches the registry whatever the
  * repository holds, and only `npm ci` installs exactly what a lockfile pins.
+ * When the program that opened the connection is `uv` (as `uvx` and `uv run`
+ * are), only `uv run --locked` keeps it to what `uv.lock` pins: the line
+ * follows the recording, not the words of the command.
  * `after` steps follow it in its job; they read what it leaves, so they run
  * when it ran.
  */
 const fixOf = (reason: string, command: string, after: number): string | undefined => {
   const named = /, with no (\S+) to say what it fetches/.exec(reason)?.[1]
+  const reacher = /^it opened a network connection \((\S+) to /.exec(reason)?.[1]
   const lockfile = named !== undefined
     ? `commit ${named}`
     : reason.startsWith("it opened a network connection") && npmInstall.test(command)
     ? "commit package-lock.json, install with `npm ci`,"
+    : reacher === "uv"
+    ? "commit uv.lock, run it with `uv run --locked`,"
     : undefined
   if (lockfile === undefined) return undefined
   return `${lockfile} and this step${after === 0 ? "" : ` and the ${after} after it`} can be reused`

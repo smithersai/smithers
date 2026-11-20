@@ -587,8 +587,11 @@ describe("records and totals", () => {
       ["//:last", { step: "test: npm i", command: "npm i", after: 0 }],
       ["//:add", { step: "test: add", command: "npm install left-pad" }],
       ["//:both", { step: "test: both", command: "npm install && npm test" }],
-      ["//:curl", { step: "test: curl", command: "curl https://example.invalid" }]
+      ["//:curl", { step: "test: curl", command: "curl https://example.invalid" }],
+      ["//:tox", { step: "tests: tox", command: "uvx --with tox-uv tox -e py314", after: 0 }],
+      ["//:uvpy", { step: "tests: fetch", command: "uv run python fetch.py", after: 0 }]
     ])
+    const uv = "it opened a network connection (uv to 8.8.8.8 port 53)"
     const fixes = (results: ReadonlyArray<TargetResult>) =>
       totalsOf(record(results), names).notReused?.map((entry) => entry.fix)
     expect(
@@ -597,13 +600,16 @@ describe("records and totals", () => {
         // The line Smithers build gives for a day after such a run still names the lockfile.
         { ...ran("//:build"), notStored: `${cargo}, when its reads were last recorded` },
         { ...ran("//:install"), notStored: network },
-        { ...ran("//:last"), notStored: network }
+        { ...ran("//:last"), notStored: network },
+        // uv resolved what it fetched when it ran: the program the recording names, whatever the command says.
+        { ...ran("//:tox"), notStored: uv }
       ])
     ).toEqual([
       "commit Cargo.lock and this step and the 2 after it can be reused",
       "commit Cargo.lock and this step and the 2 after it can be reused",
       "commit package-lock.json, install with `npm ci`, and this step and the 1 after it can be reused",
-      "commit package-lock.json, install with `npm ci`, and this step can be reused"
+      "commit package-lock.json, install with `npm ci`, and this step can be reused",
+      "commit uv.lock, run it with `uv run --locked`, and this step can be reused"
     ])
     // An install of a package it names, a step that does more than install, another program, a step with no
     // name, and a step whose result is kept: nothing a lockfile mends, so no line says it would.
@@ -614,9 +620,12 @@ describe("records and totals", () => {
         { ...ran("//:curl"), notStored: network },
         { ...ran("//:unnamed"), notStored: network },
         { ...ran("//:install"), notStored: "it changed its root directory" },
-        { ...ran("//:build"), notReused: cargo }
+        { ...ran("//:build"), notReused: cargo },
+        // A step run with uv whose connection another program opened: no lockfile of uv's pins it.
+        { ...ran("//:uvpy"), notStored: "it opened a network connection (python3 to 8.8.8.8 port 443)" },
+        { ...ran("//:tox"), notReused: uv }
       ])
-    ).toEqual([undefined, undefined, undefined, undefined, undefined, undefined])
+    ).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined])
   })
 
   it("sums work and reads wall time from the record", () => {

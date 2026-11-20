@@ -260,7 +260,7 @@ would store nothing. An install
 that fetches exactly what a lockfile pins is the exception, because the
 lockfile it read fixes what it fetches: `npm ci`, `pnpm install
 --frozen-lockfile`, `yarn install --immutable`, `bun install
---frozen-lockfile`, `uv sync --locked`, `pip install --require-hashes`, `go mod
+--frozen-lockfile`, `uv sync --locked`, `uv run --locked`, `pip install --require-hashes`, `go mod
 download` and `cargo fetch --locked` are stored like any other step. So is a
 `cargo` or `go` build or test that downloads what `Cargo.lock` or `go.sum`
 pins and leaves that file as it was. `npm install`, `pip install -r
@@ -850,7 +850,9 @@ A reason that names a file is a file the step read, changed by those commits.
 every commit, and the line says what it did. When what it lacks is a lockfile,
 the line ends with what to do: which file to commit, and how many steps after
 it in its job can then be reused with it. For `npm install` it says to commit
-`package-lock.json` and install with `npm ci`.
+`package-lock.json` and install with `npm ci`. When `uv` opened the connection,
+as `uvx` and `uv run` without `--locked` do, it says to commit `uv.lock` and
+run the step with `uv run --locked`.
 
 With fast mode, it also gives fast mode's selection metrics; see
 [Normal mode and fast mode](modes.md#how-fast-mode-is-measured).
