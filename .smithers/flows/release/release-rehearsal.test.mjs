@@ -214,6 +214,22 @@ test("runner temporary paths stay at step scope, where GitHub permits the runner
   assert.equal(step("Report the skipped publication").env.PUBLISH_ORDER, "${{ runner.temp }}/publish-order.txt")
 })
 
+// A dry run never reaches the publish preflight. Run 44620940500 met a name npm
+// had never seen two hours into the tag run, after 49 immutable uploads.
+test("every publish plan, a dry run's included, reads each package name from npm", () => {
+  const plan = step("Compute the publish plan")
+  const contexts = dispatchContexts("v0.1.0-next.0", true)
+  contexts.env = jobEnv(contexts)
+  for (const lane of ["candidate", "release"]) assert.equal(condition(plan.if, { ...contexts, matrix: { lane } }), true, lane)
+  assert.equal(plan.env.PACK_DIR, "${{ runner.temp }}/release-packs")
+  assert.match(plan.run, /\nnode \.smithers\/flows\/release\/publish-release\.mjs --check-names "\$PACK_DIR"\n$/)
+  // The allow input reaches every step that reads names, empty unless dispatched with it.
+  assert.equal(release.on.workflow_dispatch.inputs.allowNewNames.default, "")
+  assert.equal(release.jobs.publish.env.RELEASE_ALLOW_NEW_NAMES, "${{ inputs.allowNewNames }}")
+  assert.equal(jobEnv(pushContexts("v0.1.0")).RELEASE_ALLOW_NEW_NAMES, "")
+  assert.equal(jobEnv({ ...contexts, inputs: { ...contexts.inputs, allowNewNames: "smithers-ci" } }).RELEASE_ALLOW_NEW_NAMES, "smithers-ci")
+})
+
 test("publication keeps provenance and uses the repository token for first publications", () => {
   const publish = step("Publish packages in dependency order")
 

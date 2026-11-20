@@ -675,6 +675,15 @@ export const operations = (
       sourceSha: "",
       releaseTag: `v${input.version}`,
       readRegistry,
+      // A bare name answers E404 only when npm has no package of that name.
+      readName: async (name: string): Promise<string | undefined> => {
+        try {
+          return json<string>(await run("npm", ["view", name, "name", "--json"], signal ? { signal } : {}))
+        } catch (error) {
+          if (/\bE404\b/.test(String(error))) return undefined
+          throw error
+        }
+      },
       verifyVersion: async (entry: { name: string; version: string }) => {
         try {
           return json<unknown>(

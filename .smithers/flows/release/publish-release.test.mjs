@@ -1,20 +1,22 @@
 import assert from "node:assert/strict"
+import { spawnSync } from "node:child_process"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import test from "node:test"
-import { consumerTags, maintainerReleasePlan, integrity, preflight, publishCandidate, recordSmokeSuccess, registryPublisher } from "./publish-release.mjs"
+import { consumerTags, maintainerReleasePlan, integrity, parseAllowNewNames, preflight, publishCandidate, recordSmokeSuccess, registryPublisher } from "./publish-release.mjs"
 
 const fixture = async (body, names = ["a", "b"]) => {
   const directory = await mkdtemp(join(tmpdir(), "smithers-publish-"))
   try {
-    const packages = names.map((name) => ({ name, version: "1.0.0-rc.0", filename: `${name}.tgz`, integrity: integrity(Buffer.from(name)) }))
+    const packages = names.map((name) => ({ name, version: "1.0.0-rc.0", filename: `${name.replace(/^@/, "").replace("/", "-")}.tgz`, integrity: integrity(Buffer.from(name)) }))
     for (const entry of packages) await writeFile(join(directory, entry.filename), entry.name)
     const candidate = { schemaVersion: 1, source: { sha: "tested-sha", tag: "v1.0.0-rc.0", dirty: false }, packages }
     await writeFile(join(directory, "manifest.json"), JSON.stringify(packages))
     await writeFile(join(directory, "release-manifest.json"), JSON.stringify(candidate))
     await recordSmokeSuccess(directory, candidate)
-    const options = { sourceSha: "tested-sha", releaseTag: "v1.0.0-rc.0", readTag: async () => undefined, promote: async () => {}, verifyVersion: async () => true }
+    const options = { sourceSha: "tested-sha", releaseTag: "v1.0.0-rc.0", readName: async (name) => name, readTag: async () => undefined, promote: async () => {}, verifyVersion: async () => true }
     await body(directory, candidate, options)
   } finally { await rm(directory, { recursive: true, force: true }) }
 }
@@ -45,6 +47,9 @@ test("a mismatched existing package refuses the entire partial retry", () => fix
 test("missing registry integrity and transport failures fail closed", () => fixture(async (directory, candidate, options) => {
   await assert.rejects(preflight(directory, candidate, { ...options, readRegistry: async () => null }), /Registry integrity mismatch/)
   await assert.rejects(preflight(directory, candidate, { ...options, readRegistry: async () => { throw new Error("offline") } }), /offline/)
+  const missing = async () => undefined
+  await assert.rejects(preflight(directory, candidate, { ...options, readRegistry: missing, readName: async () => null }), /Registry name check unavailable: a/)
+  await assert.rejects(preflight(directory, candidate, { ...options, readRegistry: missing, readName: async () => { throw new Error("offline") } }), /offline/)
 }))
 
 test("tag, source, dirty state and altered tested bytes are refused", () => fixture(async (directory, candidate, options) => {
@@ -207,6 +212,195 @@ test("a partial publication resumes only the missing packages from the tested tr
   assert.deepEqual(calls, ["a", "b", "b"])
 }))
 
+// npm as the v1.0.0-rc.18 tag run (44620940500) met it. pnpm answers a new name
+// with ERR_PNPM_FETCH_404 and a missing version of an existing name with
+// ERR_PNPM_PACKAGE_NOT_FOUND; `npm view <name> name` answers E404 only for a
+// new name. The release token creates a name in the scope it was granted
+// (`@smthrs`) and answers 403 for any other new name.
+const npmRegistry = (directory, candidate, { known, published = new Map(), tags = new Map(), granted = new Set() }) => {
+  const calls = []
+  const failure = (code, message) => Object.assign(new Error(`Command failed: ${message}`), { status: 1, stdout: JSON.stringify({ error: { code, message } }), stderr: "" })
+  const at = (spec) => [spec.slice(0, spec.lastIndexOf("@")), spec.slice(spec.lastIndexOf("@") + 1)]
+  const adapter = registryPublisher({ pause: () => {}, run: (command, args) => {
+    calls.push([command, ...args])
+    const [verb, spec, field] = args
+    if (verb === "view" && field === "name") {
+      if (!known.has(spec)) throw failure("E404", `404 Not Found - GET https://registry.npmjs.org/${spec} - Not found`)
+      return JSON.stringify(spec)
+    }
+    if (verb === "view" && field.startsWith("dist-tags.")) {
+      const current = tags.get(`${spec}:${field.slice("dist-tags.".length)}`)
+      return current === undefined ? "" : JSON.stringify(current)
+    }
+    if (verb === "view") {
+      const [name, version] = at(spec)
+      if (!known.has(name)) throw failure("ERR_PNPM_FETCH_404", `GET https://registry.npmjs.org/${name}: Not Found - 404`)
+      if (!published.has(spec)) throw failure(command === "pnpm" ? "ERR_PNPM_PACKAGE_NOT_FOUND" : "E404", `No matching version found for ${spec}`)
+      return JSON.stringify(field === "version" ? version : published.get(spec))
+    }
+    if (verb === "publish") {
+      const entry = candidate.packages.find((entry) => args[1] === join(directory, entry.filename))
+      if (!known.has(entry.name) && !entry.name.startsWith("@smthrs/") && !granted.has(entry.name)) {
+        throw failure("E403", `403 Forbidden - PUT https://registry.npmjs.org/${entry.name} - You may not perform that action with these credentials.`)
+      }
+      known.add(entry.name)
+      published.set(`${entry.name}@${entry.version}`, entry.integrity)
+      return ""
+    }
+    assert.deepEqual([command, ...args.slice(0, 2)], ["npm", "dist-tag", "add"])
+    const [name, version] = at(args[2])
+    tags.set(`${name}:${args[3]}`, version)
+    return ""
+  } })
+  return { calls, adapter }
+}
+
+const nameReads = (calls) => calls.filter(([, verb, , field]) => verb === "view" && field === "name").map(([, , name]) => name)
+const uploads = (calls) => calls.filter(([, verb]) => verb === "publish").map(([, , path]) => path)
+const refusal = (names) => (error) => {
+  assert.ok(error.message.startsWith(`npm has no package named ${names}. `), error.message)
+  assert.match(error.message, /release-resume\.md/)
+  assert.match(error.message, /\nOnce the release token can create such a name, list it in allowNewNames /)
+  return true
+}
+
+// v1.0.0-rc.18 (run 44620940500) created `@smthrs/fuzz`,
+// `@smthrs/platform-cloudflare` and `@smthrs/views` with the release token:
+// npm already served other `@smthrs` packages of that roster.
+test("a new name in a scope the roster already holds on npm is created by the train", () => fixture(async (directory, candidate, options) => {
+  const npm = npmRegistry(directory, candidate, { known: new Set(["@smthrs/core", "smthrs"]) })
+  const lines = []
+  const result = await publishCandidate(directory, candidate, { ...options, ...npm.adapter, log: (line) => lines.push(line) })
+  assert.deepEqual(result, ["@smthrs/core", "@smthrs/fuzz", "@smthrs/views", "smthrs"])
+  assert.deepEqual(nameReads(npm.calls), ["@smthrs/core", "@smthrs/fuzz", "@smthrs/views", "smthrs"])
+  assert.deepEqual(lines, [
+    "New npm name @smthrs/fuzz: its scope @smthrs already holds packages of this candidate, so the release token creates it.",
+    "New npm name @smthrs/views: its scope @smthrs already holds packages of this candidate, so the release token creates it."
+  ])
+}, ["@smthrs/core", "@smthrs/fuzz", "@smthrs/views", "smthrs"]))
+
+test("a new unscoped name stops the train before its first upload and is named", () => fixture(async (directory, candidate, options) => {
+  const npm = npmRegistry(directory, candidate, { known: new Set(["a", "b"]) })
+  await assert.rejects(publishCandidate(directory, candidate, { ...options, ...npm.adapter }), (error) => {
+    refusal("smithers-ci")(error)
+    assert.match(error.message, /\n +npm publish smithers-ci\.tgz --access public --tag staging --provenance=false\n/)
+    return true
+  })
+  assert.deepEqual(uploads(npm.calls), [])
+  assert.deepEqual(npm.calls.filter(([, verb]) => verb === "dist-tag"), [])
+  await assert.rejects(readFile(join(directory, "publish-receipt.json")), /ENOENT/)
+}, ["a", "smithers-ci", "b"]))
+
+test("a new name in a scope with no package of the roster on npm stops the train", () => fixture(async (directory, candidate, options) => {
+  const npm = npmRegistry(directory, candidate, { known: new Set(["@smthrs/core", "b"]) })
+  await assert.rejects(publishCandidate(directory, candidate, { ...options, ...npm.adapter }), refusal("@elsewhere/tool"))
+  assert.deepEqual(uploads(npm.calls), [])
+  // Two new names cannot establish their own scope for each other.
+  const fresh = { ...candidate, packages: candidate.packages.map((entry) => entry.name === "@smthrs/core" ? { ...entry, name: "@fresh/one" } : entry.name === "@elsewhere/tool" ? { ...entry, name: "@fresh/two" } : entry) }
+  await writeFile(join(directory, "manifest.json"), JSON.stringify(fresh.packages))
+  await writeFile(join(directory, "release-manifest.json"), JSON.stringify(fresh))
+  await recordSmokeSuccess(directory, fresh)
+  const other = npmRegistry(directory, fresh, { known: new Set(["b"]) })
+  await assert.rejects(publishCandidate(directory, fresh, { ...options, ...other.adapter }), refusal("@fresh/one, @fresh/two"))
+  assert.deepEqual(uploads(other.calls), [])
+}, ["@smthrs/core", "@elsewhere/tool", "b"]))
+
+test("allowNewNames admits exactly the packages it names", () => fixture(async (directory, candidate, options) => {
+  const granted = new Set(["smithers-ci", "other-new"])
+  const one = npmRegistry(directory, candidate, { known: new Set(["a"]), granted })
+  await assert.rejects(publishCandidate(directory, candidate, { ...options, ...one.adapter, allowNewNames: ["smithers-ci"], log: () => {} }), refusal("other-new"))
+  assert.deepEqual(uploads(one.calls), [])
+  const lines = []
+  const both = npmRegistry(directory, candidate, { known: new Set(["a"]), granted })
+  assert.deepEqual(await publishCandidate(directory, candidate, { ...options, ...both.adapter, allowNewNames: ["smithers-ci", "other-new"], log: (line) => lines.push(line) }), ["a", "smithers-ci", "other-new"])
+  assert.deepEqual(lines, [
+    "allowNewNames admitted smithers-ci: npm has no package of that name, and this run creates it.",
+    "allowNewNames admitted other-new: npm has no package of that name, and this run creates it."
+  ])
+  // Exact names only, and only names of this candidate.
+  assert.deepEqual(parseAllowNewNames(" smithers-ci , other-new,"), ["smithers-ci", "other-new"])
+  assert.deepEqual(parseAllowNewNames(undefined), [])
+  for (const value of ["@smthrs/*", "smithers-ci other-new", "Smithers-CI"]) assert.throws(() => parseAllowNewNames(value), /exact package names/)
+  const typo = npmRegistry(directory, candidate, { known: new Set(["a"]), granted })
+  await assert.rejects(publishCandidate(directory, candidate, { ...options, ...typo.adapter, allowNewNames: ["smithers-ci", "other-neww"] }), /allowNewNames names a package outside this candidate: other-neww/)
+  assert.deepEqual(uploads(typo.calls), [])
+}, ["a", "smithers-ci", "other-new"]))
+
+test("existing names that lack this version pass the name check and publish", () => fixture(async (directory, candidate, options) => {
+  const npm = npmRegistry(directory, candidate, { known: new Set(["a", "b"]) })
+  assert.deepEqual(await publishCandidate(directory, candidate, { ...options, ...npm.adapter }), ["a", "b"])
+  assert.deepEqual(nameReads(npm.calls), ["a", "b"])
+  // Every name is read before the first upload.
+  const lastNameRead = npm.calls.findLastIndex(([, verb, , field]) => verb === "view" && field === "name")
+  assert.ok(lastNameRead < npm.calls.findIndex(([, verb]) => verb === "publish"))
+  assert.deepEqual(uploads(npm.calls), [join(directory, "a.tgz"), join(directory, "b.tgz")])
+}))
+
+// The recovery for run 44620940500: 49 versions were uploaded, `smithers-ci`
+// was refused and `smthrs` never ran. The owner publishes `smithers-ci` once by
+// hand from the candidate's own tarball, then the candidate resumes.
+test("a resume treats a new name published by hand from the candidate tarball as published", () => fixture(async (directory, candidate, options) => {
+  const [first, ci, cli] = candidate.packages
+  const version = ci.version
+  const handPublished = integrity(await readFile(join(directory, ci.filename)))
+  const state = () => ({
+    known: new Set(["a", "smithers-ci", "smthrs"]),
+    published: new Map([[`a@${version}`, first.integrity], [`smithers-ci@${version}`, handPublished]]),
+    // `npm publish --tag staging` of a first version may also set `latest`.
+    tags: new Map([[`smithers-ci:staging`, version], [`smithers-ci:latest`, version]])
+  })
+  const npm = npmRegistry(directory, candidate, state())
+  assert.deepEqual(await publishCandidate(directory, candidate, { ...options, ...npm.adapter }), ["smthrs"])
+  // A version npm already serves proves its name, so only `smthrs` is read.
+  assert.deepEqual(nameReads(npm.calls), ["smthrs"])
+  assert.deepEqual(uploads(npm.calls), [join(directory, cli.filename)])
+  assert.deepEqual(npm.calls.filter(([, verb]) => verb === "dist-tag").map(([, , , spec, tag]) => `${spec} ${tag}`),
+    [`a@${version} next`, `smithers-ci@${version} next`, `smithers-ci@${version} latest`, `smthrs@${version} next`])
+  // Bytes other than the candidate's under the hand-published version are refused.
+  const repacked = state()
+  repacked.published.set(`smithers-ci@${version}`, integrity(Buffer.from("repacked smithers-ci")))
+  const other = npmRegistry(directory, candidate, repacked)
+  await assert.rejects(publishCandidate(directory, candidate, { ...options, ...other.adapter }), /Registry integrity mismatch or unavailable: smithers-ci/)
+  assert.deepEqual(uploads(other.calls), [])
+}, ["a", "smithers-ci", "smthrs"]))
+
+// A dry run publishes nothing, so nothing else would find a new name before
+// the tag run. Its publish plan step runs this check on the candidate.
+test("a dry run reads every name and names each one the credentials cannot create", () => fixture(async (directory, candidate) => {
+  const bin = await mkdtemp(join(tmpdir(), "smithers-npm-"))
+  try {
+    // `npm view <name> name --json` as npm answers it: the name, or E404.
+    await writeFile(join(bin, "npm"), [
+      "#!/bin/sh",
+      "echo \"$*\" >> \"$NPM_CALLS\"",
+      "case \" $UNKNOWN \" in *\" $2 \"*) echo \"npm error code E404\" >&2; echo \"npm error 404 Not Found - GET https://registry.npmjs.org/$2 - Not found\" >&2; exit 1 ;; esac",
+      "printf '\"%s\"\\n' \"$2\""
+    ].join("\n") + "\n", { mode: 0o755 })
+    const check = (unknown, allow = "") => spawnSync(process.execPath, [fileURLToPath(new URL("./publish-release.mjs", import.meta.url)), "--check-names", directory], {
+      encoding: "utf8", timeout: 60_000,
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, UNKNOWN: unknown, NPM_CALLS: join(bin, "calls"), RELEASE_ALLOW_NEW_NAMES: allow }
+    })
+    const fuzz = "New npm name @smthrs/fuzz: its scope @smthrs already holds packages of this candidate, so the release token creates it.\n"
+    const done = `The release credentials can publish all ${candidate.packages.length} package names.\n`
+    const refused = check("@smthrs/fuzz smithers-ci c")
+    assert.equal(refused.status, 1, refused.stderr)
+    assert.equal(refused.stdout, fuzz)
+    assert.match(refused.stderr, /npm has no package named smithers-ci, c\. /)
+    assert.match(refused.stderr, /npm publish smithers-ci\.tgz --access public --tag staging --provenance=false\n +npm publish c\.tgz /)
+    const allowed = check("@smthrs/fuzz smithers-ci c", "smithers-ci,c")
+    assert.equal(allowed.status, 0, allowed.stderr)
+    assert.equal(allowed.stdout, fuzz + [
+      "allowNewNames admitted smithers-ci: npm has no package of that name, and this run creates it.",
+      "allowNewNames admitted c: npm has no package of that name, and this run creates it."
+    ].join("\n") + "\n" + done)
+    const known = check("")
+    assert.equal(known.status, 0, known.stderr)
+    assert.equal(known.stdout, done)
+    const reads = candidate.packages.map((entry) => `view ${entry.name} name --json`)
+    assert.deepEqual((await readFile(join(bin, "calls"), "utf8")).trim().split("\n"), [...reads, ...reads, ...reads])
+  } finally { await rm(bin, { recursive: true, force: true }) }
+}, ["@smthrs/core", "@smthrs/fuzz", "smithers-ci", "c"]))
+
 test("a successful smoke receipt is required and bound to the complete manifest", () => fixture(async (directory, candidate, options) => {
   const readRegistry = async () => assert.fail("untested candidates cannot query the registry")
   await rm(join(directory, "smoke-evidence.json"))
@@ -328,6 +522,7 @@ for (const version of ["1.0.0-rc.0", "1.0.0"]) {
     let failPromotion = true
     const adapter = registryPublisher({ pause: () => {}, run: (command, args) => {
       calls.push([command, ...args])
+      if (args[0] === "view" && args[2] === "name") return JSON.stringify(args[1])
       if (args[0] === "view" && args[2].startsWith("dist-tags.")) return tags.has(`${args[1]}:${args[2].slice(10)}`) ? JSON.stringify(tags.get(`${args[1]}:${args[2].slice(10)}`)) : ""
       if (args[0] === "view") {
         const entry = candidate.packages.find((entry) => `${entry.name}@${version}` === args[1])

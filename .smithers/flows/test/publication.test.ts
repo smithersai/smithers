@@ -18,7 +18,7 @@ const consumerTagCount = (packages: ReadonlyArray<{ name: string; version: strin
 
 const fixture = async (
   test: TestContext,
-  options: { gates?: ReleaseGateSet; version?: string; tagRead?: () => string } = {}
+  options: { gates?: ReleaseGateSet; version?: string; tagRead?: () => string; newNames?: ReadonlySet<string> } = {}
 ) => {
   const repo = await repository(test)
   const version = options.version ?? repo.evidence.version
@@ -72,6 +72,7 @@ const fixture = async (
   const versionViews = new Set<string>()
   const tags = new Map<string, string>()
   const tagRead = options.tagRead
+  const newNames = options.newNames
   const ops = operations({
     root: repo.root,
     gates,
@@ -90,6 +91,11 @@ const fixture = async (
         if (tagRead) return tagRead()
         const current = tags.get(`${args[1]}:${args[2].slice("dist-tags.".length)}`)
         return current === undefined ? "" : JSON.stringify(current)
+      }
+      if (args[0] === "view" && args[2] === "name") {
+        assert.equal(command, "npm")
+        if (newNames?.has(args[1]!)) throw new ReleaseError({ step: "registry", message: "E404" })
+        return JSON.stringify(args[1])
       }
       if (args[0] === "view") {
         const value = registry.get(args[1]!)
@@ -223,6 +229,22 @@ test("a declared exception reaches the approval prompt by name and reason", asyn
   )
   assert.match(verified.approvalPrompt, /Rebuild and byte-compare flows_jj\.wasm: this host has no wasm32 target/)
   assert.doesNotMatch(verified.approvalPrompt, /Every release\.yml gate ran/)
+})
+
+test("verification refuses a new unscoped name before the approval prompt", async (test) => {
+  // The fixture's registry lacks only the last package's version, so only its name is read.
+  const pending = publishedPackages.at(-1)!
+  assert.ok(!pending.startsWith("@"), `${pending} is unscoped`)
+  const state = await fixture(test, { newNames: new Set([pending]) })
+  await assert.rejects(
+    state.ops.verifyCandidate({ input: state.input, candidate: state.candidate }),
+    (error) => String(error).includes(`npm has no package named ${pending}. `)
+  )
+  await assert.rejects(
+    state.ops.publish({ input: state.input, candidate: state.candidate }),
+    /npm has no package named/
+  )
+  assert.equal(state.publishes.length, 0)
 })
 
 test("registry conflicts, tampered smoke receipts and stale source each refuse the whole publication", async (test) => {

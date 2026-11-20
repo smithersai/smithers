@@ -35,6 +35,11 @@ on:
         type: string
         required: false
         default: ""
+      allowNewNames:
+        description: "Exact new npm package names the token can now create, comma separated. A new name in a scope that already holds a package of the candidate needs no entry."
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -133,6 +138,9 @@ jobs:
       SOURCE_REF: ${{ inputs.sourceRef }}
       CANDIDATE_RUN_ID: ${{ inputs.candidateRunId }}
       CANDIDATE_ARTIFACT_ID: ${{ inputs.candidateArtifactId }}
+      # New package names outside an established scope that the release token
+      # can create (release-resume.md, "A package name that is new to npm").
+      RELEASE_ALLOW_NEW_NAMES: ${{ inputs.allowNewNames }}
     steps:
       # A re-run replays every gate, rebuilds and repacks a candidate, and then
       # fails at the archive step: actions/upload-artifact refuses a second
@@ -607,6 +615,11 @@ jobs:
           echo "PUBLISH_DIST_TAG=$publish_tag" >> "$GITHUB_ENV"
           echo "Publish plan for $release_version on the $publish_tag dist-tag:"
           cat "$PUBLISH_ORDER"
+          # The release token creates new names only in the scope it was
+          # granted, so a new name outside it would stop the publish step. A
+          # dry run reports it here, while the owner can still create it
+          # (release-resume.md).
+          node .smithers/flows/release/publish-release.mjs --check-names "$PACK_DIR"
       - name: Publish packages in dependency order
         if: env.DRY_RUN != 'true' && !inputs.sourceRef && matrix.lane != 'gates'
         env:
@@ -615,8 +628,12 @@ jobs:
           # Trusted publishing (id-token: write) is the primary credential and
           # needs nothing here. First publication of a new package name needs
           # the repository token because npm cannot preconfigure trusted
-          # publishing for a name that does not exist yet. The token remains a
-          # fallback for existing names, and provenance stays enabled below.
+          # publishing for a name that does not exist yet. The token creates
+          # names only in the scope it was granted, so the preflight refuses
+          # an unscoped or foreign-scope new name before the first upload
+          # (release-resume.md, "A package name that is new to npm"). The token
+          # remains a fallback for existing names, and provenance stays enabled
+          # below.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
         run: |

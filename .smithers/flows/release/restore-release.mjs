@@ -5,7 +5,7 @@ import { createReadStream, closeSync, openSync, writeSync } from "node:fs"
 import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 
-import { preflight, registryIntegrity } from "./publish-release.mjs"
+import { parseAllowNewNames, preflight, registryIntegrity, registryName } from "./publish-release.mjs"
 import { superviseProcess } from "./release-process.mjs"
 import { dependencyOrder, publishedPackages, readWorkspaceManifests, workspaceDependencies } from "./pack-release.mjs"
 import { isMain } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
@@ -159,6 +159,8 @@ if (isMain(import.meta)) {
       expectedPackages: dependencyOrder(workspaceDependencies(manifests)).map((directory) => ({ name: manifests.get(directory).name, version: manifests.get(directory).version })),
       lockfileSha256: createHash("sha256").update(await readFile("pnpm-lock.yaml")).digest("hex"),
       readRegistry: registryIntegrity,
+      readName: registryName,
+      allowNewNames: parseAllowNewNames(process.env.RELEASE_ALLOW_NEW_NAMES),
       readMetadata: async (endpoint) => JSON.parse(execFileSync("gh", ["api", endpoint, ...githubHeaders], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000 })),
       download: (endpoint, path) => captureArchive("gh", ["api", endpoint, ...githubHeaders], path)
     })

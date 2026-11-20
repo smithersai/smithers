@@ -20,6 +20,30 @@ A missing or expired archive is a failed resume, not permission to rebuild diffe
 
 The local restore implementation uses Node, the GitHub CLI, and Python 3's standard ZIP library, available on the workflow's Ubuntu runner. All GitHub calls are read-only and request JSON metadata under API version `2026-03-10`; archive bytes are downloaded by artifact ID. The action token needs `actions: read`. The endpoint and metadata contract is documented by GitHub's [artifact API](https://docs.github.com/en/rest/actions/artifacts) and [workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs).
 
+## A package name that is new to npm
+
+Trusted publishing cannot create a package name: npm configures it per existing package. The `NPM_TOKEN` token creates names in the scope it was granted and in no other, so an unscoped name, or a name in another scope, needs the npm account owner once. On the v1.0.0-rc.18 tag run (44620940500) the token created `@smthrs/fuzz`, `@smthrs/platform-cloudflare` and `@smthrs/views`. The unscoped `smithers-ci` answered 403 after 49 immutable uploads, leaving `smthrs` unpublished and no consumer tag moved.
+
+Before its first upload, publication therefore reads whether npm knows the name of each package whose version the registry lacks (`npm view <name> name`; 404 means the name is new, and any other answer fails the run). A new name passes when npm already serves another package of the candidate in its scope (`@smthrs` today), or when the `allowNewNames` input lists it; the run prints each name it admits. Any other new name stops publication with an error that names every such name. The same check runs on the paths that publish nothing:
+
+- A dry run of a new candidate: "Compute the publish plan" runs `publish-release.mjs --check-names` on the packed candidate and reads every name. The local rehearsal driver runs that step too.
+- A restore of an archived candidate, dry run or not: it runs the publication preflight.
+- The local release flow: candidate verification runs the publication preflight before the approval prompt. It has no `allowNewNames` input.
+
+`allowNewNames` is a Release `workflow_dispatch` input, passed to the scripts as `RELEASE_ALLOW_NEW_NAMES`: exact package names of the candidate, comma separated. Set it only after the token can create those names, for example once its grant covers a new scope.
+
+To publish a candidate with a new name the token cannot create, the npm account owner:
+
+1. Downloads the candidate archive the resume will restore and publishes each new name once from its tarball, with npm 11:
+
+   ```sh
+   npm publish smithers-ci-1.0.0-rc.18.tgz --access public --tag staging --provenance=false
+   ```
+
+   The tarball must be the candidate's own bytes: the resume compares the registry's `dist.integrity` with the candidate's and refuses other bytes under that version. A tag run stops before its first upload and has already archived its candidate, so its `release-candidate-<run-id>` archive is the one to use; a dry run of the tag works the same way. A `sourceRef` rehearsal's candidate cannot be restored, so its report is notice only. npm 11 lets these flags override the tarball's `publishConfig` (`tag: next`, `provenance: true`); provenance needs the workflow's OIDC identity, which a hand publication lacks.
+2. Gives the release credentials the name: adds the package to the `NPM_TOKEN` token's packages and configures its trusted publisher as for the existing packages. The resume moves the package's consumer tags with that token.
+3. Resumes the candidate as the start of this page describes. Its preflight finds the hand-published version with identical integrity and skips it, publishes the versions still missing, then moves the consumer tags in roster order, `smthrs` last.
+
 ## Rehearse an untagged main commit
 
 For a fresh candidate before creating a release tag, dispatch **Release** from `main` with `dryRun=true`, an explicit `sourceRef` containing the full 40- or 64-character commit SHA already pushed to main, and `releaseTag` naming the intended `v<version>`. Leave both archived-candidate IDs empty. For example, after setting `SOURCE_SHA` to the chosen full SHA:

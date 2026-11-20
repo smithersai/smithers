@@ -111,8 +111,64 @@ export const recordSmokeSuccess = async (directory, candidate) => {
   }, null, 2) + "\n")
 }
 
+/** The `@scope` of a scoped package name, or undefined for an unscoped one. */
+export const scopeOf = (name) => name.startsWith("@") && name.includes("/") ? name.slice(0, name.indexOf("/")) : undefined
+
+/** `allowNewNames` (RELEASE_ALLOW_NEW_NAMES): exact package names, comma separated. */
+export const parseAllowNewNames = (value = "") => {
+  const names = value.split(",").map((name) => name.trim()).filter((name) => name !== "")
+  for (const name of names) {
+    if (!/^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/.test(name)) throw new Error(`allowNewNames takes exact package names, comma separated: ${name}`)
+  }
+  return names
+}
+
+/**
+ * Refuse a new name the release credentials cannot create. The release token
+ * creates names in the scope it was granted, and trusted publishing creates
+ * none. The v1.0.0-rc.18 tag run (44620940500) created `@smthrs/fuzz`,
+ * `@smthrs/platform-cloudflare` and `@smthrs/views` with the token, then the
+ * unscoped `smithers-ci` answered 403 after 49 immutable uploads, leaving
+ * `smthrs` unpublished and no consumer tag moved.
+ *
+ * A new name is admitted when npm already serves another package of the roster
+ * in its scope, or when `allowNewNames` lists it exactly. An unscoped name, or
+ * one in a scope with no existing roster package, is refused. `readName`
+ * answers the name, or undefined when npm has no package of that name; any
+ * other answer fails closed. Entries outside `unread` are already on npm.
+ */
+export const requireCreatableNames = async (roster, unread, { readName, allowNewNames = [], log = console.log }) => {
+  for (const name of allowNewNames) {
+    if (!roster.some((entry) => entry.name === name)) throw new Error(`allowNewNames names a package outside this candidate: ${name}`)
+  }
+  const existing = new Set(roster.filter((entry) => !unread.includes(entry)).map((entry) => entry.name))
+  const fresh = []
+  for (const entry of unread) {
+    const answer = await readName(entry.name)
+    if (answer === entry.name) existing.add(entry.name)
+    else if (answer === undefined) fresh.push(entry)
+    else throw new Error(`Registry name check unavailable: ${entry.name}`)
+  }
+  const established = new Set([...existing].map(scopeOf).filter((scope) => scope !== undefined))
+  const refused = []
+  for (const entry of fresh) {
+    if (established.has(scopeOf(entry.name))) log(`New npm name ${entry.name}: its scope ${scopeOf(entry.name)} already holds packages of this candidate, so the release token creates it.`)
+    else if (allowNewNames.includes(entry.name)) log(`allowNewNames admitted ${entry.name}: npm has no package of that name, and this run creates it.`)
+    else refused.push(entry)
+  }
+  if (refused.length === 0) return
+  throw new Error([
+    `npm has no package named ${refused.map((entry) => entry.name).join(", ")}. The release credentials cannot create it: the release token creates names only in a scope it was granted, taken here as a scope that already holds a published package of this candidate, and trusted publishing creates none. No package of this candidate is uploaded until npm knows these names. For each name, the npm account owner:`,
+    "  1. Publishes it once by hand from this candidate's own tarball, in the candidate's release-candidate-<run id> archive. The resume's integrity check accepts only those bytes:",
+    ...refused.map((entry) => `       npm publish ${entry.filename} --access public --tag staging --provenance=false`),
+    "  2. Gives the release credentials the name: adds it to the packages of the NPM_TOKEN token and configures its trusted publisher.",
+    "  3. Resumes this candidate as .smithers/flows/release/release-resume.md says (\"A package name that is new to npm\").",
+    "Once the release token can create such a name, list it in allowNewNames (the Release workflow input, or RELEASE_ALLOW_NEW_NAMES), comma separated, instead."
+  ].join("\n"))
+}
+
 /** Preflight the whole train before any publish: an existing mismatch refuses all missing packages. */
-export const preflight = async (directory, candidate, { sourceSha, releaseTag, readRegistry }) => {
+export const preflight = async (directory, candidate, { sourceSha, releaseTag, readRegistry, readName, allowNewNames = [], log = console.log }) => {
   requireReleaseProviders(candidate)
   await verifyLocalCandidate(directory, candidate)
   if (candidate.source.sha !== sourceSha || candidate.source.tag !== releaseTag || candidate.source.dirty !== false) throw new Error("Release source/tag does not match the clean tested candidate")
@@ -125,6 +181,9 @@ export const preflight = async (directory, candidate, { sourceSha, releaseTag, r
     if (existing === undefined) pending.push(entry)
     else if (existing !== entry.integrity) throw new Error(`Registry integrity mismatch or unavailable: ${entry.name}`)
   }
+  // A version npm already serves proves its name exists, so a resume after a
+  // name was published by hand reads only the names still pending.
+  await requireCreatableNames(candidate.packages, pending, { readName, allowNewNames, log })
   return pending
 }
 
@@ -225,6 +284,12 @@ export const registryPublisher = ({ run = execFileSync, pause = (seconds) => exe
     return value
   }
   return { pause, readRegistry,
+    // A bare name answers 404 only when npm has no package of that name;
+    // a missing version is not asked here.
+    readName: (name) => {
+      const output = invoke(["view", name, "name", "--json"], true, undefined, "npm")
+      return output === undefined ? undefined : JSON.parse(output)
+    },
     verifyVersion: (entry) => {
       const output = invoke(["view", `${entry.name}@${entry.version}`, "version", "--json"], true, undefined, "npm")
       return output !== undefined && JSON.parse(output) === entry.version
@@ -248,7 +313,19 @@ export const registryPublisher = ({ run = execFileSync, pause = (seconds) => exe
 
 export const registryIntegrity = (spec) => registryPublisher().readRegistry(spec)
 
-if (isMain(import.meta)) {
+export const registryName = (name) => registryPublisher().readName(name)
+
+if (isMain(import.meta) && process.argv[2] === "--check-names") {
+  // A dry run of a new candidate never reaches the preflight, so its publish
+  // plan step runs this. It reads every name: a new one would stop the real run.
+  const directory = resolve(process.argv[3] ?? "dist/release-packs")
+  const candidate = JSON.parse(await readFile(join(directory, "release-manifest.json"), "utf8"))
+  await verifyLocalCandidate(directory, candidate)
+  await requireCreatableNames(candidate.packages, candidate.packages, {
+    readName: registryName, allowNewNames: parseAllowNewNames(process.env.RELEASE_ALLOW_NEW_NAMES)
+  })
+  console.log(`The release credentials can publish all ${candidate.packages.length} package names.`)
+} else if (isMain(import.meta)) {
   const directory = resolve(process.argv[2] ?? "dist/release-packs")
   const candidate = JSON.parse(await readFile(join(directory, "release-manifest.json"), "utf8"))
   const releaseTag = process.env.RELEASE_TAG
@@ -257,6 +334,6 @@ if (isMain(import.meta)) {
   const tagSha = execFileSync("git", ["rev-parse", "--verify", `refs/tags/${releaseTag}^{commit}`], { encoding: "utf8" }).trim()
   if (sourceSha !== tagSha) throw new Error("The checked-out source is not the requested release tag")
   await publishCandidate(directory, candidate, {
-    sourceSha, releaseTag, ...registryPublisher()
+    sourceSha, releaseTag, allowNewNames: parseAllowNewNames(process.env.RELEASE_ALLOW_NEW_NAMES), ...registryPublisher()
   })
 }

@@ -39,7 +39,8 @@ const fixture = async (body) => {
       expectedPackages: packages.map(({ name, version }) => ({ name, version })), lockfileSha256: "tested-lock",
       readMetadata: async (endpoint) => { calls.push(endpoint); return endpoint.includes("/runs/") ? run : artifact },
       download: async (endpoint, path) => { calls.push(endpoint); await cp(archive, path) },
-      readRegistry: async () => undefined
+      readRegistry: async () => undefined,
+      readName: async (name) => name
     }
     await body({ root, packed, destination, candidate, run, artifact, archive, options, pack, calls })
   } finally { await rm(root, { recursive: true, force: true }) }
@@ -114,6 +115,13 @@ test("different roster, order or lockfile and registry mismatch refuse restored 
   await assert.rejects(restoreCandidate(destination, { ...options, expectedPackages: options.expectedPackages.slice(0, 1) }), /expected roster member count/)
   await assert.rejects(restoreCandidate(destination, { ...options, lockfileSha256: "other-lock" }), /lockfile/)
   await assert.rejects(restoreCandidate(destination, { ...options, readRegistry: async () => "different-bytes" }), /Registry integrity mismatch/)
+  assert.equal(existsSync(destination), false)
+}))
+
+// A dry run of an archived candidate runs the publish preflight, so it reports
+// a new name the release credentials cannot create before any tag run uploads.
+test("a restored candidate with a new unscoped name is refused", () => fixture(async ({ destination, options }) => {
+  await assert.rejects(restoreCandidate(destination, { ...options, readName: async (name) => name === "b" ? undefined : name }), /^Error: npm has no package named b\. /)
   assert.equal(existsSync(destination), false)
 }))
 
