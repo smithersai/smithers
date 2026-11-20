@@ -272,6 +272,38 @@ name more only for `build.zig`: the edit added a blank line, the build graph
 came out the same, and Zig rebuilt nothing. Every closure holds `build.zig`
 because another edit to it can change any step.
 
+### Four commits replayed
+
+`smithers-ci --commits 4 --no-trial` on needlefish's four commits up to
+`06d8113`, on a shared machine with a fixed share of its processors. Its CI is
+`just ci`: `tidy`, then `zig build test`, which runs 3,180 unit tests in one
+test binary and three small ones. Each way first runs once at the commit
+before, which is not counted: 31.7 minutes as CI, 28.6 as targets. No step's
+result differed from CI's.
+
+| Commit    | Changed           |     As CI | As targets | What ran again    |
+| --------- | ----------------- | --------: | ---------: | ----------------- |
+| `55590ed` | `bin/base`        |  28.8 min |   29.3 min | `test`            |
+| `a66baf9` | one file in `src` |  34.5 min |   33.3 min | `test`            |
+| `2aee274` | one docs file     |  35.1 min |        4 s | nothing           |
+| `06d8113` | 38 files          |  30.1 min |   32.5 min | `test`            |
+| Total     |                   | 128.4 min |   95.1 min | 1.35 times faster |
+
+`tidy` takes a second and runs at every commit: it reads which commit is
+checked out. A `test` that runs compiles and runs every binary from empty Zig
+caches, as `just ci` does on a new machine. So a commit that changes a file
+the step read costs what the CI costs, between 0.97 and 1.08 times its time
+here with the recording, and the gain is the commits that change no file a
+step read. One binary holds all 3,180 tests, so any change under `src` runs
+them all: that is what bounds the number. With
+[a test binary per directory](#one-test-binary-or-several) each directory has
+a step of its own, and a change runs only the steps whose own run read it.
+
+The machine was shared: the same full run took between 29 and 35 minutes. One
+test in `bin/base/log_relay.zig` was made to skip when the kernel refuses a
+larger pipe, which that machine does under load; nothing else in the
+repository was changed.
+
 ## What it cannot see
 
 - **What a test reads when it runs.** A test that opens a file at run time,
