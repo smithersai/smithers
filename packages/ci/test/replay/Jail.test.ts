@@ -735,6 +735,35 @@ describe("the tools on a search path", () => {
     expect(tools.homes).toEqual([{ path: ".local/share/mise", target: manager }])
     expect(toolsOn(undefined, { ...ExecSandbox.host(), home })).toEqual({ reads: [], links: [], homes: [] })
   })
+
+  it("are, for corepack, each package manager its cache keeps, linked where a step's corepack looks", () => {
+    const home = directory("corepack-person")
+    const cache = join(home, ".cache", "node", "corepack")
+    mkdirSync(join(cache, "v1", "pnpm", "12.15.0"), { recursive: true })
+    mkdirSync(join(cache, "v1", "yarn", "1.22.22"), { recursive: true })
+    // corepack's own files beside the versions are no version.
+    writeFileSync(join(cache, "v1", "pnpm", ".lock"), "")
+    writeFileSync(join(cache, "lastKnownGood.json"), "{}\n")
+    // A link to a version that is gone is no version either.
+    symlinkSync(join(cache, "gone"), join(cache, "v1", "pnpm", "9.0.0"))
+    const facts = { ...ExecSandbox.host(), home }
+    const homes = [
+      { path: ".cache/node/corepack/v1/pnpm/12.15.0", target: join(cache, "v1", "pnpm", "12.15.0") },
+      { path: ".cache/node/corepack/v1/yarn/1.22.22", target: join(cache, "v1", "yarn", "1.22.22") }
+    ]
+    expect(toolsOn(undefined, facts)).toEqual({ reads: homes.map((link) => link.target), links: [], homes })
+    // Where the person's corepack keeps it: COREPACK_HOME, else XDG_CACHE_HOME, else the home's `.cache`.
+    const elsewhere = directory("corepack-elsewhere")
+    mkdirSync(join(elsewhere, "node", "corepack", "v1", "pnpm", "11.0.0"), { recursive: true })
+    expect(toolsOn(undefined, facts, { XDG_CACHE_HOME: elsewhere }).homes).toEqual([
+      {
+        path: ".cache/node/corepack/v1/pnpm/11.0.0",
+        target: join(elsewhere, "node", "corepack", "v1", "pnpm", "11.0.0")
+      }
+    ])
+    expect(toolsOn(undefined, { ...facts, home: undefined }, { COREPACK_HOME: cache }).homes).toEqual(homes)
+    expect(toolsOn(undefined, { ...facts, home: undefined }).homes).toEqual([])
+  })
 })
 
 describe("the jail", () => {

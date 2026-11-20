@@ -543,7 +543,9 @@ such as Node under nvm or Rust under rustup; the files `smithers-ci` itself
 runs from; and your repository. Nothing else is there: no directory of
 settings, no shell history, no file a program keeps a token in, whatever its
 name. A tool that looks for its versions under `HOME`, as rustup, asdf and
-mise do, finds them under the step's own. A program on your `PATH` that starts
+mise do, finds them under the step's own. So does corepack: the pnpm and Yarn
+releases it keeps are there, read-only, and a release it does not keep is
+downloaded into the step's home, never into yours. A program on your `PATH` that starts
 a tool kept in another directory of your home does not find it there: the step
 fails, and its failure names the directory to put on `PATH`.
 

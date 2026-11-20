@@ -8,6 +8,7 @@
 
 import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import { spawnSync } from "node:child_process"
+import { readdirSync, realpathSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { inPlainWords } from "./Reads.ts"
@@ -121,8 +122,8 @@ export interface Link {
  * Smithers build finds them for a confined run: `reads` are the installs the
  * programs on `PATH` live in, `links` the links a program is reached through
  * that no install holds, and `homes` the links a step's own home needs so a
- * version manager finds its versions there, such as `.rustup`, each from the
- * step's home.
+ * version manager finds its versions there, such as `.rustup` or each package
+ * manager corepack keeps, each from the step's home.
  *
  * @category models
  * @since 0.1.0
@@ -143,14 +144,65 @@ const nowhere = "/nonexistent/smithers-ci"
  * @category resolution
  * @since 0.1.0
  */
-export const toolsOn = (searchPath: string | undefined, facts: ExecSandbox.Host): Tools => {
+export const toolsOn = (
+  searchPath: string | undefined,
+  facts: ExecSandbox.Host,
+  environment: Readonly<Record<string, string | undefined>> = {}
+): Tools => {
   const found = ExecSandbox.toolchain(searchPath, nowhere, facts)
+  const corepack = corepackVersions(facts.home, environment)
   return {
-    reads: found.reads,
+    reads: [...found.reads, ...corepack.map((link) => link.target)],
     links: found.links,
-    homes: found.privateLinks.flatMap((link) =>
-      link.path.startsWith("home/") ? [{ path: link.path.slice("home/".length), target: link.target }] : []
-    )
+    homes: [
+      ...found.privateLinks.flatMap((link) =>
+        link.path.startsWith("home/") ? [{ path: link.path.slice("home/".length), target: link.target }] : []
+      ),
+      ...corepack
+    ]
+  }
+}
+
+/**
+ * The package managers the person's corepack keeps, `<cache>/v1/<name>/<version>`:
+ * a tool home, as a version manager's is. A step's corepack looks under the
+ * step's own home (`.cache/node/corepack`) and finds each of them linked
+ * there, read where it is and never written. A version the cache does not
+ * hold it fetches into the step's own home, as on a runner. The cache is where
+ * the person's corepack keeps it: `COREPACK_HOME`, else `node/corepack` in
+ * `XDG_CACHE_HOME`, else in the home's `.cache`.
+ */
+const corepackVersions = (
+  home: string | undefined,
+  environment: Readonly<Record<string, string | undefined>>
+): ReadonlyArray<Link> => {
+  const caches = environment["XDG_CACHE_HOME"] ?? (home === undefined ? undefined : join(home, ".cache"))
+  const cache = environment["COREPACK_HOME"] ?? (caches === undefined ? undefined : join(caches, "node", "corepack"))
+  if (cache === undefined) return []
+  return entries(join(cache, "v1")).flatMap((name) =>
+    entries(join(cache, "v1", name)).flatMap((version) => {
+      const real = realDirectory(join(cache, "v1", name, version))
+      return real === undefined ? [] : [{ path: `.cache/node/corepack/v1/${name}/${version}`, target: real }]
+    })
+  )
+}
+
+/** The names in a directory, in order; none where there is no directory to read. */
+const entries = (directory: string): ReadonlyArray<string> => {
+  try {
+    return readdirSync(directory).sort()
+  } catch {
+    return []
+  }
+}
+
+/** Where a directory really is, or nothing for a path that is not a directory. */
+const realDirectory = (path: string): string | undefined => {
+  try {
+    const real = realpathSync(path)
+    return statSync(real).isDirectory() ? real : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -228,7 +280,7 @@ const answer = (
 ): Probe => {
   const refusal = refuses(facts)
   // With no jail a step still has a home of its own, where a tool looks for its versions.
-  if (refusal !== undefined) return { refusal, homes: toolsOn(environment["PATH"], facts).homes }
+  if (refusal !== undefined) return { refusal, homes: toolsOn(environment["PATH"], facts, environment).homes }
   const perl = facts.executable("perl")
   return {
     bwrap: facts.executable("bwrap") as string,
@@ -237,7 +289,7 @@ const answer = (
     daemons: daemonSockets(facts.uid, environment),
     tmp: tmpdir(),
     caches: [join(tmpdir(), `tsx-${facts.uid}`), join(tmpdir(), `vibelang-cache-${facts.uid}`)],
-    tools: toolsOn(environment["PATH"], facts),
+    tools: toolsOn(environment["PATH"], facts, environment),
     ...(perl !== undefined && scoped(perl) ? { scope: perl } : {})
   }
 }

@@ -320,7 +320,10 @@ export effect function confine(
   for (const root of temporaryRoots(programs, temporary)) {
     if (try fs.exists(root)) roots.push(root)
   }
-  const visible = [...roots, ...caches, work]
+  // A tool kept in a temporary directory, as a corepack cache `COREPACK_HOME` names there, stays in sight over the
+  // jail's own, read-only as it is everywhere else.
+  const tools = found.tools.reads.filter((each) => temporary.some((directory) => within(directory, each)))
+  const visible = [...roots, ...caches, ...tools, work]
   // The filter that refuses a step the keys of the person's session, where bubblewrap reads it and no step writes it.
   const filter = path.join(work, "keyring-filter")
   try fs.writeFile(filter, keyringFilter())
