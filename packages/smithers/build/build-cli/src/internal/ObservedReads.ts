@@ -2255,32 +2255,115 @@ export const anchored = (stored: Record, latest: (label: string) => string | und
 }
 
 /**
- * A measurement that remembers a file's digest while its size, times and
- * inode stay the same, the trust Git's index places in the same fields. A
- * file changed less than two seconds ago is always read again.
+ * What a measurement remembers, by path: the fingerprint a file had when it
+ * was measured and what it held. A build keeps it between builds
+ * ({@link loadDigests}, {@link saveDigests}).
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Digests = Map<string, readonly [fingerprint: string, state: string]>
+
+/**
+ * A measurement that remembers a file's digest while its size, times, inode
+ * and device stay the same, the trust Git's index places in the same fields.
+ * A file changed less than two seconds ago is always read again. `memory`
+ * holds what an earlier build measured, and is added to.
  *
  * @category measuring
  * @since 1.0.0
  */
-export const remembering = (io: Io = defaultIo, now: () => number = Date.now): (path: string) => string => {
-  const memory = new Map<string, readonly [fingerprint: string, state: string]>()
+export const remembering = (
+  io: Io = defaultIo,
+  now: () => number = Date.now,
+  memory: Digests = new Map()
+): (path: string) => string => {
   return (path) => {
     let fingerprint: string | undefined
     try {
       const stats = io.lstat(path)
       if (stats.isFile() && now() - stats.ctimeMs > 2000) {
-        fingerprint = `${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}:${stats.ino}:${stats.mode}`
+        fingerprint = `${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}:${stats.ino}:${stats.dev}:${stats.mode}`
       }
     } catch {
       fingerprint = undefined
     }
     const known = memory.get(path)
-    if (fingerprint !== undefined && known !== undefined && known[0] === fingerprint) return known[1]
+    // The last used is the last kept when there are too many to keep.
+    memory.delete(path)
+    if (fingerprint !== undefined && known !== undefined && known[0] === fingerprint) {
+      memory.set(path, known)
+      return known[1]
+    }
     const state = measure(path, io)
-    if (fingerprint === undefined) memory.delete(path)
-    else memory.set(path, [fingerprint, state])
+    if (fingerprint !== undefined) memory.set(path, [fingerprint, state])
     return state
   }
+}
+
+/** One kept digest: a path, its fingerprint and what it held. */
+const isDigest = (entry: unknown): entry is readonly [path: string, fingerprint: string, state: string] =>
+  Array.isArray(entry) && entry.length === 3 && entry.every((part) => typeof part === "string")
+
+/** The format tag of kept digests; a file with any other is not read. */
+const digestsFormat = "smthrs-digests/1"
+
+/**
+ * The most digests kept between builds, the last used first.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maximumDigests = 200_000
+
+/**
+ * The digests an earlier build kept in `file`; none when there is no such
+ * file or it cannot be read.
+ *
+ * @category measuring
+ * @since 1.0.0
+ */
+export const loadDigests = (file: string): Digests => {
+  const memory: Digests = new Map()
+  try {
+    const kept = JSON.parse(NodeFs.readFileSync(file, "utf8")) as {
+      readonly format?: unknown
+      readonly digests?: unknown
+    }
+    if (kept.format !== digestsFormat || !Array.isArray(kept.digests)) return memory
+    for (const entry of kept.digests as ReadonlyArray<unknown>) {
+      if (isDigest(entry)) memory.set(entry[0], [entry[1], entry[2]])
+    }
+  } catch {
+    // No file, or not one a build wrote: nothing is remembered.
+  }
+  return memory
+}
+
+/**
+ * Keeps the digests a build measured in `file` for the next build: those
+ * `kept` holds, at most `maximum`, the last used first. The file
+ * is replaced whole, so a build that reads it while another writes it reads
+ * one or the other.
+ *
+ * @category measuring
+ * @since 1.0.0
+ */
+export const saveDigests = (
+  file: string,
+  memory: Digests,
+  kept: (path: string) => boolean,
+  maximum: number = maximumDigests
+): void => {
+  const digests: Array<readonly [string, string, string]> = []
+  for (const [path, [fingerprint, state]] of memory) if (kept(path)) digests.push([path, fingerprint, state])
+  const written = `${file}.${process.pid}`
+  NodeFs.mkdirSync(NodePath.dirname(file), { recursive: true })
+  NodeFs.writeFileSync(
+    written,
+    JSON.stringify({ format: digestsFormat, digests: digests.slice(Math.max(0, digests.length - maximum)) })
+  )
+  NodeFs.renameSync(written, file)
 }
 
 /**

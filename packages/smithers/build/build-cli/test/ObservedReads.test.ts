@@ -963,6 +963,64 @@ describe("measuring", () => {
     expect(later(Path.join(root, "missing"))).toBe("-")
     expect(later(root)).toBe("d")
   })
+
+  it("keeps what it measured for the next build, and reads again a file that changed since", async () => {
+    const root = await directory()
+    const tool = Path.join(root, "tool")
+    const other = Path.join(root, "other")
+    const gone = Path.join(root, "gone")
+    await Fs.writeFile(tool, "tool")
+    await Fs.writeFile(other, "other")
+    await Fs.writeFile(gone, "gone")
+    let reads = 0
+    const counting: ObservedReads.Io = {
+      ...ObservedReads.defaultIo,
+      readFile: (path) => {
+        reads += 1
+        return ObservedReads.defaultIo.readFile(path)
+      }
+    }
+    const settled = () => Date.now() + 60_000
+    const kept = Path.join(root, "cache", "digests.json")
+    const first: ObservedReads.Digests = new Map()
+    const measured = ObservedReads.remembering(counting, settled, first)
+    const states = [tool, other, gone].map(measured)
+    // Used again, `tool` is the last used, so it is the one kept when one is.
+    expect(measured(tool)).toBe(states[0])
+    expect(reads).toBe(3)
+    ObservedReads.saveDigests(kept, first, (path) => path !== other)
+    // The next build reads neither file it measured, and does not hold one it was not given.
+    const next = ObservedReads.loadDigests(kept)
+    expect([...next.keys()].sort()).toEqual([gone, tool])
+    const again = ObservedReads.remembering(counting, settled, next)
+    expect([tool, gone].map(again)).toEqual([states[0], states[2]])
+    expect(reads).toBe(3)
+    expect(again(other)).toBe(states[1])
+    expect(reads).toBe(4)
+    // A file that changed is read again.
+    await Fs.writeFile(gone, "changed")
+    expect(again(gone)).not.toBe(states[2])
+    expect(reads).toBe(5)
+    ObservedReads.saveDigests(kept, first, () => true, 1)
+    expect([...ObservedReads.loadDigests(kept).keys()]).toEqual([tool])
+    // What no build wrote is no memory.
+    for (
+      const text of [
+        "not json",
+        JSON.stringify({ format: "other", digests: [] }),
+        JSON.stringify({ format: "smthrs-digests/1" })
+      ]
+    ) {
+      await Fs.writeFile(kept, text)
+      expect(ObservedReads.loadDigests(kept).size).toBe(0)
+    }
+    await Fs.writeFile(
+      kept,
+      JSON.stringify({ format: "smthrs-digests/1", digests: [[tool, "1", "f:x"], [tool, 2, "f:y"], "z"] })
+    )
+    expect([...ObservedReads.loadDigests(kept)]).toEqual([[tool, ["1", "f:x"]]])
+    expect(ObservedReads.loadDigests(Path.join(root, "absent.json")).size).toBe(0)
+  })
 })
 
 describe("recording what a run read", () => {

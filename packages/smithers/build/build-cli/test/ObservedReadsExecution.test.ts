@@ -229,6 +229,29 @@ describe("an observed test", () => {
     expect(await run(["plain"])).toEqual({ plain: "ran" })
   })
 
+  tracedIt("trusts what an earlier build measured outside the workspace while it is the same file", async () => {
+    const { base, reasons, root, run, write } = await fixture()
+    expect(await run()).toEqual({ check: "ran" })
+    const file = Path.join(root, ".flows", "observed-digests.json")
+    const kept = JSON.parse(await Fs.readFile(file, "utf8")) as {
+      readonly digests: Array<[string, string, string]>
+    }
+    // The program the check runs is kept; nothing of the workspace is.
+    const cat = kept.digests.find(([path]) => path.endsWith("/cat"))!
+    expect(cat[2]).toMatch(/^f:[0-9a-f]{64}:x$/)
+    expect(kept.digests.filter(([path]) => path.startsWith(`${base}/`))).toEqual([])
+    // A file the check declares and never reads changed, so its record is held against what it read.
+    await write("docs/readme.md", "changed\n")
+    expect(await run()).toEqual({ check: "hit" })
+    // Told that `cat` held something else, the next build believes it, as it would have measured it again: the
+    // file's size, times and inode are the same.
+    cat[2] = `f:${"0".repeat(64)}:x`
+    await Fs.writeFile(file, JSON.stringify(kept))
+    await write("docs/readme.md", "changed again\n")
+    expect(await run()).toEqual({ check: "ran" })
+    expect(reasons).toEqual([`${cat[0]} changed`])
+  })
+
   // A program of many threads ends while its threads are asking about files: Go's tools do at every exit. The
   // tracer then writes lines for calls it could not follow, each for a thread killed where it stopped. Here a
   // process of twenty-five threads is killed three times. The step still passes, and its result is stored.

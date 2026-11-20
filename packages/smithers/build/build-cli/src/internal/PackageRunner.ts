@@ -2748,7 +2748,21 @@ const executeWith = (
     let observing: ObservedReads.Observer | undefined
     let unobservedNoted = false
     let traces = 0
-    const stateOf = ObservedReads.remembering()
+    // What the build measured outside the workspace and its machines is kept for the next build: a tool every build
+    // reads is hashed once while it stays the same file, not at every build.
+    const digestsFile = NodePath.join(NodeFs.realpathSync(root), ...cacheDirectory.split("/"), "observed-digests.json")
+    const digests = yield* Effect.acquireRelease(
+      Effect.sync(() => ObservedReads.loadDigests(digestsFile)),
+      (memory) =>
+        Effect.sync(() => {
+          const real = NodeFs.realpathSync(root)
+          const kept = (path: string): boolean =>
+            path !== real && !path.startsWith(`${real}/`) &&
+            (machinesKept === undefined || !path.startsWith(`${machinesKept}/`))
+          ObservedReads.saveDigests(digestsFile, memory, kept)
+        }).pipe(Effect.ignore)
+    )
+    const stateOf = ObservedReads.remembering(ObservedReads.defaultIo, Date.now, digests)
     const failedObserved = "it passed, but failed while its reads were recorded"
     /** The targets of this run that wait for a target, directly or through another. */
     const dependentsOf = (() => {
