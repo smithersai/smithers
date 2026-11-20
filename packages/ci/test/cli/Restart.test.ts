@@ -52,6 +52,9 @@ describe("the variables the program keeps", () => {
   it("are what a step gets of the machine and what the runtime and the terminal read", () => {
     expect([...machine].sort()).toEqual([...inheritedEnvironmentNames].sort())
     expect(runtime).toContain("NODE_OPTIONS")
+    // Where compiled code is kept: a new start, and the Zig builds it starts, find it where the person put it.
+    const kept = { NODE_COMPILE_CACHE: "/c/node", VIBELANG_CACHE_DIR: "/c/vibelang", ZIG_GLOBAL_CACHE_DIR: "/c/zig" }
+    expect(split(kept, "linux")).toEqual({ short: kept, withheld: {} })
     const { short, withheld } = split({
       PATH: "/bin",
       HOME: "/home/me",

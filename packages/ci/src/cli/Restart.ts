@@ -83,6 +83,17 @@ export const runtime: ReadonlyArray<string> = [
 ]
 
 /**
+ * Where the program and the tools it starts keep compiled code: Node's,
+ * VibeLang's and Zig's caches. None holds a credential. Without them a new
+ * start, and every Zig build it starts, compiles everything again where the
+ * person chose a cache that already holds it.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const caches: ReadonlyArray<string> = ["NODE_COMPILE_CACHE", "VIBELANG_CACHE_DIR", "ZIG_GLOBAL_CACHE_DIR"]
+
+/**
  * The variable that tells a new start where the withheld variables wait. Its
  * value is the path of a pipe, never a variable's value.
  *
@@ -104,7 +115,7 @@ export const split = (
   environment: Environment,
   platform: string
 ): { readonly short: Record<string, string>; readonly withheld: Record<string, string> } => {
-  const names = new Set([...machine, ...runtime])
+  const names = new Set([...machine, ...runtime, ...caches])
   const short: Record<string, string> = {}
   const withheld: Record<string, string> = {}
   for (const [name, value] of Object.entries(environment)) {
