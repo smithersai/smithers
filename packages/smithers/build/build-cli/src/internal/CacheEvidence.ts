@@ -135,7 +135,8 @@ export const declarationIdentity = (declaration: {
 /**
  * How long a failed confined attempt is remembered. A suite that cannot run
  * confined pays for one extra run a day; one that failed by chance is tried
- * again the next day.
+ * again the next day. Another build of Smithers build tries it again at once
+ * ({@link Writer}).
  *
  * @category constants
  * @since 1.0.0
@@ -144,6 +145,22 @@ export const attemptMemoryMs = 24 * 60 * 60 * 1000
 
 /** The format tag a remembered attempt carries; any other tag is ignored. */
 const format = "smthrs-confined-attempt/1"
+
+/**
+ * Who made an attempt: the build of Smithers build, by the fingerprint of its
+ * implementation (`Planner.implementationFingerprint`), and for a run whose
+ * reads were recorded, the recorder (`strace`, or `smthrs-observe` and its
+ * digest). The failure may be the build's or the recorder's, so a remembered
+ * failure answers only the build and the recorder that made it: after an
+ * upgrade the attempt is made once more, and remembered again if it fails.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export interface Writer {
+  readonly build: string
+  readonly recorder?: string | undefined
+}
 
 /**
  * Where one declaration's failed confined attempt is remembered:
@@ -156,9 +173,10 @@ export const attemptPath = (root: string, cacheDirectory: string, identity: stri
   NodePath.join(root, ...cacheDirectory.split("/"), "evidence", `${identity}.json`)
 
 /**
- * When a confined attempt of this declaration failed, if it did within
- * {@link attemptMemoryMs}: the attempt is made again that long after it. A
- * missing, unreadable, malformed or expired record answers `undefined`.
+ * When an attempt of this declaration made by `writer` failed, if it did
+ * within {@link attemptMemoryMs}: the attempt is made again that long after
+ * it. A missing, unreadable, malformed or expired record answers `undefined`,
+ * and so does one another build or another recorder wrote.
  *
  * @category attempts
  * @since 1.0.0
@@ -167,6 +185,7 @@ export const attemptFailedAt = async (
   root: string,
   cacheDirectory: string,
   identity: string,
+  writer: Writer,
   now: number = Date.now()
 ): Promise<number | undefined> => {
   let parsed: unknown
@@ -176,17 +195,23 @@ export const attemptFailedAt = async (
     return undefined
   }
   if (typeof parsed !== "object" || parsed === null) return undefined
-  const record = parsed as { readonly format?: unknown; readonly at?: unknown }
+  const record = parsed as {
+    readonly format?: unknown
+    readonly at?: unknown
+    readonly build?: unknown
+    readonly recorder?: unknown
+  }
   return record.format === format && typeof record.at === "number" && now >= record.at &&
-      now - record.at < attemptMemoryMs
+      now - record.at < attemptMemoryMs && record.build === writer.build && record.recorder === writer.recorder
     ? record.at
     : undefined
 }
 
 /**
- * Whether a confined attempt of this declaration failed within
- * {@link attemptMemoryMs}. A missing, unreadable, malformed or expired record
- * answers no, and the run is attempted confined.
+ * Whether an attempt of this declaration made by `writer` failed within
+ * {@link attemptMemoryMs}. A missing, unreadable, malformed or expired record,
+ * or one another build or recorder wrote, answers no, and the run is
+ * attempted.
  *
  * @category attempts
  * @since 1.0.0
@@ -195,13 +220,14 @@ export const attemptFailed = async (
   root: string,
   cacheDirectory: string,
   identity: string,
+  writer: Writer,
   now: number = Date.now()
-): Promise<boolean> => await attemptFailedAt(root, cacheDirectory, identity, now) !== undefined
+): Promise<boolean> => await attemptFailedAt(root, cacheDirectory, identity, writer, now) !== undefined
 
 /**
- * Remembers that a confined attempt of this declaration failed while the same
- * run passed unconfined. `output` is the end of the attempt's failure, the
- * text a failed target prints.
+ * Remembers that an attempt of this declaration made by `writer` failed while
+ * the same run passed plainly. `output` is the end of the attempt's failure,
+ * the text a failed target prints.
  *
  * @category attempts
  * @since 1.0.0
@@ -210,6 +236,7 @@ export const rememberFailedAttempt = async (
   root: string,
   cacheDirectory: string,
   identity: string,
+  writer: Writer,
   record: {
     readonly label: string
     readonly denied: ReadonlyArray<string>
@@ -217,7 +244,13 @@ export const rememberFailedAttempt = async (
   },
   now: number = Date.now()
 ): Promise<void> => {
-  await remember(attemptPath(root, cacheDirectory, identity), { format, at: now, ...record })
+  await remember(attemptPath(root, cacheDirectory, identity), {
+    format,
+    at: now,
+    build: writer.build,
+    ...(writer.recorder === undefined ? {} : { recorder: writer.recorder }),
+    ...record
+  })
 }
 
 /** Writes one remembered fact whole: a reader finds the earlier one or this one, never a part. */

@@ -1844,12 +1844,13 @@ const executeWith = (
           tools: node.pathTools?.map((tool) => tool.name)
         })
         const evidencePath = posix(NodePath.relative(root, CacheEvidence.attemptPath(root, cacheDirectory, identity)))
-        if (yield* joined(() => CacheEvidence.attemptFailed(root, cacheDirectory, identity))) {
+        const writer: CacheEvidence.Writer = { build: yield* joined(() => Planner.implementationFingerprint()) }
+        if (yield* joined(() => CacheEvidence.attemptFailed(root, cacheDirectory, identity, writer))) {
           unstored(
             node,
             failedConfined,
-            `, on an earlier run; it is tried again a day after that run, or once its declaration changes. ` +
-              `The confined run's output is in ${evidencePath}`
+            `, on an earlier run; it is tried again a day after that run, once its declaration changes, ` +
+              `or by another build of Smithers build. The confined run's output is in ${evidencePath}`
           )
           return yield* unproven
         }
@@ -1870,7 +1871,7 @@ const executeWith = (
           const failure = Executor.describeFailure(Cause.squash(attempt.cause))
           const denied = CacheEvidence.deniedLines(failure)
           yield* joined(() =>
-            CacheEvidence.rememberFailedAttempt(root, cacheDirectory, identity, {
+            CacheEvidence.rememberFailedAttempt(root, cacheDirectory, identity, writer, {
               label: node.label,
               denied,
               output: [failure.slice(-attemptOutputCharacters)]
@@ -3368,11 +3369,19 @@ const executeWith = (
         const attemptPath = posix(
           NodePath.relative(root, CacheEvidence.attemptPath(root, cacheDirectory, observed.key))
         )
-        const failedAt = yield* joined(() => CacheEvidence.attemptFailedAt(root, cacheDirectory, observed.key))
+        // The recorder on, which a failure may be the fault of as much as the build's.
+        const recordedBy: CacheEvidence.Writer = {
+          build: yield* joined(() => Planner.implementationFingerprint()),
+          recorder: host.supervisor === true ? ObservedReads.recorder() : "strace"
+        }
+        const failedAt = yield* joined(() =>
+          CacheEvidence.attemptFailedAt(root, cacheDirectory, observed.key, recordedBy)
+        )
         if (failedAt !== undefined) {
           log(
             `${node.label}  its reads are not recorded: ${failedObserved}, on an earlier run; ` +
-              `they are recorded again a day after that run. That run's output is in ${attemptPath}`
+              "they are recorded again a day after that run, or by another build of Smithers build or another " +
+              `recorder. That run's output is in ${attemptPath}`
           )
           // Nothing says what it leaves for the targets that wait for it, so it runs every time: its row says that
           // its recorded run failed, and not that this host cannot record one.
@@ -3438,7 +3447,7 @@ const executeWith = (
             const plain = yield* spawnConsumer(node)
             if (!plain.ok) return fail(plain.error)
             yield* joined(() =>
-              CacheEvidence.rememberFailedAttempt(root, cacheDirectory, observed.key, {
+              CacheEvidence.rememberFailedAttempt(root, cacheDirectory, observed.key, recordedBy, {
                 label: node.label,
                 denied: [],
                 output: [attempt.error.slice(-attemptOutputCharacters)]

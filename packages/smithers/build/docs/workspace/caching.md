@@ -267,10 +267,13 @@ A workspace that turned build confinement off keeps every verdict it had: a
 suite that passes today still passes, and it is cached once it also passes
 confined. A red attempt that the unconfined run turns green prints one line
 naming the paths the confinement closed, and its output is kept in
-`<cacheDirectory>/evidence/<id>.json`. The attempt is not repeated for 24 hours
-unless the declaration changes, so a suite that cannot run confined costs one
-extra run a day. A `Vitest` attempt runs with `--bail=1`: an attempt that is
-going to be discarded stops at its first failure.
+`<cacheDirectory>/evidence/<id>.json`, with the build of Smithers build that
+made it. The same build does not repeat the attempt for 24 hours unless the
+declaration changes, so a suite that cannot run confined costs one extra run a
+day. Another build attempts it once more at its first run, so an upgrade that
+fixes the confinement is not kept waiting. A `Vitest` attempt runs with
+`--bail=1`: an attempt that is going to be discarded stops at its first
+failure.
 
 A host with no scratch-capable mechanism (macOS, or Linux without `bwrap`) stores
 nothing and still answers hits a capable host stored.
@@ -700,8 +703,11 @@ all be known, and says why on its own line:
 A tracer changes what a few programs can do: one that gains privileges, as
 `sudo` does, or one that traces another program. A traced run that fails is
 therefore followed by an untraced run, and the untraced run is the verdict. When
-it passes, nothing is stored and the declaration is not traced again for a day;
-until then it is keyed by its `data`. A target that another target waits for
+it passes, nothing is stored and the declaration is not traced again for a day
+by the same build of Smithers build with the same recorder; until then it is
+keyed by its `data`. Another build, or another recorder, records it once more
+at its first run: the failure may have been the recorder's or the build's, and
+an upgrade may have fixed it. A target that another target waits for
 cannot be keyed so, because nothing says what it leaves: it runs every time
 until then, and its line says when the recording is tried again:
 

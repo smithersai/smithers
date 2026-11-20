@@ -872,8 +872,9 @@ run the step with `uv run --locked`.
 A few programs do other things while their reads are recorded: one that
 traces another program, or one that gains privileges. When a step fails with
 the recording and passes without it, the run without it is the verdict, and
-the step is run that way for a day. Its line says so, and when the recording
-is tried again:
+the step is run that way for a day. Another release of Smithers CI, or another
+recorder, tries the recording once more at once, since an upgrade may have
+fixed what failed. Its line says so, and when the recording is tried again:
 
 ```text
 2 of 2 commits  ci.yml:build:1  ./debug-tests.sh  never reused: its recorded run failed and its plain run passed; it runs unrecorded until 2026-11-21 02:21 UTC

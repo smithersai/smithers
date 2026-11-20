@@ -269,7 +269,9 @@ const fixture = async (options: FixtureOptions = {}) => {
     return Object.fromEntries(summary.results.map((result) => [result.label.split(":")[1]!, result.status]))
   }
   const node = async (name: string) => (await planned([name])).nodes.get(label(name))!
-  const attempts = async (): Promise<ReadonlyArray<{ readonly label: string; readonly at: number }>> => {
+  const attempts = async (): Promise<
+    ReadonlyArray<{ readonly label: string; readonly at: number; readonly build?: string }>
+  > => {
     const directory = Path.join(root, ".flows", "evidence")
     const names = await Fs.readdir(directory).catch(() => [])
     return Promise.all(names.map(async (name) => JSON.parse(await Fs.readFile(Path.join(directory, name), "utf8"))))
@@ -608,6 +610,42 @@ describe("a confined run", () => {
     expect(await declared.run("test")).toEqual({ test: "hit" })
     await declared.write(declared.inPackage("data.txt"), "other data\n")
     expect(await declared.run("test")).toEqual({ test: "ran" })
+  })
+
+  // A memo outlived the build that caused it: an upgrade that fixed the confinement still waited a day.
+  confinedIt("attempts again once under another build of Smithers build, and not again under the same", async () => {
+    const { attempts, logs, root, run } = await fixture({ behaviour: "/bin/cat data.txt > /dev/null" })
+    expect(await run("test")).toEqual({ test: "ran" })
+    const [first] = await attempts()
+    // The build that made the attempt is named in what is remembered.
+    expect(first).toMatchObject({ label: "//pkg:test", build: expect.stringMatching(/./) })
+    expect((first as { readonly recorder?: string }).recorder).toBeUndefined()
+    const evidence = Path.join(root, ".flows", "evidence")
+    const [name] = await Fs.readdir(evidence)
+    // What another build remembered, and what a build from before builds were named remembered.
+    for (const other of [{ ...first, build: "another build" }, { ...first, build: undefined }]) {
+      await Fs.writeFile(Path.join(evidence, name!), JSON.stringify(other))
+      const before = logs.length
+      expect(await run("test")).toEqual({ test: "ran" })
+      const said = logs.slice(before).filter((line) => line.includes("not cached"))
+      expect(said).toHaveLength(1)
+      expect(said[0]).toContain("//pkg:test  not cached: it passed, but failed when confined to its declared inputs")
+      expect(said[0]).not.toContain("on an earlier run")
+      const [again] = await attempts()
+      expect(again!.build).toBe(first!.build)
+      expect(again!.at).toBeGreaterThan(first!.at)
+    }
+    // This build failed it again: it is not attempted again by this build.
+    const remembered = await attempts()
+    const before = logs.length
+    expect(await run("test")).toEqual({ test: "ran" })
+    expect(await attempts()).toEqual(remembered)
+    expect(logs.slice(before).filter((line) => line.includes("not cached"))).toEqual([
+      expect.stringContaining(
+        "on an earlier run; it is tried again a day after that run, once its declaration changes, " +
+          "or by another build of Smithers build."
+      )
+    ])
   })
 
   confinedIt("fails a run that reads an undeclared file where the workspace confines its build", async () => {

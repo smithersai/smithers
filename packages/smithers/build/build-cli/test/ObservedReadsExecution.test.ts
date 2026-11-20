@@ -156,7 +156,12 @@ const fixture = async (settings: FixtureOptions = {}) => {
     return { ...executionServicesLive, observer: () => ({ tracer: file }) }
   }
   const attempts = async (): Promise<
-    ReadonlyArray<{ readonly label: string; readonly output: ReadonlyArray<string> }>
+    ReadonlyArray<{
+      readonly label: string
+      readonly output: ReadonlyArray<string>
+      readonly build?: string
+      readonly recorder?: string
+    }>
   > => {
     const directory = Path.join(root, ".flows", "evidence")
     const names = await Fs.readdir(directory).catch(() => [])
@@ -432,13 +437,50 @@ describe("an observed test", () => {
     ).toBe(true)
     const remembered = await attempts()
     expect(remembered.map((attempt) => attempt.label)).toEqual(["//:check"])
+    // It names the build and the recorder the run failed under.
+    expect(remembered[0]).toMatchObject({ build: expect.stringMatching(/./), recorder: "strace" })
     // The next runs are keyed by the declared inputs, as any other shell test.
     expect(await run()).toEqual({ check: "ran" })
     expect(logs.some((line) => line.startsWith("//:check  its reads are not recorded: it passed, but failed while")))
       .toBe(true)
+    expect(logs).toContainEqual(expect.stringContaining(
+      "they are recorded again a day after that run, or by another build of Smithers build or another recorder."
+    ))
     expect(await run()).toEqual({ check: "hit" })
     await write("docs/readme.md", "changed\n")
     expect(await run()).toEqual({ check: "ran" })
+  })
+
+  // A recorder fixed by an upgrade, and a build fixed by one, still waited a day.
+  tracedIt("records again once under another build or another recorder, and not again under the same", async () => {
+    const refusing = "if /bin/grep -q -e '^TracerPid:[[:space:]]*[1-9]' -e '^Seccomp_filters:[[:space:]]*[1-9]' " +
+      "/proc/self/status; then exit 1; fi\n" +
+      "/bin/cat input.txt > /dev/null"
+    const { attempts, logs, root, run, write } = await fixture({ check: refusing })
+    const failedRecorded = "//:check  failed while its reads were recorded; it runs again without the recording"
+    expect(await run()).toEqual({ check: "ran" })
+    const [first] = await attempts()
+    const evidence = Path.join(root, ".flows", "evidence")
+    const [name] = await Fs.readdir(evidence)
+    for (
+      const other of [
+        { ...first, build: "another build" },
+        { ...first, recorder: "smthrs-observe:another" },
+        { ...first, build: undefined, recorder: undefined }
+      ]
+    ) {
+      await Fs.writeFile(Path.join(evidence, name!), JSON.stringify(other))
+      // A change the declared inputs see, so the run is not answered by its plain result.
+      await write("input.txt", `pass ${logs.length}\n`)
+      const before = logs.length
+      expect(await run()).toEqual({ check: "ran" })
+      expect(logs.slice(before)).toContain(failedRecorded)
+      expect((await attempts())[0]).toMatchObject({ build: first!.build, recorder: "strace" })
+    }
+    await write("input.txt", "pass again\n")
+    const before = logs.length
+    expect(await run()).toEqual({ check: "ran" })
+    expect(logs.slice(before)).not.toContain(failedRecorded)
   })
 
   tracedIt("gives its command the signals a plain run has", async () => {

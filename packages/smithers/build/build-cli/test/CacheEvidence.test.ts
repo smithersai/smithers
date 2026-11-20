@@ -143,7 +143,7 @@ describe("a remembered reach outside the run", () => {
     // A record from the future is a clock that moved, not a fact.
     expect(await CacheEvidence.reachedOutside(root, ".flows", identity, at - 1)).toBeUndefined()
     // It is no failed attempt, and a failed attempt is no reach outside.
-    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, at)).toBe(false)
+    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, { build: "build-1" }, at)).toBe(false)
     // The host clock: remembered now, it answers now, and a later remembering replaces it.
     await CacheEvidence.rememberReachedOutside(root, ".flows", identity, { label: "//:install", reason: "another" })
     expect(await CacheEvidence.reachedOutside(root, ".flows", identity)).toBe("another")
@@ -183,15 +183,18 @@ describe("a remembered reach outside the run", () => {
 })
 
 describe("a remembered failed attempt", () => {
+  const build: CacheEvidence.Writer = { build: "build-1" }
+
   it("answers for a day and then lets the run be attempted again", async () => {
     const root = await workspace()
     const identity = "a".repeat(64)
-    expect(await CacheEvidence.attemptFailed(root, ".flows", identity)).toBe(false)
+    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, build)).toBe(false)
     const at = 1_800_000_000_000
     await CacheEvidence.rememberFailedAttempt(
       root,
       ".flows",
       identity,
+      build,
       { label: "//pkg:test", denied: ["pkg/data.json is outside the declared read set"], output: ["FAIL\n"] },
       at
     )
@@ -200,24 +203,69 @@ describe("a remembered failed attempt", () => {
     expect(JSON.parse(await Fs.readFile(file, "utf8"))).toEqual({
       format: "smthrs-confined-attempt/1",
       at,
+      build: "build-1",
       label: "//pkg:test",
       denied: ["pkg/data.json is outside the declared read set"],
       output: ["FAIL\n"]
     })
-    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, at)).toBe(true)
-    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, at + CacheEvidence.attemptMemoryMs - 1)).toBe(
-      true
-    )
+    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, build, at)).toBe(true)
+    expect(
+      await CacheEvidence.attemptFailed(root, ".flows", identity, build, at + CacheEvidence.attemptMemoryMs - 1)
+    ).toBe(true)
     // It says when the attempt was, so a reader can be told when the next one is.
-    expect(await CacheEvidence.attemptFailedAt(root, ".flows", identity, at + 1)).toBe(at)
-    expect(await CacheEvidence.attemptFailedAt(root, ".flows", identity, at + CacheEvidence.attemptMemoryMs))
+    expect(await CacheEvidence.attemptFailedAt(root, ".flows", identity, build, at + 1)).toBe(at)
+    expect(await CacheEvidence.attemptFailedAt(root, ".flows", identity, build, at + CacheEvidence.attemptMemoryMs))
       .toBeUndefined()
-    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, at + CacheEvidence.attemptMemoryMs)).toBe(false)
+    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, build, at + CacheEvidence.attemptMemoryMs))
+      .toBe(false)
     // A record from the future is a clock that moved, not a fact.
-    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, at - 1)).toBe(false)
+    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, build, at - 1)).toBe(false)
     // The host clock: remembered now, it answers now.
-    await CacheEvidence.rememberFailedAttempt(root, ".flows", identity, { label: "//pkg:test", denied: [], output: [] })
-    expect(await CacheEvidence.attemptFailed(root, ".flows", identity)).toBe(true)
+    await CacheEvidence.rememberFailedAttempt(root, ".flows", identity, build, {
+      label: "//pkg:test",
+      denied: [],
+      output: []
+    })
+    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, build)).toBe(true)
+  })
+
+  it("answers only the build and the recorder that failed", async () => {
+    const root = await workspace()
+    const identity = "e".repeat(64)
+    const at = 1_800_000_000_000
+    const recorded: CacheEvidence.Writer = { build: "build-1", recorder: "smthrs-observe:1" }
+    await CacheEvidence.rememberFailedAttempt(
+      root,
+      ".flows",
+      identity,
+      recorded,
+      { label: "//:check", denied: [], output: [] },
+      at
+    )
+    expect(JSON.parse(await Fs.readFile(CacheEvidence.attemptPath(root, ".flows", identity), "utf8"))).toMatchObject({
+      build: "build-1",
+      recorder: "smthrs-observe:1"
+    })
+    expect(await CacheEvidence.attemptFailedAt(root, ".flows", identity, recorded, at)).toBe(at)
+    for (
+      const other of [
+        { build: "build-2", recorder: "smthrs-observe:1" },
+        { build: "build-1", recorder: "smthrs-observe:2" },
+        { build: "build-1", recorder: "strace" },
+        { build: "build-1" }
+      ]
+    ) {
+      expect([other, await CacheEvidence.attemptFailedAt(root, ".flows", identity, other, at)]).toEqual([
+        other,
+        undefined
+      ])
+    }
+    // What a build that named no build remembered is another build's.
+    await Fs.writeFile(
+      CacheEvidence.attemptPath(root, ".flows", identity),
+      JSON.stringify({ format: "smthrs-confined-attempt/1", at, label: "//pkg:test", denied: [], output: [] })
+    )
+    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, build, at)).toBe(false)
   })
 
   it.each([
@@ -231,7 +279,7 @@ describe("a remembered failed attempt", () => {
     const identity = "b".repeat(64)
     await Fs.mkdir(Path.join(root, ".flows", "evidence"), { recursive: true })
     await Fs.writeFile(CacheEvidence.attemptPath(root, ".flows", identity), text)
-    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, 1)).toBe(false)
+    expect(await CacheEvidence.attemptFailed(root, ".flows", identity, build, 1)).toBe(false)
   })
 
   it("fails to remember where the record cannot be published, and leaves no temporary file", async () => {
@@ -240,7 +288,11 @@ describe("a remembered failed attempt", () => {
     // A directory where the record belongs: the rename cannot replace it.
     await Fs.mkdir(CacheEvidence.attemptPath(root, ".flows", identity), { recursive: true })
     await expect(
-      CacheEvidence.rememberFailedAttempt(root, ".flows", identity, { label: "//pkg:test", denied: [], output: [] })
+      CacheEvidence.rememberFailedAttempt(root, ".flows", identity, build, {
+        label: "//pkg:test",
+        denied: [],
+        output: []
+      })
     ).rejects.toThrow()
     expect(await Fs.readdir(Path.join(root, ".flows", "evidence"))).toEqual([`${identity}.json`])
   })
