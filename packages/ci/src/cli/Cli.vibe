@@ -413,7 +413,12 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
       if (why !== undefined) throw { code: "unsupported", message: why, part: "inventory" } satisfies Failure
       const split = try parts.decompose(root, ci(inventory))
       // The workflow's own check runs `apply` as it was run here.
-      const options = { cache: Option.getOrUndefined(cache), ...(allowDocker ? { allowDocker } : {}) }
+      // A job left out stays in the repository's own workflow, and the notes name it with why.
+      const options = {
+        cache: Option.getOrUndefined(cache),
+        left: notReplayed(inventory),
+        ...(allowDocker ? { allowDocker } : {})
+      }
       const all = try checkPaths(try parts.files(split, options))
       // The target map is the program's own document: it is not written into the repository.
       return { files: writtenFiles(all), checked: try check(root, all) }

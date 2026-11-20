@@ -8,6 +8,7 @@
 import * as Result from "effect/Result"
 import { commitQuestion, type Inventory, stepTimeoutHours, type Toolchain } from "../contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.ts"
+import { reasonsSentence } from "../contract/Reasons.ts"
 import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.ts"
 import { variantKey } from "./Expressions.ts"
 import { type Leg, repositoryLabel, type StepPlan, type StepTarget, workflowPath } from "./Steps.ts"
@@ -823,13 +824,13 @@ const renderTargetMap = (plan: StepPlan, serial: boolean): string => {
 
 const renderPackIgnore = (): string => [hashComment(generated), `*`, ``].join("\n")
 
-const renderNotes = (plan: StepPlan): string =>
+const renderNotes = (notes: ReadonlyArray<string>): string =>
   [
     `# Not reproduced from the original CI`,
     ``,
     generated,
     ``,
-    ...plan.notes.map((note) => `- ${note.replace(/[\r\n\u2028\u2029]+/g, " ")}`),
+    ...notes.map((note) => `- ${note.replace(/[\r\n\u2028\u2029]+/g, " ")}`),
     ``
   ].join("\n")
 
@@ -838,7 +839,8 @@ const renderNotes = (plan: StepPlan): string =>
  * workflow shares results through the cache its repository names in the
  * `SMITHERS_CACHE_URL` variable, or else through `options.cache`. With
  * `options.inheritEnv`, every target passes those variables of the machine to
- * its step.
+ * its step. Each job of `options.left` is named in the notes with why it is
+ * left out: it stays in the repository's own workflow.
  *
  * A tool of the repository's own never reads a generated file as one of its
  * files. Every file but the workflow is under `.smithers/`, under a name no
@@ -874,6 +876,11 @@ export const renderFiles = (
     })
   }
   const serial = collides(plan, held)
+  // A job the inventory leaves out stays in the repository's own workflow: the notes say which, and why.
+  const notes = [
+    ...plan.notes,
+    ...(options?.left ?? []).map((entry) => `${entry.job}: not in this workflow: ${reasonsSentence(entry.reasons)}`)
+  ]
   return Result.succeed([
     {
       path: workflowPath,
@@ -892,6 +899,6 @@ export const renderFiles = (
     { path: packIgnorePath, content: renderPackIgnore() },
     { path: targetMapPath, content: renderTargetMap(plan, serial), written: false },
     ...(plan.legs.length === 0 ? [] : [{ path: legsPath, content: renderLegs(plan.legs) }]),
-    ...(plan.notes.length === 0 ? [] : [{ path: notesPath, content: renderNotes(plan) }])
+    ...(notes.length === 0 ? [] : [{ path: notesPath, content: renderNotes(notes) }])
   ])
 }

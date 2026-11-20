@@ -22,7 +22,7 @@
 import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type { Closure } from "./Closure.ts"
-import type { Ci, Inventory } from "./Inventory.ts"
+import type { Ci, Inventory, NotReplayed } from "./Inventory.ts"
 import type { Plan } from "./Plan.ts"
 import type { ReplayReport } from "./ReplayReport.ts"
 import type { Mode, RunRecord } from "./RunRecord.ts"
@@ -101,6 +101,13 @@ export interface GenerateOptions {
   readonly cache?: string | undefined
   readonly inheritEnv?: ReadonlyArray<string> | undefined
   readonly allowDocker?: boolean | undefined
+  /**
+   * The CI jobs the inventory leaves out, with why (`Inventory.notReplayed`).
+   * Each is named in `.smithers/ci/NOT-REPRODUCED.txt` with the sentence a
+   * report gives it: the job stays in the repository's own workflow, and the
+   * generated workflow does not run it.
+   */
+  readonly left?: ReadonlyArray<NotReplayed> | undefined
 }
 
 /**

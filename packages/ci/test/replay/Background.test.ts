@@ -1,7 +1,8 @@
 /**
- * A step that leaves a program running. On GitHub the runner stops such a program when the job ends ("Cleaning up
- * orphan processes"). In a replay the jail gives each step a process namespace of its own, so the program ends with
- * its step, in the baseline and as a target, and nothing of it is left when the replay is over.
+ * A step that leaves a program running. On GitHub the program lives until the job ends, so a later step can use it,
+ * and the runner stops it then ("Cleaning up orphan processes"). Where a replay cannot keep it that long the job is
+ * left out and listed with the step, the other jobs are replayed, and nothing of the program is left when the replay
+ * is over.
  */
 
 import { spawnSync } from "node:child_process"
@@ -29,7 +30,7 @@ const sleeping = (seconds: number): ReadonlyArray<string> => {
 }
 
 describe.runIf(!("refusal" in probe()))("a step that leaves a program running", () => {
-  it("passes alike both ways and leaves nothing behind when the replay ends", async () => {
+  it("leaves the job out with the step that leaves it, replays the rest, and leaves nothing behind", async () => {
     const seconds = 90_000 + (process.pid % 9_000)
     const root = temporary("replay-background")
     made.push(root)
@@ -42,7 +43,13 @@ jobs:
     runs-on: ${runner}
     steps:
       - uses: actions/checkout@v4
-      - run: nohup sleep ${seconds} > /dev/null 2>&1 &
+      - name: Start it
+        run: nohup sleep ${seconds} > /dev/null 2>&1 &
+      - run: cat src.txt
+  check:
+    runs-on: ${runner}
+    steps:
+      - uses: actions/checkout@v4
       - run: cat src.txt
 `,
       "src.txt": "one\n"
@@ -50,6 +57,10 @@ jobs:
 
     const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check", "--json", "--no-trial"], root)
     const report = JSON.parse(outcome.stdout) as ReplayReport
+    expect(report.notReplayed).toEqual([{
+      job: "ci.yml:build",
+      reasons: [{ feature: "left-running", detail: "\"Start it\" leaves sleep running" }]
+    }])
     expect(report.commits[0]?.baseline.ok).toBe(true)
     expect(report.commits[0]?.normal.ok).toBe(true)
     expect(report.commits[0]?.mismatches).toEqual([])

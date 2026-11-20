@@ -90,6 +90,13 @@ export const reasons: Readonly<Record<string, Reason>> = {
   include: { sentence: "includes a Makefile that was not read" },
   interpreter: { sentence: "runs in an interpreter other than a plain shell" },
   load: { sentence: "loads a Make extension" },
+  "left-running": {
+    sentence: "leaves a program running for its later steps, which this machine cannot keep until the job ends: {}",
+    next: "the job stays in your CI as it is",
+    slot: "STEP",
+    none: "a step leaves one",
+    subject: whole
+  },
   "long-running": { sentence: "keeps running until it is stopped" },
   "make-setting": { sentence: "sets something that changes how Make runs" },
   "malformed-env": { sentence: "sets an environment variable to a list or mapping" },

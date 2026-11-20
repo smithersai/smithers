@@ -628,6 +628,21 @@ export const changesMachine = "changes-machine"
 export const docker = "docker"
 
 /**
+ * The feature of a job with a step that leaves a program running for the
+ * steps after it, as `python3 -m http.server 8000 &` or `redis-server
+ * --daemonize yes` does, where the program cannot be kept until the job
+ * ends. On a GitHub runner such a program lives until the job's last step
+ * has ended. The `detail` names the step and the program, as in `"Start the
+ * server" leaves python3 running`. Such a job is not replayed, and
+ * the CI `apply` writes keeps it as the repository has it, so it runs on the
+ * runner as before.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const leftRunning = "left-running"
+
+/**
  * The feature of a job, or of one matrix variant of it, that failed when the
  * replay ran the CI once at the newest commit: it needs something this machine
  * does not have. Its `detail` is the first line of the error. Such a job is run
@@ -644,6 +659,7 @@ const detailed: ReadonlyMap<string, string> = new Map([
   [missingTool, ", "],
   [changesMachine, "; "],
   [docker, "; "],
+  [leftRunning, "; "],
   [failsHere, "; "]
 ])
 

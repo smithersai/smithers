@@ -775,7 +775,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       // A target passes on what tells git to refuse a push, as the baseline's step is told, and with Docker allowed
       // where the person's container daemon is.
       const inheritEnv = [...Object.keys(pushRefusal), ...Object.keys(places.normal.daemon)]
-      const generated = try parts.files(split, { cache: request.cache, inheritEnv })
+      // The notes name what `apply` leaves out: what this machine failed is no part of them.
+      const left = notReplayed(allowDocker ? allowingDocker(read) : read)
+      const generated = try parts.files(split, { cache: request.cache, inheritEnv, left })
       // A commit can hold a link, or a file its owner wrote, where a generated file goes: nothing is written then.
       const checked = check(normalCopy, generated) catch effect (cause) => {
         throw failure("unsupported", cause.message)

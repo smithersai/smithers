@@ -40,6 +40,7 @@ const named = [
   Inventory.missingTool,
   Inventory.changesMachine,
   Inventory.docker,
+  Inventory.leftRunning,
   Inventory.noCommand,
   Inventory.noTarget,
   Inventory.longRunning,
