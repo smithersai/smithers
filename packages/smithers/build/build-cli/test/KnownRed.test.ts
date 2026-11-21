@@ -682,9 +682,21 @@ export const Package = S.Package({ targets: { good, bad, worse, consumer } })
     expect(written.version).toBe(1)
     expect(Object.fromEntries(written.results.map((row: { label: string; status: string }) => [row.label, row.status])))
       .toEqual({ "//:bad": "failed", "//:good": "ran" })
-    // Only label/status/key rows: a result's error carries raw child output, and CI publishes this file.
-    expect(written.results.every((row: object) => Object.keys(row).sort().join() === "durationMs,key,label,status"))
-      .toBe(true)
+    // Status rows and their reuse notes only: a result's error carries raw child output, and CI publishes this file.
+    const fields = new Set([
+      "label",
+      "status",
+      "key",
+      "durationMs",
+      "blocking",
+      "failureDigest",
+      "notStored",
+      "notReused",
+      "parts",
+      "rights"
+    ])
+    expect(written.results.flatMap((row: object) => Object.keys(row).filter((field) => !fields.has(field))))
+      .toEqual([])
     expect(written).not.toHaveProperty("knownRed")
     expect(await Fs.readFile(results, "utf8")).not.toContain("reviewed failure")
     const plain = NodePath.join(root, "out", "plain.json")
