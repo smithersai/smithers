@@ -165,21 +165,6 @@ export const KNOWN_HOST_ACCESS = [
     kinds: ["ambient-global"],
     reason: "reads process.platform and process.env for a child's environment"
   },
-  {
-    module: "packages/smithers/flows/sandbox/src/ContainerSandbox/existing.ts",
-    kinds: ["ambient-global"],
-    reason: "reads process.env for the transport's environment"
-  },
-  {
-    module: "packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts",
-    kinds: ["ambient-global"],
-    reason: "reads process.env for a command's environment"
-  },
-  {
-    module: "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/layer.ts",
-    kinds: ["ambient-global"],
-    reason: "reads process.env to keep host-only values out of a guest"
-  }
 ]
 
 /** The names in the browser half of the contract. */

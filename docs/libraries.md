@@ -190,7 +190,6 @@ them stops reaching the host, so the list only shrinks.
 | `@smthrs/engine-store` `src/OwnerIdentity.ts` | `process.pid` | The run owner's identity |
 | `@smthrs/kernel` `src/ChildProcessSpawner.ts` | `process.platform`, `process.env` | A child's environment |
 | `@smthrs/integrations` `src/Environment.ts` | `process.env` | Configuration |
-| `@smthrs/sandbox` `src/ContainerSandbox/existing.ts`, `src/DirectorySandbox/make.ts`, `src/RemoteChildProcessSpawner/layer.ts` | `process.env` | A command's environment |
 
 ### Known violations: platform code on a subpath outside a host package
 
