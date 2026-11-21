@@ -418,8 +418,12 @@ static void printf_(struct text *t, const char *format, ...) {
 
 /* A string as strace writes it with `-s` larger than the string: printable ASCII as it is, `"` and `\` escaped,
  * the usual control escapes, and every other byte as `\xHH`. */
-static void quoted(struct text *t, const char *s, size_t n) {
-  put(t, "\"", 1);
+/*
+ * Writes the inside of a quoted string as strace writes it: `"`, `\` and every byte that is not printable ASCII
+ * escaped. With `angled`, `<` and `>` too, as strace -y writes the path of a descriptor between them: a directory
+ * named with a newline (click's tests make one) would otherwise end the line.
+ */
+static void escaped(struct text *t, const char *s, size_t n, int angled) {
   for (size_t i = 0; i < n; i++) {
     unsigned char c = (unsigned char)s[i];
     char e[5];
@@ -433,17 +437,29 @@ static void quoted(struct text *t, const char *s, size_t n) {
       case '\f': put(t, "\\f", 2); continue;
       default: break;
     }
-    if (c >= 0x20 && c < 0x7f) {
+    if (c >= 0x20 && c < 0x7f && !(angled && (c == '<' || c == '>'))) {
       put(t, (const char *)&c, 1);
     } else {
       snprintf(e, sizeof e, "\\x%02x", c);
       put(t, e, 4);
     }
   }
+}
+
+static void quoted(struct text *t, const char *s, size_t n) {
+  put(t, "\"", 1);
+  escaped(t, s, n, 0);
   put(t, "\"", 1);
 }
 
 static void quotedz(struct text *t, const char *s) { quoted(t, s, strlen(s)); }
+
+/* A descriptor's path, as strace -y writes it: `<path>`. */
+static void angledz(struct text *t, const char *s) {
+  put(t, "<", 1);
+  escaped(t, s, strlen(s), 1);
+  put(t, ">", 1);
+}
 
 /* ---- State shared by the serving threads ------------------------------------------------------------------- */
 
@@ -1595,9 +1611,9 @@ static void serve(const struct seccomp_notif *req) {
         /* A directory opened is a directory listed: no listing is watched, and what is in it counts. */
         keep(id, 2, &t);
         t = (struct text){0};
-        printf_(&t, "%d getdents64(0<", tgid);
-        puts_(&t, path);
-        puts_(&t, ">, {...}, 32768) = 0");
+        printf_(&t, "%d getdents64(0", tgid);
+        angledz(&t, path);
+        puts_(&t, ", {...}, 32768) = 0");
         keep(id, 3, &t);
         return;
       }
@@ -1726,7 +1742,9 @@ static void serve(const struct seccomp_notif *req) {
           why = "base";
           break;
         }
-        printf_(&t, "%d utimensat(%d<%s>, NULL, NULL, 0) = 0", tgid, (int)req->data.args[0], path);
+        printf_(&t, "%d utimensat(%d", tgid, (int)req->data.args[0]);
+        angledz(&t, path);
+        puts_(&t, ", NULL, NULL, 0) = 0");
         break;
       }
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
@@ -1742,7 +1760,9 @@ static void serve(const struct seccomp_notif *req) {
         why = "base";
         break;
       }
-      printf_(&t, "%d %s(%d<%s>, 0) = 0", tgid, c->name, (int)req->data.args[0], path);
+      printf_(&t, "%d %s(%d", tgid, c->name, (int)req->data.args[0]);
+      angledz(&t, path);
+      puts_(&t, ", 0) = 0");
       break;
     }
     case K_RENAME:

@@ -62,6 +62,7 @@ describe("the tracer command", () => {
     expect(script).toContain("'-f'")
     expect(script).toContain("'--seccomp-bpf'")
     expect(script).toContain("'inject=io_uring_setup:error=ENOSYS'")
+    expect(script).toContain("'inject=pidfd_open:error=ENOSYS'")
     expect(script).toContain("getdents64")
     expect(script).toContain("-o \"$out\" --")
   })
@@ -421,6 +422,20 @@ describe("reading a trace", () => {
     expect(trace.refusals).toEqual([])
     expect(paths(trace.listed)).toEqual(["/w/dir", "/w/old"])
     expect(read("100 getdents64(3, 0x55d0 /* 3 entries */, 32768) = 80").refusals)
+      .toEqual(["its trace does not name a directory it listed"])
+  })
+
+  // click's tests make a directory named with a newline. strace -y escapes a descriptor's path as it does a quoted
+  // string, and `<` and `>` too; smthrs-observe writes it the same way (`\x3c` for `<`).
+  it("reads the path of a descriptor as the tracer escapes it", () => {
+    const trace = read([
+      "100 getdents64(3</w/a\\nb\\\"c\\74d\\76e\\\\f>, 0x55d0 /* 2 entries */, 32768) = 48",
+      "100 getdents64(0</w/g\\x3ch\\x3e\\ti>, {...}, 32768) = 0"
+    ].join("\n"))
+    expect(trace.refusals).toEqual([])
+    expect(paths(trace.listed)).toEqual(["/w/a\nb\"c<d>e\\f", "/w/g<h>\ti"])
+    // An escape no tracer writes names no path.
+    expect(read("100 getdents64(3</w/bad\\q>, 0x55d0 /* 2 entries */, 32768) = 48").refusals)
       .toEqual(["its trace does not name a directory it listed"])
   })
 

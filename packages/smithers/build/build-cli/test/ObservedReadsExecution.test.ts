@@ -339,6 +339,37 @@ describe("an observed test", () => {
     }
   )
 
+  // tokio, and so uv, waits for a child by polling its pidfd and then reaping it without blocking, and panics when
+  // it cannot reap it yet. A tracer reaps a traced child that ended before its parent can, so a step running uv
+  // failed at random while it was recorded and ran unrecorded for a day. This program fails as tokio does, and waits
+  // for its children as tokio does on a kernel without pidfds.
+  tracedIt("passes recorded when it waits for its children as tokio does", async () => {
+    const reaping = [
+      "import errno, os, select, signal, sys",
+      "for i in range(1000):",
+      "    pid = os.fork()",
+      "    if pid == 0:",
+      "        signal.signal(signal.SIGUSR1, lambda *a: None)",
+      "        os._exit(0)",
+      "    try:",
+      "        fd = os.pidfd_open(pid)",
+      "    except OSError as error:",
+      "        if error.errno != errno.ENOSYS: raise",
+      "        os.waitpid(pid, 0)",
+      "        continue",
+      "    poll = select.poll()",
+      "    poll.register(fd, select.POLLIN)",
+      "    poll.poll()",
+      "    if os.waitpid(pid, os.WNOHANG)[0] == 0: sys.exit('pidfd is ready to read, the process should have exited')",
+      "    os.close(fd)"
+    ].join("\n")
+    const { run, write } = await fixture({ check: "/usr/bin/python3 reaping.py && /bin/cat input.txt > /dev/null" })
+    await write("reaping.py", `${reaping}\n`)
+    expect(await run()).toEqual({ check: "ran" })
+    await write("docs/readme.md", "changed\n")
+    expect(await run()).toEqual({ check: "hit" })
+  }, 120_000)
+
   // A program of many threads ends while its threads are asking about files: Go's tools do at every exit. The
   // tracer then writes lines for calls it could not follow, each for a thread killed where it stopped. Here a
   // process of twenty-five threads is killed three times. The step still passes, and its result is stored.

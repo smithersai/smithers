@@ -63,7 +63,11 @@
  * calling thread waits, and the call then goes on in the kernel as the run
  * made it. Elsewhere it is `strace` with a seccomp filter, which stops every
  * thread at each file-system call and when it starts and ends; `io_uring` is
- * refused to a run under strace, as it is in a container. `smthrs-observe`
+ * refused to a run under strace, as it is in a container, and so is
+ * `pidfd_open`: strace reaps a traced process that ended before its parent
+ * can, so a parent that a pidfd told the child ended would find it not ended
+ * yet (tokio, and so uv, panics then), and refused one waits for its children
+ * as on a kernel without pidfds. `smthrs-observe`
  * refuses nothing: a run that sets up a ring stores nothing, since a read
  * submitted through a ring is in no trace. A traced run ends when its command
  * ends, and a process the command left running is stopped, as a sandbox
@@ -162,6 +166,7 @@ const calls: ReadonlyArray<string> = [
   "open",
   "openat",
   "openat2",
+  "pidfd_open",
   "pivot_root",
   "readlink",
   "readlinkat",
@@ -196,7 +201,9 @@ const tracerFlags: ReadonlyArray<string> = [
   "-e",
   `trace=${calls.join(",")}`,
   "-e",
-  "inject=io_uring_setup:error=ENOSYS"
+  "inject=io_uring_setup:error=ENOSYS",
+  "-e",
+  "inject=pidfd_open:error=ENOSYS"
 ]
 
 const quoted = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
@@ -583,12 +590,17 @@ const split = (text: string): ReadonlyArray<string> => {
   return parts
 }
 
-/** The path a descriptor argument names (`3</tmp/x>`), or `undefined` when the tracer printed none. */
+/**
+ * The path a descriptor argument names (`3</tmp/x>`), or `undefined` when the tracer printed none. The tracer escapes
+ * it as it does a quoted string, and `<` and `>` too: `</tmp/a\nb\74c\76>` is the directory `a`, newline, `b<c>`.
+ */
 const descriptorPath = (argument: string): string | undefined => {
   const match = /^(?:\d+|AT_FDCWD)<(.*)>$/s.exec(argument)
   if (match === null) return undefined
-  const path = match[1]!
-  return path.startsWith("/") ? path.replace(/ \(deleted\)$/, "") : undefined
+  const raw = match[1]!
+  // Nearly every path holds no escape, and is itself.
+  const path = raw.includes("\\") ? unquote(`"${raw}"`) : raw
+  return path?.startsWith("/") === true ? path.replace(/ \(deleted\)$/, "") : undefined
 }
 
 /** The words of a command line a tracer printed as `["npm", "ci"]`; `undefined` when it is cut short. */

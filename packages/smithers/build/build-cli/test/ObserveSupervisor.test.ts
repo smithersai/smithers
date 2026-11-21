@@ -420,6 +420,25 @@ for (let i = 0; i < 3; i++) try { fs.statSync(file) } catch {}
 spawnSync(process.execPath, ["-e", "try { require('node:fs').statSync(" + JSON.stringify(file) + ") } catch {}"])
 `
 
+describe("smthrs-observe and names a line cannot hold", () => {
+  supervised("writes the path of a directory it lists so that the reader reads it back", async () => {
+    const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-names-")))
+    temporary.push(base)
+    // As click's tests make one: a directory whose name holds a newline, and every character a path is closed with.
+    const odd = Path.join(base, "my\ndir \"<odd>\\")
+    await Fs.mkdir(odd)
+    await Fs.writeFile(Path.join(odd, "file"), "file\n")
+    const trace = Path.join(base, "trace")
+    const script =
+      "require('node:fs').readdirSync(process.argv[1]); require('node:fs').utimesSync(process.argv[1], 1, 1)"
+    const run = spawnSync(supervisor!, [trace, "--", process.execPath, "-e", script, odd], { encoding: "utf8" })
+    expect(run.status, run.stderr).toBe(0)
+    const read = ObservedReads.read(() => NodeFs.readFileSync(trace, "utf8").split("\n"), base)
+    expect(read.refusals).toEqual([])
+    expect(read.listed.has(odd)).toBe(true)
+  })
+})
+
 describe("smthrs-observe and questions asked again", () => {
   supervised("writes a question once until something could answer it otherwise", async () => {
     const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-again-")))
