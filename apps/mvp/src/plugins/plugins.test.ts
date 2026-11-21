@@ -145,7 +145,7 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     second.cell(`ctx.done("Deploying docs-v2.")`)
     await until(() => expect(a.run(answerId)?.answer).toEqual({ value: "docs-v2" }))
     await until(() => expect(a.run(answerId)?.status).toBe("done"))
-    await until(() => expect(tab.queries.current.current()).toEqual({ item: undefined, index: 0, total: 0 }))
+    await until(() => expect(tab.queries.current.current()).toEqual({ item: undefined, index: 0, total: 0, snoozed: 0, sort: "oldest" }))
     expect(heard).toBeGreaterThan(0)
     stop()
     await until(() => expect(a.state()).toMatchObject({ sending: false, failed: false }))
@@ -227,7 +227,7 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     ;(await Effect.runPromise(api.answerTo("Deploy three", 1))).cell(`ctx.done("Deploying release.")`)
     await until(() => expect(a.run(third)?.answer).toEqual({ value: "release" }))
     await until(() => expect(a.run(third)?.status).toBe("done"))
-    await until(() => expect(tab.queries.current.current()).toEqual({ item: undefined, index: 0, total: 0 }))
+    await until(() => expect(tab.queries.current.current()).toEqual({ item: undefined, index: 0, total: 0, snoozed: 0, sort: "oldest" }))
   })
 
   test("going between a repository's plugin page and an app plugin page keeps the next page's view shown, so its keys act on it", async () => {
