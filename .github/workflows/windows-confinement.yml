@@ -56,7 +56,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify native directory listing and confinement coverage
-        run: pnpm --dir packages/smithers/flows/platform-node exec vitest run test/DeclaredDirectoryListing.test.ts test/ProcessSandbox.test.ts --coverage.include=src/ProcessSandbox.ts
+        run: pnpm --dir packages/smithers/flows/platform-node exec vitest run test/DeclaredDirectoryListing.test.ts test/ProcessSandbox.test.ts test/ProcessSandboxWriteProtection.test.ts test/ProcessToolchain.test.ts --coverage.include=src/ProcessSandbox.ts
       - name: Verify CLI outputs, cache, comparison, and denials
         run: pnpm --dir packages/smithers/build/build-cli exec vitest run test/WindowsConfinement.test.ts --coverage.enabled=false
   windows-wsl2:
@@ -146,5 +146,5 @@ jobs:
       - name: Verify declared directory traversal and coverage in WSL2
         shell: pwsh
         run: |
-          wsl --distribution Ubuntu-24.04 --user confinement --cd /home/confinement/workspace --exec pnpm --dir packages/smithers/flows/platform-node exec vitest run test/DeclaredDirectoryListing.test.ts test/ProcessSandbox.test.ts --coverage.include=src/ProcessSandbox.ts
+          wsl --distribution Ubuntu-24.04 --user confinement --cd /home/confinement/workspace --exec pnpm --dir packages/smithers/flows/platform-node exec vitest run test/DeclaredDirectoryListing.test.ts test/ProcessSandbox.test.ts test/ProcessSandboxWriteProtection.test.ts test/ProcessToolchain.test.ts --coverage.include=src/ProcessSandbox.ts
           if ($LASTEXITCODE -ne 0) { throw 'WSL2 declared traversal failed' }
