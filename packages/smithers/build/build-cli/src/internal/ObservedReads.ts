@@ -1906,6 +1906,8 @@ export interface Variables {
   readonly shown?: ReadonlySet<string> | undefined
   readonly ignored?: ((paths: ReadonlyArray<string>) => ReadonlySet<string>) | undefined
   readonly readAsData?: ReadonlyArray<string> | undefined
+  /** Bytes of workspace files to search for names above which git is asked first; a test gives a small one. */
+  readonly searchFirstAbove?: number | undefined
 }
 
 /**
@@ -2121,11 +2123,12 @@ const onceEach = (io: Io): Io => {
 
 /**
  * Bytes of workspace files to search for variable names above which git is
- * asked first which of them it leaves out: one process start against a pass
- * over what a tool installed in the workspace (a virtual environment, a type
- * checker's cache).
+ * asked first which of them it leaves out. The search takes about a
+ * millisecond a megabyte; starting git from a build's process takes about a
+ * quarter of a second (measured 2026-11-20: a reading of 4,500 files of 9 MB
+ * took 0.46 to 0.55 s with git asked, 0.22 to 0.32 s without).
  */
-const searchedFirst = 8 * 1024 * 1024
+const searchedFirst = 256 * 1024 * 1024
 
 /** Whether a path is absolute and written in one spelling, with no `.`, `..` or empty name in it. */
 const plain = (path: string): boolean =>
@@ -2480,7 +2483,7 @@ export const observe = (
       }
       files.push(path)
     }
-    if (bytes < searchedFirst) return undefined
+    if (bytes < (given.searchFirstAbove ?? searchedFirst)) return undefined
     const data = (given.readAsData ?? []).map((path) => NodePath.posix.join(options.root, path))
     const kept = files.filter((file) => !data.some((directory) => under(file, directory)))
     const left = (given.ignored ?? ignoredByGit(options.root))(kept)

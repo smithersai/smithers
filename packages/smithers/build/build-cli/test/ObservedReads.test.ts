@@ -2929,19 +2929,19 @@ describe("the variables of the host a run could have used", () => {
       open("src/listed"),
       `100 openat(AT_FDCWD<${root}>, "src/absent.txt", O_RDONLY) = -1 ENOENT (No such file or directory)`
     ]
-    const record = observe(lines, { ignored })
+    const record = observe(lines, { ignored, searchFirstAbove: 8 * 1024 * 1024 })
     // The name in the cache says nothing, as before; the one in the script does.
     expect(record.variables).toEqual(held("COMMIT"))
     // Git was asked once, before the search, about every file of the workspace the run read.
     expect(asked).toEqual([[cache, plain, script].sort()])
-    // Below the size, git is asked only about the files that held a name, after the search, as before.
+    // Below the size, git is asked only about the files that held a name, after the search.
     asked.length = 0
     await write("dist/cache.bin", "RUN")
-    expect(observe(lines, { ignored }).variables).toEqual(held("COMMIT"))
+    expect(observe(lines, { ignored, searchFirstAbove: 8 * 1024 * 1024 }).variables).toEqual(held("COMMIT"))
     expect(asked).toEqual([[cache, script].sort()])
     await write("dist/cache.bin", "nothing")
     asked.length = 0
-    expect(observe(lines, { ignored }).variables).toEqual(held("COMMIT"))
+    expect(observe(lines, { ignored, searchFirstAbove: 8 * 1024 * 1024 }).variables).toEqual(held("COMMIT"))
     expect(asked).toEqual([[script]])
   })
 
