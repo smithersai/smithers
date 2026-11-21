@@ -109,17 +109,14 @@ describe("classifier", () => {
 })
 
 describe("readingsOf", () => {
-  it("reads each item's chance of failure and the sentence of the fact the judge chose", () => {
+  it("reads each item's chance of failure and the fact the judge chose", () => {
     const readings = Scoring.readingsOf(2, {
       fails0: { value: true, probability: 0.9 },
       why0: { value: "history", probabilities: {}, confidence: 1 },
       fails1: { value: false, probability: 0.02 },
       why1: { value: "none", probabilities: {}, confidence: 1 }
     })
-    expect(readings).toEqual([
-      { score: 0.9, reason: "The target failed in recent runs." },
-      { score: 0.02, reason: "Nothing in the features points to a failure." }
-    ])
+    expect(readings).toEqual([{ score: 0.9, fact: "history" }, { score: 0.02, fact: "none" }])
   })
 })
 
@@ -131,11 +128,54 @@ describe("scoresOf", () => {
       row("c2", "//a:test", { testCount: 1 })
     ]
     const asked = [[features({ testCount: 1 })], [features({ testCount: 2 })]]
-    const answered = [[{ score: 0.7, reason: "x" }], [{ score: 0.1, reason: "y" }]]
+    const answered = [[{ score: 0.7, fact: "history" as const }], [{ score: 0.1, fact: "size" as const }]]
+    // No failure in any window is a reason to skip; the number of tests never is.
     expect(Scoring.scoresOf(rows, asked, answered)).toEqual([
-      { commit: "c1", target: "//a:test", score: 0.7, reason: "x" },
-      { commit: "c1", target: "//b:test", score: 0.1, reason: "y" },
-      { commit: "c2", target: "//a:test", score: 0.7, reason: "x" }
+      { commit: "c1", target: "//a:test", score: 0.7, reason: Scoring.skipReasons.history },
+      { commit: "c1", target: "//b:test", score: 0.1 },
+      { commit: "c2", target: "//a:test", score: 0.7, reason: Scoring.skipReasons.history }
     ])
+  })
+})
+
+describe("skipReason", () => {
+  it("says why a skip is safe from what the features measured of the fact the judge named", () => {
+    expect(Scoring.skipReason("history", features())).toBe("No failure on record in the last 56 days.")
+    expect(Scoring.skipReason("distance", features({ graphDistance: -1 }))).toBe(
+      "No known path leads from the change to it in the dependency graph."
+    )
+    expect(Scoring.skipReason("churn", features({ fileChanges: { d3: 0, d14: 0, d56: 0 } }))).toBe(
+      "The changed files had no other change in the 56 days before."
+    )
+    expect(Scoring.skipReason("kind", features({ extensions: [".md"] }))).toBe("Only .md files changed.")
+    expect(Scoring.skipReason("kind", features({ extensions: [".md", ".txt"] }))).toBe("Only .md, .txt files changed.")
+    expect(Scoring.skipReason("kind", features({ extensions: ["(none)"] }))).toBe(
+      "Only files with no extension changed."
+    )
+    expect(Scoring.skipReason("kind", features({ extensions: ["(none)", ".md"] }))).toBe(
+      "Only .md files and files with no extension changed."
+    )
+    expect(Scoring.skipReason("none", features())).toBe("Nothing in its history or in the change points to a failure.")
+  })
+
+  it("gives no reason where the fact, as measured, points to a failure", () => {
+    // A MacBook replay printed "The change is close to the target in the dependency graph." for a skip.
+    expect(Scoring.skipReason("distance", features({ graphDistance: 1 }))).toBeUndefined()
+    expect(Scoring.skipReason("distance", features({ graphDistance: 0 }))).toBeUndefined()
+    expect(Scoring.skipReason("history", features({ failureRates: { d7: 0, d14: 0, d28: 0, d56: 0.1 } })))
+      .toBeUndefined()
+    expect(Scoring.skipReason("churn", features())).toBeUndefined()
+    expect(Scoring.skipReason("kind", features({ extensions: [] }))).toBeUndefined()
+    expect(Scoring.skipReason("size", features({ testCount: 0 }))).toBeUndefined()
+  })
+
+  it("never says why a target could fail, whatever the judge named", () => {
+    const risky = features({ failureRates: { d7: 0.5, d14: 0.5, d28: 0.5, d56: 0.5 }, graphDistance: 1 })
+    for (const fact of ["history", "distance", "churn", "size"] as const) {
+      expect(Scoring.skipReason(fact, risky)).toBeUndefined()
+    }
+    for (const fact of Object.keys(Scoring.reasons) as ReadonlyArray<keyof typeof Scoring.reasons>) {
+      expect(Object.values(Scoring.reasons)).not.toContain(Scoring.skipReason(fact, features()))
+    }
   })
 })

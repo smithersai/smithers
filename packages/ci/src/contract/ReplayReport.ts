@@ -145,9 +145,10 @@ export type Mismatch = typeof Mismatch.Type
 /**
  * A target fast mode did not run at a commit, because the model predicted
  * the change cannot break it. `score` is the model's estimate of the chance
- * the target fails on the change, from 0 to 1, and `reason` the fact that
- * most decided it. A skip is never a pass: when the target failed in the
- * baseline, the commit lists a mismatch for it too.
+ * the target fails on the change, from 0 to 1, and `reason` why it was safe
+ * to skip, from the fact that most decided the score; it is absent where that
+ * fact points to a failure. A skip is never a pass: when the target failed in
+ * the baseline, the commit lists a mismatch for it too.
  *
  * @category models
  * @since 0.1.0

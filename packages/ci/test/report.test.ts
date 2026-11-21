@@ -110,9 +110,9 @@ describe("text", () => {
       "0000000  baseline, normal  //packages/core:test  exit 1: expected 2, got 3",
       "",
       "skipped, predicted-safe",
-      "0000000  3 targets  Nothing in the features points to a failure.  //apps/web:lint, //apps/web:test, //packages/core:lint",
-      "0000000  1 target  The changed files have changed often lately.  //packages/ui:test",
-      "0000000  3 targets  Nothing in the features points to a failure.  //apps/web:lint, //packages/core:test, //packages/ui:test",
+      "0000000  3 steps  Nothing in its history or in the change points to a failure.  //apps/web:lint, //apps/web:test, //packages/core:lint",
+      "0000000  1 step  The changed files have changed often lately.  //packages/ui:test",
+      "0000000  3 steps  Nothing in its history or in the change points to a failure.  //apps/web:lint, //packages/core:test, //packages/ui:test",
       "",
       "0000000  fast    //packages/core:test  fail → skipped"
     ].join("\n"))
@@ -1154,8 +1154,8 @@ describe("what fast mode did, in both renderers", () => {
     }
     expect(section(many, "skipped, predicted-safe")).toEqual([
       "skipped, predicted-safe",
-      "aaaaaaa  7 targets  //a:test, //b:test, //c:test, //d:test, //e:test and 2 more",
-      "bbbbbbb  1 target  why  //x:test"
+      "aaaaaaa  7 steps  //a:test, //b:test, //c:test, //d:test, //e:test and 2 more",
+      "bbbbbbb  1 step  why  //x:test"
     ])
     const page = html(many)
     expect(page).toContain("<h2>skipped, predicted-safe</h2>")
@@ -1180,7 +1180,7 @@ describe("what fast mode did, in both renderers", () => {
       }, red]
     }
     const lines = section(hostileSkip, "skipped, predicted-safe")
-    expect(lines[1]).toBe("0000000  1 target  <i>why</i>\uFFFD  //<b>x</b>:test\uFFFD[31m")
+    expect(lines[1]).toBe("0000000  1 step  <i>why</i>\uFFFD  //<b>x</b>:test\uFFFD[31m")
     const page = html(hostileSkip)
     expect(page).toContain("&lt;i&gt;why&lt;/i&gt;")
     expect(page).toContain("//&lt;b&gt;x&lt;/b&gt;:test")

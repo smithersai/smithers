@@ -41,10 +41,10 @@ describe("score", () => {
       const scores = try score(rows)
       try Effect.try(() => {
         expect(scores).toEqual([
-          { commit: "c1", target: "//a:test", score: 0.8, reason: Scoring.reasons.history },
-          { commit: "c1", target: "//a:lint", score: 0, reason: Scoring.reasons.none },
-          { commit: "c1", target: "//a:check", score: 0, reason: Scoring.reasons.none },
-          { commit: "c2", target: "//a:test", score: 0.8, reason: Scoring.reasons.history }
+          { commit: "c1", target: "//a:test", score: 0.8 },
+          { commit: "c1", target: "//a:lint", score: 0, reason: Scoring.skipReasons.none },
+          { commit: "c1", target: "//a:check", score: 0, reason: Scoring.skipReasons.none },
+          { commit: "c2", target: "//a:test", score: 0.8 }
         ])
         expect(asked).toEqual({ requests: 1, questions: 4 })
         expect(Selection.select(scores.filter((each) => each.commit === "c1"), { scoreCutoff: 0.5, countCutoff: 0 })).toEqual(["//a:test"])
@@ -228,8 +228,8 @@ describe("score", () => {
       try Effect.try(() => {
         expect(first.map((each) => each.score)).toEqual([0.8, 0.2])
         expect(second).toEqual([
-          { commit: "c2", target: "//a:test", score: 0.8, reason: Scoring.reasons.history },
-          { commit: "c2", target: "//c:test", score: 0.4, reason: Scoring.reasons.history }
+          { commit: "c2", target: "//a:test", score: 0.8 },
+          { commit: "c2", target: "//c:test", score: 0.4 }
         ])
         expect(count).toBe(3)
         // Two questions for each feature set the judge was sent: 2 feature sets, then 1.
@@ -250,8 +250,8 @@ describe("score", () => {
       ])
       try Effect.try(() => {
         expect(again).toEqual([
-          { commit: "c2", target: "//other:test", score: 0.8, reason: Scoring.reasons.history },
-          { commit: "c2", target: "//third:test", score: 0.8, reason: Scoring.reasons.history }
+          { commit: "c2", target: "//other:test", score: 0.8 },
+          { commit: "c2", target: "//third:test", score: 0.8 }
         ])
         expect(seen.requests).toBe(1)
       })
@@ -304,7 +304,7 @@ describe("score", () => {
     provide host(flaky) {
       const scores = try score([row("c1", "//a:test")])
       try Effect.try(() => {
-        expect(scores).toEqual([{ commit: "c1", target: "//a:test", score: 0.5, reason: Scoring.reasons.churn }])
+        expect(scores).toEqual([{ commit: "c1", target: "//a:test", score: 0.5, reason: Scoring.skipReasons.churn }])
         expect(requests).toBe(2)
       })
     }

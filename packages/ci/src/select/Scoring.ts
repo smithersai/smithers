@@ -11,7 +11,7 @@
 import { Classifier } from "@smthrs/model"
 import * as Schema from "effect/Schema"
 import type { Features, Row, Score } from "../contract/Selection.ts"
-import { unreachable } from "./Features.ts"
+import { noExtension, unreachable } from "./Features.ts"
 
 /**
  * How many distinct feature sets one request to the judge holds.
@@ -40,7 +40,8 @@ export const attempts = 4
 
 /**
  * The facts the judge can name as what most decides a score, each with the
- * one-line reason a score carries.
+ * sentence the judge is asked to choose by. A skip is shown with
+ * {@link skipReason}, not with these: each says why a target could fail.
  *
  * @category constants
  * @since 0.1.0
@@ -94,14 +95,14 @@ export const State = Schema.Struct({ about: Schema.String, items: Schema.Array(I
 
 /**
  * What the judge answered for one feature set: the chance of a failure and
- * the one-line reason.
+ * the fact that most decides it.
  *
  * @category schemas
  * @since 0.1.0
  */
 export const Reading = Schema.Struct({
   score: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1)),
-  reason: Schema.String
+  fact: Schema.Literals(["history", "distance", "churn", "kind", "size", "none"])
 })
 
 /**
@@ -233,12 +234,64 @@ export const readingsOf = (
   Array.from({ length: count }, (_, item) => {
     const fails = answers[ids(item).fails] as Classifier.BooleanAnswer
     const why = answers[ids(item).why] as Classifier.ChoiceAnswer<keyof typeof reasons>
-    return { score: fails.probability, reason: reasons[why.value] }
+    return { score: fails.probability, fact: why.value }
   })
 
 /**
- * One score per row: the reading of the row's feature set. `known` holds the
- * readings of the feature sets that were not asked about again, by
+ * The sentences a skip is shown with, for the facts whose sentence is always
+ * the same.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const skipReasons = {
+  history: "No failure on record in the last 56 days.",
+  distance: "No known path leads from the change to it in the dependency graph.",
+  churn: "The changed files had no other change in the 56 days before.",
+  none: "Nothing in its history or in the change points to a failure."
+} as const
+
+/**
+ * Why a target may be skipped, from the fact the judge named as deciding its
+ * score and what `features` measured of that fact. A sentence is given only
+ * where that fact, as measured, points away from a failure: no failure in
+ * any window, no known path from the change, no other change to the changed
+ * files, or only some kinds of file changed. A fact that points to a failure,
+ * such as a recent failure or a changed file the target depends on, gives
+ * none, and so does the number of tests: a skip never shows a reason to run.
+ *
+ * @category reading
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const skipReason = (fact: Reading["fact"], features: Features): string | undefined => {
+  const rates = features.failureRates
+  switch (fact) {
+    case "history":
+      return rates.d7 + rates.d14 + rates.d28 + rates.d56 === 0 ? skipReasons.history : undefined
+    case "distance":
+      return features.graphDistance === unreachable ? skipReasons.distance : undefined
+    case "churn":
+      return features.fileChanges.d56 === 0 ? skipReasons.churn : undefined
+    case "kind": {
+      const named = features.extensions.filter((extension) => extension !== noExtension)
+      const kinds = [
+        ...(named.length === 0 ? [] : [`${named.join(", ")} files`]),
+        ...(features.extensions.includes(noExtension) ? ["files with no extension"] : [])
+      ]
+      return kinds.length === 0 ? undefined : `Only ${kinds.join(" and ")} changed.`
+    }
+    case "size":
+      return undefined
+    case "none":
+      return skipReasons.none
+  }
+}
+
+/**
+ * One score per row: the reading of the row's feature set, with the reason a
+ * skip of it is shown with ({@link skipReason}) when there is one. `known`
+ * holds the readings of the feature sets that were not asked about again, by
  * {@link keyOf}.
  *
  * @category reading
@@ -257,6 +310,7 @@ export const scoresOf = (
   }
   return rows.map((row) => {
     const reading = readings.get(keyOf(row.features))!
-    return { commit: row.commit, target: row.target, score: reading.score, reason: reading.reason }
+    const reason = skipReason(reading.fact, row.features)
+    return { commit: row.commit, target: row.target, score: reading.score, ...(reason === undefined ? {} : { reason }) }
   })
 }

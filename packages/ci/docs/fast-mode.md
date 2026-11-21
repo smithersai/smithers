@@ -57,16 +57,21 @@ target is at distance 0 only inside a changed file's own project.
 Scores come from the model that predicts which tests a change cannot break. It
 reads an entry's six features and nothing else: not the target's name, not the
 diff. For each entry it answers the chance the target fails, and which fact most
-decides that:
+decides that: the failure rate, the distance, the changes to those files, the
+extensions, the test count, or none of them.
 
-| Reason the score carries                                   | The fact               |
-| ---------------------------------------------------------- | ---------------------- |
-| The target failed in recent runs.                          | Failure rate           |
-| The change is close to the target in the dependency graph. | Distance               |
-| The changed files have changed often lately.               | Changes to those files |
-| The kind of file changed tends to break this target.       | Extensions             |
-| The target holds many tests.                               | Test count             |
-| Nothing in the features points to a failure.               | None                   |
+A skipped target is listed with why it was safe to skip, read from that fact as
+the features measured it. Where the fact points to a failure, such as a changed
+file the target depends on, the list gives no reason rather than a wrong one:
+
+| The fact               | Reason a skip carries                                              | When                          |
+| ---------------------- | ------------------------------------------------------------------ | ----------------------------- |
+| Failure rate           | No failure on record in the last 56 days.                          | Every failure rate is 0       |
+| Distance               | No known path leads from the change to it in the dependency graph. | No path is known              |
+| Changes to those files | The changed files had no other change in the 56 days before.       | No change in 56 days          |
+| Extensions             | Only .md files changed.                                            | Always, naming the extensions |
+| Test count             | None                                                               | Never                         |
+| None                   | Nothing in its history or in the change points to a failure.       | Always                        |
 
 Entries with equal features share one question, so a change with thousands of
 targets asks about a few dozen feature sets. An answer is kept for the rest of
@@ -122,12 +127,12 @@ the model answered 24 questions in 3m 05s, which is in fast mode's times
 over the commits these times cover, fast mode's runs took 1m 42s less than normal mode's and asking the model took 1m 31s
 
 skipped, predicted-safe
-3f2a1c9  3 targets  Nothing in the features points to a failure.  //:ci.yml-unit-api-1, //:ci.yml-unit-cli-1, //:ci.yml-unit-core-1
+3f2a1c9  3 steps  Nothing in its history or in the change points to a failure.  //:ci.yml-unit-api-1, //:ci.yml-unit-cli-1, //:ci.yml-unit-core-1
 ```
 
-A line of the list is one commit and one reason: how many targets, the reason
-the score carries, and the targets, the first five by name. `--json` holds
-every one, with its score, in the commit's `skipped`.
+A line of the list is one commit and one reason: how many steps, why they were
+safe to skip when the features say, and the steps, the first five by name.
+`--json` holds every one, with its score, in the commit's `skipped`.
 
 ## What the model costs
 

@@ -134,7 +134,7 @@ describe("a model that stops answering at the second of three commits", () => {
       expect(report.commits.map((commit) => commit.model?.questions)).toEqual([1, 1, 1])
       expect(report.model?.questions).toBe(3)
       expect(report.model?.ms).toBe(report.commits.reduce((total, commit) => total + commit.model!.ms, 0))
-      const skip = { label: "//:a0_0", skipReason: "predicted-safe", score: 0, reason: Scoring.reasons.none }
+      const skip = { label: "//:a0_0", skipReason: "predicted-safe", score: 0, reason: Scoring.skipReasons.none }
       expect(report.commits.map((commit) => commit.skipped)).toEqual([[skip], [skip], [skip]])
       // A fast-mode run waits for the model before it starts, so the model's time is in its wall time.
       for (const commit of report.commits) expect(commit.fast!.wallMs).toBeGreaterThanOrEqual(commit.model!.ms)

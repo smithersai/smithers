@@ -31,19 +31,19 @@
           "label": "//apps/web:lint",
           "skipReason": "predicted-safe",
           "score": 0.02,
-          "reason": "Nothing in the features points to a failure."
+          "reason": "Nothing in its history or in the change points to a failure."
         },
         {
           "label": "//apps/web:test",
           "skipReason": "predicted-safe",
           "score": 0.02,
-          "reason": "Nothing in the features points to a failure."
+          "reason": "Nothing in its history or in the change points to a failure."
         },
         {
           "label": "//packages/core:lint",
           "skipReason": "predicted-safe",
           "score": 0.02,
-          "reason": "Nothing in the features points to a failure."
+          "reason": "Nothing in its history or in the change points to a failure."
         },
         {
           "label": "//packages/ui:test",
@@ -97,19 +97,19 @@
           "label": "//apps/web:lint",
           "skipReason": "predicted-safe",
           "score": 0.02,
-          "reason": "Nothing in the features points to a failure."
+          "reason": "Nothing in its history or in the change points to a failure."
         },
         {
           "label": "//packages/core:test",
           "skipReason": "predicted-safe",
           "score": 0.03,
-          "reason": "Nothing in the features points to a failure."
+          "reason": "Nothing in its history or in the change points to a failure."
         },
         {
           "label": "//packages/ui:test",
           "skipReason": "predicted-safe",
           "score": 0.03,
-          "reason": "Nothing in the features points to a failure."
+          "reason": "Nothing in its history or in the change points to a failure."
         }
       ],
       "model": { "ms": 12000, "questions": 4 },

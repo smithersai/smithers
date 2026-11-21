@@ -30,7 +30,7 @@
  * When fast mode was measured, its test recall, change recall and selection
  * rate each have a line with the count behind it, a line says how many
  * questions the model answered and how long that took, and every target it
- * skipped is listed with its commit and the model's reason.
+ * skipped is listed with its commit and why it was safe to skip, where the features say.
  *
  * Labels, reasons and commit ids come from the repository being replayed, so control
  * characters in them are replaced before they reach a terminal.
@@ -228,7 +228,7 @@ export const text: RenderReport = (report) => {
       ...skips.map((group) =>
         [
           clean(shortCommit(group.commit)),
-          count(group.labels.length, "target"),
+          count(group.labels.length, "step"),
           clean(group.reason),
           clean(skippedLabels(group.labels))
         ].filter((cell) => cell !== "").join("  ")

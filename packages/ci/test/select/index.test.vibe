@@ -29,8 +29,8 @@ describe("select", () => {
       try Effect.try(() => {
         const selected = new Map([[commits[1]!, Selection.select(scores, { scoreCutoff: 0.5, countCutoff: 0 })]])
         expect(scores).toEqual([
-          { commit: commits[1], target: "//packages/a:test", score: 0.6, reason: Select.Scoring.reasons.distance },
-          { commit: commits[1], target: "//packages/b:test", score: 0.01, reason: Select.Scoring.reasons.none }
+          { commit: commits[1], target: "//packages/a:test", score: 0.6 },
+          { commit: commits[1], target: "//packages/b:test", score: 0.01, reason: Select.Scoring.skipReasons.none }
         ])
         expect(Selection.metrics(built, selected)).toEqual({
           rows: 2,

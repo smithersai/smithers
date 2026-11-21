@@ -22,7 +22,12 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
-**Twenty-third round, 2026-11-20.** The recorder a person chooses reaches Smithers build (`sci-rough-edges`).
+**Twenty-third round, 2026-11-20.** The recorder a person chooses reaches Smithers build, and a skip shows why it
+was safe (`sci-rough-edges`).
+
+- **`ReplayReport.PredictedSafe.reason`** (meaning changed, shape unchanged): why it was safe to skip, from the fact
+  that most decided the score (`Scoring.skipReason`); it is absent where that fact points to a failure. It was the
+  judge's sentence for the fact, which says why a target could fail.
 
 - **`Command.environment.SMTHRS_OBSERVE_WITH`** (added): how Smithers build records what a step reads on Linux,
   `smthrs-observe` or `strace`. A replay hands it to every run of Smithers build as the person set it; another value
