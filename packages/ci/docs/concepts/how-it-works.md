@@ -385,16 +385,24 @@ at another commit only when its run did not use one of them. No trace shows a
 program reading a variable, so a run counts as having used one when any of
 these holds:
 
-| What shows it                                                                | Example                                    |
-| ---------------------------------------------------------------------------- | ------------------------------------------ |
-| The variable's name in the step's script                                     | `echo "$GITHUB_SHA"`                       |
-| Its name in a file of your repository the step read that git does not ignore | A test that reads `process.env.GITHUB_SHA` |
-| Its value in what the step printed                                           | `env`, a tool that logs the commit         |
-| Its value in a file the step wrote and left                                  | A version file, a report naming the commit |
-| Its value in the arguments of a program the step started                     | `git show` with the commit                 |
+| What shows it                                                                                                        | Example                                    |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| The variable's name in the step's script                                                                             | `echo "$GITHUB_SHA"`                       |
+| Its name in a file of your repository the step read that git does not ignore, for every variable but `GITHUB_RUN_ID` | A test that reads `process.env.GITHUB_SHA` |
+| Its value in what the step printed                                                                                   | `env`, a tool that logs the commit         |
+| Its value in a file the step wrote and left                                                                          | A version file, a report naming the commit |
+| Its value in the arguments of a program the step started                                                             | `git show` with the commit                 |
 
 Such a step runs again at every commit. Every other step is reused while the
 files it read are unchanged.
+
+`GITHUB_RUN_ID` counts only by its name in the step's script, or by its value
+in what the step printed, wrote and left, or passed to a program. A step that
+reads a file naming it, as a build reads the sources it compiles, is reused:
+the id is a number GitHub makes up for each run, so nothing in your repository
+can be compared with it, and a step depends on it only by using it. A replay
+gives each commit an id of 11 digits, as long as GitHub's, so its value is not
+met by chance.
 
 Your workflow files under `.github/workflows/` are read as data: GitHub runs
 them, the step does not. A step that reads a workflow naming `GITHUB_RUN_ID`, as

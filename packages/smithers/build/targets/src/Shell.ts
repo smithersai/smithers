@@ -221,6 +221,13 @@ export const TestAttrs = Schema.Struct({
    * name variables the CI sets and a check that reads them never uses. Each
    * is still an input: a change to one runs the target again.
    *
+   * `byValue` names variables of `env` whose name in a file the run read
+   * shows nothing: such a variable counts only when its name is in `shell`,
+   * or its value is in what the run printed, in a file it wrote and left, or
+   * in the arguments of a program it started. Use it for a value made up for
+   * each run, such as a CI run's id, that nothing in the workspace can be
+   * compared with: a run depends on it only by using it.
+   *
    * `quiet` names words that mark a question the command asks for itself,
    * such as a wrapper asking git which commit is checked out to hand it on
    * in a variable, as a CI runner hands it on. A program the run starts with
@@ -238,7 +245,8 @@ export const TestAttrs = Schema.Struct({
         ignore: Schema.optional(Schema.Array(Schema.NonEmptyString)),
         quiet: Schema.optional(Schema.Array(Schema.NonEmptyString)),
         env: Schema.optional(Attr.InheritEnv),
-        readAsData: Schema.optional(Schema.Array(Schema.NonEmptyString))
+        readAsData: Schema.optional(Schema.Array(Schema.NonEmptyString)),
+        byValue: Schema.optional(Schema.Array(Schema.NonEmptyString))
       })
     ])
   ),

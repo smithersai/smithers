@@ -662,6 +662,22 @@ S.Shell.Test({
 })
 ```
 
+`observe: { byValue: [...] }` names variables of `env` whose name in a file the
+run read shows nothing. Such a variable counts only when its name is in `shell`,
+or its value is in what the run printed, in a file it wrote and left, or in the
+arguments of a program it started. Use it for a value made up for each run, such
+as a CI run's id: nothing in the workspace can be compared with it, so a build
+that compiles a source naming it does not use it.
+
+```ts
+S.Shell.Test({
+  shell: "npm run build",
+  sandbox: "none",
+  observe: { env: ["GITHUB_SHA", "GITHUB_RUN_ID"], byValue: ["GITHUB_RUN_ID"] },
+  data: [S.glob("//**")]
+})
+```
+
 On a host that cannot record reads, every variable `env` names is part of the
 key, as with `inheritEnv`.
 

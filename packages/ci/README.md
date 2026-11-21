@@ -22,6 +22,15 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**2026-11-21, a run's id** (`sci-eliza`). Additive.
+
+- **`Inventory.runIdBase`** (added): `10_000_000_000`. **`Inventory.runValues`**' `GITHUB_RUN_ID` (value changed,
+  shape unchanged) is it plus the commit's first nine digits read as a number: 11 digits, as GitHub's run ids have,
+  where it was 1 to 11. The runner text makes the same id where no run gave one.
+- Not a contract, and changed with it: the generator writes `observe.byValue: ["GITHUB_RUN_ID"]` (Smithers build's
+  new `observe.byValue`), so the id's name in a file a step read no longer runs the step again; its name in the
+  step's text or its value in what the step printed, wrote or passed on still does.
+
 **Twenty-third round, 2026-11-20.** The recorder a person chooses reaches Smithers build, and a skip shows why it
 was safe (`sci-rough-edges`).
 

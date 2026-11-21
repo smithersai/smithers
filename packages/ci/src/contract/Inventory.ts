@@ -451,8 +451,18 @@ export const runVariables = [
 ] as const
 
 /**
+ * What a replay's run ids start from: an id is this plus the first nine
+ * digits of the commit read as a number, so it always has 11 digits, as
+ * GitHub's run ids do, and is no short number met by chance in a file.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const runIdBase = 10_000_000_000
+
+/**
  * What a replay gives the steps of one commit under each of `runVariables`:
- * the commit itself, an id made from it, and as the run's number `count`,
+ * the commit itself, an 11-digit id made from it (`runIdBase`), and as the run's number `count`,
  * the number of commits up to it, so that a later commit is a later run. The
  * same commit always gets the same values, in the baseline and in every
  * mode.
@@ -466,7 +476,7 @@ export const runValues = (
   count: number
 ): Readonly<Record<(typeof runVariables)[number], string>> => ({
   GITHUB_RUN_ATTEMPT: "1",
-  GITHUB_RUN_ID: String(Number.parseInt(commit.slice(0, 9), 16)),
+  GITHUB_RUN_ID: String(runIdBase + Number.parseInt(commit.slice(0, 9), 16)),
   GITHUB_RUN_NUMBER: String(count),
   GITHUB_SHA: commit,
   GITHUB_WORKFLOW_SHA: commit

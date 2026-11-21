@@ -2534,6 +2534,8 @@ export const idOf = (record: Omit<Record, "id">): string =>
  * - `readAsData`: files the run reads as data, from the workspace root, each
  *   a file or a directory with all it holds. A name in one of them does not
  *   show the run used the variable.
+ * - `byValue`: the variables whose name in any file the run read shows
+ *   nothing: one of them is used when `text` names it or its value shows.
  *
  * @category models
  * @since 1.0.0
@@ -2544,6 +2546,7 @@ export interface Variables {
   readonly shown?: ReadonlySet<string> | undefined
   readonly ignored?: ((paths: ReadonlyArray<string>) => ReadonlySet<string>) | undefined
   readonly readAsData?: ReadonlyArray<string> | undefined
+  readonly byValue?: ReadonlyArray<string> | undefined
   /** Bytes of workspace files to search for names above which git is asked first; a test gives a small one. */
   readonly searchFirstAbove?: number | undefined
 }
@@ -3583,7 +3586,12 @@ export const observe = (
       ? new Set<string>()
       : (given.ignored ?? ignoredByGit(options.root))(holders)
     const counted = new Set(holders.filter((file) => !left.has(file)))
-    for (const [name, files] of naming) if (files.some((file) => counted.has(file))) names.add(name)
+    // A value made up for each run, such as a CI run's id, is nothing a file can be compared with: a file naming it
+    // is code that may use it, and the run used it only when its value shows.
+    const byValue = new Set(given.byValue)
+    for (const [name, files] of naming) {
+      if (!byValue.has(name) && files.some((file) => counted.has(file))) names.add(name)
+    }
     // A value in a file the run wrote and left. What a locked install fetched is fixed by a lockfile, not by the run.
     const sought = variableNames.flatMap((name) => {
       const value = given.values[name]

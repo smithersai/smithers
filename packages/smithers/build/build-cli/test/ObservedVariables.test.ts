@@ -33,6 +33,8 @@ const posixIt = it.skipIf(process.platform === "win32")
 /** A commit id, and a value too short to look for. */
 const commit = "SMTHRS_OBSERVED_COMMIT"
 const attempt = "SMTHRS_OBSERVED_ATTEMPT"
+/** A run's id: made up for each run, so a file of the workspace naming it shows nothing (`observe.byValue`). */
+const runId = "SMTHRS_OBSERVED_RUN"
 const id = (digit: string): string => digit.repeat(40)
 
 /** Runs `body` with the host's variables set as given; `undefined` unsets one. */
@@ -62,7 +64,7 @@ const fixture = async () => {
     await Fs.writeFile(file, text)
   }
   // The workspace's own files are the ones git does not ignore. What is installed and what is built is ignored.
-  await write(".gitignore", "node_modules\n.flows\nstamp.txt\n")
+  await write(".gitignore", "node_modules\n.flows\nstamp.txt\nout\nenv.txt\n")
   expect(spawnSync("git", ["-C", root, "init", "--quiet"]).status).toBe(0)
   await write("input.txt", "pass\n")
   await write("docs/readme.md", "nothing reads this\n")
@@ -77,7 +79,20 @@ const fixture = async () => {
   await write("node_modules/tool/stamp.sh", `/usr/bin/printenv ${commit} > stamp.txt\n`)
   await write("node_modules/tool/pass.sh", `/bin/echo "$${commit}" > /dev/null\n`)
   await write("node_modules/tool/warn.sh", `/usr/bin/printenv ${commit} >&2\n`)
+  // Sources a build compiles, one naming the run's id and one naming it and the commit, and the build's scripts.
+  await write("src/report.ts", `export const run = process.env.${runId}\n`)
+  await write("src/both.ts", `export const at = [process.env.${runId}, process.env.${commit}]\n`)
+  await write("build/bundle.sh", `/usr/bin/printenv ${runId} > out/bundle.js\n`)
+  await write("build/pass.sh", `/bin/echo "$${runId}" > /dev/null\n`)
   const reads = "/bin/cat input.txt > /dev/null"
+  /** An observed test given the run's id by value. */
+  const byValue = (shell: string) =>
+    S.Shell.Test({
+      sandbox: "none",
+      data: [S.glob("**")],
+      shell,
+      observe: { env: [commit, runId], byValue: [runId] }
+    })
   const observed = (shell: string) =>
     S.Shell.Test({ sandbox: "none", data: [S.glob("**")], shell, observe: { env: [commit, attempt] } })
   /** An observed test that reads the workflows as data. */
@@ -114,6 +129,12 @@ const fixture = async () => {
           workflowsNamed: reading(`/bin/sh test/workflows.sh; test -n "$${commit}"`),
           workflowsOwn: reading("/bin/sh test/workflows.sh; /bin/sh test/own.sh"),
           workflowsUnmarked: observed("/bin/sh test/workflows.sh"),
+          compiles: byValue("/bin/cat src/report.ts > /dev/null"),
+          compilesBoth: byValue("/bin/cat src/both.ts > /dev/null"),
+          scripted: byValue(`${reads}; test -n "$${runId}"`),
+          bundles: byValue("/bin/mkdir -p out && /bin/sh build/bundle.sh"),
+          envFile: byValue("/usr/bin/env > env.txt"),
+          handed: byValue("/bin/sh build/pass.sh"),
           // The same variable given the way that always keys on it.
           inherited: S.Shell.Test({
             sandbox: "none",
@@ -266,6 +287,39 @@ describe("an observed test that reads the workflows as data", () => {
     await write(".github/workflows/ci.yml", `jobs:\n  b:\n    steps:\n      - run: echo "$${commit}"\n`)
     expect(await given({ [commit]: id("b") }, () => run(reused))).toEqual(each(reused, "ran"))
     expect(logs).toContain("//:workflows  runs again: .github/workflows/ci.yml changed")
+  })
+})
+
+describe("an observed test given a run's id by value", () => {
+  // Lead's decision (2026-11-21): a CI run's id is a number made up for each run. Nothing in a repository can be
+  // compared with it, so a run depends on it only by using it: its name in the run's own text, or its value in what
+  // the run printed, wrote and left, or handed to a program. Its name in a file the run read shows nothing.
+  const reused = ["compiles", "compilesBoth"]
+  const again = ["scripted", "bundles", "envFile", "handed"]
+  const all = [...reused, ...again]
+  const first = "10000000001"
+  const second = "10000000002"
+
+  tracedIt("is reused when it only read a file naming the id, and runs again when it used the id", async () => {
+    const { logs, root, run } = await fixture()
+    expect(await given({ [commit]: id("a"), [runId]: first }, () => run(all))).toEqual(each(all, "ran"))
+    // Another run of the same commit.
+    expect(await given({ [commit]: id("a"), [runId]: second }, () => run(all))).toEqual({
+      ...each(reused, "hit"),
+      ...each(again, "ran")
+    })
+    // Its own text names the id; a bundler wrote its value into its output; `env > file` wrote it; a program was
+    // handed it in its arguments.
+    for (const name of again) {
+      expect(logs).toContain(`//:${name}  runs again: the variable ${runId} has another value`)
+    }
+    expect(await Fs.readFile(Path.join(root, "out/bundle.js"), "utf8")).toBe(`${second}\n`)
+    // A variable not given by value still counts by its name in a file read: the commit, named beside the id.
+    expect(await given({ [commit]: id("b"), [runId]: second }, () => run(reused))).toEqual({
+      compiles: "hit",
+      compilesBoth: "ran"
+    })
+    expect(logs).toContain(`//:compilesBoth  runs again: the variable ${commit} has another value`)
   })
 })
 

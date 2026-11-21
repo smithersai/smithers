@@ -3737,6 +3737,7 @@ const visit = async (
       ignore: observe === true ? [] : (observe as { readonly ignore?: ReadonlyArray<string> }).ignore ?? [],
       quiet: observe === true ? [] : (observe as { readonly quiet?: ReadonlyArray<string> }).quiet ?? [],
       readAsData: observe === true ? [] : (observe as { readonly readAsData?: ReadonlyArray<string> }).readAsData ?? [],
+      byValue: observe === true ? [] : (observe as { readonly byValue?: ReadonlyArray<string> }).byValue ?? [],
       variables: Object.fromEntries(
         observedVariables.map((name) => [name, spawnEnvironment[name]])
       )

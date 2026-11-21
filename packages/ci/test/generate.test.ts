@@ -510,7 +510,7 @@ describe("what a step becomes", () => {
     // value out of the key.
     expect(declaration(source, "a-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn())}`)
     expect(declaration(source, "a-1")).toContain(
-      `observe: { ignore: ${ignore}, env: ${run}, quiet: ${quiet}, readAsData: ${data} }`
+      `observe: { ignore: ${ignore}, env: ${run}, quiet: ${quiet}, readAsData: ${data}, byValue: ["GITHUB_RUN_ID"] }`
     )
     // Smithers build refuses a variable a target both sets and passes on, and the step's value is the one it means.
     expect(declaration(source, "a-3")).toContain(
@@ -519,7 +519,7 @@ describe("what a step becomes", () => {
     expect(declaration(source, "a-3")).toContain(
       `observe: { ignore: ${ignore}, env: ${
         JSON.stringify(runGiven.filter((name) => name !== "GITHUB_SHA"))
-      }, quiet: ${quiet}, readAsData: ${data} }`
+      }, quiet: ${quiet}, readAsData: ${data}, byValue: ["GITHUB_RUN_ID"] }`
     )
     // A step without runner text is given no runner variable it does not name.
     expect(declaration(source, "a-4")).toContain(`observe: { ignore: ${ignore} }`)
@@ -527,7 +527,7 @@ describe("what a step becomes", () => {
     const last = targetsOf(inventory([job("a", [step("a:1", "npm test", { runner })])]))
     expect(declaration(last, "a-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn())}`)
     expect(declaration(last, "a-1")).toContain(
-      `observe: { ignore: ${ignore}, env: ${run}, quiet: ${quiet}, readAsData: ${data} }`
+      `observe: { ignore: ${ignore}, env: ${run}, quiet: ${quiet}, readAsData: ${data}, byValue: ["GITHUB_RUN_ID"] }`
     )
   })
 
@@ -563,7 +563,7 @@ describe("what a step becomes", () => {
       expect(declaration(source, label)).toContain(
         `env: ${JSON.stringify(runGiven)}, quiet: ${
           JSON.stringify([commitQuestion])
-        }, readAsData: [".github/workflows"] }`
+        }, readAsData: [".github/workflows"], byValue: ["GITHUB_RUN_ID"] }`
       )
       expect(declaration(source, label)).not.toContain("given:")
     }

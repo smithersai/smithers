@@ -1511,7 +1511,7 @@ jobs:
       GITHUB_REPOSITORY: "acme/widgets",
       GITHUB_REPOSITORY_OWNER: "acme",
       GITHUB_RUN_ATTEMPT: "1",
-      GITHUB_RUN_ID: String(Number.parseInt(head.slice(0, 9), 16)),
+      GITHUB_RUN_ID: String(10_000_000_000 + Number.parseInt(head.slice(0, 9), 16)),
       GITHUB_RUN_NUMBER: "2",
       GITHUB_SHA: head,
       GITHUB_WORKFLOW: "Checks",

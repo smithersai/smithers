@@ -249,6 +249,11 @@ const given = (target: StepTarget): string =>
 // variable's name in one does not show the step used it. Each is still an input of the step.
 const workflowFiles: ReadonlyArray<string> = [".github/workflows"]
 
+// The run's id is a number GitHub makes up for each run: nothing in a repository can be compared with it, so a step
+// uses it only by naming it in its own text or by printing, writing or passing on its value. Its name in a file the
+// step read, as a build reads the sources it compiles, does not count.
+const madeUp: ReadonlyArray<string> = ["GITHUB_RUN_ID"]
+
 // What an observed target asks Smithers build to record. The variables a run gives are passed on with their values
 // out of the key: a result holds the value of each one its run could have used, and is reused at another commit
 // when it used none. Where no run gives them, as when a person runs the targets, the runner text asks git, and
@@ -261,8 +266,13 @@ const observation = (target: StepTarget): string =>
       ? ""
       : `, env: ${JSON.stringify(target.runEnv)}, quiet: ${JSON.stringify([commitQuestion])}, readAsData: ${
         JSON.stringify(workflowFiles)
-      }`
+      }${byValue(target)}`
   } }`
+
+const byValue = (target: StepTarget): string => {
+  const names = madeUp.filter((name) => target.runEnv.includes(name))
+  return names.length === 0 ? "" : `, byValue: ${JSON.stringify(names)}`
+}
 
 const renderTarget = (
   target: StepTarget,

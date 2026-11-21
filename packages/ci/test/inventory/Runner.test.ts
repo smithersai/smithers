@@ -1159,7 +1159,7 @@ describe("write", () => {
       const env = { GITHUB_EVENT_PATH: "/machine.json", GITHUB_JOB: "machine" }
       const show = `echo "$GITHUB_SHA $GITHUB_WORKFLOW_SHA $GITHUB_RUN_ID $GITHUB_RUN_NUMBER $GITHUB_RUN_ATTEMPT `
         + `[\${GITHUB_JOB-unset}]"; cat "$GITHUB_EVENT_PATH"`
-      const numbers = `${head} ${head} ${Number.parseInt(head.slice(0, 9), 16)} 2 1`
+      const numbers = `${head} ${head} ${10_000_000_000 + Number.parseInt(head.slice(0, 9), 16)} 2 1`
       const options = { env, job: job({ event: JSON.stringify({ after: commitMark, before: parentMark }) }) }
       const file = `{"after":"${head}","before":"${at.git("rev-parse", "HEAD^")}"}\n`
       expect(pass({ first: true, job: undefined }, show, options)).toBe(`${numbers} [unset]\n${file}`)
@@ -1169,7 +1169,9 @@ describe("write", () => {
         "@A@",
         named("runattempt")
       ]]
-      expect(pass({ fills }, "echo @I@ @N@ @A@")).toBe(`${Number.parseInt(head.slice(0, 9), 16)} 2 1\n`)
+      expect(pass({ fills }, "echo @I@ @N@ @A@")).toBe(
+        `${10_000_000_000 + Number.parseInt(head.slice(0, 9), 16)} 2 1\n`
+      )
     })
 
     // A runner, and a replay for the commit it replays, give every step the commit and the run's numbers. The step
@@ -1187,7 +1189,7 @@ describe("write", () => {
       const env = { PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}`, ...given, [eventsVariable]: events }
       const show = `echo "$GITHUB_SHA $GITHUB_WORKFLOW_SHA $GITHUB_RUN_ID $GITHUB_RUN_NUMBER $GITHUB_RUN_ATTEMPT"; `
         + `cat "$GITHUB_EVENT_PATH"`
-      const numbers = `${"c".repeat(40)} ${"c".repeat(40)} ${Number.parseInt("c".repeat(9), 16)} 7 1`
+      const numbers = `${"c".repeat(40)} ${"c".repeat(40)} ${10_000_000_000 + Number.parseInt("c".repeat(9), 16)} 7 1`
       const options = { env, job: job({ eventName: "pull_request" }) }
       expect(pass({ first: true }, show, options)).toBe(`${numbers}\n{"event":"a pull request"}\n`)
       expect(pass({ commit: true }, show, options)).toBe(`${numbers}\n{"event":"a pull request"}\n`)

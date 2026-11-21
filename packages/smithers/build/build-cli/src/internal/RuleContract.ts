@@ -259,13 +259,15 @@ export interface SharedFields extends Planner.PlannedTarget {
    * holds the host variables `observe.env` names, each with its value on
    * this host or `undefined` when it is not set: they reach the run, and are
    * no part of `key`. `readAsData` holds the paths, from the workspace root,
-   * whose files name variables the run does not use.
+   * whose files name variables the run does not use. `byValue` holds the
+   * variables whose name in any file the run read shows nothing.
    */
   readonly observed?: {
     readonly key: string
     readonly ignore: ReadonlyArray<string>
     readonly quiet: ReadonlyArray<string>
     readonly readAsData: ReadonlyArray<string>
+    readonly byValue: ReadonlyArray<string>
     readonly variables: Readonly<{ readonly [name: string]: string | undefined }>
   }
   /**

@@ -330,7 +330,7 @@ const library = (job: JobFacts): string =>
     `    __ci_fail "this step reads the commit, and git cannot be read in $__root"`,
     `  }`,
     `  __count=$("\${__ask[@]}" -C "$__root" rev-list --count HEAD) || __count=1`,
-    `  export "\${__g}SHA=$__sha" "\${__g}WORKFLOW_SHA=$__sha" "\${__g}RUN_ID=$((16#\${__sha:0:9}))"`,
+    `  export "\${__g}SHA=$__sha" "\${__g}WORKFLOW_SHA=$__sha" "\${__g}RUN_ID=$((${Contract.runIdBase} + 16#\${__sha:0:9}))"`,
     `  export "\${__g}RUN_NUMBER=$__count" "\${__g}RUN_ATTEMPT=1" "\${__g}EVENT_PATH=$__state/event.json"`,
     `  __parent=$("\${__ask[@]}" -C "$__root" rev-parse --verify --quiet 'HEAD^') || __parent=${noParent}`,
     `  printf '%s\\n' ${eventText(job.event)} > "$__state/event.json"`,

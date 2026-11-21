@@ -3690,7 +3690,8 @@ const executeWith = (
           values: observed.variables,
           text: (node.argv ?? []).join("\n"),
           shown,
-          readAsData: observed.readAsData
+          readAsData: observed.readAsData,
+          byValue: observed.byValue
         },
         root: NodeFs.realpathSync(place),
         held: commitHolds,

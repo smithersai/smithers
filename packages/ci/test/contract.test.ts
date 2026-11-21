@@ -344,8 +344,8 @@ describe("contract 4: inventory", () => {
     expect(Object.keys(given).sort()).toEqual([...Inventory.runVariables])
     expect(given).toEqual({
       GITHUB_RUN_ATTEMPT: "1",
-      // The first nine digits of the commit, read as a number.
-      GITHUB_RUN_ID: String(0x012345678),
+      // The first nine digits of the commit, read as a number, from 10^10: 11 digits, as GitHub's run ids have.
+      GITHUB_RUN_ID: String(10_000_000_000 + 0x012345678),
       GITHUB_RUN_NUMBER: "12",
       GITHUB_SHA: commit,
       GITHUB_WORKFLOW_SHA: commit
@@ -353,6 +353,10 @@ describe("contract 4: inventory", () => {
     // The same commit is the same run, and another commit another.
     expect(Inventory.runValues(commit, 12)).toEqual(given)
     expect(Inventory.runValues(commit.replace("0", "f"), 13).GITHUB_RUN_ID).not.toBe(given.GITHUB_RUN_ID)
+    // As hard to meet by chance as GitHub's: 11 digits from the smallest commit to the largest.
+    for (const digit of ["0", "f"]) {
+      expect(Inventory.runValues(digit.repeat(40), 1).GITHUB_RUN_ID).toMatch(/^[1-9][0-9]{10}$/)
+    }
   })
 
   it("gives a step with runner text every variable of a run, and any other step the ones its script names", () => {
