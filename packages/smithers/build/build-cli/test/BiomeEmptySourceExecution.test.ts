@@ -17,7 +17,8 @@ it("executes an empty Biome source set without invoking a tool over the working 
     await Fs.writeFile(Path.join(root, "unrelated.ts"), "this is not valid TypeScript )\n")
     const packageManager = PackageManager.ResolvedPnpmPackageManager.make({
       name: "pnpm",
-      version: execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim(),
+      // The version this host's pnpm reports where the target runs, outside this repository's pinned one.
+      version: execFileSync("pnpm", ["--version"], { cwd: root, encoding: "utf8" }).trim(),
       executable: "pnpm",
       runtime: Runtime.ResolvedNodeRuntime.make({
         name: "node",
