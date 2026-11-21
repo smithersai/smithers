@@ -30,6 +30,16 @@ afterEach(async () => {
 const tracing = ObservedReads.observer(ExecSandbox.host())
 const tracedIt = it.skipIf("reason" in tracing)
 const posixIt = it.skipIf(process.platform === "win32")
+
+/**
+ * Why this host gives a machine no `/tmp` of its own, with `refused` first on `PATH`: on Linux the bubblewrap there
+ * fails to start; on macOS there is no bubblewrap to try.
+ */
+const noOwnTmp = (refused: string) =>
+  process.platform === "linux"
+    ? `${refused}/bwrap cannot give a process a mount of its own on this host`
+    : "a private /tmp needs bubblewrap, which runs only on Linux"
+
 /** A host that cannot record what a run reads, as macOS is. */
 const untraced: ExecutionServices = {
   ...executionServicesLive,
@@ -310,8 +320,9 @@ describe("the /tmp of a machine", () => {
     // Observed where this host has a tracer: what the targets read is recorded with `/tmp` as the host has it.
     expect(await run(["one", "two"])).toEqual({ one: "ran", two: "ran" })
     expect(logs.filter((line) => line.includes("share this host's /tmp"))).toEqual([
-      `smthrs: the targets of a machine share this host's /tmp: ${refused}/bwrap cannot give a process a mount of ` +
-      "its own on this host; TMPDIR is still each machine's own"
+      `smthrs: the targets of a machine share this host's /tmp: ${
+        noOwnTmp(refused)
+      }; TMPDIR is still each machine's own`
     ])
   })
 })
@@ -332,7 +343,7 @@ describe("a build told that two machines never share a /tmp", () => {
       [refused]
     )
     environment[Machine.ownTmpVariable] = "required"
-    const reason = `${refused}/bwrap cannot give a process a mount of its own on this host`
+    const reason = noOwnTmp(refused)
     // The targets of the first machine run. The other machine would find what the first left in `/tmp`.
     expect(await run(["other"], untraced)).toEqual({ first: "ran", second: "ran", other: "failed" })
     expect(failures.get("other")).toContain(Machine.sharedRefusal("b", "a", reason))
