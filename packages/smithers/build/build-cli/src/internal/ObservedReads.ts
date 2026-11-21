@@ -860,6 +860,31 @@ const joinedFrom = (directory: string, rest: ReadonlyArray<string>): string => {
 const decorated = /^(\d+)<(.*)>$/s
 
 /**
+ * Marks when a run begins: writes `file`, and answers its change time on the
+ * file system's clock, taken again until it is later than the first. A file
+ * written in the same tick as the mark, as the files a build puts back for a
+ * step are, has the same time, and would count as changed while the run ran;
+ * every file written before this mark is older than it. A file system that
+ * keeps whole seconds is waited on for up to `limitMs`, and then the first
+ * time is answered.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const markStart = (file: string, limitMs = 3000): number => {
+  NodeFs.writeFileSync(file, "")
+  const first = NodeFs.statSync(file).ctimeMs
+  const pause = new Int32Array(new SharedArrayBuffer(4))
+  for (let waited = 0; waited < limitMs; waited += 1) {
+    NodeFs.writeFileSync(file, waited % 2 === 0 ? "\n" : "")
+    const now = NodeFs.statSync(file).ctimeMs
+    if (now > first) return now
+    Atomics.wait(pause, 0, 0, 1)
+  }
+  return first
+}
+
+/**
  * Whether a trace `smthrs-observe` wrote is whole: it ends with the line the
  * supervisor writes once every process of the run has ended.
  *

@@ -3279,6 +3279,23 @@ describe("the paths a record leaves out", () => {
   })
 })
 
+describe("the mark a run begins at", () => {
+  it("is later than every file written before it, also in the same tick", async () => {
+    const root = await directory()
+    // A build puts back what an earlier step left and starts the next step at once: the same tick, often.
+    for (let round = 0; round < 200; round += 1) {
+      const before = Path.join(root, `put-back-${round}`)
+      NodeFs.writeFileSync(before, "what an earlier step left")
+      const started = ObservedReads.markStart(Path.join(root, "trace"))
+      expect(started, `round ${round}`).toBeGreaterThan(NodeFs.lstatSync(before).ctimeMs)
+      expect(started).toBe(NodeFs.statSync(Path.join(root, "trace")).ctimeMs)
+    }
+    // Where the clock does not move within the time allowed, the first time is the mark.
+    const trace = Path.join(root, "still")
+    expect(ObservedReads.markStart(trace, 0)).toBe(NodeFs.statSync(trace).ctimeMs)
+  })
+})
+
 describe("the lines of a trace file", () => {
   it("reads a large file a block at a time, with or without a last line break", async () => {
     const root = await directory()

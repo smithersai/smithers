@@ -3526,9 +3526,9 @@ const executeWith = (
         return yield* Effect.gen(function*() {
           // What earlier runs wrote is measured before the run, as part of holding its records against the files.
           const found = yield* timed(node.label, "check", joined(async () => foundBefore(node, place, earlier)))
-          // The trace file is made first: its time on the file system's clock is when the run began.
-          yield* joined(() => Fs.writeFile(traceFile, ""))
-          const startedMs = (yield* joined(() => Fs.stat(traceFile))).ctimeMs
+          // The trace file is made first: its time on the file system's clock is when the run began, later than
+          // anything written before it, such as what was put back for the run.
+          const startedMs = yield* Effect.sync(() => ObservedReads.markStart(traceFile))
           // The values of the variables the run is given are looked for in what it prints and in what it starts.
           const listener = ObservedReads.listening(observed.variables)
           const attempt = yield* timed(
