@@ -1404,8 +1404,12 @@ static int pendingAgain(pid_t tid, int sig) {
   return 0;
 }
 
+/* How many times a signal stopped a thread of the run: each stop is a round trip to this program. */
+static unsigned long signalStops;
+
 /* A signal `sig` stopped `tid`. */
 static void signalStop(pid_t tid, int sig) {
+  __atomic_add_fetch(&signalStops, 1, __ATOMIC_RELAXED);
   int again = pendingAgain(tid, sig);
   struct timespec now;
   clock_gettime(CLOCK_MONOTONIC, &now);
@@ -2225,6 +2229,8 @@ static int writeLines(const char *file, struct lines *lines) {
   if (dropped) unrecorded("the recorder could not keep every line");
   for (int i = 0; i < reasonCount; i++) fprintf(out, "%d +++ unrecorded: %s +++\n", rootPid, reasons[i]);
   for (int i = 0; i < rightsCount; i++) fprintf(out, "%d +++ rights: %s +++\n", rootPid, rightsNeeded[i]);
+  unsigned long stops = __atomic_load_n(&signalStops, __ATOMIC_RELAXED);
+  if (stops > 0) fprintf(out, "%d +++ signal stops: %lu +++\n", rootPid, stops);
   fprintf(out, "%d +++ complete +++\n", rootPid);
   if (fflush(out) != 0 || ferror(out)) {
     fclose(out);

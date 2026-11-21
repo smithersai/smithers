@@ -774,7 +774,10 @@ finds it free. A program whose signals come faster than a recorded call
 completes, such as a timer every 10 microseconds or less, would never end
 recorded: `smthrs-observe` stops that run, and the step runs again without the
 recording, with that reason on its row. Its verdict is the plain run's and
-nothing is stored for it, so no record holds a run that was cut off. A
+nothing is stored for it, so no record holds a run that was cut off. A step
+whose signals come more slowly ends recorded, but each signal stops it for a
+round trip to `smthrs-observe`: a timer every few tens of microseconds makes it
+many times slower, and one line says how many times its recording stopped it. A
 recorded run ends when its command
 ends: a process the command left running is stopped a second later, as a
 sandbox stops it. On macOS and Windows, where neither recorder can run, or

@@ -19,7 +19,7 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import * as ObservedReads from "../src/internal/ObservedReads.ts"
-import { signalling, survivedTimer } from "./helpers/SignalStorm.ts"
+import { signalling, survivedTimer, ticking } from "./helpers/SignalStorm.ts"
 
 const temporary: Array<string> = []
 afterEach(async () => {
@@ -598,6 +598,36 @@ describe("smthrs-observe and signals faster than a call", () => {
     expect(calm.stdout).toBe("done\n")
     expect(NodeFs.readFileSync(trace, "utf8")).not.toContain(ObservedReads.signalStorm)
   }, 120_000)
+
+  supervised(
+    "counts the signal stops of a run in its trace, and writes none for a run that took no signal",
+    async () => {
+      const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-ticking-")))
+      temporary.push(base)
+      const script = Path.join(base, "ticking.py")
+      await Fs.writeFile(script, ticking)
+      const trace = Path.join(base, "trace")
+      const run = spawnSync(supervisor!, [trace, "--", "python3", script, "1", script], {
+        encoding: "utf8",
+        timeout: 60_000
+      })
+      expect(run.status, run.stderr).toBe(0)
+      expect(run.stdout).toBe("done\n")
+      const lines = NodeFs.readFileSync(trace, "utf8").split("\n")
+      const counted = lines.map((line) => /^\d+ \+\+\+ signal stops: (\d+) \+\+\+$/.exec(line)?.[1]).find((n) =>
+        n !== undefined
+      )
+      // A second of a timer every 200 microseconds: about 5,000, however busy the machine.
+      expect(Number(counted)).toBeGreaterThan(1_000)
+      expect(ObservedReads.read(() => lines, base).signalStops).toBe(Number(counted))
+      const quiet = spawnSync(supervisor!, [trace, "--", "/bin/cat", script], { encoding: "utf8", timeout: 60_000 })
+      expect(quiet.status, quiet.stderr).toBe(0)
+      const plain = NodeFs.readFileSync(trace, "utf8")
+      expect(plain).not.toContain("signal stops")
+      expect(ObservedReads.read(() => plain.split("\n"), base).signalStops).toBeUndefined()
+    },
+    120_000
+  )
 
   supervised("stops such a run within a bound on a machine that takes its signal stops slowly", async () => {
     const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-slow-storm-")))

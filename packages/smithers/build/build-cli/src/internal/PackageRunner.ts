@@ -3954,6 +3954,14 @@ const executeWith = (
             else unstored(node, failedObserved, `; the failed run's output is in ${attemptPath}`)
             return green("ran")
           }
+          // A step that takes a signal every few tens of microseconds ends recorded, many times slower: say why.
+          const stops = Exit.isSuccess(parsed) ? parsed.value.signalStops ?? 0 : 0
+          if (stops >= ObservedReads.notedSignalStops) {
+            log(
+              `${node.label}  its recording stopped it ${stops.toLocaleString("en-US")} times for signals, so it ` +
+                "ran slower than it does unrecorded"
+            )
+          }
           wroteHere.delete(node.label)
           // The run named the machine's temporary directory `/tmp` where the host gave it one.
           const mounts: ReadonlyArray<readonly [string, string]> =

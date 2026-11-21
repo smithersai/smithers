@@ -32,6 +32,22 @@ print("done")
 `
 
 /**
+ * A program that takes a signal every 200 microseconds, far slower than a
+ * recorded call, while it asks for a file over and over for as many seconds
+ * as its first argument says: `python3 ticking.py <seconds> <path>`. It ends
+ * recorded, stopped about 5,000 times a second, and prints `done`.
+ */
+export const ticking = String.raw`
+import os, signal, sys, time
+signal.signal(signal.SIGALRM, lambda sig, frame: None)
+signal.setitimer(signal.ITIMER_REAL, 0.0002, 0.0002)
+end = time.monotonic() + float(sys.argv[1])
+while time.monotonic() < end: os.stat(sys.argv[2])
+signal.setitimer(signal.ITIMER_REAL, 0, 0)
+print("done")
+`
+
+/**
  * The fastest timer, of 16 microseconds or faster, at which the program ends
  * unrecorded within five seconds on this machine.
  */

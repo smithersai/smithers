@@ -696,6 +696,14 @@ describe("reading a trace", () => {
     expect(paths(trace.made)).not.toContain("/w/elsewhere")
   })
 
+  it("reads how many times the recorder stopped the run for signals", () => {
+    const counted = read(
+      ["100 +++ smthrs-observe 1 +++", "100 +++ signal stops: 21345 +++", "100 +++ complete +++"].join("\n")
+    )
+    expect(counted.signalStops).toBe(21_345)
+    expect(read(["100 +++ smthrs-observe 1 +++", "100 +++ complete +++"].join("\n")).signalStops).toBeUndefined()
+  })
+
   it("reads an install that links thousands of files into thousands of directories it made, in time", () => {
     const lines: Array<string> = []
     for (let index = 0; index < 60_000; index += 1) lines.push(`100 mkdir("/w/env/d${index}", 0777) = 0`)

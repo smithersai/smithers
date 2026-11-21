@@ -587,7 +587,18 @@ export interface Trace {
    * `built` is the run's own, and leads nowhere else.
    */
   readonly plainMade?: ReadonlySet<string> | undefined
+  /** How many times `smthrs-observe` stopped a thread of the run for a signal; absent when none did. */
+  readonly signalStops?: number | undefined
 }
+
+/**
+ * The signal stops of a recorded run from which the build says so: each is a round trip to the recorder, and a
+ * timer that fires every few tens of microseconds makes a recorded step many times slower than unrecorded.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const notedSignalStops = 10_000
 
 /** Decodes a quoted string as the tracer prints it; `undefined` when it is cut short or malformed. */
 const unquote = (text: string): string | undefined => {
@@ -1268,6 +1279,7 @@ export const read = (
   const leaders = new Map<number, number>()
   const reachedThrough: Array<readonly [path: string, named: string, opened: string]> = []
   const rights = new Set<string>()
+  let signalStops = 0
 
   /**
    * A path as the process that named it found it: through a link the kernel makes for a process
@@ -1713,6 +1725,11 @@ export const read = (
       rights.add(asking[1]!)
       continue
     }
+    const stopped = /^\+\+\+ signal stops: (\d+) \+\+\+$/.exec(rest)
+    if (stopped !== null) {
+      signalStops = Number(stopped[1])
+      continue
+    }
     if (rest.startsWith("+++") || rest.startsWith("---")) continue
     // The tracer writes `???` for a call it could not ask the thread about: the thread was killed where it stopped
     // before the call, by a thread that ended the process or started another program. The call never ran.
@@ -1819,6 +1836,7 @@ export const read = (
     outside: [...outside],
     ...(reachedThrough.length === 0 ? {} : { reached: reachedThrough }),
     ...(supervised ? { rights: [...rights] } : {}),
+    ...(signalStops === 0 ? {} : { signalStops }),
     bound: listened,
     built,
     plainMade

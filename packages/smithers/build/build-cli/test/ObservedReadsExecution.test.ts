@@ -24,7 +24,7 @@ import * as ObservedReads from "../src/internal/ObservedReads.ts"
 import { executeEffect, ExecutionServices, executionServicesLive } from "../src/internal/PackageRunner.ts"
 import { plan } from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
-import { signalling, survivedTimer } from "./helpers/SignalStorm.ts"
+import { signalling, survivedTimer, ticking } from "./helpers/SignalStorm.ts"
 
 const temporary: Array<string> = []
 afterEach(async () => {
@@ -318,6 +318,31 @@ describe("an observed test", () => {
         `//:check  its recording was ended: ${ObservedReads.signalStorm}; it runs again without it`
       )
       expect(logs).toContain(`//:check  not cached: ${ObservedReads.signalStorm}, so it ran without the recording`)
+    },
+    120_000
+  )
+
+  tracedIt(
+    "says in one line that a step ran slower recorded when its recording stopped it many times for signals",
+    async () => {
+      const supervisor = ObservedReads.supervisorPath(process.platform, process.arch, {
+        SMTHRS_OBSERVE_WITH: "smthrs-observe"
+      })
+      if (supervisor === undefined) return
+      // A timer every 200 microseconds for four seconds: some 20,000 stops, each a round trip to the recorder.
+      const { logs, run, write } = await fixture({
+        check: "/usr/bin/python3 ticking.py 4 input.txt && /bin/cat input.txt > /dev/null"
+      })
+      await write("ticking.py", ticking)
+      const services = { ...executionServicesLive, observer: () => ({ tracer: supervisor, supervisor: true as const }) }
+      expect(await run(["check"], services)).toEqual({ check: "ran" })
+      expect(logs.filter((line) => line.includes("for signals"))).toEqual([
+        expect.stringMatching(
+          /^\/\/:check {2}its recording stopped it [\d,]+ times for signals, so it ran slower than it does unrecorded$/
+        )
+      ])
+      // The run ended recorded, so it is stored as any other.
+      expect(await run(["check"], services)).toEqual({ check: "hit" })
     },
     120_000
   )
