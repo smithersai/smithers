@@ -1368,7 +1368,13 @@ export const read = (
     const args = split(body)
     const failed = result !== undefined && result.startsWith("-1 ")
     const errno = failed ? result.split(" ")[1]! : undefined
-    const gone = errno === "ENOENT" || errno === "ENOTDIR"
+    // ENOTDIR says a name on the way is no directory. A call that asks for a directory at the end of its path (rmdir,
+    // unlinkat with AT_REMOVEDIR, chdir, an open with O_DIRECTORY) gets it from the last name too, which may be the
+    // file the run then reads: such a path is not known to be missing.
+    const asksDirectory = name === "rmdir" || name === "chdir" ||
+      (name === "unlinkat" && /AT_REMOVEDIR/.test(args[2] ?? "")) ||
+      ((name === "open" || name === "openat" || name === "openat2") && /O_DIRECTORY/.test(body))
+    const gone = errno === "ENOENT" || (errno === "ENOTDIR" && !asksDirectory)
     // An answer that starts with `?` is no answer: the thread ended inside the call.
     const ok = result !== undefined && !failed && !result.startsWith("?")
     // Every descriptor the tracer printed says what it named at that call.
@@ -1805,6 +1811,39 @@ export const read = (
     }
   }
 
+  /**
+   * The threads, by the working directory they share, in the middle of a change of directory (`moving`) or of a call
+   * that names a path from it (`naming`). The tracer reads the directory when a call begins and the kernel when it
+   * looks the path up, so a thread that changes the directory between the two puts the call in another directory
+   * than its line names: which one cannot be known.
+   */
+  const moving = new Map<Cell, Set<number>>()
+  const naming = new Map<Cell, Set<number>>()
+  const changesDirectory = (text: string): boolean => /^f?chdir\(/.test(text)
+  const namesFromCwd = (text: string): boolean => /^\w+\((?:AT_FDCWD\b|"(?!\/))/.test(text)
+  const others = (sets: Map<Cell, Set<number>>, cell: Cell, pid: number): boolean =>
+    [...(sets.get(cell) ?? [])].some((thread) => thread !== pid)
+  /** A call of `pid` begins (`begins`) or ends: a change of directory and a call from it under way at once. */
+  const directoryRace = (pid: number, text: string, begins: boolean): void => {
+    const cell = cells.get(pid)
+    if (supervised || cell === undefined) return
+    const [mine, theirs] = changesDirectory(text) ? [moving, naming] : namesFromCwd(text) ? [naming, moving] : []
+    if (mine === undefined || theirs === undefined) return
+    if (others(theirs, cell, pid)) {
+      refusals.add(
+        "a thread changed its process's working directory while another thread named a path from it, so which " +
+          "directory that path was in cannot be known"
+      )
+    }
+    let threads = mine.get(cell)
+    if (begins) {
+      if (threads === undefined) mine.set(cell, threads = new Set())
+      threads.add(pid)
+    } else {
+      threads?.delete(pid)
+    }
+  }
+
   /** A call cut off by the end of its thread still happened, with an answer nobody saw. */
   const cutOff = (pid: number, open: { readonly at: number; readonly text: string }): void => {
     const paren = open.text.indexOf("(")
@@ -1885,6 +1924,10 @@ export const read = (
       }
       entered = open.at
       rest = open.text + rest.slice(resumed[0].length)
+      directoryRace(pid, open.text, false)
+    } else if (!rest.endsWith("<unfinished ...>")) {
+      directoryRace(pid, rest, true)
+      directoryRace(pid, rest, false)
     }
     const start = resumed === null ? children.get(at) : undefined
     if (start !== undefined) {
@@ -1920,6 +1963,7 @@ export const read = (
     }
     if (rest.endsWith("<unfinished ...>")) {
       pending.set(pid, { at: entered, text: rest.slice(0, -"<unfinished ...>".length) })
+      directoryRace(pid, rest, true)
       continue
     }
     // The answer follows the last `) = `, which the tracer pads to a column.

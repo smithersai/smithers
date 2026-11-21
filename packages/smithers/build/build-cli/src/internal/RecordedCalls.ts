@@ -267,7 +267,7 @@ export const calls: ReadonlyArray<Call> = [
   // The working directory, and listings.
   { name: "chdir", kind: "chdir", dir: cwd, path: 0 },
   // smthrs-observe reads each call's working directory from the kernel at the call; strace's reader follows it.
-  { name: "fchdir", kind: "fchdir", dir: 0, only: "strace" },
+  { name: "fchdir", kind: "fchdir", dir: 0 },
   // smthrs-observe lists a directory where it is opened.
   { name: "getdents", kind: "list", dir: 0, only: "strace" },
   { name: "getdents64", kind: "list", dir: 0, only: "strace" },

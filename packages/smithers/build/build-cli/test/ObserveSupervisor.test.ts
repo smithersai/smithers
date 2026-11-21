@@ -19,6 +19,7 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import * as ObservedReads from "../src/internal/ObservedReads.ts"
+import * as Races from "./helpers/Races.ts"
 import { signalling, survivedTimer, ticking } from "./helpers/SignalStorm.ts"
 
 const temporary: Array<string> = []
@@ -809,4 +810,42 @@ describe("smthrs-observe --reap, for a step whose job has nothing to keep what i
     const bare = spawnSync(supervisor!, ["--reap", "--"], { encoding: "utf8" })
     expect([bare.status, bare.stderr]).toEqual([125, "usage: smthrs-observe --reap -- <command> [<argument>...]\n"])
   })
+})
+
+/** How many times each race case runs under each recorder: `SMTHRS_RACE_RUNS`, or 3. */
+const raceRuns = Number(process.env["SMTHRS_RACE_RUNS"] ?? 3)
+
+/** Why a race case may store nothing: what its calls did cannot be known, and the run says so. */
+const unknowable = [
+  /was made and removed by calls of the run at the same moment, so which call did what cannot be known$/,
+  /^a thread changed its process's working directory while another thread named a path from it/,
+  /^a program it connected to started while it connected/
+]
+
+describe("recorders and threads that change the same names at once", () => {
+  const recorders = [
+    ["smthrs-observe", supervisor === undefined ? undefined : { tracer: supervisor, supervisor: true as const }],
+    ["strace", "tracer" in strace && !("supervisor" in strace) ? { tracer: strace.tracer } : undefined]
+  ] as const
+  for (const [label, recorder] of recorders) {
+    for (const [name, fresh] of Races.cases) {
+      it.skipIf(recorder === undefined || !Races.runnable() || process.getuid?.() === 0)(
+        `${label}, ${name}: a record it stores says only what the run did`,
+        async () => {
+          const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-races-")))
+          temporary.push(base)
+          for (let run = 0; run < raceRuns; run += 1) {
+            const raced = await Races.raceOnce(name, fresh, recorder!, base)
+            expect(raced.status, raced.stderr).toBe(0)
+            if (raced.refusal !== undefined) {
+              expect(unknowable.some((reason) => reason.test(raced.refusal!)), raced.refusal).toBe(true)
+              continue
+            }
+            expect(raced).toEqual({ status: 0 })
+          }
+        },
+        600_000
+      )
+    }
+  }
 })

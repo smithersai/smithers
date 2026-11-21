@@ -23,11 +23,21 @@
  * only add to what the record holds:
  *
  * - A name counts as made by the run only where this supervisor saw it absent at a stop of this run.
- * - A call that makes a name where the directory it goes in was missing at the stop is looked at again once the call
- *   has surely ended: at the next stop of the same thread, or at the end of the run. Another thread may have made the
- *   directory between the stop and the call (npm makes its cache's directories so, many at once), and the call then
- *   made the name. Where the name is there by then, the line says the call made it; written as missing, the name
- *   would read as one the run found missing and something else made.
+ * - The answer is the kernel's where nothing races: `rmdir` of a directory that holds a file is `ENOTEMPTY`, `unlink`
+ *   of a directory `EISDIR`, a rename across devices `EXDEV`, and so on, each from one look at the name.
+ * - Another thread or process of the run can change the name, or the directory it goes in, between the stop and the
+ *   call. So a call that makes or removes a name (open with O_CREAT, mkdir, mknod, unlink, rmdir, rename, link,
+ *   symlink, a socket bound to a path) is looked at again once it has surely ended: its thread stops again, or waits
+ *   in another call (`/proc/<thread>/syscall`), or the step's lines are taken, or the run ends. The calls on one name
+ *   between those moments are one group, looked at again when the last has ended, and each line is given the answer
+ *   the look after shows (resolve()). Where it cannot show it (two threads made and removed the
+ *   name at once), the run is unrecorded and says so. A lookup, an open to read or an exec under way with such a
+ *   call is left out where the name changed: it may have found it either way, and the name is the run's own.
+ * - A thread that changes its process's working directory while another names a path from it makes the run
+ *   unrecorded: the line could name another directory than the one the call started from.
+ * - A connection to a socket path or a local port is asked again once it has ended, through a copy of its socket
+ *   taken at the stop and let go within a tick: `getpeername` and `TCP_INFO` say whether it connected (never
+ *   `SO_ERROR`, which takes the error the program waits for).
  * - Before a call that writes a name that is already there (a rename, a link, a symlink, an exclusive create), a
  *   line notes that the run found it there.
  * - A program a process starts is written with no answer (`= ?`): it counts as looked at and started, and changes
@@ -87,6 +97,7 @@
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <poll.h>
 #include <pthread.h>
@@ -106,6 +117,7 @@
 #include <sys/stat.h>
 #include <sys/xattr.h>
 #include <sys/syscall.h>
+#include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/un.h>
@@ -127,6 +139,12 @@
 #endif
 #ifndef AT_EMPTY_PATH
 #define AT_EMPTY_PATH 0x1000
+#endif
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE 1
+#endif
+#ifndef RENAME_EXCHANGE
+#define RENAME_EXCHANGE 2
 #endif
 #ifndef SYS_pidfd_open
 #define SYS_pidfd_open 434
@@ -227,10 +245,11 @@ static int install(void) {
   }
   for (int i = 0; i < NCALLS; i++) {
     if (calls[i].nr == SYS_unshare) {
-      /* The flags' low word holds every namespace flag. */
+      /* The flags' low word holds every namespace flag, and CLONE_FS: a thread that takes a working directory of
+       * its own. */
       J(BPF_JMP | BPF_JEQ | BPF_K, calls[i].nr, 0, 4);
       S(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0]));
-      J(BPF_JMP | BPF_JSET | BPF_K, NEW_NAMESPACES, 0, 1);
+      J(BPF_JMP | BPF_JSET | BPF_K, NEW_NAMESPACES | CLONE_FS, 0, 1);
       S(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF);
       S(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
       continue;
@@ -261,6 +280,9 @@ static int install(void) {
 }
 
 /* ---- Lines ---------------------------------------------------------------------------------------------------- */
+
+/* A line's `sub` with this bit is left out of the trace: what it said may not be what the call found. */
+#define LEFT_OUT 0x80000000u
 
 struct line {
   uint64_t id;
@@ -370,11 +392,15 @@ static void angledz(struct text *t, const char *s) {
 /* ---- State shared by the serving threads ------------------------------------------------------------------- */
 
 static int listener = -1;
+/* Held while a stop is served, and while lines are taken: the calls under way are the serving thread's. */
+static pthread_mutex_t serving_lock = PTHREAD_MUTEX_INITIALIZER;
 static int stopping;
 static pid_t rootPid;
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static struct lines all;
 static int dropped;
+/* How many times the lines were taken (writeStep, writeKept): a place among them holds only in its own taking. */
+static uint64_t linesTaken;
 
 /* Reasons the run cannot be recorded, each once. */
 static char *reasons[16];
@@ -428,8 +454,13 @@ static void rights(const char *program) {
   pthread_mutex_unlock(&lock);
 }
 
+static long keepIn(uint64_t id, uint32_t sub, struct text *t, uint64_t *taking);
+
 /* Keeps a line; answers its place among the lines, or -1 when it could not be kept. */
-static long keep(uint64_t id, uint32_t sub, struct text *t) {
+static long keep(uint64_t id, uint32_t sub, struct text *t) { return keepIn(id, sub, t, NULL); }
+
+/* keep(), also saying in which taking of the lines the place holds. */
+static long keepIn(uint64_t id, uint32_t sub, struct text *t, uint64_t *taking) {
   if (t->failed) {
     __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
     free(t->data);
@@ -450,6 +481,7 @@ static long keep(uint64_t id, uint32_t sub, struct text *t) {
   }
   long place = (long)all.count;
   all.items[all.count++] = (struct line){id, sub, (uint32_t)t->length, t->data};
+  if (taking != NULL) *taking = linesTaken;
   pthread_mutex_unlock(&lock);
   return place;
 }
@@ -510,6 +542,11 @@ struct starting {
   char *script; /* the path as the call gave it, then the arguments after the first: what follows an interpreter */
   size_t scriptLength;
   char *line;   /* the line that says it started */
+  char *path;   /* the program, as the line names it */
+  uint64_t taking;
+  long place;   /* the line's place, and where its answer starts */
+  size_t at;
+  int missing;  /* the look found no program: the line says ENOENT, until a later stop shows the program started */
   struct starting *next;
 };
 static struct starting *startings;
@@ -805,6 +842,8 @@ static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
 /* A path a call names, made absolute from the directory it starts from, and followed in the caller's view through
  * any link the kernel makes for a process (stepView). `*empty` is set for an empty path, which names the
  * descriptor itself. Answers 0 with `why` when the path cannot be known. */
+static void fromCwd(pid_t tid, pid_t tgid, int nr, const char *cwd);
+
 static int pathOf(pid_t tid, const struct seccomp_notif *req, int dirIndex, int pathIndex, char *out,
                   size_t capacity, const char **why) {
   char path[PATH_MAX + 1], base[PATH_MAX + 1];
@@ -821,6 +860,7 @@ static int pathOf(pid_t tid, const struct seccomp_notif *req, int dirIndex, int 
     *why = "base";
     return 0;
   }
+  if (fd == AT_FDCWD) fromCwd(tid, tgidOf(tid), req->data.nr, base);
   /* A path from a deep directory can be longer than one call takes: no later look can name its file. */
   int n = path[0] == 0              ? snprintf(out, capacity, "%s", base)
         : strcmp(base, "/") == 0    ? snprintf(out, capacity, "/%s", path)
@@ -944,87 +984,811 @@ static void answer(struct text *t, int error) {
   printf_(t, " = -1 %s (%s)", errnoName(error), strerror(error));
 }
 
-/* A call that makes a name, answered before it ran that the directory the name goes in is missing: its line, where
- * the answer starts in it, and the name. */
-struct made {
-  pid_t tid;
-  size_t place, at;
-  char *name;
-  struct made *next;
+/* ---- Calls that change a name, until they have surely ended ---------------------------------------------------- */
+
+/*
+ * A call that makes or removes a name gets its answer from a look at its stop, and goes on in the kernel after. The
+ * look can be wrong: another thread may change the name, or the directory it goes in, before the call runs. So each
+ * such call is looked at again once it has surely ended: when its thread stops again, when its thread is found
+ * waiting in another call, or at the end of the run. Calls of the run on the same name between those two moments
+ * make one group, looked at again together when the last of them has ended.
+ *
+ * - A call alone in its group: the look after says what the call did, and the line is given that answer.
+ * - Calls together on one name that only make it (or only remove it): the look before the first and the look after
+ *   the last say whether one of them made it (removed it). The line of the first that could have is given success,
+ *   each other one the failure the kernel gives where the name is (is not). A line may so name the wrong one of two
+ *   threads; what the run did to the name, and in what state it found and left it, is exact.
+ * - Calls together that make and remove the name: the lines stand where, taken in order, they leave the name as it
+ *   is; otherwise the run is not recorded, and says so.
+ */
+
+/* What is at a name: nothing, or a file of a kind with its identity. A file's number is given again soon after the
+ * file is removed, so the time it was made is part of who it is, where the file system keeps one. */
+struct ident {
+  int there;
+  dev_t dev;
+  ino_t ino;
+  mode_t type;
+  int64_t born;
+  uint32_t bornNs;
 };
-#define MADE_BUCKETS 1024
-static struct made *madeAfter[MADE_BUCKETS];
-static pthread_mutex_t making = PTHREAD_MUTEX_INITIALIZER;
 
-/* Answers a call that makes `name`, and notes where the answer starts when the name was missing and so was its
- * directory: the answer may be wrong by the time the call runs (madeYet). */
-static void answerMaking(struct text *t, int error, int missing, const char *name, const char **made, size_t *at) {
-  if (missing && (error == ENOENT || error == ENOTDIR)) {
-    *made = name;
-    *at = t->length;
+/* statx's answer, as linux/stat.h lays it out (the C library may lack it). */
+struct statxAnswer {
+  uint32_t mask, blksize;
+  uint64_t attributes;
+  uint32_t nlink, uid, gid;
+  uint16_t mode, spare0;
+  uint64_t ino, size, blocks, attributesMask;
+  struct { int64_t sec; uint32_t nsec; int32_t spare; } atime, btime, ctime, mtime;
+  uint32_t rdevMajor, rdevMinor, devMajor, devMinor;
+  uint64_t spare2[14];
+};
+#ifndef SYS_statx
+#define SYS_statx 332
+#endif
+
+/* Looks at a name without following a link at its end: 0 when something is there, or the error. */
+static int identify(const char *path, struct ident *out) {
+  memset(out, 0, sizeof *out);
+  if (pseudo(path)) {
+    out->there = 1;
+    return 0;
   }
-  answer(t, error);
+  struct statxAnswer x;
+  if (syscall(SYS_statx, AT_FDCWD, path, AT_NO_AUTOMOUNT | AT_SYMLINK_NOFOLLOW, 0x1 | 0x100 | 0x800 /* type, ino, btime */,
+              &x) != 0)
+    return errno;
+  out->there = 1;
+  out->dev = makedev(x.devMajor, x.devMinor);
+  out->ino = x.ino;
+  out->type = x.mode & S_IFMT;
+  if (x.mask & 0x800) {
+    out->born = x.btime.sec;
+    out->bornNs = x.btime.nsec;
+  }
+  return 0;
 }
 
-static void awaitMade(pid_t tid, long place, size_t at, const char *name) {
-  if (place < 0) return;
-  struct made *m = malloc(sizeof *m);
-  if (m == NULL) return;
-  m->name = strdup(name);
-  if (m->name == NULL) {
-    free(m);
-    return;
-  }
-  m->tid = tid;
-  m->place = (size_t)place;
-  m->at = at;
-  pthread_mutex_lock(&making);
-  struct made **bucket = &madeAfter[(unsigned)tid % MADE_BUCKETS];
-  m->next = *bucket;
-  *bucket = m;
-  pthread_mutex_unlock(&making);
+static int sameIdent(const struct ident *a, const struct ident *b) {
+  return a->there == b->there && (!a->there || (a->dev == b->dev && a->ino == b->ino && a->type == b->type &&
+                                                a->born == b->born && a->bornNs == b->bornNs));
 }
 
-/* The call has ended: where its name is there now, the call made it. */
-static void madeYet(struct made *m) {
-  if (look(m->name, 1) == 0) {
-    pthread_mutex_lock(&lock);
-    struct line *l = &all.items[m->place];
-    char *text = m->at <= l->length ? realloc(l->text, m->at + 4) : NULL;
-    if (text != NULL) {
-      memcpy(text + m->at, " = 0", 4);
-      l->text = text;
-      l->length = (uint32_t)(m->at + 4);
+static int sameFile(const struct ident *a, const struct ident *b) {
+  return a->there && b->there && a->dev == b->dev && a->ino == b->ino && a->born == b->born && a->bornNs == b->bornNs;
+}
+
+/* Whether a directory holds anything: what rmdir answers. */
+static int holdsAnything(const char *path) {
+  int fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (fd < 0) return 0;
+  char buffer[4096];
+  int any = 0;
+  long n;
+  while (!any && (n = syscall(SYS_getdents64, fd, buffer, sizeof buffer)) > 0) {
+    for (long at = 0; at < n && !any;) {
+      struct {
+        uint64_t ino;
+        int64_t off;
+        unsigned short reclen;
+        unsigned char type;
+        char name[];
+      } *d = (void *)(buffer + at);
+      if (strcmp(d->name, ".") != 0 && strcmp(d->name, "..") != 0) any = 1;
+      at += d->reclen;
     }
-    pthread_mutex_unlock(&lock);
   }
-  free(m->name);
-  free(m);
+  close(fd);
+  return any;
 }
 
-/* A thread stopped again, so its last call ended. With `tid` 0, the run ended, and every call did. */
-static void settleMade(pid_t tid) {
-  struct made *ended = NULL;
-  pthread_mutex_lock(&making);
-  for (unsigned b = tid == 0 ? 0 : (unsigned)tid % MADE_BUCKETS; b < MADE_BUCKETS; b++) {
-    for (struct made **at = &madeAfter[b]; *at != NULL;) {
-      struct made *m = *at;
-      if (tid != 0 && m->tid != tid) {
-        at = &m->next;
+/* The device of the directory a name goes in. */
+static dev_t deviceAbove(const char *path) {
+  char parent[PATH_MAX + 1];
+  snprintf(parent, sizeof parent, "%s", path);
+  size_t length = strlen(parent);
+  while (length > 1 && parent[length - 1] == '/') parent[--length] = 0;
+  char *slash = strrchr(parent, '/');
+  if (slash == NULL) return 0;
+  if (slash == parent) slash[1] = 0;
+  else *slash = 0;
+  struct stat st;
+  return stat(parent, &st) == 0 ? st.st_dev : 0;
+}
+
+/* A line whose answer may be set again: its place among the lines and where its answer starts. Shared by the two
+ * names of a rename. */
+struct answered {
+  uint64_t taking;
+  long place;
+  size_t at;
+  int answer;     /* written: 0 or an errno */
+  int settledBy;  /* how many of its names set it */
+  int holders;
+};
+
+enum effect { MAKES, REMOVES };
+
+struct change {
+  struct change *nextOfThread, *nextInGroup;
+  struct group *group;
+  struct answered *line;
+  pid_t tid;
+  int nr;
+  enum effect effect;
+  int exclusive;      /* fails where something is: mkdir, O_EXCL, link, symlink */
+  int renaming;       /* a name of a rename; `moved` is the file it moves from `from` */
+  struct ident moved;
+  char *from;
+  int sourceGone;     /* looked at once the rename ended: the moved file is no longer at `from` */
+  int predicted;      /* the answer its look gave */
+  int given;
+  struct ident before;
+  int form;           /* which call: mkdir, a create, unlink, rmdir, ... (one group's calls of one form agree) */
+  mode_t makesType;   /* the kind of file it makes, or 0 when not known */
+};
+
+enum { F_CREATE = 1, F_EXCL, F_MKDIR, F_LINK, F_SYMLINK, F_UNLINK, F_RMDIR, F_RENAME, F_BIND, F_MKNOD };
+
+static void formOf(struct change *c, int form, mode_t type) {
+  if (c == NULL) return;
+  c->form = form;
+  c->makesType = type;
+}
+
+struct group {
+  struct group *next;
+  char *name;
+  uint64_t since;        /* the directory renames noted before its first call */
+  struct ident start;
+  int open;
+  int count;
+  struct change *members; /* newest first */
+  /* Lines of lookups made while a call of the group may still have been under way: what each found is the name as it
+   * was at its look, which the call may since have changed. */
+  struct { uint64_t taking; long place; } *uncertain;
+  int uncertainCount, uncertainRoom;
+};
+
+/*
+ * Directories the run renamed, in order: a name in one of them is at another path once the rename went on, so the
+ * look after a call follows the renames noted since the call's group began. A rename that failed left the name where
+ * it was: the name is looked for there first.
+ */
+#define MOVES 4096
+static struct {
+  char *from, *to;
+} moves[MOVES];
+static uint64_t moveCount;
+
+static void keyOf(const char *name, char *out, size_t capacity);
+
+static void movedDirectory(const char *from, const char *to) {
+  unsigned at = (unsigned)(moveCount % MOVES);
+  free(moves[at].from);
+  free(moves[at].to);
+  char key[PATH_MAX + 1];
+  keyOf(from, key, sizeof key);
+  moves[at].from = strdup(key);
+  keyOf(to, key, sizeof key);
+  moves[at].to = strdup(key);
+  moveCount++;
+}
+
+#define GROUP_BUCKETS 4096
+#define THREAD_BUCKETS 1024
+static struct group *groups[GROUP_BUCKETS];
+static struct change *openOf[THREAD_BUCKETS];
+
+/* A name as groups know it: `.` parts, doubled slashes and a slash at the end left out (`a/./b//` is `a/b`). */
+static void keyOf(const char *name, char *out, size_t capacity) {
+  size_t n = 0;
+  for (const char *at = name; *at != 0 && n + 1 < capacity;) {
+    if (*at == '/') {
+      while (*at == '/') at++;
+      if (at[0] == '.' && (at[1] == '/' || at[1] == 0)) {
+        at++;
         continue;
       }
-      *at = m->next;
-      m->next = ended;
-      ended = m;
+      if (*at == 0) break;
+      out[n++] = '/';
+      continue;
+    }
+    out[n++] = *at++;
+  }
+  if (n == 0 && name[0] == '/') out[n++] = '/';
+  out[n] = 0;
+}
+
+static uint64_t fullHash(const char *name) {
+  uint64_t h = 1469598103934665603ull;
+  for (const char *at = name; *at != 0; at++) h = (h ^ (unsigned char)*at) * 1099511628211ull;
+  return h;
+}
+
+static unsigned nameHash(const char *name) { return (unsigned)(fullHash(name) % GROUP_BUCKETS); }
+
+/*
+ * Each thread's last lookup, while the thread may still be in it: a call that changes the name noted meanwhile makes
+ * what the lookup found uncertain, as a lookup noted while such a call is under way is (busyOn).
+ */
+struct looking {
+  struct looking *next; /* in its name's bucket */
+  pid_t tid;
+  int nr;
+  uint64_t hash;
+  uint64_t taking;
+  long place, place2;
+  int used;
+};
+#define LOOKINGS 4096
+static struct looking lookings[LOOKINGS];
+static struct looking *lookBuckets[GROUP_BUCKETS];
+
+static void unlook(struct looking *l) {
+  if (!l->used) return;
+  for (struct looking **at = &lookBuckets[l->hash % GROUP_BUCKETS]; *at != NULL; at = &(*at)->next)
+    if (*at == l) {
+      *at = l->next;
+      break;
+    }
+  l->used = 0;
+}
+
+/* A thread stopped again: its last lookup has ended. */
+static void lookEnded(pid_t tid) {
+  struct looking *l = &lookings[(unsigned)tid % LOOKINGS];
+  if (l->used && l->tid == tid) unlook(l);
+}
+
+/* A thread looks up `name`: its line's place is noted once kept. */
+static struct looking *lookStarts(pid_t tid, int nr, const char *spelled) {
+  struct looking *l = &lookings[(unsigned)tid % LOOKINGS];
+  unlook(l);
+  char name[PATH_MAX + 1];
+  keyOf(spelled, name, sizeof name);
+  uint64_t h = fullHash(name);
+  *l = (struct looking){lookBuckets[h % GROUP_BUCKETS], tid, nr, h, 0, -1, -1, 1};
+  lookBuckets[h % GROUP_BUCKETS] = l;
+  return l;
+}
+
+/* Whether a thread is surely past a call: it waits in another call, or it is gone. A thread that runs may still be
+ * in it. */
+static int pastCall(pid_t tid, int nr) {
+  char name[64], text[64];
+  snprintf(name, sizeof name, "/proc/%d/syscall", tid);
+  int fd = open(name, O_RDONLY | O_CLOEXEC);
+  if (fd < 0) return 1;
+  ssize_t n = read(fd, text, sizeof text - 1);
+  close(fd);
+  if (n <= 0) return 0;
+  text[n] = 0;
+  if (strncmp(text, "running", 7) == 0) return 0;
+  return strtol(text, NULL, 10) != nr;
+}
+
+/* Writes `text` as the answer of the line at `place` of `taking`, from `at`; `text` NULL leaves the line out.
+ * Answers 0 when the line was already written (the step it belongs to ended). */
+static int setAnswer(uint64_t taking, long place, size_t at, const char *text) {
+  if (place < 0) return 1;
+  size_t length = text == NULL ? 0 : strlen(text);
+  pthread_mutex_lock(&lock);
+  if (taking != linesTaken || (size_t)place >= all.count) {
+    pthread_mutex_unlock(&lock);
+    return 0;
+  }
+  struct line *l = &all.items[place];
+  if (text == NULL) {
+    l->sub |= LEFT_OUT;
+    pthread_mutex_unlock(&lock);
+    return 1;
+  }
+  l->sub &= ~LEFT_OUT; /* what a later stop showed is certain */
+  char *data = at <= l->length ? realloc(l->text, at + length) : NULL;
+  if (data != NULL) {
+    memcpy(data + at, text, length);
+    l->text = data;
+    l->length = (uint32_t)(at + length);
+  } else {
+    dropped = 1;
+  }
+  pthread_mutex_unlock(&lock);
+  return 1;
+}
+
+/* A line written before what it says was known: a call of a program the step left running, looked at again after
+ * the step's lines were written. */
+static const char *lateAnswer =
+  "a call made while the step ended changed a name in a way its written line does not say";
+
+/* Sets a line's answer, once for each name it holds; two names that set it otherwise make the run unrecorded. */
+static void answerAgain(struct answered *a, int value) {
+  if (a->settledBy > 0 && a->answer != value) {
+    unrecorded("a rename's two names said otherwise of what it did, while other calls changed them at once");
+    return;
+  }
+  a->settledBy++;
+  if (a->answer == value) return;
+  a->answer = value;
+  if (a->place < 0) return;
+  struct text t = {0};
+  answer(&t, value);
+  if (t.failed) __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
+  else if (!setAnswer(a->taking, a->place, a->at, t.data)) unrecorded(lateAnswer);
+  free(t.data);
+}
+
+static void unknownChange(const char *name, const char *how) {
+  char reason[PATH_MAX + 256];
+  snprintf(reason, sizeof reason, "%s %s", name, how);
+  unrecorded(reason);
+}
+
+static const char *failedUnseen =
+  "was not changed by a call that the recorder saw would change it, for a reason the recorder cannot see";
+static const char *changedUnseen = "was changed while the run ran by something the recorder does not see";
+
+/* A rename's answer, from both its names once it has ended: it moved the file when the file is no longer at the old
+ * name and is at the new one, or another rename onto the new name of the same group may have replaced it since. */
+static int renameAnswer(const struct change *m, const struct ident *after, int renames) {
+  if (!m->sourceGone) return m->predicted != 0 ? m->predicted : -1;
+  if (sameFile(after, &m->moved)) return 0;
+  /* Alone on the new name, which now holds another file than before: only the rename can have put it there (a file
+   * copied up by an overlay file system gets a new number). */
+  if (renames > 1 || (after->there && !sameIdent(&m->before, after))) return 0;
+  /* Gone from the old name and not at the new one: another call took it first. */
+  return ENOENT;
+}
+
+static void resolveIn(struct group *g, struct change **order, struct ident *afterNow);
+static int ended(struct change *c);
+static void settleName(const char *name);
+static void whereNow(const struct group *g, struct ident *after);
+
+/* Every call of a group has ended: `after` is what is at the name now. */
+static void resolve(struct group *g) {
+  struct ident after;
+  whereNow(g, &after);
+  /* The members, oldest first. */
+  struct change **order = malloc((size_t)g->count * sizeof *order);
+  if (order == NULL) {
+    __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
+    return;
+  }
+  resolveIn(g, order, &after);
+  free(order);
+  if (g->uncertainCount == 0) return;
+  /* A lookup under way with a call that made, removed or replaced the name may have found it either way: its line is
+   * left out. The name is then the run's own, which a record holds in either state. */
+  int touched = !sameIdent(&g->start, &after);
+  for (struct change *m = g->members; m != NULL && !touched; m = m->nextInGroup) {
+    int value = m->line->settledBy > 0 ? m->line->answer : m->predicted;
+    if (value == 0 && (m->renaming || (m->effect == MAKES ? !m->before.there : m->before.there))) touched = 1;
+  }
+  if (!touched) return;
+  for (int i = 0; i < g->uncertainCount; i++)
+    if (!setAnswer(g->uncertain[i].taking, g->uncertain[i].place, 0, NULL)) unrecorded(lateAnswer);
+}
+
+/* The group of calls on `name` still under way, once those surely past have ended; NULL when there is none. */
+static struct group *busyOn(const char *spelled) {
+  if (pseudo(spelled)) return NULL;
+  char name[PATH_MAX + 1];
+  keyOf(spelled, name, sizeof name);
+  settleName(name);
+  unsigned b = nameHash(name);
+  struct group *g = groups[b];
+  while (g != NULL && strcmp(g->name, name) != 0) g = g->next;
+  return g != NULL && g->open > 0 ? g : NULL;
+}
+
+static void uncertainIn(struct group *g, uint64_t taking, long place) {
+  if (g == NULL || place < 0) return;
+  if (g->uncertainCount == g->uncertainRoom) {
+    int room = g->uncertainRoom == 0 ? 8 : g->uncertainRoom * 2;
+    void *grown = realloc(g->uncertain, (size_t)room * sizeof *g->uncertain);
+    if (grown == NULL) {
+      __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
+      return;
+    }
+    g->uncertain = grown;
+    g->uncertainRoom = room;
+  }
+  g->uncertain[g->uncertainCount].taking = taking;
+  g->uncertain[g->uncertainCount].place = place;
+  g->uncertainCount++;
+}
+
+/* Before the lines are taken (a step ended): each call surely past has ended, so its line says what it did. */
+static void settlePast(void) {
+  for (unsigned b = 0; b < THREAD_BUCKETS; b++) {
+    for (struct change **at = &openOf[b]; *at != NULL;) {
+      struct change *c = *at;
+      if (!pastCall(c->tid, c->nr)) {
+        at = &c->nextOfThread;
+        continue;
+      }
+      *at = c->nextOfThread;
+      ended(c);
+      at = &openOf[b]; /* ended() may have freed others of this list's groups: start the list again */
+    }
+  }
+}
+
+static void resolveIn(struct group *g, struct change **order, struct ident *afterNow) {
+  struct ident after = *afterNow;
+  int n = 0;
+  for (struct change *m = g->members; m != NULL; m = m->nextInGroup) order[n++] = m;
+  for (int i = 0; i < n / 2; i++) {
+    struct change *x = order[i];
+    order[i] = order[n - 1 - i];
+    order[n - 1 - i] = x;
+  }
+  int makes = 0, removes = 0, renames = 0;
+  for (int i = 0; i < n; i++) {
+    order[i]->effect == MAKES ? makes++ : removes++;
+    renames += order[i]->renaming;
+  }
+  if (renames > 0) {
+    /* A rename is answered at its new name, by the file it moved. Every other call is answered by its line when, taken
+     * in order with the renames' answers, the lines agree with what each call's look found and leave the name as it
+     * is now (uv makes a directory, fills it and renames it into place while the thread that made it runs on). */
+    int state = g->start.there, agree = 1;
+    for (int i = 0; i < n; i++) {
+      struct change *m = order[i];
+      int value = m->predicted;
+      if (m->renaming && m->effect == MAKES) {
+        value = renameAnswer(m, &after, renames);
+        if (value < 0) {
+          unknownChange(g->name, failedUnseen);
+          return;
+        }
+        answerAgain(m->line, value);
+      }
+      if (m->before.there != state) agree = 0;
+      if (value == 0 && !(m->effect == MAKES && !m->exclusive && m->before.there && !m->renaming))
+        state = m->effect == MAKES ? 1 : 0;
+    }
+    if (renames < n && (!agree || state != after.there)) {
+      /* A rename onto a name that was there all along leaves it there: a call that makes it finds it there. */
+      int there = g->start.there && after.there;
+      for (int i = 0; i < n && there; i++) {
+        struct change *m = order[i];
+        if (!m->renaming && (m->effect != MAKES || !m->before.there)) there = 0;
+      }
+      if (!there) {
+        unknownChange(g->name, "was changed by a rename and another call of the run at once");
+        return;
+      }
+      for (int i = 0; i < n; i++)
+        if (!order[i]->renaming) answerAgain(order[i]->line, order[i]->exclusive ? EEXIST : 0);
+      return;
+    }
+    for (int i = 0; i < n; i++)
+      if (!order[i]->renaming) answerAgain(order[i]->line, order[i]->predicted);
+    return;
+  }
+  if (n == 1) {
+    struct change *m = order[0];
+    int value = m->predicted;
+    if (m->effect == MAKES) {
+      if (!m->before.there && after.there) value = 0;
+      else if (sameIdent(&m->before, &after)) {
+        if (!m->before.there && value == 0) value = -1;
+      } else value = -2;
+    } else {
+      if (m->before.there && !after.there) value = 0;
+      else if (sameIdent(&m->before, &after)) {
+        if (m->before.there && value == 0) value = -1;
+      } else value = -2;
+    }
+    if (value == -1) unknownChange(g->name, failedUnseen);
+    else if (value == -2) unknownChange(g->name, changedUnseen);
+    else answerAgain(m->line, value);
+    return;
+  }
+  int oneForm = 1;
+  for (int i = 1; i < n; i++)
+    if (order[i]->form != order[0]->form) oneForm = 0;
+  if ((removes == 0 || makes == 0) && oneForm) {
+    int making = makes > 0;
+    int did = making ? (!g->start.there && after.there) : (g->start.there && !after.there);
+    int none = sameIdent(&g->start, &after);
+    if (!did && !none) {
+      unknownChange(g->name, changedUnseen);
+      return;
+    }
+    int given = 0;
+    for (int pass = 0; pass < 2 && did && !given; pass++)
+      for (int i = 0; i < n && !given; i++)
+        if ((pass == 0) == (order[i]->predicted == 0)) {
+          answerAgain(order[i]->line, 0);
+          order[i]->given = given = 1;
+        }
+    for (int i = 0; i < n; i++) {
+      struct change *m = order[i];
+      if (m->given) continue;
+      if (m->predicted != 0) {
+        answerAgain(m->line, m->predicted);
+      } else if (making && !m->exclusive) {
+        answerAgain(m->line, 0); /* a plain create opens what is there */
+      } else if (making ? (did || g->start.there) : (did || !g->start.there)) {
+        answerAgain(m->line, making ? EEXIST : ENOENT);
+      } else {
+        unknownChange(g->name, failedUnseen);
+        return;
+      }
+    }
+    return;
+  }
+  /* Made and removed at once: the lines stand when each call's look found the name as the calls before it, taken
+   * in order, left it, and the last leaves it as it is now. Otherwise a call went on after a later one looked. */
+  int state = g->start.there, agree = 1;
+  mode_t type = g->start.type;
+  for (int i = 0; i < n; i++) {
+    struct change *m = order[i];
+    if (m->before.there != state || (state && type != 0 && m->before.type != type)) agree = 0;
+    if (m->predicted != 0) continue;
+    if (m->effect == REMOVES) {
+      state = 0;
+    } else if (!(m->form == F_CREATE && m->before.there)) {
+      state = 1;
+      type = m->makesType;
+    }
+  }
+  if (!agree || state != after.there || (state && type != 0 && after.type != type)) {
+    unknownChange(g->name, "was made and removed by calls of the run at the same moment, so which call did what "
+                           "cannot be known");
+    return;
+  }
+  for (int i = 0; i < n; i++) answerAgain(order[i]->line, order[i]->predicted);
+}
+
+static void freeChange(struct change *c) {
+  if (--c->line->holders == 0) free(c->line);
+  free(c->from);
+  free(c);
+}
+
+/* Notes a call that changes `name`: what its look found there and what its line says. */
+static struct change *changing(pid_t tid, int nr, const char *spelled, enum effect effect, int exclusive,
+                               const struct ident *before, struct answered *line) {
+  if (pseudo(spelled)) return NULL;
+  char name[PATH_MAX + 1];
+  keyOf(spelled, name, sizeof name);
+  struct change *c = calloc(1, sizeof *c);
+  if (c == NULL) {
+    __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
+    return NULL;
+  }
+  c->tid = tid;
+  c->nr = nr;
+  c->effect = effect;
+  c->exclusive = exclusive;
+  c->predicted = line->answer;
+  c->before = *before;
+  c->line = line;
+  line->holders++;
+  unsigned b = nameHash(name);
+  struct group *g = groups[b];
+  while (g != NULL && strcmp(g->name, name) != 0) g = g->next;
+  if (g == NULL) {
+    g = calloc(1, sizeof *g);
+    char *copy = strdup(name);
+    if (g == NULL || copy == NULL) {
+      free(g);
+      free(copy);
+      __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
+      return c;
+    }
+    g->name = copy;
+    g->since = moveCount;
+    g->start = *before;
+    g->next = groups[b];
+    groups[b] = g;
+  }
+  c->group = g;
+  c->nextInGroup = g->members;
+  g->members = c;
+  g->open++;
+  g->count++;
+  /* Another thread's lookup of the name that may not have run yet: what it found waits on this group. */
+  uint64_t h = fullHash(name);
+  for (struct looking **at = &lookBuckets[h % GROUP_BUCKETS]; *at != NULL;) {
+    struct looking *l = *at;
+    if (l->hash != h || l->tid == tid || l->place < 0 || pastCall(l->tid, l->nr)) {
+      at = &l->next;
+      continue;
+    }
+    uncertainIn(g, l->taking, l->place);
+    uncertainIn(g, l->taking, l->place2);
+    *at = l->next;
+    l->used = 0;
+  }
+  return c;
+}
+
+/* The call went on: it waits for its thread to be past it. */
+static void opened(struct change *c) {
+  if (c == NULL) return;
+  struct change **bucket = &openOf[(unsigned)c->tid % THREAD_BUCKETS];
+  c->nextOfThread = *bucket;
+  *bucket = c;
+}
+
+static void freeGroup(struct group *g) {
+  unsigned b = nameHash(g->name);
+  for (struct group **at = &groups[b]; *at != NULL; at = &(*at)->next)
+    if (*at == g) {
+      *at = g->next;
+      break;
+    }
+  for (struct change *m = g->members; m != NULL;) {
+    struct change *next = m->nextInGroup;
+    freeChange(m);
+    m = next;
+  }
+  free(g->uncertain);
+  free(g->name);
+  free(g);
+}
+
+/* A call has ended: its group is looked at again once all of its calls have. Answers whether the group was. */
+/* What is at a group's name now, or where a directory rename since its first call took it. */
+static void whereNow(const struct group *g, struct ident *after) {
+  identify(g->name, after);
+  if (after->there || g->since == moveCount) return;
+  if (moveCount - g->since > MOVES) return;
+  char path[PATH_MAX + 1];
+  snprintf(path, sizeof path, "%s", g->name);
+  for (uint64_t i = g->since; i < moveCount; i++) {
+    const char *from = moves[i % MOVES].from, *to = moves[i % MOVES].to;
+    if (from == NULL || to == NULL) continue;
+    size_t length = strlen(from);
+    if (strncmp(path, from, length) != 0 || path[length] != '/') continue;
+    char moved[PATH_MAX + 1];
+    if ((size_t)snprintf(moved, sizeof moved, "%s%s", to, path + length) >= sizeof moved) return;
+    snprintf(path, sizeof path, "%s", moved);
+  }
+  if (strcmp(path, g->name) != 0) identify(path, after);
+}
+
+static int ended(struct change *c) {
+  struct group *g = c->group;
+  if (c->from != NULL) {
+    struct ident source;
+    identify(c->from, &source);
+    c->sourceGone = !sameFile(&source, &c->moved);
+  }
+  if (g == NULL) {
+    freeChange(c);
+    return 0;
+  }
+  if (--g->open > 0) return 0;
+  resolve(g);
+  freeGroup(g);
+  return 1;
+}
+
+/* A thread stopped again, so its last calls ended. With `tid` 0, the run ended, and every call did. */
+static void settleChanges(pid_t tid) {
+  for (unsigned b = tid == 0 ? 0 : (unsigned)tid % THREAD_BUCKETS; b < THREAD_BUCKETS; b++) {
+    for (struct change **at = &openOf[b]; *at != NULL;) {
+      struct change *c = *at;
+      if (tid != 0 && c->tid != tid) {
+        at = &c->nextOfThread;
+        continue;
+      }
+      *at = c->nextOfThread;
+      ended(c);
     }
     if (tid != 0) break;
   }
-  pthread_mutex_unlock(&making);
-  while (ended != NULL) {
-    struct made *next = ended->next;
-    madeYet(ended);
-    ended = next;
+}
+
+/* Before a call on `name` is looked at: each call on it whose thread is surely past it has ended. */
+static void settleName(const char *spelled) {
+  char name[PATH_MAX + 1];
+  keyOf(spelled, name, sizeof name);
+  unsigned b = nameHash(name);
+  struct group *g = groups[b];
+  while (g != NULL && strcmp(g->name, name) != 0) g = g->next;
+  if (g == NULL) return;
+  for (int again = 1; again;) {
+    again = 0;
+    for (struct change *m = g->members; m != NULL; m = m->nextInGroup) {
+      struct change **at = &openOf[(unsigned)m->tid % THREAD_BUCKETS];
+      while (*at != NULL && *at != m) at = &(*at)->nextOfThread;
+      if (*at == NULL || !pastCall(m->tid, m->nr)) continue;
+      *at = m->nextOfThread;
+      if (ended(m)) return; /* the group is gone */
+      again = 1;
+      break;
+    }
   }
+}
+
+/* ---- The working directory, shared by a process's threads ------------------------------------------------------ */
+
+/*
+ * A path named from the working directory is made absolute at the stop. Another thread of the process that changes
+ * the directory between that stop and the call would put the call in another directory than its line names. So a
+ * change of directory and a call from it that are under way at once, in one process, make the run unrecorded: which
+ * directory the call started from cannot be known.
+ */
+struct place {
+  pid_t tid, tgid;
+  int nr;
+  int moving;              /* a chdir, to `to` */
+  char to[PATH_MAX + 1];
+};
+#define PLACES 1024
+static struct place places[PLACES];
+static int movingCount;
+
+static const char *placeUnknown =
+  "a thread changed its process's working directory while another thread named a path from it, so which directory "
+  "that path was in cannot be known";
+
+static void clearPlace(struct place *p) {
+  if (p->tid != 0 && p->moving) movingCount--;
+  p->tid = 0;
+  p->moving = 0;
+}
+
+static int placeOpen(struct place *p) { return p->tid != 0 && !pastCall(p->tid, p->nr); }
+
+/*
+ * Threads that took a working directory of their own (`unshare(CLONE_FS)`): each is its own group of threads that
+ * share one. (A thread started without CLONE_FS is not seen; pthreads and every runtime share it.)
+ */
+static pid_t ownCwds[PLACES];
+
+static void ownCwd(pid_t tid) { ownCwds[(unsigned)tid % PLACES] = tid; }
+
+/* Who shares `tid`'s working directory: its process, or itself alone. */
+static pid_t cwdGroup(pid_t tid, pid_t tgid) { return ownCwds[(unsigned)tid % PLACES] == tid ? -tid : tgid; }
+
+/* A thread names a path from its working directory, which it found to be `cwd`. */
+static void fromCwd(pid_t tid, pid_t process, int nr, const char *cwd) {
+  pid_t tgid = cwdGroup(tid, process);
+  if (movingCount > 0) {
+    for (unsigned i = 0; i < PLACES; i++) {
+      struct place *p = &places[i];
+      if (p->tid == 0 || !p->moving || p->tgid != tgid || p->tid == tid) continue;
+      if (strcmp(p->to, cwd) == 0 || !placeOpen(p)) clearPlace(p);
+      else unrecorded(placeUnknown);
+    }
+  }
+  struct place *mine = &places[(unsigned)tid % PLACES];
+  if (mine->tid == 0 || mine->tid == tid || !placeOpen(mine)) {
+    clearPlace(mine);
+    *mine = (struct place){tid, tgid, nr, 0, {0}};
+  }
+}
+
+/* A thread changes its process's working directory to `to`. */
+static void movesCwd(pid_t tid, pid_t process, int nr, const char *to) {
+  pid_t tgid = cwdGroup(tid, process);
+  for (unsigned i = 0; i < PLACES; i++) {
+    struct place *p = &places[i];
+    if (p->tid == 0 || p->tgid != tgid || p->tid == tid) continue;
+    if (!placeOpen(p)) clearPlace(p);
+    else unrecorded(placeUnknown);
+  }
+  struct place *mine = &places[(unsigned)tid % PLACES];
+  clearPlace(mine);
+  *mine = (struct place){tid, tgid, nr, 1, {0}};
+  snprintf(mine->to, sizeof mine->to, "%s", to);
+  movingCount++;
+}
+
+/* A thread stopped again: its calls ended. */
+static void settlePlace(pid_t tid) {
+  struct place *mine = &places[(unsigned)tid % PLACES];
+  if (mine->tid == tid) clearPlace(mine);
 }
 
 static void begin(struct text *t, pid_t tgid, const char *name) { printf_(t, "%d %s(", tgid, name); }
@@ -1105,6 +1869,97 @@ static int listening(pid_t tid, unsigned port) {
     fclose(f);
   }
   return 0;
+}
+
+/*
+ * A connection whose line says it found nothing to talk to (no socket at the path, nothing listening on the port):
+ * a program that started meanwhile may have answered the call. Looked at again once the call has surely ended: when
+ * the thread waits in another call or stops again, when a bind of the run is about to go on, or at the end of the
+ * run. Something there by then may have answered: the run is not recorded.
+ */
+struct refused {
+  struct refused *next;
+  pid_t tid;
+  int nr;
+  unsigned port;    /* a local port, or 0 for `path` */
+  int copy;         /* a copy of the socket, taken at the stop, or -1 */
+  int inProgress;   /* a socket that does not wait: a connection it begins is answered EINPROGRESS */
+  int predicted;    /* the answer written */
+  uint64_t taking;  /* the line, and where its answer starts */
+  long place;
+  size_t at;
+  char path[];
+};
+static struct refused *refusedCalls;
+
+static int listening(pid_t tid, unsigned port);
+
+static int setAnswer(uint64_t taking, long place, size_t at, const char *text);
+static const char *lateAnswer;
+
+static void refusedEnded(struct refused *r) {
+  if (r->copy >= 0) {
+    /* The socket says whether the call connected it. */
+    struct sockaddr_storage peer;
+    socklen_t length = sizeof peer;
+    int connected = getpeername(r->copy, (struct sockaddr *)&peer, &length) == 0, pending = 0;
+    if (!connected && r->inProgress) {
+      /* Still connecting, read from the connection's state: SO_ERROR would take the error the program waits for. */
+      struct tcp_info info;
+      socklen_t size = sizeof info;
+      memset(&info, 0, sizeof info);
+      pending = getsockopt(r->copy, IPPROTO_TCP, TCP_INFO, &info, &size) == 0 && info.tcpi_state == 2 /* SYN_SENT */;
+    }
+    close(r->copy);
+    const char *text = NULL;
+    if (connected || pending) {
+      if (r->inProgress) text = " = -1 EINPROGRESS (Operation now in progress)";
+      else if (r->predicted != 0) text = " = 0";
+    } else if (r->predicted == 0) {
+      /* Written as answered, and nothing answered: something was at the name, and did not listen yet. */
+      text = r->port == 0 && look(r->path, 0) == ENOENT ? " = -1 ENOENT (No such file or directory)"
+                                                         : " = -1 ECONNREFUSED (Connection refused)";
+    }
+    if (text != NULL && !setAnswer(r->taking, r->place, r->at, text)) unrecorded(lateAnswer);
+  } else {
+    int there = r->predicted != 0 && (r->port != 0 ? listening(r->tid, r->port) : look(r->path, 0) != ENOENT);
+    if (there)
+      unrecorded("a program it connected to started while it connected, so whether the connection was answered "
+                 "cannot be known");
+  }
+  free(r);
+}
+
+/* Each refused connection whose thread is past it (`all`: every one) is looked at again. */
+static void settleRefused(pid_t tid, int all) {
+  if (refusedCalls == NULL) return;
+  for (struct refused **at = &refusedCalls; *at != NULL;) {
+    struct refused *r = *at;
+    if (all || r->tid == tid || pastCall(r->tid, r->nr)) {
+      *at = r->next;
+      refusedEnded(r);
+    } else {
+      at = &r->next;
+    }
+  }
+}
+
+static struct refused *refusedCall(pid_t tid, int nr, unsigned port, const char *path) {
+  size_t length = path == NULL ? 0 : strlen(path);
+  struct refused *r = calloc(1, sizeof *r + length + 1);
+  if (r == NULL) {
+    __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
+    return NULL;
+  }
+  r->copy = -1;
+  r->place = -1;
+  r->tid = tid;
+  r->nr = nr;
+  r->port = port;
+  if (path != NULL) memcpy(r->path, path, length + 1);
+  r->next = refusedCalls;
+  refusedCalls = r;
+  return r;
 }
 
 static int loopbackAddress(const struct sockaddr_storage *a) {
@@ -1544,6 +2399,14 @@ static void startedYet(pid_t tid, pid_t tgid) {
     free(now);
   }
   if (same) {
+    /* A program the look found missing was made before the call ran. */
+    if (s->missing) {
+      if (!setAnswer(s->taking, s->place, s->at, " = ?")) unrecorded(lateAnswer);
+      pthread_mutex_lock(&lock);
+      unsigned *generation = generationOf(tgid);
+      if (generation != NULL) *generation += 1;
+      pthread_mutex_unlock(&lock);
+    }
     struct text t = {0};
     puts_(&t, s->line);
     puts_(&t, " = 0");
@@ -1559,6 +2422,7 @@ static void startedYet(pid_t tid, pid_t tgid) {
   free(s->argv);
   free(s->script);
   free(s->line);
+  free(s->path);
   free(s);
 }
 
@@ -1747,7 +2611,10 @@ static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp
 static void serve(const struct seccomp_notif *req) {
   pid_t tid = (pid_t)req->pid;
   uint64_t id = req->id;
-  settleMade(tid);
+  settleChanges(tid);
+  settlePlace(tid);
+  lookEnded(tid);
+  settleRefused(tid, 0);
   if (req->data.arch != NATIVE_ARCH || (req->data.nr & (int)X32_BIT) != 0) {
     unrecorded("a program of another architecture ran, whose calls this recorder does not read");
     return;
@@ -1772,9 +2639,17 @@ static void serve(const struct seccomp_notif *req) {
   char path[PATH_MAX + 1], other[PATH_MAX + 1];
   const char *why = NULL;
   struct text t = {0};
-  /* A name this call makes, answered as missing with its directory, and where in the line the answer starts. */
-  const char *made = NULL;
-  size_t madeAt = 0;
+  /* The names this call makes or removes, looked at again once it has ended (settleChanges), and its line. */
+  struct change *changes[2] = {NULL, NULL};
+  struct answered *line = NULL;
+  /* A program this call starts: its line's place is noted once the line is kept. */
+  struct starting *starting = NULL;
+  /* The calls under way on the name a lookup asks about, whose line holds only if none of them changed it. */
+  struct group *busy = NULL;
+  /* A connection written as refused, asked again once it ended. */
+  struct refused *refusing = NULL;
+  /* This lookup, while it may still be under way. */
+  struct looking *looking = NULL;
   if (c->kind == K_MKDIR || c->kind == K_REMOVE || c->kind == K_RENAME || c->kind == K_LINK || c->kind == K_SYMLINK ||
       c->kind == K_CHANGE) {
     __atomic_add_fetch(&namesChanged, 1, __ATOMIC_ACQ_REL);
@@ -1801,40 +2676,63 @@ static void serve(const struct seccomp_notif *req) {
         }
       }
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
-      int error, directory = 0, missing = 0;
+      int error, directory = 0, makes = 0;
+      struct ident before = {0};
       if (!reading) __atomic_add_fetch(&namesChanged, 1, __ATOMIC_ACQ_REL);
       if ((flags & O_TMPFILE) == O_TMPFILE) {
         /* An unnamed file in a directory: the directory is looked at, and no name is made. */
         error = look(path, 0);
       } else if (flags & O_CREAT) {
-        error = look(path, 1);
-        missing = error == ENOENT;
-        if ((flags & O_EXCL) && error == 0) {
-          error = EEXIST;
+        /* One look: a second one could see what another thread did in between. */
+        settleName(path);
+        error = identify(path, &before);
+        if (error == 0) {
+          error = (flags & O_EXCL) ? EEXIST
+                : before.type == S_IFDIR ? EISDIR
+                : before.type == S_IFLNK && (flags & O_NOFOLLOW) ? ELOOP
+                : 0; /* opened; through a link that leads nowhere, the file it names is made */
+          /* Opened where something is, or made by this call when another removes the name before it runs. */
+          makes = 1;
         } else if (error == ENOENT) {
           error = parentThere(path, 0, EISDIR); /* nothing there: made, when its directory is */
-        } else if (error == 0) {
-          error = look(path, (flags & O_NOFOLLOW) != 0);
+          makes = 1;
         }
       } else {
+        busy = busyOn(path);
         error = lookKind(path, (flags & O_NOFOLLOW) != 0, &directory);
+        if (error == 0 && directory && (flags & O_ACCMODE) != O_RDONLY) error = EISDIR;
+        else if (error == 0 && !directory && (flags & O_DIRECTORY) && !pseudo(path)) error = ENOTDIR;
       }
-      if (reading && askedAgain(tgid, 2 | (flags << 2), path, error)) break;
+      if (reading && busy == NULL && askedAgain(tgid, 2 | (flags << 2), path, error)) break;
+      if (reading && !pseudo(path)) looking = lookStarts(tid, c->nr, path);
       begin(&t, tgid, "openat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
       puts_(&t, ", ");
       openFlags(&t, flags);
       puts_(&t, ")");
-      answerMaking(&t, error, missing, path, &made, &madeAt);
+      if (makes && (line = calloc(1, sizeof *line)) != NULL) {
+        *line = (struct answered){0, -1, t.length, error, 0, 0};
+        changes[0] = changing(tid, c->nr, path, MAKES, (flags & O_EXCL) != 0, &before, line);
+        formOf(changes[0], (flags & O_EXCL) ? F_EXCL : F_CREATE, S_IFREG);
+      }
+      answer(&t, error);
       if (error == 0 && directory && !pseudo(path)) {
         /* A directory opened is a directory listed: no listing is watched, and what is in it counts. */
-        keep(id, 2, &t);
+        uint64_t taking = 0;
+        long first = keepIn(id, 2, &t, &taking);
+        uncertainIn(busy, taking, first);
         t = (struct text){0};
         printf_(&t, "%d getdents64(0", tgid);
         angledz(&t, path);
         puts_(&t, ", {...}, 32768) = 0");
-        keep(id, 3, &t);
+        long second = keepIn(id, 3, &t, &taking);
+        uncertainIn(busy, taking, second);
+        if (looking != NULL) {
+          looking->taking = taking;
+          looking->place = first;
+          looking->place2 = second;
+        }
         return;
       }
       break;
@@ -1843,8 +2741,10 @@ static void serve(const struct seccomp_notif *req) {
       int nofollow = c->nofollow;
       if (c->flags >= 0 && (req->data.args[(int)c->flags] & AT_SYMLINK_NOFOLLOW)) nofollow = 1;
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      busy = busyOn(path);
       int error = look(path, nofollow);
-      if (askedAgain(tgid, (uint64_t)nofollow, path, error)) break;
+      if (busy == NULL && askedAgain(tgid, (uint64_t)nofollow, path, error)) break;
+      if (!pseudo(path)) looking = lookStarts(tid, c->nr, path);
       begin(&t, tgid, "newfstatat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
@@ -1854,7 +2754,11 @@ static void serve(const struct seccomp_notif *req) {
     }
     case K_EXEC: {
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      busy = busyOn(path);
       int error = look(path, 0);
+      /* Found missing: what the call found is uncertain while another call changes the program's name. */
+      if (error == 0) busy = NULL;
+      else if (!pseudo(path)) looking = lookStarts(tid, c->nr, path);
       uint64_t argvAt = req->data.args[c->nr == SYS_execveat ? 2 : 1];
       struct text words = {0}, raw = {0};
       char given[PATH_MAX + 1];
@@ -1892,17 +2796,19 @@ static void serve(const struct seccomp_notif *req) {
       puts_(&t, words.data);
       puts_(&t, ", 0x0 /* vars */)");
       free(words.data);
-      if (error != 0) {
+      if (error != 0 && error != ENOENT) {
         answer(&t, error);
         free(raw.data);
         free(script.data);
         break;
       }
-      rights(path);
-      pthread_mutex_lock(&lock);
-      unsigned *generation = generationOf(tgid);
-      if (generation != NULL) *generation += 1;
-      pthread_mutex_unlock(&lock);
+      if (error == 0) rights(path);
+      if (error == 0) {
+        pthread_mutex_lock(&lock);
+        unsigned *generation = generationOf(tgid);
+        if (generation != NULL) *generation += 1;
+        pthread_mutex_unlock(&lock);
+      }
       /* Looked at and started; what it starts as is known at a later stop. */
       struct starting *s = calloc(1, sizeof *s);
       if (s != NULL) {
@@ -1914,6 +2820,11 @@ static void serve(const struct seccomp_notif *req) {
         s->script = script.data;
         s->scriptLength = script.length;
         s->line = strdup(t.data == NULL ? "" : t.data);
+        s->path = strdup(path);
+        s->place = -1;
+        s->at = t.length;
+        s->missing = error != 0;
+        starting = s;
         pthread_mutex_lock(&lock);
         s->next = startings;
         startings = s;
@@ -1922,35 +2833,71 @@ static void serve(const struct seccomp_notif *req) {
         free(raw.data);
         free(script.data);
       }
-      puts_(&t, " = ?");
+      if (error != 0) answer(&t, error);
+      else puts_(&t, " = ?");
       break;
     }
     case K_CHDIR: {
-      if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      if (c->path < 0) {
+        if (!placeOf(tid, (int)req->data.args[0], path, sizeof path)) {
+          why = "base";
+          break;
+        }
+      } else if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) {
+        break;
+      }
+      int directory = 0, error = lookKind(path, 0, &directory);
+      if (error == 0 && !directory && !pseudo(path)) error = ENOTDIR;
+      if (error == 0) movesCwd(tid, tgid, c->nr, path);
       begin(&t, tgid, "chdir");
       quotedz(&t, path);
       puts_(&t, ")");
-      answer(&t, look(path, 0));
+      answer(&t, error);
       break;
     }
     case K_MKDIR: {
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
-      int there = look(path, 1);
+      settleName(path);
+      struct ident before;
+      int there = identify(path, &before);
       int error = there == 0 ? EEXIST : there == ENOENT ? parentThere(path, 1, 0) : there;
       begin(&t, tgid, "mkdirat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
       puts_(&t, ", 0777)");
-      answerMaking(&t, error, there == ENOENT, path, &made, &madeAt);
+      if ((line = calloc(1, sizeof *line)) != NULL) {
+        *line = (struct answered){0, -1, t.length, error, 0, 0};
+        changes[0] = changing(tid, c->nr, path, MAKES, 1, &before, line);
+        formOf(changes[0], c->kind == K_MKDIR ? F_MKDIR : F_SYMLINK, c->kind == K_MKDIR ? S_IFDIR : S_IFLNK);
+      }
+      answer(&t, error);
       break;
     }
     case K_REMOVE: {
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      /* rmdir, or unlinkat with AT_REMOVEDIR, removes only an empty directory; unlink anything else. */
+      int directoryOnly = 0;
+#ifdef SYS_rmdir
+      directoryOnly = c->nr == SYS_rmdir;
+#endif
+      if (c->nr == SYS_unlinkat && (req->data.args[2] & AT_REMOVEDIR)) directoryOnly = 1;
+      settleName(path);
+      struct ident before;
+      int error = identify(path, &before);
+      if (error == 0 && !pseudo(path)) {
+        error = directoryOnly ? (before.type != S_IFDIR ? ENOTDIR : holdsAnything(path) ? ENOTEMPTY : 0)
+                              : (before.type == S_IFDIR ? EISDIR : 0);
+      }
       begin(&t, tgid, "unlinkat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
-      puts_(&t, ", 0)");
-      answer(&t, look(path, 1));
+      puts_(&t, directoryOnly ? ", AT_REMOVEDIR)" : ", 0)");
+      if ((line = calloc(1, sizeof *line)) != NULL) {
+        *line = (struct answered){0, -1, t.length, error, 0, 0};
+        changes[0] = changing(tid, c->nr, path, REMOVES, 0, &before, line);
+        formOf(changes[0], directoryOnly ? F_RMDIR : F_UNLINK, 0);
+      }
+      answer(&t, error);
       break;
     }
     case K_CHANGE: {
@@ -1968,11 +2915,15 @@ static void serve(const struct seccomp_notif *req) {
         break;
       }
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      busy = busyOn(path);
+      int directory = 0, error = lookKind(path, nofollow, &directory);
+      if (!pseudo(path)) looking = lookStarts(tid, c->nr, path);
+      if (error == 0 && directory && c->nr == SYS_truncate && !pseudo(path)) error = EISDIR;
       begin(&t, tgid, "fchmodat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
       puts_(&t, ", 0)");
-      answer(&t, look(path, nofollow));
+      answer(&t, error);
       break;
     }
     case K_CHANGE_FD: {
@@ -1989,18 +2940,31 @@ static void serve(const struct seccomp_notif *req) {
     case K_LINK: {
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
       if (!pathOf(tid, req, c->dir2, c->path2, other, sizeof other, &why)) break;
+      settleName(path);
+      settleName(other);
       /* RENAME_NOREPLACE (1) fails where the new name is there; RENAME_EXCHANGE (2) swaps two names that are both
        * there; RENAME_WHITEOUT (4) moves as a rename does. The line names them, as strace does. */
       uint64_t renaming = c->nr == SYS_renameat2 ? (uint32_t)req->data.args[(int)c->flags] : 0;
-      int moving = 0, from = lookKind(path, 1, &moving), to = look(other, 1);
+      struct ident source, target;
+      int from = identify(path, &source), to = identify(other, &target);
+      int moving = source.type == S_IFDIR;
       /* A name that is there already is one the run found, whatever the call does to it. */
       if (to == 0 && !pseudo(other)) found(tgid, id, 0, other);
-      int error = from != 0                                   ? from
-                : (renaming & 2)                              ? (to == 0 ? 0 : to)
-                : ((c->kind == K_LINK || (renaming & 1)) && to == 0) ? EEXIST
-                : to != ENOENT                                ? 0
-                : c->kind == K_LINK                           ? parentThere(other, 0, ENOENT)
-                                                              : parentThere(other, moving, ENOTDIR);
+      size_t pathLength = strlen(path);
+      int error = from != 0 ? from
+        : c->kind == K_LINK ? (to == 0 ? EEXIST : moving ? EPERM : to != ENOENT ? to : parentThere(other, 0, ENOENT))
+        : (renaming & 2) ? (to == 0 ? 0 : to)
+        : (renaming & 1) && to == 0 ? EEXIST
+        : to == 0 && source.dev == target.dev && source.ino == target.ino ? 0
+        : moving && strncmp(other, path, pathLength) == 0 && other[pathLength] == '/' ? EINVAL
+        : to == 0 ? (moving && target.type != S_IFDIR ? ENOTDIR
+                     : !moving && target.type == S_IFDIR ? EISDIR
+                     : moving && holdsAnything(other) ? ENOTEMPTY
+                     : 0)
+        : to != ENOENT ? to
+        : parentThere(other, moving, ENOTDIR);
+      dev_t above = error == 0 && !pseudo(path) && !pseudo(other) ? deviceAbove(other) : 0;
+      if (above != 0 && above != source.dev) error = EXDEV;
       begin(&t, tgid, c->kind == K_RENAME ? "renameat2" : "linkat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
@@ -2019,7 +2983,23 @@ static void serve(const struct seccomp_notif *req) {
         }
         puts_(&t, ")");
       }
-      answerMaking(&t, error, from == 0 && to == ENOENT, other, &made, &madeAt);
+      if (!(renaming & 2) && (line = calloc(1, sizeof *line)) != NULL) {
+        *line = (struct answered){0, -1, t.length, error, 0, 0};
+        changes[0] = changing(tid, c->nr, other, MAKES, c->kind == K_LINK, &target, line);
+        formOf(changes[0], c->kind == K_LINK ? F_LINK : F_RENAME, source.type);
+        if (c->kind == K_RENAME) {
+          if (moving && error == 0) movedDirectory(path, other);
+          changes[1] = changing(tid, c->nr, path, REMOVES, 0, &source, line);
+          formOf(changes[1], F_RENAME, 0);
+          if (changes[0] != NULL) {
+            changes[0]->renaming = 1;
+            changes[0]->moved = source;
+            changes[0]->from = strdup(path);
+          }
+          if (changes[1] != NULL) changes[1]->renaming = 1;
+        }
+      }
+      answer(&t, error);
       break;
     }
     case K_SYMLINK: {
@@ -2028,7 +3008,9 @@ static void serve(const struct seccomp_notif *req) {
         break;
       }
       if (!pathOf(tid, req, c->dir2, c->path2, path, sizeof path, &why)) break;
-      int there = look(path, 1);
+      settleName(path);
+      struct ident before;
+      int there = identify(path, &before);
       if (there == 0 && !pseudo(path)) found(tgid, id, 0, path);
       int error = there == 0 ? EEXIST : there == ENOENT ? parentThere(path, 0, ENOENT) : there;
       begin(&t, tgid, "symlinkat");
@@ -2036,7 +3018,12 @@ static void serve(const struct seccomp_notif *req) {
       puts_(&t, ", AT_FDCWD, ");
       quotedz(&t, path);
       puts_(&t, ")");
-      answerMaking(&t, error, there == ENOENT, path, &made, &madeAt);
+      if ((line = calloc(1, sizeof *line)) != NULL) {
+        *line = (struct answered){0, -1, t.length, error, 0, 0};
+        changes[0] = changing(tid, c->nr, path, MAKES, 1, &before, line);
+        formOf(changes[0], c->kind == K_MKDIR ? F_MKDIR : F_SYMLINK, c->kind == K_MKDIR ? S_IFDIR : S_IFLNK);
+      }
+      answer(&t, error);
       break;
     }
     case K_CONNECT:
@@ -2085,16 +3072,49 @@ static void serve(const struct seccomp_notif *req) {
             }
             /* Nothing there, or no socket there: the kernel refuses the connection, and the run learns which. */
             struct stat st;
-            if (full[0] != 0 && !pseudo(full))
+            if (full[0] != 0 && !pseudo(full)) {
               error = stat(full, &st) != 0 ? (errno == ENOENT ? ENOENT : 0) : S_ISSOCK(st.st_mode) ? 0 : ECONNREFUSED;
+              refusing = refusedCall(tid, c->nr, 0, full);
+            }
           }
         } else if (loopbackAddress(&a)) {
           unsigned port = a.ss_family == AF_INET ? ntohs(((struct sockaddr_in *)&a)->sin_port)
                                                  : ntohs(((struct sockaddr_in6 *)&a)->sin6_port);
           if (!listening(tid, port)) error = ECONNREFUSED;
+          refusing = refusedCall(tid, c->nr, port, NULL);
+        }
+        if (refusing != NULL) {
+          /* A copy of the socket, to ask once the call has ended whether it connected. */
+          int pidfd = (int)syscall(SYS_pidfd_open, tgid, 0);
+          refusing->copy = pidfd < 0 ? -1 : (int)syscall(SYS_pidfd_getfd, pidfd, (int)req->data.args[0], 0);
+          if (pidfd >= 0) close(pidfd);
+          int flags = refusing->copy < 0 ? 0 : fcntl(refusing->copy, F_GETFL);
+          refusing->inProgress = flags >= 0 && (flags & O_NONBLOCK) && a.ss_family != AF_UNIX;
+          refusing->at = t.length;
+          refusing->predicted = error;
         }
         answer(&t, error);
         break;
+      }
+      /* A socket bound to a path makes that name: calls on the name at once are in one group with it. */
+      if (a.ss_family == AF_UNIX && ((const struct sockaddr_un *)&a)->sun_path[0] != 0) {
+        const struct sockaddr_un *u = (const struct sockaddr_un *)&a;
+        char name[sizeof u->sun_path + 1], full[PATH_MAX + 1];
+        snprintf(name, sizeof name, "%.*s", (int)sizeof u->sun_path, u->sun_path);
+        if (name[0] == '/') snprintf(full, sizeof full, "%s", name);
+        else if (!placeOf(tid, AT_FDCWD, other, sizeof other)) full[0] = 0;
+        else snprintf(full, sizeof full, "%s/%s", other, name);
+        struct answered *making = full[0] == 0 ? NULL : calloc(1, sizeof *making);
+        if (making != NULL) {
+          settleName(full);
+          struct ident before;
+          identify(full, &before);
+          *making = (struct answered){0, -1, 0, before.there ? EADDRINUSE : 0, 0, 0};
+          struct change *binding_ = changing(tid, c->nr, full, MAKES, 1, &before, making);
+          formOf(binding_, F_BIND, S_IFSOCK);
+          opened(binding_);
+          if (making->holders == 0) free(making);
+        }
       }
       /* A path there already is one the run found: the bind fails on it. One not there is the run's once bound. */
       if (a.ss_family == AF_UNIX && named->sun_path[0] == '/' && !pseudo(named->sun_path) &&
@@ -2135,17 +3155,29 @@ static void serve(const struct seccomp_notif *req) {
       return;
     case K_MAKE: {
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
-      int there = look(path, 1);
+      settleName(path);
+      struct ident before;
+      int there = identify(path, &before);
       if (there == 0 && !pseudo(path)) found(tgid, id, 0, path);
       begin(&t, tgid, "mknodat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
       puts_(&t, ", 0)");
-      answer(&t, there == 0 ? EEXIST : there == ENOENT ? parentThere(path, 0, ENOENT) : there);
+      int error = there == 0 ? EEXIST : there == ENOENT ? parentThere(path, 0, ENOENT) : there;
+      if ((line = calloc(1, sizeof *line)) != NULL) {
+        *line = (struct answered){0, -1, t.length, error, 0, 0};
+        changes[0] = changing(tid, c->nr, path, MAKES, 1, &before, line);
+        formOf(changes[0], F_MKNOD, 0);
+      }
+      answer(&t, error);
       break;
     }
     case K_SPACE:
-      unrecorded("it made a namespace of its own");
+      if (req->data.args[0] & NEW_NAMESPACES) {
+        unrecorded("it made a namespace of its own");
+        return;
+      }
+      ownCwd(tid);
       return;
     case K_FORK: {
       uint64_t flags = SIGCHLD;
@@ -2252,9 +3284,32 @@ static void serve(const struct seccomp_notif *req) {
       puts_(&t, ", O_RDONLY) = -1 EBADF (Bad file descriptor)");
     }
   }
-  if (t.data == NULL && !t.failed) return;
-  long place = keep(id, 2, &t);
-  if (made != NULL && why == NULL) awaitMade(tid, place, madeAt, made);
+  if (t.data == NULL && !t.failed) {
+    if (line != NULL && line->holders == 0) free(line);
+    return;
+  }
+  uint64_t taking = 0;
+  long place = keepIn(id, 2, &t, &taking);
+  if (starting != NULL) {
+    starting->place = place;
+    starting->taking = taking;
+  }
+  uncertainIn(busy, taking, place);
+  if (looking != NULL) {
+    looking->taking = taking;
+    looking->place = place;
+  }
+  if (refusing != NULL) {
+    refusing->place = place;
+    refusing->taking = taking;
+  }
+  if (line != NULL) {
+    line->place = place;
+    line->taking = taking;
+    opened(changes[0]);
+    opened(changes[1]);
+    if (line->holders == 0) free(line);
+  }
 }
 
 static void *serving(void *unused) {
@@ -2278,7 +3333,9 @@ static void *serving(void *unused) {
       if (__atomic_load_n(&stopping, __ATOMIC_ACQUIRE)) break;
       continue;
     }
+    pthread_mutex_lock(&serving_lock);
     serve(req);
+    pthread_mutex_unlock(&serving_lock);
     memset(resp, 0, sizes.seccomp_notif_resp);
     resp->id = req->id;
     resp->flags = SECCOMP_USER_NOTIF_FLAG_CONTINUE;
@@ -2388,6 +3445,7 @@ static int writeLines(const char *file, struct lines *lines) {
   qsort(lines->items, lines->count, sizeof *lines->items, byOrder);
   fprintf(out, "%d +++ smthrs-observe 1 +++\n", rootPid);
   for (size_t i = 0; i < lines->count; i++) {
+    if (lines->items[i].sub & LEFT_OUT) continue;
     fwrite(lines->items[i].text, 1, lines->items[i].length, out);
     fputc('\n', out);
   }
@@ -2413,6 +3471,7 @@ static struct lines takeLines(void) {
   pthread_mutex_lock(&lock);
   struct lines taken = all;
   all = (struct lines){0};
+  linesTaken++;
   pthread_mutex_unlock(&lock);
   qsort(taken.items, taken.count, sizeof *taken.items, byOrder);
   return taken;
@@ -2445,7 +3504,10 @@ static int writeWhole(const char *file, const char *text) {
  */
 static int writeStep(const char *file, int code) {
   settleBindings();
+  pthread_mutex_lock(&serving_lock);
+  settlePast();
   struct lines taken = takeLines();
+  pthread_mutex_unlock(&serving_lock);
   int ok = writeLines(file, &taken);
   freeLines(&taken);
   char status[64], statusFile[PATH_MAX + 32];
@@ -2476,7 +3538,10 @@ static void writeKept(const char *file) {
     }
   }
   settleBindings();
+  pthread_mutex_lock(&serving_lock);
+  settlePast();
   struct lines taken = takeLines();
+  pthread_mutex_unlock(&serving_lock);
   if (taken.count == 0) {
     freeLines(&taken);
     if (asked > answered) {
@@ -2492,6 +3557,7 @@ static void writeKept(const char *file) {
   FILE *out = fopen(keptFile, "ae");
   if (out != NULL) {
     for (size_t i = 0; i < taken.count; i++) {
+      if (taken.items[i].sub & LEFT_OUT) continue;
       fwrite(taken.items[i].text, 1, taken.items[i].length, out);
       fputc('\n', out);
     }
@@ -2844,6 +3910,12 @@ int main(int argc, char **argv) {
       else if (now.tv_sec > deadline.tv_sec || (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) endLeft();
     }
     sendStale();
+    /* A connection asked again once its thread is past it: the copy of its socket is let go within a tick. */
+    if (__atomic_load_n(&refusedCalls, __ATOMIC_ACQUIRE) != NULL) {
+      pthread_mutex_lock(&serving_lock);
+      settleRefused(0, 0);
+      pthread_mutex_unlock(&serving_lock);
+    }
     struct timespec tick = {0, 5000000};
     sigtimedwait(&waits, NULL, &tick);
   }
@@ -2871,7 +3943,8 @@ int main(int argc, char **argv) {
   }
   close(listener);
   boundSockets();
-  settleMade(0);
+  settleChanges(0);
+  settleRefused(0, 1);
 #ifdef STORM_STATS
   fprintf(stderr, "storm-stats: most stops %u over %ld ms\n", mostStops, longestMs);
 #endif

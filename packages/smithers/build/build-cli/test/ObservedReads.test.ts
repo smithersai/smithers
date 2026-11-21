@@ -413,6 +413,27 @@ describe("picking the recorder", () => {
 })
 
 describe("reading a trace", () => {
+  it("keeps a file that a call asking for a directory found in place of one", () => {
+    // rmdir of a file, unlinkat with AT_REMOVEDIR, chdir to a file and an open with O_DIRECTORY each answer ENOTDIR
+    // from the last name of the path: the file is there, and the run reads it next.
+    const trace = read([
+      "100 rmdir(\"src/a\") = -1 ENOTDIR (Not a directory)",
+      "100 unlinkat(AT_FDCWD</w>, \"src/b\", AT_REMOVEDIR) = -1 ENOTDIR (Not a directory)",
+      "100 chdir(\"/w/src/c\") = -1 ENOTDIR (Not a directory)",
+      "100 openat(AT_FDCWD</w>, \"src/d\", O_RDONLY|O_DIRECTORY|O_CLOEXEC) = -1 ENOTDIR (Not a directory)",
+      "100 openat2(AT_FDCWD</w>, \"src/e\", {flags=O_RDONLY|O_DIRECTORY, mode=0, resolve=0}, 24) = -1 ENOTDIR (Not a directory)",
+      // A name above the last that is no directory: the path is missing.
+      "100 unlink(\"src/a/x\") = -1 ENOTDIR (Not a directory)",
+      "100 openat(AT_FDCWD</w>, \"src/a/y\", O_RDONLY) = -1 ENOTDIR (Not a directory)",
+      "100 rmdir(\"src/a/z\") = -1 ENOENT (No such file or directory)",
+      "100 +++ exited with 0 +++",
+      ""
+    ].join("\n"))
+    expect(trace.refusals).toEqual([])
+    expect(paths(trace.found)).toEqual(["/w/src/a", "/w/src/b", "/w/src/c", "/w/src/d", "/w/src/e"])
+    expect(paths(trace.missing)).toEqual(["/w/src/a/x", "/w/src/a/y", "/w/src/a/z"])
+  })
+
   it("sorts each open by what the run learned from it", () => {
     const trace = read([
       "100 execve(\"/bin/sh\", [\"sh\", \"-c\", \"x\"], 0x7ffd0 /* 3 vars */) = 0",

@@ -793,8 +793,19 @@ recording, with that reason on its row. Its verdict is the plain run's and
 nothing is stored for it, so no record holds a run that was cut off. A step
 whose signals come more slowly ends recorded, but each signal stops it for a
 round trip to `smthrs-observe`: a timer every few tens of microseconds makes it
-many times slower, and one line says how many times its recording stopped it. A
-recorded run ends when its command
+many times slower, and one line says how many times its recording stopped it.
+`smthrs-observe` writes each call's answer from a look just before the call
+goes on, and looks again once the call has ended, so a name another thread
+made or removed in between is written as the kernel answered. Where that
+cannot be known (two threads made and removed the same name at the same
+moment, or a thread changed its process's working directory while another
+named a path from it) nothing is stored, and the row says why:
+
+```text
+//:test  not cached: /w/out/lock was made and removed by calls of the run at the same moment, so which call did what cannot be known
+```
+
+A recorded run ends when its command
 ends: a process the command left running is stopped a second later, as a
 sandbox stops it. On macOS and Windows, where neither recorder can run, or
 where the host forbids it, the target is keyed by its `data` as any other

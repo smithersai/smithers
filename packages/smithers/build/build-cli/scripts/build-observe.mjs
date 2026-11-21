@@ -41,6 +41,8 @@ const kinds = {
   look: "K_LOOK",
   exec: "K_EXEC",
   chdir: "K_CHDIR",
+  // fchdir moves the working directory as chdir does: a call from it under way at once cannot be placed.
+  fchdir: "K_CHDIR",
   mkdir: "K_MKDIR",
   make: "K_MAKE",
   remove: "K_REMOVE",
