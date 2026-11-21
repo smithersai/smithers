@@ -219,8 +219,10 @@ int main(int argc, char **argv) {
     const key = NodePath.join(home, ".ssh/key")
     NodeFs.writeFileSync(key, "synthetic credential")
     vi.stubEnv("HOME", home)
-    expect(ProcessSandbox.host().home).toBe(home)
-    const service = ProcessConfinement.make({ temporaryDirectory: f.temporaryDirectory })
+    // The ambient host is read once per process (ProcessSandbox.host), so the home it names is handed over here,
+    // as a host whose home is inside the workspace would report it.
+    const facts: ProcessSandbox.Host = { ...ProcessSandbox.host(), home }
+    const service = ProcessConfinement.make({ temporaryDirectory: f.temporaryDirectory, host: facts })
     const execute = (args: ReadonlyArray<string>) =>
       Effect.runPromise(
         Effect.scoped(Effect.gen(function*() {
