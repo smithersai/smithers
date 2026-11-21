@@ -1039,24 +1039,40 @@ export const read = (lines: () => Iterable<string>, cwd: string, quiet: Readonly
    */
   const built = new Set<string>()
   /**
-   * Every directory above one that was ever in `built`. A name not here has
-   * nothing of `built` below it, so taking it away is looked up, not searched:
-   * an install links thousands of files into the thousands of directories it
-   * made.
+   * Every directory above one in `built`, with the names under it that are in
+   * `built` or above one. A name not here has nothing of `built` below it, so
+   * taking it away is looked up, not searched: an install links thousands of
+   * files into the thousands of directories it made. A name here is taken away
+   * by walking only what is under it: an install keeps thousands of
+   * directories it made while it moves each package it unpacked into place.
    */
-  const aboveBuilt = new Set<string>()
+  const aboveBuilt = new Map<string, Set<string>>()
   const build = (path: string): void => {
     built.add(path)
-    for (let above = NodePath.posix.dirname(path); above !== "/" && !aboveBuilt.has(above);) {
-      aboveBuilt.add(above)
+    for (let below = path, above = NodePath.posix.dirname(path); above !== "/";) {
+      const names = aboveBuilt.get(above)
+      if (names !== undefined) {
+        names.add(below)
+        break
+      }
+      aboveBuilt.set(above, new Set([below]))
+      below = above
       above = NodePath.posix.dirname(above)
     }
   }
   /** A name is taken away or given to something else: neither it nor anything under it is a directory the run made. */
   const unbuilt = (path: string): void => {
     built.delete(path)
-    if (!aboveBuilt.has(path)) return
-    for (const directory of built) if (directory.startsWith(`${path}/`)) built.delete(directory)
+    const under = [path]
+    for (let index = 0; index < under.length; index += 1) {
+      const names = aboveBuilt.get(under[index]!)
+      if (names === undefined) continue
+      aboveBuilt.delete(under[index]!)
+      for (const name of names) {
+        built.delete(name)
+        under.push(name)
+      }
+    }
   }
   /** Names the run removed or moved away. */
   const removed = new Set<string>()

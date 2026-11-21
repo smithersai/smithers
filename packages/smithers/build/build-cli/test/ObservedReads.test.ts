@@ -628,6 +628,37 @@ describe("reading a trace", () => {
     ])
   })
 
+  it("reads an install that unpacks thousands of packages in directories it made and moves each into place, in time", () => {
+    // `bun install` makes the directories of node_modules and keeps them, and unpacks each package in a directory
+    // it made and renames that into its cache: at eliza's 78e44531, 3,335 such moves among 84,999 directories made.
+    const lines: Array<string> = []
+    for (let index = 0; index < 60_000; index += 1) {
+      lines.push(`100 mkdirat(AT_FDCWD</w>, "modules/d${index}", 0777) = 0`)
+    }
+    for (let index = 0; index < 6_000; index += 1) {
+      lines.push(
+        `100 mkdirat(AT_FDCWD</w>, "tmp/p${index}", 0777) = 0`,
+        `100 mkdirat(AT_FDCWD</w>, "tmp/p${index}/lib", 0777) = 0`,
+        `100 renameat2(AT_FDCWD</w>, "tmp/p${index}", AT_FDCWD</w>, "cache/p${index}", 0) = 0`
+      )
+    }
+    lines.push(
+      `100 mkdirat(AT_FDCWD</w>, "tmp/kept", 0777) = 0`,
+      `100 mkdirat(AT_FDCWD</w>, "tmp/kept/lib", 0777) = 0`,
+      `100 openat(AT_FDCWD</w>, "tmp/kept/lib/lock", O_RDONLY|O_CREAT, 0666) = 3`,
+      `100 openat(AT_FDCWD</w>, "modules/d9/lock", O_RDONLY|O_CREAT, 0666) = 3`,
+      `100 openat(AT_FDCWD</w>, "tmp/p7/lib/lock", O_RDONLY|O_CREAT, 0666) = 3`
+    )
+    const began = performance.now()
+    const trace = read(lines.join("\n"))
+    // Searching every directory made at every move took 39 s here, on the build server.
+    expect(performance.now() - began).toBeLessThan(10_000)
+    expect(trace.refusals).toEqual([])
+    // A directory the run moved away is no longer one it made, nor is anything that was under it.
+    expect(["/w/tmp/kept/lib/lock", "/w/modules/d9/lock", "/w/tmp/p7/lib/lock"].map((path) => trace.made.has(path)))
+      .toEqual([true, true, false])
+  })
+
   it("leaves out what a quiet process and the processes it starts read, and keeps what they write", () => {
     const quiet = (text: string, words: ReadonlyArray<string>): ObservedReads.Trace =>
       ObservedReads.read(() => text.split("\n"), "/w", words)
