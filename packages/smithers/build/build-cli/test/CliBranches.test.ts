@@ -1023,6 +1023,23 @@ export const Package = S.Package({ targets: {
     expect(result.data.cache.directory).toBe(NodePath.join(root, ".inspection/cache"))
   })
 
+  it("info reads the workspace file it is given, and names the sandboxes that file declares", async () => {
+    const root = await packageFixture()
+    const declaration = NodePath.join(root, "WORKSPACE.ts")
+    const source = await Fs.readFile(declaration, "utf8")
+    await write(
+      root,
+      "WORKSPACE.ts",
+      source.replace(
+        "nodeModules: S.Npm.NodeModules({ packageJson }),",
+        "nodeModules: S.Npm.NodeModules({ packageJson }),\n  sandboxes: S.Sandboxes({ default: S.Sandbox.Bubblewrap() }),"
+      )
+    )
+    const info = await jsonCommand(root, ["info", "--workspace-file", declaration])
+    expect(info.exitCode, info.envelope).toBe(0)
+    expect(info.data).toMatchObject({ name: "fixture", declaration, sandboxProviders: ["default"] })
+  })
+
   it("reports its default identity and preserves an explicitly featured target", async () => {
     const root = await packageFixture()
     const source = await Fs.readFile(NodePath.join(root, "PACKAGE.ts"), "utf8")
