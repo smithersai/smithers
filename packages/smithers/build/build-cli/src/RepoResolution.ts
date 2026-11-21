@@ -58,6 +58,11 @@ export interface GitState {
   readonly status: string
 }
 
+/** A probe of a child repository that did not end in its time. */
+class ProbeTimeoutError extends Data.TaggedError("smithers-build/ProbeTimeoutError")<{
+  readonly message: string
+}> {}
+
 /**
  * A child CLI execution failed after streaming its output.
  *
@@ -191,7 +196,13 @@ const runProcess = (
     }
     const timeout = setTimeout(() => {
       child.kill("SIGKILL")
-      finish(() => reject(new Error(`child process ${[command, ...args].join(" ")} timed out after ${timeoutMs} ms`)))
+      finish(() =>
+        reject(
+          new ProbeTimeoutError({
+            message: `child process ${[command, ...args].join(" ")} timed out after ${timeoutMs} ms`
+          })
+        )
+      )
     }, timeoutMs)
     child.stdout.on("data", append(stdout))
     child.stderr.on("data", append(stderr))

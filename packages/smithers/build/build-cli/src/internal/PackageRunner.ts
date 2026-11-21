@@ -809,6 +809,11 @@ const execErrorText = (error: Exec.ExecError): string => {
   return `${head}: ${error.argv.join(" ")}${detail === "" ? "" : `\n${detail}`}`
 }
 
+/** The recorder ended before the step it recorded, so the build cannot say what the step did. */
+class RecorderStoppedError extends Data.TaggedError("smithers-build/RecorderStoppedError")<{
+  readonly message: string
+}> {}
+
 /** A manifest read or parse failed before compatibility could be judged. */
 class ApiCompatManifestError extends Data.TaggedError("smithers-build/ApiCompatManifestError")<{
   readonly path: string
@@ -5671,7 +5676,7 @@ const executeWith = (
     yield* Executor.scheduleEffect(planned.workList, jobs, runOne, options.signal, {
       stop: () => stoppedBy !== undefined || brokeOn !== undefined
     })
-    if (brokeOn !== undefined) return yield* Effect.fail(new Error(brokeOn))
+    if (brokeOn !== undefined) return yield* Effect.fail(new RecorderStoppedError({ message: brokeOn }))
     for (const node of planned.workList) {
       if (stoppedBy !== undefined && !reports.has(node.label)) cancel(node, 0, "not started")
     }
