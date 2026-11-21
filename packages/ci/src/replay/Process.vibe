@@ -289,17 +289,33 @@ export const originOf = (root: string) =>
   exec("git", ["config", "--get", "remote.origin.url"], root, {}, outputLimit, stdoutOf)
 
 /**
- * Makes `copy` from `source` with nothing checked out. It fetches from the
- * repository's remote, with no credential in the address, and can push
- * nowhere.
+ * The branch the repository's `origin` names as its default
+ * (`refs/remotes/origin/HEAD`), as the repository holds it.
  *
  * @category copies
  * @since 0.1.0
  */
-export effect function cloneCopy(work: string, source: string, copy: string, origin: Output) {
+export const originHeadOf = (root: string) =>
+  exec("git", ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], root, {}, outputLimit, stdoutOf)
+
+/**
+ * Makes `copy` from `source` with nothing checked out. It fetches from the
+ * repository's remote, with no credential in the address, and can push
+ * nowhere. Its `origin/HEAD` names the repository's default branch, as
+ * `head` gives it: a copy cloned from the replay's own clone would otherwise
+ * take the branch the person has checked out for the default one.
+ *
+ * @category copies
+ * @since 0.1.0
+ */
+export effect function cloneCopy(work: string, source: string, copy: string, origin: Output, head: Output) {
   const noPush = ["--config", `remote.origin.pushurl=${noPushUrl}`]
   try git(work, ["clone", "--quiet", "--shared", "--no-checkout", ...noPush, source, copy])
   if (origin.exitCode === 0) try git(copy, ["remote", "set-url", "origin", withoutCredentials(origin.text)])
+  const named = head.text.trim()
+  if (head.exitCode === 0 && named.startsWith("refs/remotes/origin/")) {
+    try git(copy, ["symbolic-ref", "refs/remotes/origin/HEAD", named])
+  }
 }
 
 /**

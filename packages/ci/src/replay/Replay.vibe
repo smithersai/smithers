@@ -102,6 +102,7 @@ import {
   git,
   lines,
   orFail,
+  originHeadOf,
   originOf,
   outputLimit,
   pastLimit,
@@ -675,6 +676,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     // A copy has the repository's directory name and remote, so a reader names it as it does in place.
     const origin = try originOf(root)
+    // And the repository's default branch: a copy's own `origin` is the replay's clone, at the person's branch.
+    const defaultHead = try originHeadOf(root)
 
     /** Checks `commit` out in `copy` and removes every file the commit does not hold: nothing of ours is there. */
     const checkout = (copy: string, commit: string, place: Confined) => checkoutAt(copy, commit, place, [])
@@ -684,7 +687,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * push nowhere.
      */
     effect function cloneAt(copy: string, commit: string, place: Confined) {
-      try cloneCopy(work, source, copy, origin)
+      try cloneCopy(work, source, copy, origin, defaultHead)
       try checkout(copy, commit, place)
     }
 

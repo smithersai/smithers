@@ -2,12 +2,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
+import { execFileSync } from "node:child_process"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { reasonOf } from "../../src/replay/Failures.ts"
-import { exec, runStep } from "../../src/replay/Process.vibe"
+import { cloneCopy, exec, originHeadOf, originOf, runStep } from "../../src/replay/Process.vibe"
 
 const made: Array<string> = []
 afterAll(() => made.forEach((path) => rmSync(path, { recursive: true, force: true })))
@@ -102,5 +103,72 @@ describe("what a failed step printed", { timeout: 120_000 }, () => {
     ) as { readonly exitCode: number; readonly stderr: string; readonly stdout: string }
     expect(run).toMatchObject({ exitCode: 1, stderr: steps.isPlainObj.stderr, stdout: steps.isPlainObj.stdout })
     expect(reasonOf(run)).toBe("TypeError: util.isDate is not a function")
+  })
+})
+
+/** Runs git in `cwd` and answers what it printed, trimmed. */
+const gitIn = (cwd: string, ...args: ReadonlyArray<string>): string =>
+  execFileSync("git", [...args], {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_AUTHOR_NAME: "t",
+      GIT_AUTHOR_EMAIL: "t@t",
+      GIT_COMMITTER_NAME: "t",
+      GIT_COMMITTER_EMAIL: "t@t"
+    }
+  }).trim()
+
+describe("a copy of the repository a replay makes", { timeout: 120_000 }, () => {
+  /** An upstream whose default branch is `develop`, and the person's clone of it, checked out on a branch of theirs. */
+  const repositories = () => {
+    const base = directory()
+    const upstream = join(base, "upstream")
+    gitIn(base, "init", "--quiet", "--initial-branch=develop", upstream)
+    writeFileSync(join(upstream, "a.txt"), "a\n")
+    gitIn(upstream, "add", "a.txt")
+    gitIn(upstream, "commit", "--quiet", "-m", "first")
+    const person = join(base, "person")
+    gitIn(base, "clone", "--quiet", upstream, person)
+    gitIn(person, "checkout", "--quiet", "-b", "my-feature")
+    // The replay's own clone of the person's repository, as it makes one: its HEAD is the person's branch.
+    const source = join(base, "source")
+    gitIn(base, "clone", "--quiet", "--no-checkout", person, source)
+    return { base, person, source }
+  }
+
+  const copied = async (
+    head: { readonly exitCode: number; readonly text: string },
+    { base, person, source }: ReturnType<typeof repositories> = repositories()
+  ) => {
+    const copy = join(base, "copy")
+    const origin = await onNode(originOf(person).pipe(Effect.provide(NodeServices.layer)) as never)
+    await onNode(
+      cloneCopy(base, source, copy, origin as never, head as never).pipe(Effect.provide(NodeServices.layer)) as never
+    )
+    return { copy, person }
+  }
+
+  // Read.vibe takes the default branch from `origin/HEAD`, and then a condition such as `github.ref ==
+  // 'refs/heads/develop'` or a `pull_request: branches: [develop]` filter is judged for that branch.
+  it("names the repository's default branch, not the branch the person has checked out", async () => {
+    const repos = repositories()
+    const { person } = repos
+    const head = await onNode(originHeadOf(person).pipe(Effect.provide(NodeServices.layer)) as never) as {
+      readonly exitCode: number
+      readonly text: string
+    }
+    expect(head.exitCode).toBe(0)
+    expect(head.text.trim()).toBe("refs/remotes/origin/develop")
+    const { copy } = await copied(head, repos)
+    expect(gitIn(copy, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")).toBe("origin/develop")
+    expect(gitIn(copy, "remote", "get-url", "origin")).toBe(gitIn(person, "remote", "get-url", "origin"))
+  })
+
+  it("keeps the copy's own when the repository names no default branch", async () => {
+    const { copy } = await copied({ exitCode: 1, text: "" })
+    expect(gitIn(copy, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")).toBe("origin/my-feature")
   })
 })

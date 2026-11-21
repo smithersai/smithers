@@ -49,6 +49,7 @@ import {
   git,
   lines,
   orFail,
+  originHeadOf,
   originOf,
   type Output,
   outputLimit,
@@ -332,6 +333,8 @@ export const own = <R>(
     try orFail(fs.makeDirectory(records), "could not make a directory")
     try git(work, ["clone", "--quiet", "--no-checkout", root, source])
     const origin = try originOf(root)
+    // And the repository's default branch: a copy's own `origin` is the replay's clone, at the person's branch.
+    const defaultHead = try originHeadOf(root)
     const history = lines(try git(source, ["rev-list", "--first-parent", `--max-count=${request.commits}`, "HEAD"]))
     const commits = [...history].reverse()
     // A partial clone lacks the files of past commits, and a shallow clone the commits before its oldest.
@@ -345,7 +348,7 @@ export const own = <R>(
      */
     effect function copyOf(way: Way) {
       const copy = path.join(work, way, path.basename(root))
-      try cloneCopy(work, source, copy, origin)
+      try cloneCopy(work, source, copy, origin, defaultHead)
       // Every copy starts with a whole tree, so the first timed checkout is the same work in each mode.
       try git(copy, ["checkout", "--quiet", "--force", "--detach", "HEAD"], places[way])
       return copy
