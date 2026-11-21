@@ -11,6 +11,7 @@
  * file, `EACCES` past a closed directory), the line must still say the path
  * was there or that it could not be looked at, never that it was missing.
  */
+import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import { spawn, spawnSync } from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
@@ -436,6 +437,66 @@ describe("smthrs-observe and names a line cannot hold", () => {
     const read = ObservedReads.read(() => NodeFs.readFileSync(trace, "utf8").split("\n"), base)
     expect(read.refusals).toEqual([])
     expect(read.listed.has(odd)).toBe(true)
+  })
+})
+
+/**
+ * npm makes its cache's directories with node's recursive mkdir, many at once
+ * on the thread pool. A thread asks for `c/t0/a/b1` while `c/t0/a` is
+ * missing; another makes `c/t0/a` before that call runs, and the call then
+ * makes `b1`. The answer read at the stop said the directory was missing, so
+ * no line said the run made `b1`, and the step read as one that found it
+ * missing: at the next commit, with npm's cache kept, `b1` "now exists" and
+ * `npm ci` ran again (about one run in ten of the generated job).
+ */
+const racing = String.raw`
+import { mkdir } from "node:fs/promises"
+const root = process.argv[2]
+for (let i = 0; i < 40; i++) {
+  await Promise.all(Array.from({ length: 16 }, (_, k) => mkdir(root + "/c/t" + i + "/a/b" + k, { recursive: true })))
+}
+`
+
+/** strace where the host has it: it writes the answer each call got, so it must agree. */
+const strace = ObservedReads.observer({ ...ExecSandbox.host(), supervisor: undefined })
+const straced = it.skipIf(!("tracer" in strace) || "supervisor" in strace)
+
+/** Records `racing` with a recorder, and says which directories it made that the record does not hold as made. */
+const race = async (recorder: { readonly tracer: string; readonly supervisor?: true }) => {
+  const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-racing-")))
+  temporary.push(base)
+  const root = Path.join(base, "w")
+  await Fs.mkdir(root)
+  const script = Path.join(base, "racing.mjs")
+  await Fs.writeFile(script, racing)
+  const trace = Path.join(base, "trace")
+  // When the run began, as the file system's clock tells it, a tick after the script was written.
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  await Fs.writeFile(Path.join(base, "mark"), "")
+  const startedMs = NodeFs.statSync(Path.join(base, "mark")).ctimeMs
+  const [program, ...rest] = ObservedReads.commandFor(recorder, trace, [process.execPath, script, root])
+  const run = spawnSync(program!, rest, { encoding: "utf8", env: { ...process.env, UV_THREADPOOL_SIZE: "16" } })
+  expect(run.status, run.stderr).toBe(0)
+  const read = ObservedReads.read(() => NodeFs.readFileSync(trace, "utf8").split("\n"), root)
+  expect(read.refusals).toEqual([])
+  const made = NodeFs.readdirSync(Path.join(root, "c"), { recursive: true }).map((name) => Path.join(root, "c", name))
+  expect(made).toHaveLength(40 * 18)
+  const observed = ObservedReads.observe(read, { root: base, ignore: [], startedMs })
+  if ("refusal" in observed) throw new Error(observed.refusal)
+  return {
+    unmade: made.filter((directory) => !read.made.has(directory)),
+    // A directory the run found missing and then made holds in either state: none is held as missing alone.
+    missingAlone: observed.record.reads.filter((row) => row[0].startsWith("w/c") && row.length === 2)
+  }
+}
+
+describe("smthrs-observe and names made by threads at once", () => {
+  supervised("says the run made each directory it made, though another thread made the one it goes in", async () => {
+    expect(await race({ tracer: supervisor!, supervisor: true })).toEqual({ unmade: [], missingAlone: [] })
+  })
+
+  straced("says the same as strace, which writes the answer each call got", async () => {
+    expect(await race(strace as { readonly tracer: string })).toEqual({ unmade: [], missingAlone: [] })
   })
 })
 

@@ -20,6 +20,11 @@
  * only add to what the record holds:
  *
  * - A name counts as made by the run only where this supervisor saw it absent at a stop of this run.
+ * - A call that makes a name where the directory it goes in was missing at the stop is looked at again once the call
+ *   has surely ended: at the next stop of the same thread, or at the end of the run. Another thread may have made the
+ *   directory between the stop and the call (npm makes its cache's directories so, many at once), and the call then
+ *   made the name. Where the name is there by then, the line says the call made it; written as missing, the name
+ *   would read as one the run found missing and something else made.
  * - Before a call that writes a name that is already there (a rename, a link, a symlink, an exclusive create), a
  *   line notes that the run found it there.
  * - A program a process starts is written with no answer (`= ?`): it counts as looked at and started, and changes
@@ -520,11 +525,12 @@ static void rights(const char *program) {
   pthread_mutex_unlock(&lock);
 }
 
-static void keep(uint64_t id, uint32_t sub, struct text *t) {
+/* Keeps a line; answers its place among the lines, or -1 when it could not be kept. */
+static long keep(uint64_t id, uint32_t sub, struct text *t) {
   if (t->failed) {
     __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
     free(t->data);
-    return;
+    return -1;
   }
   pthread_mutex_lock(&lock);
   if (all.count == all.capacity) {
@@ -534,13 +540,15 @@ static void keep(uint64_t id, uint32_t sub, struct text *t) {
       dropped = 1;
       pthread_mutex_unlock(&lock);
       free(t->data);
-      return;
+      return -1;
     }
     all.items = items;
     all.capacity = capacity;
   }
+  long place = (long)all.count;
   all.items[all.count++] = (struct line){id, sub, (uint32_t)t->length, t->data};
   pthread_mutex_unlock(&lock);
+  return place;
 }
 
 /* A thread's process. A thread id is not given again while the thread lives, and the run's threads live while
@@ -1023,6 +1031,89 @@ static void answer(struct text *t, int error) {
     return;
   }
   printf_(t, " = -1 %s (%s)", errnoName(error), strerror(error));
+}
+
+/* A call that makes a name, answered before it ran that the directory the name goes in is missing: its line, where
+ * the answer starts in it, and the name. */
+struct made {
+  pid_t tid;
+  size_t place, at;
+  char *name;
+  struct made *next;
+};
+#define MADE_BUCKETS 1024
+static struct made *madeAfter[MADE_BUCKETS];
+static pthread_mutex_t making = PTHREAD_MUTEX_INITIALIZER;
+
+/* Answers a call that makes `name`, and notes where the answer starts when the name was missing and so was its
+ * directory: the answer may be wrong by the time the call runs (madeYet). */
+static void answerMaking(struct text *t, int error, int missing, const char *name, const char **made, size_t *at) {
+  if (missing && (error == ENOENT || error == ENOTDIR)) {
+    *made = name;
+    *at = t->length;
+  }
+  answer(t, error);
+}
+
+static void awaitMade(pid_t tid, long place, size_t at, const char *name) {
+  if (place < 0) return;
+  struct made *m = malloc(sizeof *m);
+  if (m == NULL) return;
+  m->name = strdup(name);
+  if (m->name == NULL) {
+    free(m);
+    return;
+  }
+  m->tid = tid;
+  m->place = (size_t)place;
+  m->at = at;
+  pthread_mutex_lock(&making);
+  struct made **bucket = &madeAfter[(unsigned)tid % MADE_BUCKETS];
+  m->next = *bucket;
+  *bucket = m;
+  pthread_mutex_unlock(&making);
+}
+
+/* The call has ended: where its name is there now, the call made it. */
+static void madeYet(struct made *m) {
+  if (look(m->name, 1) == 0) {
+    pthread_mutex_lock(&lock);
+    struct line *l = &all.items[m->place];
+    char *text = m->at <= l->length ? realloc(l->text, m->at + 4) : NULL;
+    if (text != NULL) {
+      memcpy(text + m->at, " = 0", 4);
+      l->text = text;
+      l->length = (uint32_t)(m->at + 4);
+    }
+    pthread_mutex_unlock(&lock);
+  }
+  free(m->name);
+  free(m);
+}
+
+/* A thread stopped again, so its last call ended. With `tid` 0, the run ended, and every call did. */
+static void settleMade(pid_t tid) {
+  struct made *ended = NULL;
+  pthread_mutex_lock(&making);
+  for (unsigned b = tid == 0 ? 0 : (unsigned)tid % MADE_BUCKETS; b < MADE_BUCKETS; b++) {
+    for (struct made **at = &madeAfter[b]; *at != NULL;) {
+      struct made *m = *at;
+      if (tid != 0 && m->tid != tid) {
+        at = &m->next;
+        continue;
+      }
+      *at = m->next;
+      m->next = ended;
+      ended = m;
+    }
+    if (tid != 0) break;
+  }
+  pthread_mutex_unlock(&making);
+  while (ended != NULL) {
+    struct made *next = ended->next;
+    madeYet(ended);
+    ended = next;
+  }
 }
 
 static void begin(struct text *t, pid_t tgid, const char *name) { printf_(t, "%d %s(", tgid, name); }
@@ -1559,6 +1650,7 @@ static void startedYet(pid_t tid, pid_t tgid) {
 static void serve(const struct seccomp_notif *req) {
   pid_t tid = (pid_t)req->pid;
   uint64_t id = req->id;
+  settleMade(tid);
   if (req->data.arch != NATIVE_ARCH || (req->data.nr & (int)X32_BIT) != 0) {
     unrecorded("a program of another architecture ran, whose calls this recorder does not read");
     return;
@@ -1572,6 +1664,9 @@ static void serve(const struct seccomp_notif *req) {
   char path[PATH_MAX + 1], other[PATH_MAX + 1];
   const char *why = NULL;
   struct text t = {0};
+  /* A name this call makes, answered as missing with its directory, and where in the line the answer starts. */
+  const char *made = NULL;
+  size_t madeAt = 0;
   if (c->kind == K_MKDIR || c->kind == K_REMOVE || c->kind == K_RENAME || c->kind == K_LINK || c->kind == K_SYMLINK ||
       c->kind == K_CHANGE) {
     __atomic_add_fetch(&namesChanged, 1, __ATOMIC_ACQ_REL);
@@ -1587,7 +1682,7 @@ static void serve(const struct seccomp_notif *req) {
         flags = O_WRONLY | O_CREAT | O_TRUNC; /* creat */
       }
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
-      int error, directory = 0;
+      int error, directory = 0, missing = 0;
       int reading = (flags & (O_ACCMODE | O_CREAT | O_TRUNC | O_TMPFILE)) == O_RDONLY;
       if (!reading) __atomic_add_fetch(&namesChanged, 1, __ATOMIC_ACQ_REL);
       if ((flags & O_TMPFILE) == O_TMPFILE) {
@@ -1595,6 +1690,7 @@ static void serve(const struct seccomp_notif *req) {
         error = look(path, 0);
       } else if (flags & O_CREAT) {
         error = look(path, 1);
+        missing = error == ENOENT;
         if ((flags & O_EXCL) && error == 0) {
           error = EEXIST;
         } else if (error == ENOENT) {
@@ -1612,7 +1708,7 @@ static void serve(const struct seccomp_notif *req) {
       puts_(&t, ", ");
       openFlags(&t, flags);
       puts_(&t, ")");
-      answer(&t, error);
+      answerMaking(&t, error, missing, path, &made, &madeAt);
       if (error == 0 && directory && !pseudo(path)) {
         /* A directory opened is a directory listed: no listing is watched, and what is in it counts. */
         keep(id, 2, &t);
@@ -1721,13 +1817,13 @@ static void serve(const struct seccomp_notif *req) {
     }
     case K_MKDIR: {
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
-      int error = look(path, 1);
-      error = error == 0 ? EEXIST : error == ENOENT ? parentThere(path, 1, 0) : error;
+      int there = look(path, 1);
+      int error = there == 0 ? EEXIST : there == ENOENT ? parentThere(path, 1, 0) : there;
       begin(&t, tgid, "mkdirat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
       puts_(&t, ", 0777)");
-      answer(&t, error);
+      answerMaking(&t, error, there == ENOENT, path, &made, &madeAt);
       break;
     }
     case K_REMOVE: {
@@ -1788,7 +1884,7 @@ static void serve(const struct seccomp_notif *req) {
       puts_(&t, ", AT_FDCWD, ");
       quotedz(&t, other);
       puts_(&t, ", 0)");
-      answer(&t, error);
+      answerMaking(&t, error, from == 0 && to == ENOENT, other, &made, &madeAt);
       break;
     }
     case K_SYMLINK: {
@@ -1805,7 +1901,7 @@ static void serve(const struct seccomp_notif *req) {
       puts_(&t, ", AT_FDCWD, ");
       quotedz(&t, path);
       puts_(&t, ")");
-      answer(&t, error);
+      answerMaking(&t, error, there == ENOENT, path, &made, &madeAt);
       break;
     }
     case K_CONNECT:
@@ -1986,7 +2082,8 @@ static void serve(const struct seccomp_notif *req) {
     }
   }
   if (t.data == NULL && !t.failed) return;
-  keep(id, 2, &t);
+  long place = keep(id, 2, &t);
+  if (made != NULL && why == NULL) awaitMade(tid, place, madeAt, made);
 }
 
 static void *serving(void *unused) {
@@ -2500,6 +2597,7 @@ int main(int argc, char **argv) {
   }
   close(listener);
   boundSockets();
+  settleMade(0);
 #ifdef STORM_STATS
   fprintf(stderr, "storm-stats: most stops %u over %ld ms\n", mostStops, longestMs);
 #endif
