@@ -209,6 +209,18 @@ only.
 | `smithers/agent` | `separates recorded file picks that came back flat, over the live gateway` | `ctx.skip` when `SMITHERS_LIVE_MODEL_TESTS !== "1"` or `AI_GATEWAY_API_KEY` is unset |
 | `smithers/agent/model` | `requireLiveGateway` | `ctx.skip` when `SMITHERS_LIVE_MODEL_TESTS !== "1"` or `AI_GATEWAY_API_KEY` is unset |
 | `smithers/agent/model` | `requireKey` | `ctx.skip` when `SMITHERS_LIVE_MODEL_TESTS !== "1"` or `CEREBRAS_API_KEY` is unset |
+| `ci` | `the model, on a machine with a key` | `describe.runIf(process.env["AI_GATEWAY_API_KEY"])`: the live model answer needs a gateway key |
+| `ci` | `reruns only the scripts that read a changed file, and fails where the chain fails` | `it.skipIf(!observes \|\| !installed(manager.name))`: needs the host's file-read observation and that package manager on PATH |
+| `smithers/build/build-cli` | `goCase("Go selected SDK execution", olderGo !== undefined, "a Go launcher older than 1.26 (SMITHERS_TEST_OLDER_GO)")` | `describe.runIf(!skipGo && olderGo !== undefined)`: needs `SMITHERS_TEST_OLDER_GO`; `goCase` names the missing tool in the title |
+| `smithers/build/build-cli` | `goCase("Go empty package selections", hasGo, "Go 1.26 or later on PATH")` | `describe.runIf(!skipGo && hasGo)`: needs Go 1.26 or later |
+| `smithers/build/build-cli` | `goCase("Go package execution", hasGo, "Go 1.26 or later on PATH")` | `describe.runIf(!skipGo && hasGo)`: needs Go 1.26 or later |
+| `smithers/build/build-cli` | `goCase("Go native compiler inputs", hasGo, "Go 1.26 or later on PATH")` | `describe.runIf(!skipGo && hasGo)`: needs Go 1.26 or later |
+| `smithers/build/build-cli` | `Nix imported environment inputs` | `describe.skipIf(process.env["SMITHERS_TEST_NIX_IMPORTS"] !== "1")`: needs Nix on PATH and a writable local Nix store |
+| `smithers` | `does not where bubblewrap is there and does not start` | `it.skipIf(bwrap === undefined)`: needs bubblewrap on PATH |
+| `smithers` | `does on a machine whose bubblewrap starts, asked of the machine itself` | `it.skipIf(!holds)`: needs a host where bubblewrap starts |
+| `smithers` | `smthrs started with the token to run targets` | `describe.skipIf(!holds)`: needs a host where bubblewrap starts |
+| `smithers/agent` | `refuses a missing ambient Gemini key up front` | `it.skipIf` when `GEMINI_API_KEY` is set: the case proves the refusal without a key |
+| `smithers/agent` | `runs the real Gemini stack (requires SMITHERS_LIVE_EXAMPLES=1 and GEMINI_API_KEY)` | `it.effect.skipIf(!liveEnabled \|\| !hasKey)` |
 
 **Configuration ownership and callback replay:** `16d282b8981a` retained the
 configuration writer race as known broken: another writer can replace the file

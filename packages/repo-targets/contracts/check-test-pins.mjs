@@ -39,8 +39,12 @@ export const guardedGroups = new Set(["engine", "agent", "tooling"])
 
 export const notesPath = join(repoRoot, "packages/repo-targets/contracts", "test-pins.md")
 
-/** This guard's own suite, which lives in a guarded package and spells every pin form as a fixture. */
-const ownSuite = fileURLToPath(new URL("./check-test-pins.test.mjs", import.meta.url))
+/**
+ * Suites that spell skip forms as string fixtures: this guard's own, and the fault-case audit, which feeds
+ * `it.skip("x", fn)` and its kin to its marker reader. Their fixtures are not pins.
+ */
+const fixtureSuites = new Set(["./check-test-pins.test.mjs", "./fault-skips.test.mjs"]
+  .map((suite) => fileURLToPath(new URL(suite, import.meta.url))))
 
 /**
  * Matches an outright pin's modifier, and a `.each(` table call after it.
@@ -422,7 +426,7 @@ export const undocumentedPins = (notes = readFileSync(notesPath, "utf8"), packag
     const packageName = relative(join(repoRoot, "packages"), packageDirectory)
     const supplied = suppliedEnv(packageDirectory)
     for (const file of testFilesUnder(packageDirectory)) {
-      if (file === ownSuite) continue
+      if (fixtureSuites.has(file)) continue
       for (const pin of findPins(readFileSync(file, "utf8"), supplied)) {
         if (documented.has(`${packageName}\u0000${pin.title}`)) continue
         unexplained.push({ ...pin, file: relative(repoRoot, file) })
