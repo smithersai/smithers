@@ -28,6 +28,7 @@ import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
 import * as PackageTree from "../src/PackageTree.ts"
 import * as StampExec from "../src/StampExec.ts"
+import { goCase, runsGo } from "./helpers/HostGo.ts"
 import { write } from "./helpers/WriteFile.ts"
 
 const roots: Array<string> = []
@@ -577,7 +578,7 @@ describe("measured tool reuse", () => {
     expect(node.refusal).toBeUndefined()
     expect(node.argv?.[0]).toMatch(/node$/)
   })
-  it("expands a real Go one-shot reference without executing its package", async () => {
+  it.runIf(runsGo())(goCase("expands a real Go one-shot reference without executing its package"), async () => {
     const { options } = await fixture(
       "export const Package=S.Package({targets:{command:S.Shell.Test({bin:S.Go.run(\"example.invalid/probe@v1\")})}})"
     )
@@ -595,26 +596,29 @@ const goFiles = {
   "main.go": "package main\nfunc main(){}\n"
 }
 describe("Go generator tool authority", () => {
-  it.each(["host", "missing", "one-shot"])("plans generator tool %s without executing directives", async (kind) => {
-    const tool = kind === "host"
-      ? "S.Host.bin(\"sh\")"
-      : kind === "missing"
-      ? "S.Host.bin(\"missing-generator\")"
-      : "S.Runtime.npx(\"generator@1\")"
-    const { options } = await fixture(
-      declared("Go.Generate", `{pkgs:["./..."],changes:["generated.go"],tools:[${tool}]}`),
-      goFiles,
-      goLayer
-    )
-    const plan = await PackageExec.plan(options), node = plan.nodes.get("//:command")!
-    if (kind === "host") {
-      expect(node.refusal).toBeUndefined()
-      // The generator reaches PATH at spawn as its exact executable; no host
-      // directory enters the keyed environment.
-      expect(node.env.PATH).toBeUndefined()
-      expect(node.pathTools).toEqual([{ name: "sh", path: PackageTree.findOnPath("sh")! }])
-    } else expect(node.refusal).toContain(kind === "missing" ? "missing-generator" : "not as PATH tools")
-  })
+  it.runIf(runsGo()).each(["host", "missing", "one-shot"])(
+    goCase("plans generator tool %s without executing directives"),
+    async (kind) => {
+      const tool = kind === "host"
+        ? "S.Host.bin(\"sh\")"
+        : kind === "missing"
+        ? "S.Host.bin(\"missing-generator\")"
+        : "S.Runtime.npx(\"generator@1\")"
+      const { options } = await fixture(
+        declared("Go.Generate", `{pkgs:["./..."],changes:["generated.go"],tools:[${tool}]}`),
+        goFiles,
+        goLayer
+      )
+      const plan = await PackageExec.plan(options), node = plan.nodes.get("//:command")!
+      if (kind === "host") {
+        expect(node.refusal).toBeUndefined()
+        // The generator reaches PATH at spawn as its exact executable; no host
+        // directory enters the keyed environment.
+        expect(node.env.PATH).toBeUndefined()
+        expect(node.pathTools).toEqual([{ name: "sh", path: PackageTree.findOnPath("sh")! }])
+      } else expect(node.refusal).toContain(kind === "missing" ? "missing-generator" : "not as PATH tools")
+    }
+  )
   it("refuses a missing Go executable by name", async () => {
     const { options } = await fixture(declared("Go.Test", "{pkgs:[\"./...\"]}"), goFiles, goLayer)
     const plan = await PackageExec.plan({ ...options, environment: { PATH: "/definitely-absent-planner-path" } })
@@ -782,7 +786,7 @@ describe("generator and installation identities", () => {
     const plan = await PackageExec.plan(options)
     expect(plan.nodes.get("//:command")?.refusal).toContain("node_modules binary not found")
   })
-  it("binds the Go generator environment without running its one-shot package", async () => {
+  it.runIf(runsGo())(goCase("binds the Go generator environment without running its one-shot package"), async () => {
     const { options } = await fixture(
       declared("Generate", "{bin:S.Go.run('example.invalid/tool@v1'),env:{MODE:'public'},changes:[]}"),
       goFiles,
@@ -974,7 +978,7 @@ describe("SDK and interpreter authority", () => {
     if (kind === "no command") await expect(PackageExec.plan(options)).rejects.toThrow("cannot identify env shebang")
     else expect((await PackageExec.plan(options)).nodes.get("//:command")?.refusal).toBeUndefined()
   })
-  it("deduplicates a real SDK grant shared by distinct Go references", async () => {
+  it.runIf(runsGo())(goCase("deduplicates a real SDK grant shared by distinct Go references"), async () => {
     const { options } = await fixture(
       "export const Package=S.Package({targets:{command:S.Shell.Test({bin:S.Go.bin,tools:[S.Go.run('example.invalid/tool@v1')]})}})"
     )
@@ -982,7 +986,7 @@ describe("SDK and interpreter authority", () => {
     expect(node.refusal).toBeUndefined()
     expect(new Set(node.externalReads).size).toBe(node.externalReads.length)
   })
-  it("keeps a workspace-owned SDK outside external read grants", async () => {
+  it.runIf(runsGo())(goCase("keeps a workspace-owned SDK outside external read grants"), async () => {
     const sdk = execFileSync("go", ["env", "GOROOT"], { encoding: "utf8" }).trim()
     const { root, options } = await fixture(
       "export const Package=S.Package({targets:{command:S.Shell.Test({bin:S.Go.bin})}})"
@@ -1007,7 +1011,7 @@ describe("SDK and interpreter authority", () => {
     const plan = await PackageExec.plan(options)
     expect(plan.nodes.get("//:command")?.refusal).toBeUndefined()
   })
-  it("refuses an invalid Go module graph with its planning cause", async () => {
+  it.runIf(runsGo())(goCase("refuses an invalid Go module graph with its planning cause"), async () => {
     const { options } = await fixture(declared("Go.Test", "{pkgs:[\"./...\"]}"), {
       ...goFiles,
       "go.mod": "not a module\n"
@@ -1348,23 +1352,26 @@ export const Package=S.Package({targets:{selected,other,command}})`,
       else process.env.PATH = previous
     }
   })
-  it("plans generator tools with an explicit environment when the process has no PATH", async () => {
-    const { options } = await fixture(
-      declared("Go.Generate", "{pkgs:['./...'],changes:['generated.go'],tools:[S.Host.bin('sh')]}"),
-      goFiles,
-      goLayer
-    )
-    const environment = { ...process.env }, previous = process.env.PATH
-    delete process.env.PATH
-    try {
-      const node = (await PackageExec.plan({ ...options, environment })).nodes.get("//:command")!
-      expect(node.refusal).toBeUndefined()
-      expect(node.env.PATH).toBeUndefined()
-      expect(node.pathTools).toEqual([{ name: "sh", path: PackageTree.findOnPath("sh", environment)! }])
-    } finally {
-      if (previous !== undefined) process.env.PATH = previous
+  it.runIf(runsGo())(
+    goCase("plans generator tools with an explicit environment when the process has no PATH"),
+    async () => {
+      const { options } = await fixture(
+        declared("Go.Generate", "{pkgs:['./...'],changes:['generated.go'],tools:[S.Host.bin('sh')]}"),
+        goFiles,
+        goLayer
+      )
+      const environment = { ...process.env }, previous = process.env.PATH
+      delete process.env.PATH
+      try {
+        const node = (await PackageExec.plan({ ...options, environment })).nodes.get("//:command")!
+        expect(node.refusal).toBeUndefined()
+        expect(node.env.PATH).toBeUndefined()
+        expect(node.pathTools).toEqual([{ name: "sh", path: PackageTree.findOnPath("sh", environment)! }])
+      } finally {
+        if (previous !== undefined) process.env.PATH = previous
+      }
     }
-  })
+  )
 })
 
 describe("index ownership boundaries", () => {
@@ -1541,7 +1548,7 @@ describe("cleanup value members", () => {
 })
 
 describe("relative SDK configuration", () => {
-  it("never admits a relative Go SDK root as external authority", async () => {
+  it.runIf(runsGo())(goCase("never admits a relative Go SDK root as external authority"), async () => {
     const sdk = execFileSync("go", ["env", "GOROOT"], { encoding: "utf8" }).trim()
     const relative = "../".repeat(32) + sdk.slice(1)
     const { root, options } = await fixture(

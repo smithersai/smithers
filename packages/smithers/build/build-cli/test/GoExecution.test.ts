@@ -14,6 +14,7 @@ import * as PackageLoader from "../src/PackageLoader.ts"
 import * as PackageTree from "../src/PackageTree.ts"
 import { writeExecutable } from "./helpers/Executable.ts"
 import { executeWithServices } from "./helpers/ExecuteWithServices.ts"
+import { goCase, runsGo } from "./helpers/HostGo.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -82,21 +83,13 @@ const olderGo = await (async (): Promise<string | undefined> => {
   return undefined
 })()
 
-describe.skipIf(skipGo)("Go execution host requirements", () => {
-  it("requires a Go launcher that selects Go 1.26 or later", () => {
-    expect(
-      hasGo,
-      "Go execution tests require Go >= 1.26; SMITHERS_TEST_SKIP_GO=1 explicitly opts out of Go execution coverage"
-    ).toBe(true)
-  })
-
-  it("requires an older launcher for selected SDK coverage", () => {
-    expect(
-      olderGo,
-      "Install Go < 1.26 and set SMITHERS_TEST_OLDER_GO to its executable; " +
-        "SMITHERS_TEST_SKIP_GO=1 explicitly opts out of Go execution coverage"
-    ).toBeDefined()
-  })
+describe("Go execution host requirements", () => {
+  it.runIf(runsGo(hasGo))(
+    goCase("requires a Go launcher that selects Go 1.26 or later", hasGo, "Go 1.26 or later on PATH"),
+    () => {
+      expect(hasGo, "Go execution tests require Go >= 1.26 on CI; SMITHERS_TEST_SKIP_GO=1 opts out").toBe(true)
+    }
+  )
 })
 
 /**
@@ -198,43 +191,46 @@ export const Package = S.Package({ targets: { all, binary, fetch, fuzz, generate
   return root
 }
 
-describe.runIf(!skipGo && olderGo !== undefined)("Go selected SDK execution", () => {
-  it("builds with the already selected SDK rather than the older Go launcher", async () => {
-    const root = await fixture()
-    const selected = JSON.parse(NodeChildProcess.execFileSync(olderGo!, ["env", "-json", "GOROOT", "GOTOOLDIR"], {
-      cwd: root,
-      encoding: "utf8"
-    })) as { GOROOT: string; GOTOOLDIR: string }
-    const sdkGo = NodePath.join(selected.GOROOT, "bin", process.platform === "win32" ? "go.exe" : "go")
-    expect(selected.GOROOT).not.toBe(NodePath.dirname(NodePath.dirname(olderGo!)))
-    expect(await Fs.stat(sdkGo)).toBeDefined()
-    const control = await serve(await fixture(), ["build", "//:binary"], {
-      environment: {
+describe.runIf(!skipGo && olderGo !== undefined)(
+  goCase("Go selected SDK execution", olderGo !== undefined, "a Go launcher older than 1.26 (SMITHERS_TEST_OLDER_GO)"),
+  () => {
+    it("builds with the already selected SDK rather than the older Go launcher", async () => {
+      const root = await fixture()
+      const selected = JSON.parse(NodeChildProcess.execFileSync(olderGo!, ["env", "-json", "GOROOT", "GOTOOLDIR"], {
+        cwd: root,
+        encoding: "utf8"
+      })) as { GOROOT: string; GOTOOLDIR: string }
+      const sdkGo = NodePath.join(selected.GOROOT, "bin", process.platform === "win32" ? "go.exe" : "go")
+      expect(selected.GOROOT).not.toBe(NodePath.dirname(NodePath.dirname(olderGo!)))
+      expect(await Fs.stat(sdkGo)).toBeDefined()
+      const control = await serve(await fixture(), ["build", "//:binary"], {
+        environment: {
+          ...process.env,
+          PATH: `${NodePath.dirname(sdkGo)}${NodePath.delimiter}${process.env.PATH ?? ""}`
+        }
+      })
+      expect(control.exitCode, control.logs).toBe(0)
+      expect(control.logs).toContain("//:binary  ran")
+      // A configured launcher may have a versioned name; production resolves "go".
+      const launcherBin = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-go-launcher-")))
+      temporaryDirectories.push(launcherBin)
+      await Fs.symlink(
+        await Fs.realpath(olderGo!),
+        NodePath.join(launcherBin, process.platform === "win32" ? "go.exe" : "go")
+      )
+      const environment = {
         ...process.env,
-        PATH: `${NodePath.dirname(sdkGo)}${NodePath.delimiter}${process.env.PATH ?? ""}`
+        PATH: `${launcherBin}${NodePath.delimiter}${process.env.PATH ?? ""}`
       }
-    })
-    expect(control.exitCode, control.logs).toBe(0)
-    expect(control.logs).toContain("//:binary  ran")
-    // A configured launcher may have a versioned name; production resolves "go".
-    const launcherBin = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-go-launcher-")))
-    temporaryDirectories.push(launcherBin)
-    await Fs.symlink(
-      await Fs.realpath(olderGo!),
-      NodePath.join(launcherBin, process.platform === "win32" ? "go.exe" : "go")
-    )
-    const environment = {
-      ...process.env,
-      PATH: `${launcherBin}${NodePath.delimiter}${process.env.PATH ?? ""}`
-    }
-    expect(await Fs.realpath(PackageTree.findOnPath("go", environment)!)).toBe(await Fs.realpath(olderGo!))
-    const launched = await serve(root, ["build", "//:binary"], { environment })
-    expect(launched.exitCode, launched.logs).toBe(0)
-    expect(launched.logs).toContain("//:binary  ran")
-  }, 120_000)
-})
+      expect(await Fs.realpath(PackageTree.findOnPath("go", environment)!)).toBe(await Fs.realpath(olderGo!))
+      const launched = await serve(root, ["build", "//:binary"], { environment })
+      expect(launched.exitCode, launched.logs).toBe(0)
+      expect(launched.logs).toContain("//:binary  ran")
+    }, 120_000)
+  }
+)
 
-describe.runIf(!skipGo && hasGo)("Go empty package selections", () => {
+describe.runIf(!skipGo && hasGo)(goCase("Go empty package selections", hasGo, "Go 1.26 or later on PATH"), () => {
   it.each([true, false])("keeps an empty difference empty with root package %s", async (rootPackage) => {
     const root = await fixture()
     if (rootPackage) await write(root, "root.go", "package root\n")
@@ -315,7 +311,7 @@ describe.runIf(!skipGo && hasGo)("Go empty package selections", () => {
   })
 })
 
-describe.runIf(!skipGo && hasGo)("Go package execution", () => {
+describe.runIf(!skipGo && hasGo)(goCase("Go package execution", hasGo, "Go 1.26 or later on PATH"), () => {
   it("loads, plans without NotImplemented, executes tests/build/tool edge/stamps, and hits", async () => {
     const root = await fixture()
     const query = await serve(root, ["query", "//..."])
@@ -623,7 +619,7 @@ export const Package = S.Package({ targets: { binary, test } })
 /** cgo needs a host C compiler; a runner without one cannot build the fixture at all. */
 const hasCCompiler = PackageTree.findOnPath("cc") !== undefined || PackageTree.findOnPath("clang") !== undefined
 
-describe.runIf(!skipGo && hasGo)("Go native compiler inputs", () => {
+describe.runIf(!skipGo && hasGo)(goCase("Go native compiler inputs", hasGo, "Go 1.26 or later on PATH"), () => {
   /**
    * `GoListRow` stopped at the Go and embed collections, so a `.c`, `.h`, or
    * `.s` file a cgo package compiles was absent from the closure. Editing one
@@ -659,7 +655,7 @@ describe.runIf(!skipGo && hasGo)("Go native compiler inputs", () => {
   }, 180_000)
 })
 
-describe.runIf(!skipGo && hasGo)("Go toolchain environment", () => {
+describe.runIf(!skipGo && hasGo)(goCase("Go toolchain environment", hasGo, "Go 1.26 or later on PATH"), () => {
   /**
    * The confinement admitted the directories the SDK's executables sit in --
    * `$GOROOT/bin` and `$GOTOOLDIR` -- and nothing else of the SDK. `go build`

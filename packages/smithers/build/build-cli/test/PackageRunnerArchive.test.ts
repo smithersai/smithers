@@ -10,6 +10,7 @@ import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
 import * as PackageTree from "../src/PackageTree.ts"
+import { goCase, runsGo } from "./helpers/HostGo.ts"
 import { write } from "./helpers/WriteFile.ts"
 
 const roots: Array<string> = []
@@ -83,7 +84,7 @@ const first = async (f: Fixture) => {
   expect(result.ok, JSON.stringify(result.results)).toBe(true)
 }
 
-describe("module cache archive boundaries", () => {
+describe.runIf(runsGo())(goCase("module cache archive boundaries"), () => {
   it.each([
     ["null", null],
     ["primitive", 7],
@@ -210,7 +211,7 @@ describe("module cache archive boundaries", () => {
   })
 })
 
-describe("archive index host failure", () => {
+describe.runIf(runsGo())(goCase("archive index host failure"), () => {
   it("reruns the real fetch when the archive index process fails", async () => {
     const f = await fixture()
     await first(f)
@@ -256,7 +257,7 @@ describe("archive index host failure", () => {
   })
 })
 
-it("removes both temporary files when archive restoration is interrupted", async () => {
+it.runIf(runsGo())(goCase("removes both temporary files when archive restoration is interrupted"), async () => {
   const f = await fixture()
   await first(f)
   await Effect.runPromise(Effect.gen(function*() {
@@ -288,7 +289,7 @@ it("removes both temporary files when archive restoration is interrupted", async
   expect(temporary).not.toContain(`go-mod-${f.node.keyPreview}.tar.list`)
 })
 
-it("removes both temporary files when preparing the archive destination fails", async () => {
+it.runIf(runsGo())(goCase("removes both temporary files when preparing the archive destination fails"), async () => {
   const f = await fixture("cache-parent/modules")
   await first(f)
   let invalidated = 0
