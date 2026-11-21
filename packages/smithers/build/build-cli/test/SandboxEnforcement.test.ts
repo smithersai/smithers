@@ -12,6 +12,7 @@ import * as Fs from "node:fs/promises"
 import * as NodeHttp from "node:http"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
+import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
 import { openPackageIndex } from "../src/Cli.ts"
 import * as PackageExec from "../src/PackageExec.ts"
@@ -55,21 +56,19 @@ const temporaryWorkspace = async (): Promise<string> => {
 }
 
 /** Runs `body` with `PATH` reduced to one directory holding only the named tools. */
-const withBarePath = async <A>(tools: ReadonlyArray<string>, body: () => Promise<A>): Promise<A> => {
+/** A directory holding only `tools`, linked to where this host has them. */
+const barePath = async (tools: ReadonlyArray<string>): Promise<string> => {
   const bin = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-bare-bin-"))
   temporaryDirectories.push(bin)
   for (const tool of tools) {
     const found = NodeChildProcess.execFileSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim()
     await Fs.symlink(found, NodePath.join(bin, NodePath.basename(tool)))
   }
-  const previous = process.env["PATH"]
-  process.env["PATH"] = bin
-  try {
-    return await body()
-  } finally {
-    process.env["PATH"] = previous
-  }
+  return bin
 }
+
+/** The CLI as a person starts it. */
+const cliMain = fileURLToPath(new URL("../src/main.js", import.meta.url))
 
 const native = process.platform === "darwin" || process.platform === "linux"
 const hasBwrap = process.platform !== "linux" ||
@@ -318,12 +317,21 @@ export const Package = S.Package({ targets: { confined, open } })
 `
     )
     commitAll(root)
-    const { planned, refused, opened } = await withBarePath(["sh", "true", "git"], async () => ({
-      planned: await serve(root, ["//:confined", "--plan"]),
-      refused: await serve(root, ["//:confined"]),
-      opened: await serve(root, ["//:open"])
-    }))
-    expect(planned.exitCode).toBe(0)
+    // A program reads its PATH once, so each run is its own process, as a person starts it, with docker out of reach.
+    const bin = await barePath(["sh", "true", "git"])
+    const run = (args: ReadonlyArray<string>) => {
+      const child = NodeChildProcess.spawnSync(process.execPath, [cliMain, ...args, "--workspace", root], {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, PATH: bin, SMITHERS_AUDIENCE: "agent", NO_COLOR: "1" },
+        timeout: 120_000
+      })
+      return { exitCode: child.status, output: child.stdout, logs: child.stderr }
+    }
+    const planned = run(["//:confined", "--plan"])
+    const refused = run(["//:confined"])
+    const opened = run(["//:open"])
+    expect(planned.exitCode, planned.output + planned.logs).toBe(0)
     expect(planned.output).toMatch(/sandboxEnforced:\s*false/)
     expect(refused.exitCode).toBe(1)
     expect(refused.logs).toContain("cannot be enforced")
