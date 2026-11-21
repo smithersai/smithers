@@ -320,9 +320,10 @@ describe("an observed test", () => {
     await write("threads.cjs", threads)
     expect(await run()).toEqual({ check: "ran" })
     expect(logs.filter((line) => line.includes("cannot be read"))).toEqual([])
-    expect(await run()).toEqual({ check: "hit" })
+    // On a failure the build's own lines say why the step ran: why it was not stored, or what changed.
+    expect(await run(), logs.join("\n")).toEqual({ check: "hit" })
     await write("docs/readme.md", "changed\n")
-    expect(await run()).toEqual({ check: "hit" })
+    expect(await run(), logs.join("\n")).toEqual({ check: "hit" })
     await write("input.txt", "pass, changed\n")
     expect(await run()).toEqual({ check: "ran" })
     expect(reasons).toEqual(["input.txt changed"])
