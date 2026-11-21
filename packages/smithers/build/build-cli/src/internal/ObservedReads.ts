@@ -84,6 +84,7 @@ import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import * as Environment from "../Environment.ts"
 import type { Recorder } from "../Executor.ts"
+import * as RecordedCalls from "./RecordedCalls.ts"
 import { byCodeUnit } from "./Text.ts"
 
 /**
@@ -125,68 +126,14 @@ export const pathsOf = (record: Record): number =>
 /** Symbolic links one path may pass through before resolving it fails. */
 const maximumLinks = 40
 
-/** The system calls a trace stops at. */
-const calls: ReadonlyArray<string> = [
-  "access",
-  "bind",
-  "chdir",
-  "chmod",
-  "chown",
-  "chroot",
-  "clone",
-  "clone3",
-  "connect",
-  "creat",
-  "dup",
-  "dup2",
-  "dup3",
-  "execve",
-  "execveat",
-  "faccessat",
-  "faccessat2",
-  "fchdir",
-  "fchmod",
-  "fchmodat",
-  "fchmodat2",
-  "fchown",
-  "fchownat",
-  "futimesat",
-  "fork",
-  "getdents",
-  "getdents64",
-  "io_uring_setup",
-  "lchown",
-  "link",
-  "linkat",
-  "lstat",
-  "mkdir",
-  "mkdirat",
-  "mount",
-  "newfstatat",
-  "open",
-  "openat",
-  "openat2",
-  "pidfd_open",
-  "pivot_root",
-  "readlink",
-  "readlinkat",
-  "rename",
-  "renameat",
-  "renameat2",
-  "rmdir",
-  "setns",
-  "stat",
-  "statx",
-  "symlink",
-  "symlinkat",
-  "truncate",
-  "unlink",
-  "unlinkat",
-  "utime",
-  "utimensat",
-  "utimes",
-  "vfork"
-]
+/**
+ * The longest path one call takes, in bytes: `PATH_MAX` less its closing zero. A run reaches a file by a longer
+ * one through a working directory or a descriptor, and no later look can name that file again.
+ */
+const maximumPath = 4095
+
+/** Whether a path is longer than one call takes. Nearly every path is far shorter: those are not counted. */
+const tooLong = (path: string): boolean => path.length * 3 > maximumPath && Buffer.byteLength(path) > maximumPath
 
 /** What the tracer is always started with, before the trace file and the command. */
 const tracerFlags: ReadonlyArray<string> = [
@@ -199,7 +146,7 @@ const tracerFlags: ReadonlyArray<string> = [
   "-e",
   "signal=none",
   "-e",
-  `trace=${calls.join(",")}`,
+  `trace=${RecordedCalls.traced.join(",")}`,
   "-e",
   "inject=io_uring_setup:error=ENOSYS",
   "-e",
@@ -295,20 +242,29 @@ export const command = (
 
 /**
  * The argv that runs `argv` under the recorder a host has: `smthrs-observe`
- * when `supervisor` is set, else strace ({@link command}).
+ * when `supervisor` is set, else strace ({@link command}), through `guard`
+ * when the host has one: `smthrs-observe --guard`, without which strace lets
+ * a call it has no name for go by unseen (`native/observe.c`).
  *
  * @category tracing
  * @since 1.0.0
  */
 export const commandFor = (
-  observer: { readonly tracer: string; readonly supervisor?: true | undefined },
+  observer: { readonly tracer: string; readonly supervisor?: true | undefined; readonly guard?: string | undefined },
   traceFile: string,
   argv: ReadonlyArray<string>,
   keep = false
 ): ReadonlyArray<string> =>
   observer.supervisor === true
     ? [observer.tracer, ...(keep ? ["--keep"] : []), traceFile, "--", ...argv]
-    : command(observer.tracer, traceFile, argv, keep)
+    : command(
+      observer.tracer,
+      traceFile,
+      // A step of a job that keeps what it leaves running runs without the guard: under it, the job's end did not
+      // end a program the step left (MachineExecution, "fails with why when it cannot start again").
+      observer.guard === undefined || keep ? argv : [observer.guard, "--guard", "--", ...argv],
+      keep
+    )
 
 /**
  * A host's answer to whether it can observe a run: the recorder's path, and
@@ -321,7 +277,13 @@ export const commandFor = (
  * @since 1.0.0
  */
 export type Observer =
-  | { readonly tracer: string; readonly supervisor?: true | undefined; readonly why?: string | undefined }
+  | {
+    readonly tracer: string
+    readonly supervisor?: true | undefined
+    readonly why?: string | undefined
+    /** `smthrs-observe`, which strace runs the command through so that it sees every call ({@link commandFor}). */
+    readonly guard?: string | undefined
+  }
   | { readonly reason: string }
 
 /**
@@ -496,6 +458,8 @@ export const observer = (host: {
   readonly supervisor?: string | undefined
   /** Why the host has none though one is built for it ({@link unsupervised}). */
   readonly unsupervised?: string | undefined
+  /** `smthrs-observe` to run a command strace records through; the one this package holds, unless given. */
+  readonly guard?: string | undefined
 }): Observer => {
   if (host.platform !== "linux") return { reason: `reads cannot be observed on ${host.platform}` }
   // The kernel must give a listener that waits for the supervisor without being cut short by a signal (5.19), and
@@ -518,13 +482,27 @@ export const observer = (host: {
   const refused = why === undefined ? "" : `${why}, and `
   const tracer = host.executable("strace")
   if (tracer === undefined) return { reason: `${refused}strace is not installed` }
-  const probe = spawnSync(tracer, [...tracerFlags, "-o", "/dev/null", "--", tracer, "-V"], {
+  // strace sees every call only through the guard: a host that refuses it cannot record exactly with strace.
+  const guard = "guard" in host
+    ? host.guard
+    : supervisorPath(process.platform, process.arch, { [recorderVariable]: "smthrs-observe" })
+  const guarded = guard === undefined ? [] : [guard, "--guard", "--"]
+  const probe = spawnSync(tracer, [...tracerFlags, "-o", "/dev/null", "--", ...guarded, tracer, "-V"], {
     encoding: "utf8",
     timeout: 30_000
   })
-  if (probe.status === 0) return why === undefined ? { tracer } : { tracer, why }
+  if (probe.status === 0) {
+    return { tracer, ...(why === undefined ? {} : { why }), ...(guard === undefined ? {} : { guard }) }
+  }
   // A tracer that could not be started at all said nothing.
   const said = (probe.stderr ?? "").trim().split("\n")[0]!
+  // strace that runs, with a guard that does not, would record less than a run reads.
+  if (
+    guard !== undefined &&
+    spawnSync(tracer, [...tracerFlags, "-o", "/dev/null", "--", tracer, "-V"], { timeout: 30_000 }).status === 0
+  ) {
+    return { reason: `${refused}strace cannot see every call here without smthrs-observe --guard: ${said}` }
+  }
   return { reason: `${refused}strace cannot trace a process on this host${said === "" ? "" : `: ${said}`}` }
 }
 
@@ -539,6 +517,11 @@ export const observer = (host: {
 export interface Trace {
   /** Paths the run looked at and found, or whose answer the trace does not hold. */
   readonly found: ReadonlyMap<string, number>
+  /**
+   * Paths the run looked at without following a link at their end (`lstat`, `readlink`, `AT_SYMLINK_NOFOLLOW`): it
+   * read the name, a link's target text with it, and nothing the link leads to.
+   */
+  readonly unfollowed?: ReadonlyMap<string, number> | undefined
   /** Paths the run looked at and found missing. */
   readonly missing: ReadonlyMap<string, number>
   /** Directories the run listed. */
@@ -635,37 +618,19 @@ export interface Walk {
 }
 
 /**
- * The `RESOLVE_*` flags of `openat2` a walk follows exactly. Any other is a way
- * of reaching a file the recorder cannot follow.
- *
- * @category tracing
- * @since 1.0.0
- */
-export const resolveFlags: ReadonlySet<string> = new Set([
-  "RESOLVE_NO_XDEV",
-  "RESOLVE_NO_MAGICLINKS",
-  "RESOLVE_NO_SYMLINKS",
-  "RESOLVE_BENEATH",
-  "RESOLVE_IN_ROOT",
-  "RESOLVE_CACHED"
-])
-
-/**
- * The flags of `renameat2` the reader follows exactly.
- *
- * @category tracing
- * @since 1.0.0
- */
-export const renameFlags: ReadonlySet<string> = new Set(["RENAME_NOREPLACE", "RENAME_EXCHANGE", "RENAME_WHITEOUT"])
-
-/**
  * Why a run stores nothing when it reached a file in a way the recorder does
  * not follow exactly: `form` names the call, and the flag or form of it.
  *
  * @category tracing
  * @since 1.0.0
  */
-export const cannotFollow = (form: string): string => `it reached a file in a way the recorder cannot follow: ${form}`
+export const cannotFollow: (form: string) => string = RecordedCalls.cannotFollow
+
+/** The flags of `openat2`, which are in its `how`, as a row of the table: those of an open. */
+const opening: RecordedCalls.Call = { name: "openat2", kind: "open", follows: RecordedCalls.openFlags }
+
+/** The `RESOLVE_*` flags of `openat2`, as a row of the table. */
+const resolving: RecordedCalls.Call = { name: "openat2", kind: "open", follows: RecordedCalls.resolveFlags }
 
 /** Decodes a quoted string as the tracer prints it; `undefined` when it is cut short or malformed. */
 const unquote = (text: string): string | undefined => {
@@ -1168,6 +1133,7 @@ export const read = (
   inside: ReadonlySet<string> = new Set()
 ): Trace => {
   const found = new Map<string, number>()
+  const unfollowed = new Map<string, number>()
   const missing = new Map<string, number>()
   const listed = new Map<string, number>()
   const made = new Map<string, number>()
@@ -1425,6 +1391,8 @@ export const read = (
         // was killed where it stopped before the call, or the address is no memory of the process and the call
         // failed on it. Neither opened a file. A call that succeeded on such a path did read something.
         if (address.test(argument) && !ok) return undefined
+        // A path longer than a call takes, which the tracer cut short: the call failed on it, and read nothing.
+        if (errno === "ENAMETOOLONG") return undefined
         refusals.add(`its trace holds a path that cannot be read: ${argument.slice(0, 80)}`)
         return undefined
       }
@@ -1450,15 +1418,16 @@ export const read = (
     /** Whether a path is one a build tool reads for its own bookkeeping, read by the tool itself. */
     const own = (path: string): boolean =>
       building.get(pid)?.own?.test(path) === true || noting.get(pid)?.test(path) === true
-    const saw = (path: string): void => {
+    const saw = (path: string, follow = true): void => {
       if (hushed.has(pid)) return
       if (own(path)) return
-      if (!found.has(path)) ended.set(path, at)
-      first(found, path, entered)
+      const seen = follow ? found : unfollowed
+      if (!seen.has(path)) ended.set(path, at)
+      first(seen, path, entered)
     }
-    const looked = (path: string | undefined): void => {
+    const looked = (path: string | undefined, follow = true): void => {
       if (path === undefined || hushed.has(pid)) return
-      if (!gone) saw(path)
+      if (!gone) saw(path, follow)
       else if (!own(path)) first(missing, path, entered)
     }
     /**
@@ -1518,14 +1487,15 @@ export const read = (
      * An `openat2` with `RESOLVE_*` flags: its path is walked again by the kernel's rules once the run is over
      * ({@link Walk}). What it wrote is the file its answer names.
      */
-    const walkOpen = (how: string, resolve: string): void => {
-      const flags = /flags=([^,}]*)/.exec(how)?.[1] ?? ""
-      const bits = resolve.split("|").map((bit) => bit.trim())
-      const unknown = bits.find((bit) => !resolveFlags.has(bit))
+    const walkOpen = (flags: string, resolve: string): void => {
+      const unknown = RecordedCalls.unfollowed(resolving, resolve)
       if (unknown !== undefined) {
-        refusals.add(cannotFollow(`openat2 with ${unknown}`))
+        refusals.add(cannotFollow(unknown))
         return
       }
+      const bits = resolve.split("|").map((bit) => bit.trim())
+      // A path longer than a call takes: the call failed on it, and read nothing.
+      if (errno === "ENAMETOOLONG") return
       // The flags come after the path, so the line names one.
       const text = unquote(args[1]!)
       if (text === undefined) {
@@ -1566,16 +1536,49 @@ export const read = (
       if (writes && opened !== undefined) wrote(spelled(opened), how_ ?? "changed", creates)
     }
 
+    // A call strace has no name for: its number says which, and its arguments are numbers, so no path it named
+    // can be read. One the table does not know may name a file in any way.
+    const numbered = name.startsWith("syscall_0x") ? /^syscall_0x([0-9a-f]+)$/.exec(name) : null
+    if (numbered !== null) {
+      const number = Number.parseInt(numbered[1]!, 16)
+      const known = RecordedCalls.byNumber.get(number)
+      if (known === undefined && number > RecordedCalls.lastKnown) {
+        refusals.add(cannotFollow(`a system call it does not know, numbered ${number}`))
+      } else if (known !== undefined && known.kind !== "none") refusals.add(cannotFollow(known.name))
+      return
+    }
+    const row = RecordedCalls.byName.get(name)
+    if (row === undefined) return
+    // A flag the table does not follow for this call may name a file another way.
+    const how = name === "openat2" ? args[2] ?? "" : undefined
+    const unfollowedFlag = how !== undefined
+      ? RecordedCalls.unfollowed(opening, /flags=([^,}]*)/.exec(how)?.[1] ?? "0")
+      : row.flags === undefined
+      ? undefined
+      : RecordedCalls.unfollowed(row, args[row.flags] ?? "0")
+    if (unfollowedFlag !== undefined) {
+      refusals.add(cannotFollow(unfollowedFlag))
+      return
+    }
+    // A call that names a file no record can hold, and did: a failed one reached nothing.
+    if (row.kind === "refused") {
+      if (ok) refusals.add(cannotFollow(name))
+      return
+    }
+    /** The path a row's arguments name: the path at `index`, from the directory at `dir`. */
+    const pathAt = (dir: number | undefined, index: number | undefined): string | undefined =>
+      pathOf(args[index!], dir === RecordedCalls.cwd ? cell.path : baseOf(args[dir!]))
+
     switch (name) {
       case "open":
       case "openat":
       case "openat2":
       case "creat": {
-        const resolve = name === "openat2" ? /resolve=([^,}]*)/.exec(args[2] ?? "")?.[1]?.trim() : undefined
-        if (resolve !== undefined && resolve !== "0") return walkOpen(args[2]!, resolve)
-        const at2 = name === "openat" || name === "openat2"
-        const path = pathOf(args[at2 ? 1 : 0], at2 ? baseOf(args[0]) : cell.path)
-        const flags = name === "creat" ? "O_WRONLY|O_CREAT|O_TRUNC" : args[at2 ? 2 : 1] ?? ""
+        const resolve = how === undefined ? undefined : /resolve=([^,}]*)/.exec(how)?.[1]?.trim()
+        const given = how === undefined ? undefined : /flags=([^,}]*)/.exec(how)?.[1] ?? ""
+        if (resolve !== undefined && resolve !== "0") return walkOpen(given!, resolve)
+        const path = pathAt(row.dir, row.path)
+        const flags = name === "creat" ? "O_WRONLY|O_CREAT|O_TRUNC" : given ?? args[row.flags!] ?? ""
         const creates = /O_CREAT/.test(flags)
         if (creates && /O_EXCL/.test(flags)) wrote(path, "made", true)
         else if (/O_TRUNC/.test(flags)) wrote(path, "emptied", creates)
@@ -1597,24 +1600,12 @@ export const read = (
         }
         return
       }
-      case "stat":
-      case "lstat":
-      case "access":
-      case "readlink":
-      case "chdir":
-      case "chroot": {
+      case "chdir": {
         const path = pathOf(args[0], cell.path)
         looked(path)
-        if (name === "chdir" && ok) cell.path = path
-        if (name === "chroot" && ok) refusals.add("it changed its root directory")
+        if (ok) cell.path = path
         return
       }
-      case "newfstatat":
-      case "statx":
-      case "faccessat":
-      case "faccessat2":
-      case "readlinkat":
-        return looked(pathOf(args[1], baseOf(args[0])))
       case "fchdir": {
         const path = baseOf(args[0])
         if (ok) cell.path = path
@@ -1629,7 +1620,7 @@ export const read = (
       }
       case "execve":
       case "execveat": {
-        const path = name === "execve" ? pathOf(args[0], cell.path) : pathOf(args[1], baseOf(args[0]))
+        const path = pathAt(row.dir, row.path)
         const words = ok ? wordsOf(args[name === "execve" ? 1 : 2]) : undefined
         // A question the command asks for itself is no read of the run's, nor is the program that answers it.
         if (words !== undefined && words.some((word) => quiet.includes(word))) hushed.add(pid)
@@ -1670,86 +1661,44 @@ export const read = (
         }
         return
       }
-      case "unlink":
-      case "rmdir":
-      case "truncate":
-      // A new mode, owner or time changes when the file last changed, as a write does.
-      case "chmod":
-      case "chown":
-      case "lchown":
-      case "utime":
-      case "utimes":
-        return wrote(pathOf(args[0], cell.path), "changed")
-      case "unlinkat":
-      case "fchmodat":
-      case "fchmodat2":
-      case "fchownat":
-      case "futimesat":
-        return wrote(pathOf(args[1], baseOf(args[0])), "changed")
       case "utimensat":
         // With no path, the descriptor itself is the file.
-        return wrote(args[1] === "NULL" ? baseOf(args[0]) : pathOf(args[1], baseOf(args[0])), "changed")
-      case "fchmod":
-      case "fchown":
-        return wrote(baseOf(args[0]), "changed")
-      case "mkdir":
-        return madeDirectory(pathOf(args[0], cell.path))
-      case "mkdirat":
-        return madeDirectory(pathOf(args[1], baseOf(args[0])))
-      case "symlink":
-        return linked(pathOf(args[1], cell.path))
-      case "symlinkat":
-        return linked(pathOf(args[2], baseOf(args[1])))
+        return wrote(args[1] === "NULL" ? baseOf(args[0]) : pathAt(row.dir, row.path), "changed")
       case "rename":
-      case "link": {
-        // The new path holds what the old one held, so the old one was read.
-        const from = pathOf(args[0], cell.path)
-        const to = pathOf(args[1], cell.path)
-        looked(from)
-        if (name === "rename") wrote(from, "changed")
-        else if (from !== undefined && ok) write(from)
-        if (to !== undefined && ok) unbuilt(to)
-        wrote(to, "made", false, name === "link")
-        if (name === "rename" && to !== undefined && ok) notPlain.add(to)
-        if (name === "rename" && to !== undefined) plainMade.delete(to)
-        if (name === "rename" && ok && from !== undefined && to !== undefined && from !== to) carry(from, to, at)
-        return
-      }
+      case "link":
       case "renameat":
       case "renameat2":
       case "linkat": {
-        const from = pathOf(args[1], baseOf(args[0]))
-        const to = pathOf(args[3], baseOf(args[2]))
-        const flags = name === "renameat2"
-          ? (args[4] ?? "0").split("|").map((flag) => flag.trim()).filter((flag) => flag !== "0")
-          : []
-        const unknown = flags.find((flag) => !renameFlags.has(flag))
-        if (unknown !== undefined) {
-          refusals.add(cannotFollow(`renameat2 with ${unknown}`))
-          return
-        }
+        // The new path holds what the old one held, so the old one was read.
+        const from = pathAt(row.dir, row.path)
+        const to = pathAt(row.dir2, row.path2)
+        const flags = name === "renameat2" ? (args[4] ?? "0").split("|").map((flag) => flag.trim()) : []
+        const linking = row.kind === "link"
         looked(from)
         if (flags.includes("RENAME_EXCHANGE")) {
           // Each name now holds what the other held: both were read, both are written, and neither is gone.
           looked(to)
           if (!ok || from === undefined || to === undefined) return
+          // Neither name holds what the run made there any more.
           for (const path of [from, to]) {
             write(path)
             unbuilt(path)
+            notPlain.add(path)
+            plainMade.delete(path)
           }
           exchanged.push([from, to])
           return
         }
         // A name there already stops the call: the run found it.
         if (flags.includes("RENAME_NOREPLACE") && errno === "EEXIST") return looked(to)
-        if (name === "linkat") {
+        if (linking) {
           if (from !== undefined && ok) write(from)
         } else wrote(from, "changed")
         if (to !== undefined && ok) unbuilt(to)
-        wrote(to, "made", false, name === "linkat" || flags.includes("RENAME_NOREPLACE"))
-        if (name !== "linkat" && to !== undefined && ok) notPlain.add(to)
-        if (name !== "linkat" && to !== undefined) plainMade.delete(to)
-        if (name !== "linkat" && ok && from !== undefined && to !== undefined && from !== to) carry(from, to, at)
+        wrote(to, "made", false, linking || flags.includes("RENAME_NOREPLACE"))
+        if (!linking && to !== undefined && ok) notPlain.add(to)
+        if (!linking && to !== undefined) plainMade.delete(to)
+        if (!linking && ok && from !== undefined && to !== undefined && from !== to) carry(from, to, at)
         return
       }
       case "bind":
@@ -1762,17 +1711,34 @@ export const read = (
           : family === "AF_INET" || family === "AF_INET6"
           ? `port:${portOf(address)}`
           : undefined
+        // A socket's path is a name as any other: whether something is there decides what the call does.
+        // One named from a working directory the trace does not know was named so before this was followed too.
+        const named = unix === undefined || unix.startsWith("@") ? undefined : unquote(unix)
+        const socket = named === undefined || named === ""
+          ? undefined
+          : named.startsWith("/")
+          ? spelled(named)
+          : cell.path === undefined
+          ? undefined
+          : spelled(`${cell.path}/${named}`)
         if (name === "bind") {
-          if (failed) return
+          if (failed) {
+            if (errno === "EADDRINUSE") looked(socket)
+            return
+          }
           if (key === "port:0") ephemeral = true
           else if (key !== undefined) {
             bound.add(key)
             listened.add(key)
           }
+          if (socket !== undefined) wrote(socket, "made", true)
           return
         }
-        // A connection that was refused or found nothing read nothing.
-        if (failed && errno !== "EINPROGRESS") return
+        // A connection that was refused or found nothing read nothing but whether its path is there.
+        if (failed && errno !== "EINPROGRESS") {
+          if (errno === "ENOENT" || errno === "ECONNREFUSED") looked(socket)
+          return
+        }
         // What a locked install fetches, and whom it asks for an address, is fixed by the lockfile it read.
         if (installing.has(pid) || installed.has(pid)) return
         // So is what a build tool fetches once it has read its lockfile, while nothing writes that lockfile.
@@ -1803,14 +1769,37 @@ export const read = (
         }
         return
       }
-      case "mount":
-      case "pivot_root":
-      case "setns":
-        if (ok) refusals.add("it changed its view of the file system")
+      case "unshare": {
+        if (!ok) return
+        if (/CLONE_NEW/.test(args[0]!)) refusals.add("it made a namespace of its own")
+        // A process that stops sharing its working directory, or its descriptors, has its own from here on.
+        if (/CLONE_FS/.test(args[0]!)) cells.set(pid, { path: cell.path })
+        if (/CLONE_FILES/.test(args[0]!)) tables.set(pid, new Map(tableOf(pid)))
         return
+      }
       case "io_uring_setup":
-        if (ok) refusals.add("it read through io_uring, which a trace does not show")
+        if (ok) refusals.add(cannotFollow("io_uring"))
         return
+    }
+    // The rest by what the table says the call does.
+    switch (row.kind) {
+      case "look":
+        return looked(
+          pathAt(row.dir, row.path),
+          row.nofollow !== true && !/AT_SYMLINK_NOFOLLOW/.test(row.flags === undefined ? "" : args[row.flags] ?? "")
+        )
+      // A new mode, owner, time, size or attribute changes when the file last changed, as a write does.
+      case "remove":
+      case "change":
+        return wrote(pathAt(row.dir, row.path), "changed")
+      case "changeFd":
+        return wrote(baseOf(args[0]), "changed")
+      case "mkdir":
+        return madeDirectory(pathAt(row.dir, row.path))
+      case "make":
+        return wrote(pathAt(row.dir, row.path), "made", true)
+      case "symlink":
+        return linked(pathAt(row.dir2, row.path2))
       default:
         return
     }
@@ -1945,9 +1934,11 @@ export const read = (
   // nothing was cannot have been found before it was made: a call that found it, and ended after the making
   // began, came after the making, so the name is the run's own and not something it read.
   for (const [path, start] of began) {
-    const looked = found.get(path)
-    if (looked === undefined || removed.has(path)) continue
-    if (looked < made.get(path)! && ended.get(path)! > start) found.delete(path)
+    for (const seen of [found, unfollowed]) {
+      const looked = seen.get(path)
+      if (looked === undefined || removed.has(path)) continue
+      if (looked < made.get(path)! && ended.get(path)! > start) seen.delete(path)
+    }
   }
   // Every traced run starts a program, so a trace without a line is not a run's trace.
   if (root === undefined) refusals.add("its trace is empty")
@@ -1969,6 +1960,7 @@ export const read = (
   }
   return {
     found,
+    ...(unfollowed.size === 0 ? {} : { unfollowed }),
     missing,
     listed,
     made,
@@ -3052,6 +3044,8 @@ export const observe = (
 
   /** The real path of a name the run wrote: only what leads to the name is followed. */
   const named = (raw: string): string | undefined => {
+    // A name that is itself a mounted directory is where that directory really is, whatever holds its parent.
+    if (mounts.some(([at]) => at === raw)) return placed(raw)
     const slash = raw.lastIndexOf("/")
     const simple = slash > 0 && plain(raw)
     const name = simple ? raw.slice(slash + 1) : NodePath.posix.basename(raw)
@@ -3139,13 +3133,14 @@ export const observe = (
   }
 
   const events: Array<
-    readonly [at: number, kind: "found" | "missing" | "made" | "emptied" | "listed" | "walk", path: string]
+    readonly [at: number, kind: "found" | "name" | "missing" | "made" | "emptied" | "listed" | "walk", path: string]
   > = []
   for (const [index, walk] of (trace.walks ?? []).entries()) events.push([walk.at, "walk", String(index)])
   // What the run found of its own after it made it is its own already.
   for (const [path, at] of trace.found) {
     if (!(ownName(path) && trace.made.get(path)! < at)) events.push([at, "found", path])
   }
+  for (const [path, at] of trace.unfollowed ?? []) events.push([at, "name", path])
   for (const [path, at] of trace.missing) events.push([at, "missing", path])
   for (const [path, at] of trace.made) events.push([at, "made", path])
   // A name emptied when or after the run made it says nothing its making did not: an install opens each file it
@@ -3166,6 +3161,10 @@ export const observe = (
   for (const [, kind, raw] of events) {
     if (kind === "walk") {
       const walk = trace.walks![Number(raw)]!
+      if (tooLong(`${walk.start}/${walk.path}`)) {
+        refusal ??= cannotFollow(`a path longer than ${maximumPath} bytes`)
+        continue
+      }
       const ended = walkResolved(walk)
       // The kernel names the file the call opened: a walk that ended elsewhere did not see the run's file system.
       if (walk.opened !== undefined && (ended === undefined || placed(ended) !== placed(spelled(walk.opened)))) {
@@ -3174,15 +3173,20 @@ export const observe = (
       continue
     }
     if (pseudo(raw)) continue
-    // What a run made or found missing is the name itself: a link put there since leads somewhere the run never looked.
-    const path = kind === "made" || kind === "missing" ? named(raw) : resolve(raw)
+    if (tooLong(raw)) {
+      refusal ??= cannotFollow(`a path longer than ${maximumPath} bytes`)
+      continue
+    }
+    // What a run made, found missing or looked at without following is the name itself: a link put there since
+    // leads somewhere the run never looked.
+    const path = kind === "made" || kind === "missing" || kind === "name" ? named(raw) : resolve(raw)
     if (path === undefined || !visible(path)) continue
     if (kind === "listed") {
       const entry = touch(path, "found")
       if (!entry.made) entry.listed = true
       continue
     }
-    touch(path, kind === "emptied" ? "made" : kind)
+    touch(path, kind === "emptied" ? "made" : kind === "name" ? "found" : kind)
   }
   const touched = new Set<string>()
   const fetched = new Set<string>()
@@ -3195,6 +3199,10 @@ export const observe = (
   }
   for (const raw of trace.changed) {
     if (pseudo(raw)) continue
+    if (tooLong(raw)) {
+      refusal ??= cannotFollow(`a path longer than ${maximumPath} bytes`)
+      continue
+    }
     // Both the name the run wrote and the file a link under that name leads to are the run's to change.
     const path = named(raw)
     if (path === undefined) continue

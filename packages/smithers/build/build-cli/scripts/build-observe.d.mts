@@ -38,3 +38,6 @@ export declare const buildObserve: (options?: {
   readonly log?: (line: string) => void
   readonly find?: typeof findZig
 }) => ReadonlyArray<string>
+
+/** The C of the table of calls smthrs-observe watches (`calls.h`), from `src/internal/RecordedCalls.ts`. */
+export declare const callsHeader: () => string

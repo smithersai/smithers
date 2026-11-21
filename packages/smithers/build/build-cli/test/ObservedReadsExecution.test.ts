@@ -1646,7 +1646,7 @@ describe("a step that reaches a file by other rules than an open's", () => {
       }
     }
     const change = async (): Promise<void> => {
-      const [path, text] = KernelProbe.changes[way]!
+      const [path, text] = KernelProbe.ways[way]!.change
       if (text === undefined) await Fs.rm(Path.join(made.root, path))
       else await made.write(path, text)
     }
@@ -1660,8 +1660,8 @@ describe("a step that reaches a file by other rules than an open's", () => {
   tracedIt.each([
     "in-root",
     "in-root-up",
+    "in-root-made-link",
     "in-root-link",
-    "in-root-committed-link",
     "beneath",
     "no-symlinks",
     "exchange",

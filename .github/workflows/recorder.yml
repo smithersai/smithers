@@ -1,8 +1,9 @@
 name: Recorder
 # smthrs-observe, the recorder of what an observed step reads, against a real
 # kernel on each machine it ships for: the suites that record steps end to end
-# (ObserveSupervisor, ObservedReadsExecution, MachineExecution) with it, and
-# the last two with strace. The binaries are built here with the zig release
+# (ObserveSupervisor, ObservedReadsExecution, MachineExecution) and the table
+# of calls walked way by way under both recorders (RecordedCalls) with it, and
+# the second and third with strace. The binaries are built here with the zig release
 # the package pins, as the release builds them. And a job of the workflow
 # `smithers-ci apply` writes, run on each machine with no strace installed:
 # its steps are recorded by smthrs-observe and reused at the next commit.
@@ -14,6 +15,9 @@ on:
       - "packages/smithers/build/build-cli/native/**"
       - "packages/smithers/build/build-cli/scripts/build-observe.mjs"
       - "packages/smithers/build/build-cli/src/internal/ObservedReads.ts"
+      - "packages/smithers/build/build-cli/src/internal/RecordedCalls.ts"
+      - "packages/smithers/build/build-cli/test/RecordedCalls.test.ts"
+      - "packages/smithers/build/build-cli/test/helpers/KernelProbe.ts"
       - "packages/smithers/build/build-cli/test/ObserveSupervisor.test.ts"
       - "packages/smithers/build/build-cli/test/ObservedReadsExecution.test.ts"
       - "packages/smithers/build/build-cli/test/MachineExecution.test.ts"
@@ -26,6 +30,9 @@ on:
       - "packages/smithers/build/build-cli/native/**"
       - "packages/smithers/build/build-cli/scripts/build-observe.mjs"
       - "packages/smithers/build/build-cli/src/internal/ObservedReads.ts"
+      - "packages/smithers/build/build-cli/src/internal/RecordedCalls.ts"
+      - "packages/smithers/build/build-cli/test/RecordedCalls.test.ts"
+      - "packages/smithers/build/build-cli/test/helpers/KernelProbe.ts"
       - "packages/smithers/build/build-cli/test/ObserveSupervisor.test.ts"
       - "packages/smithers/build/build-cli/test/ObservedReadsExecution.test.ts"
       - "packages/smithers/build/build-cli/test/MachineExecution.test.ts"
@@ -89,7 +96,7 @@ jobs:
         run: |
           uname -srm
           "packages/smithers/build/build-cli/native/out/linux-$(node -p process.arch)/smthrs-observe" --probe
-          pnpm --dir packages/smithers/build/build-cli exec vitest run test/ObserveSupervisor.test.ts test/ObservedReadsExecution.test.ts test/MachineExecution.test.ts --coverage.enabled=false
+          pnpm --dir packages/smithers/build/build-cli exec vitest run test/ObserveSupervisor.test.ts test/ObservedReadsExecution.test.ts test/MachineExecution.test.ts test/RecordedCalls.test.ts --coverage.enabled=false
       - name: Record with strace
         env:
           SMTHRS_OBSERVE_WITH: strace

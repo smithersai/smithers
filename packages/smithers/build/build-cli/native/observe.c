@@ -7,6 +7,7 @@
  *     smthrs-observe --rights <program>...
  *     smthrs-observe --reap -- <command> [<argument>...]
  *     smthrs-observe --probe --reap
+ *     smthrs-observe --guard -- <command> [<argument>...]
  *
  * The command runs under a seccomp filter whose listener this program holds. The kernel hands each watched call
  * to one of the supervisor's threads; only the calling thread waits, and the call then goes on in the kernel as
@@ -146,164 +147,53 @@
 
 /* ---- What each watched call is ---------------------------------------------------------------------------- */
 
-/* How the supervisor writes a call. */
+/* How the supervisor writes a call: the kinds of src/internal/RecordedCalls.ts. */
 enum kind {
-  K_OPEN,      /* open, openat, openat2, creat: a path, flags */
-  K_LOOK,      /* stat, lstat, newfstatat, statx, access, faccessat(2), readlink(at): a path looked at */
-  K_EXEC,      /* execve, execveat */
+  K_OPEN,      /* a path opened, with flags */
+  K_LOOK,      /* a path looked at */
+  K_EXEC,      /* a program started */
   K_CHDIR,     /* chdir */
-  K_MKDIR,     /* mkdir, mkdirat */
-  K_REMOVE,    /* unlink, unlinkat, rmdir */
-  K_CHANGE,    /* chmod, chown, lchown, utime(s), futimesat, utimensat, truncate, fchmodat(2), fchownat */
+  K_MKDIR,     /* a directory made */
+  K_MAKE,      /* mknod, mknodat: another name made where none was */
+  K_REMOVE,    /* a name taken away */
+  K_CHANGE,    /* a file's mode, owner, times, size or attributes changed, by path */
   K_CHANGE_FD, /* fchmod, fchown: the descriptor's file */
   K_RENAME,    /* rename, renameat, renameat2 */
   K_LINK,      /* link, linkat */
   K_SYMLINK,   /* symlink, symlinkat */
   K_CONNECT,
   K_BIND,
-  K_VIEW,      /* mount, umount2, pivot_root, chroot, setns, move_mount, open_tree, fsmount, fsopen */
   K_SPACE,     /* unshare with a new namespace */
   K_FORK,      /* fork, vfork, clone, clone3: a process (a thread is its process's), or a new namespace */
   K_RING,      /* io_uring_setup */
   K_RING_ENTER,/* io_uring_enter: what the ring is told to do */
-  K_HANDLE,    /* open_by_handle_at */
   K_FILTER,    /* seccomp: a filter of the run's own */
   K_HANDLER,   /* rt_sigaction: a handler that lets a signal cut a waiting call short */
+  K_REFUSED,   /* a file named in a way no record can hold */
 };
 
 /* Where a call's arguments are: `dir` is the argument index of a directory descriptor (-1: the working
  * directory), `path` of the path (-1: none); `dir2`/`path2` likewise for a second path; `flags` the index of the
- * flags (-1: none). */
+ * flags (-1: none), of which `followed` holds every bit the recorder follows exactly. */
 struct call {
   int nr;
   const char *name;
   enum kind kind;
   signed char dir, path, dir2, path2, flags;
   unsigned char nofollow; /* the call does not follow a link at the end of its path */
+  uint64_t followed;
 };
 
 #define CWD -1
 #define NONE -1
-static const struct call calls[] = {
-#ifdef SYS_open
-  {SYS_open, "open", K_OPEN, CWD, 0, NONE, NONE, 1, 0},
+/* A flag's value on this machine, where x86_64 and aarch64 differ. */
+#if defined(__x86_64__)
+#define FLAGS(x86_64, aarch64) (x86_64)
+#else
+#define FLAGS(x86_64, aarch64) (aarch64)
 #endif
-  {SYS_openat, "openat", K_OPEN, 0, 1, NONE, NONE, 2, 0},
-#ifdef SYS_openat2
-  {SYS_openat2, "openat2", K_OPEN, 0, 1, NONE, NONE, NONE, 0},
-#endif
-#ifdef SYS_creat
-  {SYS_creat, "creat", K_OPEN, CWD, 0, NONE, NONE, NONE, 0},
-#endif
-#ifdef SYS_stat
-  {SYS_stat, "stat", K_LOOK, CWD, 0, NONE, NONE, NONE, 0},
-#endif
-#ifdef SYS_lstat
-  {SYS_lstat, "lstat", K_LOOK, CWD, 0, NONE, NONE, NONE, 1},
-#endif
-#ifdef SYS_newfstatat
-  {SYS_newfstatat, "newfstatat", K_LOOK, 0, 1, NONE, NONE, 3, 0},
-#endif
-#ifdef SYS_statx
-  {SYS_statx, "statx", K_LOOK, 0, 1, NONE, NONE, 2, 0},
-#endif
-#ifdef SYS_access
-  {SYS_access, "access", K_LOOK, CWD, 0, NONE, NONE, NONE, 0},
-#endif
-  {SYS_faccessat, "faccessat", K_LOOK, 0, 1, NONE, NONE, NONE, 0},
-#ifdef SYS_faccessat2
-  {SYS_faccessat2, "faccessat2", K_LOOK, 0, 1, NONE, NONE, 3, 0},
-#endif
-#ifdef SYS_readlink
-  {SYS_readlink, "readlink", K_LOOK, CWD, 0, NONE, NONE, NONE, 1},
-#endif
-  {SYS_readlinkat, "readlinkat", K_LOOK, 0, 1, NONE, NONE, NONE, 1},
-  {SYS_execve, "execve", K_EXEC, CWD, 0, NONE, NONE, NONE, 0},
-  {SYS_execveat, "execveat", K_EXEC, 0, 1, NONE, NONE, 4, 0},
-  {SYS_chdir, "chdir", K_CHDIR, CWD, 0, NONE, NONE, NONE, 0},
-#ifdef SYS_mkdir
-  {SYS_mkdir, "mkdir", K_MKDIR, CWD, 0, NONE, NONE, NONE, 1},
-#endif
-  {SYS_mkdirat, "mkdirat", K_MKDIR, 0, 1, NONE, NONE, NONE, 1},
-#ifdef SYS_unlink
-  {SYS_unlink, "unlink", K_REMOVE, CWD, 0, NONE, NONE, NONE, 1},
-#endif
-#ifdef SYS_rmdir
-  {SYS_rmdir, "rmdir", K_REMOVE, CWD, 0, NONE, NONE, NONE, 1},
-#endif
-  {SYS_unlinkat, "unlinkat", K_REMOVE, 0, 1, NONE, NONE, NONE, 1},
-#ifdef SYS_chmod
-  {SYS_chmod, "chmod", K_CHANGE, CWD, 0, NONE, NONE, NONE, 0},
-#endif
-#ifdef SYS_chown
-  {SYS_chown, "chown", K_CHANGE, CWD, 0, NONE, NONE, NONE, 0},
-#endif
-#ifdef SYS_lchown
-  {SYS_lchown, "lchown", K_CHANGE, CWD, 0, NONE, NONE, NONE, 1},
-#endif
-#ifdef SYS_utime
-  {SYS_utime, "utime", K_CHANGE, CWD, 0, NONE, NONE, NONE, 0},
-#endif
-#ifdef SYS_utimes
-  {SYS_utimes, "utimes", K_CHANGE, CWD, 0, NONE, NONE, NONE, 0},
-#endif
-#ifdef SYS_futimesat
-  {SYS_futimesat, "futimesat", K_CHANGE, 0, 1, NONE, NONE, NONE, 0},
-#endif
-  {SYS_utimensat, "utimensat", K_CHANGE, 0, 1, NONE, NONE, 3, 0},
-  {SYS_truncate, "truncate", K_CHANGE, CWD, 0, NONE, NONE, NONE, 0},
-  {SYS_fchmodat, "fchmodat", K_CHANGE, 0, 1, NONE, NONE, NONE, 0},
-#ifdef SYS_fchmodat2
-  {SYS_fchmodat2, "fchmodat2", K_CHANGE, 0, 1, NONE, NONE, 3, 0},
-#endif
-  {SYS_fchownat, "fchownat", K_CHANGE, 0, 1, NONE, NONE, 4, 0},
-  {SYS_fchmod, "fchmod", K_CHANGE_FD, 0, NONE, NONE, NONE, NONE, 0},
-  {SYS_fchown, "fchown", K_CHANGE_FD, 0, NONE, NONE, NONE, NONE, 0},
-#ifdef SYS_rename
-  {SYS_rename, "rename", K_RENAME, CWD, 0, CWD, 1, NONE, 1},
-#endif
-#ifdef SYS_renameat
-  {SYS_renameat, "renameat", K_RENAME, 0, 1, 2, 3, NONE, 1},
-#endif
-  {SYS_renameat2, "renameat2", K_RENAME, 0, 1, 2, 3, 4, 1},
-#ifdef SYS_link
-  {SYS_link, "link", K_LINK, CWD, 0, CWD, 1, NONE, 1},
-#endif
-  {SYS_linkat, "linkat", K_LINK, 0, 1, 2, 3, 4, 1},
-#ifdef SYS_symlink
-  {SYS_symlink, "symlink", K_SYMLINK, NONE, NONE, CWD, 1, NONE, 1},
-#endif
-  {SYS_symlinkat, "symlinkat", K_SYMLINK, NONE, NONE, 1, 2, NONE, 1},
-  {SYS_connect, "connect", K_CONNECT, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_bind, "bind", K_BIND, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_mount, "mount", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_umount2, "umount2", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_pivot_root, "pivot_root", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_chroot, "chroot", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_setns, "setns", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
-#ifdef SYS_move_mount
-  {SYS_move_mount, "move_mount", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_open_tree, "open_tree", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_fsmount, "fsmount", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_fsopen, "fsopen", K_VIEW, NONE, NONE, NONE, NONE, NONE, 0},
-#endif
-  {SYS_unshare, "unshare", K_SPACE, NONE, NONE, NONE, NONE, 0, 0},
-  {SYS_clone, "clone", K_FORK, NONE, NONE, NONE, NONE, 0, 0},
-#ifdef SYS_clone3
-  {SYS_clone3, "clone3", K_FORK, NONE, NONE, NONE, NONE, NONE, 0},
-#endif
-#ifdef SYS_fork
-  {SYS_fork, "fork", K_FORK, NONE, NONE, NONE, NONE, NONE, 0},
-#endif
-#ifdef SYS_vfork
-  {SYS_vfork, "vfork", K_FORK, NONE, NONE, NONE, NONE, NONE, 0},
-#endif
-  {SYS_io_uring_setup, "io_uring_setup", K_RING, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_io_uring_enter, "io_uring_enter", K_RING_ENTER, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_open_by_handle_at, "open_by_handle_at", K_HANDLE, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_seccomp, "seccomp", K_FILTER, NONE, NONE, NONE, NONE, NONE, 0},
-  {SYS_rt_sigaction, "rt_sigaction", K_HANDLER, NONE, NONE, NONE, NONE, NONE, 0},
-};
+/* The table: calls[], LAST_KNOWN, OPEN_FOLLOWED and RESOLVE_FOLLOWED, written by scripts/build-observe.mjs. */
+#include "calls.h"
 #define NCALLS ((int)(sizeof calls / sizeof calls[0]))
 
 #define NEW_NAMESPACES (CLONE_NEWNS | CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWIPC | CLONE_NEWUTS | \
@@ -323,7 +213,7 @@ static const struct call *callOf(int nr) {
  * watched call goes to it always; everything else passes.
  */
 static int install(void) {
-  struct sock_filter f[16 + 4 * NCALLS];
+  struct sock_filter f[18 + 4 * NCALLS];
   int n = 0;
 #define S(code, k) (f[n++] = (struct sock_filter)BPF_STMT(code, k))
 #define J(code, k, t, e) (f[n++] = (struct sock_filter)BPF_JUMP(code, k, t, e))
@@ -358,6 +248,9 @@ static int install(void) {
     J(BPF_JMP | BPF_JEQ | BPF_K, calls[i].nr, 0, 1);
     S(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF);
   }
+  /* A call numbered past the table may name a file in any way. */
+  J(BPF_JMP | BPF_JGT | BPF_K, LAST_KNOWN, 0, 1);
+  S(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF);
   S(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
 #undef S
 #undef J
@@ -496,6 +389,14 @@ static void unrecorded(const char *reason) {
     }
   if (reasonCount < 16) reasons[reasonCount++] = strdup(reason);
   pthread_mutex_unlock(&lock);
+}
+
+/* A run that reached a file in a way no record can hold: `form` names the call, and the flag or form of it
+ * (ObservedReads.cannotFollow). */
+static void refuse(const char *form) {
+  char reason[256];
+  snprintf(reason, sizeof reason, "it reached a file in a way the recorder cannot follow: %s", form);
+  unrecorded(reason);
 }
 
 /*
@@ -742,7 +643,8 @@ static int placeOf(pid_t tid, int fd, char *out, size_t capacity) {
   else
     snprintf(link, sizeof link, "/proc/%d/fd/%d", tid, fd);
   ssize_t n = readlink(link, out, capacity - 1);
-  if (n <= 0) return 0;
+  /* A name that fills the buffer may have been cut short. */
+  if (n <= 0 || (size_t)n == capacity - 1) return 0;
   out[n] = 0;
   return 1;
 }
@@ -884,12 +786,13 @@ static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
       target[length] = 0;
       more += part;
     }
-    if (*more == 0)
-      snprintf(path, capacity, "%s", target);
-    else if (length == 1)
-      snprintf(path, capacity, "/%s", more);
-    else
-      snprintf(path, capacity, "%s/%s", target, more);
+    int written = *more == 0  ? snprintf(path, capacity, "%s", target)
+                : length == 1 ? snprintf(path, capacity, "/%s", more)
+                              : snprintf(path, capacity, "%s/%s", target, more);
+    if (written < 0 || (size_t)written >= capacity) {
+      *why = "long";
+      return 0;
+    }
   }
   *why = "up";
   return 0;
@@ -914,12 +817,14 @@ static int pathOf(pid_t tid, const struct seccomp_notif *req, int dirIndex, int 
     *why = "base";
     return 0;
   }
-  if (path[0] == 0)
-    snprintf(out, capacity, "%s", base);
-  else if (strcmp(base, "/") == 0)
-    snprintf(out, capacity, "/%s", path);
-  else
-    snprintf(out, capacity, "%s/%s", base, path);
+  /* A path from a deep directory can be longer than one call takes: no later look can name its file. */
+  int n = path[0] == 0              ? snprintf(out, capacity, "%s", base)
+        : strcmp(base, "/") == 0    ? snprintf(out, capacity, "/%s", path)
+                                    : snprintf(out, capacity, "%s/%s", base, path);
+  if (n < 0 || (size_t)n >= capacity) {
+    *why = "long";
+    return 0;
+  }
   return stepView(tid, out, capacity, why);
 }
 
@@ -1653,6 +1558,19 @@ static void startedYet(pid_t tid, pid_t tgid) {
   free(s);
 }
 
+/* A call given flags the table does not follow: the first by its name, as strace prints it, or all by number. */
+static void refuseFlags(const char *call, uint64_t bits) {
+  char form[128];
+  for (size_t i = 0; i < sizeof flagNames / sizeof flagNames[0]; i++) {
+    if (!(bits & flagNames[i].bit)) continue;
+    snprintf(form, sizeof form, "%s with %s", call, flagNames[i].name);
+    refuse(form);
+    return;
+  }
+  snprintf(form, sizeof form, "%s with 0x%llx", call, (unsigned long long)bits);
+  refuse(form);
+}
+
 /* ---- openat2 with RESOLVE_* flags --------------------------------------------------------------------------- */
 
 #ifndef RESOLVE_NO_XDEV
@@ -1663,9 +1581,6 @@ static void startedYet(pid_t tid, pid_t tgid) {
 #define RESOLVE_IN_ROOT 0x10
 #define RESOLVE_CACHED 0x20
 #endif
-/* The flags a reader walks exactly (ObservedReads.resolveFlags). */
-#define RESOLVE_FOLLOWED \
-  (RESOLVE_NO_XDEV | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS | RESOLVE_BENEATH | RESOLVE_IN_ROOT | RESOLVE_CACHED)
 
 /* The first fields of `struct open_how`, which every openat2 passes. */
 struct how {
@@ -1709,11 +1624,8 @@ static int nameOf(int fd, char *out, size_t capacity) {
  */
 static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp_notif *req, const struct how *how,
                         struct text *t, const char **why) {
-  if (how->resolve & ~(uint64_t)RESOLVE_FOLLOWED) {
-    char reason[128];
-    snprintf(reason, sizeof reason, "it reached a file in a way the recorder cannot follow: openat2 with 0x%llx",
-             (unsigned long long)(how->resolve & ~(uint64_t)RESOLVE_FOLLOWED));
-    unrecorded(reason);
+  if ((how->flags & ~(uint64_t)OPEN_FOLLOWED) || (how->resolve & ~(uint64_t)RESOLVE_FOLLOWED)) {
+    refuseFlags("openat2", (how->flags & ~(uint64_t)OPEN_FOLLOWED) | (how->resolve & ~(uint64_t)RESOLVE_FOLLOWED));
     return 1;
   }
   char given[PATH_MAX + 1], base[PATH_MAX + 1], opened[PATH_MAX + 1], link[64];
@@ -1741,7 +1653,7 @@ static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp
     if (!nameOf(fd, opened, sizeof opened) || fstat(fd, &st) != 0) {
       close(fd);
       close(from);
-      unrecorded("it reached a file in a way the recorder cannot follow: openat2 of a file with no name");
+      refuse("openat2 of a file with no name");
       return 1;
     }
     close(fd);
@@ -1781,7 +1693,7 @@ static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp
           /* A link that leads nowhere: the call makes the file it names, by the rules of the walk. */
           close(dir);
           close(from);
-          unrecorded("it reached a file in a way the recorder cannot follow: openat2 to make a file through a link");
+          refuse("openat2 to make a file through a link");
           return 1;
         }
         char place[PATH_MAX + 1];
@@ -1817,7 +1729,7 @@ static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp
   }
   printf_(t, " = 0<%s>", opened);
   keep(id, 2, t);
-  if (directory && (how->flags & (O_ACCMODE | O_CREAT | O_TMPFILE | O_PATH)) == O_RDONLY) {
+  if (directory) {
     /* A directory opened is a directory listed, as an open's is. */
     struct text listed = {0};
     printf_(&listed, "%d getdents64(0<", tgid);
@@ -1837,7 +1749,18 @@ static void serve(const struct seccomp_notif *req) {
     return;
   }
   const struct call *c = callOf(req->data.nr);
-  if (c == NULL) return;
+  if (c == NULL) {
+    if (req->data.nr > LAST_KNOWN) {
+      char form[96];
+      snprintf(form, sizeof form, "a system call it does not know, numbered %d", req->data.nr);
+      refuse(form);
+    }
+    return;
+  }
+  if (c->flags >= 0 && ((uint32_t)req->data.args[(int)c->flags] & ~c->followed)) {
+    refuseFlags(c->name, (uint32_t)req->data.args[(int)c->flags] & ~c->followed);
+    return;
+  }
   pid_t tgid = tgidOf(tid);
   sendKept(tid, tgid);
   receivedCall(tid);
@@ -1862,11 +1785,12 @@ static void serve(const struct seccomp_notif *req) {
       } else {
         flags = O_WRONLY | O_CREAT | O_TRUNC; /* creat */
       }
-      int reading = (flags & (O_ACCMODE | O_CREAT | O_TRUNC | O_TMPFILE)) == O_RDONLY;
+      /* O_TMPFILE holds O_DIRECTORY's bit: only all of it makes an unnamed file. */
+      int reading = (flags & (O_ACCMODE | O_CREAT | O_TRUNC)) == O_RDONLY && (flags & O_TMPFILE) != O_TMPFILE;
       if (c->nr == SYS_openat2) {
         struct how how = {0, 0, 0};
         if (req->data.args[3] < sizeof how || !bytesAt(tid, req->data.args[2], &how, sizeof how)) break;
-        if (how.resolve != 0) {
+        if (how.resolve != 0 || (how.flags & ~(uint64_t)OPEN_FOLLOWED)) {
           if (!reading) __atomic_add_fetch(&namesChanged, 1, __ATOMIC_ACQ_REL);
           if (resolvedOpen(tid, tgid, id, req, &how, &t, &why)) return;
           break;
@@ -2063,14 +1987,7 @@ static void serve(const struct seccomp_notif *req) {
       if (!pathOf(tid, req, c->dir2, c->path2, other, sizeof other, &why)) break;
       /* RENAME_NOREPLACE (1) fails where the new name is there; RENAME_EXCHANGE (2) swaps two names that are both
        * there; RENAME_WHITEOUT (4) moves as a rename does. The line names them, as strace does. */
-      uint64_t renaming = c->nr == SYS_renameat2 ? req->data.args[(int)c->flags] : 0;
-      if (renaming & ~(uint64_t)7) {
-        char reason[128];
-        snprintf(reason, sizeof reason, "it reached a file in a way the recorder cannot follow: renameat2 with 0x%llx",
-                 (unsigned long long)(renaming & ~(uint64_t)7));
-        unrecorded(reason);
-        return;
-      }
+      uint64_t renaming = c->nr == SYS_renameat2 ? (uint32_t)req->data.args[(int)c->flags] : 0;
       int moving = 0, from = lookKind(path, 1, &moving), to = look(other, 1);
       /* A name that is there already is one the run found, whatever the call does to it. */
       if (to == 0 && !pseudo(other)) found(tgid, id, 0, other);
@@ -2126,9 +2043,26 @@ static void serve(const struct seccomp_notif *req) {
       socklen_t length = (socklen_t)req->data.args[2];
       if (length > sizeof a) length = sizeof a;
       if (length < sizeof(sa_family_t) || !bytesAt(tid, req->data.args[1], &a, length)) break;
+      /* A socket's path from the working directory is written whole, as every other path is. */
+      struct sockaddr_storage shown = a;
+      socklen_t shownLength = length;
+      struct sockaddr_un *named = (struct sockaddr_un *)&shown;
+      if (a.ss_family == AF_UNIX && length > offsetof(struct sockaddr_un, sun_path) && named->sun_path[0] != 0 &&
+          named->sun_path[0] != '/') {
+        char relative[sizeof named->sun_path + 1], whole[PATH_MAX + 1];
+        snprintf(relative, sizeof relative, "%.*s", (int)(length - offsetof(struct sockaddr_un, sun_path)),
+                 named->sun_path);
+        int fits = placeOf(tid, AT_FDCWD, other, sizeof other) &&
+                   snprintf(whole, sizeof whole, "%s/%s", other, relative) < (int)sizeof named->sun_path;
+        if (fits) {
+          memset(named->sun_path, 0, sizeof named->sun_path);
+          memcpy(named->sun_path, whole, strlen(whole));
+          shownLength = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + strlen(whole) + 1);
+        }
+      }
       begin(&t, tgid, c->name);
       printf_(&t, "%d, ", (int)req->data.args[0]);
-      socketAddress(&t, &a, length);
+      socketAddress(&t, &shown, shownLength);
       printf_(&t, ", %u)", (unsigned)length);
       if (c->kind == K_CONNECT) {
         int error = 0;
@@ -2145,7 +2079,10 @@ static void serve(const struct seccomp_notif *req) {
             } else {
               full[0] = 0;
             }
-            if (full[0] != 0 && look(full, 0) == ENOENT) error = ENOENT;
+            /* Nothing there, or no socket there: the kernel refuses the connection, and the run learns which. */
+            struct stat st;
+            if (full[0] != 0 && !pseudo(full))
+              error = stat(full, &st) != 0 ? (errno == ENOENT ? ENOENT : 0) : S_ISSOCK(st.st_mode) ? 0 : ECONNREFUSED;
           }
         } else if (loopbackAddress(&a)) {
           unsigned port = a.ss_family == AF_INET ? ntohs(((struct sockaddr_in *)&a)->sin_port)
@@ -2155,6 +2092,10 @@ static void serve(const struct seccomp_notif *req) {
         answer(&t, error);
         break;
       }
+      /* A path there already is one the run found: the bind fails on it. One not there is the run's once bound. */
+      if (a.ss_family == AF_UNIX && named->sun_path[0] == '/' && !pseudo(named->sun_path) &&
+          look(named->sun_path, 1) == 0)
+        found(tgid, id, 0, named->sun_path);
       /* A bind is written at the end of the run, when the socket says it is bound. */
       int pidfd = (int)syscall(SYS_pidfd_open, tgid, 0);
       int copy = pidfd < 0 ? -1 : (int)syscall(SYS_pidfd_getfd, pidfd, (int)req->data.args[0], 0);
@@ -2185,9 +2126,20 @@ static void serve(const struct seccomp_notif *req) {
       free(t.data);
       return;
     }
-    case K_VIEW:
-      unrecorded("it changed its view of the file system");
+    case K_REFUSED:
+      refuse(c->name);
       return;
+    case K_MAKE: {
+      if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
+      int there = look(path, 1);
+      if (there == 0 && !pseudo(path)) found(tgid, id, 0, path);
+      begin(&t, tgid, "mknodat");
+      puts_(&t, "AT_FDCWD, ");
+      quotedz(&t, path);
+      puts_(&t, ", 0)");
+      answer(&t, there == 0 ? EEXIST : there == ENOENT ? parentThere(path, 0, ENOENT) : there);
+      break;
+    }
     case K_SPACE:
       unrecorded("it made a namespace of its own");
       return;
@@ -2218,14 +2170,14 @@ static void serve(const struct seccomp_notif *req) {
       /* A ring whose kernel thread takes what it is told with no call: nothing it does is seen. */
       uint32_t setup[3] = {0, 0, 0}; /* sq_entries, cq_entries, flags */
       if (!bytesAt(tid, req->data.args[1], setup, sizeof setup) || (setup[2] & 2u /* IORING_SETUP_SQPOLL */)) {
-        unrecorded("it set up an io_uring whose kernel thread reads files with no call a trace shows");
+        refuse("io_uring with a kernel thread of its own");
       }
       return;
     }
     case K_RING_ENTER: {
       /* What the ring is about to do, as the kernel lists it: a call that names a path is one no line holds. */
       if (req->data.args[3] & 16u /* IORING_ENTER_REGISTERED_RING */) {
-        unrecorded("it used an io_uring by a registered descriptor, whose requests cannot be read");
+        refuse("io_uring by a registered descriptor");
         return;
       }
       char name[64], buffer[16384];
@@ -2241,17 +2193,14 @@ static void serve(const struct seccomp_notif *req) {
                                     "opcode:GETXATTR,", "opcode:SETXATTR,", "opcode:FILES_UPDATE,"};
       for (size_t i = 0; i < sizeof paths / sizeof paths[0]; i++) {
         if (strstr(buffer, paths[i]) != NULL) {
-          unrecorded("it read files through io_uring, which a trace does not show");
+          refuse("io_uring");
           return;
         }
       }
       /* A list cut short by the buffer may hold more: what is not read is not known. */
-      if ((size_t)n == sizeof buffer - 1) unrecorded("it gave io_uring more requests than the recorder reads");
+      if ((size_t)n == sizeof buffer - 1) refuse("io_uring with more requests than it reads");
       return;
     }
-    case K_HANDLE:
-      unrecorded("it opened a file by its handle, which names no path");
-      return;
     case K_FILTER:
       if (req->data.args[0] == SECCOMP_SET_MODE_FILTER) unrecorded("it filtered its own system calls");
       return;
@@ -2273,6 +2222,10 @@ static void serve(const struct seccomp_notif *req) {
     if (ioctl(listener, SECCOMP_IOCTL_NOTIF_ID_VALID, &id) != 0) return;
     if (strcmp(why, "up") == 0) {
       unrecorded("it named a path that goes back up inside /proc or /dev, which cannot be followed as it ran");
+      return;
+    }
+    if (strcmp(why, "long") == 0) {
+      refuse("a path longer than 4095 bytes");
       return;
     }
     if (strcmp(why, "removed") == 0) {
@@ -2673,6 +2626,46 @@ static int reap(char **command) {
   return code;
 }
 
+/*
+ * `smthrs-observe --guard -- <command>` runs a command strace records with a filter of its own that hands strace the
+ * calls it would otherwise let by unseen. strace's filter lets through a call it has no name for once it is told to
+ * trace as many calls as a recorded run is (strace 6.8: from 77), so a trace would never show `getxattrat`, or a call
+ * newer than strace, and the record would say less than the run read. This filter sends strace every call numbered
+ * from GUARD_FROM on, each call from 424 on that names a file (`guarded`, from the table), and every call of another
+ * architecture; strace writes each, by its number where it has no name. A program strace has let go of, as a job
+ * keeps one a step left running, gets ENOSYS from those calls alone: no call a running program depends on is among
+ * them (`pidfd_open`, `clone3`, `close_range`, `epoll_pwait2` and the futex calls are not).
+ */
+static int guard(char **command) {
+  struct sock_filter f[8 + sizeof guarded / sizeof guarded[0] * 2];
+  int n = 0;
+#define S(code, k) (f[n++] = (struct sock_filter)BPF_STMT(code, k))
+#define J(code, k, t, e) (f[n++] = (struct sock_filter)BPF_JUMP(code, k, t, e))
+  S(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch));
+  J(BPF_JMP | BPF_JEQ | BPF_K, NATIVE_ARCH, 1, 0);
+  S(BPF_RET | BPF_K, SECCOMP_RET_TRACE);
+  S(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr));
+  J(BPF_JMP | BPF_JGE | BPF_K, GUARD_FROM, 0, 1);
+  S(BPF_RET | BPF_K, SECCOMP_RET_TRACE);
+  for (size_t i = 0; i < sizeof guarded / sizeof guarded[0]; i++) {
+    J(BPF_JMP | BPF_JEQ | BPF_K, guarded[i], 0, 1);
+    S(BPF_RET | BPF_K, SECCOMP_RET_TRACE);
+  }
+  S(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
+#undef S
+#undef J
+  struct sock_fprog prog = {.len = (unsigned short)n, .filter = f};
+  if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 || syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, 0, &prog) != 0) {
+    /* Unguarded, the record could say less than the run read: the run fails, and runs again unrecorded. */
+    fprintf(stderr, "smthrs-observe: this machine refuses the filter strace needs to see every call: %s\n",
+            strerror(errno));
+    return 126;
+  }
+  execvp(command[0], command);
+  fprintf(stderr, "smthrs-observe: cannot start %s: %s\n", command[0], strerror(errno));
+  return 125;
+}
+
 int main(int argc, char **argv) {
   /* `--probe --reap` answers 0: this program can reap (`--reap`), which needs nothing of the kernel but a child
    * subreaper. One built before it could refuses the pair; asked `--reap -- true`, it would record `true`. */
@@ -2688,6 +2681,7 @@ int main(int argc, char **argv) {
    * leaves running (`--keep`), which one built before could not, and refused the pair. */
   if (argc >= 2 && argc <= 3 && strcmp(argv[1], "--probe") == 0 && (argc == 2 || strcmp(argv[2], "--keep") == 0))
     return probe();
+  if (argc >= 4 && strcmp(argv[1], "--guard") == 0 && strcmp(argv[2], "--") == 0) return guard(argv + 3);
   /* Names each program whose file asks for rights, one a line; answers 0. strace's reader asks this way. */
   if (argc >= 2 && strcmp(argv[1], "--rights") == 0) {
     for (int i = 2; i < argc; i++)

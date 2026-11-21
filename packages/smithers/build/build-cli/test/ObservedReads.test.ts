@@ -140,7 +140,32 @@ describe("finding the tracer", () => {
 
   it.skipIf(process.platform === "win32")("answers with a tracer that traces a process", async () => {
     const tracer = await program("exit 0")
-    expect(ObservedReads.observer({ platform: "linux", executable: () => tracer })).toEqual({ tracer })
+    expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, guard: undefined })).toEqual({
+      tracer
+    })
+  })
+
+  it.skipIf(process.platform === "win32")("runs strace's command through the guard, which must work too", async () => {
+    // Stands where strace does: runs what follows `--`.
+    const tracer = await program(
+      "[ \"$1\" = -V ] && exit 0\nwhile [ \"$1\" != \"--\" ]; do shift; done\nshift\nexec \"$@\""
+    )
+    const guard = await program("[ \"$1 $2\" = \"--guard --\" ] || exit 9\nshift 2\nexec \"$@\"")
+    expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, guard })).toEqual({ tracer, guard })
+    expect(ObservedReads.commandFor({ tracer, guard }, "/t/trace", ["true"]))
+      .toEqual(ObservedReads.command(tracer, "/t/trace", [guard, "--guard", "--", "true"]))
+    // A step of a job that keeps what it leaves running runs without it.
+    expect(ObservedReads.commandFor({ tracer, guard }, "/t/trace", ["true"], true))
+      .toEqual(ObservedReads.command(tracer, "/t/trace", ["true"], true))
+    const refusing = await program("echo 'smthrs-observe: this machine refuses the filter' >&2\nexit 126")
+    expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, guard: refusing })).toEqual({
+      reason:
+        "strace cannot see every call here without smthrs-observe --guard: smthrs-observe: this machine refuses the filter"
+    })
+    // Unless given, the guard is the smthrs-observe this package holds, whichever recorder is asked for.
+    const held = ObservedReads.supervisorPath(process.platform, process.arch, { SMTHRS_OBSERVE_WITH: "smthrs-observe" })
+    expect(ObservedReads.observer({ platform: "linux", executable: () => tracer }))
+      .toEqual(held === undefined ? { tracer } : { tracer, guard: held })
   })
 
   it.skipIf(process.platform === "win32")("repeats what a tracer that cannot trace said", async () => {
@@ -266,10 +291,13 @@ describe("picking the recorder", () => {
       )
       const tracer = Path.join(root, "strace")
       await Fs.writeFile(tracer, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
-      expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, supervisor: older })).toEqual({
-        tracer,
-        why: "smthrs-observe was built before it could follow a program a step leaves running: build it again"
-      })
+      expect(
+        ObservedReads.observer({ platform: "linux", executable: () => tracer, supervisor: older, guard: undefined })
+      )
+        .toEqual({
+          tracer,
+          why: "smthrs-observe was built before it could follow a program a step leaves running: build it again"
+        })
       // One built from this package's source answers both ways.
       if (process.platform === "linux" && NodeFs.existsSync(built)) {
         expect(spawnSync(built, ["--probe", "--keep"]).status).toBe(spawnSync(built, ["--probe"]).status)
@@ -287,7 +315,9 @@ describe("picking the recorder", () => {
     const tracer = Path.join(root, "strace")
     await Fs.writeFile(tracer, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
     // strace records, and the answer says why smthrs-observe does not.
-    expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, supervisor: refusing }))
+    expect(
+      ObservedReads.observer({ platform: "linux", executable: () => tracer, supervisor: refusing, guard: undefined })
+    )
       .toEqual({ tracer, why: "smthrs-observe cannot run here" })
   })
 
@@ -306,16 +336,21 @@ describe("picking the recorder", () => {
           platform: "linux",
           executable: () => tracer,
           supervisor: refusing,
-          unsupervised: "not asked"
+          unsupervised: "not asked",
+          guard: undefined
         })
       ).toEqual({ tracer, why: said })
       const missing = "this installation of @smthrs/build-cli holds no smthrs-observe for linux-x64"
-      expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, unsupervised: missing }))
+      expect(
+        ObservedReads.observer({ platform: "linux", executable: () => tracer, unsupervised: missing, guard: undefined })
+      )
         .toEqual({ tracer, why: missing })
       expect(ObservedReads.observer({ platform: "linux", executable: () => undefined, unsupervised: missing }))
         .toEqual({ reason: `${missing}, and strace is not installed` })
       // Where none is built for the host, strace alone is named.
-      expect(ObservedReads.observer({ platform: "linux", executable: () => tracer })).toEqual({ tracer })
+      expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, guard: undefined })).toEqual({
+        tracer
+      })
     }
   )
 
@@ -466,17 +501,16 @@ describe("reading a trace", () => {
     ].join("\n"))
     expect(trace.refusals).toEqual([])
     expect(paths(trace.found)).toEqual([
-      "/proc/self/exe",
       "/w/a.txt",
       "/w/dir/child",
-      "/w/other/in-other",
       "/w/other/plain",
       "/w/sub",
       "/w/sub/rel.txt",
-      "/w/third/rl",
       "/w/third/still-third",
       "/w/third/sx"
     ])
+    // A lookup that does not follow a link at the end read the name, not what a link there leads to.
+    expect(paths(trace.unfollowed!)).toEqual(["/proc/self/exe", "/w/other/in-other", "/w/third/rl"])
     expect(paths(trace.missing)).toEqual(["/missing", "/w/sub/nope", "/w/third/fa"])
   })
 
@@ -950,19 +984,68 @@ describe("reading a trace", () => {
   })
 
   it("stores nothing for a run that changed its view of the file system", () => {
-    expect(read("100 chroot(\"/w/jail\")                = 0").refusals).toEqual(["it changed its root directory"])
-    expect(read("100 mount(\"none\", \"/mnt\", \"tmpfs\", 0, NULL) = 0").refusals)
-      .toEqual(["it changed its view of the file system"])
-    expect(read("100 pivot_root(\".\", \".\")             = 0").refusals)
-      .toEqual(["it changed its view of the file system"])
-    expect(read("100 setns(5</proc/1/ns/mnt>, CLONE_NEWNS) = 0").refusals)
-      .toEqual(["it changed its view of the file system"])
+    const refused = ObservedReads.cannotFollow
+    expect(read("100 chroot(\"/w/jail\")                = 0").refusals).toEqual([refused("chroot")])
+    expect(read("100 mount(\"none\", \"/mnt\", \"tmpfs\", 0, NULL) = 0").refusals).toEqual([refused("mount")])
+    expect(read("100 pivot_root(\".\", \".\")             = 0").refusals).toEqual([refused("pivot_root")])
+    expect(read("100 setns(5</proc/1/ns/mnt>, CLONE_NEWNS) = 0").refusals).toEqual([refused("setns")])
     expect(read("100 setns(5</proc/1/ns/mnt>, CLONE_NEWNS) = -1 EPERM (Operation not permitted)").refusals)
       .toEqual([])
     expect(read("100 mount(\"none\", \"/mnt\", \"tmpfs\", 0, NULL) = -1 EPERM (Operation not permitted)").refusals)
       .toEqual([])
     expect(read("100 io_uring_setup(256, {flags=0, sq_thread_cpu=0}) = 4<anon_inode:[io_uring]>").refusals)
-      .toEqual(["it read through io_uring, which a trace does not show"])
+      .toEqual([refused("io_uring")])
+    // A namespace of its own, or a working directory or descriptors of its own.
+    expect(read("100 unshare(CLONE_NEWUSER|CLONE_NEWNS) = 0").refusals).toEqual(["it made a namespace of its own"])
+    expect(read("100 unshare(CLONE_NEWUSER) = -1 EPERM (Operation not permitted)").refusals).toEqual([])
+    const own = read([
+      "100 clone(child_stack=0x1, flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_THREAD) = 101",
+      "101 unshare(CLONE_FS|CLONE_FILES) = 0",
+      "101 chdir(\"sub\") = 0",
+      "100 open(\"a.txt\", O_RDONLY) = 3",
+      "101 open(\"b.txt\", O_RDONLY) = 3"
+    ].join("\n"))
+    expect(paths(own.found)).toEqual(["/w/a.txt", "/w/sub", "/w/sub/b.txt"])
+    // A call strace names by number: one that names no file, one that does, one past the table.
+    expect(read("100 syscall_0x1ce(0, 0, 0) = 0").refusals).toEqual([])
+    expect(read("100 syscall_0x1d0(0xffffffffffffff9c, 0x7f, 0, 0x7f, 0, 0) = -1 ENODATA (No data)").refusals)
+      .toEqual([refused("getxattrat")])
+    expect(read("100 syscall_0x1d8(0) = -1 ENOSYS (Function not implemented)").refusals)
+      .toEqual([refused("a system call it does not know, numbered 472")])
+    expect(read("100 syscall_0x14(0) = 0").refusals).toEqual([])
+    // A flag the table does not follow, and one it does.
+    expect(read("100 linkat(AT_FDCWD</w>, \"a\", AT_FDCWD</w>, \"b\", AT_SYMLINK_NOFOLLOW) = -1 EINVAL (Bad)").refusals)
+      .toEqual([refused("linkat with AT_SYMLINK_NOFOLLOW")])
+    expect(read("100 openat2(AT_FDCWD</w>, \"a\", {flags=O_RDONLY|0x4, resolve=0}, 24) = 3</w/a>").refusals)
+      .toEqual([refused("openat2 with 0x4")])
+    expect(read("100 openat2(AT_FDCWD</w>, \"a\", {resolve=0}, 24) = 3</w/a>").refusals).toEqual([])
+    // A call the table does not hold names no file.
+    expect(read("100 close(3) = 0").refusals).toEqual([])
+    // A socket's path: there or not, as the failed call says; not asked about where the call says nothing of it, or
+    // where the trace does not know the directory a relative one is in.
+    const sockets = read([
+      "100 connect(3<socket:[1]>, {sa_family=AF_UNIX, sun_path=\"gone\"}, 7) = -1 ENOENT (No such file or directory)",
+      "100 connect(3<socket:[1]>, {sa_family=AF_UNIX, sun_path=\"/w/file\"}, 10) = -1 ECONNREFUSED (Refused)",
+      "100 connect(3<socket:[1]>, {sa_family=AF_UNIX, sun_path=\"/w/locked\"}, 12) = -1 EACCES (Permission denied)",
+      "100 bind(3<socket:[1]>, {sa_family=AF_UNIX, sun_path=\"/w/taken\"}, 11) = -1 EADDRINUSE (Address in use)",
+      "100 bind(3<socket:[1]>, {sa_family=AF_UNIX, sun_path=\"/w/denied\"}, 12) = -1 EACCES (Permission denied)",
+      "100 bind(3<socket:[1]>, {sa_family=AF_UNIX, sun_path=\"/w/mine\"}, 10) = 0",
+      "200 connect(3<socket:[1]>, {sa_family=AF_UNIX, sun_path=\"rel\"}, 6) = -1 ENOENT (No such file or directory)"
+    ].join("\n"))
+    expect([paths(sockets.found), paths(sockets.missing), paths(sockets.made)])
+      .toEqual([["/w/file", "/w/taken"], ["/w/gone"], ["/w/mine"]])
+    // A name made where none was, by its own call.
+    expect(paths(read("100 mknodat(AT_FDCWD</w>, \"fifo\", S_IFIFO|0644) = 0").made)).toEqual(["/w/fifo"])
+    // An extended attribute, a file system's numbers, a watch: each looks the path up.
+    expect(paths(
+      read([
+        "100 getxattr(\"x\", \"user.a\", NULL, 0) = -1 ENODATA (No data available)",
+        "100 statfs(\"y\", {...}) = 0",
+        "100 inotify_add_watch(3, \"z\", IN_ALL_EVENTS) = 1",
+        "100 lsetxattr(\"x\", \"user.a\", \"v\", 1, 0) = 0",
+        "100 removexattrat(AT_FDCWD</w>, \"x\", 0, \"user.a\") = 0"
+      ].join("\n")).found
+    )).toEqual(["/w/x", "/w/y", "/w/z"])
     expect(
       read("100 io_uring_setup(256, {flags=0}) = -1 ENOSYS (Function not implemented) (INJECTED)").refusals
     ).toEqual([])
@@ -1884,6 +1967,21 @@ describe("recording what a run read", () => {
       expect(refusal(at2("../x.txt", "RESOLVE_BENEATH", opened("x.txt")))).toEqual({
         refusal: "its trace does not say where ../x.txt led"
       })
+      // A path from a directory so deep that the two are longer than a call takes cannot be measured again; one the
+      // call failed on for its length read nothing.
+      const deep = `/${"d".repeat(4090)}`
+      expect(refusal(at2("x.txt", "RESOLVE_IN_ROOT", `4<${deep}/x.txt>`, "O_RDONLY", `3<${deep}>`))).toEqual({
+        refusal: ObservedReads.cannotFollow("a path longer than 4095 bytes")
+      })
+      expect(record([at2("x".repeat(4100), "RESOLVE_IN_ROOT", "-1 ENAMETOOLONG (File name too long)")]))
+        .not.toHaveProperty("refusal")
+      // So for any path a run read or wrote from such a directory.
+      expect(record([`100 openat(3<${deep}>, "x.txt", O_RDONLY) = 4<${deep}/x.txt>`])).toEqual({
+        refusal: ObservedReads.cannotFollow("a path longer than 4095 bytes")
+      })
+      expect(record([`100 openat(3<${deep}>, "x.txt", O_WRONLY|O_CREAT|O_TRUNC, 0644) = 4<${deep}/x.txt>`])).toEqual({
+        refusal: ObservedReads.cannotFollow("a path longer than 4095 bytes")
+      })
       // A file the call opened and the run then removed was read, and is gone.
       expect(refusal(at2("removed.txt", "RESOLVE_IN_ROOT", opened("removed.txt")))).toEqual({
         refusal: "r/removed.txt was removed while it ran"
@@ -1894,6 +1992,19 @@ describe("recording what a run read", () => {
       expect(record([`100 openat2(3<${r}>, "x.txt", {resolve=RESOLVE_IN_ROOT}, 24) = ${opened("x.txt")}`]))
         .not.toHaveProperty("refusal")
     })
+  })
+
+  it("holds a link the run looked at without following it, wherever it leads", async () => {
+    const { record, root, rows } = await setup()
+    await Fs.symlink("nowhere", Path.join(root, "dangling"))
+    const stored = rows(record([
+      `100 newfstatat(AT_FDCWD<${root}>, "dangling", {st_mode=S_IFLNK|0777, ...}, AT_SYMLINK_NOFOLLOW) = 0`,
+      `100 readlinkat(AT_FDCWD<${root}>, "dangling", "nowhere", 4096) = 7`
+    ]))
+    expect(stored.reads).toEqual([["dangling", "l:nowhere"]])
+    await Fs.rm(Path.join(root, "dangling"))
+    await Fs.symlink("elsewhere", Path.join(root, "dangling"))
+    expect(ObservedReads.changed(stored, root)).toBe("dangling changed")
   })
 
   describe("a renameat2 with flags", () => {
@@ -1987,6 +2098,13 @@ describe("recording what a run read", () => {
     // The file outside is one path, by the link, by the way up, and as the script's interpreter.
     expect(placed.filter((path) => path === outside)).toEqual([outside])
     expect(placed.some((path) => path.startsWith("/shared"))).toBe(false)
+    // A directory mounted below another, looked at without following it: the name is where its own mount says.
+    const inner = Path.join(base, "inner")
+    await Fs.mkdir(inner)
+    expect(read([
+      `100 newfstatat(AT_FDCWD<${root}>, "/shared/inner", {st_mode=S_IFDIR|0755, ...}, AT_SYMLINK_NOFOLLOW) = 0`,
+      `100 newfstatat(AT_FDCWD<${root}>, "/shared/gone", {...}, AT_SYMLINK_NOFOLLOW) = -1 ENOENT (No such file)`
+    ], [["/shared/inner", inner], ["/shared", own]])).toEqual([inner, Path.join(own, "gone")])
     // With nothing mounted the same names are the host's own, where there is no such directory: the run read what
     // nobody can find again, and stores nothing.
     expect(recorded(lines)).toEqual({ refusal: "/shared was removed while it ran" })

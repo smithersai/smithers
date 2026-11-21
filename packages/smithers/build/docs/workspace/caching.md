@@ -706,8 +706,8 @@ all be known, and says why on its own line:
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `it opened a network connection (uv to 151.101.0.223 port 443)`            | What a network answers is in no record. The line names the program and the first address         |
 | `it reached a program outside the run ...`                                 | A daemon reads files this run's trace does not show. A server the run starts itself is in it     |
-| `it changed its view of the file system`                                   | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says              |
-| `it reached a file in a way the recorder cannot follow: <call>`           | The call, or a flag or form of it, names a file no record can hold exactly. The line names it    |
+| `it reached a file in a way the recorder cannot follow: open_by_handle_at` | The run named a file in a way no record can hold exactly: see below. The line names the call     |
+| `it made a namespace of its own`                                           | In a namespace of its own a path can name another file than the trace says                       |
 | `<path> changed while it ran`, `was removed while it ran`                  | Something else wrote a file the run read, so what the run saw can no longer be measured          |
 | `its trace ...`                                                            | A line of the trace could not be read in full                                                    |
 | `its trace does not say where /proc/self/fd/3/x led`                       | With strace, a path below a descriptor is followed only for a call that opened a file there      |
@@ -717,6 +717,21 @@ all be known, and says why on its own line:
 | `it passed, but failed while its reads were recorded`                      | See below                                                                                        |
 | `its recorded run failed and its plain run passed; it runs unrecorded ...` | See below: the run after such a one, of a target another waits for                               |
 | `a step after it may read what it leaves, and its reads are not recorded`  | The host cannot record reads, and another target waits for this one                              |
+
+Both recorders follow one table of the calls that name a file, kept in
+`@smthrs/build-cli` as `src/internal/RecordedCalls.ts`: for each call, where
+its paths are and which of its flags are followed exactly. A path an
+`openat2` holds inside a directory (`RESOLVE_IN_ROOT`, `RESOLVE_BENEATH`) is
+walked by the kernel's rules, every link and directory on the way is held, and
+the file the kernel opened is checked against the walk. A run stores nothing,
+and its line names the call, when it reaches a file any other way: by a handle
+instead of a path (`open_by_handle_at`, `name_to_handle_at`), through another
+root or another set of mounts (`chroot`, `pivot_root`, `mount` and the calls
+that make mounts, `setns`), through `io_uring`, as a device, a swap area, an
+accounting file or a pinned kernel object, with a flag the table does not name,
+by a path longer than 4,095 bytes, or by a call numbered past the table. Under
+`strace` such a call counts only when it succeeded; `smthrs-observe` sees a
+call before the kernel answers it, so it counts every one.
 
 A program whose file asks for rights (set-user-id, set-group-id, a file
 capability, as `ping` has) gets none in a traced run, nor in the jail that gives

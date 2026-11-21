@@ -304,6 +304,13 @@ when the file it reaches changes, and is reused otherwise. A job jailed to
 the files it reads sees the link as a link; what it points at outside the
 repository is there only when the jail gives that path to every step.
 
+A step that reaches a file in a way the recorder cannot follow exactly, such as
+opening it by a handle instead of a name, stores nothing and runs at every
+commit, and its line names the call:
+`not cached: it reached a file in a way the recorder cannot follow: open_by_handle_at`.
+Every other way a step reaches a file is followed as the kernel follows it,
+including a path held inside one directory, as container tools open files.
+
 A step that asks git about the commit, as `git describe` and `pre-commit` do,
 read `.git`, which every commit changes, so it runs at every commit. `cargo
 build`, `cargo test` and `cargo doc` open `.git` only to list a package's

@@ -19,6 +19,7 @@ import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:
 import { homedir, tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { calls, flagValues, lastKnown, openFlags, resolveFlags } from "../src/internal/RecordedCalls.ts"
 
 /** The zig release the programs are built with; its release archive is dated 2026-11-02, weeks before it was pinned. */
 export const zigVersion = "0.17.1"
@@ -30,6 +31,91 @@ export const observeTargets = [
 ]
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+
+/** The first call number strace 6.8 has no name for: from here on the guard hands every call to strace. */
+export const guardFrom = 462
+
+/** Each kind of src/internal/RecordedCalls.ts as observe.c names it; `none` is strace's alone. */
+const kinds = {
+  open: "K_OPEN",
+  look: "K_LOOK",
+  exec: "K_EXEC",
+  chdir: "K_CHDIR",
+  mkdir: "K_MKDIR",
+  make: "K_MAKE",
+  remove: "K_REMOVE",
+  change: "K_CHANGE",
+  changeFd: "K_CHANGE_FD",
+  rename: "K_RENAME",
+  link: "K_LINK",
+  symlink: "K_SYMLINK",
+  connect: "K_CONNECT",
+  bind: "K_BIND",
+  space: "K_SPACE",
+  fork: "K_FORK",
+  ring: "K_RING",
+  ringEnter: "K_RING_ENTER",
+  filter: "K_FILTER",
+  handler: "K_HANDLER",
+  refused: "K_REFUSED"
+}
+
+/** The bits of `names` on x86_64 and on aarch64, as `FLAGS(<x86_64>, <aarch64>)`. */
+const flagsOf = (names) => {
+  const on = (machine) =>
+    names.reduce((bits, name) => {
+      const value = flagValues[name]
+      return (bits | (Array.isArray(value) ? value[machine] : value)) >>> 0
+    }, 0)
+  return `FLAGS(0x${on(0).toString(16)}u, 0x${on(1).toString(16)}u)`
+}
+
+/**
+ * The table of calls `smthrs-observe` watches, as C (`calls.h`, which observe.c includes): every row of
+ * src/internal/RecordedCalls.ts strace alone does not need, each under `#ifdef SYS_<name>` so a call the machine
+ * lacks is left out, and the number of each call numbered alike everywhere for a C library that lacks it.
+ */
+export const callsHeader = () => {
+  const index = (value) => (value === undefined ? "NONE" : value === -1 ? "CWD" : String(value))
+  const lines = [
+    "/* Written by scripts/build-observe.mjs from src/internal/RecordedCalls.ts, the one table of calls. */",
+    `#define LAST_KNOWN ${lastKnown}`,
+    `#define OPEN_FOLLOWED ${flagsOf(openFlags)}`,
+    `#define RESOLVE_FOLLOWED ${flagsOf(resolveFlags)}`
+  ]
+  const watched = calls.filter((call) => call.only !== "strace")
+  for (const call of watched) {
+    if (call.number !== undefined) lines.push(`#ifndef SYS_${call.name}`, `#define SYS_${call.name} ${call.number}`, "#endif")
+  }
+  // Each flag of one bit by its name, to name an unfollowed flag as strace does: lowest first, as strace lists them.
+  const named = Object.entries(flagValues).flatMap(([name, value]) => {
+    const [x86, arm] = Array.isArray(value) ? value : [value, value]
+    const single = (bits) => bits !== 0 && (bits & (bits - 1)) === 0
+    return name.startsWith("AT_") && name !== "AT_EACCESS" && single(x86) && single(arm) ? [[name, x86, arm]] : []
+  }).sort((left, right) => left[1] - right[1])
+  lines.push("static const struct {", "  uint64_t bit;", "  const char *name;", "} flagNames[] = {")
+  for (const [name, x86, arm] of named) lines.push(`  {FLAGS(0x${x86.toString(16)}u, 0x${arm.toString(16)}u), "${name}"},`)
+  lines.push("};")
+  // The calls the guard hands strace (native/observe.c, guard): each numbered from 424 to 461 that names a file, and
+  // every one from 462 on, which no strace a run may use is sure to know by name.
+  const pathKinds = ["open", "look", "exec", "chdir", "mkdir", "make", "remove", "change", "rename", "link", "symlink", "refused"]
+  const guarded = calls.filter((call) => call.number !== undefined && call.number < guardFrom && pathKinds.includes(call.kind))
+  lines.push(`#define GUARD_FROM ${guardFrom}`)
+  lines.push(`static const unsigned guarded[] = {${guarded.map((call) => call.number).join(", ")}};`)
+  lines.push("static const struct call calls[] = {")
+  for (const call of watched) {
+    const followed = call.follows === undefined ? "~0ull" : flagsOf(call.follows)
+    lines.push(
+      `#ifdef SYS_${call.name}`,
+      `  {SYS_${call.name}, "${call.name}", ${kinds[call.kind]}, ${index(call.dir)}, ${index(call.path)}, ${
+        index(call.dir2)
+      }, ${index(call.path2)}, ${index(call.flags)}, ${call.nofollow === true ? 1 : 0}, ${followed}},`,
+      "#endif"
+    )
+  }
+  lines.push("};", "")
+  return lines.join("\n")
+}
 
 /**
  * zig's own archive of the pinned release for each machine a build fetches it
@@ -123,6 +209,7 @@ export const buildObserve = ({
   // zig keeps what it compiles once (musl for each target) in its global cache, and this build's own in a
   // directory removed after it.
   const local = mkdtempSync(join(tmpdir(), "smthrs-observe-"))
+  writeFileSync(join(local, "calls.h"), callsHeader())
   const built = []
   for (const [platform, target] of observeTargets) {
     const directory = join(root, "native", "out", platform)
@@ -131,7 +218,7 @@ export const buildObserve = ({
     const writing = `${output}.building`
     const result = spawnSync(
       zig,
-      ["cc", "-target", target, "-O2", "-static", "-s", "-Wall", "-Werror", "-o", writing, source],
+      ["cc", "-target", target, "-O2", "-static", "-s", "-Wall", "-Werror", "-I", local, "-o", writing, source],
       { encoding: "utf8", env: { ...process.env, ZIG_LOCAL_CACHE_DIR: local } }
     )
     if (result.status !== 0) {

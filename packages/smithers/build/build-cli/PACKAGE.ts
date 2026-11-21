@@ -81,13 +81,14 @@ const lib = Smithers.TsBuild({
  * and aarch64 Linux: `native/observe.c` built by `scripts/build-observe.mjs`
  * with the zig release it pins, fetched from zig's own archive where it is not
  * installed. Where neither works the build says so, builds nothing, and steps
- * are recorded with strace.
+ * are recorded with strace. Its table of calls is `src/internal/RecordedCalls.ts`.
  */
 const observe = Smithers.Shell.Build({
   shell: "node packages/smithers/build/build-cli/scripts/build-observe.mjs",
   outDirs: ["native/out"],
   data: [
     Smithers.file("native/observe.c"),
+    Smithers.file("src/internal/RecordedCalls.ts"),
     Smithers.file("scripts/build-observe.mjs"),
     Smithers.file("scripts/fetch-zig.mjs")
   ],
