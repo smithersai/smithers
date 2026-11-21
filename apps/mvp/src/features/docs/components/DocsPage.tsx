@@ -1,4 +1,4 @@
-import { DocsPageView, EmptyState, Input, Skeleton } from "@smthrs/ui"
+import { DocsPageView, EmptyState, Input, OutlineView, Skeleton } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { DOCS_REGION, DOCS_TAB, SEARCH_DOCS } from "../contract"
@@ -82,6 +82,11 @@ export function DocsPage() {
           )}
         </section>
       )}
+      {page.page?.kind === "text" ? (
+        <aside className="docs-page-outline" aria-label="On this page">
+          <OutlineView markdown={page.page.text} emptyLabel="" />
+        </aside>
+      ) : null}
     </div>
   )
 }

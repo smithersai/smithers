@@ -1,0 +1,95 @@
+/* Layout only; visual tokens come from @smthrs/ui and useVaultCss(). */
+.wiki-view {
+  display: grid;
+  grid-template-columns: minmax(13rem, 17rem) minmax(0, 1fr) minmax(13rem, 17rem);
+  gap: 1.5rem;
+  align-items: start;
+  width: 100%;
+  max-width: 88rem;
+  margin-inline: auto;
+  padding: 1.25rem 1.5rem 2.5rem;
+  box-sizing: border-box;
+}
+
+.wiki-sidebar,
+.wiki-aside {
+  position: sticky;
+  top: 4.5rem;
+  max-height: calc(100dvh - 6rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.wiki-folder-title {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.wiki-note-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.wiki-note-btn {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+
+.wiki-note-btn[aria-current="page"] {
+  background: var(--brand-soft, color-mix(in srgb, var(--brand, #0f766e) 12%, transparent));
+  font-weight: 600;
+}
+
+.wiki-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.wiki-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+@media (max-width: 72rem) {
+  .wiki-view {
+    grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+  }
+  .wiki-aside {
+    position: static;
+    max-height: none;
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 48rem) {
+  .wiki-view {
+    grid-template-columns: minmax(0, 1fr);
+    padding-inline: 1rem;
+  }
+  .wiki-sidebar {
+    position: static;
+    max-height: 14rem;
+  }
+}
