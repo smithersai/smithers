@@ -974,7 +974,7 @@ describe("a program a step leaves running, where its job cannot keep it", () => 
       expect(running(`sleep ${seconds}`)).toEqual([])
     }, 300_000)
 
-    keptIt.skipIf(ObservedReads.reaperPath() === undefined)(
+    keptIt(
       `ends a program that left the step's session with its step (${refuse})`,
       async () => {
         const seconds = (refuse === "namespace" ? 53_000 : 54_000) + (process.pid % 900)

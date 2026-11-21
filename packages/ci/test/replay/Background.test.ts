@@ -10,7 +10,6 @@ import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { reaperProgram } from "../../src/replay/Environment.ts"
 import { probe } from "../../src/replay/Jail.ts"
 import { bin, commit, git, remove, spawn, spawnWith, temporary } from "../cli/repo.ts"
 
@@ -64,7 +63,7 @@ jobs:
   }, 900_000)
 })
 
-describe.runIf(process.platform === "linux" && reaperProgram() !== undefined)(
+describe.runIf(process.platform === "linux")(
   "a step that leaves a program running where nothing can keep it",
   () => {
     it("ends the program with its step, however it detached, in the baseline and in normal mode", async () => {
@@ -86,7 +85,7 @@ jobs:
       - run: sh start.sh
       - run: cat src.txt
 `,
-        // A session of its own, which the step's text does not show: nothing ends it but the program it runs under.
+        // A session of its own, which the step's text does not show: its process group does not hold it.
         "start.sh": `setsid -f sleep ${seconds} > /dev/null 2>&1 < /dev/null\n`,
         "src.txt": "one\n"
       })

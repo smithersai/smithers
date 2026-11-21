@@ -307,3 +307,71 @@ describe("the file a client writes what a step left to", () => {
     expect(await JobKeeper.leftAt(file)).toEqual([])
   })
 })
+
+describe("what a step left in its directory where nothing keeps it", () => {
+  const directory = (): string => {
+    const made_ = mkdtempSync(join(tmpdir(), "orphans-"))
+    made.push(made_)
+    return made_
+  }
+  const sleeping = (line: string): ReadonlyArray<number> =>
+    spawnSync("pgrep", ["-u", String(process.getuid?.()), "-x", "-f", line], { encoding: "utf8" }).stdout
+      .split("\n").filter((pid) => pid !== "").map(Number)
+  const until = async (done: () => boolean): Promise<void> => {
+    for (let waited = 0; !done() && waited < 10_000; waited += 50) await new Promise((r) => setTimeout(r, 50))
+  }
+
+  it("lists this user's processes with their parents, and none where ps cannot run", async () => {
+    const listed = await JobKeeper.processes()
+    expect(listed.get(process.pid)).toBe(process.ppid)
+    expect((await JobKeeper.processes(join(directory(), "no-ps"))).size).toBe(0)
+    // No process is new: nothing is looked at.
+    expect(await JobKeeper.orphansIn(new Map(), directory(), "linux", process.pid, async () => new Map())).toEqual([])
+    // A process that is new but works nowhere under a directory that is gone is not found.
+    const listing = async (): Promise<ReadonlyMap<number, number>> => new Map([[process.pid, 1]])
+    expect(await JobKeeper.orphansIn(new Map(), join(tmpdir(), "no-such-directory"), "linux", -1, listing)).toEqual([])
+  })
+
+  it("reads lsof's lines, and each process's directory on Linux", async () => {
+    expect([...JobKeeper.cwdsFromLsof("nstray\np163\nfcwd\nn/\np164\nfcwd\nn/Users/me/w\n")]).toEqual([
+      [163, "/"],
+      [164, "/Users/me/w"]
+    ])
+    if (process.platform === "linux") {
+      expect([...await JobKeeper.cwds([process.pid, 2 ** 22 + 1])]).toEqual([[process.pid, process.cwd()]])
+    }
+    // Where lsof cannot run, nothing is read.
+    const lsof = spawnSync("lsof", ["-v"]).error === undefined
+    if (!lsof) expect((await JobKeeper.cwds([process.pid], "darwin")).size).toBe(0)
+  })
+
+  it.runIf(process.platform === "linux")(
+    "ends a program that left the step's process tree and works in its directory, and nothing else",
+    async () => {
+      const seconds = 71_000 + (process.pid % 900)
+      const there = directory()
+      const elsewhere = directory()
+      const before = await JobKeeper.processes()
+      // A step that left a program in a session of its own, and one that left it in another directory.
+      spawnSync("/bin/sh", ["-c", `setsid -f sleep ${seconds} > /dev/null 2>&1 < /dev/null`], { cwd: there })
+      spawnSync("/bin/sh", ["-c", `setsid -f sleep ${seconds + 1} > /dev/null 2>&1 < /dev/null`], { cwd: elsewhere })
+      // A step still running in the same directory, as a step of another job is.
+      const running = spawn("sleep", [String(seconds + 2)], { cwd: there, stdio: "ignore" })
+      await until(() => sleeping(`sleep ${seconds}`).length === 1 && sleeping(`sleep ${seconds + 1}`).length === 1)
+      try {
+        const found = await JobKeeper.endOrphans(before, there)
+        expect(found.map((each) => each.command)).toEqual([`sleep ${seconds}`])
+        await until(() => sleeping(`sleep ${seconds}`).length === 0)
+        expect(sleeping(`sleep ${seconds}`)).toEqual([])
+        expect(sleeping(`sleep ${seconds + 1}`)).toHaveLength(1)
+        expect(sleeping(`sleep ${seconds + 2}`)).toEqual([running.pid])
+        // Nothing left: nothing found, nothing ended.
+        expect(await JobKeeper.endOrphans(before, there)).toEqual([])
+      } finally {
+        running.kill("SIGKILL")
+        for (const pid of sleeping(`sleep ${seconds + 1}`)) process.kill(pid, "SIGKILL")
+      }
+    },
+    60_000
+  )
+})

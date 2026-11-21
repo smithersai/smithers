@@ -471,3 +471,128 @@ export const end = (node: string, directory: string, left: ReadonlyArray<Left>):
     ])
     execFile(argv[0], argv.slice(1), { env: {} }, () => resolve())
   })
+
+/**
+ * The processes of this user, by id, each with its parent's id, as `ps`
+ * lists them on Linux and on macOS. None where `ps` cannot run.
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export const processes = (program = "ps"): Promise<ReadonlyMap<number, number>> =>
+  new Promise((resolve) => {
+    execFile(program, ["-A", "-o", "pid=,ppid=,uid="], { maxBuffer: 64 * 1024 * 1024 }, (error, stdout) => {
+      const found = new Map<number, number>()
+      const uid = process.getuid?.()
+      for (const line of error === null ? stdout.split("\n") : []) {
+        const [pid, parent, owner] = line.trim().split(/\s+/).map(Number)
+        if (Number.isInteger(pid) && Number.isInteger(parent) && owner === uid) found.set(pid!, parent!)
+      }
+      resolve(found)
+    })
+  })
+
+/**
+ * The working directory of each process `lsof -d cwd -F pn` printed: lines
+ * `p<id>` and `n<path>`.
+ *
+ * @throws {never}
+ * @category parsing
+ * @since 0.1.0
+ */
+export const cwdsFromLsof = (text: string): ReadonlyMap<number, string> => {
+  const found = new Map<number, string>()
+  let pid: number | undefined
+  for (const line of text.split("\n")) {
+    if (line.startsWith("p")) pid = Number(line.slice(1))
+    else if (line.startsWith("n") && pid !== undefined) found.set(pid, line.slice(1))
+  }
+  return found
+}
+
+/**
+ * The working directory of each of `pids` that can be read: from `/proc` on
+ * Linux, from `lsof` elsewhere (macOS).
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export const cwds = async (
+  pids: ReadonlyArray<number>,
+  platform: NodeJS.Platform = process.platform
+): Promise<ReadonlyMap<number, string>> => {
+  if (platform === "linux") {
+    const found = new Map<number, string>()
+    for (const pid of pids) {
+      const cwd = await Fs.readlink(`/proc/${pid}/cwd`).catch(() => undefined)
+      if (cwd !== undefined) found.set(pid, cwd)
+    }
+    return found
+  }
+  return new Promise((resolve) => {
+    // lsof answers 1 when one of the processes has ended; what it printed for the others holds.
+    execFile(
+      "lsof",
+      ["-a", "-p", pids.join(","), "-d", "cwd", "-F", "pn"],
+      (_error, stdout) => resolve(cwdsFromLsof(stdout))
+    )
+  })
+}
+
+/**
+ * What a step left running in `directory` that has left its process tree,
+ * where nothing keeps a job's programs or ends them with the step (macOS): a
+ * process of this user that was not running in `before`, the processes when
+ * the step started; whose parent was, as the system adopts an orphan; and
+ * whose working directory is `directory` or below it. A program the step left
+ * in its process group ends with the step already, and a child of `self` is a
+ * step still running. A program that changes its directory out of
+ * `directory`, as a daemon that changes to `/` does, is not found. `list`
+ * lists the processes ({@link processes}).
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export const orphansIn = async (
+  before: ReadonlyMap<number, number>,
+  directory: string,
+  platform: NodeJS.Platform = process.platform,
+  self: number = process.pid,
+  list: () => Promise<ReadonlyMap<number, number>> = processes
+): Promise<ReadonlyArray<Left>> => {
+  const now = await list()
+  const candidates = [...now].filter(([pid, parent]) =>
+    !before.has(pid) && parent !== self && (parent === 1 || before.has(parent))
+  ).map(([pid]) => pid)
+  if (candidates.length === 0) return []
+  // macOS names /tmp by its real path, /private/tmp.
+  const root = await Fs.realpath(directory).catch(() => directory)
+  const where = await cwds(candidates, platform)
+  const inside = candidates.filter((pid) => {
+    const cwd = where.get(pid)
+    return cwd !== undefined && (cwd === root || cwd.startsWith(`${root}/`))
+  })
+  return Promise.all(inside.map(async (pid) => ({ pid, command: await commandOf(pid) })))
+}
+
+const commandOf = (pid: number): Promise<string> =>
+  new Promise((resolve) =>
+    execFile("ps", ["-o", "command=", "-p", String(pid)], (_error, stdout) => resolve(stdout.trim().slice(0, 200)))
+  )
+
+/**
+ * Ends what {@link orphansIn} finds, and answers what it found.
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export const endOrphans = async (
+  before: ReadonlyMap<number, number>,
+  directory: string,
+  platform: NodeJS.Platform = process.platform
+): Promise<ReadonlyArray<Left>> => {
+  const found = await orphansIn(before, directory, platform)
+  // One that ended on its own in the meantime is no longer there to end.
+  await new Promise((resolve) => execFile("kill", ["-KILL", ...found.map((each) => String(each.pid))], resolve))
+  return found
+}

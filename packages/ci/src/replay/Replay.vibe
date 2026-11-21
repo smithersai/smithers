@@ -117,7 +117,7 @@ import { readableNames, readyHistory } from "./History.vibe"
 import { couldNotStart, fixesOf, homeOf, namedInStepHome, putOnPath } from "./HomeTools.ts"
 import { backTo, keep, pathsIn, viewOf } from "./Kept.vibe"
 import { keeperIn, keepsPrograms, reapedBy, reaperIn } from "./Job.vibe"
-import { client } from "@smthrs/targets/JobKeeper"
+import { client, endOrphans, processes } from "@smthrs/targets/JobKeeper"
 import { printsNotes, readsListener, recorderStopped } from "./Reads.ts"
 import { defaultStallMinutes, type StallLimit, type Table, tableFor, watchFor } from "./Stall.vibe"
 import {
@@ -1203,6 +1203,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             { ...temporary, ...onMachine, ...found, ...place.daemon, ...run, ...step.env, ...told },
             place
           )
+          // Where nothing ends what the step leaves running (macOS), what it left in the job's directory ends with it.
+          const sweeps = job === undefined && reaper === undefined && place.jail === undefined
+          const before = sweeps ? try promise(() => processes()) : undefined
           // A step that cannot start, for example because its directory does not exist at this commit, has failed.
           const output = runStep(
             program,
@@ -1216,6 +1219,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           )
             catch (cause) => ({ timedOut: false, stalled: false, exitCode: undefined, stderr: `could not start: ${describe(cause)}`, stdout: "" } satisfies StepRun)
           const durationMs = (try Clock.currentTimeMillis) - start
+          if (before !== undefined) try promise(() => endOrphans(before, directory))
           if (output.exitCode === 0) {
             results.push({ label: step.label, status: "ran", key: "", durationMs })
             continue

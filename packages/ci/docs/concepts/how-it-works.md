@@ -210,8 +210,14 @@ of its own, a program a step leaves running ends with its step. On Linux the
 step runs under `smthrs-observe`, which Smithers CI ships for x86_64 and
 aarch64: a second after the step's command ends, it ends whatever the step
 left running, however that detached (`nohup ... &`, `setsid`, a double fork).
-There a job with a step that puts a program in the background and never waits
-for it, or starts one with a flag that keeps it running on its own
+On macOS, once the step has ended, Smithers CI ends each program the step
+left that has left the step's process tree and works in the job's checkout;
+with steps of other jobs running beside it, it waits until the last of them
+has ended. A program that moves out of the checkout, as a daemon that changes
+to `/` does, is not found there and keeps running.
+
+On such a machine a job with a step that puts a program in the background and
+never waits for it, or starts one with a flag that keeps it running on its own
 (`--daemonize yes`, `mongod --fork`, `pg_ctl start`), is left out, and the
 report names the step:
 

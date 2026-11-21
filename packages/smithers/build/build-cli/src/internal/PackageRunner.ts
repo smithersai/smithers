@@ -1155,6 +1155,11 @@ const executeWith = (
     }
     /** What each target that ran on a kept machine left running, by label. */
     const leftRunning = new Map<string, ReadonlyArray<JobKeeper.Left>>()
+    // Where no program ends what a CI step leaves running (macOS), the build ends what the steps left in the
+    // checkout once none of them runs: a program one step left is never ended while another step that may use it
+    // runs. `sweeping` counts the steps running so; `sweptFrom` lists the processes when the first of them started.
+    let sweeping = 0
+    let sweptFrom: ReadonlyMap<number, number> | undefined
     let leftFiles = 0
     /** How many targets of each machine have yet to finish in this build: its job ends when none has. */
     const unfinished = new Map<string, number>()
@@ -1482,6 +1487,11 @@ const executeWith = (
             (path) => joined(() => GoCache.releaseLease(path)).pipe(Effect.orDie)
           )
           : Effect.void
+        const sweeps = onIts && job === undefined && ObservedReads.reaperPath() === undefined
+        if (sweeps) {
+          sweeping++
+          sweptFrom ??= yield* joined(() => JobKeeper.processes())
+        }
         const exit = yield* Effect.exit(Effect.scoped(Effect.andThen(
           lease,
           services.exec({
@@ -1510,6 +1520,11 @@ const executeWith = (
             ...(traced !== undefined && done === undefined ? { heldOutput: services.heldOutput } : {})
           }, payload)
         ))).pipe(Effect.ensuring(Effect.sync(output.close)))
+        if (sweeps && --sweeping === 0) {
+          const from = sweptFrom!
+          sweptFrom = undefined
+          yield* joined(() => JobKeeper.endOrphans(from, workspaceRoot))
+        }
         if (leftFile !== undefined) {
           const left = yield* joined(() => JobKeeper.leftAt(leftFile))
           if (left.length === 0) leftRunning.delete(node.label)
