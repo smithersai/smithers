@@ -770,7 +770,12 @@ Docker's default profile refuses it `pidfd_getfd`) a run is recorded by
 is in no trace; under `smthrs-observe` a ring request that names a path makes
 the run unrecorded, with the reason. A port a recorded process closes is free
 again at once, as it is unrecorded, so a program that listens on it again
-finds it free. A recorded run ends when its command
+finds it free. A program whose signals come faster than a recorded call
+completes, such as a timer every 10 microseconds or less, would never end
+recorded: `smthrs-observe` stops that run, and the step runs again without the
+recording, with that reason on its row. Its verdict is the plain run's and
+nothing is stored for it, so no record holds a run that was cut off. A
+recorded run ends when its command
 ends: a process the command left running is stopped a second later, as a
 sandbox stops it. On macOS and Windows, where neither recorder can run, or
 where the host forbids it, the target is keyed by its `data` as any other
