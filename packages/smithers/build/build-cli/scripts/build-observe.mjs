@@ -107,6 +107,9 @@ export const buildObserve = ({
   if (found.problem !== undefined) {
     if (required) throw new Error(`smthrs-observe: ${found.problem}`)
     log(`smthrs-observe not built: ${found.problem}; reads are recorded with strace`)
+    // The target declares `native/out`; it is there, empty, where nothing could be built (Windows has no zig
+    // archive), so the build passes and a run there records with strace.
+    mkdirSync(join(root, "native", "out"), { recursive: true })
     return []
   }
   const zig = found.zig
