@@ -939,6 +939,18 @@ describe("bubblewrap argv", () => {
     expect(argv.indexOf("--remount-ro")).toBeGreaterThan(argv.lastIndexOf("--bind"))
   })
 
+  it("loads the seccomp filter from the descriptor the plan names, before the program", () => {
+    const argv = ProcessSandbox.bubblewrap({ ...planned(linux), seccomp: 7 }, ["node", "build.js"], linux)
+    expect(argv.slice(argv.indexOf("--seccomp"), argv.indexOf("--seccomp") + 2)).toEqual(["--seccomp", "7"])
+    expect(argv.indexOf("--seccomp")).toBeLessThan(argv.lastIndexOf("--"))
+    expect(ProcessSandbox.bubblewrap(planned(linux), ["true"], linux)).not.toContain("--seccomp")
+  })
+
+  it("names a run as root root in its own user files", () => {
+    const argv = ProcessSandbox.bubblewrap({ ...planned(linux), uid: 0, gid: 0 }, ["true"], linux)
+    expect(argv.slice(3, 6)).toEqual(["smithers-users", "root:x:0:0::/smthrs/home:/bin/sh", "root:x:0:"])
+  })
+
   it("binds a linked read's real location before the link itself", () => {
     const linked: ProcessSandbox.Host = {
       ...linux,
