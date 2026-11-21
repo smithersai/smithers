@@ -44,7 +44,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm]
+        # ubuntu-latest too: it is what most repositories name, and GitHub moved it to a newer image than 24.04.
+        os: [ubuntu-24.04, ubuntu-24.04-arm, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -98,7 +99,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm]
+        # ubuntu-latest too: it is what most repositories name, and GitHub moved it to a newer image than 24.04.
+        os: [ubuntu-24.04, ubuntu-24.04-arm, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
