@@ -135,12 +135,11 @@ posixIt.each(["build", "check", "test", "lint", "fmt"])(
     await write("config.json", "{}")
     await write("pnpm-lock.yaml", "lockfileVersion: '9.0'\n# changed\n")
     expect((await node(name)).keyPreview).not.toBe(original.keyPreview)
-    // A build and a formatter still have no complete output contract. A test,
-    // a type check and a lint are reused, and only as the product of a run
+    // A build, a type check, a test, a lint and a format check are each reused, and only as the product of a run
     // confined to what the key covers.
     const planned = await node(name)
-    expect(planned.cacheable).toBe(["check", "test", "lint"].includes(name))
-    expect(planned.evidence).toEqual(["check", "test", "lint"].includes(name) ? { mode: "declared" } : undefined)
+    expect(planned.cacheable).toBe(true)
+    expect(planned.evidence).toEqual({ mode: "declared" })
   }
 )
 
