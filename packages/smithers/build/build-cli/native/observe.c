@@ -2339,6 +2339,12 @@ int main(int argc, char **argv) {
   pid_t child = fork();
   if (child < 0) return 125;
   if (child == 0) {
+    /* The command ends with this program. A recorder killed after the command started would leave it running,
+     * adopted by the nearest subreaper above, which can be the session's own service manager. The kernel kills the
+     * command when this program ends; that holds across the exec below. Had this program ended before the line,
+     * the read below finds the socket closed and the command never starts: this program sends its byte only after
+     * this line has run. */
+    if (prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0) != 0) _exit(126);
     close(sv[0]);
     int fd = install();
     char c = 0;

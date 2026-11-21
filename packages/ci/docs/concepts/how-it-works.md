@@ -346,7 +346,9 @@ GitHub job's `container`); without it Smithers CI records with `strace` if the
 container has it. On any other system such a step runs on every change, as it
 does in the repository's CI today, and a replay says once on standard error that this
 machine cannot record what a step reads, and why. The report names the recorder
-([4. Report](#4-report)).
+([4. Report](#4-report)). On Linux with bubblewrap, a step of a GitHub Actions
+job never outlives its recorder: when the recorder stops first, the step and
+everything it started stop with it, and the step's result is not kept.
 
 Each step runs under the tool versions its job sets up, so a matrix over Node
 18 and 20 tests both. Steps that need different versions run on separate
