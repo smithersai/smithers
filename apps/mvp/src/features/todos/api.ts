@@ -1,7 +1,7 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract"
-import { stackRoute, TODO_STATUS_NOT_FOUND, todoStatusRoute } from "./contract"
+import { type StackBase, stackRoute, TODO_STATUS_NOT_FOUND, todoStatusRoute } from "./contract"
 import { TodoStatusUnavailable, type TodoStatusResult } from "./flows"
 import { Refusal, Taken, TodoStatusRead } from "./schema"
 
@@ -29,10 +29,13 @@ export type ChangeRequest =
     readonly acceptance: ReadonlyArray<string>
     /** The issue it was made from. */
     readonly issue?: number
+    /** The open TODO id to stack after, `null` for independent, or omitted for repo default. */
+    readonly after?: number | null
   }
   | { readonly opId: string; readonly op: "drop" | "retry"; readonly number: number }
   /** Decision 0153: a TODO with no issue, or a deleted one, under issue `issue`. */
   | { readonly opId: string; readonly op: "attach"; readonly number: number; readonly issue: number }
+  | { readonly opId: string; readonly op: "configure"; readonly lanes: number; readonly maxOpen: number; readonly base: StackBase }
 
 const decodeTaken = Schema.decodeUnknownEffect(Taken)
 const decodeRefusal = Schema.decodeUnknownOption(Refusal)

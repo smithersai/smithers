@@ -1564,4 +1564,77 @@ describe("TODO issue picker lifecycle", () => {
     await until(() => expect(restoredIssues.opened(REPO_ID)).toBeDefined())
     expect(restored.view()?.repoId).toBe("")
   }, WITHIN)
+
+  test("setAfter persists stacking target on drafts, forwards it on commit and restore, and configure saves or reports refusal", async () => {
+    const admin: Actor = { subject: { kind: "person", id: "person-admin" }, role: "admin", login: "ada" }
+    const tab = await open({}, admin)
+    await tab.actions.open(OWNER, NAME)
+    const id = tab.actions.newDraft(OWNER, NAME)
+    tab.actions.setTitle(id, "Stacked task")
+    tab.actions.setPrompt(id, "Do stacked work")
+    tab.actions.setIssue(id, 42)
+    // Unknown draft id is ignored cleanly
+    tab.actions.setAfter("missing-draft", null)
+    // Set explicit independent (null), then reset to repo default (undefined), then back to null
+    tab.actions.setAfter(id, null)
+    await until(() => expect(tab.drafts().find((d) => d.id === id)?.after).toBeNull())
+    tab.actions.setAfter(id, undefined)
+    await until(() => expect(tab.drafts().find((d) => d.id === id)?.after).toBeUndefined())
+    tab.actions.setAfter(id, null)
+    await until(() => expect(tab.drafts().find((d) => d.id === id)?.after).toBeNull())
+
+    // Commit with explicit after: null succeeds and queues, then stack a second TODO after T1
+    const path = await tab.actions.commit(id)
+    expect(path).toBe(`/${OWNER}/${NAME}/stack`)
+    await until(() => expect(tab.rows()).toContainEqual(expect.objectContaining({ number: 1, title: "Stacked task" })))
+
+    const id2 = tab.actions.newDraft(OWNER, NAME)
+    tab.actions.setTitle(id2, "Stacked after T1")
+    tab.actions.setPrompt(id2, "Build on T1")
+    tab.actions.setIssue(id2, 42)
+    tab.actions.setAfter(id2, 1)
+    await tab.actions.commit(id2)
+    await until(() => expect(tab.rows()).toContainEqual(expect.objectContaining({ number: 2, title: "Stacked after T1" })))
+
+    // Updating an existing attachment choice with repoId preserves the repoId tag
+    tab.actions.setAttachmentIssue("orphan-todo", 10)
+    tab.actions.setAttachmentIssue("orphan-todo", 11, REPO_ID)
+
+    // Edit a refused commit with after restores after on the draft
+    const refusedId = crypto.randomUUID()
+    await tab.runtime.runPromise(tab.store.requested.insert({
+      id: refusedId,
+      repo: `${OWNER}/${NAME}`,
+      repoId: REPO_ID,
+      op: "commit",
+      title: "Refused stacked",
+      prompt: "Retry me",
+      acceptance: [],
+      number: 0,
+      after: null,
+      queuedAt: Date.now(),
+      status: "not_sent",
+      reason: "stack_full",
+      taken: null,
+    }))
+    await tab.actions.edit(refusedId)
+    await until(() => expect(tab.drafts().some((d) => d.title === "Refused stacked" && d.after === null)).toBe(true))
+
+    // Configure stack settings: Admin succeeds, non-Admin/invalid fails with code
+    const saved = await tab.actions.configure(OWNER, NAME, { lanes: 2, maxOpen: 25, base: "independent" })
+    expect(saved).toEqual({ status: "saved" })
+    await until(() => expect(tab.view()?.settingsOutcome).toEqual({ status: "saved" }))
+
+    const refused = await tab.actions.configure(OWNER, NAME, { lanes: 0, maxOpen: 25, base: "stacked" })
+    expect(refused.status).toBe("failed")
+    await until(() => expect(tab.view()?.settingsOutcome?.status).toBe("failed"))
+
+    const offlineTab = await open({
+      replace: Layer.succeed(StackClient, StackClient.of({
+        change: () => Effect.fail(new ChangeNotTaken({})),
+      })),
+    }, admin)
+    const offline = await offlineTab.actions.configure(OWNER, NAME, { lanes: 1, maxOpen: 10, base: "stacked" })
+    expect(offline).toEqual({ status: "failed", code: "unavailable" })
+  }, WITHIN)
 })

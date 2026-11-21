@@ -322,9 +322,7 @@ Run with the compose Postgres and Electric up (`pnpm db:up`).
 
 ## Not built yet
 
-- The run's step strip on a TODO's page.
 - Slice 2's rest: Before Tn and Amend, Move, forward updates while the TODO below is still in review, out-of-order merges, and redoing a TODO whose base closed instead of failing it.
-- Choosing `after` on a draft card, and the stack's settings in a repository's Settings: the route takes both; the browser's commit takes the repository's base.
 
 
 ### Boundary regression guarantees

@@ -7,7 +7,8 @@ import { FlowDispatch } from "../../flows/dispatch"
 import { startOperation } from "../commands/admission"
 import { followRun } from "../../resumeAdmissions"
 import { repoId } from "../repo/contract"
-import { isPrompt, isTitle, OP_ID_NAMESPACE, stackPath } from "./contract"
+import { isPrompt, isTitle, OP_ID_NAMESPACE, type StackBase, stackPath } from "./contract"
+import { StackClient } from "./api"
 import { pendingActions } from "./metrics"
 import { type Draft, type QueuedOp, type Requested, VIEW } from "./schema"
 import { TodosStore } from "./store"
@@ -56,7 +57,7 @@ export const newDraft = (owner: string, name: string) =>
   }).pipe(Effect.orDie)
 
 /** Changes draft `id`'s text; a draft the device no longer has stays gone. */
-const changeDraft = (id: string, change: Partial<Pick<Draft, "title" | "prompt" | "issue">>) =>
+const changeDraft = (id: string, change: Partial<Pick<Draft, "title" | "prompt" | "issue" | "after">>) =>
   Effect.gen(function* () {
     const { drafts } = yield* TodosStore
     if (Option.isNone(yield* drafts.get(id))) return
@@ -67,6 +68,43 @@ export const setTitle = (id: string, title: string) => changeDraft(id, { title }
 /** The issue draft `id` hangs under (decision 0153): Commit waits until one is chosen. */
 export const setIssue = (id: string, issue: number) => changeDraft(id, { issue })
 export const setPrompt = (id: string, prompt: string) => changeDraft(id, { prompt })
+/** Which open TODO draft `id` stacks after: `undefined` uses repo default, `null` starts independent, or a TODO id. */
+export const setAfter = (id: string, after: number | null | undefined) =>
+  changeDraft(id, { after })
+
+/** Updates a repository stack's settings (lanes, maxOpen, base) through the stack route (Admin-only). */
+export const configureStack = (
+  owner: string,
+  name: string,
+  settings: { readonly lanes: number; readonly maxOpen: number; readonly base: StackBase },
+) =>
+  Effect.gen(function* () {
+    const { view } = yield* TodosStore
+    const client = yield* StackClient
+    yield* view.update(VIEW, (row) => {
+      row.settingsOutcome = { status: "saving" }
+    }).pipe(Effect.orDie)
+    const outcome = yield* client
+      .change(
+        owner,
+        name,
+        { opId: crypto.randomUUID(), op: "configure", lanes: settings.lanes, maxOpen: settings.maxOpen, base: settings.base },
+      )
+      .pipe(
+        Effect.as({ status: "saved" as const }),
+        Effect.catchTag("ChangeNotTaken", (error) => {
+          const code = error.code ?? "unavailable"
+          return Effect.logWarning("todos.configure").pipe(
+            Effect.annotateLogs({ feature: "todos", code }),
+            Effect.as({ status: "failed" as const, code }),
+          )
+        }),
+      )
+    yield* view.update(VIEW, (row) => {
+      row.settingsOutcome = outcome
+    }).pipe(Effect.orDie)
+    return outcome
+  })
 
 /** Changes this tab's issue choice for one orphan TODO; clearing or an invalid number removes the choice. */
 export const setAttachmentIssue = (todoId: string, issue: number | undefined, repoId?: string) =>
@@ -93,7 +131,7 @@ const setCommitting = (id: string, committing: boolean) =>
     })))
 
 /** Stable for an unchanged draft snapshot; its content never enters the flow's recorded identity. */
-const commitIdentity = (draft: Draft) => ({ namespace: OP_ID_NAMESPACE, value: JSON.stringify([draft.id, draft.repo, draft.title.trim(), draft.prompt, draft.acceptance, draft.issue ?? null]) })
+const commitIdentity = (draft: Draft) => ({ namespace: OP_ID_NAMESPACE, value: JSON.stringify([draft.id, draft.repo, draft.title.trim(), draft.prompt, draft.acceptance, draft.issue ?? null, draft.after === undefined ? "default" : draft.after]) })
 const commitExecutionId = (draft: Draft) => Uuid.v5(OP_ID_NAMESPACE, commitIdentity(draft).value).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
 
 /** Commit retains its draft until the device durably admits its snapshot. */
@@ -109,7 +147,8 @@ export const commit = (id: string) =>
     yield* setCommitting(id, true)
     const payload = { repo: draft.repo, title: draft.title.trim(), prompt: draft.prompt,
       ...(draft.acceptance.length === 0 ? {} : { acceptance: draft.acceptance }),
-      ...(draft.issue === undefined ? {} : { issue: draft.issue }) }
+      ...(draft.issue === undefined ? {} : { issue: draft.issue }),
+      ...(draft.after === undefined ? {} : { after: draft.after }) }
     // Input retention must precede any asynchronous progress/toast persistence as well as outbox admission.
     const admission = yield* beginAdmission("todo/commit", payload, commitIdentity(draft), id)
     if (Option.isNone(admission)) { yield* setCommitting(id, false); return undefined }
@@ -238,6 +277,7 @@ const restoreDraft = (change: Requested) =>
       answerId: null,
       createdAt: yield* Clock.currentTimeMillis,
       ...(change.issue === undefined ? {} : { issue: change.issue }),
+      ...(change.after === undefined ? {} : { after: change.after }),
     }).pipe(Effect.flatMap((inserted) => inserted.persisted), Effect.as(true), Effect.orElseSucceed(() => false))
     return { id, kept, made: true }
   })

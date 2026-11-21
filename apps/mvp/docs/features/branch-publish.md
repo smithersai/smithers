@@ -177,7 +177,6 @@ No record carries a title, a body, a path, a branch name or a login. The machine
 - Resync on its own when GitHub's branch moves without Smithers (a push, a commit on github.com): the page says `Behind` only once the publication learns the head; until then the person presses Resync.
 - A faster resync fetch: the scoped proxy drops the machine's haves, so each fetch carries the branch's whole history again, as a clone does.
 - A compare view before Publish: the working copy's diff shows in the editor, not on the Compare tab.
-- The branches page.
 
 Publish and Update attempts log `branch.write.identity` and count `smithers_branch_write_identities` by `op` and `identity` (`person` or `app`), without login or token. The browser also logs `branch.write.identity` at credential resolution with `runId`, `parentRunId`, `flow`, credential kind and identity, so the continuation where authority changed is visible through the telemetry relay.
 

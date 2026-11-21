@@ -1,4 +1,4 @@
-import type { IssuesViewIssue, IssuesViewLink, ItemConversationEvent, ItemStateKind, ItemStatus } from "@smthrs/ui"
+import type { IssuesViewIssue, IssuesViewLink, ItemConversationEvent, ItemStateKind, ItemStatus, StageStripItem } from "@smthrs/ui"
 import { mayAsk, type Role } from "../auth/contract"
 import { hereOf, type RepoAnswer } from "../auth/viewer"
 import { issuePath } from "../issues/contract"
@@ -18,6 +18,8 @@ import {
   RUNNING_STATES,
   SETTLED_STATES,
   TODO_STATE_WORDS,
+  TODO_STEPS,
+  type TodoStep,
   type TodoFailure,
   type TodoState,
   todoPath,
@@ -550,4 +552,71 @@ export const needsAnIssue = (repoId: string, todos: ReadonlyArray<Todo>, issues:
   return todos
     .filter((todo) => todo.repoId === repoId && todo.position !== null && (todo.issueNumber === null || deleted.has(todo.issueNumber)))
     .sort((a, b) => a.position! - b.position!)
+}
+
+const STEP_LABELS: Readonly<Record<TodoStep, string>> = {
+  implement: "Implement",
+  publish: "Publish",
+  await: "Review",
+}
+
+/**
+ * Pipeline stages for a TODO's page (`StageStrip`), derived from its live `state`, `step`, and `waiting` fields.
+ * Empty for `queued` and `dropped` TODOs that have not started running.
+ */
+export const todoStagesOf = (
+  todo: Pick<Todo, "state" | "step" | "waiting"> | undefined,
+): ReadonlyArray<StageStripItem> => {
+  if (todo === undefined || todo.state === "queued" || todo.state === "dropped") return []
+  if (todo.state === "merged") {
+    return TODO_STEPS.map((step) => ({ label: STEP_LABELS[step], status: "completed" }))
+  }
+  if (todo.state === "in_review") {
+    return TODO_STEPS.map((step) => ({
+      label: STEP_LABELS[step],
+      status: step === "await" ? "running" : "completed",
+    }))
+  }
+  const activeIndex = todo.step === null ? 0 : TODO_STEPS.indexOf(todo.step)
+  return TODO_STEPS.map((step, index) => {
+    if (index < activeIndex) return { label: STEP_LABELS[step], status: "completed" }
+    if (index > activeIndex) return { label: STEP_LABELS[step], status: "pending" }
+    if (todo.state === "failed") return { label: STEP_LABELS[step], status: "failed" }
+    return { label: STEP_LABELS[step], status: todo.waiting === null ? "running" : "pending" }
+  })
+}
+
+/** Value tokens for the draft `After` selector. */
+export const AFTER_DEFAULT = "__default__"
+export const AFTER_INDEPENDENT = "__independent__"
+
+/** One selectable stacking choice for a draft card. */
+export interface AfterChoice {
+  readonly value: string
+  readonly label: string
+}
+
+/** Open TODOs on `repoId` a new draft may stack after, prefixed by repository default and independent choices. */
+export const afterChoicesOf = (
+  repoId: string,
+  todos: ReadonlyArray<Pick<Todo, "id" | "repoId" | "number" | "title" | "position">>,
+): ReadonlyArray<AfterChoice> => [
+  { value: AFTER_DEFAULT, label: "Repository default" },
+  { value: AFTER_INDEPENDENT, label: "Base branch (independent)" },
+  ...todos
+    .filter((todo) => todo.repoId === repoId && todo.position !== null)
+    .sort((a, b) => a.position! - b.position!)
+    .map((todo) => ({ value: String(todo.number), label: `After T${todo.number} · ${todo.title}` })),
+]
+
+/** Encodes `draft.after` to the `<select>` value token. */
+export const afterValueOf = (after: number | null | undefined): string =>
+  after === undefined ? AFTER_DEFAULT : after === null ? AFTER_INDEPENDENT : String(after)
+
+/** Decodes a `<select>` value token back into `draft.after`. */
+export const parseAfterChoice = (value: string): number | null | undefined => {
+  if (value === AFTER_DEFAULT) return undefined
+  if (value === AFTER_INDEPENDENT) return null
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
 }

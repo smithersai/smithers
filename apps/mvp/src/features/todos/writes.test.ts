@@ -10,7 +10,7 @@ import { describe, expect, test } from "vitest"
 import { deviceRegistry } from "../../device/registry"
 import { faultyPersistenceOn } from "../../test/deviceFixture"
 import { type Requested, Requested as RequestedRow, type Sending } from "./schema"
-import { keep } from "./writes"
+import { keep, requestOf } from "./writes"
 
 const row: Sending = {
   id: "0b6e2c4f-7a1d-4e38-9c52-1f0d3a8b6e74",
@@ -52,4 +52,40 @@ describe("a stack change's send", () => {
     const exit = await keepOn(true)
     expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined).toBeInstanceOf(Outbox.Retry)
   })
+})
+
+describe("requestOf after forwarding", () => {
+  test("includes after on commit requests only when set", () => {
+    const base = {
+      id: "op-1",
+      repo: "acme/widgets",
+      repoId: "github/acme/widgets",
+      op: "commit" as const,
+      title: "Fix bug",
+      prompt: "Please fix",
+      acceptance: [],
+      number: 0,
+      queuedAt: 1,
+      v: 3 as const,
+    }
+    expect("after" in requestOf(base)).toBe(false)
+    expect(requestOf({ ...base, after: null })).toMatchObject({ op: "commit", after: null })
+    expect(requestOf({ ...base, after: 1 })).toMatchObject({ op: "commit", after: 1 })
+  })
+})
+
+test("requestOf defaults missing attach issue to 0", () => {
+  const row: Sending = {
+    id: "op-attach-empty",
+    repo: "acme/widgets",
+    repoId: "github/acme/widgets",
+    op: "attach",
+    title: "",
+    prompt: "",
+    acceptance: [],
+    number: 9,
+    queuedAt: 1,
+    v: 3,
+  }
+  expect(requestOf(row)).toEqual({ opId: "op-attach-empty", op: "attach", number: 9, issue: 0 })
 })

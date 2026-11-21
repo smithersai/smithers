@@ -253,7 +253,7 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
         .map((row) => row.id)
       if (stale.length > 0) yield* Effect.ignore(attachmentIssues.delete(stale))
       yield* stackOf(id)
-      yield* Effect.forEach(shapesOf.get(id) ?? [], (shape) => shape.evict, { discard: true })
+      yield* Effect.forEach(shapesOf.get(id)!, (shape) => shape.evict, { discard: true })
     }))
 
   /** Keeps `draft` once, acknowledging only device storage, including outstanding writes of an existing draft. */

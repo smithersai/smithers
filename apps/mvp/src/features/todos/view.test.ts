@@ -1,4 +1,10 @@
-import { mayRetry } from "./view"
+import {
+  AFTER_DEFAULT,
+  AFTER_INDEPENDENT,
+  afterChoicesOf,
+  afterValueOf,
+  parseAfterChoice,
+  todoStagesOf, mayRetry } from "./view"
 // What the stack's screens show (src/features/todos/view.ts) and the contract's helpers, as pure functions over rows;
 // and how a send's refusal reads (writes.ts `reasonOf`). The rows they read
 // come from real devices in todos.test.ts.
@@ -731,6 +737,7 @@ describe("issues for TODOs", () => {
     const attach = requested({ id: "x", op: "attach", number: 1, issue: 12 })
     expect(deliveredOf(REPO, [todo({ id: "a", number: 1 })], [attach])).toEqual([])
     expect(deliveredOf(REPO, [todo({ id: "a", number: 1, issueNumber: 12 })], [attach])).toEqual(["x"])
+    expect(notSentRows(REPO, [{ ...attach, issue: undefined, status: "not_sent", reason: "attached" }])[0]?.label).toBe("Attach T1 to #–")
     expect(notSentRows(REPO, [{ ...attach, status: "not_sent", reason: "attached" }]))
       .toEqual([{ id: "x", op: "attach", label: "Attach T1 to #12", reason: "Already has an issue" }])
   })
@@ -740,5 +747,65 @@ describe("issues for TODOs", () => {
       .toEqual(["issue_not_found", "issue_required", "attached"])
     expect([notSentOf("issue_not_found"), notSentOf("issue_required"), notSentOf("attached")])
       .toEqual(["issue_not_found", "issue_required", "attached"])
+  })
+})
+
+describe("TODO stage strip and draft after choices", () => {
+  test("todoStagesOf maps queued, working, waiting, publish, in_review, failed, merged, and dropped states", () => {
+    expect(todoStagesOf(undefined)).toEqual([])
+    expect(todoStagesOf({ state: "queued", step: null, waiting: null })).toEqual([])
+    expect(todoStagesOf({ state: "dropped", step: null, waiting: null })).toEqual([])
+    expect(todoStagesOf({ state: "merged", step: "await", waiting: null })).toEqual([
+      { label: "Implement", status: "completed" },
+      { label: "Publish", status: "completed" },
+      { label: "Review", status: "completed" },
+    ])
+    expect(todoStagesOf({ state: "in_review", step: "await", waiting: null })).toEqual([
+      { label: "Implement", status: "completed" },
+      { label: "Publish", status: "completed" },
+      { label: "Review", status: "running" },
+    ])
+    expect(todoStagesOf({ state: "working", step: null, waiting: null })).toEqual([
+      { label: "Implement", status: "running" },
+      { label: "Publish", status: "pending" },
+      { label: "Review", status: "pending" },
+    ])
+    expect(todoStagesOf({ state: "working", step: "publish", waiting: "runner" })).toEqual([
+      { label: "Implement", status: "completed" },
+      { label: "Publish", status: "pending" },
+      { label: "Review", status: "pending" },
+    ])
+    expect(todoStagesOf({ state: "failed", step: "publish", waiting: null })).toEqual([
+      { label: "Implement", status: "completed" },
+      { label: "Publish", status: "failed" },
+      { label: "Review", status: "pending" },
+    ])
+    expect(todoStagesOf({ state: "failed", step: null, waiting: null })).toEqual([
+      { label: "Implement", status: "failed" },
+      { label: "Publish", status: "pending" },
+      { label: "Review", status: "pending" },
+    ])
+  })
+
+  test("afterChoicesOf lists repo default, independent, and open TODOs in position order, round-tripping tokens", () => {
+    const choices = afterChoicesOf("github/acme/widgets", [
+      { id: "t2", repoId: "github/acme/widgets", number: 2, title: "Second", position: 2 },
+      { id: "t1", repoId: "github/acme/widgets", number: 1, title: "First", position: 1 },
+      { id: "done", repoId: "github/acme/widgets", number: 3, title: "Merged", position: null },
+      { id: "other", repoId: "github/other/repo", number: 1, title: "Other", position: 1 },
+    ])
+    expect(choices).toEqual([
+      { value: AFTER_DEFAULT, label: "Repository default" },
+      { value: AFTER_INDEPENDENT, label: "Base branch (independent)" },
+      { value: "1", label: "After T1 · First" },
+      { value: "2", label: "After T2 · Second" },
+    ])
+    expect(afterValueOf(undefined)).toBe(AFTER_DEFAULT)
+    expect(afterValueOf(null)).toBe(AFTER_INDEPENDENT)
+    expect(afterValueOf(1)).toBe("1")
+    expect(parseAfterChoice(AFTER_DEFAULT)).toBeUndefined()
+    expect(parseAfterChoice(AFTER_INDEPENDENT)).toBeNull()
+    expect(parseAfterChoice("1")).toBe(1)
+    expect(parseAfterChoice("invalid")).toBeUndefined()
   })
 })

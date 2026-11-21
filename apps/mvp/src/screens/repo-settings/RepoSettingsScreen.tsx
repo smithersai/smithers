@@ -5,6 +5,7 @@ import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { mayManageDomains } from "../../features/auth/contract"
 import { DomainSettings } from "../../features/domains/components/DomainSettings"
+import { StackSettings } from "../../features/todos/components/StackSettings"
 import { SETTINGS } from "../../features/domains/copy"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
@@ -24,7 +25,7 @@ export function RepoSettingsScreen() {
       <RepoHeader />
       <PageBody width="narrow">
         {maintainer
-          ? <DomainSettings />
+          ? <><DomainSettings />{answer.role === "admin" ? <StackSettings owner={owner} repo={repo} /> : null}</>
           : (
             <Card>
               <CardContent>

@@ -1,12 +1,12 @@
 import { NotSentChanges } from "../../features/todos/components/NotSentChanges"
-import { Button, Breadcrumbs, Card, CardContent, ConfirmButton, EmptyState, ItemAsideSection, ItemConversation, ItemStateIcon, PageBody, Skeleton } from "@smthrs/ui"
+import { Button, Breadcrumbs, Card, CardContent, ConfirmButton, EmptyState, ItemAsideSection, ItemConversation, ItemStateIcon, PageBody, Skeleton, StageStrip } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useTodos } from "../../features/todos/components/TodosContext"
 import { AFTER, BRANCH, DROP, ISSUE, NOT_FOUND, PULL_REQUEST, RUN, STACK, stackPath } from "../../features/todos/contract"
-import { mayRetry, accessFor, dropConfirm, mayChange, stackRows, todoCardOf, todoScreenOf } from "../../features/todos/view"
+import { mayRetry, accessFor, dropConfirm, mayChange, stackRows, todoCardOf, todoScreenOf, todoStagesOf } from "../../features/todos/view"
 import "./stack-screen.css"
 import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
@@ -57,6 +57,7 @@ export function TodoScreen() {
   const todo = todos.find((todo) => todo.number === number)
   const retryable = todo !== undefined && session !== undefined && mayRetry(todo, session, answer)
   const may = session !== undefined && mayChange(session, confirmed, answer)
+  const stages = todoStagesOf(todo)
   return (
     <main className="stack-screen" aria-label="TODO">
       <RepoHeader />
@@ -86,6 +87,8 @@ export function TodoScreen() {
         ) : null}
         {screen.kind === "missing" ? <Card><CardContent><EmptyState title={NOT_FOUND} /></CardContent></Card> : null}
       {screen.kind === "page" ? (
+        <>
+          {stages.length === 0 ? null : <StageStrip className="todo-stage-strip" stages={[...stages]} showSummary summaryLabel="Progress" />}
         <ItemConversation
           title={screen.page.title}
           number={screen.page.number}
@@ -134,6 +137,7 @@ export function TodoScreen() {
               </>
             )}
         />
+        </>
       ) : null}
         <NotSentChanges repoId={repoId} number={number} />
       </PageBody>

@@ -97,6 +97,7 @@ export const requestOf = (row: Sending): ChangeRequest =>
       prompt: row.prompt,
       acceptance: row.acceptance,
       ...(row.issue === undefined ? {} : { issue: row.issue }),
+      ...(row.after === undefined ? {} : { after: row.after }),
     }
     : row.op === "attach"
     ? { opId: row.id, op: "attach", number: row.number, issue: row.issue ?? 0 }
@@ -155,7 +156,7 @@ const send = (requested: Collection.Collection<Requested, string>, { rows }: { r
         durationMs: (yield* Clock.currentTimeMillis) - startedAt,
       }),
     )
-    if (answer._tag === "Success") return yield* keep(requested, row, "requested", null, answer.success.number)
+    if (answer._tag === "Success") return yield* keep(requested, row, "requested", null, answer.success.number!)
     if (holding) return yield* held()
     if (reason === undefined) return yield* new Outbox.Retry(status === undefined ? {} : { status })
     yield* keep(requested, row, "not_sent", reason, null)

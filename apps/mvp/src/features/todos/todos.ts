@@ -1,7 +1,9 @@
 import { Context, Effect, Layer, Stream } from "effect"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { attach, retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setAttachmentIssue, setIssue, setPrompt, setTitle, warm } from "./actions"
+import { attach, configureStack, retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setAfter, setAttachmentIssue, setIssue, setPrompt, setTitle, warm } from "./actions"
+import type { StackClient } from "./api"
+import type { StackBase } from "./contract"
 import { syncIssueChoices } from "./issuePickers"
 import { type RepoStack, TodosStore } from "./store"
 
@@ -47,6 +49,10 @@ export interface TodosActions {
   readonly setAttachmentIssue: (todoId: string, issue: number | undefined, repoId?: string) => void
   /** The issue a draft hangs under (decision 0153). */
   readonly setIssue: (draftId: string, issue: number) => void
+  /** Which open TODO a draft stacks after (`undefined` = repo default, `null` = independent, or a TODO id). */
+  readonly setAfter: (draftId: string, after: number | null | undefined) => void
+  /** Updates a repository stack's lanes, maxOpen, and default base (Admin-only). */
+  readonly configure: (owner: string, name: string, settings: { readonly lanes: number; readonly maxOpen: number; readonly base: StackBase }) => Promise<{ readonly status: "saved" } | { readonly status: "failed"; readonly code: string }>
   /** Commit on a draft: the stack's page to show, or nothing when it didn't run. */
   readonly commit: (draftId: string) => Promise<string | undefined>
   readonly discardDraft: (draftId: string) => void
@@ -82,7 +88,7 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
         ])),
         Effect.forkIn(store.scope, { startImmediately: true }),
       )
-      const context = yield* Effect.context<TodosStore | FlowDispatch>()
+      const context = yield* Effect.context<TodosStore | FlowDispatch | StackClient>()
       const { runSync: run, runPromise: runAsync } = runners(context, "todos")
       const stackQueries = (stack: RepoStack): StackQueries => ({
         todos: stack.todos.tanstack,
@@ -107,6 +113,8 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
           setPrompt: (draftId, prompt) => run(setPrompt(draftId, prompt)),
           setAttachmentIssue: (todoId, issue, repoId) => run(setAttachmentIssue(todoId, issue, repoId)),
           setIssue: (draftId, issue) => run(setIssue(draftId, issue)),
+          setAfter: (draftId, after) => run(setAfter(draftId, after)),
+          configure: (owner, name, settings) => runAsync(configureStack(owner, name, settings)),
           commit: (draftId) => runAsync(commit(draftId)),
           discardDraft: (draftId) => run(discardDraft(draftId)),
           retry: (owner, name, number) => runAsync(retry(owner, name, number)),

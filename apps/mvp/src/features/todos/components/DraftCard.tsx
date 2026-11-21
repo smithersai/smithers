@@ -6,7 +6,7 @@ import { useTodos } from "./TodosContext"
 import { useIssues } from "../../issues/components/IssuesContext"
 import { useEngineStopped } from "../../chat/components/useEngineStopped"
 import { COMMIT_UNAVAILABLE, COPY_DRAFT } from "../../chat/engineAvailability"
-import { issueChoices } from "../view"
+import { afterChoicesOf, afterValueOf, issueChoices, parseAfterChoice } from "../view"
 
 // One private draft (decision 0016 §3): its title, the issue it hangs under and its prompt as the person edits them,
 // Commit and Discard. A TODO hangs under exactly one issue (decision 0153), so Commit waits until one is chosen from
@@ -20,6 +20,8 @@ export function DraftCard({ draft }: { readonly draft: Draft }) {
   // Redrawn once the repository's issues are open, which then reads its own rows.
   useLiveQuery(issues.queries.opened)
   const { data: rows } = useLiveQuery(issues.queries.summariesOf(draft.repoId))
+  const { data: stackTodos } = useLiveQuery(queries.stack(draft.repoId).todos)
+  const afterChoices = afterChoicesOf(draft.repoId, stackTodos ?? [])
   const navigate = useNavigate()
   return (
     <>
@@ -43,6 +45,19 @@ export function DraftCard({ draft }: { readonly draft: Draft }) {
       }}
       onDiscard={() => actions.discardDraft(draft.id)}
     />
+    <label className="todo-draft-after">
+      <span>Stack after</span>
+      <select
+        aria-label="Stack after"
+        value={afterValueOf(draft.after)}
+        disabled={stopped || view?.committing.includes(draft.id) === true}
+        onChange={(event) => actions.setAfter(draft.id, parseAfterChoice(event.currentTarget.value))}
+      >
+        {afterChoices.map((choice) => (
+          <option key={choice.value} value={choice.value}>{choice.label}</option>
+        ))}
+      </select>
+    </label>
     </>
   )
 }

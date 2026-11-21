@@ -52,6 +52,7 @@ export const commitPayload = {
   prompt: Prompt,
   acceptance: Schema.optional(Acceptance),
   issue: Schema.optional(IssueNumber),
+  after: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0)))),
 }
 
 /** What `todo/drop` takes. */

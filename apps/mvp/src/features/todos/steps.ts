@@ -170,6 +170,7 @@ type Fields =
     readonly prompt: string
     readonly acceptance?: ReadonlyArray<string> | undefined
     readonly issue?: number | undefined
+    readonly after?: number | null | undefined
   }
   | { readonly op: "drop" | "retry"; readonly repo: string; readonly number: number }
   | { readonly op: "attach"; readonly repo: string; readonly number: number; readonly issue: number }
@@ -196,6 +197,7 @@ export const queueChange = (fields: Fields) =>
         acceptance: fields.acceptance ?? [],
         number: 0,
         ...(fields.issue === undefined ? {} : { issue: fields.issue }),
+        ...(fields.after === undefined ? {} : { after: fields.after }),
       }
       : fields.op === "attach"
       ? { id: opId, repo: fields.repo, op: "attach", title: "", prompt: "", acceptance: [], number: fields.number, issue: fields.issue }

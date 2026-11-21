@@ -425,6 +425,7 @@ export const TODOS_TELEMETRY = {
     "todos.send",
     "todos.pending",
     "todos.inspect",
+    "todos.configure",
     "todos.issue.load",
     "smithers_todo_drafts",
     "smithers_todo_queued",

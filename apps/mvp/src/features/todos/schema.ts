@@ -92,6 +92,7 @@ export const Draft = Schema.Struct({
   answerId: Schema.NullOr(Schema.String),
   createdAt: Schema.Number,
   issue: Schema.optionalKey(Schema.Number),
+  after: Schema.optional(Schema.NullOr(Schema.Number)),
 })
 export type Draft = typeof Draft.Type
 
@@ -109,6 +110,7 @@ export const QueuedOp = Schema.Struct({
   acceptance: Schema.Array(Schema.String),
   number: Schema.Number,
   issue: Schema.optionalKey(Schema.Number),
+  after: Schema.optional(Schema.NullOr(Schema.Number)),
 })
 export type QueuedOp = typeof QueuedOp.Type
 
@@ -150,6 +152,12 @@ export type Requested = typeof Requested.Type
  * stuck.
  */
 export const VIEW = "view"
+export const StackSettingsOutcome = Schema.Struct({
+  status: Schema.Literals(["saving", "saved", "failed"]),
+  code: Schema.optionalKey(Schema.String),
+})
+export type StackSettingsOutcome = typeof StackSettingsOutcome.Type
+
 export const StackView = Schema.Struct({
   id: Schema.Literal(VIEW),
   owner: Schema.String,
@@ -158,6 +166,7 @@ export const StackView = Schema.Struct({
   number: Schema.NullOr(Schema.Number),
   committing: Schema.Array(Schema.String),
   admissionFailures: Schema.optional(Schema.Array(Requested)),
+  settingsOutcome: Schema.optionalKey(StackSettingsOutcome),
 })
 export type StackView = typeof StackView.Type
 
@@ -197,7 +206,7 @@ export const Taken = Schema.Struct({
   txid: Schema.NullOr(Schema.Number),
   opId: Schema.String,
   outcome: Schema.Literals(STACK_OUTCOMES),
-  number: Schema.Number,
+  number: Schema.optional(Schema.Number),
 })
 export type Taken = typeof Taken.Type
 

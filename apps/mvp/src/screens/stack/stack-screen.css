@@ -22,3 +22,22 @@
 .stack-needs-issue-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
 .stack-needs-issue-label { margin-right: auto; overflow-wrap: anywhere; }
 .stack-needs-issue-select { width: auto; max-width: 100%; }
+
+.todo-stage-strip { margin-bottom: 1rem; }
+.todo-draft-after {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+.todo-draft-after select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm, 0.375rem);
+  border: 1px solid var(--border);
+  background: var(--surface, transparent);
+  color: inherit;
+}

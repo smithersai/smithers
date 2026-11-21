@@ -1,2 +1,14 @@
 /* Page layout only; components and colors come from @smthrs/ui. */
 .repo-settings-screen { min-height: 100dvh; min-width: 0; }
+
+.stack-settings { margin-top: 1.5rem; }
+.stack-settings-form { display: flex; flex-direction: column; gap: 1rem; }
+.stack-settings-form select {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm, 0.375rem);
+  border: 1px solid var(--border);
+  background: var(--surface, transparent);
+  color: inherit;
+}
+.stack-settings-actions { display: flex; align-items: center; gap: 0.75rem; }
