@@ -157,12 +157,23 @@ const counted = (base: string, name: string): string => `printf x >> ${Path.join
 
 const why = /^it started \/.*\/tools\/id, which needs rights its jail takes away$/
 const theirs = expect.stringMatching(/^\/.*\/tools\/id$/)
-/** Whether this host gives a machine a `/tmp` of its own, which a run with no jail goes without. */
-const mountedIt = it.skipIf(!("bwrap" in mount))
+/**
+ * Whether a run here may gain the rights a program's file asks for: a sandbox such as bubblewrap sets
+ * `no_new_privs` on everything it starts, and then no program gains them. A case that needs them runs where they can
+ * be gained, and on CI, so a CI that cannot is red instead of quietly dropping the case; elsewhere its name says why
+ * it is skipped.
+ */
+const gains = !executionServicesLive.noNewPrivileges()
+const runsGaining = gains || process.env["CI"] === "true"
+const gaining = (name: string): string =>
+  runsGaining ? name : `${name} (skipped: needs a process that may gain privileges; no_new_privs is set)`
+const gainingIt = it.skipIf(!runsGaining)
+/** And where this host gives a machine a `/tmp` of its own, which a run with no jail goes without. */
+const gainingMountedIt = it.skipIf(!runsGaining || !("bwrap" in mount))
 
 for (const [name, observer] of recorders) {
   describe.skipIf("reason" in observer)(`a step recorded with ${name} that starts a program asking for rights`, () => {
-    it("runs again with no jail, is never stored, and then goes straight to that run", async () => {
+    gainingIt(gaining("runs again with no jail, is never stored, and then goes straight to that run"), async () => {
       const { run, runs, logs } = await fixture(observer, (base) => ({
         own: on("job", `${idOf(base)} -u > /dev/null && ${counted(base, "own")}`),
         other: on("job", `${idOf(base)} -g > /dev/null && ${counted(base, "other")}`),
@@ -194,7 +205,7 @@ for (const [name, observer] of recorders) {
       expect((await run(["fails"]))["fails"]).toMatchObject({ status: "failed", rights: [theirs] })
     })
 
-    it("records again at every run where what it needs cannot be remembered", async () => {
+    gainingIt(gaining("records again at every run where what it needs cannot be remembered"), async () => {
       const { root, run, runs } = await fixture(observer, (base) => ({
         own: on("job", `${idOf(base)} -u > /dev/null && ${counted(base, "own")}`)
       }))
@@ -206,31 +217,34 @@ for (const [name, observer] of recorders) {
       expect(runs("own")).toBe(4)
     })
 
-    it("runs again in the tree the recorded run left, with what the jailed step was given", async () => {
-      const { base, run } = await fixture(
-        observer,
-        (base) => ({
-          twice: on(
-            "job",
-            `echo run >> runs.log; ${idOf(base)} -u > /dev/null; ` +
-              `env > ${Path.join(base, "env")}; test "$(wc -l < runs.log)" -eq 2`
-          )
-        }),
-        { SMITHERS_CACHE_TOKEN: "rights-canary-token-0123456789" }
-      )
-      // The second run found the line the first run wrote: it runs in the tree that run left.
-      expect((await run(["twice"]))["twice"]?.status).toBe("ran")
-      const seen = Object.fromEntries(
-        (await Fs.readFile(Path.join(base, "env"), "utf8")).split("\n").filter((line) => line.includes("=")).map(
-          (line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]
+    gainingIt(
+      gaining("runs again in the tree the recorded run left, with what the jailed step was given"),
+      async () => {
+        const { base, run } = await fixture(
+          observer,
+          (base) => ({
+            twice: on(
+              "job",
+              `echo run >> runs.log; ${idOf(base)} -u > /dev/null; ` +
+                `env > ${Path.join(base, "env")}; test "$(wc -l < runs.log)" -eq 2`
+            )
+          }),
+          { SMITHERS_CACHE_TOKEN: "rights-canary-token-0123456789" }
         )
-      )
-      // The machine's home and temporary directory, and none of the build's tokens.
-      expect(seen["HOME"]).not.toBe(Path.join(base, "home"))
-      expect(seen["HOME"]).toContain(Path.join(base, "machines"))
-      expect(seen["TMPDIR"]).toContain(Path.join(base, "machines"))
-      expect(JSON.stringify(seen)).not.toContain("rights-canary-token-0123456789")
-    })
+        // The second run found the line the first run wrote: it runs in the tree that run left.
+        expect((await run(["twice"]))["twice"]?.status).toBe("ran")
+        const seen = Object.fromEntries(
+          (await Fs.readFile(Path.join(base, "env"), "utf8")).split("\n").filter((line) => line.includes("=")).map(
+            (line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]
+          )
+        )
+        // The machine's home and temporary directory, and none of the build's tokens.
+        expect(seen["HOME"]).not.toBe(Path.join(base, "home"))
+        expect(seen["HOME"]).toContain(Path.join(base, "machines"))
+        expect(seen["TMPDIR"]).toContain(Path.join(base, "machines"))
+        expect(JSON.stringify(seen)).not.toContain("rights-canary-token-0123456789")
+      }
+    )
 
     it("fails, and says what to do, where this build itself has no new privileges", async () => {
       const { run, services } = await fixture(observer, (base) => ({ own: on("job", `${idOf(base)} -u > /dev/null`) }))
@@ -245,35 +259,40 @@ for (const [name, observer] of recorders) {
       })
     })
 
-    mountedIt("shares the host's /tmp with another machine's run only while neither left a name there", async () => {
-      const left = (base: string, machine: string): string =>
-        `${idOf(base)} -u > /dev/null && touch /tmp/${Path.basename(base)}-${machine}`
-      const { base, run } = await fixture(
-        observer,
-        (base) => ({
-          one: on("one", `${idOf(base)} -u > /dev/null`),
-          two: on("two", `${idOf(base)} -u > /dev/null`),
-          three: on("three", left(base, "three")),
-          four: on("four", left(base, "four"))
-        }),
-        { [Machine.ownTmpVariable]: "required" }
-      )
-      try {
-        // Neither run left a name in /tmp: each runs with no jail.
-        const quiet = await run(["one", "two"])
-        expect([quiet["one"]?.status, quiet["two"]?.status]).toEqual(["ran", "ran"])
-        // The first to run left one, and the other would find it there.
-        const results = await run(["three", "four"])
-        const statuses = [results["three"]?.status, results["four"]?.status].sort()
-        expect(statuses).toEqual(["failed", "ran"])
-        const failed = [results["three"], results["four"]].find((result) => result?.status === "failed")
-        expect(failed?.error).toMatch(
-          /which needs rights its jail takes away, and machine (three|four) left \/tmp\/.*-(three|four) in this build: write this job back/
+    gainingMountedIt(
+      gaining("shares the host's /tmp with another machine's run only while neither left a name there"),
+      async () => {
+        const left = (base: string, machine: string): string =>
+          `${idOf(base)} -u > /dev/null && touch /tmp/${Path.basename(base)}-${machine}`
+        const { base, run } = await fixture(
+          observer,
+          (base) => ({
+            one: on("one", `${idOf(base)} -u > /dev/null`),
+            two: on("two", `${idOf(base)} -u > /dev/null`),
+            three: on("three", left(base, "three")),
+            four: on("four", left(base, "four"))
+          }),
+          { [Machine.ownTmpVariable]: "required" }
         )
-      } finally {
-        for (const machine of ["three", "four"]) await Fs.rm(`/tmp/${Path.basename(base)}-${machine}`, { force: true })
+        try {
+          // Neither run left a name in /tmp: each runs with no jail.
+          const quiet = await run(["one", "two"])
+          expect([quiet["one"]?.status, quiet["two"]?.status]).toEqual(["ran", "ran"])
+          // The first to run left one, and the other would find it there.
+          const results = await run(["three", "four"])
+          const statuses = [results["three"]?.status, results["four"]?.status].sort()
+          expect(statuses).toEqual(["failed", "ran"])
+          const failed = [results["three"], results["four"]].find((result) => result?.status === "failed")
+          expect(failed?.error).toMatch(
+            /which needs rights its jail takes away, and machine (three|four) left \/tmp\/.*-(three|four) in this build: write this job back/
+          )
+        } finally {
+          for (const machine of ["three", "four"]) {
+            await Fs.rm(`/tmp/${Path.basename(base)}-${machine}`, { force: true })
+          }
+        }
       }
-    })
+    )
 
     it.skipIf(!ping)("gets the verdict of a runner, where ping works", async () => {
       const { run } = await fixture(observer, () => ({
