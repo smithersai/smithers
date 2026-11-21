@@ -7,6 +7,7 @@
  * `ObservedReadsExecution.test.ts` runs the real tracer end to end.
  */
 import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
@@ -181,7 +182,13 @@ describe("picking the recorder", () => {
       }); console.log(m.recorder(), m.recorderKey().recorder)`
     ], { encoding: "utf8", env: { ...process.env, ...asked } })
     expect(named.stdout.trim()).toMatch(/^smthrs-observe:[0-9a-f]{64} smthrs-observe:[0-9a-f]{64}$/)
-    expect([ObservedReads.recorder(), ObservedReads.recorderKey()]).toEqual(["strace", {}])
+    // This process records with what the program picks here: on x86_64 the one built, unless strace is asked for.
+    const here = ObservedReads.supervisorPath()
+    const used = here === undefined
+      ? "strace"
+      : `smthrs-observe:${createHash("sha256").update(NodeFs.readFileSync(here)).digest("hex")}`
+    expect([ObservedReads.recorder(), ObservedReads.recorderKey()])
+      .toEqual([used, here === undefined ? {} : { recorder: used }])
   })
 
   it.skipIf(process.platform !== "linux" || process.arch !== "x64" || !NodeFs.existsSync(built))(
