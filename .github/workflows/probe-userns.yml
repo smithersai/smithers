@@ -1,0 +1,47 @@
+# Throwaway probe (sci-github-ci, 2026-11-21): why bwrap inside bwrap is refused on ubuntu-26.04. Delete after reading.
+name: Probe nested bubblewrap
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    name: "Probe (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-latest]
+    steps:
+      - name: Install bubblewrap as ci.yml does
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends bubblewrap
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: What the image is
+        run: |
+          set -x
+          uname -srm; cat /etc/os-release | head -3
+          command -v bwrap; bwrap --version; dpkg -S "$(command -v bwrap)" || true
+          apparmor_parser --version | head -1 || true
+          for s in kernel.apparmor_restrict_unprivileged_userns kernel.apparmor_restrict_unprivileged_unconfined kernel.unprivileged_userns_clone user.max_user_namespaces; do sysctl "$s" 2>&1 || true; done
+          ls -la /etc/apparmor.d | grep -i -E "bwrap|userns|unpriv" || true
+          sudo aa-status 2>/dev/null | grep -i -E "bwrap|userns|unpriv|profiles are" || true
+          cat /etc/apparmor.d/bwrap-userns-restrict 2>/dev/null || true
+      - name: One bwrap, then bwrap inside bwrap
+        run: |
+          one() { bwrap --unshare-user --unshare-pid --ro-bind / / --dev /dev --proc /proc "$@"; }
+          echo "== one level"; one true && echo "one level: ok" || echo "one level: refused ($?)"
+          echo "== nested"; one bwrap --unshare-user --ro-bind / / --dev /dev true && echo "nested: ok" || echo "nested: refused ($?)"
+          echo "== nested, inner without its own user namespace"; one bwrap --ro-bind / / --dev /dev true && echo "nested no-userns: ok" || echo "nested no-userns: refused ($?)"
+      - name: The same after unloading bwrap-userns-restrict
+        run: |
+          if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+            sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict && echo "unloaded"
+          else
+            echo "no bwrap-userns-restrict profile on this image"
+          fi
+          one() { bwrap --unshare-user --unshare-pid --ro-bind / / --dev /dev --proc /proc "$@"; }
+          one bwrap --unshare-user --ro-bind / / --dev /dev true && echo "nested after unload: ok" || echo "nested after unload: refused ($?)"
