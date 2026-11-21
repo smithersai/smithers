@@ -1216,23 +1216,35 @@ static pthread_mutex_t keeping = PTHREAD_MUTEX_INITIALIZER;
 
 /*
  * Signals that come faster than a recorded thread can take them: each one stops the thread for this supervisor,
- * or cuts its restarted call short again before the call is received, and the thread makes no more calls, where
- * unrecorded it would. For each thread, how many signals stopped it since this supervisor last received a call of
- * it, and since when. At `stormCuts` of them, coming at `stormRate` a second or faster, the recording ends: the run
- * is stopped, and the build runs the step again without it.
+ * and the thread makes no more calls, where unrecorded it would. For each thread, how many signals stopped it since
+ * this supervisor last received a call of it, how many of them found the same signal already pending again when it
+ * stopped, and since when. At `stormStops` of them, or at `stormLeast` over `stormMs` or longer, with at least one in
+ * four pending again, the recording ends: the run is stopped, and the build runs the step again without it.
+ *
+ * Neither bound is a rate: how fast this supervisor takes signal stops is the machine's, and on a slow one a
+ * storm's stops come slowly while the thread still makes no calls. A signal pending again says the signals come
+ * faster than this machine takes them; a thread that only computes between a runtime's timers (Go preempts a
+ * goroutine every 10 ms) makes no calls either, but its signal is never pending again. Measured on the build server
+ * (2026-11-21) with a timer to a handler around `stat`: at 16 microseconds or faster the thread made no recorded
+ * call, with 61 to 100 in 100 stops pending again, and at 32 or slower it made its calls. With these bounds a timer
+ * of 24 microseconds or faster was stopped within 3.4 s on 4 free cores, 6.8 s on 2 shared with busy loops and
+ * 34 s on a quarter of one, where 20,000 stops a second never stopped 2 microseconds there; 64 or slower ended
+ * recorded, and so did 32 but for one run of two on the busy cores.
  */
 #define STORM_SLOTS 4096
-static const unsigned stormCuts = 5000;
-static const long stormRate = 20000;
+static const unsigned stormStops = 1000;
+static const unsigned stormLeast = 100;
+static const long stormMs = 1000;
 static struct {
   pid_t tid;
-  unsigned cuts;
+  unsigned stops;
+  unsigned again;
   struct timespec first;
 } storms[STORM_SLOTS];
 static pthread_mutex_t storming = PTHREAD_MUTEX_INITIALIZER;
 static int stormed;
 #ifdef STORM_STATS
-static unsigned mostCuts;
+static unsigned mostStops;
 static long longestMs;
 #endif
 
@@ -1245,32 +1257,59 @@ static unsigned stormSlot(pid_t tid) {
   return slot;
 }
 
-/* A call of `tid` was received: what cut it short before is over. */
+/* A call of `tid` was received: the signals that stopped it before are over. */
 static void receivedCall(pid_t tid) {
   pthread_mutex_lock(&storming);
   unsigned at = stormSlot(tid);
-  if (storms[at].tid == tid) storms[at].cuts = 0;
+  if (storms[at].tid == tid) storms[at].stops = storms[at].again = 0;
   pthread_mutex_unlock(&storming);
 }
 
-/* A signal stopped `tid`. */
-static void cutAgain(pid_t tid) {
+#ifndef PTRACE_PEEKSIGINFO
+#define PTRACE_PEEKSIGINFO 0x4209
+#endif
+#ifndef PTRACE_PEEKSIGINFO_SHARED
+#define PTRACE_PEEKSIGINFO_SHARED 1u
+#endif
+
+/* Whether `sig` is pending for `tid` again, for the thread or its process, while the thread is stopped for it: its
+ * queues as ptrace reads them (PTRACE_PEEKSIGINFO, Linux 3.10). */
+static int pendingAgain(pid_t tid, int sig) {
+  struct {
+    uint64_t off;
+    uint32_t flags;
+    int32_t nr;
+  } queue = {.off = 0, .nr = 32};
+  siginfo_t pending[32];
+  for (int shared = 0; shared < 2; shared++) {
+    queue.flags = shared ? PTRACE_PEEKSIGINFO_SHARED : 0u;
+    long n = ptrace(PTRACE_PEEKSIGINFO, tid, &queue, pending);
+    for (long i = 0; i < n; i++) if (pending[i].si_signo == sig) return 1;
+  }
+  return 0;
+}
+
+/* A signal `sig` stopped `tid`. */
+static void signalStop(pid_t tid, int sig) {
+  int again = pendingAgain(tid, sig);
   struct timespec now;
   clock_gettime(CLOCK_MONOTONIC, &now);
   pthread_mutex_lock(&storming);
   unsigned at = stormSlot(tid);
   if (storms[at].tid != tid) {
     storms[at].tid = tid;
-    storms[at].cuts = 0;
+    storms[at].stops = storms[at].again = 0;
   }
-  if (storms[at].cuts == 0) storms[at].first = now;
-  storms[at].cuts++;
+  if (storms[at].stops == 0) storms[at].first = now;
+  storms[at].stops++;
+  storms[at].again += (unsigned)again;
+  unsigned stops = storms[at].stops;
   long ms = (now.tv_sec - storms[at].first.tv_sec) * 1000 + (now.tv_nsec - storms[at].first.tv_nsec) / 1000000;
 #ifdef STORM_STATS
-  if (storms[at].cuts > mostCuts) mostCuts = storms[at].cuts;
+  if (stops > mostStops) mostStops = stops;
   if (ms > longestMs) longestMs = ms;
 #endif
-  int over = storms[at].cuts >= stormCuts && (long)storms[at].cuts * 1000 >= stormRate * (ms + 1);
+  int over = 4 * storms[at].again >= stops && (stops >= stormStops || (stops >= stormLeast && ms >= stormMs));
   pthread_mutex_unlock(&storming);
   if (over && !__atomic_exchange_n(&stormed, 1, __ATOMIC_ACQ_REL)) {
     unrecorded("signals arrive faster than a recorded call completes");
@@ -1336,7 +1375,7 @@ static void sendAfterFork(pid_t tid) {
  * first: the signal is kept and the call runs again, unless the signal was sent again after the restarted call was
  * received. Otherwise a kept signal sent again is put back as it first came. */
 static int atSignal(pid_t tid, int sig) {
-  cutAgain(tid);
+  signalStop(tid, sig);
   int fork = 0;
   if (cutShort(tid, &fork)) {
     pthread_mutex_lock(&keeping);
@@ -2319,7 +2358,7 @@ int main(int argc, char **argv) {
   close(listener);
   boundSockets();
 #ifdef STORM_STATS
-  fprintf(stderr, "storm-stats: most cuts %u over %ld ms\n", mostCuts, longestMs);
+  fprintf(stderr, "storm-stats: most stops %u over %ld ms\n", mostStops, longestMs);
 #endif
   if (!writeTrace(traceFile)) {
     fprintf(stderr, "smthrs-observe: could not write %s\n", traceFile);

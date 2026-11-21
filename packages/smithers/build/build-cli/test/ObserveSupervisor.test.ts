@@ -11,7 +11,7 @@
  * file, `EACCES` past a closed directory), the line must still say the path
  * was there or that it could not be looked at, never that it was missing.
  */
-import { spawnSync } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
@@ -516,6 +516,36 @@ describe("smthrs-observe and signals faster than a call", () => {
     expect(calm.stdout).toBe("done\n")
     expect(NodeFs.readFileSync(trace, "utf8")).not.toContain(ObservedReads.signalStorm)
   }, 120_000)
+
+  supervised("stops such a run within a bound on a machine that takes its signal stops slowly", async () => {
+    const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-slow-storm-")))
+    temporary.push(base)
+    const script = Path.join(base, "storm.py")
+    await Fs.writeFile(script, signalling)
+    const timer = String(survivedTimer())
+    // One processor this test may use, shared with five busy loops: the program and the recorder get a sixth of
+    // it, and the recorder takes signal stops a few times more slowly. A rule of so many stops a second never ended
+    // this run. With this timer the program ends unrecorded on a processor of its own (the test above).
+    const cpu = /^Cpus_allowed_list:\s*(\d+)/m.exec(NodeFs.readFileSync("/proc/self/status", "utf8"))![1]!
+    const busy = [0, 1, 2, 3, 4].map(() =>
+      spawn("taskset", ["-c", cpu, "sh", "-c", "while :; do :; done"], { stdio: "ignore" })
+    )
+    try {
+      const trace = Path.join(base, "trace")
+      const started = Date.now()
+      const run = spawnSync("taskset", ["-c", cpu, supervisor!, trace, "--", "python3", script, timer, script], {
+        encoding: "utf8",
+        timeout: 90_000
+      })
+      expect(run.error).toBeUndefined()
+      expect(run.status).not.toBe(0)
+      expect(Date.now() - started).toBeLessThan(10_000)
+      const lines = NodeFs.readFileSync(trace, "utf8").split("\n")
+      expect(ObservedReads.read(() => lines, base).refusals).toContain(ObservedReads.signalStorm)
+    } finally {
+      for (const loop of busy) loop.kill("SIGKILL")
+    }
+  }, 240_000)
 })
 
 /**
