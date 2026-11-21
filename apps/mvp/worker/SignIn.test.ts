@@ -3,7 +3,7 @@
 // cases run ChatApi's real handler (worker/test/harness.ts) with sign-in's sessions.
 import { credentialRoute } from "../src/flows/contract.ts"
 import { ModelRequest } from "@smthrs/model"
-import { ConfigProvider, Deferred, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, ConfigProvider, Deferred, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
@@ -22,13 +22,14 @@ import { refsRoute } from "../src/features/repo/contract.ts"
 import { githubHarness } from "./github/test/harness.ts"
 import { scriptedGitHub as scriptedRepository } from "./github/test/scriptedGitHub.ts"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { Sessions as ActorSessions } from "./Actor.ts"
+import { Sessions as ActorSessions, SessionsUnavailable as ActorSessionsUnavailable } from "./Actor.ts"
 import * as SessionStore from "./SessionStore.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { branchAccess, BranchRoles } from "./branch/Access.ts"
 import * as Audit from "./runners/Audit.ts"
 import { HttpEffect } from "effect/http"
 import * as SessionKeys from "./SessionKeys.ts"
+import * as RunCredentials from "./RunCredentials.ts"
 import * as SignIn from "./SignIn.ts"
 import { devRoles, localDeveloper, newcomer, STRANGERS_REPOSITORY } from "./DevChatApi.ts"
 import { repositoryOf } from "./github/Config.ts"
@@ -1419,5 +1420,432 @@ describe("GitHub's page at the callback (decision 0165)", () => {
     } finally {
       await query(sql => sql`ALTER TABLE github_token_cleanups_hidden RENAME TO github_token_cleanups`)
     }
+  })
+})
+
+describe("remaining sign-in branches (#5458)", () => {
+  test("missing sealing secret and invalid SESSION_SECRETS leave sign-in unconfigured", async () => {
+    const noSeal = await signInHarness(runtime, {
+      config: {
+        GITHUB_APP_CLIENT_ID: "Iv1.scripted",
+        GITHUB_APP_CLIENT_SECRET: CLIENT_SECRET,
+        SESSION_SECRETS: JSON.stringify({ k1: SECRET }),
+        GITHUB_REPOSITORY: "smithersai/smithers",
+      },
+    })
+    expect(noSeal.line("auth.config").map((l) => l.annotations)).toContainEqual(expect.objectContaining({ errorCode: "session_seal_secret_missing" }))
+    expect(await (await noSeal.fetch("/api/auth/session")).json()).toMatchObject({ signedIn: false, available: false })
+
+    const badSecrets = await signInHarness(runtime, {
+      config: { ...configured, SESSION_SECRETS: "not-json" },
+    })
+    expect(badSecrets.line("auth.config").map((l) => l.annotations)).toContainEqual(expect.objectContaining({ errorCode: "session_secrets_invalid" }))
+    expect(await (await badSecrets.fetch("/api/auth/session")).json()).toMatchObject({ signedIn: false, available: false })
+  })
+
+  test("role check wait failure logs warning; lookup error after wait returns SessionsUnavailable", async () => {
+    const h = await signInHarness(runtime, {
+      roleChecks: {
+        start: () => Effect.void,
+        wait: () => Effect.fail(new Error("wait_boom")),
+      },
+    })
+    const signed = await h.signInAs()
+    await query(sql => sql`UPDATE sessions SET role_verified_at = now() - interval '2 hours', role_checked_at = now() - interval '2 hours'`)
+    const res = await h.fetch("/api/auth/session", { headers: { cookie: cookie(signed.cookies) } })
+    expect(res.status).toBe(200)
+    expect(h.line("auth.role_check").map((l) => l.annotations)).toContainEqual(expect.objectContaining({ outcome: "wait_failed" }))
+
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    let waited = false
+    const failing = await signInHarness(runtime, {
+      roleChecks: {
+        start: () => Effect.void,
+        wait: () => Effect.sync(() => { waited = true }),
+      },
+      database: Layer.effect(SqlClient.SqlClient, Effect.map(SqlClient.SqlClient, (real) => new Proxy(real, {
+        apply(target, thisArg, args) {
+          if (waited && String(args[0]).includes("FROM sessions")) {
+            return Effect.fail(new SqlError({ reason: new ConnectionError({ cause: "db_down" }) }))
+          }
+          return Reflect.apply(target, thisArg, args)
+        },
+      }))).pipe(Layer.provide(scratch.database)),
+    })
+    const signedFailing = await failing.signInAs()
+    const rows = await sessionRows()
+    const row = rows.find((r) => r.id !== undefined && r.personId !== undefined && rows.indexOf(r) === rows.length - 1)!
+    const app = await harness(runtime, () => Effect.die("unused") as never, { sessions: failing.sessions })
+    const issued = await app.fetch(credentialRoute("bearer-lookup-fail"), {
+      method: "POST",
+      headers: { cookie: cookie(signedFailing.cookies), [DEVICE_PERSON_HEADER]: row!.personId },
+      body: JSON.stringify({ flow: "watch/set" }),
+    })
+    expect(issued.status).toBe(200)
+    const { token } = await issued.json() as { token: string }
+    await query(sql => sql`UPDATE sessions SET role_verified_at = now() - interval '2 hours', role_checked_at = now() - interval '2 hours'`)
+    const resolved = await runtime.runPromise(Effect.result(
+      Effect.flatMap(ActorSessions, (s) => s.resolve).pipe(
+        Effect.provide(failing.sessions),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
+          headers: { authorization: `Bearer ${token}` },
+        }))),
+      ),
+    ))
+    expect(resolved._tag).toBe("Failure")
+  })
+
+  test("credentialStale database error surfaces 503 and discarded callback cleanup failure is caught", async () => {
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const staleDown = await signInHarness(runtime, {
+      database: Layer.effect(SqlClient.SqlClient, Effect.map(SqlClient.SqlClient, (real) => new Proxy(real, {
+        apply(target, thisArg, args) {
+          if (String(args[0]).includes("AS stale")) {
+            return Effect.fail(new SqlError({ reason: new ConnectionError({ cause: "stale_check_down" }) }))
+          }
+          return Reflect.apply(target, thisArg, args)
+        },
+      }))).pipe(Layer.provide(scratch.database)),
+    })
+    const signed = await staleDown.signInAs()
+    await query(sql => sql`UPDATE sessions SET revoked_at = now()`)
+    const req = HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
+      headers: { cookie: cookie(signed.cookies) },
+    }))
+    const res = await runtime.runPromise(
+      staleDown.signIn.guard(Effect.succeed(HttpServerResponse.empty({ status: 204 }))).pipe(
+        Effect.provide(staleDown.services),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, req),
+      ),
+    )
+    expect(res.status).toBe(503)
+
+    const cleanupDown = await signInHarness(runtime, {
+      database: Layer.effect(SqlClient.SqlClient, Effect.map(SqlClient.SqlClient, (real) => new Proxy(real, {
+        apply(target, thisArg, args) {
+          const text = String(args[0])
+          if (text.includes("INSERT INTO sessions") || text.includes("github_token_cleanups")) {
+            return Effect.fail(new SqlError({ reason: new ConnectionError({ cause: "store_down" }) }))
+          }
+          return Reflect.apply(target, thisArg, args)
+        },
+      }))).pipe(Layer.provide(scratch.database)),
+    })
+    const cb = await cleanupDown.signInAs()
+    expect(cb.response.headers.get("location")).toBe("/app?sign_in=failed")
+    expect(cleanupDown.line("auth.token_cleanup").map((l) => l.annotations)).toContainEqual(expect.objectContaining({ outcome: "failed" }))
+  })
+
+  test("admit swallows maintenance seed failure, nested guard reuses receipt, and guard maps SessionsUnavailable on sign-out", async () => {
+    const h = await signInHarness(runtime, {
+      starter: {
+        start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "starter_down" })),
+      },
+    })
+    const signed = await h.signInAs()
+    const req = HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
+      headers: { cookie: cookie(signed.cookies) },
+    }))
+    const ok = await runtime.runPromise(
+      h.signIn.admit(h.signIn.guard(Effect.succeed(HttpServerResponse.empty({ status: 204 })))).pipe(
+        Effect.provide(h.services),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, req),
+      ),
+    )
+    expect(ok.status).toBe(204)
+
+    const signOutReq = HttpServerRequest.fromWeb(new Request("http://smithers.test/api/auth/sign-out", { method: "POST" }))
+    const unavailable = await runtime.runPromise(
+      h.signIn.guard(Effect.fail(new ActorSessionsUnavailable())).pipe(
+        Effect.provide(h.services),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, signOutReq),
+      ),
+    )
+    expect(unavailable.status).toBe(503)
+  })
+
+  test("pre-migration re-auth recovers pairDigest from sealed access and revokes unreadable seals", async () => {
+    const h = await signInHarness(runtime)
+    const first = await h.signInAs()
+    const [row1] = await sessionRows()
+    await query(sql => sql`UPDATE sessions SET github_pair_digest = NULL WHERE id = ${row1!.id}`)
+    const started1 = await h.start()
+    const { code: c1, state: st1 } = h.github.approve(started1.location)
+    const cookies1 = { ...first.cookies, ...Object.fromEntries(Object.entries(started1.cookies).map(([k, v]) => [k, v.value])) }
+    const res1 = await h.fetch(`/api/auth/callback?${new URLSearchParams({ code: c1, state: st1 })}`, { headers: { cookie: cookie(cookies1) } })
+    expect(res1.status).toBe(303)
+    const cleanups1 = await query(sql => sql`SELECT session_id FROM github_token_cleanups WHERE session_id = ${row1!.id}`)
+    expect(cleanups1.length).toBeGreaterThanOrEqual(1)
+
+    const otherKeys = await Effect.runPromise(SessionKeys.make(Redacted.make("another-seal-secret-".padEnd(64, "7"))))
+    const unreadable = await Effect.runPromise(otherKeys.seal(Redacted.make("ghu_unreadable"), { id: row1!.id, name: "github_access", version: 1 }))
+    await query(sql => sql`UPDATE sessions SET github_pair_digest = NULL, github_access = ${JSON.stringify(unreadable)}::jsonb WHERE id = ${row1!.id}`)
+    const started2 = await h.start()
+    const { code: c2, state: st2 } = h.github.approve(started2.location)
+    const cookies2 = { ...first.cookies, ...Object.fromEntries(Object.entries(started2.cookies).map(([k, v]) => [k, v.value])) }
+    const res2 = await h.fetch(`/api/auth/callback?${new URLSearchParams({ code: c2, state: st2 })}`, { headers: { cookie: cookie(cookies2) } })
+    expect(res2.status).toBe(303)
+    const [revokedRow] = await query<{ readonly revoked_reason: string | null }>(sql => sql`SELECT revoked_reason FROM sessions WHERE id = ${row1!.id}`)
+    expect(revokedRow?.revoked_reason).toBe("unreadable")
+  })
+
+  test("session route tolerates Conversations.home failure and Actor.Sessions catches CredentialStale", async () => {
+    const NEXT = "next-signing-secret-".padEnd(64, "9")
+    const h = await signInHarness(runtime, {
+      config: { ...configured, SESSION_SECRETS: JSON.stringify({ legacy: SECRET, next: NEXT }), SESSION_SEAL_SECRET: SECRET },
+    })
+    const signed = await h.signInAs()
+    await query(sql => sql`ALTER TABLE branches RENAME TO branches_hidden_5458`)
+    try {
+      const res = await h.fetch("/api/auth/session", { headers: { cookie: cookie(signed.cookies) } })
+      expect(res.status).toBe(200)
+      const body = await res.json() as SessionState
+      expect(body.signedIn).toBe(true)
+      if (body.signedIn) expect(body.homeConversationId).toBeUndefined()
+    } finally {
+      await query(sql => sql`ALTER TABLE branches_hidden_5458 RENAME TO branches`)
+    }
+
+    await query(sql => sql`UPDATE sessions SET cookie_key = 'next'`)
+    const req = HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
+      headers: { cookie: cookie(signed.cookies) },
+    }))
+    const resolved = await runtime.runPromise(
+      Effect.flatMap(ActorSessions, (s) => Effect.all([
+        s.resolve,
+        s.resolveCookie ?? Effect.succeed(Option.none()),
+      ])).pipe(
+        Effect.provide(h.sessions),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, req),
+      ),
+    )
+    expect(resolved.map(Option.isNone)).toEqual([true, true])
+  })
+
+  test("admit skips maintenance when unconfigured, guard handles bearer on /api/auth and custom errorCode, and dev resolveCookie omits expiry", async () => {
+    const dev = await signInHarness(runtime, { config: {}, fallback: { actor: localDeveloper, login: "local-developer" } })
+    const unconfiguredOk = await runtime.runPromise(
+      dev.signIn.admit(Effect.succeed(HttpServerResponse.empty({ status: 204 }))).pipe(
+        Effect.provide(dev.services),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches"))),
+      ),
+    )
+    expect(unconfiguredOk.status).toBe(204)
+    const devActor = await runtime.runPromise(
+      Effect.flatMap(ActorSessions, (s) => s.resolveCookie ?? Effect.succeed(Option.none())).pipe(
+        Effect.provide(dev.sessions),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches"))),
+      ),
+    )
+    expect(Option.isSome(devActor) && devActor.value.expiry === undefined).toBe(true)
+
+    const h = await signInHarness(runtime)
+    const bearerOnAuth = await runtime.runPromise(
+      h.signIn.guard(Effect.succeed(HttpServerResponse.empty({ status: 204 }))).pipe(
+        Effect.provide(h.services),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/auth/other", {
+          headers: { authorization: "Bearer some.token" },
+        }))),
+      ),
+    )
+    expect(bearerOnAuth.status).toBe(204)
+
+    const signOutCustomCode = await runtime.runPromise(
+      h.signIn.guard(Effect.fail(new ActorSessionsUnavailable({ errorCode: "db_lost" }))).pipe(
+        Effect.provide(h.services),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/auth/sign-out", { method: "POST" }))),
+      ),
+    )
+    expect(signOutCustomCode.status).toBe(503)
+  })
+
+  test("re-auth handles null held access, duplicate cleanup row, expired issuance, post-commit cleanup start failure, and null refresh on error", async () => {
+    const h = await signInHarness(runtime)
+    const first = await h.signInAs()
+    const [row1] = await sessionRows()
+    // 1. held.access === null skips cleanup enqueue
+    await query(sql => sql`UPDATE sessions SET github_access = NULL WHERE id = ${row1!.id}`)
+    const s1 = await h.start()
+    const { code: c1, state: st1 } = h.github.approve(s1.location)
+    const ck1 = { ...first.cookies, ...Object.fromEntries(Object.entries(s1.cookies).map(([k, v]) => [k, v.value])) }
+    expect((await h.fetch(`/api/auth/callback?${new URLSearchParams({ code: c1, state: st1 })}`, { headers: { cookie: cookie(ck1) } })).status).toBe(303)
+
+    // 2. Duplicate pair_digest already in github_token_cleanups returns None from enqueueCleanup
+    const held = await runtime.runPromise(SessionStore.held(row1!.id))
+    if (Option.isNone(held) || held.value.access === null || held.value.pairDigest === null) throw new Error("expected held access")
+    await runtime.runPromise(SessionStore.enqueueCleanup({
+      sessionId: row1!.id,
+      pairDigest: held.value.pairDigest,
+      access: held.value.access,
+      refresh: held.value.refresh,
+    }))
+    const s2 = await h.start()
+    const { code: c2, state: st2 } = h.github.approve(s2.location)
+    const ck2 = { ...first.cookies, ...Object.fromEntries(Object.entries(s2.cookies).map(([k, v]) => [k, v.value])) }
+    expect((await h.fetch(`/api/auth/callback?${new URLSearchParams({ code: c2, state: st2 })}`, { headers: { cookie: cookie(ck2) } })).status).toBe(303)
+
+    // 3. Post-commit ReplacedTokens.start failure hits onError with retained === true
+    const failStart = await signInHarness(runtime, {
+      starter: { start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "boom" })) },
+    })
+    const s3 = await failStart.start()
+    const { code: c3, state: st3 } = failStart.github.approve(s3.location)
+    const ck3 = { ...first.cookies, ...Object.fromEntries(Object.entries(s3.cookies).map(([k, v]) => [k, v.value])) }
+    const r3 = await failStart.fetch(`/api/auth/callback?${new URLSearchParams({ code: c3, state: st3 })}`, { headers: { cookie: cookie(ck3) } })
+    expect(r3.status).toBe(303)
+
+    // 4. Issuance whose findLive returns empty fails with reason=expired
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    let inserted = false
+    const expiredDb = Layer.effect(SqlClient.SqlClient, Effect.map(SqlClient.SqlClient, (real) => new Proxy(real, {
+      apply(target, thisArg, args) {
+        const q = String(args[0])
+        if (q.includes("INSERT INTO sessions")) inserted = true
+        if (inserted && q.includes("FROM sessions s") && q.includes("JOIN people p")) {
+          return Effect.succeed([])
+        }
+        return Reflect.apply(target, thisArg, args)
+      },
+    }))).pipe(Layer.provide(scratch.database))
+    const expH = await signInHarness(runtime, { database: expiredDb })
+    const expRes = await expH.signInAs()
+    expect(expRes.response.headers.get("location")).toBe("/app?sign_in=failed")
+
+    // 5. Failed issuance with null refreshToken runs discarded cleanup with refresh: null
+    const noRefreshGh = scriptedGitHub()
+    noRefreshGh.expiring = false
+    const failInsert = Layer.effect(SqlClient.SqlClient, Effect.map(SqlClient.SqlClient, (real) => new Proxy(real, {
+      apply(target, thisArg, args) {
+        if (String(args[0]).includes("INSERT INTO sessions")) {
+          return Effect.fail(new SqlError({ reason: new ConnectionError({ cause: "insert_down" }) }))
+        }
+        return Reflect.apply(target, thisArg, args)
+      },
+    }))).pipe(Layer.provide(scratch.database))
+    const nrH = await signInHarness(runtime, { github: noRefreshGh, database: failInsert })
+    const nrRes = await nrH.signInAs()
+    expect(nrRes.response.headers.get("location")).toBe("/app?sign_in=failed")
+  })
+
+  test("session prior with stale cookie and unavailable db, revoked bearer, disappeared bearer after wait, and monotonic snapshot expiry", async () => {
+    const NEXT = "next-signing-secret-".padEnd(64, "9")
+    const h = await signInHarness(runtime, {
+      config: { ...configured, SESSION_SECRETS: JSON.stringify({ legacy: SECRET, next: NEXT }), SESSION_SEAL_SECRET: SECRET },
+    })
+    const signed = await h.signInAs()
+    const sessionRes = await h.fetch("/api/auth/session", { headers: { cookie: cookie(signed.cookies) } })
+    const body = await sessionRes.json() as SessionState
+    if (!body.signedIn || !body.session) throw new Error("expected session tag")
+
+    // Stale cookie with x-smithers-session-tag carries prior on 200
+    await query(sql => sql`UPDATE sessions SET cookie_key = 'next'`)
+    const staleWithPrior = await h.fetch("/api/auth/session", {
+      headers: { cookie: cookie(signed.cookies), "x-smithers-session-tag": body.session },
+    })
+    expect(staleWithPrior.status).toBe(200)
+    expect(await staleWithPrior.json()).toMatchObject({ credential: "stale", prior: "live" })
+
+    // Unavailable DB with x-smithers-session-tag carries prior on 503
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const renewDown = Layer.effect(SqlClient.SqlClient, Effect.map(SqlClient.SqlClient, (real) => new Proxy(real, {
+      apply(target, thisArg, args) {
+        if (String(args[0]).includes("UPDATE sessions") && String(args[0]).includes("expires_at")) {
+          return Effect.fail(new SqlError({ reason: new ConnectionError({ cause: "renew_down" }) }))
+        }
+        return Reflect.apply(target, thisArg, args)
+      },
+    }))).pipe(Layer.provide(scratch.database))
+    const downH = await signInHarness(runtime, {
+      config: { ...configured, SESSION_SECRETS: JSON.stringify({ legacy: SECRET, next: NEXT }), SESSION_SEAL_SECRET: SECRET },
+      database: renewDown,
+    })
+    const unavailWithPrior = await downH.fetch("/api/auth/session", {
+      headers: { cookie: cookie(signed.cookies), "x-smithers-session-tag": body.session },
+    })
+    expect(unavailWithPrior.status).toBe(503)
+    expect(await unavailWithPrior.json()).toMatchObject({ prior: "live" })
+
+    // Monotonic expiry guard for both cookie and bearer, plus revoked & disappeared bearer
+    let jumpMs = 0
+    const monoClock = (clock: Clock.Clock): Clock.Clock => ({
+      currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe(),
+      currentTimeMillis: clock.currentTimeMillis,
+      currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe(),
+      currentTimeNanos: clock.currentTimeNanos,
+      monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe() + BigInt(jumpMs) * 1_000_000n,
+      monotonicTimeNanos: Effect.sync(() => clock.monotonicTimeNanosUnsafe() + BigInt(jumpMs) * 1_000_000n),
+      sleep: (duration) => clock.sleep(duration),
+    })
+    let revokeOnWait = false
+    const monoH = await signInHarness(runtime, {
+      roleChecks: {
+        start: () => Effect.void,
+        wait: (id) => Effect.gen(function* () {
+          if (revokeOnWait) {
+            yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE sessions SET revoked_at = now() WHERE id = ${id}`).pipe(Effect.provide(scratch.database))
+          } else {
+            jumpMs += 40 * 24 * 60 * 60 * 1000
+          }
+        }),
+      },
+    })
+    const mSigned = await monoH.signInAs()
+    const rows = await sessionRows()
+    const mRow = rows.at(-1)!
+    const app = await harness(runtime, () => Effect.die("unused") as never, { sessions: monoH.sessions })
+    const issued = await app.fetch(credentialRoute("mono-bearer"), {
+      method: "POST",
+      headers: { cookie: cookie(mSigned.cookies), [DEVICE_PERSON_HEADER]: mRow.personId },
+      body: JSON.stringify({ flow: "watch/set" }),
+    })
+    const { token } = await issued.json() as { token: string }
+    await query(sql => sql`UPDATE sessions SET role_verified_at = now() - interval '2 hours', role_checked_at = now() - interval '2 hours' WHERE id = ${mRow.id}`)
+
+    // Cookie monotonic expiry returns None
+    const cookieExpired = await runtime.runPromise(
+      Effect.flatMap(ActorSessions, (s) => s.resolve).pipe(
+        Effect.provide(monoH.sessions),
+        Effect.updateService(Clock.Clock, monoClock),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
+          headers: { cookie: cookie(mSigned.cookies) },
+        }))),
+      ),
+    )
+    expect(Option.isNone(cookieExpired)).toBe(true)
+
+    // Bearer monotonic expiry returns None
+    const bearerExpired = await runtime.runPromise(
+      Effect.flatMap(ActorSessions, (s) => s.resolve).pipe(
+        Effect.provide(monoH.sessions),
+        Effect.updateService(Clock.Clock, monoClock),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
+          headers: { authorization: `Bearer ${token}` },
+        }))),
+      ),
+    )
+    expect(Option.isNone(bearerExpired)).toBe(true)
+
+    // Bearer whose session is revoked during wait returns None (L1280)
+    revokeOnWait = true
+    const bearerDisappeared = await runtime.runPromise(
+      Effect.flatMap(ActorSessions, (s) => s.resolve).pipe(
+        Effect.provide(monoH.sessions),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
+          headers: { authorization: `Bearer ${token}` },
+        }))),
+      ),
+    )
+    expect(Option.isNone(bearerDisappeared)).toBe(true)
+
+    // Bearer whose session is already revoked returns None on initial lookup (L1278)
+    const bearerRevoked = await runtime.runPromise(
+      Effect.flatMap(ActorSessions, (s) => s.resolve).pipe(
+        Effect.provide(monoH.sessions),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
+          headers: { authorization: `Bearer ${token}` },
+        }))),
+      ),
+    )
+    expect(Option.isNone(bearerRevoked)).toBe(true)
   })
 })

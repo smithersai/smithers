@@ -173,7 +173,7 @@ export const configured = (github?: GitHubAuth["Service"]) =>
     }
     const signing = Option.isSome(encodedSecrets) ? SessionKeys.decodeSecrets(encodedSecrets.value)
       : SessionKeys.decodeSecrets(Redacted.make(JSON.stringify({
-        legacy: Redacted.value(Option.getOrElse(secret, () => sealing.value)),
+        legacy: Redacted.value(Option.getOrThrow(secret)),
       })))
     if (Option.isNone(signing)) {
       yield* Effect.logError("auth.config").pipe(Effect.annotateLogs({ errorCode: "session_secrets_invalid" }))
@@ -430,11 +430,10 @@ export const make = <E, R>(
       )
 
     /** Both cookie and bearer traffic admit the same generation of the durable role recheck. */
-    const admitRoleCheck = (live: SessionStore.Live) => Effect.gen(function* () {
-      if (Option.isNone(setup)) return false
+    const admitRoleCheck = (configured: Configured, live: SessionStore.Live) => Effect.gen(function* () {
       // Both age and expiry use the database clock that read the receipt. Worker skew cannot delay renewal.
       const checkedAgo = live.serverNow - live.roleCheckedAt
-      const window = setup.value.recheckAfterMs
+      const window = configured.recheckAfterMs
       const renewAfter = window - Math.min(ROLE_RECHECK_MARGIN_MS, window / 2)
       const due = live.roleVerifiedAt === null || live.serverNow - live.roleVerifiedAt >= renewAfter
       if (checkedAgo >= renewAfter || (due && checkedAgo >= Math.min(UNCONFIRMED_RECHECK_MS, renewAfter))) {
@@ -452,9 +451,9 @@ export const make = <E, R>(
     })
 
     /** Past expiry, give the durable check a bounded chance and read the resulting receipt, never the old snapshot. */
-    const renewRole = (live: SessionStore.Live, lookup?: Effect.Effect<Option.Option<SessionStore.Live>, Actor.SessionsUnavailable, R>) => Effect.gen(function* () {
-      const admitted = yield* admitRoleCheck(live)
-      if (!admitted || Option.isNone(setup) || SessionStore.roleFresh(live.roleVerifiedAt, live.serverNow, setup.value.recheckAfterMs)) {
+    const renewRole = (configured: Configured, live: SessionStore.Live, lookup?: Effect.Effect<Option.Option<SessionStore.Live>, Actor.SessionsUnavailable, R>) => Effect.gen(function* () {
+      const admitted = yield* admitRoleCheck(configured, live)
+      if (!admitted || SessionStore.roleFresh(live.roleVerifiedAt, live.serverNow, configured.recheckAfterMs)) {
         return Option.some(live)
       }
       const checks = yield* RoleChecks
@@ -488,18 +487,12 @@ export const make = <E, R>(
       Metric.update(Metric.withAttributes(sessionOutcomes, { outcome: "credential_stale" }), 1),
       Effect.logInfo("auth.session").pipe(Effect.annotateLogs({ outcome: "credential_stale" })),
     )
-    const credentialStale = Effect.gen(function* () {
-      if (Option.isNone(setup)) return false
-      const request = yield* HttpServerRequest.HttpServerRequest
-      const { url, secure } = arrival(request)
-      const proof = yield* setup.value.keys.verify("session", request.cookies[cookieNames(secure).session])
-      if (Option.isNone(proof)) return false
-      const digest = SessionKeys.digest(proof.value.value)
-      const away = Option.isSome(handoff) && url.hostname !== handoff.value.host
-      return yield* SessionStore.credentialStale(digest, away ? url.hostname : null, proof.value.keyId).pipe(
-        Effect.provide(database), Effect.mapError(error => new Actor.SessionsUnavailable({ errorCode: codeOf(error) })),
+    const credentialStale = (digest: string, host: string | null, keyId: string) =>
+      SessionStore.credentialStale(digest, host, keyId).pipe(
+        Effect.provide(database),
+        Effect.mapError(error => new Actor.SessionsUnavailable({ errorCode: codeOf(error) })),
+        withSigningKeys,
       )
-    }).pipe(withSigningKeys)
     // Only clients that retain writes through stale credentials may receive this retryable response.
     // Its own generator reads the request: worker-config.test.ts takes the innermost function reading one for the handler.
     const staleResponse = Effect.gen(function* () {
@@ -509,16 +502,12 @@ export const make = <E, R>(
         ...noStore, "x-smithers-credential": "stale", ...(accepts ? { "retry-after": "1" } : {}),
       } })
     })
-    const readCookie = Effect.gen(function* () {
+    const readCookie = (configured: Configured) => Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       const lookupClock = yield* Clock.Clock
       const initialStarted = yield* lookupClock.monotonicTimeNanos
       const rawCookie = request.cookies[cookieNames(arrival(request).secure).session]
-      if (Option.isNone(setup)) {
-        if (rawCookie !== undefined) yield* recordCookieRejected
-        return { live: Option.none<SessionStore.Live>(), lookupStarted: initialStarted }
-      }
-      const { keys } = setup.value
+      const { keys } = configured
       const { url } = arrival(request)
       const token = yield* keys.verify("session", rawCookie)
       if (Option.isNone(token)) {
@@ -529,7 +518,7 @@ export const make = <E, R>(
       // Away from home, an alias session first; a session signed in at this host itself, as before 0130, still reads.
       const away = Option.isSome(handoff) && url.hostname !== handoff.value.host
       if (request.method === "GET" && request.url.split("?")[0] === SESSION_ROUTE) {
-        const renewed = yield* SessionStore.renew(digest, away ? url.hostname : null, setup.value.maxAgeSeconds, token.value.keyId).pipe(
+        const renewed = yield* SessionStore.renew(digest, away ? url.hostname : null, configured.maxAgeSeconds, token.value.keyId).pipe(
           Effect.provide(database),
           Effect.tapError(error => Effect.logError("auth.session").pipe(
             Effect.annotateLogs({ outcome: "error", errorCode: codeOf(error) }),
@@ -552,10 +541,10 @@ export const make = <E, R>(
         Effect.mapError(error => new Actor.SessionsUnavailable({ errorCode: codeOf(error) })),
       )
       const found = yield* lookup
-      const live = Option.isNone(found) ? found : yield* renewRole(found.value, lookup)
+      const live = Option.isNone(found) ? found : yield* renewRole(configured, found.value, lookup)
       if (Option.isNone(live)) {
         yield* recordCookieRejected
-        if (yield* credentialStale) { yield* recordStale; return yield* new CredentialStale() }
+        if (yield* credentialStale(digest, away ? url.hostname : null, token.value.keyId)) { yield* recordStale; return yield* new CredentialStale() }
         return { live, lookupStarted }
       }
       return { live, lookupStarted }
@@ -570,7 +559,7 @@ export const make = <E, R>(
       if (Option.isNone(setup) || (RunCredentials.carriesCredential(request) && !path.startsWith("/api/auth/")) ||
         [SESSION_ROUTE, SIGN_IN_ROUTE, SIGN_OUT_ROUTE, CALLBACK_ROUTE, ARRIVE_ROUTE, HANDOFF_ROUTE].includes(path)) return yield* next
       if (Option.isSome(yield* Effect.serviceOption(CookieReceipt))) return yield* next
-      const receipt = yield* readCookie
+      const receipt = yield* readCookie(setup.value)
       return yield* next.pipe(Effect.provideService(CookieReceipt, receipt))
     }).pipe(
       Effect.catchTag("CredentialStale", () => staleResponse),
@@ -616,7 +605,7 @@ export const make = <E, R>(
         return Option.fromNullishOr(teammate ?? options.fallback)
       }
       const shared = yield* Effect.serviceOption(CookieReceipt)
-      const { live, lookupStarted } = Option.isSome(shared) ? shared.value : yield* readCookie
+      const { live, lookupStarted } = Option.isSome(shared) ? shared.value : yield* readCookie(setup.value)
       if (Option.isNone(live)) return Option.none()
       const { recheckAfterMs } = setup.value
       const lookupClock = yield* Clock.Clock
@@ -958,8 +947,7 @@ export const make = <E, R>(
         const tokens = yield* fromGitHub(github.exchange({ code: Redacted.make(code), codeVerifier, redirectUri }))
         // Until issuance commits, this callback owns the pair. Failed sign-in must hand it to durable cleanup.
         const discardedId = crypto.randomUUID()
-        let retained = false
-        return yield* Effect.gen(function* () {
+        const signedIn = yield* Effect.gen(function* () {
           const user = yield* fromGitHub(github.user(tokens.accessToken))
           const roleGeneration = yield* SessionStore.roleObservation.pipe(
             Effect.provide(database),
@@ -968,7 +956,7 @@ export const make = <E, R>(
           const role = roleOf(yield* fromGitHub(github.permission(tokens.accessToken, repository)))
           const freshId = crypto.randomUUID()
           const freshToken = yield* keys.token
-          const signedIn = yield* SessionStore.issuance(Effect.gen(function* () {
+          return yield* SessionStore.issuance(Effect.gen(function* () {
             const personId = yield* SessionStore.upsertPerson({ id: crypto.randomUUID(), githubId: user.id, login: user.login })
             const candidate = Option.isNone(previous) ? Option.none<{ id: string; eligible: boolean }>()
               : yield* SessionStore.reauthCandidate(SessionKeys.digest(previous.value.value), personId, previous.value.keyId, keys.keyIds)
@@ -1010,23 +998,7 @@ export const make = <E, R>(
             Effect.provide(database),
             Effect.mapError((error) => new CallbackFailed({ reason: error instanceof SessionStore.IssuerUnconfigured ? "issuer_unconfigured" : "database", returnTo, errorCode: codeOf(error) })),
           )
-          retained = true
-          // Commit the cleanup request before admitting its flow. A refused start leaves it for the alarm's sweeper.
-          yield* Effect.forEach(signedIn.pending, ReplacedTokens.start, { discard: true })
-          yield* recordReauth(signedIn.renewed ? "renewed_in_place" : "new_row", signedIn.renewed ? "eligible" : "ineligible")
-          // Whether GitHub showed a page, after one of our revocations or not (decision 0165). It never fails sign-in.
-          yield* SessionStore.tokenHistory(signedIn.personId, signedIn.sessionId).pipe(
-            Effect.provide(database),
-            Effect.flatMap((history) => GitHub.Auth.Consent.observe({
-              page: GitHub.Auth.Consent.pageOf(request.headers.referer, GitHub.Auth.Consent.githubOrigin(github)),
-              ...history,
-              path: "sign_in",
-            })),
-            Effect.catch((error) => Effect.logWarning("auth.github.consent").pipe(Effect.annotateLogs({ outcome: "failed", errorCode: codeOf(error) }))),
-          )
-          return { ...signedIn, returnTo, cookie: yield* keys.sign("session", signedIn.token, signedIn.cookieKey) }
         }).pipe(Effect.onError(() => Effect.gen(function* () {
-          if (retained) return
           const access = yield* keys.seal(tokens.accessToken, { id: discardedId, name: "github_access", version: 1 })
           const refresh = tokens.refreshToken === null ? null : yield* keys.seal(tokens.refreshToken, { id: discardedId, name: "github_refresh", version: 1 })
           const pending = yield* SessionStore.enqueueCleanup({ sessionId: discardedId,
@@ -1036,6 +1008,20 @@ export const make = <E, R>(
           Metric.update(Metric.withAttributes(ReplacedTokens.cleanups, { outcome: "failed" }), 1),
           Effect.logWarning("auth.token_cleanup").pipe(Effect.annotateLogs({ outcome: "failed" })),
         )))))
+        // Commit the cleanup request before admitting its flow. A refused start leaves it for the alarm's sweeper.
+        yield* Effect.forEach(signedIn.pending, ReplacedTokens.start, { discard: true })
+        yield* recordReauth(signedIn.renewed ? "renewed_in_place" : "new_row", signedIn.renewed ? "eligible" : "ineligible")
+        // Whether GitHub showed a page, after one of our revocations or not (decision 0165). It never fails sign-in.
+        yield* SessionStore.tokenHistory(signedIn.personId, signedIn.sessionId).pipe(
+          Effect.provide(database),
+          Effect.flatMap((history) => GitHub.Auth.Consent.observe({
+            page: GitHub.Auth.Consent.pageOf(request.headers.referer, GitHub.Auth.Consent.githubOrigin(github)),
+            ...history,
+            path: "sign_in",
+          })),
+          Effect.catch((error) => Effect.logWarning("auth.github.consent").pipe(Effect.annotateLogs({ outcome: "failed", errorCode: codeOf(error) }))),
+        )
+        return { ...signedIn, returnTo, cookie: yield* keys.sign("session", signedIn.token, signedIn.cookieKey) }
       }).pipe(
         // A bug: logged by its name, and the browser told sign-in failed.
         Effect.catchDefect((defect) =>
@@ -1280,7 +1266,7 @@ export const make = <E, R>(
           const lookupStarted = yield* lookupClock.monotonicTimeNanos
           const found = yield* SessionStore.findLiveById(claims.sid!)
           if (Option.isNone(found) || found.value.personId !== claims.sub) return Option.none()
-          const renewed = yield* renewRole(found.value)
+          const renewed = yield* renewRole(setup.value, found.value)
           if (Option.isNone(renewed)) return Option.none()
           const live = renewed.value
           // Role-check admission may wait even for a still-fresh role. Bound this snapshot's lifetime just as
