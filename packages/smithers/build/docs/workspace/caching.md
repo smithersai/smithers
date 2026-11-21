@@ -873,6 +873,13 @@ removed when the build ends, and what an earlier build left there, or under
 `~/.cache/smthrs/machines` where builds kept them before, is removed before the
 first target runs. One build at a time uses a workspace's machines.
 
+Every machine stays until the build ends, so the machines of a large repository
+can fill the disk. A target on a machine that fails while the disk that holds
+the machines is full, with less than 1 GB free or less than 1% of the disk when
+that is more, did not fail on its own when the other machines hold more than
+its own: its failure says so, names the disk, what the machines hold and
+`--jobs`. A target whose own machine holds the most keeps its own failure.
+
 `machine` requires `sandbox: "none"`. A `Shell.Build` on a machine also
 declares `cache: false`: what it builds stays on its machine for the targets
 there that depend on it, so it always runs. `machine` cannot be combined with

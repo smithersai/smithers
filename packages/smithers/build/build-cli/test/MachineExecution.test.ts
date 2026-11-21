@@ -369,6 +369,26 @@ describe("what a target on a machine keeps in the cache directory", () => {
   })
 })
 
+describe("a machine target that fails on a full disk", () => {
+  posixIt("fails for the build when the other machines filled the disk, and for itself when its own did", async () => {
+    // The disk the machines are on says it has 0.2 GB of 100 GB free: it is full.
+    const full: ExecutionServices = { ...untraced, diskSpace: async () => ({ free: 2e8, total: 1e11 }) }
+    const { failures, run } = await fixture(() => ({
+      big: on("big", "head -c 2000000 /dev/zero > big.bin"),
+      small: on("small", "exit 1"),
+      fills: on("fills", "head -c 8000000 /dev/zero > more.bin; exit 1")
+    }))
+    expect(await run(["big", "small", "fills"], full)).toEqual({ big: "ran", small: "failed", fills: "failed" })
+    expect(failures.get("small")).toMatch(
+      /^the disk that holds this build's machines \(.+\) is full, 0\.2 GB free: its \d machines hold .+, this target's .+, so the target did not fail on its own\. Run fewer jobs at once \(--jobs\) or free some space$/
+    )
+    expect(failures.get("fills")).not.toContain("is full")
+    // A disk with room leaves every failure the target's own.
+    expect(await run(["small"], untraced)).toEqual({ small: "failed" })
+    expect(failures.get("small")).not.toContain("is full")
+  })
+})
+
 describe("the targets of one machine", () => {
   posixIt("share its tree, its home and its temporary directory, one at a time and in order", async () => {
     const { run } = await fixture(() => {

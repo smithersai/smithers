@@ -61,6 +61,7 @@ import { runTarget } from "../TargetExecution.ts"
 import * as Workspace from "../Workspace.ts"
 import * as ApprovalBridge from "./ApprovalBridge.ts"
 import * as CacheEvidence from "./CacheEvidence.ts"
+import * as FullDisk from "./FullDisk.ts"
 import * as GoCache from "./GoCache.ts"
 import * as InstalledTree from "./InstalledTree.ts"
 import * as Machine from "./Machine.ts"
@@ -138,6 +139,8 @@ export interface ExecutionServices {
   readonly replanner: typeof replanner
   /** Whether this build itself runs with no new privileges, as inside another program's jail. */
   readonly noNewPrivileges: () => boolean
+  /** The free space and the size of the disk that holds a path, or nothing where the host does not say. */
+  readonly diskSpace: (path: string) => Promise<FullDisk.Space | undefined>
 }
 
 /**
@@ -165,7 +168,8 @@ export const executionServicesLive: ExecutionServices = {
   observer: (host) => ObservedReads.observer({ ...host, supervisor: ObservedReads.supervisorPath() }),
   replanner,
   // Asked only where a recorder ran, which is Linux, where every process has the file.
-  noNewPrivileges: () => /^NoNewPrivs:\s*1$/m.test(NodeFs.readFileSync("/proc/self/status", "utf8"))
+  noNewPrivileges: () => /^NoNewPrivs:\s*1$/m.test(NodeFs.readFileSync("/proc/self/status", "utf8")),
+  diskSpace: FullDisk.spaceOf
 }
 
 /**
@@ -5572,13 +5576,25 @@ const executeWith = (
         const node = byLabel.get(label)!
         const started = performance.now()
         if (!node.dependencies.some((dependency) => notGreen.has(dependency))) reporter.targetStarted(label)
-        const outcome = yield* inTurn(node, treeGate(takesExclusiveTreePermit(node), settle(node))).pipe(
+        const settled = yield* inTurn(node, treeGate(takesExclusiveTreePermit(node), settle(node))).pipe(
           Effect.onInterrupt(() =>
             Effect.sync(() => {
               if (stoppedBy !== undefined) cancel(node, performance.now() - started, "cancelled")
             })
           )
         )
+        // A machine target that failed on a disk the build's other machines filled did not fail on its own.
+        const buildsOwn = settled.status === "failed" && node.machine !== undefined
+          ? yield* joined(() =>
+            FullDisk.buildsOwn(
+              machinesKept!,
+              Machine.named(machinesKept!, NodeFs.realpathSync(root), node.machine!).directory,
+              [...madeMachines].filter(([name]) => name !== node.machine).map(([, made]) => made.directory),
+              services.diskSpace
+            )
+          )
+          : undefined
+        const outcome: Outcome = buildsOwn === undefined ? settled : { status: "failed", error: buildsOwn }
         if (outcome.status === "failed" || outcome.status === "skipped") notGreen.add(label)
         // What a run wrote is known only for the outputs it declares, so every
         // target that waits for one that ran is measured again when it starts.
