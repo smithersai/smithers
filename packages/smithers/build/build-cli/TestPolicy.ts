@@ -3,11 +3,9 @@
  * @since 1.0.0
  */
 export const legacyModuleReplacements: Readonly<Record<string, number>> = {
-  "test/Cache.test.ts": 1,
   "test/PlanDigestIndex.test.ts": 2,
   "test/PlanHostLookups.test.ts": 2,
-  "test/PlanInputSharing.test.ts": 2,
-  "test/ServiceSupervisor.test.ts": 1
+  "test/PlanInputSharing.test.ts": 2
 }
 
 /** Existing process-platform patches outside the boundary suites; no additions are admitted. */
