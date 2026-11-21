@@ -468,7 +468,7 @@ jobs:
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
           MSYS2_ARG_CONV_EXCL: //
       # The candidate. These steps never run in the gates lane.
-      # @smthrs/build-cli ships smthrs-observe, the recorder of what a step
+      # The build CLI package ships smthrs-observe, the recorder of what a step
       # reads, for x86_64 and aarch64 Linux, built by its package build with
       # one pinned zig (packages/smithers/build/build-cli/scripts/build-observe.mjs).
       # The archive is zig's own, released 2026-11-02, and is checked against
