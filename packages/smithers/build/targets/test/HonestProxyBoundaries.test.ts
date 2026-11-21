@@ -26,6 +26,10 @@ const request = (url: string, path: string, body?: Buffer): Promise<{ status: nu
       response.on("error", reject)
     })
     call.on("error", reject)
+    // A proxy that refuses a body answers before reading all of it and closes. The rest of the body then fails to
+    // write (EPIPE on macOS) after the response has ended and the socket has left the request, where no listener
+    // would take it. The answer is what the test reads; that late write error is the refusal working.
+    call.on("socket", (socket) => socket.on("error", () => undefined))
     call.setTimeout(5000, () => call.destroy(new Error("local proxy request timed out")))
     call.end(body)
   })
