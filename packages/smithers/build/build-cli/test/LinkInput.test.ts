@@ -7,8 +7,9 @@
  * assert the kernel's answer and the planner's key: the link exists inside
  * the sandbox with the same target, a declared target resolves through it, an
  * undeclared one stays unreadable, a retarget re-keys while content behind the
- * link does not, a target outside the workspace is refused, globs carry links
- * as links, and `smthrs affected` selects the target on a retarget.
+ * link does not, a target outside the workspace is keyed by its string and
+ * placed as a link that grants nothing, globs carry links as links, and
+ * `smthrs affected` selects the target on a retarget.
  */
 import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
@@ -114,6 +115,32 @@ export const Package = S.Package({ targets: { visible, through, sibling } })
     expect((await run(root, "//:sibling")).row.status).toBe("failed")
   })
 
+  it.each([
+    ["an absolute target", (outside: string) => outside],
+    [
+      "a target that leaves the workspace",
+      (outside: string, root: string) => NodePath.relative(NodePath.join(root, "consumer"), outside)
+    ]
+  ])("places a link with %s as a link, and the jail does not follow it", async (_, targetOf) => {
+    const host = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-link-host-")))
+    temporaryDirectories.push(host)
+    await Fs.writeFile(NodePath.join(host, "secret.txt"), "host\n")
+    const root = await linkWorkspace(`import { Smithers as S } from "@smthrs/targets"
+const visible = S.Shell.Run({ shell: "test -L consumer/alias && readlink consumer/alias", data: [S.glob("consumer/**")] })
+const through = S.Shell.Run({ shell: "cat consumer/alias", data: [S.glob("consumer/**")] })
+export const Package = S.Package({ targets: { visible, through } })
+`)
+    const target = targetOf(NodePath.join(host, "secret.txt"), root)
+    await retarget(root, "consumer/alias", target)
+    const visible = await run(root, "//:visible")
+    expect(visible.row.error).toBeUndefined()
+    expect(visible.row.status).toBe("ran")
+    expect(visible.node.declaredInputs.flatMap((input) => input.files)).toContainEqual(
+      expect.objectContaining({ path: "consumer/alias", link: target })
+    )
+    expect((await run(root, "//:through")).row.status).toBe("failed")
+  })
+
   it("carries a link a glob matched into the sandbox as a link", async () => {
     const root = await linkWorkspace(`import { Smithers as S } from "@smthrs/targets"
 const declared = S.Shell.Run({ shell: ${JSON.stringify(readsThrough)}, data: [S.glob("consumer/{alias,agent/**}")] })
@@ -174,17 +201,17 @@ export const Package = S.Package({ targets: { declared } })
   })
 
   it.each([
-    ["a target that leaves the workspace", "../../outside", "leaves the workspace"],
-    ["an absolute target", "/etc", "is absolute"]
-  ])("refuses %s, naming the path", async (_, target, reason) => {
+    ["a target that leaves the workspace", "../../outside.txt"],
+    ["an absolute target", "/etc/hostname"]
+  ])("keys %s by its string, and re-keys when the string changes", async (_, target) => {
     const root = await linkWorkspace(declaredLink)
     await retarget(root, "consumer/alias", target)
-    await expect(keyOf(root)).rejects.toMatchObject({
-      _tag: "smithers-build/PackageError",
-      code: "link_input_refused",
-      path: "consumer/alias",
-      message: expect.stringContaining(`consumer/alias -> ${target} ${reason}`)
-    })
+    const node = await planNode(root, "//:declared")
+    expect(node.declaredInputs.flatMap((input) => input.files)).toEqual([
+      expect.objectContaining({ path: "consumer/alias", link: target })
+    ])
+    await retarget(root, "consumer/alias", `${target}.other`)
+    expect(await keyOf(root)).not.toBe(node.keyPreview)
   })
 
   it("refuses a path that is not a symbolic link", async () => {
@@ -233,10 +260,16 @@ export const Package = S.Package({ targets: { declared } })
     expect(await keyOf(root)).not.toBe(first)
   })
 
-  it("refuses a link it matches whose target leaves the workspace, naming it", async () => {
+  it("lists a link it matches whose target leaves the workspace, keyed by its text", async () => {
     const root = await linkWorkspace(globbed("consumer/**"))
-    await retarget(root, "consumer/alias", "/etc")
-    await expect(keyOf(root)).rejects.toThrow(/consumer\/alias -> \/etc is absolute/)
+    await retarget(root, "consumer/alias", "/etc/hostname")
+    expect(await rows(root)).toContainEqual(expect.objectContaining({ path: "consumer/alias", link: "/etc/hostname" }))
+    const first = await keyOf(root)
+    await retarget(root, "consumer/alias", "../../outside.txt")
+    expect(await rows(root)).toContainEqual(
+      expect.objectContaining({ path: "consumer/alias", link: "../../outside.txt" })
+    )
+    expect(await keyOf(root)).not.toBe(first)
   })
 
   it("enters a node_modules directory only when a .gitignore negation says the workspace tracks it", async () => {

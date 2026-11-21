@@ -233,10 +233,10 @@ workspace) is never followed:
   it. One naming a link that leaves the workspace fails by name. A dangling
   one is recorded as absent, as a missing file is.
 - A glob that is a target's declared input lists it as a link input, keyed by
-  its target string (see [Symbolic link inputs](#symbolic-link-inputs)), and
-  fails with `link_input_refused`, naming the link, when that string is
-  absolute or leaves the workspace. A tracked path is never silently dropped
-  from a target's key.
+  its target string (see [Symbolic link inputs](#symbolic-link-inputs)),
+  whatever that string points at: an absolute target and one that leaves the
+  workspace are listed too. A tracked path is never silently dropped from a
+  target's key.
 - Every other caller of glob expansion, such as a lint rule listing the files
   it reads, skips it: there are no bytes at a link to a directory to read.
 
@@ -325,26 +325,30 @@ const test = S.Shell.Test({
 })
 ```
 
-The planner refuses with `link_input_refused`, naming the path, when:
+The planner refuses with `link_input_refused`, naming the path, when the path
+is not a symbolic link.
 
-- the path is not a symbolic link,
-- the target is absolute, or
-- the target, resolved lexically from the link's directory, leaves the
-  workspace.
+Every target string is admitted: a relative one, a dangling one, an absolute
+one such as `/etc/hostname`, and one that leaves the workspace such as
+`../../outside.txt`. Git stores a link as its text, so the text is the whole
+of the link's identity, wherever it points. What a run reads through the link
+is a read of whatever is at the other end, and is treated as that read would be
+without the link:
 
-An absolute or escaping target names something outside the tree the key
-covers: the key would say nothing about what the link reaches on another
-checkout, and the sandbox would need to grant a host path to make the link
-resolve. `nodeModules()` draws the same line from the other side: it admits a
-linked tree only when the link resolves to a real install with a manifest and
-a lockfile, and otherwise fails closed. A dangling link inside the workspace is
-admitted, because its target string is still the whole of its identity.
+- Under confinement the run sees the link as a link: bubblewrap creates it in
+  the workspace tmpfs, and seatbelt grants the link itself as a literal path.
+  Neither grants anything through it, so a target outside the workspace is
+  readable only when the confinement already grants that path. Docker binds
+  paths, and a bind of the link would grant what it points at, so a
+  Docker-confined target with a link input fails closed.
+- Under a read recorder (`observe`), a read through the link records the link
+  as its text and the file it reached as its content, at that file's own path:
+  a file inside the workspace by its workspace path, a file outside it by its
+  absolute path, as every read outside the workspace is recorded.
 
-Under confinement the run sees the link as a link: bubblewrap creates it in
-the workspace tmpfs, and seatbelt grants the link itself as a literal path.
-Neither grants anything through it. Docker binds paths, and a bind of the link
-would grant what it points at, so a Docker-confined target with a link input
-fails closed.
+`nodeModules()` draws a different line: it grants a tree, not a link, and
+admits a linked tree only when the link resolves to a real install with a
+manifest and a lockfile.
 
 A link input never becomes an output, and remote caching is unchanged: inputs
 are key material, never uploaded. A link a tool produces is an output only

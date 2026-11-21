@@ -49,7 +49,7 @@ describe("public declaration edge cases", () => {
     ])
   })
 
-  it("refuses an explicit bubblewrap plan whose declared link leaves the workspace", () => {
+  it("places a declared link that leaves the workspace as a link in an explicit bubblewrap plan", () => {
     const host: ExecSandbox.Host = {
       platform: "linux",
       executable: () => "/usr/bin/bwrap",
@@ -71,9 +71,8 @@ describe("public declaration edge cases", () => {
       { workspaceRoot: "/virtual/workspace", cwd: "/virtual/workspace", tmp: "/virtual/tmp" },
       host
     )
-    expect(ExecSandbox.isUnenforceable(planned)).toBe(true)
-    expect(planned).toMatchObject({ missing: "workspace link target" })
-    expect((planned as { message: string }).message).toContain("A confined target never runs unconfined")
+    expect(ExecSandbox.isUnenforceable(planned)).toBe(false)
+    expect(planned).toMatchObject({ links: [{ path: "/virtual/workspace/link", target: "../outside" }] })
   })
 })
 

@@ -1,7 +1,6 @@
 /**
  * Symbolic links as declared inputs: a link input is keyed by its own target
- * string, never followed, and refused when that string is absolute or leaves
- * the workspace. Globs list such links only for a declared input expansion,
+ * string, never followed, wherever that string points. Globs list such links only for a declared input expansion,
  * and enter a `node_modules` directory only when a `.gitignore` negation rule
  * says the workspace tracks it.
  */
@@ -66,18 +65,24 @@ describe.runIf(process.platform !== "win32")("Input links", () => {
   })
 
   it.each([
-    ["absolute", "/etc", "is absolute"],
-    ["Windows drive", "C:/tools", "is absolute"],
-    ["escaping", "../../outside", "leaves the workspace"]
-  ])("refuses an %s target, naming the link", async (_, target, reason) => {
+    ["absolute", "/etc/hostname"],
+    ["Windows drive", "C:/tools"],
+    ["escaping", "../../outside.txt"]
+  ])("keys an %s target by its string, as git stores it", async (_, target) => {
     await Fs.rm(NodePath.join(root, "consumer/alias"))
     await link(target, "consumer/alias")
-    const refused = Input.digestLink(root, "consumer/alias")
-    await expect(refused).rejects.toBeInstanceOf(Input.LinkRefused)
-    await expect(refused).rejects.toThrow(`declared link input consumer/alias -> ${target} ${reason}`)
+    expect(await Input.digestLink(root, "consumer/alias")).toEqual({
+      path: "consumer/alias",
+      digest: identity(target),
+      link: target
+    })
+    expect(await Input.digestFiles(root, ["consumer/alias"])).toEqual([
+      { path: "consumer/alias", digest: identity(target), link: target }
+    ])
   })
 
   it("refuses a path that is not a link", async () => {
+    await expect(Input.digestLink(root, "consumer/agent")).rejects.toBeInstanceOf(Input.LinkRefused)
     await expect(Input.digestLink(root, "consumer/agent")).rejects.toMatchObject({
       path: "consumer/agent",
       reason: "not-a-link",
@@ -110,17 +115,17 @@ describe.runIf(process.platform !== "win32")("Input links", () => {
       "consumer/agent/index.js",
       "consumer/alias"
     ])
-    await link("/etc", "consumer/absolute")
+    await link("/etc/hostname", "consumer/absolute")
+    await link("../../outside.txt", "consumer/escaping")
     expect(await Input.expandGlob(root, "", "consumer/**")).toEqual(["consumer/agent/index.js"])
-    await expect(Input.expandGlob(root, "", "consumer/**", { links: true })).rejects.toThrow(
-      "declared link input consumer/absolute -> /etc is absolute"
-    )
-    // A refused link the pattern does not select fails nothing.
-    expect(await Input.expandGlob(root, "", "consumer/**/*.js", { links: true })).toEqual(["consumer/agent/index.js"])
-    expect(await Input.expandGlob(root, "", "consumer/**", { links: true, exclude: ["consumer/absolute"] })).toEqual([
+    // A link that points out of the workspace is listed like any other: git tracks it.
+    expect(await Input.expandGlob(root, "", "consumer/**", { links: true })).toEqual([
+      "consumer/absolute",
       "consumer/agent/index.js",
-      "consumer/alias"
+      "consumer/alias",
+      "consumer/escaping"
     ])
+    expect(await Input.expandGlob(root, "", "consumer/**/*.js", { links: true })).toEqual(["consumer/agent/index.js"])
   })
 
   it("digests a link to a workspace file as that file, and every other link as a link", async () => {
@@ -155,11 +160,5 @@ describe.runIf(process.platform !== "win32")("Input links", () => {
     expect(await expand("consumer/**")).toContain("consumer/node_modules/agent")
     expect(await expand("consumer/**")).not.toContain("consumer/node_modules/installed/index.js")
     expect(await expand("consumer/node_modules/*")).toEqual(["consumer/node_modules/agent"])
-  })
-
-  it("keeps the link refusal check lexical", () => {
-    expect(Input.linkTargetRefusal("a/b", "../c")).toBeUndefined()
-    expect(Input.linkTargetRefusal("a/b", "../../c")).toMatchObject({ reason: "escapes" })
-    expect(Input.linkTargetRefusal("a/b", "\\\\server\\share")).toMatchObject({ reason: "absolute" })
   })
 })

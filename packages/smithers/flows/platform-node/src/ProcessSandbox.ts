@@ -287,9 +287,10 @@ export interface Plan {
   readonly reads: ReadonlyArray<string>
   /**
    * Symbolic links placed as links. Each path is absolute and inside the
-   * workspace, and each target is relative and resolves, lexically, inside it.
-   * A link is never a read: what it points at is readable only when a read
-   * grants it. Bubblewrap creates each link that no read or write already
+   * workspace; each target is the link's own string, wherever it points. A
+   * link is never a read: what it points at is readable only when a read
+   * grants it, so a target outside the workspace reaches only what the run
+   * could already reach there. Bubblewrap creates each link that no read or write already
    * covers; seatbelt grants the link itself, which the host already holds.
    */
   readonly links?: ReadonlyArray<Link> | undefined
@@ -827,22 +828,18 @@ export const plan = (
     const real = hostFacts.realpath?.(path) ?? path
     if (!insideRoot(root, real)) externalReads.push(real)
   }
-  // A link is placed, never followed, so its target is checked as a string:
-  // an absolute target, or one that climbs out of the workspace, would make
-  // the run's view depend on the host rather than on the declaration.
+  // A link is placed, never followed: its target is the link's own string,
+  // and what it points at is readable only when a read grants it, wherever
+  // that is. Only where the link itself goes is checked.
   const links: Array<Link> = []
   for (const link of request.links ?? []) {
     const absolute = anchor(link.path)
-    const api = pathApi(root)
-    const resolved = absolute === undefined || api.isAbsolute(link.target) || /^[A-Za-z]:|^\\/.test(link.target)
-      ? undefined
-      : api.resolve(api.dirname(absolute), ...link.target.split("/"))
-    if (absolute === undefined || resolved === undefined || !insideRoot(root, resolved)) {
+    if (absolute === undefined) {
       return unenforceable(
         hostFacts.platform,
         selected._tag,
-        "workspace link target",
-        `the link input ${link.path} -> ${link.target} must name a relative target inside the workspace`
+        "workspace link",
+        `the link input ${link.path} is outside the workspace`
       )
     }
     links.push({ path: absolute, target: link.target })

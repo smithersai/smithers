@@ -2408,18 +2408,26 @@ describe("link inputs", () => {
   })
 
   it.each([
-    ["an absolute target", { path: "consumer/alias", target: "/etc" }],
-    ["a target that climbs out of the workspace", { path: "consumer/alias", target: "../../outside" }],
-    ["a Windows drive target", { path: "consumer/alias", target: "C:/tools" }],
-    ["a link path outside the workspace", { path: "../alias", target: "agent" }]
-  ])("refuses %s, naming the link", (_, link) => {
+    ["an absolute target", "/etc/hostname"],
+    ["a target that climbs out of the workspace", "../../outside"],
+    ["a Windows drive target", "C:/tools"]
+  ])("places a link with %s as a link, and grants nothing through it", (_, target) => {
+    const plan = planned(linux, { links: [{ path: "consumer/alias", target }] })
+    expect(plan.links).toEqual([{ path: "/work/ws/consumer/alias", target }])
+    expect(plan.reads).toEqual(planned(linux).reads)
+    expect(plan.externalReads).toEqual(planned(linux).externalReads)
+  })
+
+  it("refuses a link whose own path is outside the workspace, naming it", () => {
     const result = ProcessSandbox.plan(
-      { ...request, links: [link] },
+      { ...request, links: [{ path: "../alias", target: "agent" }] },
       { workspaceRoot: root, cwd: `${root}/pkg`, tmp: "/work/ws/.flows/sandbox/run1" },
       linux
     )
     expect(ProcessSandbox.isUnenforceable(result)).toBe(true)
-    expect(result).toMatchObject({ message: expect.stringContaining(`${link.path} -> ${link.target}`) })
+    expect(result).toMatchObject({
+      message: expect.stringContaining("the link input ../alias is outside the workspace")
+    })
   })
 
   it("refuses links under docker, whose bind would grant what the link points at", () => {

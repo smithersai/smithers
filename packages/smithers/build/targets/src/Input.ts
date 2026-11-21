@@ -319,10 +319,9 @@ export const nodeModules = (path: string): NodeModules => NodeModules.make({ pat
  * changing files behind it re-keys the target only when those files are
  * declared themselves. Under confinement the link exists at the same path
  * with the same target and grants nothing: what it points at is readable
- * only when declared. A target that is absolute, or that leaves the
- * workspace, is refused, because the key would then name something no
- * checkout of the workspace reproduces. A path that is not a symbolic link
- * is refused too.
+ * only when declared. Any target string is admitted, an absolute one or one
+ * that leaves the workspace too: git stores the string, and the string is
+ * what the key holds. A path that is not a symbolic link is refused.
  *
  * @example
  * ```ts
@@ -338,7 +337,7 @@ export const link = (path: string): Link => Link.make({ path })
 
 /**
  * A declared symbolic link that cannot be an input: the path is not a
- * symbolic link, or its target is absolute or leaves the workspace.
+ * symbolic link.
  *
  * @category errors
  * @since 1.0.0
@@ -347,46 +346,26 @@ export class LinkRefused extends Error {
   readonly _tag = "smithers-build/LinkRefused"
   /** The workspace-relative path of the declared link. */
   readonly path: string
-  /** The link's target string, when the path is a link. */
-  readonly target: string | undefined
   /** Why the link is refused. */
-  readonly reason: "not-a-link" | "absolute" | "escapes"
-  constructor(path: string, target: string | undefined, reason: "not-a-link" | "absolute" | "escapes") {
-    super(
-      reason === "not-a-link"
-        ? `declared link input ${path} is not a symbolic link`
-        : `declared link input ${path} -> ${target} ${
-          reason === "absolute" ? "is absolute" : "leaves the workspace"
-        }; a link input must name a relative target inside the workspace`
-    )
+  readonly reason: "not-a-link"
+  constructor(path: string) {
+    super(`declared link input ${path} is not a symbolic link`)
     this.path = path
-    this.target = target
-    this.reason = reason
+    this.reason = "not-a-link"
   }
 }
 
 /**
- * Checks a link's target string against the workspace, lexically: the target
- * is never resolved, because a link input is never followed.
- *
- * @category validation
- * @since 1.0.0
+ * The key row of one link: its path, the digest of its target string, and the
+ * string. Every target string is admitted, wherever it points: git stores a
+ * link as its text, and a read through the link is the run's own, measured
+ * where it lands.
  */
-export const linkTargetRefusal = (path: string, target: string): LinkRefused | undefined => {
-  if (NodePath.posix.isAbsolute(target) || /^[A-Za-z]:|^\\/.test(target)) {
-    return new LinkRefused(path, target, "absolute")
-  }
-  const resolved = NodePath.posix.normalize(NodePath.posix.join(NodePath.posix.dirname(path), target))
-  if (resolved === ".." || resolved.startsWith("../")) return new LinkRefused(path, target, "escapes")
-  return undefined
-}
-
-/** The key row of one link: its path, the digest of its target string, and the string. */
-const linkRow = (path: string, target: string): FileDigest => {
-  const refusal = linkTargetRefusal(path, target)
-  if (refusal !== undefined) throw refusal
-  return { path, digest: digestText(`symlink\0${target}`), link: target }
-}
+const linkRow = (path: string, target: string): FileDigest => ({
+  path,
+  digest: digestText(`symlink\0${target}`),
+  link: target
+})
 
 /**
  * Measures one declared symbolic link: its target string, never the content
@@ -394,8 +373,7 @@ const linkRow = (path: string, target: string): FileDigest => {
  *
  * The parent directory is confined to the workspace before the link is read.
  * A missing link records `digest: undefined`, as a missing file does. A path
- * that is not a symbolic link, and a link whose target is absolute or leaves
- * the workspace, fail with {@link LinkRefused}.
+ * that is not a symbolic link fails with {@link LinkRefused}.
  *
  * @category digests
  * @since 1.0.0
@@ -422,7 +400,7 @@ export const digestLink = async (
     if (code === "ENOENT" || code === "ENOTDIR") return { path, digest: undefined }
     throw cause
   }
-  if (!stats.isSymbolicLink()) throw new LinkRefused(path, undefined, "not-a-link")
+  if (!stats.isSymbolicLink()) throw new LinkRefused(path)
   return linkRow(path, await (io.readlink ?? SafeFs.defaultReadlink)(absolute))
 }
 
@@ -889,13 +867,6 @@ interface Scan {
    * as a link input. Only a declared input expansion lists them.
    */
   readonly links: boolean
-  /**
-   * Link inputs whose target cannot be an input, by path. A walk lists every
-   * link before the pattern filters them, so refusing at discovery would fail
-   * a glob over a link it never selects; the expansion refuses only a link the
-   * pattern matched.
-   */
-  readonly refusedLinks: Map<string, LinkRefused>
   readonly found: Array<string>
   readonly limits: ScanLimits
   readonly signal: AbortSignal | undefined
@@ -1267,18 +1238,12 @@ const readLink = async (scan: Scan, child: string): Promise<boolean> => {
 /**
  * Classifies one symbolic link a declared input walk found: a link to a
  * workspace file is that file's content, and every other link is a link
- * input keyed by its target string, which must be relative and stay inside
- * the workspace. A link that cannot be either is recorded, and fails the
- * expansion, naming the link, when the pattern selects it, rather than
- * vanishing from the target's inputs.
+ * input keyed by its target string, wherever that string points, so a
+ * tracked path never vanishes from the target's inputs.
  */
 const admitsLinkInput = async (scan: Scan, child: string): Promise<boolean> => {
   if (await admitsLink(scan, child)) return true
-  if (!scan.links) return false
-  const target = await (scan.io.readlink ?? SafeFs.defaultReadlink)(NodePath.join(scan.root, child))
-  const refusal = linkTargetRefusal(child, target)
-  if (refusal !== undefined) scan.refusedLinks.set(child, refusal)
-  return true
+  return scan.links
 }
 
 const walk = async (
@@ -1375,9 +1340,8 @@ const walk = async (
  *
  * With `links: true`, which a declared input expansion passes, every other
  * symbolic link the pattern matches is listed too, as a link input keyed by
- * its target string ({@link digestLink}); one whose target is absolute or
- * leaves the workspace fails the expansion with {@link LinkRefused} naming
- * it. Without it such links are skipped, because a caller that reads the
+ * its target string ({@link digestLink}), an absolute or escaping one too.
+ * Without it such links are skipped, because a caller that reads the
  * listed files as files has nothing to read at a link to a directory.
  *
  * A pattern whose static prefix does not exist, is not a real directory, or is
@@ -1443,7 +1407,6 @@ export const expandGlob = async (
     repositoryBoundaries,
     enteredRepositories,
     links: options.links ?? false,
-    refusedLinks: new Map(),
     found: [],
     limits: validatedScanLimits(options.limits),
     signal: options.signal,
@@ -1479,8 +1442,6 @@ export const expandGlob = async (
   const matched = scan.found
     .filter((path) => included.match(path) && !excluded.some((exclude) => exclude.match(path)))
     .sort()
-  const refused = matched.find((path) => scan.refusedLinks.has(path))
-  if (refused !== undefined) throw scan.refusedLinks.get(refused)!
   return matched
 }
 
@@ -1528,7 +1489,6 @@ export const discoverFiles = async (
     repositoryBoundaries: await declaredSubmodules(root, io, options.signal),
     enteredRepositories: new Set(),
     links: false,
-    refusedLinks: new Map(),
     found: [],
     limits: validatedScanLimits(options.limits),
     signal: options.signal,
@@ -1577,7 +1537,6 @@ export const listOutputFiles = async (
     repositoryBoundaries: [],
     enteredRepositories: new Set(),
     links: false,
-    refusedLinks: new Map(),
     found: [],
     limits: validatedScanLimits(options.limits),
     signal: options.signal,
@@ -1867,8 +1826,7 @@ export const defaultDigestConcurrency = 32
  * A symbolic link that resolves, inside the root, to a regular file digests
  * as that file. Every other symbolic link digests as a link input
  * ({@link digestLink}): its row carries the target string and never the
- * content behind it, and a target that is absolute or leaves the workspace
- * fails with {@link LinkRefused}.
+ * content behind it, wherever the target string points.
  *
  * @category digests
  * @since 0.1.0
