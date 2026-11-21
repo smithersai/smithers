@@ -30,6 +30,7 @@ import * as Config from "./Config.ts"
 import * as ExecSandbox from "./ExecSandbox.ts"
 import { failureMessage } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
+import { DestinationBrokerRoot } from "./internal/DestinationBrokerRoot.ts"
 import * as ExecDestinationPolicy from "./internal/ExecDestinationPolicy.ts"
 import * as ExecEnvironment from "./internal/ExecEnvironment.ts"
 import * as ExecLaunch from "./internal/ExecLaunch.ts"
@@ -1825,8 +1826,9 @@ const confined = (
           }
         })
     )
+    const brokerRoot = yield* DestinationBrokerRoot
     if (destinations !== undefined) {
-      const { socket, token } = yield* DestinationProxy.isolated(destinations, confinement.workspaceRoot)
+      const { socket, token } = yield* DestinationProxy.isolated(destinations, confinement.workspaceRoot, brokerRoot)
         .pipe(Effect.mapError(preparationError))
       command = DestinationProxy.wrap(resolved.argv, socket)
       brokerEnvironment = { SMTHRS_DESTINATION_TOKEN: token }

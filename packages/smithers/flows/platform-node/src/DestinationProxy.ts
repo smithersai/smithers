@@ -177,14 +177,21 @@ export const wrap = (
 
 /** Creates a private broker outside the workspace and its shared cache grants.
  * Other network namespaces see neither its directory nor its socket. The
- * caller mounts only the returned socket in the owning namespace.
+ * caller mounts only the returned socket in the owning namespace. `root` is
+ * the private directory the broker is made under: by default
+ * `/tmp/.smthrs-egress`, the one bubblewrap masks; a confined run refuses a
+ * broker under any other.
  * @category constructors
  * @since 1.0.0
  */
-export const isolated = (destinations: ReadonlyArray<string>, workspaceRoot: string) =>
+export const isolated = (
+  destinations: ReadonlyArray<string>,
+  workspaceRoot: string,
+  root: string = destinationBrokerRoot
+) =>
   Effect.gen(function*() {
     const directory = yield* Effect.acquireRelease(
-      createBrokerDirectory(destinationBrokerRoot, process.getuid?.()),
+      createBrokerDirectory(root, process.getuid?.()),
       (directory) => Effect.promise(() => Fs.rm(directory, { recursive: true, force: true }))
     )
     const relative = Path.relative(workspaceRoot, directory)

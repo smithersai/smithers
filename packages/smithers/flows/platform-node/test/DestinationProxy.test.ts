@@ -284,6 +284,23 @@ describe.runIf(process.platform === "linux")("isolated destination brokers", () 
   })
 })
 
+// A broker's directory needs an owner's uid, which Windows does not give.
+describe.skipIf(process.platform === "win32")("a destination broker under a root of its caller's", () => {
+  it("is made in a private directory under that root and removed at scope exit", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "eb-")))
+    roots.push(root)
+    let socket = ""
+    await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const broker = yield* DestinationProxy.isolated([], Path.join(root, "workspace"), root)
+      socket = broker.socket
+      expect(Path.dirname(Path.dirname(socket))).toBe(root)
+      expect(Path.basename(socket)).toBe("p.sock")
+      expect((yield* Effect.promise(() => Fs.stat(Path.dirname(socket)))).mode & 0o777).toBe(0o700)
+    })))
+    expect(await Fs.readdir(root)).toEqual([])
+  })
+})
+
 describe.runIf(process.platform === "linux")("broker authentication", () => {
   it("requires the owning run's token before HTTP or CONNECT can reach an upstream", async () => {
     const workspace = Path.dirname(await socketPath())

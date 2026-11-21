@@ -8828,7 +8828,7 @@
       },
       "declarations": {
         "AtomicFileSystem.d.ts": "c5305cbe6fec99b0afed584c98dec8f4a6b084b25cb566b68906329dff3da6d4",
-        "DestinationProxy.d.ts": "da1b6ffae731139f894d2b36cc137dc16741bd720c54c9276fc913c90d6a3bbb",
+        "DestinationProxy.d.ts": "47191c46e2ee967af29c47d010f01a395874122974cb63ac5bddf2be1933ff29",
         "EgressHttpClient.d.ts": "644f6f228b54ac79b8d4686d39420809d636ae441f0cea53bebdb6f45566dbf0",
         "FetchTransport.d.ts": "cc836e4cbd7e997475d5a37f486ddbc4d1c517dd3b473d2f08b094df1c21d753",
         "HostLiveness.d.ts": "a242beb9186888b0c031c3565bbe40242eb3d5d9fd2f36bb4bdb9bbbfffa76c9",
@@ -11948,6 +11948,7 @@
         "index.d.ts": "a08c7b18d4568771446e3f4e56702a9033fef1091877627ffab16c443436b1eb",
         "internal/CargoPlatform.d.ts": "8d5433e64209e13d4c4fba5c6aed5ef94c1684fe3e8db65368dd316b224f571b",
         "internal/DeclarationSource.d.ts": "29192d96f0675075db3d0946668cd789e71e7dc2e6c0b4a79b6ea38948a775f0",
+        "internal/DestinationBrokerRoot.d.ts": "afd3ac8e25e42794560c7316c846ebcc50af1a9e15c9384a9048b9f9d87507a7",
         "internal/ExecDestinationPolicy.d.ts": "0a74df6c0d2657fe5d2a1c67b06db221b0702427f6b197decad0f599aa2fa71c",
         "internal/ExecEnvironment.d.ts": "ad9f5beab901deeb28ace9873ee596e5e4e879eea1b93d8dcaf1ee19fe2c8c84",
         "internal/ExecLaunch.d.ts": "8598ed3c4ad6d4e29594be3c5978ceb8b222c5f91f18959bcbad26a0870aa984",

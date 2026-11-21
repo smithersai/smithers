@@ -6,6 +6,9 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Exec from "../src/Exec.ts"
+import * as ExecSandbox from "../src/ExecSandbox.ts"
+import { DestinationBrokerRoot } from "../src/internal/DestinationBrokerRoot.ts"
+import { SandboxHost } from "../src/internal/SandboxHost.ts"
 
 const payload = (source: string): Exec.Payload => ({
   argv: [process.execPath, "-e", source],
@@ -94,6 +97,40 @@ describe.runIf(process.platform === "linux")("destination confinement", () => {
       }
     }
   )
+})
+
+// Every host but Windows, whose processes have no uid to own a broker's directory: Linux host facts, with a bubblewrap
+// that is never started, and a broker made under this test's own directory instead of the tree bubblewrap masks.
+describe.skipIf(process.platform === "win32")("a destination broker outside the tree bubblewrap masks", () => {
+  it("is refused before the tool starts, and its directory is removed", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "exec-destination-")))
+    const brokers = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "eb-")))
+    const host = ExecSandbox.host()
+    const facts: ExecSandbox.Host = {
+      ...host,
+      platform: "linux",
+      executable: (name) => name === "bwrap" ? Path.join(brokers, "bin", "bwrap") : host.executable(name)
+    }
+    const ran = Path.join(root, "ran")
+    try {
+      const exit = await Effect.runPromiseExit(
+        Exec.run(
+          {
+            workspaceRoot: root,
+            sandbox: { policy: {}, reads: [], writes: [".flows"], destinations: ["example.com"] }
+          },
+          payload(`require("node:fs").writeFileSync(${JSON.stringify(ran)}, "")`)
+        ).pipe(Effect.provideService(SandboxHost, facts), Effect.provideService(DestinationBrokerRoot, brokers))
+      )
+      expect(exit._tag).toBe("Failure")
+      expect(JSON.stringify(exit)).toContain("invalid destination broker socket")
+      expect(await Fs.readdir(brokers)).toEqual([])
+      await expect(Fs.access(ran)).rejects.toThrow()
+    } finally {
+      await Fs.rm(root, { recursive: true, force: true })
+      await Fs.rm(brokers, { recursive: true, force: true })
+    }
+  })
 })
 
 describe.runIf(process.platform === "linux")("concurrent destination isolation", () => {
