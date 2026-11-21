@@ -389,23 +389,25 @@ describe("diff slice against a scripted git", () => {
     expect(await trace()).toEqual(["list", "U0", "U0"])
   }, 60_000)
 
+  // Each batch takes 5 s and the bound is 10 s: listing and two process starts fit before the second batch starts,
+  // also on a machine where starting a process takes a second, and the two batches together never do.
   it("applies the git deadline to the sum of path batches", async () => {
-    const environment = await scriptedGit({ FAKE_SLEEP_MS: "700" })
+    const environment = await scriptedGit({ FAKE_SLEEP_MS: "5000" })
     await Fs.writeFile(environment["FAKE_LIST"]!, JSON.stringify(manyPaths))
     await Fs.writeFile(environment["FAKE_PATCH"]!, "")
     const started = Date.now()
     const error = await Effect.runPromise(Effect.flip(AgentSession.expandDiffSlice(
       root,
       [Input.gitDiff({ base: "HEAD", paths: ["src/**"], addedLines: "TODO" })],
-      1_000,
+      10_000,
       { environment }
     )))
     expect(error.phase).toBe("diff")
-    expect(error.message).toBe("agent subprocess timed out after 1000ms")
-    // Two 700 ms batches each fit the 1000 ms bound; the second was cut short.
+    expect(error.message).toBe("agent subprocess timed out after 10000ms")
+    // Two 5 s batches each fit the 10 s bound; the second was cut short.
     expect(await trace()).toEqual(["list", "U0", "U0"])
-    expect(Date.now() - started).toBeLessThan(5_000)
-  })
+    expect(Date.now() - started).toBeLessThan(14_000)
+  }, 60_000)
 
   /** Git reads no user config: Windows names its null device `NUL`, POSIX `/dev/null`. */
   it.each([["win32", "NUL"], ["linux", "/dev/null"]] as const)(
