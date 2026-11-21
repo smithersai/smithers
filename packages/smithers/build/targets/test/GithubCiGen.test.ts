@@ -2104,6 +2104,32 @@ describe("system packages", () => {
     expect(rendered).not.toMatch(otherCondition)
   })
 
+  it("lets a bubblewrap a confined target starts make its own namespace, only where bubblewrap is declared", () => {
+    const unload = "    sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict"
+    for (const packages of [["bubblewrap"], ["iproute2"]] as const) {
+      const rendered = render({
+        ...goldenAttrs,
+        jobs: [{
+          id: "sandbox",
+          name: "sandbox",
+          runsOn: "ubuntu-latest",
+          toolchain: CiToolchain.Needs({ runtimes: [node], apt: CiToolchain.Apt({ packages }) }),
+          steps: [{ verb: Verb.Test, pattern: "//packages/..." }]
+        }],
+        gates: []
+      })
+      const sysctl = rendered.indexOf("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0")
+      if (packages[0] === "bubblewrap") {
+        expect(rendered).toContain("  if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then")
+        expect(rendered.indexOf(unload)).toBeGreaterThan(sysctl)
+        expect(sysctl).toBeGreaterThan(-1)
+      } else {
+        expect(rendered).not.toContain("bwrap-userns-restrict")
+        expect(sysctl).toBe(-1)
+      }
+    }
+  })
+
   it("provisions sshd privilege separation only for a declared SSH server", () => {
     for (const packages of [["openssh-server"], ["bubblewrap"]] as const) {
       const rendered = render({

@@ -95,6 +95,9 @@ jobs:
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+            fi
           fi
         shell: "bash"
       - name: "Install PostgreSQL"
@@ -225,6 +228,9 @@ jobs:
             sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'strace'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
             fi
           fi
         shell: "bash"
@@ -586,6 +592,9 @@ jobs:
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+            fi
           fi
         shell: "bash"
       - name: "Install PostgreSQL"
@@ -872,6 +881,9 @@ jobs:
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+            fi
           fi
         shell: "bash"
       - name: "Package documentation tarballs"
@@ -947,6 +959,9 @@ jobs:
             sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'strace' 'tmux'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
             fi
           fi
         shell: "bash"
@@ -1090,6 +1105,9 @@ jobs:
             sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'strace'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
             fi
           fi
         shell: "bash"
@@ -1288,6 +1306,9 @@ jobs:
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+            fi
             sudo install -d -m 0755 /run/sshd
           fi
         shell: "bash"
@@ -1431,6 +1452,9 @@ jobs:
             sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server' 'strace'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
             fi
             sudo install -d -m 0755 /run/sshd
           fi
@@ -1576,6 +1600,9 @@ jobs:
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+            fi
             sudo install -d -m 0755 /run/sshd
           fi
         shell: "bash"
@@ -1719,6 +1746,9 @@ jobs:
             sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server' 'strace'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
             fi
             sudo install -d -m 0755 /run/sshd
           fi
@@ -1864,6 +1894,9 @@ jobs:
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+            fi
             sudo install -d -m 0755 /run/sshd
           fi
         shell: "bash"
@@ -2007,6 +2040,9 @@ jobs:
             sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server' 'strace'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
             fi
             sudo install -d -m 0755 /run/sshd
           fi
@@ -2152,6 +2188,9 @@ jobs:
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+            fi
             sudo install -d -m 0755 /run/sshd
           fi
         shell: "bash"
@@ -2296,6 +2335,9 @@ jobs:
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+            fi
             sudo install -d -m 0755 /run/sshd
           fi
         shell: "bash"
@@ -2439,6 +2481,9 @@ jobs:
             sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server' 'strace'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
             fi
             sudo install -d -m 0755 /run/sshd
           fi

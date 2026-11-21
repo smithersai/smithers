@@ -1148,10 +1148,23 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
     // throwaway VM, so the suite exercises real confinement instead of
     // reporting which host it ran on. It is guarded twice: `bubblewrap` has to
     // be among the declared packages, and the key has to exist on this kernel.
+    //
+    // ubuntu-26.04 (ubuntu-latest from November 2026) also loads AppArmor's
+    // `bwrap-userns-restrict` profile: /usr/bin/bwrap may make a user
+    // namespace, but what it starts runs under `unpriv_bwrap`, where a second
+    // bwrap fails with `No permissions to create a new namespace`. The sysctl
+    // does not lift a profile. A confined target that starts bubblewrap itself
+    // (a sandbox's own tests, a machine's private /tmp) needs that second
+    // bwrap, so the profile is unloaded where the image ships it. Shown by the
+    // probe run 44914254700: nested bwrap refused on 26.04, allowed after the
+    // unload, allowed on 24.04, which ships no such profile.
     const sandboxSetup = needs.apt.packages.includes("bubblewrap")
       ? [
         "  if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then",
         "    sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0",
+        "  fi",
+        "  if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then",
+        "    sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict",
         "  fi"
       ]
       : []

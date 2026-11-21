@@ -318,6 +318,9 @@ jobs:
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
+            if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+              sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+            fi
           fi
         shell: bash
       # The candidate lane skips database/browser setup, and with it every gate.
