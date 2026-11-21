@@ -397,17 +397,37 @@ export const cpuTime = (report: ReplayReport): string | undefined => {
 }
 
 /**
- * What starting costs beside a short CI, as one line: `your CI takes 5.8s for
+ * What starting costs beside a short CI, as one line. When a commit of the
+ * replay was faster than the CI, only reuse is faster: `your CI takes 5.8s for
  * a commit and Smithers CI takes 3.2s to start, so only a commit that reuses
- * results is faster here`.
+ * results is faster here`. When none was, and the start alone takes the CI's
+ * time, or a commit where normal mode reused every step took longer than the
+ * CI there, there is nothing to gain: `your CI takes 1.1s for a commit and
+ * Smithers CI takes 1.4s to start, so your CI is already shorter than Smithers
+ * CI's start and there is nothing to gain here`. Both are read from the times
+ * of the `commits` whose baseline passed, the ones `cost` covers.
  *
  * @category formatting
  * @since 0.1.0
  */
-export const startCost = (cost: StartCost): string =>
-  `your CI takes ${duration(cost.commitMs)} for a commit and Smithers CI takes ${
+export const startCost = (cost: StartCost, commits: ReadonlyArray<ReplayCommit>): string => {
+  const both = `your CI takes ${duration(cost.commitMs)} for a commit and Smithers CI takes ${
     duration(cost.startMs)
-  } to start, so only a commit that reuses results is faster here`
+  } to start`
+  const counted = commits.filter((commit) => commit.baseline.ok)
+  if (!counted.some((commit) => commit.normal.wallMs < commit.baseline.wallMs)) {
+    if (cost.startMs >= cost.commitMs) {
+      return `${both}, so your CI is already shorter than Smithers CI's start and there is nothing to gain here`
+    }
+    const reused = counted.find((commit) => commit.normal.counts.ran + commit.normal.counts.failed === 0)
+    if (reused !== undefined) {
+      return `${both}; at ${shortCommit(reused.commit)}, where it reused every step, it took ${
+        duration(reused.normal.wallMs)
+      } against your CI's ${duration(reused.baseline.wallMs)}, so there is nothing to gain here`
+    }
+  }
+  return `${both}, so only a commit that reuses results is faster here`
+}
 
 /**
  * How many times failed steps ran again and what that took, as one line:

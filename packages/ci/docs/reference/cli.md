@@ -144,10 +144,25 @@ on this machine, the replay starts with an empty cache and the report says so
 Smithers CI starts once for each commit. When normal mode took longer than your
 CI and that start is more than a twentieth of your CI's time for a commit, the
 report gives both times on one line (`startCost` under `--json`, with
-`commitMs` and `startMs`):
+`commitMs` and `startMs`). When a commit was faster than your CI, only reuse
+makes Smithers CI faster:
 
 ```text
 your CI takes 5.8s for a commit and Smithers CI takes 3.2s to start, so only a commit that reuses results is faster here
+```
+
+When no commit was faster, and the start alone takes your CI's time, there is
+nothing to gain on this repository:
+
+```text
+your CI takes 1.1s for a commit and Smithers CI takes 1.4s to start, so your CI is already shorter than Smithers CI's start and there is nothing to gain here
+```
+
+When the start is shorter than your CI but a commit where every step was
+reused still took longer, the line names that commit and its two times:
+
+```text
+your CI takes 1.1s for a commit and Smithers CI takes 900ms to start; at cb5e4c0, where it reused every step, it took 1.7s against your CI's 1.1s, so there is nothing to gain here
 ```
 
 Both times are a mean over the commits the speedup covers. The speedup and

@@ -921,6 +921,39 @@ describe("failed steps", () => {
     expect(html(normalOnly())).not.toContain("to start")
   })
 
+  it("says there is nothing to gain when no commit was faster and the start or a reused commit takes the CI's time", () => {
+    const [commit] = normalOnly().commits as [ReplayCommit]
+    // rec3c: eleven one-line jobs, about a second a commit, and the commit where all eleven steps were reused.
+    const at = (sha: string, baselineMs: number, normalMs: number, ran: number): ReplayCommit => ({
+      ...commit,
+      commit: sha,
+      baseline: { ...commit.baseline, wallMs: baselineMs },
+      normal: { ...commit.normal, wallMs: normalMs, counts: { hit: 11 - ran, ran, failed: 0, skipped: 0 } }
+    })
+    const slower = [at("35bae0d1", 1100, 1900, 11), at("cb5e4c0a", 1100, 1700, 0)]
+    const short = (commits: ReadonlyArray<ReplayCommit>, startMs: number): ReplayReport => ({
+      ...normalOnly(),
+      commits: [...commits],
+      startCost: { commitMs: 1100, startMs }
+    })
+    const startLonger =
+      "your CI takes 1.1s for a commit and Smithers CI takes 1.4s to start, so your CI is already shorter than Smithers CI's start and there is nothing to gain here"
+    expect(text(short(slower, 1400)).split("\n")).toContain(startLonger)
+    expect(body(html(short(slower, 1400)))).toContain(`<p class="summary">${startLonger}</p>`)
+    // A start shorter than the CI, and the commit that reused every step still took longer.
+    expect(text(short(slower, 900)).split("\n")).toContain(
+      "your CI takes 1.1s for a commit and Smithers CI takes 900ms to start; at cb5e4c0, where it reused every step, it took 1.7s against your CI's 1.1s, so there is nothing to gain here"
+    )
+    // One commit faster than the CI: only reuse is faster, whatever the start.
+    const reuse = "so only a commit that reuses results is faster here"
+    expect(text(short([...slower, at("d00d00d0", 1100, 1000, 0)], 1400))).toContain(reuse)
+    // No commit reused every step and the start is shorter than the CI: reuse may still be faster.
+    expect(text(short([at("35bae0d1", 1100, 1900, 11)], 900))).toContain(reuse)
+    // A commit whose baseline failed says nothing about the CI's time.
+    const failed = { ...at("e0e0e0e0", 1100, 100, 0), baseline: { ...commit.baseline, ok: false, wallMs: 1100 } }
+    expect(text(short([...slower, failed], 1400))).toContain(startLonger)
+  })
+
   it("gives the CPU time each way's steps used on one line, in the text and on the page", () => {
     const report: ReplayReport = { ...normalOnly(), baselineCpuMs: 1_570_000, normalCpuMs: 242_000 }
     const line = "the steps used 26m 10s of CPU time as the baseline and 4m 02s in normal mode (6.5× less)"

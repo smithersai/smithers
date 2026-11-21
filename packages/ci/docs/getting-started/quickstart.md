@@ -102,6 +102,9 @@ more than the time on the clock. Smithers CI starts once for each commit; when
 normal mode took longer than your CI and that start is more than a twentieth
 of your CI's time for a commit, a line gives both times:
 `your CI takes 5.8s for a commit and Smithers CI takes 3.2s to start, so only a commit that reuses results is faster here`.
+When no commit was faster and even a commit that reused every step cannot be,
+it says so:
+`your CI takes 1.1s for a commit and Smithers CI takes 1.4s to start, so your CI is already shorter than Smithers CI's start and there is nothing to gain here`.
 The speedup counts every start all the same. Then it gives one line for each
 commit: the files it changed, and whether each way passed, with its wall
 time. Under them it lists:

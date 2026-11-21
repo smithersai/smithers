@@ -21,7 +21,7 @@
  * that says why that commit started with an empty cache. When normal mode
  * took longer than the CI and starting Smithers CI is more than a twentieth
  * of the CI's time for a commit, a line gives both times and says only reuse
- * is faster there. When failed steps
+ * is faster there, or, when no commit was, that there is nothing to gain. When failed steps
  * ran again, a line says how many and how long that took. Every step
  * normal mode ran and did not reuse is listed with the build's reason and
  * the number of commits it ran at: a file it read that changed, or what keeps its result
@@ -184,7 +184,7 @@ export const text: RenderReport = (report) => {
   if (report.trialMs !== undefined) sections.push([trialTime(report.trialMs)])
   if (report.appliedMs !== undefined) sections.push([appliedTime(report.appliedMs)])
   if (report.firstRun !== undefined) sections.push([firstRunTime(report.firstRun)])
-  if (report.startCost !== undefined) sections.push([startCost(report.startCost)])
+  if (report.startCost !== undefined) sections.push([startCost(report.startCost, report.commits)])
   if (report.cold !== undefined) sections.push([clean(coldStart(report.cold))])
   if (report.reruns !== undefined) sections.push([rerunTime(report.reruns)])
   if (report.diskHeldBytes !== undefined) sections.push([diskHeld(report.diskHeldBytes)])
