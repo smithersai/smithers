@@ -2452,23 +2452,51 @@ export const ignoredByGit = (root: string) => (paths: ReadonlyArray<string>): Re
  * is asked for once. The run has ended, so a second answer would say the
  * same, and a reading that resolves, measures and checks ten thousand paths
  * asked three times over.
+ *
+ * `status` answers `undefined` where nothing is. On the host it asks without
+ * an error for a missing path: Node takes about 20 µs to build one, against
+ * 1.3 µs for the answer, and an install that wrote and moved away 266,000
+ * files asks that 266,000 times (eliza's `bun install`, 2026-11-21).
  */
-const onceEach = (io: Io): Io => {
-  const seen = new Map<string, NodeFs.Stats | { readonly failed: unknown }>()
+const onceEach = (io: Io): Io & { readonly status: (path: string) => NodeFs.Stats | undefined } => {
+  /**
+   * Each path's status, or why there is none: `missing` with the error that said nothing is there, `failed` with any
+   * other error, and nothing at all where the host said nothing is there without an error.
+   */
+  const seen = new Map<
+    string,
+    NodeFs.Stats | { readonly missing: unknown } | { readonly failed: unknown } | undefined
+  >()
+  const host = io.lstat === defaultIo.lstat
+  const ask = (
+    path: string
+  ): NodeFs.Stats | { readonly missing: unknown } | { readonly failed: unknown } | undefined => {
+    if (seen.has(path)) return seen.get(path)
+    let stats: NodeFs.Stats | { readonly missing: unknown } | { readonly failed: unknown } | undefined
+    try {
+      stats = host ? NodeFs.lstatSync(path, { throwIfNoEntry: false }) : io.lstat(path)
+    } catch (cause) {
+      stats = codeOf(cause) === "ENOENT" ? { missing: cause } : { failed: cause }
+    }
+    seen.set(path, stats)
+    return stats
+  }
+  const status = (path: string): NodeFs.Stats | undefined => {
+    const stats = ask(path)
+    if (stats === undefined || "missing" in stats) return undefined
+    if ("failed" in stats) throw stats.failed
+    return stats
+  }
   return {
     ...io,
+    status,
     lstat: (path) => {
-      let stats = seen.get(path)
-      if (stats === undefined) {
-        try {
-          stats = io.lstat(path)
-        } catch (cause) {
-          stats = { failed: cause }
-        }
-        seen.set(path, stats)
-      }
-      if ("failed" in stats) throw stats.failed
-      return stats
+      const stats = ask(path)
+      // A caller that wants the error for a path the host said nothing is at asks the host for it: that is rare,
+      // and an error costs Node far more than the answer.
+      if (stats === undefined) return io.lstat(path)
+      if ("missing" in stats) throw stats.missing
+      return status(path)!
     }
   }
 }
@@ -2557,6 +2585,16 @@ export const observe = (
     return { refusal: trace.refusals[0]!, ...(outside === undefined ? {} : { outside }) }
   }
   const io = onceEach(options.io ?? defaultIo)
+  /** Whether anything is at a path: nothing is below a directory a walk found missing. */
+  const there = (path: string): boolean => {
+    const parent = path.slice(0, path.lastIndexOf("/"))
+    if (lostDirectories.has(parent) || (kinds.has(parent) && kinds.get(parent) === undefined)) return false
+    try {
+      return io.status(path) !== undefined
+    } catch {
+      return false
+    }
+  }
   const variables = options.variables
   const variableNames = Object.keys(variables?.values ?? {}).sort(byCodeUnit)
   /** The files of the workspace the run read that hold each variable's name. */
@@ -2600,8 +2638,10 @@ export const observe = (
     if (kinds.has(path)) return kinds.get(path)
     let kind: { readonly link: string | undefined; readonly directory: boolean } | undefined
     try {
-      const stats = io.lstat(path)
-      kind = { link: stats.isSymbolicLink() ? io.readlink(path) : undefined, directory: stats.isDirectory() }
+      const stats = io.status(path)
+      kind = stats === undefined
+        ? undefined
+        : { link: stats.isSymbolicLink() ? io.readlink(path) : undefined, directory: stats.isDirectory() }
     } catch {
       kind = undefined
     }
@@ -2644,11 +2684,28 @@ export const observe = (
   const walked = new Map<string, { readonly shown: string; readonly current: string; readonly links: number }>()
   /** What each path resolved to, by the path as given and the names after it: a trace names a path in several lines. */
   const resolved = new Map<string, string | undefined>()
+  /**
+   * Where the walk of a directory that is not there ended, by that directory as the run wrote it: an install that
+   * unpacks into a directory and moves it away names 150,000 files below one, and each walked every name from `/`.
+   */
+  const missing = new Map<string, string>()
+  /** The real paths of those directories, where nothing is either. */
+  const lostDirectories = new Set<string>()
+  /**
+   * What each path resolved to when its walk passed no link of a process, which alone reads the names after it: a
+   * run writes thousands of names in one directory, and the directory resolves once for all of them.
+   */
+  const alone = new Map<string, string | undefined>()
+  /** Whether the walk under way followed a link of a process, whose end depends on the names after the path. */
+  let consulted = false
   const resolve = (path: string, after: ReadonlyArray<string> = []): string | undefined => {
+    if (alone.has(path)) return alone.get(path)
     const asked = after.length === 0 ? path : `${path}\0${after.join("/")}`
     if (resolved.has(asked)) return resolved.get(asked)
+    consulted = false
     const result = walk(path, after)
-    resolved.set(asked, result)
+    if (consulted) resolved.set(asked, result)
+    else alone.set(path, result)
     return result
   }
   const walk = (path: string, after: ReadonlyArray<string>): string | undefined => {
@@ -2663,7 +2720,11 @@ export const observe = (
     let remember: boolean
     // An absolute path in one spelling, whose directory was walked: only its last name is left to walk.
     const slash = path.lastIndexOf("/")
-    const known = slash > 0 && plain(path) ? walked.get(path.slice(1, slash)) : undefined
+    const asked = slash > 0 && plain(path) ? path.slice(1, slash) : undefined
+    // Below a directory that is not there, a name is not there either, and resolves no further.
+    const lost = asked === undefined ? undefined : missing.get(asked)
+    if (lost !== undefined) return `${lost}/${path.slice(slash + 1)}`
+    const known = asked === undefined ? undefined : walked.get(asked)
     if (known !== undefined) {
       ;({ current, links, shown } = known)
       key = path.slice(1, slash)
@@ -2686,7 +2747,14 @@ export const observe = (
         const kind = kindOf(candidate)
         if (kind === undefined) {
           // Nothing is here, so nothing below it resolves any further.
-          return NodePath.posix.normalize([candidate, ...queue].join("/"))
+          const end = NodePath.posix.normalize([candidate, ...queue].join("/"))
+          // The name asked for is still to walk, so it is the last of `queue`: what is left is its directory's end.
+          if (asked !== undefined && queue.length > 0) {
+            const directory = end.slice(0, end.lastIndexOf("/"))
+            missing.set(asked, directory)
+            lostDirectories.add(directory)
+          }
+          return end
         }
         if (kind.link === undefined) {
           shown = `${shown}/${part}`
@@ -2700,6 +2768,7 @@ export const observe = (
           // A link into a process's own links leads where it led for the run's process, which only the run could
           // see. A descriptor or a program alone is a file the run opened or started where its trace shows it, or no
           // file.
+          consulted ||= pseudo(candidate)
           const through = pseudo(candidate)
             ? processLinkOf([`${shown}/${part}`, ...queue, ...after].join("/"))
             : undefined
@@ -2725,14 +2794,27 @@ export const observe = (
     return current === "" ? "/" : current
   }
 
-  const visible = (path: string): boolean =>
-    !pseudo(path) && !options.ignore.some((directory) => under(path, directory))
+  /** Whether each directory is outside every path left out, by the directory. */
+  const shownDirectories = new Map<string, boolean>()
+  const outsideIgnored = (path: string): boolean => !options.ignore.some((directory) => under(path, directory))
+  // A path is below a directory left out when it is that directory or its own directory is below one.
+  const visible = (path: string): boolean => {
+    if (pseudo(path)) return false
+    const slash = path.lastIndexOf("/")
+    if (slash <= 0) return outsideIgnored(path)
+    const parent = path.slice(0, slash)
+    let shown = shownDirectories.get(parent)
+    if (shown === undefined) shownDirectories.set(parent, shown = outsideIgnored(parent))
+    return shown && !options.ignore.includes(path)
+  }
 
   /** The real path of a name the run wrote: only what leads to the name is followed. */
   const named = (raw: string): string | undefined => {
-    const parent = resolve(NodePath.posix.dirname(raw), [NodePath.posix.basename(raw)])
+    const slash = raw.lastIndexOf("/")
+    const simple = slash > 0 && plain(raw)
+    const name = simple ? raw.slice(slash + 1) : NodePath.posix.basename(raw)
+    const parent = resolve(simple ? raw.slice(0, slash) : NodePath.posix.dirname(raw), [name])
     if (parent === undefined) return undefined
-    const name = NodePath.posix.basename(raw)
     return parent === "/" ? `/${name}` : `${parent}/${name}`
   }
 
@@ -2742,7 +2824,12 @@ export const observe = (
   for (const [path, at] of trace.found) events.push([at, "found", path])
   for (const [path, at] of trace.missing) events.push([at, "missing", path])
   for (const [path, at] of trace.made) events.push([at, "made", path])
-  for (const [path, at] of trace.emptied) events.push([at, "emptied", path])
+  // A name emptied when or after the run made it says nothing its making did not: an install opens each file it
+  // writes with both, 480,000 times in eliza's.
+  for (const [path, at] of trace.emptied) {
+    const madeAt = trace.made.get(path)
+    if (madeAt === undefined || madeAt > at) events.push([at, "emptied", path])
+  }
   for (const [path, at] of trace.listed) events.push([at, "listed", path])
   // A program a run starts can name another that the kernel starts for it.
   for (const [path, at] of trace.started) {
@@ -2763,23 +2850,33 @@ export const observe = (
   }
   const touched = new Set<string>()
   const fetched = new Set<string>()
+  /** Notes a path the run wrote under the name `raw`. */
+  const noteWritten = (written: string, raw: string): void => {
+    const entry = entries.get(written)
+    if (entry !== undefined) entry.changed = true
+    if (visible(written)) touched.add(written)
+    if (trace.fetched.has(raw)) fetched.add(written)
+  }
   for (const raw of trace.changed) {
     if (pseudo(raw)) continue
     // Both the name the run wrote and the file a link under that name leads to are the run's to change.
     const path = named(raw)
     if (path === undefined) continue
-    for (const written of new Set([path, resolve(raw) ?? path])) {
-      const entry = entries.get(written)
-      if (entry !== undefined) entry.changed = true
-      // Making a name writes the name: a link the run made leads to a file the run may never have written.
-      if (written !== path && trace.made.has(raw)) continue
-      if (visible(written)) touched.add(written)
-      if (trace.fetched.has(raw)) fetched.add(written)
+    const real = resolve(raw) ?? path
+    noteWritten(path, raw)
+    // Making a name writes the name: a link the run made leads to a file the run may never have written.
+    if (real !== path) {
+      const entry = entries.get(real)
+      if (!trace.made.has(raw)) noteWritten(real, raw)
+      else if (entry !== undefined) entry.changed = true
     }
-    const parent = NodePath.posix.dirname(path)
+    // The names it wrote count only in a directory it listed: those are left out of the listing.
+    const slash = path.lastIndexOf("/")
+    const parent = slash > 0 ? path.slice(0, slash) : NodePath.posix.dirname(path)
+    if (entries.get(parent)?.listed !== true) continue
     let names = own.get(parent)
     if (names === undefined) own.set(parent, names = new Set())
-    names.add(NodePath.posix.basename(path))
+    names.add(slash > 0 ? path.slice(slash + 1) : NodePath.posix.basename(path))
   }
   // A file a call opened below a descriptor is the one its answer names, or the trace placed the descriptor wrong.
   for (const [path, named, opened] of trace.reached ?? []) {
@@ -2850,9 +2947,12 @@ export const observe = (
   const lists: Array<Record["lists"][number]> = []
   const temporary = options.temporary ?? []
   if (variables !== undefined && variableNames.length > 0) telling = toldBefore(variables)
-  for (const path of [...entries.keys()].sort(byCodeUnit)) {
+  // What the run made is no input of it, so it is left out before the paths are put in order: an install makes
+  // hundreds of thousands, and ordering them all took about two seconds.
+  const inputs: Array<string> = []
+  for (const [path, entry] of entries) if (entry.first !== "made" && visible(path)) inputs.push(path)
+  for (const path of inputs.sort(byCodeUnit)) {
     const entry = entries.get(path)!
-    if (!visible(path) || entry.first === "made") continue
     // What a locked install wrote outside the workspace is the package manager's own cache and scratch files,
     // in a home directory or a temporary one: a machine's home may itself lie in a temporary directory. What it
     // installs is fixed by the lockfile the run read, and it writes its cache again when a file of it is missing
@@ -2893,7 +2993,7 @@ export const observe = (
     if (names.length === 0 && !entry.changed && moved(path)) return { refusal: `${inside(path)} changed while it ran` }
     lists.push(added.length === 0 ? [inside(path), digest, names] : [inside(path), digest, names, added])
   }
-  const survivors = [...touched].filter((path) => path !== options.root && present(path, io)).sort(byCodeUnit)
+  const survivors = [...touched].filter((path) => path !== options.root && there(path)).sort(byCodeUnit)
   /** Whether the run wrote a path, or made a directory above it. */
   const wrote = (path: string, among: ReadonlySet<string>): boolean => {
     if (among.has(path)) return true
@@ -2990,7 +3090,7 @@ export const observe = (
     const gone: Array<string> = []
     for (const raw of trace.removed) {
       const path = pseudo(raw) ? undefined : named(raw)
-      if (path === undefined || !visible(path) || present(path, io)) continue
+      if (path === undefined || !visible(path) || there(path)) continue
       const name = keptAs(path)
       if (name !== undefined) gone.push(name)
     }

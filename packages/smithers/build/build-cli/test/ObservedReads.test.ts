@@ -2216,6 +2216,69 @@ describe("what a run left behind", () => {
     return { root, temp, home, write, made, filled, observe }
   }
 
+  it("keeps the file a run wrote through a link it found", async () => {
+    const { observe, root, write } = await places()
+    await write(Path.join(root, "target.txt"), "before")
+    await Fs.symlink("target.txt", Path.join(root, "latest"))
+    const observed = observe([`100 openat(AT_FDCWD<${root}>, "latest", O_WRONLY|O_TRUNC) = 3`])
+    expect(observed.left).toEqual({ keep: ["latest", "target.txt"], gone: [], outside: [] })
+  })
+
+  it.skipIf(process.platform !== "linux")(
+    "reads a link into a process's own output once and writes through it",
+    async () => {
+      const { observe, root } = await places()
+      await Fs.symlink("/dev/stdout", Path.join(root, "out"))
+      const observed = observe([
+        `100 openat(AT_FDCWD<${root}>, "out", O_RDONLY) = 3`,
+        `100 openat(AT_FDCWD<${root}>, "out", O_WRONLY) = 3`
+      ])
+      // The link is the run's to read, and what it leads to is the process's own output, which nothing keeps.
+      expect(observed.record.reads).toEqual([["out", "l:/dev/stdout", "l:/dev/stdout"]])
+      expect(observed.left).toEqual({ keep: ["out"], gone: [], outside: [] })
+    }
+  )
+
+  it("reads a run that wrote below a directory it then put a file in place of", async () => {
+    const { filled, made, observe, root, write } = await places()
+    await write(Path.join(root, "out"), "a file now")
+    const observed = observe([
+      made(`${root}/out`),
+      filled("out/part.txt"),
+      `100 openat(AT_FDCWD<${root}>, "out/part.txt", O_RDONLY) = -1 ENOTDIR (Not a directory)`
+    ])
+    expect(observed.record.reads).toEqual([])
+    expect(observed.left).toEqual({ keep: ["out"], gone: [], outside: [] })
+  })
+
+  // `bun install` writes each package in a directory of its own and moves that directory away, so most paths it
+  // wrote are gone when its trace is read: 266,467 of them at eliza's 78e44531, each asked for with an error as its
+  // answer (about 20 µs in Node, against 1.3 µs for a status).
+  it("asks for no path below a directory that is not there", async () => {
+    const { filled, made, root, write } = await places()
+    await write(Path.join(root, "out/kept.txt"))
+    const lines = [made(`${root}/out`), filled("out/kept.txt"), made(`${root}/unpacked`)]
+    for (let index = 0; index < 1_000; index += 1) lines.push(filled(`unpacked/lib/f${index}`))
+    lines.push(`100 rename("${root}/unpacked", "${root}/../moved") = 0`)
+    const asked: Array<string> = []
+    const io: ObservedReads.Io = {
+      ...ObservedReads.defaultIo,
+      lstat: (path) => {
+        asked.push(path)
+        return ObservedReads.defaultIo.lstat(path)
+      }
+    }
+    const observed = ObservedReads.observe(ObservedReads.read(() => lines, root), {
+      root,
+      ignore: [],
+      startedMs: Date.now() + 60_000,
+      io
+    })
+    if ("refusal" in observed) throw new Error(observed.refusal)
+    expect(observed.left).toEqual({ keep: ["out", "out/kept.txt"], gone: ["unpacked"], outside: [] })
+    expect(asked.filter((path) => path.startsWith(`${root}/unpacked/`))).toEqual([])
+  })
+
   // `npm ci` reads an entry of its cache index and writes it back with another time at every run. A CI job that
   // restores that cache from another run's save would find the entry changed at every commit.
   it("leaves out of what it read the cache a locked install writes outside the workspace", async () => {
