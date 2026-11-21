@@ -17,6 +17,7 @@ import { execFile, spawn } from "node:child_process"
 import { createHash, randomBytes } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
+import * as Net from "node:net"
 import * as NodePath from "node:path"
 import * as PackageTree from "../PackageTree.ts"
 import * as ObservedReads from "./ObservedReads.ts"
@@ -207,6 +208,169 @@ export const prepare = async (
   const real = await Fs.realpath(kept)
   refuseSkipped(real)
   return real
+}
+
+/**
+ * What a build says when another build of the same workspace uses its
+ * machines and it waits for that one to end ({@link hold}).
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const waitingLine = "smthrs: another run uses this checkout's machines; waiting for it to end"
+
+/**
+ * A build's hold on the machines of its workspace ({@link hold}).
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Held {
+  /** Ends the hold, and a build that waits for it goes on. */
+  readonly release: () => Promise<void>
+}
+
+/** Machines kept where no hold on them can be named. */
+class MachinesPathTooLong extends Data.TaggedError("smithers-build/MachinesPathTooLong")<{
+  readonly message: string
+}> {}
+
+/**
+ * Where the hold on the machines kept in `kept` is: a socket beside them,
+ * which no build removes with them. A system takes a socket path of a little
+ * over 100 bytes, and a build run on a machine keeps its own machines under
+ * that machine's home, deeper than that: on Linux such a hold is a socket
+ * named apart from the file system, and elsewhere the build fails and says
+ * what to set.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const holdPath = (kept: string, platform: NodeJS.Platform = process.platform): string => {
+  const path = `${kept}.lock`
+  if (Buffer.byteLength(path) <= (platform === "linux" ? 107 : 103)) return path
+  if (platform === "linux") return `\0smthrs-machines-${createHash("sha256").update(kept).digest("hex")}`
+  throw new MachinesPathTooLong({
+    message: `machines would be kept in ${kept}, a path too long for a socket that holds them while a build ` +
+      `uses them. Set ${holdingVariable} to a shorter directory.`
+  })
+}
+
+/** Listens on the socket at `path`: the server, or nothing when the path is taken. */
+const listen = (path: string): Promise<Net.Server | undefined> =>
+  new Promise((resolve, reject) => {
+    const server = Net.createServer()
+    server.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EADDRINUSE") resolve(undefined)
+      else reject(error)
+    })
+    server.listen(path, () => resolve(server))
+  })
+
+/** The connection to whoever listens on the socket at `path`, or nothing when nobody does. */
+const answering = (path: string): Promise<Net.Socket | undefined> =>
+  new Promise((resolve) => {
+    const socket = Net.connect(path)
+    socket.once("connect", () => resolve(socket))
+    // Also a reset once connected, which ends the connection as its close does.
+    socket.once("error", () => resolve(undefined))
+  })
+
+/** Resolves once `connection` is closed: the build at its other end has released its hold or ended. */
+const closed = (connection: Net.Socket, signal: AbortSignal | undefined): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const stop = (): void => {
+      connection.destroy()
+      reject(signal!.reason)
+    }
+    signal?.addEventListener("abort", stop, { once: true })
+    connection.once("close", () => {
+      signal?.removeEventListener("abort", stop)
+      resolve()
+    })
+  })
+
+/**
+ * Takes away a hold at `path` whose build ended without releasing it, as one that was killed does: its socket
+ * is still there and nobody listens on it. It is moved aside first, so two builds that both found it so never
+ * remove what a third took meanwhile; a socket that answers once moved aside is put back.
+ *
+ * @category lifecycle
+ * @since 1.0.0
+ */
+export const unstale = async (path: string): Promise<void> => {
+  const aside = `${path}.stale-${process.pid}-${randomBytes(4).toString("hex")}`
+  // Gone already: another build took it away.
+  if (!(await Fs.rename(path, aside).then(() => true, () => false))) return
+  const answer = await answering(aside)
+  if (answer !== undefined) {
+    answer.destroy()
+    await Fs.link(aside, path)
+  }
+  await Fs.rm(aside, { force: true })
+}
+
+/**
+ * Holds the machines of the workspace at `root` for one build until it
+ * releases them or ends. Two builds of one workspace at once would each empty
+ * and make the same machines, and a step of one would fail on a checkout the
+ * other removed, so a second build waits here for the first to end, and says
+ * so once with `waiting`. The hold is a socket the build listens on beside
+ * where the machines are kept: the system closes it when the build ends,
+ * however it ends, and a waiting build connected to it learns so at once. A
+ * build that waits stops when `signal` is aborted.
+ *
+ * @category lifecycle
+ * @since 1.0.0
+ */
+export const hold = async (
+  root: string,
+  environment: Readonly<Record<string, string | undefined>>,
+  waiting: () => void,
+  signal?: AbortSignal
+): Promise<Held> => {
+  const kept = holding(root, environment)
+  refuseSkipped(kept)
+  const path = holdPath(kept)
+  await Fs.mkdir(NodePath.dirname(kept), { recursive: true })
+  let said = false
+  for (;;) {
+    signal?.throwIfAborted()
+    const server = await listen(path)
+    if (server !== undefined) return held(server)
+    const other = await answering(path)
+    if (other === undefined) {
+      await unstale(path)
+      continue
+    }
+    if (!said) waiting()
+    said = true
+    await closed(other, signal)
+  }
+}
+
+/** The hold of a build that listens on `server`: the builds waiting for it are connected until it is released. */
+const held = (server: Net.Server): Held => {
+  const waiters = new Set<Net.Socket>()
+  server.on("connection", (waiter) => {
+    const forget = (): void => {
+      waiters.delete(waiter)
+    }
+    waiters.add(waiter)
+    // A connection that fails is closed next: either way the build at its other end waits no more.
+    waiter.on("error", forget)
+    waiter.on("close", forget)
+    waiter.unref()
+  })
+  server.unref()
+  return {
+    release: () =>
+      new Promise((resolve) => {
+        // Closing the server removes its socket.
+        server.close(() => resolve())
+        for (const waiter of waiters) waiter.destroy()
+      })
+  }
 }
 
 /**

@@ -2,7 +2,7 @@
  * A machine, made from real workspaces: real git checkouts, real files, real
  * links. A git that fails is supplied as a function.
  */
-import { execFileSync } from "node:child_process"
+import { type ChildProcess, execFileSync, spawn } from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
@@ -214,6 +214,175 @@ describe("where machines are kept", () => {
       (argv, failed) => Machine.startApart(["/nonexistent-smithers-remover", ...argv], failed)
     )
     await expect.poll(() => Fs.readdir(Path.dirname(kept)), { timeout: 30_000 }).toEqual([])
+  })
+})
+
+/**
+ * Another build's hold on the machines, as a process of its own: it listens at `path` until it is killed. One that
+ * `drops` closes each connection to it at once, and still listens.
+ */
+const otherHold = async (path: string, drops = false): Promise<ChildProcess> => {
+  const child = spawn(process.execPath, [
+    "-e",
+    `require('node:net').createServer(${drops ? "(c) => c.destroy()" : ""})` +
+    ".listen(process.argv[1], () => console.log('held'))",
+    path
+  ], { stdio: ["ignore", "pipe", "inherit"] })
+  await new Promise((resolve, reject) => {
+    child.stdout!.once("data", resolve)
+    child.once("exit", reject)
+  })
+  return child
+}
+
+/** Kills `child` and waits until it has ended. */
+const killed = async (child: ChildProcess): Promise<void> => {
+  const ended = new Promise((resolve) => child.once("exit", resolve))
+  child.kill("SIGKILL")
+  await ended
+}
+
+describe("the hold on a workspace's machines", () => {
+  const unprivilegedIt = it.skipIf(process.platform === "win32" || process.getuid?.() === 0)
+  const linuxIt = it.skipIf(process.platform !== "linux")
+  const never = (): void => {
+    throw new Error("it never waits")
+  }
+
+  posixIt("is one build's at a time: the others wait, each says so once, and goes on when it is released", async () => {
+    const base = await directory("held")
+    const environment = { [Machine.holdingVariable]: Path.join(base, "machines") }
+    const said: Array<string> = []
+    const first = await Machine.hold("/work/repo", environment, never)
+    const second = Machine.hold("/work/repo", environment, () => said.push("second"))
+    const third = Machine.hold("/work/repo", environment, () => said.push("third"))
+    await expect.poll(() => said.toSorted()).toEqual(["second", "third"])
+    // Another workspace's machines are held apart.
+    await (await Machine.hold("/work/other", environment, never)).release()
+    const both = Promise.all([second, third])
+    await first.release()
+    // One of the two goes on; the other waits for that one, and says nothing again.
+    const next = await Promise.race([second, third])
+    await next.release()
+    await (await both).find((each) => each !== next)!.release()
+    expect(said.toSorted()).toEqual(["second", "third"])
+    // Released, it leaves nothing beside the machines.
+    expect(await Fs.readdir(Path.join(base, "machines"))).toEqual([])
+  })
+
+  posixIt("is taken over from a build that was killed, which never released it", async () => {
+    const base = await directory("held")
+    const environment = { [Machine.holdingVariable]: Path.join(base, "machines") }
+    const path = Machine.holdPath(Machine.holding("/work/repo", environment))
+    await Fs.mkdir(Path.dirname(path), { recursive: true })
+    const said: Array<string> = []
+    // Killed while another build waits for it.
+    const other = await otherHold(path)
+    const waiting = Machine.hold("/work/repo", environment, () => said.push("waits"))
+    await expect.poll(() => said).toEqual(["waits"])
+    await killed(other)
+    await (await waiting).release()
+    // Killed with nobody waiting: its socket is still there, and the next build does not wait for it.
+    await killed(await otherHold(path))
+    expect(await Fs.readdir(Path.dirname(path))).toEqual([Path.basename(path)])
+    const held = await Machine.hold("/work/repo", environment, never)
+    expect(await Fs.readdir(Path.dirname(path))).toEqual([Path.basename(path)])
+    await held.release()
+    expect(said).toEqual(["waits"])
+    expect(await Fs.readdir(Path.dirname(path))).toEqual([])
+  })
+
+  posixIt("is waited for again, with nothing said again, while the other build still holds it", async () => {
+    const base = await directory("held")
+    const environment = { [Machine.holdingVariable]: Path.join(base, "machines") }
+    const path = Machine.holdPath(Machine.holding("/work/repo", environment))
+    await Fs.mkdir(Path.dirname(path), { recursive: true })
+    // Its connection closes at once, as when the other build has gone on to another that holds them.
+    const other = await otherHold(path, true)
+    const said: Array<string> = []
+    let held: Machine.Held | undefined
+    const waiting = Machine.hold("/work/repo", environment, () => said.push("waits")).then((each) => {
+      held = each
+    })
+    await expect.poll(() => said).toEqual(["waits"])
+    // Still waiting a while later.
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(held).toBeUndefined()
+    await killed(other)
+    await waiting
+    await held!.release()
+    expect(said).toEqual(["waits"])
+  })
+
+  posixIt("is put back where a build took it while another found it left by a killed build", async () => {
+    const base = await directory("held")
+    const environment = { [Machine.holdingVariable]: Path.join(base, "machines") }
+    const path = Machine.holdPath(Machine.holding("/work/repo", environment))
+    await Fs.mkdir(Path.dirname(path), { recursive: true })
+    const other = await otherHold(path)
+    try {
+      // The other build listens at it: it stays the other build's, and nothing is left beside it.
+      await Machine.unstale(path)
+      expect(await Fs.readdir(Path.dirname(path))).toEqual([Path.basename(path)])
+      const said: Array<string> = []
+      const stop = new AbortController()
+      const waiting = Machine.hold("/work/repo", environment, () => said.push("waits"), stop.signal)
+      await expect.poll(() => said).toEqual(["waits"])
+      // A build that waits stops when it is told to.
+      stop.abort(new Error("stopped"))
+      await expect(waiting).rejects.toThrow("stopped")
+      await expect(Machine.hold("/work/repo", environment, never, AbortSignal.abort(new Error("stopped first"))))
+        .rejects.toThrow("stopped first")
+      // Gone already: there is nothing to take away.
+      await Machine.unstale(`${path}.gone`)
+      expect(await Fs.readdir(Path.dirname(path))).toEqual([Path.basename(path)])
+    } finally {
+      await killed(other)
+    }
+  })
+
+  linuxIt("is named apart from the file system on Linux where machines are kept too deep for a socket", async () => {
+    // A build run on a machine keeps its own machines under that machine's home.
+    const base = Path.join(await directory("deep"), "d".repeat(100))
+    const environment = { [Machine.holdingVariable]: base }
+    expect(Machine.holdPath(Machine.holding("/work/repo", environment))).toMatch(/^\0smthrs-machines-[0-9a-f]{64}$/)
+    const said: Array<string> = []
+    const first = await Machine.hold("/work/repo", environment, never)
+    const second = Machine.hold("/work/repo", environment, () => said.push("second"))
+    await expect.poll(() => said).toEqual(["second"])
+    await first.release()
+    await (await second).release()
+    expect(await Fs.readdir(base)).toEqual([])
+  })
+
+  it("is a socket beside the machines, where its path is short enough for one", () => {
+    expect(Machine.holdPath("/kept/0123456789abcdef", "darwin")).toBe("/kept/0123456789abcdef.lock")
+    // macOS takes 103 bytes, Linux 107.
+    expect(Machine.holdPath(`/${"k".repeat(97)}`, "darwin")).toBe(`/${"k".repeat(97)}.lock`)
+    expect(Machine.holdPath(`/${"k".repeat(101)}`, "linux")).toBe(`/${"k".repeat(101)}.lock`)
+    expect(() => Machine.holdPath(`/${"k".repeat(98)}`, "darwin")).toThrow(
+      `machines would be kept in /${"k".repeat(98)}, a path too long for a socket that holds them while a build ` +
+        `uses them. Set ${Machine.holdingVariable} to a shorter directory.`
+    )
+  })
+
+  posixIt("refuses a directory under one a tool skips, and makes nothing", async () => {
+    const base = await directory("held")
+    const environment = { [Machine.holdingVariable]: Path.join(base, ".cache", "machines") }
+    await expect(Machine.hold("/work/repo", environment, never)).rejects.toThrow("under a directory named .cache")
+    expect(await Fs.readdir(base)).toEqual([])
+  })
+
+  unprivilegedIt("fails with why where its socket cannot be made", async () => {
+    const base = await directory("held")
+    await Fs.mkdir(Path.join(base, "machines"))
+    await Fs.chmod(Path.join(base, "machines"), 0o500)
+    try {
+      await expect(Machine.hold("/work/repo", { [Machine.holdingVariable]: Path.join(base, "machines") }, never))
+        .rejects.toThrow("EACCES")
+    } finally {
+      await Fs.chmod(Path.join(base, "machines"), 0o700)
+    }
   })
 })
 

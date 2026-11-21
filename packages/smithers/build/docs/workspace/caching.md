@@ -906,7 +906,13 @@ directory, so a lint that passes in the workspace would fail on the machine,
 and the build stops before the first target with that reason. Machines are
 removed when the build ends, and what an earlier build left there, or under
 `~/.cache/smthrs/machines` where builds kept them before, is removed before the
-first target runs. One build at a time uses a workspace's machines.
+first target runs. One build at a time uses a workspace's machines: a build
+started while another build of the same checkout uses them waits for that build
+to end before its first target, and says so once:
+
+```text
+smthrs: another run uses this checkout's machines; waiting for it to end
+```
 
 Every machine stays until the build ends, so the machines of a large repository
 can fill the disk. A target on a machine that fails while the disk that holds

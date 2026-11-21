@@ -121,7 +121,7 @@ const fixture = async (
   const logs: Array<string> = []
   /** Why each target that failed did, by name. */
   const failures = new Map<string, string>()
-  const options = (names: ReadonlyArray<string>, jobs: number) => ({
+  const options = (names: ReadonlyArray<string>, jobs: number, heard: Array<string>) => ({
     index,
     cacheDirectory: ".flows",
     verb: "auto" as const,
@@ -130,19 +130,24 @@ const fixture = async (
     jobs,
     log: (line: string) => {
       logs.push(line)
+      heard.push(line)
     }
   })
-  /** Plans and executes the named targets; answers each one's status by name, and the first line of each failure. */
+  /**
+   * Plans and executes the named targets; answers each one's status by name, and the first line of each failure.
+   * What the run says is also put in `heard`.
+   */
   const run = async (
     names: ReadonlyArray<string>,
     services: ExecutionServices = executionServicesLive,
-    jobs = 1
+    jobs = 1,
+    heard: Array<string> = []
   ): Promise<Record<string, string>> => {
     const previous = process.env["PATH"]
     process.env["PATH"] = environment["PATH"]
     try {
       const summary = await Effect.runPromise(
-        executeEffect(await plan(options(names, jobs)), options(names, jobs)).pipe(
+        executeEffect(await plan(options(names, jobs, heard)), options(names, jobs, heard)).pipe(
           Effect.provideService(ExecutionServices, services)
         )
       )
@@ -204,6 +209,55 @@ describe("targets on two machines", () => {
     expect(await run(["locked"], untraced)).toEqual({ locked: "ran" })
     expect(NodeFs.existsSync(Machine.holding(await Fs.realpath(Path.dirname(kept) + "/ws"), environment))).toBe(false)
   })
+})
+
+describe("two builds of one checkout at once", () => {
+  tracedIt(
+    "never share its machines: the later one waits for the earlier, says so once, and marks nothing",
+    async () => {
+      // Two builds of a checkout started together each emptied and made the same machines, so a step of one failed
+      // on a checkout the other had just removed, and the next build alone marked a step "runs unrecorded until"
+      // the next day.
+      const turns = await Fs.realpath(await Fs.mkdtemp(Path.join("/var/tmp", "smithers-machine-turns-")))
+      temporary.push(turns)
+      const { failures, run } = await fixture(() => {
+        const held = on(
+          "job",
+          `echo one > out.txt && touch ${turns}/started && while [ ! -e ${turns}/go ]; do sleep 0.05; done && ` +
+            "grep -q one out.txt && ls \"$HOME\" \"$TMPDIR\" > /dev/null"
+        )
+        return { held, after: on("job", "grep -q one out.txt", [held]) }
+      })
+      const path = process.env["PATH"]
+      const first: Array<string> = []
+      const second: Array<string> = []
+      const third: Array<string> = []
+      try {
+        const earlier = run(["after"], executionServicesLive, 1, first)
+        await expect.poll(() => NodeFs.existsSync(Path.join(turns, "started")), { timeout: 120_000 }).toBe(true)
+        const later = run(["after"], executionServicesLive, 1, second)
+        // The later build waits for the earlier one, which is in its step, and says so.
+        await expect.poll(() => second.includes(Machine.waitingLine), { timeout: 120_000 }).toBe(true)
+        expect(first).not.toContain(Machine.waitingLine)
+        await Fs.writeFile(Path.join(turns, "go"), "")
+        expect(await earlier).toEqual({ held: "ran", after: "ran" })
+        // It starts once the earlier one has ended, and finds the earlier one's results: the step that waited runs
+        // again only because what it waited for is there now.
+        expect(await later).toEqual({ held: "ran", after: "hit" })
+        expect(second).toContain(`//:held  runs again: ${turns}/go now exists`)
+        // A build alone afterwards runs nothing again.
+        expect(await run(["after"], executionServicesLive, 1, third)).toEqual({ held: "hit", after: "hit" })
+      } finally {
+        process.env["PATH"] = path
+      }
+      expect(failures).toEqual(new Map())
+      expect(second.filter((line) => line === Machine.waitingLine)).toHaveLength(1)
+      expect([...first, ...second, ...third].filter((line) => /unrecorded|not recorded|not cached/.test(line))).toEqual(
+        []
+      )
+    },
+    600_000
+  )
 })
 
 describe("where a machine's checkout is", () => {

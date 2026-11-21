@@ -1235,7 +1235,7 @@
         "internal/HostTools.d.ts": "b085bef82da0e36d718653d7c9b7fe572c9bbb0c4556758df272c6c1b93f70fd",
         "internal/InputPackage.d.ts": "b655e444fd6cb4ded8d62fbe734260896886dec59b28322d156a11e2dc281651",
         "internal/InstalledTree.d.ts": "1e7063399594bbe1a4026e8735b5d587beb1809a36ccf49d77d33dd80735ea4b",
-        "internal/Machine.d.ts": "d5117b8eea5fd677db87f080b0b033379ec5ceeef179b37a6ff4772aa53f98e5",
+        "internal/Machine.d.ts": "c4f230e79bf1ed4868b05937ca78d630f106689eaf34c4af2e7f57e63e2266a2",
         "internal/MissingTool.d.ts": "da6565584fabe84a221eb9b1ba16d4c5dfa78b22415aab6e8f48978442cc5387",
         "internal/ObservedReads.d.ts": "cbf2e06d9c34330bec87a355912a6241bbd005346a40595147a23662d645a5ef",
         "internal/OutputCas.d.ts": "6617f92cbfd883094ee392ba9a8353cbfdc11dda031adaa9dabd0eb1d8c4e909",
