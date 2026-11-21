@@ -496,8 +496,9 @@ func TestExternalImport(t *testing.T) { if externalhelper.Want < 1 || helper.Wan
       ...Runner.executionServicesLive,
       captureFile: (...args) =>
         Effect.gen(function*() {
-          if (args[2].startsWith(".flows/tmp/go-mod-")) {
-            const stat = yield* Effect.promise(() => Fs.stat(NodePath.join(root, args[2])))
+          // The archive is named inside the cache directory, which may lie outside the workspace.
+          if (args[2].startsWith("tmp/go-mod-")) {
+            const stat = yield* Effect.promise(() => Fs.stat(NodePath.join(args[0], args[2])))
             expect(stat.size).toBeGreaterThan(0)
             capturedArchive = true
             return yield* Effect.fail(new Error("fixture capture failure"))
