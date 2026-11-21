@@ -1813,6 +1813,9 @@ static void serve(const struct seccomp_notif *req) {
   if (why != NULL) {
     free(t.data);
     t = (struct text){0};
+    /* A thread killed while its call waited here took the call with it: the call never ran, and its path and its
+     * directory could not be read because the thread is gone. Nothing is written of it. */
+    if (ioctl(listener, SECCOMP_IOCTL_NOTIF_ID_VALID, &id) != 0) return;
     if (strcmp(why, "up") == 0) {
       unrecorded("it named a path that goes back up inside /proc or /dev, which cannot be followed as it ran");
       return;

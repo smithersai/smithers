@@ -444,6 +444,39 @@ describe("smthrs-observe and questions asked again", () => {
   })
 })
 
+/**
+ * A program of forty-eight threads that each ask for a file by a relative name, killed while they ask: as a test
+ * runner kills its workers. A thread killed while its call waits for the recorder takes the call with it.
+ */
+const killedMidCall = String.raw`
+import os, signal, threading, time
+ready = threading.Barrier(49)
+def ask():
+    ready.wait()
+    while True: os.stat("file")
+for _ in range(48): threading.Thread(target=ask, daemon=True).start()
+ready.wait()
+time.sleep(0.002)
+os.kill(os.getpid(), signal.SIGKILL)
+`
+
+describe("smthrs-observe and threads killed in the middle of calls", () => {
+  supervised("writes nothing of a call whose thread was killed while it waited", async () => {
+    const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-killed-")))
+    temporary.push(base)
+    await Fs.writeFile(Path.join(base, "file"), "file\n")
+    await Fs.writeFile(Path.join(base, "killed.py"), killedMidCall)
+    const trace = Path.join(base, "trace")
+    const rounds = "for round in $(seq 40); do python3 killed.py; done; true"
+    const run = spawnSync(supervisor!, [trace, "--", "/bin/sh", "-c", rounds], { cwd: base, encoding: "utf8" })
+    expect(run.status, run.stderr).toBe(0)
+    const lines = NodeFs.readFileSync(trace, "utf8").split("\n")
+    // No line that a reader cannot place: every line it wrote names its directory.
+    expect(lines.filter((line) => line.includes("EBADF"))).toEqual([])
+    expect(ObservedReads.read(() => lines, base).refusals).toEqual([])
+  }, 120_000)
+})
+
 describe("smthrs-observe and signals", () => {
   supervised("never lets a signal cut short a call it would not cut short unrecorded", async () => {
     const base = await signalRoot()
