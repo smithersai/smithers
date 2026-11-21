@@ -412,6 +412,25 @@ describe("a plan", () => {
     expect(measured.installedTrees).toEqual(["pkg/node_modules"])
   })
 
+  posixIt("refuses a suite planned with no PATH anywhere, naming the package manager it cannot find", async () => {
+    const { index, label } = await fixture()
+    // Neither the run's environment nor this process gives a PATH to search.
+    const previous = process.env["PATH"]
+    delete process.env["PATH"]
+    try {
+      const planned = await plan({
+        index,
+        cacheDirectory: ".flows",
+        verb: "auto",
+        patterns: [label("test")],
+        environment: {}
+      })
+      expect(planned.nodes.get(label("test"))!.refusal).toMatch(/^cannot identify declared pnpm executable/)
+    } finally {
+      process.env["PATH"] = previous
+    }
+  })
+
   posixIt("keys a tool that starts in the workspace root, with or without a manifest there", async () => {
     const { node } = await fixture({ cwd: "." })
     const original = await node("test")

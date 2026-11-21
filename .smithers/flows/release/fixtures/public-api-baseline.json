@@ -1186,7 +1186,7 @@
         "MemoryBackend.d.ts": "55b445da9d4e3d1b4c275dca497887d5aefb999e52e29f62720cd22400cb4ab4",
         "Mount.d.ts": "38e783f7e881cb36fad16061910d1cf0079ac5ee2d8d9a1599dec86d88bdb74b",
         "NixExec.d.ts": "2179a752451595191236ee0cc22b77aa156c47f2925706f5d68e2dff1ff59581",
-        "OutputStream.d.ts": "edfc9d516ea5dcad24013883ed8bc2377b565d96149adb3d910d7b7756a79695",
+        "OutputStream.d.ts": "531d22624cd9decb4dbf27e786cb9d4b820bbc7eea9c9748d9357f5d7b80457f",
         "OverlayExec.d.ts": "cb68b64526ce801c30a2baed9aa44d3cd37414c70db2fa4695b6c3a0ce9fe714",
         "Owners.d.ts": "225dc55b2c98c07618259f3ece34d3b8d2e32e205f5529478fdc41956d615d67",
         "PackageDiscovery.d.ts": "dcc12ced18e3f21222cfc8d5a4d787efcbe47d83874de3d485570298194df880",

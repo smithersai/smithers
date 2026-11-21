@@ -2161,7 +2161,9 @@ const visit = async (
       if (typeof measured === "string") installedProblem ??= measured
       else {
         toolchain.push({ _tag: "DprintPlugins", digest: measured.digest })
-        for (const file of measured.files) if (!externalReads.includes(file)) externalReads.push(file)
+        // Each plugin file is named once, and what this format check reads outside the workspace so far is
+        // installed trees: none of them is a plugin file.
+        externalReads.push(...measured.files)
         toolLinks.push({ path: DprintPlugins.privateCachePath(process.platform), target: measured.cache })
       }
     }
