@@ -322,6 +322,28 @@ describe("an observed test", () => {
     120_000
   )
 
+  // uv fills its cache so: it makes a directory under a temporary name and each directory of the package in it as
+  // `pkg/`, with a slash at the end, writes the package's files, moves the directory into place, then reads them.
+  // The step made all of it, so none of it is an input. smthrs-observe wrote `mkdir("pkg/")` as failing, the
+  // move then did not carry the files, and every uv step ran at every commit: `.../RECORD changed while it ran`.
+  tracedIt(
+    "is stored when it read a file it made in a directory it named with a slash at the end, then moved",
+    async () => {
+      const uv = [
+        "set -e",
+        "/bin/mkdir -p cache/archive",
+        "/bin/mkdir cache/.tmp \"cache/.tmp/pkg/\"",
+        "echo one > cache/.tmp/pkg/RECORD",
+        "/bin/mv cache/.tmp cache/archive/one",
+        "/bin/cat cache/archive/one/pkg/RECORD input.txt > /dev/null"
+      ].join("\n")
+      const { reasons, run, write } = await fixture({ check: uv })
+      expect(await run()).toEqual({ check: "ran" })
+      await write("docs/readme.md", "changed\n")
+      expect([await run(), reasons]).toEqual([{ check: "hit" }, [undefined]])
+    }
+  )
+
   // A program of many threads ends while its threads are asking about files: Go's tools do at every exit. The
   // tracer then writes lines for calls it could not follow, each for a thread killed where it stopped. Here a
   // process of twenty-five threads is killed three times. The step still passes, and its result is stored.

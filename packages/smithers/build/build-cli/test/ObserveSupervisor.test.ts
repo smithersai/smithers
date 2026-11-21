@@ -65,6 +65,13 @@ call("readlink", "file", () => fs.readlinkSync(at("file")))
 call("mkdir", "made", () => fs.mkdirSync(at("made")))
 call("mkdir", "made", () => fs.mkdirSync(at("made")))
 call("mkdir", "nowhere/made", () => fs.mkdirSync(at("nowhere/made")))
+// A name with a slash at its end, as uv makes each directory of a package it unpacks: only a directory is made there.
+call("mkdir", "slashed/", () => fs.mkdirSync(at("slashed/")))
+call("mkdir", "nowhere/slashed/", () => fs.mkdirSync(at("nowhere/slashed/")))
+call("create", "slashed-file/", () => fs.openSync(at("slashed-file/"), "wx"))
+call("symlink", "slashed-soft/", () => fs.symlinkSync("file", at("slashed-soft/")))
+call("rename", "slashed/", () => fs.renameSync(at("slashed/"), at("moved-dir/")))
+call("rename", "plain", () => fs.renameSync(at("plain"), at("plain-dir/")))
 call("rename", "fresh", () => fs.renameSync(at("fresh"), at("moved")))
 call("rename", "absent", () => fs.renameSync(at("absent"), at("anywhere")))
 call("rename", "other", () => fs.renameSync(at("other"), at("target")))
@@ -108,6 +115,7 @@ const recorded = async () => {
   await Fs.mkdir(Path.join(root, "listed"))
   await Fs.writeFile(Path.join(root, "file"), "file\n")
   await Fs.writeFile(Path.join(root, "other"), "other\n")
+  await Fs.writeFile(Path.join(root, "plain"), "plain\n")
   await Fs.writeFile(Path.join(root, "target"), "target\n")
   await Fs.writeFile(Path.join(root, "closed", "inner"), "inner\n")
   await Fs.writeFile(Path.join(root, "tool"), "#!/bin/sh\nexit 0\n", { mode: 0o755 })
@@ -522,7 +530,45 @@ describe("smthrs-observe and signals faster than a call", () => {
   }, 120_000)
 })
 
+/**
+ * A parent that waits for each child as tokio, and so uv, does: it polls the child's pidfd, then reaps it without
+ * blocking. tokio panics when the child cannot be reaped then (`pidfd is ready to read, the process should have
+ * exited`). Each child sets a handler without `SA_RESTART`, so smthrs-observe traces it.
+ */
+const reaping = String.raw`
+import os, select, signal, sys
+early = 0
+for i in range(int(sys.argv[1])):
+    pid = os.fork()
+    if pid == 0:
+        signal.signal(signal.SIGUSR1, lambda *a: None)
+        os._exit(0)
+    fd = os.pidfd_open(pid)
+    poll = select.poll()
+    poll.register(fd, select.POLLIN)
+    poll.poll()
+    if os.waitpid(pid, os.WNOHANG)[0] == 0:
+        early += 1
+        os.waitpid(pid, 0)
+    os.close(fd)
+print(early, "not reaped when their pidfd was ready")
+`
+const pidfds = spawnSync("python3", ["-c", "import os; os.pidfd_open"]).status === 0
+const reapingIt = it.skipIf(supervisor === undefined || process.getuid?.() === 0 || !pidfds)
+
 describe("smthrs-observe and signals", () => {
+  reapingIt("lets a parent reap a traced child as soon as the child's pidfd says it ended", async () => {
+    const base = await signalRoot()
+    const script = Path.join(base, "reaping.py")
+    await Fs.writeFile(script, reaping)
+    const plain = spawnSync("python3", [script, "300"], { encoding: "utf8" })
+    expect([plain.status, plain.stdout]).toEqual([0, "0 not reaped when their pidfd was ready\n"])
+    const traced = spawnSync(supervisor!, [Path.join(base, "trace"), "--", "python3", script, "300"], {
+      encoding: "utf8"
+    })
+    expect([traced.status, traced.stdout]).toEqual([0, "0 not reaped when their pidfd was ready\n"])
+  }, 60_000)
+
   supervised("never lets a signal cut short a call it would not cut short unrecorded", async () => {
     const base = await signalRoot()
     const script = [

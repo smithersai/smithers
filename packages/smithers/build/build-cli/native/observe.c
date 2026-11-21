@@ -37,6 +37,9 @@
  * traced (ptrace, every thread, its children until they start another program). When a signal cuts a watched
  * call short, the signal is kept and the kernel restarts the call; once the restarted call is received the signal
  * is sent again and is delivered, with what it first said, when the call ends (a fork: once it made its process).
+ * A traced thread is let go when it starts to end: a traced process that ended is its tracer's to reap first, so its
+ * parent, told by the process's pidfd that it ended, could not reap it yet, and tokio's reaper panics then (uv's
+ * `pidfd is ready to read, the process should have exited`).
  * A call that waits in the kernel itself (a FIFO, a device) is cut short there as it would be unrecorded. On
  * aarch64 the stop no longer shows the call's answer: a thread stopped at the `svc #0` of a watched call that
  * restarts is taken as cut short there (cutShort).
@@ -910,10 +913,18 @@ static int lookKind(const char *path, int nofollow, int *directory) {
 
 static int look(const char *path, int nofollow) { return lookKind(path, nofollow, NULL); }
 
-/* Whether the directory a new name goes in is there. */
-static int parentThere(const char *path) {
+/*
+ * What the kernel answers a call that makes the name `path` where nothing is: 0 when the directory the name goes in
+ * is there. A name written with a slash at its end (`dir/`, as uv writes each directory of a package it unpacks) is
+ * the name before the slash, and only a directory can be made there: a call that makes anything else gets `refusal`,
+ * as it does from the kernel.
+ */
+static int parentThere(const char *path, int directory, int refusal) {
   char parent[PATH_MAX + 1];
   snprintf(parent, sizeof parent, "%s", path);
+  size_t length = strlen(parent);
+  while (length > 1 && parent[length - 1] == '/') parent[--length] = 0;
+  if (length < strlen(path) && !directory) return refusal;
   char *slash = strrchr(parent, '/');
   if (slash == NULL) return 1;
   if (slash == parent) return 1;
@@ -1152,7 +1163,8 @@ static void expose(pid_t tgid) {
 
 /* Seizes every thread of a process; new threads and children come by the events. */
 static void seizeAll(pid_t tgid) {
-  long options = PTRACE_O_TRACECLONE | PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACEEXEC;
+  long options =
+    PTRACE_O_TRACECLONE | PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEEXIT;
   for (int round = 0, added = 1; added && round < 50; round++) {
     added = 0;
     char name[64];
@@ -1525,7 +1537,7 @@ static void serve(const struct seccomp_notif *req) {
         if ((flags & O_EXCL) && error == 0) {
           error = EEXIST;
         } else if (error == ENOENT) {
-          error = parentThere(path); /* nothing there: made, when its directory is */
+          error = parentThere(path, 0, EISDIR); /* nothing there: made, when its directory is */
         } else if (error == 0) {
           error = look(path, (flags & O_NOFOLLOW) != 0);
         }
@@ -1649,7 +1661,7 @@ static void serve(const struct seccomp_notif *req) {
     case K_MKDIR: {
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
       int error = look(path, 1);
-      error = error == 0 ? EEXIST : error == ENOENT ? parentThere(path) : error;
+      error = error == 0 ? EEXIST : error == ENOENT ? parentThere(path, 1, 0) : error;
       begin(&t, tgid, "mkdirat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
@@ -1698,10 +1710,13 @@ static void serve(const struct seccomp_notif *req) {
     case K_LINK: {
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
       if (!pathOf(tid, req, c->dir2, c->path2, other, sizeof other, &why)) break;
-      int from = look(path, 1), to = look(other, 1);
+      int moving = 0, from = lookKind(path, 1, &moving), to = look(other, 1);
       /* A name that is there already is one the run found, whatever the call does to it. */
       if (to == 0 && !pseudo(other)) found(tgid, id, 0, other);
-      int error = from != 0 ? from : (c->kind == K_LINK && to == 0) ? EEXIST : to == ENOENT ? parentThere(other) : 0;
+      int error = from != 0 ? from : (c->kind == K_LINK && to == 0) ? EEXIST
+        : to != ENOENT ? 0
+        : c->kind == K_LINK ? parentThere(other, 0, ENOENT)
+        : parentThere(other, moving, ENOTDIR);
       begin(&t, tgid, c->kind == K_RENAME ? "renameat2" : "linkat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
@@ -1719,7 +1734,7 @@ static void serve(const struct seccomp_notif *req) {
       if (!pathOf(tid, req, c->dir2, c->path2, path, sizeof path, &why)) break;
       int there = look(path, 1);
       if (there == 0 && !pseudo(path)) found(tgid, id, 0, path);
-      int error = there == 0 ? EEXIST : there == ENOENT ? parentThere(path) : there;
+      int error = there == 0 ? EEXIST : there == ENOENT ? parentThere(path, 0, ENOENT) : there;
       begin(&t, tgid, "symlinkat");
       quotedz(&t, other);
       puts_(&t, ", AT_FDCWD, ");
@@ -2250,6 +2265,11 @@ int main(int argc, char **argv) {
       } else if (event == PTRACE_EVENT_EXEC) {
         /* A new program starts with every handler at its default: nothing to watch until it sets one. */
         setWatched(pid, 0);
+        ptrace(PTRACE_DETACH, pid, 0, 0);
+      } else if (event == PTRACE_EVENT_EXIT) {
+        /* A thread that starts to end is let go: once it ended, its parent reaps it, not this supervisor. */
+        setWatched(pid, 0);
+        dropKept(pid);
         ptrace(PTRACE_DETACH, pid, 0, 0);
       } else if (event == PTRACE_EVENT_FORK || event == PTRACE_EVENT_VFORK || event == PTRACE_EVENT_CLONE) {
         sendAfterFork(pid);
