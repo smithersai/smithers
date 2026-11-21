@@ -163,7 +163,9 @@ jobs each run `mkdir ~/.config/tool` with no `-p`. Both pass in your CI, and
 both would fail in one shared tree with one home.
 
 So the targets of a job run on a machine of that job's own. Smithers build
-makes it when the first of them has to run and removes it when the run ends:
+makes it when the first of them has to run and removes it once the job's last
+step has ended and its result is kept, as a runner is thrown away when its job
+ends. The disk holds only the machines of the jobs that run at once:
 
 | A job gets            | What it holds when the job's first step starts                                 |
 | --------------------- | ------------------------------------------------------------------------------ |

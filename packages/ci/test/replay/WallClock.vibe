@@ -7,14 +7,19 @@ import { noUpkeep } from "../../src/replay/Git.ts"
 /** One hour in milliseconds: far longer than any step of a test runs. */
 export const hour = 3_600_000
 
+/** How long making a job's directories removable takes at the moment `removal`: far longer than a test's run. */
+export const removalHold = 30_000
+
 /**
  * Runs `work` on the machine's clock, moved ahead by an hour at each
  * `moment`: each time the replay prepares a copy for the generated targets
- * (`prepare`), each time it starts `git checkout` (`checkout`), or each time
- * it makes a job's directories removable before it removes them (`tidy`). A
- * wall time that holds the moment is an hour longer for each one.
+ * (`prepare`), or each time it starts `git checkout` (`checkout`). A wall
+ * time that holds the moment is an hour longer for each one. At `removal`
+ * the clock is not moved: making a job's directories removable before they
+ * are removed takes {@link removalHold} of real time, and a wall time that
+ * waits for it is at least that long.
  */
-export const jumping = <A, E, R>(moment: "prepare" | "checkout" | "tidy", work: A!E!R) => effect {
+export const jumping = <A, E, R>(moment: "prepare" | "checkout" | "removal", work: A!E!R) => effect {
   const live = try Clock.Clock
   const real = try ChildProcessSpawner
   let ahead = 0
@@ -33,7 +38,12 @@ export const jumping = <A, E, R>(moment: "prepare" | "checkout" | "tidy", work: 
     // git is given `noUpkeep` before its own arguments.
     const checkout = words[words.indexOf("git") + 1 + noUpkeep.length] === "checkout"
     if (moment === "checkout" && checkout) ahead += hour
-    if (moment === "tidy" && words[0] === "chmod") ahead += hour
+    if (moment === "removal" && words[0] === "chmod") {
+      return effect {
+        try live.sleep(Duration.millis(removalHold))
+        return try real.spawn(process)
+      }
+    }
     return real.spawn(process)
   })
   provide Clock.Clock = clock, ChildProcessSpawner = processes, Options = {

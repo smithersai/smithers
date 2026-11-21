@@ -206,6 +206,18 @@ describe("targets on two machines", () => {
     expect(await run(["toola", "toolb"], untraced)).toEqual({ toola: "ran", toolb: "ran" })
   })
 
+  posixIt("are each removed once their last target has ended, while the build goes on", async () => {
+    // A runner is thrown away when its job ends: the disk holds only the machines whose targets still run.
+    const first = Path.basename(Machine.named("/machines", "/ws", "first").directory)
+    const { run } = await fixture(() => {
+      const one = on("first", "echo one > \"$TMPDIR/held\"")
+      return { one, two: on("second", `test ! -e "$HOME/../../${first}"`, [one]) }
+    })
+    expect(await run(["two"], untraced)).toEqual({ one: "ran", two: "ran" })
+    // Answered from the cache, neither machine is made, and nothing is removed.
+    expect(await run(["two"], untraced)).toEqual({ one: "hit", two: "hit" })
+  })
+
   posixIt("are gone when the build ends, with what was left where they are kept", async () => {
     const { environment, kept, run } = await fixture(() => ({
       locked: on("locked", "mkdir -p ~/go/pkg/mod/x && : > ~/go/pkg/mod/x/file && chmod -R a-w ~/go")
@@ -443,18 +455,30 @@ describe("a machine target that fails on a full disk", () => {
   posixIt("fails for the build when the other machines filled the disk, and for itself when its own did", async () => {
     // The disk the machines are on says it has 0.2 GB of 100 GB free: it is full.
     const full: ExecutionServices = { ...untraced, diskSpace: async () => ({ free: 2e8, total: 1e11 }) }
-    const { failures, run } = await fixture(() => ({
-      big: on("big", "head -c 2000000 /dev/zero > big.bin"),
-      small: on("small", "exit 1"),
-      fills: on("fills", "head -c 8000000 /dev/zero > more.bin; exit 1")
-    }))
-    expect(await run(["big", "small", "fills"], full)).toEqual({ big: "ran", small: "failed", fills: "failed" })
+    // `big` has a target still to run after `small` fails, so its machine is there when `small` fails: a machine
+    // whose targets have all ended is removed, and fills the disk no more.
+    const { failures, run } = await fixture(() => {
+      const big = on("big", "head -c 2000000 /dev/zero > big.bin")
+      const small = on("small", "exit 1", [big])
+      return {
+        big,
+        small,
+        later: on("big", "true", [small]),
+        fills: on("fills", "head -c 8000000 /dev/zero > more.bin; exit 1")
+      }
+    })
+    expect(await run(["later", "fills"], full)).toEqual({
+      big: "ran",
+      small: "failed",
+      later: "skipped",
+      fills: "failed"
+    })
     expect(failures.get("small")).toMatch(
       /^the disk that holds this build's machines \(.+\) is full, 0\.2 GB free: its \d machines hold .+, this target's .+, so the target did not fail on its own\. Run fewer jobs at once \(--jobs\) or free some space$/
     )
     expect(failures.get("fills")).not.toContain("is full")
     // A disk with room leaves every failure the target's own.
-    expect(await run(["small"], untraced)).toEqual({ small: "failed" })
+    expect((await run(["small"], untraced))["small"]).toBe("failed")
     expect(failures.get("small")).not.toContain("is full")
   })
 })

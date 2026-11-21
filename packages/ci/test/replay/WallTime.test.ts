@@ -11,14 +11,14 @@ import { compiledCaches, compiledCode, compiledSource, Options, run } from "../.
 import { job, linkTargets, makeEmptyDirectory, makeSmallRepository, smthrs } from "./fixture.ts"
 import { unconfined } from "./place.ts"
 import { parts } from "./TestParts.vibe"
-import { hour, jumping } from "./WallClock.vibe"
+import { hour, jumping, removalHold } from "./WallClock.vibe"
 
 const created: Array<string> = []
 afterAll(() => {
   for (const root of created) rmSync(root, { recursive: true, force: true })
 })
 
-const replay = (moment: "prepare" | "checkout" | "tidy"): Promise<ReplayReport> => {
+const replay = (moment: "prepare" | "checkout" | "removal"): Promise<ReplayReport> => {
   const root = makeSmallRepository([job("a", "sh a.sh")])
   created.push(root)
   const chosen = parts("none") as unknown as ReplayParts<never>
@@ -103,14 +103,14 @@ describe("the wall time of one commit", () => {
     expect(commit?.baseline.wallMs).toBeLessThan(hour)
   }, 600_000)
 
-  it("leaves out removing what a job left: a CI machine is thrown away", async () => {
-    // The clock jumps an hour each time a job's checkout, home and temporary directory are made ready to remove.
-    const commit = (await replay("tidy")).commits[0]
+  it("does not wait for removing what a job left: a CI machine is thrown away", async () => {
+    // Making a job's checkout, home and temporary directory ready to remove takes 30 s each time. The baseline removes
+    // a job's as it ends, beside the run (the disk holds only the jobs that run at once), and its wall time does not
+    // wait for it. Smithers build removes a mode's machines with a command nobody waits for (MachineExecution).
+    const commit = (await replay("removal")).commits[0]
     expect(commit?.baseline.ok).toBe(true)
     expect(commit?.baseline.wallMs).toBeGreaterThan(0)
-    expect(commit?.baseline.wallMs).toBeLessThan(hour)
-    expect(commit?.normal.wallMs).toBeLessThan(hour)
-    expect(commit?.fast?.wallMs).toBeLessThan(hour)
+    expect(commit?.baseline.wallMs).toBeLessThan(removalHold)
   }, 600_000)
 
   it("holds the checkout, in the baseline and in each mode", async () => {

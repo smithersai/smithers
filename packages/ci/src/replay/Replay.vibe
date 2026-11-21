@@ -1142,10 +1142,16 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       given: Readonly<Record<string, string>>,
       later: Array<Scope.Closeable> | undefined
     ) {
-      // The job's checkout, home and temporary directory are removed when its last step ends, or, for a run that
-      // is timed, when the caller says: after its clock has stopped.
+      // The job's checkout, home and temporary directory are removed when its last step ends, as a runner's machine
+      // is: the disk holds no more than the jobs that run at once. A run that is timed does not wait for the removal,
+      // which goes on beside the jobs still running; its caller waits for it after the clock has stopped.
       const own = try Scope.make()
-      if (later !== undefined) later.push(own)
+      const removed = try Deferred.make<void>()
+      if (later !== undefined) {
+        const waited = try Scope.make()
+        try Scope.addFinalizer(waited, Deferred.await(removed))
+        later.push(waited)
+      }
       const steps = Scope.provide(effect {
         // A job is a machine: its home and its temporary directory are its own, and gone when it ends.
         // A job with a machine runs where Smithers build puts that machine in each mode; one with none beside the way.
@@ -1253,10 +1259,16 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         if (counted !== undefined) try sync(counted)
         return wanted === undefined ? results : results.filter((result) => wanted.has(result.label))
       }, own)
-      return try (later === undefined ? ensuring(steps, Scope.close(own, Exit.void)) : steps)
+      const removal = effect {
+        try Scope.close(own, Exit.void)
+        try Deferred.succeed(removed, undefined)
+      }
+      return try ensuring(steps, later === undefined ? removal : effect {
+        fork.detached removal
+      })
     }
 
-    /** Removes what the jobs of a timed baseline run left: each job's checkout, home and temporary directory. */
+    /** Waits until what the jobs of a timed baseline run left is removed: each job's checkout, home and temporary directory. */
     const removing = (later: Array<Scope.Closeable>) => effect {
       for (const own of later.splice(0)) try Scope.close(own, Exit.void)
     }

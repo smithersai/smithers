@@ -1149,7 +1149,8 @@ const executeWith = (
     /**
      * Once a target of a machine has finished: a step that left a program running and holds no record of its own is
      * named among what the job keeps, so no step after it is held to files alone, and the machine's job ends with
-     * its last target here.
+     * its last target here. Its result is kept by then and nothing of this build reads the machine again, so the
+     * machine is removed, as a runner is when its job ends: the disk holds only the machines whose targets still run.
      */
     const finishedOn = async (node: PackageNode): Promise<void> => {
       const name = node.machine!
@@ -1161,7 +1162,16 @@ const executeWith = (
       }
       const remaining = unfinished.get(name)! - 1
       unfinished.set(name, remaining)
-      if (remaining === 0) await Promise.all([endJob(name), endKept(name)])
+      if (remaining > 0) return
+      await Promise.all([endJob(name), endKept(name)])
+      // A machine the caller asked to keep stays for keepMachines, which puts it where it was asked when the build
+      // ends: the workflow apply writes runs its kept steps on what the job left there.
+      const wanted = Machine.toKeep(hostEnvironment)
+      if ("problem" in wanted || wanted.has(name)) return
+      const made = madeMachines.get(name)
+      if (made === undefined) return
+      madeMachines.delete(name)
+      await Machine.discard(made.directory)
     }
     /** What each target that ran on a kept machine left running, by label. */
     const leftRunning = new Map<string, ReadonlyArray<JobKeeper.Left>>()

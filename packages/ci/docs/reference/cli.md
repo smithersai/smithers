@@ -320,7 +320,10 @@ held space it would give back; otherwise the line says how much to free, as in
 `Free 1.0 GB more on that disk, or set TMPDIR to a folder on a disk with more room`.
 With `--json` that line is the report's `stopped` field. The same line goes to
 standard error, and the program exits `4`. Every report gives the most disk
-the replay held at once, `diskHeldBytes` with `--json`.
+the replay held at once, `diskHeldBytes` with `--json`. A job's machine is
+removed as soon as its last step has ended, in the baseline and in each mode,
+so the replay holds the machines of the jobs that run at once: `--jobs` bounds
+it.
 
 When `smthrs-observe`, which records what a step reads, stops before the step
 ends, as an out-of-memory kill stops it, the step's run says nothing about the

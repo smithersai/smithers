@@ -12,6 +12,7 @@ import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Failure, ReplayParts } from "../../src/contract/Parts.ts"
 import { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { files } from "../../src/generate/index.ts"
 import { gigabyte } from "../../src/replay/DiskSpace.ts"
 import { Options, Progress, run, WorkDirectory } from "../../src/replay/index.ts"
 import { text } from "../../src/report/Text.ts"
@@ -30,6 +31,8 @@ afterAll(() => {
 })
 
 const base = parts("none") as unknown as ReplayParts<never>
+/** The real generator in place of the test one: a job's targets run on a machine of its own, as `smithers-ci` runs them. */
+const generating = { ...base, files } as unknown as ReplayParts<never>
 const gb = (n: number): number => n * gigabyte
 
 /** What a replay said, the folder it kept its copies in, and its report or failure. */
@@ -51,7 +54,8 @@ const replay = async (
   counted: ReadonlyArray<string>,
   jobs = 2,
   taken: (since: (way: string) => number | undefined) => number = () => 0,
-  trial = false
+  trial = false,
+  chosen: ReplayParts<never> = base
 ): Promise<Outcome> => {
   const said: Array<string> = []
   const folders: Array<string> = []
@@ -79,7 +83,7 @@ const replay = async (
   )
   const start = Date.now()
   const result = await Effect.runPromise(
-    run({ root, commits, modes: ["normal"], jobs, trial }, base).pipe(
+    run({ root, commits, modes: ["normal"], jobs, trial }, chosen).pipe(
       Effect.catch((failure: Failure) => Effect.succeed(failure)),
       Effect.provide(Layer.provideMerge(host, NodeServices.layer))
     ) as Effect.Effect<ReplayReport | Failure>
@@ -113,8 +117,11 @@ const stoppedHere =
 
 describe("a replay on a disk its jobs would fill", () => {
   it("starts a job only once what the jobs before it left is gone, and says the most it held", async () => {
-    // One job at a time; each leaves 6 GB in its temporary directory, which stays until the commit's run ends.
-    const root = track(makeSmallRepository([job("first", ballast(6000)), job("second", ballast(6000))]))
+    // One job at a time; each holds 6 GB in its temporary directory for a second more, so the disk is read while it
+    // holds it, and the job's machine is gone when the job ends, before the next starts.
+    const root = track(
+      makeSmallRepository([job("first", `${ballast(6000)} && sleep 1`), job("second", `${ballast(6000)} && sleep 1`)])
+    )
     const { said, result } = await replay(root, 1, gb(9), ["baseline"], 1)
     const report = result as ReplayReport
     expect(report.commits[0]?.baseline.ok).toBe(true)
@@ -125,6 +132,20 @@ describe("a replay on a disk its jobs would fill", () => {
     expect(text(report)).toContain(
       "The replay held at most 6 GB of disk at once; fewer jobs at once (--jobs) hold less"
     )
+  }, 600_000)
+
+  it("holds no more than the jobs that run at once: each job's machine goes when its last step is judged", async () => {
+    // Four jobs, one at a time, each leaving 1 GB in its temporary directory and running a second more, so the disk
+    // is read while it holds it. A runner's machine is gone when its job ends; so is a job's machine in the baseline
+    // and in normal mode, so the replay holds 1 GB at most, not 4.
+    const jobs = ["one", "two", "three", "four"].map((name) => job(name, `${ballast(1000)} && sleep 1`))
+    for (const way of ["baseline", "normal"]) {
+      const root = track(makeSmallRepository(jobs))
+      const { result } = await replay(root, 1, gb(100), [way], 1, () => 0, false, generating)
+      const report = result as ReplayReport
+      expect([way, report.commits[0]?.baseline.ok, report.commits[0]?.normal.ok]).toEqual([way, true, true])
+      expect([way, report.diskHeldBytes]).toEqual([way, gb(1)])
+    }
   }, 600_000)
 
   it("reports no commit and says why when there is no room from the start", async () => {
