@@ -391,7 +391,7 @@ describe("ci conformance", () => {
       }
     })
     assert.equal(job["runs-on"], "${{ matrix.os }}")
-    assert.equal(job["timeout-minutes"], 40)
+    assert.equal(job["timeout-minutes"], 60)
     assert.equal(job["continue-on-error"], "${{ matrix.advisory }}")
     assert.equal(job.steps.filter((step) => step.name === "Package test targets").length, 1)
     }

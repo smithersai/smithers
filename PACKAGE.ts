@@ -735,7 +735,9 @@ const ci = Smithers.GithubCiGen({
         { os: "macos-latest", advisory: true },
         { os: "windows-latest", advisory: true }
       ],
-      timeoutMinutes: 40,
+      // 60, not 40: a package root is never split, and //packages/ci:test alone runs over 20 minutes on a runner
+      // (run 44878422382 cut package suites 7/9 at 40 minutes on all three machines with it still running).
+      timeoutMinutes: 60,
       toolchain: Smithers.CiToolchain.Needs({
         cargoBinaries: nativeFilesystem,
         runtimes: [node, bun],

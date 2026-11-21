@@ -69,10 +69,63 @@
       "label": "//packages/smithers/flows/platform-node:importRules",
       "durationMs": 540,
       "exitCode": 0
+    },
+    {
+      "run": 44864065051,
+      "job": 136726003555,
+      "platform": "macos-latest"
+    },
+    {
+      "run": 44864065051,
+      "job": 136726003604,
+      "platform": "ubuntu-latest"
+    },
+    {
+      "run": 44864065051,
+      "job": 136726003633,
+      "platform": "ubuntu-latest"
+    },
+    {
+      "run": 44864065051,
+      "job": 136726003744,
+      "platform": "ubuntu-latest"
+    },
+    {
+      "run": 44864065051,
+      "job": 136726003924,
+      "platform": "ubuntu-latest"
+    },
+    {
+      "run": 44878422382,
+      "job": 136768682560,
+      "platform": "windows-latest"
+    },
+    {
+      "run": 44878422382,
+      "job": 136768682577,
+      "platform": "ubuntu-latest"
+    },
+    {
+      "run": 44878422382,
+      "job": 136768682686,
+      "platform": "ubuntu-latest"
+    },
+    {
+      "run": 44878422382,
+      "job": 136768682871,
+      "platform": "ubuntu-latest"
     }
   ],
   "method": "Maximum completed elapsed milliseconds per target, including failures, or an unfinished target's observed elapsed lower bound at cancellation. Service lifetimes are excluded from censored target costs. These observations are workload estimates, not upper wall-time bounds; no cache hits assumed.",
   "durationMs": {
+    "//packages/ci:check": 42500,
+    "//packages/ci:circular": 5000,
+    "//packages/ci:docs": 128,
+    "//packages/ci:fmt": 6700,
+    "//packages/ci:lib": 59300,
+    "//packages/ci:lint": 30200,
+    "//packages/ci:test": 1199878,
+    "//packages/ci:toolCaches": 33200,
     "//packages/effect-code-storage:check": 1268,
     "//packages/effect-code-storage:circular": 1600,
     "//packages/effect-code-storage:docs": 501,
@@ -404,7 +457,9 @@
     "//packages/smithers/build/build-cli:importRules": 892,
     "//packages/smithers/build/build-cli:lib": 13600,
     "//packages/smithers/build/build-cli:lint": 27538,
+    "//packages/smithers/build/build-cli:observe": 246000,
     "//packages/smithers/build/build-cli:test": 1300328,
+    "//packages/smithers/build/build-cli:testObserve": 166600,
     "//packages/smithers/build/infra:check": 4775,
     "//packages/smithers/build/infra:docs": 149,
     "//packages/smithers/build/infra:docsFiles": 1,
@@ -441,6 +496,7 @@
     "//packages/smithers/control:lib": 18400,
     "//packages/smithers/control:lint": 8751,
     "//packages/smithers/control:postgresInventory": 12700,
+    "//packages/smithers/control:signalMutations": 62000,
     "//packages/smithers/control:test": 490400,
     "//packages/smithers/flows/artifacts:bunTest": 23400,
     "//packages/smithers/flows/artifacts:check": 1443,
@@ -740,6 +796,7 @@
     "//packages/smithers/ui:__private_Shell_Test_5": 236,
     "//packages/smithers/ui:browserProbes": 63100,
     "//packages/smithers/ui:check": 3689,
+    "//packages/smithers/ui:checkTests": 17200,
     "//packages/smithers/ui:docs": 212,
     "//packages/smithers/ui:importRules": 1200,
     "//packages/smithers/ui:sourceFiles": 1,
@@ -748,6 +805,7 @@
     "//packages/smithers:__private_Shell_Test_7": 207,
     "//packages/smithers:check": 15698,
     "//packages/smithers:circular": 3800,
+    "//packages/smithers:cliBundle": 608800,
     "//packages/smithers:cliInstall": 4800,
     "//packages/smithers:commonJsBuild": 687,
     "//packages/smithers:docs": 164,
@@ -758,6 +816,8 @@
     "//packages/smithers:lint": 42225,
     "//packages/smithers:localSmithers": 404,
     "//packages/smithers:localSmithersUnit": 742,
+    "//packages/smithers:nodeRuntimeMatrix": 34800,
+    "//packages/smithers:serveStartup": 600400,
     "//packages/smithers:test": 1760556,
     "//packages/smithers:tuiBundleExternals": 21700,
     "//packages/smithers:tuiSources": 1,
@@ -821,6 +881,14 @@
       "firstOutput": "2026-10-30T17:50:00.4162920Z",
       "cancelled": "2026-10-30T17:51:18.6025210Z",
       "lowerBoundMs": 78186
+    },
+    {
+      "run": 44878422382,
+      "job": 136768682871,
+      "label": "//packages/ci:test",
+      "firstOutput": "2026-11-21T08:08:05.5254661Z",
+      "cancelled": "2026-11-21T08:28:05.4030294Z",
+      "lowerBoundMs": 1199878
     }
   ]
 }

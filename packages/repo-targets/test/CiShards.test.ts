@@ -51,7 +51,7 @@ function verify(jobs: Record<string, Job>, costs: Costs = { all: weights, tests:
     const job = jobs[id]!
     assert.ok(job, `missing ${id}`)
     assert.equal(job.needs, undefined)
-    assert.equal(job["timeout-minutes"], 40)
+    assert.equal(job["timeout-minutes"], 60)
     const steps = job.steps.filter((step) => step.name === stepName)
     assert.equal(steps.length, 1)
     const command = steps[0]!.run!
@@ -70,9 +70,14 @@ function verify(jobs: Record<string, Job>, costs: Costs = { all: weights, tests:
   // Package selections are nonrecursive and disjoint. Hence each target root
   // has exactly one owner, with the CLI's manual/exclusive/host policy intact.
   assert.deepEqual(selections.sort(), roots, "missing or duplicated target ownership")
-  assert.ok(Math.max(...durations) <= 32 * 60_000, "shard exceeds 32 measured target-minutes")
+  // The bound is 80% of the job's 60 minutes, as 32 was of 40. With every target measured the lane holds 310
+  // target-minutes, so 32 could not hold for any split. A shard holding one package root cannot be split further,
+  // so the bound holds for the others and the job's limit for that one (//packages/smithers:* measures 52).
+  const divisible = (values: ReadonlyArray<number>) => values.filter((_, index) => rootCounts[index]! > 1)
+  assert.ok(Math.max(...divisible(durations)) <= 48 * 60_000, "shard exceeds 48 measured target-minutes")
+  assert.ok(Math.max(...durations) <= 60 * 60_000, "a single package exceeds the job's 60 minutes")
   assert.ok(spread(durations, rootCounts) <= 3 * 60_000, "shards differ by over three target-minutes")
-  assert.ok(Math.max(...testDurations) <= 32 * 60_000, "test shard exceeds 32 measured target-minutes")
+  assert.ok(Math.max(...divisible(testDurations)) <= 48 * 60_000, "test shard exceeds 48 measured target-minutes")
   assert.ok(spread(testDurations, rootCounts) <= 4 * 60_000, "test shards differ by over four target-minutes")
 }
 
@@ -172,9 +177,9 @@ it("rejects a missing job, a dropped target, a duplicate and a complete but unba
   // This move keeps combined costs within three minutes but separates test
   // costs by over four: the package lane must check its own workload too.
   const testOnly = ci().jobs
-  const from = testOnly["packages-7"]!.steps.find((step) => step.name === stepName)!
-  const to = testOnly["packages-2"]!.steps.find((step) => step.name === stepName)!
-  const move = "'//packages/smithers/agent/harness:*'"
+  const from = testOnly["packages-6"]!.steps.find((step) => step.name === stepName)!
+  const to = testOnly["packages-8"]!.steps.find((step) => step.name === stepName)!
+  const move = "'//packages/smithers/flows/database:*'"
   from.run = from.run!.replace(move, "")
   to.run = to.run!.replace(" --jobs", ` ${move} --jobs`)
   expect(() => verify(testOnly)).toThrow(/test shards differ/)
