@@ -38390,7 +38390,10 @@ script runs another file of it through the home), `links` (host links to
 place, passed as `externalLinks`), `privateLinks` (each such home or directory
 under the run's private `HOME`) and `selections` (the files that choose a
 shim's version). It never returns the home directory, a directory
-programs share in it, or a credential location. Requests name `network`, `reads`, and writable directory `writes`,
+programs share in it, or a credential location. Under WSL it reads no `PATH`
+directory on a Windows drive: `windowsDrives()` reads where WSL mounts them
+from `/proc/self/mountinfo`, `host()` fills `Host.windowsDrives` from it, and a
+confined run cannot start a Windows program anyway. Requests name `network`, `reads`, and writable directory `writes`,
 with optional `mechanism`, `writeFiles`, `readOnly`, `externalReads`, `strict`,
 and `unixSockets`. Native agent confinement uses a strict process and IPC
 policy and closes Unix sockets; build tools retain their declared policy. Build
