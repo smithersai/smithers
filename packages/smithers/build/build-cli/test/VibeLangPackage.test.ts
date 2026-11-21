@@ -38,8 +38,9 @@ const fixture = async (declaration: DeclarationFile): Promise<string> => {
   }
   await write(root, "package.json", `${JSON.stringify({ name: "fixture", private: true, type: "module" })}\n`)
   await write(root, "yarn.lock", "# yarn lockfile v1\n")
-  // The VibeLang compiler writes each module's declaration beside it.
-  await write(root, ".gitignore", "node_modules\n*.d.vibe.ts\n")
+  // The VibeLang compiler writes each module's declarations beside it and one ownership receipt per project, and
+  // the workspace ignores them as this repository does.
+  await write(root, ".gitignore", "node_modules\n*.d.vibe.ts\n*.d.ts\n.vibelang-sidecar-*.owner\n")
   await write(
     root,
     "tsconfig.json",
