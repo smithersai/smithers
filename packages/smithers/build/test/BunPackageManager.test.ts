@@ -20,6 +20,13 @@ const runtimeLayer = Runtime.layerNoop("bun", {
 
 const patch = "patches/dep@1.0.0.patch"
 
+/**
+ * A store path as the manager spells it in arguments, the child's environment and messages: joined with `/` on
+ * every host, as the pnpm manager's are. A real directory the test reads is still `NodePath.join`ed; on Windows the
+ * two differ in their separators.
+ */
+const spelled = (...parts: ReadonlyArray<string>): string => parts.join("/")
+
 /** A Bun text lockfile with one workspace member and one patch, as Bun writes it. */
 const lockfile = `{
   "lockfileVersion": 1,
@@ -180,7 +187,7 @@ describe("PackageManager.makeBun", () => {
         "--ignore-scripts",
         "--no-progress",
         "--cache-dir",
-        NodePath.join(store, "cache")
+        spelled(root, ".flows/store/bun/cache")
       ])
       expect(call?.cwd).toBe(NodePath.join(store, "fetch"))
       expect(await filesBelow(NodePath.join(store, "fetch"))).toEqual([
@@ -217,7 +224,7 @@ describe("PackageManager.makeBun", () => {
         "--ignore-scripts",
         "--no-progress",
         "--cache-dir",
-        NodePath.join(root, ".flows/store/bun/cache")
+        spelled(root, ".flows/store/bun/cache")
       ])
       expect(call?.cwd).toBe(root)
     })
@@ -236,16 +243,16 @@ describe("PackageManager.makeBun", () => {
       })
       await Effect.runPromise(manager.fetch)
       await Effect.runPromise(manager.link)
-      const store = NodePath.join(root, ".flows/store/bun")
+      const store = spelled(root, ".flows/store/bun")
       for (const { env } of await calls()) {
         expect(env).toMatchObject({
-          BUN_INSTALL_CACHE_DIR: NodePath.join(store, "cache"),
-          BUN_INSTALL: NodePath.join(store, "home/.bun"),
-          HOME: NodePath.join(store, "home"),
-          USERPROFILE: NodePath.join(store, "home"),
-          XDG_CACHE_HOME: NodePath.join(store, "home/.cache"),
-          XDG_CONFIG_HOME: NodePath.join(store, "home/.config"),
-          XDG_DATA_HOME: NodePath.join(store, "home/.local/share"),
+          BUN_INSTALL_CACHE_DIR: spelled(store, "cache"),
+          BUN_INSTALL: spelled(store, "home/.bun"),
+          HOME: spelled(store, "home"),
+          USERPROFILE: spelled(store, "home"),
+          XDG_CACHE_HOME: spelled(store, "home/.cache"),
+          XDG_CONFIG_HOME: spelled(store, "home/.config"),
+          XDG_DATA_HOME: spelled(store, "home/.local/share"),
           CI: "true"
         })
         expect(env.BUN_CONFIG_REGISTRY).toBeUndefined()
@@ -271,7 +278,7 @@ describe("PackageManager.makeBun", () => {
       await write(".flows/store/bun/home/.npmrc", "registry=https://elsewhere.example/\n")
       const error = await refused(manager.link)
       expect(error.code).toBe("unsafe_configuration")
-      expect(error.message).toContain(`${home} is not empty`)
+      expect(error.message).toContain(`${spelled(root, ".flows/store/bun/home")} is not empty`)
       expect(await calls()).toHaveLength(2)
     })
   })
@@ -287,7 +294,7 @@ describe("PackageManager.makeBun", () => {
         await Fs.symlink(outside, cache)
         const error = await refused(manager.link)
         expect(error.code).toBe("unsafe_configuration")
-        expect(error.message).toBe(`${cache} resolves outside the install store`)
+        expect(error.message).toBe(`${spelled(root, ".flows/store/bun/cache")} resolves outside the install store`)
         expect(await calls()).toHaveLength(1)
       } finally {
         await Fs.rm(outside, { recursive: true, force: true })
@@ -437,7 +444,7 @@ describe("PackageManager.makeBun", () => {
           const manager = await makeBun(root, executable)
           const error = await refused(manager.fetch)
           expect(error.code).toBe("unsafe_configuration")
-          expect(error.message).toBe(`${NodePath.join(root, path)} resolves outside the install store`)
+          expect(error.message).toBe(`${spelled(root, path)} resolves outside the install store`)
           expect(await Fs.readdir(outside)).toEqual(["kept"])
           expect(await calls()).toEqual([])
         } finally {
@@ -458,7 +465,7 @@ describe("PackageManager.makeBun", () => {
         const error = await refused((await makeBun(root, executable)).fetch)
         expect(error.code).toBe("unsafe_configuration")
         expect(error.message).toBe(
-          `${NodePath.join(root, directory)}/package.json is above the staging copy; Bun would install from it instead`
+          `${spelled(root, directory, "package.json")} is above the staging copy; Bun would install from it instead`
         )
         expect(await calls()).toEqual([])
       })
@@ -496,9 +503,9 @@ describe("PackageManager.makeBun", () => {
         await Effect.runPromise(manager.link)
         const [fetch, link] = await calls()
         expect(fetch?.cwd).toBe(NodePath.join(store, "fetch"))
-        expect(fetch?.args.at(-1)).toBe(NodePath.join(store, "cache"))
+        expect(fetch?.args.at(-1)).toBe(spelled(store, "cache"))
         expect(link?.cwd).toBe(root)
-        expect(link?.args.at(-1)).toBe(NodePath.join(store, "cache"))
+        expect(link?.args.at(-1)).toBe(spelled(store, "cache"))
         await expect(Fs.access(NodePath.join(root, ".flows"))).rejects.toThrow()
       } finally {
         await Fs.rm(store, { recursive: true, force: true })

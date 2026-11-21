@@ -72,7 +72,8 @@ describe("PackageManager.RegularFileOpen", () => {
         }
       }
       const read = await Effect.runPromise(warningsOf(digest(root, noPathOpen, delegating)))
-      expect(opened).toEqual([NodePath.join(root, "pnpm-lock.yaml")])
+      // The manager joins the project root and the lockfile name with `/` on every host.
+      expect(opened).toEqual([`${root}/pnpm-lock.yaml`])
       expect(read.warnings).toEqual([])
 
       const refusal = PlatformError.systemError({
