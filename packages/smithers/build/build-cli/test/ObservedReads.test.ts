@@ -1750,6 +1750,205 @@ describe("recording what a run read", () => {
     expect(ObservedReads.changed(stored, root)).toBe("alias changed")
   })
 
+  describe("an openat2 with RESOLVE flags", () => {
+    /** A tree to walk: `r` holds files, a directory, and links of each kind. */
+    const tree = async () => {
+      const made = await setup()
+      const r = Path.join(made.root, "r")
+      await Fs.mkdir(Path.join(r, "sub"), { recursive: true })
+      await Fs.writeFile(Path.join(r, "x.txt"), "ok")
+      await Fs.writeFile(Path.join(r, "sub", "y.txt"), "ok")
+      await Fs.symlink("/sub/y.txt", Path.join(r, "abs"))
+      await Fs.symlink("../../../x.txt", Path.join(r, "sub", "up"))
+      await Fs.symlink("sub/y.txt", Path.join(r, "rel"))
+      await Fs.symlink(Path.join(made.root, "src", "a.txt"), Path.join(r, "far"))
+      await Fs.symlink("loop", Path.join(r, "loop"))
+      const at2 = (path: string, resolve: string, answer: string, flags = "O_RDONLY", base = `3<${r}>`): string =>
+        `100 openat2(${base}, ${JSON.stringify(path)}, {flags=${flags}, resolve=${resolve}}, 24) = ${answer}`
+      const opened = (path: string): string => `4<${Path.join(r, path)}>`
+      const names = (stored: ReturnType<typeof made.rows>) => stored.reads.map((row) => row[0])
+      return { ...made, r, at2, opened, names }
+    }
+
+    it("walks the path as the kernel does, inside the directory it starts from", async () => {
+      const { at2, names, opened, record, root, rows, r } = await tree()
+      const stored = rows(record([
+        // `/x.txt` inside r is r/x.txt; `..` at r stays at r.
+        at2("/x.txt", "RESOLVE_IN_ROOT", opened("x.txt")),
+        at2("../../x.txt", "RESOLVE_IN_ROOT", opened("x.txt")),
+        // An absolute link leads from r; a relative one from where it is; `..` past r stays at r.
+        at2("abs", "RESOLVE_IN_ROOT|RESOLVE_NO_MAGICLINKS", opened("sub/y.txt"), "O_RDONLY|O_CLOEXEC"),
+        at2("rel", "RESOLVE_IN_ROOT", opened("sub/y.txt")),
+        at2("sub/up", "RESOLVE_IN_ROOT|RESOLVE_CACHED", opened("x.txt")),
+        // With no RESOLVE_IN_ROOT, an absolute path and an absolute link start from the machine's root.
+        at2(Path.join(root, "src", "b.txt"), "RESOLVE_NO_XDEV", `4<${root}/src/b.txt>`),
+        at2("far", "RESOLVE_NO_XDEV", `4<${root}/src/a.txt>`),
+        // Not followed at the end, a link is what the call opened.
+        at2("rel", "RESOLVE_IN_ROOT", opened("rel"), "O_RDONLY|O_NOFOLLOW|O_PATH")
+      ]))
+      expect(names(stored)).toEqual([
+        "r/abs",
+        "r/far",
+        "r/rel",
+        "r/sub",
+        "r/sub/up",
+        "r/sub/y.txt",
+        "r/x.txt",
+        "src/a.txt",
+        "src/b.txt"
+      ])
+      expect(stored.reads.find((row) => row[0] === "r/sub")).toEqual(["r/sub", "d"])
+      expect(ObservedReads.changed(stored, root)).toBeUndefined()
+      // What the walk read decides the file: the file itself, a link on the way, a directory made a link.
+      await Fs.writeFile(Path.join(r, "sub", "y.txt"), "bad!")
+      expect(ObservedReads.changed(stored, root)).toBe("r/sub/y.txt changed")
+      await Fs.writeFile(Path.join(r, "sub", "y.txt"), "ok")
+      await Fs.rm(Path.join(r, "abs"))
+      await Fs.symlink("/x.txt", Path.join(r, "abs"))
+      expect(ObservedReads.changed(stored, root)).toBe("r/abs changed")
+    })
+
+    it("notes what the walk read up to where the call failed", async () => {
+      const { at2, names, opened, record, rows } = await tree()
+      const failed = (error: string): string => `-1 ${error} (failed)`
+      expect(names(rows(record([
+        // RESOLVE_BENEATH: an absolute path, a `..` out of r, and an absolute link all end the walk.
+        at2("/x.txt", "RESOLVE_BENEATH", failed("EXDEV")),
+        at2("../x.txt", "RESOLVE_BENEATH", failed("EXDEV")),
+        at2("abs", "RESOLVE_BENEATH", failed("EXDEV")),
+        at2("sub/../x.txt", "RESOLVE_BENEATH", opened("x.txt")),
+        // RESOLVE_NO_SYMLINKS ends at the first link, and a link to itself at the kernel's limit.
+        at2("rel", "RESOLVE_NO_SYMLINKS", failed("ELOOP")),
+        at2("loop", "RESOLVE_IN_ROOT", failed("ELOOP")),
+        // A file is no directory to walk on from.
+        at2("x.txt/y", "RESOLVE_IN_ROOT", failed("ENOTDIR")),
+        // A name missing on the way, or at the end.
+        at2("none/y", "RESOLVE_IN_ROOT", failed("ENOENT")),
+        at2("gone.txt", "RESOLVE_IN_ROOT", failed("ENOENT"))
+      ])))).toEqual(["r/abs", "r/gone.txt", "r/loop", "r/none", "r/rel", "r/sub", "r/x.txt"])
+    })
+
+    it("counts what the call wrote as the run's own, and the names it walked by as read", async () => {
+      const { at2, names, opened, r, record, rows } = await tree()
+      await Fs.writeFile(Path.join(r, "sub", "made.txt"), "the run's")
+      await Fs.writeFile(Path.join(r, "sub", "kept.txt"), "the run's")
+      const stored = rows(record([
+        at2("sub/made.txt", "RESOLVE_IN_ROOT", opened("sub/made.txt"), "O_WRONLY|O_CREAT|O_EXCL"),
+        at2("sub/kept.txt", "RESOLVE_IN_ROOT", opened("sub/kept.txt"), "O_WRONLY|O_CREAT|O_TRUNC"),
+        at2("x.txt", "RESOLVE_IN_ROOT", opened("x.txt"), "O_RDWR"),
+        at2("sub/y.txt", "RESOLVE_IN_ROOT", opened("sub/y.txt"), "O_WRONLY"),
+        // A write the kernel refused wrote nothing; an unnamed file names no file.
+        at2("sub/no.txt", "RESOLVE_IN_ROOT", "-1 EACCES (Permission denied)", "O_WRONLY|O_CREAT"),
+        at2("sub", "RESOLVE_IN_ROOT", "4</nowhere/#1 (deleted)>", "O_RDWR|O_TMPFILE")
+      ]))
+      expect(names(stored)).toEqual(["r/sub", "r/x.txt"])
+      expect(stored.reads.find((row) => row[0] === "r/x.txt")).toHaveLength(3)
+    })
+
+    it("leaves out what a quiet process and an ignored directory walked", async () => {
+      const { at2, opened, r, root } = await tree()
+      const lines = [
+        `100 execve("/bin/tool", ["tool", "--quiet"], 0x0 /* 0 vars */) = 0`,
+        at2("x.txt", "RESOLVE_IN_ROOT", opened("x.txt")),
+        at2("sub/y.txt", "RESOLVE_IN_ROOT", opened("sub/y.txt")).replace(/^100/, "200")
+      ]
+      const quiet = ObservedReads.record(ObservedReads.read(() => lines, root, ["--quiet"]), {
+        root,
+        ignore: [Path.join(r, "sub")],
+        startedMs: Date.now() + 60_000
+      })
+      if ("refusal" in quiet) throw new Error(quiet.refusal)
+      expect(quiet.reads.map((row) => row[0]).filter((path) => path.startsWith("r"))).toEqual([])
+    })
+
+    it("stores nothing when the walk cannot be followed, or ends elsewhere than the call's answer", async () => {
+      const { at2, opened, record, r } = await tree()
+      const refusal = (line: string) => record([line])
+      expect(refusal(at2("x.txt", "RESOLVE_IN_ROOT|0x40", opened("x.txt")))).toEqual({
+        refusal: ObservedReads.cannotFollow("openat2 with 0x40")
+      })
+      expect(refusal(at2("self/cwd", "RESOLVE_IN_ROOT", "4</w>", "O_RDONLY", "3</proc>"))).toEqual({
+        refusal: ObservedReads.cannotFollow("openat2 with RESOLVE flags through /proc/self")
+      })
+      expect(refusal("100 openat2(3</r>, 0x7ffc, {flags=O_RDONLY, resolve=RESOLVE_IN_ROOT}, 24) = -1 EFAULT (Bad)"))
+        .toEqual({ refusal: "its trace holds a path that cannot be read: 0x7ffc" })
+      expect(refusal(at2("x.txt", "RESOLVE_IN_ROOT", "4", "O_RDONLY", "3"))).toEqual({
+        refusal: "its trace does not say which directory \"x.txt\" was read from"
+      })
+      expect(refusal(at2("x.txt", "RESOLVE_IN_ROOT", "4"))).toEqual({
+        refusal: "its trace does not say which file \"x.txt\" opened"
+      })
+      expect(refusal(at2("x.txt", "RESOLVE_IN_ROOT", opened("sub/y.txt")))).toEqual({
+        refusal: "its trace does not say where x.txt led"
+      })
+      expect(refusal(at2("../x.txt", "RESOLVE_BENEATH", opened("x.txt")))).toEqual({
+        refusal: "its trace does not say where ../x.txt led"
+      })
+      // A file the call opened and the run then removed was read, and is gone.
+      expect(refusal(at2("removed.txt", "RESOLVE_IN_ROOT", opened("removed.txt")))).toEqual({
+        refusal: "r/removed.txt was removed while it ran"
+      })
+      // With no RESOLVE flag, or none named, openat2 is an open; a line with no flags names none.
+      expect(record([at2(`${r}/x.txt`, "0", "4")])).not.toHaveProperty("refusal")
+      expect(record([`100 openat2(3<${r}>, "x.txt") = -1 EINVAL (Invalid argument)`])).not.toHaveProperty("refusal")
+      expect(record([`100 openat2(3<${r}>, "x.txt", {resolve=RESOLVE_IN_ROOT}, 24) = ${opened("x.txt")}`]))
+        .not.toHaveProperty("refusal")
+    })
+  })
+
+  describe("a renameat2 with flags", () => {
+    const rename = (root: string, from: string, to: string, flags: string, answer = "0"): string =>
+      `100 renameat2(AT_FDCWD<${root}>, ${JSON.stringify(from)}, AT_FDCWD<${root}>, ${
+        JSON.stringify(to)
+      }, ${flags}) = ${answer}`
+
+    it("reads both names RENAME_EXCHANGE swaps, and counts both as written", async () => {
+      const { record, root, rows } = await setup()
+      const stored = rows(record([
+        rename(root, "src/a.txt", "src/b.txt", "RENAME_EXCHANGE"),
+        open(root, "src/a.txt"),
+        rename(root, "src/a.txt", "src/b.txt", "RENAME_EXCHANGE")
+      ]))
+      expect(stored.reads.map((row) => row.slice(0, 1))).toEqual([["src/a.txt"], ["src/b.txt"]])
+      // What the run read under a.txt was b.txt's.
+      await Fs.writeFile(Path.join(root, "src", "b.txt"), "bad!")
+      expect(ObservedReads.changed(stored, root)).toBe("src/b.txt changed")
+      // A swap that failed found both names missing.
+      expect(rows(record([rename(root, "src/no", "src/none", "RENAME_EXCHANGE", "-1 ENOENT (No such file)")])).reads)
+        .toEqual([["src/no", "-"], ["src/none", "-"]])
+    })
+
+    it("stores nothing when RENAME_EXCHANGE swapped a directory, or a flag is unknown", async () => {
+      const { record, root } = await setup()
+      await Fs.mkdir(Path.join(root, "other"))
+      expect(record([rename(root, "src", "other", "RENAME_EXCHANGE")])).toEqual({
+        refusal: ObservedReads.cannotFollow("renameat2 with RENAME_EXCHANGE of a directory")
+      })
+      // A name gone by the end may have been a directory.
+      expect(record([rename(root, "src/a.txt", "src/gone", "RENAME_EXCHANGE")])).toEqual({
+        refusal: ObservedReads.cannotFollow("renameat2 with RENAME_EXCHANGE of a directory")
+      })
+      expect(record([rename(root, "/dev/shm/a", "src/b.txt", "RENAME_EXCHANGE")])).toEqual({
+        refusal: ObservedReads.cannotFollow("renameat2 with RENAME_EXCHANGE of a directory")
+      })
+      expect(record([rename(root, "src/a.txt", "src/b.txt", "RENAME_EXCHANGE|0x8")])).toEqual({
+        refusal: ObservedReads.cannotFollow("renameat2 with 0x8")
+      })
+    })
+
+    it("reads the name RENAME_NOREPLACE found there, and makes the one it did not", async () => {
+      const { record, root, rows } = await setup()
+      const stored = rows(record([
+        rename(root, "src/a.txt", "src/b.txt", "RENAME_NOREPLACE", "-1 EEXIST (File exists)"),
+        rename(root, "src/a.txt", "src/c.txt", "RENAME_NOREPLACE|RENAME_WHITEOUT"),
+        rename(root, "src/c.txt", "src/d.txt", "0"),
+        // A line with no flags moves as renameat does.
+        `100 renameat2(AT_FDCWD<${root}>, "src/d.txt", AT_FDCWD<${root}>, "src/e.txt") = 0`
+      ]))
+      expect(stored.reads.map((row) => row[0])).toEqual(["src/a.txt", "src/b.txt"])
+    })
+  })
+
   it("reads a path the run named under a mounted directory where that directory really is", async () => {
     // A run on a machine finds the machine's temporary directory at `/shared`: what it named there is the machine's.
     const { base, outside, root } = await setup()

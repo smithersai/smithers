@@ -568,6 +568,13 @@ export interface Trace {
    * call's own answer says it opened: the two are the same file only when the trace placed the descriptor right.
    */
   readonly reached?: ReadonlyArray<readonly [path: string, named: string, opened: string]> | undefined
+  /** Files a run opened with `openat2` and `RESOLVE_*` flags, in the order the calls began: see {@link Walk}. */
+  readonly walks?: ReadonlyArray<Walk> | undefined
+  /**
+   * Pairs of names a `renameat2` with `RENAME_EXCHANGE` swapped. Two files are followed exactly; two directories
+   * are not: a file read below one afterwards held what was below the other.
+   */
+  readonly exchanged?: ReadonlyArray<readonly [string, string]> | undefined
   /** The programs `smthrs-observe` saw the run start whose file asks for rights the run did not have. */
   readonly rights?: ReadonlyArray<string> | undefined
   /**
@@ -599,6 +606,66 @@ export interface Trace {
  * @since 1.0.0
  */
 export const notedSignalStops = 10_000
+
+/**
+ * A path a run opened with `openat2` and `RESOLVE_*` flags. The kernel walks
+ * such a path by other rules than an open's (`RESOLVE_IN_ROOT` keeps it inside
+ * the directory it starts from), so no path an open names can stand for it:
+ * {@link observe} walks it again by those rules, notes each directory and link
+ * on the way, and holds where the walk ended against `opened`.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export interface Walk {
+  /** The line the call began on. */
+  readonly at: number
+  /** The directory the walk starts from: the descriptor's, or the working directory. */
+  readonly start: string
+  /** The path as the call named it. */
+  readonly path: string
+  /** The call's `RESOLVE_*` flags. */
+  readonly resolve: ReadonlyArray<string>
+  /** Whether a link at the end of the path is followed (no `O_NOFOLLOW`). */
+  readonly follow: boolean
+  /** Whether the call reads the file the path ends at, and not only writes it. */
+  readonly reads: boolean
+  /** The file the call's answer says it opened, as the kernel names its descriptor; `undefined` when it failed. */
+  readonly opened: string | undefined
+}
+
+/**
+ * The `RESOLVE_*` flags of `openat2` a walk follows exactly. Any other is a way
+ * of reaching a file the recorder cannot follow.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const resolveFlags: ReadonlySet<string> = new Set([
+  "RESOLVE_NO_XDEV",
+  "RESOLVE_NO_MAGICLINKS",
+  "RESOLVE_NO_SYMLINKS",
+  "RESOLVE_BENEATH",
+  "RESOLVE_IN_ROOT",
+  "RESOLVE_CACHED"
+])
+
+/**
+ * The flags of `renameat2` the reader follows exactly.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const renameFlags: ReadonlySet<string> = new Set(["RENAME_NOREPLACE", "RENAME_EXCHANGE", "RENAME_WHITEOUT"])
+
+/**
+ * Why a run stores nothing when it reached a file in a way the recorder does
+ * not follow exactly: `form` names the call, and the flag or form of it.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const cannotFollow = (form: string): string => `it reached a file in a way the recorder cannot follow: ${form}`
 
 /** Decodes a quoted string as the tracer prints it; `undefined` when it is cut short or malformed. */
 const unquote = (text: string): string | undefined => {
@@ -1280,6 +1347,9 @@ export const read = (
   const reachedThrough: Array<readonly [path: string, named: string, opened: string]> = []
   const rights = new Set<string>()
   let signalStops = 0
+  const walks: Array<Walk> = []
+  /** Pairs of names a `RENAME_EXCHANGE` swapped. */
+  const exchanged: Array<readonly [string, string]> = []
 
   /**
    * A path as the process that named it found it: through a link the kernel makes for a process
@@ -1444,11 +1514,65 @@ export const read = (
       if (path !== undefined && ok) build(path)
     }
 
+    /**
+     * An `openat2` with `RESOLVE_*` flags: its path is walked again by the kernel's rules once the run is over
+     * ({@link Walk}). What it wrote is the file its answer names.
+     */
+    const walkOpen = (how: string, resolve: string): void => {
+      const flags = /flags=([^,}]*)/.exec(how)?.[1] ?? ""
+      const bits = resolve.split("|").map((bit) => bit.trim())
+      const unknown = bits.find((bit) => !resolveFlags.has(bit))
+      if (unknown !== undefined) {
+        refusals.add(cannotFollow(`openat2 with ${unknown}`))
+        return
+      }
+      // The flags come after the path, so the line names one.
+      const text = unquote(args[1]!)
+      if (text === undefined) {
+        refusals.add(`its trace holds a path that cannot be read: ${args[1]!.slice(0, 80)}`)
+        return
+      }
+      const start = baseOf(args[0])
+      // A path from `/` that the call does not hold inside its directory starts where any absolute path does.
+      const from = text.startsWith("/") && !bits.includes("RESOLVE_IN_ROOT") ? "/" : start
+      if (from === undefined) {
+        refusals.add(`its trace does not say which directory ${JSON.stringify(text)} was read from`)
+        return
+      }
+      const opened = ok ? decorated.exec(result)?.[2] : undefined
+      if (ok && opened === undefined) {
+        refusals.add(`its trace does not say which file ${JSON.stringify(text)} opened`)
+        return
+      }
+      const creates = /O_CREAT/.test(flags)
+      // An unnamed file is made in the directory the path names, and nothing is read or written by name.
+      const unnamed = /O_TMPFILE/.test(flags)
+      const how_ = creates && /O_EXCL/.test(flags) ? "made" : /O_TRUNC/.test(flags) ? "emptied" : undefined
+      const writes = !unnamed && (how_ !== undefined || /O_WRONLY|O_RDWR/.test(flags))
+      const reads = !unnamed && how_ === undefined && !/O_WRONLY/.test(flags)
+      if (!hushed.has(pid)) {
+        const follow = !/O_NOFOLLOW/.test(flags)
+        // An unnamed file's descriptor names no path the walk could end at.
+        walks.push({
+          at: entered,
+          start: from,
+          path: text,
+          resolve: bits,
+          follow,
+          reads,
+          opened: unnamed ? undefined : opened
+        })
+      }
+      if (writes && opened !== undefined) wrote(spelled(opened), how_ ?? "changed", creates)
+    }
+
     switch (name) {
       case "open":
       case "openat":
       case "openat2":
       case "creat": {
+        const resolve = name === "openat2" ? /resolve=([^,}]*)/.exec(args[2] ?? "")?.[1]?.trim() : undefined
+        if (resolve !== undefined && resolve !== "0") return walkOpen(args[2]!, resolve)
         const at2 = name === "openat" || name === "openat2"
         const path = pathOf(args[at2 ? 1 : 0], at2 ? baseOf(args[0]) : cell.path)
         const flags = name === "creat" ? "O_WRONLY|O_CREAT|O_TRUNC" : args[at2 ? 2 : 1] ?? ""
@@ -1596,12 +1720,33 @@ export const read = (
       case "linkat": {
         const from = pathOf(args[1], baseOf(args[0]))
         const to = pathOf(args[3], baseOf(args[2]))
+        const flags = name === "renameat2"
+          ? (args[4] ?? "0").split("|").map((flag) => flag.trim()).filter((flag) => flag !== "0")
+          : []
+        const unknown = flags.find((flag) => !renameFlags.has(flag))
+        if (unknown !== undefined) {
+          refusals.add(cannotFollow(`renameat2 with ${unknown}`))
+          return
+        }
         looked(from)
+        if (flags.includes("RENAME_EXCHANGE")) {
+          // Each name now holds what the other held: both were read, both are written, and neither is gone.
+          looked(to)
+          if (!ok || from === undefined || to === undefined) return
+          for (const path of [from, to]) {
+            write(path)
+            unbuilt(path)
+          }
+          exchanged.push([from, to])
+          return
+        }
+        // A name there already stops the call: the run found it.
+        if (flags.includes("RENAME_NOREPLACE") && errno === "EEXIST") return looked(to)
         if (name === "linkat") {
           if (from !== undefined && ok) write(from)
         } else wrote(from, "changed")
         if (to !== undefined && ok) unbuilt(to)
-        wrote(to, "made", false, name === "linkat")
+        wrote(to, "made", false, name === "linkat" || flags.includes("RENAME_NOREPLACE"))
         if (name !== "linkat" && to !== undefined && ok) notPlain.add(to)
         if (name !== "linkat" && to !== undefined) plainMade.delete(to)
         if (name !== "linkat" && ok && from !== undefined && to !== undefined && from !== to) carry(from, to, at)
@@ -1835,6 +1980,8 @@ export const read = (
     refusals: [...refusals],
     outside: [...outside],
     ...(reachedThrough.length === 0 ? {} : { reached: reachedThrough }),
+    ...(walks.length === 0 ? {} : { walks }),
+    ...(exchanged.length === 0 ? {} : { exchanged }),
     ...(supervised ? { rights: [...rights] } : {}),
     ...(signalStops === 0 ? {} : { signalStops }),
     bound: listened,
@@ -2923,9 +3070,78 @@ export const observe = (
     const slash = raw.lastIndexOf("/")
     return slash > 0 && trace.built?.has(raw.slice(0, slash)) === true
   }
+  /**
+   * Walks the path of an `openat2` with `RESOLVE_*` flags as the kernel walks it, and notes what the walk read:
+   * each directory and link on the way below where it starts, and the file it ends at, or the first name it found
+   * missing. `RESOLVE_IN_ROOT` holds the walk inside its start: `..` there stays there, and a link's absolute
+   * target starts from there. `RESOLVE_BENEATH` ends the walk where it would leave its start, and
+   * `RESOLVE_NO_SYMLINKS` at the first link: the call failed there. The other flags only make a call fail where an
+   * open would not, so the walk goes on as an open's, and notes at most more than the call read. Under the first two,
+   * a directory on the way is noted too: put a link there, and an open of the same path leads elsewhere than this
+   * walk does.
+   * Answers the path the walk ended at, which the call's answer must name.
+   */
+  const walkResolved = (walk: Walk): string | undefined => {
+    const inRoot = walk.resolve.includes("RESOLVE_IN_ROOT")
+    const beneath = walk.resolve.includes("RESOLVE_BENEATH")
+    const noLinks = walk.resolve.includes("RESOLVE_NO_SYMLINKS")
+    const start = spelled(walk.start)
+    const note = (path: string, how: "found" | "missing"): void => {
+      const host = placed(path)
+      if (visible(host)) touch(host, how)
+    }
+    if (walk.path.startsWith("/") && beneath) return undefined
+    let current = walk.path.startsWith("/") && !inRoot ? "/" : start
+    let depth = 0
+    let links = 0
+    const queue = walk.path.split("/").filter((part) => part !== "" && part !== ".")
+    while (queue.length > 0) {
+      const part = queue.shift()!
+      const last = queue.length === 0
+      if (part === "..") {
+        if (inRoot && current === start) continue
+        if (beneath && depth === 0) return undefined
+        current = NodePath.posix.dirname(current)
+        depth -= 1
+        continue
+      }
+      const candidate = current === "/" ? `/${part}` : `${current}/${part}`
+      if (pseudo(candidate)) {
+        refusal ??= cannotFollow(`openat2 with RESOLVE flags through ${candidate}`)
+        return undefined
+      }
+      const kind = kindOf(placed(candidate))
+      if (kind === undefined) {
+        // A file the call opened and the run then removed was found, and the record says it was removed.
+        if (!last || walk.reads) note(candidate, last && walk.opened !== undefined ? "found" : "missing")
+        return candidate
+      }
+      if (kind.link !== undefined && (!last || walk.follow)) {
+        note(candidate, "found")
+        links += 1
+        if (noLinks || links > maximumLinks) return undefined
+        if (kind.link.startsWith("/")) {
+          if (beneath) return undefined
+          current = inRoot ? start : "/"
+          depth = 0
+        }
+        queue.unshift(...kind.link.split("/").filter((part) => part !== "" && part !== "."))
+        continue
+      }
+      // A directory on the way decides the walk only where the walk keeps to its start: elsewhere a link put there
+      // leads where an open of the same path leads.
+      if (last ? walk.reads : beneath || inRoot || !kind.directory) note(candidate, "found")
+      if (!last && !kind.directory) return undefined
+      current = candidate
+      depth += 1
+    }
+    return current
+  }
+
   const events: Array<
-    readonly [at: number, kind: "found" | "missing" | "made" | "emptied" | "listed", path: string]
+    readonly [at: number, kind: "found" | "missing" | "made" | "emptied" | "listed" | "walk", path: string]
   > = []
+  for (const [index, walk] of (trace.walks ?? []).entries()) events.push([walk.at, "walk", String(index)])
   // What the run found of its own after it made it is its own already.
   for (const [path, at] of trace.found) {
     if (!(ownName(path) && trace.made.get(path)! < at)) events.push([at, "found", path])
@@ -2948,6 +3164,15 @@ export const observe = (
   }
   events.sort((left, right) => left[0] - right[0])
   for (const [, kind, raw] of events) {
+    if (kind === "walk") {
+      const walk = trace.walks![Number(raw)]!
+      const ended = walkResolved(walk)
+      // The kernel names the file the call opened: a walk that ended elsewhere did not see the run's file system.
+      if (walk.opened !== undefined && (ended === undefined || placed(ended) !== placed(spelled(walk.opened)))) {
+        refusal ??= `its trace does not say where ${walk.path} led`
+      }
+      continue
+    }
     if (pseudo(raw)) continue
     // What a run made or found missing is the name itself: a link put there since leads somewhere the run never looked.
     const path = kind === "made" || kind === "missing" ? named(raw) : resolve(raw)
@@ -2988,6 +3213,14 @@ export const observe = (
     let names = own.get(parent)
     if (names === undefined) own.set(parent, names = new Set())
     names.add(slash > 0 ? path.slice(slash + 1) : NodePath.posix.basename(path))
+  }
+  // Two directories swapped swap all below them: a file read below one afterwards held what was below the other.
+  // A name gone by the end may have been either.
+  for (const pair of trace.exchanged ?? []) {
+    const kinds = pair.map((path) => pseudo(path) ? undefined : kindOf(placed(path)))
+    if (kinds.some((kind) => kind === undefined || kind.directory)) {
+      refusal ??= cannotFollow("renameat2 with RENAME_EXCHANGE of a directory")
+    }
   }
   // A file a call opened below a descriptor is the one its answer names, or the trace placed the descriptor wrong.
   for (const [path, named, opened] of trace.reached ?? []) {

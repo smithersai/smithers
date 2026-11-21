@@ -1653,6 +1653,181 @@ static void startedYet(pid_t tid, pid_t tgid) {
   free(s);
 }
 
+/* ---- openat2 with RESOLVE_* flags --------------------------------------------------------------------------- */
+
+#ifndef RESOLVE_NO_XDEV
+#define RESOLVE_NO_XDEV 0x01
+#define RESOLVE_NO_MAGICLINKS 0x02
+#define RESOLVE_NO_SYMLINKS 0x04
+#define RESOLVE_BENEATH 0x08
+#define RESOLVE_IN_ROOT 0x10
+#define RESOLVE_CACHED 0x20
+#endif
+/* The flags a reader walks exactly (ObservedReads.resolveFlags). */
+#define RESOLVE_FOLLOWED \
+  (RESOLVE_NO_XDEV | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS | RESOLVE_BENEATH | RESOLVE_IN_ROOT | RESOLVE_CACHED)
+
+/* The first fields of `struct open_how`, which every openat2 passes. */
+struct how {
+  uint64_t flags, mode, resolve;
+};
+
+static void resolveNames(struct text *t, uint64_t resolve) {
+  static const struct {
+    uint64_t bit;
+    const char *name;
+  } names[] = {{RESOLVE_NO_XDEV, "RESOLVE_NO_XDEV"},         {RESOLVE_NO_MAGICLINKS, "RESOLVE_NO_MAGICLINKS"},
+               {RESOLVE_NO_SYMLINKS, "RESOLVE_NO_SYMLINKS"}, {RESOLVE_BENEATH, "RESOLVE_BENEATH"},
+               {RESOLVE_IN_ROOT, "RESOLVE_IN_ROOT"},         {RESOLVE_CACHED, "RESOLVE_CACHED"}};
+  int first = 1;
+  for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+    if (!(resolve & names[i].bit)) continue;
+    if (!first) puts_(t, "|");
+    puts_(t, names[i].name);
+    first = 0;
+  }
+}
+
+/* What a descriptor of this program names, as the kernel names it. 0 when it names no path. */
+static int nameOf(int fd, char *out, size_t capacity) {
+  char link[64];
+  snprintf(link, sizeof link, "/proc/self/fd/%d", fd);
+  ssize_t n = readlink(link, out, capacity - 1);
+  if (n <= 0) return 0;
+  out[n] = 0;
+  return out[0] == '/' && !(n > 10 && strcmp(out + n - 10, " (deleted)") == 0);
+}
+
+/*
+ * An openat2 with RESOLVE_* flags walks its path by other rules than an open's: RESOLVE_IN_ROOT holds the walk inside
+ * the directory it starts from, so `/x.txt` from `data` is `data/x.txt`. No path made absolute stands for that, so
+ * the line is written as strace writes it: the directory with its descriptor, the path as the call named it, the
+ * flags, and as its answer the file the kernel opens, which a reader holds its own walk against. That answer is the
+ * kernel's own: this program asks the same question at the stop, from the same directory (opened through
+ * `/proc/<thread>/fd/<n>`), with O_PATH, which opens no file and blocks on none, and the descriptor it gets names the
+ * file. A file the call makes is named by its directory, asked the same way. Answers 1 when the line is kept.
+ */
+static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp_notif *req, const struct how *how,
+                        struct text *t, const char **why) {
+  if (how->resolve & ~(uint64_t)RESOLVE_FOLLOWED) {
+    char reason[128];
+    snprintf(reason, sizeof reason, "it reached a file in a way the recorder cannot follow: openat2 with 0x%llx",
+             (unsigned long long)(how->resolve & ~(uint64_t)RESOLVE_FOLLOWED));
+    unrecorded(reason);
+    return 1;
+  }
+  char given[PATH_MAX + 1], base[PATH_MAX + 1], opened[PATH_MAX + 1], link[64];
+  if (!stringAt(tid, req->data.args[1], given, sizeof given)) {
+    *why = "address";
+    return 0;
+  }
+  int dirfd = (int)req->data.args[0];
+  if (dirfd == AT_FDCWD)
+    snprintf(link, sizeof link, "/proc/%d/cwd", tid);
+  else
+    snprintf(link, sizeof link, "/proc/%d/fd/%d", tid, dirfd);
+  int from = open(link, O_PATH | O_CLOEXEC);
+  if (from < 0 || !placeOf(tid, dirfd, base, sizeof base) || base[0] != '/') {
+    if (from >= 0) close(from);
+    *why = "base";
+    return 0;
+  }
+  struct how ours = {O_PATH | O_CLOEXEC | (how->flags & (O_NOFOLLOW | O_DIRECTORY)), 0,
+                     how->resolve & ~(uint64_t)RESOLVE_CACHED};
+  int error = 0, directory = 0;
+  int fd = (int)syscall(SYS_openat2, from, given, &ours, sizeof ours);
+  if (fd >= 0) {
+    struct stat st;
+    if (!nameOf(fd, opened, sizeof opened) || fstat(fd, &st) != 0) {
+      close(fd);
+      close(from);
+      unrecorded("it reached a file in a way the recorder cannot follow: openat2 of a file with no name");
+      return 1;
+    }
+    close(fd);
+    directory = S_ISDIR(st.st_mode);
+    int writing = (how->flags & O_ACCMODE) != O_RDONLY || (how->flags & O_CREAT);
+    if ((how->flags & (O_CREAT | O_EXCL)) == (O_CREAT | O_EXCL))
+      error = EEXIST;
+    else if (S_ISLNK(st.st_mode) && !(how->flags & O_PATH))
+      error = ELOOP; /* O_NOFOLLOW at a link */
+    else if (directory && writing && (how->flags & O_TMPFILE) != O_TMPFILE)
+      error = EISDIR;
+  } else {
+    error = errno;
+    if (error == ENOENT && (how->flags & O_CREAT) && (how->flags & O_TMPFILE) != O_TMPFILE) {
+      /* Nothing there: the call makes it in its directory, when that is there. */
+      char parent[PATH_MAX + 1];
+      snprintf(parent, sizeof parent, "%s", given);
+      char *slash = strrchr(parent, '/');
+      const char *name = slash == NULL ? parent : slash + 1;
+      if (slash == NULL)
+        snprintf(parent, sizeof parent, ".");
+      else if (slash == parent)
+        parent[1] = 0;
+      else
+        *slash = 0;
+      char made[NAME_MAX + 1];
+      snprintf(made, sizeof made, "%s", name);
+      struct how up = {O_PATH | O_CLOEXEC | O_DIRECTORY, 0, ours.resolve};
+      int dir = made[0] == 0 ? -1 : (int)syscall(SYS_openat2, from, parent, &up, sizeof up);
+      if (made[0] == 0) {
+        error = EISDIR;
+      } else if (dir < 0) {
+        error = errno;
+      } else {
+        struct stat st;
+        if (fstatat(dir, made, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+          /* A link that leads nowhere: the call makes the file it names, by the rules of the walk. */
+          close(dir);
+          close(from);
+          unrecorded("it reached a file in a way the recorder cannot follow: openat2 to make a file through a link");
+          return 1;
+        }
+        char place[PATH_MAX + 1];
+        /* A directory with no name was removed: nothing is made in it. */
+        if (!nameOf(dir, place, sizeof place))
+          error = ENOENT;
+        else if (strlen(place) + 1 + strlen(made) >= sizeof opened)
+          error = ENAMETOOLONG;
+        else
+          snprintf(opened, sizeof opened, "%s/%s", strcmp(place, "/") == 0 ? "" : place, made);
+        close(dir);
+      }
+    }
+  }
+  close(from);
+  begin(t, tgid, "openat2");
+  if (dirfd == AT_FDCWD)
+    puts_(t, "AT_FDCWD<");
+  else
+    printf_(t, "%d<", dirfd);
+  puts_(t, base);
+  puts_(t, ">, ");
+  quotedz(t, given);
+  puts_(t, ", {flags=");
+  openFlags(t, how->flags);
+  puts_(t, ", resolve=");
+  resolveNames(t, how->resolve);
+  puts_(t, "}, 24)");
+  if (error != 0) {
+    answer(t, error);
+    keep(id, 2, t);
+    return 1;
+  }
+  printf_(t, " = 0<%s>", opened);
+  keep(id, 2, t);
+  if (directory && (how->flags & (O_ACCMODE | O_CREAT | O_TMPFILE | O_PATH)) == O_RDONLY) {
+    /* A directory opened is a directory listed, as an open's is. */
+    struct text listed = {0};
+    printf_(&listed, "%d getdents64(0<", tgid);
+    puts_(&listed, opened);
+    puts_(&listed, ">, {...}, 32768) = 0");
+    keep(id, 3, &listed);
+  }
+  return 1;
+}
+
 static void serve(const struct seccomp_notif *req) {
   pid_t tid = (pid_t)req->pid;
   uint64_t id = req->id;
@@ -1687,9 +1862,18 @@ static void serve(const struct seccomp_notif *req) {
       } else {
         flags = O_WRONLY | O_CREAT | O_TRUNC; /* creat */
       }
+      int reading = (flags & (O_ACCMODE | O_CREAT | O_TRUNC | O_TMPFILE)) == O_RDONLY;
+      if (c->nr == SYS_openat2) {
+        struct how how = {0, 0, 0};
+        if (req->data.args[3] < sizeof how || !bytesAt(tid, req->data.args[2], &how, sizeof how)) break;
+        if (how.resolve != 0) {
+          if (!reading) __atomic_add_fetch(&namesChanged, 1, __ATOMIC_ACQ_REL);
+          if (resolvedOpen(tid, tgid, id, req, &how, &t, &why)) return;
+          break;
+        }
+      }
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
       int error, directory = 0, missing = 0;
-      int reading = (flags & (O_ACCMODE | O_CREAT | O_TRUNC | O_TMPFILE)) == O_RDONLY;
       if (!reading) __atomic_add_fetch(&namesChanged, 1, __ATOMIC_ACQ_REL);
       if ((flags & O_TMPFILE) == O_TMPFILE) {
         /* An unnamed file in a directory: the directory is looked at, and no name is made. */
@@ -1877,19 +2061,43 @@ static void serve(const struct seccomp_notif *req) {
     case K_LINK: {
       if (!pathOf(tid, req, c->dir, c->path, path, sizeof path, &why)) break;
       if (!pathOf(tid, req, c->dir2, c->path2, other, sizeof other, &why)) break;
+      /* RENAME_NOREPLACE (1) fails where the new name is there; RENAME_EXCHANGE (2) swaps two names that are both
+       * there; RENAME_WHITEOUT (4) moves as a rename does. The line names them, as strace does. */
+      uint64_t renaming = c->nr == SYS_renameat2 ? req->data.args[(int)c->flags] : 0;
+      if (renaming & ~(uint64_t)7) {
+        char reason[128];
+        snprintf(reason, sizeof reason, "it reached a file in a way the recorder cannot follow: renameat2 with 0x%llx",
+                 (unsigned long long)(renaming & ~(uint64_t)7));
+        unrecorded(reason);
+        return;
+      }
       int moving = 0, from = lookKind(path, 1, &moving), to = look(other, 1);
       /* A name that is there already is one the run found, whatever the call does to it. */
       if (to == 0 && !pseudo(other)) found(tgid, id, 0, other);
-      int error = from != 0 ? from : (c->kind == K_LINK && to == 0) ? EEXIST
-        : to != ENOENT ? 0
-        : c->kind == K_LINK ? parentThere(other, 0, ENOENT)
-        : parentThere(other, moving, ENOTDIR);
+      int error = from != 0                                   ? from
+                : (renaming & 2)                              ? (to == 0 ? 0 : to)
+                : ((c->kind == K_LINK || (renaming & 1)) && to == 0) ? EEXIST
+                : to != ENOENT                                ? 0
+                : c->kind == K_LINK                           ? parentThere(other, 0, ENOENT)
+                                                              : parentThere(other, moving, ENOTDIR);
       begin(&t, tgid, c->kind == K_RENAME ? "renameat2" : "linkat");
       puts_(&t, "AT_FDCWD, ");
       quotedz(&t, path);
       puts_(&t, ", AT_FDCWD, ");
       quotedz(&t, other);
-      puts_(&t, ", 0)");
+      if (renaming == 0) {
+        puts_(&t, ", 0)");
+      } else {
+        static const char *names[] = {"RENAME_NOREPLACE", "RENAME_EXCHANGE", "RENAME_WHITEOUT"};
+        puts_(&t, ", ");
+        for (int bit = 0, first = 1; bit < 3; bit++) {
+          if (!(renaming & (1u << bit))) continue;
+          if (!first) puts_(&t, "|");
+          puts_(&t, names[bit]);
+          first = 0;
+        }
+        puts_(&t, ")");
+      }
       answerMaking(&t, error, from == 0 && to == ENOENT, other, &made, &madeAt);
       break;
     }

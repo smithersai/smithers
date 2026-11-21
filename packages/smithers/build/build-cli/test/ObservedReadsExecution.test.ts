@@ -24,6 +24,7 @@ import * as ObservedReads from "../src/internal/ObservedReads.ts"
 import { executeEffect, ExecutionServices, executionServicesLive } from "../src/internal/PackageRunner.ts"
 import { plan } from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
+import * as KernelProbe from "./helpers/KernelProbe.ts"
 import { signalling, survivedTimer, ticking } from "./helpers/SignalStorm.ts"
 
 const temporary: Array<string> = []
@@ -67,6 +68,8 @@ const check = [
 
 interface FixtureOptions {
   readonly check?: string
+  /** Paths the check declares as files of the workspace apart from: none unless given. */
+  readonly exclude?: ReadonlyArray<string>
   readonly observe?: boolean | { readonly ignore?: ReadonlyArray<string>; readonly quiet?: ReadonlyArray<string> }
 }
 
@@ -84,7 +87,10 @@ const fixture = async (settings: FixtureOptions = {}) => {
   await write("tests/a.test", "a\n")
   await write("docs/readme.md", "nothing reads this\n")
   await write("volatile.txt", "1\n")
-  const declared = { sandbox: "none" as const, data: [S.glob("**")] }
+  const declared = {
+    sandbox: "none" as const,
+    data: [settings.exclude === undefined ? S.glob("**") : S.glob("**", { exclude: settings.exclude })]
+  }
   // A step that always runs before the test, as an install does.
   const setup = S.Shell.Build({
     shell: "mkdir -p .flows/ci && : > .flows/ci/setup",
@@ -1609,6 +1615,80 @@ describe("a job of observed steps", () => {
     expect((await packing.run())["install"]).toBe("ran")
     expect(packing.reasons["install"]).toBe(".git/HEAD changed")
   })
+})
+
+describe("a step that reaches a file by other rules than an open's", () => {
+  /** Each recorder this host has: strace, and smthrs-observe where the package holds one that runs here. */
+  const recorders = (): ReadonlyArray<readonly [string, ExecutionServices]> => {
+    const supervisor = ObservedReads.supervisorPath(process.platform, process.arch, {
+      SMTHRS_OBSERVE_WITH: "smthrs-observe"
+    })
+    return [
+      ["strace", { ...executionServicesLive, observer: () => host }],
+      ...(supervisor === undefined ? [] : [
+        [
+          "smthrs-observe",
+          { ...executionServicesLive, observer: () => ({ tracer: supervisor, supervisor: true as const }) }
+        ] as const
+      ])
+    ]
+  }
+  const probe = async (way: string) => {
+    // The link to `/sub/y.txt` that `in-root-link` leaves is the step's own, not a file the check declares: a
+    // declared link must lead inside the workspace by itself.
+    const made = await fixture({ check: `python3 probe.py ${way}`, exclude: ["data/root/abs"] })
+    await made.write("probe.py", KernelProbe.program)
+    for (const [path, text] of KernelProbe.files) {
+      if (!text.startsWith("-> ")) await made.write(path, text)
+      else {
+        await Fs.mkdir(Path.dirname(Path.join(made.root, path)), { recursive: true })
+        await Fs.symlink(text.slice(3), Path.join(made.root, path))
+      }
+    }
+    const change = async (): Promise<void> => {
+      const [path, text] = KernelProbe.changes[way]!
+      if (text === undefined) await Fs.rm(Path.join(made.root, path))
+      else await made.write(path, text)
+    }
+    return { ...made, change }
+  }
+
+  // openat2 with RESOLVE_IN_ROOT is how filepath-securejoin and libpathrs (runc, containerd, podman) open a file
+  // inside a container's root. smthrs-observe wrote `/x.txt` for data/root's `/x.txt`, the machine's root, and the
+  // reader of strace's line did too; a RENAME_EXCHANGE was read as a move, so the name moved onto counted as the
+  // run's own. Each step was answered from the cache at the commit that changed what it read.
+  tracedIt.each([
+    "in-root",
+    "in-root-up",
+    "in-root-link",
+    "in-root-committed-link",
+    "beneath",
+    "no-symlinks",
+    "exchange",
+    "no-replace"
+  ])("%s: is reused while what it read holds, and runs again when that changes", async (way) => {
+    for (const [recorder, services] of recorders()) {
+      const { change, logs, run } = await probe(way)
+      const refused = () => logs.filter((line) => line.includes("not cached"))
+      expect([recorder, await run(["check"], services), refused()]).toEqual([recorder, { check: "ran" }, []])
+      expect([recorder, await run(["check"], services)]).toEqual([recorder, { check: "hit" }])
+      await change()
+      expect([recorder, await run(["check"], services)]).toEqual([recorder, { check: "failed" }])
+    }
+  }, 120_000)
+
+  tracedIt("stores nothing, and says why, when it swaps two directories", async () => {
+    for (const [recorder, services] of recorders()) {
+      const { change, logs, run } = await probe("exchange-directories")
+      expect([recorder, await run(["check"], services)]).toEqual([recorder, { check: "ran" }])
+      expect(logs).toContain(
+        `//:check  not cached: ${ObservedReads.cannotFollow("renameat2 with RENAME_EXCHANGE of a directory")}`
+      )
+      expect([recorder, await run(["check"], services)]).toEqual([recorder, { check: "ran" }])
+      await change()
+      expect([recorder, await run(["check"], services)]).toEqual([recorder, { check: "failed" }])
+    }
+  }, 120_000)
 })
 
 describe("a host that cannot observe a run", () => {

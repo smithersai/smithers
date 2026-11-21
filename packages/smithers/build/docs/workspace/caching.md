@@ -707,6 +707,7 @@ all be known, and says why on its own line:
 | `it opened a network connection (uv to 151.101.0.223 port 443)`            | What a network answers is in no record. The line names the program and the first address         |
 | `it reached a program outside the run ...`                                 | A daemon reads files this run's trace does not show. A server the run starts itself is in it     |
 | `it changed its view of the file system`                                   | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says              |
+| `it reached a file in a way the recorder cannot follow: <call>`           | The call, or a flag or form of it, names a file no record can hold exactly. The line names it    |
 | `<path> changed while it ran`, `was removed while it ran`                  | Something else wrote a file the run read, so what the run saw can no longer be measured          |
 | `its trace ...`                                                            | A line of the trace could not be read in full                                                    |
 | `its trace does not say where /proc/self/fd/3/x led`                       | With strace, a path below a descriptor is followed only for a call that opened a file there      |
