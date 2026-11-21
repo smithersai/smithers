@@ -1,0 +1,197 @@
+/**
+ * Keeps a replay from filling the disk. A job of a large repository can hold
+ * tens of gigabytes in its machine, and a replay runs several at once: a full
+ * disk in the middle of a run fails every program on the machine, not only
+ * the replay. So the replay reads the free space of the disk that holds its
+ * folder while it runs. Under a floor it starts no new job until running
+ * ones end and their machines are gone; under half the floor it ends what
+ * runs. When space does not come back, the replay ends with one line that
+ * says what it held.
+ *
+ * @since 0.1.0
+ */
+
+import type { Failure } from "../contract/Parts.ts"
+import { gigabyte, heldUnder, sizeOf, type Space, spaceOf } from "./DiskSpace.ts"
+import { failure } from "./Summary.ts"
+
+/**
+ * The least free space a replay leaves on the disk that holds its folder:
+ * 5 GB, or 2% of the disk when that is more. A machine needs room beside the
+ * replay for its own programs to keep working.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const floorBytes = 5 * gigabyte
+
+/**
+ * The share of the disk a replay leaves free when it is more than
+ * {@link floorBytes}.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const floorShare = 0.02
+
+/**
+ * The free space a replay leaves on a disk of `total` bytes.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const floorOf = (total: number): number => Math.max(floorBytes, total * floorShare)
+
+/**
+ * How often the free space is read while a replay runs.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const defaultDiskTick: Duration.Input = "2 seconds"
+
+/**
+ * The disk as a replay reads it: `space` gives the free space and the size of
+ * the file system that holds a path, or `undefined` where the machine does
+ * not say, and `held` the bytes the files under a path take on it.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export service DiskSpace {
+  readonly space: (path: string) => (Space | undefined)!!
+  readonly held: (path: string) => number!!
+  static readonly defaultValue = () => ({
+    effect space(path: string) {
+      return tryPromise(() => spaceOf(path)) catch () => undefined
+    },
+    // Reading a tree never fails: what cannot be read holds nothing.
+    effect held(path: string) {
+      return try promise(() => heldUnder(path))
+    }
+  })
+}
+
+/**
+ * The line a replay ends with when the disk would fill.
+ *
+ * @category rendering
+ * @since 0.1.0
+ */
+export const stoppedLine = (folder: string, free: number, floor: number, held: number, machines: number): string =>
+  `the replay stopped before the disk filled: the disk that holds ${folder} has ${sizeOf(free)} free, under the ` +
+  `${sizeOf(floor)} a replay leaves free (5 GB, or 2% of the disk when that is more); the replay held ` +
+  `${sizeOf(held)} there, ${sizeOf(machines)} of it in its jobs' machines. Run it with fewer jobs at once ` +
+  `(--jobs) or with more free space`
+
+/**
+ * What a replay says while a job waits for disk space.
+ *
+ * @category rendering
+ * @since 0.1.0
+ */
+export const waitingLine = (free: number, floor: number): string =>
+  `waiting for disk space: ${sizeOf(free)} free, under the ${sizeOf(floor)} a replay leaves free; ` +
+  `no job starts until a running one ends`
+
+/**
+ * The disk under watch while a replay runs. `admit` waits until a job may
+ * start and counts it as running until `release`; it gives false when the
+ * replay must stop instead, after `leftBehind` removed what finished jobs
+ * left, which is all of it once no job runs. `ended` ends when the replay must
+ * stop now: free space fell under half the floor, or a job could not start.
+ * It and `admit` then fail with the line the replay ends with, which
+ * `stopped` gives. `most` is the most disk the replay held at once: how far
+ * the free space fell below what it was when the replay started, or
+ * `undefined` where the machine does not say how much is free.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface DiskWatch {
+  readonly admit: (leftBehind: void!!) => void!Failure
+  readonly release: void!!
+  readonly ended: never!Failure
+  readonly stopped: (string | undefined)!!
+  readonly most: (number | undefined)!!
+}
+
+/**
+ * A watch of the disk that holds `folder`, the replay's folder, whose jobs'
+ * machines are under `machines`. It reads the free space every `tick` until
+ * its scope closes, and says `waitingLine` through `say` when a job waits.
+ * Where the machine does not say how much is free, nothing waits or stops.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function diskWatch(
+  folder: string,
+  machines: string,
+  say: (line: string) => void!!,
+  tick: Duration.Input = defaultDiskTick
+) {
+  const disk = try DiskSpace
+  const done = try Deferred.make<string>()
+  const first = try disk.space(folder)
+  const floor = first === undefined ? 0 : floorOf(first.total)
+  let free = first?.free ?? 0
+  let most = 0
+  let running = 0
+  let waiting = false
+  let stopped: string | undefined = undefined
+  effect function read() {
+    const now = try disk.space(folder)
+    if (first === undefined || now === undefined) return
+    free = now.free
+    most = Math.max(most, first.free - now.free)
+  }
+  // The first line stands: a job and the watch may both find the disk full.
+  effect function stop() {
+    stopped ??= stoppedLine(folder, free, floor, try disk.held(folder), try disk.held(machines))
+    try Deferred.succeed(done, stopped)
+  }
+  const ended = effect {
+    throw failure("command-failed", try Deferred.await(done))
+  }
+  effect function watching() {
+    while (stopped === undefined) {
+      try sleep(tick)
+      try read()
+      if (free < floor / 2) try stop()
+    }
+  }
+  fork.scoped watching()
+  return {
+    admit: (leftBehind) => effect {
+      while (stopped === undefined) {
+        try read()
+        if (free >= floor) {
+          waiting = false
+          running += 1
+          return
+        }
+        if (running === 0) {
+          try leftBehind
+          try read()
+          if (free >= floor) {
+            running += 1
+            return
+          }
+          try stop()
+        } else {
+          if (!waiting) try say(waitingLine(free, floor))
+          waiting = true
+          try sleep(tick)
+        }
+      }
+      try ended
+    },
+    release: sync(() => {
+      running -= 1
+    }),
+    ended,
+    stopped: sync(() => stopped),
+    most: sync(() => first === undefined ? undefined : most)
+  } satisfies DiskWatch
+}

@@ -656,6 +656,29 @@ describe("a report whose fast mode could not be measured", () => {
   })
 })
 
+describe("the disk a replay held", () => {
+  const line = "the replay stopped before the disk filled: the disk that holds /tmp/x has 2 GB free"
+
+  it("says the most the replay held at once, and the flag that holds less, in both renderers", () => {
+    const report: ReplayReport = { ...normalOnly(), diskHeldBytes: 47_400_000_000 }
+    const said = "The replay held at most 47 GB of disk at once; fewer jobs at once (--jobs) hold less"
+    expect(text(report)).toContain(said)
+    expect(html(report)).toContain(said)
+    expect(text(normalOnly())).not.toContain("of disk at once")
+    expect(html(normalOnly())).not.toContain("of disk at once")
+  })
+
+  it("says why a replay stopped before its last commit, above what it replayed", () => {
+    const report: ReplayReport = { ...normalOnly(), stopped: line }
+    const printed = text(report)
+    expect(printed.startsWith(`The replay stopped before the disk filled: the disk that holds /tmp/x has 2 GB free.`))
+      .toBe(true)
+    expect(printed).toContain("1 commit · 0 mismatches")
+    expect(html(report)).toContain(`<p class="alert" role="alert">The replay stopped before the disk filled`)
+    expect(text(normalOnly())).not.toContain("stopped before")
+  })
+})
+
 describe("steps not reused", () => {
   const { fast: _fast, ...plain } = green
   const network = {

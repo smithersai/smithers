@@ -19,6 +19,7 @@ import {
   count,
   coverage,
   cpuTime,
+  diskHeld,
   duration,
   type FailedStep,
   failedSteps,
@@ -49,6 +50,7 @@ import {
   speedup,
   speedupCommits,
   startCost,
+  stoppedEarly,
   times,
   toolVersion,
   trialTime,
@@ -277,6 +279,9 @@ export const html: RenderReport = (report) => {
   if (report.fastNotMeasured !== undefined) {
     body.push(`<p class="summary">${escape(fastNotMeasured(report.fastNotMeasured))}</p>`)
   }
+  if (report.stopped !== undefined) {
+    body.push(`<p class="alert" role="alert">${escape(stoppedEarly(report.stopped))}</p>`)
+  }
   if (report.commits.length === 0) {
     body.push(`<p class="summary">${count(0, "commit")}</p>`)
   } else {
@@ -313,6 +318,7 @@ export const html: RenderReport = (report) => {
     if (report.startCost !== undefined) body.push(`<p class="summary">${startCost(report.startCost)}</p>`)
     if (report.cold !== undefined) body.push(`<p class="summary">${escape(coldStart(report.cold))}</p>`)
     if (report.reruns !== undefined) body.push(`<p class="summary">${rerunTime(report.reruns)}</p>`)
+    if (report.diskHeldBytes !== undefined) body.push(`<p class="summary">${diskHeld(report.diskHeldBytes)}</p>`)
     if (report.selection !== undefined) body.push(selection(report))
     body.push(commitTable(report.commits))
     if (skipGroups(report.commits).length > 0) body.push(skippedTable(report.commits))

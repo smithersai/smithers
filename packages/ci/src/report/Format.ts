@@ -17,6 +17,7 @@ import type {
   StepNotReused
 } from "../contract/ReplayReport.ts"
 import type { Metrics } from "../contract/Selection.ts"
+import { sizeOf } from "../replay/DiskSpace.ts"
 
 /**
  * Elapsed time in the largest units that keep it short: `850ms`, `12.3s`,
@@ -56,6 +57,23 @@ export const times = (ratio: number): string => {
  * @private
  */
 export const fastNotMeasured = (reason: string): string => `Fast mode was not measured. ${reason}`
+
+/**
+ * The line that says how much disk the replay held at once.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const diskHeld = (bytes: number): string =>
+  `The replay held at most ${sizeOf(bytes)} of disk at once; fewer jobs at once (--jobs) hold less`
+
+/**
+ * The line that says the replay ended before its last commit, and why.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const stoppedEarly = (line: string): string => `${line.charAt(0).toUpperCase()}${line.slice(1)}.`
 
 /**
  * Whether a run passed, as one word.

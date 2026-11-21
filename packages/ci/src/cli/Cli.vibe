@@ -462,6 +462,12 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
       if (!within.startsWith("..")) written = within
     }
     try Console.log(input.json ? document : `${try render(parts.text, report)}${footer(report, written)}`)
+    // A replay the disk stopped is reported to the commit before, and is a failure of the program's own.
+    if (report.stopped !== undefined) {
+      try Console.error(`${Surface.name}: ${report.stopped}`)
+      try settle(Surface.exitCodes.failed)
+      return
+    }
     if (report.fastNotMeasured !== undefined) {
       try Console.error(`${Surface.name}: fast mode was not measured. ${report.fastNotMeasured}`)
       try settle(Surface.exitCodes.failed)

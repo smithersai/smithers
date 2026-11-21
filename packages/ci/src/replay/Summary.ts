@@ -1536,6 +1536,10 @@ export interface Gathered {
   readonly firstRun?: FirstRun | undefined
   /** Why the first counted commit started with an empty cache, when a run before it was asked for. */
   readonly cold?: string | undefined
+  /** The most disk the replay held at once, where the machine says how much is free. */
+  readonly diskHeldBytes?: number | undefined
+  /** Why the replay ended before its last commit, when the disk would have filled. */
+  readonly stopped?: string | undefined
 }
 
 /**
@@ -1567,7 +1571,7 @@ export const finishedReport = (
   gathered: Gathered
 ): ReplayReport => {
   const measured = gathered.fastNotMeasured === undefined
-  return reportOf(inventory, measured ? commits : commits.map(withoutFast), {
+  const report = reportOf(inventory, measured ? commits : commits.map(withoutFast), {
     selection: gathered.fastAsked && measured ? selectionOf(gathered.rows, gathered.selected) : undefined,
     left: gathered.left,
     flaky: measured ? gathered.flaky + gathered.fastFlaky : gathered.flaky,
@@ -1580,4 +1584,9 @@ export const finishedReport = (
     firstRun: measured ? gathered.firstRun : firstRunWithoutFast(gathered.firstRun),
     cold: gathered.cold
   })
+  return {
+    ...report,
+    ...(gathered.diskHeldBytes === undefined ? {} : { diskHeldBytes: Math.max(0, Math.round(gathered.diskHeldBytes)) }),
+    ...(gathered.stopped === undefined ? {} : { stopped: gathered.stopped })
+  }
 }

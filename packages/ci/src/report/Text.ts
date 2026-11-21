@@ -48,6 +48,7 @@ import {
   count,
   coverage,
   cpuTime,
+  diskHeld,
   duration,
   failedSteps,
   failureText,
@@ -79,6 +80,7 @@ import {
   speedup,
   speedupCommits,
   startCost,
+  stoppedEarly,
   times,
   toolVersion,
   trialTime,
@@ -143,6 +145,7 @@ export const text: RenderReport = (report) => {
   const sections: Array<Array<string>> = []
   if (found > 0) sections.push([`✗ ${mismatches(found)}`])
   if (report.fastNotMeasured !== undefined) sections.push([clean(fastNotMeasured(report.fastNotMeasured))])
+  if (report.stopped !== undefined) sections.push([clean(stoppedEarly(report.stopped))])
   if (report.commits.length === 0) return [...sections, [count(0, "commit")]].map(paragraph).join("\n\n")
   const modes = [
     { name: "baseline", ms: report.baselineWallMs, ratio: undefined },
@@ -184,6 +187,7 @@ export const text: RenderReport = (report) => {
   if (report.startCost !== undefined) sections.push([startCost(report.startCost)])
   if (report.cold !== undefined) sections.push([clean(coldStart(report.cold))])
   if (report.reruns !== undefined) sections.push([rerunTime(report.reruns)])
+  if (report.diskHeldBytes !== undefined) sections.push([diskHeld(report.diskHeldBytes)])
   if (report.selection !== undefined) {
     const rows = selectionRows(report.selection)
     const nameWidth = Math.max(...rows.map((row) => row.name.length))

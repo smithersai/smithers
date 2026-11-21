@@ -342,6 +342,13 @@ export type StartCost = typeof StartCost.Type
  * CI by that start, and only a commit that reuses results is faster. It is
  * absent when Smithers build did not time its start.
  *
+ * `diskHeldBytes` is the most disk the replay held at once: how far the free
+ * space of the disk that holds its folder fell below what it was when the
+ * replay started. It is absent where the machine does not say how much is
+ * free. `stopped` says why the replay ended before its last commit: the disk
+ * would have filled. `commits` then holds the commits replayed before the one
+ * it stopped in, and nothing that commit's run kept is kept.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -374,7 +381,9 @@ export const ReplayReport = Schema.Struct({
   notReplayedCommits: Schema.optionalKey(Schema.Array(NotReplayedCommit)),
   toolVersions: Schema.optionalKey(Schema.Array(ToolVersion)),
   withheld: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
-  targets: Schema.optionalKey(Schema.Array(Schema.NonEmptyString))
+  targets: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+  diskHeldBytes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  stopped: Schema.optionalKey(Schema.NonEmptyString)
 })
 
 /**

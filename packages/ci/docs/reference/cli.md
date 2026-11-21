@@ -259,6 +259,14 @@ and it says fast mode was not measured and why. With `--json` the reason is the
 report's `fastNotMeasured` field. The same line goes to standard error, and the
 program exits `4`, also when the report lists a mismatch.
 
+When the disk that holds the replay's folder would fill, the replay stops. The
+report holds the commits replayed before the one it stopped in, and its first
+line says how much the replay held and where:
+`the replay stopped before the disk filled: the disk that holds /tmp/smithers-ci-replay-x has 2.4 GB free, under the 5 GB a replay leaves free (5 GB, or 2% of the disk when that is more); the replay held 47 GB there, 41 GB of it in its jobs' machines. Run it with fewer jobs at once (--jobs) or with more free space`.
+With `--json` that line is the report's `stopped` field. The same line goes to
+standard error, and the program exits `4`. Every report gives the most disk
+the replay held at once, `diskHeldBytes` with `--json`.
+
 ## Output
 
 The report goes to standard output. While a replay runs, standard error gets one line as each mode of each commit starts:

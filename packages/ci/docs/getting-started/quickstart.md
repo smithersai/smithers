@@ -77,6 +77,15 @@ and print nothing for 10 minutes, the replay stops it and reports `it made no
 progress for 10 minutes`. A step that waits that long on purpose needs a higher
 limit: `--stall-minutes 30`.
 
+The replay never fills your disk. A job's machine can hold tens of gigabytes
+for a large repository, and several run at once. The replay leaves 5 GB free on
+the disk that holds its folder, or 2% of the disk when that is more. Below
+that it starts no new job until a running one ends and its machine is removed,
+and below half of it, it ends what runs. When no space comes back, it stops
+with one line that says how much it held and where, prints the report of the
+commits it replayed before, and exits with code 4. Every report says the most
+disk the replay held at once; a smaller `--jobs` holds less.
+
 ## What it prints
 
 The text report gives the totals: the baseline wall time, the normal-mode wall

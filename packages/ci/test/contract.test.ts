@@ -413,6 +413,18 @@ describe("contract 4: inventory", () => {
 })
 
 describe("contract 5: replay report", () => {
+  it("holds the most disk a replay held, and why it stopped before its last commit", () => {
+    const example = fixture("replay-report.example.json") as Record<string, unknown>
+    const decode = Schema.decodeUnknownSync(ReplayReport.ReplayReport)
+    const stopped = "the replay stopped before the disk filled"
+    expect(decode({ ...example, diskHeldBytes: 6_000_000_000, stopped })).toMatchObject({
+      diskHeldBytes: 6_000_000_000,
+      stopped
+    })
+    expect(() => decode({ ...example, diskHeldBytes: -1 })).toThrow()
+    expect(() => decode({ ...example, stopped: "" })).toThrow()
+  })
+
   it("decodes a report whose fast mode skipped a target that failed in the baseline", () => {
     const report = Schema.decodeUnknownSync(ReplayReport.ReplayReport)(fixture("replay-report.example.json"))
     expect(report.speedup).toBeCloseTo(report.baselineWallMs / report.normalWallMs)

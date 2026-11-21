@@ -1,0 +1,38 @@
+/**
+ * Disks for tests, given to a replay as its `DiskSpace`: one whose free space
+ * a test sets, and a small one that the files a step writes fill.
+ */
+import { DiskSpace } from "../../src/replay/Disk.vibe"
+import { gigabyte } from "../../src/replay/DiskSpace.ts"
+import { ballastUnder } from "./ballast.ts"
+
+/** A 100 GB disk, which leaves 5 GB free, whose free space is what `free` holds; none is said while it is `undefined`. */
+export const setDisk = (free: Ref.Ref<number | undefined>, held: number) =>
+  Layer.succeed(DiskSpace, {
+    effect space(_path: string) {
+      const now = try Ref.get(free)
+      return now === undefined ? undefined : { free: now, total: 100 * gigabyte }
+    },
+    effect held(_path: string) {
+      return held
+    }
+  })
+
+/** What one byte of a file named `ballast` takes on {@link smallDisk}. */
+export const ballastScale = 1_000_000
+
+/**
+ * A 100 GB disk, which leaves 5 GB free, with `free` bytes free before the replay writes anything. Each byte of a
+ * file named `ballast` under the replay's folder takes a megabyte of it while `counting` says so, and is all a
+ * replay holds there. `taken` is what else fills it, as another program does, at each moment.
+ */
+export const smallDisk = (free: number, counting: () => boolean, taken: () => number = () => 0) =>
+  Layer.succeed(DiskSpace, {
+    effect space(path: string) {
+      const ballast = counting() ? try promise(() => ballastUnder(path)) : 0
+      return { free: free - ballast * ballastScale - taken(), total: 100 * gigabyte }
+    },
+    effect held(path: string) {
+      return (try promise(() => ballastUnder(path))) * ballastScale
+    }
+  })

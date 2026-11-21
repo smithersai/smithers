@@ -64,6 +64,7 @@ import {
 } from "./Confine.vibe"
 import { addTo, type Count, type CpuBucket, uncounted, usedBy } from "./Cpu.ts"
 import { cpuWatch } from "./CpuWatch.vibe"
+import { diskWatch } from "./Disk.vibe"
 import {
   ambientEnvironment,
   coreCount,
@@ -224,7 +225,8 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
  * is the machine's core count, of which a quarter of the jobs run at once when
  * the request sets no limit; without it, the core count is read. `processes` is where a step's processes are
  * read and stopped, and `cpuTick` how often they are read for the CPU time
- * the steps use. `environment` holds the variables of the person who runs
+ * the steps use. `diskTick` is how often the free space of the disk that
+ * holds the replay's folder is read (`Disk.vibe`). `environment` holds the variables of the person who runs
  * the replay, which the program keeps out of its own process; without it they
  * are read from the process. `smthrsWithToken` starts Smithers build as
  * `smthrs` does and reads the token of the shared cache from its standard input;
@@ -242,6 +244,7 @@ export service Options {
   readonly cores?: number | undefined
   readonly processes?: Table | undefined
   readonly cpuTick?: Duration.Input | undefined
+  readonly diskTick?: Duration.Input | undefined
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   readonly smthrsWithToken?: readonly [string, ...Array<string>] | undefined
   static readonly defaultValue = () => ({
@@ -704,6 +707,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // baseline and in each mode, at every commit, as a runner's are (`machinePaths`).
     const machines = path.join(try orFail(fs.realPath(work), "could not read a directory"), "machines")
     try orFail(fs.makeDirectory(machines), "could not make a directory")
+    // A job holds its machine on the disk that holds this folder: no job starts where it would fill that disk.
+    const disk = try diskWatch(workPath, machines, progress.say, options.diskTick)
     const checkoutPath = try orFail(fs.realPath(normalCopy), "could not read a directory")
 
     /**
@@ -935,7 +940,17 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const given = try givenAt(commit, site.place, own, applied?.seen)
       const environment = { ...startEnv(site), ...given, ...printsNotes }
       const handed = starter === undefined ? undefined : token
-      const output = try exec(command, args, site.copy, environment, printedLimitOf(selected.length), undefined, true, heard, watch, handed, count)
+      // Smithers build runs the mode's jobs: they start only where the disk has room, and end when it would fill.
+      try disk.admit(Effect.void)
+      const output = try ensuring(
+        effect {
+          return try.race [
+            exec(command, args, site.copy, environment, printedLimitOf(selected.length), undefined, true, heard, watch, handed, count),
+            disk.ended
+          ]
+        },
+        disk.release
+      )
       const stalled = try Ref.get(watch.stalled)
       const record = effect {
         const text = try fs.readFileString(file)
@@ -1196,8 +1211,18 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           if (needsPassed) {
             const view = viewAt(sequence)
             results.push(...(try limit.withPermits(1)(effect {
-              try orFail(viewOf(store, waitedFor, view), "could not show a job what earlier runs kept")
-              return try runSequence(sequence, names.get(sequence) as string, commit, wanted, place, view, given, later)
+              // A job starts only where the disk has room for its machine, and ends when the disk would fill.
+              try disk.admit(removing(later ?? []))
+              return try ensuring(
+                effect {
+                  try orFail(viewOf(store, waitedFor, view), "could not show a job what earlier runs kept")
+                  return try.race [
+                    runSequence(sequence, names.get(sequence) as string, commit, wanted, place, view, given, later),
+                    disk.ended
+                  ]
+                },
+                disk.release
+              )
             })))
           } else {
             const waiting = sequence.flatMap((unit) => labelsOf(unit, wanted))
@@ -1404,139 +1429,157 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // What each way keeps from one commit to the next: a commit that runs again starts from what it held before.
     const keeping = [kept, normal.cache, ...(fast === undefined ? [] : [fast.cache])]
 
-    let index = 0
-    while (index < commits.length) {
-      const commit = commits[index] as string
-      const at = `${index + 1}/${commits.length} ${commit.slice(0, 7)}`
-      const own = index === commits.length - 1 ? newest : try preparedAt(commit)
-      if ("reason" in own) {
-        try progress.say(`${at} not replayed`)
-        commitsLeft.push({ commit, reason: own.reason })
-        index += 1
-        continue
+    // Where each way stood before the commit that runs, and what its steps last failed with.
+    let stood: Array<readonly [string, ReadonlySet<string>]> = []
+    let lastBefore = { baseline: new Map(last.baseline), normal: new Map(last.normal), fast: new Map(last.fast) }
+    let tallyBefore = { ...tally }
+    /** Puts each way back where it stood before the commit that runs: that commit keeps nothing. */
+    const putBack = effect {
+      for (const [directory, paths] of stood) {
+        try orFail(backTo(directory, paths), "could not put back what a way keeps")
       }
-      // Where each way stands before the commit runs, for a commit that runs again.
-      const stood: Array<readonly [string, ReadonlySet<string>]> = []
-      for (const directory of keeping) {
-        stood.push([directory, try orFail(pathsIn(directory), "could not read what a way keeps")])
-      }
-      const lastBefore = { baseline: new Map(last.baseline), normal: new Map(last.normal), fast: new Map(last.fast) }
-      const tallyBefore = { ...tally }
-      const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
-      try progress.say(`${at} baseline`)
-      const left: Array<Scope.Closeable> = []
-      const base = try measure(
-        Effect.void,
-        Effect.void,
-        baseline(commit, own, places.baseline, left),
-        undefined,
-        reruns,
-        last.baseline,
-        tally,
-        counting,
-        removing(left)
-      )
-      const baseRecord = recordOf(base.results, commit, base.wallMs)
-      const names = stepNames(own.units)
-      try progress.say(`${at} normal`)
-      // A mode starts each commit as a CI run starts: with a home and a temporary directory nothing wrote to.
-      try orFail(renew(places.normal), "could not empty the home of normal mode")
-      const spent: Spent = {}
-      const ran = try measure(
-        checkout(normalCopy, commit, normal.place),
-        equip(normal, own),
-        smithers(commit, normal, own, undefined, spent),
-        undefined,
-        reruns,
-        last.normal,
-        tally,
-        counting
-      )
-      const normalRecord = recordOf(ran.results, commit, ran.wallMs, "normal", withCheckout(spent.parts, ran.checkoutMs))
-      let fastPart: Pick<ReplayCommit, "fast" | "skipped" | "model"> = {}
-      let fastMismatches: ReturnType<typeof mismatchesOf> = []
-      let fastFlakyHere = 0
-      let rowsHere: ReadonlyArray<Row> = []
-      let chosen: ReadonlyArray<string> | undefined = undefined
-      if (fast !== undefined && fastNotMeasured === undefined) {
-        const rows = try onNormalCopy(parts.rows(normalCopy, normalRecord, try planOf(normal, own)))
-        const answered = try askModel(parts, rows)
-        if (typeof answered === "string") {
-          fastNotMeasured = answered
-          try progress.say(`${at} fast not measured`)
-        } else {
-          const { scores } = answered
-          const choice = choose(scores, request.settings ?? defaultSettings)
-          const labels = ran.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
-          try progress.say(`${at} fast`)
-          try orFail(renew(places.fast), "could not empty the home of fast mode")
-          const sped = try atCheckout(fast, (site) =>
-            measure(
-              checkout(site.copy, commit, site.place),
-              equip(site, own),
-              smithers(commit, site, own),
-              labels,
-              reruns,
-              last.fast,
-              tally,
-              counting
-            )
-          )
-          const run = fastRunOf(
-            ran.results,
-            sped.results,
-            commit,
-            sped.wallMs,
-            baseRecord,
-            names,
-            own.splits,
-            undefined,
-            sped.cpuMs,
-            answered
-          )
-          fastPart = run.part
-          fastMismatches = run.mismatches
-          fastFlakyHere = run.flaky
-          rowsHere = rows
-          chosen = choice.selected
-        }
-      }
-      // The newest commit is the one `apply` is run on.
-      const applied = index === commits.length - 1
-        ? try asApplied(at, commit, own, baseRecord, normalRecord)
-        : undefined
-      // A job found to need rights is in this commit's times, which cannot be split by job: the commit runs again
-      // without it, from where each way stood before, and no number of this run is kept.
-      const without = try leftForRightsNow()
-      if (without.length > 0) {
-        try progress.say(`${at} again without ${[...new Set(without.map((entry) => entry.job))].join(", ")}`)
-        for (const [directory, paths] of stood) {
-          try orFail(backTo(directory, paths), "could not put back what a way keeps")
-        }
-        Object.assign(last, lastBefore)
-        Object.assign(tally, tallyBefore)
-        continue
-      }
-      baselines.push(baseRecord)
-      flaky += flakyOf([baseRecord, normalRecord])
-      fastFlaky += fastFlakyHere
-      allRows.push(...rowsHere)
-      if (chosen !== undefined) selected.set(commit, chosen)
-      if (applied !== undefined) appliedMs = applied.ms
-      commitsDone.push({
-        commit,
-        changedFiles: changed.length,
-        baseline: totalsOf(baseRecord, names, base.cpuMs),
-        normal: totalsOf(normalRecord, names, ran.cpuMs),
-        mismatches: [
-          ...mismatchesOf("normal", baseRecord, normalRecord, own.splits),
-          ...(applied === undefined ? [] : applied.mismatches),
-          ...fastMismatches
-        ],
-        ...fastPart
-      })
-      index += 1
+      Object.assign(last, lastBefore)
+      Object.assign(tally, tallyBefore)
     }
+
+    let index = 0
+    // A replay the disk stopped reports the commits before the one it stopped in, and says why it stopped.
+    const finished = effect {
+      while (index < commits.length) {
+        const commit = commits[index] as string
+        const at = `${index + 1}/${commits.length} ${commit.slice(0, 7)}`
+        const own = index === commits.length - 1 ? newest : try preparedAt(commit)
+        if ("reason" in own) {
+          try progress.say(`${at} not replayed`)
+          commitsLeft.push({ commit, reason: own.reason })
+          index += 1
+          continue
+        }
+        // Where each way stands before the commit runs, for a commit that runs again.
+        stood = []
+        for (const directory of keeping) {
+          stood.push([directory, try orFail(pathsIn(directory), "could not read what a way keeps")])
+        }
+        lastBefore = { baseline: new Map(last.baseline), normal: new Map(last.normal), fast: new Map(last.fast) }
+        tallyBefore = { ...tally }
+        const changed = lines(try git(source, ["show", "--format=", "--name-only", "--diff-merges=first-parent", commit]))
+        try progress.say(`${at} baseline`)
+        const left: Array<Scope.Closeable> = []
+        const base = try measure(
+          Effect.void,
+          Effect.void,
+          baseline(commit, own, places.baseline, left),
+          undefined,
+          reruns,
+          last.baseline,
+          tally,
+          counting,
+          removing(left)
+        )
+        const baseRecord = recordOf(base.results, commit, base.wallMs)
+        const names = stepNames(own.units)
+        try progress.say(`${at} normal`)
+        // A mode starts each commit as a CI run starts: with a home and a temporary directory nothing wrote to.
+        try orFail(renew(places.normal), "could not empty the home of normal mode")
+        const spent: Spent = {}
+        const ran = try measure(
+          checkout(normalCopy, commit, normal.place),
+          equip(normal, own),
+          smithers(commit, normal, own, undefined, spent),
+          undefined,
+          reruns,
+          last.normal,
+          tally,
+          counting
+        )
+        const normalRecord = recordOf(ran.results, commit, ran.wallMs, "normal", withCheckout(spent.parts, ran.checkoutMs))
+        let fastPart: Pick<ReplayCommit, "fast" | "skipped" | "model"> = {}
+        let fastMismatches: ReturnType<typeof mismatchesOf> = []
+        let fastFlakyHere = 0
+        let rowsHere: ReadonlyArray<Row> = []
+        let chosen: ReadonlyArray<string> | undefined = undefined
+        if (fast !== undefined && fastNotMeasured === undefined) {
+          const rows = try onNormalCopy(parts.rows(normalCopy, normalRecord, try planOf(normal, own)))
+          const answered = try askModel(parts, rows)
+          if (typeof answered === "string") {
+            fastNotMeasured = answered
+            try progress.say(`${at} fast not measured`)
+          } else {
+            const { scores } = answered
+            const choice = choose(scores, request.settings ?? defaultSettings)
+            const labels = ran.results.map((result) => result.label).filter((label) => !choice.skipped.has(label))
+            try progress.say(`${at} fast`)
+            try orFail(renew(places.fast), "could not empty the home of fast mode")
+            const sped = try atCheckout(fast, (site) =>
+              measure(
+                checkout(site.copy, commit, site.place),
+                equip(site, own),
+                smithers(commit, site, own),
+                labels,
+                reruns,
+                last.fast,
+                tally,
+                counting
+              )
+            )
+            const run = fastRunOf(
+              ran.results,
+              sped.results,
+              commit,
+              sped.wallMs,
+              baseRecord,
+              names,
+              own.splits,
+              undefined,
+              sped.cpuMs,
+              answered
+            )
+            fastPart = run.part
+            fastMismatches = run.mismatches
+            fastFlakyHere = run.flaky
+            rowsHere = rows
+            chosen = choice.selected
+          }
+        }
+        // The newest commit is the one `apply` is run on.
+        const applied = index === commits.length - 1
+          ? try asApplied(at, commit, own, baseRecord, normalRecord)
+          : undefined
+        // A job found to need rights is in this commit's times, which cannot be split by job: the commit runs again
+        // without it, from where each way stood before, and no number of this run is kept.
+        const without = try leftForRightsNow()
+        if (without.length > 0) {
+          try progress.say(`${at} again without ${[...new Set(without.map((entry) => entry.job))].join(", ")}`)
+          try putBack
+          continue
+        }
+        baselines.push(baseRecord)
+        flaky += flakyOf([baseRecord, normalRecord])
+        fastFlaky += fastFlakyHere
+        allRows.push(...rowsHere)
+        if (chosen !== undefined) selected.set(commit, chosen)
+        if (applied !== undefined) appliedMs = applied.ms
+        commitsDone.push({
+          commit,
+          changedFiles: changed.length,
+          baseline: totalsOf(baseRecord, names, base.cpuMs),
+          normal: totalsOf(normalRecord, names, ran.cpuMs),
+          mismatches: [
+            ...mismatchesOf("normal", baseRecord, normalRecord, own.splits),
+            ...(applied === undefined ? [] : applied.mismatches),
+            ...fastMismatches
+          ],
+          ...fastPart
+        })
+        index += 1
+      }
+      return true
+    } catch effect (cause) => {
+      if ((try disk.stopped) === undefined) throw cause
+      try putBack
+      return false
+    }
+    if (!finished && commitsDone.length === 0) throw failure("command-failed", (try disk.stopped) as string)
     // One commit where nothing passes is a failed commit. When nothing passes at any, the CI does not run here.
     const nothing = nothingPassed(baselines, stepNames(newest.units))
     if (nothing !== undefined) throw failure("unsupported", nothing)
@@ -1554,6 +1597,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       appliedMs,
       reruns: tally,
       firstRun: started.firstRun,
-      cold: started.cold
+      cold: started.cold,
+      diskHeldBytes: try disk.most,
+      stopped: try disk.stopped
     })
   })

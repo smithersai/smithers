@@ -151,6 +151,27 @@ describe("a report whose fast mode could not be measured", () => {
   })
 })
 
+describe("a report the disk stopped before its last commit", () => {
+  const line = "the replay stopped before the disk filled: the disk that holds /tmp/x has 2 GB free"
+  const stopped: Parts<Host> = {
+    ...parts,
+    run: (request, given) => Effect.map(parts.run(request, given), (report) => ({ ...report, stopped: line }))
+  }
+
+  it("is printed whole, is said again on standard error, and exits 4", async () => {
+    const outcome = await runIn(["--commits", "1", "--no-apply-check"], keep(repository()), stopped)
+    expect(outcome.code).toBe(exitCodes.failed)
+    expect(outcome.stdout).toContain("The replay stopped before the disk filled")
+    expect(outcome.stderr.endsWith(`smithers-ci: ${line}\n`)).toBe(true)
+  })
+
+  it("carries the line in --json", async () => {
+    const outcome = await runIn(["replay", "--commits", "1", "--no-apply-check", "--json"], keep(repository()), stopped)
+    expect(outcome.code).toBe(exitCodes.failed)
+    expect(JSON.parse(outcome.stdout).stopped).toBe(line)
+  })
+})
+
 describe("a real replay whose model is lost at the second of three commits", () => {
   it("prints the whole normal-mode report and exits 4", async () => {
     // Each commit changes a different kind of file, so each asks the model a new question.
