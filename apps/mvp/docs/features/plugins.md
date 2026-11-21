@@ -117,7 +117,7 @@ A view with `scope: "repository"` belongs to one repository's page (decision 012
 
 ## The queue
 
-The first plugin (`plugins/queue/`): everything that waits on you, one item at a time, oldest first, full screen, by keyboard: the agent's questions in your conversations, and what an agent with no person behind it asks you ([addressed waits](agent-status.md#addressed-waits)). Each item shows its place and its repository. `g q` or `/queue` opens it; `j` and `k` move; the strip answers: `1`–`9` picks an option, `a` approves and `r` asks for changes (each with the note), `⌘↵` sends the note as a reply. Its only wiring is its manifest and `PluginHost`; it never dispatches `run/answer` itself.
+The first plugin (`plugins/queue/`): everything that waits on you, one item at a time, oldest first or approvals first (`p`), full screen, by keyboard: the agent's questions in your conversations, and what an agent with no person behind it asks you ([addressed waits](agent-status.md#addressed-waits)). Each item shows its place and its repository. `g q` or `/queue` opens it; `j` and `k` move; `s` snoozes the current item for later, `u` restores snoozed items, and `p` toggles priority ordering; the strip answers: `1`–`9` picks an option, `a` approves and `r` asks for changes (each with the note), `⌘↵` sends the note as a reply. Its only wiring is its manifest and `PluginHost`; it never dispatches `run/answer` itself.
 
 ## Bug reports
 
@@ -137,6 +137,18 @@ The fourth plugin (`plugins/fleet/`, [fleet.md](fleet.md)): a repository's agent
 `repository` view for Maintainers (`/<owner>/<repo>/-/fleet`) and a `repo.tabs` entry, over the core queries
 `core/agent-runs` and `core/machines`, each asked with `{ repo: "owner/name" }` and served from one Electric shape per
 repository (`src/features/fleet/store.ts`). It dispatches nothing: a run links to its TODO's page.
+
+## Guided tour
+
+The fifth plugin (`plugins/tour/`): an interactive 8-stop guided product walkthrough at `/app/tour` (`g t` or `/tour`,
+`minimum: "anyone"`), with keyboard stepping (`←`/`→`, `j`/`k`), interactive per-stop previews, and direct links to the
+zero-backend `/app?agent=mock` interactive demo and `/app`.
+
+## Repository wiki
+
+The sixth plugin (`plugins/wiki/`): an Obsidian-compatible repository knowledge base at `/<owner>/<repo>/-/wiki`
+(`/wiki`, `repo.tabs` entry, `minimum: "anyone"`), built over `core/feeds` with YAML frontmatter, `[[wikilinks]]`,
+automatic backlinks (`BacklinksPanel`), heading outlines (`OutlineView`), folder grouping, and full-text filtering.
 
 ## Observability
 

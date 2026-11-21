@@ -47,13 +47,22 @@ The composer is available to Members and above. Minimum roles below describe eac
 | `/status` | none | Member | Show sandbox changes. |
 | `/diff` | `[paths]` | Member | Show the sandbox diff. |
 
+## Command palette and Go-to-File
+
+Press `⌘P` (`Ctrl+P` on Linux and Windows) from any page to open the global command palette. Filter across app pages, enabled plugin commands, and files in the currently open repository, then press Enter to jump directly to a destination or file.
+
 ## Plugin commands
 
-Enabled plugins can contribute commands. The shipped queue and bug plugins add:
+Enabled plugins can contribute commands. Repository-scoped plugin commands target the repository you currently have open. The shipped plugins add:
 
 | Command | Arguments | Minimum role | Action |
 | --- | --- | --- | --- |
-| `/queue` | none | Member | Open the decision queue. |
+| `/tour` | none | Anyone | Open the interactive guided tour. |
+| `/wiki` | none | Anyone | Open the current repository's knowledge base wiki. |
+| `/factory` | none | Anyone | Open the current repository's factory overview. |
+| `/lanes` | none | Anyone | Open the current repository's factory lanes. |
+| `/decide` | none | Maintainer | Open pending factory decisions for the current repository. |
+| `/queue` | none | Member | Open the keyboard-driven decision queue. |
 | `/bug` | none | Guest | Open the bug report form. |
 | `/bugs` | none | Guest | Open the bug inbox. |
 
