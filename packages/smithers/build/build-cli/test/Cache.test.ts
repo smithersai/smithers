@@ -624,31 +624,26 @@ describe("openCache", () => {
    * and a stale temporary file is never adopted.
    */
   it("never lets two writers of one key share a temporary file", async () => {
-    const random = vi.spyOn(Math, "random").mockReturnValue(0.5)
-    try {
-      const first = await openCache({ workspaceRoot: root })
-      const second = await openCache({ workspaceRoot: root })
-      // Results of different sizes, as two runs of a tool whose output is not
-      // byte-identical produce.
-      const large: CachedResult = { ...result, output: { padding: "x".repeat(4_000_000) } }
-      const small: CachedResult = { ...result, output: { padding: "y" } }
+    const first = await openCache({ workspaceRoot: root })
+    const second = await openCache({ workspaceRoot: root })
+    // Results of different sizes, as two runs of a tool whose output is not
+    // byte-identical produce.
+    const large: CachedResult = { ...result, output: { padding: "x".repeat(4_000_000) } }
+    const small: CachedResult = { ...result, output: { padding: "y" } }
 
-      const settled = await Promise.allSettled([
-        first.put(result.key, large),
-        second.put(result.key, small)
-      ])
+    const settled = await Promise.allSettled([
+      first.put(result.key, large),
+      second.put(result.key, small)
+    ])
 
-      expect(settled.map((entry) => entry.status)).toEqual(["fulfilled", "fulfilled"])
-      const published = await first.get(result.key)
-      // Whichever writer won, the published entry is one writer's whole entry.
-      expect(published).not.toBeNull()
-      expect([large.output, small.output]).toContainEqual(published!.output)
-      expect(await Fs.readdir(NodePath.join(root, ".flows/cache/al"))).toEqual(["alpha.json"])
-      await first.close()
-      await second.close()
-    } finally {
-      random.mockRestore()
-    }
+    expect(settled.map((entry) => entry.status)).toEqual(["fulfilled", "fulfilled"])
+    const published = await first.get(result.key)
+    // Whichever writer won, the published entry is one writer's whole entry.
+    expect(published).not.toBeNull()
+    expect([large.output, small.output]).toContainEqual(published!.output)
+    expect(await Fs.readdir(NodePath.join(root, ".flows/cache/al"))).toEqual(["alpha.json"])
+    await first.close()
+    await second.close()
   })
 
   it("publishes whole entries under concurrent writers of the same key", async () => {

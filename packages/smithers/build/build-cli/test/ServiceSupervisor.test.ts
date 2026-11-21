@@ -25,7 +25,7 @@ import * as Fs from "node:fs/promises"
 import * as NodeNet from "node:net"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as OutputStream from "../src/OutputStream.ts"
 import * as ServiceSupervisor from "../src/ServiceSupervisor.ts"
 
@@ -1214,15 +1214,10 @@ describe("process probes", () => {
   })
 
   it("reads a process it may not signal as alive", () => {
-    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
-      throw Object.assign(new Error("permission denied"), { code: "EPERM" })
-    })
-    try {
-      expect(alive(12345)).toBe(true)
-      expect(kill).toHaveBeenCalledWith(12345, 0)
-    } finally {
-      kill.mockRestore()
-    }
+    // The first process of the host (init on Linux and macOS, System on Windows) belongs to another user: signalling
+    // it answers EPERM, which the probe reads as alive. Run as root, the signal is allowed, and it is alive as well.
+    const protectedPid = process.platform === "win32" ? 4 : 1
+    expect(alive(protectedPid)).toBe(true)
   })
 
   it("reads an unused pid as absent", () => {
