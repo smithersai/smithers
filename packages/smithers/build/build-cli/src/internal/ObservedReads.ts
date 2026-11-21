@@ -2982,7 +2982,7 @@ export const loadDigests = (file: string): Digests => {
  * Keeps the digests a build measured in `file` for the next build: those
  * `kept` holds, at most `maximum`, the last used first. The file
  * is replaced whole, so a build that reads it while another writes it reads
- * one or the other.
+ * one or the other. With none to keep and no file, nothing is written.
  *
  * @category measuring
  * @since 1.0.0
@@ -2995,6 +2995,8 @@ export const saveDigests = (
 ): void => {
   const digests: Array<readonly [string, string, string]> = []
   for (const [path, [fingerprint, state]] of memory) if (kept(path)) digests.push([path, fingerprint, state])
+  // A build that measured nothing to keep leaves no file where there was none.
+  if (digests.length === 0 && !NodeFs.existsSync(file)) return
   const written = `${file}.${process.pid}`
   NodeFs.mkdirSync(NodePath.dirname(file), { recursive: true })
   NodeFs.writeFileSync(

@@ -1156,6 +1156,13 @@ describe("measuring", () => {
     )
     expect([...ObservedReads.loadDigests(kept)]).toEqual([[tool, ["1", "f:x"]]])
     expect(ObservedReads.loadDigests(Path.join(root, "absent.json")).size).toBe(0)
+    // A build that measured nothing to keep leaves no file, and no directory, where there was none.
+    const none = Path.join(root, "unused", "digests.json")
+    ObservedReads.saveDigests(none, new Map([[other, ["1", "f:x"]]]), () => false)
+    await expect(Fs.stat(Path.dirname(none))).rejects.toMatchObject({ code: "ENOENT" })
+    // One that had a file replaces it, so what it no longer keeps is gone.
+    ObservedReads.saveDigests(kept, new Map(), () => true)
+    expect(ObservedReads.loadDigests(kept).size).toBe(0)
   })
 })
 
