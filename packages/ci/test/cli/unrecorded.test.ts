@@ -16,8 +16,16 @@ import { bin, commit, git, observes, remove, spawn, temporary } from "./repo.ts"
 const made: Array<string> = []
 afterAll(() => made.forEach(remove))
 
-/** A step that refuses to run under a tracer, as a debugger or a program that traces another does. */
-const refuses = "if grep -q '^TracerPid:[[:space:]]*[1-9]' /proc/self/status; then exit 1; fi; echo built > out.txt"
+/**
+ * A step that refuses to run under a tracer, as a debugger or a program that traces another does. The shell asks
+ * about itself, with its own builtins, after it sets a handler: smthrs-observe traces a process only once it sets a
+ * handler, and lets it go when it starts another program, so a `grep` of `/proc/self/status` finds no tracer there.
+ */
+const refuses = [
+  "trap : USR1",
+  "while read -r key value; do if [ \"$key\" = TracerPid: ] && [ \"$value\" != 0 ]; then exit 1; fi; done < /proc/self/status",
+  "echo built > out.txt"
+].join("; ")
 const reads = "grep -q built out.txt && cat notes.txt"
 
 const workflow = [

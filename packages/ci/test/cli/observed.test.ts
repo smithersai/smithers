@@ -156,14 +156,15 @@ describe("a repository whose CI is npm ci, then npm run lint and npm test", () =
       commit(root, "docs only", { "docs/readme.md": "# Fixture\n\nMore words.\n" })
       const tools = temporary("no-strace")
       made.push(tools)
+      // Whether or not this checkout holds a built smthrs-observe (the `observe` target makes it), the run is told
+      // to record with strace, and strace is not on its PATH.
       const outcome = await spawnWith(bin, ["--commits", "2", "--no-apply-check", "--json"], root, {
-        PATH: pathWithout("strace", tools)
+        PATH: pathWithout("strace", tools),
+        SMTHRS_OBSERVE_WITH: "strace"
       })
-      // The checkout under test holds no built smthrs-observe (the `observe` target makes it), so the line says
-      // that first.
-      const sentence = "smithers-ci: this machine cannot record what a step reads (this installation of "
-        + `@smthrs/build-cli holds no smthrs-observe for linux-${process.arch}, and strace is not installed). `
-        + "A step that names no inputs runs on every commit. On Linux, install strace."
+      const sentence = "smithers-ci: this machine cannot record what a step reads (SMTHRS_OBSERVE_WITH=strace asks "
+        + "for strace, and strace is not installed). A step that names no inputs runs on every commit. On Linux, "
+        + "install strace."
       expect(outcome.stderr.split("\n").filter((line) => line.includes("cannot record"))).toEqual([sentence])
       expect(outcome.stdout).not.toContain("cannot record")
       expect(outcome.code).toBe(0)
