@@ -3132,14 +3132,20 @@ const executeWith = (
     /** Removes the kept files of records a declaration no longer holds. */
     /** Where the records of reads are kept: the cache's content store. */
     const recordStore = RecordStore.contentStore(root, cacheDirectory)
-    /** The records of reads a declaration's cache entry names, each read from the content store. */
+    /**
+     * The records of reads a declaration's cache entry names, each read from the content store, and why any it
+     * names could not be read.
+     */
     const recordsOf = (
       node: PackageNode,
       key: string
-    ): Effect.Effect<ReadonlyArray<ObservedReads.Record>, unknown> =>
+    ): Effect.Effect<
+      { readonly records: ReadonlyArray<ObservedReads.Record>; readonly unread: ReadonlyArray<"missing" | "changed"> },
+      unknown
+    > =>
       Effect.gen(function*() {
         const entry = yield* cacheGet(node, key)
-        return yield* joined(() => RecordStore.load(recordStore, entry?.output))
+        return yield* joined(() => RecordStore.loadAll(recordStore, entry?.output))
       })
     /** Writes a declaration's records into the content store and the entry that names them into the cache. */
     const putRecords = (
@@ -3328,7 +3334,7 @@ const executeWith = (
         if ("reason" in (observing ??= services.observer(services.sandboxHost()))) return kept
         const records = new Map<string, ReadonlyArray<ObservedReads.Record>>()
         for (const node of candidates) {
-          const stored = yield* recordsOf(node, node.observed!.key)
+          const stored = (yield* recordsOf(node, node.observed!.key)).records
           if (stored.length === 0) continue
           records.set(node.label, stored)
           kept.set(node.label, new Set(stored.map((record) => record.id!)))
@@ -3421,7 +3427,7 @@ const executeWith = (
         const machine = yield* onMachine(node)
         const place = machine?.tree ?? root
         const checked = parts.begin(node.label, "check")
-        const earlier = yield* recordsOf(node, observed.key)
+        const { records: earlier, unread } = yield* recordsOf(node, observed.key)
         const awaited = awaitedBy(node)
         let why: string | undefined
         for (const stored of earlier) {
@@ -3470,6 +3476,8 @@ const executeWith = (
           return green("hit")
         }
         checked()
+        // An entry whose records are not in the content store, as where the cache was carried without it.
+        why ??= RecordStore.unreadReason(unread)
         if (why !== undefined) {
           unreusedReasons.set(node.label, why)
           log(`${node.label}  runs again: ${why}`)

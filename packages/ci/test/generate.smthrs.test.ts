@@ -606,14 +606,19 @@ jobs:
     const sources = { "input.txt": "source\n" }
     const first = repository(inventory, sources)
     const second = repository(inventory, sources)
+    const without = repository(inventory, sources)
     try {
       expect(execute(first, "first").statuses.get("check-1")).toBe("ran")
+      // The entries alone, without the content store that holds each step's record of what it read: the step runs.
+      cpSync(join(stateOf(first), "cache"), join(stateOf(without), "cache"), { recursive: true })
+      expect(execute(without, "without").statuses.get("check-1")).toBe("ran")
       // What `actions/cache` saves on one runner and restores on the next: the results, from outside the checkout.
       for (const kept of ["cache", contentStore]) {
         cpSync(join(stateOf(first), kept), join(stateOf(second), kept), { recursive: true })
       }
       expect(execute(second, "second").statuses.get("check-1")).toBe("hit")
     } finally {
+      rmSync(without, { recursive: true, force: true })
       rmSync(first, { recursive: true, force: true })
       rmSync(second, { recursive: true, force: true })
     }

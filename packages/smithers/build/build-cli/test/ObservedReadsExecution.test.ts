@@ -1610,6 +1610,22 @@ describe("a tracer that fails", () => {
     expect(await run(["check"], flooding)).toEqual({ check: "hit" })
   })
 
+  // The cache's entries carried to another place without the content store beside them, as a workflow that saves
+  // only the entries would: the entry is looked up and its record is not there.
+  posixIt("runs and says why when its record is not in the content store, then is answered again", async () => {
+    const { logs, root, run, tracer } = await fixture()
+    const flooding = await tracer(flood(10, 8))
+    expect(await run(["check"], flooding)).toEqual({ check: "ran" })
+    expect(await run(["check"], flooding)).toEqual({ check: "hit" })
+    await Fs.rm(Path.join(root, ".flows", "cas"), { recursive: true })
+    expect(await run(["check"], flooding)).toEqual({ check: "ran" })
+    expect(logs).toContain(
+      "//:check  runs again: its record of what it read is not in the cache's content store, the cas directory beside " +
+        "the cache's entries"
+    )
+    expect(await run(["check"], flooding)).toEqual({ check: "hit" })
+  })
+
   posixIt("stores nothing when the run read more paths than a record holds, and says how many", async () => {
     const { logs, run, tracer } = await fixture()
     const flooding = await tracer(flood(400_001, 1))

@@ -189,6 +189,29 @@ describe("the records of reads in the content store", () => {
     }
   })
 
+  it("says which records an entry names that could not be read, and why", async () => {
+    const cas = await store()
+    const entry = await RecordStore.save(cas, ObservedReads.store(full, [plain])!)
+    expect(await RecordStore.loadAll(cas, entry)).toEqual({
+      records: [sorted, { ...plain, reads: [["a", "f:00"], ["b", "-"]] }],
+      unread: []
+    })
+    expect(RecordStore.unreadReason([])).toBeUndefined()
+    // A cache carried without its content store: the entry is there and its records are not.
+    const [first, second] = entry.records
+    await Fs.rm(Path.join(cas, first!.digest))
+    expect((await RecordStore.loadAll(cas, entry)).unread).toEqual(["missing"])
+    expect(RecordStore.unreadReason(["missing"])).toBe(
+      "its record of what it read is not in the cache's content store, the cas directory beside the cache's entries"
+    )
+    // Bytes that are not the ones stored.
+    await Fs.writeFile(Path.join(cas, second!.digest), "other bytes")
+    expect((await RecordStore.loadAll(cas, entry)).unread).toEqual(["missing", "changed"])
+    expect(RecordStore.unreadReason(["changed"])).toBe(
+      "its record of what it read is not as it was stored in the cache's content store"
+    )
+  })
+
   it("is the cache directory's content store", () => {
     expect(RecordStore.contentStore("/w", ".smithers/cache")).toBe(Path.join("/w", ".smithers", "cache", "cas"))
   })

@@ -223,17 +223,51 @@ export const read = async (cas: string, reference: Reference): Promise<ObservedR
 }
 
 /**
+ * The records a cache entry names, read from the content store, and why any
+ * other it names could not be: `missing` when the content store does not
+ * hold it, as where a cache was carried without its content store;
+ * `changed` when its bytes are not the ones stored.
+ *
+ * @category loading
+ * @since 1.0.0
+ */
+export const loadAll = async (
+  cas: string,
+  output: unknown
+): Promise<{
+  readonly records: ReadonlyArray<ObservedReads.Record>
+  readonly unread: ReadonlyArray<"missing" | "changed">
+}> => {
+  const records: Array<ObservedReads.Record> = []
+  const unread: Array<"missing" | "changed"> = []
+  for (const reference of references(output)) {
+    const record = await read(cas, reference)
+    if (record !== undefined) records.push(record)
+    else unread.push(NodeFs.existsSync(NodePath.join(cas, reference.digest)) ? "changed" : "missing")
+  }
+  return { records, unread }
+}
+
+/**
  * The records a cache entry names, each read from the content store. A
  * record that cannot be read is left out, as an entry of another form is.
  *
  * @category loading
  * @since 1.0.0
  */
-export const load = async (cas: string, output: unknown): Promise<ReadonlyArray<ObservedReads.Record>> => {
-  const records: Array<ObservedReads.Record> = []
-  for (const reference of references(output)) {
-    const record = await read(cas, reference)
-    if (record !== undefined) records.push(record)
-  }
-  return records
-}
+export const load = async (cas: string, output: unknown): Promise<ReadonlyArray<ObservedReads.Record>> =>
+  (await loadAll(cas, output)).records
+
+/**
+ * Why a step whose cache entry names records runs when none of them could be
+ * read, or `undefined` when nothing was left unread.
+ *
+ * @category loading
+ * @since 1.0.0
+ */
+export const unreadReason = (unread: ReadonlyArray<"missing" | "changed">): string | undefined =>
+  unread.length === 0
+    ? undefined
+    : unread.includes("missing")
+    ? "its record of what it read is not in the cache's content store, the cas directory beside the cache's entries"
+    : "its record of what it read is not as it was stored in the cache's content store"
