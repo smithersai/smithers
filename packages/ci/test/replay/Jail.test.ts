@@ -180,91 +180,101 @@ const toolsOf = (owner: ReturnType<typeof person>) => ({
 })
 
 describe.skipIf(!jailable)("a step in the jail", () => {
-  it("has a home of its own, and cannot read a credential, write outside, or push", async () => {
-    const owner = person()
-    const other = neighbour("other")
-    const origin = neighbour("origin")
-    const outside = directory("outside")
-    const marker = join(mkdtempSync("/tmp/replay-jail-marker-"), "seen")
-    created.push(dirname(marker))
-    writeFileSync(marker, "")
-    const passing: Jobs = [
-      job(
-        "home",
-        [
-          `test "$HOME" != ${homedir()}`,
-          `test "$HOME" != ${owner.home}`,
-          `test "$XDG_CACHE_HOME" = "$HOME/.cache"`,
-          `: > "$HOME/mine"`,
-          // The temporary directory is the job's own, and `/tmp` holds nothing of the machine's.
-          `: > "\${TMPDIR:-/tmp}/mine"`,
-          `test ! -e ${marker}`,
-          `: > made-here`
-        ].join(" && ")
-      ),
-      // What is put back of the person's home: a tool installed there, read and run, and the link it is reached through.
-      job("tool", `test "$(${owner.tool}/bin/tool)" = "a tool ran" && test -x ${owner.home}/system/env`),
-      // A version manager finds its versions under the step's own home.
-      job("versions", `test "$(readlink "$HOME/.versions/tool")" = ${owner.tool}`),
-      job("npm", `test "$(npm config get cache)" = "$HOME/.npm"`),
-      job(
-        "quiet",
-        `test "$GIT_TERMINAL_PROMPT" = 0 && test -z "\${SSH_AUTH_SOCK+set}" && test -z "$(git config --get credential.helper)"`
-      ),
-      job("reaches", `git ls-remote file://${other} && git ls-remote file://${origin}`)
-    ]
-    const failing: Jobs = [
-      job("key", `cat ${owner.home}/.ssh/id_test`),
-      job("token", `grep -q authToken ${owner.home}/.npmrc`),
-      job("linked", `cat ${owner.cloud}/credentials`),
-      job("linkedfile", `grep -q password ${owner.vault}/netrc`),
-      // No list names these: a plain file of the home, and a file in a directory with a name of its own.
-      job("plain", `cat ${owner.home}/notes.txt`),
-      job("unlisted", `cat ${owner.home}/${owner.unlisted}/token`),
-      job("listing", `test -n "$(ls -A ${owner.home} | grep -v -e '^.local$' -e '^system$')"`),
-      // A tool is read, never written.
-      job("tooledit", `: > ${owner.tool}/bin/other`),
-      job("agent", `cat ${owner.runtime}/agent`),
-      job("outside", `: > ${outside}/written`),
-      job("persons", `: > ${owner.home}/written`),
-      // `--no-verify` skips the hook, so only the jail is left to stop these.
-      job("explicit", `git push --no-verify file://${other} HEAD:refs/heads/pushed`),
-      job(
-        "added",
-        `git remote add up file://${other} 2>/dev/null || true; git push --no-verify up HEAD:refs/heads/pushed2`
-      ),
-      job(
-        "pushurl",
-        `git remote set-url --push origin file://${origin} && git push --no-verify origin HEAD:refs/heads/pushed3`
-      )
-    ]
-    const root = repository([...passing, ...failing], [{ "notes.md": "one\n" }, { "notes.md": "two\n" }], origin)
-    const refs = [git(other, "for-each-ref"), git(origin, "for-each-ref")]
+  it(
+    "has a home of its own, writes beside its checkout, and cannot read a credential, write outside, or push",
+    async () => {
+      const owner = person()
+      const other = neighbour("other")
+      const origin = neighbour("origin")
+      const outside = directory("outside")
+      const marker = join(mkdtempSync("/tmp/replay-jail-marker-"), "seen")
+      created.push(dirname(marker))
+      writeFileSync(marker, "")
+      const passing: Jobs = [
+        job(
+          "home",
+          [
+            `test "$HOME" != ${homedir()}`,
+            `test "$HOME" != ${owner.home}`,
+            `test "$XDG_CACHE_HOME" = "$HOME/.cache"`,
+            `: > "$HOME/mine"`,
+            // The temporary directory is the job's own, and `/tmp` holds nothing of the machine's.
+            `: > "\${TMPDIR:-/tmp}/mine"`,
+            `test ! -e ${marker}`,
+            `: > made-here`
+          ].join(" && ")
+        ),
+        // The directory that holds the checkout is the job's own, as a runner's is: a step makes a directory beside
+        // its checkout, and a committed link that leads there reads what it wrote.
+        job(
+          "beside",
+          `mkdir -p ../beside && echo made > ../beside/x && ln -s ../beside seen && test "$(cat seen/x)" = made`
+        ),
+        // What is put back of the person's home: a tool installed there, read and run, and the link it is reached through.
+        job("tool", `test "$(${owner.tool}/bin/tool)" = "a tool ran" && test -x ${owner.home}/system/env`),
+        // A version manager finds its versions under the step's own home.
+        job("versions", `test "$(readlink "$HOME/.versions/tool")" = ${owner.tool}`),
+        job("npm", `test "$(npm config get cache)" = "$HOME/.npm"`),
+        job(
+          "quiet",
+          `test "$GIT_TERMINAL_PROMPT" = 0 && test -z "\${SSH_AUTH_SOCK+set}" && test -z "$(git config --get credential.helper)"`
+        ),
+        job("reaches", `git ls-remote file://${other} && git ls-remote file://${origin}`)
+      ]
+      const failing: Jobs = [
+        job("key", `cat ${owner.home}/.ssh/id_test`),
+        job("token", `grep -q authToken ${owner.home}/.npmrc`),
+        job("linked", `cat ${owner.cloud}/credentials`),
+        job("linkedfile", `grep -q password ${owner.vault}/netrc`),
+        // No list names these: a plain file of the home, and a file in a directory with a name of its own.
+        job("plain", `cat ${owner.home}/notes.txt`),
+        job("unlisted", `cat ${owner.home}/${owner.unlisted}/token`),
+        job("listing", `test -n "$(ls -A ${owner.home} | grep -v -e '^.local$' -e '^system$')"`),
+        // A tool is read, never written.
+        job("tooledit", `: > ${owner.tool}/bin/other`),
+        job("agent", `cat ${owner.runtime}/agent`),
+        job("outside", `: > ${outside}/written`),
+        job("persons", `: > ${owner.home}/written`),
+        // `--no-verify` skips the hook, so only the jail is left to stop these.
+        job("explicit", `git push --no-verify file://${other} HEAD:refs/heads/pushed`),
+        job(
+          "added",
+          `git remote add up file://${other} 2>/dev/null || true; git push --no-verify up HEAD:refs/heads/pushed2`
+        ),
+        job(
+          "pushurl",
+          `git remote set-url --push origin file://${origin} && git push --no-verify origin HEAD:refs/heads/pushed3`
+        )
+      ]
+      const root = repository([...passing, ...failing], [{ "notes.md": "one\n" }, { "notes.md": "two\n" }], origin)
+      const refs = [git(other, "for-each-ref"), git(origin, "for-each-ref")]
 
-    process.env["SSH_AUTH_SOCK"] = join(outside, "agent")
-    const asked = () => ({ ...found, home: owner.home, hidden: [owner.runtime], tools: toolsOf(owner) })
-    const { report, said } = await replay(root, 2, asked).finally(() => {
-      delete process.env["SSH_AUTH_SOCK"]
-    })
+      process.env["SSH_AUTH_SOCK"] = join(outside, "agent")
+      const asked = () => ({ ...found, home: owner.home, hidden: [owner.runtime], tools: toolsOf(owner) })
+      const { report, said } = await replay(root, 2, asked).finally(() => {
+        delete process.env["SSH_AUTH_SOCK"]
+      })
 
-    const counts = { hit: 0, ran: passing.length, failed: failing.length, skipped: 0 }
-    expect(report.commits.map((commit) => commit.baseline.counts)).toEqual([counts, counts])
-    // Every target runs at the first commit. At the second, one whose step read nothing that changed may be
-    // answered from the cache, which is a pass too.
-    expect(report.commits[0]?.normal.counts).toEqual(counts)
-    const second = report.commits[1]?.normal.counts
-    expect([(second?.hit ?? 0) + (second?.ran ?? 0), second?.failed, second?.skipped]).toEqual([
-      passing.length,
-      failing.length,
-      0
-    ])
-    expect(report.commits.flatMap((commit) => commit.mismatches)).toEqual([])
-    expect([git(other, "for-each-ref"), git(origin, "for-each-ref")]).toEqual(refs)
-    expect(existsSync(join(outside, "written"))).toBe(false)
-    expect(existsSync(join(owner.home, "written"))).toBe(false)
-    expect(readFileSync(join(owner.home, ".ssh", "id_test"), "utf8")).toBe("a private key\n")
-    expect(said.filter((line) => line.includes("jail"))).toEqual([])
-  }, 1_200_000)
+      const counts = { hit: 0, ran: passing.length, failed: failing.length, skipped: 0 }
+      expect(report.commits.map((commit) => commit.baseline.counts)).toEqual([counts, counts])
+      // Every target runs at the first commit. At the second, one whose step read nothing that changed may be
+      // answered from the cache, which is a pass too.
+      expect(report.commits[0]?.normal.counts).toEqual(counts)
+      const second = report.commits[1]?.normal.counts
+      expect([(second?.hit ?? 0) + (second?.ran ?? 0), second?.failed, second?.skipped]).toEqual([
+        passing.length,
+        failing.length,
+        0
+      ])
+      expect(report.commits.flatMap((commit) => commit.mismatches)).toEqual([])
+      expect([git(other, "for-each-ref"), git(origin, "for-each-ref")]).toEqual(refs)
+      expect(existsSync(join(outside, "written"))).toBe(false)
+      expect(existsSync(join(owner.home, "written"))).toBe(false)
+      expect(readFileSync(join(owner.home, ".ssh", "id_test"), "utf8")).toBe("a private key\n")
+      expect(said.filter((line) => line.includes("jail"))).toEqual([])
+    },
+    1_200_000
+  )
 })
 
 describe("a step on a machine with no jail", () => {

@@ -238,6 +238,19 @@ With `strace` as the recorder, a step that looks below a descriptor's directory
 without opening a file there, as `test -e /proc/self/fd/3/data.txt` does, runs
 at every commit.
 
+Your repository may commit a link that points out of it, such as
+`docs/link -> /etc/hostname` or `fixtures/shared -> ../../shared`. Smithers CI
+reads a committed link as git stores it: by its text. A link no step reads
+through changes nothing; the replay and the workflow `apply` writes run as they
+would without it. A step that reads through a link reads the file at the other
+end, and that file counts as if the step had named it: a file of the
+repository by its content, and a file outside it, on the runner, by its
+content at its own path, as every file outside the repository a step reads
+counts. So the step runs again when the link is changed to point elsewhere, or
+when the file it reaches changes, and is reused otherwise. A job jailed to
+the files it reads sees the link as a link; what it points at outside the
+repository is there only when the jail gives that path to every step.
+
 A step that asks git about the commit, as `git describe` and `pre-commit` do,
 read `.git`, which every commit changes, so it runs at every commit. `cargo
 build`, `cargo test` and `cargo doc` open `.git` only to list a package's
@@ -550,10 +563,12 @@ stands for them, so the job stays in your CI as it is.
 
 **A jail.** On Linux with
 [bubblewrap](https://github.com/containers/bubblewrap) installed, a step can
-write three places: its copy of the repository, its home and a temporary
-directory of its own, which it finds at `/tmp` and at `TMPDIR`. Every other
-file of the machine is read-only, so a push to a repository on the same disk
-fails.
+write three places: its copy of the repository with the directory that holds
+it, its home and a temporary directory of its own, which it finds at `/tmp` and
+at `TMPDIR`. The directory that holds the copy is the job's own, as the one
+that holds a runner's checkout is, so a step that clones or builds beside its
+checkout works as on the runner. Every other file of the machine is read-only,
+so a push to a repository on the same disk fails.
 
 Your home directory is empty for it. What a step finds there is what it has a
 use for, each read-only: the tools on your `PATH` that are installed under it,
@@ -586,24 +601,24 @@ kernel refuses a step every such socket it did not make itself.
 
 What a step can do depends on the machine:
 
-| A step                                                   | Linux with bubblewrap | Linux without it | macOS |
-| -------------------------------------------------------- | --------------------- | ---------------- | ----- |
-| sees your home directory as its `HOME`                   | no                    | no               | no    |
-| gets a token, an SSH agent or `DOCKER_HOST` from you     | no                    | no               | no    |
-| reads a variable of yours from `smithers-ci`             | no                    | no               | no    |
-| pushes with `git push`                                   | no                    | no               | no    |
-| starts `docker` or `podman` by name                      | no                    | no               | no    |
-| starts `sudo`, `su` or `doas` by name                    | no                    | no               | no    |
-| writes its copy, its home and its temporary directory    | yes                   | yes              | yes   |
-| reaches the network                                      | yes                   | yes              | yes   |
-| reads the other files of the machine                     | yes                   | yes              | yes   |
-| writes any other file, such as a repository beside it    | no                    | yes              | yes   |
-| reads a file of your home that is not a tool             | no                    | yes              | yes   |
-| talks to a container daemon's socket by its path         | no                    | yes              | yes   |
-| leaves a process running after it ends                   | no                    | yes              | yes   |
-| sees your other programs and what they were started with | no                    | yes              | yes   |
-| reads the keys the Linux kernel holds for your session   | no                    | yes              | no    |
-| connects to an abstract socket of one of your programs   | no, from Linux 6.12   | yes              | no    |
+| A step                                                           | Linux with bubblewrap | Linux without it | macOS |
+| ---------------------------------------------------------------- | --------------------- | ---------------- | ----- |
+| sees your home directory as its `HOME`                           | no                    | no               | no    |
+| gets a token, an SSH agent or `DOCKER_HOST` from you             | no                    | no               | no    |
+| reads a variable of yours from `smithers-ci`                     | no                    | no               | no    |
+| pushes with `git push`                                           | no                    | no               | no    |
+| starts `docker` or `podman` by name                              | no                    | no               | no    |
+| starts `sudo`, `su` or `doas` by name                            | no                    | no               | no    |
+| writes its copy, beside it, its home and its temporary directory | yes                   | yes              | yes   |
+| reaches the network                                              | yes                   | yes              | yes   |
+| reads the other files of the machine                             | yes                   | yes              | yes   |
+| writes any other file, such as a repository beside it            | no                    | yes              | yes   |
+| reads a file of your home that is not a tool                     | no                    | yes              | yes   |
+| talks to a container daemon's socket by its path                 | no                    | yes              | yes   |
+| leaves a process running after it ends                           | no                    | yes              | yes   |
+| sees your other programs and what they were started with         | no                    | yes              | yes   |
+| reads the keys the Linux kernel holds for your session           | no                    | yes              | no    |
+| connects to an abstract socket of one of your programs           | no, from Linux 6.12   | yes              | no    |
 
 On macOS, and on Linux without bubblewrap, there is no jail. `smithers-ci`
 says so once on standard error and names what to install. The first six lines of the table

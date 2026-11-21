@@ -1158,8 +1158,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             continue
           }
           const start = try Clock.currentTimeMillis
-          // The job's temporary directory is its `/tmp` and, by its own path, its `TMPDIR`.
-          const [program, ...argv] = held(place, [copy, store, place.tmp], [...shell, step.command])
+          // The job's temporary directory is its `/tmp` and, by its own path, its `TMPDIR`. The directory that holds
+          // the checkout is the job's own and writable, as a runner's is: a step that makes a directory beside its
+          // checkout, and a committed link that leads there, work as on the runner and as on a job's machine.
+          const [program, ...argv] = held(place, [directory, store, place.tmp], [...shell, step.command])
           // Only a step whose text names the variable is given it: the text takes it away before the step's own
           // script starts, and a step with no such text would hand it on.
           const told = step.command.includes(stateVariable) ? { [stateVariable]: store } : {}
