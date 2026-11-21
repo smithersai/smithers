@@ -9,12 +9,13 @@ import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import type * as Scope from "effect/Scope"
-import { chmodSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Confined } from "../../src/replay/Confine.vibe"
-import { keeperIn, keepsPrograms } from "../../src/replay/Job.vibe"
+import { reaperProgram } from "../../src/replay/Environment.ts"
+import { keeperIn, keepsPrograms, reapedBy, reaperIn } from "../../src/replay/Job.vibe"
 import { placeIn } from "./place.ts"
 
 const made: Array<string> = []
@@ -77,5 +78,62 @@ describe("a job's keeper where it cannot be had", () => {
     expect(waited).toBeGreaterThanOrEqual(10_000)
     expect(waited).toBeLessThan(60_000)
     expect(readdirSync(join(root, "jobs"))).toEqual([])
+  })
+})
+
+/** A program at `path` that runs this shell text. */
+const program = (path: string, text: string): string => {
+  writeFileSync(path, `#!/bin/sh\n${text}\n`)
+  chmodSync(path, 0o755)
+  return path
+}
+
+describe("the program a step runs under where nothing keeps what it leaves running", () => {
+  it("is smthrs-observe where it answers --reap, for a place with no jail only", async () => {
+    const root = work()
+    const answering = program(
+      join(root, "answering"),
+      "[ \"$1\" = --probe ] && [ \"$2\" = --reap ] && exit 0\nexit 125"
+    )
+    const older = program(join(root, "older"), "exit 125")
+    const place = placeIn(root, "baseline")
+    expect(await onNode(reaperIn(place, () => answering))).toBe(answering)
+    expect(await onNode(reaperIn(place, () => older))).toBeUndefined()
+    expect(await onNode(reaperIn(place, () => undefined))).toBeUndefined()
+    // A jail's process namespace ends what a step leaves with the step.
+    expect(await onNode(reaperIn(jailedBy(root, "/bin/true"), () => answering))).toBeUndefined()
+    const noPrograms = Layer.succeed(ChildProcessSpawner, makeSpawner(() => Effect.fail(denied)))
+    expect(await onNode(reaperIn(place, () => answering), noPrograms)).toBeUndefined()
+    expect(reapedBy(["sh", "-c", "true"], answering)).toEqual([answering, "--reap", "--", "sh", "-c", "true"])
+    expect(reapedBy(["sh", "-c", "true"], undefined)).toEqual(["sh", "-c", "true"])
+  })
+
+  it("is found beside the smthrs this program runs, on Linux for x86_64 and aarch64", () => {
+    const root = work()
+    // An installation as npm lays it out: @smthrs/cli, and the @smthrs/build-cli it depends on.
+    const cli = join(root, "node_modules", "@smthrs", "cli")
+    const build = join(root, "node_modules", "@smthrs", "build-cli")
+    for (const directory of [cli, join(build, "native", "out", "linux-x64")]) mkdirSync(directory, { recursive: true })
+    writeFileSync(join(cli, "package.json"), JSON.stringify({ name: "@smthrs/cli" }))
+    writeFileSync(join(build, "package.json"), JSON.stringify({ name: "@smthrs/build-cli" }))
+    const built = program(join(build, "native", "out", "linux-x64", "smthrs-observe"), "exit 0")
+    const resolve = (specifier: string): string => {
+      if (specifier !== "@smthrs/cli/package.json") throw new Error(`cannot find ${specifier}`)
+      return join(cli, "package.json")
+    }
+    expect(reaperProgram(resolve, "linux", "x64")).toBe(built)
+    expect(reaperProgram(resolve, "linux", "arm64")).toBeUndefined()
+    expect(reaperProgram(resolve, "linux", "ia32")).toBeUndefined()
+    expect(reaperProgram(resolve, "darwin", "arm64")).toBeUndefined()
+    expect(reaperProgram(
+      () => {
+        throw new Error("no @smthrs/cli")
+      },
+      "linux",
+      "x64"
+    )).toBeUndefined()
+    // This program's own installation: one built for this machine, or none.
+    const own = reaperProgram()
+    if (own !== undefined) expect(own).toMatch(/native\/out\/linux-(x64|arm64)\/smthrs-observe$/)
   })
 })

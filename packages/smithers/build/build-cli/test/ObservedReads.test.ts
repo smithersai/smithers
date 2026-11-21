@@ -156,6 +156,46 @@ describe("finding the tracer", () => {
   })
 })
 
+describe("the program a step runs under where nothing keeps what it leaves running", () => {
+  it.skipIf(process.platform === "win32")("is smthrs-observe where it answers --reap, asked once", async () => {
+    const root = await directory()
+    const asked = Path.join(root, "asked")
+    const answering = Path.join(root, "answering")
+    await Fs.writeFile(
+      answering,
+      `#!/bin/sh\necho "$*" >> '${asked}'\n[ "$1" = --probe ] && [ "$2" = --reap ] && exit 0\nexit 125\n`,
+      { mode: 0o755 }
+    )
+    // One built before it could reap refuses `--probe --reap` with its usage line, though it would record a command
+    // into a file named `--reap` when asked `--reap -- true`.
+    const older = Path.join(root, "older")
+    await Fs.writeFile(
+      older,
+      "#!/bin/sh\n[ \"$2\" = -- ] && exec \"$3\"\necho 'usage: smthrs-observe <trace file> -- <command>' >&2\nexit 125\n",
+      { mode: 0o755 }
+    )
+    expect(ObservedReads.reaperPath(answering)).toBe(answering)
+    expect(ObservedReads.reaperPath(answering)).toBe(answering)
+    expect(NodeFs.readFileSync(asked, "utf8")).toBe("--probe --reap\n")
+    expect(ObservedReads.reaperPath(older)).toBeUndefined()
+    expect(ObservedReads.reaperPath(Path.join(root, "none"))).toBeUndefined()
+    expect(ObservedReads.reaped(["sh", "-c", "exit 0"], answering)).toEqual([
+      answering,
+      "--reap",
+      "--",
+      "sh",
+      "-c",
+      "exit 0"
+    ])
+    expect(ObservedReads.reaped(["sh", "-c", "exit 0"], undefined)).toEqual(["sh", "-c", "exit 0"])
+  })
+
+  it("is the one this package built for the host, whether or not it records", () => {
+    const built = ObservedReads.supervisorPath(process.platform, process.arch, {})
+    expect(ObservedReads.reaperPath()).toBe(built === undefined ? undefined : ObservedReads.reaperPath(built))
+  })
+})
+
 describe("picking the recorder", () => {
   const built = Path.resolve(import.meta.dirname, "..", "native", "out", `linux-${process.arch}`, "smthrs-observe")
   const asked = { SMTHRS_OBSERVE_WITH: "smthrs-observe" }

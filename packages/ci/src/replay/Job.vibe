@@ -13,7 +13,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { keeper, socketName } from "@smthrs/targets/JobKeeper"
 import { type Confined, held } from "./Confine.vibe"
-import { nodePath, searchPath } from "./Environment.ts"
+import { nodePath, reaperProgram, searchPath } from "./Environment.ts"
 import { exec, outputLimit } from "./Process.vibe"
 
 /**
@@ -98,3 +98,34 @@ export effect function keepsPrograms(place: Confined) {
     catch () => Option.none()
   return Option.isSome(tried) && tried.value.exitCode === 0
 }
+
+/**
+ * The program a step of a job in `place` runs under when nothing keeps what
+ * it leaves running: `smthrs-observe --reap`, which ends whatever the step
+ * left, however it detached, a second after the step's command has ended, as
+ * a runner ends a job's programs. Asked once, with a limit. None where the
+ * place has a jail (its process namespace ends with each step), where `find`
+ * finds no program, or where it does not answer.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function reaperIn(place: Confined, find: () => string | undefined = reaperProgram) {
+  if (place.jail !== undefined) return undefined
+  const program = find()
+  if (program === undefined) return undefined
+  const tried = timeoutOption(exec(program, ["--probe", "--reap"], "/", { PATH: searchPath().join(":") }, outputLimit), "30 seconds")
+    catch () => Option.none()
+  return Option.isSome(tried) && tried.value.exitCode === 0 ? program : undefined
+}
+
+/**
+ * `argv` run under `reaper` ({@link reaperIn}), or as it is where there is none.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const reapedBy = (
+  argv: readonly [string, ...Array<string>],
+  reaper: string | undefined
+): readonly [string, ...Array<string>] => reaper === undefined ? argv : [reaper, "--reap", "--", ...argv]

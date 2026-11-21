@@ -376,6 +376,45 @@ export const supervisorPath = (
   return undefined
 }
 
+const reapers = new Map<string, string | undefined>()
+
+/**
+ * `smthrs-observe`, where it answers `--reap`: the program a step of a CI job
+ * runs under when its job has no process namespace to keep what the step
+ * leaves running ({@link reaped}). `path` is the one this installation built
+ * for the host, whether or not it records (strace may be asked for). It is
+ * asked once (`--probe --reap`); `undefined` where there is none, or one
+ * built before it could reap.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const reaperPath = (
+  path: string | undefined = supervisorPath(process.platform, process.arch, {})
+): string | undefined => {
+  if (path === undefined) return undefined
+  if (!reapers.has(path)) {
+    const answered = spawnSync(path, ["--probe", "--reap"], { stdio: "ignore", timeout: 30_000 })
+    reapers.set(path, answered.status === 0 ? path : undefined)
+  }
+  return reapers.get(path)
+}
+
+/**
+ * `argv` run under `reaper` (`smthrs-observe --reap`), which ends whatever the
+ * command leaves running, however it detached, a second after the command has
+ * ended: as on a CI runner, where nothing a job started outlives the job. A
+ * step whose job keeps its programs in a namespace of their own runs without
+ * it. `argv` as it is where there is no reaper.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const reaped = (
+  argv: readonly [string, ...Array<string>],
+  reaper: string | undefined
+): readonly [string, ...Array<string>] => reaper === undefined ? argv : [reaper, "--reap", "--", ...argv]
+
 /**
  * Why this host has no `smthrs-observe` to record with though the package
  * builds one for it (Linux on x86_64 and aarch64): `SMTHRS_OBSERVE_WITH=strace`

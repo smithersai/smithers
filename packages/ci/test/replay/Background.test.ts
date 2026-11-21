@@ -6,10 +6,13 @@
  */
 
 import { spawnSync } from "node:child_process"
+import { writeFileSync } from "node:fs"
+import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { reaperProgram } from "../../src/replay/Environment.ts"
 import { probe } from "../../src/replay/Jail.ts"
-import { bin, commit, git, remove, spawn, temporary } from "../cli/repo.ts"
+import { bin, commit, git, remove, spawn, spawnWith, temporary } from "../cli/repo.ts"
 
 const made: Array<string> = []
 afterAll(() => made.forEach(remove))
@@ -60,3 +63,42 @@ jobs:
     expect(sleeping(seconds)).toEqual([])
   }, 900_000)
 })
+
+describe.runIf(process.platform === "linux" && reaperProgram() !== undefined)(
+  "a step that leaves a program running where nothing can keep it",
+  () => {
+    it("ends the program with its step, however it detached, in the baseline and in normal mode", async () => {
+      const seconds = 93_000 + (process.pid % 900)
+      const root = temporary("replay-reaped")
+      const tools = temporary("replay-reaped-tools")
+      made.push(root, tools)
+      // A bubblewrap that cannot start anything: every step runs with no jail and no namespace of its job.
+      writeFileSync(join(tools, "bwrap"), "#!/bin/sh\nexit 1\n", { mode: 0o755 })
+      git(root, "init", "--quiet", "--initial-branch=main")
+      commit(root, "base", {
+        ".github/workflows/ci.yml": `
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh start.sh
+      - run: cat src.txt
+`,
+        // A session of its own, which the step's text does not show: nothing ends it but the program it runs under.
+        "start.sh": `setsid -f sleep ${seconds} > /dev/null 2>&1 < /dev/null\n`,
+        "src.txt": "one\n"
+      })
+      const outcome = await spawnWith(bin, ["--commits", "1", "--no-apply-check", "--json", "--no-trial"], root, {
+        PATH: `${tools}:${process.env["PATH"]}`
+      })
+      expect(outcome.code, outcome.stderr).toBe(0)
+      const report = JSON.parse(outcome.stdout) as ReplayReport
+      expect(report.notReplayed ?? []).toEqual([])
+      expect(report.commits[0]?.baseline.ok).toBe(true)
+      expect(report.commits[0]?.normal.ok).toBe(true)
+      expect(sleeping(seconds)).toEqual([])
+    }, 900_000)
+  }
+)

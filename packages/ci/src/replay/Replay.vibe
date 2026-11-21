@@ -116,7 +116,7 @@ import {
 import { readableNames, readyHistory } from "./History.vibe"
 import { couldNotStart, fixesOf, homeOf, namedInStepHome, putOnPath } from "./HomeTools.ts"
 import { backTo, keep, pathsIn, viewOf } from "./Kept.vibe"
-import { keeperIn, keepsPrograms } from "./Job.vibe"
+import { keeperIn, keepsPrograms, reapedBy, reaperIn } from "./Job.vibe"
 import { client } from "@smthrs/targets/JobKeeper"
 import { printsNotes, readsListener, recorderStopped } from "./Reads.ts"
 import { defaultStallMinutes, type StallLimit, type Table, tableFor, watchFor } from "./Stall.vibe"
@@ -673,6 +673,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     )
     // Whether a job's programs live until its last step has ended here, as on a runner: in one jail per job.
     const keeps = try keepsPrograms(places.baseline)
+    // Where a step runs with no jail, it runs under a program that ends what it leaves running when it ends.
+    const reaper = try reaperIn(places.baseline)
     // Where `smthrs` writes its run records: the one place it can write that a step run on its own cannot.
     const records = path.join(work, "records")
     try orFail(fs.makeDirectory(records), "could not make a directory")
@@ -1184,7 +1186,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           // the checkout is the job's own and writable, as a runner's is: a step that makes a directory beside its
           // checkout, and a committed link that leads there, work as on the runner and as on a job's machine.
           const [program, ...argv] = job === undefined
-            ? held(place, [directory, store, place.tmp], [...shell, step.command])
+            ? reapedBy(held(place, [directory, store, place.tmp], [...shell, step.command]), reaper)
             : client(nodePath(), job.directory, [...shell, step.command])
           // Only a step whose text names the variable is given it: the text takes it away before the step's own
           // script starts, and a step with no such text would hand it on.

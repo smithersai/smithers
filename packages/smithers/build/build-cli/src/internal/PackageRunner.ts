@@ -1435,16 +1435,20 @@ const executeWith = (
           ? yield* joined(() => jobOf(machine, bwrap))
           : undefined
         const leftFile = job === undefined ? undefined : NodePath.join(job.directory, `left-${++leftFiles}.json`)
+        // A step of a job whose programs nothing keeps ends with what it left running, however that detached.
+        const plain = onIts && job === undefined
+          ? [...ObservedReads.reaped(started, ObservedReads.reaperPath())] as [string, ...Array<string>]
+          : started
         const payload: Exec.Payload = {
           cwd: node.cwd,
           argv: job !== undefined
             ? JobKeeper.client(process.execPath, job.directory, started, { left: leftFile, done })
             : bwrap === undefined
-            ? started
+            ? plain
             : Machine.withOwnTmp(
               bwrap,
               machine!,
-              started,
+              plain,
               sightOf(machine!, resolved.env["PATH"] ?? hostEnvironment["PATH"])
             ),
           env: ownsGoBuild

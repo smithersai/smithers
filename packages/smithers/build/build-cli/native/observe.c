@@ -5,6 +5,8 @@
  *     smthrs-observe [--keep] <trace file> -- <command> [<argument>...]
  *     smthrs-observe --probe
  *     smthrs-observe --rights <program>...
+ *     smthrs-observe --reap -- <command> [<argument>...]
+ *     smthrs-observe --probe --reap
  *
  * The command runs under a seccomp filter whose listener this program holds. The kernel hands each watched call
  * to one of the supervisor's threads; only the calling thread waits, and the call then goes on in the kernel as
@@ -2407,7 +2409,67 @@ static void forward(int sig) {
   if (commandPid > 0) kill(commandPid, sig);
 }
 
+/* `--reap -- <command>`: runs the command as a child subreaper and records nothing. A step of a job that has no
+ * process namespace to keep what it leaves running runs this way: whatever the step leaves, however it detached
+ * (a double fork, `setsid`, `nohup ... &`), comes to this program when its parent ends, and once the command has
+ * ended it is given a second to end, then stopped, as after a recorded run. Answers the command's exit status. */
+static int reap(char **command) {
+  prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0);
+  pid_t self = getpid();
+  pid_t child = fork();
+  if (child < 0) return 125;
+  if (child == 0) {
+    /* The command ends with this program, and does not start if this program has already ended. */
+    if (prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0) != 0 || getppid() != self) _exit(126);
+    execvp(command[0], command);
+    fprintf(stderr, "smthrs-observe: %s: %s\n", command[0], strerror(errno));
+    _exit(errno == ENOENT ? 127 : 126);
+  }
+  commandPid = child;
+  struct sigaction passOn;
+  memset(&passOn, 0, sizeof passOn);
+  passOn.sa_handler = forward;
+  passOn.sa_flags = SA_RESTART;
+  sigaction(SIGTERM, &passOn, NULL);
+  sigaction(SIGINT, &passOn, NULL);
+  sigaction(SIGHUP, &passOn, NULL);
+  sigaction(SIGQUIT, &passOn, NULL);
+  int code = 125, rootDone = 0;
+  struct timespec deadline = {0, 0};
+  for (;;) {
+    int status = 0;
+    pid_t pid = waitpid(-1, &status, WNOHANG);
+    if (pid == child) {
+      code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+      rootDone = 1;
+      clock_gettime(CLOCK_MONOTONIC, &deadline);
+      deadline.tv_sec += 1;
+      continue;
+    }
+    if (pid > 0) continue;
+    if (pid < 0 && errno == ECHILD) break;
+    if (rootDone) {
+      struct timespec now;
+      clock_gettime(CLOCK_MONOTONIC, &now);
+      if (now.tv_sec > deadline.tv_sec || (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) endLeft();
+    }
+    struct timespec tick = {0, 5000000};
+    nanosleep(&tick, NULL);
+  }
+  return code;
+}
+
 int main(int argc, char **argv) {
+  /* `--probe --reap` answers 0: this program can reap (`--reap`), which needs nothing of the kernel but a child
+   * subreaper. One built before it could refuses the pair; asked `--reap -- true`, it would record `true`. */
+  if (argc == 3 && strcmp(argv[1], "--probe") == 0 && strcmp(argv[2], "--reap") == 0) return 0;
+  if (argc >= 3 && strcmp(argv[1], "--reap") == 0 && strcmp(argv[2], "--") == 0) {
+    if (argc == 3) {
+      fprintf(stderr, "usage: smthrs-observe --reap -- <command> [<argument>...]\n");
+      return 125;
+    }
+    return reap(argv + 3);
+  }
   /* `--probe --keep` answers as `--probe` does: a build that asks it learns this program can follow what a step
    * leaves running (`--keep`), which one built before could not, and refused the pair. */
   if (argc >= 2 && argc <= 3 && strcmp(argv[1], "--probe") == 0 && (argc == 2 || strcmp(argv[2], "--keep") == 0))

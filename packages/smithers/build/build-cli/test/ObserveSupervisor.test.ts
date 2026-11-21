@@ -734,3 +734,47 @@ describe("smthrs-observe --keep, for a step whose job keeps what it leaves runni
     expect(NodeFs.readFileSync(trace, "utf8")).toBe(own)
   }, 60_000)
 })
+
+describe("smthrs-observe --reap, for a step whose job has nothing to keep what it leaves running", () => {
+  const reaps = it.skipIf(supervisor === undefined)
+  /** The programs of this user whose whole command line is `line`. */
+  const alive = (line: string): ReadonlyArray<string> =>
+    spawnSync("pgrep", ["-u", String(process.getuid?.()), "-x", "-f", line], { encoding: "utf8" }).stdout
+      .split("\n").filter((pid) => pid !== "")
+
+  reaps("ends what the command left however it detached, once it ended, and answers its exit", () => {
+    const seconds = 61_000 + (process.pid % 900)
+    const script = [
+      `nohup sleep ${seconds} > /dev/null 2>&1 &`,
+      `setsid -f sleep ${seconds + 1} > /dev/null 2>&1 < /dev/null`,
+      // A double fork into a session of its own, as a daemon does.
+      `sh -c 'setsid sh -c "sleep ${seconds + 2} > /dev/null 2>&1 < /dev/null &" &'`,
+      `for i in $(seq 1 50); do pgrep -x -f 'sleep ${seconds + 2}' > /dev/null && break; sleep 0.1; done`,
+      "exit 3"
+    ].join("\n")
+    const run = spawnSync(supervisor!, ["--reap", "--", "/bin/sh", "-c", script], {
+      encoding: "utf8",
+      timeout: 120_000
+    })
+    expect(run.status).toBe(3)
+    for (const line of [`sleep ${seconds}`, `sleep ${seconds + 1}`, `sleep ${seconds + 2}`]) {
+      expect(alive(line)).toEqual([])
+    }
+  })
+
+  reaps("passes a signal on to the command, and says why a command cannot start", async () => {
+    const child = spawn(supervisor!, ["--reap", "--", "sleep", "600"], { stdio: "ignore" })
+    const ended = new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    child.kill("SIGTERM")
+    expect(await ended).toBe(128 + 15)
+    const missing = spawnSync(supervisor!, ["--reap", "--", "/no/such/program"], { encoding: "utf8" })
+    expect([missing.status, missing.stderr]).toEqual([
+      127,
+      "smthrs-observe: /no/such/program: No such file or directory\n"
+    ])
+    expect(spawnSync(supervisor!, ["--probe", "--reap"]).status).toBe(0)
+    const bare = spawnSync(supervisor!, ["--reap", "--"], { encoding: "utf8" })
+    expect([bare.status, bare.stderr]).toEqual([125, "usage: smthrs-observe --reap -- <command> [<argument>...]\n"])
+  })
+})

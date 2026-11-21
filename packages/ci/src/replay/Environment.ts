@@ -7,8 +7,10 @@
  */
 
 import { toolEnvironment } from "@smthrs/targets/Exec"
+import { existsSync } from "node:fs"
+import { createRequire } from "node:module"
 import { availableParallelism } from "node:os"
-import { delimiter } from "node:path"
+import { delimiter, dirname, join } from "node:path"
 import { runnerSoftware } from "../contract/Inventory.ts"
 
 /**
@@ -338,6 +340,33 @@ export const searchPath = (): ReadonlyArray<string> => (process.env["PATH"] as s
  * @since 0.1.0
  */
 export const nodePath = (): string => process.execPath
+
+/**
+ * `smthrs-observe` as the `@smthrs/build-cli` beside the `smthrs` this
+ * program runs holds it for this machine: a step of a job that has no process
+ * namespace runs under it (`--reap`), so whatever the step leaves running ends
+ * with it. `undefined` on a machine it is not built for (only Linux on x86_64
+ * and aarch64) and where the installation holds none.
+ *
+ * @category environment
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const reaperProgram = (
+  resolve: (specifier: string) => string = createRequire(import.meta.url).resolve,
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch
+): string | undefined => {
+  if (platform !== "linux" || (arch !== "x64" && arch !== "arm64")) return undefined
+  try {
+    const cli = dirname(resolve("@smthrs/cli/package.json"))
+    const build = dirname(createRequire(join(cli, "package.json")).resolve("@smthrs/build-cli/package.json"))
+    const program = join(build, "native", "out", `linux-${arch}`, "smthrs-observe")
+    return existsSync(program) ? program : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * This machine's operating system, in Node's names. A matrix variant for

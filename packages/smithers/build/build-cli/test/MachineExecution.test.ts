@@ -973,6 +973,25 @@ describe("a program a step leaves running, where its job cannot keep it", () => 
       expect(logs.filter((line) => line.startsWith(said))).toHaveLength(1)
       expect(running(`sleep ${seconds}`)).toEqual([])
     }, 300_000)
+
+    keptIt.skipIf(ObservedReads.reaperPath() === undefined)(
+      `ends a program that left the step's session with its step (${refuse})`,
+      async () => {
+        const seconds = (refuse === "namespace" ? 53_000 : 54_000) + (process.pid % 900)
+        const fake = await fakeBubblewrap(refuse)
+        const { run } = await fixture(
+          () => {
+            const start = on("one", `setsid -f sleep ${seconds} > /dev/null 2>&1 < /dev/null`)
+            return { start, find: on("one", `pgrep -x -f 'sleep ${seconds}' > /dev/null`, [start]) }
+          },
+          undefined,
+          [fake]
+        )
+        expect(await run(["find"])).toEqual({ start: "ran", find: "failed" })
+        expect(running(`sleep ${seconds}`)).toEqual([])
+      },
+      300_000
+    )
   }
 
   for (

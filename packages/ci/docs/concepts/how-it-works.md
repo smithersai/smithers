@@ -206,10 +206,14 @@ A step that leaves a program running did something no file holds, so:
   not to the network.
 
 On macOS, and on a Linux machine where bubblewrap cannot start a process tree
-of its own, a program a step leaves running ends with its step. There a job
-with a step that puts a program in the background and never waits for it, or
-starts one with a flag that keeps it running on its own (`--daemonize yes`,
-`mongod --fork`, `pg_ctl start`), is left out, and the report names the step:
+of its own, a program a step leaves running ends with its step. On Linux the
+step runs under `smthrs-observe`, which Smithers CI ships for x86_64 and
+aarch64: a second after the step's command ends, it ends whatever the step
+left running, however that detached (`nohup ... &`, `setsid`, a double fork).
+There a job with a step that puts a program in the background and never waits
+for it, or starts one with a flag that keeps it running on its own
+(`--daemonize yes`, `mongod --fork`, `pg_ctl start`), is left out, and the
+report names the step:
 
 ```text
 ci.yml:e2e  leaves a program running for its later steps, which this machine cannot keep until the job ends: "Start the server" leaves python3 running; the job stays in your CI as it is
