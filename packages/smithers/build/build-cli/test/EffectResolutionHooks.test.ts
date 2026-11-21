@@ -260,6 +260,15 @@ describe("a CLI that runs as one file", () => {
     expect((await load(url)).some).toBe(true)
   })
 
+  it("leaves a module at a URL that is not a file to its own loader", async () => {
+    await holding("one-file-data", { named: 1 })
+    const url = await write(
+      "one-file-data/PACKAGE.ts",
+      "import given from \"data:text/javascript,export default 'from a data URL'\"\nexport const seen: string = given\n"
+    )
+    expect((await load(url)).seen).toBe("from a data URL")
+  })
+
   it("leaves a CommonJS require of an owned name to ordinary resolution", async () => {
     await holding("one-file-require", { named: 1 })
     const url = await write(
