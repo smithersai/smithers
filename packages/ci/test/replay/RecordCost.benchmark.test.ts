@@ -55,6 +55,11 @@
  *    it read take at most 1.20 times the baseline's step in wall time, and at
  *    most 1.30 times its CPU time: what `docs/concepts/modes.md` says a step
  *    that has to run costs.
+ * 3. In every pair normal mode's step uses at least 0.7 times the baseline's
+ *    CPU time. It does the same work, recorded: less says the build did not
+ *    count the step's processes, and then 2 says nothing about CPU. A known
+ *    defect marks this broken (`cpuUncounted`): while the mark stands, 3 must
+ *    fail, 2 is judged on wall time only, and the run prints why.
  *
  * **Limits.** One machine, shared: on the build server (48 threads, ten
  * agents' builds and tests beside it) the same baseline work took 3.0 to
@@ -246,6 +251,17 @@ const medianRatio = (pairs: ReadonlyArray<Pair>): Time => ({
 
 const load = (): number => Number(readFileSync("/proc/loadavg", "utf8").split(" ")[0])
 
+/**
+ * Known broken (TEST-5): since 355f33e4d1f3 a step on a job's machine runs under the job's keeper, which the build
+ * does not wait for, so normal mode's CPU leaves the step out (one run: 0.22 to 0.31 s against 2.93 to 3.44 s for
+ * the files step). sci-left-running fixes it. While this mark stands the check that normal mode counts the step is
+ * expected to fail, the CPU bound is not judged, and the benchmark turns red the day the check passes.
+ */
+const cpuUncounted: { readonly commit: string; readonly owner: string } | undefined = {
+  commit: "355f33e4d1f3",
+  owner: "sci-left-running"
+}
+
 /** How many double replays a fixture runs: two counted commits each, so ten pairs. */
 const doubles = 5
 
@@ -318,8 +334,22 @@ describe.skipIf(!recordable)("a step that has to run, recorded", () => {
           join(out, `record-cost-${fixture}.jsonl`),
           `${JSON.stringify({ at: new Date().toISOString(), fixture, runs, pairs, median: ratio })}\n`
         )
+        // Normal mode's step does the baseline's work, recorded. Far less CPU than the baseline's says the build did not
+        // count the step's processes, and then the CPU bound says nothing.
+        const counted = pairs.every((pair) => pair.normal.cpu - pair.reads.cpu >= 0.7 * pair.baseline.cpu)
         expect(ratio.wall, seen).toBeLessThanOrEqual(1.2)
-        expect(ratio.cpu, seen).toBeLessThanOrEqual(1.3)
+        if (cpuUncounted === undefined) {
+          expect(counted, `normal mode's CPU does not count the step\n${seen}`).toBe(true)
+          expect(ratio.cpu, seen).toBeLessThanOrEqual(1.3)
+        } else {
+          // Known broken: the check fails while the defect stands, and the day it passes the mark has to go.
+          expect(counted, `normal mode's CPU counts the step again: remove the mark for ${cpuUncounted.commit}`)
+            .toBe(false)
+          console.log(
+            `${fixture}: CPU bound not judged: CPU uncounted (since ${cpuUncounted.commit}, normal mode's CPU leaves ` +
+              `out the step; ${cpuUncounted.owner} fixes it)`
+          )
+        }
       },
       1_800_000
     )
