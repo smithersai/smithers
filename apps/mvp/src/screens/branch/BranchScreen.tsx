@@ -10,7 +10,7 @@ import { BranchCompare } from "../../features/branch/components/BranchCompare"
 import { BranchHeader } from "../../features/branch/components/BranchHeader"
 import { useBranch } from "../../features/branch/components/BranchContext"
 import { comparesOf } from "../../features/branch/publishView"
-import { accessNow, deniedTitleOf, writes } from "../../features/branch/view"
+import { accessNow, deniedTitleOf, paneModeOf, writes } from "../../features/branch/view"
 import { Composer } from "../../features/chat/components/Composer"
 import { SharedFile } from "../../features/coedit/components/SharedFile"
 import { FileTabsBar } from "../../features/files/components/FileTabsBar"
@@ -46,7 +46,7 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
   const { data: todos } = useLiveQuery(useTodos().queries.stack(current ? repoId(current.owner, current.repo) : "").todos)
   const { data: room } = useLiveQuery(presence.queries.room)
   const { data: participants } = useLiveQuery(presence.queries.participants)
-  const search = useSearch({ strict: false }) as { readonly terminal?: string; readonly edit?: string; readonly compare?: true }
+  const search = useSearch({ strict: false }) as { readonly terminal?: string; readonly edit?: string; readonly compare?: true; readonly pane?: "full" }
   const { data: session } = useLiveQuery(useAuth().queries.session)
   const { data: confirmed } = useLiveQuery(useAuth().queries.confirmed)
   const unavailable = branchUnavailable(stopped, session, confirmed)
@@ -58,7 +58,7 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
   // This person may change the branch's files: the live editor for a file, and a Markdown file in place on its page.
   const editsFiles = open && writes(access) && current?.mode === "open"
   return (
-    <main className="branch-screen" aria-label="Repository" data-workspace={open || denied || savedConversation ? "true" : "false"}>
+    <main className="branch-screen" aria-label="Repository" data-workspace={open || denied || savedConversation ? "true" : "false"} data-pane={paneModeOf(search.pane)}>
       {/* This screen hangs the stack under its own chrome, so the repository header doesn't. */}
       <RepoHeader notices={false} />
       {/* Offline before tracking answered: the pending view's public chrome until the route opens again online. */}

@@ -6,6 +6,8 @@ export const DOMAINS_SEGMENT = "domains"
 
 /** ChatApi's Electric shape proxy for one repository's domains: `GET ?repo=<repo id>`, Maintainers and Admins only. */
 export const DOMAINS_SHAPE_ROUTE = "/api/shapes/domains"
+/** Internal/site-Worker lookup for an active custom domain host: `/api/domains/resolve?host=<hostname>`. */
+export const DOMAIN_RESOLVE_ROUTE = "/api/domains/resolve"
 
 /** The Postgres table of domains (db/migrations/0046_domains.ts). */
 export const DOMAINS_TABLE = "domains"

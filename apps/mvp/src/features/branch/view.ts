@@ -43,3 +43,18 @@ export const writes = (access: Access | "none" | undefined): boolean => access =
  */
 export const statusOf = (access: Access | "none" | undefined): string | undefined =>
   access === undefined || access === "none" ? undefined : ACCESS_LABELS[access]
+
+/** Whether the branch workspace shows its view beside the conversation (`split`) or fills the full width (`full`). */
+export type PaneMode = "split" | "full"
+
+/** Reads `?pane=full` from route search; anything else is `split`. */
+export const paneModeOf = (value: unknown): PaneMode => (value === "full" ? "full" : "split")
+
+/** Search params for a branch view link, preserving active pane mode when maximized. */
+export const paneSearchOf = <S extends Record<string, unknown>>(
+  search: S,
+  mode: PaneMode,
+): Omit<S, "pane"> & { readonly pane?: "full" } => {
+  const { pane: _drop, ...rest } = search
+  return mode === "full" ? { ...rest, pane: "full" as const } : rest
+}

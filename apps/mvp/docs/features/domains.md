@@ -115,7 +115,6 @@ A domain whose row is `active` signs people in through `APP_DOMAIN`'s one GitHub
 
 - **Known gaps.** A `domain/Claim` that fails for 30 minutes (Postgres down) ends its poll with no row, after the route answered `202`. A lost `202` that the browser retries starts a second poll, or a second removal; a delayed second removal could remove a domain added again in between.
 
-- **Serving a custom domain.** The site Worker doesn't yet map a request's `Host` to the repository's app; that and the Cloudflare setup above land with the smithers.sh cut-over.
 - **Live Cloudflare calls** have not run: they need the zone's token on the MacBook.
 
 A repository's Settings page says `No settings available` when the viewer cannot manage its domains.

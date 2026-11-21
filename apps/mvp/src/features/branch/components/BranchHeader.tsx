@@ -5,7 +5,7 @@ import { PresenceAvatars } from "../../presence/components/PresenceAvatars"
 import { ShareButton } from "../../sharing/components/ShareButton"
 import type { Access } from "../contract"
 import { COMPARE, comparesOf } from "../publishView"
-import { statusOf } from "../view"
+import { paneModeOf, paneSearchOf, statusOf } from "../view"
 import { useBranch } from "./BranchContext"
 import { PublishControls } from "./PublishControls"
 
@@ -19,7 +19,7 @@ export function BranchHeader({ access, pending = false }: { readonly access: Acc
   const { data: current } = useLiveQuery(queries.current)
   const { data: publication } = useLiveQuery(publishing.queries.publication)
   const params = useParams({ strict: false })
-  const search = useSearch({ strict: false }) as { readonly terminal?: string; readonly compare?: true }
+  const search = useSearch({ strict: false }) as { readonly terminal?: string; readonly edit?: string; readonly compare?: true; readonly pane?: "full" }
   const file = useRouterState({ select: (state) => state.matches.at(-1)?.routeId === "/$owner/$repo/blob/$ref/$" })
   if (!pending && (current === undefined || current.status !== "ready" || access === "none")) return null
   const tree = "/$owner/$repo/tree/$ref/$"
@@ -38,17 +38,25 @@ export function BranchHeader({ access, pending = false }: { readonly access: Acc
       {pending ? null : <PublishControls access={access} />}
       <span className="branch-header-views">
         {/* Exact, so the router marks only the view that shows: Code's empty search is part of any terminal's. */}
-        <Link to={code} params={routeParams} search={{}} activeOptions={{ exact: true }} aria-current={search.terminal === undefined && search.compare === undefined ? "page" : undefined}>
+        <Link to={code} params={routeParams} search={paneSearchOf({}, paneModeOf(search.pane))} activeOptions={{ exact: true }} aria-current={search.terminal === undefined && search.compare === undefined ? "page" : undefined}>
           Code
         </Link>
-        <Link to={tree} params={terminalParams} search={{ terminal: "me" }} activeOptions={{ exact: true }} aria-current={search.terminal !== undefined ? "page" : undefined}>
+        <Link to={tree} params={terminalParams} search={paneSearchOf({ terminal: "me" }, paneModeOf(search.pane))} activeOptions={{ exact: true }} aria-current={search.terminal !== undefined ? "page" : undefined}>
           Terminal
         </Link>
         {!pending && comparesOf(access, publication) ? (
-          <Link to={tree} params={terminalParams} search={{ compare: true }} activeOptions={{ exact: true }} aria-current={search.terminal === undefined && search.compare !== undefined ? "page" : undefined}>
+          <Link to={tree} params={terminalParams} search={paneSearchOf({ compare: true as const }, paneModeOf(search.pane))} activeOptions={{ exact: true }} aria-current={search.terminal === undefined && search.compare !== undefined ? "page" : undefined}>
             {COMPARE}
           </Link>
         ) : null}
+        <Link
+          to={code}
+          params={routeParams}
+          search={paneSearchOf(search, paneModeOf(search.pane) === "full" ? "split" : "full")}
+          aria-pressed={paneModeOf(search.pane) === "full"}
+        >
+          {paneModeOf(search.pane) === "full" ? "Split view" : "Expand"}
+        </Link>
       </span>
     </nav>
   )

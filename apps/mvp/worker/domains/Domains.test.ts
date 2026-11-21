@@ -4,11 +4,13 @@
 // scripted at the network; an unhappy path swaps in a faulty provider.
 import { Action } from "@smthrs/flow"
 import { Effect, Fiber, Option, Redacted } from "effect"
+import { Layer } from "effect"
+import { HttpEffect } from "effect/http"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { SqlClient } from "effect/sql"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { DOMAINS_SHAPE_ROUTE, domainRoute, domainsRoute } from "../../src/features/domains/contract.ts"
+import { DOMAIN_RESOLVE_ROUTE, DOMAINS_SHAPE_ROUTE, domainRoute, domainsRoute } from "../../src/features/domains/contract.ts"
 import * as Flows from "../Flows.ts"
 import { personOnlyRefusals } from "../Actor.ts"
 import { eventually, testFile } from "../test/harness.ts"
@@ -802,8 +804,28 @@ describe("GET /api/shapes/domains", () => {
 
   test("the routes it handles", () => {
     expect(DomainsApi.handles(DOMAINS_SHAPE_ROUTE)).toBe(true)
+    expect(DomainsApi.handles(DOMAIN_RESOLVE_ROUTE)).toBe(true)
     expect(DomainsApi.handles(domainsRoute("a", "b"))).toBe(true)
     expect(DomainsApi.handles(domainRoute("a", "b", "c.d"))).toBe(true)
     expect(DomainsApi.handles("/api/repos/a/b/secrets/X")).toBe(false)
+  })
+
+  test("GET /api/domains/resolve returns only active custom domains, and refuses invalid or non-GET requests", async () => {
+    await seed(runtime, { hostname: "pending.example.com", state: "pending" })
+    await seed(runtime, { hostname: "live.example.com", state: "active" })
+    const h = await open({ actor: null })
+    expect((await h.fetch(`${DOMAIN_RESOLVE_ROUTE}?host=live.example.com`, { method: "POST" })).status).toBe(405)
+    expect((await h.fetch(DOMAIN_RESOLVE_ROUTE)).status).toBe(400)
+    expect((await h.fetch(`${DOMAIN_RESOLVE_ROUTE}?host=not_a_host`)).status).toBe(400)
+    expect((await h.fetch(`${DOMAIN_RESOLVE_ROUTE}?host=missing.example.com`)).status).toBe(404)
+    expect((await h.fetch(`${DOMAIN_RESOLVE_ROUTE}?host=pending.example.com`)).status).toBe(404)
+    const active = await h.fetch(`${DOMAIN_RESOLVE_ROUTE}?host=LIVE.EXAMPLE.COM.`)
+    expect(active.status).toBe(200)
+    expect(await active.json()).toEqual({ path: "/acme/widgets" })
+    const broken = await Effect.runPromise(Effect.gen(function* () {
+      const api = yield* DomainsApi.make({ id: REPO_ID }, Layer.effectDiscard(Effect.fail(new Error("db_down"))) as never)
+      return HttpEffect.toWebHandler(api.fetch as never)
+    }))
+    expect((await broken(new Request(`http://localhost${DOMAIN_RESOLVE_ROUTE}?host=live.example.com`))).status).toBe(503)
   })
 })

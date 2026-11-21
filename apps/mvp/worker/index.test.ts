@@ -125,3 +125,47 @@ test("the real index HTML resource keeps its successful status and origin metada
   expect(response.headers.get("etag")).toBeNull()
   expect(await response.text()).toBe("<html>https://app.test</html>")
 })
+
+test("an active custom domain redirects / to its repository page, preserving query, and skips APP_DOMAIN", async () => {
+  const seen: Array<string> = []
+  const chatApi = {
+    fetch: async (request: Request) => {
+      const url = new URL(request.url)
+      seen.push(`CHAT_API ${request.method} ${url.pathname}${url.search}`)
+      if (url.searchParams.get("host") === "code.acme.test") {
+        return new Response(JSON.stringify({ path: "/acme/widgets" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      if (url.searchParams.get("host") === "bad.acme.test") {
+        return new Response(JSON.stringify({ path: "//evil.test" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      if (url.searchParams.get("host") === "down.acme.test") {
+        throw new Error("binding offline")
+      }
+      return new Response(null, { status: 404 })
+    },
+  } as unknown as Fetcher
+  const env = { CHAT_API: chatApi, ASSETS: binding("ASSETS", seen), APP_DOMAIN: "smithers.test" }
+
+  // Active custom domain redirects / to its repository path with query preserved
+  const active = await site.fetch(new Request("https://code.acme.test/?ref=main") as Parameters<typeof site.fetch>[0], env)
+  expect(active.status).toBe(302)
+  expect(active.headers.get("location")).toBe("https://code.acme.test/acme/widgets?ref=main")
+
+  // APP_DOMAIN itself never calls /api/domains/resolve
+  seen.length = 0
+  const home = await site.fetch(new Request("https://smithers.test/") as Parameters<typeof site.fetch>[0], env)
+  expect(await home.text()).toBe("ASSETS")
+  expect(seen).toEqual(["ASSETS GET /"])
+
+  // Unknown, malformed, or unreachable custom domains fall back safely to ASSETS
+  for (const host of ["pending.acme.test", "bad.acme.test", "down.acme.test"]) {
+    const fallback = await site.fetch(new Request(`https://${host}/`) as Parameters<typeof site.fetch>[0], env)
+    expect(await fallback.text()).toBe("ASSETS")
+  }
+})

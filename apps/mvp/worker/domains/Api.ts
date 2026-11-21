@@ -5,6 +5,7 @@ import type { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
   DOMAINS_SHAPE_COLUMNS,
+  DOMAIN_RESOLVE_ROUTE,
   DOMAINS_SHAPE_ROUTE,
   DOMAINS_TABLE,
   isUnder,
@@ -46,7 +47,7 @@ export const shapes = Metric.counter("smithers_domain_shape_requests", {
 })
 
 /** Whether a path is one of the domain routes. */
-export const handles = (path: string): boolean => path === DOMAINS_SHAPE_ROUTE || parseDomainRoute(path) !== undefined
+export const handles = (path: string): boolean => path === DOMAINS_SHAPE_ROUTE || path === DOMAIN_RESOLVE_ROUTE || parseDomainRoute(path) !== undefined
 
 /** Whether `actor` may see and change domains: a Maintainer or Admin acting in person (0007 `repo:domain-write`). */
 export const mayManage = (actor: Actor): boolean =>
@@ -171,9 +172,34 @@ export const make = <E, R>(repository: { readonly id: string }, database: Layer.
       return response
     }).pipe(Effect.withSpan("domain.request", { kind: "server" }))
 
+    /** `GET /api/domains/resolve?host=<hostname>`: resolves an active custom domain to its repository path. */
+    const resolve = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: noStore })
+      const raw = new URL(request.url, "http://localhost").searchParams.get("host")
+      const hostname = raw === null ? undefined : normalizeHostname(raw)
+      if (hostname === undefined) return HttpServerResponse.empty({ status: 400, headers: noStore })
+      const row = yield* Store.read(hostname).pipe(
+        Effect.provide(database),
+        Effect.map((found) => ({ ok: true as const, found })),
+        Effect.catchCause(() => Effect.succeed({ ok: false as const })),
+      )
+      if (!row.ok) return HttpServerResponse.empty({ status: 503, headers: noStore })
+      if (Option.isNone(row.found) || row.found.value.state !== "active" || !row.found.value.repoId.startsWith("github/")) {
+        return HttpServerResponse.empty({ status: 404, headers: noStore })
+      }
+      return HttpServerResponse.jsonUnsafe(
+        { path: `/${row.found.value.repoId.slice("github/".length)}` },
+        { status: 200, headers: { "cache-control": "public, max-age=60" } },
+      )
+    })
+
     const fetch = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
-      return request.url.split("?")[0] === DOMAINS_SHAPE_ROUTE ? yield* shape : yield* write
+      const path = request.url.split("?")[0]
+      if (path === DOMAINS_SHAPE_ROUTE) return yield* shape
+      if (path === DOMAIN_RESOLVE_ROUTE) return yield* resolve
+      return yield* write
     })
 
     return { fetch }

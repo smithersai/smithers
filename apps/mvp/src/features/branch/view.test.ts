@@ -1,7 +1,7 @@
 // What a branch's page lets this person do right now (src/features/branch/view.ts, docs/features/branch-workspace.md#sharing).
 import { describe, expect, test } from "vitest"
 import { MEMBERS_ASK } from "../auth/contract"
-import { accessNow, deniedTitleOf, NO_ACCESS, statusOf, writes } from "./view"
+import { accessNow, deniedTitleOf, NO_ACCESS, paneModeOf, paneSearchOf, statusOf, writes } from "./view"
 
 describe("accessNow", () => {
   test("nothing until the branch is ready; what tracking answered until the room says otherwise", () => {
@@ -53,5 +53,21 @@ describe("deniedTitleOf", () => {
     expect(deniedTitleOf(true, { role: "member" })).toBe(NO_ACCESS)
     expect(deniedTitleOf(true, undefined)).toBe(NO_ACCESS)
     expect(deniedTitleOf(false, { role: null })).toBe(NO_ACCESS)
+  })
+})
+
+describe("paneModeOf and paneSearchOf", () => {
+  test("parses ?pane=full and defaults every other value to split", () => {
+    expect(paneModeOf("full")).toBe("full")
+    expect(paneModeOf("split")).toBe("split")
+    expect(paneModeOf(undefined)).toBe("split")
+    expect(paneModeOf(123)).toBe("split")
+  })
+
+  test("toggles pane=full while preserving other branch search params", () => {
+    expect(paneSearchOf({ terminal: "me" }, "full")).toEqual({ terminal: "me", pane: "full" })
+    expect(paneSearchOf({ terminal: "me", pane: "full" }, "split")).toEqual({ terminal: "me" })
+    expect(paneSearchOf({ compare: true }, "full")).toEqual({ compare: true, pane: "full" })
+    expect(paneSearchOf({ pane: "full" }, "split")).toEqual({})
   })
 })

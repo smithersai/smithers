@@ -132,8 +132,11 @@ export default Alchemy.Stack(
       // The aliases' pages, which `/` on each alias redirects to (worker/aliases.ts).
       env: {
         CHAT_API: chatApi,
-        ...(Option.isSome(domain) && domain.value.aliases.length > 0
-          ? { APP_ALIASES: aliasesBinding(domain.value) }
+        ...(Option.isSome(domain)
+          ? {
+            APP_DOMAIN: domain.value.name,
+            ...(domain.value.aliases.length > 0 ? { APP_ALIASES: aliasesBinding(domain.value) } : {}),
+          }
           : {})
       },
       // Production's custom domain and the hostnames that redirect to it, or none at all with APP_DOMAIN=workers.dev;

@@ -52,6 +52,12 @@
   grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem);
   align-content: stretch;
 }
+.branch-screen[data-workspace="true"][data-pane="full"] .branch-screen-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.branch-screen[data-workspace="true"][data-pane="full"] .branch-screen-side {
+  display: none;
+}
 
 .branch-screen-view { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 .branch-screen[data-workspace="true"] .branch-screen-view { overflow-y: auto; }

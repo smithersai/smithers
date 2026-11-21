@@ -103,11 +103,19 @@ export interface RouterContext {
  */
 const branchSearch = (
   search: Record<string, unknown>,
-): { readonly L?: unknown; readonly terminal?: string; readonly edit?: string; readonly compare?: true } => ({
+): { readonly L?: unknown; readonly terminal?: string; readonly edit?: string; readonly compare?: true; readonly pane?: "full" } => ({
   ...lineSearch(search),
   ...(typeof search.terminal === "string" && search.terminal !== "" ? { terminal: search.terminal } : {}),
   ...(typeof search.edit === "string" && search.edit !== "" ? { edit: search.edit } : {}),
   ...(search.compare !== undefined && search.compare !== false ? { compare: true as const } : {}),
+  ...(search.pane === "full" ? { pane: "full" as const } : {}),
+})
+
+const blobSearch = (
+  search: Record<string, unknown>,
+): { readonly L?: unknown; readonly pane?: "full" } => ({
+  ...lineSearch(search),
+  ...(search.pane === "full" ? { pane: "full" as const } : {}),
 })
 
 /** How long a link must be hovered before its page preloads, so a pointer sweeping over a list preloads nothing. */
@@ -475,7 +483,7 @@ const blobRoute = createRoute({
   component: repoGated(BlobScreen),
   pendingComponent: BranchPendingScreen,
   ...LOADING_PENDING,
-  validateSearch: lineSearch,
+  validateSearch: blobSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
     enterRepo(context, params, load, () => context.repo.actions.warmRoute("blob", params, search), () =>
       Promise.all([
