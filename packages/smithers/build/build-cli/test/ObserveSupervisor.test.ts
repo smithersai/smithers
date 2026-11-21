@@ -477,6 +477,51 @@ describe("smthrs-observe and threads killed in the middle of calls", () => {
   }, 120_000)
 })
 
+/** A program whose timer sends SIGALRM every `us` microseconds to a handler while it asks for a file 20,000 times. */
+const signalling = String.raw`
+import os, signal, sys
+count = [0]
+def handler(sig, frame): count[0] += 1
+signal.signal(signal.SIGALRM, handler)
+every = float(sys.argv[1]) / 1e6
+signal.setitimer(signal.ITIMER_REAL, every, every)
+for i in range(20000): os.stat(sys.argv[2])
+signal.setitimer(signal.ITIMER_REAL, 0, 0)
+print("done")
+`
+
+describe("smthrs-observe and signals faster than a call", () => {
+  supervised("stops a run whose signals come faster than a recorded call completes, and says so", async () => {
+    const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-storm-")))
+    temporary.push(base)
+    const script = Path.join(base, "storm.py")
+    await Fs.writeFile(script, signalling)
+    // Unrecorded, the program ends at once whatever its timer.
+    expect(spawnSync("python3", [script, "2", script], { encoding: "utf8", timeout: 20_000 }).stdout).toBe("done\n")
+    const trace = Path.join(base, "trace")
+    const started = Date.now()
+    const run = spawnSync(supervisor!, [trace, "--", "python3", script, "2", script], {
+      encoding: "utf8",
+      timeout: 30_000
+    })
+    // Recorded, it would never end: the recorder stops it, writes why, and ends its trace.
+    expect(run.error).toBeUndefined()
+    expect(run.status).not.toBe(0)
+    expect(Date.now() - started).toBeLessThan(20_000)
+    const lines = NodeFs.readFileSync(trace, "utf8").split("\n")
+    expect(ObservedReads.read(() => lines, base).refusals).toContain(ObservedReads.signalStorm)
+    expect(lines.filter((line) => line !== "").at(-1)).toMatch(/^\d+ \+\+\+ complete \+\+\+$/)
+    // A timer of 100 microseconds is no storm: the run ends recorded, as it ends unrecorded.
+    const calm = spawnSync(supervisor!, [trace, "--", "python3", script, "100", script], {
+      encoding: "utf8",
+      timeout: 60_000
+    })
+    expect(calm.status, calm.stderr).toBe(0)
+    expect(calm.stdout).toBe("done\n")
+    expect(NodeFs.readFileSync(trace, "utf8")).not.toContain(ObservedReads.signalStorm)
+  }, 120_000)
+})
+
 describe("smthrs-observe and signals", () => {
   supervised("never lets a signal cut short a call it would not cut short unrecorded", async () => {
     const base = await signalRoot()

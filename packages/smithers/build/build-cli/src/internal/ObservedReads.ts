@@ -860,6 +860,16 @@ const joinedFrom = (directory: string, rest: ReadonlyArray<string>): string => {
 const decorated = /^(\d+)<(.*)>$/s
 
 /**
+ * Why `smthrs-observe` stopped a run: its signals came faster than a
+ * recorded call completes, so a call cut short by each never ended where it
+ * ends unrecorded. The build runs such a step again without the recording.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const signalStorm = "signals arrive faster than a recorded call completes"
+
+/**
  * Marks when a run begins: writes `file`, and answers its change time on the
  * file system's clock, taken again until it is later than the first. A file
  * written in the same tick as the mark, as the files a build puts back for a

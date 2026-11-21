@@ -3572,17 +3572,25 @@ const executeWith = (
             return yield* withRights(node, needs)
           }
           if (!attempt.ok) {
-            log(`${node.label}  failed while its reads were recorded; it runs again without the recording`)
+            // smthrs-observe stops a run whose signals come faster than a recorded call completes, which would never
+            // end recorded: the step runs again without the recording, as one that failed recorded does.
+            const storm = Exit.isSuccess(parsed) && parsed.value.refusals.includes(ObservedReads.signalStorm)
+            log(
+              storm
+                ? `${node.label}  its recording was ended: ${ObservedReads.signalStorm}; it runs again without it`
+                : `${node.label}  failed while its reads were recorded; it runs again without the recording`
+            )
             const plain = yield* timed(node.label, "step", spawnConsumer(node))
             if (!plain.ok) return fail(plain.error)
             yield* joined(() =>
               CacheEvidence.rememberFailedAttempt(root, cacheDirectory, observed.key, recordedBy, {
                 label: node.label,
                 denied: [],
-                output: [attempt.error.slice(-attemptOutputCharacters)]
+                output: [storm ? ObservedReads.signalStorm : attempt.error.slice(-attemptOutputCharacters)]
               }).catch(() => undefined)
             )
-            unstored(node, failedObserved, `; the failed run's output is in ${attemptPath}`)
+            if (storm) unstored(node, `${ObservedReads.signalStorm}, so it ran without the recording`)
+            else unstored(node, failedObserved, `; the failed run's output is in ${attemptPath}`)
             return green("ran")
           }
           wroteHere.delete(node.label)

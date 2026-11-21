@@ -293,6 +293,35 @@ describe("an observed test", () => {
     await expect(run(["check"], services)).rejects.toThrow("smthrs-observe stopped before the step ended")
   })
 
+  tracedIt(
+    "runs again without the recording a step whose signals come faster than a recorded call completes",
+    async () => {
+      const supervisor = ObservedReads.supervisorPath(process.platform, process.arch, {
+        SMTHRS_OBSERVE_WITH: "smthrs-observe"
+      })
+      if (supervisor === undefined) return
+      // A timer every two microseconds, to a handler, while the program asks for a file: it ends at once unrecorded.
+      const storm = [
+        "import os, signal",
+        "signal.signal(signal.SIGALRM, lambda sig, frame: None)",
+        "signal.setitimer(signal.ITIMER_REAL, 2e-6, 2e-6)",
+        "for i in range(20000): os.stat('input.txt')",
+        "signal.setitimer(signal.ITIMER_REAL, 0, 0)"
+      ].join("\n")
+      const { logs, run, write } = await fixture({
+        check: "/usr/bin/python3 storm.py && /bin/cat input.txt > /dev/null"
+      })
+      await write("storm.py", `${storm}\n`)
+      const services = { ...executionServicesLive, observer: () => ({ tracer: supervisor, supervisor: true as const }) }
+      expect(await run(["check"], services)).toEqual({ check: "ran" })
+      expect(logs).toContain(
+        `//:check  its recording was ended: ${ObservedReads.signalStorm}; it runs again without it`
+      )
+      expect(logs).toContain(`//:check  not cached: ${ObservedReads.signalStorm}, so it ran without the recording`)
+    },
+    120_000
+  )
+
   // A program of many threads ends while its threads are asking about files: Go's tools do at every exit. The
   // tracer then writes lines for calls it could not follow, each for a thread killed where it stopped. Here a
   // process of twenty-five threads is killed three times. The step still passes, and its result is stored.

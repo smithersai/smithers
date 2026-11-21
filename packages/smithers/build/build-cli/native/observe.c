@@ -1202,6 +1202,69 @@ struct kept {
 static struct kept *keptSignals;
 static pthread_mutex_t keeping = PTHREAD_MUTEX_INITIALIZER;
 
+/*
+ * Signals that come faster than a recorded thread can take them: each one stops the thread for this supervisor,
+ * or cuts its restarted call short again before the call is received, and the thread makes no more calls, where
+ * unrecorded it would. For each thread, how many signals stopped it since this supervisor last received a call of
+ * it, and since when. At `stormCuts` of them, coming at `stormRate` a second or faster, the recording ends: the run
+ * is stopped, and the build runs the step again without it.
+ */
+#define STORM_SLOTS 4096
+static const unsigned stormCuts = 5000;
+static const long stormRate = 20000;
+static struct {
+  pid_t tid;
+  unsigned cuts;
+  struct timespec first;
+} storms[STORM_SLOTS];
+static pthread_mutex_t storming = PTHREAD_MUTEX_INITIALIZER;
+static int stormed;
+#ifdef STORM_STATS
+static unsigned mostCuts;
+static long longestMs;
+#endif
+
+static unsigned stormSlot(pid_t tid) {
+  unsigned slot = (unsigned)tid % STORM_SLOTS;
+  for (unsigned i = 0; i < STORM_SLOTS; i++) {
+    unsigned at = (slot + i) % STORM_SLOTS;
+    if (storms[at].tid == tid || storms[at].tid == 0) return at;
+  }
+  return slot;
+}
+
+/* A call of `tid` was received: what cut it short before is over. */
+static void receivedCall(pid_t tid) {
+  pthread_mutex_lock(&storming);
+  unsigned at = stormSlot(tid);
+  if (storms[at].tid == tid) storms[at].cuts = 0;
+  pthread_mutex_unlock(&storming);
+}
+
+/* A signal stopped `tid`. */
+static void cutAgain(pid_t tid) {
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  pthread_mutex_lock(&storming);
+  unsigned at = stormSlot(tid);
+  if (storms[at].tid != tid) {
+    storms[at].tid = tid;
+    storms[at].cuts = 0;
+  }
+  if (storms[at].cuts == 0) storms[at].first = now;
+  storms[at].cuts++;
+  long ms = (now.tv_sec - storms[at].first.tv_sec) * 1000 + (now.tv_nsec - storms[at].first.tv_nsec) / 1000000;
+#ifdef STORM_STATS
+  if (storms[at].cuts > mostCuts) mostCuts = storms[at].cuts;
+  if (ms > longestMs) longestMs = ms;
+#endif
+  int over = storms[at].cuts >= stormCuts && (long)storms[at].cuts * 1000 >= stormRate * (ms + 1);
+  pthread_mutex_unlock(&storming);
+  if (over && !__atomic_exchange_n(&stormed, 1, __ATOMIC_ACQ_REL)) {
+    unrecorded("signals arrive faster than a recorded call completes");
+  }
+}
+
 /* At a signal stop: whether the thread was cut short in a watched call that the kernel restarts when no signal is
  * delivered. Only reads: the call's number and its answer, or on aarch64 where the thread stands. */
 static int cutShort(pid_t tid, int *fork) {
@@ -1261,6 +1324,7 @@ static void sendAfterFork(pid_t tid) {
  * first: the signal is kept and the call runs again, unless the signal was sent again after the restarted call was
  * received. Otherwise a kept signal sent again is put back as it first came. */
 static int atSignal(pid_t tid, int sig) {
+  cutAgain(tid);
   int fork = 0;
   if (cutShort(tid, &fork)) {
     pthread_mutex_lock(&keeping);
@@ -1430,6 +1494,7 @@ static void serve(const struct seccomp_notif *req) {
   if (c == NULL) return;
   pid_t tgid = tgidOf(tid);
   sendKept(tid, tgid);
+  receivedCall(tid);
   startedYet(tid, tgid);
   char path[PATH_MAX + 1], other[PATH_MAX + 1];
   const char *why = NULL;
@@ -2197,6 +2262,8 @@ int main(int argc, char **argv) {
       }
     }
     if (pid < 0 && errno == ECHILD) break;
+    /* Signals come faster than a recorded call completes: the run is stopped, and runs again unrecorded. */
+    if (__atomic_load_n(&stormed, __ATOMIC_ACQUIRE)) endLeft();
     if (rootDone) {
       struct timespec now;
       clock_gettime(CLOCK_MONOTONIC, &now);
@@ -2231,6 +2298,9 @@ int main(int argc, char **argv) {
   }
   close(listener);
   boundSockets();
+#ifdef STORM_STATS
+  fprintf(stderr, "storm-stats: most cuts %u over %ld ms\n", mostCuts, longestMs);
+#endif
   if (!writeTrace(traceFile)) {
     fprintf(stderr, "smthrs-observe: could not write %s\n", traceFile);
   }
