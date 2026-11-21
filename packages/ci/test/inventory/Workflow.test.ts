@@ -559,7 +559,7 @@ jobs:
 
   // "actions/cache": `cache-hit` is empty after a miss. A cache step whose key hashes a file outside the repository
   // cannot be kept here (`Cache.test.ts` has the ones that can), so it restores nothing.
-  it("reads a cache step it cannot keep as a miss, an upload as nothing to run, and leaves out a job that uses any other action", () => {
+  it("reads a cache step it cannot keep as a miss, keeps an upload for the runner, and leaves out a job that uses any other action", () => {
     const repo = withWorkflow(`
 on: pull_request
 jobs:
@@ -597,9 +597,10 @@ jobs:
     expect(cached.steps.map((step) => step.command)).toEqual(["echo install"])
     expect(details(cached)).toEqual([
       "actions/cache@v4 has no command to run",
-      "actions/upload-artifact@v4 has no command to run",
       "cached step 4 depends on steps.cache.outputs.cache-primary-key: an output of actions/cache@v4, which a replay does not run"
     ])
+    // The upload is not run here: the workflow apply writes runs it on the runner.
+    expect(cached.kept?.map((step) => step.uses)).toEqual(["actions/upload-artifact@v4"])
     expect(details(jobOf(repo, "ci.yml:later")).at(-1)).toBe(
       "later step 3 depends on steps.maybe.outcome: how a step ended is known only when its condition is"
     )

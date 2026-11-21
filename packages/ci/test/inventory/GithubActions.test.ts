@@ -232,13 +232,13 @@ describe("readWorkflow steps", () => {
     const job = jobOf(withSteps(`
       - uses: actions/checkout@v4
       - run: bun test
-      - uses: codecov/codecov-action@v5
-        with: { token: "\${{ secrets.CODECOV_TOKEN }}" }
+      - uses: dorny/test-reporter@v2
+        with: { name: tests, path: report.xml, reporter: java-junit }
 `))
     expect(job.steps.map((step) => [step.id, step.command])).toEqual([["ci.yml:test:1", "bun test"]])
     expect(job.unsupported).toEqual([
       { feature: "host-action", detail: `${file}: actions/checkout@v4 has no command to run` },
-      { feature: "uses", detail: `${file}: codecov/codecov-action@v5 has no command to run` }
+      { feature: "uses", detail: `${file}: dorny/test-reporter@v2 has no command to run` }
     ])
   })
 

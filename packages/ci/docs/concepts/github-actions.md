@@ -244,20 +244,52 @@ the software and set its variable, then run again.
 
 ## Actions
 
-| A step that uses                                                    | Becomes                                                                                                                                                         |
-| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `actions/checkout`                                                  | Nothing to run: the replay made the checkout. One that asks for another repository, directory or commit, or for submodules, leaves the job out.                 |
-| A setup action, such as `actions/setup-node` or `oven-sh/setup-bun` | Nothing to run. Smithers CI installs no tool: it looks for the tool on your machine before it runs the job. See [setup actions](how-it-works.md#setup-actions). |
-| `actions/cache`, `actions/cache/restore`, `actions/cache/save`      | A command that restores and one that saves, in a store on your machine. See [Caches](#caches).                                                                  |
-| `actions/upload-artifact`                                           | Nothing to run.                                                                                                                                                 |
-| A local action, `./path`, that is composite                         | Its own steps, with its `inputs` and `outputs`.                                                                                                                 |
-| A local workflow, `./.github/workflows/x.yml`, called by a job      | Its jobs, with its `inputs`. The calling job waits for all of them. A matrix of calls is not read, and its job is left out.                                     |
-| Any other action, `actions/download-artifact` included              | Nothing: the job is left out.                                                                                                                                   |
+| A step that uses                                                             | Becomes                                                                                                                                                                |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `actions/checkout`                                                           | Nothing to run: the replay made the checkout. One that asks for another repository, directory or commit, or for submodules, leaves the job out.                        |
+| A setup action, such as `actions/setup-node` or `oven-sh/setup-bun`          | Nothing to run. Smithers CI installs no tool: it looks for the tool on your machine before it runs the job. See [setup actions](how-it-works.md#setup-actions).        |
+| `actions/cache`, `actions/cache/restore`, `actions/cache/save`               | A command that restores and one that saves, in a store on your machine. See [Caches](#caches).                                                                         |
+| An action that sends the job's results out, such as `codecov/codecov-action` | Nothing to run here. The job's other steps run, and the workflow `apply` writes runs the step on your runner. See [Results a job sends out](#results-a-job-sends-out). |
+| A local action, `./path`, that is composite                                  | Its own steps, with its `inputs` and `outputs`.                                                                                                                        |
+| A local workflow, `./.github/workflows/x.yml`, called by a job               | Its jobs, with its `inputs`. The calling job waits for all of them. A matrix of calls is not read, and its job is left out.                                            |
+| Any other action, `actions/download-artifact` included                       | Nothing: the job is left out.                                                                                                                                          |
 
 A setup action also sets variables for the steps after it, such as `GOROOT`.
 Smithers CI sets none of them, so a job with a step that reads one is left out.
 `JAVA_HOME` is the exception: a runner has one anyway, so a step gets your
 machine's, as [above](#software-a-runner-comes-with).
+
+## Results a job sends out
+
+A step that uploads an artifact, a coverage report or test results gives
+nothing back to the steps after it, so a replay runs the job without it and
+compares the job's result from the steps it ran. The report lists each such
+step under `not run here`. The workflow `apply` writes runs the step on your
+runner, after the steps it follows, with the `with`, `if`, `env`,
+`continue-on-error` and `timeout-minutes` your workflow gives it, and the
+secrets it names. It finds the files your job's steps left, also when those
+steps reused their results.
+
+| Action                                     | What it does with the results                         |
+| ------------------------------------------ | ----------------------------------------------------- |
+| `actions/upload-artifact`                  | Stores files for other jobs and for people            |
+| `actions/upload-artifact/merge`            | Merges artifacts already stored                       |
+| `actions/upload-pages-artifact`            | Packs a site for a deploy job that runs after its own |
+| `codecov/codecov-action`                   | Sends coverage to Codecov                             |
+| `codecov/test-results-action`              | Sends test results to Codecov                         |
+| `coverallsapp/github-action`               | Sends coverage to Coveralls                           |
+| `codacy/codacy-coverage-reporter-action`   | Sends coverage to Codacy                              |
+| `github/codeql-action/upload-sarif`        | Sends findings to code scanning                       |
+| `EnricoMi/publish-unit-test-result-action` | Publishes test results as a check                     |
+| `mikepenz/action-junit-report`             | Publishes test results as a check                     |
+
+A job is left out, as with any other action, when a later step reads what the
+step gave (`steps.<id>.outputs` or `steps.<id>.outcome`), when the step reads
+a value the workflow `apply` writes does not have (`env`, `steps`, `needs`,
+`inputs`), or when the action can fail on what it reports:
+`EnricoMi/publish-unit-test-result-action` with `action_fail: true`,
+`mikepenz/action-junit-report` with `fail_on_failure: true`, and
+`dorny/test-reporter`, which fails when a test failed.
 
 ## Caches
 

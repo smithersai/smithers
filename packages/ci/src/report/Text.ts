@@ -272,6 +272,14 @@ export const text: RenderReport = (report) => {
       ...tools.map((entry) => `${clean(entry.job).padEnd(jobWidth)}  ${clean(toolVersion(entry))}`)
     ])
   }
+  const runner = report.runnerSteps ?? []
+  if (runner.length > 0) {
+    const jobWidth = Math.max(...runner.map((entry) => clean(entry.job).length))
+    sections.push([
+      "not run here: your runner runs them, in the workflow apply writes",
+      ...runner.map((entry) => `${clean(entry.job).padEnd(jobWidth)}  ${clean(entry.action)}: ${clean(entry.why)}`)
+    ])
+  }
   const empty = report.withheld ?? []
   if (empty.length > 0) sections.push([clean(leftEmpty(empty))])
   return sections.map(paragraph).join("\n\n")

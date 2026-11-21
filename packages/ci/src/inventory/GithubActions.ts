@@ -22,9 +22,12 @@ import {
   hostActions,
   hostOf,
   type Job,
+  type KeptStep,
   releaseTrigger,
+  resultAction,
   runnerSoftware,
   secret as receivesSecret,
+  type Step,
   type Toolchain,
   triggerFilter,
   unknownRunner,
@@ -63,6 +66,7 @@ import {
   type Part,
   type Residual,
   type Scope as Expressions,
+  split,
   truthy,
   unknown,
   type Value,
@@ -75,7 +79,7 @@ import { filesOf } from "./Glob.ts"
 import { installsOf } from "./MachineChanges.ts"
 import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
 import { type JobFacts, settled, type StepFacts, write } from "./Runner.ts"
-import { isLiteralSecret, isSecretName } from "./Secrets.ts"
+import { hasSecretValue, isLiteralSecret, isSecretName } from "./Secrets.ts"
 import { readSetup, type Setup } from "./Setup.ts"
 import { before as beforeSetupCache, lockVariable, setupCache } from "./SetupCache.ts"
 import { readLimit, secondsOf, within as withinLimit } from "./TimeLimit.ts"
@@ -183,6 +187,8 @@ interface JobState extends Shape {
   actions: number
   /** What the job's actions run after its other steps, as a cache step saves: the last one added runs first. */
   readonly after: Array<() => void>
+  /** The steps that only send the job's results out, which the workflow `apply` writes runs (`Job.kept`). */
+  readonly kept: Array<KeptStep>
 }
 
 /** A job is read with this many local actions and no more. */
@@ -931,6 +937,93 @@ const readUses = (context: StepContext, raw: Record<string, unknown>, uses: stri
   return recordOf(ran, outputs, undefined)
 }
 
+/**
+ * The action of `resultActions` a step uses, when it only sends the job's results out: with the input that makes it
+ * fail on what it reports, it can change the job's verdict, and is not one.
+ */
+const resultActionOf = (uses: string, inputs: unknown) => {
+  const found = resultAction(uses)
+  if (found?.fails === undefined) return found
+  const given = isRecord(inputs) ? inputs[found.fails] : undefined
+  return given === undefined || given === false || given === "false" ? found : undefined
+}
+
+/** Every text of a kept step that the workflow `apply` writes. */
+const keptTexts = (step: KeptStep): ReadonlyArray<string> => [
+  step.if ?? "",
+  ...Object.values(step.with ?? {}),
+  ...Object.values(step.env ?? {}),
+  step.continueOnError ?? "",
+  step.timeoutMinutes ?? ""
+]
+
+// The contexts a step of the generated workflow has as the original step had them. Its job holds no other steps of
+// the original job, no `env:` of it and no other job's outputs.
+const keptContexts = /^(matrix|secrets|github|runner|vars)$/
+
+/** The first name an expression in a kept step's text reads that the generated workflow does not have. */
+const foreignContext = (text: string, bare: boolean): string | undefined => {
+  const { pieces, rest } = split(text)
+  const expressions = pieces.length === 0 && bare ? [rest] : pieces.map(([, expression]) => expression)
+  for (const expression of expressions) {
+    const unquoted = expression.replace(/'(?:[^']|'')*'/g, "''")
+    for (const match of unquoted.matchAll(/(?<![\w.])([A-Za-z_][\w-]*)\s*(?=[.[])/g)) {
+      const name = (match[1] as string).toLowerCase()
+      if (!keptContexts.test(name)) return name
+    }
+  }
+  return undefined
+}
+
+/**
+ * Reads a step that only sends the job's results out (`resultActionOf`). A replay does not run it, so no later step
+ * may read how it ended or what it gave. The workflow `apply` writes runs it as the repository wrote it, after the
+ * step before it, when every value it reads is one that workflow has.
+ */
+const keepStep = (state: JobState, raw: Record<string, unknown>, uses: string, where: string): StepRecord => {
+  const { job } = state
+  const left = unknown(`what ${uses} gave: Smithers CI leaves it to your runner`)
+  const out: StepRecord = { outputs: left, outcome: left }
+  const texts = (entry: unknown): Record<string, string> | undefined => {
+    if (entry === undefined) return {}
+    if (!isRecord(entry)) return undefined
+    const pairs = Object.entries(entry).map(([name, held]) => [name, asScalar(held)] as const)
+    return pairs.every(([, held]) => held !== undefined)
+      ? Object.fromEntries(pairs) as Record<string, string>
+      : undefined
+  }
+  const inputs = texts(raw["with"])
+  const env = texts(raw["env"])
+  const scalar = (name: string): string | undefined => raw[name] === undefined ? undefined : asScalar(raw[name]) ?? ""
+  const step: KeptStep = {
+    uses,
+    ...(job.steps.length === 0 ? {} : { after: (job.steps.at(-1) as Step).id }),
+    ...(typeof raw["id"] === "string" ? { id: raw["id"] } : {}),
+    ...(typeof raw["name"] === "string" ? { name: raw["name"] } : {}),
+    ...(scalar("if") === undefined ? {} : { if: scalar("if") as string }),
+    ...(inputs === undefined || Object.keys(inputs).length === 0 ? {} : { with: inputs }),
+    ...(env === undefined || Object.keys(env).length === 0 ? {} : { env }),
+    ...(scalar("continue-on-error") === undefined ? {} : { continueOnError: scalar("continue-on-error") as string }),
+    ...(scalar("timeout-minutes") === undefined ? {} : { timeoutMinutes: scalar("timeout-minutes") as string })
+  }
+  if (inputs === undefined || env === undefined || [step.if, step.continueOnError, step.timeoutMinutes].includes("")) {
+    note(job, "uses", `${where} gives ${uses} a value that is not text`)
+    return out
+  }
+  if (keptTexts(step).some(hasSecretValue)) {
+    note(job, "secret-value", `${where} holds a value shaped like a secret`)
+    return out
+  }
+  const foreign = [step.if ?? ""].map((text) => foreignContext(text, true)).find((name) => name !== undefined) ??
+    keptTexts(step).slice(1).map((text) => foreignContext(text, false)).find((name) => name !== undefined)
+  if (foreign !== undefined) {
+    note(job, "uses", `${where}: ${uses} reads ${foreign}, which a step of the workflow apply writes does not have`)
+    return out
+  }
+  state.kept.push(step)
+  return out
+}
+
 const readStep = (state: JobState, scope: StepScope, raw: unknown, index: number): void => {
   const { job } = state
   const number = index + 1
@@ -953,6 +1046,9 @@ const readStep = (state: JobState, scope: StepScope, raw: unknown, index: number
   }
   const unread = recordOf({ kind: "problem", why: "" }, unknown(""), undefined)
 
+  if (typeof uses === "string" && scope.depth === 0 && resultActionOf(uses, raw["with"]) !== undefined) {
+    return record(keepStep(state, raw, uses, where))
+  }
   const ran = within(scope.condition, readCondition(raw["if"], own))
   if (ran.kind === "never") {
     note(
@@ -1050,7 +1146,8 @@ const fillReferencedKeys = (job: Draft, matrix: Matrix): Draft => {
       // Every step read from a workflow has runner text.
       String(step.runner).replace(/^__m=.*$/gm, ""),
       ...Object.values(step.env)
-    ])
+    ]),
+    ...(job.kept ?? []).flatMap(keptTexts)
   ]
   const used = texts.flatMap(matrixReferences).filter((key) => matrix.keys.has(key))
   return {
@@ -1336,7 +1433,8 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     python: false,
     keeps: [],
     actions: 0,
-    after: []
+    after: [],
+    kept: []
   }
   const scope: StepScope = {
     env: withEnv(workflow.env, raw["env"], job, name, before, false),
@@ -1364,7 +1462,7 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
   if (matrix.variants.some((variant) => quoted.some((used) => variant[used]?.includes("'")))) {
     note(job, "shell", `${name} puts a matrix value holding a quote into a script`)
   }
-  return [fillReferencedKeys(job, matrix)]
+  return [fillReferencedKeys(state.kept.length === 0 ? job : { ...job, kept: state.kept }, matrix)]
 }
 
 /**

@@ -1,0 +1,167 @@
+/**
+ * A job that ends with a step sending its results out, as tkem/cachetools ends with codecov: the replay runs its
+ * other steps and names the step it did not run, and `apply` writes the step as the repository had it.
+ */
+
+import { spawnSync } from "node:child_process"
+import { existsSync, mkdirSync, readFileSync } from "node:fs"
+import { join } from "node:path"
+import { fileURLToPath } from "node:url"
+import { afterAll, describe, expect, it } from "vitest"
+import { parse as parseYaml } from "yaml"
+import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
+import { bin, commit, git, remove, spawn, temporary } from "../cli/repo.ts"
+
+const made: Array<string> = []
+afterAll(() => made.forEach(remove))
+
+/** A real replay runs each commit up to three ways; a busy machine takes minutes. */
+const replayLimit = 540_000
+
+const smthrs = fileURLToPath(new URL("../../../smithers/bin/smithers.mjs", import.meta.url))
+
+const here = process.platform === "darwin" ? "macos-latest" : "ubuntu-latest"
+
+const workflow = `
+on: push
+jobs:
+  main:
+    runs-on: ${here}
+    strategy:
+      matrix:
+        part: [one, two]
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh test.sh \${{ matrix.part }}
+      - uses: codecov/codecov-action@v5
+        with:
+          name: \${{ matrix.part }}
+          files: coverage-\${{ matrix.part }}.txt
+          token: \${{ secrets.CODECOV_TOKEN }}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: "coverage-\${{ matrix.part }}", path: "coverage-*.txt" }
+`
+
+const repository = (): string => {
+  const root = temporary("result-actions")
+  made.push(root)
+  git(root, "init", "--quiet", "--initial-branch=main")
+  commit(root, "ci", { ".github/workflows/ci.yml": workflow, "test.sh": "echo \"covered $1\" > \"coverage-$1.txt\"\n" })
+  return root
+}
+
+describe("a job that ends with steps that send its results out", () => {
+  it("is replayed without them, and the report names them", async () => {
+    const root = repository()
+    const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check", "--no-trial", "--json"], root, process.env)
+    expect(outcome.code, outcome.stderr).toBe(0)
+    const report = JSON.parse(outcome.stdout) as ReplayReport
+    expect(report.notReplayed ?? []).toEqual([])
+    expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
+    expect(report.commits[0]?.mismatches).toEqual([])
+    expect(report.runnerSteps).toEqual([
+      { job: "ci.yml:main", action: "codecov/codecov-action@v5", why: "it sends coverage to Codecov" },
+      { job: "ci.yml:main", action: "actions/upload-artifact@v4", why: "it stores files for other jobs and for people" }
+    ])
+    const text = await spawn(bin, ["--commits", "1", "--no-apply-check", "--no-trial"], root, process.env)
+    expect(text.stdout).toContain("not run here: your runner runs them, in the workflow apply writes")
+    expect(text.stdout).toContain("ci.yml:main  codecov/codecov-action@v5: it sends coverage to Codecov")
+  }, replayLimit)
+
+  it("is written by apply as the repository had it, after the steps it follows, once for each variant", async () => {
+    const root = repository()
+    const applied = await spawn(bin, ["apply"], root, process.env)
+    expect(applied.code, applied.stderr).toBe(0)
+    const generated = parseYaml(readFileSync(join(root, ".github", "workflows", "smithers-ci.yml"), "utf8")) as {
+      readonly jobs: { readonly ci: { readonly steps: ReadonlyArray<Readonly<Record<string, unknown>>> } }
+    }
+    const steps = generated.jobs.ci.steps
+    const last = steps.findIndex((step) => String(step["run"] ?? "").includes("smthrs ci"))
+    const after = steps.slice(last + 1)
+    expect(after.filter((step) => step["uses"] === "codecov/codecov-action@v5")).toEqual([
+      expect.objectContaining({
+        if: `\${{ matrix.os == '${here}' && (success()) }}`,
+        with: { name: "one", files: "coverage-one.txt", token: "${{ secrets.CODECOV_TOKEN }}" }
+      }),
+      expect.objectContaining({
+        if: `\${{ matrix.os == '${here}' && (success()) }}`,
+        with: { name: "two", files: "coverage-two.txt", token: "${{ secrets.CODECOV_TOKEN }}" }
+      })
+    ])
+    expect(after.filter((step) => step["uses"] === "actions/upload-artifact@v4").map((step) => step["if"])).toEqual([
+      `\${{ matrix.os == '${here}' && (always()) }}`,
+      `\${{ matrix.os == '${here}' && (always()) }}`
+    ])
+    // Each kept step follows the step that puts its job's checkout in the workspace.
+    expect(after.filter((step) => String(step["name"]).startsWith("Files of ci.yml:main"))).toHaveLength(4)
+  }, replayLimit)
+  it(
+    "finds the files its job left when the workflow apply writes runs, also when every step reused its result",
+    async () => {
+      const root = repository()
+      const applied = await spawn(bin, ["apply"], root, process.env)
+      expect(applied.code, applied.stderr).toBe(0)
+      commit(root, "apply")
+      const steps = (parseYaml(readFileSync(join(root, ".github", "workflows", "smithers-ci.yml"), "utf8")) as {
+        readonly jobs: { readonly ci: { readonly steps: ReadonlyArray<Readonly<Record<string, unknown>>> } }
+      }).jobs.ci.steps
+      // The runner's temporary directory and the workspace an action reads, as GitHub gives them.
+      const runnerTemp = temporary("result-actions-runner")
+      const workspace = temporary("result-actions-workspace")
+      const home = temporary("result-actions-home")
+      made.push(runnerTemp, workspace, home)
+      const filled = (text: string): string => text.replaceAll("${{ runner.temp }}", runnerTemp)
+      const build = steps.find((step) => String(step["run"] ?? "").includes("smthrs ci")) as {
+        readonly env: Readonly<Record<string, string>>
+      }
+      const environment = {
+        ...process.env,
+        HOME: home,
+        SMTHRS_MACHINES: filled(build.env["SMTHRS_MACHINES"] as string),
+        SMTHRS_KEEP_MACHINES: filled(build.env["SMTHRS_KEEP_MACHINES"] as string)
+      }
+      const copies = steps.filter((step) => String(step["name"]).startsWith("Files of ci.yml:main"))
+      let printed = ""
+      const runOnce = (): ReadonlyArray<string> => {
+        const ran = spawnSync(process.execPath, [
+          smthrs,
+          "ci",
+          "//...",
+          "--jobs",
+          "1",
+          "--cache-dir",
+          join(runnerTemp, "state")
+        ], {
+          cwd: root,
+          encoding: "utf8",
+          maxBuffer: 64 * 1024 * 1024,
+          env: environment
+        })
+        expect(ran.status, `${ran.stdout}${ran.stderr}`).toBe(0)
+        printed = ran.stdout
+        // Each copy step, then what its kept step would read: the coverage its own variant wrote.
+        return copies.map((step) => {
+          mkdirSync(workspace, { recursive: true })
+          const copied = spawnSync("sh", ["-c", filled(String(step["run"]))], {
+            encoding: "utf8",
+            env: { ...process.env, GITHUB_WORKSPACE: workspace }
+          })
+          expect(copied.status, copied.stderr).toBe(0)
+          const part = /\(part (\w+)\)$/.exec(String(step["name"]))?.[1] as string
+          return existsSync(join(workspace, `coverage-${part}.txt`))
+            ? readFileSync(join(workspace, `coverage-${part}.txt`), "utf8")
+            : "none"
+        })
+      }
+      const covered = ["covered one\n", "covered one\n", "covered two\n", "covered two\n"]
+      expect(runOnce()).toEqual(covered)
+      // Every step is reused now: what each left is put back on its machine before the machine is kept.
+      expect(runOnce()).toEqual(covered)
+      expect(printed).toMatch(/hit: 2\n\s*ran: 0\n/)
+      // The repository's own checkout holds none of it.
+      expect(existsSync(join(root, "coverage-one.txt"))).toBe(false)
+    },
+    replayLimit
+  )
+})

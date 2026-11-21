@@ -569,7 +569,10 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       else if (runsOn !== undefined) runners.add(runsOn)
       const variantTools = choice.toolsOf(job, variant)
       // A GitHub job starts on a runner of its own, so its targets run on a machine of their own.
-      const machine = job.source === "github-actions" && !heldThroughout(job) ? machineOf(job, variant) : undefined
+      // A job with a step that sends its results out runs on a machine, whose checkout the build keeps for that step.
+      const machine = job.source === "github-actions" && (!heldThroughout(job) || (job.kept ?? []).length > 0)
+        ? machineOf(job, variant)
+        : undefined
       // Two jobs never share a `/tmp`. On Linux each machine has its own, by a mount. A macOS runner has no such
       // mount, so a job with a machine is a runner job of its own there: it is kept apart from every other job,
       // as targets that need other tool versions are, and waits for no job on another runner.

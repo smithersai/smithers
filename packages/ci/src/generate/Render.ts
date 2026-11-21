@@ -11,6 +11,7 @@ import type { Failure, GeneratedFile, GenerateOptions } from "../contract/Parts.
 import { reasonsSentence } from "../contract/Reasons.ts"
 import { path as targetMapPath, type TargetMap } from "../contract/TargetMap.ts"
 import { variantKey } from "./Expressions.ts"
+import { keepValue, keepVariable, type KeptRun, keptRuns, keptSteps } from "./Kept.ts"
 import { type Leg, repositoryLabel, type StepPlan, type StepTarget, workflowPath } from "./Steps.ts"
 import * as Yaml from "./Yaml.ts"
 
@@ -678,7 +679,8 @@ const renderWorkflow = (
   confined: boolean,
   serial: boolean,
   allowDocker: boolean,
-  refs: ReadonlyMap<string, string>
+  refs: ReadonlyMap<string, string>,
+  results: ReadonlyArray<KeptRun>
 ): string => {
   // The jobs that run on a machine of their own: each has a checkout, a home and a temporary directory.
   const machines = new Set(plan.targets.flatMap((target) => target.machine === undefined ? [] : [target.machine]))
@@ -776,13 +778,17 @@ const renderWorkflow = (
                         // Two jobs on one runner: neither finds what the other left in `/tmp`.
                         ...(machines.size > 1 ? [Yaml.entry(ownTmpVariable, "required")] : []),
                         ...(machines.size > 0 ? [Yaml.entry("SMTHRS_MACHINES", machinesDirectory)] : []),
+                        // The machines of the jobs whose steps send results out are left for those steps.
+                        ...(results.length > 0 ? [Yaml.entry(keepVariable, keepValue(results))] : []),
                         Yaml.entry("SMITHERS_CACHE_URL", cacheUrl(cache)),
                         Yaml.entry("SMITHERS_CACHE_TOKEN", cacheToken)
                       ])
                     )
                   ],
                   serial ? ["Targets that can write the same files run one at a time."] : []
-                )
+                ),
+                // Each step that sends a job's results out, as the repository wrote it, after the job's own steps.
+                ...results.flatMap((run) => keptSteps(run.step, run.place, run.index))
               ])
             )
           ])
@@ -889,7 +895,8 @@ export const renderFiles = (
         plan.targets.some((target) => narrows(target, held)),
         serial,
         options?.allowDocker === true,
-        actionRefs(inventory.toolchains)
+        actionRefs(inventory.toolchains),
+        keptRuns(inventory.jobs, plan)
       )
     },
     { path: workspacePath, content: targets },

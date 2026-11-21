@@ -286,6 +286,29 @@ export const StartCost = Schema.Struct({
 export type StartCost = typeof StartCost.Type
 
 /**
+ * A step of a replayed job that the replay does not run: it uses an action
+ * that only sends the job's results out (`Inventory.KeptStep`), and the
+ * workflow `apply` writes runs it on your runner after the steps it follows.
+ * `why` says what the action does with the results.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const RunnerStep = Schema.Struct({
+  job: Schema.NonEmptyString,
+  action: Schema.NonEmptyString,
+  why: Schema.NonEmptyString
+})
+
+/**
+ * A decoded `RunnerStep`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type RunnerStep = typeof RunnerStep.Type
+
+/**
  * The whole replay. Each commit in `commits` ran its own CI, read from its
  * own tree; a commit whose CI could not be replayed is in
  * `notReplayedCommits` and in no time. `speedup` is baseline wall time
@@ -356,6 +379,9 @@ export type StartCost = typeof StartCost.Type
  * observe named it, with why when it is not `smthrs-observe` on a machine
  * `smthrs-observe` is built for. It is absent when no step was observed.
  *
+ * `runnerSteps` names each step of a replayed job that only sends the job's
+ * results out (`RunnerStep`): it was not run here, and your runner runs it.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -391,7 +417,8 @@ export const ReplayReport = Schema.Struct({
   targets: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   diskHeldBytes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   stopped: Schema.optionalKey(Schema.NonEmptyString),
-  recorder: Schema.optionalKey(Recorder)
+  recorder: Schema.optionalKey(Recorder),
+  runnerSteps: Schema.optionalKey(Schema.Array(RunnerStep))
 })
 
 /**

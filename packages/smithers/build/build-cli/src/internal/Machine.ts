@@ -69,6 +69,58 @@ export type Git = (root: string, args: ReadonlyArray<string>) => Promise<string>
 export const holdingVariable = "SMTHRS_MACHINES"
 
 /**
+ * The variable that names the machines a build keeps when it ends, and
+ * where: a JSON object from a machine's name to an absolute directory. A
+ * kept machine's checkout is copied there as its targets left it, with what
+ * each target answered from the cache left put back. A workflow that runs a
+ * step after the build, such as an upload of what a job's tests wrote, finds
+ * the job's files there.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const keepVariable = "SMTHRS_KEEP_MACHINES"
+
+/**
+ * The machines `environment` asks a build to keep (`keepVariable`), by
+ * name, with the directory each goes to; or why the value cannot be read.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const toKeep = (
+  environment: Readonly<Record<string, string | undefined>>
+): ReadonlyMap<string, string> | { readonly problem: string } => {
+  const text = environment[keepVariable]
+  if (text === undefined || text === "") return new Map()
+  const wrong = { problem: `${keepVariable} is not a JSON object from machine names to absolute directories` }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return wrong
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return wrong
+  const entries = Object.entries(parsed)
+  return entries.every(([, directory]) => typeof directory === "string" && NodePath.isAbsolute(directory))
+    ? new Map(entries as ReadonlyArray<readonly [string, string]>)
+    : wrong
+}
+
+/**
+ * Copies a machine's checkout to `directory`, replacing what was there,
+ * with its links and the times of its files as they are.
+ *
+ * @category lifecycle
+ * @since 1.0.0
+ */
+export const keep = async (machine: Machine, directory: string): Promise<void> => {
+  await remove(directory)
+  await Fs.mkdir(NodePath.dirname(directory), { recursive: true })
+  await Fs.cp(machine.tree, directory, { recursive: true, verbatimSymlinks: true, preserveTimestamps: true })
+}
+
+/**
  * The variable that names a directory whose contents every machine's home
  * starts with, as a CI image gives every runner the same home.
  *

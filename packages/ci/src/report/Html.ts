@@ -11,7 +11,14 @@
 
 import type { NotReplayed, ToolVersion, Unsupported } from "../contract/Inventory.ts"
 import type { RenderReport } from "../contract/Parts.ts"
-import type { Mismatch, NotReplayedCommit, ReplayCommit, ReplayReport, RunTotals } from "../contract/ReplayReport.ts"
+import type {
+  Mismatch,
+  NotReplayedCommit,
+  ReplayCommit,
+  ReplayReport,
+  RunnerStep,
+  RunTotals
+} from "../contract/ReplayReport.ts"
 import {
   appliedTime,
   coldStart,
@@ -217,6 +224,18 @@ const notReplayedTable = (left: ReadonlyArray<NotReplayed>): string =>
     "</table></div>"
   ].join("\n")
 
+const runnerStepsTable = (steps: ReadonlyArray<RunnerStep>): string =>
+  [
+    "<h2>Not run here: your runner runs them, in the workflow apply writes</h2>",
+    "<div class=\"scroll\"><table>",
+    ...steps.map((entry) =>
+      `<tr><th scope="row"><code>${escape(entry.job)}</code></th><td class="sub"><code>${
+        escape(entry.action)
+      }</code>: ${escape(entry.why)}</td></tr>`
+    ),
+    "</table></div>"
+  ].join("\n")
+
 const commitsLeftTable = (entries: ReadonlyArray<NotReplayedCommit>): string =>
   [
     "<h2>Commits not replayed</h2>",
@@ -331,6 +350,8 @@ export const html: RenderReport = (report) => {
     if (notRead.length > 0) body.push(notReadTable(notRead))
     const tools = report.toolVersions ?? []
     if (tools.length > 0) body.push(toolVersionsTable(tools))
+    const runner = report.runnerSteps ?? []
+    if (runner.length > 0) body.push(runnerStepsTable(runner))
     const empty = report.withheld ?? []
     if (empty.length > 0) body.push(`<p class="summary">${escape(leftEmpty(empty))}</p>`)
   }

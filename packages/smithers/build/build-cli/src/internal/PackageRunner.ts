@@ -825,6 +825,11 @@ class RecorderStoppedError extends Data.TaggedError("smithers-build/RecorderStop
   readonly message: string
 }> {}
 
+/** A machine the caller asked to keep (`Machine.keepVariable`) cannot be kept, or the request cannot be read. */
+class MachineKeepError extends Data.TaggedError("smithers-build/MachineKeepError")<{
+  readonly message: string
+}> {}
+
 /** A manifest read or parse failed before compatibility could be judged. */
 class ApiCompatManifestError extends Data.TaggedError("smithers-build/ApiCompatManifestError")<{
   readonly path: string
@@ -6046,11 +6051,48 @@ const executeWith = (
           ...(parts.of(label) === undefined ? {} : { parts: parts.of(label) })
         })
       })
+    /**
+     * Leaves each machine the caller names (`Machine.keepVariable`) where it says, as the machine's targets left
+     * it: what a target answered from the cache left is put back first, in the order they would have run, and a
+     * target whose files cannot be put back runs, as before a target that waits for it.
+     */
+    const keepMachines = (): Effect.Effect<void, unknown> =>
+      Effect.gen(function*() {
+        const wanted = Machine.toKeep(hostEnvironment)
+        if ("problem" in wanted) return yield* Effect.fail(new MachineKeepError({ message: wanted.problem }))
+        for (const [name, directory] of wanted) {
+          const nodes = inOrder.filter((node) => node.machine === name)
+          const [first] = nodes
+          if (first === undefined) {
+            log(`smthrs: no target of this run is on machine ${name}, so nothing of it is kept`)
+            continue
+          }
+          for (const producer of nodes) {
+            const stored = leftBy.get(producer.label)
+            if (stored === undefined || putBack.has(producer.label)) continue
+            putBack.add(producer.label)
+            yield* onMachine(producer)
+            if (yield* restore(producer, producer.observed!, stored)) continue
+            const ran = yield* spawnConsumer(producer)
+            if (!ran.ok) {
+              return yield* Effect.fail(
+                new MachineKeepError({
+                  message: `machine ${name} cannot be kept: ${producer.label} failed when it ran again: ${ran.error}`
+                })
+              )
+            }
+          }
+          const machine = (yield* onMachine(first)) as Machine.Machine
+          yield* joined(() => Machine.keep(machine, directory))
+          log(`smthrs: machine ${name} is kept in ${directory}`)
+        }
+      })
     answered = yield* timed(undefined, "answer", answerTogether())
     yield* Executor.scheduleEffect(planned.workList, jobs, runOne, options.signal, {
       stop: () => stoppedBy !== undefined || brokeOn !== undefined
     })
     if (brokeOn !== undefined) return yield* Effect.fail(new RecorderStoppedError({ message: brokeOn }))
+    yield* keepMachines()
     for (const node of planned.workList) {
       if (stoppedBy !== undefined && !reports.has(node.label)) cancel(node, 0, "not started")
     }

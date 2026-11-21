@@ -137,6 +137,37 @@ export const Unsupported = Schema.Struct({
 export type Unsupported = typeof Unsupported.Type
 
 /**
+ * A step a replay does not run and the workflow `apply` writes as the
+ * repository wrote it: one that uses an action of `resultActions`, which only
+ * sends the job's results out. `after` is the id of the job's step it
+ * follows; without it the step comes before every step of the job. Each value
+ * is the text the workflow holds, `${{ }}` included: a secret is named, never
+ * held.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const KeptStep = Schema.Struct({
+  uses: Schema.NonEmptyString,
+  after: Schema.optionalKey(Schema.NonEmptyString),
+  id: Schema.optionalKey(Schema.NonEmptyString),
+  name: Schema.optionalKey(Schema.String),
+  if: Schema.optionalKey(Schema.String),
+  with: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+  env: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+  continueOnError: Schema.optionalKey(Schema.String),
+  timeoutMinutes: Schema.optionalKey(Schema.String)
+})
+
+/**
+ * A decoded `KeptStep`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type KeptStep = typeof KeptStep.Type
+
+/**
  * One job: steps that run in order on one machine. `needs` names the jobs
  * that must pass first. `matrix` lists one variable assignment per variant;
  * an empty list means the job runs once.
@@ -146,7 +177,8 @@ export type Unsupported = typeof Unsupported.Type
  * `matrix`, in its order, when `runs-on` is an expression a variant's values
  * do not fill in by name, such as `${{ matrix.os || 'ubuntu-latest' }}`. A
  * runner the workflow file does not give stays as its expression
- * (`unknownRunner`). Read a variant's runner with `runnerOf`.
+ * (`unknownRunner`). Read a variant's runner with `runnerOf`. `kept` holds
+ * the steps that only send the job's results out (`KeptStep`).
  *
  * @category models
  * @since 0.1.0
@@ -162,7 +194,8 @@ export const Job = Schema.Struct({
   steps: Schema.Array(Step),
   unsupported: Schema.Array(Unsupported),
   runsOn: Schema.optionalKey(Schema.String),
-  runners: Schema.optionalKey(Schema.Array(Schema.String))
+  runners: Schema.optionalKey(Schema.Array(Schema.String)),
+  kept: Schema.optionalKey(Schema.Array(KeptStep))
 })
 
 /**
@@ -860,6 +893,58 @@ export const hostActions: ReadonlyArray<string> = [
   "actions/cache/save",
   "actions/upload-artifact"
 ]
+
+/**
+ * An action that only sends a job's results out: a later step of its job gets nothing from it, so a replay runs
+ * the job without it and compares the job's verdict from the steps it ran. `fails` names the input that makes the
+ * action fail on what it reports, when it has one: with that input true it can change the job's verdict, and the
+ * step is read as any other action.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface ResultAction {
+  readonly action: string
+  readonly why: string
+  readonly fails?: string
+}
+
+/**
+ * The actions that only send a job's results out, named without their version. GitHub code search counted the
+ * workflows that use each on 2026-11-20; `dorny/test-reporter` is not here: it fails its job when a test failed.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const resultActions: ReadonlyArray<ResultAction> = [
+  { action: "actions/upload-artifact", why: "it stores files for other jobs and for people" },
+  { action: "actions/upload-artifact/merge", why: "it merges artifacts already stored" },
+  { action: "actions/upload-pages-artifact", why: "it packs a site for a deploy job that runs after its own" },
+  { action: "codecov/codecov-action", why: "it sends coverage to Codecov" },
+  { action: "codecov/test-results-action", why: "it sends test results to Codecov" },
+  { action: "coverallsapp/github-action", why: "it sends coverage to Coveralls" },
+  { action: "codacy/codacy-coverage-reporter-action", why: "it sends coverage to Codacy" },
+  { action: "github/codeql-action/upload-sarif", why: "it sends findings to code scanning" },
+  ...["", "/linux", "/macos", "/windows", "/composite"].map((part) => ({
+    action: `EnricoMi/publish-unit-test-result-action${part}`,
+    why: "it publishes test results as a check",
+    fails: "action_fail"
+  })),
+  { action: "mikepenz/action-junit-report", why: "it publishes test results as a check", fails: "fail_on_failure" }
+]
+
+/**
+ * The entry of `resultActions` for an action as a step names it, with or
+ * without its version; GitHub reads an action's name without case.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const resultAction = (uses: string): ResultAction | undefined => {
+  const action = (uses.split("@")[0] as string).toLowerCase()
+  return resultActions.find((entry) => entry.action.toLowerCase() === action)
+}
 
 /**
  * The `Unsupported.feature` of a workflow that runs only for some branches

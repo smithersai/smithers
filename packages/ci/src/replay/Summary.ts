@@ -21,6 +21,7 @@ import {
   notRead,
   type NotReplayed,
   otherSystem,
+  resultAction,
   runnerOf,
   script,
   selfHosted,
@@ -41,6 +42,7 @@ import type {
   PredictedSafe,
   ReplayCommit,
   ReplayReport,
+  RunnerStep,
   RunTotals,
   StartCost,
   StepFailure
@@ -1311,6 +1313,8 @@ export interface Findings {
   readonly cold?: string | undefined
   /** What recorded the files the steps read, when a step was observed. */
   readonly recorder?: Recorder | undefined
+  /** The steps of replayed jobs that only send the job's results out, which your runner runs (`runnerStepsOf`). */
+  readonly runnerSteps?: ReadonlyArray<RunnerStep> | undefined
 }
 
 /**
@@ -1440,8 +1444,32 @@ export const reportOf = (
     ...(unread.length === 0 ? {} : { notRead: unread }),
     ...(inventory.toolVersions === undefined ? {} : { toolVersions: inventory.toolVersions }),
     ...(empty.length === 0 ? {} : { withheld: empty }),
-    ...(found.recorder === undefined ? {} : { recorder: found.recorder })
+    ...(found.recorder === undefined ? {} : { recorder: found.recorder }),
+    ...(found.runnerSteps === undefined || found.runnerSteps.length === 0 ? {} : { runnerSteps: found.runnerSteps })
   }
+}
+
+/**
+ * The steps of the replayed jobs that a replay does not run because they
+ * only send the job's results out (`Inventory.KeptStep`), each once, in the
+ * order of the jobs.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const runnerStepsOf = (
+  inventory: Inventory,
+  units: ReadonlyArray<Pick<Unit, "job">>
+): ReadonlyArray<RunnerStep> => {
+  const replayed = new Set(units.map((unit) => unit.job))
+  return inventory.jobs.filter((job) => replayed.has(job.id)).flatMap((job) =>
+    (job.kept ?? []).map((step) => ({
+      job: job.id,
+      action: step.uses,
+      why: resultAction(step.uses)?.why ?? "it sends the job's results out"
+    }))
+  )
 }
 
 /**
@@ -1545,6 +1573,8 @@ export interface Gathered {
   readonly firstRun?: FirstRun | undefined
   /** Why the first counted commit started with an empty cache, when a run before it was asked for. */
   readonly cold?: string | undefined
+  /** The steps of replayed jobs that only send the job's results out, which your runner runs (`runnerStepsOf`). */
+  readonly runnerSteps?: ReadonlyArray<RunnerStep> | undefined
   /** The most disk the replay held at once, where the machine says how much is free. */
   readonly diskHeldBytes?: number | undefined
   /** Why the replay ended before its last commit, when the disk would have filled. */
@@ -1594,7 +1624,8 @@ export const finishedReport = (
     reruns: gathered.reruns,
     firstRun: measured ? gathered.firstRun : firstRunWithoutFast(gathered.firstRun),
     cold: gathered.cold,
-    recorder: gathered.recorder
+    recorder: gathered.recorder,
+    runnerSteps: gathered.runnerSteps
   })
   return {
     ...report,

@@ -63,6 +63,9 @@ no toolchain.
   read for each variant: the variants for your system run, and the others are
   left out by name. When every job is for another system, the command names
   the system in one line and exits with code 3.
+- A step that only sends results out, such as an upload to Codecov or
+  `actions/upload-artifact`, is not run here; the report lists it under
+  `not run here`, and the workflow `apply` writes runs it on your runner.
 - A job that cannot pass here, because it needs Docker, a service or a
   credential, is left out too. A job that fails the first run, and fails again
   at the newest commit, is listed as failing on this machine, with the first
