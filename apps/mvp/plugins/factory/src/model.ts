@@ -640,3 +640,17 @@ export const VIEWS = [
 
 /** A view of the factory, by id. */
 export type ViewId = (typeof VIEWS)[number]["id"]
+
+/** Formats decided/answered factory decisions as portable Markdown for pasting into specs, PRs, or issues. */
+export const answersMarkdownOf = (decisions: ReadonlyArray<Decision>, repository: string): string => {
+  const lines: Array<string> = []
+  for (const decision of decisions) {
+    if (decision.answer !== null) {
+      const detail = decision.answer.text === "" ? "" : `: ${decision.answer.text}`
+      lines.push(`- **${decision.title}** (\`${decision.id}\`): **${decision.answer.choice}**${detail}`)
+    } else if (decision.decided !== "") {
+      lines.push(`- **${decision.title}** (\`${decision.id}\`): ${decision.decided}`)
+    }
+  }
+  return lines.length === 0 ? "" : `# ${repository} decisions\n\n${lines.join("\n")}\n`
+}

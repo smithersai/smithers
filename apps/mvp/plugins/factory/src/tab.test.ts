@@ -292,3 +292,34 @@ describe("moving around", () => {
     expect(hrefOf("factory/now", other)).toBe("/octo/hello/-/factory")
   })
 })
+
+describe("copyAnswers", () => {
+  test("copies markdown to clipboard and reports copied or failed", async () => {
+    const host = hostWith()
+    const written: Array<string> = []
+    const original = Object.getOwnPropertyDescriptor(globalThis, "navigator")
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { clipboard: { writeText: async (text: string) => void written.push(text) } },
+    })
+    try {
+      await withTab(host, async (built) => {
+        built.actions.copyAnswers("")
+        expect(built.queries.copied.current()).toBe("idle")
+        built.actions.copyAnswers("# summary\n")
+        await vi.waitFor(() => expect(built.queries.copied.current()).toBe("copied"))
+        expect(written).toEqual(["# summary\n"])
+      })
+      Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: { clipboard: { writeText: async () => { throw new Error("denied") } } },
+      })
+      await withTab(host, async (built) => {
+        built.actions.copyAnswers("# summary\n")
+        await vi.waitFor(() => expect(built.queries.copied.current()).toBe("failed"))
+      })
+    } finally {
+      if (original !== undefined) Object.defineProperty(globalThis, "navigator", original)
+    }
+  })
+})

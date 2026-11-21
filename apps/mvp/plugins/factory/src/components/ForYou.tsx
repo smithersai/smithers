@@ -1,5 +1,5 @@
 import { Button, Markdown } from "@smthrs/ui"
-import { type Decision, decisionsOf } from "../model"
+import { answersMarkdownOf, type Decision, decisionsOf } from "../model"
 import type { Host } from "@smthrs/plugin"
 import type { FactoryTab } from "../tab"
 import { Frame } from "./Frame"
@@ -22,6 +22,9 @@ export function ForYou({ tab, repository }: ViewProps) {
                 : <Waiting tab={tab} repository={repository!} waiting={waiting} />}
             </Section>
             <Section title="Past" wide>
+              {past.length > 0 ? (
+                <CopyAnswersButton tab={tab} markdown={answersMarkdownOf(past, `${repository!.owner}/${repository!.name}`)} />
+              ) : null}
               {past.map((decision) => (
                 <details key={decision.id} className="factory-item" data-ask={decision.id}>
                   <summary><Header decision={decision} /></summary>
@@ -102,6 +105,17 @@ function Links({ decision }: { readonly decision: Decision }) {
           <a href={link.url} target="_blank" rel="noopener noreferrer">{link.label}</a>
         </Button>
       ))}
+    </p>
+  )
+}
+
+function CopyAnswersButton({ tab, markdown }: { readonly tab: FactoryTab; readonly markdown: string }) {
+  const copied = useWatched(tab.queries.copied)
+  return (
+    <p className="factory-links">
+      <Button variant="outline" size="sm" onClick={() => tab.actions.copyAnswers(markdown)}>
+        {copied === "copied" ? "Copied answers" : copied === "failed" ? "Copy failed" : "Copy answers"}
+      </Button>
     </p>
   )
 }

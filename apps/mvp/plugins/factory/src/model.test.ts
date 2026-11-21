@@ -4,7 +4,7 @@
 import { describe, expect, test } from "vitest"
 import {
   commitDiffOf,
-  decisionsOf,
+  answersMarkdownOf, decisionsOf,
   duration,
   failuresOf,
   gradeOf,
@@ -322,5 +322,22 @@ describe("Smithers' own runs", () => {
         ["c#g1", "T9", "old", "nyc-02", "sol", "", "mystery", "muted"],
       ])
     expect(lanes[1]!.duration).toBe(duration(Math.floor(Date.parse(at(72)) / 1000), null, Math.floor(now / 1000)))
+  })
+})
+
+describe("answersMarkdownOf", () => {
+  test("exports answered and decided decisions to Markdown and returns empty string when none exist", () => {
+    expect(answersMarkdownOf([], "acme/widgets")).toBe("")
+    const md = answersMarkdownOf([
+      { id: "d1", title: "Pick storage", kind: "decide", due: "", body: "", links: [], decided: "", answer: { choice: "Option A", text: "Fastest", at: 0 } },
+      { id: "d2", title: "Enable flag", kind: "decide", due: "", body: "", links: [], decided: "", answer: { choice: "accept", text: "", at: 0 } },
+      { id: "d3", title: "Legacy", kind: "review", due: "", body: "", links: [], decided: "Shipped", answer: null },
+      { id: "d4", title: "Open", kind: "decide", due: "", body: "", links: [], decided: "", answer: null },
+    ], "acme/widgets")
+    expect(md).toContain("# acme/widgets decisions")
+    expect(md).toContain("- **Pick storage** (`d1`): **Option A**: Fastest")
+    expect(md).toContain("- **Enable flag** (`d2`): **accept**")
+    expect(md).toContain("- **Legacy** (`d3`): Shipped")
+    expect(md).not.toContain("Open")
   })
 })

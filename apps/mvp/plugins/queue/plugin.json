@@ -77,7 +77,10 @@
           }
         },
         { "name": "next", "local": true },
-        { "name": "previous", "local": true }
+        { "name": "previous", "local": true },
+        { "name": "snooze", "local": true },
+        { "name": "unsnooze", "local": true },
+        { "name": "sort", "local": true }
       ]
     }],
     "slots": [{
@@ -109,7 +112,10 @@
       { "key": "r", "event": "changes", "when": "view == queue/queue && item.approval && !focus.input" },
       { "key": "mod+enter", "event": "reply", "when": "view == queue/queue && item.question" },
       { "key": "j", "event": "next", "when": "view == queue/queue && !focus.input" },
-      { "key": "k", "event": "previous", "when": "view == queue/queue && !focus.input" }
+      { "key": "k", "event": "previous", "when": "view == queue/queue && !focus.input" },
+      { "key": "s", "event": "snooze", "when": "view == queue/queue && !focus.input" },
+      { "key": "u", "event": "unsnooze", "when": "view == queue/queue && !focus.input" },
+      { "key": "p", "event": "sort", "when": "view == queue/queue && !focus.input" }
     ]
   }
 }

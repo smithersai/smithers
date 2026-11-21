@@ -67,6 +67,8 @@ export interface FactoryTab {
     readonly opened: Watched<Opened | null>
     /** A repository's agent runs on Smithers itself, live; none when the host refused them. */
     readonly runs: (repository: Host.Repository) => Watched<ReadonlyArray<SmithersRun>>
+    /** Outcome of the latest Copy answers press. */
+    readonly copied: Watched<"idle" | "copied" | "failed">
   }
   readonly actions: {
     /** Where one of the factory's views shows on `repository`, for its link. */
@@ -81,6 +83,8 @@ export interface FactoryTab {
     readonly select: (ask: AskRow) => void
     /** Navigates to a page of the app (the repository's docs or pull requests) through the view's `go` event. */
     readonly go: (view: ViewId, to: string) => void
+    /** Copies rendered Markdown decision answers to the clipboard. */
+    readonly copyAnswers: (markdown: string) => void
   }
 }
 
@@ -238,10 +242,21 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
         ),
       )
     }
+    const copied = cell<"idle" | "copied" | "failed">("idle")
+    const copyAnswers = (markdown: string) => {
+      if (markdown === "") return
+      run(
+        Effect.tryPromise(() => navigator.clipboard.writeText(markdown)).pipe(
+          Effect.andThen(Effect.sync(() => copied.set("copied"))),
+          // expected: clipboard refusal or missing API reports "Copy failed" inline
+          Effect.catch(() => Effect.sync(() => copied.set("failed"))),
+        ),
+      )
+    }
     yield* Effect.addFinalizer(() => Effect.sync(close))
 
     return {
-      queries: { feed, asks, selected, opened, runs },
+      queries: { feed, asks, selected, opened, runs, copied },
       actions: {
         href: (view, repository) => hrefOf(view, repository),
         open: (view, repository) => void run(host.open(view, repository)),
@@ -249,6 +264,7 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
         close,
         select,
         go: (view, to) => void run(host.dispatch({ view, name: "go" }, { to }).pipe(Effect.ignore)),
+        copyAnswers,
       },
     } satisfies FactoryTab
   })
