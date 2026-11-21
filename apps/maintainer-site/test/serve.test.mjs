@@ -331,6 +331,38 @@ describe("POST /api/answer", () => {
     }
   })
 
+  test("atomic replacement with identical size and mtime invalidates the queue cache (#5451)", async () => {
+    const fixed = new Date("2026-10-21T12:00:00.000Z")
+    const writeWithFixedTime = (revision) => {
+      const payload = JSON.stringify({ version: 1, items: [{ id: "review-atomic", kind: "code", revision }] })
+      const tmp = join(queueDir, "queue.json.atomic")
+      writeFileSync(tmp, payload)
+      utimesSync(tmp, fixed, fixed)
+      renameSync(tmp, join(queueDir, "queue.json"))
+    }
+    try {
+      writeWithFixedTime("aaaaaaaaaa")
+      const first = await call("/api/queue")
+      assert.equal(first.status, 200)
+      assert.equal(first.json.items[0].revision, "aaaaaaaaaa")
+      writeWithFixedTime("bbbbbbbbbb")
+      const response = await call("/api/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: { itemId: "review-atomic", action: "approve", revision: "bbbbbbbbbb", commit: null, addedAt: null },
+      })
+      assert.equal(response.status, 200, response.text)
+      assert.equal(response.json.answer.revision, "bbbbbbbbbb")
+      await call("/api/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: { itemId: "review-atomic", action: "undo" },
+      })
+    } finally {
+      copyFileSync(join(fixtures, "queue.json"), join(queueDir, "queue.json"))
+    }
+  })
+
   test("stats count today's answers and what remains by kind", async () => {
     const before = (await call("/api/stats")).json
     await post({ itemId: "question:scratch-repo", action: "option", option: "2" })

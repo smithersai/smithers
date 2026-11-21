@@ -109,10 +109,11 @@ export function resolveFile(requested, roots) {
     if (checked.isSymbolicLink()) return { status: 403, error: "refused: file changed" }
     if (!checked.isFile()) return { status: 404, error: "not a file" }
     if (checked.size > MAX_FILE) return { status: 413, error: "too large" }
-    // Darwin's O_NOFOLLOW_ANY rejects a symlink in any component of the canonical path.
-    // Node does not expose this flag; its value is defined in Darwin's sys/fcntl.h.
-    const noFollowAny = process.platform === "darwin" ? 0x20000000 : 0
-    fd = openSync(real, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK | noFollowAny)
+    // Darwin's O_NOFOLLOW_ANY rejects a symlink in any component of the canonical path, including
+    // the final component; combining it with O_NOFOLLOW returns EINVAL on macOS.
+    // Node does not expose O_NOFOLLOW_ANY; its value is defined in Darwin's sys/fcntl.h.
+    const noFollow = process.platform === "darwin" ? 0x20000000 : constants.O_NOFOLLOW
+    fd = openSync(real, constants.O_RDONLY | noFollow | constants.O_NONBLOCK)
     const stat = fstatSync(fd)
     if (!stat.isFile() || stat.dev !== checked.dev || stat.ino !== checked.ino)
       return { status: 403, error: "refused: file changed" }
@@ -237,7 +238,7 @@ export function startServer(options = {}) {
   // queue/before/<id>/ holds the old recordings and files a verify item compares against; the curator copies them in.
   const roots = [rootOf(repo), rootOf(gifs), rootOf(videos), rootOf(join(queueDir, "before"))]
 
-  // queue.json, cached by mtime and size; a parse failure keeps the last good copy.
+  // queue.json, cached by file identity, change time, mtime and size; a parse failure keeps the last good copy.
   let cached = { key: "", queue: { version: 1, generatedAt: null, items: [] }, error: null }
   const readQueue = () => {
     let stat
@@ -246,7 +247,7 @@ export function startServer(options = {}) {
     } catch {
       return { version: 1, generatedAt: null, items: [], missing: true }
     }
-    const key = `${stat.mtimeMs}:${stat.size}`
+    const key = `${stat.dev}:${stat.ino}:${stat.ctimeMs}:${stat.mtimeMs}:${stat.size}`
     if (key === cached.key) return cached.queue
     try {
       const parsed = JSON.parse(readFileSync(queueFile, "utf8"))
