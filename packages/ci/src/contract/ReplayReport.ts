@@ -12,7 +12,7 @@
 
 import * as Schema from "effect/Schema"
 import { NotReplayed, ToolVersion, Unsupported } from "./Inventory.ts"
-import { Mode, Parts, StatusCounts, Verdict } from "./RunRecord.ts"
+import { Mode, Parts, Recorder, StatusCounts, Verdict } from "./RunRecord.ts"
 import { Metrics } from "./Selection.ts"
 
 /**
@@ -351,6 +351,11 @@ export type StartCost = typeof StartCost.Type
  * before the step ended. `commits` then holds the commits replayed before the
  * one it stopped in, and nothing that commit's run kept is kept.
  *
+ * `recorder` names what recorded the files the replay's steps read
+ * (`Recorder`), as the first run of Smithers build that had a step to
+ * observe named it, with why when it is not `smthrs-observe` on a machine
+ * `smthrs-observe` is built for. It is absent when no step was observed.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -385,7 +390,8 @@ export const ReplayReport = Schema.Struct({
   withheld: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   targets: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   diskHeldBytes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-  stopped: Schema.optionalKey(Schema.NonEmptyString)
+  stopped: Schema.optionalKey(Schema.NonEmptyString),
+  recorder: Schema.optionalKey(Recorder)
 })
 
 /**

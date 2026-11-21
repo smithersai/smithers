@@ -79,6 +79,7 @@ import { findPackageJSON } from "node:module"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import * as Environment from "../Environment.ts"
+import type { Recorder } from "../Executor.ts"
 import { byCodeUnit } from "./Text.ts"
 
 /**
@@ -282,14 +283,33 @@ export const commandFor = (
 
 /**
  * A host's answer to whether it can observe a run: the recorder's path, and
- * whether it is `smthrs-observe`, or why there is none.
+ * whether it is `smthrs-observe`, or why there is none. `why` says why a
+ * host records with strace where `smthrs-observe` is built for it: strace
+ * was asked for, the installation holds no `smthrs-observe` for the host,
+ * or `smthrs-observe` cannot run here.
  *
  * @category models
  * @since 1.0.0
  */
 export type Observer =
-  | { readonly tracer: string; readonly supervisor?: true | undefined }
+  | { readonly tracer: string; readonly supervisor?: true | undefined; readonly why?: string | undefined }
   | { readonly reason: string }
+
+/**
+ * What recorded the reads of a run, as its summary names it, from the
+ * host's answer: `smthrs-observe`, `strace`, or `none` with the reason.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const recorderOf = (observer: Observer): Recorder =>
+  "reason" in observer
+    ? { name: "none", why: observer.reason }
+    : observer.supervisor === true
+    ? { name: "smthrs-observe" }
+    : observer.why === undefined
+    ? { name: "strace" }
+    : { name: "strace", why: observer.why }
 
 /**
  * The variable that picks the recorder: `SMTHRS_OBSERVE_WITH=strace` records
@@ -325,6 +345,27 @@ export const supervisorPath = (
     if (NodeFs.existsSync(path)) return path
   }
   return undefined
+}
+
+/**
+ * Why this host has no `smthrs-observe` to record with though the package
+ * builds one for it (Linux on x86_64 and aarch64): `SMTHRS_OBSERVE_WITH=strace`
+ * asks for strace, or this installation holds none for the host.
+ * `undefined` where the host has one, and on any other host.
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const unsupervised = (
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+  environment: { readonly [name: string]: string | undefined } = Environment.ambientEnvironment()
+): string | undefined => {
+  if (platform !== "linux" || (arch !== "x64" && arch !== "arm64")) return undefined
+  if (environment[recorderVariable] === "strace") return `${recorderVariable}=strace asks for strace`
+  return supervisorPath(platform, arch, environment) === undefined
+    ? `this installation of @smthrs/build-cli holds no smthrs-observe for linux-${arch}`
+    : undefined
 }
 
 /** The package.json a module specifier or URL belongs to, as Node resolves it from this module. */
@@ -371,7 +412,11 @@ export const recorderKey = (): { readonly recorder?: string } => {
 
 /**
  * Finds the tracer on a host and proves it can trace a process here. A
- * container may forbid tracing, and an old tracer lacks the filter.
+ * container may forbid tracing, and an old tracer lacks the filter. Where
+ * strace records though `smthrs-observe` is built for the host, the answer
+ * says why: the first line `smthrs-observe --probe` printed when it refused,
+ * or `host.unsupervised` when there is none to probe. When nothing can
+ * record, that leads the reason.
  *
  * @category tracing
  * @since 1.0.0
@@ -381,25 +426,28 @@ export const observer = (host: {
   readonly executable: (name: string) => string | undefined
   /** `smthrs-observe`, when the host has one ({@link supervisorPath}). */
   readonly supervisor?: string | undefined
+  /** Why the host has none though one is built for it ({@link unsupervised}). */
+  readonly unsupervised?: string | undefined
 }): Observer => {
   if (host.platform !== "linux") return { reason: `reads cannot be observed on ${host.platform}` }
   // The kernel must give a listener that waits for the supervisor without being cut short by a signal (5.19), and
   // let it copy a descriptor of the process it watches (a container refuses that without CAP_SYS_PTRACE). Where it
   // cannot run, it says why, and that leads the reason when strace cannot record either.
-  let refused = ""
+  let why = host.unsupervised
   if (host.supervisor !== undefined) {
     const supervised = spawnSync(host.supervisor, ["--probe"], { encoding: "utf8", timeout: 30_000 })
     if (supervised.status === 0) return { tracer: host.supervisor, supervisor: true }
     const said = (supervised.stderr ?? "").trim().split("\n")[0]!
-    refused = `${said === "" ? "smthrs-observe cannot run here" : said}, and `
+    why = said === "" ? "smthrs-observe cannot run here" : said
   }
+  const refused = why === undefined ? "" : `${why}, and `
   const tracer = host.executable("strace")
   if (tracer === undefined) return { reason: `${refused}strace is not installed` }
   const probe = spawnSync(tracer, [...tracerFlags, "-o", "/dev/null", "--", tracer, "-V"], {
     encoding: "utf8",
     timeout: 30_000
   })
-  if (probe.status === 0) return { tracer }
+  if (probe.status === 0) return why === undefined ? { tracer } : { tracer, why }
   // A tracer that could not be started at all said nothing.
   const said = (probe.stderr ?? "").trim().split("\n")[0]!
   return { reason: `${refused}strace cannot trace a process on this host${said === "" ? "" : `: ${said}`}` }

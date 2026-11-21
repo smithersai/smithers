@@ -237,6 +237,24 @@ It is read from each step's processes while the step runs: four times a second
 on Linux, every two seconds on macOS. A machine whose processes cannot be read
 gives a report with no CPU time.
 
+### What recorded the steps
+
+A step that names no inputs is recorded while it runs
+([How it works](../concepts/how-it-works.md#2-targets)). The report names what
+recorded the files the steps read on one line (`recorder` under `--json`, with
+`name`: `smthrs-observe`, `strace` or `none`, and `why`):
+
+```text
+what the steps read was recorded by smthrs-observe
+what the steps read was recorded by strace: smthrs-observe cannot run here: this machine refuses pidfd_getfd, which reads a socket a step binds: Operation not permitted; a container allows it with CAP_SYS_PTRACE
+what the steps read was not recorded: reads cannot be observed on macOS
+```
+
+On x86_64 and aarch64 Linux a line that names `strace` says why
+`smthrs-observe` did not record: the installation holds no `smthrs-observe` for
+the machine, or `smthrs-observe` refused to run here. A replay whose steps all
+name their inputs has no such line.
+
 ### Steps that stop making progress
 
 A step whose whole process tree uses less than one hundredth of a CPU core and

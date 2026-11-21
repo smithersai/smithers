@@ -283,13 +283,14 @@ pick a version when they run, so they run every time. A step that restores or sa
 `actions/cache`, also runs every time: what it keeps lives from one run to the
 next, and the record of a run does not hold it. Recording
 needs Linux: on x86_64 and aarch64 with Linux 5.19 or newer Smithers CI records
-with a program of its own, which the generated workflow needs nothing installed
-for, and elsewhere with `strace`. In a container the program needs `CAP_SYS_PTRACE`
+with a program of its own, `smthrs-observe`, which the generated workflow needs
+nothing installed for, and elsewhere with `strace`. In a container the program needs `CAP_SYS_PTRACE`
 (`docker run --cap-add SYS_PTRACE`, or `options: --cap-add SYS_PTRACE` under a
 GitHub job's `container`); without it Smithers CI records with `strace` if the
 container has it. On any other system such a step runs on every change, as it
 does in the repository's CI today, and a replay says once on standard error that this
-machine cannot record what a step reads, and why.
+machine cannot record what a step reads, and why. The report names the recorder
+([4. Report](#4-report)).
 
 Each step runs under the tool versions its job sets up, so a matrix over Node
 18 and 20 tests both. Steps that need different versions run on separate
@@ -831,6 +832,21 @@ second of each process on Linux, and up to two seconds elsewhere, which is
 most of a step that takes a second. A process that leaves its step where no
 jail holds it is not counted. On a machine whose processes cannot be read,
 the report has no CPU time.
+
+The report names what recorded the files the steps read, on one line
+(`recorder` under `--json`, with `name` and `why`):
+
+```text
+what the steps read was recorded by strace: this installation of @smthrs/build-cli holds no smthrs-observe for linux-x64
+```
+
+On x86_64 and aarch64 Linux, where `smthrs-observe` is built, a replay that
+`strace` recorded says why: the installed Smithers CI holds no `smthrs-observe`
+for the machine, or `smthrs-observe` refused to run here, in the first line it
+printed. On any
+other machine `strace` is named alone. Where nothing can record, the line says
+`what the steps read was not recorded` and why. A replay where every step names
+its inputs records nothing and has no such line.
 
 Every step that failed in a way is named, with its exit code and the first line
 of its error output. When the step wrote no error, a line of what it printed

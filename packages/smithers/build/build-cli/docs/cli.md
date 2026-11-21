@@ -158,6 +158,11 @@ green result could not be stored. The record carries `notStored`, a list of
 ([reasons](../../docs/workspace/caching.md#why-a-result-was-not-stored)). A row
 carries `notReused` when the target had a stored result and ran again: the
 first thing that result read that changed, such as `src/a.ts changed`.
+The record carries `recorder`, `{ name, why? }`, when the run had a target
+that asks to be observed: what recorded the files it read (`smthrs-observe`,
+`strace`, or `none`), and why when it is not `smthrs-observe` on x86_64 or
+aarch64 Linux ([recorders](../../docs/workspace/caching.md#results-reused-from-what-a-run-read)).
+The summary a person reads ends with the same as a `recorder:` line.
 
 ### Shards
 

@@ -142,5 +142,6 @@
     "testRecall": 0,
     "changeRecall": 0
   },
-  "model": { "ms": 33000, "questions": 9 }
+  "model": { "ms": 33000, "questions": 9 },
+  "recorder": { "name": "smthrs-observe" }
 }

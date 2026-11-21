@@ -29,6 +29,18 @@ describe("contract 1: run record", () => {
     expect(record.results.filter((result) => RunRecord.verdictOf(result) === "fail")).toHaveLength(22)
   })
 
+  it("names what recorded the files a run's observed steps read, and why", () => {
+    const base = fixture("run-record.rc18-workspace-targets.json") as object
+    const decode = Schema.decodeUnknownSync(RunRecord.RunRecord)
+    expect(decode(base).recorder).toBeUndefined()
+    const why = "this installation of @smthrs/build-cli holds no smthrs-observe for linux-x64"
+    expect(decode({ ...base, recorder: { name: "strace", why } }).recorder).toEqual({ name: "strace", why })
+    expect(decode({ ...base, recorder: { name: "smthrs-observe" } }).recorder).toEqual({ name: "smthrs-observe" })
+    expect(decode({ ...base, recorder: { name: "none", why: "strace is not installed" } }).recorder?.name).toBe("none")
+    expect(() => decode({ ...base, recorder: { name: "ptrace" } })).toThrow()
+    expect(() => decode({ ...base, recorder: { name: "strace", why: "" } })).toThrow()
+  })
+
   it("refuses a status outside hit, ran, failed and skipped", () => {
     const result = { label: "//a:test", status: "passed", key: "k", durationMs: 1 }
     expect(() => Schema.decodeUnknownSync(RunRecord.TargetResult)(result)).toThrow()
@@ -462,6 +474,17 @@ describe("contract 5: replay report", () => {
       Schema.decodeUnknownSync(ReplayReport.ReplayReport)(withSkip({ label: "//a:test", skipReason: "predicted-safe" }))
         .commits[0]?.skipped
     ).toEqual([{ label: "//a:test", skipReason: "predicted-safe" }])
+  })
+
+  it("names the recorder of the steps' reads, and holds none when it names none", () => {
+    const document = fixture("replay-report.example.json") as Record<string, unknown>
+    const decode = Schema.decodeUnknownSync(ReplayReport.ReplayReport)
+    expect(decode(document).recorder).toEqual({ name: "smthrs-observe" })
+    const { recorder: _recorder, ...unnamed } = document
+    expect(decode(unnamed).recorder).toBeUndefined()
+    const why = "SMTHRS_OBSERVE_WITH=strace asks for strace"
+    expect(decode({ ...document, recorder: { name: "strace", why } }).recorder).toEqual({ name: "strace", why })
+    expect(() => decode({ ...document, recorder: { name: "none", why: "" } })).toThrow()
   })
 
   it("decodes a report whose fast mode could not be measured, which holds no fast-mode number", () => {

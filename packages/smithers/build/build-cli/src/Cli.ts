@@ -1323,6 +1323,7 @@ const writeResults = async (
           counts: summary.counts,
           notStored: summary.notStored,
           parts: summary.parts,
+          recorder: summary.recorder,
           results,
           version: 1,
           ...((summary as ShardedSummary).shard === undefined ? {} : { shard: (summary as ShardedSummary).shard })

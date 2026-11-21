@@ -262,6 +262,31 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     expect(said.filter((line) => line.startsWith("this machine cannot record"))).toEqual([cannotRecord("no tracer")])
   })
 
+  it("names the recorder the runs' records name, and none when they name none", async () => {
+    const recorder = { name: "strace", why: "SMTHRS_OBSERVE_WITH=strace asks for strace" }
+    // The real run, then the record it wrote, naming a recorder as a run with a step to observe does.
+    const naming = fakeSmthrs(
+      [
+        "\"$real\" \"$@\"",
+        "status=$?",
+        `[ -f "$results" ] && ${process.execPath} -e '${
+          [
+            "const fs = require(\"node:fs\")",
+            "const record = JSON.parse(fs.readFileSync(process.argv[1], \"utf8\"))",
+            "fs.writeFileSync(process.argv[1], JSON.stringify({ ...record, recorder: JSON.parse(process.argv[2]) }))"
+          ].join("; ")
+        }' "$results" '${JSON.stringify(recorder)}'`,
+        "exit $status"
+      ].join("\n")
+    )
+    const named = await onNode(own(request(keep(makeOwnWith(naming))), partsFor("none"), "WORKSPACE.ts"))
+    expect(named.recorder).toEqual(recorder)
+    expect(Schema.decodeUnknownSync(ReplayReport)(named).recorder).toEqual(recorder)
+    const unnamed = await onNode(own(request(keep(makeOwnWith(smthrs))), partsFor("none"), "WORKSPACE.ts"))
+    expect(unnamed.commits[0]?.normal.ok).toBe(true)
+    expect(unnamed).not.toHaveProperty("recorder")
+  })
+
   it("replays the patterns asked for, and gives the shared cache --cache names to normal mode only", async () => {
     const recording = recordingSmthrs()
     const root = keep(makeOwnWith(recording.command))

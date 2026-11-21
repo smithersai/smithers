@@ -15,7 +15,7 @@ import { applyRefuses } from "../contract/Command.ts"
 import { failsHere, needsLeftOut, type NotReplayed, stepTimeoutHours } from "../contract/Inventory.ts"
 import type { Failure, ReplayParts, ReplayRequest, RunReplay } from "../contract/Parts.ts"
 import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport } from "../contract/ReplayReport.ts"
-import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
+import { type Recorder, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { type Confined, confine, held, jobHomes, reading, sourceDirectory, type Way } from "../replay/Confine.vibe"
 import { addTo, type Count, type CpuBucket, uncounted, usedBy } from "../replay/Cpu.ts"
@@ -442,6 +442,8 @@ export const own = <R>(
     }
 
     let runs = 0
+    // What recorded the files the targets read, as the first run that had a target to observe named it.
+    let recorder: Recorder | undefined = undefined
     const jobs = request.jobs === undefined ? [] : ["--jobs", String(request.jobs)]
 
     /**
@@ -498,6 +500,7 @@ export const own = <R>(
         const text = try fs.readFileString(file)
         return try Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text)
       } catch () => undefined
+      recorder ??= record?.recorder
       const recorded = record === undefined ? undefined : withReasons(record.results, output.text)
       if (try Ref.get(watch.stalled)) {
         return stoppedResults(recorded, selected, watch.limitMs, noProgress(stall.minutes))
@@ -808,7 +811,8 @@ export const own = <R>(
       trialMs,
       reruns: tally,
       firstRun: started.firstRun,
-      cold: started.cold
+      cold: started.cold,
+      recorder
     })
     return { ...report, targets: chosen.patterns }
   })

@@ -206,8 +206,70 @@ describe("picking the recorder", () => {
       .toEqual({ reason: "smthrs-observe cannot run here, and strace is not installed" })
     const tracer = Path.join(root, "strace")
     await Fs.writeFile(tracer, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+    // strace records, and the answer says why smthrs-observe does not.
     expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, supervisor: refusing }))
-      .toEqual({ tracer })
+      .toEqual({ tracer, why: "smthrs-observe cannot run here" })
+  })
+
+  it.skipIf(process.platform === "win32")(
+    "says why strace records where smthrs-observe is built for the host",
+    async () => {
+      const root = await directory()
+      const tracer = Path.join(root, "strace")
+      await Fs.writeFile(tracer, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+      const refusing = Path.join(root, "smthrs-observe")
+      const said = "smthrs-observe cannot run here: this machine refuses pidfd_getfd: Operation not permitted"
+      await Fs.writeFile(refusing, `#!/bin/sh\necho '${said}' >&2\necho 'more' >&2\nexit 126\n`, { mode: 0o755 })
+      // The first line smthrs-observe printed when it refused, over why the host would have none.
+      expect(
+        ObservedReads.observer({
+          platform: "linux",
+          executable: () => tracer,
+          supervisor: refusing,
+          unsupervised: "not asked"
+        })
+      ).toEqual({ tracer, why: said })
+      const missing = "this installation of @smthrs/build-cli holds no smthrs-observe for linux-x64"
+      expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, unsupervised: missing }))
+        .toEqual({ tracer, why: missing })
+      expect(ObservedReads.observer({ platform: "linux", executable: () => undefined, unsupervised: missing }))
+        .toEqual({ reason: `${missing}, and strace is not installed` })
+      // Where none is built for the host, strace alone is named.
+      expect(ObservedReads.observer({ platform: "linux", executable: () => tracer })).toEqual({ tracer })
+    }
+  )
+
+  it("says why a machine smthrs-observe is built for has none", () => {
+    expect(ObservedReads.unsupervised("darwin", "arm64", {})).toBeUndefined()
+    expect(ObservedReads.unsupervised("linux", "ia32", {})).toBeUndefined()
+    expect(ObservedReads.unsupervised("linux", "riscv64", { SMTHRS_OBSERVE_WITH: "strace" })).toBeUndefined()
+    expect(ObservedReads.unsupervised("linux", "x64", { SMTHRS_OBSERVE_WITH: "strace" }))
+      .toBe("SMTHRS_OBSERVE_WITH=strace asks for strace")
+    expect(ObservedReads.unsupervised("linux", "arm64", { SMTHRS_OBSERVE_WITH: "strace" }))
+      .toBe("SMTHRS_OBSERVE_WITH=strace asks for strace")
+  })
+
+  for (const arch of ["x64", "arm64"]) {
+    const held = Path.resolve(import.meta.dirname, "..", "native", "out", `linux-${arch}`, "smthrs-observe")
+    it.skipIf(NodeFs.existsSync(held))(`says this installation holds none for linux-${arch}`, () => {
+      expect(ObservedReads.unsupervised("linux", arch, {}))
+        .toBe(`this installation of @smthrs/build-cli holds no smthrs-observe for linux-${arch}`)
+      expect(ObservedReads.unsupervised("linux", arch, asked))
+        .toBe(`this installation of @smthrs/build-cli holds no smthrs-observe for linux-${arch}`)
+    })
+    it.skipIf(!NodeFs.existsSync(held))(`says nothing where this installation holds one for linux-${arch}`, () => {
+      expect(ObservedReads.unsupervised("linux", arch, {})).toBeUndefined()
+    })
+  }
+
+  it("names the recorder a run's summary gives", () => {
+    expect(ObservedReads.recorderOf({ tracer: "/x/smthrs-observe", supervisor: true }))
+      .toEqual({ name: "smthrs-observe" })
+    expect(ObservedReads.recorderOf({ tracer: "/usr/bin/strace" })).toEqual({ name: "strace" })
+    expect(ObservedReads.recorderOf({ tracer: "/usr/bin/strace", why: "SMTHRS_OBSERVE_WITH=strace asks for strace" }))
+      .toEqual({ name: "strace", why: "SMTHRS_OBSERVE_WITH=strace asks for strace" })
+    expect(ObservedReads.recorderOf({ reason: "strace is not installed" }))
+      .toEqual({ name: "none", why: "strace is not installed" })
   })
 
   it.skipIf(process.platform === "win32")(

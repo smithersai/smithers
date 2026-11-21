@@ -44,7 +44,7 @@ import type {
   ReplayReport,
   StepFailure
 } from "../contract/ReplayReport.ts"
-import { type Parts, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
+import { type Parts, type Recorder, RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
 import { check } from "../apply/index.ts"
@@ -864,6 +864,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     let runs = 0
+    // What recorded the files the steps read, as the first run that had a step to observe named it.
+    let recorder: Recorder | undefined = undefined
     // Where this machine has the software a GitHub runner comes with. A step with runner text is told.
     const software = softwareEnvironment(person)
     /**
@@ -966,6 +968,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       }
       // The first pass is the run a wall time covers: its parts are the ones kept.
       if (spent !== undefined && spent.parts === undefined) spent.parts = record?.parts
+      recorder ??= record?.recorder
       const recorded = record === undefined ? undefined : withReasons(record.results, output.text)
       const results = stalled
         ? stoppedResults(recorded, selected, watch.limitMs, noProgress(stall.minutes))
@@ -1609,6 +1612,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       firstRun: started.firstRun,
       cold: started.cold,
       diskHeldBytes: try disk.most,
-      stopped
+      stopped,
+      recorder
     })
   })

@@ -11,7 +11,9 @@
  * reasons, and so is what the inventory could not read, so the speedup is
  * never read as covering them. A tool this machine has at another version
  * than a job asks for is listed with both versions. Flaky verdicts are
- * counted beside the mismatches. On a repository that
+ * counted beside the mismatches. A line names what recorded the files the
+ * steps read, and why when it is not smthrs-observe on a machine it is built
+ * for. On a repository that
  * already builds with Smithers build, the patterns replayed stand above the
  * speedup. When fast mode was asked for and could not be measured, a line says
  * so and why. The speedup covers the commits whose baseline passed and says so
@@ -71,6 +73,7 @@ import {
   ownTargets,
   ratio,
   reasons,
+  recordedBy,
   rerunTime,
   selectionRows,
   shortCommit,
@@ -179,6 +182,7 @@ export const text: RenderReport = (report) => {
       commitsLeftOut(commitsLeft.length)
     }${leftOut(jobsLeftOut(report))}${unread(notRead.length)}`
   ])
+  if (report.recorder !== undefined) sections.push([clean(recordedBy(report.recorder))])
   const cpu = cpuTime(report)
   if (cpu !== undefined) sections.push([cpu])
   if (report.trialMs !== undefined) sections.push([trialTime(report.trialMs)])

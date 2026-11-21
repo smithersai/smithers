@@ -49,6 +49,7 @@ import {
   combine,
   type Mode,
   type Parts,
+  type Recorder,
   type RunRecord,
   type StatusCounts,
   type TargetResult,
@@ -1308,6 +1309,8 @@ export interface Findings {
   readonly firstRun?: FirstRun | undefined
   /** Why the first counted commit started with an empty cache, when a run before it was asked for. */
   readonly cold?: string | undefined
+  /** What recorded the files the steps read, when a step was observed. */
+  readonly recorder?: Recorder | undefined
 }
 
 /**
@@ -1436,7 +1439,8 @@ export const reportOf = (
       : { notReplayedCommits: found.commitsLeft }),
     ...(unread.length === 0 ? {} : { notRead: unread }),
     ...(inventory.toolVersions === undefined ? {} : { toolVersions: inventory.toolVersions }),
-    ...(empty.length === 0 ? {} : { withheld: empty })
+    ...(empty.length === 0 ? {} : { withheld: empty }),
+    ...(found.recorder === undefined ? {} : { recorder: found.recorder })
   }
 }
 
@@ -1545,6 +1549,8 @@ export interface Gathered {
   readonly diskHeldBytes?: number | undefined
   /** Why the replay ended before its last commit, when the disk would have filled. */
   readonly stopped?: string | undefined
+  /** What recorded the files the steps read, as the first run with a step to observe named it. */
+  readonly recorder?: Recorder | undefined
 }
 
 /**
@@ -1587,7 +1593,8 @@ export const finishedReport = (
     appliedMs: gathered.appliedMs,
     reruns: gathered.reruns,
     firstRun: measured ? gathered.firstRun : firstRunWithoutFast(gathered.firstRun),
-    cold: gathered.cold
+    cold: gathered.cold,
+    recorder: gathered.recorder
   })
   return {
     ...report,

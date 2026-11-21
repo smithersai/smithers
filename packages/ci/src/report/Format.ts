@@ -16,8 +16,10 @@ import type {
   StepFailure,
   StepNotReused
 } from "../contract/ReplayReport.ts"
+import type { Recorder } from "../contract/RunRecord.ts"
 import type { Metrics } from "../contract/Selection.ts"
 import { sizeOf } from "../replay/DiskSpace.ts"
+import { inPlainWords } from "../replay/Reads.ts"
 
 /**
  * Elapsed time in the largest units that keep it short: `850ms`, `12.3s`,
@@ -558,6 +560,23 @@ export const skippedLabels = (labels: ReadonlyArray<string>): string =>
   `${labels.slice(0, shownSkips).join(", ")}${
     labels.length > shownSkips ? ` and ${labels.length - shownSkips} more` : ""
   }`
+
+/**
+ * What recorded the files the steps read, as one line, with why when the
+ * report says: `what the steps read was recorded by smthrs-observe`, `what
+ * the steps read was recorded by strace: this installation of
+ * @smthrs/build-cli holds no smthrs-observe for linux-x64`, or `what the
+ * steps read was not recorded: strace is not installed`.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const recordedBy = (recorder: Recorder): string => {
+  const why = recorder.why === undefined ? "" : `: ${inPlainWords(recorder.why).replace(/\.$/, "")}`
+  return recorder.name === "none"
+    ? `what the steps read was not recorded${why}`
+    : `what the steps read was recorded by ${recorder.name}${why}`
+}
 
 /**
  * Why the first counted commit started with an empty cache, as one line.

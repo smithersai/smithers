@@ -41,6 +41,7 @@ import {
   ownTargets,
   ratio,
   reasons,
+  recordedBy,
   rerunTime,
   selectionRows,
   shortCommit,
@@ -310,6 +311,7 @@ export const html: RenderReport = (report) => {
         flaky(report.flaky ?? 0)
       }${commitsLeftOut(commitsLeft.length)}${leftOut(jobsLeftOut(report))}${unread(notRead.length)}</p>`
     )
+    if (report.recorder !== undefined) body.push(`<p class="summary">${escape(recordedBy(report.recorder))}</p>`)
     const cpu = cpuTime(report)
     if (cpu !== undefined) body.push(`<p class="summary">${cpu}</p>`)
     if (report.trialMs !== undefined) body.push(`<p class="summary">${trialTime(report.trialMs)}</p>`)

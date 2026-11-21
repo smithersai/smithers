@@ -792,6 +792,25 @@ the line names what the container refused and what lets it record:
 smthrs: reads are not observed on this host: smthrs-observe cannot run here: this machine refuses pidfd_getfd, which reads a socket a step binds: Operation not permitted; a container allows it with CAP_SYS_PTRACE, and strace is not installed; a target that asks for it is keyed by its declared inputs
 ```
 
+A run with a target that asks to be observed names its recorder: `recorder`
+in its summary and in its `--results-file` record, with `name`
+(`smthrs-observe`, `strace` or `none`) and `why`, and one line under the
+counts a person reads:
+
+```text
+recorder: smthrs-observe
+recorder: strace (this installation of @smthrs/build-cli holds no smthrs-observe for linux-x64)
+recorder: none (strace is not installed)
+```
+
+On x86_64 and aarch64 Linux, a run that `strace` records says why
+`smthrs-observe` did not: `SMTHRS_OBSERVE_WITH=strace asks for strace`, the
+installation holds no `smthrs-observe` for the machine, or the first line
+`smthrs-observe --probe` printed when it refused to run here. Elsewhere
+`strace` is named alone. With `none`, `why` is the reason the `reads are not
+observed` line gives, which on those machines starts with why `smthrs-observe`
+did not record. A run with no such target names no recorder.
+
 `observe` requires `sandbox: "none"`, because a confined target is already held
 to its declared inputs. It cannot be combined with `shards` or `services`. Its
 results stay in the local cache, as every unconfined result does.

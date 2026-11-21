@@ -166,7 +166,12 @@ export const executionServicesLive: ExecutionServices = {
   cache: (options) => joined(() => openCache(options)),
   sandboxHost: () => ExecSandbox.host(),
   writeProtection: (host) => ExecSandbox.writeProtectionRefusal(host),
-  observer: (host) => ObservedReads.observer({ ...host, supervisor: ObservedReads.supervisorPath() }),
+  observer: (host) =>
+    ObservedReads.observer({
+      ...host,
+      supervisor: ObservedReads.supervisorPath(),
+      unsupervised: ObservedReads.unsupervised()
+    }),
   replanner,
   // Asked only where a recorder ran, which is Linux, where every process has the file.
   noNewPrivileges: () => /^NoNewPrivs:\s*1$/m.test(NodeFs.readFileSync("/proc/self/status", "utf8")),
@@ -5711,7 +5716,9 @@ const executeWith = (
       counts,
       ok: counts.failed === 0 && stoppedBy === undefined,
       results,
-      ...(notStored.length === 0 ? {} : { notStored })
+      ...(notStored.length === 0 ? {} : { notStored }),
+      // Named only when the run had a step that asks to be observed, and so asked the host what records it.
+      ...(observing === undefined ? {} : { recorder: ObservedReads.recorderOf(observing) })
     }
     reporter.summary(summary)
     return summary

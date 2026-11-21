@@ -126,6 +126,23 @@ export const notStoredCounts = (reasons: Iterable<string>): ReadonlyArray<NotSto
 }
 
 /**
+ * What recorded the files a run's observed steps read: `smthrs-observe`,
+ * `strace`, or `none` when nothing on the host can record. `why` says why
+ * when it is not `smthrs-observe` on a machine `smthrs-observe` is built for
+ * (Linux on x86_64 and aarch64): `SMTHRS_OBSERVE_WITH=strace` asked for
+ * strace, the installation holds no `smthrs-observe` for the machine, or
+ * `smthrs-observe` refused to run, in the first line it printed. With
+ * `none` it is the reason nothing records.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Recorder {
+  readonly name: "smthrs-observe" | "strace" | "none"
+  readonly why?: string | undefined
+}
+
+/**
  * Per-status result counts for one execution.
  *
  * `cancelled` is present only when a fail-fast run cancelled a target.
@@ -172,6 +189,11 @@ export interface Summary {
    * `plan` are present for the first run of a `smthrs` process.
    */
   readonly parts?: Parts | undefined
+  /**
+   * What recorded the files the run's observed steps read. Present when the
+   * run had a step that asks to be observed and asked the host for a recorder.
+   */
+  readonly recorder?: Recorder | undefined
 }
 
 /**

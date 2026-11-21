@@ -158,6 +158,28 @@ export const StatusCounts = Schema.Struct({
 export type StatusCounts = typeof StatusCounts.Type
 
 /**
+ * What recorded the files a run's observed steps read: `smthrs-observe`,
+ * `strace`, or `none` when nothing on the machine can record. `why` says why
+ * when it is not `smthrs-observe` on a machine `smthrs-observe` is built for
+ * (Linux on x86_64 and aarch64), and with `none` why nothing records.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const Recorder = Schema.Struct({
+  name: Schema.Literals(["smthrs-observe", "strace", "none"]),
+  why: Schema.optionalKey(Schema.NonEmptyString)
+})
+
+/**
+ * A decoded `Recorder`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Recorder = typeof Recorder.Type
+
+/**
  * Which selection a run used. `normal` runs every affected target; `fast`
  * also skips targets the model predicted safe.
  *
@@ -176,7 +198,8 @@ export type Mode = typeof Mode.Type
 
 /**
  * One run: every selected target's outcome in plan order, plus the verdict
- * `ok`, false when any target failed.
+ * `ok`, false when any target failed. `recorder` names what recorded the
+ * files its observed steps read, when it had any.
  *
  * @category models
  * @since 0.1.0
@@ -195,7 +218,8 @@ export const RunRecord = Schema.Struct({
   cache: Schema.optionalKey(Schema.Boolean),
   machine: Schema.optionalKey(Schema.String),
   parts: Schema.optionalKey(Parts),
-  shard: Schema.optionalKey(Schema.Struct({ index: Schema.Int, count: Schema.Int }))
+  shard: Schema.optionalKey(Schema.Struct({ index: Schema.Int, count: Schema.Int })),
+  recorder: Schema.optionalKey(Recorder)
 })
 
 /**

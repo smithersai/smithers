@@ -89,6 +89,8 @@ describe("text", () => {
       "",
       "2 commits · 1 mismatch",
       "",
+      "what the steps read was recorded by smthrs-observe",
+      "",
       "the steps used 1h 10m of CPU time as the baseline, 10m 00s in normal mode (7.0× less) and 3m 30s in fast mode (20.0× less)",
       "",
       "the first run, with an empty cache, took 23m 10s as the baseline, 24m 30s in normal mode and 24m 40s in fast mode; it happens once and is in none of these times",
@@ -1169,6 +1171,47 @@ describe("what fast mode did, in both renderers", () => {
     const none: ReplayReport = { ...example, commits: [{ ...green, skipped: [] }, { ...red, skipped: [] }] }
     expect(section(none, "skipped, predicted-safe")).toEqual([])
     expect(html(none)).not.toContain("skipped, predicted-safe")
+  })
+
+  it("names what recorded the files the steps read, and why, in the terminal and on the page", () => {
+    const line = (report: ReplayReport): ReadonlyArray<string> =>
+      text(report).split("\n").filter((each) => each.startsWith("what the steps read"))
+    const page = (report: ReplayReport): ReadonlyArray<string> =>
+      [...html(report).matchAll(/<p class="summary">(what the steps read[^<]*)<\/p>/g)].map((match) => match[1]!)
+    const cases: ReadonlyArray<readonly [NonNullable<ReplayReport["recorder"]>, string]> = [
+      [{ name: "smthrs-observe" }, "what the steps read was recorded by smthrs-observe"],
+      [{ name: "strace" }, "what the steps read was recorded by strace"],
+      [
+        { name: "strace", why: "SMTHRS_OBSERVE_WITH=strace asks for strace" },
+        "what the steps read was recorded by strace: SMTHRS_OBSERVE_WITH=strace asks for strace"
+      ],
+      [
+        { name: "strace", why: "smthrs-observe cannot run here: this machine refuses pidfd_getfd." },
+        "what the steps read was recorded by strace: smthrs-observe cannot run here: this machine refuses pidfd_getfd"
+      ],
+      [
+        { name: "none", why: "reads cannot be observed on darwin" },
+        "what the steps read was not recorded: reads cannot be observed on macOS"
+      ],
+      [{ name: "none" }, "what the steps read was not recorded"]
+    ]
+    for (const [recorder, said] of cases) {
+      expect(line({ ...example, recorder })).toEqual([said])
+      expect(page({ ...example, recorder })).toEqual([said])
+    }
+    // It stands under the counts, before the CPU time.
+    const lines = text(example).split("\n")
+    expect(lines.indexOf("what the steps read was recorded by smthrs-observe")).toBe(
+      lines.indexOf("2 commits · 1 mismatch") + 2
+    )
+    // A replay that observed no step names no recorder.
+    const { recorder: _recorder, ...unnamed } = example
+    expect(line(unnamed)).toEqual([])
+    expect(page(unnamed)).toEqual([])
+    // What the recorder said is the machine's, so it is cleaned for the terminal and escaped for the page.
+    const hostile: ReplayReport = { ...example, recorder: { name: "strace", why: "<b>x</b>\u001b[31m" } }
+    expect(line(hostile)).toEqual(["what the steps read was recorded by strace: <b>x</b>\uFFFD[31m"])
+    expect(html(hostile)).toContain("recorded by strace: &lt;b&gt;x&lt;/b&gt;")
   })
 
   it("never lets a skipped target's label or reason reach the terminal or the page as it came", () => {

@@ -215,6 +215,21 @@ export const notStoredSummary = (summary: Summary): string | undefined => {
     counts.map((entry) => `${entry.count} ${entry.reason}`).join("; ")
 }
 
+/**
+ * The line that names what recorded the files the run's observed steps
+ * read, and why when the summary says: `recorder: smthrs-observe`,
+ * `recorder: strace (SMTHRS_OBSERVE_WITH=strace asks for strace)`, or
+ * `recorder: none (strace is not installed)`. Nothing for a run that asked
+ * for no recorder.
+ *
+ * @category formatting
+ * @since 1.0.0
+ */
+export const recorderSummary = (summary: Summary): string | undefined =>
+  summary.recorder === undefined
+    ? undefined
+    : `recorder: ${summary.recorder.name}${summary.recorder.why === undefined ? "" : ` (${summary.recorder.why})`}`
+
 const noop = (): void => {}
 
 const lines = (chunk: string): ReadonlyArray<string> => {
@@ -243,6 +258,8 @@ export const plain = (writeLine: (line: string) => void): Reporter => ({
     writeLine(plainSummary(summary))
     const notStored = notStoredSummary(summary)
     if (notStored !== undefined) writeLine(notStored)
+    const recorder = recorderSummary(summary)
+    if (recorder !== undefined) writeLine(recorder)
   },
   close: noop
 })
@@ -324,6 +341,8 @@ const humanPlain = (terminal: Terminal): Reporter => {
     summary: (summary) => {
       const notStored = notStoredSummary(summary)
       if (notStored !== undefined) Clack.log.message(notStored, { output })
+      const recorder = recorderSummary(summary)
+      if (recorder !== undefined) Clack.log.message(recorder, { output })
       Clack.outro(plainSummary(summary), { output })
     }
   }
@@ -487,6 +506,8 @@ const pretty = (options: MakeOptions, live: boolean): Reporter => {
     }
     const notStored = notStoredSummary(summary)
     if (notStored !== undefined) out.push(c.dim(notStored))
+    const recorder = recorderSummary(summary)
+    if (recorder !== undefined) out.push(c.dim(recorder))
     return out
   }
 
