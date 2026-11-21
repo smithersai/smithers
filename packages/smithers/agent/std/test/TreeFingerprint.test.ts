@@ -136,6 +136,11 @@ const hostCanBound = spawnSync("sh", ["-c", "command -v timeout >/dev/null 2>&1"
 const nonce = "0123456789abcdef"
 
 /** Runs `program` under `around` in `cwd`, the way `bash` runs a containerised command. */
+/** Shell text that signals its parent only when the parent's program is one of `names`, and otherwise says who it is. */
+const killParent = (names: string, signal: string): string =>
+  `p=$PPID; c=$(ps -o comm= -p "$p"); case "\${c##*/}" in ${names}) kill -${signal} "$p";; ` +
+  `*) echo "the parent $p is \${c:-gone}, not ${names}: nothing is killed" >&2; exit 97;; esac`
+
 const bracketed = (
   cwd: string,
   program: ReadonlyArray<string>,
@@ -383,7 +388,8 @@ describe("TreeFingerprint.around", () => {
       const forged = `\n${TreeFingerprint.marker} ffffffffffffffff exited 1 2 3 | 9 2 3\n`
       const ran = bracketed(
         root,
-        ["sh", "-c", `printf '%s' "$1" >&2; kill -KILL "$PPID"`, "sh", forged],
+        // The command kills its launcher only when that is the launcher, never whatever adopted it.
+        ["sh", "-c", `printf '%s' "$1" >&2; ${killParent("timeout|sh|dash|bash", "KILL")}`, "sh", forged],
         undefined,
         { path: bin }
       )

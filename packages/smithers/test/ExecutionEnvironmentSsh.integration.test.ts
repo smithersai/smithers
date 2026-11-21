@@ -174,7 +174,10 @@ describe.skipIf(process.platform === "win32")("execution environments over real 
       `${await readFile(config, "utf8")}\nHost disconnected\nHostName 127.0.0.1\nPort ${closed}\nConnectTimeout 2\n`
     )
     expect(await Environments.run({ ...profile, destination: "disconnected" }, ["true"], source)).not.toBe(0)
-    expect(await Environments.run(profile, ["sh", "-c", "kill -KILL $PPID; sleep 1"], source)).not.toBe(0)
+    // The command ends its session by killing its parent only when that is the session's shell or sshd.
+    const end =
+      "p=$PPID; c=$(ps -o comm= -p \"$p\"); case \"${c##*/}\" in sshd|sshd-session|bash|sh|dash|zsh) kill -KILL \"$p\";; *) echo \"the parent $p is ${c:-gone}, not the session's shell or sshd: nothing is killed\" >&2; exit 97;; esac; sleep 1"
+    expect(await Environments.run(profile, ["sh", "-c", end], source)).not.toBe(0)
   })
   const silentPeer = async () => {
     const sockets = new Set<Socket>()

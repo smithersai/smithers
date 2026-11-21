@@ -289,7 +289,12 @@ describe("an observed test", () => {
       SMTHRS_OBSERVE_WITH: "smthrs-observe"
     })
     if (supervisor === undefined) return
-    const { run } = await fixture({ check: "kill -9 $PPID; /bin/cat input.txt > /dev/null" })
+    // The step kills its parent only when that is the recorder: a step whose recorder is already gone is adopted by
+    // the nearest subreaper, which can be the session's own service manager.
+    const { run } = await fixture({
+      check:
+        "p=$PPID; c=$(ps -o comm= -p \"$p\"); case \"${c##*/}\" in smthrs-observe) kill -9 \"$p\";; *) echo \"the parent $p is ${c:-gone}, not smthrs-observe: nothing is killed\" >&2; exit 97;; esac; /bin/cat input.txt > /dev/null"
+    })
     const services = { ...executionServicesLive, observer: () => ({ tracer: supervisor, supervisor: true as const }) }
     await expect(run(["check"], services)).rejects.toThrow("smthrs-observe stopped before the step ended")
   })

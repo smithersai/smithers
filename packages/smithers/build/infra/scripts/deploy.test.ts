@@ -273,8 +273,10 @@ describe("deploy wrapper", () => {
         // Also reap the fixture when testing the broken implementation, which
         // returns while this group is still writing its heartbeat.
         if (existsSync(`${marker}.leader`)) {
+          // An empty or torn file reads as 0, and -0 is this test's own group: only a group leader's pid is killed.
+          const leader = Number(readFileSync(`${marker}.leader`, "utf8"))
           try {
-            process.kill(-Number(readFileSync(`${marker}.leader`, "utf8")), "SIGKILL")
+            if (Number.isInteger(leader) && leader > 1) process.kill(-leader, "SIGKILL")
           } catch {
             // A successful wrapper has already removed the process group.
           }

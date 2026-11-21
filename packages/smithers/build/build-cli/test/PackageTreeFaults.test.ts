@@ -81,7 +81,10 @@ describe("runGit failures", () => {
 
   it("names the signal when git is killed without stderr", async () => {
     await repository()
-    await expect(PackageTree.runGit(root, ["-c", "alias.die=!kill -TERM $PPID", "die"]))
+    // The alias signals its parent only when that is git, never whatever adopted it.
+    const die =
+      "p=$PPID; c=$(ps -o comm= -p \"$p\"); case \"${c##*/}\" in git) kill -TERM \"$p\";; *) echo \"the parent $p is ${c:-gone}, not git: nothing is killed\" >&2; exit 97;; esac"
+    await expect(PackageTree.runGit(root, ["-c", `alias.die=!${die}`, "die"]))
       .rejects.toThrow("git -c failed: SIGTERM")
   })
 
