@@ -8,6 +8,7 @@
  * @since 0.1.0
  */
 
+import { notUtf8, unreadableName } from "./Names.ts"
 import { exec, git, lines, outputLimit, stdoutOf } from "./Process.vibe"
 import { failure, withoutCredentials } from "./Summary.ts"
 
@@ -193,4 +194,20 @@ export effect function readyHistory(
   const held = Math.min(wanted.length, asked)
   try sayShallow(source, held, asked, warm, say)
   try fetchMissing(root, source, wanted, say)
+}
+
+/**
+ * Fails `unsupported` when a file of one of the newest `count` commits of
+ * `source`'s first-parent history, or of the commit before them, has a name
+ * that is not UTF-8. It names the first such file, as git shows it.
+ *
+ * @category names
+ * @since 0.1.0
+ */
+export effect function readableNames(source: string, count: number) {
+  const commits = lines(try git(source, ["rev-list", "--first-parent", `--max-count=${count + 1}`, "HEAD"]))
+  for (const commit of commits) {
+    const shown = notUtf8(try git(source, ["-c", "core.quotePath=true", "ls-tree", "-r", "--name-only", commit]))
+    if (shown !== undefined) throw failure("unsupported", unreadableName(shown, commit))
+  }
 }

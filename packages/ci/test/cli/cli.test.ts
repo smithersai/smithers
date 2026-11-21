@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { existsSync } from "node:fs"
+import { existsSync, writeFileSync } from "node:fs"
 import { basename } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { layer } from "../../src/cli/Host.vibe"
@@ -445,6 +445,21 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
 
   it("exits 2 on an unknown flag", async () => {
     expect((await spawn(bin, ["--bogus"], repo())).code).toBe(exitCodes.usage)
+  })
+
+  it("exits 3 with one line naming the file when a replayed commit holds a name that is not UTF-8", async () => {
+    const root = repo()
+    // The Latin-1 bytes of "café.txt". Smithers build reads every name of a checkout as UTF-8 and stops at this one.
+    writeFileSync(Buffer.from(`${root}/caf\xe9.txt`, "latin1"), "ok\n")
+    git(root, "add", "--all")
+    git(root, "commit", "--quiet", "--message", "latin-1")
+    const head = git(root, "rev-parse", "--short=7", "HEAD").trim()
+    const outcome = await spawn(bin, ["replay", "--commits", "1", "--mode", "normal"], root)
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.unsupported)
+    expect(outcome.stdout).toBe("")
+    expect(outcome.stderr.trim().split("\n").at(-1)).toBe(
+      `smithers-ci: replay: the file "caf\\351.txt" at ${head} has a name that is not UTF-8, which Smithers build cannot read; rename the file to replay this repository`
+    )
   })
 
   it("exits 2 with one line, before anything runs, when SMTHRS_OBSERVE_WITH names no recorder", async () => {

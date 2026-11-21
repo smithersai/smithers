@@ -317,6 +317,14 @@ A workflow that does not parse is listed there and nowhere else.
 | `3`  | `unsupported` | The repository cannot be replayed: it is not a Git repository with a commit, it uses something Smithers CI cannot run, or its CI does not pass on this machine.                                                               |
 | `4`  | `failed`      | A step of the command could not finish.                                                                                                                                                                                       |
 
+A replay also exits `3` when a commit it replays, or the commit its first run
+starts from, holds a file whose name is not UTF-8. Smithers build reads every
+file name as UTF-8, so the line names the file as git shows it:
+
+```text
+smithers-ci: replay: the file "data/caf\351.txt" at 35bae0d has a name that is not UTF-8, which Smithers build cannot read; rename the file to replay this repository
+```
+
 Exit `3` also means the repository's CI does not pass on this machine: no job
 passed the first run or the run after it, or, with `--no-trial`, no
 step passed in the baseline of any replayed commit. The program then prints no

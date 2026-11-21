@@ -56,7 +56,7 @@ import {
   runStep,
   stdoutOf
 } from "../replay/Process.vibe"
-import { readyHistory } from "../replay/History.vibe"
+import { readableNames, readyHistory } from "../replay/History.vibe"
 import { printsNotes, readsListener } from "../replay/Reads.ts"
 import { type Execute, Options, Progress, scoresOrReason, settle, WorkDirectory } from "../replay/Replay.vibe"
 import { defaultStall, defaultStallMinutes, type StallLimit, tableFor, watchFor } from "../replay/Stall.vibe"
@@ -336,6 +336,8 @@ export const own = <R>(
     const commits = [...history].reverse()
     // A partial clone lacks the files of past commits, and a shallow clone the commits before its oldest.
     try readyHistory(root, source, request.commits, request.warm === true, progress.say)
+    // Smithers build reads every file name as UTF-8: a commit with another name is named before anything runs.
+    try readableNames(source, request.commits)
 
     /**
      * A copy of the repository for one mode. It is named as the repository is and fetches from its remote, so what
