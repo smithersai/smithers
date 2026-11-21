@@ -27,6 +27,9 @@ export declare const findZig: (options?: {
   readonly archives?: Readonly<Record<string, readonly [string, string]>>
 }) => { readonly zig: string; readonly problem?: undefined } | { readonly problem: string; readonly zig?: undefined }
 
+/** The file in `native/out` that says why nothing was built there. */
+export declare const notBuilt: string
+
 /** Builds both programs; the paths it wrote, or none where no zig can be had and the build is not required. */
 export declare const buildObserve: (options?: {
   readonly root?: string

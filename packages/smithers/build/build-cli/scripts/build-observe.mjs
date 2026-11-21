@@ -15,7 +15,7 @@
  * strace where the program is missing.
  */
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -96,6 +96,9 @@ export const findZig = ({
 
 const fetchScript = join(dirname(fileURLToPath(import.meta.url)), "fetch-zig.mjs")
 
+/** The file in `native/out` that says why nothing was built there. */
+export const notBuilt = "not-built.txt"
+
 export const buildObserve = ({
   root = packageRoot,
   named = process.env.SMITHERS_ZIG,
@@ -107,11 +110,14 @@ export const buildObserve = ({
   if (found.problem !== undefined) {
     if (required) throw new Error(`smthrs-observe: ${found.problem}`)
     log(`smthrs-observe not built: ${found.problem}; reads are recorded with strace`)
-    // The target declares `native/out`; it is there, empty, where nothing could be built (Windows has no zig
-    // archive), so the build passes and a run there records with strace.
+    // The target declares `native/out`, and Smithers build counts an empty declared directory as not produced.
+    // Where nothing could be built (Windows has no zig archive) the directory holds only why, so the build passes
+    // and a run there records with strace.
     mkdirSync(join(root, "native", "out"), { recursive: true })
+    writeFileSync(join(root, "native", "out", notBuilt), `smthrs-observe not built: ${found.problem}\n`)
     return []
   }
+  rmSync(join(root, "native", "out", notBuilt), { force: true })
   const zig = found.zig
   const source = join(root, "native", "observe.c")
   // zig keeps what it compiles once (musl for each target) in its global cache, and this build's own in a
