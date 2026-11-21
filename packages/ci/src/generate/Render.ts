@@ -118,6 +118,18 @@ export const stateDirectory = "${{ runner.temp }}/smithers-ci"
  */
 export const keptFiles = "kept"
 
+/**
+ * Where Smithers build keeps content by its digest in the directory it keeps
+ * its cache in: each recorded step's record of what it read, and the files a
+ * target declares as its output. The cache's entries name them, so the
+ * workflow carries this directory with the entries: a record left behind
+ * would make every recorded step run again.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const contentStore = "cas"
+
 // The limit a baseline step has, which is GitHub's for a job; the build's own default is 30 minutes.
 const stepTimeout = `${stepTimeoutHours}h`
 
@@ -684,7 +696,12 @@ const renderWorkflow = (
   // What the workflow carries from one run to the next is Smithers build's own: its records, what each step left
   // for the steps after it, and its compiled code. No tool of a step keeps a cache there. A tool's cache is in the
   // step's own job, where the tool puts it, and is gone with the job, as on the runner of the original CI.
-  const kept = [`${stateDirectory}/cache`, `${stateDirectory}/${keptFiles}`, `${stateDirectory}/${compiledCode}`]
+  const kept = [
+    `${stateDirectory}/cache`,
+    `${stateDirectory}/${contentStore}`,
+    `${stateDirectory}/${keptFiles}`,
+    `${stateDirectory}/${compiledCode}`
+  ]
   const matrix = apart
     ? Yaml.entry("include", Yaml.sequence(plan.legs.map((leg) => renderLeg(leg, varying))))
     : Yaml.entry("os", Yaml.list(plan.runners.map(runnerValue)))

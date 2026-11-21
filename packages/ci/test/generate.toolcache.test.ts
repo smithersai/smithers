@@ -49,7 +49,12 @@ const zig = ["test-a", "test-b"].map((name) =>
 )
 
 describe("what the generated workflow carries from one run to the next", () => {
-  const own = [`${stateDirectory}/cache`, `${stateDirectory}/kept`, `${stateDirectory}/node-compile-cache`]
+  const own = [
+    `${stateDirectory}/cache`,
+    `${stateDirectory}/cas`,
+    `${stateDirectory}/kept`,
+    `${stateDirectory}/node-compile-cache`
+  ]
 
   it("is Smithers build's own: its records, what each step left, and its compiled code", () => {
     expect(carried(generated([job("a", [step("a:1", "npm test")])], workflowPath))).toEqual(own)

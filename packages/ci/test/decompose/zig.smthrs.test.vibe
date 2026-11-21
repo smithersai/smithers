@@ -7,7 +7,7 @@ import { ci, type Step } from "../../src/contract/Inventory.ts"
 import { path as targetMapPath, TargetMap } from "../../src/contract/TargetMap.ts"
 import { split } from "../../src/decompose/index.ts"
 import * as ZigSteps from "../../src/decompose/Zig.ts"
-import { compiledCode, keptFiles } from "../../src/generate/Render.ts"
+import { compiledCode, contentStore, keptFiles } from "../../src/generate/Render.ts"
 import { files } from "../../src/generate/index.ts"
 import { read } from "../../src/inventory/index.ts"
 import { observes } from "../cli/repo.ts"
@@ -252,7 +252,7 @@ effect function filesUnder(root: string) {
 }
 
 /** What Smithers build keeps in the directory a workflow carries from run to run: nothing a tool was told to put there. */
-const own = ["cache", keptFiles, compiledCode, "plan", "tmp"]
+const own = ["cache", contentStore, keptFiles, compiledCode, "plan", "tmp"]
 
 /** A file under one of Zig's caches, or under a directory a tool was told to keep one in. */
 const ofZig = (name: string): boolean => /(?:^|\/)(?:\.zig-cache|zig|tools)\//.test(name)

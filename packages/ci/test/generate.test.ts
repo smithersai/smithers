@@ -32,6 +32,7 @@ import { files } from "../src/generate/index.ts"
 import {
   actionRefs,
   compiledCode,
+  contentStore,
   keptFiles,
   legsPath,
   machinesDirectory,
@@ -1510,9 +1511,11 @@ describe("the workspace and workflow", () => {
     )
     // The runner keeps its results, what each step left and the compiled code of smthrs, and the run reads them.
     expect(workflow).toContain(
-      `          path: |\n            ${stateDirectory}/cache\n            ${stateDirectory}/${keptFiles}\n            ${stateDirectory}/${compiledCode}\n`
+      `          path: |\n            ${stateDirectory}/cache\n            ${stateDirectory}/${contentStore}\n` +
+        `            ${stateDirectory}/${keptFiles}\n            ${stateDirectory}/${compiledCode}\n`
     )
     expect(keptFiles).toBe("kept")
+    expect(contentStore).toBe("cas")
     expect(workflow.indexOf(`            ${stateDirectory}/${compiledCode}`)).toBeLessThan(
       workflow.indexOf("smthrs ci")
     )

@@ -10,7 +10,7 @@ import { parse as parseYaml } from "yaml"
 import type { Ci, Inventory as InventoryDocument, Job } from "../src/contract/Inventory.ts"
 import { ci, Inventory, shell } from "../src/contract/Inventory.ts"
 import { files } from "../src/generate/index.ts"
-import { workflowPath } from "../src/generate/Render.ts"
+import { contentStore, workflowPath } from "../src/generate/Render.ts"
 import { assemble } from "../src/inventory/Draft.ts"
 import { readWorkflow } from "../src/inventory/GithubActions.ts"
 import { observes } from "./cli/repo.ts"
@@ -609,7 +609,9 @@ jobs:
     try {
       expect(execute(first, "first").statuses.get("check-1")).toBe("ran")
       // What `actions/cache` saves on one runner and restores on the next: the results, from outside the checkout.
-      cpSync(join(stateOf(first), "cache"), join(stateOf(second), "cache"), { recursive: true })
+      for (const kept of ["cache", contentStore]) {
+        cpSync(join(stateOf(first), kept), join(stateOf(second), kept), { recursive: true })
+      }
       expect(execute(second, "second").statuses.get("check-1")).toBe("hit")
     } finally {
       rmSync(first, { recursive: true, force: true })
