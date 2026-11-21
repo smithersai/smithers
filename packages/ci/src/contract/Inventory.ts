@@ -141,6 +141,13 @@ export type Unsupported = typeof Unsupported.Type
  * that must pass first. `matrix` lists one variable assignment per variant;
  * an empty list means the job runs once.
  *
+ * `runsOn` is the runner as written, with `${{ matrix.<key> }}` where a
+ * variant's value goes. `runners` holds the runner of each variant of
+ * `matrix`, in its order, when `runs-on` is an expression a variant's values
+ * do not fill in by name, such as `${{ matrix.os || 'ubuntu-latest' }}`. A
+ * runner the workflow file does not give stays as its expression
+ * (`unknownRunner`). Read a variant's runner with `runnerOf`.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -154,7 +161,8 @@ export const Job = Schema.Struct({
   matrix: Schema.Array(Schema.Record(Schema.String, Schema.String)),
   steps: Schema.Array(Step),
   unsupported: Schema.Array(Unsupported),
-  runsOn: Schema.optionalKey(Schema.String)
+  runsOn: Schema.optionalKey(Schema.String),
+  runners: Schema.optionalKey(Schema.Array(Schema.String))
 })
 
 /**
@@ -962,6 +970,41 @@ export const expand = (text: string, variant: Readonly<Record<string, string>>):
     (whole, key: string) => Object.hasOwn(variant, key) ? String(variant[key]) : whole
   )
 
+// A variant by its values, whatever order its keys are in.
+const sameVariant = (variant: Readonly<Record<string, string>>): string =>
+  JSON.stringify(Object.keys(variant).sort().map((key) => [key, variant[key]]))
+
+/**
+ * The runner one variant of a job runs on (`Job.runners`, else `Job.runsOn`
+ * with the variant's values filled in), or `undefined` when the job names
+ * none. A variant that is not one of the job's own is filled in by name.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const runnerOf = (job: Job, variant: Readonly<Record<string, string>>): string | undefined => {
+  const { matrix, runners, runsOn } = job
+  if (runners !== undefined) {
+    const key = sameVariant(variant)
+    const at = matrix.findIndex((entry) => sameVariant(entry) === key)
+    const found = runners[at]
+    if (found !== undefined) return found
+  }
+  return runsOn === undefined ? undefined : expand(runsOn, variant)
+}
+
+/**
+ * Whether a runner (`runnerOf`) is still an expression: one the workflow
+ * file does not give, such as a repository variable or another job's
+ * output. A variant on such a runner is left out with the feature `runner`.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const unknownRunner = (runner: string | undefined): boolean => runner !== undefined && runner.includes("${{")
+
 /**
  * A step with one matrix variant filled into its command, directory,
  * environment values and runner text.
@@ -1283,9 +1326,7 @@ const everyJobElsewhere = (inventory: Inventory, left: ReadonlyArray<NotReplayed
   const byId = new Map(inventory.jobs.map((job) => [job.id, job]))
   const hostsOf = (id: string): ReadonlyArray<Host | undefined> => {
     const job = byId.get(id) as Job
-    return (job.matrix.length === 0 ? [{}] : job.matrix).map((variant) =>
-      hostOf(job.runsOn === undefined ? undefined : expand(job.runsOn, variant))
-    )
+    return (job.matrix.length === 0 ? [{}] : job.matrix).map((variant) => hostOf(runnerOf(job, variant)))
   }
   const windowsOnly = (entry: NotReplayed): boolean => hostsOf(entry.job).every((host) => host === "win32")
   const elsewhere = (entry: NotReplayed): boolean =>

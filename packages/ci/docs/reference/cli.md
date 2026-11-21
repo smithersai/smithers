@@ -204,6 +204,11 @@ at that commit. `smithers-ci apply` writes every job, those left out here too:
 they pass on your runners. `--no-trial` leaves no job out: it runs every job at
 every commit, in the baseline and in each mode, and compares them all.
 
+A matrix variant is left out on its own when its runner is for another system
+(`other-system`), or is a value only GitHub has, such as a repository variable
+(`runner`, with the expression). `runs-on` is read for each variant: see
+[the runner](../concepts/github-actions.md#the-runner).
+
 ### Steps that fail
 
 A step that fails runs once more, in the baseline and in each mode. When it

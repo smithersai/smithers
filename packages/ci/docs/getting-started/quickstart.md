@@ -58,8 +58,11 @@ no toolchain.
   the tool to install.
 - A tool you have at another version than a job asks for is used, and the
   report gives both versions.
-- A job for another operating system is left out. When every job is, the
-  command names the system in one line and exits with code 3.
+- A job for another operating system is left out. A matrix that picks its
+  runner with an expression, such as `${{ matrix.os || 'ubuntu-latest' }}`, is
+  read for each variant: the variants for your system run, and the others are
+  left out by name. When every job is for another system, the command names
+  the system in one line and exits with code 3.
 - A job that cannot pass here, because it needs Docker, a service or a
   credential, is left out too. A job that fails the first run, and fails again
   at the newest commit, is listed as failing on this machine, with the first

@@ -77,6 +77,26 @@ such a comparison while the job runs stops and says so.
 `secrets` and `needs` are not read: a step that receives a secret is never run,
 and a job that reads what another job gave is left out.
 
+## The runner
+
+`runs-on` is read for each variant of the matrix, with the values the workflow
+file gives: the variant's `matrix` values, text, `||`, `&&`, `==`, `!=`,
+`format`, and `fromJSON` of text. `inputs` gives what a calling job passes and
+the defaults the called workflow declares. `vars` gives nothing here: a
+repository variable is set outside the file.
+
+| A variant's runner                              | What happens                                                                   |
+| ----------------------------------------------- | ------------------------------------------------------------------------------ |
+| A label GitHub hosts for your machine's system  | The variant is replayed, and the workflow `apply` writes runs it on that label |
+| A label GitHub hosts for another system         | The variant is left out of the replay, with `other-system`                     |
+| `self-hosted`                                   | The variant is left out of the replay; `apply` keeps it on its labels          |
+| A repository variable, or what another job gave | The variant is left out, with `runner` and the expression                      |
+
+So `runs-on: ${{ matrix.os || 'ubuntu-latest' }}` runs each variant that names
+no `os` on `ubuntu-latest`, and leaves out a variant with `os: windows-latest`
+on Linux. A variant left out with `runner` stays in your own workflow, and
+`.smithers/ci/NOT-REPRODUCED.txt` names it.
+
 ## Conditions
 
 A step or a job whose `if:` is false for the event is left out, and the report

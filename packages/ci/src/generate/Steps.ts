@@ -62,13 +62,15 @@ import {
   type Inventory,
   type Job,
   readsCommit,
+  runnerOf,
   runnerSoftware,
   runVariables,
   script,
   shell,
   type Step,
   type Toolchain,
-  treeOrder
+  treeOrder,
+  unknownRunner
 } from "../contract/Inventory.ts"
 import type { Failure } from "../contract/Parts.ts"
 import { shardOf } from "../contract/Shard.ts"
@@ -555,7 +557,13 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     const jobTails: Array<Tail> = []
     tails.set(job.id, jobTails)
     for (const variant of variantsOf(job)) {
-      const runsOn = job.runsOn === undefined ? undefined : forText(job.runsOn, variant)
+      const runner = runnerOf(job, variant)
+      // A variant whose runner the workflow file does not give stays in the repository's own workflow.
+      if (unknownRunner(runner)) {
+        notes.add(`${job.id}: a variant picks its runner from ${runner}, which the workflow file does not give.`)
+        continue
+      }
+      const runsOn = runner === undefined ? undefined : forText(runner, variant)
       const host = hostOf(runsOn)
       if (host === "win32") notes.add(`${job.id}: runs only on Windows, which generated targets do not support.`)
       else if (runsOn !== undefined) runners.add(runsOn)

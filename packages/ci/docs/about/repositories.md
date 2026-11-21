@@ -45,7 +45,8 @@ Smithers CI slower, never wrong.
   so the replay leaves the job out and says why. `smithers-ci apply` keeps the
   job on the labels it names in `runs-on`.
 - **Jobs for another operating system.** A job, or a matrix variant, that runs
-  on another system than your machine is listed and not run. When every job
+  on another system than your machine is listed and not run. A variant's
+  runner is read with its own values, also when `runs-on` is an expression. When every job
   is for another system, the command names the system and exits with code 3.
 - **Jobs that need a tool you do not have.** Smithers CI downloads no tool. A
   job that sets up a tool your machine lacks is listed with the tool to

@@ -21,11 +21,13 @@ import {
   hostAction,
   hostActions,
   hostOf,
+  type Job,
   releaseTrigger,
   runnerSoftware,
   secret as receivesSecret,
   type Toolchain,
   triggerFilter,
+  unknownRunner,
   writePermission
 } from "../contract/Inventory.ts"
 import { cacheActions, checkoutProblems, parseYaml, readAction, setupVariables } from "./Actions.ts"
@@ -63,6 +65,7 @@ import {
   type Scope as Expressions,
   truthy,
   unknown,
+  type Value,
   value,
   type Variable,
   variable,
@@ -1013,20 +1016,27 @@ const readStep = (state: JobState, scope: StepScope, raw: unknown, index: number
  * names no shell is PowerShell text. A job with a variant on another system is read as that variant runs it: its
  * Windows variants are left out one by one where the job is replayed (`Inventory.otherSystem`), never the job.
  */
-const windowsOnly = (runsOn: string | undefined, matrix: Matrix): boolean => {
-  if (runsOn === undefined) return false
-  const names = matrix.variants.length === 0 ? [runsOn] : matrix.variants.map((variant) => expand(runsOn, variant))
-  return names.every((name) => hostOf(name) === "win32")
+const windowsOnly = (job: Pick<Job, "runsOn" | "runners">, matrix: Matrix): boolean => {
+  const names = runnersOf(job, matrix)
+  return names !== undefined && names.every((name) => hostOf(name) === "win32")
 }
 
 /** The system every run of the job is on, or `undefined` when the variants differ or none is named. */
-const hostOfJob = (runsOn: string | undefined, matrix: Matrix): Host | undefined => {
-  if (runsOn === undefined) return undefined
-  const hosts = new Set(
-    (matrix.variants.length === 0 ? [{}] : matrix.variants).map((variant) => hostOf(expand(runsOn, variant)))
-  )
+const hostOfJob = (job: Pick<Job, "runsOn" | "runners">, matrix: Matrix): Host | undefined => {
+  const names = runnersOf(job, matrix)
+  if (names === undefined) return undefined
+  const hosts = new Set(names.map(hostOf))
   const [only] = hosts
   return hosts.size === 1 ? only : undefined
+}
+
+/** The runner of each variant, in the matrix's order, or `undefined` when the job names none. */
+const runnersOf = (job: Pick<Job, "runsOn" | "runners">, matrix: Matrix): ReadonlyArray<string> | undefined => {
+  const { runners, runsOn } = job
+  if (runsOn === undefined) return undefined
+  return matrix.variants.length === 0
+    ? [runsOn]
+    : matrix.variants.map((variant, at) => runners?.[at] ?? expand(runsOn, variant))
 }
 
 /** GitHub reads a matrix key a variant lacks as empty, so a variant must say so. */
@@ -1093,14 +1103,53 @@ interface WorkflowContext {
   readonly depth: number
 }
 
+/**
+ * What `runs-on` reads. A repository variable is set outside the workflow file, so a runner it picks is not known
+ * here, whatever an `if:` makes of it.
+ */
+const runnerScope = (scope: Expressions, variant?: Readonly<Record<string, Value>>): Expressions => ({
+  ...scope,
+  context: (name) =>
+    name === "vars"
+      ? fields((key) => unknown(`vars.${key} is a repository variable, which the workflow file does not give`))
+      : name === "matrix" && variant !== undefined
+      ? fields((key) => {
+        // GitHub reads a matrix key without case, and a nested value by a dotted key.
+        const keys = Object.keys(variant)
+        const found = keys.find((held) => held.toLowerCase() === key)
+        if (found !== undefined) return value(variant[found] as Value)
+        return keys.some((held) => held.toLowerCase().startsWith(`${key}.`))
+          ? runnerScope(scope, nested(variant, key)).context("matrix")
+          : undefined
+      })
+      : scope.context(name)
+})
+
+/** The values of a variant under one key of it, as their own variant: `node.version` under `node` is `version`. */
+const nested = (variant: Readonly<Record<string, Value>>, key: string): Readonly<Record<string, Value>> =>
+  Object.fromEntries(
+    Object.entries(variant).flatMap(([held, found]) =>
+      held.toLowerCase().startsWith(`${key}.`) ? [[held.slice(key.length + 1), found]] : []
+    )
+  )
+
+/** A variant's values as an expression reads them: a value written as a number or a boolean is one. */
+const typedVariant = (variant: Readonly<Record<string, string>>, textKeys: ReadonlySet<string>) =>
+  Object.fromEntries(
+    Object.entries(variant).map(([key, held]): readonly [string, Value] => {
+      if (textKeys.has(key)) return [key, held]
+      const read = /^(true|false|null|-?\d+(\.\d+)?)$/.test(held) ? JSON.parse(held) as Value : held
+      return [key, read]
+    })
+  )
+
 /** The runner name a `runs-on` value gives: its labels joined, with what is known filled in. */
-const readRunsOn = (
+const readLabels = (
   raw: unknown,
   job: { readonly name: string },
   scope: Expressions,
   problems: Array<[string, string]>
 ): { readonly runsOn?: string } => {
-  if (raw === undefined) return {}
   const expression = typeof raw === "string" ? whole(raw) : undefined
   const evaluated = expression === undefined ? undefined : evaluate(expression, scope)
   const held = evaluated?.kind === "ok" && evaluated.residual.kind === "literal" ? evaluated.residual.value : raw
@@ -1116,6 +1165,33 @@ const readRunsOn = (
     return text ?? label
   })
   return { runsOn: filled.join(",") }
+}
+
+/**
+ * The runner a `runs-on` value gives (`readLabels`). One that the variants' values do not fill in by name, such as
+ * `${{ matrix.os || 'ubuntu-latest' }}`, is worked out for each variant with that variant's values (`Job.runners`).
+ * A variant whose runner the file does not give keeps the expression, and the replay leaves that variant out; when
+ * no variant's runner is known, the job is left out.
+ */
+const readRunsOn = (
+  raw: unknown,
+  job: { readonly name: string },
+  scope: Expressions,
+  shape: Pick<Shape, "matrix" | "textKeys">,
+  problems: Array<[string, string]>
+): Pick<Job, "runsOn" | "runners"> => {
+  if (raw === undefined) return {}
+  const found: Array<[string, string]> = []
+  const read = readLabels(raw, job, runnerScope(scope), found)
+  const { variants } = shape.matrix
+  if (found.length > 0 && read.runsOn !== undefined && variants.length > 0) {
+    const runners = variants.map((variant) =>
+      readLabels(raw, job, runnerScope(scope, typedVariant(variant, shape.textKeys)), []).runsOn as string
+    )
+    if (runners.some((runner) => !unknownRunner(runner))) return { runsOn: read.runsOn, runners }
+  }
+  problems.push(...found)
+  return read
 }
 
 /** True when a variable named like a secret takes its value from the matrix, which would hold it in plain text. */
@@ -1193,7 +1269,7 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     name,
     needs: [...(needs ?? []).map((need) => `${prefix}${need}`), ...workflow.needs],
     triggers,
-    ...readRunsOn(raw["runs-on"], { name }, before, problems)
+    ...readRunsOn(raw["runs-on"], { name }, before, { matrix, textKeys: shape.textKeys }, problems)
   })
   for (const [feature, reason] of [...problems, ...workflow.called]) note(job, feature, reason)
   for (const filter of workflow.filters) note(job, triggerFilter, filter)
@@ -1231,7 +1307,7 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
   if ("problem" in limit) {
     note(job, "expression", `${name} has a timeout-minutes a replay cannot keep: ${limit.problem}`)
   }
-  const host = hostOfJob(job.runsOn, matrix)
+  const host = hostOfJob(job, matrix)
   const place = { job: key, workflow: workflow.name, file: workflow.file }
   const state: JobState = {
     ...shape,
@@ -1239,7 +1315,7 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     job,
     host,
     defaults: readDefaults(raw, workflow.defaults),
-    windowsOnly: windowsOnly(job.runsOn, matrix),
+    windowsOnly: windowsOnly(job, matrix),
     toolchains: workflow.toolchains,
     runner: {
       id,

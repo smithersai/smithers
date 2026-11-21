@@ -9,7 +9,16 @@
  * @since 0.1.0
  */
 
-import { type Ci, expand, generatedWorkflow, hostOf, type Job, type Toolchain, treeOf } from "../contract/Inventory.ts"
+import {
+  type Ci,
+  expand,
+  generatedWorkflow,
+  hostOf,
+  type Job,
+  runnerOf,
+  type Toolchain,
+  treeOf
+} from "../contract/Inventory.ts"
 import { type Variant, variantsOf } from "./Expressions.ts"
 
 /**
@@ -93,7 +102,7 @@ export const chooseToolchains = (inventory: Ci): Choice => {
       return toolchain.name !== name || job === undefined
         ? []
         : variantsOf(job)
-          .filter((variant) => hostOf(job.runsOn === undefined ? undefined : expand(job.runsOn, variant)) !== "win32")
+          .filter((variant) => hostOf(runnerOf(job, variant)) !== "win32")
           .flatMap((variant) => filledOf(toolchain, variant) ?? [])
     })[0]
 

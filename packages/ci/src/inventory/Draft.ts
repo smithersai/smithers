@@ -43,7 +43,9 @@ export interface Draft extends Job {
  * @throws {never}
  */
 export const draft = (
-  fields: Pick<Job, "id" | "source" | "file" | "name"> & Partial<Pick<Job, "needs" | "triggers" | "matrix" | "runsOn">>
+  fields:
+    & Pick<Job, "id" | "source" | "file" | "name">
+    & Partial<Pick<Job, "needs" | "triggers" | "matrix" | "runsOn" | "runners">>
 ): Draft => ({ needs: [], triggers: [], matrix: [], ...fields, steps: [], unsupported: [] })
 
 /**

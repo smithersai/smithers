@@ -11,7 +11,6 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import {
   type Ci,
-  expand,
   type FailedHere,
   hostOf,
   type Inventory,
@@ -22,9 +21,11 @@ import {
   notRead,
   type NotReplayed,
   otherSystem,
+  runnerOf,
   script,
   selfHosted,
   treeOf,
+  unknownRunner,
   type Unsupported,
   withheldOf,
   withVariant
@@ -350,15 +351,19 @@ export const replayable = (inventory: Ci, map: TargetMap, host: string): Replaya
   const byId = new Map(inventory.jobs.map((job) => [job.id, job]))
   const named = partsOf(map)
   const variantsOf = (job: Job): ReadonlyArray<Variant> => job.matrix.length === 0 ? [{}] : job.matrix
-  const runnerOf = (job: Job, variant: Variant) => job.runsOn === undefined ? undefined : expand(job.runsOn, variant)
   const systemOf = (job: Job, variant: Variant) => hostOf(runnerOf(job, variant))
   const here = (job: Job): ReadonlyArray<Variant> =>
     variantsOf(job).filter((variant) =>
-      !isSelfHosted(runnerOf(job, variant)) && (systemOf(job, variant) ?? host) === host
+      !isSelfHosted(runnerOf(job, variant)) && !unknownRunner(runnerOf(job, variant)) &&
+      (systemOf(job, variant) ?? host) === host
     )
   const elsewhere = (job: Job): ReadonlyArray<Unsupported> =>
     variantsOf(job).flatMap((variant) => {
-      if (isSelfHosted(runnerOf(job, variant))) {
+      const runner = runnerOf(job, variant)
+      if (unknownRunner(runner)) {
+        return [{ feature: "runner", detail: `${job.id}${variantText(variant)} picks its runner from ${runner}` }]
+      }
+      if (isSelfHosted(runner)) {
         return [{ feature: selfHosted, detail: `${job.id}${variantText(variant)} runs on a self-hosted runner` }]
       }
       const system = systemOf(job, variant) ?? host

@@ -822,7 +822,7 @@ jobs:
     expect(outputs(runJob(repo, jobOf(repo, "ci.yml:test")))).toEqual([commits(repo).head, "replaced"])
   })
 
-  it("reads a runner chosen by an expression it can evaluate, and reports one it cannot", () => {
+  it("reports a runner chosen by a repository variable or a value only the run knows", () => {
     const repo = withWorkflow(`
 on: pull_request
 jobs:
@@ -847,9 +847,10 @@ jobs:
         uses: actions/setup-node@v4
       - run: echo "\${{ steps.node.outcome }}"
 `)
-    const hosted = jobOf(repo, "ci.yml:hosted")
-    expect(hosted.runsOn).toBe("ubuntu-24.04")
-    expect(outputs(runJob(repo, hosted))[0]).toMatch(/^Linux (X64|ARM64)$/)
+    // A repository variable is set outside the workflow file, so the runner it picks is not known here.
+    expect(details(jobOf(repo, "ci.yml:hosted"))).toEqual([
+      "hosted picks its runner from fromJSON(vars.FLEET_ONLINE != 'true' && '[\"ubuntu-24.04\"]' || '[\"self-hosted\",\"robot\"]')"
+    ])
     const pooled = jobOf(repo, "ci.yml:pooled")
     expect(pooled.runsOn).toBe("self-hosted,pool-\${{ github.retention_days }}")
     // Its runner's name does not say which system it is, so the step reads the system when it starts.

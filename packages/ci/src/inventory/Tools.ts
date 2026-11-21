@@ -18,9 +18,11 @@ import {
   type Job,
   missingTool,
   otherSystem,
+  runnerOf,
   selfHosted,
   type Toolchain,
   type ToolVersion,
+  unknownRunner,
   type Unsupported
 } from "../contract/Inventory.ts"
 
@@ -146,14 +148,15 @@ const variantsOf = (job: Job): ReadonlyArray<Readonly<Record<string, string>>> =
  * `host`, and the self-hosted runners of the rest. A runner that names no system is here.
  */
 const placesOf = (job: Job, host: string) => {
-  const runnerOf = (variant: Readonly<Record<string, string>>): string | undefined =>
-    job.runsOn === undefined ? undefined : expand(job.runsOn, variant)
-  const systemOf = (variant: Readonly<Record<string, string>>): string => hostOf(runnerOf(variant)) ?? host
-  const hosted = variantsOf(job).filter((variant) => !isSelfHosted(runnerOf(variant)))
+  const systemOf = (variant: Readonly<Record<string, string>>): string => hostOf(runnerOf(job, variant)) ?? host
+  // A variant whose runner the workflow file does not give runs nowhere a replay knows.
+  const hosted = variantsOf(job).filter((variant) =>
+    !isSelfHosted(runnerOf(job, variant)) && !unknownRunner(runnerOf(job, variant))
+  )
   return {
     systems: [...new Set(hosted.map(systemOf))],
     here: hosted.filter((variant) => systemOf(variant) === host),
-    ownRunners: [...new Set(variantsOf(job).map(runnerOf).filter(isSelfHosted))]
+    ownRunners: [...new Set(variantsOf(job).map((variant) => runnerOf(job, variant)).filter(isSelfHosted))]
   }
 }
 
