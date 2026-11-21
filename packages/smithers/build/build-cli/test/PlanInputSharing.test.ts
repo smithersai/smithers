@@ -1,9 +1,12 @@
-import fsPromises, * as Fs from "node:fs/promises"
-import { syncBuiltinESMExports } from "node:module"
+import * as SafeFs from "@smthrs/targets/SafeFs"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import { makeCli, normalizeArgv } from "../src/Cli.ts"
+import { planEffect, PlanningServices, planningServicesLive } from "../src/internal/PackagePlanner.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
@@ -13,8 +16,6 @@ import type * as Reporter from "../src/Reporter.ts"
 const roots: Array<string> = []
 
 afterEach(async () => {
-  vi.restoreAllMocks()
-  syncBuiltinESMExports()
   await Promise.all(roots.splice(0).map((root) => Fs.rm(root, { recursive: true, force: true })))
 })
 
@@ -68,20 +69,24 @@ export const Package = S.Package({ targets: {\n${targets.join(",\n")}\n} })\n`
   return files
 }
 
-/** How many times one plan of `root` opens each directory, by workspace-relative path. */
+/** The real host's reads for a plan, counting each directory it lists by workspace-relative path. */
+const listing = (root: string, opens: Map<string, number>): SafeFs.Io => ({
+  ...SafeFs.defaultIo,
+  readdir: (path, limit) => {
+    const relative = Path.relative(root, path)
+    opens.set(relative, (opens.get(relative) ?? 0) + 1)
+    return SafeFs.defaultIo.readdir(path, limit)
+  }
+})
+
+/** How many times one plan of `root` lists each directory, by workspace-relative path. */
 const directoryOpens = async (root: string, patterns: ReadonlyArray<string>): Promise<Map<string, number>> => {
   const index = PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)))
   const opens = new Map<string, number>()
-  const original = fsPromises.opendir
-  vi.spyOn(fsPromises, "opendir").mockImplementation((path, options) => {
-    const relative = Path.relative(root, String(path))
-    opens.set(relative, (opens.get(relative) ?? 0) + 1)
-    return original(path, options)
-  })
-  syncBuiltinESMExports()
-  await PackageExec.plan({ index, patterns: [...patterns], cacheDirectory: ".flows", verb: "test" })
-  vi.restoreAllMocks()
-  syncBuiltinESMExports()
+  await Effect.runPromise(
+    planEffect({ index, patterns: [...patterns], cacheDirectory: ".flows", verb: "test" })
+      .pipe(Effect.provideService(PlanningServices, { ...planningServicesLive, io: listing(root, opens) }))
+  )
   return opens
 }
 
@@ -190,32 +195,21 @@ export const Package = S.Package({ targets: {
   })
 })
 
-/** Serves one CLI invocation in-process and counts directory opens by workspace-relative path. */
+/** Serves one CLI invocation in-process and counts the directories its plans list, by workspace-relative path. */
 const servedDirectoryOpens = async (root: string, args: ReadonlyArray<string>): Promise<Map<string, number>> => {
   const opens = new Map<string, number>()
-  const original = fsPromises.opendir
-  vi.spyOn(fsPromises, "opendir").mockImplementation((path, options) => {
-    const relative = Path.relative(root, String(path))
-    opens.set(relative, (opens.get(relative) ?? 0) + 1)
-    return original(path, options)
-  })
-  syncBuiltinESMExports()
   let output = ""
   let exitCode = 0
   const terminal = (): Reporter.Terminal => ({ write: (text) => (output += text), isTTY: false, columns: 100 })
-  try {
-    await makeCli({
-      environment: { ...process.env, SMITHERS_AUDIENCE: "agent", NO_COLOR: "1", CI: undefined },
-      stdout: terminal(),
-      stderr: terminal()
-    }).serve([...normalizeArgv(args), "--workspace", root], {
-      exit: (code) => (exitCode = code),
-      stdout: (text) => (output += text)
-    })
-  } finally {
-    vi.restoreAllMocks()
-    syncBuiltinESMExports()
-  }
+  await makeCli({
+    environment: { ...process.env, SMITHERS_AUDIENCE: "agent", NO_COLOR: "1", CI: undefined },
+    stdout: terminal(),
+    stderr: terminal(),
+    services: Layer.succeed(PlanningServices, { ...planningServicesLive, io: listing(root, opens) })
+  }).serve([...normalizeArgv(args), "--workspace", root], {
+    exit: (code) => (exitCode = code),
+    stdout: (text) => (output += text)
+  })
   expect(exitCode, output).toBe(0)
   return opens
 }
@@ -233,10 +227,10 @@ export const Package = S.Package({ targets: {
       "src/a.txt": "a\n",
       "src/nested/b.txt": "b\n"
     })
-    const one = await servedDirectoryOpens(root, ["test", "//...", "--plan", "--format", "json"])
+    const one = await directoryOpens(root, ["//..."])
     const all = await servedDirectoryOpens(root, ["ci", "//...", "--plan", "--format", "json"])
-    // Discovery opens each directory once too; planning adds one walk.
-    expect(one.get("src")).toBe(2)
+    // One verb's plan walks the glob once; `ci` plans two verbs over the same walk.
+    expect(one.get("src")).toBe(1)
     expect(all.get("src")).toBe(one.get("src"))
     expect(all.get("src/nested")).toBe(one.get("src/nested"))
   })

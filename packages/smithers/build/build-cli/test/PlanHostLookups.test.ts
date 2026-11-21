@@ -1,19 +1,17 @@
-import NodeFs from "node:fs"
-import fsPromises, * as Fs from "node:fs/promises"
-import { syncBuiltinESMExports } from "node:module"
+import * as SafeFs from "@smthrs/targets/SafeFs"
+import * as Effect from "effect/Effect"
+import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
+import { planEffect, PlanningServices, planningServicesLive } from "../src/internal/PackagePlanner.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
-import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
 
 const roots: Array<string> = []
 
 afterEach(async () => {
-  vi.restoreAllMocks()
-  syncBuiltinESMExports()
   await Promise.all(roots.splice(0).map((root) => Fs.rm(root, { recursive: true, force: true })))
 })
 
@@ -47,33 +45,34 @@ ${
   return root
 }
 
-/** Plans every target and counts opens of the node binary and executable probes of PATH entries named node. */
+/** Plans every target and counts opens of the node binary and PATH searches for node. */
 const lookups = async (targets: number) => {
   const root = await workspace(targets)
   const index = PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)))
   const node = await Fs.realpath(process.execPath)
   let opens = 0
   let probes = 0
-  const open = fsPromises.open
-  vi.spyOn(fsPromises, "open").mockImplementation((path, ...rest) => {
-    if (String(path) === node) opens += 1
-    return open(path, ...rest)
-  })
-  const access = NodeFs.accessSync
-  vi.spyOn(NodeFs, "accessSync").mockImplementation((path, mode) => {
-    if (Path.basename(String(path)) === "node") probes += 1
-    return access(path, mode)
-  })
-  syncBuiltinESMExports()
-  try {
-    const plan = await PackageExec.plan({ index, patterns: ["//..."], cacheDirectory: ".flows", verb: "test" })
-    expect(plan.roots).toHaveLength(targets)
-    expect(new Set(plan.roots.map((label) => plan.nodes.get(label)!.keyPreview)).size).toBe(targets)
-    return { opens, probes }
-  } finally {
-    vi.restoreAllMocks()
-    syncBuiltinESMExports()
+  const services: PlanningServices = {
+    ...planningServicesLive,
+    io: {
+      ...SafeFs.defaultIo,
+      open: (path) => {
+        if (path === node) opens += 1
+        return SafeFs.defaultIo.open(path)
+      }
+    },
+    findOnPath: (name, environment) => {
+      if (name === "node") probes += 1
+      return planningServicesLive.findOnPath(name, environment)
+    }
   }
+  const plan = await Effect.runPromise(
+    planEffect({ index, patterns: ["//..."], cacheDirectory: ".flows", verb: "test" })
+      .pipe(Effect.provideService(PlanningServices, services))
+  )
+  expect(plan.roots).toHaveLength(targets)
+  expect(new Set(plan.roots.map((label) => plan.nodes.get(label)!.keyPreview)).size).toBe(targets)
+  return { opens, probes }
 }
 
 describe("one plan asks the host about an executable once", () => {
@@ -83,6 +82,7 @@ describe("one plan asks the host about an executable once", () => {
       const one = await lookups(1)
       const five = await lookups(5)
       expect(one.opens).toBeGreaterThan(0)
+      expect(one.probes).toBeGreaterThan(0)
       expect(five).toEqual(one)
     }
   )

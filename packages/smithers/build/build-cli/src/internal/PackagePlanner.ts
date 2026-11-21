@@ -362,6 +362,10 @@ export interface PlanningServices {
     options: Parameters<typeof NixExec.resolveEnvironment>[0]
   ) => Effect.Effect<NixExec.ResolvedEnvironment, unknown>
   readonly readCrateManifest: (path: string) => Effect.Effect<string, unknown>
+  /** What a plan reads the workspace and a tool's bytes through: the files a key digests and the directories a glob lists. */
+  readonly io: SafeFs.Io
+  /** Where `PATH` finds a program the plan names, or `undefined`. */
+  readonly findOnPath: (name: string, environment: Readonly<Record<string, string | undefined>>) => string | undefined
 }
 /** Real plan-time host operations.
  * @category services
@@ -370,7 +374,9 @@ export interface PlanningServices {
 export const planningServicesLive: PlanningServices = {
   resolveNixEnvironment: (options) =>
     Effect.tryPromise({ try: () => NixExec.resolveEnvironment(options), catch: (cause) => cause }),
-  readCrateManifest: (path) => Effect.promise(() => Fs.readFile(path, "utf8"))
+  readCrateManifest: (path) => Effect.promise(() => Fs.readFile(path, "utf8")),
+  io: SafeFs.defaultIo,
+  findOnPath: PackageTree.findOnPath
 }
 /** Invocation-local planning host services.
  * @category services
@@ -655,6 +661,8 @@ interface ExecutableContext {
   readonly executableIdentities?: Map<string, Promise<unknown>> | undefined
   /** One plan's PATH lookups, by name and search path. */
   readonly pathLookups?: Map<string, string | undefined> | undefined
+  /** The plan's host services; absent, the real host. */
+  readonly services?: Pick<PlanningServices, "io" | "findOnPath"> | undefined
 }
 
 /** The variables a PATH lookup reads: `PATH` and `PATHEXT` in any case. */
@@ -669,15 +677,16 @@ const searchPathOf = (environment: Readonly<Record<string, string | undefined>>)
  * `PATH` directory, about ten thousand times in one 4,500-target plan.
  */
 const onPath = (
-  context: { readonly pathLookups?: Map<string, string | undefined> | undefined },
+  context: Pick<ExecutableContext, "pathLookups" | "services">,
   name: string,
   environment: Readonly<Record<string, string | undefined>>
 ): string | undefined => {
+  const find = context.services?.findOnPath ?? PackageTree.findOnPath
   const lookups = context.pathLookups
-  if (lookups === undefined) return PackageTree.findOnPath(name, environment)
+  if (lookups === undefined) return find(name, environment)
   const key = JSON.stringify([name, searchPathOf(environment)])
   if (lookups.has(key)) return lookups.get(key)
-  const found = PackageTree.findOnPath(name, environment)
+  const found = find(name, environment)
   lookups.set(key, found)
   return found
 }
@@ -687,7 +696,8 @@ const identifyExecutable = async (
   path: string,
   ancestors: ReadonlySet<string>
 ): Promise<unknown> => {
-  const resolved = await Fs.realpath(path)
+  const io = context.services?.io ?? SafeFs.defaultIo
+  const resolved = await io.realpath(path)
   if (ancestors.has(resolved)) throw new Error(`cyclic executable interpreter: ${path}`)
   let digest = context.toolBytes.get(resolved)
   if (digest === undefined) {
@@ -703,11 +713,11 @@ const identifyExecutable = async (
   const interpreters: Array<unknown> = []
   // The kernel follows the shebang, and env then resolves its command on
   // PATH. Hashing only the script misses both executable dependencies.
-  const handle = await Fs.open(resolved, "r")
+  const handle = await io.open(resolved)
   let header: string
   try {
     const buffer = Buffer.alloc(4096)
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+    const bytesRead = await handle.read(buffer)
     header = buffer.subarray(0, bytesRead).toString("utf8").split("\n", 1)[0]!
   } finally {
     await handle.close()
@@ -783,6 +793,7 @@ const appSetCrates = async (
       const match of await Input.expandGlob(context.root, packagePath, glob, {
         cacheDirectory: context.cacheDirectory,
         signal: context.signal,
+        io: context.services.io,
         walks: context.walks
       })
     ) paths.add(match)
@@ -1098,7 +1109,7 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
       }
     } else {
       const name = layer.cargo
-      const path = NodePath.isAbsolute(name) ? name : PackageTree.findOnPath(name, context.environment)
+      const path = NodePath.isAbsolute(name) ? name : context.services.findOnPath(name, context.environment)
       if (path === undefined) {
         outcome = {
           _tag: "refused",
@@ -1213,7 +1224,11 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
                   _tag: "Executable",
                   source: portable,
                   path: portable,
-                  digest: await Input.digestFile(script, { signal: context.signal, digests: context.digests }),
+                  digest: await Input.digestFile(script, {
+                    signal: context.signal,
+                    io: context.services.io,
+                    digests: context.digests
+                  }),
                   interpreters: []
                 }
               }
@@ -1307,6 +1322,7 @@ const treeInputFiles = async (
     const digest = await Input.digestFile(absolute, {
       workspaceRoot: context.root,
       signal: context.signal,
+      io: context.services.io,
       digests: context.digests
     }).catch(async (cause: unknown) => {
       // A file() naming a link to a directory is a link the author meant to
@@ -1326,7 +1342,9 @@ const treeInputFiles = async (
   }
   if (declaration._tag === "Link") {
     const path = Input.resolvePath(packagePath, declaration.path)
-    return [await linkInput(() => Input.digestLink(context.root, path, { signal: context.signal }))]
+    return [
+      await linkInput(() => Input.digestLink(context.root, path, { signal: context.signal, io: context.services.io }))
+    ]
   }
   if (declaration._tag === "NodeModules") {
     // The install's identity is its manifest and every lockfile beside it.
@@ -1338,6 +1356,7 @@ const treeInputFiles = async (
       const digest = await Input.digestFile(NodePath.join(context.root, path), {
         workspaceRoot: context.root,
         signal: context.signal,
+        io: context.services.io,
         digests: context.digests
       })
       if (digest !== undefined) rows.push({ path, digest })
@@ -1367,14 +1386,22 @@ const treeInputFiles = async (
         repositoryBoundaries: Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path),
         links: true,
         signal: context.signal,
+        io: context.services.io,
         walks: context.walks
       })
     )
     : await Input.expandPnpmWorkspace(context.root, packagePath, declaration, {
       cacheDirectory: context.cacheDirectory,
-      signal: context.signal
+      signal: context.signal,
+      io: context.services.io
     })
-  return linkInput(() => Input.digestFiles(context.root, matches, { signal: context.signal, digests: context.digests }))
+  return linkInput(() =>
+    Input.digestFiles(context.root, matches, {
+      signal: context.signal,
+      io: context.services.io,
+      digests: context.digests
+    })
+  )
 }
 
 /** Reports a refused link input as the planner's own error, naming the link. */
@@ -1536,7 +1563,11 @@ const expandGitDiff = async (
     return true
   })
   const paths = selected.map((entry) => entry.path).sort()
-  const files = await Input.digestFiles(context.root, paths, { signal: context.signal, digests: context.digests })
+  const files = await Input.digestFiles(context.root, paths, {
+    signal: context.signal,
+    io: context.services.io,
+    digests: context.digests
+  })
   const patches: Array<string> = []
   let patchBytes = 0
   for (const batch of gitPathspecBatches(paths)) {
@@ -1695,6 +1726,7 @@ const visit = async (
     if (depRule === "Cargo.Fetch" && rule !== "Clean" && planned.refusal === undefined) {
       const delivered = await Input.digestFiles(context.root, [...fetchOutFiles(context, dependency)], {
         signal: context.signal,
+        io: context.services.io,
         digests: context.digests
       })
       const home = fetchCargoHome(context, dependency) ?? null
@@ -2137,6 +2169,7 @@ const visit = async (
     if (NodeFs.existsSync(NodePath.join(context.root, ...manifest.split("/")))) {
       const [row] = await Input.digestFiles(context.root, [manifest], {
         signal: context.signal,
+        io: context.services.io,
         digests: context.digests
       })
       toolchain.push({ _tag: "Manifest", path: manifest, digest: row!.digest })
@@ -3343,9 +3376,14 @@ const visit = async (
         packageScoped: false,
         repositoryBoundaries: Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path),
         signal: context.signal,
+        io: context.services.io,
         walks: context.walks
       })
-      const files = await Input.digestFiles(context.root, matches, { signal: context.signal, digests: context.digests })
+      const files = await Input.digestFiles(context.root, matches, {
+        signal: context.signal,
+        io: context.services.io,
+        digests: context.digests
+      })
       states.push({ pattern, digest: Input.digestText(JSON.stringify(files)) })
     }
     writeSetState = states
@@ -3934,6 +3972,7 @@ const globPresent = async (
       const digest = await Input.digestFile(NodePath.join(context.root, alternative), {
         workspaceRoot: context.root,
         signal: context.signal,
+        io: context.services.io,
         digests: context.digests
       })
       if (digest !== undefined) return true
@@ -3979,6 +4018,7 @@ const globExpansions = (context: PlanContext): GlobExpansions => {
         repositoryBoundaries,
         packageScoped,
         signal: context.signal,
+        io: context.services.io,
         walks: context.walks
       })
       expansions.set(key, expansion)
@@ -4019,6 +4059,7 @@ const absentInputsOf = async (
         const digest = await Input.digestFile(NodePath.join(context.root, path), {
           workspaceRoot: context.root,
           signal: context.signal,
+          io: context.services.io,
           digests: context.digests
         })
         if (digest === undefined) absent(path)

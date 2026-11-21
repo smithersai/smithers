@@ -1241,7 +1241,7 @@
         "internal/ObservedReads.d.ts": "2cd2cc066ea146f3bd244ea4c30528d82f36031181c690b3f489fc098d3a68c2",
         "internal/OutputCas.d.ts": "6617f92cbfd883094ee392ba9a8353cbfdc11dda031adaa9dabd0eb1d8c4e909",
         "internal/PackageOptions.d.ts": "748658819397fd4fa2912cd24f421d074a3c47366b68c0cfdca07b2c27aa2803",
-        "internal/PackagePlanner.d.ts": "01ef9c8f5c66e0771e1c37cc1c6ac450b7e09178be688690712d242a469bbb52",
+        "internal/PackagePlanner.d.ts": "a8f7f4b5e1575b7eda156195622bcb2f5e6a5d2d53a4d74a0b055eff8f20f7e6",
         "internal/PackageRunner.d.ts": "ff31131dcfda748de5ead59dbc9145ece8931cbecd5058c5e434e36486cadbc1",
         "internal/ParseModule.d.ts": "94b4b3df29c93119b9d126fd3e13f815f5ed346b893e02fa806c1e707c3f03c7",
         "internal/Parts.d.ts": "174c50f7a1ab575c7f6fef7bbd0ba7f013a65af9cb61a5eda6214bd8f150675f",
