@@ -17,7 +17,9 @@ import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import type * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
@@ -1260,6 +1262,60 @@ interface Spawned {
 }
 
 /**
+ * Ends the programs that still hold a tool's output once the tool has
+ * exited, so a run never waits on them for ever: a recorder that ends before
+ * the step it records leaves the step's programs holding its output. `links`
+ * reads, as the tool starts, what its output is (on Linux the links of
+ * `/proc/<pid>/fd/1` and `/2`); `holders` names the processes that hold any
+ * of them, or `undefined` when that cannot be known; `kill` ends one.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface HeldOutput {
+  readonly links: (pid: number) => ReadonlyArray<string>
+  readonly holders: (links: ReadonlyArray<string>) => ReadonlyArray<number> | undefined
+  readonly kill: (pid: number) => void
+}
+
+/**
+ * How long a tool's output may stay held after the tool has exited before
+ * its holders are ended ({@link HeldOutput}), and for how long they are
+ * ended before the output is let go.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const heldOutputMs = { wait: 2_000, end: 5_000 } as const
+
+// Waits up to `ms` for the reading of a tool's output to end; true once it has.
+const readTo = (reading: Fiber.Fiber<unknown, ExecError>, ms: number): Effect.Effect<boolean, ExecError> =>
+  Fiber.join(reading).pipe(
+    Effect.timeoutOption(ms),
+    Effect.map(Option.isSome),
+    Effect.provideService(Clock.Clock, hostClock)
+  )
+
+// After the tool has exited: its output's holders are ended once it has been held `heldOutputMs.wait`, again until
+// none holds it or `heldOutputMs.end` passes, and then what is left of it is let go.
+const releaseHeld = (
+  reading: Fiber.Fiber<unknown, ExecError>,
+  held: HeldOutput,
+  links: ReadonlyArray<string>
+): Effect.Effect<void, ExecError> =>
+  Effect.gen(function*() {
+    if (yield* readTo(reading, heldOutputMs.wait)) return
+    const until = Date.now() + heldOutputMs.end
+    while (Date.now() < until) {
+      const holders = links.length === 0 ? undefined : held.holders(links)
+      if (holders === undefined) break
+      for (const pid of holders) held.kill(pid)
+      if (yield* readTo(reading, 100)) return
+    }
+    yield* Fiber.interrupt(reading)
+  })
+
+/**
  * Spawns argv in the resolved directory through the shape {@link spawnShape}
  * settles. The supervisor keeps cleanup independent of target exit and pipe
  * EOF; native Windows batch arguments retain their exact existing quoting.
@@ -1271,7 +1327,8 @@ const spawnTool = (
   secretEnv: Readonly<Record<string, string>>,
   onStdout?: ((chunk: Uint8Array) => void) | undefined,
   onStderr?: ((chunk: Uint8Array) => void) | undefined,
-  base?: ToolEnvironment | undefined
+  base?: ToolEnvironment | undefined,
+  held?: HeldOutput | undefined
 ): Effect.Effect<Spawned, ExecError> =>
   Effect.suspend(() => {
     const stdout = capture()
@@ -1356,6 +1413,8 @@ const spawnTool = (
         ))
       }
       const handle = spawned.success
+      // What the tool's output is, read while the tool is surely there.
+      const links = held === undefined ? [] : held.links(handle.targetPid)
       const consume = (
         source: typeof handle.stdout,
         capture: Capture,
@@ -1382,13 +1441,21 @@ const spawnTool = (
               failure(`${name} could not be read: ${failureMessage(cause.cause ?? cause)}`, "stream_failed")
           )
         )
-      const [status] = yield* Effect.all([
-        processService.status(handle).pipe(
-          Effect.mapError((cause) => failure(failureMessage(cause.cause ?? cause), "stream_failed"))
-        ),
+      const exitStatus = processService.status(handle).pipe(
+        Effect.mapError((cause) => failure(failureMessage(cause.cause ?? cause), "stream_failed"))
+      )
+      const reading = Effect.all([
         consume(handle.stdout, stdout, "stdout", onStdout),
         consume(handle.stderr, stderr, "stderr", onStderr)
       ], { concurrency: "unbounded" })
+      const status = held === undefined
+        ? (yield* Effect.all([exitStatus, reading], { concurrency: "unbounded" }))[0]
+        : yield* Effect.gen(function*() {
+          const read = yield* Effect.forkChild(reading)
+          const exited = yield* exitStatus
+          yield* releaseHeld(read, held, links)
+          return exited
+        })
       finish(stdout)
       finish(stderr)
       if (status.signal !== null) {
@@ -1555,6 +1622,8 @@ export const run = (
     readonly onStdout?: ((chunk: Uint8Array) => void) | undefined
     /** Receives stderr bytes as the child produces them. */
     readonly onStderr?: ((chunk: Uint8Array) => void) | undefined
+    /** Ends what still holds the tool's output once it has exited ({@link HeldOutput}); absent, the run waits for it. */
+    readonly heldOutput?: HeldOutput | undefined
   },
   untrustedPayload: Payload
 ): Effect.Effect<Result, ExecError> => {
@@ -1746,6 +1815,7 @@ const confined = (
     readonly environment?: ToolEnvironment | undefined
     readonly onStdout?: ((chunk: Uint8Array) => void) | undefined
     readonly onStderr?: ((chunk: Uint8Array) => void) | undefined
+    readonly heldOutput?: HeldOutput | undefined
   },
   destinations?: ReadonlyArray<string>,
   hostFacts?: ExecSandbox.Host,
@@ -1761,7 +1831,8 @@ const confined = (
       secretEnv,
       options.onStdout,
       options.onStderr,
-      options.environment
+      options.environment,
+      options.heldOutput
     ).pipe(Effect.mapError((error) => ({ ...error, argv: resolved.argv })))
   }
   const preparationError = (cause: unknown): ExecError =>
@@ -1883,7 +1954,8 @@ const confined = (
       { ...secretEnv, ...brokerEnvironment },
       options.onStdout,
       options.onStderr,
-      options.environment
+      options.environment,
+      options.heldOutput
     ).pipe(
       Effect.mapError((error) => ({
         ...error,

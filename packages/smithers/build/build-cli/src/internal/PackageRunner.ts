@@ -65,6 +65,7 @@ import * as ApprovalBridge from "./ApprovalBridge.ts"
 import * as CacheEvidence from "./CacheEvidence.ts"
 import * as FullDisk from "./FullDisk.ts"
 import * as GoCache from "./GoCache.ts"
+import * as HeldOutput from "./HeldOutput.ts"
 import * as InstalledTree from "./InstalledTree.ts"
 import * as Machine from "./Machine.ts"
 import * as MissingTool from "./MissingTool.ts"
@@ -111,6 +112,8 @@ const joined = <A>(run: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, u
  */
 export interface ExecutionServices {
   readonly exec: typeof Exec.run
+  /** Ends what still holds a recorded command's output once its recorder has ended ({@link HeldOutput.live}). */
+  readonly heldOutput: Exec.HeldOutput
   readonly findOnPath: (
     ...args: Parameters<typeof PackageTree.findOnPath>
   ) => Effect.Effect<string | undefined, unknown>
@@ -153,6 +156,7 @@ export interface ExecutionServices {
  */
 export const executionServicesLive: ExecutionServices = {
   exec: Exec.run,
+  heldOutput: HeldOutput.live,
   findOnPath: (...args) => Effect.sync(() => PackageTree.findOnPath(...args)),
   captureFile: (...args) => joined(() => PackageTree.captureFile(...args)),
   revertIgnored: (...args) => joined(() => PackageTree.revertIgnored(...args)),
@@ -1496,7 +1500,10 @@ const executeWith = (
             onStderr: heard === undefined ? output.onStderr : (block) => {
               heard(block)
               output.onStderr(block)
-            }
+            },
+            // A recorded command with no job keeper has no namespace that ends what it started: when its recorder
+            // ends first, what still holds its output is ended, and the run never waits on it for ever.
+            ...(traced !== undefined && done === undefined ? { heldOutput: services.heldOutput } : {})
           }, payload)
         ))).pipe(Effect.ensuring(Effect.sync(output.close)))
         if (leftFile !== undefined) {
