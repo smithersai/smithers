@@ -241,12 +241,14 @@ class MachinesPathTooLong extends Data.TaggedError("smithers-build/MachinesPathT
  * over 100 bytes, and a build run on a machine keeps its own machines under
  * that machine's home, deeper than that: on Linux such a hold is a socket
  * named apart from the file system, and elsewhere the build fails and says
- * what to set.
+ * what to set. On Windows it is a named pipe.
  *
  * @category resolution
  * @since 1.0.0
  */
 export const holdPath = (kept: string, platform: NodeJS.Platform = process.platform): string => {
+  // Windows listens on a named pipe, never on a path of the file system.
+  if (platform === "win32") return `\\\\.\\pipe\\smthrs-machines-${createHash("sha256").update(kept).digest("hex")}`
   const path = `${kept}.lock`
   if (Buffer.byteLength(path) <= (platform === "linux" ? 107 : 103)) return path
   if (platform === "linux") return `\0smthrs-machines-${createHash("sha256").update(kept).digest("hex")}`

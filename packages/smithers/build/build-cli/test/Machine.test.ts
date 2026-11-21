@@ -357,6 +357,7 @@ describe("the hold on a workspace's machines", () => {
 
   it("is a socket beside the machines, where its path is short enough for one", () => {
     expect(Machine.holdPath("/kept/0123456789abcdef", "darwin")).toBe("/kept/0123456789abcdef.lock")
+    expect(Machine.holdPath("C:\\Users\\me\\kept", "win32")).toMatch(/^\\\\\.\\pipe\\smthrs-machines-[0-9a-f]{64}$/)
     // macOS takes 103 bytes, Linux 107.
     expect(Machine.holdPath(`/${"k".repeat(97)}`, "darwin")).toBe(`/${"k".repeat(97)}.lock`)
     expect(Machine.holdPath(`/${"k".repeat(101)}`, "linux")).toBe(`/${"k".repeat(101)}.lock`)
