@@ -215,6 +215,26 @@ describe("where machines are kept", () => {
     )
     await expect.poll(() => Fs.readdir(Path.dirname(kept)), { timeout: 30_000 }).toEqual([])
   })
+
+  posixIt("leaves the directory set aside when neither the command nor this build can remove it", async () => {
+    const base = await directory("kept")
+    const environment = { [Machine.holdingVariable]: Path.join(base, "machines") }
+    const kept = await Machine.prepare("/work/repo", environment)
+    await write(kept, "job/home/left", "left\n")
+    const parent = Path.dirname(kept)
+    // The command cannot start, and nothing can be taken out of the directory the machines were kept in.
+    await Machine.discard(kept, (_argv, failed) => {
+      NodeFs.chmodSync(parent, 0o555)
+      failed()
+    })
+    const [aside] = await Fs.readdir(parent)
+    expect(aside).toContain(".gone-")
+    // The removal failed and said nothing: the next build removes what is left.
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(await Fs.readdir(parent)).toEqual([aside])
+    await Fs.chmod(parent, 0o755)
+    await Machine.remove(Path.join(parent, aside!))
+  })
 })
 
 /**
@@ -718,6 +738,26 @@ describe("making a machine", () => {
     }
     await expect(Machine.remove(denied, refusing)).rejects.toMatchObject({ code: "EPERM" })
     await Machine.remove(denied)
+  })
+
+  posixIt("passes over a directory another remover took away before this one looked at it", async () => {
+    const kept = await directory("kept")
+    await write(kept, "home/go/pkg/mod/cache/file", "locked\n")
+    const locked = Path.join(kept, "home/go/pkg/mod")
+    await Fs.chmod(locked, 0o555)
+    const looked: Array<string> = []
+    const racing: Machine.Removal = {
+      ...Fs,
+      lstat: (async (path: string) => {
+        looked.push(Path.relative(kept, path))
+        // The other remover takes `cache` away just before this one asks what it is.
+        if (path.endsWith("/cache")) execFileSync("sh", ["-c", "chmod u+w \"$1\" && rm -rf \"$1/cache\"", "sh", locked])
+        return Fs.lstat(path)
+      }) as typeof Fs.lstat
+    }
+    await Machine.remove(kept, racing)
+    expect(looked).toContain("home/go/pkg/mod/cache")
+    expect(NodeFs.existsSync(kept)).toBe(false)
   })
 
   posixIt("fails when git cannot say where the repository is", async () => {
