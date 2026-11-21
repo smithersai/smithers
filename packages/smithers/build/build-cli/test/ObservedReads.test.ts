@@ -2279,6 +2279,98 @@ describe("what a run left behind", () => {
     expect(asked.filter((path) => path.startsWith(`${root}/unpacked/`))).toEqual([])
   })
 
+  // An install makes node_modules, links each package into it and reads it back: what it made there is its own and
+  // is not resolved again. A link it made there leads out, and what lies behind the link is read.
+  describe("what a run made in a directory it made", () => {
+    const link = (root: string, target: string, name: string): string =>
+      `100 symlink(${JSON.stringify(target)}, "${root}/${name}") = 0`
+    const reads = (root: string, name: string): string => `100 openat(AT_FDCWD<${root}>, "${name}", O_RDONLY) = 3`
+
+    it("is its own, and what a link it made there leads to is read", async () => {
+      const { made, observe, root, write } = await places()
+      await write(Path.join(root, "packages/core/package.json"), "{}")
+      await write(Path.join(root, "cache/index.js"), "fetched")
+      await write(Path.join(root, "node_modules/pkg/index.js"), "fetched")
+      await Fs.symlink("../packages/core", Path.join(root, "node_modules/core"))
+      const observed = observe([
+        made(`${root}/node_modules`),
+        made(`${root}/node_modules/pkg`),
+        `100 linkat(AT_FDCWD<${root}>, "cache/index.js", AT_FDCWD<${root}>, "node_modules/pkg/index.js", 0) = 0`,
+        link(root, "../packages/core", "node_modules/core"),
+        reads(root, "node_modules/pkg/index.js"),
+        `100 getdents64(3</${root.slice(1)}/node_modules/pkg>, 0x0 /* 1 entries */, 32768) = 24`,
+        reads(root, "node_modules/core/package.json")
+      ])
+      expect(observed.record.reads.map(([path]) => path)).toEqual(["cache/index.js", "packages/core/package.json"])
+    })
+
+    it("reads where a link it made leads at the end, after it pointed the link elsewhere", async () => {
+      const { made, observe, root, write } = await places()
+      await write(Path.join(root, "a.txt"), "a")
+      await write(Path.join(root, "b.txt"), "b")
+      await Fs.mkdir(Path.join(root, "out"))
+      await Fs.symlink("../b.txt", Path.join(root, "out/current"))
+      const observed = observe([
+        made(`${root}/out`),
+        link(root, "../a.txt", "out/current"),
+        reads(root, "out/current"),
+        `100 unlink("${root}/out/current") = 0`,
+        link(root, "../b.txt", "out/current"),
+        reads(root, "out/current")
+      ])
+      expect(observed.record.reads.map(([path]) => path)).toEqual(["b.txt"])
+    })
+
+    it("reads what a link it made there leads to outside the workspace", async () => {
+      const { made, observe, root, temp, write } = await places()
+      const outside = await write(Path.join(temp, "tool/config.json"), "{}")
+      await Fs.mkdir(Path.join(root, "out"))
+      await Fs.symlink(outside, Path.join(root, "out/config.json"))
+      const observed = observe([
+        made(`${root}/out`),
+        link(root, outside, "out/config.json"),
+        // Opened to make it if need be: the open goes through the link.
+        `100 openat(AT_FDCWD<${root}>, "out/config.json", O_RDONLY|O_CREAT, 0666) = 3`,
+        reads(root, "out/config.json")
+      ])
+      expect(observed.record.reads.map(([path]) => path)).toEqual([outside])
+    })
+
+    it("reads what another thread found there before the run made it, took it away and made it again", async () => {
+      const { made, observe, root } = await places()
+      await Fs.mkdir(Path.join(root, "out/again"), { recursive: true })
+      const stat = "{st_mode=S_IFDIR|0755, st_size=4096, ...}"
+      const observed = observe([
+        made(`${root}/out`),
+        `100 mkdir("${root}/out/again", 0777 <unfinished ...>`,
+        `101 stat("${root}/out/again",  <unfinished ...>`,
+        "100 <... mkdir resumed>)              = 0",
+        `101 <... stat resumed>${stat})        = 0`,
+        `100 rmdir("${root}/out/again")        = 0`,
+        made(`${root}/out/again`)
+      ])
+      expect(observed.record.reads.map(([path]) => path)).toEqual(["out/again"])
+    })
+
+    it("makes nothing of a link whose name its trace does not give", () => {
+      const trace = ObservedReads.read(() => ["100 symlink(\"target\", 0x7ffd1234) = 0"], "/w")
+      expect(trace.refusals).toEqual(["its trace holds a path that cannot be read: 0x7ffd1234"])
+      expect([...(trace.plainMade ?? [])]).toEqual([])
+    })
+
+    it("reads a file of a directory it did not make, though an earlier step made it", async () => {
+      const { filled, made, observe, root, write } = await places()
+      await write(Path.join(root, "dist/earlier.js"), "built before")
+      await write(Path.join(root, "dist/mine.js"), "built now")
+      const observed = observe([filled("dist/mine.js"), reads(root, "dist/mine.js"), reads(root, "dist/earlier.js")])
+      // What it wrote is its own wherever it is.
+      expect(observed.record.reads.map(([path]) => path)).toEqual(["dist/earlier.js"])
+      // In a directory the run made, all is its own.
+      const own = observe([made(`${root}/dist`), filled("dist/mine.js"), reads(root, "dist/mine.js")])
+      expect(own.record.reads).toEqual([])
+    })
+  })
+
   // `npm ci` reads an entry of its cache index and writes it back with another time at every run. A CI job that
   // restores that cache from another run's save would find the entry changed at every commit.
   it("leaves out of what it read the cache a locked install writes outside the workspace", async () => {

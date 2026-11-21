@@ -536,6 +536,18 @@ export interface Trace {
    * listened on. A program the run left running may still listen on them.
    */
   readonly bound?: ReadonlySet<string> | undefined
+  /**
+   * The directories the run made where nothing was that are still the ones it made: nothing it removed, moved
+   * away or moved something onto. Such a directory held nothing when it was made, so what is in it the run put
+   * there.
+   */
+  readonly built?: ReadonlySet<string> | undefined
+  /**
+   * The names the run made as a file or a directory, where nothing was or in a directory in `built`, and that are
+   * still those: not a link, not the new name of something moved, not taken away since. One in a directory in
+   * `built` is the run's own, and leads nowhere else.
+   */
+  readonly plainMade?: ReadonlySet<string> | undefined
 }
 
 /** Decodes a quoted string as the tracer prints it; `undefined` when it is cut short or malformed. */
@@ -1132,6 +1144,13 @@ export const read = (
   }
   /** Names the run removed or moved away. */
   const removed = new Set<string>()
+  /** The names the run made as a file or a directory and that are still those ({@link Trace.plainMade}). */
+  const plainMade = new Set<string>()
+  /** The names the run made as a link or moved something onto, until it takes them away: a call may go through them. */
+  const notPlain = new Set<string>()
+  const madePlain = (path: string): void => {
+    if (!notPlain.has(path)) plainMade.add(path)
+  }
   /** The calls that take a name away. */
   const removers = new Set(["unlink", "unlinkat", "rmdir", "rename", "renameat", "renameat2"])
   /** The program each process is running, by the name it was started under. */
@@ -1342,6 +1361,7 @@ export const read = (
       if (installing.has(pid) || installed.has(pid)) fetched.add(path)
       if (!ok) return
       if (how !== "changed") first(how === "made" ? made : emptied, path, at)
+      if (how === "made") madePlain(path)
       // A call that only succeeds where nothing was says so: the name was not there when it began.
       if (fresh) first(began, path, entered)
       // A name the run found missing and then opened to write, making it if need be, is one the run made. So is
@@ -1349,11 +1369,23 @@ export const read = (
       // wrote whatever is there. `go` writes an entry of a new cache so, with nothing asked about it first.
       else if (
         creates && how === "changed" && (missing.has(path) || built.has(NodePath.posix.dirname(path)))
-      ) first(made, path, at)
+      ) {
+        first(made, path, at)
+        madePlain(path)
+      }
       if (how === "changed" && removers.has(name)) {
         removed.add(path)
         unbuilt(path)
+        plainMade.delete(path)
+        notPlain.delete(path)
       }
+    }
+    /** Notes a link the run made: a name that leads elsewhere. */
+    const linked = (path: string | undefined): void => {
+      wrote(path, "made", true)
+      if (path === undefined) return
+      notPlain.add(path)
+      plainMade.delete(path)
     }
     /** Notes a directory the run made. */
     const madeDirectory = (path: string | undefined): void => {
@@ -1490,9 +1522,9 @@ export const read = (
       case "mkdirat":
         return madeDirectory(pathOf(args[1], baseOf(args[0])))
       case "symlink":
-        return wrote(pathOf(args[1], cell.path), "made", true)
+        return linked(pathOf(args[1], cell.path))
       case "symlinkat":
-        return wrote(pathOf(args[2], baseOf(args[1])), "made", true)
+        return linked(pathOf(args[2], baseOf(args[1])))
       case "rename":
       case "link": {
         // The new path holds what the old one held, so the old one was read.
@@ -1503,6 +1535,8 @@ export const read = (
         else if (from !== undefined && ok) write(from)
         if (to !== undefined && ok) unbuilt(to)
         wrote(to, "made", false, name === "link")
+        if (name === "rename" && to !== undefined && ok) notPlain.add(to)
+        if (name === "rename" && to !== undefined) plainMade.delete(to)
         if (name === "rename" && ok && from !== undefined && to !== undefined && from !== to) carry(from, to, at)
         return
       }
@@ -1517,6 +1551,8 @@ export const read = (
         } else wrote(from, "changed")
         if (to !== undefined && ok) unbuilt(to)
         wrote(to, "made", false, name === "linkat")
+        if (name !== "linkat" && to !== undefined && ok) notPlain.add(to)
+        if (name !== "linkat" && to !== undefined) plainMade.delete(to)
         if (name !== "linkat" && ok && from !== undefined && to !== undefined && from !== to) carry(from, to, at)
         return
       }
@@ -1744,7 +1780,9 @@ export const read = (
     outside: [...outside],
     ...(reachedThrough.length === 0 ? {} : { reached: reachedThrough }),
     ...(supervised ? { rights: [...rights] } : {}),
-    bound: listened
+    bound: listened,
+    built,
+    plainMade
   }
 }
 
@@ -2818,10 +2856,23 @@ export const observe = (
     return parent === "/" ? `/${name}` : `${parent}/${name}`
   }
 
+  /**
+   * Whether a name is one the run made as a file or a directory in a directory that is still one it made: such a
+   * name is the run's own, as the walk of it would find, and leads nowhere else. An install reads back each of
+   * the 270,000 files it linked into the directories it made.
+   */
+  const ownName = (raw: string): boolean => {
+    if (trace.plainMade?.has(raw) !== true) return false
+    const slash = raw.lastIndexOf("/")
+    return slash > 0 && trace.built?.has(raw.slice(0, slash)) === true
+  }
   const events: Array<
     readonly [at: number, kind: "found" | "missing" | "made" | "emptied" | "listed", path: string]
   > = []
-  for (const [path, at] of trace.found) events.push([at, "found", path])
+  // What the run found of its own after it made it is its own already.
+  for (const [path, at] of trace.found) {
+    if (!(ownName(path) && trace.made.get(path)! < at)) events.push([at, "found", path])
+  }
   for (const [path, at] of trace.missing) events.push([at, "missing", path])
   for (const [path, at] of trace.made) events.push([at, "made", path])
   // A name emptied when or after the run made it says nothing its making did not: an install opens each file it
@@ -2830,7 +2881,10 @@ export const observe = (
     const madeAt = trace.made.get(path)
     if (madeAt === undefined || madeAt > at) events.push([at, "emptied", path])
   }
-  for (const [path, at] of trace.listed) events.push([at, "listed", path])
+  // A directory the run made and listed holds only what it put there: its listing says nothing it did not make.
+  for (const [path, at] of trace.listed) {
+    if (!(trace.built?.has(path) === true && (trace.made.get(path) ?? at) < at)) events.push([at, "listed", path])
+  }
   // A program a run starts can name another that the kernel starts for it.
   for (const [path, at] of trace.started) {
     for (const interpreter of interpreters(placed(path), io)) events.push([at, "found", interpreter])
@@ -2862,7 +2916,7 @@ export const observe = (
     // Both the name the run wrote and the file a link under that name leads to are the run's to change.
     const path = named(raw)
     if (path === undefined) continue
-    const real = resolve(raw) ?? path
+    const real = ownName(raw) ? path : resolve(raw) ?? path
     noteWritten(path, raw)
     // Making a name writes the name: a link the run made leads to a file the run may never have written.
     if (real !== path) {
