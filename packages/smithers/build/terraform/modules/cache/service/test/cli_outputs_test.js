@@ -15,6 +15,9 @@ const hash = (value) => createHash("sha256").update(value).digest("hex")
 const reader = "reader-credential-for-cli-output-tests"
 const writer = "writer-credential-for-cli-output-tests"
 const chunkBytes = 16 * 1024 * 1024
+// Windows keeps no POSIX mode bits: every writable file stats as 0o666, the one written here as much as the one
+// restored, so there the restored mode is that.
+const hostMode = (mode) => process.platform === "win32" ? 0o666 : mode
 
 for (const [name, make] of [["hosted", worker], ["self-hosted", service]]) {
   describe(name + " CLI output conformance", () => {
@@ -111,7 +114,7 @@ for (const [name, make] of [["hosted", worker], ["self-hosted", service]]) {
         await Tree.materializeManifest(f.b, ".flows", manifest)
         for (let i = 0; i < 520; i++) {
           expect(await Fs.readFile(Path.join(f.b, "out", String(i)), "utf8")).toBe("artifact-" + i)
-          expect((await Fs.stat(Path.join(f.b, "out", String(i)))).mode & 0o777).toBe(i % 2 ? 0o755 : 0o644)
+          expect((await Fs.stat(Path.join(f.b, "out", String(i)))).mode & 0o777).toBe(hostMode(i % 2 ? 0o755 : 0o644))
         }
         expect(f.warnings).toEqual([])
         expect(f.statuses.filter(([method]) => method === "PUT").at(-1)[1]).toMatch(/^\/ac\//)
@@ -145,7 +148,7 @@ for (const [name, make] of [["hosted", worker], ["self-hosted", service]]) {
           await Tree.materializeFile(f.b, ".flows", f.file)
           expect(await Tree.digestFileBytes(Path.join(f.b, "program"))).toBe(f.file.digest)
           expect((await Fs.stat(Path.join(f.b, "program"))).size).toBe(size)
-          expect((await Fs.stat(Path.join(f.b, "program"))).mode & 0o777).toBe(0o755)
+          expect((await Fs.stat(Path.join(f.b, "program"))).mode & 0o777).toBe(hostMode(0o755))
           expect([...f.contentStore.objects.values()].every((b) => b.length <= chunkBytes)).toBe(true)
           expect(f.warnings).toEqual([])
           // Every direct index/chunk reference is visible to retention.

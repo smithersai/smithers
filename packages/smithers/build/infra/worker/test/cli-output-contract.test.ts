@@ -8,6 +8,10 @@ import * as Tree from "../../../build-cli/src/PackageTree.ts"
 import { createHandler } from "../protocol.ts"
 import { MemoryActionCache, MemoryContentStore } from "./MemoryStores.ts"
 
+// Windows keeps no POSIX mode bits: every writable file stats as 0o666, the one written as much as the one
+// restored, so there the restored mode is that.
+const hostMode = (mode: number) => process.platform === "win32" ? 0o666 : mode
+
 const roots: Array<string> = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => Fs.rm(root, { recursive: true, force: true }))) })
 const hash = (value: string) => createHash("sha256").update(value).digest("hex")
@@ -67,7 +71,7 @@ describe("remote output blobs", () => {
     expect(hit!.storedAt).toBe(result.storedAt)
     await restore(b, hit!.output)
     expect(await Tree.digestFileBytes(Path.join(b, "out/program"))).toBe(await Tree.digestFileBytes(Path.join(a, "out/program")))
-    expect((await Fs.stat(Path.join(b, "out/program"))).mode & 0o777).toBe(0o755)
+    expect((await Fs.stat(Path.join(b, "out/program"))).mode & 0o777).toBe(hostMode(0o755))
     expect(f.requests.filter(r => r.method === "PUT").at(-1)?.path).toMatch(/^\/ac\//)
     expect([...f.contentStore.objects.values()].every(bytes => bytes.length <= 16 * 1024 * 1024)).toBe(true)
     expect(f.warnings).toEqual([])

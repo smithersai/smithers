@@ -10,6 +10,10 @@ import { createHandler } from "../protocol.ts"
 import { MemoryActionCache, MemoryContentStore } from "./MemoryStores.ts"
 import { createHash } from "node:crypto"
 
+// Windows keeps no POSIX mode bits: every writable file stats as 0o666, the one written as much as the one
+// restored, so there the restored mode is that.
+const hostMode = (mode: number) => process.platform === "win32" ? 0o666 : mode
+
 it.each([1, 520])("reports a real target hit and restores %i outputs after all local cache files are removed", async count => {
   const f = await runnerFixture(`
 const command = S.ToolBuild({
@@ -63,7 +67,7 @@ export const Package = S.Package({ targets: { command } })
   expect(second.ok, JSON.stringify(second.results)).toBe(true)
   expect(second.results).toMatchObject([{ label: "//:command", status: "hit" }])
   expect(await Fs.readFile(Path.join(f.root, "out/program"), "utf8")).toBe("artifact")
-  expect((await Fs.stat(Path.join(f.root, "out/program"))).mode & 0o777).toBe(0o755)
+  expect((await Fs.stat(Path.join(f.root, "out/program"))).mode & 0o777).toBe(hostMode(0o755))
   expect(await Fs.readFile(Path.join(f.root, "calls.log"), "utf8")).toBe("run")
   expect(await Fs.readdir(Path.join(f.root, "out"))).toHaveLength(count)
   for (let i = 1; i < count; i++) {
