@@ -5,7 +5,7 @@ description: "Run smithers-ci in a repository: what it reads, what it prints, an
 
 ## Run it
 
-In any directory of a Git repository:
+Smithers CI runs on Linux and macOS. In any directory of a Git repository:
 
 ```sh
 bunx smithers-ci

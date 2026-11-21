@@ -56219,6 +56219,10 @@
       "//packages/ci:sources-packages-smithers-ui-views",
       "//packages/ci:toolCaches"
     ],
+    "hosts": [
+      "linux",
+      "darwin"
+    ],
     "source": {
       "file": "packages/ci/PACKAGE.ts"
     }

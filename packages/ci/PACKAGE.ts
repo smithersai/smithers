@@ -75,6 +75,9 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   // Zig compiles a build runner into its global cache. A confined run is shown no cache of the host's, so without one
   // of its own every test that starts `zig build` compiled it again and passed its time limit under load.
   testEnv: toolCacheEnv,
+  // smithers-ci runs on Linux and macOS (docs/getting-started/quickstart.md), so its suite does too: on Windows the
+  // package suites leave it out, as a person on Windows cannot run the program it tests.
+  testHosts: ["linux", "darwin"],
   testDeps: [toolCaches, linkedDocs],
   cwd
 })

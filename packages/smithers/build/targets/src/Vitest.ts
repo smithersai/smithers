@@ -105,6 +105,13 @@ export const Attrs = Schema.Struct({
    */
   tools: Schema.optional(Schema.Array(Reference.HostBin)),
   /**
+   * The hosts the suite runs on, as `process.platform` names them, as for
+   * `Shell.Test`: `["linux", "darwin"]` for a suite whose program does not run
+   * on Windows. A wildcard selection leaves the target out on another host,
+   * and naming it there refuses it.
+   */
+  hosts: Schema.optional(Attr.HostPlatforms),
+  /**
    * How long the run may take before the tool is killed.
    *
    * The exec default of ten minutes is measured against a developer machine
@@ -205,6 +212,7 @@ export const mergeArguments = (
  */
 export const Vitest = Target.make("Vitest", {
   attrs: Attrs,
+  hosts: (attrs) => attrs.hosts,
   workspaceAttrs: ["packageManager", "runtime"],
   kinds: ["test"],
   success: Exec.Result,

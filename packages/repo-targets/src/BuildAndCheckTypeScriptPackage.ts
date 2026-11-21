@@ -28,6 +28,10 @@ import { CircularImports } from "./CircularImports.ts"
  * @category models
  * @since 0.1.0
  */
+
+/** A host as `process.platform` names it. */
+type Host = "linux" | "darwin" | "win32"
+
 export interface Options {
   /**
    * The package manager every emitted target runs its tool through. Omitted —
@@ -112,6 +116,8 @@ export interface Options {
    * runs, as `ZIG_GLOBAL_CACHE_DIR`.
    */
   readonly testEnv?: Readonly<Record<string, string>> | undefined
+  /** The hosts the suite runs on (`Vitest`'s `hosts`); absent, every host. */
+  readonly testHosts?: readonly [Host, ...Array<Host>] | undefined
   /** Targets only the suite waits for, such as one that fills a tool's cache before the suite starts. */
   readonly testDeps?: ReadonlyArray<Target.AnyTarget> | undefined
   readonly eslintConfigs?: ReadonlyArray<Input.File> | undefined
@@ -290,6 +296,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
       ...(options.testTimeoutMs === undefined ? {} : { timeoutMs: options.testTimeoutMs }),
       ...(options.testTools === undefined ? {} : { tools: options.testTools }),
       ...(options.testEnv === undefined ? {} : { env: options.testEnv }),
+      ...(options.testHosts === undefined ? {} : { hosts: options.testHosts }),
       tests: [tests],
       sources: [
         sources,

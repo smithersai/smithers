@@ -11,6 +11,7 @@ import * as Docker from "../src/Docker.ts"
 import * as Input from "../src/Input.ts"
 import * as Shell from "../src/Shell.ts"
 import * as Target from "../src/Target.ts"
+import * as Vitest from "../src/Vitest.ts"
 
 describe("hosts", () => {
   it("restricts a shell declaration to the hosts it names", () => {
@@ -20,6 +21,13 @@ describe("hosts", () => {
     expect(Target.metadata(Shell.Build({ shell: "true", outFiles: ["a"], hosts: ["darwin"] })).hosts).toEqual([
       "darwin"
     ])
+  })
+
+  it("restricts a Vitest suite to the hosts it names, and leaves an unrestricted one on every host", () => {
+    const suite = { tests: [], sources: [], deps: [], config: null, environment: "node", passWithNoTests: true }
+    expect(Target.metadata(Vitest.Vitest({ ...suite, hosts: ["linux", "darwin"] })).hosts).toEqual(["linux", "darwin"])
+    expect(Target.metadata(Vitest.Vitest(suite)).hosts).toBeUndefined()
+    expect(() => Vitest.Vitest({ ...suite, hosts: ["plan9"] as never })).toThrow()
   })
 
   it("leaves an unrestricted declaration on every host", () => {
