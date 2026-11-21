@@ -17,3 +17,18 @@ export const diesAt = (subject: string, defect: unknown) => Layer.effect(ChildPr
     return try real.spawn(process)
   })
 })
+
+const refused = (path: string) =>
+  Effect.fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "remove", pathOrDescriptor: path }))
+
+/** The real file system, except that its removal of a file or a tree always fails. */
+export const noRemoving = Layer.effect(FileSystem.FileSystem, effect {
+  const fs = try FileSystem.FileSystem
+  return { ...fs, remove: (path: string) => refused(path) }
+})
+
+/** As `noRemoving`, and a path always exists: as a tree that `rm` cannot remove either. */
+export const keptRemoving = Layer.effect(FileSystem.FileSystem, effect {
+  const fs = try FileSystem.FileSystem
+  return { ...fs, remove: (path: string) => refused(path), exists: () => Effect.succeed(true) }
+})

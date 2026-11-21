@@ -364,6 +364,27 @@ export const held = (
 ): readonly [string, ...Array<string>] => jailed(place.jail, [place.home, ...writable], [place.hooks], argv)
 
 /**
+ * Removes `directory` and everything in it. A step can leave a tree deeper
+ * than the longest path the system takes, which the platform's removal cannot
+ * walk: `rm` then removes it, a directory at a time. The removal fails only
+ * when the directory is still there after both.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function removeTree(directory: string) {
+  const fs = try FileSystem.FileSystem
+  fs.remove(directory, { recursive: true, force: true }) catch effect (cause) => {
+    const spawner = try ChildProcessSpawner
+    const command = ChildProcess.make("rm", ["-rf", "--", directory], { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
+    try ignore(scoped(effect {
+      try (try spawner.spawn(command)).exitCode
+    }))
+    if (try fs.exists(directory)) throw cause
+  }
+}
+
+/**
  * An empty directory at `directory`, made writable and removed when the scope
  * closes. What an earlier run left there is removed first: a step can leave a
  * directory nothing can be removed from, so everything is made writable before.
@@ -377,7 +398,7 @@ export effect function fresh(directory: string) {
   const clear = effect {
     if (!(try fs.exists(directory))) return
     try unlock(spawner, [directory])
-    try fs.remove(directory, { recursive: true, force: true })
+    try removeTree(directory)
   }
   try clear
   try fs.makeDirectory(directory, { recursive: true })
@@ -395,9 +416,8 @@ export effect function fresh(directory: string) {
  * @since 0.1.0
  */
 export effect function discard(directory: string) {
-  const fs = try FileSystem.FileSystem
   try unlockWork(directory)
-  try ignore(fs.remove(directory, { recursive: true, force: true }))
+  try ignore(removeTree(directory))
 }
 
 /**
@@ -450,8 +470,8 @@ export effect function machine(place: Confined, home: string, tmp: string, alone
 export effect function renew(place: Confined) {
   const fs = try FileSystem.FileSystem
   try unlock(try ChildProcessSpawner, [place.home, place.tmp])
-  try fs.remove(place.home, { recursive: true, force: true })
-  try fs.remove(place.tmp, { recursive: true, force: true })
+  try removeTree(place.home)
+  try removeTree(place.tmp)
   try fs.makeDirectory(place.tmp)
   try furnish(place.home, place.links)
 }
