@@ -205,7 +205,7 @@ test("importing the release scripts reads no workspace tree", async () => {
   // roster error before the importer could call anything.
   const fixture = await mkdtemp(join(tmpdir(), "smithers-pack-release-import-"))
   try {
-    for (const file of ["packages/repo-targets/scripts/workspace-packages.mjs", "packages/repo-targets/scripts/workspace-root.mjs", ...["pack-release.mjs", "published-packages.mjs", "publish-release.mjs", "packed-export-targets.mjs", "build-release.mjs", "release-native-helpers.mjs"].map((name) => `.smithers/flows/release/${name}`)]) {
+    for (const file of ["packages/repo-targets/scripts/workspace-packages.mjs", "packages/repo-targets/scripts/workspace-root.mjs", "packages/smithers/build/build-cli/scripts/build-observe.mjs", ...["pack-release.mjs", "published-packages.mjs", "publish-release.mjs", "packed-export-targets.mjs", "build-release.mjs", "release-native-helpers.mjs"].map((name) => `.smithers/flows/release/${name}`)]) {
       await mkdir(dirname(join(fixture, file)), { recursive: true })
       await cp(join(repoRoot, file), join(fixture, file))
     }
@@ -1261,6 +1261,35 @@ test("pack boundary requires the ESM, declarations and CommonJS of every VibeLan
   }
   await writeFile(join(directory, "build.mjs"), build(outputs))
   await assertBuilt(directory, manifest)
+}))
+
+test("packing refuses a package whose shipped program its build did not make, rebuilt or --built", () => staleBuildFixture(async (directory, manifest) => {
+  // npm packs a package whose `files` names a missing program without a word; @smthrs/build-cli without
+  // smthrs-observe would then record with strace.
+  const program = "native/out/linux-x64/smthrs-observe"
+  manifest.publishConfig.executableFiles = [program]
+  const build = (makes) => [
+    'import { mkdirSync, writeFileSync } from "node:fs"',
+    'mkdirSync("dist/esm", { recursive: true })',
+    'mkdirSync("dist/cjs", { recursive: true })',
+    'for (const file of ["esm/index.js", "esm/index.d.ts", "cjs/index.js"]) writeFileSync("dist/" + file, "")',
+    ...(makes ? [`mkdirSync("native/out/linux-x64", { recursive: true })`, `writeFileSync(${JSON.stringify(program)}, "")`] : [])
+  ].join("\n")
+  await writeFile(join(directory, "build.mjs"), build(false))
+  await assert.rejects(assertBuilt(directory, manifest), {
+    message: `smithers-pack-stale-fixture ships ${program}, and its build did not make it. It is built with zig 0.17.1: ` +
+      "on PATH, named by SMITHERS_ZIG, or fetched by packages/smithers/build/build-cli/scripts/build-observe.mjs, " +
+      "which says why it could not."
+  })
+  await assert.rejects(assertBuilt(directory, manifest, { rebuild: false }), /ships native\/out\/linux-x64\/smthrs-observe, and it is not built\./)
+  manifest.publishConfig.executableFiles = ["bin/tool"]
+  await assert.rejects(assertBuilt(directory, manifest, { rebuild: false }), {
+    message: "smithers-pack-stale-fixture ships bin/tool, and it is not built. Build the package, then pack again."
+  })
+  manifest.publishConfig.executableFiles = [program]
+  await writeFile(join(directory, "build.mjs"), build(true))
+  await assertBuilt(directory, manifest)
+  await assertBuilt(directory, manifest, { rebuild: false })
 }))
 
 test("pack boundary refuses stale artifacts without a build script", () => staleBuildFixture(async (directory, manifest) => {

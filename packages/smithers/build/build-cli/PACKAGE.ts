@@ -79,13 +79,18 @@ const lib = Smithers.TsBuild({
 /**
  * `smthrs-observe`, the recorder of what an observed step reads, for x86_64
  * and aarch64 Linux: `native/observe.c` built by `scripts/build-observe.mjs`
- * with the zig release it pins. Where that zig is missing the build says so,
- * builds nothing, and steps are recorded with strace.
+ * with the zig release it pins, fetched from zig's own archive where it is not
+ * installed. Where neither works the build says so, builds nothing, and steps
+ * are recorded with strace.
  */
 const observe = Smithers.Shell.Build({
   shell: "node packages/smithers/build/build-cli/scripts/build-observe.mjs",
   outDirs: ["native/out"],
-  data: [Smithers.file("native/observe.c"), Smithers.file("scripts/build-observe.mjs")],
+  data: [
+    Smithers.file("native/observe.c"),
+    Smithers.file("scripts/build-observe.mjs"),
+    Smithers.file("scripts/fetch-zig.mjs")
+  ],
   sandbox: "none"
 })
 

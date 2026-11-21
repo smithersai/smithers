@@ -994,7 +994,12 @@ const releasePack = Smithers.NodeBinary({
   // packages admitted under `packages/`. `lib` is the whole distribution,
   // `dist/esm` and `dist/cjs`, which is what `assertBuilt` in the packing
   // program requires; nothing here depends on a prior `pnpm run build`.
-  deps: [apiBaseline, Smithers.Target.subtree("//packages/...", "lib")]
+  // `smthrs-observe` is built by build-cli's `observe`, not its `lib`; packing refuses a build-cli without it.
+  deps: [
+    apiBaseline,
+    Smithers.Target.subtree("//packages/...", "lib"),
+    Smithers.Target.subtree("//packages/smithers/build/build-cli/...", "observe")
+  ]
 })
 
 /**

@@ -453,6 +453,20 @@ export const assertBuilt = async (packageRoot, manifest, { rebuild = true } = {}
       ...(esmOnly.has(modulePath) ? [] : [access(join(packageRoot, "dist", "cjs", `${modulePath}.js`))])
     ])
   }
+  // A program the package ships is made by its build: `smthrs-observe` in @smthrs/build-cli, the recorder of what a
+  // step reads. npm packs a package whose program is missing without a word, and that package records with strace,
+  // so the pack stops here instead.
+  for (const program of manifest.publishConfig?.executableFiles ?? []) {
+    if (!existsSync(join(packageRoot, program))) {
+      throw new Error(
+        `${manifest.name} ships ${program}, and ${rebuild ? "its build did not make it" : "it is not built"}. ` +
+          (program.endsWith("/smthrs-observe")
+            ? "It is built with zig 0.17.1: on PATH, named by SMITHERS_ZIG, or fetched by " +
+              "packages/smithers/build/build-cli/scripts/build-observe.mjs, which says why it could not."
+            : "Build the package, then pack again.")
+      )
+    }
+  }
 }
 
 /** Package-declared template trees are authored input, even when configuration is hidden; local credentials never are. */

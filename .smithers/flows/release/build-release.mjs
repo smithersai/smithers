@@ -4,7 +4,7 @@ import { rmSync } from "node:fs"
 import { join } from "node:path"
 import { dependencyOrder, readWorkspaceManifests, workspaceDependencies } from "./pack-release.mjs"
 import { isMain, repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
-import { zigProblem } from "../../../packages/smithers/build/build-cli/scripts/build-observe.mjs"
+import { findZig } from "../../../packages/smithers/build/build-cli/scripts/build-observe.mjs"
 
 /**
  * Optional peers and development dependencies can point back to their host
@@ -22,7 +22,7 @@ export const buildRelease = (root = repoRoot, manifests = readWorkspaceManifests
   }
   // A release that must ship smthrs-observe stops here, before an hour of builds, when it cannot.
   if (process.env.SMITHERS_NATIVE === "required") {
-    const problem = zigProblem()
+    const { problem } = findZig()
     if (problem !== undefined) throw new Error(`smthrs-observe: ${problem}; install zig 0.17.1 or unset SMITHERS_NATIVE`)
   }
   for (const directory of order) {
