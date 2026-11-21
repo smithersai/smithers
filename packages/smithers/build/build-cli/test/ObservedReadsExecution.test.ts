@@ -717,6 +717,36 @@ describe("an observed test", () => {
     }
   })
 
+  // Linux connects the unspecified address, `::` or `0.0.0.0`, to this machine itself (measured on nyc-01: both reach
+  // a server listening on `::`). A run that reaches its own server there reached nothing outside it.
+  tracedIt("is stored when it reaches its own server on :: through :: and 0.0.0.0", async () => {
+    const serving = `${process.execPath} -e "` +
+      "const net = require('net'); const server = net.createServer((s) => s.end('ok')).listen(0, '::', async () => {" +
+      " const port = server.address().port;" +
+      " for (const host of ['::', '0.0.0.0']) await new Promise((done, fail) => net.connect(port, host)" +
+      ".on('data', done).on('error', fail));" +
+      " server.close() })" +
+      `"`
+    const { run } = await fixture({ check: serving })
+    expect(await run()).toEqual({ check: "ran" })
+    expect(await run()).toEqual({ check: "hit" })
+  })
+
+  tracedIt("stores nothing for a run that reached a program outside it on ::", async () => {
+    const server = Net.createServer((socket) => socket.end())
+    await new Promise<void>((resolve) => server.listen(0, "::", resolve))
+    try {
+      const port = (server.address() as Net.AddressInfo).port
+      const connecting =
+        `${process.execPath} -e "require('net').connect(${port}, '::').on('connect', function () { this.end() })"`
+      const { logs, run } = await fixture({ check: connecting })
+      expect(await run()).toEqual({ check: "ran" })
+      expect(logs).toContain(`//:check  not cached: it reached a program outside the run on local port ${port}`)
+    } finally {
+      await new Promise((resolve) => server.close(resolve))
+    }
+  })
+
   tracedIt("runs without the recording for a day after a run that reached outside it", async () => {
     const server = Net.createServer((socket) => socket.end())
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))

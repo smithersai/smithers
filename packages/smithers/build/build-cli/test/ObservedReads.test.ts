@@ -688,6 +688,16 @@ describe("reading a trace", () => {
     ).toEqual(["it reached a program outside the run on local port 6379"])
     expect(read(address("{sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr(\"93.184.216.34\")}")).refusals)
       .toEqual(["it opened a network connection (to 93.184.216.34 port 443)"])
+    // Linux connects the unspecified address to this machine itself: a port there is a local port, never the network.
+    const v6 = (host: string, port: number): string =>
+      `{sa_family=AF_INET6, sin6_port=htons(${port}), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, "${host}", &sin6_addr), sin6_scope_id=0}`
+    expect(read(address(v6("::", 5432))).refusals).toEqual(["it reached a program outside the run on local port 5432"])
+    expect(read(address(v6("::", 0))).refusals).toEqual(["it reached a program outside the run on local port 0"])
+    expect(read(address(v6("::ffff:0.0.0.0", 5432))).refusals)
+      .toEqual(["it reached a program outside the run on local port 5432"])
+    expect(read(address("{sa_family=AF_INET, sin_port=htons(5432), sin_addr=inet_addr(\"0.0.0.0\")}")).refusals)
+      .toEqual(["it reached a program outside the run on local port 5432"])
+    expect(read(address(v6("::2", 5432))).refusals).toEqual(["it opened a network connection (to ::2 port 5432)"])
     expect(
       read(
         "100 connect(3<socket:[9]>, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr(\"93.184.216.34\")}, 16) = -1 EINPROGRESS (Operation now in progress)"

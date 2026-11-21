@@ -944,9 +944,13 @@ const supervisorLast = "+++ complete +++"
 /** The answers a call that starts a program can have: it started, or it did not and the answer names why. */
 const startAnswer = /^(?:0|-1 E[A-Z0-9]+\b.*)$/
 
-/** Whether an address a run connected or bound to is on this machine's loopback. */
+/**
+ * Whether an address a run connected or bound to is on this machine: its loopback, or the unspecified address
+ * (`0.0.0.0`, `::`), which Linux connects to this machine itself.
+ */
 const loopback = (address: string): boolean =>
-  /inet_addr\("127\./.test(address) || /inet_pton\(AF_INET6, "(?:::1|::ffff:127\.[0-9.]+)"/.test(address)
+  /inet_addr\("(?:127\.|0\.0\.0\.0")/.test(address) ||
+  /inet_pton\(AF_INET6, "(?:::1|::|::ffff:127\.[0-9.]+|::ffff:0\.0\.0\.0)"/.test(address)
 
 const portOf = (address: string): string | undefined => /sin6?_port=htons\((\d+)\)/.exec(address)?.[1]
 
