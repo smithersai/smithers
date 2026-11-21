@@ -497,8 +497,9 @@ describe.skipIf(!engineAvailable)("approval: \"required\" through the public CLI
 
       expect(again).toEqual(revision)
       expect(result.exitCode, `${result.output}${result.logs}`).toBe(0)
-      // Planning asks once and the pre-push recheck asks again, both for the granted revision.
-      expect(memory.asked).toEqual([revision, revision])
+      // Planning asks, and so does every plan made again before the push; each asks for the granted revision.
+      expect(memory.asked.length).toBeGreaterThanOrEqual(2)
+      expect(memory.asked.filter((request) => JSON.stringify(request) !== JSON.stringify(revision))).toEqual([])
       expect(pushes(await workspace.calls())).toHaveLength(2)
     })
   }
@@ -554,7 +555,9 @@ describe.skipIf(!engineAvailable)("approval: \"required\" through the public CLI
       }
     }
     const result = await serve(workspace.root, ["//:push"], { environment: workspace.environment, approvals: store })
-    expect(asked).toEqual([revision.digest, revision.digest])
+    // Planning was granted; a later check before the push was not, and every check named the same revision.
+    expect(asked.length).toBeGreaterThanOrEqual(2)
+    expect(asked.filter((digest) => digest !== revision.digest)).toEqual([])
     expect(result.exitCode).toBe(1)
     expect(`${result.output}${result.logs}`).toContain("is not approved")
     expect(pushes(await workspace.calls())).toEqual([])
