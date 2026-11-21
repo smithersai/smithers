@@ -102,8 +102,8 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     const api = await openApi()
     const a = await openDevice(api)
     // The built-ins, ordered by their dependencies, then id (src/plugins/builtin.ts).
-    expect(a.plugins.contributions.plugins.map((plugin) => plugin.id)).toEqual(["bugs", "factory", "fleet", "queue"])
-    expect(a.count(Metric.withAttributes(loads, { outcome: "active", tier: "built-in", reason: "none" }))).toBe(4)
+    expect(a.plugins.contributions.plugins.map((plugin) => plugin.id)).toEqual(["bugs", "factory", "fleet", "queue", "tour"])
+    expect(a.count(Metric.withAttributes(loads, { outcome: "active", tier: "built-in", reason: "none" }))).toBe(5)
 
     const answerId = await a.ask("Deploy the preview", question("preview"))
     const tab = (await a.plugins.actions.tab("queue")) as QueueTab

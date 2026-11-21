@@ -3,5 +3,6 @@ import bugs from "../../plugins/bugs/plugin.json" with { type: "json" }
 import factory from "../../plugins/factory/plugin.json" with { type: "json" }
 import fleet from "../../plugins/fleet/plugin.json" with { type: "json" }
 import queue from "../../plugins/queue/plugin.json" with { type: "json" }
-export { bugs, factory, fleet, queue }
-export const BUILTIN_MANIFESTS = [bugs, factory, fleet, queue] as const
+import tour from "../../plugins/tour/plugin.json" with { type: "json" }
+export { bugs, factory, fleet, queue, tour }
+export const BUILTIN_MANIFESTS = [bugs, factory, fleet, queue, tour] as const

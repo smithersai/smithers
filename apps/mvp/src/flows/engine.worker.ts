@@ -33,6 +33,8 @@ let receipt: Receipt | undefined
 const identity = new BroadcastChannel(IDENTITY_MESSAGE)
 const unbound = self.fetch.bind(self)
 // Under the dev server, the end-to-end tests' parameters, which main.tsx names this worker with (`dev:<parameters>`).
+// In production or dev, `demo:mock` runs an isolated zero-backend visitor demo (`?agent=mock`).
+const demoMock = self.name === "demo:mock"
 const dev = import.meta.env.DEV && self.name.startsWith("dev:") ? new URLSearchParams(self.name.slice("dev:".length)) : undefined
 const scripted = dev?.get("agent") ?? undefined
 const faulted = dev?.get("faults") === "session-503"
@@ -92,7 +94,7 @@ self.fetch = boundFetch(unbound, {
 
 const run = (model?: Model.Model, summaryModel?: Model.Model, rendererModel?: Model.Model) =>
   BrowserRuntime.run({
-    name: ENGINE_NAME,
+    name: demoMock ? "smithers-demo" : ENGINE_NAME,
     // The SQLite build loads only once this worker leads, and only in this worker's bundle.
     sqlite: {
       module: async () => ({ default: SqliteFactory }),
@@ -115,7 +117,7 @@ const run = (model?: Model.Model, summaryModel?: Model.Model, rendererModel?: Mo
     // `http:` pages on this machine open only under the dev server (src/features/web/url.ts).
     registerFlows: workerRegistrations(self, {
       origin: self.location.origin,
-      name: ENGINE_NAME,
+      name: demoMock ? "smithers-demo" : ENGINE_NAME,
       localHttp: import.meta.env.DEV,
       ...(model === undefined ? {} : { model }),
       ...(summaryModel === undefined ? {} : { summaryModel }),
@@ -130,7 +132,12 @@ const run = (model?: Model.Model, summaryModel?: Model.Model, rendererModel?: Mo
 // Under the dev server, `?agent=<script>` answers with a scripted model for the end-to-end tests
 // (src/test/scriptedAgent.ts), and `?faults=session-503` opens the session read refused until the page heals it
 // (src/test/authFaults.ts). A production build drops these branches, and the modules with them.
-if (scripted === undefined && !faulted) run()
+if (demoMock) {
+  void import("../features/agent/demoModel").then((demo) => {
+    session = Effect.succeed(demo.DEMO_SESSION)
+    run(demo.demoModel, demo.demoSummary, demo.demoRenderer)
+  })
+} else if (scripted === undefined && !faulted) run()
 else {
   void Promise.all([
     faulted ? import("../test/authFaults").then((faults) => void (session = faults.faultySession(session, true))) : undefined,

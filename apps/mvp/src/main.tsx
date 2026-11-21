@@ -490,8 +490,9 @@ const host: Omit<Host, "editorTabId" | "editorTabPersistent" | "editorTabRefusal
     const search = new URLSearchParams(window.location.search)
     const dev = new URLSearchParams([...search].filter(([key]) => key === "agent" || key === "faults"))
     // Vite reads the worker's `type` statically, so it comes after the spread.
+    const demoMock = search.get("agent") === "mock"
     const worker = new Worker(new URL("./flows/engine.worker.ts", import.meta.url), {
-      ...(import.meta.env.DEV && dev.toString() !== "" ? { name: `dev:${dev}` } : {}),
+      ...(demoMock ? { name: "demo:mock" } : import.meta.env.DEV && dev.toString() !== "" ? { name: `dev:${dev}` } : {}),
       type: "module",
     })
     engineWorker = worker
@@ -643,6 +644,27 @@ void Promise.all([Promise.resolve(firstPaint?.handOver()).then((held) => wipe.op
     void import("./test/e2e")
       .then((e2e) => e2e.startWithFaults(opened, window.location.search, window))
       .then(({ stop }) => leaving(stop))
+  } else if (new URLSearchParams(window.location.search).get("agent") === "mock") {
+    void import("./features/agent/demoModel")
+      .then((demo) => {
+        const demoPage = {
+          ...opened,
+          host: {
+            ...unwiped(tabHost),
+            engineName: demo.DEMO_ENGINE_NAME,
+            engineWorker: () =>
+              new Worker(new URL("./flows/engine.worker.ts", import.meta.url), {
+                name: demo.DEMO_WORKER_NAME,
+                type: "module",
+              }),
+          },
+        }
+        leaving(start(demoPage, demo.demoServices).stop)
+      })
+      .catch(() => {
+        // recorded: fallback to normal boot if demo chunk fails to load
+        leaving(start(opened, realServices(opened)).stop)
+      })
   } else {
     leaving(start(opened, realServices(opened)).stop)
   }
