@@ -1160,7 +1160,17 @@ describe("SIGINT teardown", () => {
   it("kills the service process group when the embedding process gets SIGINT (pgrep proves no orphan)", async () => {
     const port = await freePort()
     const marker = `service-supervisor-sigint-proof-${randomUUID()}`
-    const driver = spawn(process.execPath, ["--import", "tsx", driverPath, String(port), serverPath, marker], {
+    // The supervisor reaches the engine, whose sources are partly VibeLang, as the health driver does.
+    const driver = spawn(process.execPath, [
+      "--import",
+      "tsx",
+      "--import",
+      "vibelang/register",
+      driverPath,
+      String(port),
+      serverPath,
+      marker
+    ], {
       cwd: packageDir,
       stdio: ["ignore", "pipe", "pipe"]
     })
