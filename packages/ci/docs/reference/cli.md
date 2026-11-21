@@ -312,6 +312,15 @@ before the one it stopped in, and its first line names the step:
 `the replay stopped at 3f2a1c9: smthrs-observe, which records what ci.yml:test:1 reads, stopped before the step ended, so its run says nothing about the step. Run the replay again, or set SMTHRS_OBSERVE_WITH=strace to record with strace`.
 The same line goes to standard error, and the program exits `4`.
 
+When the replay meets an error of its own, such as a directory a step left that
+it cannot remove, or a run of Smithers build that ends without its record, it
+stops the same way. The report holds the commits replayed before the one it
+stopped in, and its first line says what the error was, with its kind and
+details:
+`the replay stopped at 3f2a1c9 on an error of its own: could not make a directory: Unknown: FileSystem.remove (/tmp/smithers-ci-replay-x/...)`.
+The same line goes to standard error, and the program exits `4`. When it stops
+at its first commit there is no report, only the line.
+
 ## Output
 
 The report goes to standard output. While a replay runs, standard error gets one line as each mode of each commit starts:

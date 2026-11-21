@@ -27,7 +27,7 @@ import {
   variantsFailedHere,
   withoutFailedHere
 } from "../contract/Inventory.ts"
-import { declarationOf } from "../contract/Command.ts"
+import { declarationOf, errorLine } from "../contract/Command.ts"
 import {
   type Failure,
   type GeneratedFile,
@@ -479,6 +479,21 @@ export effect function askModel<R>(parts: Pick<ReplayParts<R>, "asked" | "score"
   const after = try askedSoFar(parts)
   const model: ModelUse = before === undefined || after === undefined ? { ms } : { ms, questions: after - before }
   return { scores, model }
+}
+
+/**
+ * What stopped a replay when the error is its own, in one line: the message
+ * of a failure it raised (`command-failed`), or what a defect says, with its
+ * kind and fields. Nothing for a failure of the repository's own, such as
+ * `unsupported`, or for an interruption.
+ *
+ * @category internals
+ * @since 0.1.0
+ */
+export const ownStop = <E>(cause: Cause.Cause<E>): string | undefined => {
+  const failed = Option.getOrUndefined(Cause.findErrorOption(cause)) as Partial<Failure> | undefined
+  if (failed?.code === "command-failed") return errorLine(failed.message)
+  return Cause.hasDies(cause) ? errorLine(Cause.squash(cause)) : undefined
 }
 
 /**
@@ -1454,11 +1469,12 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     let index = 0
-    // Why the replay stopped when the recorder of a step stopped first, as an out-of-memory kill stops it.
+    // Why the replay stopped when the recorder of a step stopped first, as an out-of-memory kill stops it, or when
+    // it met an error of its own.
     let recorderGone: string | undefined = undefined
-    // A replay the disk or a stopped recorder stopped reports the commits before the one it stopped in, and says
-    // why it stopped.
-    const finished = effect {
+    // A replay the disk, a stopped recorder or an error of its own stopped reports the commits before the one it
+    // stopped in, and says why it stopped.
+    const replayed = try exit(effect {
       while (index < commits.length) {
         const commit = commits[index] as string
         const at = `${index + 1}/${commits.length} ${commit.slice(0, 7)}`
@@ -1588,11 +1604,21 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         index += 1
       }
       return true
-    } catch effect (cause) => {
-      recorderGone = recorderStopped(cause, commits[index] as string, stepNames(newest.units))
-      if ((try disk.stopped) === undefined && recorderGone === undefined) throw cause
+    })
+    const finished = Exit.isSuccess(replayed)
+    if (Exit.isFailure(replayed)) {
+      // A signal ends the program as a signal does, and a failure of the repository's own keeps its exit code. An
+      // error of the replay's own ends it with the commits before, as a full disk does; with none before, the
+      // program says what it was and where.
+      const cause = replayed.cause
+      const commit = commits[index] as string
+      recorderGone = recorderStopped(Cause.squash(cause), commit, stepNames(newest.units))
+      if ((try disk.stopped) === undefined && recorderGone === undefined) {
+        const own = ownStop(cause)
+        if (own === undefined || commitsDone.length === 0) try failCause(cause)
+        recorderGone = `the replay stopped at ${commit.slice(0, 7)} on an error of its own: ${own}`
+      }
       try putBack
-      return false
     }
     const stopped = (try disk.stopped) ?? recorderGone
     if (!finished && commitsDone.length === 0) throw failure("command-failed", stopped as string)

@@ -97,7 +97,7 @@ const failed = (message: string): Failure => ({ code: "command-failed", message,
 effect function render(renderer: RenderReport, report: ReplayReport) {
   return try Effect.try({
     try: () => renderer(report),
-    catch: (error): Failure => ({ code: "command-failed", message: `could not render the report: ${String(error)}`, part: "report" })
+    catch: (error): Failure => ({ code: "command-failed", message: `could not render the report: ${Surface.errorLine(error)}`, part: "report" })
   })
 }
 

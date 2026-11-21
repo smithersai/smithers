@@ -704,7 +704,20 @@ describe.concurrent("smithers-ci with a faulty part or host", () => {
     const broken: Chosen = { ...parts, text: () => JSON.parse("{") as string }
     const outcome = await runIn(["replay"], repo(), broken)
     expect(outcome.code).toBe(exitCodes.failed)
-    expect(outcome.stderr).toMatch(/smithers-ci: report: could not render the report: SyntaxError/)
+    expect(outcome.stderr).toMatch(/smithers-ci: report: could not render the report: .+ \(SyntaxError\)/)
+  })
+
+  it("names what a renderer threw when it is no Error, never [object Object]", async () => {
+    const thrown: Chosen = {
+      ...parts,
+      text: () => {
+        throw { _tag: "Unrenderable", field: "speedup" }
+      }
+    }
+    const outcome = await runIn(["replay"], repo(), thrown)
+    expect(outcome.code).toBe(exitCodes.failed)
+    expect(outcome.stderr).toContain("could not render the report: Unrenderable, field: speedup")
+    expect(outcome.stderr).not.toContain("[object Object]")
   })
 
   it("refuses a part's document that breaks its contract", async () => {

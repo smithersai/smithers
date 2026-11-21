@@ -254,3 +254,103 @@ export const declarationOf = (files: ReadonlyArray<GeneratedFile>): GeneratedFil
  * @since 0.1.0
  */
 export const applyIgnores: ReadonlyArray<string> = []
+
+/** What a value that cannot say what it is says. */
+const mute = "an error with no message"
+
+/** Fields that are not what an error says: its words, trace, kind and cause, and a number its code repeats. */
+const unsaid: ReadonlySet<string> = new Set(["message", "stack", "_tag", "name", "cause", "errno"])
+
+/** How far fields are followed into values they hold: an error's reason holds its own fields. */
+const deepest = 3
+
+/** The kind of an error: its tag, else its class's name when that is not the plain `Error`. */
+const kindOf = (value: object): string | undefined => {
+  const tag = (value as { readonly _tag?: unknown })._tag
+  if (typeof tag === "string" && tag !== "") return tag
+  return value instanceof Error && value.name !== "Error" && value.name !== "" ? value.name : undefined
+}
+
+/** An error's own words, when it has any. */
+const wordsOf = (value: object): string | undefined => {
+  const message = (value as { readonly message?: unknown }).message
+  return typeof message === "string" && message.trim() !== "" ? message.trim() : undefined
+}
+
+/** One field as text: a scalar as itself, a list item by item, an object as what it says; nothing for the rest. */
+const fieldText = (value: unknown, depth: number): string | undefined => {
+  if (typeof value === "string") return value === "" ? undefined : value
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value)
+  if (typeof value !== "object" || value === null || depth >= deepest) return undefined
+  if (Array.isArray(value)) {
+    const items = value.map((item) => fieldText(item, depth + 1)).filter((item) => item !== undefined)
+    return items.length === 0 ? undefined : `[${items.join(", ")}]`
+  }
+  return said(value, depth + 1)
+}
+
+/** Whether `words` hold `text` as a whole: a code, a path or a name, never the middle of a longer one. */
+const holds = (words: string, text: string): boolean =>
+  new RegExp(`(?<![\\w-])${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(words)
+
+/**
+ * What an object says about itself: its words, then its kind and each field
+ * its words do not already hold, so a tagged error with no message still
+ * names itself. Nothing when it says nothing.
+ */
+const said = (value: object, depth: number): string | undefined => {
+  const words = wordsOf(value)
+  const kind = kindOf(value)
+  const fields: Array<string> = []
+  for (const [key, field] of Object.entries(value)) {
+    if (unsaid.has(key)) continue
+    const text = fieldText(field, depth)
+    if (text !== undefined && (words === undefined || !holds(words, text))) fields.push(`${key}: ${text}`)
+  }
+  const named = kind !== undefined && (words === undefined || !holds(words, kind)) ? [kind, ...fields] : fields
+  if (words === undefined) return named.length === 0 ? undefined : named.join(", ")
+  return named.length === 0 ? words : `${words} (${named.join(", ")})`
+}
+
+/**
+ * What an error says, as one text: its message, then its kind (`_tag`, or a
+ * class name other than `Error`) and each field the message does not already
+ * hold, followed into the values it holds, such as a platform error's
+ * `reason`. A tagged error with no message still names itself and its fields.
+ * Any other value is itself as text. An object is never `[object Object]`:
+ * one that says nothing, or that cannot be read, is `an error with no
+ * message`.
+ *
+ * Every part turns an error into text with this, so a failure reads the same
+ * wherever the program prints it.
+ *
+ * @throws {never}
+ * @category rendering
+ * @since 0.1.0
+ */
+export const errorText = (cause: unknown): string => {
+  try {
+    return typeof cause === "object" && cause !== null ? said(cause, 0) ?? mute : String(cause)
+  } catch {
+    return mute
+  }
+}
+
+/** A URL's user name and password, wherever a text holds one. */
+const credential = /(\b[a-z][a-z0-9+.-]*:\/*)[^\s"']*@/gi
+
+/** The longest error a line quotes. */
+const longest = 300
+
+/**
+ * What went wrong, in one line: {@link errorText}, with no URL's user name or
+ * password and no more than 300 characters.
+ *
+ * @throws {never}
+ * @category rendering
+ * @since 0.1.0
+ */
+export const errorLine = (cause: unknown): string => {
+  const line = errorText(cause).replace(credential, "$1").replace(/\s+/g, " ").trim()
+  return line.length > longest ? `${line.slice(0, longest)}…` : line
+}

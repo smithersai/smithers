@@ -129,7 +129,7 @@ describe("a replay whose recorder stopped", { timeout: 600_000 }, () => {
     expect(failed?.message).toMatch(/^the replay stopped at \w{7}: smthrs-observe, which records what /)
   })
 
-  it("still fails as before for a run that failed for another reason", async () => {
+  it("says nothing of the recorder for a run that failed for another reason", async () => {
     const root = repository()
     const directory = track(mkdtempSync(join(tmpdir(), "recorder-other-")))
     const command = join(directory, "smthrs")
@@ -138,8 +138,8 @@ describe("a replay whose recorder stopped", { timeout: 600_000 }, () => {
       `#!/bin/sh\ncase " $* " in *" --plan "*) exec ${smthrs} "$@";; esac\nif [ "$(git log -1 --format=%s)" = three ]; then echo broken; exit 1; fi\nexec ${smthrs} "$@"\n`
     )
     chmodSync(command, 0o755)
-    const failed = await replay(root, command, 2).then(() => undefined, (cause: Failure) => cause)
-    expect(failed?.code).toBe("command-failed")
-    expect(failed?.message).toContain("smthrs ci wrote no run record")
+    const report = await replay(root, command, 2)
+    expect(report.stopped).toMatch(/^the replay stopped at \w{7} on an error of its own: smthrs ci wrote no run record/)
+    expect(report.stopped).not.toContain("smthrs-observe")
   })
 })

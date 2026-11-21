@@ -5,7 +5,7 @@
  * @since 0.1.0
  */
 
-import { exitCodes, name } from "../contract/Command.ts"
+import { errorLine, exitCodes, name } from "../contract/Command.ts"
 
 /**
  * A stage of a replay: what was running, and at which commit.
@@ -93,33 +93,14 @@ const speaker = (told: Told): string =>
  */
 export const unanswered = (told: Told): string => `${speaker(told)} stopped without an answer${where(told)}`
 
-/** A URL's user name and password, wherever a text holds one. */
-const credential = /(\b[a-z][a-z0-9+.-]*:\/*)[^\s"']*@/gi
-
-/** An error's message, else the value as text. A value that cannot say what it is has no message. */
-const textOf = (cause: unknown): string => {
-  try {
-    return cause instanceof Error ? cause.message : String(cause)
-  } catch {
-    return "an error with no message"
-  }
-}
-
-/** The longest reason a line quotes. */
-const longest = 300
-
 /**
- * What went wrong, in one line: an error's message, else the value as text,
- * with no URL's user name or password and no more than 300 characters.
+ * What went wrong, in one line; see `errorLine`.
  *
  * @throws {never}
  * @category rendering
  * @since 0.1.0
  */
-export const reasonOf = (cause: unknown): string => {
-  const line = textOf(cause).replace(credential, "$1").replace(/\s+/g, " ").trim()
-  return line.length > longest ? `${line.slice(0, longest)}…` : line
-}
+export const reasonOf = (cause: unknown): string => errorLine(cause)
 
 /**
  * The line for a program stopped by an error no part of it answers for.

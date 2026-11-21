@@ -1,0 +1,19 @@
+/** A process spawner that dies, as a defect of the program's own does, at one commit. */
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+
+/**
+ * The real spawner, except that the run of Smithers build that writes a run record, in a checkout of the commit
+ * whose subject is `subject`, dies with `defect` instead of starting.
+ */
+export const diesAt = (subject: string, defect: unknown) => Layer.effect(ChildProcessSpawner, effect {
+  const real = try ChildProcessSpawner
+  return makeSpawner((process) => effect {
+    if (process._tag === "StandardCommand" && process.args.includes("--results-file")) {
+      const head = ChildProcess.make("git", ["log", "-1", "--format=%s"], { cwd: process.options.cwd })
+      const at = real.string(head) catch () => ""
+      if (at.trim() === subject) return try die(defect)
+    }
+    return try real.spawn(process)
+  })
+})
