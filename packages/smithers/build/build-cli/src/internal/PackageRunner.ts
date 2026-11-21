@@ -88,6 +88,7 @@ import {
 import * as Parts from "./Parts.ts"
 import * as Path from "./Path.ts"
 import * as PathTools from "./PathTools.ts"
+import * as RecordStore from "./RecordStore.ts"
 import * as RulePolicy from "./RulePolicy.ts"
 import * as NativeRules from "./rules/NativeRules.ts"
 import { byCodeUnit, posix, sha256Hex } from "./Text.ts"
@@ -3106,6 +3107,27 @@ const executeWith = (
         return { ...record, kept: { archive: record.id!, outside: left.outside, gone: left.gone } }
       })
     /** Removes the kept files of records a declaration no longer holds. */
+    /** Where the records of reads are kept: the cache's content store. */
+    const recordStore = RecordStore.contentStore(root, cacheDirectory)
+    /** The records of reads a declaration's cache entry names, each read from the content store. */
+    const recordsOf = (
+      node: PackageNode,
+      key: string
+    ): Effect.Effect<ReadonlyArray<ObservedReads.Record>, unknown> =>
+      Effect.gen(function*() {
+        const entry = yield* cacheGet(node, key)
+        return yield* joined(() => RecordStore.load(recordStore, entry?.output))
+      })
+    /** Writes a declaration's records into the content store and the entry that names them into the cache. */
+    const putRecords = (
+      node: PackageNode,
+      stored: ObservedReads.Stored,
+      key: string
+    ): Effect.Effect<void, unknown> =>
+      Effect.gen(function*() {
+        const entry = yield* joined(() => RecordStore.save(recordStore, stored))
+        yield* cachePut(node, entry, key, false)
+      })
     const prune = (
       observed: NonNullable<PackageNode["observed"]>,
       stored: ObservedReads.Stored
@@ -3283,7 +3305,7 @@ const executeWith = (
         if ("reason" in (observing ??= services.observer(services.sandboxHost()))) return kept
         const records = new Map<string, ReadonlyArray<ObservedReads.Record>>()
         for (const node of candidates) {
-          const stored = ObservedReads.decode((yield* cacheGet(node, node.observed!.key))?.output)
+          const stored = yield* recordsOf(node, node.observed!.key)
           if (stored.length === 0) continue
           records.set(node.label, stored)
           kept.set(node.label, new Set(stored.map((record) => record.id!)))
@@ -3376,7 +3398,7 @@ const executeWith = (
         const machine = yield* onMachine(node)
         const place = machine?.tree ?? root
         const checked = parts.begin(node.label, "check")
-        const earlier = ObservedReads.decode((yield* cacheGet(node, observed.key))?.output)
+        const earlier = yield* recordsOf(node, observed.key)
         const awaited = awaitedBy(node)
         let why: string | undefined
         for (const stored of earlier) {
@@ -3414,12 +3436,11 @@ const executeWith = (
             // What it left was put back under its record's old name: the targets after it read it under the new one.
             const mine = wroteHere.get(node.label)
             if (mine !== undefined) wroteHere.set(node.label, { ...mine, id: anchored.id! })
-            // The record fit before under ids of the same length, so it fits now.
-            yield* cachePut(
+            // The record held as many paths before, so it is stored now.
+            yield* putRecords(
               node,
-              ObservedReads.store(anchored, earlier.filter((record) => record !== stored)),
-              observed.key,
-              false
+              ObservedReads.store(anchored, earlier.filter((record) => record !== stored))!,
+              observed.key
             )
           }
           checked()
@@ -3619,12 +3640,17 @@ const executeWith = (
             keep(node, observed, machine === undefined ? read.value : Machine.recorded(read.value, machine))
           )
           const stored = ObservedReads.store(record, earlier)
-          if (stored === undefined) unstored(node, "it read more paths than one record holds")
-          else {
+          if (stored === undefined) {
+            unstored(
+              node,
+              `it read ${ObservedReads.pathsOf(record).toLocaleString("en-US")} paths, more than the ` +
+                `${ObservedReads.maximumPaths.toLocaleString("en-US")} one record holds`
+            )
+          } else {
             yield* timed(
               node.label,
               "store",
-              Effect.andThen(cachePut(node, stored, observed.key, false), prune(observed, stored))
+              Effect.andThen(putRecords(node, stored, observed.key), prune(observed, stored))
             )
             wroteHere.set(node.label, { label: node.label, id: record.id!, made, touched })
           }

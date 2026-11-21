@@ -87,7 +87,7 @@ import { byCodeUnit } from "./Text.ts"
  * @category constants
  * @since 1.0.0
  */
-export const format = "smthrs-observed-reads/2"
+export const format = "smthrs-observed-reads/3"
 
 /**
  * Records kept for one declaration. A fresh checkout and a tree a run has
@@ -99,26 +99,23 @@ export const format = "smthrs-observed-reads/2"
 export const maximumRecords = 4
 
 /**
- * The largest set of records stored for one declaration, in JSON bytes. The
- * records are one entry of the local cache, so they hold what one entry holds
- * (`Cache.entryLimit`, 16 MiB), less room for the entry around them. A record
- * takes about 150 bytes for each path its run read: about 100,000 paths.
+ * The most paths one record holds: what its run read, the directories it
+ * listed and the files steps before it gave it. A run that read more is not
+ * stored. A TypeScript build of 64 packages of elizaOS/eliza reads 168,803.
  *
  * @category constants
  * @since 1.0.0
  */
-export const maximumBytes = 15 * 1024 * 1024
+export const maximumPaths = 400_000
 
 /**
- * The most JSON members (array elements and object keys) the records stored
- * for one declaration hold: what one cache entry holds
- * (`Cache.outputMemberLimit`), less room for the entry around them. A path
- * read takes three.
+ * The paths a record holds, counted against {@link maximumPaths}.
  *
- * @category constants
+ * @category results
  * @since 1.0.0
  */
-export const maximumMembers = 499_000
+export const pathsOf = (record: Record): number =>
+  record.reads.length + record.lists.length + (record.given?.length ?? 0)
 
 /** Symbolic links one path may pass through before resolving it fails. */
 const maximumLinks = 40
@@ -3088,47 +3085,26 @@ const isRecord = (value: unknown): value is Record => {
 }
 
 /**
- * Decodes stored records; any other shape, or another format, is none.
+ * A record read back from where it was kept; any other shape is none.
  *
  * @category results
  * @since 1.0.0
  */
-export const decode = (output: unknown): ReadonlyArray<Record> => {
-  if (typeof output !== "object" || output === null) return []
-  const value = output as { readonly kind?: unknown; readonly format?: unknown; readonly records?: unknown }
-  if (value.kind !== kind || value.format !== format || !Array.isArray(value.records)) return []
-  return value.records.every(isRecord) ? value.records : []
-}
+export const asRecord = (value: unknown): Record | undefined => isRecord(value) ? value : undefined
 
 /**
- * Puts a new record in front of the stored ones and keeps the newest that
- * fit {@link maximumRecords} and {@link maximumBytes}. `undefined` when the
- * new record alone is too large to store.
+ * Puts a new record in front of the stored ones and keeps the newest
+ * {@link maximumRecords}. `undefined` when the new record holds more than
+ * {@link maximumPaths} paths.
  *
  * @category results
  * @since 1.0.0
  */
 export const store = (added: Record, earlier: ReadonlyArray<Record>): Stored | undefined => {
-  const records: Array<Record> = []
-  let bytes = 0
-  // The three keys of what is stored.
-  let members = 3
+  if (pathsOf(added) > maximumPaths) return undefined
   // A run that read what an earlier one read replaces that one's record.
   const others = earlier.filter((record) => record.id !== added.id)
-  for (const candidate of [added, ...others].slice(0, maximumRecords)) {
-    bytes += Buffer.byteLength(JSON.stringify(candidate))
-    members += 1 + membersOf(candidate)
-    if (bytes > maximumBytes || members > maximumMembers) break
-    records.push(candidate)
-  }
-  return records.length === 0 ? undefined : { kind, format, records }
-}
-
-/** The array elements and object keys of a JSON value, counted as the cache counts them. */
-const membersOf = (value: unknown): number => {
-  if (Array.isArray(value)) return value.reduce((sum: number, item: unknown) => sum + membersOf(item), value.length)
-  if (typeof value !== "object" || value === null) return 0
-  return Object.values(value).reduce((sum: number, item: unknown) => sum + membersOf(item), Object.keys(value).length)
+  return { kind, format, records: [added, ...others].slice(0, maximumRecords) }
 }
 
 /**

@@ -1553,30 +1553,21 @@ describe("a tracer that fails", () => {
       `F_OK) = -1 ENOENT (No such file or directory)\\n", ${values} }' > "$out"`
   }
 
-  // Over the 12 MiB records were held to before, under what one cache entry holds: 31,000 paths of 400 characters.
-  posixIt("stores and reuses a record of 13 MiB", async () => {
-    const { logs, run, tracer } = await fixture()
-    const flooding = await tracer(flood(31000, 200, 2))
-    expect(await run(["check"], flooding)).toEqual({ check: "ran" })
-    expect(logs.filter((line) => line.includes("not cached"))).toEqual([])
-    expect(await run(["check"], flooding)).toEqual({ check: "hit" })
-  })
-
-  posixIt("stores nothing when the run read more than a record holds", async () => {
-    const { logs, run, tracer } = await fixture()
-    // 110,000 paths of 110 characters: over 15 MiB.
-    const flooding = await tracer(flood(110000, 110))
-    expect(await run(["check"], flooding)).toEqual({ check: "ran" })
-    expect(logs).toContain("//:check  not cached: it read more paths than one record holds")
-  })
-
-  // 170,000 short paths make 10 MiB but over 500,000 members, more than one cache entry holds: the run is refused
-  // with the reason, not stored and then refused by the cache.
-  posixIt("stores nothing when the run read more paths than a cache entry counts", async () => {
+  // eliza's `turbo run build` reads 168,803 paths. 170,000 paths are over 500,000 members in one JSON value, more
+  // than one cache entry holds: the record is kept in the content store and the entry names it.
+  posixIt("stores and reuses a run that read 170,000 paths", async () => {
     const { logs, run, tracer } = await fixture()
     const flooding = await tracer(flood(170000, 8))
     expect(await run(["check"], flooding)).toEqual({ check: "ran" })
-    expect(logs).toContain("//:check  not cached: it read more paths than one record holds")
+    expect(logs.filter((line) => line.includes("not cached") || line.includes("could not store"))).toEqual([])
+    expect(await run(["check"], flooding)).toEqual({ check: "hit" })
+  })
+
+  posixIt("stores nothing when the run read more paths than a record holds, and says how many", async () => {
+    const { logs, run, tracer } = await fixture()
+    const flooding = await tracer(flood(400_001, 1))
+    expect(await run(["check"], flooding)).toEqual({ check: "ran" })
+    expect(logs).toContain("//:check  not cached: it read 400,001 paths, more than the 400,000 one record holds")
     expect(logs.filter((line) => line.includes("could not store"))).toEqual([])
   })
 

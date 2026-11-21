@@ -376,6 +376,17 @@ the workspace, smallest first, and the tools and installed packages last. So a
 run that has to happen is known before an installed package is read. When
 several paths changed, the line names the first one found.
 
+A record is kept in the cache's content store, `<cache directory>/cas`, one path
+per line, sorted, and compressed with gzip, under the SHA-256 of its bytes. The
+cache entry a build looks up holds only that digest, the record's number of
+paths and its size, so a record of 168,803 paths, as a TypeScript build of 64
+packages reads, costs the entry a few hundred bytes. A build reads a record a
+line at a time, and uses it only when its bytes have its digest and its size
+and its lines are the paths the entry counts; otherwise the step runs. Records
+stay in the local cache: a shared cache never gives one. After an upgrade from a
+build that kept records in the cache entry itself, each recorded step runs once
+more, and stores its record the new way.
+
 **Where the time went.** A target's row also carries `parts`: the milliseconds
 its run spent on each part, as `ms`, and the CPU time of each part, as `cpuMs`,
 on Linux.
@@ -691,20 +702,20 @@ command starts itself is recorded as any program is.
 **When nothing is stored.** A green run stores nothing when what it read cannot
 all be known, and says why on its own line:
 
-| Reason                                                                     | What happened                                                                                 |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `it opened a network connection (uv to 151.101.0.223 port 443)`            | What a network answers is in no record. The line names the program and the first address      |
-| `it reached a program outside the run ...`                                 | A daemon reads files this run's trace does not show. A server the run starts itself is in it  |
-| `it changed its view of the file system`                                   | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says           |
-| `<path> changed while it ran`, `was removed while it ran`                  | Something else wrote a file the run read, so what the run saw can no longer be measured       |
-| `its trace ...`                                                            | A line of the trace could not be read in full                                                 |
-| `its trace does not say where /proc/self/fd/3/x led`                       | With strace, a path below a descriptor is followed only for a call that opened a file there   |
-| `it started /usr/bin/ping, which needs rights its jail takes away`         | See below: it ran again with no jail and no tracer, and that run is the verdict               |
-| `<path> leads through a link of a process ...`, `... goes back up ...`     | A link of the workspace, or a `..`, leads into `/proc/self`, which only the run could follow  |
-| `it read more paths than one record holds`                                 | The record would not fit one cache entry: 15 MiB or 499,000 JSON members, about 100,000 paths |
-| `it passed, but failed while its reads were recorded`                      | See below                                                                                     |
-| `its recorded run failed and its plain run passed; it runs unrecorded ...` | See below: the run after such a one, of a target another waits for                            |
-| `a step after it may read what it leaves, and its reads are not recorded`  | The host cannot record reads, and another target waits for this one                           |
+| Reason                                                                     | What happened                                                                                    |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `it opened a network connection (uv to 151.101.0.223 port 443)`            | What a network answers is in no record. The line names the program and the first address         |
+| `it reached a program outside the run ...`                                 | A daemon reads files this run's trace does not show. A server the run starts itself is in it     |
+| `it changed its view of the file system`                                   | After `mount`, `pivot_root` or `chroot`, a path no longer names what the trace says              |
+| `<path> changed while it ran`, `was removed while it ran`                  | Something else wrote a file the run read, so what the run saw can no longer be measured          |
+| `its trace ...`                                                            | A line of the trace could not be read in full                                                    |
+| `its trace does not say where /proc/self/fd/3/x led`                       | With strace, a path below a descriptor is followed only for a call that opened a file there      |
+| `it started /usr/bin/ping, which needs rights its jail takes away`         | See below: it ran again with no jail and no tracer, and that run is the verdict                  |
+| `<path> leads through a link of a process ...`, `... goes back up ...`     | A link of the workspace, or a `..`, leads into `/proc/self`, which only the run could follow     |
+| `it read 412,345 paths, more than the 400,000 one record holds`            | A record holds 400,000 paths at most: files read, directories listed, files steps before it gave |
+| `it passed, but failed while its reads were recorded`                      | See below                                                                                        |
+| `its recorded run failed and its plain run passed; it runs unrecorded ...` | See below: the run after such a one, of a target another waits for                               |
+| `a step after it may read what it leaves, and its reads are not recorded`  | The host cannot record reads, and another target waits for this one                              |
 
 A program whose file asks for rights (set-user-id, set-group-id, a file
 capability, as `ping` has) gets none in a traced run, nor in the jail that gives

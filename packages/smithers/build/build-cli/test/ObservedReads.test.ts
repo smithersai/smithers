@@ -12,8 +12,8 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import * as Cache from "../src/Cache.ts"
 import * as ObservedReads from "../src/internal/ObservedReads.ts"
+import * as RecordStore from "../src/internal/RecordStore.ts"
 
 const temporary: Array<string> = []
 afterEach(async () => {
@@ -29,6 +29,28 @@ const directory = async (): Promise<string> => {
 const read = (text: string, cwd = "/w"): ObservedReads.Trace => ObservedReads.read(() => text.split("\n"), cwd)
 
 const paths = (map: ReadonlyMap<string, number>): ReadonlyArray<string> => [...map.keys()].sort()
+
+/** Stores records in a content store of a new directory and reads them back, as a build does. */
+const roundTrip = async (stored: ObservedReads.Stored | undefined): Promise<ReadonlyArray<ObservedReads.Record>> => {
+  const cas = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-records-"))
+  try {
+    return await RecordStore.load(cas, await RecordStore.save(cas, stored!))
+  } finally {
+    await Fs.rm(cas, { recursive: true, force: true })
+  }
+}
+
+/** A record as it comes back: its paths sorted. */
+const inStoredOrder = (record: ObservedReads.Record): ObservedReads.Record => {
+  const byPath = (a: ReadonlyArray<unknown>, b: ReadonlyArray<unknown>): number =>
+    (a[0] as string) < (b[0] as string) ? -1 : (a[0] as string) > (b[0] as string) ? 1 : 0
+  return {
+    ...record,
+    reads: [...record.reads].sort(byPath),
+    lists: [...record.lists].sort(byPath),
+    ...(record.given === undefined ? {} : { given: [...record.given].sort(byPath) })
+  }
+}
 
 describe("the tracer command", () => {
   it("runs the command under the tracer and names the trace file", () => {
@@ -1819,7 +1841,7 @@ describe("what a run read that an earlier step wrote", () => {
     expect(record.left).toBeUndefined()
     const { id, ...body } = record
     expect(id).toBe(ObservedReads.idOf(body))
-    expect(ObservedReads.decode(ObservedReads.store(record, []))).toEqual([record])
+    expect(await roundTrip(ObservedReads.store(record, []))).toEqual([inStoredOrder(record)])
   })
 
   it("records a run that depends on no step, or read nothing of one, as before", async () => {
@@ -3063,11 +3085,9 @@ describe("the variables of the host a run could have used", () => {
     const moved = ObservedReads.anchored(stored, () => "i2")
     expect(moved?.variables).toEqual(stored.variables)
     expect(moved?.id).toBe(ObservedReads.idOf({ ...stored, from: [["//:install", "i2"]] }))
-    expect(ObservedReads.decode(ObservedReads.store(stored, []))).toEqual([stored])
-    const wrong = { ...stored, variables: [["COMMIT"]] }
-    expect(ObservedReads.decode({ kind: "observed", format: ObservedReads.format, records: [wrong] })).toEqual([])
-    const noList = { ...stored, variables: "COMMIT" }
-    expect(ObservedReads.decode({ kind: "observed", format: ObservedReads.format, records: [noList] })).toEqual([])
+    expect(await roundTrip(ObservedReads.store(stored, []))).toEqual([stored])
+    expect(ObservedReads.asRecord({ ...stored, variables: [["COMMIT"]] })).toBeUndefined()
+    expect(ObservedReads.asRecord({ ...stored, variables: "COMMIT" })).toBeUndefined()
   })
 })
 
@@ -3082,48 +3102,35 @@ describe("the stored records", () => {
     id: "2"
   }
 
-  it("keeps the newest records that fit", () => {
+  it("keeps the newest records that fit", async () => {
     const stored = ObservedReads.store(one, [])
     expect(stored).toEqual({ kind: "observed", format: ObservedReads.format, records: [one] })
-    expect(ObservedReads.decode(stored)).toEqual([one])
-    expect(ObservedReads.decode(ObservedReads.store(full, [one]))).toEqual([full, one])
+    expect(await roundTrip(stored)).toEqual([one])
+    expect(await roundTrip(ObservedReads.store(full, [one]))).toEqual([full, one])
     const many = ObservedReads.store(one, Array.from({ length: 6 }, (_, index) => ({ ...one, id: `other-${index}` })))
     expect(many?.records.length).toBe(ObservedReads.maximumRecords)
     // A run that read what an earlier run read takes that record's place.
     expect(ObservedReads.store(one, [full, { ...one }])?.records).toEqual([one, full])
-    // Too many bytes for one cache entry, in few members.
-    const large: ObservedReads.Record = {
-      reads: Array.from({ length: 120_000 }, (_, index) => [`${"long-directory-name/".repeat(8)}${index}`, "-"]),
-      lists: [],
-      id: "large"
+    // A record holds 400,000 paths at most, however long they are; one over is not stored.
+    const most: ObservedReads.Record = {
+      reads: Array.from({ length: ObservedReads.maximumPaths - 2 }, (_, index) => [`${index}`, "-"]),
+      lists: [["d", "00", []]],
+      given: [["node_modules/a.js", "f:00", 0]],
+      from: [["//:install", "i1"]],
+      id: "most"
     }
-    expect(Buffer.byteLength(JSON.stringify(large))).toBeGreaterThan(ObservedReads.maximumBytes)
-    expect(ObservedReads.store(large, [one])).toBeUndefined()
-    const half: ObservedReads.Record = { reads: large.reads.slice(0, 60_000), lists: [], id: "half" }
-    expect(ObservedReads.store(half, [{ ...half, id: "half-again" }, one])?.records).toEqual([half])
-    // Too many members for one cache entry, in few bytes: three for each path.
-    const short: ObservedReads.Record = {
-      reads: Array.from({ length: 170_000 }, (_, index) => [`${index}`, "-"]),
-      lists: [],
-      id: "short"
-    }
-    expect(Buffer.byteLength(JSON.stringify(short))).toBeLessThan(ObservedReads.maximumBytes)
-    expect(ObservedReads.store(short, [])).toBeUndefined()
-    expect(ObservedReads.store({ ...short, reads: short.reads.slice(0, 100_000) }, [])?.records).toHaveLength(1)
-  })
-
-  // The records are one entry of the local cache: a set the store keeps is one the cache takes.
-  it("keeps no more than one cache entry holds", () => {
-    expect(ObservedReads.maximumBytes).toBeLessThan(Cache.entryLimit)
-    expect(ObservedReads.maximumMembers).toBeLessThan(Cache.outputMemberLimit)
+    expect(ObservedReads.pathsOf(most)).toBe(ObservedReads.maximumPaths)
+    expect(ObservedReads.store(most, [one])?.records).toEqual([most, one])
+    const over = { ...most, reads: [...most.reads, ["one-more", "-"] as const], id: "over" }
+    expect(ObservedReads.store(over, [one])).toBeUndefined()
   })
 
   const digest = "a".repeat(64)
 
-  it("keeps what says that a record's files are kept, also when the record moves", () => {
+  it("keeps what says that a record's files are kept, also when the record moves", async () => {
     const kept = { archive: digest, outside: [["/home/u/bin/tool", "f:00:x"]], gone: ["stale.txt"] } as const
     const holding: ObservedReads.Record = { ...full, kept }
-    expect(ObservedReads.decode(ObservedReads.store(holding, []))).toEqual([holding])
+    expect(await roundTrip(ObservedReads.store(holding, []))).toEqual([holding])
     // The kept files are named by the id the record had, so a record under a new id still finds them.
     expect(ObservedReads.anchored(holding, () => "i2")?.kept).toEqual(kept)
     expect(ObservedReads.anchored(full, () => "i2")?.kept).toBeUndefined()
@@ -3144,7 +3151,7 @@ describe("the stored records", () => {
     expect(ObservedReads.idOf(kept)).not.toBe(id)
   })
 
-  it("moves a record to the new records of the steps it read from", () => {
+  it("moves a record to the new records of the steps it read from", async () => {
     // No step it read from stored a new record.
     expect(ObservedReads.anchored(full, () => undefined)).toBeUndefined()
     expect(ObservedReads.anchored(full, () => "i1")).toBeUndefined()
@@ -3153,7 +3160,7 @@ describe("the stored records", () => {
     const { id, ...body } = moved
     expect(body).toEqual({ reads: [], lists: full.lists, from: [["//:install", "i2"]], given: full.given, left: true })
     expect(id).toBe(ObservedReads.idOf(body))
-    expect(ObservedReads.decode(ObservedReads.store(moved, []))).toEqual([moved])
+    expect(await roundTrip(ObservedReads.store(moved, []))).toEqual([moved])
     // A record of a run that left nothing stays one.
     const { left: _, ...plain } = full
     expect(ObservedReads.anchored(plain, () => "i2")?.left).toBeUndefined()
@@ -3213,7 +3220,17 @@ describe("the stored records", () => {
         { ...stored, records: [{ ...full, kept: { archive: digest, outside: [], gone: "none" } }] },
         { ...stored, records: [{ ...full, kept: { archive: digest, outside: [], gone: [1] } }] }
       ]
-    ) expect(ObservedReads.decode(other)).toEqual([])
+    ) {
+      // An entry of another shape names no record; a record of another shape is none.
+      const entry = other as { readonly kind?: unknown; readonly format?: unknown; readonly records?: unknown }
+      const records = entry?.records
+      if (
+        entry?.kind === "observed" && entry.format === ObservedReads.format && Array.isArray(records) &&
+        typeof records[0] === "object" && records[0] !== null
+      ) {
+        expect(ObservedReads.asRecord(records[0])).toBeUndefined()
+      } else expect(RecordStore.references(other)).toEqual([])
+    }
   })
 })
 
