@@ -48,6 +48,7 @@ import * as Overflow from "./runners/Overflow.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as SandboxEgress from "./secrets/SandboxEgress.ts"
 import * as SocketAccess from "./SocketAccess.ts"
+import * as SocketHost from "./durable/SocketHost.ts"
 import * as SocketChecks from "./SocketChecks.ts"
 
 // Branch sandboxes on Cloudflare (decision 0013 §3, decision 0005 §2, docs/features/branch-workspace.md#the-machine):
@@ -85,7 +86,7 @@ export const terminalGate = <E>(
 export const terminalLoops = <R>(
   leases: () => ReadonlyArray<{ readonly admission: SocketAccess.Admission; readonly leaseUntil: number }>,
   renewDue: Effect.Effect<void, never, R>
-) => SocketAccess.renewalLoop(leases, renewDue, renewDue, "terminal")
+) => SocketHost.renewalLoop(leases, renewDue, renewDue, "terminal")
 
 /** The headers only ChatApi sets on a socket it hands the object; it strips any a browser sent (worker/branch/Terminals.ts). */
 const TERMINAL_HEADER = "x-smithers-terminal"
@@ -345,7 +346,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
         }
       >()
       /** One renewal at a time: a gate or the loop that finds one running waits for it. */
-      const flight = SocketAccess.singleFlight()
+      const flight = SocketHost.singleFlight()
       /** Every gate's one pending renewal: frames on lapsed leases start at most one fiber for the whole object. */
       let lapsed: (() => void) | undefined
       // The box's forge requests go to ChatApi's own entrypoint with props naming this object, and come back to it

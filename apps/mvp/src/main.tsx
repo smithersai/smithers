@@ -180,7 +180,10 @@ const wipe = pageWipe(
       wipeFailureRoot ??= createRoot(document.getElementById("root")!)
       wipeFailureRoot.render(<StrictMode><SmithersUiStyles withTheme /><main role="alert"><EmptyState
         title="Wipe failed"
-        action={<Button onClick={() => { void wipe.wipe().catch(() => undefined) }}>Retry</Button>}
+        action={<Button onClick={() => {
+          // recorded: wipe records its own failure and keeps the retry screen shown
+          void wipe.wipe().catch(() => undefined)
+        }}>Retry</Button>}
       /></main></StrictMode>)
     },
     // Read when used: a browser that blocks storage throws on reaching `localStorage`.
@@ -243,14 +246,14 @@ const reopen = async (
   }
   if (!reopenDue(marks, mark, within, Date.now())) {
     let delay = within
-    try { delay = Math.max(1, Number(marks.getItem(mark)) + within - Date.now()) } catch { /* Blocked storage skips the throttle. */ }
+    try { delay = Math.max(1, Number(marks.getItem(mark)) + within - Date.now()) } catch { /* expected: blocked storage skips the reopen throttle */ }
     return retain(delay)
   }
   if (!(await wipe.reopen(reason))) return retain(within)
   const pending = pendingReopens.get(mark)
   if (pending !== undefined) clearTimeout(pending)
   pendingReopens.delete(mark)
-  try { marks.setItem(mark, String(Date.now())) } catch { /* A blocked mark cannot prevent an accepted reopen. */ }
+  try { marks.setItem(mark, String(Date.now())) } catch { /* expected: blocked storage cannot prevent an accepted reopen */ }
   why()
   return true
 }

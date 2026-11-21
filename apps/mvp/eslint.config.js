@@ -4,7 +4,9 @@ import { noSharedInflight } from "./eslint.worker-inflight.js"
 
 export default [{
   files: ["worker/**/*.ts"],
-  ignores: ["worker/**/*.test.ts", "worker/**/test/**"],
+  // Durable Object instance coordinators (worker/durable/**, worker/runners/TranscriptHost.ts) intentionally serialize
+  // and coalesce work per object instance; worker/durable/boundary.test.ts forbids stateless Workers from importing them.
+  ignores: ["worker/**/*.test.ts", "worker/**/test/**", "worker/durable/**/*.ts", "worker/runners/TranscriptHost.ts"],
   languageOptions: { parser: tseslint.parser },
   plugins: { worker: { rules: { "request-owned-io": noSharedInflight } } },
   rules: { "worker/request-owned-io": "error" },

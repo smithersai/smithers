@@ -21,6 +21,7 @@ import * as Store from "./runners/RunContent.ts"
 import * as TranscriptHost from "./runners/TranscriptHost.ts"
 import * as SessionStore from "./SessionStore.ts"
 import * as SocketAccess from "./SocketAccess.ts"
+import * as SocketHost from "./durable/SocketHost.ts"
 import * as SocketChecks from "./SocketChecks.ts"
 import { resetBranches, shared, tracked } from "./test/branch.ts"
 import { branchRoles, testFile } from "./test/harness.ts"
@@ -1099,7 +1100,7 @@ describe("a host that never hibernates", () => {
   ) => {
     const renewedAt: Array<number> = []
     const expiredAt: Array<number> = []
-    const loop = SocketAccess.renewalLoop(
+    const loop = SocketHost.renewalLoop(
       () => leases,
       Effect.andThen(Effect.flatMap(now, (at) => Effect.sync(() => void renewedAt.push(at - start))), renewDue),
       Effect.flatMap(now, (at) =>
@@ -1415,7 +1416,7 @@ describe("authoritative renewal at the cached session end", () => {
           yield* Deferred.await(release)
           return outcome === "unavailable" ? "unverified" : yield* real(current)
         })
-      const renew = SocketAccess.singleFlight()(Effect.gen(function*() {
+      const renew = SocketHost.singleFlight()(Effect.gen(function*() {
         const current = viewer
         if (current === undefined || !SocketAccess.due(current.admission, current.lease.until, yield* now)) return
         const [answer] = yield* SocketAccess.renew("terminal", [current.admission], check, within)

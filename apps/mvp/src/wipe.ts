@@ -143,7 +143,7 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     return true
   })
 
-  // A failed stop cannot keep a sign-out guard held or prevent the page from leaving.
+  // expected: a failed stop cannot keep a sign-out guard held or block leaving
   const stopOnce = () => stopping ??= Promise.resolve().then(() => stop?.()).catch(() => undefined)
   const leave = (reason: WipeReason) =>
     (leaving ??= stopOnce()
@@ -155,7 +155,10 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     // Delivery can follow a sign-out that started after the broadcast. Retain that request until its guard releases.
     else if (host.locks !== undefined) void host.locks.request(SIGN_OUT_LOCK, { mode: "shared", signal: reopening.signal }, () => {
       if (!closed && !sealed) return leave(reason)
-    }).catch(() => undefined)
+    }).catch(() => {
+      // expected: aborted reopen lock request when the page closes or seals
+      return undefined
+    })
   }
 
   const marked = () => {

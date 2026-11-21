@@ -9,6 +9,7 @@ import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.ts"
 import { type Member, Rooms, RoomUnavailable } from "./branch/Rooms.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as SocketAccess from "./SocketAccess.ts"
+import * as SocketHost from "./durable/SocketHost.ts"
 import * as SocketChecks from "./SocketChecks.ts"
 
 // Branch rooms on Cloudflare (decision 0013 §4 and §10, docs/features/branch-workspace.md#presence): `RoomObject`, one
@@ -178,7 +179,7 @@ export const room = <S extends PresenceRoom.RoomSocket<R>, R, RS, RC>(ports: Por
   })
 
   /** One renewal at a time: a message or alarm that finds one running waits for it. */
-  const flight = SocketAccess.singleFlight()
+  const flight = SocketHost.singleFlight()
 
   /** Renews every lease due now (`SocketAccess.due`), one renewal at a time; a failure is logged. */
   const renewDue = flight(

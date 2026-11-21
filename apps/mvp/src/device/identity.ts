@@ -352,7 +352,7 @@ export const reopenDue = (marks: Pick<Storage, "getItem" | "setItem">, mark: str
     const last = marks.getItem(mark)
     return last === null || now - Number(last) >= within
   } catch {
-    // Blocked storage cannot prevent identity recovery.
+    // expected: blocked storage cannot prevent identity recovery
     return true
   }
 }
@@ -419,6 +419,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
     if (recovering !== undefined) {
       // Cancellation leaves the current binding intact, including requests already waiting for the decision.
       const reopening = recovering
+      // expected: a cancelled or failed reopen leaves the current binding intact
       const accepted = await reopening.catch(() => false)
       if (accepted) throw new DeviceIdentityRefused({ reason: "reauthorizing" })
       if (recovering === reopening) recovering = undefined
@@ -470,7 +471,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
               release()
             }
           })
-          // No automatic retry: a later ordinary request supplies the next attempt inside this same lock.
+          // expected: no automatic retry; a later ordinary request retries inside this lock
           tail = attempt.catch(() => undefined)
           return attempt
         },
@@ -498,6 +499,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
         // Start one serialized publication, but expose the observed refusal immediately: a stalled lock or store
         // must not turn it into AuthClient's generic timeout and leave private rows visible. The local hold remains
         // until publication completes; later outbox attempts await publication before any send and own its retries.
+        // expected: refusal throws immediately while later outbox attempts retry publication
         void publishCredential().catch(() => undefined)
         throw new DeviceIdentityRefused({ reason: "credential_stale" })
       }
@@ -509,7 +511,10 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
       const response = await next(new Request(`${origin}${SESSION_ROUTE}`, {
         cache: "no-store", signal: request.signal,
         headers: { [ACCEPTS_HEADER]: "credential-stale", ...(tag === undefined ? {} : { "x-smithers-session-tag": tag }) },
-      })).catch(() => undefined)
+      })).catch(() => {
+        // expected: transport or abort error on session reread means session is unavailable
+        return undefined
+      })
       return response === undefined ? undefined : observeCredential(response)
     }
     const checkIdentity = async (session: State | undefined) => {
@@ -536,6 +541,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
       } else {
         // Session reads and explicit sign-out stay usable while storage is blocked. Their ordinary traffic can
         // recover a failed publication even when a different page or worker owns the waiting outbox write.
+        // expected: read traffic does not fail on background publication retry
         void publication.catch(() => undefined)
       }
     }
@@ -546,6 +552,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
       const expected = bound === NO_DEVICE_DATA ? gate.personId ?? transientPerson : bound
       if (Date.now() < gate.until) throw new DeviceIdentityRefused({ reason: "credential_stale" })
       const checked = await readCurrent()
+      // expected: non-JSON session response is treated as unreadable session
       const session = checked?.ok ? readSession(await checked.json().catch(() => undefined)) : undefined
       await checkIdentity(session)
       if (session !== undefined && !session.signedIn && reauthorize !== undefined) {

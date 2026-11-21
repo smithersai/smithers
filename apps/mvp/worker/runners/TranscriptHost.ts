@@ -4,6 +4,7 @@ import { RETENTION_MS } from "../../src/features/transcript/contract.ts"
 import type { Frame } from "../../src/features/transcript/schema.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as SocketAccess from "../SocketAccess.ts"
+import * as SocketHost from "../durable/SocketHost.ts"
 import * as Store from "./RunContent.ts"
 
 // What a run's `RunContent` Durable Object does (worker/RunContent.ts), over ports a test fills: its SQLite, its
@@ -61,7 +62,7 @@ export const make = <R, RC>(ports: Ports<R, RC>) => {
   /** Storing events with their retention, and forgetting the transcript, never run beside each other. */
   const lock = Semaphore.withPermits(Semaphore.makeUnsafe(1), 1)
   /** One renewal at a time: a send or alarm that finds one running waits for it. */
-  const flight = SocketAccess.singleFlight()
+  const flight = SocketHost.singleFlight()
 
   /** Every watcher still in the sending set; a socket from before leases is closed `1012` first. */
   const watchers = Effect.gen(function* () {
