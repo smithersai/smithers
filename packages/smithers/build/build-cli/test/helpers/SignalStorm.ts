@@ -32,18 +32,18 @@ print("done")
 `
 
 /**
- * A program that takes a signal every 200 microseconds, far slower than a
- * recorded call, while it asks for a file over and over for as many seconds
- * as its first argument says: `python3 ticking.py <seconds> <path>`. It ends
- * recorded, stopped about 5,000 times a second, and prints `done`.
+ * A program that sends itself a signal, to a handler, as many times as its
+ * first argument says, one at a time, and prints `done`:
+ * `python3 self-signalling.py <times>`. Each is delivered before the next is
+ * sent, so each stops it once under a recorder however busy the machine, and
+ * none is pending again when it stops. A timer's signals are not counted so:
+ * one that fires while the process waits for a processor joins the one
+ * already pending.
  */
-export const ticking = String.raw`
-import os, signal, sys, time
-signal.signal(signal.SIGALRM, lambda sig, frame: None)
-signal.setitimer(signal.ITIMER_REAL, 0.0002, 0.0002)
-end = time.monotonic() + float(sys.argv[1])
-while time.monotonic() < end: os.stat(sys.argv[2])
-signal.setitimer(signal.ITIMER_REAL, 0, 0)
+export const selfSignalling = String.raw`
+import os, signal, sys
+signal.signal(signal.SIGUSR1, lambda sig, frame: None)
+for i in range(int(sys.argv[1])): os.kill(os.getpid(), signal.SIGUSR1)
 print("done")
 `
 

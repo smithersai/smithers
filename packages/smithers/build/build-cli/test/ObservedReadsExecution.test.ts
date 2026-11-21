@@ -25,7 +25,7 @@ import { executeEffect, ExecutionServices, executionServicesLive } from "../src/
 import { plan } from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as KernelProbe from "./helpers/KernelProbe.ts"
-import { signalling, survivedTimer, ticking } from "./helpers/SignalStorm.ts"
+import { selfSignalling, signalling, survivedTimer } from "./helpers/SignalStorm.ts"
 
 const temporary: Array<string> = []
 afterEach(async () => {
@@ -335,11 +335,11 @@ describe("an observed test", () => {
         SMTHRS_OBSERVE_WITH: "smthrs-observe"
       })
       if (supervisor === undefined) return
-      // A timer every 200 microseconds for four seconds: some 20,000 stops, each a round trip to the recorder.
+      // 12,000 signals it sends itself: 12,000 stops, each a round trip to the recorder.
       const { logs, run, write } = await fixture({
-        check: "/usr/bin/python3 ticking.py 4 input.txt && /bin/cat input.txt > /dev/null"
+        check: "/usr/bin/python3 self-signalling.py 12000 && /bin/cat input.txt > /dev/null"
       })
-      await write("ticking.py", ticking)
+      await write("self-signalling.py", selfSignalling)
       const services = { ...executionServicesLive, observer: () => ({ tracer: supervisor, supervisor: true as const }) }
       expect(await run(["check"], services)).toEqual({ check: "ran" })
       expect(logs.filter((line) => line.includes("for signals"))).toEqual([

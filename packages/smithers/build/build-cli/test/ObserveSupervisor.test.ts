@@ -20,7 +20,7 @@ import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import * as ObservedReads from "../src/internal/ObservedReads.ts"
 import * as Races from "./helpers/Races.ts"
-import { signalling, survivedTimer, ticking } from "./helpers/SignalStorm.ts"
+import { selfSignalling, signalling, survivedTimer } from "./helpers/SignalStorm.ts"
 
 const temporary: Array<string> = []
 afterEach(async () => {
@@ -603,12 +603,12 @@ describe("smthrs-observe and signals faster than a call", () => {
   supervised(
     "counts the signal stops of a run in its trace, and writes none for a run that took no signal",
     async () => {
-      const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-ticking-")))
+      const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-self-signalling-")))
       temporary.push(base)
-      const script = Path.join(base, "ticking.py")
-      await Fs.writeFile(script, ticking)
+      const script = Path.join(base, "self-signalling.py")
+      await Fs.writeFile(script, selfSignalling)
       const trace = Path.join(base, "trace")
-      const run = spawnSync(supervisor!, [trace, "--", "python3", script, "1", script], {
+      const run = spawnSync(supervisor!, [trace, "--", "python3", script, "3000"], {
         encoding: "utf8",
         timeout: 60_000
       })
@@ -618,8 +618,9 @@ describe("smthrs-observe and signals faster than a call", () => {
       const counted = lines.map((line) => /^\d+ \+\+\+ signal stops: (\d+) \+\+\+$/.exec(line)?.[1]).find((n) =>
         n !== undefined
       )
-      // A second of a timer every 200 microseconds: about 5,000, however busy the machine.
-      expect(Number(counted)).toBeGreaterThan(1_000)
+      // One stop for each signal it sent itself, and any the program's start took.
+      expect(Number(counted)).toBeGreaterThanOrEqual(3_000)
+      expect(Number(counted)).toBeLessThan(3_100)
       expect(ObservedReads.read(() => lines, base).signalStops).toBe(Number(counted))
       const quiet = spawnSync(supervisor!, [trace, "--", "/bin/cat", script], { encoding: "utf8", timeout: 60_000 })
       expect(quiet.status, quiet.stderr).toBe(0)
