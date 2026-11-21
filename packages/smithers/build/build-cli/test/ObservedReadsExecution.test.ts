@@ -24,6 +24,7 @@ import * as ObservedReads from "../src/internal/ObservedReads.ts"
 import { executeEffect, ExecutionServices, executionServicesLive } from "../src/internal/PackageRunner.ts"
 import { plan } from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
+import { signalling, survivedTimer } from "./helpers/SignalStorm.ts"
 
 const temporary: Array<string> = []
 afterEach(async () => {
@@ -300,18 +301,12 @@ describe("an observed test", () => {
         SMTHRS_OBSERVE_WITH: "smthrs-observe"
       })
       if (supervisor === undefined) return
-      // A timer every two microseconds, to a handler, while the program asks for a file: it ends at once unrecorded.
-      const storm = [
-        "import os, signal",
-        "signal.signal(signal.SIGALRM, lambda sig, frame: None)",
-        "signal.setitimer(signal.ITIMER_REAL, 2e-6, 2e-6)",
-        "for i in range(20000): os.stat('input.txt')",
-        "signal.setitimer(signal.ITIMER_REAL, 0, 0)"
-      ].join("\n")
+      // A timer, to a handler, while the program asks for a file: unrecorded, it ends with this timer.
+      const timer = survivedTimer()
       const { logs, run, write } = await fixture({
-        check: "/usr/bin/python3 storm.py && /bin/cat input.txt > /dev/null"
+        check: `/usr/bin/python3 storm.py ${timer} input.txt && /bin/cat input.txt > /dev/null`
       })
-      await write("storm.py", `${storm}\n`)
+      await write("storm.py", signalling)
       const services = { ...executionServicesLive, observer: () => ({ tracer: supervisor, supervisor: true as const }) }
       expect(await run(["check"], services)).toEqual({ check: "ran" })
       expect(logs).toContain(

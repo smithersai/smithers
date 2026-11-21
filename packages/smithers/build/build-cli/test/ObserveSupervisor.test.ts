@@ -18,6 +18,7 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import * as ObservedReads from "../src/internal/ObservedReads.ts"
+import { signalling, survivedTimer } from "./helpers/SignalStorm.ts"
 
 const temporary: Array<string> = []
 afterEach(async () => {
@@ -485,30 +486,17 @@ describe("smthrs-observe and threads killed in the middle of calls", () => {
   }, 120_000)
 })
 
-/** A program whose timer sends SIGALRM every `us` microseconds to a handler while it asks for a file 20,000 times. */
-const signalling = String.raw`
-import os, signal, sys
-count = [0]
-def handler(sig, frame): count[0] += 1
-signal.signal(signal.SIGALRM, handler)
-every = float(sys.argv[1]) / 1e6
-signal.setitimer(signal.ITIMER_REAL, every, every)
-for i in range(20000): os.stat(sys.argv[2])
-signal.setitimer(signal.ITIMER_REAL, 0, 0)
-print("done")
-`
-
 describe("smthrs-observe and signals faster than a call", () => {
   supervised("stops a run whose signals come faster than a recorded call completes, and says so", async () => {
     const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-storm-")))
     temporary.push(base)
     const script = Path.join(base, "storm.py")
     await Fs.writeFile(script, signalling)
-    // Unrecorded, the program ends at once whatever its timer.
-    expect(spawnSync("python3", [script, "2", script], { encoding: "utf8", timeout: 20_000 }).stdout).toBe("done\n")
+    // Unrecorded, the program ends with this timer.
+    const timer = String(survivedTimer())
     const trace = Path.join(base, "trace")
     const started = Date.now()
-    const run = spawnSync(supervisor!, [trace, "--", "python3", script, "2", script], {
+    const run = spawnSync(supervisor!, [trace, "--", "python3", script, timer, script], {
       encoding: "utf8",
       timeout: 30_000
     })
