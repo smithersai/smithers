@@ -415,7 +415,10 @@ the structured envelope, so `--format json` is never mixed with progress.
 The `PackageExec.run` and `PackageExec.execute` options accept optional
 `stdout` and `stderr` terminals. A repository child writes its redacted,
 bounded live output through these terminals; omitted terminals use the process
-streams. Other invocations report tool output through `reporter`.
+streams. Other invocations report tool output through `reporter`. Either way a
+tool's first 200 lines are written as they arrive; past them, its last 80 lines
+are written when it ends, after a line that counts the lines left out, so the
+live view always ends with what a failing tool printed last.
 
 A `gitDiff` input's aggregate patch is limited to `256 MiB` across all
 path batches. A refusal names the target and asks to narrow `paths`.

@@ -180,8 +180,36 @@ describe("PackageExec reporter hooks", () => {
     expect(result.stdout + result.stderr).not.toContain("private-value")
   }, 100_000)
 
+  it("ends a cut live view with the tool's last lines, before the target fails", async () => {
+    const root = await fixture(
+      "i=0; while [ $i -lt 400 ]; do echo \"line$i\"; i=$((i+1)); done; echo 'FAIL the cause'; exit 1"
+    )
+    const reporter = recorder()
+    const summary = await PackageExec.run({
+      index: await openIndex(root),
+      cacheDirectory: ".flows",
+      verb: "auto",
+      patterns: ["//:good"],
+      readCache: false,
+      reporter
+    })
+    expect(summary.ok).toBe(false)
+    const { events } = reporter
+    const tool = events.filter((event) => event.startsWith("tool //:good "))
+    expect(tool[200]).toBe("tool //:good stdout … live output limit reached; captured task output is unchanged\n")
+    // 401 lines past the first 200: the newest 80 end the view, the cause last.
+    expect(tool.slice(201)).toEqual([
+      "tool //:good stdout … 121 more lines not shown; the last 80 follow\n",
+      ...Array.from({ length: 79 }, (_, index) => `tool //:good stdout line${321 + index}\n`),
+      "tool //:good stdout FAIL the cause\n"
+    ])
+    expect(events.lastIndexOf("tool //:good stdout FAIL the cause\n")).toBeLessThan(
+      events.indexOf("finished //:good failed")
+    )
+  })
+
   it("bounds the live lines a repository child writes to the parent process", async () => {
-    const root = await fixture("i=0; while [ $i -lt 250 ]; do echo \"line$i\"; i=$((i+1)); done")
+    const root = await fixture("i=0; while [ $i -lt 400 ]; do echo \"line$i\"; i=$((i+1)); done")
     const reporter = recorder()
     const captured = captureStandardStreams()
     const summary = await PackageExec.run({
@@ -197,8 +225,10 @@ describe("PackageExec reporter hooks", () => {
     expect(summary.ok).toBe(true)
     const stdout = captured.stdout.join("")
     expect(stdout).toContain("… live output limit reached")
-    expect(stdout).not.toContain("line249")
-    expect(stdout.split("\n").length).toBeLessThan(210)
+    expect(stdout).toContain("… 120 more lines not shown; the last 80 follow\nline320\n")
+    expect(stdout).not.toContain("line319\n")
+    expect(stdout.endsWith("line399\n")).toBe(true)
+    expect(stdout.split("\n").length).toBeLessThan(290)
   })
 
   it("reads the repository-child marker from the injected environment, not the ambient one", async () => {

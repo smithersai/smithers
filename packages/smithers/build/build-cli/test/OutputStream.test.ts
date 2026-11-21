@@ -47,9 +47,54 @@ describe("bounded live subprocess output", () => {
     expect(lines).toEqual(["one\n", "two\n"])
     const bounded = OutputStream.make({ write: (_stream, text) => lines.push(text), maximumLines: 1 })
     bounded.onStdout(Buffer.from("a\nb\nc\n"))
+    expect(lines.slice(2)).toEqual(["a\n", "… live output limit reached; captured task output is unchanged\n"])
     bounded.close()
-    expect(lines).toHaveLength(4)
-    expect(lines.at(-1)).toContain("limit reached")
+    expect(lines.slice(4)).toEqual(["b\n", "c\n"])
+  })
+
+  it("ends a cut view with the newest lines, redacted, after a count of the lines left out", () => {
+    const secret = "ZqSynthetic7Secret4Value9"
+    const lines: Array<string> = []
+    const observer = OutputStream.make({
+      maximumLines: 2,
+      lastLines: 4,
+      environment: { API_TOKEN: secret },
+      write: (stream, text) => lines.push(`${stream}:${text}`)
+    })
+    observer.onStdout(
+      Buffer.from(["l0", "l1", "l2", `l3 ${secret}`, "l4", "5".repeat(1700), "password: \"", ""].join("\n"))
+    )
+    observer.onStderr(Buffer.from(`FAIL the cause ${secret}\n`))
+    observer.onStdout(Buffer.from(`${secret}\n"\ndone\n`))
+    // Nothing past the notice is written while the tool runs.
+    expect(lines).toEqual([
+      "stdout:l0\n",
+      "stdout:l1\n",
+      "stdout:… live output limit reached; captured task output is unchanged\n"
+    ])
+    observer.close()
+    expect(lines.slice(3)).toEqual([
+      "stdout:… 3 more lines not shown; the last 4 follow\n",
+      `stdout:${"5".repeat(1600)} …\n`,
+      "stderr:FAIL the cause [REDACTED]\n",
+      "stdout:password: \"[REDACTED]\"\n",
+      "stdout:done\n"
+    ])
+    expect(lines.join("")).not.toContain(secret)
+  })
+
+  it("keeps a writer that fails on the last lines from failing the close", () => {
+    const lines: Array<string> = []
+    const observer = OutputStream.make({
+      maximumLines: 1,
+      write: (_stream, text) => {
+        if (text === "b\n") throw new Error("terminal closed")
+        lines.push(text)
+      }
+    })
+    observer.onStdout(Buffer.from("a\nb\nc\n"))
+    expect(() => observer.close()).not.toThrow()
+    expect(lines).toEqual(["a\n", "… live output limit reached; captured task output is unchanged\n"])
   })
 
   it("redacts each line of a multiline known secret", () => {
@@ -146,7 +191,7 @@ describe("bounded live subprocess output", () => {
   })
 })
 
-it("ignores chunks after the shared output bound and after close", () => {
+it("keeps chunks after the shared output bound for the close, and ignores chunks after close", () => {
   const lines: Array<string> = []
   const observer = OutputStream.make({
     maximumLines: 1,
@@ -159,6 +204,8 @@ it("ignores chunks after the shared output bound and after close", () => {
   observer.onStderr(Buffer.from("after close\n"))
   expect(lines).toEqual([
     "first\n",
-    "… live output limit reached; captured task output is unchanged\n"
+    "… live output limit reached; captured task output is unchanged\n",
+    "second\n",
+    "after limit\n"
   ])
 })

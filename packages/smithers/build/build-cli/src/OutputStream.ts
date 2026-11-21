@@ -74,6 +74,12 @@ const knownSecrets = (
  * and values spanning lines (a PEM block, a `util.inspect` concatenation).
  * The shared line redactor bounds an overlong line and shows only
  * `Redaction.omittedLine` for it.
+ *
+ * The first `maximumLines` lines (200) are written as they arrive. Past them,
+ * the newest `lastLines` lines (80) are kept, redacted the same way, and
+ * written when the observer closes, after a line that counts those left out:
+ * a tool's last lines, where a test runner prints its failures and coverage
+ * shortfall, always end its live view.
  * @category constructors
  * @since 1.0.0
  */
@@ -82,6 +88,7 @@ export const make = (options: {
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   readonly sensitiveNames?: ReadonlyArray<string> | undefined
   readonly maximumLines?: number | undefined
+  readonly lastLines?: number | undefined
 }): Observer => {
   const known = knownSecrets(options.environment, options.sensitiveNames)
   // Known values are a rule of the line redactor, so a value split across
@@ -90,20 +97,31 @@ export const make = (options: {
     ? Redaction.diagnosticRules
     : [{ id: "known-secret", pattern: known }, ...Redaction.diagnosticRules]
   const maximumLines = options.maximumLines ?? 200
+  const lastLines = options.lastLines ?? 80
   let printed = 0
   let closed = false
+  // The newest lines past the limit, in the order they arrived, and how many older ones were let go.
+  const last: Array<readonly ["stdout" | "stderr", string]> = []
+  let unseen = 0
   const emit = (stream: "stdout" | "stderr", redacted: () => ReadonlyArray<string>): void => {
-    if (printed > maximumLines) return
     try {
       for (const clean of redacted()) {
-        if (printed > maximumLines) return
+        const text = `${clean.slice(0, 1600)}${clean.length > 1600 ? " …" : ""}\n`
+        // A writer that feeds output back in can move `printed` while this batch prints.
+        if (printed < maximumLines) {
+          printed += 1
+          options.write(stream, text)
+          continue
+        }
         if (printed === maximumLines) {
           printed += 1
           options.write(stream, "… live output limit reached; captured task output is unchanged\n")
-          return
         }
-        printed += 1
-        options.write(stream, `${clean.slice(0, 1600)}${clean.length > 1600 ? " …" : ""}\n`)
+        last.push([stream, text])
+        if (last.length > lastLines) {
+          last.shift()
+          unseen += 1
+        }
       }
     } catch {
       // Progress observers cannot alter process success or captured output.
@@ -122,7 +140,7 @@ export const make = (options: {
     }
     return {
       write: (chunk: Uint8Array) => {
-        if (!closed && printed <= maximumLines) consume(decoder.write(chunk))
+        if (!closed) consume(decoder.write(chunk))
       },
       close: () => {
         consume(decoder.end())
@@ -140,6 +158,16 @@ export const make = (options: {
       closed = true
       stdout.close()
       stderr.close()
+      const kept = last.splice(0)
+      const first = kept[0]
+      try {
+        if (first !== undefined && unseen > 0) {
+          options.write(first[0], `… ${unseen} more lines not shown; the last ${kept.length} follow\n`)
+        }
+        for (const [stream, text] of kept) options.write(stream, text)
+      } catch {
+        // Progress observers cannot alter process success or captured output.
+      }
     }
   }
 }

@@ -4,14 +4,15 @@
  * A long multi-line secret value is held until it closes and is then released
  * together with the lines that followed it, as one batch. A writer that feeds
  * more output back into the observer while that batch prints must not let the
- * rest of the batch print past the bound.
+ * rest of the batch print past the bound: the rest waits for the close, where the
+ * view ends with its last lines.
  */
 import { expect, it } from "vitest"
 import * as OutputStream from "../src/OutputStream.ts"
 
 const limit = "… live output limit reached; captured task output is unchanged\n"
 
-it("stops a released batch at the bound after a re-entrant write reached it", () => {
+it("holds a released batch at the bound after a re-entrant write reached it, until the close", () => {
   const lines: Array<string> = []
   let reentered = false
   const observer: OutputStream.Observer = OutputStream.make({
@@ -28,14 +29,15 @@ it("stops a released batch at the bound after a re-entrant write reached it", ()
   const held = ["{\"password\": \"s3cret", ...Array.from({ length: 20 }, (_, index) => `part-${index}`), "\"}"]
   const after = Array.from({ length: 12 }, (_, index) => `after-${index}`)
   observer.onStdout(Buffer.from(`${[...held, ...after].join("\n")}\n`))
-  observer.close()
   // One redacted value line, the re-entrant lines up to the bound, the notice,
-  // and nothing from the rest of the batch.
+  // and nothing from the rest of the batch while the tool runs.
   expect(lines).toEqual([
     "stdout:{\"password\": \"[REDACTED]\"}\n",
     "stderr:r1\n",
     "stderr:r2\n",
     `stderr:${limit}`
   ])
+  observer.close()
+  expect(lines.slice(4)).toEqual(["stderr:r3\n", ...after.map((line) => `stdout:${line}\n`)])
   expect(lines.join("")).not.toContain("s3cret")
 })
