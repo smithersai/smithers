@@ -3,7 +3,9 @@ name: Recorder
 # kernel on each machine it ships for: the suites that record steps end to end
 # (ObserveSupervisor, ObservedReadsExecution, MachineExecution) with it, and
 # the last two with strace. The binaries are built here with the zig release
-# the package pins, as the release builds them.
+# the package pins, as the release builds them. And a job of the workflow
+# `smithers-ci apply` writes, run on each machine with no strace installed:
+# its steps are recorded by smthrs-observe and reused at the next commit.
 on:
   push:
     branches: [main]
@@ -15,6 +17,9 @@ on:
       - "packages/smithers/build/build-cli/test/ObserveSupervisor.test.ts"
       - "packages/smithers/build/build-cli/test/ObservedReadsExecution.test.ts"
       - "packages/smithers/build/build-cli/test/MachineExecution.test.ts"
+      - "packages/smithers/build/build-cli/scripts/fetch-zig.mjs"
+      - "packages/ci/src/generate/**"
+      - .github/scripts/recorder/generated-job.mjs
   pull_request:
     paths:
       - .github/workflows/recorder.yml
@@ -24,6 +29,9 @@ on:
       - "packages/smithers/build/build-cli/test/ObserveSupervisor.test.ts"
       - "packages/smithers/build/build-cli/test/ObservedReadsExecution.test.ts"
       - "packages/smithers/build/build-cli/test/MachineExecution.test.ts"
+      - "packages/smithers/build/build-cli/scripts/fetch-zig.mjs"
+      - "packages/ci/src/generate/**"
+      - .github/scripts/recorder/generated-job.mjs
   workflow_dispatch:
 permissions:
   contents: read
@@ -85,3 +93,35 @@ jobs:
         env:
           SMTHRS_OBSERVE_WITH: strace
         run: pnpm --dir packages/smithers/build/build-cli exec vitest run test/ObservedReadsExecution.test.ts test/MachineExecution.test.ts --coverage.enabled=false
+  generated:
+    name: Generated job (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      # No zig is installed: the build fetches zig's own archive and checks it
+      # against the sum zig publishes, as it does on any machine without zig.
+      - name: Build smthrs-observe
+        run: SMITHERS_NATIVE=required node packages/smithers/build/build-cli/scripts/build-observe.mjs
+      - name: Remove strace
+        run: |
+          if command -v strace >/dev/null 2>&1; then sudo apt-get remove -y -qq strace; fi
+          ! command -v strace
+      # tj/commander.js: a small public repository whose CI runs on Linux; the
+      # second commit changes one test file, so most results are reused.
+      - name: Run a generated job at two commits
+        run: |
+          uname -srm
+          node .github/scripts/recorder/generated-job.mjs https://github.com/tj/commander.js 8519088 3431f07
