@@ -282,6 +282,13 @@ With `--json` that line is the report's `stopped` field. The same line goes to
 standard error, and the program exits `4`. Every report gives the most disk
 the replay held at once, `diskHeldBytes` with `--json`.
 
+When `smthrs-observe`, which records what a step reads, stops before the step
+ends, as an out-of-memory kill stops it, the step's run says nothing about the
+step, and the replay stops the same way. The report holds the commits replayed
+before the one it stopped in, and its first line names the step:
+`the replay stopped at 3f2a1c9: smthrs-observe, which records what ci.yml:test:1 reads, stopped before the step ended, so its run says nothing about the step. Run the replay again, or set SMTHRS_OBSERVE_WITH=strace to record with strace`.
+The same line goes to standard error, and the program exits `4`.
+
 ## Output
 
 The report goes to standard output. While a replay runs, standard error gets one line as each mode of each commit starts:

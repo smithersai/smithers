@@ -347,8 +347,9 @@ export type StartCost = typeof StartCost.Type
  * space of the disk that holds its folder fell below what it was when the
  * replay started. It is absent where the machine does not say how much is
  * free. `stopped` says why the replay ended before its last commit: the disk
- * would have filled. `commits` then holds the commits replayed before the one
- * it stopped in, and nothing that commit's run kept is kept.
+ * would have filled, or the program that records what a step reads stopped
+ * before the step ended. `commits` then holds the commits replayed before the
+ * one it stopped in, and nothing that commit's run kept is kept.
  *
  * @category models
  * @since 0.1.0

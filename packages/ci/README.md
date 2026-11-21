@@ -25,6 +25,8 @@ directly, so the parts are built at the same time.
 **Twenty-third round, 2026-11-20.** The recorder a person chooses reaches Smithers build, and a skip shows why it
 was safe (`sci-rough-edges`).
 
+- **`ReplayReport.stopped`** (meaning widened, shape unchanged): also set when the recorder of a step,
+  `smthrs-observe`, stopped before the step ended; the line names the step.
 - **`ReplayReport.PredictedSafe.reason`** (meaning changed, shape unchanged): why it was safe to skip, from the fact
   that most decided the score (`Scoring.skipReason`); it is absent where that fact points to a failure. It was the
   judge's sentence for the fact, which says why a target could fail.

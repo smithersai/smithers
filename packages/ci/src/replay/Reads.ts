@@ -75,3 +75,36 @@ export const readsListener = (): (chunk: string) => string | undefined => {
     return undefined
   }
 }
+
+/**
+ * The line Smithers build fails a run with when `smthrs-observe` stopped
+ * before the step it records ended, as an out-of-memory kill stops it:
+ * `//:ci.yml-test-1: smthrs-observe stopped before the step ended, so its run
+ * says nothing about the step`. The label comes first.
+ */
+const recorderGone = /(\/\/\S*?): smthrs-observe stopped before the step ended/
+
+/**
+ * Why a replay stops at `commit` when `cause` is a run of Smithers build
+ * that failed because the recorder of a step stopped before the step ended:
+ * that run says nothing about the step, and a run again records nothing
+ * more. `names` gives the step a label belongs to. Nothing for any other
+ * cause.
+ *
+ * @category constructors
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const recorderStopped = (
+  cause: unknown,
+  commit: string,
+  names: ReadonlyMap<string, { readonly step: string }>
+): string | undefined => {
+  const message = typeof cause === "object" && cause !== null && "message" in cause ? String(cause.message) : ""
+  const label = recorderGone.exec(message)?.[1]
+  if (label === undefined) return undefined
+  return `the replay stopped at ${commit.slice(0, 7)}: smthrs-observe, which records what ${
+    names.get(label)?.step ?? label
+  } reads, stopped before the step ended, so its run says nothing about the step. Run the replay again, or set ` +
+    "SMTHRS_OBSERVE_WITH=strace to record with strace"
+}

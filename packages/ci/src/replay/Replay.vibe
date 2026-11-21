@@ -112,7 +112,7 @@ import {
 import { readableNames, readyHistory } from "./History.vibe"
 import { couldNotStart, fixesOf, homeOf, namedInStepHome, putOnPath } from "./HomeTools.ts"
 import { backTo, keep, pathsIn, viewOf } from "./Kept.vibe"
-import { printsNotes, readsListener } from "./Reads.ts"
+import { printsNotes, readsListener, recorderStopped } from "./Reads.ts"
 import { defaultStallMinutes, type StallLimit, type Table, tableFor, watchFor } from "./Stall.vibe"
 import {
   addRerun,
@@ -1448,7 +1448,10 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     }
 
     let index = 0
-    // A replay the disk stopped reports the commits before the one it stopped in, and says why it stopped.
+    // Why the replay stopped when the recorder of a step stopped first, as an out-of-memory kill stops it.
+    let recorderGone: string | undefined = undefined
+    // A replay the disk or a stopped recorder stopped reports the commits before the one it stopped in, and says
+    // why it stopped.
     const finished = effect {
       while (index < commits.length) {
         const commit = commits[index] as string
@@ -1580,11 +1583,13 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       }
       return true
     } catch effect (cause) => {
-      if ((try disk.stopped) === undefined) throw cause
+      recorderGone = recorderStopped(cause, commits[index] as string, stepNames(newest.units))
+      if ((try disk.stopped) === undefined && recorderGone === undefined) throw cause
       try putBack
       return false
     }
-    if (!finished && commitsDone.length === 0) throw failure("command-failed", (try disk.stopped) as string)
+    const stopped = (try disk.stopped) ?? recorderGone
+    if (!finished && commitsDone.length === 0) throw failure("command-failed", stopped as string)
     // One commit where nothing passes is a failed commit. When nothing passes at any, the CI does not run here.
     const nothing = nothingPassed(baselines, stepNames(newest.units))
     if (nothing !== undefined) throw failure("unsupported", nothing)
@@ -1604,6 +1609,6 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       firstRun: started.firstRun,
       cold: started.cold,
       diskHeldBytes: try disk.most,
-      stopped: try disk.stopped
+      stopped
     })
   })
