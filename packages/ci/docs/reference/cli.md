@@ -46,6 +46,14 @@ refuses, and names the path, when:
 smithers-ci: inventory: .smithers/WORKSPACE.smithers was not written by smithers-ci, so apply leaves it alone: run this repository's Smithers build with smthrs ci, or remove .smithers/WORKSPACE.smithers to have apply write its files
 ```
 
+Before it writes, Smithers build plans the files in a copy of the repository
+at its last commit, with a home and a cache of its own. A job Smithers build
+will not run is not written: it stays in your workflow as it is, and so does
+every job that needs it, and `.smithers/ci/NOT-REPRODUCED.txt` names each with
+Smithers build's own words (`build-refused`). So `apply` never writes a job
+that would fail on every runner for a reason of Smithers build's. `apply
+--check` plans the same way.
+
 `apply` writes those files and nothing else. It adds no line to your
 `.gitignore`: the cache is never in your checkout (see
 [Where the cache is on a machine](../concepts/cache.md#where-the-cache-is-on-a-machine)).
@@ -416,6 +424,7 @@ what the job names.
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `attribute`            | is a recipe with an attribute that changes how it runs                                                                                   |
 | `automatic-variable`   | uses a variable only Make can fill in                                                                                                    |
+| `build-refused`        | is refused by Smithers build: WHY; the job stays in your CI as it is                                                                     |
 | `changes-machine`      | changes the machine it runs on: WHAT                                                                                                     |
 | `checkout`             | checks out something other than the commit being replayed                                                                                |
 | `computed-name`        | sets a Make variable whose name is computed                                                                                              |

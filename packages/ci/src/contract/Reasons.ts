@@ -43,6 +43,13 @@ const whole = (detail: string): string => detail
 export const reasons: Readonly<Record<string, Reason>> = {
   attribute: { sentence: "is a recipe with an attribute that changes how it runs" },
   "automatic-variable": { sentence: "uses a variable only Make can fill in" },
+  "build-refused": {
+    sentence: "is refused by Smithers build: {}",
+    next: "the job stays in your CI as it is",
+    slot: "WHY",
+    none: "it would not plan the job's steps",
+    subject: whole
+  },
   "changes-machine": {
     sentence: "changes the machine it runs on: {}",
     slot: "WHAT",

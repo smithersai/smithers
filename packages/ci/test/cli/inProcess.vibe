@@ -73,6 +73,19 @@ export const fullDisk = Layer.effect(FileSystem.FileSystem, effect {
 })
 
 /**
+ * The real file system, except that no temporary directory can be made, as on a full or read-only `/tmp`.
+ */
+export const noTempDirectory = Layer.effect(FileSystem.FileSystem, effect {
+  const fs = try FileSystem.FileSystem
+  const none: FileSystem.FileSystem = {
+    ...fs,
+    makeTempDirectory: () =>
+      Effect.fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "makeTempDirectory" }))
+  }
+  return none
+})
+
+/**
  * The real file system, except that no file can be removed, as in a directory that cannot be written.
  */
 export const noRemove = Layer.effect(FileSystem.FileSystem, effect {

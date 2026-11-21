@@ -1,0 +1,157 @@
+/**
+ * Whether Smithers build plans the targets of the files `apply` writes,
+ * before any is written.
+ *
+ * It plans them in a copy of the repository at the commit `HEAD` names, made
+ * with `git clone --shared`, that holds the generated files, with a home and
+ * a cache of its own: nothing is written into the repository or the home. A job whose targets it refuses to plan, for
+ * any reason, stays in the repository's own workflow and is named with
+ * Smithers build's words, as every job left out is. So `apply` never writes a
+ * job Smithers build will not run. When every target plans at once, no job is
+ * planned alone; when they do not, each job is, to find the ones refused. A
+ * refusal no job meets alone keeps every job in the repository's workflow.
+ *
+ * @since 0.1.0
+ */
+
+import { errorLine } from "../contract/Command.ts"
+import type { NotReplayed } from "../contract/Inventory.ts"
+import { type Failure, type GeneratedFile, writtenFiles } from "../contract/Parts.ts"
+import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
+import { exec, git } from "../replay/Process.vibe"
+import { check } from "./Check.vibe"
+import { compiledCaches, Options } from "../replay/Replay.vibe"
+
+/**
+ * The feature of a job left out because Smithers build refuses to plan its
+ * targets.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const refusedByBuild = "build-refused"
+
+/** A failure of the check itself, which `apply` reports as its own. */
+const failed = (code: Failure["code"], message: string): Failure => ({ code, message, part: "cli" })
+
+/** The most of what Smithers build printed that is kept: its error is at the end. */
+const kept = 64 * 1024
+
+/**
+ * Smithers build's own words for a refusal, in one line: the message of the
+ * error it printed as JSON, else the last line it printed.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const refusalOf = (printed: string): string => {
+  const start = printed.indexOf("{")
+  try {
+    const document = JSON.parse(start === -1 ? printed : printed.slice(start)) as { readonly message?: unknown }
+    if (typeof document.message === "string" && document.message.trim() !== "") return errorLine(document.message)
+  } catch {
+    // Not a document: the last line it printed says why.
+  }
+  const lines = printed.trim().split("\n")
+  const last = lines[lines.length - 1] as string
+  return errorLine(last === "" ? "it printed nothing" : last)
+}
+
+/** The labels of each job's targets, by job, in the order the target map names them. */
+const labelsByJob = (map: TargetMap): ReadonlyMap<string, ReadonlySet<string>> => {
+  const jobs = new Map<string, Set<string>>()
+  for (const entry of map.targets) jobs.set(entry.job, (jobs.get(entry.job) ?? new Set<string>()).add(entry.label))
+  return jobs
+}
+
+/**
+ * The jobs of `files` whose targets Smithers build, started as `smthrs`,
+ * refuses to plan in a copy of the repository at `root`, each with why. The
+ * copy holds `files` and none of the files of an earlier `smithers-ci` that
+ * `apply` would remove from it. Nothing when it plans them all, or when the
+ * files hold no target.
+ *
+ * @category checking
+ * @since 0.1.0
+ */
+export effect function refusals(
+  smthrs: readonly [string, ...Array<string>],
+  root: string,
+  files: ReadonlyArray<GeneratedFile>
+) {
+  const written = files.find((file) => file.path === targetMapPath)
+  if (written === undefined) return []
+  const map = Schema.decodeUnknownEffect(Schema.fromJsonString(TargetMap))(written.content) catch effect (cause) => {
+    throw failed("invalid-document", `the target map the generator wrote is not one: ${cause.message}`)
+  }
+  const jobs = labelsByJob(map)
+  if (jobs.size === 0) return []
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  return try scoped(effect {
+    const work = fs.makeTempDirectory({ prefix: "smithers-ci-plan-" }) catch effect (cause) => {
+      throw failed("command-failed", `could not make a directory: ${errorLine(cause)}`)
+    }
+    // The copy goes when the plan is done; one that cannot be removed is left, and says nothing of the repository.
+    try addFinalizer(() => ignore(fs.remove(work, { recursive: true, force: true })))
+    const copy = path.join(work, path.basename(root))
+    const commit = (try git(root, ["rev-parse", "--verify", "HEAD"])).trim()
+    try git(work, ["clone", "--quiet", "--shared", "--no-checkout", root, copy])
+    try git(copy, ["checkout", "--quiet", "--detach", commit])
+    // What an earlier smithers-ci wrote at this commit goes, as apply removes it.
+    const former = (try check(copy, files)).former
+    if (former.length > 0) try git(copy, ["rm", "--quiet", "-r", "--ignore-unmatch", "--", ...former])
+    // The copy holds the files apply would write, and Smithers build is given a home of its own beside it.
+    const home = path.join(work, "home")
+    const cache = path.join(work, "cache")
+    const prepared = effect {
+      try fs.makeDirectory(home)
+      for (const file of writtenFiles(files)) {
+        const at = path.join(copy, file.path)
+        try fs.makeDirectory(path.dirname(at), { recursive: true })
+        try fs.writeFileString(at, file.content)
+      }
+    }
+    prepared catch effect (cause) => {
+      throw failed("command-failed", `could not write the files apply writes into a copy: ${errorLine(cause)}`)
+    }
+    const environment = {
+      HOME: home,
+      XDG_CACHE_HOME: path.join(home, ".cache"),
+      XDG_CONFIG_HOME: path.join(home, ".config"),
+      XDG_DATA_HOME: path.join(home, ".local", "share"),
+      XDG_STATE_HOME: path.join(home, ".local", "state"),
+      ...compiledCaches(cache, false)
+    }
+    const [command, ...first] = smthrs
+    const plan = (labels: ReadonlyArray<string>) =>
+      exec(
+        command,
+        [...first, "ci", ...labels, "--plan", "--format", "json", "--workspace", copy, "--cache-dir", cache],
+        copy,
+        environment,
+        kept
+      )
+    const whole = try plan(["//..."])
+    if (whole.exitCode === 0) return []
+    const refused: Array<NotReplayed> = []
+    for (const [job, labels] of jobs) {
+      const alone = try plan([...labels])
+      if (alone.exitCode !== 0) refused.push({ job, reasons: [{ feature: refusedByBuild, detail: refusalOf(alone.text) }] })
+    }
+    if (refused.length > 0) return refused
+    const why = refusalOf(whole.text)
+    return [...jobs.keys()].map((job) => ({ job, reasons: [{ feature: refusedByBuild, detail: why }] }))
+  })
+}
+
+/**
+ * The jobs of `files` that Smithers build, as this program starts it, refuses
+ * to run in the repository at `root`; see {@link refusals}.
+ *
+ * @category checking
+ * @since 0.1.0
+ */
+export effect function planned(root: string, files: ReadonlyArray<GeneratedFile>) {
+  return try refusals((try Options).smthrs, root, files)
+}

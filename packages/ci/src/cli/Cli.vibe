@@ -19,6 +19,7 @@ import {
   Inventory,
   keepingPrograms,
   keptOnRunner,
+  type NotReplayed,
   notReplayed,
   ownWorkspace,
   refusal
@@ -68,6 +69,13 @@ export interface Parts<R> {
   readonly score: ScoreRows<R>
   /** How many questions the model has answered, for the report; without it the report gives the time alone. */
   readonly asked?: AskedQuestions<R> | undefined
+  /**
+   * The jobs Smithers build will not run, from the files `apply` would write, each with Smithers build's words.
+   * Without it, every job the generator wrote is written.
+   */
+  readonly planned?:
+    | ((root: string, files: ReadonlyArray<GeneratedFile>) => ReadonlyArray<NotReplayed>!Failure!R)
+    | undefined
 }
 
 /**
@@ -94,6 +102,18 @@ export function lineOf(failure: Failure): string {
 }
 
 const failed = (message: string): Failure => ({ code: "command-failed", message, part: "cli" })
+
+/** The inventory with each job Smithers build refused marked with why, so it is left out as any job is. */
+const refusedIn = (inventory: Inventory, refused: ReadonlyArray<NotReplayed>): Inventory => {
+  const why = new Map(refused.map((entry) => [entry.job, entry.reasons]))
+  return {
+    ...inventory,
+    jobs: inventory.jobs.map((job) => {
+      const reasons = why.get(job.id)
+      return reasons === undefined ? job : { ...job, unsupported: [...job.unsupported, ...reasons] }
+    })
+  }
+}
 
 /** Renders a report; a renderer that throws is the report part's failure. */
 effect function render(renderer: RenderReport, report: ReplayReport) {
@@ -409,23 +429,33 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
     score: parts.score,
     asked: parts.asked
   }
-  const generate = (inventory: Inventory, cache: Option.Option<string>, allowDocker: boolean) =>
+  /**
+   * The files `apply` writes. Smithers build plans them first: a job it will not run stays in the repository's own
+   * workflow, named with its words, and so does every job that needs it, and the files are made again without them.
+   */
+  const generate = (read: Inventory, cache: Option.Option<string>, allowDocker: boolean) =>
     effect {
       // A job on a Linux runner keeps what its steps leave running until it ends; one on macOS stays as it is.
-      const kept = keepingPrograms(inventory, keptOnRunner)
-      const why = Native.refusal(kept) ?? refusal(kept)
-      if (why !== undefined) throw { code: "unsupported", message: why, part: "inventory" } satisfies Failure
-      const split = try parts.decompose(root, ci(kept))
-      // The workflow's own check runs `apply` as it was run here.
-      // A job left out stays in the repository's own workflow, and the notes name it with why.
-      const options = {
-        cache: Option.getOrUndefined(cache),
-        left: notReplayed(kept),
-        ...(allowDocker ? { allowDocker } : {})
+      let inventory = keepingPrograms(read, keptOnRunner)
+      while (true) {
+        const why = Native.refusal(inventory) ?? refusal(inventory)
+        if (why !== undefined) throw { code: "unsupported", message: why, part: "inventory" } satisfies Failure
+        const split = try parts.decompose(root, ci(inventory))
+        // The workflow's own check runs `apply` as it was run here.
+        // A job left out stays in the repository's own workflow, and the notes name it with why.
+        const options = {
+          cache: Option.getOrUndefined(cache),
+          left: notReplayed(inventory),
+          ...(allowDocker ? { allowDocker } : {})
+        }
+        const all = try checkPaths(try parts.files(split, options))
+        // Every path is checked before Smithers build plans: a refusal of a path is said as itself.
+        const checked = try check(root, all)
+        const refused = parts.planned === undefined ? [] : try parts.planned(root, all)
+        // The target map is the program's own document: it is not written into the repository.
+        if (refused.length === 0) return { files: writtenFiles(all), checked }
+        inventory = refusedIn(inventory, refused)
       }
-      const all = try checkPaths(try parts.files(split, options))
-      // The target map is the program's own document: it is not written into the repository.
-      return { files: writtenFiles(all), checked: try check(root, all) }
     }
 
   /**

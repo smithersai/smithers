@@ -5,6 +5,7 @@
  * @since 0.1.0
  */
 
+import { planned } from "../apply/Planned.vibe"
 import { split } from "../decompose/index.ts"
 import { files } from "../generate/index.ts"
 import { read, readHere } from "../inventory/index.ts"
@@ -16,7 +17,8 @@ import type { Parts } from "./Cli.vibe"
 import type { Host } from "./Host.vibe"
 
 /**
- * Every part, as the program calls them.
+ * Every part, as the program calls them. `planned` asks Smithers build to
+ * plan the files `apply` would write.
  *
  * @category parts
  * @since 0.1.0
@@ -31,5 +33,6 @@ export const parts: Parts<Host> = {
   html,
   rows,
   score,
-  asked
+  asked,
+  planned
 }
