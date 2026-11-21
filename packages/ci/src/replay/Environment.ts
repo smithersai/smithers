@@ -348,3 +348,53 @@ export const thisHost = (): string => process.platform
  * @throws {never}
  */
 export const coreCount = (): number => Math.max(1, availableParallelism())
+
+/**
+ * The variable that chooses how Smithers build records what a step reads on
+ * Linux: `smthrs-observe`, its default where that program runs, or `strace`.
+ * Smithers CI hands it to every run of Smithers build as the person set it.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const recorderVariable = "SMTHRS_OBSERVE_WITH"
+
+/**
+ * The values {@link recorderVariable} takes.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const recorders: ReadonlyArray<string> = ["smthrs-observe", "strace"]
+
+/**
+ * What a run of Smithers build is told of the recorder the person chose in
+ * `environment`: the variable as they set it, or nothing when it is unset or
+ * empty.
+ *
+ * @category environment
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const recorderOf = (
+  environment: Readonly<Record<string, string | undefined>>
+): Readonly<Record<string, string>> => {
+  const chosen = environment[recorderVariable]
+  return chosen === undefined || chosen === "" ? {} : { [recorderVariable]: chosen }
+}
+
+/**
+ * Why the recorder chosen in `environment` cannot be used, as a usage error
+ * says it, or nothing when it is unset, empty or one of {@link recorders}.
+ * The value is not repeated: the program prints no variable's value.
+ *
+ * @category environment
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const recorderRefusal = (environment: Readonly<Record<string, string | undefined>>): string | undefined => {
+  const chosen = recorderOf(environment)[recorderVariable]
+  return chosen === undefined || recorders.includes(chosen)
+    ? undefined
+    : `${recorderVariable} must be ${recorders.join(" or ")}, or unset`
+}

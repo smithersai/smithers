@@ -131,6 +131,12 @@ describe.concurrent("smithers-ci from a directory of the repository", () => {
     )
     expect(await main(["--bogus"], directory, environment)).toBe(exitCodes.usage)
   })
+
+  it("exits 2 before anything runs when SMTHRS_OBSERVE_WITH names no recorder", async () => {
+    const root = repo()
+    expect(await main(["inventory"], root, { ...environment, SMTHRS_OBSERVE_WITH: "s-trace" })).toBe(exitCodes.usage)
+    expect(await main(["inventory"], root, { ...environment, SMTHRS_OBSERVE_WITH: "strace" })).toBe(exitCodes.ok)
+  })
 })
 
 describe.concurrent("what the default command says it wrote", () => {

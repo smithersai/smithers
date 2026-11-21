@@ -6,6 +6,8 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { exitCodes as codes, name } from "../contract/Command.ts"
+import { recorderRefusal } from "../replay/Environment.ts"
 import { discard } from "../replay/index.ts"
 import { cli, type Parts } from "./Cli.vibe"
 import { type Environment, type Host, layer } from "./Host.vibe"
@@ -107,6 +109,12 @@ export async function run(
   listen: Listen = deaf
 ): Promise<number> {
   const program = effect {
+    // A recorder Smithers build does not know would be its default without a word: refused before anything runs.
+    const refused = recorderRefusal(environment)
+    if (refused !== undefined) {
+      try Console.error(`${name}: ${refused}. Run ${name} --help for the commands and flags.`)
+      return codes.usage
+    }
     return try cli(args, try rootOf(directory), chosen, directory)
   }
   return await runPromise(effect {

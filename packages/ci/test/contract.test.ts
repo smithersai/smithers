@@ -570,6 +570,7 @@ describe("contract 7: command surface", () => {
       expect.arrayContaining([
         "PATH",
         "SMITHERS_CACHE_TOKEN",
+        "SMTHRS_OBSERVE_WITH",
         "AI_GATEWAY_API_KEY",
         "ANTHROPIC_API_KEY",
         "SMITHERS_OPENAI_AUTH"

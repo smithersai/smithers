@@ -226,6 +226,24 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     }
   }
 
+  it("hands the recorder the person chose to every run of the copy's own smthrs", async () => {
+    const calls = keep(temporary("recorder"))
+    const command = fakeSmthrs(`echo "with=\${SMTHRS_OBSERVE_WITH-unset} $*" >> ${calls}/log\nexec $real "$@"`)
+    const runs = () =>
+      execFileSync("cat", [`${calls}/log`], { encoding: "utf8" }).trim().split("\n").filter((line) =>
+        !line.includes("--plan")
+      )
+    const root = keep(makeOwnWith(command))
+    vi.stubEnv("SMTHRS_OBSERVE_WITH", "strace")
+    try {
+      await onNode(own(request(root), partsFor("none"), "WORKSPACE.ts"))
+    } finally {
+      vi.unstubAllEnvs()
+    }
+    expect(runs().length).toBeGreaterThan(0)
+    expect(runs().filter((line) => !line.startsWith("with=strace "))).toEqual([])
+  })
+
   it("puts the stand-ins first on the PATH of what a commit's targets start", async () => {
     const first = "first=${PATH%%:*}\n[ \"${first##*/}\" = guard ]\n"
     const root = keep(makeOwnWith(smthrs, { "a.sh": first }))

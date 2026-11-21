@@ -28,6 +28,7 @@ import {
   repository,
   snapshot,
   spawn,
+  spawnWith,
   temporary,
   workspace
 } from "./repo.ts"
@@ -444,6 +445,19 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
 
   it("exits 2 on an unknown flag", async () => {
     expect((await spawn(bin, ["--bogus"], repo())).code).toBe(exitCodes.usage)
+  })
+
+  it("exits 2 with one line, before anything runs, when SMTHRS_OBSERVE_WITH names no recorder", async () => {
+    const outcome = await spawnWith(bin, ["--help"], repo(), { SMTHRS_OBSERVE_WITH: "s-trace" })
+    expect(outcome.code).toBe(exitCodes.usage)
+    expect(outcome.stdout).toBe("")
+    // The value is never repeated: the program prints no variable's value.
+    expect(outcome.stderr.trim().split("\n")).toEqual([
+      "smithers-ci: SMTHRS_OBSERVE_WITH must be smthrs-observe or strace, or unset. Run smithers-ci --help for the commands and flags."
+    ])
+    for (const value of ["strace", "smthrs-observe", ""]) {
+      expect((await spawnWith(bin, ["--help"], repo(), { SMTHRS_OBSERVE_WITH: value })).code).toBe(exitCodes.ok)
+    }
   })
 
   it("prints the inventory and applies the generated files", async () => {

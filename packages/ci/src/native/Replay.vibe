@@ -20,7 +20,14 @@ import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { type Confined, confine, held, jobHomes, reading, sourceDirectory, type Way } from "../replay/Confine.vibe"
 import { addTo, type Count, type CpuBucket, uncounted, usedBy } from "../replay/Cpu.ts"
 import { cpuWatch } from "../replay/CpuWatch.vibe"
-import { gitConfig, pushesGoNowhere, searchPath, stepEnvironment } from "../replay/Environment.ts"
+import {
+  ambientEnvironment,
+  gitConfig,
+  pushesGoNowhere,
+  recorderOf,
+  searchPath,
+  stepEnvironment
+} from "../replay/Environment.ts"
 import { probeWith } from "../replay/Jail.ts"
 import {
   failuresOf,
@@ -474,11 +481,13 @@ export const own = <R>(
         "plain",
         ...jobs
       ])
-      // The cache's address is the one thing the copy's own `smthrs` gets beyond what a target gets.
+      // The cache's address and the recorder the person chose are what the copy's own `smthrs` gets beyond what a
+      // target gets.
       const environment = {
         ...stepEnvironment(place.daemon, place),
         ...jobHomes(place),
         ...printsNotes,
+        ...recorderOf(options.environment ?? ambientEnvironment()),
         ...(cached ? cacheEnv : {})
       }
       const watch = try watchFor(stall.minutes, stall.table)

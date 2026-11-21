@@ -70,6 +70,7 @@ import {
   coreCount,
   machinesVariable,
   pushRefusal,
+  recorderOf,
   searchPath,
   skippedNames,
   skippedPart,
@@ -865,8 +866,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const software = softwareEnvironment(person)
     /**
      * The whole environment of a `smthrs` started for a site: what a step of the way gets of the machine, with its
-     * home, the stand-ins first on `PATH` and the push refusal, then where the shared cache and the compiled code
-     * are. Its targets take from it only what they name. Nothing else of the person's reaches it, the jail around
+     * home, the stand-ins first on `PATH` and the push refusal, then the recorder the person chose, where the shared
+     * cache and the compiled code are. Its targets take from it only what they name. Nothing else of the person's reaches it, the jail around
      * it, or what it starts: a step can read the environment of every process it runs beside.
      */
     /**
@@ -891,6 +892,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       ...stepEnvironment({ ...software, ...site.place.daemon }, site.place),
       ...jobHomes(site.place),
       [machinesVariable]: machines,
+      // The recorder the person chose, which Smithers build reads itself.
+      ...recorderOf(person),
       ...(request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }),
       ...compiledCaches(site.cache, site.place.jail !== undefined)
     })
