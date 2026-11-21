@@ -137,6 +137,8 @@ const fixture = async (
    * Plans and executes the named targets; answers each one's status by name, and the first line of each failure.
    * What the run says is also put in `heard`.
    */
+  /** Each target's CPU time in its step at the last run, by name. */
+  const cpus = new Map<string, number>()
   const run = async (
     names: ReadonlyArray<string>,
     services: ExecutionServices = executionServicesLive,
@@ -153,6 +155,8 @@ const fixture = async (
       )
       for (const result of summary.results) {
         if (result.error !== undefined) failures.set(result.label.split(":")[1]!, result.error)
+        const stepCpu = result.parts?.cpuMs?.["step"]
+        if (stepCpu !== undefined) cpus.set(result.label.split(":")[1]!, stepCpu)
       }
       return Object.fromEntries(summary.results.map((result) => [result.label.split(":")[1]!, result.status]))
     } finally {
@@ -162,7 +166,7 @@ const fixture = async (
   /** The names of the machines a run made, from what the run said. */
   const made = (): ReadonlyArray<string> =>
     logs.flatMap((line) => /^smthrs: machine (.+) has a fresh checkout/.exec(line)?.[1] ?? []).sort()
-  return { base, root, write, run, logs, made, kept, environment, failures }
+  return { base, root, write, run, logs, made, kept, environment, failures, cpus }
 }
 
 describe("targets on two machines", () => {
@@ -950,6 +954,27 @@ const fakeBubblewrap = async (refuse: "namespace" | "keeper"): Promise<string> =
   )
   return directory
 }
+
+describe("a step's CPU time", () => {
+  for (const kept of [true, false]) {
+    keptIt(
+      `counts a child of a child's, with its job's keeper and without it (${kept ? "kept" : "not kept"})`,
+      async () => {
+        const fake = kept ? undefined : await fakeBubblewrap("namespace")
+        // Burns CPU, not wall time, so a loaded machine gives the same count.
+        const burn = `${process.execPath} -e 'while (process.cpuUsage().user < 2e6) {}'`
+        const { cpus, run } = await fixture(
+          () => ({ busy: on("one", `sh -c "sh -c \\"${burn}\\""`) }),
+          undefined,
+          fake === undefined ? [] : [fake]
+        )
+        expect(await run(["busy"])).toEqual({ busy: "ran" })
+        expect(cpus.get("busy")).toBeGreaterThanOrEqual(1800)
+      },
+      300_000
+    )
+  }
+})
 
 describe("a program a step leaves running, where its job cannot keep it", () => {
   for (

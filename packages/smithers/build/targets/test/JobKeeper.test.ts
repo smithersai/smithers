@@ -51,6 +51,7 @@ interface Ran {
   readonly stdout: string
   readonly stderr: string
   readonly left: ReadonlyArray<JobKeeper.Left>
+  readonly cpuMs: number | undefined
 }
 
 let steps = 0
@@ -69,13 +70,14 @@ const step = (
     let stderr = ""
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()))
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()))
-    child.on("close", (status, signal) =>
+    child.on("close", async (status, signal) =>
       resolve({
         status,
         signal,
         stdout,
         stderr,
-        left: JobKeeper.leftIn(existsSync(left) ? readFileSync(left, "utf8") : undefined)
+        left: JobKeeper.leftIn(existsSync(left) ? readFileSync(left, "utf8") : undefined),
+        cpuMs: await JobKeeper.cpuAt(left)
       }))
   })
 
@@ -104,7 +106,8 @@ describe.runIf(bwrap !== undefined)("a job's steps in one namespace", () => {
       signal: null,
       stdout: "out given\n--require ./no-such-file.js\n",
       stderr: "err\n",
-      left: []
+      left: [],
+      cpuMs: expect.any(Number)
     })
     const empty = await step(directory, "echo \"[${NODE_OPTIONS-unset}]\"", { NODE_OPTIONS: "" })
     expect(empty.stdout).toBe("[]\n")
@@ -124,7 +127,14 @@ describe.runIf(bwrap !== undefined)("a job's steps in one namespace", () => {
       `for i in $(seq 1 50); do curl -sf http://127.0.0.1:${port}/x.txt && break; sleep 0.1; done; ` +
         `ps -e -o args= | grep -c '^python3 -m http.server'`
     )
-    expect(asked).toEqual({ status: 0, signal: null, stdout: "ok\n1\n", stderr: "", left: [] })
+    expect(asked).toEqual({
+      status: 0,
+      signal: null,
+      stdout: "ok\n1\n",
+      stderr: "",
+      left: [],
+      cpuMs: expect.any(Number)
+    })
     expect(running(server)).toHaveLength(1)
     await ended(keeper)
     for (let waited = 0; running(server).length > 0 && waited < 5_000; waited += 50) {
@@ -246,6 +256,25 @@ describe.runIf(bwrap !== undefined)("a job's steps in one namespace", () => {
     const ran = await pending
     expect(ran.status).toBe(125)
     expect(ran.stderr).toBe("smthrs: the job's keeper ended before the step did\n")
+  }, 60_000)
+})
+
+describe.runIf(bwrap !== undefined)("a step's CPU time, as its keeper counts it", () => {
+  it("counts a child of a child's, and what a program the step left used until the step ended", async () => {
+    const { directory } = await job()
+    // Burns CPU, not wall time, so a loaded machine gives the same count.
+    const burn = (ms: number): string => `${process.execPath} -e 'while (process.cpuUsage().user < ${ms * 1000}) {}'`
+    const deep = await step(directory, `sh -c "sh -c \\"${burn(2000)}\\""`)
+    expect([deep.status, deep.left]).toEqual([0, []])
+    expect(deep.cpuMs).toBeGreaterThanOrEqual(1800)
+    const seconds = 81_000 + (process.pid % 900)
+    const leaving = await step(directory, `${burn(300)}; (${burn(700)}; exec sleep ${seconds}) > /dev/null 2>&1 &`)
+    expect(leaving.left.length).toBeGreaterThan(0)
+    expect(leaving.cpuMs).toBeGreaterThanOrEqual(800)
+    // What it left runs on: none of it counts for a later step.
+    const later = await step(directory, "true")
+    expect(later.cpuMs).toBeLessThan(500)
+    expect(await JobKeeper.cpuAt(join(directory, "never-written.json"))).toBeUndefined()
   }, 60_000)
 })
 

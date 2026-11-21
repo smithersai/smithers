@@ -119,6 +119,22 @@ const commandOf = (pid) => {
     return ""
   }
 }
+// The CPU time, in clock ticks, the process pid has used and the processes it waited for used; none once it ended.
+const ticksOf = (pid) => {
+  try {
+    const stat = fs.readFileSync("/proc/" + pid + "/stat", "latin1")
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ")
+    return Number(fields[11]) + Number(fields[12]) + Number(fields[13]) + Number(fields[14])
+  } catch {
+    return 0
+  }
+}
+// The CPU time the processes the keeper waited for have used, in clock ticks.
+const waitedTicks = () => {
+  const stat = fs.readFileSync("/proc/self/stat", "latin1")
+  const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ")
+  return Number(fields[13]) + Number(fields[14])
+}
 // What a step left: alive now, not alive before it, and not started by a process that was.
 const leftSince = (before) => {
   const now = alive()
@@ -154,6 +170,7 @@ const serve = (socket) => {
   })
   const start = (request) => {
     const before = alive()
+    const waitedBefore = waitedTicks()
     let last = Date.now()
     let ended = 0
     let forwarding = true
@@ -161,10 +178,19 @@ const serve = (socket) => {
       last = Date.now()
       if (forwarding) frame(socket, type, chunk)
     }
+    // The step's CPU: what the keeper waited for since it started, and what is still running of it when it ends (a
+    // recorder that follows what it left, and each program it left), counted to it until then, as on a runner.
     const answer = (result) => {
       if (answered) return
       answered = true
       forwarding = false
+      const running = new Set(result.left.map((each) => each.pid))
+      if (child !== undefined && child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+        running.add(child.pid)
+      }
+      let ticks = waitedTicks() - waitedBefore
+      for (const pid of running) ticks += ticksOf(pid)
+      result.cpuMs = ticks * 10
       frame(socket, "X", JSON.stringify(result))
       socket.end()
     }
@@ -308,7 +334,10 @@ const end = (error) => {
     process.exitCode = 125
     return
   }
-  if (leftFile !== "") fs.writeFileSync(leftFile, JSON.stringify(result.left))
+  if (leftFile !== "") {
+    fs.writeFileSync(leftFile, JSON.stringify(result.left))
+    fs.writeFileSync(leftFile + ".cpu", String(result.cpuMs))
+  }
   if (result.signal !== null) {
     process.stdout.write("", () => process.stderr.write("", () => {
       for (const signal of ["SIGTERM", "SIGINT", "SIGHUP", "SIGQUIT"]) process.removeAllListeners(signal)
@@ -449,6 +478,22 @@ export const leftAt = async (file: string): Promise<ReadonlyArray<Left>> => {
   const text = await Fs.readFile(file, "utf8").catch(() => undefined)
   await Fs.rm(file, { force: true })
   return leftIn(text)
+}
+
+/**
+ * The CPU time a step used, in milliseconds, as its keeper measured it and
+ * its client wrote it beside its `left` file, which is then removed: the
+ * processes it waited for, and what was still running of it when it ended.
+ * None when the client wrote nothing.
+ *
+ * @category parsing
+ * @since 0.1.0
+ */
+export const cpuAt = async (leftFile: string): Promise<number | undefined> => {
+  const text = await Fs.readFile(`${leftFile}.cpu`, "utf8").catch(() => "")
+  await Fs.rm(`${leftFile}.cpu`, { force: true })
+  const cpuMs = Number(text)
+  return text !== "" && Number.isFinite(cpuMs) ? cpuMs : undefined
 }
 
 /**

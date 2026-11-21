@@ -1532,6 +1532,9 @@ const executeWith = (
         }
         if (leftFile !== undefined) {
           const left = yield* joined(() => JobKeeper.leftAt(leftFile))
+          // The step's processes are the keeper's children, which this process never waits for: the keeper counts them.
+          const stepCpu = yield* joined(() => JobKeeper.cpuAt(leftFile))
+          if (stepCpu !== undefined) parts.spend(node.label, "step", 0, stepCpu)
           if (left.length === 0) leftRunning.delete(node.label)
           else leftRunning.set(node.label, left)
         }
