@@ -479,7 +479,9 @@ const race = async (recorder: { readonly tracer: string; readonly supervisor?: t
   expect(run.status, run.stderr).toBe(0)
   const read = ObservedReads.read(() => NodeFs.readFileSync(trace, "utf8").split("\n"), root)
   expect(read.refusals).toEqual([])
-  const made = NodeFs.readdirSync(Path.join(root, "c"), { recursive: true }).map((name) => Path.join(root, "c", name))
+  const made = NodeFs.readdirSync(Path.join(root, "c"), { recursive: true, encoding: "utf8" }).map((name) =>
+    Path.join(root, "c", name)
+  )
   expect(made).toHaveLength(40 * 18)
   const observed = ObservedReads.observe(read, { root: base, ignore: [], startedMs })
   if ("refusal" in observed) throw new Error(observed.refusal)
