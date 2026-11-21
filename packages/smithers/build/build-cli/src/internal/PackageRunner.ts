@@ -2776,16 +2776,29 @@ const executeWith = (
     let traces = 0
     // What the build measured outside the workspace and its machines is kept for the next build: a tool every build
     // reads is hashed once while it stays the same file, not at every build.
-    const digestsFile = NodePath.join(NodeFs.realpathSync(root), ...cacheDirectory.split("/"), "observed-digests.json")
-    const digests = yield* Effect.acquireRelease(
-      Effect.sync(() => ObservedReads.loadDigests(digestsFile)),
+    // A workspace that is gone has no memory to read or keep: the step that finds it gone says so.
+    const startRoot = (() => {
+      try {
+        return NodeFs.realpathSync(root)
+      } catch {
+        return undefined
+      }
+    })()
+    const digests: ObservedReads.Digests = startRoot === undefined ? new Map() : yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        ObservedReads.loadDigests(NodePath.join(startRoot, ...cacheDirectory.split("/"), "observed-digests.json"))
+      ),
       (memory) =>
-        Effect.sync(() => {
+        Effect.try(() => {
           const real = NodeFs.realpathSync(root)
           const kept = (path: string): boolean =>
             path !== real && !path.startsWith(`${real}/`) &&
             (machinesKept === undefined || !path.startsWith(`${machinesKept}/`))
-          ObservedReads.saveDigests(digestsFile, memory, kept)
+          ObservedReads.saveDigests(
+            NodePath.join(real, ...cacheDirectory.split("/"), "observed-digests.json"),
+            memory,
+            kept
+          )
         }).pipe(Effect.ignore)
     )
     const stateOf = ObservedReads.remembering(ObservedReads.defaultIo, Date.now, digests)
