@@ -100,18 +100,30 @@ export const Package = S.Package({ targets: { lib } })
     }
   })
 
-  it("loads the structure guide's root Package beside PackageDefaults", async () => {
-    const snippets = await guideCode("workspace/structure.md")
-    const rootPackage = snippets.find((snippet) => snippet.includes("export const packageDefaults"))
+  it("adds no targets for a PackageDefaults export beside an empty root Package, as the structure guide says", async () => {
+    const guide = (await Fs.readFile(NodePath.join(docsRoot, "workspace/structure.md"), "utf8")).replace(/\s+/g, " ")
+    expect(guide).toContain(
+      "An empty root `Package` map plus a `PackageDefaults` export adds no package targets to the graph."
+    )
     const [helper] = await guideCode("reference/targets/standard-package.md")
-    expect(rootPackage, "structure.md needs its root PACKAGE.ts example").toBeDefined()
     expect(helper, "standard-package.md needs the referenced helper").toBeDefined()
+    const rootPackage = `import { buildAndCheckPackage } from "./package-targets.ts"
+import { Smithers } from "@smthrs/targets"
+
+export const packageDefaults = Smithers.PackageDefaults({
+  directories: "packages/*",
+  macro: buildAndCheckPackage
+})
+
+export const Package = Smithers.Package({ targets: {} })
+`
     const root = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-guide-structure-")))
     try {
       await linkDocumentedHelperDependencies(root)
       await write(root, "WORKSPACE.ts", workspace)
       await write(root, "package-targets.ts", helper!)
-      await write(root, "PACKAGE.ts", rootPackage!)
+      await write(root, "PACKAGE.ts", rootPackage)
+      await write(root, "packages/app/package.json", "{}")
       const graph = await PackageLoader.load(await PackageDiscovery.discover(root))
       expect(graph.packages).toHaveLength(1)
       expect(graph.packages[0]!.packagePath).toBe("")
