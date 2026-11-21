@@ -12,6 +12,7 @@ import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import type { CloudRun, Inspection } from "./schema"
 import { VIEW } from "./schema"
 import { AuthStore, SESSION } from "../auth/store"
+import { RepoStore } from "../repo/store"
 import { openList } from "./actions"
 import { Runs } from "./runs"
 import { flowSummary } from "./summary"
@@ -90,13 +91,14 @@ const open = (answers: Answers, withAuth = false) => {
   }))
   const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
   const runtime = ManagedRuntime.make(
-    RunsStore.layer({ origin: "http://chat.test" }).pipe(Layer.provide(repoAuthority), Layer.provideMerge(withAuth ? AuthStore.layer : Layer.empty), Layer.provide(Layer.mergeAll(engine, remote, Persistence.memory, Logger.layer([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))])))),
+    RunsStore.layer({ origin: "http://chat.test" }).pipe(Layer.provideMerge(repoAuthority), Layer.provideMerge(withAuth ? AuthStore.layer : Layer.empty), Layer.provide(Layer.mergeAll(engine, remote, Persistence.memory, Logger.layer([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))])))),
   )
   runtimes.push(runtime as never)
   const store = runtime.runSync(Effect.service(RunsStore))
   const page = (runId: string) => Option.getOrUndefined(runtime.runSync(store.pages.get(runId)))
   return {
     store,
+    repos: runtime.runSync(Effect.service(RepoStore)),
     auth: runtime.runSync(Effect.serviceOption(AuthStore)),
     logs,
     page,
@@ -1149,4 +1151,91 @@ test("a visitor's cloud history resolves without issuing an authenticated read",
   await t.run(auth.session.update(SESSION, (row) => { row.status = "signed_in" }))
   await t.run(t.store.readCloud)
   expect(reads).toBe(1)
+})
+
+test("a repository refusal evicts cached run pages, cloud runs and repo runs for that repository (#5453)", async () => {
+  const t = open({
+    inspect: () => refused("unused"),
+    list: () => Effect.succeed({ runs: [], cursor: null }),
+    cloud: () => Effect.succeed([
+      {
+        runId: "cloud-refused",
+        flow: "ci/run",
+        kind: "repo",
+        status: "running",
+        cancelRequested: false,
+        createdAtMs: 1,
+        startedAtMs: 2,
+        finishedAtMs: null,
+        trigger: "manual",
+        branch: "main",
+        actor: "alice",
+        repo: "octo/hello",
+      },
+      {
+        runId: "cloud-other",
+        flow: "ci/run",
+        kind: "repo",
+        status: "running",
+        cancelRequested: false,
+        createdAtMs: 1,
+        startedAtMs: 2,
+        finishedAtMs: null,
+        trigger: "manual",
+        branch: "main",
+        actor: "alice",
+        repo: "octo/other",
+      },
+    ]),
+  })
+  await t.run(t.store.pages.insert({
+    id: "cloud-refused",
+    state: "read",
+    repoId: "github/octo/hello",
+    inspection: inspection("cloud-refused", [], false),
+    more: [],
+    hasMore: false,
+  }))
+  await t.run(t.store.pages.insert({
+    id: "cloud-refused-child",
+    state: "read",
+    inspection: {
+      ...inspection("cloud-refused-child", [], false),
+      run: { ...summary("cloud-refused-child", { parentRunId: "cloud-refused" }), input: value("{}"), result: null },
+    },
+    more: [],
+    hasMore: false,
+  }))
+  await t.run(t.store.pages.insert({
+    id: "cloud-refused-grandchild",
+    state: "read",
+    inspection: {
+      ...inspection("cloud-refused-grandchild", [], false),
+      run: { ...summary("cloud-refused-grandchild", { parentRunId: "cloud-refused-child" }), input: value("{}"), result: null },
+    },
+    more: [],
+    hasMore: false,
+  }))
+  await t.run(t.store.pages.insert({
+    id: "cloud-other",
+    state: "read",
+    repoId: "github/octo/other",
+    inspection: inspection("cloud-other", [], false),
+    more: [],
+    hasMore: false,
+  }))
+  await t.run(t.store.readCloud)
+  await vi.waitFor(async () => expect(t.page("cloud-refused-child")?.repoId).toBe("github/octo/hello"))
+  await vi.waitFor(async () => expect(t.page("cloud-refused-grandchild")?.repoId).toBe("github/octo/hello"))
+  expect((await t.run(t.store.pages.toArray)).map((r) => r.id).sort()).toEqual(["cloud-other", "cloud-refused", "cloud-refused-child", "cloud-refused-grandchild"])
+  expect((await t.run(t.store.cloudRuns.toArray)).map((r) => r.runId).sort()).toEqual(["cloud-other", "cloud-refused"])
+  await t.run(t.repos.refuse("github/octo/hello"))
+  await t.run(t.repos.wiped("github/octo/hello"))
+  expect((await t.run(t.store.pages.toArray)).map((r) => r.id)).toEqual(["cloud-other"])
+  expect((await t.run(t.store.cloudRuns.toArray)).map((r) => r.runId)).toEqual(["cloud-other"])
+  // Refusing a repository with no cached pages or cloud runs leaves other repositories untouched.
+  await t.run(t.repos.refuse("github/octo/empty"))
+  await t.run(t.repos.wiped("github/octo/empty"))
+  expect((await t.run(t.store.pages.toArray)).map((r) => r.id)).toEqual(["cloud-other"])
+  expect((await t.run(t.store.cloudRuns.toArray)).map((r) => r.runId)).toEqual(["cloud-other"])
 })

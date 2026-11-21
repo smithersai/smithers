@@ -1526,6 +1526,19 @@ describe("TODO issue picker lifecycle", () => {
     }
   }, WITHIN)
 
+  test("a repository refusal wipes local todo-attachment-issues choices for that repository (#5457)", async () => {
+    const tab = await open()
+    const selections = tab.todos.queries.attachmentIssues
+    selections.startSyncImmediate()
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    tab.actions.setAttachmentIssue("orphan-this", 5, REPO_ID)
+    tab.actions.setAttachmentIssue("orphan-other", 8, "github/other/repo")
+    await until(() => expect(selections.toArray.map((row) => row.id).sort()).toEqual(["orphan-other", "orphan-this"]))
+    await tab.runtime.runPromise(repos.refuse(REPO_ID))
+    await tab.runtime.runPromise(repos.wiped(REPO_ID))
+    await until(() => expect(selections.toArray.map((row) => row.id)).toEqual(["orphan-other"]))
+  }, WITHIN)
+
   test("opens issue choices when a stack route opens, without mounting a picker or changing the issues route", async () => {
     const tab = await open()
     const issues = await tab.runtime.runPromise(Effect.service(IssuesStore))

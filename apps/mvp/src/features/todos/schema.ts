@@ -162,7 +162,7 @@ export const StackView = Schema.Struct({
 export type StackView = typeof StackView.Type
 
 /** This tab's issue choice for one orphan TODO; never persisted or shared between tabs. */
-export const AttachmentIssue = Schema.Struct({ id: Schema.String, issue: Schema.Number })
+export const AttachmentIssue = Schema.Struct({ id: Schema.String, issue: Schema.Number, repoId: Schema.optional(Schema.String) })
 export type AttachmentIssue = typeof AttachmentIssue.Type
 
 /**

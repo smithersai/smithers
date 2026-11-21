@@ -42,6 +42,7 @@ export const REPOSITORY_MEMORY = [
   "branch-compare",
   "home-files",
   "issue-searched",
+  "todo-attachment-issues",
   "repo-runs-shown",
   "run-pages",
   "cloud-runs",

@@ -245,8 +245,16 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
     timeToLive: (exit) => Exit.isFailure(exit) ? 0 : Infinity,
   })
   const stackOf = (id: string) => Cache.get(opening, id)
-  yield* repos.registerCache(["todos", "todo-requests"], (id) =>
-    Effect.andThen(stackOf(id), Effect.suspend(() => Effect.forEach(shapesOf.get(id) ?? [], (shape) => shape.evict, { discard: true }))))
+  yield* repos.registerCache(["todos", "todo-requests", "todo-attachment-issues"], (id) =>
+    Effect.gen(function* () {
+      const openedIds = new Set((yield* (stacks.get(id)?.stored ?? Effect.succeed([]))).map((todo) => todo.id))
+      const stale = (yield* attachmentIssues.toArray)
+        .filter((row) => row.repoId === id || openedIds.has(row.id))
+        .map((row) => row.id)
+      if (stale.length > 0) yield* Effect.ignore(attachmentIssues.delete(stale))
+      yield* stackOf(id)
+      yield* Effect.forEach(shapesOf.get(id) ?? [], (shape) => shape.evict, { discard: true })
+    }))
 
   /** Keeps `draft` once, acknowledging only device storage, including outstanding writes of an existing draft. */
   const keepDraft = (draft: Draft) =>

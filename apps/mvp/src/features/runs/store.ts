@@ -859,7 +859,7 @@ export class RunsStore extends Context.Service<
 
       yield* repos.registerCache(["repo-runs", "repo-runs-shown"], (id) => {
         const [owner, name] = id.slice("github/".length).split("/") as [string, string]
-        return Effect.andThen(openRepoRuns(owner, name), Effect.suspend(() => repoRuns.get(id)?.evict ?? Effect.void))
+        return Effect.andThen(openRepoRuns(owner, name), Effect.suspend(() => repoRuns.get(id)!.evict))
       })
 
       return RunsStore.of({

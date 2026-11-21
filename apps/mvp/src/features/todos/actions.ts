@@ -69,16 +69,19 @@ export const setIssue = (id: string, issue: number) => changeDraft(id, { issue }
 export const setPrompt = (id: string, prompt: string) => changeDraft(id, { prompt })
 
 /** Changes this tab's issue choice for one orphan TODO; clearing or an invalid number removes the choice. */
-export const setAttachmentIssue = (todoId: string, issue: number | undefined) =>
+export const setAttachmentIssue = (todoId: string, issue: number | undefined, repoId?: string) =>
   Effect.gen(function* () {
     const { attachmentIssues } = yield* TodosStore
     const held = yield* attachmentIssues.get(todoId)
     if (issue === undefined || !Number.isInteger(issue) || issue <= 0) {
       if (Option.isSome(held)) yield* attachmentIssues.delete(todoId)
     } else if (Option.isSome(held)) {
-      yield* attachmentIssues.update(todoId, (row) => { row.issue = issue })
+      yield* attachmentIssues.update(todoId, (row) => {
+        row.issue = issue
+        if (repoId !== undefined) row.repoId = repoId
+      })
     } else {
-      yield* attachmentIssues.insert({ id: todoId, issue })
+      yield* attachmentIssues.insert(repoId === undefined ? { id: todoId, issue } : { id: todoId, issue, repoId })
     }
   }).pipe(Effect.orDie)
 

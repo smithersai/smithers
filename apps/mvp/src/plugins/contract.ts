@@ -1,11 +1,9 @@
-import type { Contribution } from "@smthrs/plugin"
-
 // The plugin host's contract (decision 0017, docs/features/plugins.md): the contribution points this host implements,
 // the API version it offers, and what it records. A point it doesn't implement yet refuses the plugin that uses it
 // (`unsupported_point`), so nothing a manifest declares is silently ignored.
 
 /** The points slice 1's host implements; view events are part of `views`. */
-export const POINTS: ReadonlyArray<Contribution.Point> = ["views", "slots", "commands", "keybindings"]
+export const POINTS = ["views", "slots", "commands", "keybindings"] as const
 
 /** How long the first stroke of a two-stroke key (`g q`) waits for the second. */
 export const CHORD_WITHIN_MS = 1_000

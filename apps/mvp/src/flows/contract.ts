@@ -104,6 +104,7 @@ export const FLOWS_TELEMETRY = {
     "flows_engine_scheduler_dispatch_duration",
     "flows_engine_scheduler_nodes",
     "flows_engine_step_logs",
+    "flows_run_creations",
     "flows_run_claims",
     "flows_run_transitions",
     "flows_run_heartbeats",

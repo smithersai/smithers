@@ -44,7 +44,7 @@ export interface TodosActions {
   readonly setTitle: (draftId: string, title: string) => void
   readonly setPrompt: (draftId: string, prompt: string) => void
   /** This tab's issue choice for one orphan TODO. */
-  readonly setAttachmentIssue: (todoId: string, issue: number | undefined) => void
+  readonly setAttachmentIssue: (todoId: string, issue: number | undefined, repoId?: string) => void
   /** The issue a draft hangs under (decision 0153). */
   readonly setIssue: (draftId: string, issue: number) => void
   /** Commit on a draft: the stack's page to show, or nothing when it didn't run. */
@@ -105,7 +105,7 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
           newDraft: (owner, name) => run(newDraft(owner, name)),
           setTitle: (draftId, title) => run(setTitle(draftId, title)),
           setPrompt: (draftId, prompt) => run(setPrompt(draftId, prompt)),
-          setAttachmentIssue: (todoId, issue) => run(setAttachmentIssue(todoId, issue)),
+          setAttachmentIssue: (todoId, issue, repoId) => run(setAttachmentIssue(todoId, issue, repoId)),
           setIssue: (draftId, issue) => run(setIssue(draftId, issue)),
           commit: (draftId) => runAsync(commit(draftId)),
           discardDraft: (draftId) => run(discardDraft(draftId)),

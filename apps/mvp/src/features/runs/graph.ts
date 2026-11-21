@@ -243,7 +243,7 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
       rows[index] = {
         ...step,
         row: { ...step.row, state: "cancelled", endedAtMs: stoppedAt },
-        attempts: step.attempts.map((attempt) => attempt.finishedAtMs === null
+        attempts: step.attempts.map((attempt) => attempt.finishedAtMs === null || attempt.state === "stopped"
           ? { ...attempt, state: "cancelled", finishedAtMs: stoppedAt }
           : attempt),
         wait: null,

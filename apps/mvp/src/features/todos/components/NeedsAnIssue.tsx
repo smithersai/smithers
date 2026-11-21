@@ -48,7 +48,7 @@ function Orphan({ owner, name, todo, choices }: {
         value={issue === undefined ? "" : String(issue)}
         onChange={(event) => {
           const chosen = Number(event.currentTarget.value)
-          actions.setAttachmentIssue(todo.id, chosen)
+          actions.setAttachmentIssue(todo.id, chosen, todo.repoId)
         }}
       >
         <option value="">Choose an issue</option>
