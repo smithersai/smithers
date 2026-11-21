@@ -76,6 +76,27 @@ export interface JobFacts {
 }
 
 /**
+ * What tells a tool not to call a server that decides nothing a step does, with the value that tells it. A step that
+ * reaches the network cannot be reused, so every step is given each of them unless its workflow, its job or itself
+ * sets one:
+ *
+ * - `DO_NOT_TRACK=1`: Turborepo, and every tool that keeps that convention, reports no use
+ *   (turbo.build/repo/docs/telemetry).
+ * - `WRANGLER_SEND_METRICS=false`: Wrangler sends no usage metrics to sparrow.cloudflare.com
+ *   (workers-sdk/packages/wrangler/telemetry.md).
+ * - `WRANGLER_HIDE_BANNER=true`: Wrangler prints no banner, and with it asks npm for no newer version of itself
+ *   (developers.cloudflare.com/workers/wrangler/system-environment-variables).
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const quietTools: ReadonlyArray<readonly [string, string]> = [
+  ["DO_NOT_TRACK", "1"],
+  ["WRANGLER_SEND_METRICS", "false"],
+  ["WRANGLER_HIDE_BANNER", "true"]
+]
+
+/**
  * What one step needs from its runner.
  *
  * - `key`: the step's name in the job's state, in upper case.
@@ -107,9 +128,8 @@ export interface JobFacts {
  * - `commit`: the step's script names the commit or the run, so its verdict belongs to one commit.
  * - `ownCi`: the workflow, the job or the step sets `CI`, and the step keeps that value. Any other step is given
  *   `CI=true`, as a runner gives it, whatever the machine it runs on holds under that name.
- * - `ownDoNotTrack`: the workflow, the job or the step sets `DO_NOT_TRACK`, and the step keeps that value. Any other
- *   step is given `DO_NOT_TRACK=1`, whatever the machine holds: a tool that reports its use over the network (Turbo
- *   does, unless told not to) makes a step that cannot be reused, and what it sends decides nothing the step does.
+ * - `ownQuiet`: the variables of `quietTools` the workflow, the job or the step sets; the step keeps their values. It
+ *   is given each other one with its value, whatever the machine holds.
  * - `action`: the step's own name, given as `GITHUB_ACTION`: its `id`, or `__run` and its place in the job.
  * - `store`: the step keeps files from one run to the next, as a cache step does. It is told where in
  *   `SMITHERS_CI_CACHE_STORE`: under the directory Smithers build keeps its cache in when the step is a target,
@@ -141,7 +161,7 @@ export interface StepFacts {
   readonly fills: ReadonlyArray<readonly [written: string, residual: Residual]>
   readonly commit: boolean
   readonly ownCi?: boolean | undefined
-  readonly ownDoNotTrack?: boolean | undefined
+  readonly ownQuiet?: ReadonlyArray<string> | undefined
   readonly action?: string | undefined
   readonly limit?: number | undefined
   readonly store?: boolean | undefined
@@ -1021,8 +1041,11 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       ...(step.python === true ? python(fail) : []),
       // A runner sets CI to true. What the machine holds under that name is the person's, not the workflow's.
       ...(step.ownCi === true ? [] : [`export CI=true`]),
-      // A tool that reports its use calls a server that decides nothing the step does. Told not to, it calls none.
-      ...(step.ownDoNotTrack === true ? [] : [`export DO_NOT_TRACK=1`]),
+      // A tool that reports its use, or asks whether it has a newer version, calls a server that decides nothing the
+      // step does. Told not to, it calls none.
+      ...quietTools.filter(([name]) => !(step.ownQuiet ?? []).includes(name)).map(([name, value]) =>
+        `export ${name}=${value}`
+      ),
       ...(step.job === undefined ? [] : [`export GITHUB_JOB=${quote(step.job)}`]),
       ...(step.action === undefined ? [] : [`export GITHUB_ACTION=${quote(step.action)}`]),
       `__ci_commit ${commit ? "1" : "''"}`,

@@ -674,12 +674,20 @@ describe("write", () => {
   // Turbo reports its use to a server unless `DO_NOT_TRACK` is 1 (turbo.build/repo/docs/telemetry). The call decides
   // nothing a step does, but a step that made it cannot be reused. A runner does not set the variable: a workflow
   // that sets it keeps its own value, and the machine's own value never reaches a step.
+  // Wrangler sends usage metrics unless `WRANGLER_SEND_METRICS` is false (workers-sdk/packages/wrangler/telemetry.md),
+  // and its banner asks npm for a newer version unless `WRANGLER_HIDE_BANNER` is true (Wrangler's system environment
+  // variables). Measured on eliza's `wrangler deploy --dry-run`: 74 connections, 26 with metrics off, 0 with both.
   it("tells every tool not to report its use, unless the workflow says otherwise", () => {
     pass({ first: true }, `test "$DO_NOT_TRACK" = 1`)
-    expect(pass({}, `echo "[$DO_NOT_TRACK]"`)).toBe("[1]\n")
-    expect(pass({}, `echo "[$DO_NOT_TRACK]"`, { env: { DO_NOT_TRACK: "0" } })).toBe("[1]\n")
-    expect(pass({ ownDoNotTrack: true }, `echo "[$DO_NOT_TRACK]"`, { env: { DO_NOT_TRACK: "0" } })).toBe("[0]\n")
-    expect(pass({ ownDoNotTrack: true }, `echo "[\${DO_NOT_TRACK-unset}]"`)).toBe("[unset]\n")
+    const all = `echo "[$DO_NOT_TRACK $WRANGLER_SEND_METRICS $WRANGLER_HIDE_BANNER]"`
+    expect(pass({}, all)).toBe("[1 false true]\n")
+    const persons = { DO_NOT_TRACK: "0", WRANGLER_SEND_METRICS: "true", WRANGLER_HIDE_BANNER: "false" }
+    expect(pass({}, all, { env: persons })).toBe("[1 false true]\n")
+    expect(pass({ ownQuiet: ["DO_NOT_TRACK"] }, all, { env: persons })).toBe("[0 false true]\n")
+    expect(pass({ ownQuiet: ["WRANGLER_SEND_METRICS", "WRANGLER_HIDE_BANNER"] }, all, { env: persons })).toBe(
+      "[1 true false]\n"
+    )
+    expect(pass({ ownQuiet: ["DO_NOT_TRACK"] }, `echo "[\${DO_NOT_TRACK-unset}]"`)).toBe("[unset]\n")
   })
 
   // GitHub fills every `${{ }}` of a script in one pass: a value that holds the text of another is left as it is.

@@ -167,11 +167,18 @@ finds the commit, as it does on GitHub.
 What your own shell holds under one of these names never reaches a step: with
 `CI=1` in your shell, a step still finds `CI=true`.
 
-A step is also given `DO_NOT_TRACK=1`, which a GitHub runner does not set. A
-tool that reports its use over the network, as Turborepo does, then sends
-nothing. A step that reaches the network runs again at every commit, and a
-report of a tool's use decides nothing the step does. A workflow, job or step
-that sets `DO_NOT_TRACK` keeps its own value.
+A tool's report of its use and its check for a newer version are switched off
+where the tool documents a switch. A step that reaches the network runs again
+at every commit, and neither call decides anything the step does. So a step is
+also given these three, which a GitHub runner does not set:
+
+| Variable                      | What the tool then leaves out                                |
+| ----------------------------- | ------------------------------------------------------------ |
+| `DO_NOT_TRACK=1`              | Turborepo's report of its use, and any tool that honors it   |
+| `WRANGLER_SEND_METRICS=false` | Wrangler's usage metrics                                     |
+| `WRANGLER_HIDE_BANNER=true`   | Wrangler's banner, and with it its check for a newer version |
+
+A workflow, job or step that sets one of them keeps its own value.
 
 No step is given a token: `GITHUB_TOKEN` and the `ACTIONS_` credentials are not
 set. `GITHUB_ACTION_REPOSITORY` and `RUNNER_DEBUG` are not set either, as a

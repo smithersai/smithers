@@ -78,7 +78,7 @@ import {
 import { filesOf } from "./Glob.ts"
 import { installsOf } from "./MachineChanges.ts"
 import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
-import { type JobFacts, settled, type StepFacts, write } from "./Runner.ts"
+import { type JobFacts, quietTools, settled, type StepFacts, write } from "./Runner.ts"
 import { hasSecretValue, isLiteralSecret, isSecretName } from "./Secrets.ts"
 import { readSetup, type Setup } from "./Setup.ts"
 import { before as beforeSetupCache, lockVariable, setupCache } from "./SetupCache.ts"
@@ -662,7 +662,7 @@ const addRun = (
     fills: [...fills],
     commit: /\bGITHUB_(?:SHA|WORKFLOW_SHA|EVENT_PATH|RUN_ID|RUN_NUMBER|RUN_ATTEMPT)\b/.test(command),
     ownCi: env.entries.has("CI"),
-    ownDoNotTrack: env.entries.has("DO_NOT_TRACK"),
+    ownQuiet: quietTools.map(([name]) => name).filter((name) => env.entries.has(name)),
     action: context.action,
     limit: secondsOf(context.limit),
     store: context.store,

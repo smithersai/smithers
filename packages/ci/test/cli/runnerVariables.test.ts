@@ -14,7 +14,9 @@
  *
  * A step whose tool reports its use over the network unless `DO_NOT_TRACK` is 1, as Turbo does
  * (turbo.build/repo/docs/telemetry), is reused as one that makes no call: every step is given `DO_NOT_TRACK=1`
- * unless its workflow sets the variable.
+ * unless its workflow sets the variable. So is one whose tool sends its metrics and asks npm for a newer version of
+ * itself unless told not to, as Wrangler does: every step is given `WRANGLER_SEND_METRICS=false` and
+ * `WRANGLER_HIDE_BANNER=true`.
  */
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
@@ -43,6 +45,7 @@ const workflow = [
   ...job("plain", "node test/plain.js"),
   ...job("dump", "sh tools/dump.sh"),
   ...job("telemetry", "node tools/telemetry.js"),
+  ...job("wrangler", "node tools/wrangler.js"),
   "  own:",
   "    runs-on: ubuntu-latest",
   "    steps:",
@@ -92,6 +95,8 @@ const files: Readonly<Record<string, string>> = {
     "env > out/env.txt",
     "grep -qx 'CI=true' out/env.txt",
     "grep -qx 'DO_NOT_TRACK=1' out/env.txt",
+    "grep -qx 'WRANGLER_SEND_METRICS=false' out/env.txt",
+    "grep -qx 'WRANGLER_HIDE_BANNER=true' out/env.txt",
     "! grep -E '^(SMITHERS_|SMTHRS_|RUNNER_DEBUG=)|zz-persons-own' out/env.txt",
     ""
   ].join("\n"),
@@ -102,6 +107,17 @@ const files: Readonly<Record<string, string>> = {
     "  const socket = require(\"node:dgram\").createSocket(\"udp4\")",
     "  socket.connect(9, \"192.0.2.1\", () => socket.close())",
     "}",
+    ""
+  ].join("\n"),
+  // A tool that sends its metrics unless WRANGLER_SEND_METRICS is false, and asks for a newer version of itself unless
+  // WRANGLER_HIDE_BANNER is true, as Wrangler does.
+  "tools/wrangler.js": [
+    "const ask = (port) => {",
+    "  const socket = require(\"node:dgram\").createSocket(\"udp4\")",
+    "  socket.connect(port, \"192.0.2.1\", () => socket.close())",
+    "}",
+    "if (process.env.WRANGLER_SEND_METRICS !== \"false\") ask(9)",
+    "if (process.env.WRANGLER_HIDE_BANNER !== \"true\") ask(10)",
     ""
   ].join("\n")
 }
@@ -123,6 +139,7 @@ describe("a workflow whose steps read a runner's variables from their own code",
         ...persons
       })
       expect(outcome.stderr).not.toContain("reads are not observed")
+      if (outcome.stdout === "") throw new Error(outcome.stderr)
       const report = JSON.parse(outcome.stdout) as ReplayReport
       const subjects = git(root, "log", "--reverse", "--format=%H %s", "-4").trim().split("\n")
       const at = (subject: string) => {
@@ -150,36 +167,36 @@ describe("a workflow whose steps read a runner's variables from their own code",
         baselineFailed: parity,
         hit: 0,
         failed: parity,
-        steps: 6,
+        steps: 7,
         mismatches: []
       })
-      // Nothing a step read changed. The two tests that read no variable of the run and the tool that was told not
-      // to report its use are answered from the first commit's run. The three that used the commit or the run's
+      // Nothing a step read changed. The two tests that read no variable of the run and the two tools that were told
+      // not to call their servers are answered from the first commit's run. The three that used the commit or the run's
       // number ran again: run 2 is even, so that test now passes.
       expect(at("docs only")).toEqual({
         baseline: true,
         baselineFailed: [],
-        hit: 3,
+        hit: 4,
         failed: [],
-        steps: 6,
+        steps: 7,
         mismatches: []
       })
       // Run 3: it fails again, as it does in the baseline. An answer from run 2 would have been a pass.
       expect(at("docs again")).toEqual({
         baseline: false,
         baselineFailed: parity,
-        hit: 3,
+        hit: 4,
         failed: parity,
-        steps: 6,
+        steps: 7,
         mismatches: []
       })
-      // The file the plain test reads is another, so it runs too. The test of `CI` and the tool read no file of it.
+      // The file the plain test reads is another, so it runs too. The test of `CI` and the tools read no file of it.
       expect(at("the file a test reads changes")).toEqual({
         baseline: true,
         baselineFailed: [],
-        hit: 2,
+        hit: 3,
         failed: [],
-        steps: 6,
+        steps: 7,
         mismatches: []
       })
       expect(report.mismatches).toBe(0)
