@@ -680,3 +680,46 @@ describe("placing host links", () => {
     expect(ProcessSandbox.seatbelt(planned(darwin, { externalLinks: [] }), darwin)).not.toContain("/opt/link")
   })
 })
+
+describe("the Windows drives WSL mounts", () => {
+  it("are read from the mount table: a drvfs mount, a 9p mount of drvfs, and a mount whose source is a drive", () => {
+    const table = `${base}/mountinfo`
+    write(
+      table,
+      [
+        "28 34 0:25 / /sys rw,nosuid,nodev shared:7 - sysfs sysfs rw",
+        "89 75 0:58 / /mnt/c rw,noatime - 9p C:\\134 rw,dirsync,aname=drvfs;path=C:\;uid=1000;gid=1000",
+        "90 75 0:59 / /mnt/d rw,noatime - drvfs D: rw",
+        "91 75 0:60 / /mnt/my\\040drive rw,noatime - virtiofs E:\\134 rw",
+        "92 34 0:61 / /mnt/data rw,noatime - 9p data rw,trans=virtio",
+        "93 34 0:62 / /truncated rw - 9p",
+        ""
+      ].join("\n")
+    )
+    expect(ProcessSandbox.windowsDrives(table)).toEqual(["/mnt/c", "/mnt/d", "/mnt/my drive"])
+    expect(ProcessSandbox.windowsDrives(`${base}/no-mount-table`)).toEqual([])
+  })
+
+  it("hold no PATH entry the toolchain lists, named directly or through a link", () => {
+    // WSL appends the Windows PATH; listing System32 over the drive mount took minutes per run.
+    const drive = `${base}/wsl/mnt/c`
+    program(`${drive}/Windows/System32/where.exe`, "echo windows")
+    link(`${drive}/Windows/System32`, `${base}/wsl/system32`)
+    const bin = `${home}/.bun/bin`
+    const searchPath = `${drive}/Windows/System32:${base}/wsl/system32:${bin}`
+    const hostFacts = facts(searchPath)
+    const listed: Array<string> = []
+    const found = ProcessSandbox.toolchain(searchPath, workspace, {
+      ...hostFacts,
+      windowsDrives: [drive],
+      entries: (directory) => {
+        listed.push(directory)
+        return hostFacts.entries!(directory)
+      }
+    })
+    expect(found).toEqual(ProcessSandbox.toolchain(bin, workspace, facts(bin)))
+    expect(listed.filter((directory) => directory.startsWith(drive))).toEqual([])
+    // Without the fact, the same PATH lists the drive.
+    expect(ProcessSandbox.toolchain(searchPath, workspace, hostFacts).reads).toContain(`${drive}/Windows/System32`)
+  })
+})

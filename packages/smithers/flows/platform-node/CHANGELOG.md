@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Under WSL, `ProcessSandbox.toolchain` no longer lists the `PATH` directories
+  on a Windows drive (`/mnt/c/Windows/System32` and the rest of the Windows
+  `PATH` WSL appends). Listing them took about 150 seconds a run, for programs
+  a confined run cannot start. `ProcessSandbox.windowsDrives()` reads the
+  drive mounts from `/proc/self/mountinfo`; `Host.windowsDrives` carries them.
+
 ### Added
 
 - `ProcessSandbox.toolchain(searchPath, workspaceRoot, host)` answers what a

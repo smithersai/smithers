@@ -187,6 +187,13 @@ export interface Host {
    * without it reads no script.
    */
   readonly scriptText?: ((path: string) => string | undefined) | undefined
+  /**
+   * Where WSL mounts the Windows drives (`/mnt/c`). A program there is a
+   * Windows program, which only WSL's own interop starts and a confined run
+   * cannot, so {@link toolchain} reads no `PATH` entry there. Optional: a host
+   * without it has none.
+   */
+  readonly windowsDrives?: ReadonlyArray<string> | undefined
   readonly uid: number | undefined
   readonly gid: number | undefined
 }
@@ -483,9 +490,41 @@ export const host = (env?: Readonly<Record<string, string | undefined>>): Host =
     readlink,
     shimTarget,
     scriptText,
+    windowsDrives: windowsDrives(),
     uid: typeof process.getuid === "function" ? process.getuid() : undefined,
     gid: typeof process.getgid === "function" ? process.getgid() : undefined
   }
+}
+
+// mountinfo escapes a space, tab, newline and backslash as three octal digits.
+const unescapeMountField = (field: string): string =>
+  field.replace(/\\([0-7]{3})/g, (_, octal: string) => String.fromCharCode(Number.parseInt(octal, 8)))
+
+/**
+ * The mount points of WSL's Windows drives, read from a mount table in the
+ * format of `/proc/self/mountinfo`: WSL 1 mounts a drive as `drvfs`, WSL 2 as
+ * `9p` with `aname=drvfs`, and either names the drive (`C:\`) as the source.
+ * None when the table cannot be read.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const windowsDrives = (mountInfo = "/proc/self/mountinfo"): ReadonlyArray<string> => {
+  let table: string
+  try {
+    table = NodeFs.readFileSync(mountInfo, "utf8")
+  } catch {
+    return []
+  }
+  return table.split("\n").flatMap((line) => {
+    const fields = line.split(" ")
+    const separator = fields.indexOf("-")
+    if (separator < 5 || fields.length < separator + 4) return []
+    const [type, source, options] = fields.slice(separator + 1) as [string, string, string]
+    const drive = type === "drvfs" || /(^|[;,])aname=drvfs([;,]|$)/.test(options) ||
+      /^[A-Za-z]:\\?$/.test(unescapeMountField(source))
+    return drive ? [unescapeMountField(fields[4]!)] : []
+  })
 }
 
 const readlink = (path: string): string | undefined => {
@@ -1352,7 +1391,9 @@ const followed = (path: string, hostFacts: Host): ReadonlyArray<Link> | undefine
  * holding a linked program cannot be opened, the program's file alone is.
  *
  * A system directory (`/usr/bin`) is already
- * readable, so only what its links leave it for is added.
+ * readable, so only what its links leave it for is added. A directory on a
+ * Windows drive under WSL ({@link Host.windowsDrives}) holds Windows
+ * programs, which a confined run cannot start, so it is not read at all.
  *
  * @category resolution
  * @since 1.0.0
@@ -1428,10 +1469,14 @@ export const toolchain = (
     for (const link of followed(path, hostFacts) ?? []) links.set(link.path, link.target)
   }
   const visited = new Set<string>()
+  const drives = hostFacts.windowsDrives ?? []
+  const onDrive = (path: string): boolean => drives.some((drive) => insideRoot(drive, path))
   for (const entry of (searchPath ?? "").split(":")) {
-    if (entry === "" || !api.isAbsolute(entry) || !hostFacts.isDirectory(entry)) continue
+    // WSL appends the Windows `PATH`; listing it over the drive mount took
+    // minutes, for programs the run could not start.
+    if (entry === "" || !api.isAbsolute(entry) || onDrive(entry) || !hostFacts.isDirectory(entry)) continue
     const directory = real(entry)
-    if (visited.has(directory) || !admissible(entry) || !admissible(directory)) continue
+    if (visited.has(directory) || onDrive(directory) || !admissible(entry) || !admissible(directory)) continue
     visited.add(directory)
     const open = !covered(directory)
     if (open) reads.push(directory, rootOf(directory))
