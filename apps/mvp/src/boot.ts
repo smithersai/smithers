@@ -33,6 +33,7 @@ import { QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "./features/chat/contract"
 import { storagePersisted } from "./features/chat/metrics"
 import { chatShortcuts } from "./features/chat/shortcuts"
 import { buttonShortcuts } from "./features/keys/keys"
+import { paletteShortcuts } from "./features/commands/paletteShortcuts"
 import { tabSession } from "./features/auth/tab"
 import { tabChat } from "./features/chat/tab"
 import { type ChatConfig, type ChatHost, ChatStore, chatConfig } from "./features/chat/store"
@@ -699,6 +700,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     }
     yield* chatShortcuts(options.target)
     yield* buttonShortcuts(options.target)
+    yield* paletteShortcuts(options.target)
     yield* pluginKeys(options.target, options.mac ?? false)
     yield* bindConnectivity(options.target)
     // One line for the device store's synced collections once each has taken its first role (writer or watcher),

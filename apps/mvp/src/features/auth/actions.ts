@@ -172,7 +172,7 @@ const sendSignOut = Effect.gen(function* () {
     }
     // The server ended the session. No local state or telemetry failure may bypass durable wipe marking or sealing.
     yield* Effect.gen(function* () {
-      yield* change({ status: "signed_out", login: null, role: null, signingOut: false })
+      yield* change({ status: "signed_out", login: null, role: null, signingOut: false, confirmSignOut: false })
       yield* confirm(null)
       yield* Metric.update(Metric.withAttributes(signOuts, { outcome: "signed_out" }), 1)
       yield* Effect.logInfo("signed out")
@@ -183,6 +183,13 @@ const sendSignOut = Effect.gen(function* () {
 /** Sign out pressed: `signingOut` at once, then signed out when ChatApi ends the session. Once at a time. */
 export const signOut = Effect.gen(function* () {
   if ((yield* current).signingOut) return
-  yield* change({ signingOut: true })
+  yield* change({ signingOut: true, confirmSignOut: false })
   yield* Effect.forkIn(sendSignOut, (yield* AuthStore).scope, { startImmediately: true })
 })
+
+
+/** Asks confirmation before signing out when unsent outbox writes would be wiped with the device. */
+export const promptSignOut = change({ confirmSignOut: true })
+
+/** Cancels the unsent-writes sign-out confirmation. */
+export const cancelSignOut = change({ confirmSignOut: false })

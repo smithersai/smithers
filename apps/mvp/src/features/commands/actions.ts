@@ -21,7 +21,9 @@ import { Plugins } from "../../plugins/plugins"
 import { COMMANDS as COMMAND_LIST, type Command, commandsFor, pluginCommands, viewerOf } from "./catalog"
 import { COMMANDS, invalidArgument, missingArguments, unknownCommand } from "./contract"
 import { choices, submits } from "./metrics"
-import { MENU, type Menu } from "./schema"
+import { MENU, type Menu, PALETTE, type Palette } from "./schema"
+import { type PaletteEntry, resolveRepoTarget } from "./palette"
+import { VIEW as REPO_VIEW } from "../repo/rows"
 import { CommandsStore } from "./store"
 import { admissionNamespace, admitCommand, hasEngineAdmission, hasOutboxAdmission, startOperation } from "./admission"
 import { followRun, runEnded } from "../../resumeAdmissions"
@@ -132,7 +134,18 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     const { scope, revision, requestNamespace } = yield* CommandsStore
     const before = yield* draftNow
     const generation = Option.getOrThrow(yield* composer.get(COMPOSER)).generation
-    const input = { ...pinned, ...command.args }
+    const rawInput: Record<string, unknown> = { ...pinned, ...command.args }
+    if (typeof rawInput.to === "string" && rawInput.to.startsWith("/{repo}/")) {
+      const repos = yield* RepoStore
+      const view = Option.getOrUndefined(yield* repos.view.get(REPO_VIEW))
+      const activeRepo = view !== undefined && view.owner !== "" && view.name !== "" ? { owner: view.owner, name: view.name } : undefined
+      const first = (yield* repos.repositories.toArray)[0]
+      const fallbackRepo = first === undefined ? undefined : { owner: first.owner, name: first.name }
+      const resolved = resolveRepoTarget(rawInput.to, activeRepo, fallbackRepo)
+      if (resolved === undefined) return yield* refuse("invalid", "Open a repository first", command)
+      rawInput.to = resolved
+    }
+    const input = rawInput
     // An outbox write, or an engine operation such as `/new`, stages its input first, so a reload resumes it (decisions
     // 0123, 0124).
     const engine = hasEngineAdmission(command.flow)
@@ -215,7 +228,7 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     if (command.flow !== "app/web/open" && (Option.isNone(admission) || admission.value === "queued")) {
       // A sandbox tool runs on the branch of the conversation this tab shows now (src/features/sandbox/actions.ts), and
       // `/docs`, `/repo` and `/issues` show their views in that conversation. `/new` names its repository explicitly; `/publish`, `/branch.update` and `/branch.resync` act on that branch.
-      yield* restoreOnFailure(flows.dispatch(command.flow, { ...pinned, ...command.args } as never, { door: "slash", executionId }), cleared)
+      yield* restoreOnFailure(flows.dispatch(command.flow, input as never, { door: "slash", executionId }), cleared)
     }
     yield* Metric.update(Metric.withAttributes(submits, { outcome: "run", command: command.name }), 1)
     yield* Effect.logInfo("slash.run").pipe(Effect.annotateLogs({ command: command.name, flow: command.flow }))
@@ -285,3 +298,42 @@ export const choose = (index: number, how: "accept" | "complete", keyboard = fal
     }
     yield* type(item.draft)
   }).pipe(Effect.annotateLogs({ feature: "commands" }))
+
+
+const writePalette = (fields: Partial<Omit<Palette, "id">>) =>
+  Effect.gen(function* () {
+    const { palette } = yield* CommandsStore
+    yield* palette.update(PALETTE, (row) => void Object.assign(row, fields))
+  }).pipe(Effect.orDie)
+
+/** Opens the global command palette with an empty query. */
+export const openPalette = writePalette({ open: true, query: "", highlighted: 0 })
+
+/** Closes the global command palette and clears its query. */
+export const closePalette = writePalette({ open: false, query: "", highlighted: 0 })
+
+/** Toggles the global command palette (`⌘P` / `Ctrl+P`). */
+export const togglePalette = Effect.gen(function* () {
+  const { palette } = yield* CommandsStore
+  const current = Option.getOrThrow(yield* palette.get(PALETTE))
+  return yield* (current.open ? closePalette : openPalette)
+}).pipe(Effect.orDie)
+
+/** Updates the global command palette's search query and resets highlight to the first row. */
+export const setPaletteQuery = (query: string) => writePalette({ query, highlighted: 0 })
+
+/** Moves the highlighted row in the global command palette. */
+export const highlightPalette = (highlighted: number) => writePalette({ highlighted })
+
+/** Runs a chosen global palette item through `FlowDispatch` and closes the palette. */
+export const choosePalette = (entry: PaletteEntry) =>
+  Effect.gen(function* () {
+    const { scope } = yield* CommandsStore
+    const flows = yield* FlowDispatch
+    yield* closePalette
+    yield* flows.dispatch(entry.flow, entry.args as never, { door: "button" }).pipe(
+      // expected: navigation or flow refusal is handled by the flow itself
+      Effect.ignore,
+      Effect.forkIn(scope, { startImmediately: true }),
+    )
+  })

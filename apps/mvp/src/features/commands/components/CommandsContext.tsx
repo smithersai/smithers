@@ -13,3 +13,6 @@ export const useCommands = (): CommandsView => {
   if (commands === null) throw new Error("useCommands needs a CommandsProvider: main.tsx renders one")
   return commands
 }
+
+/** Returns `CommandsView` when inside `CommandsProvider`, or `null` in minimal test harnesses. */
+export const useOptionalCommands = (): CommandsView | null => useContext(CommandsContext)

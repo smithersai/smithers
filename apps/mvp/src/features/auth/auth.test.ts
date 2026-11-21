@@ -856,3 +856,15 @@ describe("a session check ChatApi couldn't answer", () => {
     expect(tab.session().status).toBe("signed_in")
   }, 30_000)
 })
+
+test("promptSignOut and cancelSignOut toggle the unsent-writes sign-out confirmation state", async () => {
+  const h = await signInHarness(server)
+  const b = browser(h)
+  await b.signIn()
+  const tab = await openTab(realClient(b))
+  await vi.waitFor(() => expect(tab.session().status).toBe("signed_in"))
+  tab.actions.promptSignOut()
+  expect(tab.session().confirmSignOut).toBe(true)
+  tab.actions.cancelSignOut()
+  expect(tab.session().confirmSignOut).toBe(false)
+})

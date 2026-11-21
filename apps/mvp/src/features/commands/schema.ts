@@ -34,3 +34,14 @@ export const Menu = Schema.Struct({
   refusal: Schema.NullOr(Schema.String),
 })
 export type Menu = typeof Menu.Type
+
+/** The global command palette's one row (`⌘P` / `Ctrl+P`). */
+export const PALETTE = "palette"
+
+export const Palette = Schema.Struct({
+  id: Schema.Literal(PALETTE),
+  open: Schema.Boolean,
+  query: Schema.String,
+  highlighted: Schema.Number,
+})
+export type Palette = typeof Palette.Type

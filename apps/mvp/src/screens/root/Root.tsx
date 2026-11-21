@@ -4,6 +4,7 @@ import { NotificationsBell } from "../../features/attention/components/Notificat
 import { NotificationsPanel } from "../../features/attention/components/NotificationsPanel"
 import { PageNotices } from "../../features/attention/components/PageNotices"
 import { floatsBell } from "../../features/attention/contract"
+import { GlobalPalette } from "../../features/commands/components/GlobalPalette"
 import { IntentPreload } from "../../features/navigation/components/IntentPreload"
 import "./root.css"
 
@@ -30,6 +31,7 @@ export function Root() {
           </div>
         ) : null}
         <NotificationsPanel />
+        <GlobalPalette />
       </IntentPreload>
     </>
   )

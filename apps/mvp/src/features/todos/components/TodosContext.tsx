@@ -13,3 +13,6 @@ export const useTodos = (): TodosView => {
   if (todos === null) throw new Error("useTodos needs a TodosProvider: main.tsx renders one")
   return todos
 }
+
+/** Returns `TodosView` when inside `TodosProvider`, or `null` in minimal test harnesses. */
+export const useOptionalTodos = (): TodosView | null => useContext(TodosContext)

@@ -73,9 +73,6 @@ collector GET .../feeds/answers?after=   pushes `answered`; the decision leaves 
 - **Who.** For you and `/decide` are a maintainer's (`minimum: "maintainer"`, the floor `feed/answer` sets); ChatApi checks the person is a Maintainer or Admin of the repository, in person.
 - **Past answers** show from the collector's `answered` document. Smithers' own record of answers is the collector's to read (with its key); no core query shows it.
 
-## Not yet
-
-- **A command for the repository you are on.** The commands name `smithersai/vibelang`.
 
 ## Tests
 

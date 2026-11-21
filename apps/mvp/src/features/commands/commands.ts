@@ -4,7 +4,8 @@ import type { FlowDispatch } from "../../flows/dispatch"
 import type { AuthStore } from "../auth/store"
 import type { DraftSelection } from "../chat/sharedPrompt"
 import type { ChatStore } from "../chat/store"
-import { choose, dismiss, highlight, submit, type } from "./actions"
+import { choose, choosePalette, closePalette, dismiss, highlight, highlightPalette, openPalette, setPaletteQuery, submit, togglePalette, type } from "./actions"
+import type { PaletteEntry } from "./palette"
 import { CommandsStore } from "./store"
 import type { Plugins } from "../../plugins/plugins"
 import type { IssuesStore } from "../issues/store"
@@ -22,6 +23,7 @@ type Store = CommandsStore["Service"]
 /** What a frontend reads: the menu for the composer's draft. */
 export interface CommandsQueries {
   readonly menu: Store["menuState"]["tanstack"]
+  readonly palette: Store["paletteState"]["tanstack"]
 }
 
 /** What a person does in the composer, as plain functions. Write promises resolve after local admission. */
@@ -37,6 +39,12 @@ export interface CommandsActions {
   readonly dismiss: () => void
   /** Enter or Send with no row to choose: run the command, or ask Smithers. */
   readonly submit: (text: string) => Promise<void>
+  readonly openPalette: () => void
+  readonly closePalette: () => void
+  readonly togglePalette: () => void
+  readonly setPaletteQuery: (query: string) => void
+  readonly highlightPalette: (index: number) => void
+  readonly choosePalette: (entry: PaletteEntry) => void
 }
 
 export class Commands extends Context.Service<
@@ -53,13 +61,19 @@ export class Commands extends Context.Service<
       const store = yield* CommandsStore
       const { runSync: run, runPromise: promise } = runners(yield* Effect.context<CommandsStore | ChatStore | AuthStore | FlowDispatch | Plugins | IssuesStore | TodosStore | RunSteers | SteerWrites | BranchStore | RepoStore>(), "commands")
       return Commands.of({
-        queries: { menu: store.menuState.tanstack },
+        queries: { menu: store.menuState.tanstack, palette: store.paletteState.tanstack },
         actions: {
           type: (text, selection) => promise(type(text, selection)),
           highlight: (index) => run(highlight(index)),
           choose: (index, how, keyboard) => promise(choose(index, how, keyboard)),
           dismiss: () => run(dismiss),
           submit: (text) => promise(submit(text)),
+          openPalette: () => run(openPalette),
+          closePalette: () => run(closePalette),
+          togglePalette: () => run(togglePalette),
+          setPaletteQuery: (query) => run(setPaletteQuery(query)),
+          highlightPalette: (index) => run(highlightPalette(index)),
+          choosePalette: (entry) => run(choosePalette(entry)),
         },
       })
     }),

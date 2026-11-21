@@ -1,7 +1,7 @@
 import { Context, Deferred, Effect, Layer, Queue, Stream } from "effect"
 import { runners } from "../../boundary"
 import { FlowDispatch } from "../../flows/dispatch"
-import { check, pressSignIn, refresh, restore, signOut } from "./actions"
+import { cancelSignOut, check, pressSignIn, promptSignOut, refresh, restore, signOut } from "./actions"
 import type { AuthClient } from "./api"
 import type { DeviceWipe } from "./device"
 import { AuthStore } from "./store"
@@ -25,6 +25,10 @@ export interface AuthActions {
   /** "Sign in with GitHub" pressed: the link goes to GitHub; this records it. */
   readonly pressSignIn: () => void
   readonly signOut: () => void
+  /** Asks confirmation before signing out with unsent local writes. */
+  readonly promptSignOut: () => void
+  /** Cancels the sign-out confirmation prompt. */
+  readonly cancelSignOut: () => void
   /** Asks ChatApi again who is signed in. */
   readonly reload: () => void
 }
@@ -51,6 +55,8 @@ export class Auth extends Context.Service<Auth, { readonly queries: AuthQueries;
         actions: {
           pressSignIn: () => run(pressSignIn),
           signOut: () => run(signOut),
+          promptSignOut: () => run(promptSignOut),
+          cancelSignOut: () => run(cancelSignOut),
           reload: () => run(reload),
         },
       })

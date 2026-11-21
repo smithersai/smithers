@@ -106,15 +106,15 @@
     }],
     "commands": [
       {
-        "id": "factory/open", "flow": "app/navigate", "args": { "to": "/smithersai/vibelang/-/factory" },
+        "id": "factory/open", "flow": "app/navigate", "args": { "to": "/{repo}/-/factory" },
         "title": "Factory", "minimum": "anyone", "slash": { "name": "factory" }, "palette": true
       },
       {
-        "id": "factory/lanes", "flow": "app/navigate", "args": { "to": "/smithersai/vibelang/-/factory/agents" },
+        "id": "factory/lanes", "flow": "app/navigate", "args": { "to": "/{repo}/-/factory/agents" },
         "title": "Factory lanes", "minimum": "anyone", "slash": { "name": "lanes" }, "palette": true
       },
       {
-        "id": "factory/decide", "flow": "app/navigate", "args": { "to": "/smithersai/vibelang/-/factory/for-you" },
+        "id": "factory/decide", "flow": "app/navigate", "args": { "to": "/{repo}/-/factory/for-you" },
         "title": "Factory decisions", "minimum": "maintainer", "slash": { "name": "decide" }, "palette": true
       }
     ],

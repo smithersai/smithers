@@ -50,6 +50,8 @@ export const Session = Schema.Struct({
   hostedModel: Schema.optional(Schema.Boolean),
   install: Schema.optional(Schema.String),
   signingOut: Schema.Boolean,
+  /** True while asking confirmation before wiping unsent local writes on sign-out. */
+  confirmSignOut: Schema.optional(Schema.Boolean),
   restored: Schema.Boolean,
 })
 export type Session = typeof Session.Type

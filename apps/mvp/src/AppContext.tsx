@@ -12,3 +12,6 @@ export const useChat = (): ChatView => {
   if (chat === null) throw new Error("useChat needs a ChatProvider: main.tsx renders one")
   return chat
 }
+
+/** Returns `ChatView` when inside `ChatProvider`, or `null` in minimal test harnesses. */
+export const useOptionalChat = () => useContext(ChatContext)

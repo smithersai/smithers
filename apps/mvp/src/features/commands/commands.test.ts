@@ -900,3 +900,37 @@ test("slash commands use the effective role on an uninstalled repository copy wi
   await tab.actions.type("/status")
   expect(tab.menu()?.items).toEqual([])
 })
+
+test("repository-scoped plugin slash commands resolve /{repo}/ from the open repository, and global palette actions update state", async () => {
+  const tab = await open({}, person("maintainer"))
+  const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+  // Without an active or synced repository, /factory refuses with guidance
+  await tab.actions.submit("/factory")
+  expect(tab.menu()?.refusal).toBe("Open a repository first")
+
+  // With an active repository in RepoStore.view, /factory resolves /{repo}/ to that repository
+  const { VIEW: REPO_VIEW } = await import("../repo/rows")
+  await tab.runtime.runPromise(repos.view.update(REPO_VIEW, (row) => {
+    row.owner = "acme"
+    row.name = "widgets"
+  }))
+  await tab.actions.submit("/factory")
+  await until(() => expect(tab.menu()?.refusal).toBeNull())
+
+  // Global palette actions open, search, highlight, choose, and close cleanly
+  const commands = await tab.runtime.runPromise(Effect.service(Commands))
+  commands.actions.openPalette()
+  commands.actions.setPaletteQuery("tour")
+  commands.actions.highlightPalette(1)
+  commands.actions.togglePalette()
+  commands.actions.openPalette()
+  commands.actions.choosePalette({
+    id: "go:chat",
+    label: "Chat",
+    detail: "/app",
+    badge: "Go",
+    flow: "app/navigate",
+    args: { to: "/app" },
+  })
+  commands.actions.closePalette()
+})
