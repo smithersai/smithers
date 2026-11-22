@@ -143,3 +143,11 @@ test("only a declaration beside a VibeLang source is a generated declaration", a
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test("the repository default ignores VibeLang-generated declarations beside .vibe sources", async () => {
+  const { ESLint } = await import(pathToFileURL(eslintPath).href)
+  const eslint = new ESLint({ cwd: new URL(".", import.meta.url).pathname })
+  assert.equal(await eslint.isPathIgnored("packages/smithers/agent/registry/src/Bundled.d.vibe.ts"), true)
+  assert.equal(await eslint.isPathIgnored("packages/smithers/flows/engine/src/StepTrace.d.vibe.ts"), true)
+  assert.equal(await eslint.isPathIgnored("packages/smithers/flows/engine/src/StepTrace.d.ts"), true)
+})

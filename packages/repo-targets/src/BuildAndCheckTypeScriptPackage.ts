@@ -19,6 +19,9 @@ import { Typecheck } from "@smthrs/targets/Typecheck"
 import { Vitest } from "@smthrs/targets/Vitest"
 import { CircularImports } from "./CircularImports.ts"
 
+/** A host as `process.platform` names it. */
+type Host = "linux" | "darwin" | "win32"
+
 /**
  * Options accepted by {@link BuildAndCheckTypeScriptPackage}.
  *
@@ -29,10 +32,6 @@ import { CircularImports } from "./CircularImports.ts"
  * @category models
  * @since 0.1.0
  */
-
-/** A host as `process.platform` names it. */
-type Host = "linux" | "darwin" | "win32"
-
 export interface Options {
   /**
    * The package manager every emitted target runs its tool through. Omitted —
