@@ -260,9 +260,9 @@ export const commandFor = (
     : command(
       observer.tracer,
       traceFile,
-      // A step of a job that keeps what it leaves running runs without the guard: under it, the job's end did not
-      // end a program the step left (MachineExecution, "fails with why when it cannot start again").
-      observer.guard === undefined || keep ? argv : [observer.guard, "--guard", "--", ...argv],
+      // Every step, a step of a job that keeps what it leaves running too: strace follows what the step leaves until
+      // the job ends, and the guard's filter goes with it.
+      observer.guard === undefined ? argv : [observer.guard, "--guard", "--", ...argv],
       keep
     )
 

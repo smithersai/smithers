@@ -154,9 +154,9 @@ describe("finding the tracer", () => {
     expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, guard })).toEqual({ tracer, guard })
     expect(ObservedReads.commandFor({ tracer, guard }, "/t/trace", ["true"]))
       .toEqual(ObservedReads.command(tracer, "/t/trace", [guard, "--guard", "--", "true"]))
-    // A step of a job that keeps what it leaves running runs without it.
+    // A step of a job that keeps what it leaves running runs through it too.
     expect(ObservedReads.commandFor({ tracer, guard }, "/t/trace", ["true"], true))
-      .toEqual(ObservedReads.command(tracer, "/t/trace", ["true"], true))
+      .toEqual(ObservedReads.command(tracer, "/t/trace", [guard, "--guard", "--", "true"], true))
     const refusing = await program("echo 'smthrs-observe: this machine refuses the filter' >&2\nexit 126")
     expect(ObservedReads.observer({ platform: "linux", executable: () => tracer, guard: refusing })).toEqual({
       reason:

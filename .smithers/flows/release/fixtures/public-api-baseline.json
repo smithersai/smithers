@@ -1238,7 +1238,7 @@
         "internal/InstalledTree.d.ts": "1e7063399594bbe1a4026e8735b5d587beb1809a36ccf49d77d33dd80735ea4b",
         "internal/Machine.d.ts": "0881f71be876daa28a0ec938806bd4807f0fd5586739812a78591772d68ec6cb",
         "internal/MissingTool.d.ts": "da6565584fabe84a221eb9b1ba16d4c5dfa78b22415aab6e8f48978442cc5387",
-        "internal/ObservedReads.d.ts": "a03dad2073908c0e4cbef5903e549df7845158e36c7db12f2174d121ff5a4514",
+        "internal/ObservedReads.d.ts": "c527a0ea4256ee6f361a6753ffd84ca33d3c280aa836b754873d52c73d2d1fde",
         "internal/OutputCas.d.ts": "6617f92cbfd883094ee392ba9a8353cbfdc11dda031adaa9dabd0eb1d8c4e909",
         "internal/PackageOptions.d.ts": "748658819397fd4fa2912cd24f421d074a3c47366b68c0cfdca07b2c27aa2803",
         "internal/PackagePlanner.d.ts": "a8f7f4b5e1575b7eda156195622bcb2f5e6a5d2d53a4d74a0b055eff8f20f7e6",

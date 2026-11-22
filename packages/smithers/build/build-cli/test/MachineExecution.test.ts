@@ -919,6 +919,17 @@ describe("a program a step of a machine leaves running", () => {
     }, 300_000)
   }
 
+  stracedIt("stores nothing for a step of the job that makes a call strace has no name for", async () => {
+    // getxattrat (464 on x86_64 and aarch64), newer than the strace a runner has: strace sees it only through the
+    // guard, which runs under every step, a step of a job that keeps what it leaves running too.
+    const call = "import ctypes; ctypes.CDLL(None).syscall(464, -100, b'a.txt', 0, b'user.x', 0)"
+    const { logs, run, write } = await fixture(() => ({ look: on("web", `python3 -c "${call}" && cat a.txt`) }))
+    expect(await run(["look"], straced)).toEqual({ look: "ran" })
+    expect(logs).toContain("//:look  not cached: it reached a file in a way the recorder cannot follow: getxattrat")
+    await write("docs/readme.md", "changed\n")
+    expect(await run(["look"], straced)).toEqual({ look: "ran" })
+  }, 300_000)
+
   keptIt("lives on when it leaves its session, as a daemon does, and ends with the machine", async () => {
     const seconds = 60_000 + (process.pid % 9_000)
     const { run } = await fixture(() => {
