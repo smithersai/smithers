@@ -4,6 +4,7 @@
  * `--mermaid` under a human renderer, a red run without an exit hook,
  * `gitHooks`, and the human tree and table.
  */
+import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import { Deferred, Effect, Layer } from "effect"
 import { Cli, Mcp, z } from "incur"
 import * as NodeChildProcess from "node:child_process"
@@ -18,7 +19,9 @@ import * as CacheAdmin from "../src/CacheAdmin.ts"
 import { approvalRevision, makeCli, normalizeArgv, openPackageIndex, type RuntimeConfig } from "../src/Cli.ts"
 import { CliServices, cliServicesLive } from "../src/index.ts"
 import { CacheCredentials } from "../src/internal/CacheCredentials.ts"
+import * as ObservedReads from "../src/internal/ObservedReads.ts"
 import { PlanningServices, planningServicesLive } from "../src/internal/PackagePlanner.ts"
+import { executionServicesLive } from "../src/internal/PackageRunner.ts"
 import type * as Reporter from "../src/Reporter.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -151,6 +154,46 @@ const jsonCommand = async (
   const result = await serve(root, [...args, "--format", "json"], false, configure)
   return { ...result, data: JSON.parse(result.envelope) }
 }
+
+/**
+ * A host where an observed step's program may gain its file's rights: Linux with a recorder, in a process with no
+ * no_new_privs; on CI the case runs, and is red where that cannot be.
+ */
+const gainsRights = process.platform === "linux" &&
+  !("reason" in ObservedReads.observer({ ...ExecSandbox.host(), supervisor: undefined })) &&
+  (!executionServicesLive.noNewPrivileges() || process.env["CI"] === "true")
+
+describe("the results file of a step that gained a file's rights", () => {
+  it.skipIf(!gainsRights)("names the programs it gained them from", async () => {
+    const root = await packageFixture()
+    // Beside the temporary directory, as a runner's tools are: git keeps no set-user-id bit.
+    const tools = await Fs.realpath(await Fs.mkdtemp(NodePath.join("/var/tmp", "smthrs-cli-rights-")))
+    try {
+      const id = NodePath.join(tools, "id")
+      await Fs.copyFile("/usr/bin/id", id)
+      await Fs.chmod(id, 0o4755)
+      await write(
+        root,
+        "PACKAGE.ts",
+        `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: {
+  own: S.Shell.Test({ shell: ${
+          JSON.stringify(`${id} -u > /dev/null`)
+        }, machine: "job", sandbox: "none", observe: true, data: [S.glob("**")] })
+} })
+`
+      )
+      git(root, "add", "-A")
+      git(root, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-qm", "rights")
+      const result = await jsonCommand(root, ["test", "//:own", "--results-file", "rights.json"])
+      expect(result.exitCode, result.envelope + result.stderr).toBe(0)
+      const receipt = JSON.parse(await Fs.readFile(NodePath.join(root, "rights.json"), "utf8"))
+      expect(receipt.results).toEqual([expect.objectContaining({ label: "//:own", status: "ran", rights: [id] })])
+    } finally {
+      await Fs.rm(tools, { recursive: true, force: true })
+    }
+  }, 120_000)
+})
 
 describe("public cache and inspection commands", () => {
   it("keeps the embedder's durable-step commands under cache", async () => {

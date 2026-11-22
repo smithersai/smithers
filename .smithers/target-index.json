@@ -98524,7 +98524,7 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/tsconfig.test.json"
+        "path": "packages/smithers/tsconfig.lint.json"
       },
       {
         "kind": "glob",
