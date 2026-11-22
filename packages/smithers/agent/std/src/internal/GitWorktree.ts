@@ -327,7 +327,7 @@ const withShadow = <A, E, R>(
           if (created.exitCode !== 0) {
             return yield* Effect.fail(failed(`Could not create a shadow repository: ${created.stderr.trim()}`))
           }
-          const secured = yield* run("chmod", ["700", "--", path])
+          const secured = yield* run("chmod", ["--", "700", path])
           if (secured.exitCode !== 0) {
             return yield* Effect.fail(failed(`Could not secure a shadow repository: ${secured.stderr.trim()}`))
           }

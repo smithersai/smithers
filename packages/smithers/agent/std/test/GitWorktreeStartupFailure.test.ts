@@ -1,6 +1,7 @@
 import { NodeServices } from "@effect/platform-node"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Effect, PlatformError } from "effect"
+import * as ChildProcess from "effect/process/ChildProcess"
 import * as Redacted from "effect/Redacted"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs"
@@ -126,6 +127,53 @@ it.skipIf(process.platform === "win32")(
       )
       expect(staged).toBeDefined()
       expect(existsSync(staged!)).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+)
+
+it.skipIf(process.platform === "win32")(
+  "fails and removes the shadow repository when chmod cannot secure it",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "std-private-shadow-fail-"))
+    let seenArgs: ReadonlyArray<string> | undefined
+    let shadowPath: string | undefined
+    try {
+      const error = await Effect.runPromise(
+        Effect.gen(function*() {
+          const real = yield* ChildProcessSpawner.ChildProcessSpawner
+          const spawner = ChildProcessSpawner.makeNoop({
+            spawn: (command) => {
+              if (command._tag === "StandardCommand" && command.command === "chmod") {
+                seenArgs = command.args.map(plainWord)
+                shadowPath = seenArgs[2]
+                return real.spawn(ChildProcess.make("sh", ["-c", "echo chmod denied >&2; exit 1"]))
+              }
+              return real.spawn(command)
+            }
+          })
+          return yield* Effect.flip(
+            GitWorktree.withShadow({
+              root,
+              toplevel: root,
+              common: join(root, ".git"),
+              index: join(root, ".git/index"),
+              objectFormat: "sha1",
+              settings: []
+            }, () => Effect.void).pipe(
+              Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)
+            )
+          )
+        }).pipe(Effect.provide(NodeServices.layer))
+      )
+      expect(seenArgs?.slice(0, 2)).toEqual(["--", "700"])
+      expect(error).toMatchObject({
+        code: "command_failed",
+        message: "Could not secure a shadow repository: chmod denied"
+      })
+      expect(shadowPath).toBeDefined()
+      expect(existsSync(shadowPath!)).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
