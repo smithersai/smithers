@@ -1496,7 +1496,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/ci:check' '//packages/ci:lib' '//packages/ci:testNative' '//packages/ci:toolCaches' '//packages/effect-code-storage:*' '//packages/smithers/agent/integrations:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/patterns:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/ci:testNative' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/evals:*' '//packages/smithers/agent/model:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/gateway:*' '//packages/smithers/mcp:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -1643,7 +1643,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/ci:fmt' '//packages/ci:lint' '//packages/ci:testRest' '//packages/effect-tanstack-db:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/memory:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/journal:*' '//packages/smithers/mcp:*' '//packages/smithers/ui:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/ci:circular' '//packages/ci:testRest' '//packages/rpc:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/memory:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/flows/journal:*' '//packages/smithers/ui/ui-styleguide:*' '//packages/smithers/ui:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -1790,7 +1790,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/ci:circular' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/merge-queue:*' '//packages/smithers/flows/plan:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/migrate:*' '//packages/smithers/ui/repo-view:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/harness/benchmarks/cell-comparison:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/agent/regression:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/plan:*' '//packages/smithers/migrate:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -1937,7 +1937,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/ci:docs' '//packages/ci:testReplay' '//packages/fuzz:*' '//packages/lemmascript:*' '//packages/rpc:*' '//packages/smithers/agent/evals:*' '//packages/smithers/agent/harness-detect:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/gateway:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/ci:testReplay' '//packages/effect-tanstack-db:*' '//packages/lemmascript:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/patterns:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/sync:*' '//packages/smithers/ui/ui-css:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -2084,7 +2084,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/effect-electric:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/registry:*' '//packages/smithers/build:*' '//packages/smithers/control:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/ui/terminal-frame:*' '//packages/smithers/ui/ui-css:*' '//packages/smithers/ui/views:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/fuzz:*' '//packages/smithers/agent/harness-detect:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/registry:*' '//packages/smithers/build:*' '//packages/smithers/control:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/ui/views:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -2231,7 +2231,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/errors:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/std:*' '//packages/smithers/build/targets:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/flows/step-cache:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/effect-electric:*' '//packages/errors:*' '//packages/smithers/agent/std:*' '//packages/smithers/build/targets:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/flows/step-cache:*' '//packages/smithers/notifications:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -2378,7 +2378,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/smithers/agent/chain:*' '//packages/smithers/agent:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/ui-styleguide:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/effect-code-storage:*' '//packages/smithers/agent:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/sandbox:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -2525,7 +2525,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/ci:testCli' '//packages/repo-targets:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/harness/benchmarks/cell-comparison:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/regression:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/platform-cloudflare:*' '//packages/smithers/flows:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/ci:testCli' '//packages/repo-targets:*' '//packages/smithers/agent/integrations:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/merge-queue:*' '//packages/smithers/flows/platform-cloudflare:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/flows:*' '//packages/smithers/ui/repo-view:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"

@@ -25,12 +25,15 @@ const split = new Set(inventory.filter((row) => eligible(row) && row.rule === "S
   .map((row) => row.package))
 const roots = [...new Set(inventory.filter(eligible).flatMap((row) =>
   !split.has(row.package) ? [`//${row.package}:*`] : row.exclusive === true ? [] : [row.label]))].sort()
+// The package suites run `smthrs test`: a split package gives them its test labels alone.
+const packageRoots = roots.filter((pattern) =>
+  pattern.endsWith(":*") || inventory.some((row) => row.label === pattern && row.kinds.includes("test")))
 const owned = (pattern: string, label: string) =>
   pattern.endsWith(":*") ? label.split(":")[0] === pattern.slice(0, -2) : label === pattern
-const weights = new Map(roots.map((pattern) => [pattern, Object.entries(timings.durationMs)
+const weights = new Map(packageRoots.map((pattern) => [pattern, Object.entries(timings.durationMs)
   .filter(([label]) => owned(pattern, label)).reduce((sum, [, duration]) => sum + duration, 0)]))
 const testLabels = new Set(inventory.filter((row) => row.kinds.includes("test") && !row.exclusive).map((row) => row.label))
-const testWeights = new Map(roots.map((pattern) => [pattern, Object.entries(timings.durationMs)
+const testWeights = new Map(packageRoots.map((pattern) => [pattern, Object.entries(timings.durationMs)
   .filter(([label]) => owned(pattern, label) && testLabels.has(label))
   .reduce((sum, [, duration]) => sum + duration, 0)]))
 
@@ -76,7 +79,11 @@ function verify(jobs: Record<string, Job>, costs: Costs = { all: weights, tests:
   assert.equal(Object.keys(jobs).filter((id) => id === "packages" || id.startsWith("packages-")).length, 9)
   // Package selections are nonrecursive and disjoint. Hence each target root
   // has exactly one owner, with the CLI's manual/exclusive/host policy intact.
-  assert.deepEqual(selections.sort(), roots, "missing or duplicated target ownership")
+  assert.deepEqual(selections.sort(), packageRoots, "missing or duplicated target ownership")
+  // `smthrs test` refuses a label that names no test target: every label a package suite names is a test.
+  for (const pattern of selections) {
+    if (!pattern.endsWith(":*")) assert.ok(testLabels.has(pattern), `${pattern} is no test target`)
+  }
   // The bound is 80% of the job's 60 minutes, as 32 was of 40. With every target measured the lane holds 310
   // target-minutes, so 32 could not hold for any split. A shard holding one package root cannot be split further,
   // so the bound holds for the others and the job's limit for that one (//packages/smithers:* measures 52).
@@ -100,7 +107,7 @@ const relaid = (layout: ReadonlyArray<ReadonlyArray<string>>): Record<string, Jo
 
 /** `first` as the first shard, and every other root dealt over the remaining shards. */
 const layoutWith = (first: ReadonlyArray<string>): Array<Array<string>> => {
-  const rest = roots.filter((pattern) => !first.includes(pattern))
+  const rest = packageRoots.filter((pattern) => !first.includes(pattern))
   const others = packageShards.length - 1
   return [[...first], ...Array.from({ length: others }, (_, shard) => rest.filter((_, index) => index % others === shard))]
 }
@@ -210,11 +217,11 @@ it("rejects a missing job, a dropped target, a duplicate and a complete but unba
 it("excuses only an irreducible single-root heaviest shard from the spread bounds", () => {
   // One root alone outweighs every other shard by more than either bound
   // (4 and 4.5 target-minutes), and the other shards are even: no split can do better.
-  const single = layoutWith([roots[0]!])
+  const single = layoutWith([packageRoots[0]!])
   const irreducible = { all: costsOf(single, totals(31, 27)), tests: costsOf(single, totals(30, 25.5)) }
   expect(() => verify(relaid(single), irreducible)).not.toThrow()
   // The same totals with two roots in the heaviest shard: a split could have evened it.
-  const paired = layoutWith([roots[0]!, roots[1]!])
+  const paired = layoutWith([packageRoots[0]!, packageRoots[1]!])
   expect(() => verify(relaid(paired), {
     all: costsOf(paired, totals(31, 27)), tests: costsOf(paired, totals(30, 27))
   })).toThrow(/shards differ by over three/)

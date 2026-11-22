@@ -15,6 +15,11 @@ const splitPackages = new Set(inventory.filter((target) => eligible(target) && t
 export const packagePatterns: ReadonlyArray<string> = [...new Set(inventory.filter(eligible).flatMap((target) =>
   !splitPackages.has(target.package) ? [`//${target.package}:*`] :
   "exclusive" in target && target.exclusive === true ? [] : [target.label]))].sort()
+// The package suites run `smthrs test`, which refuses a label that names no test (where `//pkg:*` passes over it), so
+// a split package gives that lane its test labels alone.
+export const packageLanePatterns: ReadonlyArray<string> = packagePatterns.filter((pattern) =>
+  pattern.endsWith(":*") ||
+  inventory.some((target) => target.label === pattern && target.kinds.some((kind) => kind === "test")))
 
 const measured = Object.entries(timings.durationMs)
 const tests = new Set(inventory.filter((target) => target.kinds.some((kind) => kind === "test") && !target.exclusive)
@@ -27,8 +32,8 @@ const owns = (pattern: string, label: string): boolean =>
 const cost = (pattern: string, testsOnly: boolean): number => measured
   .filter(([label]) => owns(pattern, label) && (!testsOnly || tests.has(label)))
   .reduce((total, [, duration]) => total + duration, 0)
-const work = new Map(packagePatterns.map((pattern) => [pattern, cost(pattern, false)]))
-const testWork = new Map(packagePatterns.map((pattern) => [pattern, cost(pattern, true)]))
+const work = new Map(packageLanePatterns.map((pattern) => [pattern, cost(pattern, false)]))
+const testWork = new Map(packageLanePatterns.map((pattern) => [pattern, cost(pattern, true)]))
 const weight = (pattern: string): number => Math.max(1, work.get(pattern)! + testWork.get(pattern)!)
 
 /** How far apart the shards are in one measure; a heaviest shard of one selection cannot be split, so it is left out. */
@@ -80,7 +85,7 @@ const evened = (start: ReadonlyArray<ReadonlyArray<string>>): ReadonlyArray<Read
 // weighs its workspace-lane work (every target) plus its package-lane work
 // (its tests), so the split stays even if the workspace graph moves back to it.
 export const packageShards = evened(
-  balanceShards(packagePatterns.map((pattern) => ({ pattern, durationMs: weight(pattern) })), 9)
+  balanceShards(packageLanePatterns.map((pattern) => ({ pattern, durationMs: weight(pattern) })), 9)
     .map((shard) => shard.patterns)
 ).map((patterns) => ({ patterns, durationMs: patterns.reduce((sum, pattern) => sum + weight(pattern), 0) }))
 
