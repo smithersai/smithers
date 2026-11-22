@@ -38,6 +38,26 @@ repository's steps a token. Flags after `--` go to the replay, as in
 
 `--dry-run` prints the `cfbox` command and starts nothing.
 
+## One box for each job
+
+A box has 20 GB of disk at most and lives a day at most. A CI too large for one
+box is replayed one job to a box with `--job`, which this command passes to the
+replay's [`--job`](../reference/cli.md#one-job); give it once for each job:
+
+```sh
+node packages/ci/scripts/box-replay.mjs https://github.com/elizaOS/eliza 78e44531 \
+  --packs <release tarballs> --commits 2 --out <results> --job pr-validation.yml:source-checks \
+  --job pr-validation.yml:sdk-owning
+```
+
+At most four boxes run at once. Each job's results are in `<results>/<n>`, and
+the command prints a table of them: for each job its exit code, its baseline and
+normal-mode seconds over the commits, the steps it reused and its mismatches.
+Under the table it adds the seconds up as `job seconds, each job alone in a 4
+vCPU box`. That sum is no speedup: each box fills its own cache, so a step two
+jobs share is reused in neither, and the seconds of jobs that ran apart are no
+replay's wall time.
+
 ## The results
 
 In `<results>`:

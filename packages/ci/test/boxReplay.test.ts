@@ -35,6 +35,12 @@ const box: {
   }
   readonly unpack: (artifact: string, out: string) => ReadonlyArray<Taken>
   readonly parse: (argv: ReadonlyArray<string>) => unknown
+  readonly pool: <A>(tasks: ReadonlyArray<() => Promise<A>>, limit: number) => Promise<ReadonlyArray<A>>
+  readonly table: (
+    rows: ReadonlyArray<{ readonly job: string; readonly exit: number; readonly report?: unknown }>,
+    cpu: string
+  ) => ReadonlyArray<string>
+  readonly reportIn: (out: string) => unknown
 } = await import(script)
 
 const made: Array<string> = []
@@ -190,6 +196,99 @@ describe("box-replay runs", () => {
     const result = await run([url, "a5a7dc0", "--packs", packs(), "--out", out])
     expect(result.code).toBe(2)
     expect(result.stderr).toMatch(/is not empty/)
+  })
+})
+
+describe("box-replay with a box for each job", () => {
+  it("prints one cfbox command for each job, each with its own job id and results folder", async () => {
+    const out = join(temporary(), "result")
+    const result = await run([
+      url,
+      "a5a7dc0",
+      "--packs",
+      packs(),
+      "--out",
+      out,
+      "--job-id",
+      "t",
+      "--job",
+      "tests.yml:test",
+      "--job",
+      "ci.yml:a b",
+      "--dry-run"
+    ])
+    expect(result.code).toBe(0)
+    expect(result.stdout.split("\n")).toEqual([
+      `cfbox run --cpu 4 --image node --job-id t-1 --artifact out --output ${out}/1/result.tgz ${out}/upload -- ` +
+      `bash box-replay.sh ${url} a5a7dc0 4 --job tests.yml:test`,
+      `cfbox run --cpu 4 --image node --job-id t-2 --artifact out --output ${out}/2/result.tgz ${out}/upload -- ` +
+      `bash box-replay.sh ${url} a5a7dc0 4 --job 'ci.yml:a b'`
+    ])
+  })
+
+  it("refuses --job with no id, and the replay's own --job", async () => {
+    for (
+      const [args, words] of [
+        [["--job"], /--job needs a CI job's id/],
+        [["--job", "--dry-run"], /--job needs a CI job's id/],
+        [["--", "--job", "x"], /replay flag --job is refused: give it as this script's --job/]
+      ] as const
+    ) {
+      const result = await run([url, "a5a7dc0", "--packs", packs(), ...args])
+      expect(result.code).toBe(2)
+      expect(result.stderr).toMatch(words)
+    }
+  })
+
+  it("brings each box's results back to its own folder and lists every job, those with no report too", async () => {
+    const out = join(temporary(), "result")
+    process.env["CFBOX"] = join(temporary(), "no-cfbox")
+    const result = await run([url, "a5a7dc0", "--packs", packs(), "--out", out, "--job", "a", "--job", "b"])
+    expect(result.code).toBe(125)
+    expect(readdirSync(out).sort()).toEqual(["1", "2", "jobs.txt"])
+    expect(readdirSync(join(out, "1"))).toEqual(["box.log"])
+    expect(readFileSync(join(out, "jobs.txt"), "utf8")).toBe(
+      "job  exit  baseline  normal  reused  mismatches\n" +
+        "a    125   -         -       -       -\n" +
+        "b    125   -         -       -       -\n" +
+        "job seconds, each job alone in a 4 vCPU box: baseline 0 s, normal 0 s\n"
+    )
+  })
+
+  it("adds the jobs' seconds up beside the table, as job seconds and never as a speedup", () => {
+    const report = JSON.parse(readFileSync(join(import.meta.dirname, "fixtures", "replay-report.example.json"), "utf8"))
+    const lines = box.table([{ job: "ci.yml:test", exit: 1, report }, { job: "ci.yml:lint", exit: 3 }], "4")
+    expect(lines).toHaveLength(4)
+    expect(lines[1]).toMatch(/^ci\.yml:test  1     \d+ s\s+\d+ s\s+\d+ of \d+\s+1$/)
+    expect(lines[2]).toMatch(/^ci\.yml:lint  3\s+-\s+-\s+-\s+-$/)
+    expect(lines[3]).toBe(
+      `job seconds, each job alone in a 4 vCPU box: baseline ${Math.round(report.baselineWallMs / 1000)} s, normal ${
+        Math.round(report.normalWallMs / 1000)
+      } s`
+    )
+    expect(lines.join("\n")).not.toMatch(/speedup|faster/)
+  })
+
+  it("runs four boxes at once at most, and gives their results in order", async () => {
+    let running = 0
+    let most = 0
+    const task = (value: number) => async () => {
+      running += 1
+      most = Math.max(most, running)
+      await new Promise((done) => setTimeout(done, 5))
+      running -= 1
+      return value
+    }
+    expect(await box.pool([1, 2, 3, 4, 5, 6, 7].map(task), 4)).toEqual([1, 2, 3, 4, 5, 6, 7])
+    expect(most).toBe(4)
+    expect(await box.pool([], 4)).toEqual([])
+  })
+
+  it("reads a box's report, and nothing where it brought none", () => {
+    const out = temporary()
+    expect(box.reportIn(out)).toBeUndefined()
+    writeFileSync(join(out, "replay.json"), `{"version":1}`)
+    expect(box.reportIn(out)).toEqual({ version: 1 })
   })
 })
 

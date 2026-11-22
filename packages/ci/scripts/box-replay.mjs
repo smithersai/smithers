@@ -2,7 +2,7 @@
 // Replays a repository we do not trust inside a Cloudflare box, and brings back only text.
 //
 //   node packages/ci/scripts/box-replay.mjs <repository URL> <commit> --packs <dir> [--commits 4] [--cpu 4]
-//     [--out <dir>] [--job-id <id>] [--dry-run] [-- <replay flags>]
+//     [--out <dir>] [--job-id <id>] [--job <CI job id>]... [--dry-run] [-- <replay flags>]
 //
 // <dir> holds the release tarballs `node .smithers/flows/release/pack-release.mjs <dir> --built` wrote, and nothing
 // else goes into the box: the box installs them with npm, clones the repository from its URL at <commit> itself,
@@ -10,7 +10,8 @@
 // results. Of what it returns, only the files named in `kept` are taken, and only as plain files: the repository's
 // code, its dependencies and what it builds never leave the box. `cfbox` (or the program `CFBOX` names) starts the
 // box; nothing of this machine's environment reaches it, and it uses no cache. `--dry-run` prints the cfbox command
-// and starts nothing.
+// and starts nothing. With `--job`, given once for each CI job, each job is replayed alone (the replay's `--job`) in
+// a box of its own, four boxes at once at most, its results in <out>/<n>; a table of the jobs follows.
 import { spawn, spawnSync } from "node:child_process"
 import {
   copyFileSync,
@@ -54,6 +55,7 @@ const carriers = {
 /** Replay flags the box sets itself, or that reach outside it. */
 const fixed = {
   "--commits": "give it as this script's --commits",
+  "--job": "give it as this script's --job, which gives each job a box of its own",
   "--json": "the box always asks for JSON",
   "--out": "the box writes the report itself",
   "--cache": "a shared cache gives the repository's steps a token and other repositories' results"
@@ -68,12 +70,16 @@ export const parse = (argv) => {
   const own = split === -1 ? argv : argv.slice(0, split)
   const replayFlags = split === -1 ? [] : argv.slice(split + 1)
   const positional = []
-  const options = { commits: "4", cpu: "4", dryRun: false }
+  const options = { commits: "4", cpu: "4", dryRun: false, jobs: [] }
   for (let index = 0; index < own.length; index++) {
     const word = own[index]
     if (Object.hasOwn(carriers, word)) throw new Refusal(`${word} is refused: ${carriers[word]}`)
     if (word === "--dry-run") options.dryRun = true
-    else if (["--packs", "--commits", "--cpu", "--out", "--job-id"].includes(word)) {
+    else if (word === "--job") {
+      const value = own[++index]
+      if (value === undefined || value.startsWith("--")) throw new Refusal("--job needs a CI job's id")
+      options.jobs.push(value)
+    } else if (["--packs", "--commits", "--cpu", "--out", "--job-id"].includes(word)) {
       const value = own[++index]
       if (value === undefined || value.startsWith("--")) throw new Refusal(`${word} needs a value`)
       options[word.slice(2).replace(/-(\w)/, (_, letter) => letter.toUpperCase())] = value
@@ -140,8 +146,11 @@ export const tarballs = (packs) => {
   return [...allowed].filter((name) => existsSync(join(packs, name)))
 }
 
-/** The cfbox command line for one run. */
-export const command = (options, upload, jobId) => [
+/**
+ * The cfbox command line for one run: its results go to `output`, and with `job` the replay is asked for that CI job
+ * alone.
+ */
+export const command = (options, upload, jobId, output = join(upload, "..", "result.tgz"), job = undefined) => [
   "run",
   "--cpu",
   options.cpu,
@@ -152,7 +161,7 @@ export const command = (options, upload, jobId) => [
   "--artifact",
   "out",
   "--output",
-  join(upload, "..", "result.tgz"),
+  output,
   upload,
   "--",
   "bash",
@@ -160,7 +169,8 @@ export const command = (options, upload, jobId) => [
   options.url,
   options.commit,
   options.commits,
-  ...options.replayFlags
+  ...options.replayFlags,
+  ...(job === undefined ? [] : ["--job", job])
 ]
 
 /** A word as a POSIX shell reads it. */
@@ -253,6 +263,67 @@ const cfbox = (args, log) =>
     })
   })
 
+/** Runs `tasks` with at most `limit` of them under way at once; their results, in their order. */
+export const pool = async (tasks, limit) => {
+  const results = new Array(tasks.length)
+  let next = 0
+  const worker = async () => {
+    while (next < tasks.length) {
+      const index = next++
+      results[index] = await tasks[index]()
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker))
+  return results
+}
+
+/** The replay's report a run brought back into `out`, or nothing when it brought none. */
+export const reportIn = (out) => {
+  try {
+    return JSON.parse(readFileSync(join(out, "replay.json"), "utf8"))
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The jobs of a run with a box for each, one line each: the job, its exit code, its baseline and normal-mode
+ * seconds over the commits its replay counted, the steps it reused and its mismatches. Under them the seconds added
+ * up, named for what they are: no speedup, since each box fills a cache of its own.
+ */
+export const table = (rows, cpu) => {
+  const seconds = (ms) => `${Math.round(ms / 1000)} s`
+  const total = { baseline: 0, normal: 0 }
+  const cells = [["job", "exit", "baseline", "normal", "reused", "mismatches"]]
+  for (const row of rows) {
+    const report = row.report
+    if (report === undefined) {
+      cells.push([row.job, String(row.exit), "-", "-", "-", "-"])
+      continue
+    }
+    total.baseline += report.baselineWallMs
+    total.normal += report.normalWallMs
+    const counts = report.commits.map((commit) => commit.normal.counts)
+    const hit = counts.reduce((sum, each) => sum + each.hit, 0)
+    const steps = counts.reduce((sum, each) => sum + each.hit + each.ran + each.failed + each.skipped, 0)
+    cells.push([
+      row.job,
+      String(row.exit),
+      seconds(report.baselineWallMs),
+      seconds(report.normalWallMs),
+      `${hit} of ${steps}`,
+      String(report.mismatches)
+    ])
+  }
+  const widths = cells[0].map((_, column) => Math.max(...cells.map((line) => line[column].length)))
+  return [
+    ...cells.map((line) => line.map((cell, column) => cell.padEnd(widths[column])).join("  ").trimEnd()),
+    `job seconds, each job alone in a ${cpu} vCPU box: baseline ${seconds(total.baseline)}, normal ${
+      seconds(total.normal)
+    }`
+  ]
+}
+
 /**
  * What a run brought back, in `out`: the named files taken from the artifact, the replay summed up, and the exit
  * code, the replay's own when the box wrote it, else `code` (cfbox's).
@@ -299,9 +370,16 @@ export const main = async (argv) => {
   const out = resolve(options.out ?? `box-replay-${options.commit}`)
   const upload = join(out, "upload")
   const jobId = options.jobId ?? `box-replay-${options.commit.slice(0, 12)}-${Date.now()}`
-  const args = command(options, upload, jobId)
+  // One box, or one for each job asked for: its own job id and results folder.
+  const boxes = options.jobs.length === 0
+    ? [{ out, id: jobId, args: command(options, upload, jobId) }]
+    : options.jobs.map((job, index) => {
+      const each = join(out, String(index + 1))
+      const id = `${jobId}-${index + 1}`
+      return { job, out: each, id, args: command(options, upload, id, join(each, "result.tgz"), job) }
+    })
   if (options.dryRun) {
-    console.log([process.env.CFBOX ?? "cfbox", ...args].map(quote).join(" "))
+    for (const box of boxes) console.log([process.env.CFBOX ?? "cfbox", ...box.args].map(quote).join(" "))
     return 0
   }
   if (existsSync(out) && readdirSync(out).length > 0) {
@@ -311,11 +389,27 @@ export const main = async (argv) => {
   mkdirSync(join(upload, "packs"), { recursive: true })
   copyFileSync(fileURLToPath(new URL("box-replay.sh", import.meta.url)), join(upload, "box-replay.sh"))
   for (const name of names) copyFileSync(join(resolve(options.packs), name), join(upload, "packs", name))
-  const run = await cfbox(args, join(out, "box.log"))
+  const runs = await pool(
+    boxes.map((box) => async () => {
+      mkdirSync(box.out, { recursive: true })
+      const run = await cfbox(box.args, join(box.out, "box.log"))
+      // A box whose stream broke may still run: it is stopped, so none is left behind.
+      await cfbox(["stop", box.id])
+      return run
+    }),
+    4
+  )
   rmSync(upload, { recursive: true })
-  // A box whose stream broke may still run: it is stopped, so none is left behind.
-  await cfbox(["stop", jobId])
-  return collect(out, options.cpu, run.code)
+  if (options.jobs.length === 0) return collect(out, options.cpu, runs[0].code)
+  const rows = boxes.map((box, index) => {
+    console.log(`${box.job}:`)
+    const exit = collect(box.out, options.cpu, runs[index].code)
+    return { job: box.job, exit, report: reportIn(box.out) }
+  })
+  const lines = table(rows, options.cpu)
+  writeFileSync(join(out, "jobs.txt"), `${lines.join("\n")}\n`)
+  for (const line of lines) console.log(line)
+  return Math.max(...rows.map((row) => row.exit))
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
