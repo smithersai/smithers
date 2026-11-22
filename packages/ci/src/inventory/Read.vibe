@@ -30,6 +30,7 @@ import { repositoryName } from "./Repository.ts"
 import { readToolFile, toolFiles } from "./Toolchains.ts"
 import { readTurbo } from "./Turbo.ts"
 import { normalizeDirectory } from "./Values.ts"
+import { gitArguments } from "../replay/Git.ts"
 
 /** Directories a workspace pattern never walks into. */
 const skipped = (name: string) => name === "node_modules" || name.startsWith(".")
@@ -61,7 +62,7 @@ const notARepository = (root: string): Failure => ({
 
 effect function git(root: string, args: ReadonlyArray<string>) {
   const spawner = try ChildProcessSpawner
-  const output = spawner.string(ChildProcess.make("git", ["-C", root, ...args])) catch () => ""
+  const output = spawner.string(ChildProcess.make("git", gitArguments(["-C", root, ...args]))) catch () => ""
   return output.trim()
 }
 

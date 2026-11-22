@@ -14,6 +14,7 @@ import { Options } from "../../src/replay/index.ts"
 import type * as Scoring from "../../src/select/Scoring.ts"
 import { linkTargets, smthrs } from "./fixture.ts"
 import { unconfined } from "./place.ts"
+import { noUpkeep } from "../../src/replay/Git.ts"
 
 const name = (step: Step, variant: number): string => `${step.id}_${variant}`
 
@@ -216,7 +217,9 @@ export const noTemporaryDirectories = Layer.effect(FileSystem.FileSystem, effect
  */
 export const gitFails = (subcommand: string) => Layer.effect(ChildProcessSpawner, effect {
   const real = try ChildProcessSpawner
-  const runs = (words: ReadonlyArray<string>): boolean => words[words.indexOf("git") + 1] === subcommand
+  // git is given `noUpkeep` before its own arguments.
+  const runs = (words: ReadonlyArray<string>): boolean =>
+    words[words.indexOf("git") + 1 + noUpkeep.length] === subcommand
   return makeSpawner((process) =>
     process._tag === "StandardCommand" && runs([process.command, ...process.args.map(String)])
       ? real.spawn(ChildProcess.make("sh", ["-c", "echo 'fatal: bad object' >&2; exit 128"]))

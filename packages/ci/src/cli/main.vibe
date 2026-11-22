@@ -14,6 +14,7 @@ import { type Environment, type Host, layer } from "./Host.vibe"
 import { parts } from "./parts.ts"
 import { deaf, exitCodes, idle, type Listen, type Signal, uncaught } from "./Signals.ts"
 import { broken, nothingTold, stoppedCode, type Told, unanswered } from "./Stage.ts"
+import { gitArguments } from "../replay/Git.ts"
 
 /**
  * The top directory of the repository that holds `directory`, as git names
@@ -25,7 +26,7 @@ import { broken, nothingTold, stoppedCode, type Told, unanswered } from "./Stage
  */
 export effect function rootOf(directory: string) {
   const spawner = try ChildProcessSpawner
-  const top = spawner.string(ChildProcess.make("git", ["-C", directory, "rev-parse", "--show-toplevel"])) catch () => ""
+  const top = spawner.string(ChildProcess.make("git", gitArguments(["-C", directory, "rev-parse", "--show-toplevel"]))) catch () => ""
   return top.trim() === "" ? directory : top.trim()
 }
 

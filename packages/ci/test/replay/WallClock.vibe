@@ -2,6 +2,7 @@
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import { Options } from "../../src/replay/index.ts"
 import { linkTargets, smthrs } from "./fixture.ts"
+import { noUpkeep } from "../../src/replay/Git.ts"
 
 /** One hour in milliseconds: far longer than any step of a test runs. */
 export const hour = 3_600_000
@@ -29,7 +30,8 @@ export const jumping = <A, E, R>(moment: "prepare" | "checkout" | "tidy", work: 
   const processes = makeSpawner((process) => {
     // On a copy a step has written, git runs in the jail, so `git checkout` is looked for among a command's words.
     const words = process._tag === "StandardCommand" ? [process.command, ...process.args.map(String)] : []
-    const checkout = words[words.indexOf("git") + 1] === "checkout"
+    // git is given `noUpkeep` before its own arguments.
+    const checkout = words[words.indexOf("git") + 1 + noUpkeep.length] === "checkout"
     if (moment === "checkout" && checkout) ahead += hour
     if (moment === "tidy" && words[0] === "chmod") ahead += hour
     return real.spawn(process)

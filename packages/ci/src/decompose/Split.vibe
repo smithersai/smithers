@@ -29,6 +29,7 @@ import {
   scanner,
   type Workspace
 } from "./Workspace.ts"
+import { gitArguments } from "../replay/Git.ts"
 
 /** File types that hold no path or package name a program follows. */
 const unscanned =
@@ -56,7 +57,7 @@ const notARepository = (root: string): Failure => ({
 /** Runs git in the repository and gives what it prints. A git that cannot start, or refuses, fails. */
 effect function git(root: string, args: ReadonlyArray<string>): string!Failure!ChildProcessSpawner {
   const spawner = try ChildProcessSpawner
-  const command = ChildProcess.make("git", ["-C", root, ...args])
+  const command = ChildProcess.make("git", gitArguments(["-C", root, ...args]))
   const code = spawner.exitCode(command) catch () => undefined
   if (code === undefined || Number(code) !== 0) throw notARepository(root)
   return spawner.string(command) catch () => ""

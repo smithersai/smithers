@@ -97,6 +97,7 @@ import {
 import { linesOf, noRecord, noRecordLabel, ranAgain, ranAgainLines, withReasons } from "./Results.ts"
 import { chosenFor } from "./Targets.ts"
 import { isGenerated } from "./Workspace.ts"
+import { gitArguments } from "../replay/Git.ts"
 
 /** Why `--targets` cannot be honoured on a repository that has no targets of its own. */
 const noWorkspace =
@@ -120,7 +121,7 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
  */
 export effect function committedWorkspace(root: string, commit = "HEAD") {
   for (const file of applyRefuses) {
-    const shown = exec("git", ["show", `${commit}:${file}`], root, {}, Number.POSITIVE_INFINITY, stdoutOf)
+    const shown = exec("git", gitArguments(["show", `${commit}:${file}`]), root, {}, Number.POSITIVE_INFINITY, stdoutOf)
       catch (): Output => ({ exitCode: 1, text: "" })
     if (shown.exitCode === 0 && !isGenerated(shown.text)) return file
   }
@@ -699,7 +700,7 @@ export const own = <R>(
     /** The first run of every way, or why there is none though one was asked for. */
     effect function start() {
       if (request.warm !== true) return {}
-      const parent = try exec("git", ["rev-parse", "--verify", "--quiet", `${oldest}^`], source, {}, outputLimit, stdoutOf)
+      const parent = try exec("git", gitArguments(["rev-parse", "--verify", "--quiet", `${oldest}^`]), source, {}, outputLimit, stdoutOf)
       if (parent.exitCode !== 0) return { cold: noCommitBefore(oldest) }
       const before = parent.text.trim()
       const ci = try ciAt(before)

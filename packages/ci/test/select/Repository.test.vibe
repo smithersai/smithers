@@ -5,6 +5,7 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { day } from "../../src/select/Features.ts"
 import { layerGit, Repository } from "../../src/select/Repository.vibe"
 import { directory, git, live, repository } from "./support.vibe"
+import { noUpkeep } from "../../src/replay/Git.ts"
 
 const now = Date.UTC(2026, 10, 14)
 
@@ -97,11 +98,12 @@ describe("Repository.layerGit", () => {
     const { root, commits } = try repository([{ at: now, files: { "a.ts": "1" } }])
     const real = try ChildProcessSpawner
     const started: Array<string> = []
-    // A recording spawner: it starts every command for real and keeps the program and git's subcommand.
+    // A recording spawner: it starts every command for real and keeps the program and git's subcommand, which
+    // comes after `noUpkeep` and `-c core.quotePath=false`.
     const recording = ChildProcessSpawner.of({
       ...real,
       spawn: (command) => {
-        if (command._tag === "StandardCommand") started.push(`${command.command} ${String(command.args[2])}`)
+        if (command._tag === "StandardCommand") started.push(`${command.command} ${String(command.args[noUpkeep.length + 2])}`)
         return real.spawn(command)
       }
     })

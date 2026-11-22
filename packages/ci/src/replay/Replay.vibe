@@ -169,6 +169,7 @@ import {
   type Unit,
   unitKey
 } from "./Summary.ts"
+import { gitArguments } from "./Git.ts"
 
 /**
  * Where Node keeps the compiled code of `smthrs` between runs, in the
@@ -691,9 +692,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // The run that only finds what passes here has a store of its own: it saves nothing a counted run restores.
     const keptTrial = path.join(work, "kept-trial")
     try orFail(fs.makeDirectory(keptTrial), "could not make a directory")
-    const cloned = try exec("git", ["clone", "--quiet", "--no-checkout", root, source], work, {}, outputLimit)
+    const cloned = try exec("git", gitArguments(["clone", "--quiet", "--no-checkout", root, source]), work, {}, outputLimit)
     if (cloned.exitCode !== 0) throw failure("not-a-repository", `${root} is not a git repository`)
-    const head = try exec("git", ["rev-parse", "--verify", "--quiet", "HEAD"], source, {}, outputLimit)
+    const head = try exec("git", gitArguments(["rev-parse", "--verify", "--quiet", "HEAD"]), source, {}, outputLimit)
     if (head.exitCode !== 0) throw failure("not-a-repository", `${root} is a git repository with no commit to replay`)
     const history = lines(try git(source, ["rev-list", "--first-parent", `--max-count=${request.commits}`, "HEAD"]))
     const commits = [...history].reverse()
@@ -1454,7 +1455,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     /** The first run of every way, or why there is none though one was asked for. */
     effect function start() {
       if (request.warm !== true) return {}
-      const parent = try exec("git", ["rev-parse", "--verify", "--quiet", `${oldest}^`], source, {}, outputLimit, stdoutOf)
+      const parent = try exec("git", gitArguments(["rev-parse", "--verify", "--quiet", `${oldest}^`]), source, {}, outputLimit, stdoutOf)
       if (parent.exitCode !== 0) return { cold: noCommitBefore(oldest) }
       const before = parent.text.trim()
       const own = try preparedAt(before)

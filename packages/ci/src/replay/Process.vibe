@@ -23,6 +23,7 @@ import {
   watchFor
 } from "./Stall.vibe"
 import { failure, withoutCredentials } from "./Summary.ts"
+import { gitArguments } from "./Git.ts"
 
 /**
  * The cache directory, kept between commits. Smithers build never reads it as
@@ -271,7 +272,7 @@ export effect function git(
   place: Confined | undefined = undefined,
   variables: Readonly<Record<string, string>> = {}
 ) {
-  const [command, ...rest] = place === undefined ? ["git", ...args] : held(place, [cwd], ["git", ...args])
+  const [command, ...rest] = place === undefined ? ["git", ...gitArguments(args)] : held(place, [cwd], ["git", ...gitArguments(args)])
   const errors = try Ref.make("")
   const output = place === undefined
     ? try exec(command, rest, cwd, variables, Number.POSITIVE_INFINITY, answered(errors))
@@ -290,7 +291,7 @@ export effect function git(
  * @since 0.1.0
  */
 export const originOf = (root: string) =>
-  exec("git", ["config", "--get", "remote.origin.url"], root, {}, outputLimit, stdoutOf)
+  exec("git", gitArguments(["config", "--get", "remote.origin.url"]), root, {}, outputLimit, stdoutOf)
 
 /**
  * The branch the repository's `origin` names as its default
@@ -300,7 +301,7 @@ export const originOf = (root: string) =>
  * @since 0.1.0
  */
 export const originHeadOf = (root: string) =>
-  exec("git", ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], root, {}, outputLimit, stdoutOf)
+  exec("git", gitArguments(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]), root, {}, outputLimit, stdoutOf)
 
 /**
  * Makes `copy` from `source` with nothing checked out. It fetches from the

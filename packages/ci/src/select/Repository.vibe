@@ -9,6 +9,7 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Failure } from "../contract/Parts.ts"
 import { failure } from "./Failure.ts"
 import { type Commit, day, horizonDays } from "./Features.ts"
+import { gitArguments } from "../replay/Git.ts"
 
 /**
  * One change as its repository records it: when it was made, the files it
@@ -53,7 +54,7 @@ const commitsOf = (text: string): ReadonlyArray<Commit> =>
 effect function run(root: string, args: ReadonlyArray<string>) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
-    const handle = try spawner.spawn(ChildProcess.make("git", ["-c", "core.quotePath=false", ...args], { cwd: root }))
+    const handle = try spawner.spawn(ChildProcess.make("git", gitArguments(["-c", "core.quotePath=false", ...args]), { cwd: root }))
     const [text, code] = try all([Stream.mkString(Stream.decodeText(handle.stdout)), handle.exitCode], { concurrency: 2 })
     return { code: Number(code), text }
   }) catch effect (error) => {

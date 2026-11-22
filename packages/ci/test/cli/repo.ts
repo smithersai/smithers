@@ -19,6 +19,7 @@ import {
 import { tmpdir } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
+import { gitArguments } from "../../src/replay/Git.ts"
 
 /** A justfile whose CI is `ci`: it needs `test`, which needs `build`. */
 export const justfile = [
@@ -39,9 +40,15 @@ export const justfile = [
 /** A justfile whose every recipe passes, for a test that needs a CI that passes on any machine. */
 export const passingJustfile = "build:\n    true\n\ntest: build\n    true\n\nci: test\n"
 
-/** Runs git in `root` as a fixed author, apart from the machine's configuration. */
+/**
+ * Runs git in `root` as a fixed author, apart from the machine's configuration,
+ * with no upkeep of its own, as smithers-ci runs it: git 2.47 and later
+ * otherwise leave a maintenance running after each commit, which takes
+ * `.git/objects/maintenance.lock` while a case compares the repository byte
+ * for byte.
+ */
 export const git = (root: string, ...args: ReadonlyArray<string>): string =>
-  execFileSync("git", args, {
+  execFileSync("git", gitArguments(args), {
     cwd: root,
     encoding: "utf8",
     env: {
