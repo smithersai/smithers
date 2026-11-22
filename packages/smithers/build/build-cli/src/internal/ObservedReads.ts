@@ -93,7 +93,7 @@ import { byCodeUnit } from "./Text.ts"
  * @category constants
  * @since 1.0.0
  */
-export const format = "smthrs-observed-reads/3"
+export const format = "smthrs-observed-reads/4"
 
 /**
  * Records kept for one declaration. A fresh checkout and a tree a run has
@@ -2391,6 +2391,13 @@ export interface Record {
   /** Set when the run left something behind that it wrote: a file, a directory or a link. */
   readonly left?: true
   /**
+   * The names of the workspace the run made where its commit held nothing, from the root: a directory, a file,
+   * a link, a socket, each one only where nothing above it is in the list. The run found nothing there, and a
+   * commit that puts something there makes it run again: `mkdir out` fails where `out` is a file. What the run
+   * itself left there, which git does not track, is no change.
+   */
+  readonly made?: ReadonlyArray<string>
+  /**
    * Set when the run left a program running when its command ended, as a server started in the background is:
    * a step after it in its job talks to that program, which no record of files holds. Such a step runs again,
    * before a later step of its job that has to run.
@@ -2502,6 +2509,7 @@ export const idOf = (record: Omit<Record, "id">): string =>
       record.from ?? [],
       record.given ?? [],
       record.left ?? false,
+      ...(record.made === undefined ? [] : ["made", record.made]),
       // A record with no variable keeps the id it had before records held any.
       ...(record.variables === undefined ? [] : [record.variables]),
       // A record of a run that left no program and talked to none keeps the id it had before records said so.
@@ -2757,6 +2765,91 @@ export const ignoredByGit = (root: string) => (paths: ReadonlyArray<string>): Re
 }
 
 /**
+ * Asks git which of some names, from the workspace at `root`, the commit
+ * checked out there holds: a file or a link git tracks, or a directory with
+ * one below it. `undefined` where git cannot say, because the workspace is no
+ * repository or git is not there.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const heldByGit = (root: string) => (names: ReadonlyArray<string>): ReadonlySet<string> | undefined => {
+  const files = trackedBelow(root, names)
+  return files === undefined ? undefined : holding(names, files)
+}
+
+/**
+ * {@link heldByGit} that asks git once, for every file it tracks, and answers
+ * each later question from that answer. A build asks for each record of each
+ * step it checks: git names 402 directories of eliza's 30,445 files in 130 ms
+ * when asked for them, and all its files in 26 ms.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const heldByGitOnce = (root: string): (names: ReadonlyArray<string>) => ReadonlySet<string> | undefined => {
+  let commit: ReadonlySet<string> | null | undefined
+  return (names) => {
+    if (commit === undefined) {
+      const files = tracked(root, [])
+      commit = files === undefined ? null : withDirectories(files)
+    }
+    const held = commit
+    return held === null ? undefined : new Set(names.filter((name) => held.has(name)))
+  }
+}
+
+/** Bytes of names past which git is asked for every file it tracks: a command line holds about 2 MB. */
+const namedAtMost = 64 * 1024
+
+/**
+ * The files git tracks at or below some names, from `root`; `undefined` where git cannot say. Git is asked for what
+ * is below the first part of each name: it matches each file against each name it is given, which costs more than
+ * listing them all once there are hundreds.
+ */
+const trackedBelow = (root: string, names: ReadonlyArray<string>): ReadonlyArray<string> | undefined => {
+  if (names.length === 0) return []
+  const heads = [...new Set(names.map((name) => name.split("/")[0]!))]
+  return tracked(root, heads.reduce((sum, head) => sum + head.length + 1, 0) > namedAtMost ? [] : heads)
+}
+
+/** The files git tracks below `pathspecs`, or all of them for none; `undefined` where git cannot say. */
+const tracked = (root: string, pathspecs: ReadonlyArray<string>): ReadonlyArray<string> | undefined => {
+  const asked = spawnSync(
+    "git",
+    // A command a configuration names never runs: a step may have written the repository's configuration.
+    [
+      "--literal-pathspecs",
+      "-c",
+      "core.fsmonitor=false",
+      "-C",
+      root,
+      "ls-files",
+      "-z",
+      "--cached",
+      ...(pathspecs.length === 0 ? [] : ["--", ...pathspecs])
+    ],
+    { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }
+  )
+  return asked.status === 0 ? asked.stdout.split("\0").filter((file) => file !== "") : undefined
+}
+
+/** Each file, and every directory above it. */
+const withDirectories = (files: ReadonlyArray<string>): ReadonlySet<string> => {
+  const held = new Set<string>()
+  for (const file of files) {
+    for (let at = file; at !== "." && !held.has(at); at = NodePath.posix.dirname(at)) held.add(at)
+  }
+  return held
+}
+
+/** Which of some names hold one of `files`: the file itself, or a directory above it. */
+const holding = (names: ReadonlyArray<string>, files: ReadonlyArray<string>): ReadonlySet<string> => {
+  const held = withDirectories(files)
+  return new Set(names.filter((name) => held.has(name)))
+}
+
+/**
  * The file system as one reading of a trace sees it: the status of each path
  * is asked for once. The run has ended, so a second answer would say the
  * same, and a reading that resolves, measures and checks ten thousand paths
@@ -2887,6 +2980,11 @@ export const observe = (
     readonly running?: boolean | undefined
     /** The steps whose programs were running while it ran, with their records' ids ({@link Record.served}). */
     readonly served?: ReadonlyArray<readonly [label: string, id: string]> | undefined
+    /**
+     * Which names, from the root, the commit the run ran at holds ({@link heldByGit} of the root unless given). A
+     * build gives the answer it took before any step ran: a step can change the repository a later look would ask.
+     */
+    readonly held?: ((names: ReadonlyArray<string>) => ReadonlySet<string> | undefined) | undefined
   }
 ): Observation | { readonly refusal: string; readonly outside?: string | undefined } => {
   if (trace.refusals.length > 0) {
@@ -3434,6 +3532,43 @@ export const observe = (
     }
     return false
   }
+  /**
+   * Where the run made names its commit held nothing at ({@link Record.made}): each name of the workspace the run
+   * wrote and did not find there, raised to the highest directory on its way that the commit holds nothing in. A
+   * name the commit holds, as a tracked file the run wrote again, is none. `undefined` where git cannot say: a
+   * workspace that is no checkout has no commit to put a name there.
+   */
+  const madePlaces = (): ReadonlyArray<string> | undefined => {
+    const names = new Set<string>()
+    // No commit holds the repository's own store.
+    const store = `${options.root}/.git`
+    for (const path of [...touched, ...made]) {
+      if (path === options.root || !under(path, options.root) || under(path, store) || fetched.has(path)) continue
+      const entry = entries.get(path)
+      if (entry !== undefined && entry.first !== "made") continue
+      names.add(inside(path))
+    }
+    if (names.size === 0) return []
+    const ways = new Set<string>()
+    for (const name of names) {
+      for (let end = name.indexOf("/"); end >= 0; end = name.indexOf("/", end + 1)) ways.add(name.slice(0, end))
+      ways.add(name)
+    }
+    const commit = (options.held ?? heldByGit(options.root))([...ways])
+    if (commit === undefined) return undefined
+    const found = new Set<string>()
+    for (const name of names) {
+      for (let end = name.indexOf("/");; end = name.indexOf("/", end + 1)) {
+        const at = end < 0 ? name : name.slice(0, end)
+        if (!commit.has(at)) {
+          found.add(at)
+          break
+        }
+        if (end < 0) break
+      }
+    }
+    return [...found].sort(byCodeUnit)
+  }
   /** The variables the run could have used, each with what it held. */
   const used = (given: Variables): ReadonlyArray<readonly [string, string]> => {
     const names = new Set(given.shown)
@@ -3473,11 +3608,13 @@ export const observe = (
     return [...names].sort(byCodeUnit).map((name) => [name, heldAs(given.values[name])] as const)
   }
   const held = variables === undefined ? [] : used(variables)
+  const madeAt = madePlaces()
   const body = {
     reads,
     lists,
     ...(from.length === 0 ? {} : { from, given }),
     ...(survivors.length > 0 ? { left: true as const } : {}),
+    ...(madeAt === undefined || madeAt.length === 0 ? {} : { made: madeAt }),
     ...(held.length === 0 ? {} : { variables: held }),
     ...(options.running === true ? { running: true as const } : {}),
     ...(options.served === undefined || options.served.length === 0 ? {} : { served: options.served })
@@ -3704,7 +3841,8 @@ export const changed = (
   answered: (label: string) => ReadonlySet<string> | undefined = () => undefined,
   values: Variables["values"] = {},
   own: (path: string) => boolean = () => false,
-  served: (label: string) => ReadonlySet<string> | undefined = answered
+  served: (label: string) => ReadonlySet<string> | undefined = answered,
+  holds: (names: ReadonlyArray<string>) => ReadonlySet<string> | undefined = heldByGit(root)
 ): string | undefined => {
   // A program another step started answered this run: the run holds only with that step answered as it was then.
   for (const [label, id] of stored.served ?? []) {
@@ -3721,6 +3859,17 @@ export const changed = (
     if (now === state || now === other) continue
     if (now === absent) return `${path} is gone`
     return state === absent ? `${path} now exists` : `${path} changed`
+  }
+  // A name the run made where its commit held nothing: the run finds something there once a commit puts it there.
+  // What the run itself left there, which git does not track, is no change. Where git cannot say, anything there
+  // may be the commit's.
+  if (stored.made !== undefined) {
+    const held = holds(stored.made)
+    const there = held ?? new Set(stored.made.filter((name) => present(absolute(name), io)))
+    const name = stored.made.find((made) => there.has(made))
+    if (name !== undefined) {
+      return `${name}, which the run made, ${held === undefined ? "is there now" : "is in the commit now"}`
+    }
   }
   for (const [label, id] of stored.from ?? []) {
     if (answered(label)?.has(id) === false) return `${label} is answered from another of its runs`
@@ -3809,6 +3958,7 @@ export const anchored = (stored: Record, latest: (label: string) => string | und
     from,
     given: stored.given ?? [],
     ...(stored.left === true ? { left: true as const } : {}),
+    ...(stored.made === undefined ? {} : { made: stored.made }),
     ...(stored.variables === undefined ? {} : { variables: stored.variables }),
     ...(stored.running === true ? { running: true as const } : {}),
     ...(stored.served === undefined ? {} : { served: stored.served })
@@ -4003,7 +4153,7 @@ const isKept = (value: unknown): boolean => {
 
 const isRecord = (value: unknown): value is Record => {
   if (typeof value !== "object" || value === null) return false
-  const { from = [], given = [], id, kept, left, lists, reads, variables = [] } = value as {
+  const { from = [], given = [], id, kept, left, lists, made = [], reads, variables = [] } = value as {
     readonly [key in keyof Record]?: unknown
   }
   const text = (part: unknown): boolean => typeof part === "string"
@@ -4012,6 +4162,7 @@ const isRecord = (value: unknown): value is Record => {
     Number.isInteger(part) && (part as number) >= 0 && (part as number) < (from as ReadonlyArray<unknown>).length
   return Array.isArray(reads) && Array.isArray(lists) && Array.isArray(from) && Array.isArray(given) &&
     typeof id === "string" && (left === undefined || left === true) && isKept(kept) &&
+    Array.isArray(made) && made.every(text) &&
     Array.isArray(variables) && variables.every((row) => Array.isArray(row) && row.length === 2 && row.every(text)) &&
     reads.every((row) => Array.isArray(row) && (row.length === 2 || row.length === 3) && row.every(text)) &&
     from.every((row) => Array.isArray(row) && row.length === 2 && row.every(text)) &&

@@ -3120,6 +3120,12 @@ const executeWith = (
      */
     let commitFiles: ReadonlySet<string> | undefined
     const commitFile = (path: string): boolean => commitFiles?.has(path) === true
+    /**
+     * Which names the workspace's commit holds ({@link ObservedReads.Record.made}), asked of git once in a build and
+     * before any step runs: a step may write a repository's configuration, and a command it names would run.
+     */
+    const commitHolds = ObservedReads.heldByGitOnce(root)
+    if (planned.workList.some((node) => node.observed !== undefined)) commitHolds([])
     /** The host as a machine that is not made yet would find it; set when the targets are answered together. */
     let unmade: ReturnType<typeof Machine.unmade> | undefined
     /**
@@ -3627,7 +3633,9 @@ const executeWith = (
                       seen.io,
                       (label) => kept.get(label),
                       node.observed!.variables,
-                      commitFile
+                      commitFile,
+                      undefined,
+                      commitHolds
                     ) === undefined
                 )
               )
@@ -3685,6 +3693,7 @@ const executeWith = (
           readAsData: observed.readAsData
         },
         root: NodeFs.realpathSync(place),
+        held: commitHolds,
         ignore: [
           ...ObservedReads.ignored(
             place,
@@ -3763,7 +3772,8 @@ const executeWith = (
               undefined,
               observed.variables,
               commitFile,
-              (label) => answered.get(label)
+              (label) => answered.get(label),
+              commitHolds
             )
           )
           if (moved !== undefined) {

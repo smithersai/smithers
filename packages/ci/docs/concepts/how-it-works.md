@@ -277,9 +277,12 @@ can say what it reads. Smithers CI records it. The step runs under a trace that
 names every file it opened, every directory it listed, and every path it looked
 for and did not find. Its result is stored with that list. On the next change
 the step is a cache hit when everything on the list is unchanged. It runs again
-when a file it read changed, when a file appeared in a directory it listed, or
-when a path it looked for now exists. A change to a file it never read, the
-docs for one, does not run it.
+when a file it read changed, when a file appeared in a directory it listed,
+when a path it looked for now exists, or when the commit adds a file, a
+directory or a link where the step made one: `mkdir dist` fails where the
+commit holds `dist`. What a step left in your checkout that git does not
+track is its own, so running it twice at the same commit reuses it. A change
+to a file it never read, the docs for one, does not run it.
 
 A path the step reaches through a link the kernel makes for its own process,
 `/proc/self/cwd/data.txt` or `/dev/fd/3/data.txt`, counts as the file it leads

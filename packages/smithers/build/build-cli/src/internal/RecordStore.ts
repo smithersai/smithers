@@ -71,6 +71,7 @@ interface Head {
   readonly given?: number
   readonly from?: ObservedReads.Record["from"]
   readonly left?: true
+  readonly made?: ObservedReads.Record["made"]
   readonly kept?: ObservedReads.Record["kept"]
   readonly variables?: ObservedReads.Record["variables"]
   readonly running?: ObservedReads.Record["running"]
@@ -91,6 +92,7 @@ function* linesOf(record: ObservedReads.Record): Generator<string> {
     ...(record.given === undefined ? {} : { given: given.length }),
     ...(record.from === undefined ? {} : { from: record.from }),
     ...(record.left === undefined ? {} : { left: record.left }),
+    ...(record.made === undefined ? {} : { made: record.made }),
     ...(record.kept === undefined ? {} : { kept: record.kept }),
     ...(record.variables === undefined ? {} : { variables: record.variables }),
     ...(record.running === undefined ? {} : { running: record.running }),
@@ -219,6 +221,7 @@ export const read = async (cas: string, reference: Reference): Promise<ObservedR
     ...(head.from === undefined ? {} : { from: head.from }),
     ...(head.given === undefined ? {} : { given }),
     ...(head.left === undefined ? {} : { left: head.left }),
+    ...(head.made === undefined ? {} : { made: head.made }),
     ...(head.kept === undefined ? {} : { kept: head.kept }),
     ...(head.variables === undefined ? {} : { variables: head.variables }),
     ...(head.running === undefined ? {} : { running: head.running }),

@@ -351,6 +351,7 @@ other file in `data` does not run the target again.
 | A file the run read                               | Its content, or whether it can be executed, differs         |
 | A new file in a directory the run listed          | The directory's names differ; a glob lists where it matches |
 | A path the run looked for and did not find        | It now exists                                               |
+| A name the run made where its commit held nothing | The commit holds a file, a directory or a link there now    |
 | A symbolic link on the way to a file              | Its target differs                                          |
 | The command, `env`, an `inheritEnv` value, a tool | The declaration's key differs                               |
 | A variable `observe.env` names that the run used  | Its value differs                                           |
@@ -368,6 +369,16 @@ say which file made a step run again.
 A file a step before it left is named with that step: `deps/built.txt, which
 //:build left, changed` says the build ran again and left other bytes, where
 `src/a.txt changed` names a file of the workspace.
+
+A run that makes a name where its commit holds nothing, as `mkdir dist` does,
+reads nothing there, yet it fails or does otherwise where a commit puts
+something at that name. The record holds each such name, or the highest new
+directory above it, and the target runs again once git tracks a file at or
+below it: `dist, which the run made, is in the commit now`. What the run left
+there itself, which git does not track, is no change, so a second run in the
+same checkout is a hit. A workspace that is no git checkout has no commit to
+put a name there, and its records hold none. A record stored before records
+held these names is not read, and its target runs once.
 
 A record holds every path its run read, and a change to any of them makes the
 run happen. For a target on a machine, the files a fresh checkout holds are

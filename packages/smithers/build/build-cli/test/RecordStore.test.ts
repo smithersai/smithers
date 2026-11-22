@@ -33,6 +33,8 @@ const full: ObservedReads.Record = {
   from: [["//:install", "i1"]],
   given: [["node_modules/z.js", "f:03", 0], ["node_modules/y.js", "f:04", 0]],
   left: true,
+  // It made `dist` where the commit held nothing.
+  made: ["dist"],
   kept: { archive: "a".repeat(64), outside: [["/home/u/bin/tool", "f:00:x"]], gone: ["stale.txt"] },
   variables: [["COMMIT", "-"]],
   // It left a server running for the steps after it, and a program //:db left running answered it.
@@ -84,6 +86,7 @@ describe("the records of reads in the content store", () => {
       given: 2,
       from: full.from,
       left: true,
+      made: ["dist"],
       kept: full.kept,
       variables: full.variables,
       running: true,
