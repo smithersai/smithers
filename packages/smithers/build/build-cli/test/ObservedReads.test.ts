@@ -3974,6 +3974,46 @@ describe("the variables of the host a run could have used", () => {
     expect(performance.now() - began).toBeLessThan(300)
   })
 
+  // eliza's types and lint, by hand: a type check reads the installed compiler and thousands of declaration files,
+  // a lint reads its program, and a runner gives the step about a hundred variables. Nearly every installed file
+  // holds a name a runner gives (`CI`, `HOME`, `PATH`), and looking for each name in turn in each such file took 8 s
+  // of a reading that took 1 s with a few variables (6,031 files).
+  it("reads an installed type check and lint for a runner's hundred variables about as fast as for three", async () => {
+    const { observe, open, write } = await places()
+    const uses = "if (process.env.CI) process.stdout.write(`${process.env.HOME}:${process.env.PATH}`)\n"
+    const lines: Array<string> = []
+    for (let index = 0; index < 2_000; index += 1) {
+      const name = `node_modules/@types/package-${index}/index.d.ts`
+      await write(name, `export declare const value${index}: number\n${uses}`.repeat(50))
+      lines.push(open(name))
+    }
+    await write("node_modules/typescript/lib/tsc.js", uses.repeat(300_000))
+    // A program of 32 MB with zero bytes in it, so the two-byte forms are looked for too.
+    const program = Buffer.alloc(32 * 1024 * 1024)
+    for (let index = 0; index < program.length; index += 1) program[index] = (index * 7_919) & 0xff
+    program.write("PATH\0HOME", 16_000_000, "latin1")
+    await write("node_modules/@biomejs/cli-linux-x64/biome", program)
+    lines.push(open("node_modules/typescript/lib/tsc.js"), open("node_modules/@biomejs/cli-linux-x64/biome"))
+    const runner = [
+      ...["CI", "HOME", "PATH", "LANG", "USER", "SHELL", "PWD", "_"],
+      ...Array.from({ length: 92 }, (_, index) => `GITHUB_VARIABLE_${index}`)
+    ]
+    const fastest = (given: Readonly<Record<string, string | undefined>>): number => {
+      let best = Number.POSITIVE_INFINITY
+      for (let round = 0; round < 3; round += 1) {
+        const began = performance.now()
+        // What git leaves out says nothing of a variable, so the record holds none.
+        expect(observe(lines, { values: given }).variables).toBeUndefined()
+        best = Math.min(best, performance.now() - began)
+      }
+      return best
+    }
+    const few = fastest(values)
+    const many = fastest(Object.fromEntries(runner.map((name) => [name, "1"])))
+    // On the build server, a pass for each name took 6.4 to 7.3 times as long as three names; one pass, 1.4 to 1.5.
+    expect(many / few, `${Math.round(many)} ms for a hundred, ${Math.round(few)} ms for three`).toBeLessThan(4)
+  }, 120_000)
+
   it("keeps the variables of a record when it moves, and stores them", async () => {
     const stored: ObservedReads.Record = {
       reads: [],
