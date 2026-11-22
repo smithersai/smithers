@@ -50,7 +50,8 @@ const replay = async (
   free: number,
   counted: ReadonlyArray<string>,
   jobs = 2,
-  taken: (since: (way: string) => number | undefined) => number = () => 0
+  taken: (since: (way: string) => number | undefined) => number = () => 0,
+  trial = false
 ): Promise<Outcome> => {
   const said: Array<string> = []
   const folders: Array<string> = []
@@ -78,7 +79,7 @@ const replay = async (
   )
   const start = Date.now()
   const result = await Effect.runPromise(
-    run({ root, commits, modes: ["normal"], jobs }, base).pipe(
+    run({ root, commits, modes: ["normal"], jobs, trial }, base).pipe(
       Effect.catch((failure: Failure) => Effect.succeed(failure)),
       Effect.provide(Layer.provideMerge(host, NodeServices.layer))
     ) as Effect.Effect<ReplayReport | Failure>
@@ -108,7 +109,7 @@ const commitTwo = (root: string): void => {
 }
 
 const stoppedHere =
-  /^the replay stopped before the disk filled: the disk that holds \S+ has (\S+) GB free, under the 5 GB a replay leaves free \(5 GB, or 2% of the disk when that is more\); the replay held (\S+) GB there, (\S+) GB of it in its jobs' machines\. Run it with fewer jobs at once \(--jobs\) or with more free space$/
+  /^the replay stopped before the disk filled: the disk that holds \S+ has (\S+) GB free, under the (\S+) GB a replay leaves free \(5 GB, or 2% of the disk when that is more\); the replay held (\S+) GB there, (\S+) GB of it in its jobs' machines\. (Run it with fewer jobs at once \(--jobs\) or with more free space|Free \S+ GB more on that disk, or set TMPDIR to a folder on a disk with more room)$/
 
 describe("a replay on a disk its jobs would fill", () => {
   it("starts a job only once what the jobs before it left is gone, and says the most it held", async () => {
@@ -126,16 +127,32 @@ describe("a replay on a disk its jobs would fill", () => {
     )
   }, 600_000)
 
-  it("stops with one line, as a failure of its own, when there is no room from the start", async () => {
+  it("reports no commit and says why when there is no room from the start", async () => {
     const root = track(makeSmallRepository([job("only", "true")]))
     const { folders, result } = await replay(root, 1, gb(4), ["baseline"])
-    const failure = result as Failure
-    expect(failure.code).toBe("command-failed")
-    expect(failure.message).toMatch(stoppedHere)
-    expect(failure.message).toContain("has 4 GB free")
+    const report = result as ReplayReport
+    expect(report.commits).toEqual([])
+    expect(report.stopped).toMatch(stoppedHere)
+    expect(report.stopped).toContain("has 4.0 GB free")
+    // Nothing a job held could give the room back, so the line says how much to free.
+    expect(report.stopped).toContain("Free 1.0 GB more on that disk, or set TMPDIR")
+    expect(Schema.decodeUnknownSync(ReplayReport)(report)).toEqual(report)
+    expect(text(report).split("\n")[0]).toMatch(/^The replay stopped before the disk filled: /)
     // Its machines and copies are gone with its folder.
     expect(folders).toHaveLength(1)
     expect(existsSync(folders[0] as string)).toBe(false)
+  }, 600_000)
+
+  it("reports no commit and says why when the disk stops the run that finds what passes here", async () => {
+    const root = track(makeSmallRepository([job("only", "true")]))
+    // That run is said as "checking which jobs pass on this machine at <commit>": the disk is small from then on.
+    const tip = execFileSync("git", ["rev-parse", "--short=7", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
+    const { result } = await replay(root, 1, gb(4), [tip], 2, () => 0, true)
+    const report = result as ReplayReport
+    expect(report.commits).toEqual([])
+    expect(report.stopped).toMatch(stoppedHere)
+    expect(Schema.decodeUnknownSync(ReplayReport)(report)).toEqual(report)
+    expect(text(report).split("\n")[0]).toMatch(/^The replay stopped before the disk filled: /)
   }, 600_000)
 
   it("ends a running job when the disk would fill, and reports the commits before", async () => {
@@ -147,7 +164,7 @@ describe("a replay on a disk its jobs would fill", () => {
     const report = result as ReplayReport
     expect(report.commits.map((commit) => commit.baseline.ok)).toEqual([true])
     expect(report.stopped).toMatch(stoppedHere)
-    expect(report.stopped).toContain("has 2 GB free")
+    expect(report.stopped).toContain("has 2.0 GB free")
     expect(report.diskHeldBytes).toBe(gb(7))
     expect(ms).toBeLessThan(500_000)
     expect(Schema.decodeUnknownSync(ReplayReport)(report)).toEqual(report)
@@ -162,10 +179,10 @@ describe("a replay on a disk its jobs would fill", () => {
       return normal !== undefined && Date.now() - normal > 10_000 ? gb(7) : 0
     }
     const { result } = await replay(root, 1, gb(9), [], 2, filled)
-    // Had the run been waited for, the replay would have reported its one commit.
-    const failure = result as Failure
-    expect(failure.code).toBe("command-failed")
-    expect(failure.message).toMatch(stoppedHere)
-    expect(failure.message).toContain("has 2 GB free")
+    // Had the run been waited for, the replay would have reported its one commit: it reports none, and why.
+    const report = result as ReplayReport
+    expect(report.commits).toEqual([])
+    expect(report.stopped).toMatch(stoppedHere)
+    expect(report.stopped).toContain("has 2.0 GB free")
   }, 600_000)
 })

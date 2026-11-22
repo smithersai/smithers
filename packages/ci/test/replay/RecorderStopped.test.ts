@@ -122,11 +122,12 @@ describe("a replay whose recorder stopped", { timeout: 600_000 }, () => {
     expect(text(report).split("\n")[0]).toMatch(/^The replay stopped at \w{7}: smthrs-observe/)
   })
 
-  it("ends with the line when it stops at its first commit", async () => {
+  it("reports no commit and says why when it stops at its first commit", async () => {
     const root = repository()
-    const failed = await replay(root, killedAt("three"), 1).then(() => undefined, (cause: Failure) => cause)
-    expect(failed?.code).toBe("command-failed")
-    expect(failed?.message).toMatch(/^the replay stopped at \w{7}: smthrs-observe, which records what /)
+    const report = await replay(root, killedAt("three"), 1)
+    expect(report.commits).toEqual([])
+    expect(report.stopped).toMatch(/^the replay stopped at \w{7}: smthrs-observe, which records what /)
+    expect(text(report).split("\n")[0]).toMatch(/^The replay stopped at \w{7}: smthrs-observe/)
   })
 
   it("says nothing of the recorder for a run that failed for another reason", async () => {

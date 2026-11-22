@@ -313,7 +313,11 @@ program exits `4`, also when the report lists a mismatch.
 When the disk that holds the replay's folder would fill, the replay stops. The
 report holds the commits replayed before the one it stopped in, and its first
 line says how much the replay held and where:
-`the replay stopped before the disk filled: the disk that holds /tmp/smithers-ci-replay-x has 2.4 GB free, under the 5 GB a replay leaves free (5 GB, or 2% of the disk when that is more); the replay held 47 GB there, 41 GB of it in its jobs' machines. Run it with fewer jobs at once (--jobs) or with more free space`.
+`the replay stopped before the disk filled: the disk that holds /tmp/smithers-ci-replay-x has 2.4 GB free, under the 5.0 GB a replay leaves free (5 GB, or 2% of the disk when that is more); the replay held 47 GB there, 41 GB of it in its jobs' machines. Run it with fewer jobs at once (--jobs) or with more free space`.
+What is free is rounded down and the floor up, so the first number is always
+under the second. Fewer jobs at once is advised only when the jobs' machines
+held space it would give back; otherwise the line says how much to free, as in
+`Free 1.0 GB more on that disk, or set TMPDIR to a folder on a disk with more room`.
 With `--json` that line is the report's `stopped` field. The same line goes to
 standard error, and the program exits `4`. Every report gives the most disk
 the replay held at once, `diskHeldBytes` with `--json`.
@@ -333,6 +337,10 @@ details:
 `the replay stopped at 3f2a1c9 on an error of its own: could not make a directory: Unknown: FileSystem.remove (/tmp/smithers-ci-replay-x/...)`.
 The same line goes to standard error, and the program exits `4`. When it stops
 at its first commit there is no report, only the line.
+
+A replay the disk stops at its first commit or before it, or whose recorder
+stops at its first commit, still prints its report: it holds no commit, and its
+first line is the line that says where it stopped, why, and what to do.
 
 ## Output
 

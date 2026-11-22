@@ -72,17 +72,45 @@ export service DiskSpace {
   })
 }
 
+/** A size in gigabytes, rounded down (`round` Math.floor) or up (Math.ceil) to the decimals one sentence uses. */
+const gigabytes = (bytes: number, digits: number, round: (value: number) => number): string =>
+  `${(round((Math.max(0, bytes) / gigabyte) * 10 ** digits) / 10 ** digits).toFixed(digits)} GB`
+
+/** The decimals a size of `bytes` is said with: none from 10 GB, one below. */
+const digitsFor = (bytes: number): number => bytes >= 10 * gigabyte ? 0 : 1
+
 /**
- * The line a replay ends with when the disk would fill.
+ * Free space under the floor, said so that it reads as under: what is free
+ * rounded down and the floor rounded up, to the same decimals. 4.97 GB under
+ * 5 GB reads "4.9 GB free, under the 5.0 GB", never "5 GB under the 5 GB".
+ */
+const apart = (free: number, floor: number): readonly [string, string] =>
+  [gigabytes(free, digitsFor(floor), Math.floor), gigabytes(floor, digitsFor(floor), Math.ceil)]
+
+/** A size to free, rounded up so that it is never nothing: 0.1 GB, 1.2 GB, 14 GB. */
+const toFree = (bytes: number): string => gigabytes(bytes, digitsFor(bytes), Math.ceil)
+
+/** Jobs' machines holding less than this held nothing a smaller --jobs would give back. */
+const machinesWorthJobs = gigabyte / 10
+
+/**
+ * The line a replay ends with when the disk would fill. It says what is free
+ * and what the replay leaves free so that the first is plainly under the
+ * second, and advises fewer jobs at once only when the jobs' machines held
+ * space a smaller `--jobs` gives back; otherwise it says how much to free.
  *
  * @category rendering
  * @since 0.1.0
  */
-export const stoppedLine = (folder: string, free: number, floor: number, held: number, machines: number): string =>
-  `the replay stopped before the disk filled: the disk that holds ${folder} has ${sizeOf(free)} free, under the ` +
-  `${sizeOf(floor)} a replay leaves free (5 GB, or 2% of the disk when that is more); the replay held ` +
-  `${sizeOf(held)} there, ${sizeOf(machines)} of it in its jobs' machines. Run it with fewer jobs at once ` +
-  `(--jobs) or with more free space`
+export const stoppedLine = (folder: string, free: number, floor: number, held: number, machines: number): string => {
+  const [freeText, floorText] = apart(free, floor)
+  const advice = machines >= machinesWorthJobs
+    ? "Run it with fewer jobs at once (--jobs) or with more free space"
+    : `Free ${toFree(floor - free)} more on that disk, or set TMPDIR to a folder on a disk with more room`
+  return `the replay stopped before the disk filled: the disk that holds ${folder} has ${freeText} free, under the ` +
+    `${floorText} a replay leaves free (5 GB, or 2% of the disk when that is more); the replay held ` +
+    `${sizeOf(held)} there, ${sizeOf(machines)} of it in its jobs' machines. ${advice}`
+}
 
 /**
  * What a replay says while a job waits for disk space.
@@ -90,9 +118,11 @@ export const stoppedLine = (folder: string, free: number, floor: number, held: n
  * @category rendering
  * @since 0.1.0
  */
-export const waitingLine = (free: number, floor: number): string =>
-  `waiting for disk space: ${sizeOf(free)} free, under the ${sizeOf(floor)} a replay leaves free; ` +
-  `no job starts until a running one ends`
+export const waitingLine = (free: number, floor: number): string => {
+  const [freeText, floorText] = apart(free, floor)
+  return `waiting for disk space: ${freeText} free, under the ${floorText} a replay leaves free; ` +
+    "no job starts until a running one ends"
+}
 
 /**
  * The disk under watch while a replay runs. `admit` waits until a job may

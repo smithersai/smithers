@@ -1489,8 +1489,36 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     // The jobs that could run here before the first run took any out.
     const could = new Set(newest.units.map((unit) => unit.job))
-    const started: { readonly firstRun?: FirstRun; readonly cold?: string } = try start()
-    const trialMs = started.firstRun === undefined && request.trial === true ? try trial() : undefined
+    const begun = try exit(effect {
+      const first: { readonly firstRun?: FirstRun; readonly cold?: string } = try start()
+      return { started: first, trialMs: first.firstRun === undefined && request.trial === true ? try trial() : undefined }
+    })
+    if (Exit.isFailure(begun)) {
+      // The disk can stop a replay before its first counted commit: it reports that, with no commit, and says why.
+      const full = try disk.stopped
+      if (full === undefined) try failCause(begun.cause)
+      return finishedReport(newest.inventory, [], {
+        fastAsked: fast !== undefined,
+        rows: [],
+        selected: new Map(),
+        left: newest.left,
+        flaky: 0,
+        fastFlaky: 0,
+        commitsLeft: [],
+        fastNotMeasured: undefined,
+        jobs: jobsCovered(newest.units, newest.left),
+        trialMs: undefined,
+        appliedMs: undefined,
+        reruns: tally,
+        firstRun: undefined,
+        cold: undefined,
+        diskHeldBytes: try disk.most,
+        stopped: full,
+        recorder,
+        runnerSteps: runnerStepsOf(newest.inventory, newest.units)
+      })
+    }
+    const { started, trialMs } = begun.value
     // A speedup over less than half of a CI is not that CI's: the replay says what it left out, and stops. A job
     // that needs rights the jail takes away is left out after: it is no failure of this CI.
     const stayed = new Set(newest.units.map((unit) => unit.job))
@@ -1678,9 +1706,9 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       try putBack
     }
     const stopped = (try disk.stopped) ?? recorderGone
-    if (!finished && commitsDone.length === 0) throw failure("command-failed", stopped as string)
-    // One commit where nothing passes is a failed commit. When nothing passes at any, the CI does not run here.
-    const nothing = nothingPassed(baselines, stepNames(newest.units))
+    // One commit where nothing passes is a failed commit. When nothing passes at any, the CI does not run here. A
+    // replay that stopped says why it stopped, whatever passed before.
+    const nothing = finished ? nothingPassed(baselines, stepNames(newest.units)) : undefined
     if (nothing !== undefined) throw failure("unsupported", nothing)
     return finishedReport(newest.inventory, commitsDone, {
       fastAsked: fast !== undefined,

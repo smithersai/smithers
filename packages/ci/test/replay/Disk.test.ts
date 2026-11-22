@@ -164,9 +164,29 @@ describe("a watch of the disk", () => {
     expect(outcome.ended).toEqual(failed)
     expect(outcome.stopped).toBe(line)
     expect(line).toBe(
-      "the replay stopped before the disk filled: the disk that holds /replay has 4 GB free, under the 5 GB a " +
+      "the replay stopped before the disk filled: the disk that holds /replay has 4.0 GB free, under the 5.0 GB a " +
         "replay leaves free (5 GB, or 2% of the disk when that is more); the replay held 7 GB there, 7 GB of it in " +
         "its jobs' machines. Run it with fewer jobs at once (--jobs) or with more free space"
+    )
+  })
+
+  it("says free space under the floor so that it reads as under, and advises only what gives room back", () => {
+    // Rounded alike, 4.97 GB and 5 GB would read "5 GB free, under the 5 GB": what is free is rounded down and the
+    // floor up, so the line never says the one is under the other when the numbers it shows are equal.
+    expect(stoppedLine("/replay", gb(4.97), gb(5), gb(0), gb(0))).toBe(
+      "the replay stopped before the disk filled: the disk that holds /replay has 4.9 GB free, under the 5.0 GB a " +
+        "replay leaves free (5 GB, or 2% of the disk when that is more); the replay held 0 GB there, 0 GB of it in " +
+        "its jobs' machines. Free 0.1 GB more on that disk, or set TMPDIR to a folder on a disk with more room"
+    )
+    expect(stoppedLine("/replay", gb(4.99999), gb(5), gb(0), gb(0))).toContain("has 4.9 GB free, under the 5.0 GB")
+    // A floor of 2% of a large disk is said in whole gigabytes, and so is a large shortfall.
+    expect(stoppedLine("/replay", gb(25.7), gb(37.2), gb(1), gb(0.05))).toContain(
+      "has 25 GB free, under the 38 GB a replay leaves free"
+    )
+    expect(stoppedLine("/replay", gb(25), gb(38), gb(1), gb(0.05))).toContain("Free 13 GB more on that disk")
+    expect(stoppedLine("/replay", gb(3), gb(5), gb(1), gb(0.05))).toContain("Free 2.0 GB more on that disk")
+    expect(waitingLine(gb(4.97), gb(5))).toBe(
+      "waiting for disk space: 4.9 GB free, under the 5.0 GB a replay leaves free; no job starts until a running one ends"
     )
   })
 
