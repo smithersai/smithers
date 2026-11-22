@@ -70,6 +70,7 @@ import { diskWatch } from "./Disk.vibe"
 import {
   ambientEnvironment,
   coreCount,
+  leftEndsVariable,
   machinesVariable,
   nodePath,
   pushRefusal,
@@ -931,6 +932,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       ...stepEnvironment({ ...software, ...site.place.daemon }, site.place),
       ...jobHomes(site.place),
       [machinesVariable]: machines,
+      // What a step leaves where nothing keeps it ends with the step, as in the baseline.
+      [leftEndsVariable]: "step",
       // The recorder the person chose, which Smithers build reads itself.
       ...recorderOf(person),
       ...(request.cache === undefined ? {} : { SMITHERS_CACHE_URL: request.cache }),

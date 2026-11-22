@@ -886,6 +886,17 @@ export const environment = (machine: Machine): Readonly<Record<string, string>> 
 export const ownTmpVariable = "SMTHRS_MACHINE_OWN_TMP"
 
 /**
+ * Set to `step` by a replay: where nothing keeps a job's programs in a
+ * namespace or reaps them (macOS), what a step leaves running ends with the
+ * step, as in the replay's baseline. Without it, as on a CI runner, it lives
+ * until the job's last step has ended, and ends then.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const leftEndsVariable = "SMTHRS_LEFT_ENDS"
+
+/**
  * Why a target of `machine` cannot run where the host gives no `/tmp` of its
  * own and `other`, another machine, has used the host's in this build.
  *

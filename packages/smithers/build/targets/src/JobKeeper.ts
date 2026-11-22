@@ -595,7 +595,10 @@ export const cwds = async (
  * in its process group ends with the step already, and a child of `self` is a
  * step still running. A program that changes its directory out of
  * `directory`, as a daemon that changes to `/` does, is not found. `list`
- * lists the processes ({@link processes}).
+ * lists the processes ({@link processes}). With `adopted` false, once nothing
+ * of the job runs, every new process of this user working in `directory`:
+ * one whose parent is itself ending is no orphan yet, and is left all the
+ * same.
  *
  * @category running
  * @since 0.1.0
@@ -605,11 +608,12 @@ export const orphansIn = async (
   directory: string,
   platform: NodeJS.Platform = process.platform,
   self: number = process.pid,
-  list: () => Promise<ReadonlyMap<number, number>> = processes
+  list: () => Promise<ReadonlyMap<number, number>> = processes,
+  adopted = true
 ): Promise<ReadonlyArray<Left>> => {
   const now = await list()
   const candidates = [...now].filter(([pid, parent]) =>
-    !before.has(pid) && parent !== self && (parent === 1 || before.has(parent))
+    !before.has(pid) && pid !== self && (!adopted || (parent !== self && (parent === 1 || before.has(parent))))
   ).map(([pid]) => pid)
   if (candidates.length === 0) return []
   // macOS names /tmp by its real path, /private/tmp.
@@ -628,7 +632,10 @@ const commandOf = (pid: number): Promise<string> =>
   )
 
 /**
- * Ends what {@link orphansIn} finds, and answers what it found.
+ * Ends what a job's steps left in `directory`, once none of them runs: every
+ * process of this user that was not running in `before` and works there
+ * ({@link orphansIn}, not only those already adopted), and answers what it
+ * found once it has ended.
  *
  * @category running
  * @since 0.1.0
@@ -638,9 +645,11 @@ export const endOrphans = async (
   directory: string,
   platform: NodeJS.Platform = process.platform
 ): Promise<ReadonlyArray<Left>> => {
-  const found = await orphansIn(before, directory, platform)
+  const found = await orphansIn(before, directory, platform, process.pid, processes, false)
   // One that ended on its own in the meantime is no longer there to end.
   await new Promise((resolve) => execFile("kill", ["-KILL", ...found.map((each) => String(each.pid))], resolve))
+  // A killed process holds its port until it has ended: it answers once they have.
+  await allEnded(found.map((each) => each.pid), 10_000, platform)
   return found
 }
 
@@ -663,7 +672,8 @@ export const childrenOf = (pid: number): ReadonlyArray<number> => {
 }
 
 /**
- * Resolves once each of `pids` has ended, `true`, or `false` after `limitMs`.
+ * Resolves once each of `pids` has ended, every thread of it, `true`, or
+ * `false` after `limitMs`.
  * The first process of a process namespace ends only once every process in
  * it has, so the namespace is empty then; the bubblewrap that holds it can
  * end first.
@@ -671,15 +681,29 @@ export const childrenOf = (pid: number): ReadonlyArray<number> => {
  * @category running
  * @since 0.1.0
  */
-export const allEnded = async (pids: ReadonlyArray<number>, limitMs = 10_000): Promise<boolean> => {
+export const allEnded = async (
+  pids: ReadonlyArray<number>,
+  limitMs = 10_000,
+  platform: NodeJS.Platform = process.platform
+): Promise<boolean> => {
   const until = Date.now() + limitMs
   const running = (pid: number): boolean => {
-    try {
-      const stat = readFileSync(`/proc/${pid}/stat`, "latin1")
-      return stat.slice(stat.lastIndexOf(")") + 2)[0] !== "Z"
-    } catch {
-      return false
+    // Without /proc (macOS), a process is there while it can be signalled; one of another user is there too.
+    if (platform !== "linux") {
+      try {
+        process.kill(pid, 0)
+        return true
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code === "EPERM"
+      }
     }
+    // A process holds its files, a listening socket among them, until its last thread has ended: its first thread
+    // can be a zombie while another still runs.
+    return threadsOf(pid).some((thread) => {
+      const stat = textOf(`/proc/${pid}/task/${thread}/stat`)
+      const state = stat?.slice(stat.lastIndexOf(")") + 2)[0]
+      return state !== undefined && state !== "Z" && state !== "X"
+    })
   }
   while (pids.some(running)) {
     if (Date.now() > until) return false
@@ -687,6 +711,24 @@ export const allEnded = async (pids: ReadonlyArray<number>, limitMs = 10_000): P
   }
   return true
 }
+
+const textOf = (path: string, encoding: BufferEncoding = "latin1"): string | undefined => {
+  try {
+    return readFileSync(path, encoding)
+  } catch {
+    return undefined
+  }
+}
+
+const entriesOf = (path: string): ReadonlyArray<string> => {
+  try {
+    return readdirSync(path)
+  } catch {
+    return []
+  }
+}
+
+const threadsOf = (pid: number): ReadonlyArray<string> => entriesOf(`/proc/${pid}/task`)
 
 const namespaceOf = (pid: number): string | undefined => {
   try {
@@ -704,16 +746,8 @@ const namespaceOf = (pid: number): string | undefined => {
  * @category running
  * @since 0.1.0
  */
-export const commandLineOf = (pid: number): string => {
-  try {
-    return readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").filter((word) => word !== "").join(" ").slice(
-      0,
-      200
-    )
-  } catch {
-    return ""
-  }
-}
+export const commandLineOf = (pid: number): string =>
+  (textOf(`/proc/${pid}/cmdline`, "utf8") ?? "").split("\0").filter((word) => word !== "").join(" ").slice(0, 200)
 
 /**
  * What still runs where `first` are the first processes of namespaces: every
@@ -730,7 +764,7 @@ export const stillIn = (first: ReadonlyArray<number>): ReadonlyArray<Left> => {
   const spaces = new Set(first.map(namespaceOf).filter((space) => space !== undefined && space !== own))
   const pids = first.filter((pid) => namespaceOf(pid) === own)
   if (spaces.size > 0) {
-    for (const entry of readdirSync("/proc")) {
+    for (const entry of entriesOf("/proc")) {
       if (/^[0-9]+$/.test(entry) && spaces.has(namespaceOf(Number(entry)))) pids.push(Number(entry))
     }
   }

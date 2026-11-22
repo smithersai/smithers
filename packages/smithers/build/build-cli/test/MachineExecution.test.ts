@@ -1109,6 +1109,47 @@ describe("the end of a job whose step left programs running", () => {
   }, 300_000)
 })
 
+describe("a program a step leaves, where nothing keeps or reaps its job's programs", () => {
+  const unreaped = it.skipIf("reason" in tracing || !keeps || !python || ObservedReads.reaperPath() !== undefined)
+  for (const [ends, asked] of [[undefined, "ran"], ["step", "failed"]] as const) {
+    unreaped(
+      `serves the steps after it until the job ends on a runner, and ends with its step in a replay (${
+        ends ?? "runner"
+      })`,
+      async () => {
+        const port = await freePort()
+        const fake = await fakeBubblewrap("namespace")
+        const server = `require("net").createServer((s) => s.end("ok")).listen(${port}, "127.0.0.1")`
+        const client = `require("net").connect(${port}, "127.0.0.1").on("data", () => process.exit(0))` +
+          `.on("error", () => process.exit(1))`
+        const { environment, run } = await fixture(
+          () => {
+            // A session of its own: the step's process group does not hold it.
+            const serve = on(
+              "one",
+              `setsid -f ${process.execPath} -e '${server}' > /dev/null 2>&1 < /dev/null; sleep 1`
+            )
+            return { serve, ask: on("one", `${process.execPath} -e '${client}'`, [serve]) }
+          },
+          undefined,
+          [fake]
+        )
+        if (ends !== undefined) environment[Machine.leftEndsVariable] = ends
+        // Unrecorded, as on macOS: a recorder ends what a recorded run left, whatever runs it.
+        expect(await run(["ask"], untraced)).toEqual({ serve: "ran", ask: asked })
+        // Either way nothing of the job is left once the build returns.
+        const free = await new Promise<boolean>((resolve) => {
+          const probe = Net.createServer()
+          probe.once("error", () => resolve(false))
+          probe.listen(port, "127.0.0.1", () => probe.close(() => resolve(true)))
+        })
+        expect(free).toBe(true)
+      },
+      300_000
+    )
+  }
+})
+
 describe("a step that left a program running and failed only while its reads were recorded", () => {
   keptIt("leaves the plain run's program alone: the recorded run's is ended first", async () => {
     const seconds = 52_000 + (process.pid % 900)

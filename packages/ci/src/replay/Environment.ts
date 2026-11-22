@@ -76,6 +76,17 @@ export const skippedPart = (path: string): string | undefined =>
 export const machinesVariable = "SMTHRS_MACHINES"
 
 /**
+ * The variable that tells Smithers build a run is a replay's: where nothing
+ * keeps a job's programs or reaps them (macOS), what a step leaves running
+ * ends with the step, as in the baseline. On a runner it lives until the job
+ * ends, as GitHub keeps it.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const leftEndsVariable = "SMTHRS_LEFT_ENDS"
+
+/**
  * The programs no step of a replay can start by name: each has a stand-in
  * that refuses, first on the step's `PATH`.
  *

@@ -386,16 +386,19 @@ describe("what a step left in its directory where nothing keeps it", () => {
       // A step that left a program in a session of its own, and one that left it in another directory.
       spawnSync("/bin/sh", ["-c", `setsid -f sleep ${seconds} > /dev/null 2>&1 < /dev/null`], { cwd: there })
       spawnSync("/bin/sh", ["-c", `setsid -f sleep ${seconds + 1} > /dev/null 2>&1 < /dev/null`], { cwd: elsewhere })
-      // A step still running in the same directory, as a step of another job is.
+      // A process of this one in the same directory, as a step still running is.
       const running = spawn("sleep", [String(seconds + 2)], { cwd: there, stdio: "ignore" })
       await until(() => sleeping(`sleep ${seconds}`).length === 1 && sleeping(`sleep ${seconds + 1}`).length === 1)
       try {
+        // While steps may run: only what the system adopted, not a child of this process.
+        const adopted = await JobKeeper.orphansIn(before, there)
+        expect(adopted.map((each) => each.command)).toEqual([`sleep ${seconds}`])
+        // Once none runs: everything new that works there.
         const found = await JobKeeper.endOrphans(before, there)
-        expect(found.map((each) => each.command)).toEqual([`sleep ${seconds}`])
-        await until(() => sleeping(`sleep ${seconds}`).length === 0)
+        expect(found.map((each) => each.command).toSorted()).toEqual([`sleep ${seconds}`, `sleep ${seconds + 2}`])
         expect(sleeping(`sleep ${seconds}`)).toEqual([])
+        expect(sleeping(`sleep ${seconds + 2}`)).toEqual([])
         expect(sleeping(`sleep ${seconds + 1}`)).toHaveLength(1)
-        expect(sleeping(`sleep ${seconds + 2}`)).toEqual([running.pid])
         // Nothing left: nothing found, nothing ended.
         expect(await JobKeeper.endOrphans(before, there)).toEqual([])
       } finally {
@@ -425,6 +428,11 @@ describe.runIf(process.platform === "linux")("the processes a namespace's holder
       expect(await JobKeeper.allEnded([])).toBe(true)
       // A process that is gone altogether has ended.
       expect(await JobKeeper.allEnded([2 ** 22 + 1])).toBe(true)
+      // Where there is no /proc, as on macOS: asked with signal 0.
+      expect(await JobKeeper.allEnded([2 ** 22 + 1], 50, "darwin")).toBe(true)
+      expect(await JobKeeper.allEnded([holder.pid!], 50, "darwin")).toBe(false)
+      // The first process of the system is another user's: it is there.
+      expect(await JobKeeper.allEnded([1], 50, "darwin")).toBe(false)
     } finally {
       holder.kill("SIGKILL")
     }

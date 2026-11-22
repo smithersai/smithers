@@ -1161,22 +1161,35 @@ const executeWith = (
       }
       const remaining = unfinished.get(name)! - 1
       unfinished.set(name, remaining)
-      if (remaining === 0) await endJob(name)
+      if (remaining === 0) await Promise.all([endJob(name), endKept(name)])
     }
     /** What each target that ran on a kept machine left running, by label. */
     const leftRunning = new Map<string, ReadonlyArray<JobKeeper.Left>>()
-    // Where no program ends what a CI step leaves running (macOS), the build ends what the steps left in the
-    // checkout once none of them runs: a program one step left is never ended while another step that may use it
-    // runs. `sweeping` counts the steps running so; `sweptFrom` lists the processes when the first of them started.
+    // Where nothing keeps a CI job's programs or reaps them (macOS), what a step leaves running in the checkout ends:
+    // in a replay with the step, as its baseline ends it, once no other such step runs, since a program one step
+    // left may serve another (`sweeping` counts them, `sweptFrom` lists the processes when the first started); on a
+    // runner, as GitHub ends it, when the job's last step has ended (`keptFrom`: the processes when its first started).
+    const endsWithStep = hostEnvironment[Machine.leftEndsVariable] === "step"
     let sweeping = 0
     let sweptFrom: ReadonlyMap<number, number> | undefined
+    const keptFrom = new Map<string, { readonly from: ReadonlyMap<number, number>; readonly directory: string }>()
+    /** Ends what the steps of a machine's job left in its directory, on a runner, once its last step has ended. */
+    const endKept = async (name: string): Promise<void> => {
+      const kept = keptFrom.get(name)
+      keptFrom.delete(name)
+      if (kept !== undefined) await JobKeeper.endOrphans(kept.from, kept.directory)
+    }
     let leftFiles = 0
     /** How many targets of each machine have yet to finish in this build: its job ends when none has. */
     const unfinished = new Map<string, number>()
     for (const node of planned.workList) {
       if (node.machine !== undefined) unfinished.set(node.machine, (unfinished.get(node.machine) ?? 0) + 1)
     }
-    yield* Effect.addFinalizer(() => joined(() => Promise.all([...machineJobs.keys()].map(endJob))).pipe(Effect.ignore))
+    yield* Effect.addFinalizer(() =>
+      joined(() => Promise.all([...[...machineJobs.keys()].map(endJob), ...[...keptFrom.keys()].map(endKept)])).pipe(
+        Effect.ignore
+      )
+    )
 
     /** The first target whose report stopped a fail-fast run. */
     let stoppedBy: string | undefined
@@ -1498,9 +1511,13 @@ const executeWith = (
           )
           : Effect.void
         const sweeps = onIts && job === undefined && ObservedReads.reaperPath() === undefined
-        if (sweeps) {
+        const before = sweeps ? yield* joined(() => JobKeeper.processes()) : undefined
+        if (before !== undefined && endsWithStep) {
           sweeping++
-          sweptFrom ??= yield* joined(() => JobKeeper.processes())
+          sweptFrom ??= before
+        }
+        if (before !== undefined && !endsWithStep && !keptFrom.has(machine!.name)) {
+          keptFrom.set(machine!.name, { from: before, directory: machine!.directory })
         }
         const exit = yield* Effect.exit(Effect.scoped(Effect.andThen(
           lease,
@@ -1530,10 +1547,17 @@ const executeWith = (
             ...(traced !== undefined && done === undefined ? { heldOutput: services.heldOutput } : {})
           }, payload)
         ))).pipe(Effect.ensuring(Effect.sync(output.close)))
-        if (sweeps && --sweeping === 0) {
+        if (before !== undefined && endsWithStep && --sweeping === 0) {
           const from = sweptFrom!
           sweptFrom = undefined
-          yield* joined(() => JobKeeper.endOrphans(from, workspaceRoot))
+          // Every machine's directory: a step of each may have run in the meantime.
+          yield* joined(() => JobKeeper.endOrphans(from, machinesKept!))
+        }
+        // On a runner what it left stays, and is what it left: a step after it that runs needs it there.
+        if (before !== undefined && !endsWithStep) {
+          const left = yield* joined(() => JobKeeper.orphansIn(before, machine!.directory))
+          if (left.length === 0) leftRunning.delete(node.label)
+          else leftRunning.set(node.label, left)
         }
         if (leftFile !== undefined) {
           const left = yield* joined(() => JobKeeper.leftAt(leftFile))
