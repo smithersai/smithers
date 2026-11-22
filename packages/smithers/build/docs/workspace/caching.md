@@ -944,6 +944,14 @@ to end before its first target, and says so once:
 smthrs: another run uses this checkout's machines; waiting for it to end
 ```
 
+A machine can outlive its build. `SMTHRS_KEEP_MACHINES` holds a JSON object
+from a machine's name to an absolute directory; when the build ends, each named
+machine's copy is left in its directory, as its targets left it. A target the
+cache answered has what it left put back first, as for a target after it, so a
+machine whose every target was answered is kept with its files too. A workflow
+step after the build, such as an upload of what a job's tests wrote, reads them
+there. A value that is not such an object stops the build with that reason.
+
 Every machine stays until the build ends, so the machines of a large repository
 can fill the disk. A target on a machine that fails while the disk that holds
 the machines is full, with less than 1 GB free or less than 1% of the disk when
