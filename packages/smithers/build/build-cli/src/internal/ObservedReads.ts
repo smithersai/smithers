@@ -3355,6 +3355,11 @@ export const observe = (
     // or other: whatever the install found there first is no input of the run.
     if (fetched.has(path) && !under(path, options.root)) continue
     const state = measured(path)
+    // A path longer than the system takes cannot be looked at, and neither can what a link there leads to: the
+    // run's reads cannot all be known, and a state that only says so would match again whatever the run read.
+    if (state === "!ENAMETOOLONG") {
+      return { refusal: `it reached ${inside(path).slice(0, 60)}…, a path longer than this system can look at` }
+    }
     if (entry.first === "missing") {
       reads.push(state !== absent && entry.made ? [inside(path), state, absent] : [inside(path), absent])
       continue

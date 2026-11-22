@@ -2131,6 +2131,37 @@ describe("recording what a run read", () => {
     expect(recorded(lines)).toEqual({ refusal: "/shared was removed while it ran" })
   })
 
+  it("stores nothing when a path the run reached is longer than the system can look at", async () => {
+    const { root } = await setup()
+    // A step that entered directories one name at a time past PATH_MAX and made a link there: the reader joins the
+    // path, and the host refuses to look at it. Here the host's answer for one path stands in for that.
+    const long = Path.join(root, "src", "a.txt")
+    const io: ObservedReads.Io = {
+      ...ObservedReads.defaultIo,
+      lstat: (path) => {
+        if (path === long) throw Object.assign(new Error("name too long"), { code: "ENAMETOOLONG" })
+        return ObservedReads.defaultIo.lstat(path)
+      }
+    }
+    const observed = ObservedReads.observe(ObservedReads.read(() => [open(root, "src/a.txt")], root), {
+      root,
+      ignore: [],
+      startedMs: Date.now() + 60_000,
+      io
+    })
+    expect(observed).toEqual({
+      refusal: "it reached src/a.txt…, a path longer than this system can look at"
+    })
+    // Read as it is, the same trace is stored.
+    expect(
+      ObservedReads.observe(ObservedReads.read(() => [open(root, "src/a.txt")], root), {
+        root,
+        ignore: [],
+        startedMs: Date.now() + 60_000
+      })
+    ).not.toHaveProperty("refusal")
+  })
+
   it("stores nothing for a path that passes through links without end", async () => {
     const { record, root } = await setup()
     await Fs.symlink("loop-b", Path.join(root, "loop-a"))
