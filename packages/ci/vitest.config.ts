@@ -3,6 +3,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-vite"
 import { configDefaults, coverageConfigDefaults, defineConfig } from "vitest/config"
+import { shortfall } from "./vitest.shortfall.ts"
 
 /**
  * The sources each part of //packages/ci:test holds to 100% coverage: what its own cases cover in full. A file the
@@ -41,6 +42,8 @@ export const suite = (part: {
   readonly coverage?: ReadonlyArray<string>
   readonly coverageExclude?: ReadonlyArray<string>
   readonly workers?: number
+  /** The part's target name and where its cases are, for what it says when a source it holds falls short. */
+  readonly part?: { readonly name: string; readonly cases: string }
 } = {}) =>
   defineConfig({
     plugins: [vibelang({ project: "tsconfig.test.json" })],
@@ -49,6 +52,7 @@ export const suite = (part: {
     // failing cases were cut. `vibelang` in `check` reports the same warnings.
     logLevel: "error",
     test: {
+      ...(part.part === undefined ? {} : { reporters: ["default", shortfall(part.part.name, part.part.cases)] }),
       globalSetup: [
         fileURLToPath(new URL("../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
         fileURLToPath(new URL("../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))

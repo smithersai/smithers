@@ -8,5 +8,6 @@ export default suite({
   exclude: Object.keys(held).map((part) => `test/${part}/**`),
   coverage: ["src/**"],
   coverageExclude: Object.values(held).flat(),
-  workers: partWorkers.rest
+  workers: partWorkers.rest,
+  part: { name: "testRest", cases: "test/, outside test/cli, test/replay and test/native" }
 })

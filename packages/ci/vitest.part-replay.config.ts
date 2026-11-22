@@ -1,4 +1,9 @@
 // One part of //packages/ci:test (vitest.config.ts says why): the cases under test/replay, holding what `held.replay` names.
 import { heldBy, partWorkers, suite } from "./vitest.config.ts"
 
-export default suite({ include: ["test/replay/**/*.test.{ts,vibe}"], ...heldBy("replay"), workers: partWorkers.replay })
+export default suite({
+  include: ["test/replay/**/*.test.{ts,vibe}"],
+  ...heldBy("replay"),
+  workers: partWorkers.replay,
+  part: { name: "testReplay", cases: "test/replay" }
+})

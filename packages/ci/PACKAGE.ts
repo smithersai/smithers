@@ -65,7 +65,9 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test, testParts } = Bu
     // docs/README.md links this package's README, and test/docs.test.ts checks that it exists.
     "README.md",
     // Each part's configuration builds on the whole suite's.
-    "vitest.config.ts"
+    "vitest.config.ts",
+    // What a part says of a source it falls short on.
+    "vitest.shortfall.ts"
   ],
   // Together the cases run past a CI job's hour on a GitHub runner (over 48 minutes on ubuntu and macOS, run
   // 44901780543), so the suite runs as four parts, each in a job of its own. `test` names all four.

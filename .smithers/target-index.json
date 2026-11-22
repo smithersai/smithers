@@ -56235,6 +56235,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/ci/vitest.shortfall.ts",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/ci/vitest.part-cli.config.ts"
       }
@@ -56415,6 +56420,11 @@
       {
         "kind": "glob",
         "pattern": "packages/ci/vitest.config.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/vitest.shortfall.ts",
         "exclude": []
       },
       {
@@ -56601,6 +56611,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/ci/vitest.shortfall.ts",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/ci/vitest.part-replay.config.ts"
       }
@@ -56781,6 +56796,11 @@
       {
         "kind": "glob",
         "pattern": "packages/ci/vitest.config.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/vitest.shortfall.ts",
         "exclude": []
       },
       {
