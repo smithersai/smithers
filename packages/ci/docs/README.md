@@ -39,6 +39,7 @@ See [Normal mode and fast mode](concepts/modes.md).
 | [Its own targets](concepts/own-targets.md)             | What happens on a repository that already builds with Smithers build.                           |
 | [The cache](concepts/cache.md)                         | What is cached, when it is reused, hosting it, and pointing CI at it.                           |
 | [Repositories](about/repositories.md)                  | What Smithers CI reads, and what it does not run.                                               |
+| [A repository you do not trust](about/untrusted.md)    | Replay it in a Cloudflare Container and take back only its text results.                        |
 | [Command reference](reference/cli.md)                  | Every command, flag and exit code.                                                              |
 | [The Zig strategy](strategies/zig.md)                  | Which files a Zig build step reads, as the Zig toolchain reports it.                            |
 

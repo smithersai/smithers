@@ -5179,6 +5179,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/ci/docs/about/untrusted.md"
+      },
+      {
+        "kind": "file",
         "path": "packages/ci/docs/concepts/cache.md"
       },
       {
