@@ -920,12 +920,15 @@ describe("a program a step of a machine leaves running", () => {
   }
 
   stracedIt("stores nothing for a step of the job that makes a call strace has no name for", async () => {
-    // getxattrat (464 on x86_64 and aarch64), newer than the strace a runner has: strace sees it only through the
-    // guard, which runs under every step, a step of a job that keeps what it leaves running too.
-    const call = "import ctypes; ctypes.CDLL(None).syscall(464, -100, b'a.txt', 0, b'user.x', 0)"
+    // A call numbered past the table, which no strace names: strace sees it only through the guard, which runs under
+    // every step, a step of a job that keeps what it leaves running too. (getxattrat would not do: strace 6.8 prints it
+    // by number, and the strace of Ubuntu 26.04 by name, which the reader follows.)
+    const call = "import ctypes; ctypes.CDLL(None).syscall(600, -100, b'a.txt', 0, b'user.x', 0)"
     const { logs, run, write } = await fixture(() => ({ look: on("web", `python3 -c "${call}" && cat a.txt`) }))
     expect(await run(["look"], straced)).toEqual({ look: "ran" })
-    expect(logs).toContain("//:look  not cached: it reached a file in a way the recorder cannot follow: getxattrat")
+    expect(logs).toContain(
+      "//:look  not cached: it reached a file in a way the recorder cannot follow: a system call it does not know, numbered 600"
+    )
     await write("docs/readme.md", "changed\n")
     expect(await run(["look"], straced)).toEqual({ look: "ran" })
   }, 300_000)
