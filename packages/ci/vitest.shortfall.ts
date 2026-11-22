@@ -1,8 +1,9 @@
-// What a part of //packages/ci:test says when a source it holds is short of 100%: the file, the part that holds it,
-// and where that part's cases are. A case another part runs does not count for it.
+// What a part of //packages/ci:test says besides the default reporter: when a source it holds is short of 100%, the
+// file, the part that holds it, and where that part's cases are (a case another part runs does not count for it);
+// and its slowest files, so a slow or cut job on a CI runner names its cause in its log.
 import { relative } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { Reporter } from "vitest/node"
+import type { Reporter, TestModule } from "vitest/node"
 
 interface Summary {
   readonly lines: { readonly pct: number }
@@ -18,8 +19,35 @@ interface CoverageMap {
 
 const root = fileURLToPath(new URL(".", import.meta.url))
 
-/** A reporter that names each file the part `name` holds and does not cover in full, and where its cases go. */
+/** A file of a part that takes longer than this is named as soon as it ends: a job cut later still shows it. */
+const slowSeconds = 300
+
+/** How long a test file took: importing it and running its cases, in whole seconds. */
+const secondsOf = (module: TestModule): number => {
+  const diagnostic = module.diagnostic()
+  return Math.round((diagnostic.collectDuration + diagnostic.duration) / 1000)
+}
+
+/**
+ * A reporter that names each file the part `name` holds and does not cover in full, and where its cases go; each file
+ * over five minutes as it ends; and the ten slowest files when the run ends.
+ */
 export const shortfall = (name: string, cases: string): Reporter => ({
+  onTestModuleEnd: (module) => {
+    const seconds = secondsOf(module)
+    if (seconds > slowSeconds) {
+      console.error(`packages/ci: //packages/ci:${name}: ${relative(root, module.moduleId)} took ${seconds} s`)
+    }
+  },
+  onTestRunEnd: (modules) => {
+    const slowest = [...modules].map((module) => [secondsOf(module), relative(root, module.moduleId)] as const)
+      .sort(([a], [b]) => b - a).slice(0, 10)
+    console.error(
+      `packages/ci: //packages/ci:${name}'s slowest files: ${
+        slowest.map(([seconds, file]) => `${file} ${seconds} s`).join(", ")
+      }`
+    )
+  },
   onCoverage: (coverage) => {
     const map = coverage as CoverageMap
     for (const file of map.files()) {
