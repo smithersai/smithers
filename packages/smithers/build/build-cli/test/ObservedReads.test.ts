@@ -840,6 +840,74 @@ describe("reading a trace", () => {
     expect(paths(trace.made)).not.toContain("/w/elsewhere")
   })
 
+  // A trace holds millions of lines: they are read by scanning, not by the expressions and the character loop that
+  // read them first, which took a third of the reading of shadcn-ui/ui's tests (8.5 million lines). Random texts
+  // of the characters the scans look at are read as those did.
+  describe("lines as the expressions read them", () => {
+    let seed = 11
+    const next = (below: number): number => (seed = (seed * 1103515245 + 12345) % 2147483648) % below
+    const textOf = (letters: ReadonlyArray<string>, length: number): string =>
+      Array.from({ length }, () => letters[next(letters.length)]).join("")
+
+    it("reads a line's process id and the text after its spaces", () => {
+      const letters = ["1", "0", " ", "\t", "\u00a0", "a", "(", "\n"]
+      for (let round = 0; round < 20_000; round += 1) {
+        const line = textOf(letters, next(12))
+        const match = /^(\d+)\s+(.*)$/s.exec(line)
+        expect(ObservedReads.pidOf(line)).toEqual(
+          match === null ? undefined : { pid: Number(match[1]), rest: match[2] }
+        )
+      }
+    })
+
+    it("reads a call's name, arguments and answer, from the last `)` with spaces and `= ` after it", () => {
+      const letters = ["a", "_", "9", "(", ")", " ", "\t", "=", "= ", ") = ", "\"", "é", "-"]
+      for (let round = 0; round < 50_000; round += 1) {
+        const text = textOf(letters, next(14))
+        const match = /^(\w+)\((.*)\)\s+= (.*)$/s.exec(text)
+        expect(ObservedReads.callOf(text)).toEqual(
+          match === null ? undefined : { name: match[1], body: match[2], answer: match[3] }
+        )
+      }
+    })
+
+    it("splits a call's arguments where the character loop did", () => {
+      // The loop that split them first.
+      const byCharacter = (text: string): ReadonlyArray<string> => {
+        const parts: Array<string> = []
+        let depth = 0
+        let start = 0
+        for (let index = 0; index < text.length; index += 1) {
+          const character = text[index]!
+          if (character === "\"") {
+            for (index += 1; index < text.length && text[index] !== "\""; index += 1) {
+              if (text[index] === "\\") index += 1
+            }
+          } else if (character === "<" && depth === 0 && /^(?:\d+|AT_FDCWD)$/.test(text.slice(start, index).trim())) {
+            for (index += 1; index < text.length; index += 1) {
+              if (text[index] !== ">") continue
+              if (index + 1 === text.length) break
+              if (text[index + 1] === "," && index + 2 < text.length && /\s/.test(text[index + 2]!)) break
+            }
+          } else if (character === "{" || character === "[" || character === "(") depth += 1
+          else if (character === "}" || character === "]" || character === ")") depth -= 1
+          else if (character === "," && depth === 0) {
+            parts.push(text.slice(start, index).trim())
+            start = index + 1
+          }
+        }
+        const last = text.slice(start).trim()
+        if (last !== "" || parts.length > 0) parts.push(last)
+        return parts
+      }
+      const letters = ["\"", "\\", ",", ", ", "<", ">", "3", "AT_FDCWD", "{", "}", "[", "]", "(", ")", "a", "/", " "]
+      for (let round = 0; round < 50_000; round += 1) {
+        const text = textOf(letters, next(16))
+        expect(ObservedReads.split(text)).toEqual(byCharacter(text))
+      }
+    })
+  })
+
   it("reads how many times the recorder stopped the run for signals", () => {
     const counted = read(
       ["100 +++ smthrs-observe 1 +++", "100 +++ signal stops: 21345 +++", "100 +++ complete +++"].join("\n")

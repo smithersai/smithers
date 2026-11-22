@@ -698,28 +698,55 @@ const escapes: { readonly [character: string]: number } = {
 
 const space = /\s/
 
-/** Splits a call's arguments at the commas that are not inside a string, a structure or a descriptor's path. */
-const split = (text: string): ReadonlyArray<string> => {
+/**
+ * Where the string that starts before `from` ends: the first quote no backslash escapes, or the text's end. Each
+ * backslash escapes the character after it, so a quote after a run of backslashes is escaped when the run is odd.
+ */
+const stringEnd = (text: string, from: number): number => {
+  for (let index = from;;) {
+    const quote = text.indexOf("\"", index)
+    if (quote === -1) return text.length
+    let before = quote
+    while (before > from && text.charCodeAt(before - 1) === backslash) before -= 1
+    if ((quote - before) % 2 === 0) return quote
+    index = quote + 1
+  }
+}
+
+/** Where a descriptor's path that starts before `from` ends: the `>` that ends the text or comes before `, `. */
+const descriptorEnd = (text: string, from: number): number => {
+  for (let index = from;;) {
+    const close = text.indexOf(">", index)
+    if (close === -1) return text.length
+    if (close + 1 === text.length) return close
+    if (text.charCodeAt(close + 1) === comma && close + 2 < text.length && space.test(text[close + 2]!)) return close
+    index = close + 1
+  }
+}
+
+const comma = 0x2c
+
+/**
+ * Splits a call's arguments at the commas that are not inside a string, a structure or a descriptor's path. A trace
+ * holds millions of calls, nearly every one with a path in a string: the strings and paths are crossed at once.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const split = (text: string): ReadonlyArray<string> => {
   const parts: Array<string> = []
   let depth = 0
   let start = 0
   for (let index = 0; index < text.length; index += 1) {
-    const character = text[index]!
-    if (character === "\"") {
-      for (index += 1; index < text.length && text[index] !== "\""; index += 1) {
-        if (text[index] === "\\") index += 1
-      }
-    } else if (character === "<" && depth === 0 && /^(?:\d+|AT_FDCWD)$/.test(text.slice(start, index).trim())) {
+    const code = text.charCodeAt(index)
+    if (code === 0x22) index = stringEnd(text, index + 1)
+    else if (code === 0x3c && depth === 0 && /^(?:\d+|AT_FDCWD)$/.test(text.slice(start, index).trim())) {
       // A descriptor's path ends at the `>` that closes the argument: the last character, or the one before a
       // comma and a space.
-      for (index += 1; index < text.length; index += 1) {
-        if (text[index] !== ">") continue
-        if (index + 1 === text.length) break
-        if (text[index + 1] === "," && index + 2 < text.length && space.test(text[index + 2]!)) break
-      }
-    } else if (character === "{" || character === "[" || character === "(") depth += 1
-    else if (character === "}" || character === "]" || character === ")") depth -= 1
-    else if (character === "," && depth === 0) {
+      index = descriptorEnd(text, index + 1)
+    } else if (code === 0x7b || code === 0x5b || code === 0x28) depth += 1
+    else if (code === 0x7d || code === 0x5d || code === 0x29) depth -= 1
+    else if (code === comma && depth === 0) {
       parts.push(text.slice(start, index).trim())
       start = index + 1
     }
@@ -1002,8 +1029,55 @@ const reached = (program: string | undefined, address: string): string => {
  * one directory, and moving that directory must carry both along.
  */
 const spelled = (path: string): string => {
+  // Nearly every path is in one spelling already: no `//`, no `/./`, no `/.` or `/` at its end.
+  if (
+    path.length > 1 && !path.includes("//") && !path.includes("/./") && !path.endsWith("/.") && !path.endsWith("/")
+  ) return path
   const text = path.replaceAll(/\/(?:\.?\/)+/g, "/").replace(/\/\.$/, "").replace(/(?<=.)\/+$/, "")
   return text === "" ? "/" : text
+}
+
+const isDigit = (code: number): boolean => code >= 0x30 && code <= 0x39
+const isWordCharacter = (code: number): boolean =>
+  isDigit(code) || (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a) || code === 0x5f
+
+/**
+ * A trace line's process id and what follows the spaces after it, as `/^(\d+)\s+(.*)$/s` reads it; `undefined` for
+ * a line that starts otherwise. A trace holds millions of lines, and a scan reads one faster than the expression.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const pidOf = (line: string): { readonly pid: number; readonly rest: string } | undefined => {
+  let digits = 0
+  while (digits < line.length && isDigit(line.charCodeAt(digits))) digits += 1
+  let rest = digits
+  while (rest < line.length && space.test(line[rest]!)) rest += 1
+  if (digits === 0 || rest === digits) return undefined
+  return { pid: Number(line.slice(0, digits)), rest: line.slice(rest) }
+}
+
+/**
+ * A call's name, its arguments and its answer, as `/^(\w+)\((.*)\)\s+= (.*)$/s` reads them: the answer follows the
+ * last `)` with spaces and `= ` after it. `undefined` for a text that is no call.
+ *
+ * @category recording
+ * @since 1.0.0
+ */
+export const callOf = (
+  text: string
+): { readonly name: string; readonly body: string; readonly answer: string } | undefined => {
+  let name = 0
+  while (name < text.length && isWordCharacter(text.charCodeAt(name))) name += 1
+  if (name === 0 || text.charCodeAt(name) !== 0x28) return undefined
+  // From the last `= `: the one whose spaces before it follow a `)` past the name's `(`.
+  for (let equals = text.lastIndexOf("= "); equals > name; equals = text.lastIndexOf("= ", equals - 1)) {
+    let close = equals
+    while (close > 0 && space.test(text[close - 1]!)) close -= 1
+    if (close === equals || close - 1 <= name || text.charCodeAt(close - 1) !== 0x29) continue
+    return { name: text.slice(0, name), body: text.slice(name + 1, close - 1), answer: text.slice(equals + 2) }
+  }
+  return undefined
 }
 
 /** Where a path passes through a link the kernel makes for a process: which link, and the parts after it. */
@@ -1924,19 +1998,21 @@ export const read = (
 
   for (const line of lines()) {
     at += 1
-    const match = /^(\d+)\s+(.*)$/s.exec(line)
-    if (match === null) {
+    const numbered = pidOf(line)
+    if (numbered === undefined) {
       if (line.trim() !== "") refusals.add(`its trace holds a line that cannot be read: ${line.slice(0, 80)}`)
       continue
     }
-    const pid = Number(match[1])
-    let rest = match[2]!
+    const pid = numbered.pid
+    let rest = numbered.rest
     if (root === undefined) {
       root = pid
       cells.set(pid, { path: cwd })
     }
     if (!cells.has(pid)) cells.set(pid, { path: undefined })
-    const superseded = /^\+\+\+ superseded by execve in pid (\d+) \+\+\+$/.exec(rest)
+    // The tracer's and the supervisor's own lines start with `+++`; the rest of the lines are calls.
+    const marked = rest.charCodeAt(0) === 0x2b
+    const superseded = marked ? /^\+\+\+ superseded by execve in pid (\d+) \+\+\+$/.exec(rest) : null
     if (superseded !== null) {
       // A thread that starts a program becomes the process, and the tracer names it by the process from here on:
       // the call that starts the program is answered under that name. A call the first thread was in is cut off.
@@ -1960,17 +2036,17 @@ export const read = (
       continue
     }
     sealed = false
-    const unseen = /^\+\+\+ unrecorded: (.*) \+\+\+$/s.exec(rest)
+    const unseen = marked ? /^\+\+\+ unrecorded: (.*) \+\+\+$/s.exec(rest) : null
     if (unseen !== null) {
       refusals.add(unseen[1]!)
       continue
     }
-    const asking = /^\+\+\+ rights: (.*) \+\+\+$/s.exec(rest)
+    const asking = marked ? /^\+\+\+ rights: (.*) \+\+\+$/s.exec(rest) : null
     if (asking !== null) {
       rights.add(asking[1]!)
       continue
     }
-    const stopped = /^\+\+\+ signal stops: (\d+) \+\+\+$/.exec(rest)
+    const stopped = marked ? /^\+\+\+ signal stops: (\d+) \+\+\+$/.exec(rest) : null
     if (stopped !== null) {
       signalStops = Number(stopped[1])
       continue
@@ -1986,7 +2062,7 @@ export const read = (
     const detached = rest.endsWith(detachedMark)
     if (detached) rest = rest.slice(0, -detachedMark.length)
     let entered = at
-    const resumed = /^<\.\.\. (\w+) resumed>/.exec(rest)
+    const resumed = rest.startsWith("<... ") ? /^<\.\.\. (\w+) resumed>/.exec(rest) : null
     if (resumed !== null) {
       const open = pending.get(pid)
       pending.delete(pid)
@@ -2039,12 +2115,12 @@ export const read = (
       continue
     }
     // The answer follows the last `) = `, which the tracer pads to a column.
-    const call = /^(\w+)\((.*)\)\s+= (.*)$/s.exec(rest)
-    if (call === null) {
+    const call = callOf(rest)
+    if (call === undefined) {
       refusals.add(`its trace holds a line that cannot be read: ${rest.slice(0, 80)}`)
       continue
     }
-    handle(pid, call[1]!, call[2]!, call[3]!.trim(), entered)
+    handle(pid, call.name, call.body, call.answer.trim(), entered)
   }
   // Calls of two threads overlap in a trace, and a call is placed where it began. A name the run made where
   // nothing was cannot have been found before it was made: a call that found it, and ended after the making
