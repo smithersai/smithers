@@ -33,6 +33,7 @@
  */
 
 import { execFile } from "node:child_process"
+import { readFileSync } from "node:fs"
 import * as Fs from "node:fs/promises"
 
 /**
@@ -490,10 +491,11 @@ export const leftAt = async (file: string): Promise<ReadonlyArray<Left>> => {
  * @since 0.1.0
  */
 export const cpuAt = async (leftFile: string): Promise<number | undefined> => {
-  const text = await Fs.readFile(`${leftFile}.cpu`, "utf8").catch(() => "")
+  const text = await Fs.readFile(`${leftFile}.cpu`, "utf8").catch(() => undefined)
   await Fs.rm(`${leftFile}.cpu`, { force: true })
+  if (text === undefined) return undefined
   const cpuMs = Number(text)
-  return text !== "" && Number.isFinite(cpuMs) ? cpuMs : undefined
+  return Number.isFinite(cpuMs) ? cpuMs : undefined
 }
 
 /**
@@ -640,4 +642,48 @@ export const endOrphans = async (
   // One that ended on its own in the meantime is no longer there to end.
   await new Promise((resolve) => execFile("kill", ["-KILL", ...found.map((each) => String(each.pid))], resolve))
   return found
+}
+
+/**
+ * The running processes `pid` started, from `/proc` (Linux); none where that
+ * cannot be read. For the bubblewrap that holds a job's namespace, the
+ * namespace's first process.
+ *
+ * @throws {never}
+ * @category running
+ * @since 0.1.0
+ */
+export const childrenOf = (pid: number): ReadonlyArray<number> => {
+  try {
+    return readFileSync(`/proc/${pid}/task/${pid}/children`, "utf8").split(" ").filter((each) => each.trim() !== "")
+      .map(Number)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Resolves once each of `pids` has ended, `true`, or `false` after `limitMs`.
+ * The first process of a process namespace ends only once every process in
+ * it has, so the namespace is empty then; the bubblewrap that holds it can
+ * end first.
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export const allEnded = async (pids: ReadonlyArray<number>, limitMs = 10_000): Promise<boolean> => {
+  const until = Date.now() + limitMs
+  const running = (pid: number): boolean => {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "latin1")
+      return stat.slice(stat.lastIndexOf(")") + 2)[0] !== "Z"
+    } catch {
+      return false
+    }
+  }
+  while (pids.some(running)) {
+    if (Date.now() > until) return false
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  return true
 }

@@ -1118,9 +1118,14 @@ const executeWith = (
       machineJobs.set(name, Promise.resolve(undefined))
       return job.then(async (found) => {
         if (found === undefined) return
-        // A keeper that has ended already is sent nothing: the kill of an ended process does nothing.
+        // The bubblewrap ends as soon as the namespace's command has, before the kernel has ended every process in
+        // the namespace. Its first process ends only after all of them, so the build waits for that too, and returns
+        // with nothing of the job left: no port still held for a person's next command. A keeper that has ended
+        // already is sent nothing: the kill of an ended process does nothing.
+        const first = JobKeeper.childrenOf(found.keeper.pid!)
         found.keeper.kill("SIGKILL")
         await found.ended
+        await JobKeeper.allEnded(first)
         for (const trace of found.traces) await Fs.rm(trace, { force: true, recursive: true })
       })
     }

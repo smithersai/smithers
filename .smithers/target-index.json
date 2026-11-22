@@ -6763,10 +6763,6 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/build/docs/workspace/caching.md.orig"
-      },
-      {
-        "kind": "file",
         "path": "packages/smithers/build/docs/workspace/configuration.md"
       },
       {

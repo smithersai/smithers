@@ -11,7 +11,7 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { keeper, socketName } from "@smthrs/targets/JobKeeper"
+import { allEnded, childrenOf, endOrphans, keeper, processes, socketName } from "@smthrs/targets/JobKeeper"
 import { type Confined, held } from "./Confine.vibe"
 import { nodePath, reaperProgram, searchPath } from "./Environment.ts"
 import { exec, outputLimit } from "./Process.vibe"
@@ -60,8 +60,17 @@ export effect function keeperIn(place: Confined, writable: ReadonlyArray<string>
       forceKillAfter: "1 second"
     })
   )
-  // The jail ends when the process that holds it does, and every process of the job with it.
-  try addFinalizer(() => ignore(handle.kill({ killSignal: "SIGKILL" })))
+  // The jail ends when the process that holds it does, and every process of the job with it. The bubblewrap ends as
+  // soon as the namespace's command has, before the kernel has ended every process in it; the namespace's first
+  // process ends only after all of them, so the scope waits for that too: nothing of the job, no port it held,
+  // outlives it.
+  try addFinalizer(() =>
+    ignore(effect {
+      const first = childrenOf(Number(handle.pid))
+      try ignore(handle.kill({ killSignal: "SIGKILL" }))
+      try promise(() => allEnded(first))
+    })
+  )
   for (let waited = 0; waited < 10_000; waited += 20) {
     if (try fs.exists(path.join(directory, socketName))) return { directory, pid: Number(handle.pid) } satisfies Keeper
     try sleep("20 millis")
@@ -129,3 +138,31 @@ export const reapedBy = (
   argv: readonly [string, ...Array<string>],
   reaper: string | undefined
 ): readonly [string, ...Array<string>] => reaper === undefined ? argv : [reaper, "--reap", "--", ...argv]
+
+/**
+ * The processes of this user when a step starts, where nothing else ends
+ * what the step leaves running: no keeper (`job`) holds its job and no
+ * reaper ({@link reaperIn}) runs it, as on macOS. None elsewhere.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function processesBefore(job: Keeper | undefined, reaper: string | undefined) {
+  if (job !== undefined || reaper !== undefined) return undefined
+  return try promise(() => processes())
+}
+
+/**
+ * Ends what a step left running in the job's `directory` that has left its
+ * process tree, where {@link processesBefore} listed `before`: a program
+ * the system adopted, working in that directory. Nothing where `before` is
+ * none.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function endLeftIn(before: ReadonlyMap<number, number> | undefined, directory: string) {
+  if (before === undefined) return
+  try promise(() => endOrphans(before, directory))
+}
+

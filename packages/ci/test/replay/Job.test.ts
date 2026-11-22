@@ -9,13 +9,14 @@ import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import type * as Scope from "effect/Scope"
+import { spawnSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Confined } from "../../src/replay/Confine.vibe"
 import { reaperProgram } from "../../src/replay/Environment.ts"
-import { keeperIn, keepsPrograms, reapedBy, reaperIn } from "../../src/replay/Job.vibe"
+import { endLeftIn, keeperIn, keepsPrograms, processesBefore, reapedBy, reaperIn } from "../../src/replay/Job.vibe"
 import { placeIn } from "./place.ts"
 
 const made: Array<string> = []
@@ -136,4 +137,30 @@ describe("the program a step runs under where nothing keeps what it leaves runni
     const own = reaperProgram()
     if (own !== undefined) expect(own).toMatch(/native\/out\/linux-(x64|arm64)\/smthrs-observe$/)
   })
+})
+
+describe.runIf(process.platform === "linux")("what a step leaves where nothing else ends it", () => {
+  it(
+    "is listed before the step only where no keeper and no reaper ends it, and ended in the job's directory",
+    async () => {
+      const root = work()
+      const seconds = 95_000 + (process.pid % 900)
+      expect(await onNode(processesBefore({ directory: root, pid: 1 }, undefined))).toBeUndefined()
+      expect(await onNode(processesBefore(undefined, "/r/smthrs-observe"))).toBeUndefined()
+      const before = await onNode(processesBefore(undefined, undefined))
+      expect(before?.get(process.pid)).toBe(process.ppid)
+      // A step that left a program in a session of its own, in the job's directory.
+      spawnSync("/bin/sh", ["-c", `setsid -f sleep ${seconds} > /dev/null 2>&1 < /dev/null`], { cwd: root })
+      const alive = (): string =>
+        spawnSync("pgrep", ["-x", "-f", `sleep ${seconds}`], { encoding: "utf8" }).stdout.trim()
+      for (let waited = 0; alive() === "" && waited < 5_000; waited += 50) await new Promise((r) => setTimeout(r, 50))
+      expect(alive()).not.toBe("")
+      await onNode(endLeftIn(undefined, root))
+      expect(alive()).not.toBe("")
+      await onNode(endLeftIn(before, root))
+      for (let waited = 0; alive() !== "" && waited < 5_000; waited += 50) await new Promise((r) => setTimeout(r, 50))
+      expect(alive()).toBe("")
+    },
+    60_000
+  )
 })

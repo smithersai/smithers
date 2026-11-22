@@ -7,6 +7,7 @@
 
 import { spawnSync } from "node:child_process"
 import { writeFileSync } from "node:fs"
+import { type AddressInfo, createServer } from "node:net"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
@@ -60,6 +61,42 @@ jobs:
     expect(report.commits[0]?.mismatches).toEqual([])
     expect(outcome.code).toBe(0)
     expect(sleeping(seconds)).toEqual([])
+  }, 900_000)
+
+  it("leaves the port a server held free the moment the replay ends", async () => {
+    const port = await new Promise<number>((resolve) => {
+      const probe = createServer().listen(0, "127.0.0.1", () => {
+        const { port } = probe.address() as AddressInfo
+        probe.close(() => resolve(port))
+      })
+    })
+    const root = temporary("replay-port")
+    made.push(root)
+    git(root, "init", "--quiet", "--initial-branch=main")
+    // A server that holds a gigabyte: a process ends its memory before its sockets, so ending it takes a moment.
+    const server = `const b = Buffer.alloc(1 << 30, 1); require("net").createServer().listen(${port}, "127.0.0.1")`
+    commit(root, "base", {
+      ".github/workflows/ci.yml": `
+on: push
+jobs:
+  build:
+    runs-on: ${runner}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start it
+        run: node -e '${server}' > /dev/null 2>&1 &
+      - run: sleep 2 && cat src.txt
+`,
+      "src.txt": "one\n"
+    })
+    const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check", "--json", "--no-trial"], root)
+    expect(outcome.code, outcome.stderr).toBe(0)
+    const free = await new Promise<boolean>((resolve) => {
+      const probe = createServer()
+      probe.once("error", () => resolve(false))
+      probe.listen(port, "127.0.0.1", () => probe.close(() => resolve(true)))
+    })
+    expect(free).toBe(true)
   }, 900_000)
 })
 

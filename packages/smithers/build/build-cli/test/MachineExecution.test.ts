@@ -1047,6 +1047,32 @@ describe("a program a step leaves running, where its job cannot keep it", () => 
   }
 })
 
+describe("the end of a job whose step left programs running", () => {
+  keptIt("leaves none of them when the build returns: the port a server held is free at once", async () => {
+    const port = await freePort()
+    // A server that holds a gigabyte: a process ends its memory before its sockets, so ending it takes a moment.
+    const server = `const b = Buffer.alloc(1 << 30, 1); require("net").createServer().listen(${port}, "127.0.0.1")`
+    const rounds = [1, 2, 3]
+    const { run } = await fixture(() =>
+      Object.fromEntries(
+        rounds.map((
+          round
+        ) => [`start${round}`, on("one", `${process.execPath} -e '${server}' > /dev/null 2>&1 & sleep 3 # ${round}`)])
+      )
+    )
+    for (const round of rounds) {
+      expect(await run([`start${round}`])).toEqual({ [`start${round}`]: "ran" })
+      // A person's next command, at once: the port is free.
+      const free = await new Promise<boolean>((resolve) => {
+        const probe = Net.createServer()
+        probe.once("error", () => resolve(false))
+        probe.listen(port, "127.0.0.1", () => probe.close(() => resolve(true)))
+      })
+      expect(free).toBe(true)
+    }
+  }, 300_000)
+})
+
 describe("a step that left a program running and failed only while its reads were recorded", () => {
   keptIt("leaves the plain run's program alone: the recorded run's is ended first", async () => {
     const seconds = 52_000 + (process.pid % 900)

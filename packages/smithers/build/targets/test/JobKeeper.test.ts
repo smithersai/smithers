@@ -275,6 +275,8 @@ describe.runIf(bwrap !== undefined)("a step's CPU time, as its keeper counts it"
     const later = await step(directory, "true")
     expect(later.cpuMs).toBeLessThan(500)
     expect(await JobKeeper.cpuAt(join(directory, "never-written.json"))).toBeUndefined()
+    writeFileSync(join(directory, "garbled.json.cpu"), "many")
+    expect(await JobKeeper.cpuAt(join(directory, "garbled.json"))).toBeUndefined()
   }, 60_000)
 })
 
@@ -403,4 +405,28 @@ describe("what a step left in its directory where nothing keeps it", () => {
     },
     60_000
   )
+})
+
+describe.runIf(process.platform === "linux")("the processes a namespace's holder started, and their end", () => {
+  it("lists a process's children, and waits for processes to end, ended ones and zombies at once", async () => {
+    const seconds = 82_000 + (process.pid % 900)
+    // A shell that leaves a child it never waits for, a zombie once it ends, and runs on as a sleep.
+    const holder = spawn("/bin/sh", ["-c", `sleep 0.2 & exec sleep ${seconds}`], { stdio: "ignore" })
+    try {
+      let children: ReadonlyArray<number> = []
+      for (let waited = 0; children.length === 0 && waited < 5_000; waited += 20) {
+        children = JobKeeper.childrenOf(holder.pid!)
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      expect(children).toHaveLength(1)
+      expect(await JobKeeper.allEnded(children, 5_000)).toBe(true)
+      expect(await JobKeeper.allEnded([holder.pid!], 50)).toBe(false)
+      expect(JobKeeper.childrenOf(2 ** 22 + 1)).toEqual([])
+      expect(await JobKeeper.allEnded([])).toBe(true)
+      // A process that is gone altogether has ended.
+      expect(await JobKeeper.allEnded([2 ** 22 + 1])).toBe(true)
+    } finally {
+      holder.kill("SIGKILL")
+    }
+  })
 })
