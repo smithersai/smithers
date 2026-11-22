@@ -65,7 +65,7 @@ test("a spec naming a project the smoke doesn't run is an error, and nothing run
 
 test("the smoke's browser specs still run in both browsers, and only registration names one", () => {
   expect(PROJECTS).toEqual(["deployment", "webkit"])
-  expect(SPECS.filter((each) => typeof each === "string")).toEqual(["e2e/cold-path.spec.ts", "e2e/first-paint.spec.ts"])
+  expect(SPECS.filter((each) => typeof each === "string")).toEqual(["e2e/cold-path.spec.ts", "e2e/first-paint-deploy.spec.ts"])
   expect(SPECS.filter((each) => typeof each !== "string")).toEqual([{ spec: "e2e/runner-registration.spec.ts", project: "deployment" }])
 })
 

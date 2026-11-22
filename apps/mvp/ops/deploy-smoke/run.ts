@@ -21,8 +21,8 @@ export const SPECS: ReadonlyArray<SmokeSpec> = [
   // A role row past its life: the first paint never 503s the page's own reads (a1d9a5d5, rolled back). Its last visit
   // leaves the row fresh, which the next spec's paint needs.
   "e2e/cold-path.spec.ts",
-  // Nothing covers search or New issue while a page syncs (a1d9a5d5).
-  "e2e/first-paint.spec.ts",
+  // Nothing covers search or New issue on the deployed build, and issue-detail navigation settles cleanly (a1d9a5d5).
+  "e2e/first-paint-deploy.spec.ts",
   // Registration through the fenced routes (decision 0148). It reads no page, so one browser proves it, and it writes,
   // so a second run would only repeat the writes.
   { spec: "e2e/runner-registration.spec.ts", project: "deployment" },

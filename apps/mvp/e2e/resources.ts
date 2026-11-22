@@ -117,6 +117,9 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
     "factory"
   ],
   "files.spec.ts": ["model:read", "branch:octocat/spoon-knife/test-branch"],
+  "first-paint-deploy.spec.ts": [
+    "tracking"
+  ],
   "first-paint.spec.ts": [
     "tracking"
   ],
