@@ -71,7 +71,7 @@ file the target depends on, the list gives no reason rather than a wrong one:
 | Changes to those files | The changed files had no other change in the 56 days before.       | No change in 56 days          |
 | Extensions             | Only .md files changed.                                            | Always, naming the extensions |
 | Test count             | None                                                               | Never                         |
-| None                   | Nothing in its history or in the change points to a failure.       | Always                        |
+| None                   | Safe to skip on what was measured; no one fact decided it.         | Always                        |
 
 Entries with equal features share one question, so a change with thousands of
 targets asks about a few dozen feature sets. An answer is kept for the rest of
@@ -127,7 +127,7 @@ the model answered 24 questions in 3m 05s, which is in fast mode's times
 over the commits these times cover, fast mode's runs took 1m 42s less than normal mode's and asking the model took 1m 31s
 
 skipped, predicted-safe
-3f2a1c9  3 steps  Nothing in its history or in the change points to a failure.  //:ci.yml-unit-api-1, //:ci.yml-unit-cli-1, //:ci.yml-unit-core-1
+3f2a1c9  3 steps  Safe to skip on what was measured; no one fact decided it.  //:ci.yml-unit-api-1, //:ci.yml-unit-cli-1, //:ci.yml-unit-core-1
 ```
 
 A line of the list is one commit and one reason: how many steps, why they were

@@ -155,7 +155,7 @@ describe("skipReason", () => {
     expect(Scoring.skipReason("kind", features({ extensions: ["(none)", ".md"] }))).toBe(
       "Only .md files and files with no extension changed."
     )
-    expect(Scoring.skipReason("none", features())).toBe("Nothing in its history or in the change points to a failure.")
+    expect(Scoring.skipReason("none", features())).toBe("Safe to skip on what was measured; no one fact decided it.")
   })
 
   it("gives no reason where the fact, as measured, points to a failure", () => {

@@ -248,7 +248,7 @@ export const skipReasons = {
   history: "No failure on record in the last 56 days.",
   distance: "No known path leads from the change to it in the dependency graph.",
   churn: "The changed files had no other change in the 56 days before.",
-  none: "Nothing in its history or in the change points to a failure."
+  none: "Safe to skip on what was measured; no one fact decided it."
 } as const
 
 /**
