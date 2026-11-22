@@ -417,6 +417,57 @@ export const FoundrySetup = Schema.Struct({ release: FoundryRelease })
 export type FoundrySetup = typeof FoundrySetup.Type
 
 /**
+ * The Zig releases a runner may install.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const ZigRelease = Schema.Literals(["0.17.1"])
+
+/**
+ * The Zig releases a runner may install.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type ZigRelease = typeof ZigRelease.Type
+
+/**
+ * Schema for a declared Zig installation: the release's own archive from
+ * ziglang.org, checked against the sha256 Zig publishes, put on `PATH`. A
+ * runner other than Linux or macOS installs nothing.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const ZigSetup = Schema.Struct({ release: ZigRelease })
+
+/**
+ * One declared Zig installation.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type ZigSetup = typeof ZigSetup.Type
+
+/**
+ * Zig's archive of each release for each runner, by `uname -s` and
+ * `uname -m`, with the sha256 Zig publishes for it in
+ * https://ziglang.org/download/index.json (checked 2026-11-20).
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const zigArchives: Readonly<Record<ZigRelease, Readonly<Record<string, readonly [string, string]>>>> = {
+  "0.17.1": {
+    "Linux-x86_64": ["zig-x86_64-linux-0.17.1", "3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a"],
+    "Linux-aarch64": ["zig-aarch64-linux-0.17.1", "a1546d5646eb184437918d6635ca6b762a0e889eac09cef720ee7a1ed3fe7795"],
+    "Darwin-x86_64": ["zig-x86_64-macos-0.17.1", "9af07b20319fbd0c92ee46ad23e81d6a782b1aaea2cfb8dcbff35f1d2c7ddbb7"],
+    "Darwin-arm64": ["zig-aarch64-macos-0.17.1", "75f1bc7a1e9852f17ec9a0c1895f767c4ec56d46bc8a834920eece1d0359dd8d"]
+  }
+}
+
+/**
  * The PostgreSQL major releases a runner may install.
  *
  * @category schemas
@@ -552,6 +603,14 @@ export const Apt = (options: { readonly packages: ReadonlyArray<string> }): AptS
  * @since 0.1.0
  */
 export const Go = (options: { readonly release: GoRelease }): GoSetup => GoSetup.make({ release: options.release })
+
+/**
+ * Declares that a job installs Zig.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const Zig = (options: { readonly release: ZigRelease }): ZigSetup => ZigSetup.make({ release: options.release })
 
 /**
  * Declares that a job installs Foundry.
@@ -1042,6 +1101,8 @@ export const Toolchain = Schema.Struct({
   apt: Schema.optional(AptSetup),
   go: Schema.optional(GoSetup),
   foundry: Schema.optional(FoundrySetup),
+  /** Install Zig and put it on `PATH`; a no-op on a runner other than Linux or macOS. */
+  zig: Schema.optional(ZigSetup),
   /** Put the PostgreSQL server binaries on `PATH`. */
   postgres: Schema.optional(PostgresSetup),
   /** Configure the runner's docker daemon; a no-op where there is none. */
@@ -1101,6 +1162,7 @@ export const Needs = (options: {
   readonly apt?: AptSetup | undefined
   readonly go?: GoSetup | undefined
   readonly foundry?: FoundrySetup | undefined
+  readonly zig?: ZigSetup | undefined
   readonly postgres?: PostgresSetup | undefined
   readonly docker?: DockerSetup | undefined
   readonly nix?: NixSetup | undefined
@@ -1113,14 +1175,25 @@ export const Needs = (options: {
     // The environment supplies every interpreter and language toolchain, so a
     // job that also installs one on the runner would run two copies and the
     // generated PATH would decide which. Refuse the mix rather than pick.
-    const mixed =
-      (["runtimes", "rust", "cargoBinaries", "jj", "ripgrep", "uv", "go", "foundry", "postgres", "playwright"] as const)
-        .filter(
-          (name) => {
-            const value = options[name]
-            return Array.isArray(value) ? value.length > 0 : value !== undefined
-          }
-        )
+    const mixed = ([
+      "runtimes",
+      "rust",
+      "cargoBinaries",
+      "jj",
+      "ripgrep",
+      "uv",
+      "go",
+      "foundry",
+      "zig",
+      "postgres",
+      "playwright"
+    ] as const)
+      .filter(
+        (name) => {
+          const value = options[name]
+          return Array.isArray(value) ? value.length > 0 : value !== undefined
+        }
+      )
     if (mixed.length > 0) {
       throw new Error(
         `CiToolchain.Needs: a Nix environment supplies the toolchain; remove ${mixed.join(", ")} from the job`
@@ -1148,6 +1221,7 @@ export const Needs = (options: {
     ...(options.apt === undefined ? {} : { apt: options.apt }),
     ...(options.go === undefined ? {} : { go: options.go }),
     ...(options.foundry === undefined ? {} : { foundry: options.foundry }),
+    ...(options.zig === undefined ? {} : { zig: options.zig }),
     ...(options.postgres === undefined ? {} : { postgres: options.postgres }),
     ...(options.docker === undefined ? {} : { docker: options.docker }),
     ...(options.nix === undefined ? {} : { nix: options.nix }),

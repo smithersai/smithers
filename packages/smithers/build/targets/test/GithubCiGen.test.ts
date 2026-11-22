@@ -2130,6 +2130,35 @@ describe("system packages", () => {
     }
   })
 
+  it("installs a declared Zig from its own archive, checked against Zig's sum, and nothing where none is declared", () => {
+    const job = (zig: boolean) =>
+      render({
+        ...goldenAttrs,
+        jobs: [{
+          id: "zig",
+          name: "zig",
+          runsOn: "ubuntu-latest",
+          toolchain: CiToolchain.Needs({
+            runtimes: [node],
+            ...(zig ? { zig: CiToolchain.Zig({ release: "0.17.1" }) } : {})
+          }),
+          steps: [{ verb: Verb.Test, pattern: "//packages/..." }]
+        }],
+        gates: []
+      })
+    const rendered = job(true)
+    expect(rendered).toContain("- name: \"Install Zig\"")
+    expect(rendered).toContain(
+      "  Linux-x86_64) archive=zig-x86_64-linux-0.17.1 sum=3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a ;;"
+    )
+    expect(rendered).toContain("  Darwin-arm64) archive=zig-aarch64-macos-0.17.1")
+    expect(rendered).toContain("  *) exit 0 ;;")
+    expect(rendered).toContain("https://ziglang.org/download/0.17.1/$archive.tar.xz")
+    expect(rendered).toContain("shasum -a 256 -c -")
+    expect(rendered).toContain("echo \"$RUNNER_TEMP/$archive\" >> \"$GITHUB_PATH\"")
+    expect(job(false)).not.toContain("Install Zig")
+  })
+
   it("provisions sshd privilege separation only for a declared SSH server", () => {
     for (const packages of [["openssh-server"], ["bubblewrap"]] as const) {
       const rendered = render({

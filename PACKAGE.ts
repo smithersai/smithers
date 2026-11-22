@@ -312,6 +312,10 @@ const packageSystemTools = Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "
 // the 55 are the Windows `pnpm.cmd` shim problem, on a row that is advisory.
 // Foundry v1.8.1 installed cleanly on every runner when it was last declared.
 const go = Smithers.CiToolchain.Go({ release: "1.26.8" })
+// packages/ci's suite builds and closes Zig projects (test/closure/zig; the Zig fixtures' minimum_zig_version), so a
+// job that runs its tests needs the Zig it pins: without one, 26 cases of testRest fail with "zig did not run"
+// (run 44980341573). 0.17.1 is the release Smithers build pins for smthrs-observe, dated 2026-11-02.
+const zig = Smithers.CiToolchain.Zig({ release: "0.17.1" })
 const foundry = Smithers.CiToolchain.Foundry({ release: "v1.8.1" })
 // Hosted runners pull anonymously from shared addresses, and Docker Hub
 // answered `429 Too Many Requests` for the pinned postgres and alpine images
@@ -436,6 +440,7 @@ const ci = Smithers.GithubCiGen({
         apt: graphSystemTools,
         playwright: Smithers.CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: ["chromium", "webkit"] }),
         go,
+        zig,
         foundry,
         postgres,
         docker: dockerImageStore,
@@ -474,6 +479,7 @@ const ci = Smithers.GithubCiGen({
         ripgrep,
         apt: bubblewrap,
         go,
+        zig,
         foundry,
         postgres,
         docker: dockerImageStore
@@ -583,6 +589,7 @@ const ci = Smithers.GithubCiGen({
         ripgrep,
         apt: bubblewrap,
         go,
+        zig,
         foundry,
         postgres,
         docker: dockerImageStore,
@@ -746,6 +753,7 @@ const ci = Smithers.GithubCiGen({
         apt: packageSystemTools,
         playwright: Smithers.CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: ["chromium", "webkit"] }),
         go,
+        zig,
         foundry,
         postgres,
         docker: dockerImageStore

@@ -1011,6 +1011,29 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
       with: { version: needs.foundry.release }
     })
   }
+  if (needs.zig !== undefined) {
+    // Zig's own archive, checked against the sum Zig publishes, rather than an action: a pinned release is a
+    // download and a checksum. The step runs under bash everywhere and installs nothing on a runner Zig ships no
+    // archive for here (Windows).
+    const release = needs.zig.release
+    steps.push({
+      name: "Install Zig",
+      shell: "bash",
+      run: [
+        `case "$(uname -s)-$(uname -m)" in`,
+        ...Object.entries(CiToolchain.zigArchives[release]).map(([host, [archive, sha256]]) =>
+          `  ${host}) archive=${archive} sum=${sha256} ;;`
+        ),
+        "  *) exit 0 ;;",
+        "esac",
+        `curl --fail --silent --show-error --location --retry 3 -o "$RUNNER_TEMP/$archive.tar.xz" ` +
+        `"https://ziglang.org/download/${release}/$archive.tar.xz"`,
+        `echo "$sum  $RUNNER_TEMP/$archive.tar.xz" | shasum -a 256 -c - > /dev/null`,
+        `tar -xJf "$RUNNER_TEMP/$archive.tar.xz" -C "$RUNNER_TEMP"`,
+        `echo "$RUNNER_TEMP/$archive" >> "$GITHUB_PATH"`
+      ].join("\n")
+    })
+  }
   if (needs.docker !== undefined) {
     // This toolchain step has no `if:` key, so its script detects the runner: a
     // runner with no docker daemon, or one whose daemon already reports the
