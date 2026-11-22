@@ -2636,11 +2636,17 @@ const literally = (text: string): string => text.replace(/[\\^$.*+?()[\]{}|]/g, 
  * The names among `names` that a text holds, each as {@link holdsName} finds
  * it, in the order given.
  *
- * A step reads thousands of files and is given tens of variables, and nearly
- * no file holds any of their names. So the names are looked for together
- * first, in one pass over the text, and one by one only in a text that holds
- * some name. The two-byte form is looked for only in a text with a zero byte
- * in it, which the form of every name longer than a character has.
+ * A step reads thousands of files and is given tens of variables: a runner
+ * gives about a hundred. The text is searched for all names at once, the
+ * longest first; each time one is found, the search goes on from where it
+ * started without that name. So the text is passed over once, and a name is
+ * found once however often it occurs (a variable named `_` occurs at every
+ * underscore). A name that starts where a longer one was found is found by the
+ * next search, from the same place. Looking for each name in turn passed over
+ * a file once a name, and with a runner's variables took 8 s of a reading
+ * that takes 1 s without (eliza's types and lint, 6,031 files). The two-byte
+ * form is looked for only in a text with a zero byte in it, which the form of
+ * every name longer than a character has.
  *
  * @category recording
  * @since 1.0.0
@@ -2648,13 +2654,38 @@ const literally = (text: string): string => text.replace(/[\\^$.*+?()[\]{}|]/g, 
 export const heldNames = (names: ReadonlyArray<string>): (text: string) => ReadonlyArray<string> => {
   if (names.length === 0) return () => []
   const wide = names.map((name) => [...name].join("\0"))
-  const any = new RegExp(names.map(literally).join("|"))
-  const anyWide = new RegExp(wide.map(literally).join("|"))
+  /** The patterns made so far, by the forms each looks for: texts that hold the same names ask for the same ones. */
+  const patterns = new Map<string, RegExp>()
+  const patternOf = (forms: ReadonlyArray<string>): RegExp => {
+    const key = JSON.stringify(forms)
+    let pattern = patterns.get(key)
+    if (pattern === undefined) patterns.set(key, pattern = new RegExp(forms.map(literally).join("|"), "g"))
+    return pattern
+  }
+  const longestFirst = (forms: ReadonlyArray<string>): ReadonlyArray<string> =>
+    [...new Set(forms)].sort((a, b) => b.length - a.length || byCodeUnit(a, b))
+  /** The forms a text holds. */
+  const held = (forms: ReadonlyArray<string>, text: string): ReadonlyArray<string> => {
+    let left = forms
+    let from = 0
+    const found: Array<string> = []
+    while (left.length > 0) {
+      const pattern = patternOf(left)
+      pattern.lastIndex = from
+      const match = pattern.exec(text)
+      if (match === null) break
+      found.push(match[0])
+      from = match.index
+      left = left.filter((form) => form !== match[0])
+    }
+    return found
+  }
+  const plainForms = longestFirst(names)
+  const wideForms = longestFirst(wide)
   return (text) => {
-    const plain = any.test(text)
-    const two = text.includes("\0") && anyWide.test(text)
-    if (!plain && !two) return []
-    return names.filter((name, index) => (plain && text.includes(name)) || (two && text.includes(wide[index]!)))
+    const plain = new Set(held(plainForms, text))
+    const two = text.includes("\0") ? new Set(held(wideForms, text)) : new Set<string>()
+    return names.filter((name, index) => plain.has(name) || two.has(wide[index]!))
   }
 }
 

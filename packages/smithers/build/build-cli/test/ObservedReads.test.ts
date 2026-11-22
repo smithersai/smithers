@@ -3806,6 +3806,51 @@ describe("the variables of the host a run could have used", () => {
     expect(ObservedReads.heldNames([])("JAVA_HOME")).toEqual([])
   })
 
+  it("finds the same names as holdsName does in texts where names overlap and lie inside one another", () => {
+    const letters = ["A", "B", "C", "_", "\0", "x"]
+    let seed = 7
+    const next = (below: number): number => (seed = (seed * 1103515245 + 12345) % 2147483648) % below
+    const word = (length: number): string => Array.from({ length }, () => letters[next(letters.length)]).join("")
+    for (let round = 0; round < 5_000; round += 1) {
+      const names = [...new Set(Array.from({ length: 1 + next(6) }, () => word(1 + next(4)).replaceAll("\0", "A")))]
+      const text = word(next(40))
+      expect(ObservedReads.heldNames(names)(text)).toEqual(names.filter((name) => ObservedReads.holdsName(text, name)))
+    }
+  })
+
+  // A shell gives its programs a variable named `_`, and a file can hold an underscore every few characters.
+  it("finds a name once, however often the text holds it", () => {
+    const held = ObservedReads.heldNames([
+      ...Array.from({ length: 100 }, (_, index) => `RUNNER_VARIABLE_${index}`),
+      "_"
+    ])
+    const text = "a_b_c_d_e_f ".repeat(4_000_000)
+    const began = performance.now()
+    expect(held(text)).toEqual(["_"])
+    // Noting every place a name started took minutes here; finding each name once, 70 ms.
+    expect(performance.now() - began).toBeLessThan(2_000)
+  })
+
+  // A step that runs a program reads its file, and a runner gives a step about a hundred variables: eliza's types and
+  // lint read biome (97 MB) and tsc (24 MB), and looking for each name in turn took 5.8 s of its reading.
+  it("passes over a program file once, whatever the number of names", () => {
+    const names = Array.from({ length: 100 }, (_, index) => `RUNNER_VARIABLE_${index}`)
+    const file = Buffer.alloc(64 * 1024 * 1024)
+    let seed = 1
+    for (let index = 0; index < file.length; index += 1) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      file[index] = seed & 0xff
+    }
+    file.write("RUNNER_VARIABLE_7", 1_000, "latin1")
+    file.write([..."RUNNER_VARIABLE_42"].join("\0"), 5_000_000, "latin1")
+    const text = file.toString("latin1")
+    const held = ObservedReads.heldNames(names)
+    const began = performance.now()
+    expect(held(text)).toEqual(["RUNNER_VARIABLE_4", "RUNNER_VARIABLE_7", "RUNNER_VARIABLE_42"])
+    // A pass for each name took 610 to 790 ms here on the build server, at load 35; one pass, 50 to 55 ms.
+    expect(performance.now() - began).toBeLessThan(300)
+  })
+
   it("keeps the variables of a record when it moves, and stores them", async () => {
     const stored: ObservedReads.Record = {
       reads: [],
