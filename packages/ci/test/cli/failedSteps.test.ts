@@ -12,13 +12,16 @@ afterAll(() => {
 
 const missing = "smithers-ci-test-no-such-program"
 
+/** A runner of this host's own system: smithers-ci replays a Linux job on Linux and a macOS job on a Mac. */
+const runner = process.platform === "darwin" ? "macos-latest" : "ubuntu-latest"
+
 const workflow = (...commands: ReadonlyArray<string>): string =>
   [
     "on: push",
     "jobs:",
     ...commands.flatMap((command, index) => [
       `  job${index}:`,
-      "    runs-on: ubuntu-latest",
+      `    runs-on: ${runner}`,
       "    steps:",
       `      - run: ${command}`
     ]),
@@ -156,7 +159,7 @@ describe("smithers-ci on a job whose middle step fails", { timeout: 600_000 }, (
       "on: push",
       "jobs:",
       "  build:",
-      "    runs-on: ubuntu-latest",
+      `    runs-on: ${runner}`,
       "    steps:",
       ...commands.map((command) => `      - run: ${command}`),
       ""
@@ -209,7 +212,7 @@ describe("smithers-ci on a step that fails and prints nothing", { timeout: 600_0
   }
   const job = (name: string, ...steps: ReadonlyArray<string>): ReadonlyArray<string> => [
     `  ${name}:`,
-    "    runs-on: ubuntu-latest",
+    `    runs-on: ${runner}`,
     "    steps:",
     ...steps.map((step) => `      - ${step}`)
   ]

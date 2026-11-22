@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { existsSync, writeFileSync } from "node:fs"
+import { existsSync, realpathSync, writeFileSync } from "node:fs"
 import { basename } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { layer } from "../../src/cli/Host.vibe"
@@ -11,6 +11,8 @@ import { changesMachine, ci as ciOf, Inventory } from "../../src/contract/Invent
 import { type Failure, type GeneratedFile, writtenFiles } from "../../src/contract/Parts.ts"
 import { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import * as TargetMap from "../../src/contract/TargetMap.ts"
+import { unjailed } from "../../src/replay/Jail.ts"
+import { cannotRecord } from "../../src/replay/Reads.ts"
 import { fullDisk, generated, inProcess } from "./inProcess.vibe"
 import { parts } from "./parts.vibe"
 import {
@@ -26,6 +28,7 @@ import {
   recorder,
   remove,
   repository,
+  skipBecause,
   snapshot,
   spawn,
   spawnWith,
@@ -34,6 +37,11 @@ import {
 } from "./repo.ts"
 
 type Chosen = typeof parts
+
+/** The lines a host with no jail, or no recorder of reads, adds to a replay's progress: their words before the reason. */
+const hostNotes = [unjailed("x").split(": ")[0], cannotRecord("x").split(" (")[0]].map((words) =>
+  `smithers-ci: ${words}`
+)
 
 const made: Array<string> = []
 const keep = (path: string): string => {
@@ -406,7 +414,8 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       expect(outcome).toEqual({
         code: exitCodes.unsupported,
         stdout: "",
-        stderr: `smithers-ci: inventory: ${directory} is not a git repository with a commit\n`
+        // The directory as the system names it: macOS's temporary directory is under a link, /var to /private/var.
+        stderr: `smithers-ci: inventory: ${realpathSync(directory)} is not a git repository with a commit\n`
       })
     })
   })
@@ -447,10 +456,16 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     expect((await spawn(bin, ["--bogus"], repo())).code).toBe(exitCodes.usage)
   })
 
-  it("exits 3 with one line naming the file when a replayed commit holds a name that is not UTF-8", async () => {
+  it("exits 3 with one line naming the file when a replayed commit holds a name that is not UTF-8", async (context) => {
     const root = repo()
     // The Latin-1 bytes of "café.txt". Smithers build reads every name of a checkout as UTF-8 and stops at this one.
-    writeFileSync(Buffer.from(`${root}/caf\xe9.txt`, "latin1"), "ok\n")
+    try {
+      writeFileSync(Buffer.from(`${root}/caf\xe9.txt`, "latin1"), "ok\n")
+    } catch (error) {
+      // APFS, and any file system that keeps names as UTF-8, refuses the name: no repository here can hold it.
+      if ((error as NodeJS.ErrnoException).code !== "EILSEQ") throw error
+      skipBecause(context, "this file system refuses a file name that is not UTF-8 (EILSEQ)")
+    }
     git(root, "add", "--all")
     git(root, "commit", "--quiet", "--message", "latin-1")
     const head = git(root, "rev-parse", "--short=7", "HEAD").trim()
@@ -496,7 +511,12 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     const outcome = await spawn(bin, ["--commits", "1", "--json", "--cold"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     const at = `smithers-ci: 1/1 ${head(root).slice(0, 7)}`
-    expect(outcome.stderr.trim().split("\n")).toEqual([
+    // What the replay did, in order. A host with no jail or no recorder adds a line that says so, which is not this
+    // case's subject.
+    const progress = outcome.stderr.trim().split("\n").filter((line) =>
+      !hostNotes.some((note) => line.startsWith(note))
+    )
+    expect(progress).toEqual([
       `smithers-ci: checking which jobs pass on this machine at ${head(root).slice(0, 7)}`,
       `${at} baseline`,
       `${at} normal`,
