@@ -238,7 +238,9 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
  * the replay, which the program keeps out of its own process; without it they
  * are read from the process. `smthrsWithToken` starts Smithers build as
  * `smthrs` does and reads the token of the shared cache from its standard input;
- * without it the replay's Smithers build gets no token.
+ * without it the replay's Smithers build gets no token. `reaper` finds the
+ * program that ends what an unjailed step leaves running; without it, the one
+ * built beside Smithers build (`reaperIn`).
  *
  * @category services
  * @since 0.1.0
@@ -255,6 +257,7 @@ export service Options {
   readonly diskTick?: Duration.Input | undefined
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   readonly smthrsWithToken?: readonly [string, ...Array<string>] | undefined
+  readonly reaper?: (() => string | undefined) | undefined
   static readonly defaultValue = () => ({
     smthrs: ["smthrs"] as const,
     reruns: maxReruns,
@@ -675,7 +678,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     // Whether a job's programs live until its last step has ended here, as on a runner: in one jail per job.
     const keeps = try keepsPrograms(places.baseline)
     // Where a step runs with no jail, it runs under a program that ends what it leaves running when it ends.
-    const reaper = try reaperIn(places.baseline)
+    const reaper = try reaperIn(places.baseline, options.reaper)
     // Where `smthrs` writes its run records: the one place it can write that a step run on its own cannot.
     const records = path.join(work, "records")
     try orFail(fs.makeDirectory(records), "could not make a directory")
