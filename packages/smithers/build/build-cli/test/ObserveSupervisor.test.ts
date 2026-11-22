@@ -924,3 +924,49 @@ describe("recorders and threads that change the same names at once", () => {
     }
   }
 })
+
+describe("smthrs-observe, for a run of many threads", () => {
+  /** Starts 10,000 threads that each look at a file once, then one that looks 50,000 times; says so, then waits. */
+  const manyThreads = String.raw`
+import os, sys, threading, time
+path, ready, go = sys.argv[1:4]
+for _ in range(20):
+    batch = [threading.Thread(target=os.stat, args=(path,)) for _ in range(500)]
+    for t in batch: t.start()
+    for t in batch: t.join()
+def late():
+    for _ in range(50000): os.stat(path)
+t = threading.Thread(target=late)
+t.start(); t.join()
+open(ready, "w").write("ready")
+while not os.path.exists(go): time.sleep(0.01)
+`
+
+  // The supervisor learns each thread's process from /proc/<thread>/status once, and keeps it. A thread that ended kept
+  // its place in that table, and a thread whose places were all taken was not kept: each of its calls read the
+  // file again, 9 million reads in shadcn-ui/ui's tests.
+  supervised("reads which process a thread is in once, however many threads came before it", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "observe-threads-")))
+    temporary.push(root)
+    await Fs.writeFile(Path.join(root, "many.py"), manyThreads)
+    await Fs.writeFile(Path.join(root, "looked"), "x")
+    const [ready, go] = [Path.join(root, "ready"), Path.join(root, "go")]
+    const child = spawn(
+      supervisor!,
+      [Path.join(root, "trace"), "--", "python3", Path.join(root, "many.py"), Path.join(root, "looked"), ready, go],
+      { stdio: "ignore" }
+    )
+    const ended = new Promise((resolve) => child.on("exit", resolve))
+    const started = Date.now()
+    while (!NodeFs.existsSync(ready)) {
+      if (Date.now() - started > 120_000) throw new Error("the program did not get through its threads")
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    // The reads the supervisor made: one for each thread that started, and others, but none for each call.
+    const reads = Number(/^syscr: (\d+)$/m.exec(NodeFs.readFileSync(`/proc/${child.pid}/io`, "utf8"))![1])
+    await Fs.writeFile(go, "")
+    await ended
+    // 10,023 here: one for each of the 10,001 threads. Before, 60,022: the late thread read it at each of its calls.
+    expect(reads).toBeLessThan(20_000)
+  }, 180_000)
+})

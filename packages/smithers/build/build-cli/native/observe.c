@@ -520,7 +520,10 @@ static long keepCallIn(uint64_t id, uint32_t sub, struct text *t, uint64_t *taki
 static long keepCall(uint64_t id, uint32_t sub, struct text *t) { return keepCallIn(id, sub, t, NULL); }
 
 /* A thread's process. A thread id is not given again while the thread lives, and the run's threads live while
- * they make calls, so a thread id read once stands for its process for the run. */
+ * they make calls, so a thread id read once stands for its process for the run. A thread that ended keeps its slot
+ * until another thread needs it: where the slots near a thread's own are all taken, as after a run started many
+ * thousands of threads, the thread takes its own slot. Without that, each call of every later thread read
+ * /proc/<thread>/status again: 9 million reads, 38 s of shadcn-ui/ui's tests. */
 #define TGIDS 8192
 static struct {
   pid_t tid, tgid;
@@ -554,14 +557,16 @@ static pid_t tgidOf(pid_t tid) {
   char *parentAt = strstr(buffer, "\nPPid:");
   if (tgid == tid && parentAt != NULL) bornOf(tgid, (pid_t)strtol(parentAt + 6, NULL, 10));
   pthread_mutex_lock(&lock);
+  unsigned place = slot;
   for (unsigned i = 0; i < 16; i++) {
-    unsigned place = (slot + i) % TGIDS;
-    if (tgids[place].tid == 0 || tgids[place].tid == tid) {
-      tgids[place].tid = tid;
-      tgids[place].tgid = tgid;
+    unsigned at = (slot + i) % TGIDS;
+    if (tgids[at].tid == 0 || tgids[at].tid == tid) {
+      place = at;
       break;
     }
   }
+  tgids[place].tid = tid;
+  tgids[place].tgid = tgid;
   pthread_mutex_unlock(&lock);
   return tgid;
 }
