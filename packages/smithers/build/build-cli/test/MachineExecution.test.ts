@@ -546,6 +546,28 @@ describe("the targets of one machine", () => {
   })
 })
 
+describe("what a step on a machine leaves, where no target of this build waits for it", () => {
+  tracedIt("is kept when a declared target of its machine waits for it through other machines' targets", async () => {
+    const { root, run } = await fixture(() => {
+      const make = on("web", "echo made > made.txt")
+      // Two targets of other machines wait for it, and a third waits for both: the walk meets the third twice.
+      const db = on("db", "cat shared.txt > /dev/null", [make])
+      const queue = on("queue", "cat shared.txt > /dev/null", [make])
+      const report = on("report", "cat shared.txt > /dev/null", [db, queue])
+      // A target of the same machine waits for that one: what `make` left is read there, in a later build.
+      const use = on("web", "cat made.txt > /dev/null", [report])
+      // A step that leaves a file and that nothing waits for, on a machine of its own.
+      const alone = on("lone", "echo left > left.txt")
+      return { make, db, queue, report, use, alone }
+    })
+    expect(await run(["make", "alone"])).toEqual({ make: "ran", alone: "ran" })
+    // Only `make` is kept: one archive, none for `alone`.
+    const archives = (await Fs.readdir(Path.join(root, ".flows/kept")).catch(() => [] as Array<string>))
+      .filter((name) => name.endsWith(".tar"))
+    expect(archives).toHaveLength(1)
+  })
+})
+
 describe("an observed target on a machine", () => {
   tracedIt("is answered from the cache with no machine made, while what it read is unchanged", async () => {
     const { logs, made, run, write } = await fixture(() => ({
