@@ -1315,6 +1315,8 @@ export interface Findings {
   readonly recorder?: Recorder | undefined
   /** The steps of replayed jobs that only send the job's results out, which your runner runs (`runnerStepsOf`). */
   readonly runnerSteps?: ReadonlyArray<RunnerStep> | undefined
+  /** Those the workflow `apply` writes leaves out, with why (`stepsLeftOutOf`). */
+  readonly stepsLeftOut?: ReadonlyArray<RunnerStep> | undefined
 }
 
 /**
@@ -1445,7 +1447,8 @@ export const reportOf = (
     ...(inventory.toolVersions === undefined ? {} : { toolVersions: inventory.toolVersions }),
     ...(empty.length === 0 ? {} : { withheld: empty }),
     ...(found.recorder === undefined ? {} : { recorder: found.recorder }),
-    ...(found.runnerSteps === undefined || found.runnerSteps.length === 0 ? {} : { runnerSteps: found.runnerSteps })
+    ...(found.runnerSteps === undefined || found.runnerSteps.length === 0 ? {} : { runnerSteps: found.runnerSteps }),
+    ...(found.stepsLeftOut === undefined || found.stepsLeftOut.length === 0 ? {} : { stepsLeftOut: found.stepsLeftOut })
   }
 }
 
@@ -1469,6 +1472,24 @@ export const runnerStepsOf = (
       action: step.uses,
       why: resultAction(step.uses)?.why ?? "it sends the job's results out"
     }))
+  )
+}
+
+/**
+ * The steps of replayed jobs that only send the job's results out and that the workflow `apply` writes leaves out
+ * (`Inventory.UnkeptStep`), each with why, in the order of the jobs.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const stepsLeftOutOf = (
+  inventory: Inventory,
+  units: ReadonlyArray<Pick<Unit, "job">>
+): ReadonlyArray<RunnerStep> => {
+  const replayed = new Set(units.map((unit) => unit.job))
+  return inventory.jobs.filter((job) => replayed.has(job.id)).flatMap((job) =>
+    (job.unkept ?? []).map((step) => ({ job: job.id, action: step.uses, why: step.why }))
   )
 }
 
@@ -1575,6 +1596,8 @@ export interface Gathered {
   readonly cold?: string | undefined
   /** The steps of replayed jobs that only send the job's results out, which your runner runs (`runnerStepsOf`). */
   readonly runnerSteps?: ReadonlyArray<RunnerStep> | undefined
+  /** Those the workflow `apply` writes leaves out, with why (`stepsLeftOutOf`). */
+  readonly stepsLeftOut?: ReadonlyArray<RunnerStep> | undefined
   /** The most disk the replay held at once, where the machine says how much is free. */
   readonly diskHeldBytes?: number | undefined
   /** Why the replay ended before its last commit, when the disk would have filled. */
@@ -1625,7 +1648,8 @@ export const finishedReport = (
     firstRun: measured ? gathered.firstRun : firstRunWithoutFast(gathered.firstRun),
     cold: gathered.cold,
     recorder: gathered.recorder,
-    runnerSteps: gathered.runnerSteps
+    runnerSteps: gathered.runnerSteps,
+    stepsLeftOut: gathered.stepsLeftOut
   })
   return {
     ...report,

@@ -168,6 +168,31 @@ export const KeptStep = Schema.Struct({
 export type KeptStep = typeof KeptStep.Type
 
 /**
+ * A step that only sends the job's results out (`resultActions`) which the
+ * workflow `apply` writes cannot run as the repository wrote it: a value it
+ * reads is one that workflow does not have (another step's outputs, `env`,
+ * `needs`, `inputs`), is not text, or is shaped like a secret. The step never
+ * costs its job: a replay runs the job without it, as it runs every job
+ * without such steps, and the workflow `apply` writes leaves it out
+ * (`unkeptResult`). `why` says what stopped it.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const UnkeptStep = Schema.Struct({
+  uses: Schema.NonEmptyString,
+  why: Schema.NonEmptyString
+})
+
+/**
+ * A decoded `UnkeptStep`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type UnkeptStep = typeof UnkeptStep.Type
+
+/**
  * One job: steps that run in order on one machine. `needs` names the jobs
  * that must pass first. `matrix` lists one variable assignment per variant;
  * an empty list means the job runs once.
@@ -178,7 +203,8 @@ export type KeptStep = typeof KeptStep.Type
  * do not fill in by name, such as `${{ matrix.os || 'ubuntu-latest' }}`. A
  * runner the workflow file does not give stays as its expression
  * (`unknownRunner`). Read a variant's runner with `runnerOf`. `kept` holds
- * the steps that only send the job's results out (`KeptStep`).
+ * the steps that only send the job's results out (`KeptStep`), and `unkept`
+ * those of them the workflow `apply` writes leaves out (`UnkeptStep`).
  *
  * @category models
  * @since 0.1.0
@@ -195,7 +221,8 @@ export const Job = Schema.Struct({
   unsupported: Schema.Array(Unsupported),
   runsOn: Schema.optionalKey(Schema.String),
   runners: Schema.optionalKey(Schema.Array(Schema.String)),
-  kept: Schema.optionalKey(Schema.Array(KeptStep))
+  kept: Schema.optionalKey(Schema.Array(KeptStep)),
+  unkept: Schema.optionalKey(Schema.Array(UnkeptStep))
 })
 
 /**
@@ -890,6 +917,16 @@ export const longRunning = "long-running"
 export const hostAction = "host-action"
 
 /**
+ * The `Unsupported.feature` of a step that only sends the job's results out
+ * and that the workflow `apply` writes leaves out (`UnkeptStep`). It never
+ * costs the job: a replay runs the job without the step either way.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const unkeptResult = "unkept-result"
+
+/**
  * The actions that are host actions besides those that set a tool up, named
  * without their version.
  *
@@ -1018,7 +1055,7 @@ export const secret = "secret"
  * @category constants
  * @since 0.1.0
  */
-export const harmless: ReadonlyArray<string> = [hostAction, triggerFilter, conditionFalse]
+export const harmless: ReadonlyArray<string> = [hostAction, triggerFilter, conditionFalse, unkeptResult]
 
 /**
  * The reasons a job cannot be reproduced on this machine: its unsupported

@@ -496,6 +496,7 @@ what the job names.
 | `target-variable`      | sets a Make variable for one rule                                                                                                        |
 | `trigger-filter`       | runs only for some branches or paths                                                                                                     |
 | `uncommitted-changes`  | differs from its commit; commit the changes to replay them                                                                               |
+| `unkept-result`        | has a step that sends its results out which the workflow apply writes leaves out                                                         |
 | `unreadable-file`      | is in a file that could not be opened                                                                                                    |
 | `uses`                 | uses the action ACTION, which Smithers CI does not run                                                                                   |
 | `variable`             | reads a Make variable that has no value here                                                                                             |

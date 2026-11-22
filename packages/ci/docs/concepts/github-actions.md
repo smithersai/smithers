@@ -291,12 +291,20 @@ steps reused their results.
 | `mikepenz/action-junit-report`             | Publishes test results as a check                     |
 
 A job is left out, as with any other action, when a later step reads what the
-step gave (`steps.<id>.outputs` or `steps.<id>.outcome`), when the step reads
-a value the workflow `apply` writes does not have (`env`, `steps`, `needs`,
-`inputs`), or when the action can fail on what it reports:
-`EnricoMi/publish-unit-test-result-action` with `action_fail: true`,
-`mikepenz/action-junit-report` with `fail_on_failure: true`, and
-`dorny/test-reporter`, which fails when a test failed.
+step gave (`steps.<id>.outputs` or `steps.<id>.outcome`), or when the action
+can fail on what it reports: `EnricoMi/publish-unit-test-result-action` with
+`action_fail: true`, `mikepenz/action-junit-report` with
+`fail_on_failure: true`, and `dorny/test-reporter`, which fails when a test
+failed.
+
+Such a step never costs its job when the workflow `apply` writes cannot run it
+as you wrote it: it reads a value that workflow does not have (another step's
+outputs, `env`, `needs`, `inputs`), a value that is not text, or one shaped
+like a secret. The replay runs the job's other steps, the report lists the step
+under `left out of the workflow apply writes`, and `apply` leaves it out of the
+workflow with one line in `NOT-REPRODUCED.txt` naming the step and why. A value
+from the matrix, `secrets`, `github`, `runner` or `vars` is one that workflow
+has.
 
 ## Caches
 

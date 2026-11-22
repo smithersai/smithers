@@ -165,3 +165,46 @@ describe("a job that ends with steps that send its results out", () => {
     replayLimit
   )
 })
+
+/** A job whose upload names its artifact from an earlier step's output, which the workflow apply writes does not have. */
+const named = `
+on: push
+jobs:
+  checks:
+    runs-on: ${here}
+    steps:
+      - uses: actions/checkout@v4
+      - id: staging
+        run: echo "name=report" >> "$GITHUB_OUTPUT"
+      - run: sh test.sh one
+      - uses: actions/upload-artifact@v4
+        with:
+          name: \${{ steps.staging.outputs.name }}
+          path: coverage-one.txt
+`
+
+describe("a job whose result step the workflow apply writes cannot keep", () => {
+  it("is replayed with its other steps, and only that step is left out, named in the report and by apply", async () => {
+    const root = temporary("result-unkept")
+    made.push(root)
+    git(root, "init", "--quiet", "--initial-branch=main")
+    commit(root, "ci", { ".github/workflows/ci.yml": named, "test.sh": "echo \"covered $1\" > \"coverage-$1.txt\"\n" })
+    const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check", "--no-trial", "--json"], root, process.env)
+    expect(outcome.code, outcome.stderr).toBe(0)
+    const report = JSON.parse(outcome.stdout) as ReplayReport
+    expect(report.notReplayed ?? []).toEqual([])
+    expect(report.commits[0]?.baseline.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 0 })
+    const why = "reads steps, which a step of the workflow apply writes does not have"
+    expect(report.stepsLeftOut).toEqual([{ job: "ci.yml:checks", action: "actions/upload-artifact@v4", why }])
+    expect(report.runnerSteps).toBeUndefined()
+    const applied = await spawn(bin, ["apply"], root, process.env)
+    expect(applied.code, applied.stderr).toBe(0)
+    const notes = readFileSync(join(root, ".smithers", "ci", "NOT-REPRODUCED.txt"), "utf8")
+    expect(notes).toContain(
+      `- ci.yml:checks: unkept-result: .github/workflows/ci.yml: checks step 4: actions/upload-artifact@v4 ${why}; ` +
+        "the workflow apply writes leaves this step out"
+    )
+    const generated = readFileSync(join(root, ".github", "workflows", "smithers-ci.yml"), "utf8")
+    expect(generated).not.toContain("upload-artifact")
+  }, replayLimit)
+})

@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from "vitest"
-import { type Job, resultActions } from "../../src/contract/Inventory.ts"
+import { blockers, type Job, resultActions } from "../../src/contract/Inventory.ts"
 import { readWorkflow } from "../../src/inventory/GithubActions.ts"
 
 const file = ".github/workflows/ci.yml"
@@ -131,14 +131,19 @@ describe("a step that only sends the job's results out", () => {
     ).toHaveLength(1)
   })
 
-  it("leaves the job out when the step reads what a generated workflow's step does not have", () => {
+  it("leaves only the step out when it reads what a generated workflow's step does not have", () => {
     const env = jobOf(main(`
       - uses: codecov/codecov-action@v5
         with: { files: "\${{ env.REPORT }}" }
 `))
+    const why = "reads env, which a step of the workflow apply writes does not have"
     expect(details(env).at(-1)).toBe(
-      "uses: main step 2: codecov/codecov-action@v5 reads env, which a step of the workflow apply writes does not have"
+      `unkept-result: main step 2: codecov/codecov-action@v5 ${why}; the workflow apply writes leaves this step out`
     )
+    expect(env.unkept).toEqual([{ uses: "codecov/codecov-action@v5", why }])
+    expect(env.kept).toBeUndefined()
+    // The step costs only itself: nothing keeps the job from being replayed.
+    expect(blockers(env)).toEqual([])
     const condition = jobOf(main(`
       - id: t
         run: tox
@@ -146,8 +151,11 @@ describe("a step that only sends the job's results out", () => {
         uses: codecov/codecov-action@v5
 `))
     expect(details(condition).at(-1)).toBe(
-      "uses: main step 3: codecov/codecov-action@v5 reads steps, which a step of the workflow apply writes does not have"
+      "unkept-result: main step 3: codecov/codecov-action@v5 reads steps, which a step of the workflow apply writes " +
+        "does not have; the workflow apply writes leaves this step out"
     )
+    expect(blockers(condition)).toEqual([])
+    expect(condition.steps.map((step) => step.command)).toEqual(["tox"])
     expect(
       jobOf(main(`
       - uses: codecov/codecov-action@v5
@@ -156,19 +164,27 @@ describe("a step that only sends the job's results out", () => {
     ).toHaveLength(1)
   })
 
-  it("leaves the job out when the step holds a value that is not text or is shaped like a secret", () => {
-    expect(
-      details(jobOf(main(`
+  it("leaves only the step out when it holds a value that is not text or is shaped like a secret", () => {
+    const list = jobOf(main(`
       - uses: codecov/codecov-action@v5
         with: { flags: [a, b] }
-`))).at(-1)
-    ).toBe("uses: main step 2 gives codecov/codecov-action@v5 a value that is not text")
-    expect(
-      details(jobOf(main(`
+`))
+    expect(details(list).at(-1)).toBe(
+      "unkept-result: main step 2: codecov/codecov-action@v5 is given a value that is not text; the workflow apply " +
+        "writes leaves this step out"
+    )
+    expect(blockers(list)).toEqual([])
+    const secret = jobOf(main(`
       - uses: codecov/codecov-action@v5
         with: { token: ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa }
-`))).at(-1)
-    ).toBe("secret-value: main step 2 holds a value shaped like a secret")
+`))
+    expect(details(secret).at(-1)).toBe(
+      "unkept-result: main step 2: codecov/codecov-action@v5 holds a value shaped like a secret; the workflow apply " +
+        "writes leaves this step out"
+    )
+    expect(blockers(secret)).toEqual([])
+    // The value is named nowhere in what the inventory holds.
+    expect(JSON.stringify(secret)).not.toContain("ghp_")
   })
 
   it("names each action with why nothing later in its job depends on it", () => {
@@ -176,7 +192,7 @@ describe("a step that only sends the job's results out", () => {
     expect(resultActions.every((entry) => entry.why.startsWith("it "))).toBe(true)
   })
 
-  it("is kept when an action that can fail on its report is given no inputs, and not when its inputs are no mapping", () => {
+  it("is kept when an action that can fail on its report is given no inputs, and left out alone when its inputs are no mapping", () => {
     expect(
       jobOf(main(`
       - uses: mikepenz/action-junit-report@v5
@@ -188,7 +204,73 @@ describe("a step that only sends the job's results out", () => {
       - uses: codecov/codecov-action@v5
         ${extra}
 `))).at(-1)
-      ).toBe("uses: main step 2 gives codecov/codecov-action@v5 a value that is not text")
+      ).toBe(
+        "unkept-result: main step 2: codecov/codecov-action@v5 is given a value that is not text; the workflow " +
+          "apply writes leaves this step out"
+      )
     }
+  })
+})
+
+describe("an upload whose artifact name the workflow apply writes cannot give", () => {
+  // The shape of a job whose upload names its artifact from what an earlier step wrote out: before, the step took
+  // the whole job with it ("0 of 49 CI jobs can be reproduced").
+  const upload = (name: string) =>
+    jobOf(
+      `
+on:
+  push:
+  workflow_call:
+    inputs:
+      label: { type: string, default: checks }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs: { tag: "\${{ steps.stage.outputs.tag }}" }
+    steps:
+      - id: stage
+        run: echo "tag=v1" >> "$GITHUB_OUTPUT"
+  checks:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        part: [one, two]
+    env: { LABEL: checks }
+    steps:
+      - uses: actions/checkout@v4
+      - id: staging_artifacts
+        run: echo "name=report-\${{ matrix.part }}" >> "$GITHUB_OUTPUT"
+      - run: make test
+      - uses: actions/upload-artifact@v4
+        with: { name: "${name}", path: report.xml }
+`,
+      "ci.yml:checks"
+    )
+
+  it.each([
+    ["an earlier step's output", "\${{ steps.staging_artifacts.outputs.name }}", "steps"],
+    ["another job's output", "\${{ needs.build.outputs.tag }}", "needs"],
+    ["the job's variables", "\${{ env.LABEL }}", "env"],
+    ["the workflow's inputs", "report-\${{ inputs.label }}", "inputs"]
+  ])("is left out alone when its name comes from %s, and the job replays its other steps", (_, name, context) => {
+    const job = upload(name)
+    expect(blockers(job)).toEqual([])
+    expect(job.steps.map((step) => step.command)).toEqual([
+      "echo \"name=report-${{ matrix.part }}\" >> \"$GITHUB_OUTPUT\"",
+      "make test"
+    ])
+    expect(job.unkept).toEqual([{
+      uses: "actions/upload-artifact@v4",
+      why: `reads ${context}, which a step of the workflow apply writes does not have`
+    }])
+    expect(job.kept).toBeUndefined()
+  })
+
+  it("is kept when its name comes from a matrix value, which the workflow apply writes has", () => {
+    const job = upload("report-\${{ matrix.part }}")
+    expect(blockers(job)).toEqual([])
+    expect(job.unkept).toBeUndefined()
+    expect(job.kept?.map((step) => step.with?.["name"])).toEqual(["report-${{ matrix.part }}"])
   })
 })

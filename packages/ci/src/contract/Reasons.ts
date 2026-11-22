@@ -174,6 +174,7 @@ export const reasons: Readonly<Record<string, Reason>> = {
   "target-variable": { sentence: "sets a Make variable for one rule" },
   "trigger-filter": { sentence: "runs only for some branches or paths" },
   "uncommitted-changes": { sentence: "differs from its commit", next: "commit the changes to replay them" },
+  "unkept-result": { sentence: "has a step that sends its results out which the workflow apply writes leaves out" },
   "unreadable-file": { sentence: "is in a file that could not be opened" },
   uses: {
     sentence: "uses the action {}, which Smithers CI does not run",

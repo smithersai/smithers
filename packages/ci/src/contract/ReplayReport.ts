@@ -381,6 +381,9 @@ export type RunnerStep = typeof RunnerStep.Type
  *
  * `runnerSteps` names each step of a replayed job that only sends the job's
  * results out (`RunnerStep`): it was not run here, and your runner runs it.
+ * `stepsLeftOut` names each such step the workflow `apply` writes leaves out,
+ * with why (`Inventory.UnkeptStep`): neither this replay nor your runner runs
+ * it, and its job was replayed without it.
  *
  * @category models
  * @since 0.1.0
@@ -418,7 +421,8 @@ export const ReplayReport = Schema.Struct({
   diskHeldBytes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   stopped: Schema.optionalKey(Schema.NonEmptyString),
   recorder: Schema.optionalKey(Recorder),
-  runnerSteps: Schema.optionalKey(Schema.Array(RunnerStep))
+  runnerSteps: Schema.optionalKey(Schema.Array(RunnerStep)),
+  stepsLeftOut: Schema.optionalKey(Schema.Array(RunnerStep))
 })
 
 /**

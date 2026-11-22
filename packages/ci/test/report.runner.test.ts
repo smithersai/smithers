@@ -36,3 +36,25 @@ describe("the steps your runner runs", () => {
     expect(html(example)).not.toContain("Not run here")
   })
 })
+
+describe("the steps the workflow apply writes leaves out", () => {
+  it("are listed with why in the text and the HTML report, and not when there are none", () => {
+    const why = "reads steps, which a step of the workflow apply writes does not have"
+    const report: ReplayReport = {
+      ...example,
+      stepsLeftOut: [
+        { job: "ci.yml:checks", action: "actions/upload-artifact@v4", why },
+        { job: "ci.yml:x", action: "codecov/codecov-action@<v5>", why: "holds a value shaped like a secret" }
+      ]
+    }
+    expect(text(report)).toContain([
+      "left out of the workflow apply writes: its job was replayed without it",
+      `ci.yml:checks  actions/upload-artifact@v4 ${why}`,
+      "ci.yml:x       codecov/codecov-action@<v5> holds a value shaped like a secret"
+    ].join("\n"))
+    expect(html(report)).toContain("<h2>Left out of the workflow apply writes: its job was replayed without it</h2>")
+    expect(html(report)).toContain("<code>codecov/codecov-action@&lt;v5&gt;</code> holds a value shaped like a secret")
+    expect(text(example)).not.toContain("left out of the workflow apply writes")
+    expect(html(example)).not.toContain("Left out of the workflow apply writes")
+  })
+})

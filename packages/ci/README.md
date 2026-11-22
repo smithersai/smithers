@@ -22,6 +22,22 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**2026-11-22, jobs a runner runs on Linux and the steps that send results out** (`sci-job-reach`). Optional
+additions, and one feature added to `harmless`.
+
+- **`Job.runners`**, **`Inventory.runnerOf(job, variant)`**, **`Inventory.unknownRunner(runner)`** (f9bb43cca1a9):
+  a `runs-on` written as an expression is worked out for each matrix variant; a variant whose runner the workflow
+  file does not give keeps the expression and is left out with `runner`. Read a variant's runner with `runnerOf`.
+- **`Inventory.KeptStep`**, **`Job.kept`**, **`Inventory.resultActions`**, **`Inventory.resultAction(uses)`**,
+  **`ReplayReport.runnerSteps`** (f229a692638c): a step that only sends the job's results out is not run by a
+  replay; `apply` writes it, as the repository had it, after the steps it follows.
+- **`Inventory.UnkeptStep`**, **`Job.unkept`**, **`Inventory.unkeptResult`** (`unkept-result`, now in
+  **`Inventory.harmless`**), **`ReplayReport.stepsLeftOut`**, **`Summary.stepsLeftOutOf`**: such a step that the
+  workflow `apply` writes cannot run as written (it reads another step's outputs, `env`, `needs` or `inputs`, or holds
+  a value that is not text or is shaped like a secret) costs only itself. f229a692638c left its whole job out.
+- Not a contract: `scripts/inventory-counts.mjs` prints the CI jobs a program reproduces in each repository from
+  its inventory; a change to `src/inventory` or `src/generate` lands with its before and after counts.
+
 **2026-11-21, a run's id** (`sci-eliza`). Additive.
 
 - **`Inventory.runIdBase`** (added): `10_000_000_000`. **`Inventory.runValues`**' `GITHUB_RUN_ID` (value changed,

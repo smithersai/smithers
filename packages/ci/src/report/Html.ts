@@ -236,6 +236,18 @@ const runnerStepsTable = (steps: ReadonlyArray<RunnerStep>): string =>
     "</table></div>"
   ].join("\n")
 
+const stepsLeftOutTable = (steps: ReadonlyArray<RunnerStep>): string =>
+  [
+    "<h2>Left out of the workflow apply writes: its job was replayed without it</h2>",
+    "<div class=\"scroll\"><table>",
+    ...steps.map((entry) =>
+      `<tr><th scope="row"><code>${escape(entry.job)}</code></th><td class="sub"><code>${escape(entry.action)}</code> ${
+        escape(entry.why)
+      }</td></tr>`
+    ),
+    "</table></div>"
+  ].join("\n")
+
 const commitsLeftTable = (entries: ReadonlyArray<NotReplayedCommit>): string =>
   [
     "<h2>Commits not replayed</h2>",
@@ -352,6 +364,8 @@ export const html: RenderReport = (report) => {
     if (tools.length > 0) body.push(toolVersionsTable(tools))
     const runner = report.runnerSteps ?? []
     if (runner.length > 0) body.push(runnerStepsTable(runner))
+    const unkept = report.stepsLeftOut ?? []
+    if (unkept.length > 0) body.push(stepsLeftOutTable(unkept))
     const empty = report.withheld ?? []
     if (empty.length > 0) body.push(`<p class="summary">${escape(leftEmpty(empty))}</p>`)
   }

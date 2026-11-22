@@ -47,6 +47,7 @@ const named = [
   Inventory.hostAction,
   Inventory.triggerFilter,
   Inventory.conditionFalse,
+  Inventory.unkeptResult,
   Inventory.releaseTrigger,
   Inventory.writePermission,
   Inventory.secret,

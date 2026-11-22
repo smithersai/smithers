@@ -155,6 +155,7 @@ import {
   rightsOf,
   runNames,
   runnerStepsOf,
+  stepsLeftOutOf,
   seenIn,
   splitOf,
   type Station,
@@ -1691,6 +1692,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       diskHeldBytes: try disk.most,
       stopped,
       recorder,
-      runnerSteps: runnerStepsOf(newest.inventory, newest.units)
+      runnerSteps: runnerStepsOf(newest.inventory, newest.units),
+      stepsLeftOut: stepsLeftOutOf(newest.inventory, newest.units)
     })
   })

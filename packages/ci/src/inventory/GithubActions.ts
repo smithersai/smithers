@@ -30,6 +30,8 @@ import {
   type Step,
   type Toolchain,
   triggerFilter,
+  unkeptResult,
+  type UnkeptStep,
   unknownRunner,
   writePermission
 } from "../contract/Inventory.ts"
@@ -189,6 +191,8 @@ interface JobState extends Shape {
   readonly after: Array<() => void>
   /** The steps that only send the job's results out, which the workflow `apply` writes runs (`Job.kept`). */
   readonly kept: Array<KeptStep>
+  /** Those of them the workflow `apply` writes leaves out, and why (`Job.unkept`). */
+  readonly unkept: Array<UnkeptStep>
 }
 
 /** A job is read with this many local actions and no more. */
@@ -978,7 +982,8 @@ const foreignContext = (text: string, bare: boolean): string | undefined => {
 /**
  * Reads a step that only sends the job's results out (`resultActionOf`). A replay does not run it, so no later step
  * may read how it ended or what it gave. The workflow `apply` writes runs it as the repository wrote it, after the
- * step before it, when every value it reads is one that workflow has.
+ * step before it, when every value it reads is one that workflow has; otherwise it leaves the step out and says why
+ * (`unkeptResult`). Either way the job is replayed without it: a step that sends results out never costs its job.
  */
 const keepStep = (state: JobState, raw: Record<string, unknown>, uses: string, where: string): StepRecord => {
   const { job } = state
@@ -1006,20 +1011,19 @@ const keepStep = (state: JobState, raw: Record<string, unknown>, uses: string, w
     ...(scalar("continue-on-error") === undefined ? {} : { continueOnError: scalar("continue-on-error") as string }),
     ...(scalar("timeout-minutes") === undefined ? {} : { timeoutMinutes: scalar("timeout-minutes") as string })
   }
+  /** Leaves the step out of the workflow `apply` writes, saying why, and only the step. */
+  const leftOut = (why: string): StepRecord => {
+    note(job, unkeptResult, `${where}: ${uses} ${why}; the workflow apply writes leaves this step out`)
+    state.unkept.push({ uses, why })
+    return out
+  }
   if (inputs === undefined || env === undefined || [step.if, step.continueOnError, step.timeoutMinutes].includes("")) {
-    note(job, "uses", `${where} gives ${uses} a value that is not text`)
-    return out
+    return leftOut("is given a value that is not text")
   }
-  if (keptTexts(step).some(hasSecretValue)) {
-    note(job, "secret-value", `${where} holds a value shaped like a secret`)
-    return out
-  }
+  if (keptTexts(step).some(hasSecretValue)) return leftOut("holds a value shaped like a secret")
   const foreign = [step.if ?? ""].map((text) => foreignContext(text, true)).find((name) => name !== undefined) ??
     keptTexts(step).slice(1).map((text) => foreignContext(text, false)).find((name) => name !== undefined)
-  if (foreign !== undefined) {
-    note(job, "uses", `${where}: ${uses} reads ${foreign}, which a step of the workflow apply writes does not have`)
-    return out
-  }
+  if (foreign !== undefined) return leftOut(`reads ${foreign}, which a step of the workflow apply writes does not have`)
   state.kept.push(step)
   return out
 }
@@ -1434,7 +1438,8 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     keeps: [],
     actions: 0,
     after: [],
-    kept: []
+    kept: [],
+    unkept: []
   }
   const scope: StepScope = {
     env: withEnv(workflow.env, raw["env"], job, name, before, false),
@@ -1462,7 +1467,12 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
   if (matrix.variants.some((variant) => quoted.some((used) => variant[used]?.includes("'")))) {
     note(job, "shell", `${name} puts a matrix value holding a quote into a script`)
   }
-  return [fillReferencedKeys(state.kept.length === 0 ? job : { ...job, kept: state.kept }, matrix)]
+  const results = {
+    ...job,
+    ...(state.kept.length === 0 ? {} : { kept: state.kept }),
+    ...(state.unkept.length === 0 ? {} : { unkept: state.unkept })
+  }
+  return [fillReferencedKeys(results, matrix)]
 }
 
 /**

@@ -1038,7 +1038,18 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
 
   it("runs a job only when every unsupported feature is harmless", () => {
     // A step left out because its condition is false for the event is one its CI would not run either.
-    expect(Inventory.harmless).toEqual(["host-action", "trigger-filter", Inventory.conditionFalse])
+    expect(Inventory.harmless).toEqual([
+      "host-action",
+      "trigger-filter",
+      Inventory.conditionFalse,
+      Inventory.unkeptResult
+    ])
+    // A step that only sends results out and that the workflow apply writes leaves out costs only itself.
+    expect(Inventory.unkeptResult).toBe("unkept-result")
+    expect(
+      Inventory.isRunnable({ ...inventory.jobs[4]!, unsupported: [{ feature: Inventory.unkeptResult, detail: "" }] })
+    )
+      .toBe(true)
     expect(Inventory.hostActions).toContain("actions/checkout")
     expect(Inventory.hostActions).not.toContain("actions/download-artifact")
     expect(Inventory.ci(inventory).jobs.map((entry) => [entry.id, entry.needs])).toEqual([

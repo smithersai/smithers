@@ -280,6 +280,14 @@ export const text: RenderReport = (report) => {
       ...runner.map((entry) => `${clean(entry.job).padEnd(jobWidth)}  ${clean(entry.action)}: ${clean(entry.why)}`)
     ])
   }
+  const unkept = report.stepsLeftOut ?? []
+  if (unkept.length > 0) {
+    const jobWidth = Math.max(...unkept.map((entry) => clean(entry.job).length))
+    sections.push([
+      "left out of the workflow apply writes: its job was replayed without it",
+      ...unkept.map((entry) => `${clean(entry.job).padEnd(jobWidth)}  ${clean(entry.action)} ${clean(entry.why)}`)
+    ])
+  }
   const empty = report.withheld ?? []
   if (empty.length > 0) sections.push([clean(leftEmpty(empty))])
   return sections.map(paragraph).join("\n\n")
