@@ -724,6 +724,84 @@ describe("reading a trace", () => {
     expect(read("100 connect(3<socket:[9]>) = 0").refusals).toEqual([])
   })
 
+  it("stores nothing for a run that sent to a program or a network outside it, as for a connection", () => {
+    const udp = (port: number, host = "127.0.0.1"): string =>
+      `{sa_family=AF_INET, sin_port=htons(${port}), sin_addr=inet_addr("${host}")}`
+    // strace's lines: what is sent is a quoted string, which may hold anything, an address's text too.
+    expect(read(`100 sendto(3<socket:[9]>, "q", 1, 0, ${udp(8798)}, 16) = 1`).refusals)
+      .toEqual(["it reached a program outside the run on local port 8798"])
+    expect(read(`100 sendto(3<socket:[9]>, "{sa_family=AF_INET, sin_port=htons(1), \"}", 1, 0, NULL, 0) = 1`).refusals)
+      .toEqual([])
+    expect(read(`100 sendto(3<socket:[9]>, "q\\\"{", 2, MSG_FASTOPEN, ${udp(443, "93.184.216.34")}, 16) = 2`).refusals)
+      .toEqual(["it opened a network connection (to 93.184.216.34 port 443)"])
+    expect(
+      read(
+        `100 sendmsg(3<socket:[9]>, {msg_name=${
+          udp(53, "10.0.0.2")
+        }, msg_namelen=16, msg_iov=[{iov_base="q", iov_len=1}], msg_iovlen=1, msg_controllen=0, msg_flags=0}, 0) = 1`
+      ).refusals
+    ).toEqual(["it opened a network connection (to 10.0.0.2 port 53)"])
+    // A message with no address goes where its socket is connected, which its connection said.
+    expect(
+      read(
+        "100 sendmsg(3<socket:[9]>, {msg_name=NULL, msg_namelen=0, msg_iov=[{iov_base=\"q\", iov_len=1}], msg_iovlen=1, msg_controllen=0, msg_flags=0}, 0) = 1"
+      ).refusals
+    ).toEqual([])
+    // Every address of a sendmmsg counts, and a send counts whatever it was answered.
+    expect(
+      read(
+        `100 sendmmsg(3<socket:[9]>, [{msg_hdr={msg_name=${
+          udp(7000)
+        }, msg_namelen=16, msg_iov=[{iov_base="a", iov_len=1}], msg_iovlen=1, msg_controllen=0, msg_flags=0}, msg_len=1}, {msg_hdr={msg_name={sa_family=AF_UNIX, sun_path="/run/other.sock"}, msg_namelen=18, msg_iov=[{iov_base="b", iov_len=1}], msg_iovlen=1, msg_controllen=0, msg_flags=0}, msg_len=1}], 2, 0) = -1 ECONNREFUSED (Connection refused)`
+      ).refusals
+    ).toEqual([
+      "it reached a program outside the run on local port 7000",
+      "it reached a program outside the run through the socket \"/run/other.sock\""
+    ])
+    // smthrs-observe's lines hold only the addresses, with no answer.
+    expect(
+      read(
+        `100 sendmmsg(3, [{msg_hdr={msg_name={sa_family=AF_UNIX, sun_path=@"bus"}, msg_namelen=6}}], 1, 0) = ?`
+      ).refusals
+    ).toEqual(["it reached a program outside the run through the socket @\"bus\""])
+    // A datagram to an address the run itself binds, in any of its processes and at any time, is its own.
+    expect(
+      read([
+        `100 sendto(3, "", 0, 0, ${udp(9000)}, 16) = ?`,
+        `100 sendto(3, "", 0, 0, {sa_family=AF_UNIX, sun_path="/w/me"}, 8) = ?`,
+        `101 bind(4<socket:[2]>, ${udp(9000)}, 16) = 0`,
+        "101 bind(5<socket:[3]>, {sa_family=AF_UNIX, sun_path=\"/w/me\"}, 8) = 0"
+      ].join("\n")).refusals
+    ).toEqual([])
+    // The kernel's own netlink end answers with the machine's state; any other end is a program.
+    expect(read("100 sendto(3, \"\", 0, 0, {sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000000}, 12) = ?").refusals)
+      .toEqual([])
+    expect(read("100 sendto(3, \"\", 0, 0, {sa_family=AF_NETLINK, nl_pid=4242, nl_groups=00000000}, 12) = ?").refusals)
+      .toEqual(["it reached a program outside the run through a netlink socket"])
+    expect(read("100 connect(3, {sa_family=AF_NETLINK, nl_pid=0, nl_groups=00000001}, 12) = 0").refusals)
+      .toEqual(["it reached a program outside the run through a netlink socket"])
+    // Frames on an interface reach whatever is on it.
+    expect(
+      read([
+        "100 execve(\"/usr/bin/arping\", [\"arping\"], 0x7ffc /* 9 vars */) = 0",
+        "100 sendto(3<socket:[9]>, \"\\377\", 1, 0, {sa_family=AF_PACKET, sll_protocol=htons(ETH_P_ARP), sll_ifindex=if_nametoindex(\"lo\"), sll_hatype=ARPHRD_ETHER, sll_pkttype=PACKET_HOST, sll_halen=6, sll_addr=[0xff, 0xff, 0xff, 0xff, 0xff, 0xff]}, 20) = 1"
+      ].join("\n")).refusals
+    ).toEqual(["it sent frames on a network interface (arping)"])
+    expect(
+      read("100 sendto(3, \"\", 0, 0, {sa_family=AF_PACKET, sll_protocol=htons(3), sll_ifindex=1}, 20) = ?").refusals
+    )
+      .toEqual(["it sent frames on a network interface (a program)"])
+    // Any other family reaches something outside the run; AF_UNSPEC ends a connection and reaches nothing.
+    expect(read("100 connect(3<socket:[9]>, {sa_family=AF_VSOCK, svm_cid=2, svm_port=1024}, 16) = 0").refusals)
+      .toEqual(["it reached a program outside the run through an address of family AF_VSOCK"])
+    expect(read("100 sendto(3, \"\", 0, 0, {sa_family=40}, 16) = ?").refusals)
+      .toEqual(["it reached a program outside the run through an address of family 40"])
+    expect(read("100 sendto(3, \"\", 0, 0, {sa_family=0x2d /* AF_??? */, sa_data=\"\"}, 16) = 1").refusals)
+      .toEqual(["it reached a program outside the run through an address of family 0x2d"])
+    expect(read("100 connect(3<socket:[9]>, {sa_family=AF_UNSPEC, sa_data=\"\"}, 16) = 0").refusals).toEqual([])
+    expect(read("100 sendto(3, \"\", 0, 0, {sa_family=AF_UNSPEC}, 16) = ?").refusals).toEqual([])
+  })
+
   it("takes what the run wrote in a directory along when the run moves the directory", () => {
     const trace = read([
       "100 mkdir(\"/w/stage\", 0777)                                            = 0",

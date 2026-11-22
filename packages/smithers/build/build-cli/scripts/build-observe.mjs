@@ -53,6 +53,7 @@ const kinds = {
   symlink: "K_SYMLINK",
   connect: "K_CONNECT",
   bind: "K_BIND",
+  send: "K_SEND",
   space: "K_SPACE",
   fork: "K_FORK",
   ring: "K_RING",

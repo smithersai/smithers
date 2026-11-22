@@ -34,6 +34,8 @@
  * - `change`, `changeFd`: changes a file's mode, owner, times, size or attributes, by path or by descriptor.
  * - `rename`, `link`, `symlink`: moves a name, adds a name, makes a link.
  * - `connect`, `bind`: reaches or offers a socket, which may be a path.
+ * - `send`: sends to the address it names (`sendto`, `sendmsg`, `sendmmsg`), which reaches what is there as `connect`
+ *   does; one that names no address sends where its socket is already connected.
  * - `fork`, `space`: starts a process or a thread, or gives one namespaces or a working directory of its own.
  * - `ring`, `ringEnter`: sets up or drives an io_uring.
  * - `filter`, `handler`: filters the run's own calls; sets a signal handler.
@@ -61,6 +63,7 @@ export type Kind =
   | "symlink"
   | "connect"
   | "bind"
+  | "send"
   | "fork"
   | "space"
   | "ring"
@@ -338,6 +341,9 @@ export const calls: ReadonlyArray<Call> = [
   // Sockets, which a path can name.
   { name: "connect", kind: "connect" },
   { name: "bind", kind: "bind" },
+  { name: "sendto", kind: "send" },
+  { name: "sendmsg", kind: "send" },
+  { name: "sendmmsg", kind: "send" },
   // Processes, threads and namespaces.
   { name: "clone", kind: "fork" },
   { name: "clone3", kind: "fork", number: 435 },

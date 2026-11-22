@@ -954,6 +954,29 @@ const loopback = (address: string): boolean =>
 
 const portOf = (address: string): string | undefined => /sin6?_port=htons\((\d+)\)/.exec(address)?.[1]
 
+/**
+ * Each address a send names, as the tracer prints it (`{sa_family=...}`), in the order it names them; a send whose
+ * socket is connected names none. What it sends is a quoted string, which may hold any text: it is passed over.
+ */
+const addressesIn = (body: string): ReadonlyArray<string> => {
+  const found: Array<string> = []
+  let start = -1
+  let depth = 0
+  for (let at = 0; at < body.length; at++) {
+    const character = body[at]
+    if (character === "\"") {
+      for (at++; at < body.length && body[at] !== "\""; at++) if (body[at] === "\\") at++
+    } else if (character === "{") {
+      if (start < 0 && body.startsWith("{sa_family=", at)) start = at
+      if (start >= 0) depth++
+    } else if (character === "}" && start >= 0 && --depth === 0) {
+      found.push(body.slice(start, at + 1))
+      start = -1
+    }
+  }
+  return found
+}
+
 /** Which program reached which address, for the line that says why a run stores nothing. */
 const reached = (program: string | undefined, address: string): string => {
   const host = /inet_addr\("([^"]+)"\)/.exec(address)?.[1] ?? /inet_pton\(AF_INET6, "([^"]+)"/.exec(address)?.[1]
@@ -1367,6 +1390,57 @@ export const read = (
     return undefined
   }
 
+  /**
+   * A connection or a send that reached an address: the network, or a program outside the run, stores nothing. A
+   * socket path or a loopback port the run listens on is its own. The kernel's own netlink end (`nl_pid` 0, no
+   * group) answers with the machine's state, as `/proc` does, and is no program.
+   */
+  const reachAddress = (pid: number, address: string): void => {
+    const family = /sa_family=([^,}]+)/.exec(address)?.[1]
+    if (family === undefined || family === "AF_UNSPEC" || family === "0") return
+    if (family === "AF_NETLINK") {
+      if (/nl_pid=0,/.test(address) && /nl_groups=0+\b/.test(address)) return
+      return reach("it reached a program outside the run through a netlink socket")
+    }
+    // What a locked install fetches, and whom it asks for an address, is fixed by the lockfile it read.
+    if (installing.has(pid) || installed.has(pid)) return
+    // So is what a build tool fetches once it has read its lockfile, while nothing writes that lockfile.
+    const build = building.get(pid)
+    if (build?.pinned === true && (family === "AF_INET" || family === "AF_INET6")) {
+      if (!pinnedConnections.has(build)) pinnedConnections.set(build, reached(programs.get(pid), address))
+      return
+    }
+    if (family === "AF_UNIX") {
+      const unix = /sun_path=(@?"(?:[^"\\]|\\.)*")/.exec(address)?.[1]
+      if (unix === undefined) reach("it reached a program outside the run through the socket it was given")
+      else if (!bound.has(`unix:${unix}`)) {
+        unbound.push([`unix:${unix}`, `it reached a program outside the run through the socket ${unix}`])
+      }
+    } else if (family === "AF_INET" || family === "AF_INET6") {
+      if (!loopback(address)) {
+        // The first connection is named; a run that opened one usually opened many.
+        if (!networked) {
+          reach(
+            `it opened a network connection (${reached(programs.get(pid), address)})${
+              build === undefined ? "" : `, with no ${build.lock} to say what it fetches`
+            }`
+          )
+        }
+        networked = true
+      } else if (!ephemeral && !bound.has(`port:${portOf(address)}`)) {
+        unbound.push([
+          `port:${portOf(address)}`,
+          `it reached a program outside the run on local port ${portOf(address)}`
+        ])
+      }
+    } else if (family === "AF_PACKET") {
+      // Frames on an interface reach whatever is on it, of the run or not.
+      reach(`it sent frames on a network interface (${programs.get(pid) ?? "a program"})`)
+    } else {
+      reach(`it reached a program outside the run through an address of family ${family.replace(/ .*/s, "")}`)
+    }
+  }
+
   const handle = (pid: number, name: string, body: string, result: string | undefined, entered: number): void => {
     const cell = cells.get(pid)!
     const args = split(body)
@@ -1711,6 +1785,12 @@ export const read = (
         if (!linking && ok && from !== undefined && to !== undefined && from !== to) carry(from, to, at)
         return
       }
+      case "sendto":
+      case "sendmsg":
+      case "sendmmsg":
+        // A send reaches what is at its address whatever it was answered: a datagram has no answer to wait for.
+        for (const address of addressesIn(body)) reachAddress(pid, address)
+        return
       case "bind":
       case "connect": {
         const address = args[1] ?? ""
@@ -1749,35 +1829,7 @@ export const read = (
           if (errno === "ENOENT" || errno === "ECONNREFUSED") looked(socket)
           return
         }
-        // What a locked install fetches, and whom it asks for an address, is fixed by the lockfile it read.
-        if (installing.has(pid) || installed.has(pid)) return
-        // So is what a build tool fetches once it has read its lockfile, while nothing writes that lockfile.
-        const build = building.get(pid)
-        if (build?.pinned === true && (family === "AF_INET" || family === "AF_INET6")) {
-          if (!pinnedConnections.has(build)) pinnedConnections.set(build, reached(programs.get(pid), address))
-          return
-        }
-        if (family === "AF_UNIX") {
-          if (key === undefined) reach("it reached a program outside the run through the socket it was given")
-          else if (!bound.has(key)) {
-            unbound.push([key, `it reached a program outside the run through the socket ${unix}`])
-          }
-        } else if (family === "AF_INET" || family === "AF_INET6") {
-          if (!loopback(address)) {
-            // The first connection is named; a run that opened one usually opened many.
-            if (!networked) {
-              reach(
-                `it opened a network connection (${reached(programs.get(pid), address)})${
-                  build === undefined ? "" : `, with no ${build.lock} to say what it fetches`
-                }`
-              )
-            }
-            networked = true
-          } else if (!ephemeral && !bound.has(key!)) {
-            unbound.push([key!, `it reached a program outside the run on local port ${portOf(address)}`])
-          }
-        }
-        return
+        return reachAddress(pid, address)
       }
       case "unshare": {
         if (!ok) return

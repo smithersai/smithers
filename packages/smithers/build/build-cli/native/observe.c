@@ -38,6 +38,9 @@
  * - A connection to a socket path or a local port is asked again once it has ended, through a copy of its socket
  *   taken at the stop and let go within a tick: `getpeername` and `TCP_INFO` say whether it connected (never
  *   `SO_ERROR`, which takes the error the program waits for).
+ * - A send that names an address (`sendto`, `sendmsg`, `sendmmsg`) is written with its addresses alone and no answer
+ *   (`= ?`): a reader counts it as reaching each, as a connection would. A `sendto` that names none goes where its
+ *   socket is connected and passes the filter unseen.
  * - Before a call that writes a name that is already there (a rename, a link, a symlink, an exclusive create), a
  *   line notes that the run found it there.
  * - A program a process starts is written with no answer (`= ?`): it counts as looked at and started, and changes
@@ -94,6 +97,8 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/audit.h>
+#include <linux/if_packet.h>
+#include <linux/netlink.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 #include <netinet/in.h>
@@ -181,6 +186,7 @@ enum kind {
   K_SYMLINK,   /* symlink, symlinkat */
   K_CONNECT,
   K_BIND,
+  K_SEND,      /* sendto, sendmsg, sendmmsg: the addresses it sends to, which reach what is there as a connect does */
   K_SPACE,     /* unshare with a new namespace */
   K_FORK,      /* fork, vfork, clone, clone3: a process (a thread is its process's), or a new namespace */
   K_RING,      /* io_uring_setup */
@@ -231,7 +237,7 @@ static const struct call *callOf(int nr) {
  * watched call goes to it always; everything else passes.
  */
 static int install(void) {
-  struct sock_filter f[18 + 4 * NCALLS];
+  struct sock_filter f[24 + 4 * NCALLS];
   int n = 0;
 #define S(code, k) (f[n++] = (struct sock_filter)BPF_STMT(code, k))
 #define J(code, k, t, e) (f[n++] = (struct sock_filter)BPF_JUMP(code, k, t, e))
@@ -262,6 +268,17 @@ static int install(void) {
       J(BPF_JMP | BPF_JSET | BPF_K, CLONE_THREAD, 0, 1);
       S(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
       S(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF);
+      continue;
+    }
+    if (calls[i].nr == SYS_sendto) {
+      /* A send that names no address goes where its socket is connected, which its connect said: it passes. */
+      J(BPF_JMP | BPF_JEQ | BPF_K, calls[i].nr, 0, 6);
+      S(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[4]));
+      J(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 2);
+      S(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[4]) + 4);
+      J(BPF_JMP | BPF_JEQ | BPF_K, 0, 1, 0);
+      S(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF);
+      S(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
       continue;
     }
     J(BPF_JMP | BPF_JEQ | BPF_K, calls[i].nr, 0, 1);
@@ -1865,9 +1882,107 @@ static void socketAddress(struct text *t, const struct sockaddr_storage *a, sock
     printf_(t, "{sa_family=AF_INET6, sin6_port=htons(%u), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, \"%s\", "
                "&sin6_addr), sin6_scope_id=0}",
             ntohs(i->sin6_port), host);
+  } else if (a->ss_family == AF_UNSPEC) {
+    puts_(t, "{sa_family=AF_UNSPEC}");
+  } else if (a->ss_family == AF_NETLINK) {
+    const struct sockaddr_nl *l = (const struct sockaddr_nl *)a;
+    printf_(t, "{sa_family=AF_NETLINK, nl_pid=%u, nl_groups=%08x}", l->nl_pid, l->nl_groups);
+  } else if (a->ss_family == AF_PACKET) {
+    const struct sockaddr_ll *l = (const struct sockaddr_ll *)a;
+    printf_(t, "{sa_family=AF_PACKET, sll_protocol=htons(%u), sll_ifindex=%d}", ntohs(l->sll_protocol),
+            l->sll_ifindex);
   } else {
     printf_(t, "{sa_family=%u}", (unsigned)a->ss_family);
   }
+}
+
+/* The most addresses of one sendmmsg a line holds; a call that sends to more is not followed. */
+#define SEND_ADDRESSES 16
+
+/*
+ * A send that names an address, written as strace writes it, with only what a reader asks about: the addresses,
+ * each a socket's path made whole from the thread's working directory. A message that names none goes where its
+ * socket is connected. Returns 0 when nothing is written: no address, or one that cannot be read, which the kernel
+ * refuses too (`EFAULT`).
+ */
+static int sendLine(struct text *t, pid_t tid, pid_t tgid, const struct call *c, const struct seccomp_notif *req) {
+  struct sockaddr_storage to[SEND_ADDRESSES];
+  socklen_t lengths[SEND_ADDRESSES];
+  int count = 0;
+  if (c->nr == SYS_sendto || c->nr == SYS_sendmsg) {
+    uint64_t name = req->data.args[4];
+    socklen_t length = (socklen_t)req->data.args[5];
+    if (c->nr == SYS_sendmsg) {
+      struct msghdr m;
+      if (!bytesAt(tid, req->data.args[1], &m, sizeof m)) return 0;
+      name = (uint64_t)(uintptr_t)m.msg_name;
+      length = m.msg_namelen;
+    }
+    if (length > sizeof to[0]) length = sizeof to[0];
+    memset(&to[0], 0, sizeof to[0]);
+    if (name == 0 || length < sizeof(sa_family_t) || !bytesAt(tid, name, &to[0], length)) return 0;
+    lengths[count++] = length;
+  } else {
+    unsigned messages = (unsigned)req->data.args[2];
+    if (messages > UIO_MAXIOV) messages = UIO_MAXIOV;
+    for (unsigned i = 0; i < messages; i++) {
+      struct mmsghdr m;
+      if (!bytesAt(tid, req->data.args[1] + (uint64_t)i * sizeof m, &m, sizeof m)) break;
+      socklen_t length = m.msg_hdr.msg_namelen;
+      if (length > sizeof to[0]) length = sizeof to[0];
+      struct sockaddr_storage a;
+      memset(&a, 0, sizeof a);
+      if (m.msg_hdr.msg_name == NULL || length < sizeof(sa_family_t) ||
+          !bytesAt(tid, (uint64_t)(uintptr_t)m.msg_hdr.msg_name, &a, length))
+        continue;
+      int seen = 0;
+      for (int j = 0; j < count && !seen; j++) seen = lengths[j] == length && memcmp(&to[j], &a, length) == 0;
+      if (seen) continue;
+      if (count == SEND_ADDRESSES) {
+        unrecorded("it sent to more addresses in one call than the recorder reads");
+        return 0;
+      }
+      to[count] = a;
+      lengths[count++] = length;
+    }
+    if (count == 0) return 0;
+  }
+  char here[PATH_MAX + 1];
+  int placed = -1;
+  begin(t, tgid, c->name);
+  printf_(t, "%d, ", (int)req->data.args[0]);
+  if (c->nr == SYS_sendmmsg) puts_(t, "[");
+  for (int i = 0; i < count; i++) {
+    struct sockaddr_un *u = (struct sockaddr_un *)&to[i];
+    /* A socket's path from the working directory is written whole, as every other path is. */
+    if (to[i].ss_family == AF_UNIX && lengths[i] > offsetof(struct sockaddr_un, sun_path) && u->sun_path[0] != 0 &&
+        u->sun_path[0] != '/') {
+      if (placed < 0) placed = placeOf(tid, AT_FDCWD, here, sizeof here);
+      char relative[sizeof u->sun_path + 1], whole[PATH_MAX + 1];
+      snprintf(relative, sizeof relative, "%.*s", (int)(lengths[i] - offsetof(struct sockaddr_un, sun_path)),
+               u->sun_path);
+      if (placed && snprintf(whole, sizeof whole, "%s/%s", here, relative) < (int)sizeof u->sun_path) {
+        memset(u->sun_path, 0, sizeof u->sun_path);
+        memcpy(u->sun_path, whole, strlen(whole));
+        lengths[i] = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + strlen(whole) + 1);
+      }
+    }
+    if (c->nr == SYS_sendto) {
+      puts_(t, "\"\", 0, 0, ");
+      socketAddress(t, &to[i], lengths[i]);
+      printf_(t, ", %u", (unsigned)lengths[i]);
+    } else {
+      puts_(t, i == 0 ? "" : ", ");
+      puts_(t, c->nr == SYS_sendmmsg ? "{msg_hdr={msg_name=" : "{msg_name=");
+      socketAddress(t, &to[i], lengths[i]);
+      printf_(t, ", msg_namelen=%u}", (unsigned)lengths[i]);
+      if (c->nr == SYS_sendmmsg) puts_(t, "}");
+    }
+  }
+  if (c->nr == SYS_sendmmsg) printf_(t, "], %u", (unsigned)req->data.args[2]);
+  if (c->nr != SYS_sendto) printf_(t, ", %u", (unsigned)req->data.args[c->nr == SYS_sendmmsg ? 3 : 2]);
+  puts_(t, ") = ?");
+  return 1;
 }
 
 /* Whether a program of the run's network namespace listens on a loopback port: the tables the kernel keeps. */
@@ -3173,6 +3288,10 @@ static void serve(const struct seccomp_notif *req) {
       free(t.data);
       return;
     }
+    case K_SEND:
+      /* What the send was answered is not known when it is written; a reader counts it either way. */
+      sendLine(&t, tid, tgid, c, req);
+      break;
     case K_REFUSED:
       refuse(c->name);
       return;
@@ -3808,29 +3927,14 @@ int main(int argc, char **argv) {
      * this line has run. */
     if (prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0) != 0) _exit(126);
     close(sv[0]);
+    /* The listener's number, which the supervisor copies (pidfd_getfd), as --probe does: a send of the descriptor
+     * itself is a call the filter hands to a supervisor that has no listener yet. */
     int fd = install();
-    char c = 0;
-    struct iovec io = {&c, 1};
-    union {
-      char buffer[CMSG_SPACE(sizeof(int))];
-      struct cmsghdr align;
-    } control;
-    memset(&control, 0, sizeof control);
-    struct msghdr m = {.msg_iov = &io, .msg_iovlen = 1};
-    if (fd >= 0) {
-      m.msg_control = control.buffer;
-      m.msg_controllen = sizeof control.buffer;
-      struct cmsghdr *h = CMSG_FIRSTHDR(&m);
-      h->cmsg_level = SOL_SOCKET;
-      h->cmsg_type = SCM_RIGHTS;
-      h->cmsg_len = CMSG_LEN(sizeof(int));
-      memcpy(CMSG_DATA(h), &fd, sizeof fd);
-    }
-    if (sendmsg(sv[1], &m, 0) != 1) _exit(126);
-    if (fd < 0) _exit(126);
-    close(fd);
+    if (write(sv[1], &fd, sizeof fd) != (ssize_t)sizeof fd || fd < 0) _exit(126);
     /* Starts the command once the supervisor serves: its first call is the start itself. */
+    char c;
     if (read(sv[1], &c, 1) != 1) _exit(126);
+    close(fd);
     close(sv[1]);
     execvp(command[0], command);
     fprintf(stderr, "smthrs-observe: %s: %s\n", command[0], strerror(errno));
@@ -3847,21 +3951,35 @@ int main(int argc, char **argv) {
   sigaction(SIGINT, &passOn, NULL);
   sigaction(SIGHUP, &passOn, NULL);
   sigaction(SIGQUIT, &passOn, NULL);
-  char c;
-  struct iovec io = {&c, 1};
-  union {
-    char buffer[CMSG_SPACE(sizeof(int))];
-    struct cmsghdr align;
-  } control;
-  struct msghdr m = {.msg_iov = &io, .msg_iovlen = 1, .msg_control = control.buffer,
-                     .msg_controllen = sizeof control.buffer};
-  if (recvmsg(sv[0], &m, 0) != 1 || CMSG_FIRSTHDR(&m) == NULL) {
+  int theirs = -1;
+  if (read(sv[0], &theirs, sizeof theirs) != (ssize_t)sizeof theirs || theirs < 0) {
     int status;
     waitpid(child, &status, 0);
     fprintf(stderr, "smthrs-observe: this host gives no seccomp listener\n");
     return 126;
   }
-  memcpy(&listener, CMSG_DATA(CMSG_FIRSTHDR(&m)), sizeof listener);
+  int pidfd = (int)syscall(SYS_pidfd_open, child, 0);
+  listener = pidfd < 0 ? -1 : (int)syscall(SYS_pidfd_getfd, pidfd, theirs, 0);
+  if (pidfd >= 0) close(pidfd);
+  if (listener < 0) {
+    /* Nothing can serve the filtered process: it is ended, and the command runs with no filter, unrecorded. */
+    int status;
+    kill(child, SIGKILL);
+    waitpid(child, &status, 0);
+    unrecorded("this machine refuses pidfd_getfd, which the recorder takes its own listener with; a container allows "
+               "it with CAP_SYS_PTRACE");
+    child = fork();
+    if (child < 0) return 125;
+    if (child == 0) {
+      if (prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0) != 0) _exit(126);
+      close(sv[0]);
+      execvp(command[0], command);
+      fprintf(stderr, "smthrs-observe: %s: %s\n", command[0], strerror(errno));
+      _exit(errno == ENOENT ? 127 : 126);
+    }
+    rootPid = child;
+    commandPid = child;
+  }
   mainThread = pthread_self();
   sigset_t waits;
   sigemptyset(&waits);
@@ -3874,10 +3992,10 @@ int main(int argc, char **argv) {
   sigaction(SIGUSR1, &woken, NULL);
   /* One serving thread: a call costs a thread switch either way, and more threads that take turns cost more
    * processor time for the same wall time (measured on click's pre-commit and typing steps). */
-  int threads = 1;
+  int threads = listener < 0 ? 0 : 1;
   pthread_t serving_[1];
   for (int i = 0; i < threads; i++) pthread_create(&serving_[i], NULL, serving, NULL);
-  if (write(sv[0], "g", 1) != 1) return 125;
+  if (listener >= 0 && write(sv[0], "g", 1) != 1) return 125;
   close(sv[0]);
 
   int status = 0, code = 125, rootDone = 0;
@@ -3966,7 +4084,7 @@ int main(int argc, char **argv) {
       }
     }
   }
-  close(listener);
+  if (listener >= 0) close(listener);
   boundSockets();
   settleChanges(0);
   settleRefused(0, 1);

@@ -349,7 +349,14 @@ date. One thing is lost: the gaps between a long step's files are not kept.
 | `package-lock.json`        | runs     | runs           | runs       |
 
 A step that reached the network, or a program outside its own run, stores
-nothing and runs every time: what those answered is on no list. For a day
+nothing and runs every time: what those answered is on no list. A step reaches
+one when it connects to it or sends to its address, a UDP datagram included,
+so a step that looks up a name through a resolver runs every time too. A
+program the step started itself, listening on a local port or a socket path, is
+part of its run. The kernel's own answers about the machine's network, such as
+its list of interfaces, are the machine's state, as `/proc` is. A step that is
+a server and only listens is stored like any other: nothing it hears is on its
+list, and on a CI runner nothing outside the job sends to it. For a day
 after such a run the step runs without the recording, which costs time and
 would store nothing. An install
 that fetches exactly what a lockfile pins is the exception, because the

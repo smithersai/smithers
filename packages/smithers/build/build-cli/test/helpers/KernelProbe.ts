@@ -562,6 +562,45 @@ def socket_way(kind):
     return way
 
 
+def send_way(kind):
+    """A datagram sent to an address, then the data read: what is at the address is the run's own only when the run
+    binds it. sendto: a socket path nothing of the run binds; sendmsg: an abstract name nothing binds; sendmmsg: two
+    datagrams to a socket path the run binds and reads back."""
+    import socket
+    def way():
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        if kind == "sendto":
+            try:
+                s.sendto(b"q", "data/none")
+            except OSError:
+                pass
+        elif kind == "sendmsg":
+            try:
+                s.sendmsg([b"q"], [], 0, "\0smthrs-probe-%d" % os.getpid())
+            except OSError:
+                pass
+        else:
+            if os.path.lexists("build/me"):
+                os.unlink("build/me")
+            me = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            me.bind("build/me")
+            address = b"build/me"
+            name = ctypes.create_string_buffer(struct.pack("H", socket.AF_UNIX) + address + b"\0")
+            data = ctypes.create_string_buffer(b"q")
+            iovec = struct.pack("PN", ctypes.addressof(data), 1)
+            iov = ctypes.create_string_buffer(iovec)
+            header = struct.pack("PI4xPNPNi4xI4x", ctypes.addressof(name), len(name.raw), ctypes.addressof(iov), 1,
+                                 0, 0, 0, 0)
+            vector = ctypes.create_string_buffer(header * 2)
+            libc.sendmmsg.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint, ctypes.c_int]
+            if libc.sendmmsg(s.fileno(), ctypes.addressof(vector), 2, 0) != 2:
+                sys.exit(2)
+            me.recv(1)
+            me.recv(1)
+        return good(text("data/x.txt"))
+    return way
+
+
 def vfork_read():
     import subprocess
     # dash starts a program that is not its last command with vfork.
@@ -665,6 +704,9 @@ ways = {
     "linkat-empty-path": link_then_read(AT_EMPTY_PATH),
     "bind": socket_way("bind"),
     "connect": socket_way("connect"),
+    "sendto": send_way("sendto"),
+    "sendmsg": send_way("sendmsg"),
+    "sendmmsg": send_way("sendmmsg"),
     # Names taken away, moved or changed where none is: each finds nothing, unless the change put it there.
     "unlink": missing_then("unlink", "data/none"),
     "rmdir": missing_then("rmdir", "data/none"),
@@ -1186,7 +1228,20 @@ export const ways: { readonly [way: string]: Way } = {
   "swapoff": { call: "swapoff", form: "a swap file", change: x, expected: failsHere("swapoff") },
   "acct": { call: "acct", form: "an accounting file", change: x, expected: failsHere("acct") },
   "uselib": { call: "uselib", form: "a library", change: x, expected: failsHere("uselib") },
-  "bpf": { call: "bpf", form: "a pinned object", change: x, expected: failsHere("bpf") }
+  "bpf": { call: "bpf", form: "a pinned object", change: x, expected: failsHere("bpf") },
+  "sendto": {
+    call: "sendto",
+    form: "a datagram to a socket path nothing of the run binds",
+    change: x,
+    expected: { reason: "it reached a program outside the run through the socket" }
+  },
+  "sendmsg": {
+    call: "sendmsg",
+    form: "a datagram to an abstract name nothing of the run binds",
+    change: x,
+    expected: { reason: "it reached a program outside the run through the socket @" }
+  },
+  "sendmmsg": { call: "sendmmsg", form: "datagrams to a socket path the run binds", change: x, expected: stored }
 }
 
 // The ways a directory reached each way is asked about.

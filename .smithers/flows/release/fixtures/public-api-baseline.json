@@ -1248,7 +1248,7 @@
         "internal/Path.d.ts": "9b0174f1dc44d87d4be89abd874d0672ecdde682ef5aa03f96752c80347f79e5",
         "internal/PathTools.d.ts": "4fc6e0818faa8e08de9c09e936502e4558c690ad569f45d075e4223083230cc0",
         "internal/RecordStore.d.ts": "2cbf6f2b7e20de8b4e2ea200ae1e2fac9049e73e14475b2c473b3e3a33d3ab83",
-        "internal/RecordedCalls.d.ts": "6f504a0012be6062c561bc7b93508e17b9d8a93eb8f05e1c5885eed97ffc82e1",
+        "internal/RecordedCalls.d.ts": "83488413a38ced6244e08d69e29a235e612070c30ba8e73aee5896aebb5350c9",
         "internal/RemoteCi.d.ts": "e363a4bc04c522523029f07ea03400d580bade535a5215db2058c354d25d51f5",
         "internal/RepositoryProcess.d.ts": "35d6808539081b7236a69c4c577119de413710368301892ba20f0429a22d898f",
         "internal/RuleContract.d.ts": "b6faa916d22b5978a4738e54bc1bc66878aa6a5bfd96db79885bc9051373242f",

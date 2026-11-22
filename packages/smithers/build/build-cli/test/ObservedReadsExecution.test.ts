@@ -11,7 +11,7 @@
 import { Smithers as S } from "@smthrs/targets"
 import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import * as Effect from "effect/Effect"
-import { spawnSync } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Net from "node:net"
@@ -55,6 +55,64 @@ const withPath = async <A>(path: string, body: () => Promise<A>): Promise<A> => 
     process.env["PATH"] = previous
   }
 }
+
+/** Programs outside a run: UDP on a loopback port, a datagram socket path, an abstract name; each answers `ok`. */
+const outsideServer = String.raw`
+import json, os, select, socket, sys
+u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+u.bind(("127.0.0.1", 0))
+path = os.path.join(sys.argv[1], "outside.sock")
+p = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+p.bind(path)
+name = "smthrs-outside-%d" % os.getpid()
+a = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+a.bind("\0" + name)
+print(json.dumps({"port": u.getsockname()[1], "path": path, "name": name}), flush=True)
+while True:
+    for s in select.select([u, p, a], [], [])[0]:
+        data, sender = s.recvfrom(64)
+        if sender:
+            s.sendto(b"ok", sender)
+`
+
+/** A step that sends to {@link outsideServer} one way (`python3 send.py <way>`), and passes on its answer. */
+const sender = String.raw`
+import ctypes, json, socket, struct, sys
+way = sys.argv[1]
+outside = json.load(open("outside.json"))
+to = ("127.0.0.1", outside["port"])
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.settimeout(10)
+if way == "sendto":
+    s.sendto(b"q", to)
+elif way == "sendmsg":
+    s.sendmsg([b"q"], [], 0, to)
+elif way == "sendmmsg":
+    # A sockaddr_in: the family in the machine's order, the port and the address in the network's.
+    address = ctypes.create_string_buffer(struct.pack("=H", socket.AF_INET) + struct.pack("!H4s8x", to[1], socket.inet_aton(to[0])))
+    data = ctypes.create_string_buffer(b"q")
+    iov = ctypes.create_string_buffer(struct.pack("PN", ctypes.addressof(data), 1))
+    header = struct.pack("PI4xPNPNi4xI4x", ctypes.addressof(address), 16, ctypes.addressof(iov), 1, 0, 0, 0, 0)
+    vector = ctypes.create_string_buffer(header * 2)
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.sendmmsg.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint, ctypes.c_int]
+    if libc.sendmmsg(s.fileno(), ctypes.addressof(vector), 2, 0) != 2:
+        sys.exit(2)
+    s.recv(64)
+elif way == "connected":
+    s.connect(to)
+    s.send(b"q")
+elif way in ("path", "abstract"):
+    u = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    u.sendto(b"q", outside["path"] if way == "path" else "\0" + outside["name"])
+    sys.exit(0)
+elif way == "netlink":
+    n = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, 0)
+    # RTM_GETLINK, a dump of the machine's interfaces, to the kernel (pid 0).
+    n.sendto(struct.pack("=IHHII", 32, 18, 0x301, 1, 0) + struct.pack("=BxHiII", 0, 0, 0, 0, 0), (0, 0))
+    sys.exit(0 if len(n.recv(65536)) > 0 else 1)
+sys.exit(0 if s.recv(64) == b"ok" else 1)
+`
 
 /**
  * The check: fails when `input.txt` holds `fail`, reads every file in
@@ -744,6 +802,44 @@ describe("an observed test", () => {
       expect(logs).toContain(`//:check  not cached: it reached a program outside the run on local port ${port}`)
     } finally {
       await new Promise((resolve) => server.close(resolve))
+    }
+  })
+
+  tracedIt("stores nothing for a run that sent to a program outside it, by any call that sends", async () => {
+    // Programs outside the run, as a server on the machine is: UDP on a loopback port, a datagram socket path, and
+    // an abstract name. Each answers `ok`.
+    const where = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smithers-outside-")))
+    temporary.push(where)
+    const server = spawn("python3", ["-c", outsideServer, where], { stdio: ["ignore", "pipe", "inherit"] })
+    try {
+      const outside = JSON.parse(
+        await new Promise<string>((resolve) => server.stdout.once("data", (data) => resolve(String(data))))
+      ) as { readonly port: number; readonly path: string; readonly name: string }
+      const local = `it reached a program outside the run on local port ${outside.port}`
+      const ways: ReadonlyArray<readonly [string, string]> = [
+        ["sendto", local],
+        ["sendmsg", local],
+        ["sendmmsg", local],
+        // A connected datagram socket: its connect is what the run reached.
+        ["connected", local],
+        ["path", `it reached a program outside the run through the socket "${outside.path}"`],
+        ["abstract", `it reached a program outside the run through the socket @"${outside.name}"`]
+      ]
+      for (const [way, reason] of ways) {
+        const { logs, run, write } = await fixture({ check: `python3 send.py ${way}` })
+        await write("send.py", sender)
+        await write("outside.json", JSON.stringify(outside))
+        expect([way, await run()]).toEqual([way, { check: "ran" }])
+        expect([way, logs]).toEqual([way, expect.arrayContaining([`//:check  not cached: ${reason}`])])
+      }
+      // The kernel's own netlink end answers with the machine's state, as /proc does: the run is stored.
+      const kernel = await fixture({ check: "python3 send.py netlink" })
+      await kernel.write("send.py", sender)
+      await kernel.write("outside.json", JSON.stringify(outside))
+      expect(await kernel.run()).toEqual({ check: "ran" })
+      expect(await kernel.run()).toEqual({ check: "hit" })
+    } finally {
+      server.kill()
     }
   })
 

@@ -370,15 +370,19 @@ describe("smthrs-observe where pidfd_getfd is refused", () => {
     expect([plain.status, plain.stderr]).toEqual([0, ""])
   })
 
-  refusable("makes a run that binds a socket unrecorded, rather than lose the bind", async () => {
+  // The recorder takes its listener from the filtered process with pidfd_getfd: refused, the command runs with no
+  // filter, as it would unrecorded, and the trace says why.
+  refusable("runs the command unrecorded, and says why, rather than not at all", async () => {
     const script = "require('node:net').createServer().listen(0, '127.0.0.1', function () { this.close() })"
     const run = await refusing([supervisor!, "trace", "--", process.execPath, "-e", script])
     expect(run.status, run.stderr).toBe(0)
     const lines = NodeFs.readFileSync(Path.join(run.base, "trace"), "utf8").split("\n").filter((line) => line !== "")
     expect(lines.filter((line) => line.includes(" bind("))).toEqual([])
     expect(lines.at(-2)).toMatch(
-      /^\d+ \+\+\+ unrecorded: this machine refuses pidfd_getfd, which reads a socket the run bound; a container allows it with CAP_SYS_PTRACE \+\+\+$/
+      /^\d+ \+\+\+ unrecorded: this machine refuses pidfd_getfd, which the recorder takes its own listener with; a container allows it with CAP_SYS_PTRACE \+\+\+$/
     )
+    const failing = await refusing([supervisor!, "trace", "--", "sh", "-c", "exit 3"])
+    expect(failing.status).toBe(3)
     expect(lines.at(-1)).toMatch(/^\d+ \+\+\+ complete \+\+\+$/)
   })
 })
