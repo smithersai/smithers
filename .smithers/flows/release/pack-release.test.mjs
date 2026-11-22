@@ -39,7 +39,7 @@ import {
   workspaces
 } from "./pack-release.mjs"
 import { repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
-import { verifyPackagedNativeHelpers } from "./release-native-helpers.mjs"
+import { linuxHelperElfProblem, maxLinuxGlibcVersion, verifyPackagedNativeHelpers } from "./release-native-helpers.mjs"
 
 // `workspaces` reads and validates a workspace tree, so this suite reads the
 // real one once and every case below asserts over that single order.
@@ -205,7 +205,7 @@ test("importing the release scripts reads no workspace tree", async () => {
   // roster error before the importer could call anything.
   const fixture = await mkdtemp(join(tmpdir(), "smithers-pack-release-import-"))
   try {
-    for (const file of ["packages/repo-targets/scripts/workspace-packages.mjs", "packages/repo-targets/scripts/workspace-root.mjs", "packages/smithers/build/build-cli/scripts/build-observe.mjs", ...["pack-release.mjs", "published-packages.mjs", "publish-release.mjs", "packed-export-targets.mjs", "build-release.mjs", "release-native-helpers.mjs"].map((name) => `.smithers/flows/release/${name}`)]) {
+    for (const file of ["packages/repo-targets/scripts/workspace-packages.mjs", "packages/repo-targets/scripts/workspace-root.mjs", "packages/smithers/build/build-cli/scripts/build-observe.mjs", "packages/smithers/build/build-cli/src/internal/RecordedCalls.ts", ...["pack-release.mjs", "published-packages.mjs", "publish-release.mjs", "packed-export-targets.mjs", "build-release.mjs", "release-native-helpers.mjs"].map((name) => `.smithers/flows/release/${name}`)]) {
       await mkdir(dirname(join(fixture, file)), { recursive: true })
       await cp(join(repoRoot, file), join(fixture, file))
     }
@@ -940,7 +940,7 @@ for (const overlay of [true, false]) test(`the platform package tarball carries 
       const parent = join(helpers, platform)
       await mkdir(parent, { recursive: true })
       const binary = join(parent, platform === "win32-x64" ? "smithers-jj-export.exe" : "smithers-jj-export")
-      await writeFile(binary, platform === "win32-x64" ? "MZwindows-fixture" : `#!/bin/sh\necho ${platform}\n`)
+      await writeFile(binary, helperPayload(platform))
       await chmod(binary, 0o644)
     }
     if (!overlay) await cp(helpers, join(source, "bin"), { recursive: true })
@@ -1013,6 +1013,94 @@ test("the actual CLI tarball carries its native export and all eight verified ed
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+
+/** Minimal 64-bit little-endian ELF fixture for release-native-helpers tests. */
+const makeElfHelper = (machine, { dynamic = false, glibcVersions = [] } = {}) => {
+  const phoff = 64
+  const phentsize = 56
+  const phnum = dynamic ? 1 : 0
+  let cursor = phoff + phentsize * phnum
+  const strParts = [Buffer.from([0])]
+  const nameOffsets = []
+  let strCursor = 1
+  for (const version of glibcVersions) {
+    nameOffsets.push(strCursor)
+    const bytes = Buffer.from(`${version}\0`, "utf8")
+    strParts.push(bytes)
+    strCursor += bytes.length
+  }
+  const strtab = Buffer.concat(strParts)
+  const strtabOff = cursor
+  cursor += strtab.length
+  // Build one Elf64_Verneed header + N Elf64_Vernaux entries
+  const verneedOff = cursor
+  const verneedBuf = glibcVersions.length > 0 ? Buffer.alloc(16 + 16 * glibcVersions.length) : Buffer.alloc(0)
+  if (glibcVersions.length > 0) {
+    verneedBuf.writeUInt16LE(1, 0) // vn_version
+    verneedBuf.writeUInt16LE(glibcVersions.length, 2) // vn_cnt
+    verneedBuf.writeUInt32LE(0, 4) // vn_file
+    verneedBuf.writeUInt32LE(16, 8) // vn_aux
+    verneedBuf.writeUInt32LE(0, 12) // vn_next
+    for (let i = 0; i < glibcVersions.length; i++) {
+      const base = 16 + i * 16
+      verneedBuf.writeUInt32LE(nameOffsets[i], base + 8) // vna_name
+      verneedBuf.writeUInt32LE(i + 1 < glibcVersions.length ? 16 : 0, base + 12) // vna_next
+    }
+  }
+  cursor += verneedBuf.length
+  const shentsize = 64
+  const shnum = dynamic ? 3 : 0
+  const shoff = dynamic ? cursor : 0
+  const total = cursor + shentsize * shnum
+  const buf = Buffer.alloc(total)
+  buf.writeUInt32BE(0x7f454c46, 0)
+  buf[4] = 2 // ELFCLASS64
+  buf[5] = 1 // ELFDATA2LSB
+  buf.writeUInt16LE(3, 16) // ET_DYN
+  buf.writeUInt16LE(machine, 18)
+  buf.writeBigUInt64LE(BigInt(phoff), 32)
+  buf.writeBigUInt64LE(BigInt(shoff), 40)
+  buf.writeUInt16LE(phentsize, 54)
+  buf.writeUInt16LE(phnum, 56)
+  buf.writeUInt16LE(shentsize, 58)
+  buf.writeUInt16LE(shnum, 60)
+  if (dynamic) {
+    buf.writeUInt32LE(3, phoff) // PT_INTERP
+    strtab.copy(buf, strtabOff)
+    verneedBuf.copy(buf, verneedOff)
+    // Section 1: SHT_STRTAB
+    const sh1 = shoff + shentsize
+    buf.writeUInt32LE(3, sh1 + 4)
+    buf.writeBigUInt64LE(BigInt(strtabOff), sh1 + 24)
+    buf.writeBigUInt64LE(BigInt(strtab.length), sh1 + 32)
+    // Section 2: SHT_GNU_verneed linked to section 1
+    const sh2 = shoff + shentsize * 2
+    buf.writeUInt32LE(0x6ffffffe, sh2 + 4)
+    buf.writeBigUInt64LE(BigInt(verneedOff), sh2 + 24)
+    buf.writeBigUInt64LE(BigInt(verneedBuf.length), sh2 + 32)
+    buf.writeUInt32LE(1, sh2 + 40)
+  }
+  return buf
+}
+const helperPayload = (platform) =>
+  platform === "win32-x64"
+    ? "MZwindows-fixture"
+    : platform === "linux-x64"
+    ? makeElfHelper(62)
+    : platform === "linux-arm64"
+    ? makeElfHelper(183)
+    : `#!/bin/sh\necho ${platform}\n`
+
+test("native smoke enforces Linux ELF architecture and glibc version floor (#5463)", async () => {
+  assert.equal(maxLinuxGlibcVersion, "2.28")
+  assert.equal(linuxHelperElfProblem(makeElfHelper(62), "linux-x64"), undefined)
+  assert.equal(linuxHelperElfProblem(makeElfHelper(183), "linux-arm64"), undefined)
+  assert.equal(linuxHelperElfProblem(makeElfHelper(62, { dynamic: true, glibcVersions: ["GLIBC_2.17", "GLIBC_2.28"] }), "linux-x64"), undefined)
+  assert.match(linuxHelperElfProblem(makeElfHelper(62, { dynamic: true, glibcVersions: ["GLIBC_2.34", "GLIBC_2.39"] }), "linux-x64") ?? "", /above the GLIBC_2\.28 floor: GLIBC_2\.34, GLIBC_2\.39/)
+  assert.match(linuxHelperElfProblem(makeElfHelper(183), "linux-x64") ?? "", /aarch64, not x86_64/)
+  assert.match(linuxHelperElfProblem(Buffer.from("#!/bin/sh\n"), "linux-x64") ?? "", /not an ELF executable/)
+})
+
 test("native smoke refuses a non-executable POSIX helper", { skip: process.platform === "win32" }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "smithers-smoke-mode-"))
   try {
@@ -1020,7 +1108,7 @@ test("native smoke refuses a non-executable POSIX helper", { skip: process.platf
       const parent = join(directory, "bin", platform)
       await mkdir(parent, { recursive: true })
       const binary = join(parent, platform === "win32-x64" ? "smithers-jj-export.exe" : "smithers-jj-export")
-      await writeFile(binary, "helper")
+      await writeFile(binary, helperPayload(platform))
       await chmod(binary, platform === "win32-x64" ? 0o644 : 0o755)
     }
     assert.equal(await verifyPackagedNativeHelpers(directory, true), true)

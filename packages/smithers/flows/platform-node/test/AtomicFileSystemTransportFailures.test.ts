@@ -155,4 +155,51 @@ describe("atomic helper transport event ordering", () => {
     )
     expect(error.reason).toMatchObject({ description: expect.stringContaining("atomic helper exited 9") })
   })
+
+  it("reports a dynamic-loader missing library version ahead of PermissionDenied (#5463)", async () => {
+    const runWith = (executable: string, stderrLimit = defaultLimits.stderr) =>
+      Effect.runPromise(
+        Effect.flip(
+          spawnHelper(request, executable, Buffer.from("request"), {
+            limits: { ...defaultLimits, stderr: stderrLimit },
+            timeoutMs: 10_000
+          })
+        )
+      )
+
+    const glibcMsg =
+      "/tmp/.smthrs/smithers-jj-export: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.39' not found (required by /tmp/.smthrs/smithers-jj-export)\n"
+    const versionError = await runWith(
+      await helper(`process.stderr.write(${JSON.stringify(glibcMsg)},()=>process.exit(1))`)
+    )
+    expect(versionError.reason._tag).toBe("Unknown")
+    expect(versionError.reason.description).toMatch(/cannot load on this host: missing GLIBC_2\.39/)
+    expect(versionError.cause).toMatchObject({
+      _tag: "@smthrs/platform-node/AtomicHelperFault",
+      code: "helper_unloadable"
+    })
+
+    const sharedLibMsg =
+      "smithers-jj-export: error while loading shared libraries: libfoo.so.1: cannot open shared object file\n"
+    const libraryError = await runWith(
+      await helper(`process.stderr.write(${JSON.stringify(sharedLibMsg)},()=>process.exit(127))`)
+    )
+    expect(libraryError.reason._tag).toBe("Unknown")
+    expect(libraryError.reason.description).toMatch(
+      /cannot load on this host: error while loading shared libraries: libfoo\.so\.1/
+    )
+    expect(libraryError.cause).toMatchObject({
+      _tag: "@smthrs/platform-node/AtomicHelperFault",
+      code: "helper_unloadable"
+    })
+
+    const truncatedMsg = "version `GLIBC_2.39' not found " + "x".repeat(128)
+    const truncatedVersionError = await runWith(
+      await helper(`process.stderr.write(${JSON.stringify(truncatedMsg)},()=>process.exit(1))`),
+      64
+    )
+    expect(truncatedVersionError.reason._tag).toBe("Unknown")
+    expect(truncatedVersionError.reason.description).toContain("missing GLIBC_2.39")
+    expect(truncatedVersionError.reason.description).toContain("(truncated)")
+  })
 })

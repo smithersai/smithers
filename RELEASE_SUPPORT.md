@@ -37,7 +37,11 @@ dependency closure declare Node 22.19.0 or later; the packed CLI matrix covers
 The `engines` lower bound is not certification of every later Node release.
 macOS checks are advisory. Hardened native filesystem confinement requires a
 trusted Python interpreter and descriptor-relative POSIX operations; Windows
-does not provide that adapter's confinement contract. Browser and Bun support
+does not provide that adapter's confinement contract. The published Linux
+`smithers-jj-export` native helpers (`linux-x64` and `linux-arm64`) are built as
+static musl executables with zero glibc runtime dependency, and the release gate
+enforces a maximum glibc symbol floor of `GLIBC_2.28` (rejecting any Linux
+helper requiring newer glibc symbol versions such as `GLIBC_2.39`). Browser and Bun support
 must be claimed per capability, not inferred from the native Node tests.
 
 Effect and its adapters are one compatibility unit. This repository is built

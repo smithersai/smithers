@@ -125,6 +125,24 @@ export const usableExecutable = (configured: string, boundaryRoot: string | unde
   return resolved
 }
 
+const loaderVersionPattern = /version [`']?([^`'"\s]+)[`']? not found/i
+const loaderLibraryPattern =
+  /(?:error while loading shared libraries|Library not loaded|Error relocating|Symbol not found):[^\r\n]*/i
+
+/** Recognizes dynamic-loader refusals (missing GLIBC symbol versions or shared libraries) in helper stderr. */
+const loaderFailure = (executable: string, text: string, truncated: boolean): string | undefined => {
+  const detail = `${text.trim()}${truncated ? " (truncated)" : ""}`
+  const version = loaderVersionPattern.exec(text)
+  if (version !== null) {
+    return `${basename(executable)} cannot load on this host: missing ${version[1]} (${detail})`
+  }
+  const library = loaderLibraryPattern.exec(text)
+  if (library !== null) {
+    return `${basename(executable)} cannot load on this host: ${library[0].trim()} (${detail})`
+  }
+  return undefined
+}
+
 /**
  * Runs one helper over one framed request and settles with its converted
  * answer. Every exit path kills the child, releases its pipes, and waits for
@@ -270,9 +288,12 @@ export const spawnHelper = <A>(
         return
       }
       const text = Buffer.concat(stderr).toString("utf8")
+      const unloadable = text !== "" ? loaderFailure(executable, text, truncated) : undefined
       complete(Effect.fail(failure(
         request,
-        text !== ""
+        unloadable !== undefined
+          ? atomicHelperFault("helper_unloadable", unloadable)
+          : text !== ""
           ? atomicHelperFault(
             "helper_exited",
             `atomic helper exited ${code}: ${text}${truncated ? " (truncated)" : ""}`

@@ -33,7 +33,8 @@ export const AtomicHelperFaultCode = Schema.Literals([
   "helper_timeout",
   "response_limit_exceeded",
   "helper_rejected",
-  "helper_exited"
+  "helper_exited",
+  "helper_unloadable"
 ])
 
 /**

@@ -11,7 +11,7 @@ import { Effect, type FileSystem, Option, PlatformError, Result } from "effect"
 import * as ByteSize from "effect/ByteSize"
 import { TextDecoder } from "node:util"
 import type { Limits } from "../AtomicFileSystem.ts"
-import { atomicHelperFault, AtomicHelperRejection } from "./AtomicHelperFault.ts"
+import { AtomicHelperFault, atomicHelperFault, AtomicHelperRejection } from "./AtomicHelperFault.ts"
 
 /**
  * One helper answer: a value, or a rejection carrying the errno name and the
@@ -135,6 +135,7 @@ export const failure = (
     return PlatformError.badArgument({ module: moduleName, method, description: rejection.message, cause })
   }
   const code = rejection?.code ?? undefined
+  const unloadable = code === undefined && cause instanceof AtomicHelperFault && cause.code === "helper_unloadable"
   return PlatformError.systemError({
     module: moduleName,
     method,
@@ -148,11 +149,23 @@ export const failure = (
     syscall: rejection?.syscall ?? undefined,
     // An own-property lookup: a code such as `toString` must not resolve
     // through Object.prototype into a tag that is not a string.
-    _tag: code === undefined ? "PermissionDenied" : Object.hasOwn(reasons, code) ? reasons[code]! : "Unknown",
+    // When the OS dynamic loader rejects the helper binary itself (e.g. a
+    // missing GLIBC version), report Unknown rather than PermissionDenied so
+    // the fault reads as a host compatibility failure, not a file permission
+    // denial (#5463).
+    _tag: unloadable
+      ? "Unknown"
+      : code === undefined
+      ? "PermissionDenied"
+      : Object.hasOwn(reasons, code)
+      ? reasons[code]!
+      : "Unknown",
     // The cause is repeated into the description because a fail-closed refusal
     // that says only "failed closed" is unactionable: an absent helper, a
     // response over the limit, and a mangled frame all look alike otherwise.
-    description: code === undefined
+    description: unloadable
+      ? cause.message
+      : code === undefined
       ? `descriptor-relative filesystem isolation failed closed: ${String(cause)}`
       : rejection?.message,
     // Match the native Node adapter's errno contract. Artifact path checks
