@@ -9,8 +9,8 @@ import {
   initialRemoteTransferConcurrency,
   openCache,
   remoteTransferConcurrency
-} from "../../../build-cli/src/Cache.ts"
-import * as Tree from "../../../build-cli/src/PackageTree.ts"
+} from "@smthrs/build-cli/Cache"
+import * as Tree from "@smthrs/build-cli/PackageTree"
 import { createHandler } from "../protocol.ts"
 import { MemoryActionCache, MemoryContentStore } from "./MemoryStores.ts"
 
