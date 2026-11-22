@@ -48,7 +48,9 @@ const scannedRoots = ["packages/", "apps/"]
 // data roots: executable app code and other packages' fixtures remain checked.
 const reviewSnapshotRoots = [
   "apps/maintainer-site/queue/before/",
-  "apps/maintainer-site/test/fixtures/"
+  "apps/maintainer-site/test/fixtures/",
+  // Synthetic LemmaScript verifier inputs importing abstract hostlib declarations.
+  "packages/lemmascript/tools/fixtures/"
 ]
 const evalSuites = [
   "packages/smithers/agent/regression",
@@ -86,8 +88,7 @@ const builtinPackages = new Set(["bun", ...builtinModules, ...builtinModules.map
 // when the import moves to a package name; the gate fails on a stale entry so
 // the list only shrinks.
 const knownReachThroughs = new Set([
-  "PACKAGE.ts -> ./apps/site/src/data/project.json",
-  "packages/smithers/build/infra/worker/test/action-cache.test.ts -> ../../../../flows/step-cache/src/CacheStore.ts"
+  "PACKAGE.ts -> ./apps/site/src/data/project.json"
 ])
 
 // Banned imports that are the input of the 0.x migrator, as `file -> import`.

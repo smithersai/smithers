@@ -127,7 +127,7 @@ export const defaultRequestTimeout = Duration.seconds(60)
  */
 export const maximumEntryBytes = CacheAdmission.maximumJsonBytes
 
-const decoder = new TextDecoder("utf-8", { fatal: true })
+const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false })
 
 const isWellFormedText = (value: string): boolean => {
   for (let index = 0; index < value.length; index++) {
