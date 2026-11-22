@@ -486,6 +486,21 @@ static long keepIn(uint64_t id, uint32_t sub, struct text *t, uint64_t *taking) 
   return place;
 }
 
+/* keepIn() for a line of the call that waits for this answer. What was read of the caller's memory is the call's only
+ * while the call still waits (seccomp_unotify(2): SECCOMP_IOCTL_NOTIF_ID_VALID after reading it). A call that no
+ * longer waits ended with its thread, or went on as nobody read it, and is received again if it starts again. Nothing
+ * is written of it: the answer is -1, as for a line that could not be kept, and the run is not dropped for it. */
+static long keepCallIn(uint64_t id, uint32_t sub, struct text *t, uint64_t *taking) {
+  if (ioctl(listener, SECCOMP_IOCTL_NOTIF_ID_VALID, &id) != 0) {
+    free(t->data);
+    t->data = NULL;
+    return -1;
+  }
+  return keepIn(id, sub, t, taking);
+}
+
+static long keepCall(uint64_t id, uint32_t sub, struct text *t) { return keepCallIn(id, sub, t, NULL); }
+
 /* A thread's process. A thread id is not given again while the thread lives, and the run's threads live while
  * they make calls, so a thread id read once stands for its process for the run. */
 #define TGIDS 8192
@@ -1800,7 +1815,7 @@ static void found(pid_t tgid, uint64_t id, uint32_t sub, const char *path) {
   puts_(&t, "AT_FDCWD, ");
   quotedz(&t, path);
   puts_(&t, ", {...}, AT_SYMLINK_NOFOLLOW) = 0");
-  keep(id, sub, &t);
+  keepCall(id, sub, &t);
 }
 
 static void openFlags(struct text *t, uint64_t flags) {
@@ -2592,18 +2607,18 @@ static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp
   puts_(t, "}, 24)");
   if (error != 0) {
     answer(t, error);
-    keep(id, 2, t);
+    keepCall(id, 2, t);
     return 1;
   }
   printf_(t, " = 0<%s>", opened);
-  keep(id, 2, t);
+  keepCall(id, 2, t);
   if (directory) {
     /* A directory opened is a directory listed, as an open's is. */
     struct text listed = {0};
     printf_(&listed, "%d getdents64(0<", tgid);
     puts_(&listed, opened);
     puts_(&listed, ">, {...}, 32768) = 0");
-    keep(id, 3, &listed);
+    keepCall(id, 3, &listed);
   }
   return 1;
 }
@@ -2720,13 +2735,13 @@ static void serve(const struct seccomp_notif *req) {
       if (error == 0 && directory && !pseudo(path)) {
         /* A directory opened is a directory listed: no listing is watched, and what is in it counts. */
         uint64_t taking = 0;
-        long first = keepIn(id, 2, &t, &taking);
+        long first = keepCallIn(id, 2, &t, &taking);
         uncertainIn(busy, taking, first);
         t = (struct text){0};
         printf_(&t, "%d getdents64(0", tgid);
         angledz(&t, path);
         puts_(&t, ", {...}, 32768) = 0");
-        long second = keepIn(id, 3, &t, &taking);
+        long second = keepCallIn(id, 3, &t, &taking);
         uncertainIn(busy, taking, second);
         if (looking != NULL) {
           looking->taking = taking;
@@ -3289,7 +3304,7 @@ static void serve(const struct seccomp_notif *req) {
     return;
   }
   uint64_t taking = 0;
-  long place = keepIn(id, 2, &t, &taking);
+  long place = keepCallIn(id, 2, &t, &taking);
   if (starting != NULL) {
     starting->place = place;
     starting->taking = taking;
