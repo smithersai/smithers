@@ -169,6 +169,18 @@ export interface RetainReport {
 }
 
 /**
+ * What one superseded-round compaction removed from a trampoline lineage.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface PruneReport {
+  readonly lineageId: string
+  readonly runIds: ReadonlyArray<string>
+  readonly deleted: Readonly<Record<string, number>>
+}
+
+/**
  * Explicit run retention.
  *
  * @category models
@@ -185,6 +197,17 @@ export interface Service {
   readonly retain: (
     options: RetainOptions
   ) => Effect.Effect<RetainReport, RetentionError | Journal.JournalError>
+  /**
+   * Atomically removes superseded completed intermediate rounds of a single
+   * trampoline lineage, reparenting the latest round onto round `0`.
+   *
+   * Round `0` (the lineage anchor) and the latest round are always kept.
+   * Any intermediate round with `flows_run_parents` edges or external
+   * descendants is left untouched so foreign keys and subflow ancestry hold.
+   */
+  readonly pruneSupersededRounds: (
+    lineageId: string
+  ) => Effect.Effect<PruneReport, RetentionError | Journal.JournalError>
 }
 
 /**
@@ -881,7 +904,72 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient | Jour
       })
     )
 
-    return { retain }
+    const edgePinnedIn = (ids: ReadonlyArray<string>) =>
+      Effect.reduce(
+        chunksOf(ids),
+        (): Set<string> => new Set(),
+        (pinned, chunk) =>
+          sql<{ readonly parent_id: string; readonly child_id: string }>`
+            SELECT parent_id, child_id FROM flows_run_parents
+            WHERE ${sql.in("parent_id", chunk)} OR ${sql.in("child_id", chunk)}
+          `.pipe(
+            Effect.map((rows) => {
+              for (const row of rows) {
+                pinned.add(row.parent_id)
+                pinned.add(row.child_id)
+              }
+              return pinned
+            }),
+            Effect.mapError(scanning("the run lineage"))
+          )
+      )
+
+    const pruneSupersededRounds: Service["pruneSupersededRounds"] = Effect.fn("Retention.pruneSupersededRounds")(
+      (lineageId: string) =>
+        journal.transact(
+          Effect.gen(function*() {
+            const rows = yield* sql<{
+              readonly run_id: string
+              readonly parent_run_id: string | null
+              readonly round_ordinal: number
+              readonly status: string
+            }>`
+              SELECT run_id, parent_run_id, round_ordinal, status
+              FROM flows_runs
+              WHERE lineage_id = ${lineageId}
+              ORDER BY round_ordinal ASC
+            `.pipe(Effect.mapError(scanning("the run lineage")))
+            if (rows.length <= 2) return { lineageId, runIds: [], deleted: {} }
+            const root = rows[0]!
+            const latest = rows[rows.length - 1]!
+            if (root.round_ordinal !== 0) return { lineageId, runIds: [], deleted: {} }
+            const completed = rows.slice(1, -1).filter((row) => row.status === "completed")
+            if (completed.length === 0) return { lineageId, runIds: [], deleted: {} }
+            const edgePinned = yield* edgePinnedIn(completed.map((row) => row.run_id))
+            const candidates: Array<Candidate> = completed
+              .filter((row) => !edgePinned.has(row.run_id))
+              .map((row) => ({ runId: row.run_id, parentRunId: row.parent_run_id }))
+            if (candidates.length === 0) return { lineageId, runIds: [], deleted: {} }
+            const candidateIds = new Set(candidates.map((candidate) => candidate.runId))
+            if (latest.parent_run_id !== null && candidateIds.has(latest.parent_run_id)) {
+              yield* sql`
+                UPDATE flows_runs SET parent_run_id = ${root.run_id} WHERE run_id = ${latest.run_id}
+              `.pipe(Effect.mapError(deleting("flows_runs")))
+            }
+            const removed = yield* deleteRuns(sql, candidates, {
+              dryRun: false,
+              assumeLadder: true
+            })
+            return {
+              lineageId,
+              runIds: removed.runIds,
+              deleted: removed.deleted
+            } satisfies PruneReport
+          })
+        )
+    )
+
+    return { retain, pruneSupersededRounds }
   })
 
 /**

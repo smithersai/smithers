@@ -42,6 +42,7 @@ export {
   defaultLimit,
   layer,
   make,
+  type PruneReport,
   type RetainOptions,
   type RetainReport,
   Retention,

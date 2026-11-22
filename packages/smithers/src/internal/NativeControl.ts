@@ -27,7 +27,7 @@ import {
 } from "@smthrs/control"
 import type * as ControlSchema from "@smthrs/control/ControlSchema"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
-import { ExecutionFacts } from "@smthrs/engine-store"
+import { ExecutionFacts, Retention } from "@smthrs/engine-store"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as ReplayOnly from "@smthrs/engine-store/ReplayOnly"
 import * as RunInspection from "@smthrs/engine-store/RunInspection"
@@ -1410,7 +1410,7 @@ export const make = (
     options: ExecutorOptions,
     evaluator: Layer.Layer<Evaluator.Evaluator>
   ): Layer.Layer<
-    ControlExecutor.ControlExecutor | FlowRuntime.FlowRuntime,
+    ControlExecutor.ControlExecutor | FlowRuntime.FlowRuntime | Retention.Retention,
     never,
     ControlRuntime.ControlRuntime | Journal.Journal | NotificationQueue.NotificationQueue | Registry.Registry
   > => {
@@ -2258,6 +2258,7 @@ export const make = (
         if (engine.host.replayOnly !== true) {
           yield* SupervisorMemory.startTtlGc({ environment, crypto: native.crypto, stores: engine.stores }).pipe(
             Effect.provideContext(memoryServices),
+            Effect.provideService(Retention.Retention, yield* Retention.make()),
             Effect.provide(native.crypto)
           )
         }
@@ -2353,8 +2354,10 @@ export const make = (
     // executor and flow runtime cross back into the control composition:
     // leaking the native Journal or RunStore redirects ControlLive to engine.db.
     return Layer.effectContext(Effect.gen(function*() {
+      const retention = yield* Retention.make()
       return Context.make(ControlExecutor.ControlExecutor, yield* ControlExecutor.ControlExecutor).pipe(
-        Context.add(FlowRuntime.FlowRuntime, yield* FlowRuntime.FlowRuntime)
+        Context.add(FlowRuntime.FlowRuntime, yield* FlowRuntime.FlowRuntime),
+        Context.add(Retention.Retention, retention)
       )
     })).pipe(Layer.provide(nativeRuntime))
   }
@@ -2401,7 +2404,8 @@ export const make = (
         ControlExecutor.ControlExecutor,
         ControlExecutor.makeObserving(yield* ControlExecutor.ControlExecutor)
       ).pipe(
-        Context.add(FlowRuntime.FlowRuntime, yield* FlowRuntime.FlowRuntime)
+        Context.add(FlowRuntime.FlowRuntime, yield* FlowRuntime.FlowRuntime),
+        Context.add(Retention.Retention, yield* Retention.Retention)
       )
     })).pipe(Layer.provide(built))
   }
@@ -2418,7 +2422,7 @@ export const make = (
     // The executor carries the engine's flow runtime beside the port, and Control
     // hands it on so a host can run its own flows, such as the trigger
     // scheduler's tick lineage, on the same engine.
-    return LocalControl.layer<FlowRuntime.FlowRuntime>(
+    return LocalControl.layer<FlowRuntime.FlowRuntime | Retention.Retention>(
       registry,
       engine,
       layerExecutor(registry, engine, root, {
@@ -2447,6 +2451,7 @@ export const make = (
         Effect.provideService(Control.Control, Context.get(context, Control.Control)),
         Effect.provide(engine.journal),
         Effect.provideService(FlowRuntime.FlowRuntime, Context.getUnsafe(context, FlowRuntime.FlowRuntime)),
+        Effect.provideService(Retention.Retention, Context.getUnsafe(context, Retention.Retention)),
         Effect.provide(native.crypto)
       )
     ))

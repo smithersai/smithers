@@ -4486,8 +4486,42 @@ const authorizeControl = (
     return true
   })
 
+/**
+ * When intermediate rounds of a trampoline lineage were pruned
+ * (`Retention.pruneSupersededRounds`), round 0's recorded handoff still names
+ * round 1 even though the lineage has advanced directly to a later round.
+ * Returns that live tip when round 1 is absent and a later round exists so
+ * callers resuming from round 0 join the current tip instead of attempting to
+ * recreate a deleted round.
+ */
+const compactedTip = (driver: Driver, executionId: string): Effect.Effect<Option.Option<RunStore.RunMetadata>> =>
+  driver.store.lineage(executionId, { includeState: false }).pipe(
+    Effect.map((rounds) => {
+      const latest = rounds[rounds.length - 1]
+      if (
+        latest === undefined ||
+        latest.runId === executionId ||
+        (latest.roundOrdinal ?? 0) <= 1 ||
+        rounds.some((row) => row.roundOrdinal === 1)
+      ) {
+        return Option.none()
+      }
+      return Option.some(latest)
+    }),
+    Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(Option.none()) : Effect.die(error))
+  )
+
 const poll = Effect.fn("FlowEngine.poll")((driver: Driver, flow: Flow.Any, executionId: string) =>
-  Effect.map(readResult(driver, flow, executionId), (observed) => observed.result)
+  Effect.gen(function*() {
+    const tip = yield* compactedTip(driver, executionId)
+    if (Option.isSome(tip)) {
+      const observed = yield* readResult(driver, flow, executionId, true)
+      return Option.isSome(observed.result) && observed.result.value._tag === "Handoff"
+        ? Option.none()
+        : observed.result
+    }
+    return (yield* readResult(driver, flow, executionId)).result
+  })
 )
 
 /** What `execute` admits, and how its caller waits. */
@@ -4524,6 +4558,17 @@ const execute = Effect.fn("FlowEngine.execute")(
       return undefined as Discard extends true ? void : never
     }
     yield* ensureRun(driver, flow, options)
+    if (options.round === undefined || options.round.ordinal === 0) {
+      const tip = yield* compactedTip(driver, options.executionId)
+      if (Option.isSome(tip)) {
+        yield* awaitDrive(driver, tip.value.runId, true)
+        const observed = yield* Effect.orDie(readResult(driver, flow, options.executionId, true))
+        if (Option.isSome(observed.result) && observed.result.value._tag === "Handoff") {
+          return new Flow.Suspended({}) as Discard extends true ? void : Flow.Result<unknown, unknown>
+        }
+        return settlementOf(observed) as Discard extends true ? void : Flow.Result<unknown, unknown>
+      }
+    }
     yield* awaitDrive(driver, options.executionId, options.follow)
     // `ensureRun` created the row above, so a not-found here is a broken
     // store invariant, not a caller-recoverable state.
@@ -4887,20 +4932,23 @@ const resume = Effect.fn("FlowEngine.resume")((
   Effect.gen(function*() {
     yield* Effect.annotateCurrentSpan({ executionId, flow: flow._tag })
     if (!(yield* authorizeControl(driver, flow, executionId, known).pipe(Effect.orDie))) return
+    let targetId = executionId
     if (options?.poll === true) {
-      const row = yield* driver.store.get(executionId).pipe(Effect.orDie)
+      const tip = yield* compactedTip(driver, executionId)
+      if (Option.isSome(tip)) targetId = tip.value.runId
+      const row = yield* driver.store.get(targetId).pipe(Effect.orDie)
       if (row.status === "suspended" && row.cancelRequestedAtMs === null) {
-        const waiting = yield* driver.engineState.waiting(executionId)
+        const waiting = yield* driver.engineState.waiting(targetId)
         if (Option.isSome(waiting) && waiting.value.reason === "quarantine") return
         if (
           (Option.isNone(waiting) || waiting.value.reason !== "released") &&
-          !(yield* driver.engineState.hasDueWake(executionId, yield* Clock.currentTimeMillis))
+          !(yield* driver.engineState.hasDueWake(targetId, yield* Clock.currentTimeMillis))
         ) return
       }
     } else {
       yield* scheduleResume(driver, flow._tag, executionId, options?.delegated === true ? "delegated" : "operator")
     }
-    yield* driver.coordinator.run(executionId, ask)
+    yield* driver.coordinator.run(targetId, ask)
   })
 )
 

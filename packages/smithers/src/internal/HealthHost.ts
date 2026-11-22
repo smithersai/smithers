@@ -3,11 +3,12 @@
  */
 
 import { Control, Health, Monitor } from "@smthrs/control"
+import { Retention } from "@smthrs/engine-store"
 import { Action, type FlowRuntime, Interpreter, Poll, Sleep } from "@smthrs/flow"
 import type { Journal } from "@smthrs/journal"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Node } from "@smthrs/plan"
-import { Cause, Effect, FiberMap, Layer, Metric, Schema, Scope, Semaphore } from "effect"
+import { Cause, Effect, FiberMap, Layer, Metric, Option, Schema, Scope, Semaphore } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { randomUUID } from "node:crypto"
@@ -71,6 +72,7 @@ const prepare = (
 > =>
   Effect.gen(function*() {
     const control = yield* Control.Control
+    const retention = yield* Effect.serviceOption(Retention.Retention)
     const gate = yield* Semaphore.make(registry.limits.maxConcurrentProbes)
     const probes = yield* Effect.acquireRelease(Scope.make(), (scope, exit) => Scope.close(scope, exit))
     const active = yield* FiberMap.make<string, Monitor.Report, never>().pipe(Scope.provide(probes))
@@ -132,6 +134,19 @@ const prepare = (
                 : Effect.logWarning("Health subject discovery failed; its durable poll will retry", {
                   operation: "health-discovery"
                 }).pipe(Effect.as({ satisfied: false, output: -1 }))
+            ),
+            Effect.tap(() =>
+              Option.isNone(retention)
+                ? Effect.void
+                : retention.value.pruneSupersededRounds(executionId).pipe(
+                  Effect.catchCause((cause) =>
+                    Cause.hasInterruptsOnly(cause)
+                      ? Effect.interrupt
+                      : Effect.logWarning("Health discovery retention failed; will retry on next scan", {
+                        operation: "health-discovery-retention"
+                      })
+                  )
+                )
             )
           )
         ),

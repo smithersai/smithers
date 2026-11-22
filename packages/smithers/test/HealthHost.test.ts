@@ -6,7 +6,7 @@ import type { RunSummary } from "@smthrs/control/ControlSchema"
 import * as TestControl from "@smthrs/control/test/TestControl"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
-import { EngineStore, StepBoundary } from "@smthrs/engine-store"
+import { EngineStore, Retention, StepBoundary } from "@smthrs/engine-store"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
@@ -18,7 +18,7 @@ import { RunStore } from "@smthrs/run-store"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Logger, Option, Schema, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
@@ -540,3 +540,138 @@ it("resumes one discovery lineage after reopening its persisted timer", () =>
       (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
     ).pipe(Effect.provide(TestClock.layer()))
   ))
+
+it("keeps engine.db rows and size bounded across repeated health discovery polls (#4830)", () =>
+  Effect.runPromise(
+    Effect.acquireUseRelease(
+      Effect.promise(() => mkdtemp(join(tmpdir(), "health-bounded-"))),
+      (directory) =>
+        Effect.gen(function*() {
+          const filename = join(directory, "engine.db")
+          const engine = () =>
+            EngineStore.layer({
+              owner: { hostId: "health-bounded" },
+              journalSource: JournalEvent.SourceId.make("health-bounded")
+            }).pipe(
+              Layer.provideMerge(TestStores.layerAt(filename)),
+              Layer.provide(StepBoundary.layer.pipe(Layer.provide(Layer.mergeAll(
+                ArtifactStore.layerMemory,
+                NodeFileSystem.layer,
+                NodePath.layer
+              )))),
+              Layer.provideMerge(NodeCrypto.layer),
+              Layer.provide(NodeJj.layerAt(process.cwd()))
+            )
+          const runSession = (rounds: number, resuming: boolean) =>
+            Effect.scoped(Effect.gen(function*() {
+              const services = yield* Layer.build(Layer.fresh(engine()))
+              const retention = yield* Retention.make().pipe(Effect.provide(services))
+              const control = yield* Control.Control
+              let scans = 0
+              const observed: Control.Service = {
+                ...control,
+                list: (request) =>
+                  control.list(request).pipe(Effect.tap(() =>
+                    request._tag === "runs" && request.filters?.status === "parked"
+                      ? Effect.sync(() => {
+                        scans += 1
+                      })
+                      : Effect.void
+                  ))
+              }
+              yield* Effect.forkScoped(
+                HealthHost.watch(Health.makeRegistry()).pipe(
+                  Effect.provideService(Control.Control, observed),
+                  Effect.provideService(FlowRuntime.FlowRuntime, Context.get(services, FlowRuntime.FlowRuntime)),
+                  Effect.provideService(Retention.Retention, retention)
+                )
+              )
+              for (let step = 0; step < rounds; step++) {
+                const target = step + 1
+                if (resuming || step > 0) yield* TestClock.adjust(5_000)
+                yield* TestDatabase.until(Effect.sync(() => scans >= target))
+              }
+              const runs = Context.get(services, RunStore.RunStore)
+              yield* TestDatabase.until(
+                runs.lineage(HealthHost.executionId).pipe(
+                  Effect.map((lineage) => lineage.some((run) => run.status === "suspended"))
+                )
+              )
+              const sql = Context.get(services, SqlClient)
+              const lineageRows = yield* sql<{ readonly total: number }>`
+                SELECT COUNT(*) AS total FROM flows_runs WHERE lineage_id = ${HealthHost.executionId}
+              `
+              const journalRows = yield* sql<{ readonly total: number }>`
+                SELECT COUNT(*) AS total FROM flows_journal_events
+                WHERE run_id IN (SELECT run_id FROM flows_runs WHERE lineage_id = ${HealthHost.executionId})
+              `
+              const roots = yield* sql<{ readonly runId: string }>`
+                SELECT run_id AS "runId" FROM flows_runs
+                WHERE json_extract(state_json, '$.flowName') = ${HealthHost.flowName} AND round_ordinal = 0
+              `
+              return {
+                lineageCount: Number(lineageRows[0]?.total ?? 0),
+                journalCount: Number(journalRows[0]?.total ?? 0),
+                roots: roots.map((row) => row.runId)
+              }
+            }))
+          const first = yield* runSession(25, false)
+          expect(first.roots).toEqual([HealthHost.executionId])
+          expect(first.lineageCount).toBeLessThanOrEqual(2)
+          expect(first.journalCount).toBeLessThan(120)
+          // Restarting after superseded rounds were pruned resumes the same lineage cleanly.
+          const second = yield* runSession(10, true)
+          expect(second.roots).toEqual([HealthHost.executionId])
+          expect(second.lineageCount).toBeLessThanOrEqual(2)
+          expect(second.journalCount).toBeLessThan(120)
+          const dbStat = yield* Effect.promise(() => stat(filename))
+          expect(dbStat.size).toBeLessThan(2 * 1024 * 1024)
+        }).pipe(Effect.provide(testLayer), Effect.scoped),
+      (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
+    ).pipe(Effect.provide(TestClock.layer()))
+  ), 60_000)
+
+it("logs and continues health discovery if superseded-round retention fails", async () => {
+  const warnings: Array<unknown> = []
+  const logger = Logger.make((record) => {
+    if (record.logLevel === "Warn") warnings.push(record.message)
+  })
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const control = yield* Control.Control
+      let scans = 0
+      const observed: Control.Service = {
+        ...control,
+        list: (request) =>
+          control.list(request).pipe(Effect.tap(() =>
+            request._tag === "runs" && request.filters?.status === "parked"
+              ? Effect.sync(() => {
+                scans += 1
+              })
+              : Effect.void
+          ))
+      }
+      const failingRetention: Retention.Service = {
+        retain: () => Effect.die("unused"),
+        pruneSupersededRounds: () =>
+          Effect.fail(new Retention.RetentionError({ code: "delete_failed", message: "simulated busy" }))
+      }
+      const fiber = yield* Effect.scoped(
+        HealthHost.watch(Health.makeRegistry()).pipe(
+          Effect.provideService(Control.Control, observed),
+          Effect.provideService(Retention.Retention, failingRetention)
+        )
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* TestDatabase.until(Effect.sync(() => scans >= 1))
+      yield* TestClock.adjust(5_000)
+      yield* TestDatabase.until(Effect.sync(() => scans >= 2))
+      yield* Fiber.interrupt(fiber)
+      expect(warnings.some((entry) => JSON.stringify(entry).includes("health-discovery-retention"))).toBe(true)
+    }).pipe(
+      Effect.provide(testLayer),
+      Effect.provide(Logger.layer([logger])),
+      Effect.provide(TestClock.layer()),
+      Effect.scoped
+    )
+  )
+})

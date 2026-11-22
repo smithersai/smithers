@@ -8,11 +8,12 @@
  * @since 1.0.0
  */
 
+import { Retention } from "@smthrs/engine-store"
 import { Action, type FlowRuntime, Interpreter, Poll, Sleep } from "@smthrs/flow"
 import * as Maintenance from "@smthrs/memory/Maintenance"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import { Node } from "@smthrs/plan"
-import { Effect, Layer, Schema, type Scope } from "effect"
+import { Cause, Effect, Layer, Option, Schema, type Scope } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 
@@ -91,6 +92,7 @@ export const start = (
   Scope.Scope | FlowRuntime.FlowRuntime | EffectDigest.Digest | SecureRandom.SecureRandom
 > =>
   Effect.gen(function*() {
+    const retention = yield* Effect.serviceOption(Retention.Retention)
     const registered = yield* Layer.build(Interpreter.layerWithImplementations(
       TtlGc,
       Layer.mergeAll(
@@ -99,7 +101,18 @@ export const start = (
             Effect.map((deleted) => ({
               satisfied: false,
               output: deleted.reduce((total, count) => total + count, 0)
-            }))
+            })),
+            Effect.tap(() =>
+              Option.isNone(retention)
+                ? Effect.void
+                : retention.value.pruneSupersededRounds(executionId).pipe(
+                  Effect.catchCause((cause) =>
+                    Cause.hasInterruptsOnly(cause)
+                      ? Effect.interrupt
+                      : Effect.logWarning("memory TTL GC retention failed; will retry on next pass", cause)
+                  )
+                )
+            )
           )
         ),
         Poll.layer,

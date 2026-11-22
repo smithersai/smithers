@@ -15,14 +15,16 @@ import { executeUntilParked } from "./ExecuteUntilParked.ts"
  * @since 0.1.0
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Action, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, Sleep } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as JournalGeneration from "@smthrs/journal/JournalGeneration"
 import { Jj } from "@smthrs/kernel"
+import { Node } from "@smthrs/plan"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -613,6 +615,7 @@ describe("retention", () => {
         const ChildFlow = Flow.make("Retention/Child", {
           payload: {},
           success: Schema.String,
+          error: Sleep.SleepRequestInvalid,
           body: opaqueHandlerBody
         })
 
@@ -1132,6 +1135,7 @@ describe("retention", () => {
         const ReplayFlow = Flow.make("Retention/Replay", {
           payload: {},
           success: Schema.String,
+          error: Sleep.SleepRequestInvalid,
           body: opaqueHandlerBody
         })
         let dispatches = 0
@@ -1193,6 +1197,217 @@ describe("retention", () => {
         expect(value).toBe("first-result/winner")
         expect(dispatches).toBe(1)
         expect(yield* statusOf("parked-run")).toBe("completed")
+      }).pipe(
+        Effect.scoped,
+        Effect.provideService(Jj.Jj, jj),
+        Effect.provide(StepBoundary.layerTest()),
+        Effect.provide(stores)
+      )
+    ))
+})
+
+describe("Retention.pruneSupersededRounds", () => {
+  it.effect("reparents the active latest round onto round 0 and deletes completed intermediate rounds", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        const runs = yield* RunStore.RunStore
+        const retain = yield* Retention.make()
+        yield* createArchiveTable
+
+        const createRound = (runId: string, parentRunId: string | undefined, ordinal: number, finishRound: boolean) =>
+          Effect.gen(function*() {
+            yield* runs.create(runId, runState, {
+              ...(parentRunId === undefined ? {} : { parentRunId }),
+              lineageId: "poll-root",
+              roundOrdinal: ordinal
+            })
+            const row = yield* runs.get(runId)
+            const expected = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
+            const claim = yield* runs.claim(runId, expected, owner, yield* Effect.clockWith((c) => c.currentTimeMillis))
+            expect(claim._tag).toBe("Claimed")
+            if (claim._tag !== "Claimed") return
+            expect(yield* runs.activate(runId, owner, claim.claimedAtMs, expected)).toEqual({ _tag: "Activated" })
+            yield* seedDependents(runId)
+            if (finishRound) {
+              yield* finish(runId, "completed")
+            }
+          })
+
+        // <= 2 rounds is a no-op
+        yield* createRound("poll-root", undefined, 0, true)
+        expect((yield* retain.pruneSupersededRounds("poll-root")).runIds).toEqual([])
+        yield* createRound("poll-r1", "poll-root", 1, true)
+        expect((yield* retain.pruneSupersededRounds("poll-root")).runIds).toEqual([])
+
+        // Open rounds 2 (completed) and 3 (active)
+        yield* createRound("poll-r2", "poll-r1", 2, true)
+        yield* createRound("poll-r3", "poll-r2", 3, false)
+
+        const report = yield* retain.pruneSupersededRounds("poll-root")
+        expect(report.lineageId).toBe("poll-root")
+        expect(report.runIds).toEqual(["poll-r1", "poll-r2"])
+        expect(report.deleted["flows_runs"]).toBe(2)
+
+        const remaining = yield* runs.lineage("poll-root")
+        expect(remaining.map((row) => ({ runId: row.runId, parent: row.parentRunId, ordinal: row.roundOrdinal })))
+          .toEqual([
+            { runId: "poll-root", parent: null, ordinal: 0 },
+            { runId: "poll-r3", parent: "poll-root", ordinal: 3 }
+          ])
+        expect(yield* footprint("poll-r1")).toEqual({
+          runs: 0,
+          attempts: 0,
+          clocks: 0,
+          deferreds: 0,
+          journal: 0,
+          checkpoints: 0,
+          stepCache: 0,
+          archive: 0,
+          generations: 0,
+          childEdges: 0,
+          parentEdges: 0
+        })
+        expect(yield* companionFacts("poll-r1")).toBe(0)
+        expect(yield* footprint("poll-r2")).toEqual({
+          runs: 0,
+          attempts: 0,
+          clocks: 0,
+          deferreds: 0,
+          journal: 0,
+          checkpoints: 0,
+          stepCache: 0,
+          archive: 0,
+          generations: 0,
+          childEdges: 0,
+          parentEdges: 0
+        })
+        expect((yield* footprint("poll-root")).runs).toBe(1)
+        expect((yield* footprint("poll-r3")).runs).toBe(1)
+        expect(yield* danglingReferences(sql)).toEqual([])
+      }).pipe(Effect.scoped, Effect.provide(stores))
+    ))
+
+  it.effect("guards non-zero roots, non-completed middle rounds, and flows_run_parents edges", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        const runs = yield* RunStore.RunStore
+        const retain = yield* Retention.make()
+
+        const makeDone = (runId: string, parentRunId: string | undefined, lineageId: string, ordinal: number) =>
+          Effect.gen(function*() {
+            yield* runs.create(runId, runState, {
+              ...(parentRunId === undefined ? {} : { parentRunId }),
+              lineageId,
+              roundOrdinal: ordinal
+            })
+            const row = yield* runs.get(runId)
+            const expected = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
+            const claim = yield* runs.claim(runId, expected, owner, yield* Effect.clockWith((c) => c.currentTimeMillis))
+            if (claim._tag !== "Claimed") return
+            yield* runs.activate(runId, owner, claim.claimedAtMs, expected)
+            yield* finish(runId, "completed")
+          })
+
+        // Non-zero root ordinal (corrupt/legacy rows) -> no-op
+        yield* makeDone("nz-0", undefined, "nz-0", 0)
+        yield* makeDone("nz-1", "nz-0", "nz-0", 1)
+        yield* runs.create("nz-2", runState, { parentRunId: "nz-1", lineageId: "nz-0", roundOrdinal: 2 })
+        yield* sql`UPDATE flows_runs SET round_ordinal = 10 WHERE run_id = ${"nz-0"}`
+        expect((yield* retain.pruneSupersededRounds("nz-0")).runIds).toEqual([])
+
+        // No completed middle rounds -> no-op
+        yield* runs.create("nc-0", runState, { lineageId: "nc-0", roundOrdinal: 0 })
+        yield* runs.create("nc-1", runState, { parentRunId: "nc-0", lineageId: "nc-0", roundOrdinal: 1 })
+        yield* runs.create("nc-2", runState, { parentRunId: "nc-1", lineageId: "nc-0", roundOrdinal: 2 })
+        expect((yield* retain.pruneSupersededRounds("nc-0")).runIds).toEqual([])
+
+        // Middle round pinned by flows_run_parents edge -> kept; latest parent not in candidates skips reparent
+        yield* makeDone("ep-0", undefined, "ep-0", 0)
+        yield* makeDone("ep-1", "ep-0", "ep-0", 1)
+        yield* runs.create("ep-child", runState)
+        yield* sql`INSERT INTO flows_run_parents (child_id, parent_id, seq) VALUES (${"ep-child"}, ${"ep-1"}, 1)`
+        yield* runs.create("ep-2", runState, { parentRunId: "ep-1", lineageId: "ep-0", roundOrdinal: 2 })
+        expect((yield* retain.pruneSupersededRounds("ep-0")).runIds).toEqual([])
+
+        // Completed middle round whose child is a non-completed round: latest parent is not a candidate,
+        // and deleteRuns pins ep-2b cleanly with zero FK errors.
+        yield* makeDone("ep-2b", "ep-1", "ep-0", 3)
+        yield* runs.create("ep-3", runState, { parentRunId: "ep-2b", lineageId: "ep-0", roundOrdinal: 4 })
+        yield* runs.create("ep-4", runState, { parentRunId: "ep-3", lineageId: "ep-0", roundOrdinal: 5 })
+        expect((yield* retain.pruneSupersededRounds("ep-0")).runIds).toEqual([])
+        expect(yield* danglingReferences(sql)).toEqual([])
+      }).pipe(Effect.scoped, Effect.provide(stores))
+    ))
+})
+
+describe("compacted lineage resumption", () => {
+  it.effect("resumes, polls, and settles a trampoline lineage whose intermediate rounds were pruned", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const retain = yield* Retention.make()
+        const LoopPayload = Schema.Struct({ round: Schema.Number })
+        const Loop: Flow.Flow<
+          "Retention/CompactedLoop",
+          typeof LoopPayload,
+          typeof Schema.String,
+          typeof Sleep.SleepRequestInvalid
+        > = Flow.make(
+          "Retention/CompactedLoop",
+          {
+            payload: { round: Schema.Number },
+            success: Schema.String,
+            body: Node.capture({}, ({ round }) =>
+              round < 2
+                ? Loop.to({ round: round + 1 })
+                : Sleep.action.call({ millis: 5_000 }).pipe(Node.andThen(Node.succeed("settled-after-prune"))))
+          }
+        )
+        const makeEngine = EngineStore.make({
+          owner: { hostId: "retention-compacted" },
+          journalSource: "retention-compacted",
+          isAlive: () => Effect.succeed(false)
+        })
+        const runs = yield* RunStore.RunStore
+        const registerLoop = (engine: Context.Service.Shape<typeof FlowRuntime.FlowRuntime>) =>
+          Layer.build(Interpreter.layerWithImplementations(Loop, Sleep.layer)).pipe(
+            Effect.provideService(FlowRuntime.FlowRuntime, engine)
+          )
+
+        // Drive rounds 0 -> 1 -> 2 (round 2 parks on durable sleep)
+        yield* Effect.scoped(Effect.gen(function*() {
+          const first = yield* makeEngine
+          yield* registerLoop(first)
+          yield* first.execute(Loop, { executionId: "compacted-root", payload: { round: 0 }, discard: true })
+          yield* TestDatabase.until(
+            runs.latestRound("compacted-root").pipe(
+              Effect.map((row) => row.roundOrdinal === 2 && row.status === "suspended"),
+              Effect.catch(() => Effect.succeed(false))
+            )
+          )
+        }))
+
+        // Prune intermediate round 1
+        const pruned = yield* retain.pruneSupersededRounds("compacted-root")
+        expect(pruned.runIds).toHaveLength(1)
+
+        // Fresh engine resumes from root: poll sees Suspended while parked, resume({ poll: true }) targets tip
+        yield* Effect.scoped(Effect.gen(function*() {
+          const second = yield* makeEngine
+          yield* registerLoop(second)
+          expect(Option.getOrUndefined(yield* second.poll(Loop, "compacted-root"))?._tag).toBe("Suspended")
+          yield* second.resume(Loop, "compacted-root", { poll: true })
+          yield* TestClock.adjust(5_000)
+          const result = yield* second.execute(Loop, {
+            executionId: "compacted-root",
+            payload: { round: 0 },
+            discard: false
+          })
+          expect(result).toBe("settled-after-prune")
+          const polled = yield* second.poll(Loop, "compacted-root")
+          expect(Option.getOrUndefined(polled)?._tag).toBe("Complete")
+        }))
       }).pipe(
         Effect.scoped,
         Effect.provideService(Jj.Jj, jj),
