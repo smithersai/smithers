@@ -714,3 +714,12 @@ it("uses default matrix limits without a package manager or Vitest config", () =
   expect(attrs.timeout).toBe("1200000ms")
   expect(attrs.srcs).not.toContainEqual(Input.file("vitest.config.ts"))
 })
+
+it("forwards explicit lintEnv overrides to the package EsLint target", () => {
+  const targets = BuildAndCheckTypeScriptPackage({
+    packageManager,
+    cwd: "packages/example",
+    lintEnv: { NODE_OPTIONS: "--max-old-space-size=4096" }
+  })
+  expect(attrsOf<EsLint.Attrs>(targets.lint).env).toEqual({ NODE_OPTIONS: "--max-old-space-size=4096" })
+})

@@ -139,6 +139,16 @@ const { check, circular, docs: readmeDocs, docsFiles, fmt, lib, lint } = BuildAn
   ],
   tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
   // Runnable examples are linted and type-checked with the sources.
+  // eslint.config.js loads one lean tsconfig.lint.json program over src + examples
+  // and declares an explicit 4 GiB Node heap ceiling so CI hosts do not OOM (#4837).
+  eslintConfigs: [
+    Smithers.file("eslint.config.js"),
+    Smithers.file("//eslint.jsdoc.js"),
+    Smithers.file("//eslint.invariants.js"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("tsconfig.lint.json")
+  ],
+  lintEnv: { NODE_OPTIONS: "--max-old-space-size=4096" },
   sources: Smithers.glob("{src,examples}/**/*.ts")
 })
 

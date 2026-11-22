@@ -3,12 +3,18 @@ import importPlugin from "eslint-plugin-import"
 import unicorn from "eslint-plugin-unicorn"
 import tseslint from "typescript-eslint"
 import { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from "../../eslint.invariants.js"
-import { jsdocConvention } from "../../eslint.jsdoc.js"
+import { jsdocConvention, vibeDeclarations } from "../../eslint.jsdoc.js"
 
 export default tseslint.config(
   {
     // ProductApi.ts is a generated client; its generator was removed with the Go backend.
-    ignores: ["**/dist", "**/build", "**/coverage", "src/internal/backend/ProductApi.ts"]
+    ignores: [
+      "**/dist",
+      "**/build",
+      "**/coverage",
+      "src/internal/backend/ProductApi.ts",
+      ...vibeDeclarations(import.meta.dirname)
+    ]
   },
   js.configs.recommended,
   importPlugin.flatConfigs.recommended,
@@ -18,8 +24,8 @@ export default tseslint.config(
     extends: [tseslint.configs.recommended],
     languageOptions: {
       parserOptions: {
-        // Examples sit outside the build program; tsconfig.test.json types them.
-        project: ["./tsconfig.json", "./tsconfig.test.json"],
+        // One lean program over src + examples (avoiding duplicate tsconfig.json + tsconfig.test.json programs, #4837).
+        project: "./tsconfig.lint.json",
         tsconfigRootDir: import.meta.dirname
       }
     },

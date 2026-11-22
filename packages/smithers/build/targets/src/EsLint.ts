@@ -6,6 +6,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as Attr from "./Attr.ts"
 import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as PackageManager from "./PackageManager.ts"
@@ -36,6 +37,8 @@ export const Attrs = Schema.Struct({
   data: Schema.Array(Input.Declared).pipe(Schema.withConstructorDefault(Effect.succeed([]))),
   maxWarnings: Schema.Number,
   fix: Schema.Boolean,
+  /** Explicit environment overrides passed to the ESLint child process (e.g. NODE_OPTIONS). */
+  env: Schema.optional(Attr.Env),
   /**
    * `false` never reuses this target's result and runs it exactly as the
    * workspace declares, with no confined attempt. Declare it on a target
@@ -98,6 +101,7 @@ export const EsLint = Target.make("EsLint", {
     const config = attrs.configs[0]
     return Exec.runTool({
       cwd: attrs.cwd,
+      ...(attrs.env === undefined ? {} : { env: attrs.env }),
       argv: PackageManager.exec(attrs.packageManager, [
         "eslint",
         ...(config === undefined ? [] : ["--config", Input.rootRelative(attrs.cwd, config.path)]),

@@ -129,6 +129,8 @@ export interface Options {
   /** Targets only the suite waits for, such as one that fills a tool's cache before the suite starts. */
   readonly testDeps?: ReadonlyArray<Target.AnyTarget> | undefined
   readonly eslintConfigs?: ReadonlyArray<Input.File> | undefined
+  /** Explicit environment overrides for the package lint target (e.g. NODE_OPTIONS). */
+  readonly lintEnv?: Readonly<Record<string, string>> | undefined
   readonly dprintConfig?: Input.File | undefined
   readonly readme?: Input.File | undefined
   /**
@@ -361,6 +363,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     })
   const lint = EsLint({
     ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
+    ...(options.lintEnv === undefined ? {} : { env: options.lintEnv }),
     sources: [sources],
     deps: [...reads],
     configs: eslintConfigs,

@@ -65,6 +65,21 @@ describe("ESLint source paths", () => {
     expect((Target.metadata(plain).attrs as EsLint.Attrs).data).toEqual([])
   })
 
+  it("forwards explicit environment overrides into the planned tool run", () => {
+    const base = {
+      packageManager,
+      sources: [Input.glob("src/**/*.ts")],
+      configs: [Input.file("eslint.config.js")],
+      deps: [],
+      maxWarnings: 0,
+      fix: false
+    }
+    const plain = EsLint.EsLint(base)
+    const bounded = EsLint.EsLint({ ...base, env: { NODE_OPTIONS: "--max-old-space-size=4096" } })
+    expect(plannedCalls(plain)[0]?.payload["env"]).toBeUndefined()
+    expect(plannedCalls(bounded)[0]?.payload["env"]).toEqual({ NODE_OPTIONS: "--max-old-space-size=4096" })
+  })
+
   it.each([".", "packages/example"])("lints rooted and relative globs from cwd %s", async (cwd) => {
     const root = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-eslint-")))
     try {
