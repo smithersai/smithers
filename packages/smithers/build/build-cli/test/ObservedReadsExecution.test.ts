@@ -1432,7 +1432,7 @@ describe("a job of observed steps", () => {
     const refusing = "if /bin/grep -q -e '^TracerPid:[[:space:]]*[1-9]' -e '^Seccomp_filters:[[:space:]]*[1-9]' " +
       "/proc/self/status; then exit 1; fi\n" +
       "/bin/cat registry.cfg > /dev/null\n/bin/mkdir -p deps\n/bin/cat lock.txt > deps/installed.txt"
-    const { logs, ran, run, unstored } = await job({ install: refusing })
+    const { logs, ran, root, run, unstored } = await job({ install: refusing })
     const before = Date.now()
     expect(await run()).toEqual(all("ran"))
     // The run that found it out says what happened to that run.
@@ -1455,6 +1455,9 @@ describe("a job of observed steps", () => {
     expect(Object.values(unstored)).not.toContain(
       "a step after it may read what it leaves, and its reads are not recorded"
     )
+    // Its plain run is its verdict: when that fails, the step fails and the steps after it do not run.
+    await Fs.rm(Path.join(root, "lock.txt"))
+    expect(await run()).toEqual({ install: "failed", build: "skipped", lint: "skipped", test: "skipped" })
   })
 
   tracedIt("is answered whole when its steps share a group of files", async () => {
