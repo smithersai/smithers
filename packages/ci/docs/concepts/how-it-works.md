@@ -380,7 +380,9 @@ does in the repository's CI today, and a replay says once on standard error that
 machine cannot record what a step reads, and why. The report names the recorder
 ([4. Report](#4-report)). On Linux with bubblewrap, a step of a GitHub Actions
 job never outlives its recorder: when the recorder stops first, the step and
-everything it started stop with it, and the step's result is not kept.
+everything it started stop with it, and the step's result is not kept. When it
+stopped because the disk that holds its trace was full, the line names that disk
+and how much it has free, and says to free space on it.
 
 Each step runs under the tool versions its job sets up, so a matrix over Node
 18 and 20 tests both. Steps that need different versions run on separate

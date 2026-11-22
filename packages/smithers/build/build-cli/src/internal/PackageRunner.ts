@@ -3939,8 +3939,15 @@ const executeWith = (
           // stopped first, and the step's file calls failed for want of it: neither its verdict nor its reads say
           // anything about the step. That is the build's failure, never the step's, and nothing is stored.
           if (host.supervisor === true && !(yield* joined(async () => ObservedReads.whole(traceFile)))) {
-            brokeOn =
-              `${node.label}: smthrs-observe stopped before the step ended, so its run says nothing about the step`
+            // A recorder writes its trace as the step runs: on a full disk it stops for want of room, and the line
+            // names the disk rather than the recorder.
+            const space = yield* joined(() => services.diskSpace(NodePath.dirname(traceFile)))
+            brokeOn = space !== undefined && FullDisk.isFull(space)
+              ? `${node.label}: the disk that holds ${NodePath.dirname(traceFile)} is full (${
+                FullDisk.sizeOf(space.free)
+              } free), so smthrs-observe could not record the step and its run says nothing about it; free space ` +
+                "on that disk"
+              : `${node.label}: smthrs-observe stopped before the step ended, so its run says nothing about the step`
             return { status: "skipped" as const, error: brokeOn }
           }
           // What the programs earlier steps of the job left running read while this step ran counts for this step,

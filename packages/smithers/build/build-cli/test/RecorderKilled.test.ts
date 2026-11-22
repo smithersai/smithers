@@ -155,6 +155,27 @@ describe.each(recorders)("a step on a machine whose recorder %s is killed", (rec
   )
 })
 
+describe("a recorder that stops on a full disk", () => {
+  it.skipIf(supervisor === undefined || process.platform !== "linux" || !("bwrap" in mount))(
+    "names the disk, not the recorder",
+    async () => {
+      const mark = `${process.pid}${Math.floor(Math.random() * 1e6)}.`
+      const { run } = await fixture("smthrs-observe", mark, true)
+      // The recorder is killed as a write on a full disk kills it; the disk says it has 64 MB of 100 GB free.
+      const full = { free: 64_000_000, total: 100_000_000_000 }
+      const services = {
+        ...executionServicesLive,
+        observer: () => recorders[0]![1]!,
+        diskSpace: async () => full
+      }
+      await expect(run(services)).rejects.toThrow(
+        /the disk that holds \S+ is full \(0\.1 GB free\), so smthrs-observe could not record the step/
+      )
+    },
+    60_000
+  )
+})
+
 describe("smthrs-observe killed while its command runs", () => {
   it.skipIf(supervisor === undefined || process.platform !== "linux")(
     "takes the command down with it, so nothing adopts the command",
