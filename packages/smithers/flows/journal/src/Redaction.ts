@@ -771,6 +771,8 @@ const urlCredentialsSource = urlCredentials.source
 // Smithers credential words. Keep the patterns non-global for repeated tests.
 const machineToken = /smm_[A-Za-z0-9_-]{43,}/
 const scopedToken = /smt1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43,}/
+const signedSmithersToken = /smithers_[a-z]+_v\d+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/
+const accessSmithersToken = /smithers_(?:(?:agent|cijob|pat)_)?[0-9a-fA-F]{40,}|smithers_pat_[A-Za-z0-9_-]{20,}/
 
 /**
  * Redact the containing dotted identifier too: an API key or JWT can enclose
@@ -818,6 +820,21 @@ export const defaultRules: ReadonlyArray<Rule> = [
     // Consume a longer suffix too so a wrapper cannot leave credential material.
     pattern: new RegExp(machineToken.source, "g"),
     rewrite: (text) => redactCredentialWord(text, machineToken)
+  },
+  {
+    id: "smithers-signed-token",
+    // Signed versioned Smithers tokens: smithers_task_v1.<payload>.<sig>,
+    // smithers_lfs_v1.<payload>.<sig>. Match before generic rules can split dots.
+    pattern: new RegExp(signedSmithersToken.source, "g"),
+    rewrite: (text) => redactCredentialWord(text, signedSmithersToken)
+  },
+  {
+    id: "smithers-access-token",
+    // Smithers personal access tokens (smithers_ + 40 hex), per-run agent tokens
+    // (smithers_agent_ + 40 hex), CI job tokens (smithers_cijob_ + 40 hex), and
+    // smithers_pat_ tokens. Plain identifiers such as smithers_auth_file survive.
+    pattern: new RegExp(accessSmithersToken.source, "g"),
+    rewrite: (text) => redactCredentialWord(text, accessSmithersToken)
   },
   // Git HTTPS OAuth credentials place the secret in the username. Match
   // before password rewriting removes the x-oauth-basic marker.
@@ -1062,7 +1079,7 @@ const ruleShape = (rule: Rule): string =>
   ])
 
 const smithersShapes = defaultRules
-  .filter((rule) => rule.id === "smithers-machine-token" || rule.id === "smithers-scoped-token")
+  .filter((rule) => rule.id.startsWith("smithers-"))
   .map((rule) => ({ shape: ruleShape(rule), rewrite: rule.rewrite, pattern: new RegExp(rule.pattern.source) }))
 
 const isSmithersRule = (rule: Rule): boolean =>

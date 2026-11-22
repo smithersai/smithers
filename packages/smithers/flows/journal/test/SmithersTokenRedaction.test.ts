@@ -6,7 +6,17 @@ import * as Redaction from "../src/Redaction.ts"
 const tail = "aB0_-".repeat(8) + "aAQ"
 const claims = Buffer.from(JSON.stringify({ v: 1, id: "invented", procedures: ["runs.get"], iat: 1, exp: 2 }))
   .toString("base64url")
-const tokens = [["machine", `smm_${tail}`], ["scoped", `smt1.${claims}.${tail}`]] as const
+const hex40 = "0123456789abcdef0123456789abcdef01234567"
+const tokens = [
+  ["machine", `smm_${tail}`],
+  ["scoped", `smt1.${claims}.${tail}`],
+  ["task", `smithers_task_v1.${claims}.c2lnbmF0dXJl`],
+  ["lfs", `smithers_lfs_v1.${claims}.${tail}`],
+  ["pat", `smithers_${hex40}`],
+  ["agent", `smithers_agent_${hex40}`],
+  ["cijob", `smithers_cijob_${hex40}`],
+  ["prefixed-pat", `smithers_pat_${tail}`]
+] as const
 
 const contexts = [
   ["bare message", (token: string) => `rejected ${token} upstream`],
@@ -72,8 +82,12 @@ for (const [surface, redact] of [["journal", Redaction.redact], ["diagnostic", R
       })
     }
 
-    it("preserves prefix descriptions and incomplete wire forms", () => {
-      const message = `smm_ prefix; smt1. format; smm_${"a".repeat(42)}; smt1.e30.${"b".repeat(42)}`
+    it("preserves prefix descriptions, ordinary smithers_ identifiers, and incomplete wire forms", () => {
+      const message = [
+        `smm_ prefix; smt1. format; smm_${"a".repeat(42)}; smt1.e30.${"b".repeat(42)}`,
+        `smithers_ prefix; smithers_task_v1; smithers_task_v1.onlypayload; smithers_${"a".repeat(39)}`,
+        "smithers_auth_file smithers_history_test smithers_machine_wake_total smithers_cachero_public _smithers_runs"
+      ].join("; ")
       expect(redact(message)).toBe(message)
     })
 
@@ -183,7 +197,21 @@ for (const [kind, token] of tokens) {
           rule
       )
       const stream = Redaction.lineRedactor(rules)
-      const prefix = kind === "machine" ? "smm_" : "smt1.e30."
+      const prefix = kind === "machine"
+        ? "smm_"
+        : kind === "scoped"
+        ? "smt1.e30."
+        : kind === "task"
+        ? "smithers_task_v1.e30."
+        : kind === "lfs"
+        ? "smithers_lfs_v1.e30."
+        : kind === "pat"
+        ? `smithers_${hex40}`
+        : kind === "agent"
+        ? `smithers_agent_${hex40}`
+        : kind === "cijob"
+        ? `smithers_cijob_${hex40}`
+        : "smithers_pat_"
       expect(stream.line(`${prefix}${"A".repeat(30)}-----BEGINABQ PRIVATE KEY-----`)).toEqual([])
       expect(stream.line("invented private body")).toEqual([])
       expect(stream.line("-----END PRIVATE KEY-----")).toEqual(["[REDACTED]"])
