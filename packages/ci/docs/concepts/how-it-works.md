@@ -187,7 +187,10 @@ its socket.
 A job's steps run the same way here. On Linux with bubblewrap every step of a
 job starts in one process tree of the job's own: what a step leaves running
 lives there until the job's last step has ended, and then all of it ends,
-however it detached from its step. No other job sees it. It is so in a
+however it detached from its step. The run goes on only once all of it has
+ended, so a port it held is free when the run returns. A program still running
+ten seconds after its job ended is named in one line, with its process id and
+command, and the run goes on. No other job sees it. It is so in a
 replay, in the baseline and in each mode, in the workflow `apply` writes, and
 when you run `smthrs ci '//...'` yourself.
 

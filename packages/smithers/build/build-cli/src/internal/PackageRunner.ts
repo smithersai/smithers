@@ -1125,7 +1125,7 @@ const executeWith = (
         const first = JobKeeper.childrenOf(found.keeper.pid!)
         found.keeper.kill("SIGKILL")
         await found.ended
-        await JobKeeper.allEnded(first)
+        await JobKeeper.endsOrSays(first, log, `smthrs: machine ${name}: `)
         for (const trace of found.traces) await Fs.rm(trace, { force: true, recursive: true })
       })
     }

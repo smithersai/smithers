@@ -1174,7 +1174,12 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         const keeping = try Scope.fork(own)
         const job = !keeps ? undefined : try orFail(
           Scope.provide(
-            keeperIn(place, [directory, store, place.tmp], path.join(work, "jobs", `${path.basename(way.home)}-${name}`)),
+            keeperIn(
+              place,
+              [directory, store, place.tmp],
+              path.join(work, "jobs", `${path.basename(way.home)}-${name}`),
+              progress.say
+            ),
             keeping
           ),
           "could not start the keeper of a job"

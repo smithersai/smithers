@@ -33,7 +33,7 @@
  */
 
 import { execFile } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync, readlinkSync } from "node:fs"
 import * as Fs from "node:fs/promises"
 
 /**
@@ -686,4 +686,85 @@ export const allEnded = async (pids: ReadonlyArray<number>, limitMs = 10_000): P
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
   return true
+}
+
+const namespaceOf = (pid: number): string | undefined => {
+  try {
+    return readlinkSync(`/proc/${pid}/ns/pid`)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The command line of process `pid`, cut to 200 characters; empty once it
+ * has ended.
+ *
+ * @throws {never}
+ * @category running
+ * @since 0.1.0
+ */
+export const commandLineOf = (pid: number): string => {
+  try {
+    return readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").filter((word) => word !== "").join(" ").slice(
+      0,
+      200
+    )
+  } catch {
+    return ""
+  }
+}
+
+/**
+ * What still runs where `first` are the first processes of namespaces: every
+ * process in those process namespaces, by its id here and its command line.
+ * Where one of them is no namespace's first process but in this process's
+ * own namespace, only that process.
+ *
+ * @throws {never}
+ * @category running
+ * @since 0.1.0
+ */
+export const stillIn = (first: ReadonlyArray<number>): ReadonlyArray<Left> => {
+  const own = namespaceOf(process.pid)
+  const spaces = new Set(first.map(namespaceOf).filter((space) => space !== undefined && space !== own))
+  const pids = first.filter((pid) => namespaceOf(pid) === own)
+  if (spaces.size > 0) {
+    for (const entry of readdirSync("/proc")) {
+      if (/^[0-9]+$/.test(entry) && spaces.has(namespaceOf(Number(entry)))) pids.push(Number(entry))
+    }
+  }
+  return pids.map((pid) => ({ pid, command: commandLineOf(pid) }))
+}
+
+/**
+ * Waits until each of `first`, the first process of a job's namespace, has
+ * ended ({@link allEnded}): nothing, or, where one has not within `limitMs`,
+ * the line that says so and names what still runs, by id and command.
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export const endedOrNamed = async (first: ReadonlyArray<number>, limitMs = 10_000): Promise<string | undefined> => {
+  if (await allEnded(first, limitMs)) return undefined
+  const still = stillIn(first).map((each) => `${each.pid} ${each.command}`).join("; ")
+  return `what a step left running did not end within ${limitMs / 1000} seconds and still runs: ${still}`
+}
+
+/**
+ * {@link endedOrNamed}, and its line, if any, said once through `say` after
+ * `prefix`: the end of a job never returns in silence on what it could not
+ * end.
+ *
+ * @category running
+ * @since 0.1.0
+ */
+export const endsOrSays = async (
+  first: ReadonlyArray<number>,
+  say: (line: string) => void,
+  prefix: string,
+  limitMs = 10_000
+): Promise<void> => {
+  const still = await endedOrNamed(first, limitMs)
+  if (still !== undefined) say(`${prefix}${still}`)
 }

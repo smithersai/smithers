@@ -430,3 +430,58 @@ describe.runIf(process.platform === "linux")("the processes a namespace's holder
     }
   })
 })
+
+describe.runIf(process.platform === "linux")("what still runs when a job's end is not reached", () => {
+  it("names a process of this namespace, and nothing for one that has ended", async () => {
+    const seconds = 83_000 + (process.pid % 900)
+    const sleeper = spawn("sleep", [String(seconds)], { stdio: "ignore" })
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(JobKeeper.stillIn([sleeper.pid!])).toEqual([{ pid: sleeper.pid, command: `sleep ${seconds}` }])
+      expect(JobKeeper.stillIn([2 ** 22 + 1])).toEqual([])
+      expect(JobKeeper.commandLineOf(2 ** 22 + 1)).toBe("")
+      expect(await JobKeeper.endedOrNamed([], 50)).toBeUndefined()
+      expect(await JobKeeper.endedOrNamed([sleeper.pid!], 50)).toBe(
+        `what a step left running did not end within 0.05 seconds and still runs: ${sleeper.pid} sleep ${seconds}`
+      )
+      const lines: Array<string> = []
+      await JobKeeper.endsOrSays([], (line) => lines.push(line), "smthrs: ", 50)
+      expect(lines).toEqual([])
+      await JobKeeper.endsOrSays([sleeper.pid!], (line) => lines.push(line), "smthrs: machine one: ", 50)
+      expect(lines).toEqual([
+        `smthrs: machine one: what a step left running did not end within 0.05 seconds and still runs: ${sleeper.pid} sleep ${seconds}`
+      ])
+    } finally {
+      sleeper.kill("SIGKILL")
+    }
+  })
+
+  it.runIf(bwrap !== undefined)("names every process of a namespace whose first process still runs", async () => {
+    const seconds = 84_000 + (process.pid % 900)
+    const holder = spawn(bwrap!, [
+      "--dev-bind",
+      "/",
+      "/",
+      "--unshare-pid",
+      "--proc",
+      "/proc",
+      "--die-with-parent",
+      "--",
+      "sh",
+      "-c",
+      `sleep ${seconds} & exec sleep ${seconds + 1}`
+    ], { stdio: "ignore" })
+    try {
+      let first: ReadonlyArray<number> = []
+      for (let waited = 0; waited < 5_000; waited += 20) {
+        first = JobKeeper.childrenOf(holder.pid!)
+        if (first.length > 0 && JobKeeper.stillIn(first).length >= 3) break
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      const commands = JobKeeper.stillIn(first).map((each) => each.command)
+      expect(commands).toEqual(expect.arrayContaining([`sleep ${seconds}`, `sleep ${seconds + 1}`]))
+    } finally {
+      holder.kill("SIGKILL")
+    }
+  })
+})

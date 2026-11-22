@@ -52,11 +52,14 @@ const jailedBy = (root: string, program: string): Confined => ({
 
 const denied = PlatformError.systemError({ _tag: "PermissionDenied", module: "test", method: "spawn" })
 
+/** Says nothing: a test that expects no line. */
+const quiet = (_line: string): Effect.Effect<void> => Effect.void
+
 describe("a job's keeper where it cannot be had", () => {
   it("is not started for a job with no jail, and such a jail keeps no program", async () => {
     const root = work()
     const place = placeIn(root, "baseline")
-    expect(await onNode(keeperIn(place, [], join(root, "jobs")))).toBeUndefined()
+    expect(await onNode(keeperIn(place, [], join(root, "jobs"), quiet))).toBeUndefined()
     expect(await onNode(keepsPrograms(place))).toBe(false)
     expect(existsSync(join(root, "jobs"))).toBe(false)
   })
@@ -70,11 +73,11 @@ describe("a job's keeper where it cannot be had", () => {
   it("gives up on a keeper that never listens after ten seconds, and leaves no directory of it", async () => {
     const root = work()
     // A bubblewrap that starts nothing: the keeper's socket never appears.
-    const quiet = join(root, "bwrap")
-    writeFileSync(quiet, "#!/bin/sh\nexit 0\n")
-    chmodSync(quiet, 0o755)
+    const deaf = join(root, "bwrap")
+    writeFileSync(deaf, "#!/bin/sh\nexit 0\n")
+    chmodSync(deaf, 0o755)
     const started = Date.now()
-    expect(await onNode(keeperIn(jailedBy(root, quiet), [], join(root, "jobs")))).toBeUndefined()
+    expect(await onNode(keeperIn(jailedBy(root, deaf), [], join(root, "jobs"), quiet))).toBeUndefined()
     const waited = Date.now() - started
     expect(waited).toBeGreaterThanOrEqual(10_000)
     expect(waited).toBeLessThan(60_000)
@@ -163,4 +166,42 @@ describe.runIf(process.platform === "linux")("what a step leaves where nothing e
     },
     60_000
   )
+})
+
+describe.runIf(process.platform === "linux")("the end of a job's keeper", () => {
+  it("names what still runs ten seconds after the job was told to end, and goes on", async () => {
+    const root = work()
+    const seconds = 96_000 + (process.pid % 900)
+    // A bubblewrap that says it listens, leaves a program in a session of its own that its end does not reach, and
+    // runs on.
+    const leaving = join(root, "bwrap")
+    // Every program by its path, and a session of its own made by the program itself, so nothing depends on the PATH
+    // or on how setsid(1) starts it.
+    const python = spawnSync("sh", ["-c", "command -v python3"], { encoding: "utf8" }).stdout.trim()
+    const sleep = spawnSync("sh", ["-c", "command -v sleep"], { encoding: "utf8" }).stdout.trim()
+    const daemon = `import os, time; os.setsid(); open("ready", "w").close(); time.sleep(${seconds})`
+    // It says it listens only once the program is in its session, out of reach of the end of the keeper's group.
+    writeFileSync(
+      leaving,
+      `#!/bin/sh\n${python} -c '${daemon}' > /dev/null 2>&1 < /dev/null &\n` +
+        `while [ ! -e ready ]; do ${sleep} 0.05; done\n: > keeper.sock\nexec ${sleep} ${seconds + 1}\n`
+    )
+    chmodSync(leaving, 0o755)
+    const lines: Array<string> = []
+    const said = (line: string): Effect.Effect<void> => Effect.sync(() => void lines.push(line))
+    try {
+      const keeper = await onNode(keeperIn(jailedBy(root, leaving), [], join(root, "jobs"), said))
+      expect(keeper?.pid).toBeGreaterThan(1)
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).toMatch(
+        new RegExp(
+          `^smithers-ci: what a step left running did not end within 10 seconds and still runs: [0-9]+ \\S*python3 -c ${
+            daemon.replace(/[.()]/g, "\\$&")
+          }$`
+        )
+      )
+    } finally {
+      spawnSync("pkill", ["-f", `time.sleep.${seconds}`])
+    }
+  }, 60_000)
 })

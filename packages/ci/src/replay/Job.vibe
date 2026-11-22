@@ -11,7 +11,7 @@
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { allEnded, childrenOf, endOrphans, keeper, processes, socketName } from "@smthrs/targets/JobKeeper"
+import { childrenOf, endedOrNamed, endOrphans, keeper, processes, socketName } from "@smthrs/targets/JobKeeper"
 import { type Confined, held } from "./Confine.vibe"
 import { nodePath, reaperProgram, searchPath } from "./Environment.ts"
 import { exec, outputLimit } from "./Process.vibe"
@@ -34,12 +34,19 @@ export interface Keeper {
  * listens. When the scope closes the keeper is ended, and every process of
  * the job with it, and its directory is removed. Nothing where the job has no
  * jail, or the keeper does not listen within ten seconds: there a program a
- * step leaves running ends with its step.
+ * step leaves running ends with its step. When the scope closes it waits for
+ * the job's namespace to be empty; what still runs ten seconds on is named
+ * through `say`.
  *
  * @category constructors
  * @since 0.1.0
  */
-export effect function keeperIn(place: Confined, writable: ReadonlyArray<string>, parent: string) {
+export effect function keeperIn(
+  place: Confined,
+  writable: ReadonlyArray<string>,
+  parent: string,
+  say: (line: string) => Effect.Effect<void>
+) {
   if (place.jail === undefined) return undefined
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
@@ -63,16 +70,20 @@ export effect function keeperIn(place: Confined, writable: ReadonlyArray<string>
   // The jail ends when the process that holds it does, and every process of the job with it. The bubblewrap ends as
   // soon as the namespace's command has, before the kernel has ended every process in it; the namespace's first
   // process ends only after all of them, so the scope waits for that too: nothing of the job, no port it held,
-  // outlives it.
+  // outlives it. The first process is noted once the keeper listens, while the bubblewrap that started it runs.
+  const first: Array<number> = []
   try addFinalizer(() =>
     ignore(effect {
-      const first = childrenOf(Number(handle.pid))
       try ignore(handle.kill({ killSignal: "SIGKILL" }))
-      try promise(() => allEnded(first))
+      const still = try promise(() => endedOrNamed(first))
+      if (still !== undefined) try say(`smithers-ci: ${still}`)
     })
   )
   for (let waited = 0; waited < 10_000; waited += 20) {
-    if (try fs.exists(path.join(directory, socketName))) return { directory, pid: Number(handle.pid) } satisfies Keeper
+    if (try fs.exists(path.join(directory, socketName))) {
+      first.push(...childrenOf(Number(handle.pid)))
+      return { directory, pid: Number(handle.pid) } satisfies Keeper
+    }
     try sleep("20 millis")
   }
   return undefined
