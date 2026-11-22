@@ -32,7 +32,7 @@ NR = {
     "removexattr": (197, 14), "lremovexattr": (198, 15), "setxattrat": (463, 463), "removexattrat": (466, 466),
     "file_setattr": (469, 469), "fchmod": (91, 52), "fchown": (93, 55), "rename": (82, None), "renameat": (264, 38),
     "renameat2": (316, 276), "link": (86, None), "linkat": (265, 37), "symlink": (88, None), "symlinkat": (266, 36),
-    "fork": (57, None), "unshare": (272, 97), "dup": (32, 23), "pidfd_open": (434, 434), "io_uring_setup": (425, 425), "io_uring_enter": (426, 426),
+    "fork": (57, None), "unshare": (272, 97), "dup": (32, 23), "pidfd_open": (434, 434), "copy_file_range": (326, 285), "io_uring_setup": (425, 425), "io_uring_enter": (426, 426),
     "seccomp": (317, 277), "mseal": (462, 462), "listns": (470, 470), "rseq_slice_yield": (471, 471),
     "name_to_handle_at": (303, 264), "open_by_handle_at": (304, 265), "chroot": (161, 51), "pivot_root": (155, 41),
     "mount": (165, 40), "umount2": (166, 39), "setns": (308, 268), "open_tree": (428, 428), "move_mount": (429, 429),
@@ -225,6 +225,121 @@ def execveat(opened, path, flags):
     os.set_inheritable(fd, True)
     call("execveat", fd, path, (ctypes.c_char_p * 2)(b"script.sh", None), (ctypes.c_char_p * 1)(None), flags)
     return False
+
+
+def x32_openat():
+    """openat by its x32 number, which a kernel without the x32 ABI refuses."""
+    if not x86:
+        raise Skip()
+    ctypes.set_errno(0)
+    r = libc.syscall(ctypes.c_long(0x40000000 | 257), ctypes.c_long(AT_FDCWD), ctypes.c_char_p(b"data/x.txt"),
+                     ctypes.c_long(0))
+    if r < 0:
+        raise Skip()
+    return good(fd_text(r))
+
+
+def int80_open():
+    """open by the 32-bit call gate, int 0x80, from a 64-bit process; in a child, which a kernel without it kills."""
+    if not x86:
+        raise Skip()
+    pid = os.fork()
+    if pid == 0:
+        libc.mmap.restype = ctypes.c_void_p
+        libc.mmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_long]
+        page = libc.mmap(None, 4096, 7, 0x22 | 0x40, -1, 0)  # RWX, MAP_PRIVATE|MAP_ANONYMOUS|MAP_32BIT
+        if page is None or page == ctypes.c_void_p(-1).value:
+            os._exit(77)
+        ctypes.memmove(page + 256, b"data/x.txt\0", 11)
+        code = bytes([0x53, 0xb8, 5, 0, 0, 0, 0xbb]) + struct.pack("<I", page + 256) + bytes(
+            [0x31, 0xc9, 0x31, 0xd2, 0xcd, 0x80, 0x5b, 0xc3])  # push rbx; open(path, 0); pop rbx; ret
+        ctypes.memmove(page, code, len(code))
+        fd = ctypes.CFUNCTYPE(ctypes.c_int)(page)()
+        if fd == -ENOSYS:
+            os._exit(77)
+        os._exit(0 if fd >= 0 and good(fd_text(fd)) else 1)
+    _, status = os.waitpid(pid, 0)
+    if os.WIFSIGNALED(status) or os.waitstatus_to_exitcode(status) == 77:
+        raise Skip()
+    return os.waitstatus_to_exitcode(status) == 0
+
+
+def passed_descriptor(through):
+    """A directory's descriptor another process opened and passed over a socket, and a file below it."""
+    import array
+    import socket
+    a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    pid = os.fork()
+    if pid == 0:
+        d = os.open("data", os.O_RDONLY | os.O_DIRECTORY)
+        a.sendmsg([b"x"], [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array("i", [d]))])
+        os._exit(0)
+    _, ancillary, _, _ = b.recvmsg(1, socket.CMSG_LEN(4))
+    os.waitpid(pid, 0)
+    fd = array.array("i", ancillary[0][2][:4])[0]
+    if through == "openat":
+        return good(text("x.txt", dir_fd=fd))
+    return good(text("/dev/fd/%d/x.txt" % fd))
+
+
+def tmpfile_linkat():
+    """A file made with no name, filled from data/x.txt, named with linkat through /proc/self/fd, then read."""
+    fd = os.open("build", os.O_RDWR | os.O_TMPFILE, 0o644)
+    os.write(fd, text("data/x.txt").encode())
+    if os.path.lexists("build/named.txt"):
+        os.unlink("build/named.txt")
+    r, e = call("linkat", AT_FDCWD, "/proc/self/fd/%d" % fd, AT_FDCWD, "build/named.txt", AT_SYMLINK_FOLLOW)
+    if r != 0:
+        sys.exit(2)
+    return good(text("build/named.txt"))
+
+
+def copy_range():
+    source = os.open("data/x.txt", os.O_RDONLY)
+    target = os.open("build/copied.txt", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    r, e = call("copy_file_range", source, 0, target, 0, 64, 0)
+    if r < 0:
+        sys.exit(2)
+    os.close(target)
+    return good(text("build/copied.txt"))
+
+
+def mapped():
+    import mmap
+    with mmap.mmap(os.open("data/x.txt", os.O_RDONLY), 0, prot=mmap.PROT_READ) as m:
+        return good(m[:].decode())
+
+
+def ring_statx(path):
+    """The size of a path asked through io_uring's STATX; None where the ring is refused."""
+    params = ctypes.create_string_buffer(120)
+    ring, e = call("io_uring_setup", 4, params)
+    if ring < 0:
+        return None
+    sq_entries, cq_entries = struct.unpack_from("II", params.raw, 0)
+    sq_off = struct.unpack_from("IIIIIII", params.raw, 40)
+    cq_off = struct.unpack_from("IIIIII", params.raw, 80)
+    import mmap
+    sq = mmap.mmap(ring, sq_off[6] + sq_entries * 4, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE, offset=0)
+    cq = mmap.mmap(ring, cq_off[5] + cq_entries * 16, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE,
+                   offset=0x8000000)
+    sqes = mmap.mmap(ring, sq_entries * 64, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE, offset=0x10000000)
+    name = ctypes.create_string_buffer(path.encode())
+    answer = ctypes.create_string_buffer(256)
+    sqe = struct.pack("BBHiQQIIQHHi", 21, 0, 0, AT_FDCWD, ctypes.addressof(answer), ctypes.addressof(name), 0x7ff, 0, 0,
+                      0, 0, 0)
+    sqes[0:len(sqe)] = sqe
+    tail = struct.unpack_from("I", sq, sq_off[1])[0]
+    mask = struct.unpack_from("I", sq, sq_off[2])[0]
+    struct.pack_into("I", sq, sq_off[6] + (tail & mask) * 4, 0)
+    struct.pack_into("I", sq, sq_off[1], tail + 1)
+    r, e = call("io_uring_enter", ring, 1, 1, 1, 0, 0)
+    if r < 0:
+        return None
+    head = struct.unpack_from("I", cq, cq_off[0])[0]
+    cmask = struct.unpack_from("I", cq, cq_off[2])[0]
+    res = struct.unpack_from("i", cq, cq_off[5] + (head & cmask) * 16 + 8)[0]
+    return None if res < 0 else struct.unpack_from("Q", answer.raw, 40)[0]
 
 
 def then_read(effect):
@@ -593,6 +708,18 @@ ways = {
     "io_uring": ring_then_read(False),
     "io_uring-sqpoll": ring_then_read(True),
     "pidfd_open": then_read(lambda: call("pidfd_open", os.getpid(), 0)),
+    # The seventh review's ways.
+    "openat-by-number": lambda: (lambda r: r[0] >= 0 and good(fd_text(r[0])))(call("openat", AT_FDCWD, "data/x.txt", 0)),
+    "x32-openat": x32_openat,
+    "int80-open": int80_open,
+    "io_uring-statx": lambda: (lambda size: size == 3 if size is not None else stat_size("statx", AT_FDCWD, "data/size.txt", 0) == 3)(ring_statx("data/size.txt")),
+    "passed-descriptor": lambda: passed_descriptor("openat"),
+    "passed-descriptor-dev-fd": lambda: passed_descriptor("dev-fd"),
+    "proc-self-root": lambda: good(text("/proc/self/root" + os.getcwd() + "/data/x.txt")),
+    "proc-pid-cwd": lambda: good(text("/proc/%d/cwd/data/x.txt" % os.getpid())),
+    "tmpfile-linkat": tmpfile_linkat,
+    "copy_file_range": copy_range,
+    "mmap": mapped,
     "mseal": then_read(lambda: call("mseal", 0, 0, 0)),
     "listns": then_read(lambda: call("listns", 0, 0, 0, 0)),
     "rseq_slice_yield": then_read(lambda: call("rseq_slice_yield")),
@@ -946,6 +1073,47 @@ export const ways: { readonly [way: string]: Way } = {
     expected: { strace: stored, observe: refused("io_uring with a kernel thread of its own") }
   },
   "pidfd_open": { call: "pidfd_open", form: "a descriptor of a process", change: x, expected: stored },
+  "openat-by-number": { call: "openat", form: "by its number through syscall(2)", change: x, expected: stored },
+  "x32-openat": {
+    call: "openat",
+    form: "by its x32 number",
+    change: x,
+    expected: { strace: "either", observe: { reason: "a program of another architecture ran" } }
+  },
+  "int80-open": {
+    call: "open",
+    form: "through int 0x80 from a 64-bit process",
+    change: x,
+    expected: { strace: "either", observe: { reason: "a program of another architecture ran" } }
+  },
+  "io_uring-statx": {
+    call: "io_uring_enter",
+    form: "a STATX through io_uring",
+    change: bad("data/size.txt"),
+    expected: { strace: stored, observe: refused("io_uring") }
+  },
+  "passed-descriptor": {
+    call: "openat",
+    form: "below a directory's descriptor passed over a socket",
+    change: x,
+    expected: stored
+  },
+  "passed-descriptor-dev-fd": {
+    call: "openat",
+    form: "/dev/fd/<n>/x of a descriptor passed over a socket",
+    change: x,
+    expected: { strace: { reason: "its trace does not say where /dev/fd/" }, observe: stored }
+  },
+  "proc-self-root": { call: "openat", form: "through /proc/self/root", change: x, expected: stored },
+  "proc-pid-cwd": { call: "openat", form: "through /proc/<pid>/cwd", change: x, expected: stored },
+  "tmpfile-linkat": {
+    call: "linkat",
+    form: "O_TMPFILE, then named through /proc/self/fd with AT_SYMLINK_FOLLOW",
+    change: x,
+    expected: stored
+  },
+  "copy_file_range": { call: "openat", form: "then copy_file_range between descriptors", change: x, expected: stored },
+  "mmap": { call: "openat", form: "then mmap", change: x, expected: stored },
   "mseal": { call: "mseal", form: "a call that names no file", change: x, expected: stored },
   "listns": { call: "listns", form: "a call that names no file", change: x, expected: stored },
   "rseq_slice_yield": { call: "rseq_slice_yield", form: "a call that names no file", change: x, expected: stored },

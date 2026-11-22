@@ -771,11 +771,15 @@ static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
     target[got] = 0;
     /* A pipe, a socket, an anonymous file the run made in memory: no file of the run. */
     if (target[0] != '/' || strncmp(target, "/memfd:", 7) == 0) return 1;
+    snprintf(rest, sizeof rest, "%s", at);
     if (got > 10 && strcmp(target + got - 10, " (deleted)") == 0) {
+      const char *after = rest;
+      /* The descriptor's own file, which the run opened, or made with no name (O_TMPFILE): the path stays under
+       * /proc, where no record looks. A path below it would go on from a directory that is gone. */
+      if (partOf(&after) == 0) return 1;
       *why = "removed";
       return 0;
     }
-    snprintf(rest, sizeof rest, "%s", at);
     size_t length = strlen(target);
     const char *more = rest;
     /* The link leads to a path with no link in it, so a `..` right after it goes up from there. Where that leads
