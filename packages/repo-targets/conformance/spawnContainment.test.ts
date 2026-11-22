@@ -196,12 +196,55 @@ describe("child-process containment conformance", () => {
       "Build CLI hook installation resolves the Git hooks directory outside a durable host. "
       + "Its git rev-parse probe has a 10-second timeout and a 64-KiB output limit."
     ],
+    [
+      "smithers/flows/platform-node/src/internal/PsSnapshot.ts",
+      "The contained spawner's own process-group snapshot probe (extracted from ProcessReaper). "
+      + "It runs only the configured fixed-path `ps` executable with fixed arguments and a 2-second timeout."
+    ],
+    [
+      "smithers/flows/platform-node/src/internal/WindowsIdentity.ts",
+      "The contained spawner's own Windows process-identity probe (extracted from ProcessReaper). "
+      + "It runs only the trusted `smithers-jj-export --process-info <pid>` helper with fixed arguments."
+    ],
+    [
+      "smithers/build/targets/src/Exec.ts",
+      "The `@smthrs/targets` native host executor (`ExecLive`) and its bounded 60-second `node --eval` "
+      + "import-resolution probe (`ImportProbe`), outside a durable flow host."
+    ],
+    [
+      "smithers/build/targets/src/JobKeeper.ts",
+      "The per-job namespace keeper process that supervises backgrounded step processes until the job ends."
+    ],
+    [
+      "smithers/build/targets/src/internal/ExecStage.ts",
+      "The staged-execution directory reaper: spawns a minimal detached `/bin/sh` bound to stdin EOF "
+      + "with an empty environment to remove its scratch directory if the parent dies."
+    ],
+    [
+      "smithers/build/build-cli/src/internal/Machine.ts",
+      "Build-CLI machine sandbox probe (`bwrap --unshare-pid` capability check) and detached machine "
+      + "cleanup launcher (`startApart`), outside a durable flow host."
+    ],
+    [
+      "smithers/build/build-cli/src/internal/ObservedReads.ts",
+      "Build-CLI recorder availability probe (`smthrs-observe --probe --reap`, 30-second timeout, "
+      + "stdio ignored), outside a durable flow host."
+    ],
+    [
+      "smithers/build/build-cli/src/internal/PackageRunner.ts",
+      "Build-CLI job-keeper launcher: spawns `JobKeeper` inside bubblewrap with a piped stdin handle "
+      + "so the job namespace terminates when the CLI exits."
+    ],
+    [
+      "smithers/build/build-cli/src/internal/RepositoryProcess.ts",
+      "Plan-time repository probe spawner (extracted from RepoResolution): fixed 60-second timeout "
+      + "and piped stdio outside a durable flow host."
+    ],
     ...[
       "GoExec.ts",
       "Mount.ts",
       "NixExec.ts",
-      "PackageTree.ts",
-      "RepoResolution.ts"
+      "PackageTree.ts"
     ].map((file): [string, string] => [
       `smithers/build/build-cli/src/${file}`,
       "Repository discovery, planning and bootstrap tooling in the public build CLI. "

@@ -24,6 +24,7 @@ import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import * as CommandSandbox from "@smthrs/sandbox/CommandSandbox"
 import * as HttpSandbox from "@smthrs/sandbox/HttpSandbox"
 import type * as Sandbox from "@smthrs/sandbox/Sandbox"
+import * as SecretProxy from "@smthrs/targets/SecretProxy"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import * as Effect from "effect/Effect"
 import { HttpClient } from "effect/http/HttpClient"
@@ -291,9 +292,15 @@ export const providers = (
         })
       })
   }
-  const token = environment[remote.token.env] || remote.token.fallback
-  if (token === undefined) {
-    throw new TokenMissing({ message: `the remote's token is not set: export ${remote.token.env}` })
+  const vault = SecretProxy.makeVault({ read: (name) => environment[name] || undefined })
+  let token: string
+  try {
+    token = vault.resolve(remote.token)
+  } catch (cause) {
+    if (cause instanceof SecretProxy.SecretUnavailable) {
+      throw new TokenMissing({ message: `the remote's token is not set: export ${remote.token.env}` })
+    }
+    throw cause
   }
   // The service names each machine's working directory; every path a part uses is absolute.
   return () =>

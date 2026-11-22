@@ -18,6 +18,7 @@ import type * as PackageLoader from "@smthrs/build-cli/PackageLoader"
 import { digestSync } from "@smthrs/crypto/Sha256"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import { CommandSandbox, HttpSandbox, RemoteChildProcessSpawner, Remotes, type Sandbox } from "@smthrs/sandbox"
+import * as SecretProxy from "@smthrs/targets/SecretProxy"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import * as Effect from "effect/Effect"
 import { HttpClient } from "effect/http/HttpClient"
@@ -78,12 +79,19 @@ const providerOf = (
       name: `remote ${remote}`
     }))
   }
-  const token = environment[declaration.token.env] || declaration.token.fallback
-  if (token === undefined) {
+  const vault = SecretProxy.makeVault({ read: (name) => environment[name] || undefined })
+  let token: string
+  try {
+    token = vault.resolve(declaration.token)
+  } catch (cause) {
     return Effect.fail(
       new ProviderError({
         code: "unavailable",
-        message: `remote ${remote}'s token is not set: export ${declaration.token.env}`
+        message: cause instanceof SecretProxy.SecretUnavailable
+          ? `remote ${remote}'s token is not set: export ${declaration.token.env}`
+          : cause instanceof Error
+          ? cause.message
+          : String(cause)
       })
     )
   }

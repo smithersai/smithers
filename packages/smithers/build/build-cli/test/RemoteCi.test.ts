@@ -388,4 +388,10 @@ describe("HTTP remotes", () => {
       "the remote's token is not set: export SMITHERS_MACHINES_TOKEN"
     )
   })
+
+  it("refuses a remote whose token contains control characters before any machine is contacted", () => {
+    expect(() => RemoteCi.providers(http("/w", ["true"]), { SMITHERS_MACHINES_TOKEN: "bad\ntoken" })).toThrow(
+      "SMITHERS_MACHINES_TOKEN"
+    )
+  })
 })
