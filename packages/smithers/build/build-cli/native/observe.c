@@ -871,7 +871,15 @@ static int pathOf(pid_t tid, const struct seccomp_notif *req, int dirIndex, int 
     return stepView(tid, out, capacity, why);
   }
   int fd = dirIndex == CWD ? AT_FDCWD : (int)req->data.args[dirIndex];
-  if (!placeOf(tid, fd, base, sizeof base) || base[0] != '/') {
+  int placed = placeOf(tid, fd, base, sizeof base);
+  /* An empty path names the descriptor itself. One that is no file of the file system, as a pipe or a socket, names
+   * no path: the call looks at no file. `fstat` comes so from libuv, and from the C library where it is `newfstatat`
+   * with an empty path (glibc 2.33 to 2.38). */
+  if (placed && path[0] == 0 && fd != AT_FDCWD && base[0] != '/') {
+    *why = "none";
+    return 0;
+  }
+  if (!placed || base[0] != '/') {
     *why = "base";
     return 0;
   }
@@ -3271,6 +3279,8 @@ static void serve(const struct seccomp_notif *req) {
     /* A thread killed while its call waited here took the call with it: the call never ran, and its path and its
      * directory could not be read because the thread is gone. Nothing is written of it. */
     if (ioctl(listener, SECCOMP_IOCTL_NOTIF_ID_VALID, &id) != 0) return;
+    /* A call on a descriptor that names no file reads none: nothing is written of it. */
+    if (strcmp(why, "none") == 0) return;
     if (strcmp(why, "up") == 0) {
       unrecorded("it named a path that goes back up inside /proc or /dev, which cannot be followed as it ran");
       return;

@@ -569,6 +569,40 @@ describe("smthrs-observe and threads killed in the middle of calls", () => {
   }, 120_000)
 })
 
+/**
+ * A program that asks what its standard input and output are, by descriptor, while both are pipes: as Node does on
+ * every `fs.fstatSync`, and as `id -u` does where the C library makes `fstat` a `newfstatat` with an empty path
+ * (glibc 2.33 to 2.38, as Debian 12 has). The descriptor names no file, so the call looks at no file.
+ */
+const describesPipes = String.raw`
+import * as fs from "node:fs"
+fs.fstatSync(0)
+fs.fstatSync(1)
+fs.closeSync(fs.openSync(process.argv[2], "r"))
+`
+
+describe("smthrs-observe and a descriptor that names no file", () => {
+  supervised("writes nothing a reader cannot place for a look at a pipe by its descriptor", async () => {
+    const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-pipes-")))
+    temporary.push(base)
+    await Fs.writeFile(Path.join(base, "pipes.mjs"), describesPipes)
+    await Fs.writeFile(Path.join(base, "read"), "read\n")
+    const trace = Path.join(base, "trace")
+    const node = JSON.stringify(process.execPath)
+    const run = spawnSync(supervisor!, [trace, "--", "/bin/sh", "-c", `echo in | ${node} pipes.mjs read | cat`], {
+      cwd: base,
+      encoding: "utf8"
+    })
+    expect(run.status, run.stderr).toBe(0)
+    const lines = NodeFs.readFileSync(trace, "utf8").split("\n")
+    expect(lines.filter((line) => line.includes("EBADF"))).toEqual([])
+    const read = ObservedReads.read(() => lines, base)
+    expect(read.refusals).toEqual([])
+    // What the program read by name is still recorded.
+    expect(read.found.has(Path.join(base, "read"))).toBe(true)
+  }, 60_000)
+})
+
 describe("smthrs-observe and signals faster than a call", () => {
   supervised("stops a run whose signals come faster than a recorded call completes, and says so", async () => {
     const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-storm-")))
