@@ -499,6 +499,12 @@
     "vitest": "5.0.0"
   },
   "peerDependencies": {
+    "@effect/sql-pg": "4.1.1",
     "effect": "4.1.1"
+  },
+  "peerDependenciesMeta": {
+    "@effect/sql-pg": {
+      "optional": true
+    }
   }
 }

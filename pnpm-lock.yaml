@@ -5710,6 +5710,9 @@ importers:
       '@smthrs/database':
         specifier: 1.0.0-rc.18
         version: link:../database
+      '@smthrs/flows':
+        specifier: 1.0.0-rc.18
+        version: link:..
       '@smthrs/jj':
         specifier: 1.0.0-rc.18
         version: link:../jj
@@ -5759,9 +5762,6 @@ importers:
       '@smthrs/artifacts':
         specifier: 1.0.0-rc.18
         version: link:../artifacts
-      '@smthrs/flows':
-        specifier: 1.0.0-rc.18
-        version: link:..
       '@smthrs/platform-node':
         specifier: 1.0.0-rc.18
         version: link:../platform-node

@@ -536,3 +536,21 @@ it("carries the parser contract into an isolated downstream TypeScript program",
   expect(ts.getPreEmitDiagnostics(program).map((diagnostic) =>
     ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"))).toEqual([])
 }, 30_000)
+
+describe("VibeLang inline modules", () => {
+  it("ignores inline module Identifier sources while keeping external imports inside module bodies", () => {
+    const result = analyze("example.vibe", `
+import type * as Flow from "@smthrs/core/Flow"
+import { helper } from construction
+export { make } from construction
+export * from construction
+
+module construction {
+  import * as Layer from "effect/Layer"
+  export const helper = Layer.empty
+  export const make = () => helper
+}
+`)
+    expect(result.references.map((ref) => ref.specifier)).toEqual(["@smthrs/core/Flow", "effect/Layer"])
+  })
+})

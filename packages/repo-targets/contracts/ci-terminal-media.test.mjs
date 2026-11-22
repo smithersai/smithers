@@ -15,7 +15,7 @@ test("Linux jobs running terminal evidence install ffmpeg before their target co
     const install = job.steps.findIndex((step) => step.name === "Install system packages")
     assert.ok(install >= 0, `${name}: install the terminal renderer`)
     assert.match(job.steps[install].run, /apt-get install[^\n]*'ffmpeg'/, `${name}: ffmpeg supplies both ffmpeg and ffprobe`)
-    const targets = job.steps.findIndex((step) => /pnpm exec (?:smthrs|smithers-build) (?:test|ci) /.test(step.run ?? ""))
+    const targets = job.steps.findIndex((step) => /pnpm exec (?:smthrs|smithers-build) (?:(?:test|ci) |flow start release\/gates\b)/.test(step.run ?? ""))
     assert.ok(targets > install, `${name}: the renderer must exist before testing`)
   }
 })

@@ -583,6 +583,7 @@ const analyzeVibe = (file: string, text: string, includeReferences: boolean): An
   }
 
   const addImport = (node: EsNode): void => {
+    if (node.source?.type !== "Literal" || typeof node.source.value !== "string") return
     const typeOnly = node.importKind === "type"
     const names: Array<ReferencedName> = []
     for (const specifier of node.specifiers) {
@@ -732,7 +733,7 @@ const analyzeVibe = (file: string, text: string, includeReferences: boolean): An
       addImport(node)
     } else if (isRequireImport(node)) {
       addImportEquals(node)
-    } else if (node.type === "ExportNamedDeclaration" && node.source !== null && node.source !== undefined) {
+    } else if (node.type === "ExportNamedDeclaration" && node.source?.type === "Literal" && typeof node.source.value === "string") {
       const typeOnly = node.exportKind === "type"
       const names = node.specifiers.map((specifier: EsNode) => ({
         name: specifier.local.name ?? specifier.local.value,
@@ -740,7 +741,7 @@ const analyzeVibe = (file: string, text: string, includeReferences: boolean): An
         line: lineOf(specifier)
       }))
       add(node, node.source.value, "export", typeOnly, names)
-    } else if (node.type === "ExportAllDeclaration") {
+    } else if (node.type === "ExportAllDeclaration" && node.source?.type === "Literal" && typeof node.source.value === "string") {
       const typeOnly = node.exportKind === "type"
       add(node, node.source.value, "export", typeOnly).unnamed.push({ typeOnly, line: lineOf(node) })
     } else if (node.type === "TSImportType") {

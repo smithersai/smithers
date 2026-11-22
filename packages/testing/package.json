@@ -471,15 +471,19 @@
     "@smthrs/fuzz": "workspace:*"
   },
   "peerDependencies": {
+    "@effect/vitest": "4.1.1",
     "effect": "4.1.1",
-    "vitest": "^5.0.0",
-    "@effect/vitest": "4.1.1"
+    "vibelang": "0.0.13",
+    "vitest": "^5.0.0"
   },
   "peerDependenciesMeta": {
     "@effect/vitest": {
       "optional": true
     },
     "vitest": {
+      "optional": true
+    },
+    "vibelang": {
       "optional": true
     }
   },
