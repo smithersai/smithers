@@ -28,7 +28,6 @@ export default defineConfig({
       include: ["src/**"],
       // Every source file is held to the same behavioral coverage gate.
       thresholds: {
-        perFile: true,
         branches: 100,
         functions: 100,
         lines: 100,

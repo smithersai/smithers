@@ -892,16 +892,15 @@ describe("coverage conformance", () => {
       // and one path guard that `KeyDigest` already satisfies by excluding
       // every path separator and dot segment.
       "smithers/flows/step-cache/src/RemoteCacheStore.ts": 2,
-      // One refusal half in the fault tier's `parentPid`. Every supported
-      // platform's `ps` either prints one parent pid or exits non-zero into
-      // the catch beside it, so neither empty output nor an unparsable first
-      // field can occur; the guard stays because a platform that produced one
-      // would otherwise report a parent of 0, which reads as "reparented to
-      // init" and is the exact claim the orphan cases assert.
-      "testing/src/Faults.ts": 1,
       // The loader's ESM/CJS directory selector is exercised by packed
       // consumers in their own processes. Package-layout resolution and
       // staged-helper exit cleanup remain measured by the unit suite.
+      // The Bun SQLite driver factory imports `bun:sqlite`, which only the
+      // native Bun lane resolves; the Node coverage run cannot execute it.
+      // Native Bun GC (`Bun.gc(true)`) is exercised only by the real Bun lane,
+      // which does not run V8 coverage.
+      "smithers/flows/platform-bun/src/BunGarbageCollector.ts": 1,
+      "smithers/flows/platform-bun/src/BunRuntime.ts": 1,
       "smithers/flows/platform-node/src/internal/AtomicFileSystemExecutable.ts": 1,
       // The fixture engine's three unreachable arms (`d1012596b6`): registered
       // execution bodies settle only after run or resume arms their

@@ -33,7 +33,7 @@ const runtime = NativeRuntime.make({
   // Node: a host killed during first start never leaves a partial store at
   // the published name, and concurrent creators converge on one winner.
   // Only the native Bun lane executes this driver factory; Node cannot import bun:sqlite.
-  /* v8 ignore start */
+  /* v8 ignore next */
   database: (filename) =>
     NodeRuntime.publishFreshDatabase(
       filename,
@@ -46,7 +46,6 @@ const runtime = NativeRuntime.make({
         ),
       Runtime.storage
     ),
-  /* v8 ignore stop */
   host: Host,
   crypto: Host.BunCrypto.layer
 })
