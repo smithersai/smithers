@@ -15,6 +15,12 @@ export const held = {
   native: ["src/native/**"]
 } as const
 
+/**
+ * The workers of each part, by its share of the suite's measured time (cli 30%, replay 29%, native 23%, the rest
+ * 18%): twelve in all, so the four parts at once run what the whole suite did.
+ */
+export const partWorkers = { cli: 4, replay: 3, native: 3, rest: 2 } as const
+
 /** What a part holds less what an earlier part of `held` holds already. */
 export const heldBy = (part: keyof typeof held): { coverage: Array<string>; coverageExclude: Array<string> } => {
   const parts = Object.keys(held) as Array<keyof typeof held>
@@ -34,6 +40,7 @@ export const suite = (part: {
   readonly exclude?: ReadonlyArray<string>
   readonly coverage?: ReadonlyArray<string>
   readonly coverageExclude?: ReadonlyArray<string>
+  readonly workers?: number
 } = {}) =>
   defineConfig({
     plugins: [vibelang({ project: "tsconfig.test.json" })],
@@ -50,8 +57,9 @@ export const suite = (part: {
       // Each test file starts real builds, and a build starts compilers that use a thread for every core. With a
       // worker per core, a 48-core build server at its 32-core limit ran 90 compilers of 50 to 97 threads at once
       // (load 650) and tests that take seconds took ten minutes. Twelve workers leave the builds room; a machine
-      // with fewer cores is unaffected.
-      maxWorkers: 12,
+      // with fewer cores is unaffected. `//packages/ci:test` runs its four parts at once on one machine, so they
+      // share the twelve (`partWorkers`).
+      maxWorkers: part.workers ?? 12,
       // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s
       // wall-clock budget so correct suites survive coverage-instrumented load
       // while a genuine hang still fails the run.
