@@ -312,6 +312,50 @@ describe("jobs that were not replayed", () => {
   })
 })
 
+describe("a replay asked for some jobs only", () => {
+  const asked: ReplayReport = {
+    ...clean,
+    jobs: { replayed: 2, total: 2 },
+    asked: { jobs: ["ci.yml:test"], needed: [{ job: "ci.yml:build", for: ["ci.yml:test"] }], notAsked: 47 }
+  }
+
+  it("counts the jobs asked for, never a share of the CI's jobs, in the terminal", () => {
+    const lines = text(asked).split("\n")
+    expect(lines).toContain("5.5× faster over 1 of 2 commits and 1 job asked for")
+    expect(lines).toContain("2 commits · 1 job asked for · 0 mismatches")
+    expect(lines).toContain(
+      "asked for ci.yml:test · with ci.yml:build, which ci.yml:test needs · 47 other jobs of the CI not asked for"
+    )
+    expect(text(asked)).not.toContain("of 49")
+  })
+
+  it("does the same on the page, escaped", () => {
+    const page = html({
+      ...asked,
+      asked: { jobs: ["ci.yml:<a>", "ci.yml:b"], needed: [], notAsked: 1 }
+    })
+    expect(page).toContain("<p class=\"summary\">over 1 of 2 commits and 2 jobs asked for</p>")
+    expect(page).toContain("<p class=\"summary\">2 commits · 2 jobs asked for · 0 mismatches</p>")
+    expect(page).toContain(
+      "<p class=\"summary\">asked for ci.yml:&lt;a&gt;, ci.yml:b · 1 other job of the CI not asked for</p>"
+    )
+  })
+
+  it("counts a job asked for that could not be replayed as left out", () => {
+    const left: ReplayReport = {
+      ...asked,
+      jobs: { replayed: 1, total: 2 },
+      notReplayed: [{ job: "ci.yml:build", reasons: [] }]
+    }
+    expect(text(left).split("\n")).toContain("2 commits · 1 job asked for · 0 mismatches · 1 job not replayed")
+  })
+
+  it("says nothing of it when every job was asked for", () => {
+    expect(text(clean)).not.toContain("asked for")
+    expect(html(clean)).not.toContain("asked for")
+  })
+})
+
 describe("flaky verdicts and what was not read", () => {
   it("counts flaky verdicts beside the mismatches, never among them", () => {
     expect(text({ ...clean, flaky: 2 }).split("\n")).toContain("2 commits · 0 mismatches · 2 flaky")

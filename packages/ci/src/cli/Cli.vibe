@@ -172,6 +172,11 @@ const cache = Flag.String("cache").pipe(
   Flag.withDescription(helpOf("cache"))
 )
 
+const job = Flag.String("job").pipe(
+  Flag.atLeast(0),
+  Flag.withDescription(helpOf("job"))
+)
+
 const targets = Flag.String("targets").pipe(
   Flag.map((value) => value.split(",").map((pattern) => pattern.trim()).filter((pattern) => pattern !== "")),
   Flag.filter((patterns) => patterns.length > 0, () => "one or more Smithers build patterns, such as //packages/ci/..."),
@@ -232,6 +237,7 @@ const replayFlags = {
   mode,
   jobs,
   cache,
+  job,
   targets,
   noTrial,
   noApplyCheck,
@@ -271,6 +277,7 @@ interface ReplayInput {
   readonly mode: "normal" | "fast" | "both"
   readonly jobs: Option.Option<number>
   readonly cache: Option.Option<string>
+  readonly job: ReadonlyArray<string>
   readonly targets: Option.Option<ReadonlyArray<string>>
   readonly out: Option.Option<string>
   readonly json: boolean
@@ -305,6 +312,7 @@ const requestOf = (root: string, input: ReplayInput): ReplayRequest => ({
   jobs: Option.getOrUndefined(input.jobs),
   cache: Option.getOrUndefined(input.cache),
   targets: Option.getOrUndefined(input.targets),
+  ...(input.job.length === 0 ? {} : { only: input.job }),
   trial: !input.noTrial,
   ...(input.noApplyCheck ? {} : { applied: true }),
   warm: !input.cold,
@@ -312,6 +320,23 @@ const requestOf = (root: string, input: ReplayInput): ReplayRequest => ({
   stallMinutes: input.stallMinutes,
   ...(input.allowDocker ? { allowDocker: true } : {})
 })
+
+/**
+ * Why the jobs asked for (`--job`) cannot be replayed as asked, or nothing when they can: a repository that builds
+ * with Smithers build is replayed by its own targets, fast mode is not measured over some jobs only, and every id
+ * must name a job of the CI.
+ */
+const jobRefusal = (input: ReplayInput, read: Inventory): string | undefined => {
+  if (input.job.length === 0) return undefined
+  if (Option.isSome(input.targets) || ownWorkspace(read) !== undefined) {
+    return "--job chooses CI jobs, and --targets the targets of a repository that builds with Smithers build: give one"
+  }
+  if (input.mode !== "normal") {
+    return "--job is not measured with fast mode: give --mode normal, or leave --job out to measure fast mode over every job"
+  }
+  const unknown = Surface.unknownJobs(read, input.job)
+  return unknown.length === 0 ? undefined : Surface.unknownJobsSentence(read, unknown)
+}
 
 /** The inventory as the person has it replayed and applied: with `--allow-docker`, the jobs that run Docker too. */
 const allowed = (inventory: Inventory, allow: boolean): Inventory => allow ? allowingDocker(inventory) : inventory
@@ -411,6 +436,15 @@ const wroteLine = (file: string | undefined): string =>
  */
 function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: Ref.Ref<number>) {
   const settle = (code: number) => Ref.set(status, code)
+
+  /** True when the jobs asked for cannot be replayed as asked (`jobRefusal`): it has said why and set the exit code. */
+  effect function refusesJobs(input: ReplayInput, read: Inventory) {
+    const why = jobRefusal(input, read)
+    if (why === undefined) return false
+    try Console.error(`${Surface.name}: ${why}`)
+    try settle(Surface.exitCodes.usage)
+    return true
+  }
 
   /** True when the program is root and was not told that is fine: it has said so and set the exit code. */
   effect function refusesRoot(input: ReplayInput) {
@@ -566,12 +600,15 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
 
   const replay = Command.make("replay", replayFlags, effect (input) => {
     if (try refusesRoot(input)) return
-    try replayAndPrint(input, allowed(try parts.read(root), input.allowDocker), () => "")
+    const read = allowed(try parts.read(root), input.allowDocker)
+    if (try refusesJobs(input, read)) return
+    try replayAndPrint(input, read, () => "")
   }).pipe(Command.withDescription(Surface.commands.replay))
 
   return Command.make(Surface.name, replayFlags, effect (input) => {
     if (try refusesRoot(input)) return
     const read = allowed(try parts.read(root), input.allowDocker)
+    if (try refusesJobs(input, read)) return
     // The footer says what the replay did, which the report holds: it ran the newest commit, and the inventory
     // was read from the working tree. A report with `targets` is a replay of the repository's own targets.
     const own = ownWorkspace(read)

@@ -35,6 +35,7 @@ import type { Failure } from "../contract/Parts.ts"
 import type { Plan } from "../contract/Plan.ts"
 import { reasonsSentence } from "../contract/Reasons.ts"
 import type {
+  Asked,
   FirstRun,
   Mismatch,
   ModelUse,
@@ -1301,6 +1302,8 @@ export interface Findings {
   readonly fastNotMeasured?: string | undefined
   /** How many of the CI's jobs the numbers cover. */
   readonly jobs?: { readonly replayed: number; readonly total: number } | undefined
+  /** The jobs the replay was asked for, when it was asked for some only (`--job`). */
+  readonly asked?: Asked | undefined
   /** How long the run that found the jobs that pass here took, when there was one. */
   readonly trialMs?: number | undefined
   /** How long the run of the newest commit as `apply` leaves the repository took, when there was one. */
@@ -1421,6 +1424,7 @@ export const reportOf = (
     speedup: normalWallMs === 0 ? 0 : baselineWallMs / normalWallMs,
     speedupCommits: measured.length,
     ...(found.jobs === undefined ? {} : { jobs: found.jobs }),
+    ...(found.asked === undefined ? {} : { asked: found.asked }),
     ...(found.trialMs === undefined ? {} : { trialMs: found.trialMs }),
     ...(found.appliedMs === undefined ? {} : { appliedMs: found.appliedMs }),
     ...(found.reruns === undefined || found.reruns.count === 0
@@ -1584,6 +1588,8 @@ export interface Gathered {
   readonly fastNotMeasured: string | undefined
   /** How many of the CI's jobs the numbers cover. */
   readonly jobs?: { readonly replayed: number; readonly total: number } | undefined
+  /** The jobs the replay was asked for, when it was asked for some only (`--job`). */
+  readonly asked?: Asked | undefined
   /** How long the run that found the jobs that pass here took, when there was one. */
   readonly trialMs?: number | undefined
   /** How long the run of the newest commit as `apply` leaves the repository took, when there was one. */
@@ -1642,6 +1648,7 @@ export const finishedReport = (
     commitsLeft: gathered.commitsLeft,
     fastNotMeasured: gathered.fastNotMeasured,
     jobs: gathered.jobs,
+    asked: gathered.asked,
     trialMs: gathered.trialMs,
     appliedMs: gathered.appliedMs,
     reruns: gathered.reruns,

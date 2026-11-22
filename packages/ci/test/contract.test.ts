@@ -491,6 +491,17 @@ describe("contract 5: replay report", () => {
     expect(() => decode({ ...document, recorder: { name: "none", why: "" } })).toThrow()
   })
 
+  it("holds the jobs a replay was asked for, the jobs that came with them, and how many were not asked for", () => {
+    const example = fixture("replay-report.example.json") as Record<string, unknown>
+    const decode = Schema.decodeUnknownSync(ReplayReport.ReplayReport)
+    const asked = { jobs: ["ci.yml:test"], needed: [{ job: "ci.yml:build", for: ["ci.yml:test"] }], notAsked: 47 }
+    expect(decode({ ...example, asked }).asked).toEqual(asked)
+    expect(decode(example).asked).toBeUndefined()
+    expect(() => decode({ ...example, asked: { ...asked, notAsked: -1 } })).toThrow()
+    expect(() => decode({ ...example, asked: { ...asked, jobs: [""] } })).toThrow()
+    expect(() => decode({ ...example, asked: { ...asked, needed: [{ job: "ci.yml:build" }] } })).toThrow()
+  })
+
   it("decodes a report whose fast mode could not be measured, which holds no fast-mode number", () => {
     const document = fixture("replay-report.fast-not-measured.json")
     const report = Schema.decodeUnknownSync(ReplayReport.ReplayReport)(document)
@@ -589,6 +600,8 @@ describe("contract 7: command surface", () => {
     expect(Command.syntax.help).toContain("--help")
     expect(Command.syntax.value).toContain("--commits 5")
     // A person allows Docker for a replay, and for the files `apply` writes from what the replay measured.
+    expect(Command.flags.job.on).toEqual(["", "replay"])
+    expect(Command.flags.job.help).toContain("give it again for more")
     expect(Command.flags["allow-docker"].on).toEqual(["", "replay", "apply"])
     expect(Command.flags["allow-docker"].default).toBe("false")
     expect(Command.flags["allow-docker"].help).toContain("every file of this machine")

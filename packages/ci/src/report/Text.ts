@@ -44,6 +44,7 @@ import type { RenderReport } from "../contract/Parts.ts"
 import type { ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
 import {
   appliedTime,
+  askedFor,
   bar,
   coldStart,
   commitsLeftOut,
@@ -182,6 +183,8 @@ export const text: RenderReport = (report) => {
       commitsLeftOut(commitsLeft.length)
     }${leftOut(jobsLeftOut(report))}${unread(notRead.length)}`
   ])
+  const asked = askedFor(report)
+  if (asked !== undefined) sections.push([clean(asked)])
   if (report.recorder !== undefined) sections.push([clean(recordedBy(report.recorder))])
   const cpu = cpuTime(report)
   if (cpu !== undefined) sections.push([cpu])

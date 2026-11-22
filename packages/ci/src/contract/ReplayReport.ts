@@ -309,6 +309,49 @@ export const RunnerStep = Schema.Struct({
 export type RunnerStep = typeof RunnerStep.Type
 
 /**
+ * A job that came with the jobs asked for, because one of them needs it: the
+ * job and the asked-for jobs it came for.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const Needed = Schema.Struct({
+  job: Schema.NonEmptyString,
+  for: Schema.Array(Schema.NonEmptyString)
+})
+
+/**
+ * A decoded `Needed`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Needed = typeof Needed.Type
+
+/**
+ * The jobs a replay was asked for (`--job`): `jobs` as they were asked for,
+ * `needed` each job that came with them, and `notAsked` how many of the CI's
+ * other jobs were neither. A job not asked for is no job that cannot be
+ * replayed: it is in no count of `ReplayReport.jobs` and not in `notReplayed`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const Asked = Schema.Struct({
+  jobs: Schema.Array(Schema.NonEmptyString),
+  needed: Schema.Array(Needed),
+  notAsked: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+})
+
+/**
+ * A decoded `Asked`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Asked = typeof Asked.Type
+
+/**
  * The whole replay. Each commit in `commits` ran its own CI, read from its
  * own tree; a commit whose CI could not be replayed is in
  * `notReplayedCommits` and in no time. `speedup` is baseline wall time
@@ -379,6 +422,10 @@ export type RunnerStep = typeof RunnerStep.Type
  * observe named it, with why when it is not `smthrs-observe` on a machine
  * `smthrs-observe` is built for. It is absent when no step was observed.
  *
+ * `asked` is there when the replay was asked for some jobs only (`Asked`):
+ * then `jobs`, `notReplayed` and every time cover those jobs and the jobs they
+ * need, and the CI's other jobs are counted in `asked.notAsked` alone.
+ *
  * `runnerSteps` names each step of a replayed job that only sends the job's
  * results out (`RunnerStep`): it was not run here, and your runner runs it.
  * `stepsLeftOut` names each such step the workflow `apply` writes leaves out,
@@ -422,6 +469,7 @@ export const ReplayReport = Schema.Struct({
   stopped: Schema.optionalKey(Schema.NonEmptyString),
   recorder: Schema.optionalKey(Recorder),
   runnerSteps: Schema.optionalKey(Schema.Array(RunnerStep)),
+  asked: Schema.optionalKey(Asked),
   stepsLeftOut: Schema.optionalKey(Schema.Array(RunnerStep))
 })
 

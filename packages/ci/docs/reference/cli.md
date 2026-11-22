@@ -86,23 +86,24 @@ it. The workflow `apply` writes runs this check as its first step; see
 
 ## Flags
 
-| Flag               | Commands                                                     | Default  | What it does                                                                                                                                                              |
-| ------------------ | ------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--commits`        | `smithers-ci`, `smithers-ci replay`                          | `20`     | How many past commits to replay.                                                                                                                                          |
-| `--mode`           | `smithers-ci`, `smithers-ci replay`                          | `normal` | normal, fast, or both.                                                                                                                                                    |
-| `--jobs`           | `smithers-ci`, `smithers-ci replay`                          | none     | Most jobs to run at once, in the baseline and in each mode; the default is this machine's core count divided by 4, at least 1, as a GitHub runner gives each job 4 cores. |
-| `--cache`          | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | none     | URL of a shared cache, with no user name or password; its token is read from SMITHERS_CACHE_TOKEN.                                                                        |
-| `--targets`        | `smithers-ci`, `smithers-ci replay`                          | none     | Smithers build patterns to replay, separated by commas, on a repository that already builds with Smithers build; the default is what its CI runs.                         |
-| `--no-trial`       | `smithers-ci`, `smithers-ci replay`                          | `false`  | Replay every job, without first running the CI once to leave out the jobs that fail on this machine.                                                                      |
-| `--no-apply-check` | `smithers-ci`, `smithers-ci replay`                          | `false`  | Skip the run of the newest commit with the files apply writes committed, which finds a step that fails over one of them.                                                  |
-| `--cold`           | `smithers-ci`, `smithers-ci replay`                          | `false`  | Count from an empty cache: skip the run before the first counted commit that fills the caches a CI run finds.                                                             |
-| `--reruns`         | `smithers-ci`, `smithers-ci replay`                          | `1`      | How many times a failed step runs again to tell a flaky failure from a broken one; 0 turns it off.                                                                        |
-| `--stall-minutes`  | `smithers-ci`, `smithers-ci replay`                          | `10`     | Stop a step whose processes use no CPU and print nothing for this many minutes; it counts as failed.                                                                      |
-| `--out`            | `smithers-ci`, `smithers-ci replay`                          | none     | Also write the report as an HTML file here.                                                                                                                               |
-| `--json`           | `smithers-ci`, `smithers-ci inventory`, `smithers-ci replay` | `false`  | Print the document as JSON.                                                                                                                                               |
-| `--allow-root`     | `smithers-ci`, `smithers-ci replay`                          | `false`  | Replay even when run as root, where a past commit's commands could change this machine.                                                                                   |
-| `--check`          | `smithers-ci apply`                                          | `false`  | Write nothing; name each file apply would change, and exit 1 if there is one.                                                                                             |
-| `--allow-docker`   | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | `false`  | Take the jobs that run docker or podman too, and let a replayed step reach a container daemon, which can read and write every file of this machine.                       |
+| Flag               | Commands                                                     | Default  | What it does                                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--commits`        | `smithers-ci`, `smithers-ci replay`                          | `20`     | How many past commits to replay.                                                                                                                                           |
+| `--mode`           | `smithers-ci`, `smithers-ci replay`                          | `normal` | normal, fast, or both.                                                                                                                                                     |
+| `--jobs`           | `smithers-ci`, `smithers-ci replay`                          | none     | Most jobs to run at once, in the baseline and in each mode; the default is this machine's core count divided by 4, at least 1, as a GitHub runner gives each job 4 cores.  |
+| `--cache`          | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | none     | URL of a shared cache, with no user name or password; its token is read from SMITHERS_CACHE_TOKEN.                                                                         |
+| `--job`            | `smithers-ci`, `smithers-ci replay`                          | none     | A CI job to replay, by the id `inventory --json` gives it; give it again for more. The jobs it needs come with it; the others are not asked for. The default is every job. |
+| `--targets`        | `smithers-ci`, `smithers-ci replay`                          | none     | Smithers build patterns to replay, separated by commas, on a repository that already builds with Smithers build; the default is what its CI runs.                          |
+| `--no-trial`       | `smithers-ci`, `smithers-ci replay`                          | `false`  | Replay every job, without first running the CI once to leave out the jobs that fail on this machine.                                                                       |
+| `--no-apply-check` | `smithers-ci`, `smithers-ci replay`                          | `false`  | Skip the run of the newest commit with the files apply writes committed, which finds a step that fails over one of them.                                                   |
+| `--cold`           | `smithers-ci`, `smithers-ci replay`                          | `false`  | Count from an empty cache: skip the run before the first counted commit that fills the caches a CI run finds.                                                              |
+| `--reruns`         | `smithers-ci`, `smithers-ci replay`                          | `1`      | How many times a failed step runs again to tell a flaky failure from a broken one; 0 turns it off.                                                                         |
+| `--stall-minutes`  | `smithers-ci`, `smithers-ci replay`                          | `10`     | Stop a step whose processes use no CPU and print nothing for this many minutes; it counts as failed.                                                                       |
+| `--out`            | `smithers-ci`, `smithers-ci replay`                          | none     | Also write the report as an HTML file here.                                                                                                                                |
+| `--json`           | `smithers-ci`, `smithers-ci inventory`, `smithers-ci replay` | `false`  | Print the document as JSON.                                                                                                                                                |
+| `--allow-root`     | `smithers-ci`, `smithers-ci replay`                          | `false`  | Replay even when run as root, where a past commit's commands could change this machine.                                                                                    |
+| `--check`          | `smithers-ci apply`                                          | `false`  | Write nothing; name each file apply would change, and exit 1 if there is one.                                                                                              |
+| `--allow-docker`   | `smithers-ci`, `smithers-ci replay`, `smithers-ci apply`     | `false`  | Take the jobs that run docker or podman too, and let a replayed step reach a container daemon, which can read and write every file of this machine.                        |
 
 A flag's value is the next argument, as in `--commits 5`. `--no-trial`, `--no-apply-check`, `--cold`, `--json`, `--allow-root`, `--check` and `--allow-docker` take no value.
 `--help` and `-h` are accepted on every command and print its commands and flags.
@@ -125,6 +126,30 @@ those jobs are replayed and applied, and their steps reach your daemon. A
 daemon does what it is asked with every file of this machine, whatever else a
 step is kept from, so give the flag only for a history you trust. See
 [What a step can reach](../concepts/how-it-works.md#what-a-step-can-reach).
+
+### One job
+
+`--job` replays the jobs you name and nothing else of your CI: your slowest job,
+or the one you are changing. Give it once for each job, with the id
+`smithers-ci inventory --json` prints:
+
+```sh
+smithers-ci replay --job ci.yml:test --commits 10
+```
+
+The jobs a named job needs come with it, as they do on your runner. The other
+jobs are not asked for: they are counted apart, never as jobs that cannot be
+replayed, and the speedup covers only the jobs replayed. The report says so on
+one line (`asked` under `--json`):
+
+```text
+asked for ci.yml:test · with ci.yml:build, which ci.yml:test needs · 47 other jobs of the CI not asked for
+```
+
+An id that names no job is a usage error (exit `2`) that lists the jobs there
+are. `--job` replays normal mode only: with `--mode fast` or `--mode both` it is
+a usage error, and so it is beside `--targets`. `apply` takes no `--job`: it
+writes every job, whatever a replay was asked for.
 
 ### The first run
 

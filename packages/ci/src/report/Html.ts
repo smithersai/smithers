@@ -21,6 +21,7 @@ import type {
 } from "../contract/ReplayReport.ts"
 import {
   appliedTime,
+  askedFor,
   coldStart,
   commitsLeftOut,
   count,
@@ -342,6 +343,8 @@ export const html: RenderReport = (report) => {
         flaky(report.flaky ?? 0)
       }${commitsLeftOut(commitsLeft.length)}${leftOut(jobsLeftOut(report))}${unread(notRead.length)}</p>`
     )
+    const asked = askedFor(report)
+    if (asked !== undefined) body.push(`<p class="summary">${escape(asked)}</p>`)
     if (report.recorder !== undefined) body.push(`<p class="summary">${escape(recordedBy(report.recorder))}</p>`)
     const cpu = cpuTime(report)
     if (cpu !== undefined) body.push(`<p class="summary">${cpu}</p>`)

@@ -79,6 +79,7 @@ const sample = (flag: keyof typeof flags, out: string): ReadonlyArray<string> =>
     mode: ["--mode", "fast"],
     jobs: ["--jobs", "3"],
     cache: ["--cache", "https://cache.example.invalid"],
+    job: ["--job", "justfile:test"],
     targets: ["--targets", "//packages/ci/..."],
     out: ["--out", out],
     json: ["--json"],

@@ -183,6 +183,12 @@ export interface ReplayRequest {
    * uses the number its host sets.
    */
   readonly reruns?: number | undefined
+  /**
+   * The CI jobs to replay, by the ids the inventory gives them; the jobs they
+   * need, directly or not, come with them. Without it every job is replayed.
+   * The report says what was asked for in `ReplayReport.asked`.
+   */
+  readonly only?: ReadonlyArray<string> | undefined
 }
 
 /**

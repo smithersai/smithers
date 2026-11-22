@@ -8,6 +8,7 @@
  * @since 0.1.0
  */
 
+import type { Inventory } from "./Inventory.ts"
 import type { Failure, GeneratedFile } from "./Parts.ts"
 
 /**
@@ -51,6 +52,12 @@ export const flags = {
     on: ["", "replay", "apply"],
     default: "",
     help: "URL of a shared cache, with no user name or password; its token is read from SMITHERS_CACHE_TOKEN."
+  },
+  job: {
+    on: ["", "replay"],
+    default: "",
+    help:
+      "A CI job to replay, by the id `inventory --json` gives it; give it again for more. The jobs it needs come with it; the others are not asked for. The default is every job."
   },
   targets: {
     on: ["", "replay"],
@@ -353,4 +360,32 @@ const longest = 300
 export const errorLine = (cause: unknown): string => {
   const line = errorText(cause).replace(credential, "$1").replace(/\s+/g, " ").trim()
   return line.length > longest ? `${line.slice(0, longest)}…` : line
+}
+
+/**
+ * The ids of `ids` (`--job`) that name no job of `inventory`, each once, in
+ * the order they were given; empty when every id names a job.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const unknownJobs = (inventory: Inventory, ids: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const known = new Set(inventory.jobs.map((job) => job.id))
+  return [...new Set(ids)].filter((id) => !known.has(id))
+}
+
+/**
+ * The usage error for ids that name no job: the ids, and every job id the CI
+ * has, so the person can choose one.
+ *
+ * @throws {never}
+ * @category rendering
+ * @since 0.1.0
+ */
+export const unknownJobsSentence = (inventory: Inventory, unknown: ReadonlyArray<string>): string => {
+  const names = inventory.jobs.map((job) => job.id)
+  return `--job ${unknown.join(", ")} ${
+    unknown.length === 1 ? "names no job" : "name no jobs"
+  } of this CI; its jobs are ${names.length === 0 ? "none" : names.join(", ")}`
 }

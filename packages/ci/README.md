@@ -22,6 +22,18 @@ directly, so the parts are built at the same time.
 
 ## Contract changes
 
+**Twenty-fourth round, 2026-11-22.** A replay of some CI jobs only (`sci-box-replay`, the lead's word of
+02:10 PST).
+
+- **`Command.flags.job`** (added): `--job <id>` on `smithers-ci` and `smithers-ci replay`, given once for each
+  job, with the ids `inventory --json` prints. **`Command.unknownJobs`** and **`Command.unknownJobsSentence`**
+  (added): an id that names no job is a usage error (exit `2`) that lists the jobs there are. `--job` beside
+  `--mode fast`, `--mode both` or `--targets` is a usage error too.
+- **`Parts.ReplayRequest.only`** (added, optional): the job ids; the jobs they need come with them.
+- **`ReplayReport.asked`** (added, optional, `Asked`: `jobs`, `needed` with the jobs each came `for`, `notAsked`):
+  when it is there, `jobs`, `notReplayed` and every time cover the jobs asked for and those they need; the CI's
+  other jobs are in `asked.notAsked` alone, never among the jobs that cannot be replayed.
+
 **2026-11-22, jobs a runner runs on Linux and the steps that send results out** (`sci-job-reach`). Optional
 additions, and one feature added to `harmless`.
 

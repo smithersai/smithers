@@ -288,15 +288,38 @@ export const normalDiffers = (report: ReplayReport): boolean =>
 
 /**
  * How many of the CI's jobs the numbers cover, or nothing when they cover
- * them all: `3 of 5 jobs`.
+ * them all: `3 of 5 jobs`. A replay asked for some jobs only covers those:
+ * `1 job asked for`, never a share of the CI's jobs.
  *
  * @category formatting
  * @since 0.1.0
  */
 export const jobsCovered = (report: ReplayReport): string =>
-  report.jobs === undefined || report.jobs.replayed === report.jobs.total
+  report.asked !== undefined
+    ? `${count(report.asked.jobs.length, "job")} asked for`
+    : report.jobs === undefined || report.jobs.replayed === report.jobs.total
     ? ""
     : `${report.jobs.replayed} of ${count(report.jobs.total, "job")}`
+
+/**
+ * What a replay asked for some jobs only (`--job`) says of them, or nothing
+ * for a replay of every job: the jobs asked for, each job that came with
+ * them and the jobs it came for, and how many of the CI's other jobs were not
+ * asked for.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const askedFor = (report: ReplayReport): string | undefined => {
+  const asked = report.asked
+  if (asked === undefined) return undefined
+  const came = asked.needed.map((entry) => `${entry.job}, which ${entry.for.join(" and ")} needs`)
+  return [
+    `asked for ${asked.jobs.join(", ")}`,
+    ...(came.length === 0 ? [] : [`with ${came.join("; ")}`]),
+    `${count(asked.notAsked, "other job")} of the CI not asked for`
+  ].join(" · ")
+}
 
 /**
  * The commits and jobs the speedup covers, or nothing when it covers them

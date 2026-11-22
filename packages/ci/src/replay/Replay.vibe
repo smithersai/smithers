@@ -39,6 +39,7 @@ import {
   writtenFiles
 } from "../contract/Parts.ts"
 import type {
+  Asked,
   FirstRun,
   ModelUse,
   NotReplayedCommit,
@@ -50,6 +51,7 @@ import { type Parts, type Recorder, RunRecord, type TargetResult } from "../cont
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { path as targetMapPath, TargetMap } from "../contract/TargetMap.ts"
 import { check } from "../apply/index.ts"
+import { toReplay } from "./Asked.ts"
 import { refusal as ownWorkspace } from "../native/Workspace.ts"
 import { withReasons } from "../native/Results.ts"
 import {
@@ -345,6 +347,8 @@ interface Prepared {
   readonly left: ReadonlyArray<NotReplayed>
   /** How many jobs run at once, in the baseline and as generated targets. */
   readonly jobs: number
+  /** The jobs asked for, when the replay was asked for some only. */
+  readonly asked?: Asked | undefined
 }
 
 /** The run in the copy that holds the files `apply` writes: the commit its steps see, and why a step failed there. */
@@ -806,7 +810,11 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
      * commit's own tree. It fails `unsupported` when nothing of that CI can be replayed on this machine.
      */
     effect function prepared(): Prepared!Failure!(R | Host) {
-      const read: Inventory = try onNormalCopy(parts.read(normalCopy))
+      const whole: Inventory = try onNormalCopy(parts.read(normalCopy))
+      // Asked for some jobs, the replay runs those and the jobs they need; the rest of the CI is not asked for.
+      const chosen = toReplay(whole, request.only)
+      if ("refusal" in chosen) throw failure("unsupported", chosen.refusal)
+      const read = chosen.inventory
       // Where a job's programs are kept until it ends, a step that leaves one running leaves no job out.
       const allowed = allowDocker ? allowingDocker(read) : read
       const inventory = withoutFailedHere(keeps ? keepingPrograms(allowed) : allowed, failedHere)
@@ -851,7 +859,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         labels,
         splits: splitOf(replayed.units),
         left: [...notReplayed(inventory), ...variantsFailedHere(inventory, failedHere), ...replayed.left],
-        jobs: jobsFor(request.jobs, targetMap.maxJobs, options.cores ?? coreCount())
+        jobs: jobsFor(request.jobs, targetMap.maxJobs, options.cores ?? coreCount()),
+        asked: chosen.asked
       }
     }
 
@@ -1519,6 +1528,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         commitsLeft: [],
         fastNotMeasured: undefined,
         jobs: jobsCovered(newest.units, newest.left),
+        asked: newest.asked,
         trialMs: undefined,
         appliedMs: undefined,
         reruns: tally,
@@ -1732,6 +1742,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       commitsLeft,
       fastNotMeasured,
       jobs: jobsCovered(newest.units, newest.left),
+      asked: newest.asked,
       trialMs,
       appliedMs,
       reruns: tally,

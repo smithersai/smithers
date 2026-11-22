@@ -1,0 +1,78 @@
+/**
+ * The CI jobs a person asks a replay for (`--job`): those jobs, every job they
+ * need, and how many of the CI's other jobs were not asked for.
+ *
+ * @since 0.1.0
+ */
+
+import type { Inventory } from "../contract/Inventory.ts"
+import type { Asked } from "../contract/ReplayReport.ts"
+
+/**
+ * `inventory` with the jobs `ids` names and every job they need, directly or
+ * through another; and what the report says of the choice (`Asked`). An id
+ * that names no job is not asked for. A job one of them needs that the
+ * inventory does not hold stays named in `needs`, where the replay's rules
+ * for a missing job see it.
+ *
+ * @throws {never}
+ * @category resolution
+ * @since 0.1.0
+ */
+export const asking = (
+  inventory: Inventory,
+  ids: ReadonlyArray<string>
+): { readonly inventory: Inventory; readonly asked: Asked } => {
+  const byId = new Map(inventory.jobs.map((job) => [job.id, job]))
+  const askedJobs = [...new Set(ids)].flatMap((id) => byId.get(id) ?? [])
+  const asked = askedJobs.map((job) => job.id)
+  const neededFor = new Map<string, Set<string>>()
+  /** Walks what `job` needs, for the asked-for job `root`; a job already reached for `root` is not walked again. */
+  const walk = (job: Inventory["jobs"][number], root: string): void => {
+    for (const need of job.needs) {
+      const needed = byId.get(need)
+      if (needed === undefined || asked.includes(need)) continue
+      const roots = neededFor.get(need) ?? new Set<string>()
+      if (roots.has(root)) continue
+      neededFor.set(need, roots.add(root))
+      walk(needed, root)
+    }
+  }
+  for (const job of askedJobs) walk(job, job.id)
+  const kept = new Set([...asked, ...neededFor.keys()])
+  const needed = [...neededFor]
+    .map(([job, roots]) => ({ job, for: [...roots].sort() }))
+    .sort((left, right) => (left.job < right.job ? -1 : 1))
+  return {
+    inventory: { ...inventory, jobs: inventory.jobs.filter((job) => kept.has(job.id)) },
+    asked: { jobs: asked, needed, notAsked: inventory.jobs.length - kept.size }
+  }
+}
+
+/**
+ * Why a commit has nothing of what was asked for: none of the jobs asked for
+ * is in its CI.
+ *
+ * @throws {never}
+ * @category rendering
+ * @since 0.1.0
+ */
+export const noneAsked = (ids: ReadonlyArray<string>): string =>
+  `none of the jobs asked for is in this commit's CI: ${[...new Set(ids)].join(", ")}`
+
+/**
+ * What a commit's replay runs of its CI: all of it when nothing was asked for (`only` is absent); else the jobs
+ * asked for with those they need (`asking`), or why there is nothing to run when its CI holds none of them.
+ *
+ * @throws {never}
+ * @category resolution
+ * @since 0.1.0
+ */
+export const toReplay = (
+  inventory: Inventory,
+  only: ReadonlyArray<string> | undefined
+): { readonly inventory: Inventory; readonly asked?: Asked } | { readonly refusal: string } => {
+  if (only === undefined) return { inventory }
+  const chosen = asking(inventory, only)
+  return chosen.asked.jobs.length === 0 ? { refusal: noneAsked(only) } : chosen
+}
