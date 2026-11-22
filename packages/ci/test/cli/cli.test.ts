@@ -709,9 +709,12 @@ describe.concurrent("smithers-ci with a faulty part or host", () => {
   })
 
   it("exits 4 and names the file when apply cannot write it", async () => {
-    const outcome = await runIn(["apply"], repo(), parts, fullDisk)
+    // No plan is asked for: Smithers build's plan writes the files into a copy first, and a full disk stops it there
+    // (test/cli/applyPlanned.test.ts), before apply writes any file of its own.
+    const outcome = await runIn(["apply"], repo(), { ...parts, planned: undefined }, fullDisk)
     expect(outcome.code).toBe(exitCodes.failed)
-    expect(outcome.stderr).toMatch(/^smithers-ci: cli: could not write .*: .*no space left on device/)
+    expect(outcome.stderr).toMatch(/^smithers-ci: cli: could not write \S+: .*no space left on device/)
+    expect(outcome.stderr).not.toContain("into a copy")
   })
 
   it("exits 4 when --out cannot be written", async () => {

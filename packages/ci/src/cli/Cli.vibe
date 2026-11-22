@@ -451,7 +451,11 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
         const all = try checkPaths(try parts.files(split, options))
         // Every path is checked before Smithers build plans: a refusal of a path is said as itself.
         const checked = try check(root, all)
-        const refused = parts.planned === undefined ? [] : try parts.planned(root, all)
+        // A statement, not `cond ? [] : try ...`: with a `yield*` ending a conditional on the line before, the
+        // coverage converter (ast-v8-to-istanbul 1.0.5 to 1.0.8) counts the `if` below as never false, though V8
+        // counted the line after it.
+        let refused: ReadonlyArray<NotReplayed> = []
+        if (parts.planned !== undefined) refused = try parts.planned(root, all)
         // The target map is the program's own document: it is not written into the repository.
         if (refused.length === 0) return { files: writtenFiles(all), checked }
         inventory = refusedIn(inventory, refused)

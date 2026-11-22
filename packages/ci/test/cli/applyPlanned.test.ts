@@ -16,10 +16,12 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
-import { refusalOf, refusals } from "../../src/apply/Planned.vibe"
+import { planned, refusalOf, refusals } from "../../src/apply/Planned.vibe"
 import { exitCodes } from "../../src/contract/Command.ts"
 import type { Failure, GeneratedFile } from "../../src/contract/Parts.ts"
 import { path as targetMapPath } from "../../src/contract/TargetMap.ts"
+import { generatedMark } from "../../src/native/Workspace.ts"
+import { Options } from "../../src/replay/Replay.vibe"
 import { fullDisk, inProcess, noTempDirectory } from "./inProcess.vibe"
 import { parts } from "./parts.vibe"
 import { bin, commit, git, recorder, remove, spawnWith, temporary } from "./repo.ts"
@@ -134,6 +136,39 @@ describe("the jobs Smithers build refuses", { timeout: 600_000 }, () => {
       job: "ci.yml:bad",
       reasons: [{ feature: "build-refused", detail: "link_input_refused: refused for the test [docs/x]" }]
     }])
+  })
+
+  it("are asked of the smthrs the replay's options name", async () => {
+    const root = repository({ ".github/workflows/ci.yml": jobs })
+    const files = await generated(root)
+    const found = await Effect.runPromise(
+      planned(root, files).pipe(
+        Effect.provideService(Options, { smthrs: [refusing("ci.yml-bad")], reruns: 1, prepare: () => Effect.void }),
+        Effect.provide(NodeServices.layer)
+      ) as Effect.Effect<ReadonlyArray<unknown>, Failure>
+    )
+    expect(found).toEqual([{
+      job: "ci.yml:bad",
+      reasons: [{ feature: "build-refused", detail: "link_input_refused: refused for the test [docs/x]" }]
+    }])
+  })
+
+  it("are asked of a copy without what an earlier smithers-ci wrote, and the repository keeps it", async () => {
+    // A workspace an earlier apply wrote is removed from the copy, as apply removes it, before the plan.
+    const earlier = `${generatedMark} Do not edit.\n`
+    const root = repository({ ".github/workflows/ci.yml": jobs, ".smithers/WORKSPACE.ts": earlier })
+    const files = await generated(root)
+    const found = await Effect.runPromise(
+      refusals([refusing("ci.yml-bad")], root, files).pipe(
+        Effect.provide(NodeServices.layer)
+      ) as Effect.Effect<ReadonlyArray<unknown>, Failure>
+    )
+    expect(found).toEqual([{
+      job: "ci.yml:bad",
+      reasons: [{ feature: "build-refused", detail: "link_input_refused: refused for the test [docs/x]" }]
+    }])
+    expect(readFileSync(join(root, ".smithers/WORKSPACE.ts"), "utf8")).toBe(earlier)
+    expect(git(root, "status", "--porcelain")).toBe("")
   })
 
   it("are every job when it refuses them together and plans each alone", async () => {
