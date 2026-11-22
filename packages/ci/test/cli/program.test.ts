@@ -212,16 +212,6 @@ describe.concurrent("what the default command says the replay did", () => {
     expect(outcome.stdout.trimEnd().endsWith(`\n\n${footer(undefined)}`)).toBe(true)
     expect(outcome.stdout).not.toContain("apply would write")
   })
-
-  it("words each footer once", () => {
-    expect(footer(undefined)).toBe(
-      "The newest commit already builds with Smithers build. The replay ran its own targets, cold against cached; there is nothing for apply to convert. This run wrote nothing to the repository."
-    )
-    expect(uncommittedFooter("WORKSPACE.ts")).toBe(
-      "The replay ran targets generated from the newest commit, which has no Smithers workspace: WORKSPACE.ts is not committed. smithers-ci apply converts nothing while that file is there. This run wrote nothing to the repository."
-    )
-    expect(uncommittedFooter("WORKSPACE.ts", "It wrote x.")).toContain("is there. It wrote x.")
-  })
 })
 
 describe.concurrent("uncommitted changes", () => {

@@ -793,6 +793,19 @@ describe("failed steps", () => {
     ].join("\n"))
   })
 
+  it("puts what to do about a failed step under it, in the text and on the page", () => {
+    const fixed = { ...failure, fix: "Install docker, then run smithers-ci again.\nIt needs a running daemon." }
+    const withFix: ReplayReport = {
+      ...partly,
+      commits: [{ ...failing, baseline: { ...failedTotals, failures: [fixed] }, normal: green.normal }]
+    }
+    expect(text(withFix)).toContain([
+      "bbbbbbb  baseline  lint <job>  exit 127: `docker` is not installed on this machine",
+      "  Install docker, then run smithers-ci again."
+    ].join("\n"))
+    expect(html(withFix)).toContain("<br>Install docker, then run smithers-ci again.")
+  })
+
   it("lists a step once when the baseline and a mode took its reason from different lines of its output", () => {
     // A step that writes no error output: the baseline reports the last line it printed, and a mode the first.
     const quiet = { step: "build: test", exitCode: 6, command: "sh test.sh" }

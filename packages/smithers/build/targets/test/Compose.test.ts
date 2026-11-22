@@ -46,6 +46,11 @@ describe("composition wrappers", () => {
     ])
   })
 
+  it("leaves an exclusive suite out of wildcards and keeps a plain one in", () => {
+    expect(Target.isExclusive(Target.metadata(Compose.Suite({ tests: [command], exclusive: true })).attrs)).toBe(true)
+    expect(Target.isExclusive(Target.metadata(Compose.Suite({ tests: [command] })).attrs)).toBe(false)
+  })
+
   it("keeps suite members and clean targets as dependency edges", () => {
     const suite = Compose.Suite({ tests: [command] })
     const clean = Compose.Clean({ targets: [command], paths: ["dist"] })

@@ -7,6 +7,7 @@
 import { DocsParity } from "@smthrs/targets/DocsParity"
 import { Dprint } from "@smthrs/targets/Dprint"
 import { EsLint } from "@smthrs/targets/EsLint"
+import { Suite } from "@smthrs/targets/Compose"
 import { Filegroup } from "@smthrs/targets/Filegroup"
 import * as Input from "@smthrs/targets/Input"
 import { entrypoint, NodeTest } from "@smthrs/targets/NodeTest"
@@ -116,6 +117,14 @@ export interface Options {
    * runs, as `ZIG_GLOBAL_CACHE_DIR`.
    */
   readonly testEnv?: Readonly<Record<string, string>> | undefined
+  /**
+   * The suite in parts, by target name: each part is a `Vitest` target of
+   * its own over its `config`, which narrows the cases it collects and the
+   * sources its coverage holds to. `test` then names every part and runs
+   * nothing itself, and a wildcard runs each part on its own, so a suite
+   * longer than a CI job can spread over several jobs.
+   */
+  readonly testParts?: Readonly<Record<string, { readonly config: Input.File }>> | undefined
   /** The hosts the suite runs on (`Vitest`'s `hosts`); absent, every host. */
   readonly testHosts?: readonly [Host, ...Array<Host>] | undefined
   /** Targets only the suite waits for, such as one that fills a tool's cache before the suite starts. */
@@ -166,7 +175,9 @@ export interface Options {
 export interface PackageTargets {
   readonly lib: ReturnType<typeof TsBuild>
   readonly check: ReturnType<typeof Typecheck>
-  readonly test: ReturnType<typeof Vitest> | ReturnType<typeof NodeTest>
+  readonly test: ReturnType<typeof Vitest> | ReturnType<typeof NodeTest> | ReturnType<typeof Suite>
+  /** The parts `test` runs, when the package declares `testParts`. */
+  readonly testParts: Readonly<Record<string, ReturnType<typeof Vitest>>>
   readonly lint: ReturnType<typeof EsLint>
   readonly fmt: ReturnType<typeof Dprint>
   readonly docs: ReturnType<typeof DocsParity>
@@ -290,7 +301,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     incremental: false,
     cwd
   })
-  const test = options.testProgram === undefined ?
+  const vitestOf = (config: Input.File | null) =>
     Vitest({
       ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
       ...(options.testTimeoutMs === undefined ? {} : { timeoutMs: options.testTimeoutMs }),
@@ -315,11 +326,17 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
         ...(options.testData ?? []).map((pattern) => Input.glob(pattern))
       ],
       deps: [lib, ...deps, ...reads, ...(options.testDeps ?? [])],
-      config: vitestConfig,
+      config,
       environment: "node",
       passWithNoTests: false,
       cwd
-    }) :
+    })
+  const testParts: Record<string, ReturnType<typeof Vitest>> = Object.fromEntries(
+    Object.entries(options.testParts ?? {}).map(([name, part]) => [name, vitestOf(part.config)])
+  )
+  const parts = Object.values(testParts)
+  const test = options.testProgram === undefined ?
+    parts.length === 0 ? vitestOf(vitestConfig) : Suite({ tests: parts, exclusive: true }) :
     NodeTest({
       ...(options.packageManager === undefined ? {} : { runtime: options.packageManager.runtime }),
       runner: entrypoint(options.testProgram),
@@ -382,5 +399,5 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     sources: [sources],
     cwd
   })
-  return { lib, check, test, lint, fmt, docs, circular, docsFiles }
+  return { lib, check, test, testParts, lint, fmt, docs, circular, docsFiles }
 }

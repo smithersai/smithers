@@ -8,7 +8,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { reasonOf } from "../../src/replay/Failures.ts"
-import { cloneCopy, exec, originHeadOf, originOf, runStep } from "../../src/replay/Process.vibe"
+import { cleanCopy, cloneCopy, exec, originHeadOf, originOf, runStep } from "../../src/replay/Process.vibe"
+import { makePlace } from "./place.ts"
 
 const made: Array<string> = []
 afterAll(() => made.forEach((path) => rmSync(path, { recursive: true, force: true })))
@@ -170,5 +171,26 @@ describe("a copy of the repository a replay makes", { timeout: 120_000 }, () => 
   it("keeps the copy's own when the repository names no default branch", async () => {
     const { copy } = await copied({ exitCode: 1, text: "" })
     expect(gitIn(copy, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")).toBe("origin/my-feature")
+  })
+})
+
+describe("cleanCopy", () => {
+  it("removes every untracked and ignored file of a copy but what it is told to keep", async () => {
+    const copy = directory()
+    const run = (...args: ReadonlyArray<string>) => execFileSync("git", ["-C", copy, ...args], { stdio: "ignore" })
+    run("init", "--quiet", "--initial-branch=main")
+    writeFileSync(join(copy, ".gitignore"), "ignored.txt\nkept/\n")
+    writeFileSync(join(copy, "tracked.txt"), "tracked\n")
+    run("add", "-A")
+    run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "one")
+    writeFileSync(join(copy, "untracked.txt"), "left by a step\n")
+    writeFileSync(join(copy, "ignored.txt"), "built\n")
+    execFileSync("mkdir", ["-p", join(copy, "kept")])
+    writeFileSync(join(copy, "kept", "cache"), "kept\n")
+    await onNode(cleanCopy(copy, ["kept"], makePlace()).pipe(Effect.provide(NodeServices.layer)))
+    expect(existsSync(join(copy, "tracked.txt"))).toBe(true)
+    expect(existsSync(join(copy, "untracked.txt"))).toBe(false)
+    expect(existsSync(join(copy, "ignored.txt"))).toBe(false)
+    expect(readFileSync(join(copy, "kept", "cache"), "utf8")).toBe("kept\n")
   })
 })

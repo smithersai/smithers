@@ -1050,7 +1050,14 @@ export const Generate = Target.guard(generateDefinition, (attrs) => {
  * @since 0.1.0
  */
 export const SuiteAttrs = Schema.Struct({
-  tests: Schema.Array(Target.Target)
+  tests: Schema.Array(Target.Target),
+  /**
+   * Whether a wildcard leaves the suite out, as it leaves out an exclusive
+   * `Vitest`; its label still runs every test it names. A package whose
+   * suite runs in parts sets it: a wildcard then runs each part once, on its
+   * own, and no one job has to run them all.
+   */
+  exclusive: Schema.optional(Schema.Literal(true))
 })
 
 const suiteDefinition = Target.make("Suite", {

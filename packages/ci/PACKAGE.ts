@@ -45,7 +45,7 @@ const toolCaches = Smithers.Shell.Build({
   sandbox: "none"
 })
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const { check, circular, docs, docsFiles, fmt, lib, lint, test, testParts } = BuildAndCheckTypeScriptPackage({
   deps: [],
   reads: [...Object.values(sources), cacheModule],
   // test/docs.test.ts reads the docs pages and the splash page; test/cli runs bin/ and test/cli/program.mjs;
@@ -63,8 +63,18 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
     // test/tools formats with this package's own dprint configuration.
     "dprint.json",
     // docs/README.md links this package's README, and test/docs.test.ts checks that it exists.
-    "README.md"
+    "README.md",
+    // Each part's configuration builds on the whole suite's.
+    "vitest.config.ts"
   ],
+  // Together the cases run past a CI job's hour on a GitHub runner (over 48 minutes on ubuntu and macOS, run
+  // 44901780543), so the suite runs as four parts, each in a job of its own. `test` names all four.
+  testParts: {
+    testCli: { config: Smithers.file("vitest.part-cli.config.ts") },
+    testReplay: { config: Smithers.file("vitest.part-replay.config.ts") },
+    testNative: { config: Smithers.file("vitest.part-native.config.ts") },
+    testRest: { config: Smithers.file("vitest.part-rest.config.ts") }
+  },
   // The suite starts real builds. On a build server at load 100 to 220 it passed the default 20 minutes every time,
   // and 40 minutes run as the workspace declares it. Run confined, the run whose result is stored, it is shown none of
   // the host's compile caches and twice ran past 40 minutes under quiet-run on nyc-01 (2,597 s and 2,569 s in all).
@@ -121,6 +131,7 @@ export const Package = Smithers.Package({
     lib,
     lint,
     test,
+    ...testParts,
     linkedDocs,
     toolCaches,
     ...sources

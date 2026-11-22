@@ -111,6 +111,9 @@ describe("errorText", () => {
     expect(errorText({ code: "command-failed", message: "could not run in /tmp/smithers-ci-replay-x", part: "replay" }))
       .toBe("could not run in /tmp/smithers-ci-replay-x (code: command-failed, part: replay)")
     expect(errorText({ _tag: "NotFound", message: "NotFound: /tmp/x", path: "/tmp/x" })).toBe("NotFound: /tmp/x")
+    // An error of a class other than Error names its class; one whose name was cleared says only its words.
+    expect(errorText(new RangeError("too far"))).toBe("too far (RangeError)")
+    expect(errorText(Object.assign(new Error("plain words"), { name: "" }))).toBe("plain words")
   })
 
   it("follows fields no deeper than three values, and leaves out what is not a value", () => {

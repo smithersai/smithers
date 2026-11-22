@@ -5,7 +5,6 @@ import {
   linesOf,
   noRecord,
   noRecordLabel,
-  nothingPassed,
   ranAgain,
   ranAgainLines,
   reasonsIn,
@@ -269,36 +268,5 @@ describe("a target that ran again with an unchanged key", () => {
     expect(ranAgainLines("2/3 abc1234 normal", many)).toEqual([
       "2/3 abc1234 normal: 7 ran again though their keys did not change: //:a //:b //:c //:d //:e +2"
     ])
-  })
-})
-
-describe("nothingPassed", () => {
-  it("is undefined when a target ran or came from the cache in any baseline", () => {
-    expect(
-      nothingPassed([
-        record("a".repeat(40), [result("//:a", "failed")]),
-        record("b".repeat(40), [result("//:a", "ran")])
-      ])
-    )
-      .toBeUndefined()
-    expect(nothingPassed([record("a".repeat(40), [result("//:a", "hit")])])).toBeUndefined()
-    expect(nothingPassed([])).toBeUndefined()
-  })
-
-  it("gives the newest commit's first failure when nothing passed at any commit", () => {
-    const older = record("a".repeat(40), [result("//:a", "failed", "old reason")])
-    const newest = record("b".repeat(40), [result("//:b", "skipped"), result("//:a", "failed", "host binary missing")])
-    expect(nothingPassed([older, newest])).toBe(refusedAt("bbbbbbb", "//:a", "host binary missing", 2))
-    expect(nothingPassed([older])).toBe(refusedAt("aaaaaaa", "//:a", "old reason"))
-  })
-
-  it("says so when nothing ran at all", () => {
-    const { commit: _commit, ...unnamed } = record("", [])
-    expect(nothingPassed([unnamed])).toBe(
-      [
-        "this repository's CI does not pass on this machine, so there is no speedup to measure. No step passed at the 1 replayed commit.",
-        "At , the patterns selected nothing that ran."
-      ].join("\n")
-    )
   })
 })

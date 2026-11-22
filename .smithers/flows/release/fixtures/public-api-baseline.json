@@ -11870,7 +11870,7 @@
         "Changesets.d.ts": "0ebb45d9a9c8932180b7c4780ebdd0782ab997b62b6e9cb6ea6686b71ae895df",
         "ChangesetsTarget.d.ts": "c2da5bbba8fbdbb3f57ac59f95a47cf6986d47218c54b6d44f906ebddece8c6e",
         "CiToolchain.d.ts": "a1c6bfcae947d94aef878a54bc0fca3932a4410ad5407b37be97241c528e4bbf",
-        "Compose.d.ts": "e270a8f223c14ee26d2d90d3e58d89316399d32b904d10416959d3d1e43a61f4",
+        "Compose.d.ts": "3eb170683403cec2dc1a9e8d785df7d48f7972203f3c2132777f275719a36179",
         "Config.d.ts": "8e9103ff557c42b0f4c71e21f66c3045af7d73f687eafeaa891eebcba3c79181",
         "CronTarget.d.ts": "d6e8cf75966bc68eb82bc907930abf4438ed1cfe3ed872c1c7c0e75a6630c079",
         "DependencyDocs.d.ts": "46a9a6b6e163eaebe37c50ad947a7494cef66aa259f78c7253179cc89021bf41",

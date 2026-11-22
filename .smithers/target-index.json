@@ -56095,6 +56095,28 @@
     "label": "//packages/ci:test",
     "package": "packages/ci",
     "name": "test",
+    "rule": "Suite",
+    "kinds": [
+      "test"
+    ],
+    "exclusive": true,
+    "cacheable": false,
+    "inputs": [],
+    "outputs": [],
+    "dependencies": [
+      "//packages/ci:testCli",
+      "//packages/ci:testNative",
+      "//packages/ci:testReplay",
+      "//packages/ci:testRest"
+    ],
+    "source": {
+      "file": "packages/ci/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/ci:testCli",
+    "package": "packages/ci",
+    "name": "testCli",
     "rule": "Vitest",
     "kinds": [
       "test"
@@ -56203,8 +56225,562 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/ci/vitest.config.ts",
+        "exclude": []
+      },
+      {
         "kind": "file",
-        "path": "packages/ci/vitest.config.ts"
+        "path": "packages/ci/vitest.part-cli.config.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/ci:cacheModule",
+      "//packages/ci:lib",
+      "//packages/ci:linkedDocs",
+      "//packages/ci:sources-packages-errors",
+      "//packages/ci:sources-packages-smithers",
+      "//packages/ci:sources-packages-smithers-agent",
+      "//packages/ci:sources-packages-smithers-agent-evals",
+      "//packages/ci:sources-packages-smithers-agent-harness",
+      "//packages/ci:sources-packages-smithers-agent-integrations",
+      "//packages/ci:sources-packages-smithers-agent-memory",
+      "//packages/ci:sources-packages-smithers-agent-model",
+      "//packages/ci:sources-packages-smithers-agent-plugin",
+      "//packages/ci:sources-packages-smithers-agent-registry",
+      "//packages/ci:sources-packages-smithers-agent-scorers",
+      "//packages/ci:sources-packages-smithers-agent-std",
+      "//packages/ci:sources-packages-smithers-agent-triggers",
+      "//packages/ci:sources-packages-smithers-build",
+      "//packages/ci:sources-packages-smithers-build-build-cli",
+      "//packages/ci:sources-packages-smithers-build-targets",
+      "//packages/ci:sources-packages-smithers-control",
+      "//packages/ci:sources-packages-smithers-flows",
+      "//packages/ci:sources-packages-smithers-flows-artifacts",
+      "//packages/ci:sources-packages-smithers-flows-canonical",
+      "//packages/ci:sources-packages-smithers-flows-capability",
+      "//packages/ci:sources-packages-smithers-flows-core",
+      "//packages/ci:sources-packages-smithers-flows-crypto",
+      "//packages/ci:sources-packages-smithers-flows-database",
+      "//packages/ci:sources-packages-smithers-flows-engine",
+      "//packages/ci:sources-packages-smithers-flows-engine-store",
+      "//packages/ci:sources-packages-smithers-flows-flow",
+      "//packages/ci:sources-packages-smithers-flows-jj",
+      "//packages/ci:sources-packages-smithers-flows-journal",
+      "//packages/ci:sources-packages-smithers-flows-kernel",
+      "//packages/ci:sources-packages-smithers-flows-keys",
+      "//packages/ci:sources-packages-smithers-flows-observability",
+      "//packages/ci:sources-packages-smithers-flows-patterns",
+      "//packages/ci:sources-packages-smithers-flows-plan",
+      "//packages/ci:sources-packages-smithers-flows-plan-store",
+      "//packages/ci:sources-packages-smithers-flows-platform-bun",
+      "//packages/ci:sources-packages-smithers-flows-platform-node",
+      "//packages/ci:sources-packages-smithers-flows-run-store",
+      "//packages/ci:sources-packages-smithers-flows-sandbox",
+      "//packages/ci:sources-packages-smithers-flows-step-cache",
+      "//packages/ci:sources-packages-smithers-flows-sync",
+      "//packages/ci:sources-packages-smithers-flows-time-travel",
+      "//packages/ci:sources-packages-smithers-gateway",
+      "//packages/ci:sources-packages-smithers-mcp",
+      "//packages/ci:sources-packages-smithers-migrate",
+      "//packages/ci:sources-packages-smithers-notifications",
+      "//packages/ci:sources-packages-smithers-ui-views",
+      "//packages/ci:toolCaches"
+    ],
+    "hosts": [
+      "linux",
+      "darwin"
+    ],
+    "source": {
+      "file": "packages/ci/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/ci:testNative",
+    "package": "packages/ci",
+    "name": "testNative",
+    "rule": "Vitest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.test.{ts,vibe}",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/src/**/*.{ts,vibe}",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.{ts,vibe}",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/ci/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/ci/tsconfig.test.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/effect-property.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-schemas.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/docs/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/docs/splash/index.html",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/bin/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/fixtures/*.json",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/fixtures/closure-zig/**",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.py",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.sh",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/dprint.json",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/README.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/vitest.config.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/ci/vitest.part-native.config.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/ci:cacheModule",
+      "//packages/ci:lib",
+      "//packages/ci:linkedDocs",
+      "//packages/ci:sources-packages-errors",
+      "//packages/ci:sources-packages-smithers",
+      "//packages/ci:sources-packages-smithers-agent",
+      "//packages/ci:sources-packages-smithers-agent-evals",
+      "//packages/ci:sources-packages-smithers-agent-harness",
+      "//packages/ci:sources-packages-smithers-agent-integrations",
+      "//packages/ci:sources-packages-smithers-agent-memory",
+      "//packages/ci:sources-packages-smithers-agent-model",
+      "//packages/ci:sources-packages-smithers-agent-plugin",
+      "//packages/ci:sources-packages-smithers-agent-registry",
+      "//packages/ci:sources-packages-smithers-agent-scorers",
+      "//packages/ci:sources-packages-smithers-agent-std",
+      "//packages/ci:sources-packages-smithers-agent-triggers",
+      "//packages/ci:sources-packages-smithers-build",
+      "//packages/ci:sources-packages-smithers-build-build-cli",
+      "//packages/ci:sources-packages-smithers-build-targets",
+      "//packages/ci:sources-packages-smithers-control",
+      "//packages/ci:sources-packages-smithers-flows",
+      "//packages/ci:sources-packages-smithers-flows-artifacts",
+      "//packages/ci:sources-packages-smithers-flows-canonical",
+      "//packages/ci:sources-packages-smithers-flows-capability",
+      "//packages/ci:sources-packages-smithers-flows-core",
+      "//packages/ci:sources-packages-smithers-flows-crypto",
+      "//packages/ci:sources-packages-smithers-flows-database",
+      "//packages/ci:sources-packages-smithers-flows-engine",
+      "//packages/ci:sources-packages-smithers-flows-engine-store",
+      "//packages/ci:sources-packages-smithers-flows-flow",
+      "//packages/ci:sources-packages-smithers-flows-jj",
+      "//packages/ci:sources-packages-smithers-flows-journal",
+      "//packages/ci:sources-packages-smithers-flows-kernel",
+      "//packages/ci:sources-packages-smithers-flows-keys",
+      "//packages/ci:sources-packages-smithers-flows-observability",
+      "//packages/ci:sources-packages-smithers-flows-patterns",
+      "//packages/ci:sources-packages-smithers-flows-plan",
+      "//packages/ci:sources-packages-smithers-flows-plan-store",
+      "//packages/ci:sources-packages-smithers-flows-platform-bun",
+      "//packages/ci:sources-packages-smithers-flows-platform-node",
+      "//packages/ci:sources-packages-smithers-flows-run-store",
+      "//packages/ci:sources-packages-smithers-flows-sandbox",
+      "//packages/ci:sources-packages-smithers-flows-step-cache",
+      "//packages/ci:sources-packages-smithers-flows-sync",
+      "//packages/ci:sources-packages-smithers-flows-time-travel",
+      "//packages/ci:sources-packages-smithers-gateway",
+      "//packages/ci:sources-packages-smithers-mcp",
+      "//packages/ci:sources-packages-smithers-migrate",
+      "//packages/ci:sources-packages-smithers-notifications",
+      "//packages/ci:sources-packages-smithers-ui-views",
+      "//packages/ci:toolCaches"
+    ],
+    "hosts": [
+      "linux",
+      "darwin"
+    ],
+    "source": {
+      "file": "packages/ci/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/ci:testReplay",
+    "package": "packages/ci",
+    "name": "testReplay",
+    "rule": "Vitest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.test.{ts,vibe}",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/src/**/*.{ts,vibe}",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.{ts,vibe}",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/ci/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/ci/tsconfig.test.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/effect-property.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-schemas.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/docs/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/docs/splash/index.html",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/bin/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/fixtures/*.json",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/fixtures/closure-zig/**",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.py",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.sh",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/dprint.json",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/README.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/vitest.config.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/ci/vitest.part-replay.config.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/ci:cacheModule",
+      "//packages/ci:lib",
+      "//packages/ci:linkedDocs",
+      "//packages/ci:sources-packages-errors",
+      "//packages/ci:sources-packages-smithers",
+      "//packages/ci:sources-packages-smithers-agent",
+      "//packages/ci:sources-packages-smithers-agent-evals",
+      "//packages/ci:sources-packages-smithers-agent-harness",
+      "//packages/ci:sources-packages-smithers-agent-integrations",
+      "//packages/ci:sources-packages-smithers-agent-memory",
+      "//packages/ci:sources-packages-smithers-agent-model",
+      "//packages/ci:sources-packages-smithers-agent-plugin",
+      "//packages/ci:sources-packages-smithers-agent-registry",
+      "//packages/ci:sources-packages-smithers-agent-scorers",
+      "//packages/ci:sources-packages-smithers-agent-std",
+      "//packages/ci:sources-packages-smithers-agent-triggers",
+      "//packages/ci:sources-packages-smithers-build",
+      "//packages/ci:sources-packages-smithers-build-build-cli",
+      "//packages/ci:sources-packages-smithers-build-targets",
+      "//packages/ci:sources-packages-smithers-control",
+      "//packages/ci:sources-packages-smithers-flows",
+      "//packages/ci:sources-packages-smithers-flows-artifacts",
+      "//packages/ci:sources-packages-smithers-flows-canonical",
+      "//packages/ci:sources-packages-smithers-flows-capability",
+      "//packages/ci:sources-packages-smithers-flows-core",
+      "//packages/ci:sources-packages-smithers-flows-crypto",
+      "//packages/ci:sources-packages-smithers-flows-database",
+      "//packages/ci:sources-packages-smithers-flows-engine",
+      "//packages/ci:sources-packages-smithers-flows-engine-store",
+      "//packages/ci:sources-packages-smithers-flows-flow",
+      "//packages/ci:sources-packages-smithers-flows-jj",
+      "//packages/ci:sources-packages-smithers-flows-journal",
+      "//packages/ci:sources-packages-smithers-flows-kernel",
+      "//packages/ci:sources-packages-smithers-flows-keys",
+      "//packages/ci:sources-packages-smithers-flows-observability",
+      "//packages/ci:sources-packages-smithers-flows-patterns",
+      "//packages/ci:sources-packages-smithers-flows-plan",
+      "//packages/ci:sources-packages-smithers-flows-plan-store",
+      "//packages/ci:sources-packages-smithers-flows-platform-bun",
+      "//packages/ci:sources-packages-smithers-flows-platform-node",
+      "//packages/ci:sources-packages-smithers-flows-run-store",
+      "//packages/ci:sources-packages-smithers-flows-sandbox",
+      "//packages/ci:sources-packages-smithers-flows-step-cache",
+      "//packages/ci:sources-packages-smithers-flows-sync",
+      "//packages/ci:sources-packages-smithers-flows-time-travel",
+      "//packages/ci:sources-packages-smithers-gateway",
+      "//packages/ci:sources-packages-smithers-mcp",
+      "//packages/ci:sources-packages-smithers-migrate",
+      "//packages/ci:sources-packages-smithers-notifications",
+      "//packages/ci:sources-packages-smithers-ui-views",
+      "//packages/ci:toolCaches"
+    ],
+    "hosts": [
+      "linux",
+      "darwin"
+    ],
+    "source": {
+      "file": "packages/ci/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/ci:testRest",
+    "package": "packages/ci",
+    "name": "testRest",
+    "rule": "Vitest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.test.{ts,vibe}",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/src/**/*.{ts,vibe}",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.{ts,vibe}",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/ci/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/ci/tsconfig.test.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/effect-property.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-schemas.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/docs/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/docs/splash/index.html",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/bin/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/fixtures/*.json",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/fixtures/closure-zig/**",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.py",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/test/**/*.sh",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/dprint.json",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/README.md",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/ci/vitest.config.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/ci/vitest.part-rest.config.ts"
       }
     ],
     "outputs": [],

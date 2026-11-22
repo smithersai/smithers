@@ -114,6 +114,46 @@
       "run": 44878422382,
       "job": 136768682871,
       "platform": "ubuntu-latest"
+    },
+    {
+      "revision": "1d75241eee46e85a394688838d7bf8d23470ffef",
+      "platform": "linux",
+      "node": "26.5.0",
+      "date": "2026-11-21",
+      "command": "bash ~/ci/checks.sh (smthrs ci //packages/ci:test on a nyc-02 check slot)",
+      "label": "//packages/ci:testCli",
+      "durationMs": 863100,
+      "exitCode": 0
+    },
+    {
+      "revision": "1d75241eee46e85a394688838d7bf8d23470ffef",
+      "platform": "linux",
+      "node": "26.5.0",
+      "date": "2026-11-21",
+      "command": "bash ~/ci/checks.sh (smthrs ci //packages/ci:test on a nyc-02 check slot)",
+      "label": "//packages/ci:testReplay",
+      "durationMs": 1314800,
+      "exitCode": 0
+    },
+    {
+      "revision": "1d75241eee46e85a394688838d7bf8d23470ffef",
+      "platform": "linux",
+      "node": "26.5.0",
+      "date": "2026-11-21",
+      "command": "bash ~/ci/checks.sh (smthrs ci //packages/ci:test on a nyc-02 check slot)",
+      "label": "//packages/ci:testNative",
+      "durationMs": 2204500,
+      "exitCode": 0
+    },
+    {
+      "revision": "1d75241eee46e85a394688838d7bf8d23470ffef",
+      "platform": "linux",
+      "node": "26.5.0",
+      "date": "2026-11-21",
+      "command": "bash ~/ci/checks.sh (smthrs ci //packages/ci:test on a nyc-02 check slot)",
+      "label": "//packages/ci:testRest",
+      "durationMs": 1835900,
+      "exitCode": 0
     }
   ],
   "method": "Maximum completed elapsed milliseconds per target, including failures, or an unfinished target's observed elapsed lower bound at cancellation. Service lifetimes are excluded from censored target costs. These observations are workload estimates, not upper wall-time bounds; no cache hits assumed.",
@@ -124,7 +164,10 @@
     "//packages/ci:fmt": 6700,
     "//packages/ci:lib": 59300,
     "//packages/ci:lint": 30200,
-    "//packages/ci:test": 1199878,
+    "//packages/ci:testCli": 863100,
+    "//packages/ci:testNative": 2204500,
+    "//packages/ci:testReplay": 1314800,
+    "//packages/ci:testRest": 1835900,
     "//packages/ci:toolCaches": 33200,
     "//packages/effect-code-storage:check": 1268,
     "//packages/effect-code-storage:circular": 1600,

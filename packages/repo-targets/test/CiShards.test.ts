@@ -16,15 +16,22 @@ const ci = () => Yaml.parse(readFileSync(new URL("../../../.github/workflows/ci.
   jobs: Record<string, Job>
 }
 const inventory = JSON.parse(readFileSync(new URL("../../../.smithers/target-index.json", import.meta.url), "utf8")) as Array<{
-  package: string; label: string; kinds: Array<string>; exclusive?: boolean
+  package: string; label: string; rule: string; kinds: Array<string>; exclusive?: boolean
 }>
-const roots = [...new Set(inventory.filter((row) => row.package.startsWith("packages/") &&
-  row.kinds.some((kind) => ["build", "test", "lint", "docs"].includes(kind))).map((row) => `//${row.package}:*`))].sort()
+const eligible = (row: (typeof inventory)[number]) =>
+  row.package.startsWith("packages/") && row.kinds.some((kind) => ["build", "test", "lint", "docs"].includes(kind))
+// A package whose test is an exclusive suite of parts is selected label by label, its exclusive targets left out.
+const split = new Set(inventory.filter((row) => eligible(row) && row.rule === "Suite" && row.exclusive === true)
+  .map((row) => row.package))
+const roots = [...new Set(inventory.filter(eligible).flatMap((row) =>
+  !split.has(row.package) ? [`//${row.package}:*`] : row.exclusive === true ? [] : [row.label]))].sort()
+const owned = (pattern: string, label: string) =>
+  pattern.endsWith(":*") ? label.split(":")[0] === pattern.slice(0, -2) : label === pattern
 const weights = new Map(roots.map((pattern) => [pattern, Object.entries(timings.durationMs)
-  .filter(([label]) => label.split(":")[0] === pattern.slice(0, -2)).reduce((sum, [, duration]) => sum + duration, 0)]))
+  .filter(([label]) => owned(pattern, label)).reduce((sum, [, duration]) => sum + duration, 0)]))
 const testLabels = new Set(inventory.filter((row) => row.kinds.includes("test") && !row.exclusive).map((row) => row.label))
 const testWeights = new Map(roots.map((pattern) => [pattern, Object.entries(timings.durationMs)
-  .filter(([label]) => label.split(":")[0] === pattern.slice(0, -2) && testLabels.has(label))
+  .filter(([label]) => owned(pattern, label) && testLabels.has(label))
   .reduce((sum, [, duration]) => sum + duration, 0)]))
 
 type Costs = { readonly all: ReadonlyMap<string, number>; readonly tests: ReadonlyMap<string, number> }
@@ -176,12 +183,27 @@ it("rejects a missing job, a dropped target, a duplicate and a complete but unba
   expect(() => verify(unbalanced)).toThrow(/target-minutes/)
   // This move keeps combined costs within three minutes but separates test
   // costs by over four: the package lane must check its own workload too.
-  const testOnly = ci().jobs
-  const from = testOnly["packages-6"]!.steps.find((step) => step.name === stepName)!
-  const to = testOnly["packages-8"]!.steps.find((step) => step.name === stepName)!
-  const move = "'//packages/smithers/flows/database:*'"
-  from.run = from.run!.replace(move, "")
-  to.run = to.run!.replace(" --jobs", ` ${move} --jobs`)
+  // The move is found, not named: the layout follows the measured times.
+  const layout = packageShards.map((shard) => [...shard.patterns])
+  const spreadIn = (shards: ReadonlyArray<ReadonlyArray<string>>, costs: ReadonlyMap<string, number>) => {
+    const totals = shards.map((patterns) => patterns.reduce((sum, pattern) => sum + costs.get(pattern)!, 0))
+    return spread(totals, shards.map((patterns) => patterns.length))
+  }
+  const testOnlyMove = layout.flatMap((patterns, from) =>
+    patterns.flatMap((pattern) => layout.map((_, to) => ({ pattern, from, to })))
+  ).find(({ pattern, from, to }) => {
+    if (from === to || layout[from]!.length < 2) return false
+    const moved = layout.map((patterns, index) =>
+      index === from ? patterns.filter((other) => other !== pattern) : index === to ? [...patterns, pattern] : patterns
+    )
+    return spreadIn(moved, weights) <= 3 * 60_000 && spreadIn(moved, testWeights) > 4 * 60_000
+  })
+  assert.ok(testOnlyMove, "no move keeps all work within three minutes and spreads tests over four")
+  const testOnly = relaid(layout.map((patterns, index) =>
+    index === testOnlyMove.from
+      ? patterns.filter((pattern) => pattern !== testOnlyMove.pattern)
+      : index === testOnlyMove.to ? [...patterns, testOnlyMove.pattern] : patterns
+  ))
   expect(() => verify(testOnly)).toThrow(/test shards differ/)
 })
 

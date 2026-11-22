@@ -382,6 +382,16 @@ describe("replayable", () => {
     )
   })
 
+  it("leaves out a job whose runner comes from an expression it cannot read, naming the expression", () => {
+    const picked = inventory([job("picked", { runsOn: "${{ needs.pick.outputs.runner }}" }), job("plain")])
+    const { left, units } = replayable(picked, mapAll(picked), "linux")
+    expect(units.map((unit) => unit.job)).toEqual(["plain"])
+    expect(left).toEqual([{
+      job: "picked",
+      reasons: [{ feature: "runner", detail: "picked picks its runner from ${{ needs.pick.outputs.runner }}" }]
+    }])
+  })
+
   it("leaves out a variant for another system, and a job with no variant for this one", () => {
     const narrowed = inventory([
       job("both", { runsOn: "${{ matrix.os }}", matrix: [{ os: "ubuntu-latest" }, { os: "macos-latest" }] }),

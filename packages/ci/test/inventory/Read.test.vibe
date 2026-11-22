@@ -3,7 +3,7 @@ import { expect, it } from "@effect/vitest"
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
-import { commitMark, Inventory, parentMark, uncommittedChanges } from "../../src/contract/Inventory.ts"
+import { commitMark, Inventory, parentMark, smithersBuild, uncommittedChanges } from "../../src/contract/Inventory.ts"
 import { read } from "../../src/inventory/index.ts"
 
 const denied = (method: string) =>
@@ -292,6 +292,16 @@ jobs:
         const inventory = try read(root)
         try Effect.try(() => expect(inventory.jobs.map((job) => job.id)).toEqual(["packages/a/package.json:t"]))
       }
+    })
+
+  it.effect("names the workspace of a repository that already builds with Smithers build", () =>
+    effect {
+      const root = try repository({
+        "WORKSPACE.ts": "export const Workspace = {}\n",
+        "package.json": JSON.stringify({ scripts: { test: "vitest run" } })
+      })
+      const inventory = try read(root)
+      try Effect.try(() => expect(inventory.unsupported).toContainEqual({ feature: smithersBuild, detail: "WORKSPACE.ts" }))
     })
 
   it.effect("fails with not-a-repository outside a repository", () =>

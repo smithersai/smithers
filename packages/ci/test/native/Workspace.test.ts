@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { applyRefuses } from "../../src/contract/Command.ts"
 import { type Inventory, ownWorkspace, smithersBuild } from "../../src/contract/Inventory.ts"
 import { found, generatedMark, isGenerated, overwriteRefusal, refusal } from "../../src/native/index.ts"
-import { wrote } from "../../src/native/Workspace.ts"
+import { footer, uncommittedFooter, wrote } from "../../src/native/Workspace.ts"
 
 const inventory = (unsupported?: Inventory["unsupported"]): Inventory => ({
   version: 1,
@@ -61,5 +61,17 @@ describe("a repository that already builds with Smithers build", () => {
     expect(overwriteRefusal(["PACKAGE.ts", "a/PACKAGE.ts"])).toBe(
       "PACKAGE.ts, a/PACKAGE.ts were not written by smithers-ci and would be replaced"
     )
+  })
+})
+
+describe("the footer of a replay of a repository that builds with Smithers build", () => {
+  it("words each footer once", () => {
+    expect(footer(undefined)).toBe(
+      "The newest commit already builds with Smithers build. The replay ran its own targets, cold against cached; there is nothing for apply to convert. This run wrote nothing to the repository."
+    )
+    expect(uncommittedFooter("WORKSPACE.ts")).toBe(
+      "The replay ran targets generated from the newest commit, which has no Smithers workspace: WORKSPACE.ts is not committed. smithers-ci apply converts nothing while that file is there. This run wrote nothing to the repository."
+    )
+    expect(uncommittedFooter("WORKSPACE.ts", "It wrote x.")).toContain("is there. It wrote x.")
   })
 })
