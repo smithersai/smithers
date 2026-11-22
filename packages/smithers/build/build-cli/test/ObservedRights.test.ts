@@ -270,7 +270,10 @@ for (const [name, observer] of recorders) {
             one: on("one", `${idOf(base)} -u > /dev/null`),
             two: on("two", `${idOf(base)} -u > /dev/null`),
             three: on("three", left(base, "three")),
-            four: on("four", left(base, "four"))
+            four: on("four", left(base, "four")),
+            // Two steps of one machine, one at a time: what the first left in /tmp is that machine's own.
+            fiveA: on("five", left(base, "fiveA")),
+            fiveB: on("five", left(base, "fiveB"))
           }),
           { [Machine.ownTmpVariable]: "required" }
         )
@@ -286,8 +289,11 @@ for (const [name, observer] of recorders) {
           expect(failed?.error).toMatch(
             /which needs rights its jail takes away, and machine (three|four) left \/tmp\/.*-(three|four) in this build: write this job back/
           )
+          // A name its own machine left stops no step of that machine.
+          const same = await run(["fiveA", "fiveB"])
+          expect([same["fiveA"]?.status, same["fiveB"]?.status]).toEqual(["ran", "ran"])
         } finally {
-          for (const machine of ["three", "four"]) {
+          for (const machine of ["three", "four", "fiveA", "fiveB"]) {
             await Fs.rm(`/tmp/${Path.basename(base)}-${machine}`, { force: true })
           }
         }
