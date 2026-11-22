@@ -72,7 +72,8 @@
     "./UnresolvedFailure": "./src/UnresolvedFailure.ts",
     "./FailedCall": "./src/FailedCall.ts",
     "./VariablesPanel": "./src/VariablesPanel.ts",
-    "./index": "./src/index.ts"
+    "./index": "./src/index.ts",
+    "./VacuousVerification": null
   },
   "imports": {
     "#quickjs.wasm": {
@@ -469,7 +470,8 @@
           "types": "./dist/cjs/index.d.ts",
           "default": "./dist/cjs/index.js"
         }
-      }
+      },
+      "./VacuousVerification": null
     }
   },
   "scripts": {

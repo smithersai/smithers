@@ -1148,6 +1148,38 @@
       "reason": "Scoped, expiring gateway tokens (#1791): HMAC-signed under the bearer credential, verified in ControlAuth per procedure, run and flow; the gateway admits them only toward the in-band-authenticated mounts."
     },
     {
+      "name": "@smthrs/control",
+      "subpath": "./ControlFacts",
+      "development": "./src/ControlFacts.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/ControlFacts.d.ts",
+          "default": "./dist/esm/ControlFacts.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ControlFacts.d.ts",
+          "default": "./dist/cjs/ControlFacts.js"
+        }
+      },
+      "reason": "Versioned control lifecycle facts and shared read projection across control hosts and health consumers (25a6a721261d, a461d003d423)."
+    },
+    {
+      "name": "@smthrs/control",
+      "subpath": "./JevSessionChecker",
+      "development": "./src/JevSessionChecker.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/JevSessionChecker.d.ts",
+          "default": "./dist/esm/JevSessionChecker.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JevSessionChecker.d.ts",
+          "default": "./dist/cjs/JevSessionChecker.js"
+        }
+      },
+      "reason": "Session activity HealthChecker backed by the host's configured evaluator (a461d003d423)."
+    },
+    {
       "name": "@smthrs/cli",
       "subpath": "./CloudSandbox",
       "development": "./src/CloudSandbox.ts",
@@ -2398,6 +2430,11 @@
       "name": "@smthrs/scorers",
       "subpath": "./RunnerLive",
       "reason": "DUR-2: remove the in-memory Runner queue; await Scoring batch helpers inside caller-owned durable flow actions."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./VacuousVerification",
+      "reason": "Retired unused VacuousVerification namespace and subpath while retaining legacy AgentEvent decoding (#4797, e3bb5cc911e4)."
     }
   ],
   "packages": [
