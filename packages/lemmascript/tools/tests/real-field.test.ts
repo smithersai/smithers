@@ -70,3 +70,34 @@ test("an early-return disjunction tests a narrowed real for zero instead of bool
   assert.match(output, /case Some\((\w+)\) =>[^]*?\1 == \(0 as real\)/);
   assert.doesNotMatch(output, /!\(i_x_val\)/);
 });
+
+test("optional real comparisons coerce integral operands in both operand orders (issue #5452)", () => {
+  const src = [
+    "type real = number",
+    "export function isZeroLeft(x: real | undefined): boolean { return x === 0; }",
+    "export function isZeroRight(x: real | undefined): boolean { return 0 === x; }",
+    "export function isNonZero(x: real | undefined): boolean { return x !== 0; }",
+    "//@ ensures x > 0 ==> \\result",
+    "//@ ensures 0 < x ==> \\result",
+    "export function gtZero(x: real | undefined): boolean { return x !== undefined && x > 0; }",
+    "export function optIntEqReal(n: number | undefined, r: real): boolean { return n === r; }",
+    "export function realEqOptInt(r: real, n: number | undefined): boolean { return r === n; }",
+    "//@ ensures r < n ==> \\result",
+    "export function realLtOptInt(r: real, n: number | undefined): boolean { return n !== undefined && r < n; }",
+  ].join("\n") + "\n";
+
+  const dafny = emit(src);
+  const sectionOf = (header: string): string => {
+    const start = dafny.indexOf(header);
+    assert.ok(start >= 0, `missing ${header}`);
+    const next = dafny.slice(start + 1).search(/\n(?:function|lemma) /);
+    return next < 0 ? dafny.slice(start) : dafny.slice(start, start + 1 + next);
+  };
+  assert.ok(sectionOf("function isZeroLeft(").includes("(i_value == (0 as real))"));
+  assert.ok(sectionOf("function isZeroRight(").includes("(i_value == (0 as real))"));
+  assert.ok(sectionOf("function isNonZero(").includes("(i_value != (0 as real))"));
+  assert.ok(sectionOf("lemma gtZero_ensures(").includes("(i_value > (0 as real))"));
+  assert.ok(sectionOf("function optIntEqReal(").includes("((i_value as real) == r)"));
+  assert.ok(sectionOf("function realEqOptInt(").includes("((i_value as real) == r)"));
+  assert.ok(sectionOf("lemma realLtOptInt_ensures(").includes("((i_value as real) > r)"));
+});

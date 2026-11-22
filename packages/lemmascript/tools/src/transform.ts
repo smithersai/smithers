@@ -671,10 +671,17 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
         const cmpOp = BOOL_OP_MAP[op] ?? op;
         const noneVal = e.op === "!==" ? true : false;
         const bound = matchBinder("value");
+        const realCtx = innerTy.kind === "real" || valSide.ty.kind === "real";
+        const boundExpr: Expr = realCtx && isIntegral(innerTy)
+          ? { kind: "toReal", expr: { kind: "var", name: bound } }
+          : { kind: "var", name: bound };
+        const rightExpr: Expr = realCtx && isIntegral(valSide.ty)
+          ? { kind: "toReal", expr: valExpr }
+          : valExpr;
         return {
           kind: "match", scrutinee: optExpr,
           arms: [
-            { pattern: pCtor("some", bound), body: { kind: "binop", op: cmpOp, left: { kind: "var", name: bound }, right: valExpr } },
+            { pattern: pCtor("some", bound), body: { kind: "binop", op: cmpOp, left: boundExpr, right: rightExpr } },
             { pattern: pCtor("none"), body: { kind: "bool", value: noneVal } },
           ],
         };
