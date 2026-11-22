@@ -10,7 +10,7 @@ import {
   swallowedCause,
   uninstalledSafety
 } from "../../../../eslint.invariants.js"
-import { jsdocConvention } from "../../../../eslint.jsdoc.js"
+import { jsdocConvention, vibeDeclarations } from "../../../../eslint.jsdoc.js"
 
 // Keep the remaining defensive exclusions explicit and bounded. An identical
 // pragma copied in the same file must consume a second approval and fail.
@@ -50,7 +50,7 @@ const noNewCoverageIgnores = {
 
 export default tseslint.config(
   {
-    ignores: ["**/dist", "**/build", "**/coverage"]
+    ignores: ["**/dist", "**/build", "**/coverage", ...vibeDeclarations(import.meta.dirname)]
   },
   js.configs.recommended,
   importPlugin.flatConfigs.recommended,

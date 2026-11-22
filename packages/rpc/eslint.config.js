@@ -1,7 +1,7 @@
 import tseslint from "typescript-eslint"
-import { jsdocConvention } from "../../eslint.jsdoc.js"
+import { jsdocConvention, vibeDeclarations } from "../../eslint.jsdoc.js"
 
-export default tseslint.config({ ignores: ["dist/**"] }, {
+export default tseslint.config({ ignores: ["dist/**", ...vibeDeclarations(import.meta.dirname)] }, {
   files: ["src/**/*.ts"],
   languageOptions: { parser: tseslint.parser }
 }, ...jsdocConvention)

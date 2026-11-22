@@ -3,10 +3,10 @@ import importPlugin from "eslint-plugin-import"
 import unicorn from "eslint-plugin-unicorn"
 import tseslint from "typescript-eslint"
 import { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from "../../../../eslint.invariants.js"
-import { jsdocConvention } from "../../../../eslint.jsdoc.js"
+import { jsdocConvention, vibeDeclarations } from "../../../../eslint.jsdoc.js"
 
 export default tseslint.config(
-  { ignores: ["**/dist", "**/coverage"] },
+  { ignores: ["**/dist", "**/coverage", ...vibeDeclarations(import.meta.dirname)] },
   js.configs.recommended,
   importPlugin.flatConfigs.recommended,
   importPlugin.flatConfigs.typescript,
