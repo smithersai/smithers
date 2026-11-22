@@ -2042,12 +2042,16 @@ static void refusedEnded(struct refused *r) {
     struct sockaddr_storage peer;
     socklen_t length = sizeof peer;
     int connected = getpeername(r->copy, (struct sockaddr *)&peer, &length) == 0, pending = 0;
-    if (!connected && r->inProgress) {
+    struct tcp_info info;
+    socklen_t size = sizeof info;
+    memset(&info, 0, sizeof info);
+    if (!connected && r->port != 0 && getsockopt(r->copy, IPPROTO_TCP, TCP_INFO, &info, &size) == 0) {
       /* Still connecting, read from the connection's state: SO_ERROR would take the error the program waits for. */
-      struct tcp_info info;
-      socklen_t size = sizeof info;
-      memset(&info, 0, sizeof info);
-      pending = getsockopt(r->copy, IPPROTO_TCP, TCP_INFO, &info, &size) == 0 && info.tcpi_state == 2 /* SYN_SENT */;
+      pending = r->inProgress && info.tcpi_state == 2 /* SYN_SENT */;
+      /* A connection that ended before this look connected all the same: a refused one got one segment, the reset,
+       * and no round trip was timed; one that was answered got the answer and another (its end, or a reset), and
+       * the answer was timed. */
+      connected = info.tcpi_segs_in > 1 || info.tcpi_rtt > 0;
     }
     close(r->copy);
     const char *text = NULL;

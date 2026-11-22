@@ -867,6 +867,25 @@ describe("an observed test", () => {
     expect(await node.run()).toEqual({ check: "hit" })
   })
 
+  tracedIt("stores nothing for a run whose connection ended before the recorder looked at it", async () => {
+    // A server outside the run that ends each connection at once. The step stays out of the kernel, where the recorder
+    // could ask its socket, until the connection is over both ways, and asks next with a lookup.
+    const server = Net.createServer((socket) => socket.end())
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    try {
+      const port = (server.address() as Net.AddressInfo).port
+      const connecting = "python3 -c 'import os, socket, time\n" +
+        "def spin():\n    end = time.perf_counter() + 0.3\n    while time.perf_counter() < end: pass\n" +
+        `s = socket.socket(); s.connect(("127.0.0.1", ${port})); spin(); s.shutdown(socket.SHUT_RDWR); s.close()\n` +
+        "spin(); os.stat(\"input.txt\")'"
+      const { logs, run } = await fixture({ check: connecting })
+      expect(await run()).toEqual({ check: "ran" })
+      expect(logs).toContain(`//:check  not cached: it reached a program outside the run on local port ${port}`)
+    } finally {
+      await new Promise((resolve) => server.close(resolve))
+    }
+  })
+
   tracedIt("runs without the recording for a day after a run that reached outside it", async () => {
     const server = Net.createServer((socket) => socket.end())
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
