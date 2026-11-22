@@ -7,31 +7,23 @@
  * where it is: a step that names a kept pnpm opens no network and is reused at
  * the next commit. A step that names a pnpm the cache does not keep fetches it
  * into its own home, as on a runner, and the person's cache is the same, byte
- * for byte, after the replay. Both hold with a jail and without one.
+ * for byte, after the replay. Both hold with a jail and without one. The pnpm
+ * is one this machine's corepack keeps: a machine that keeps none skips the
+ * cases and says what to run.
  */
 import * as Schema from "effect/Schema"
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import {
-  cpSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  realpathSync,
-  symlinkSync
-} from "node:fs"
+import { cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, symlinkSync } from "node:fs"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { homedir } from "node:os"
 import { dirname, join } from "node:path"
-import { afterAll, describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it, type TestContext } from "vitest"
 import { exitCodes } from "../../src/contract/Command.ts"
 import { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { probe } from "../../src/replay/Jail.ts"
-import { bin, commit, git, observes, remove, start, temporary } from "./repo.ts"
+import { corepackRelease, type Release } from "./corepack.ts"
+import { bin, commit, git, observes, remove, skipBecause, start, temporary } from "./repo.ts"
 
 const made: Array<string> = []
 const keep = (path: string): string => {
@@ -43,26 +35,14 @@ afterAll(() => made.forEach(remove))
 /** A machine that can jail a step: Linux with a bubblewrap that starts. */
 const jails = !("refusal" in probe())
 
-/** This machine's corepack cache, where the person's corepack keeps it. */
-const machineCache = process.env["COREPACK_HOME"] ??
-  join(process.env["XDG_CACHE_HOME"] ?? join(homedir(), ".cache"), "node", "corepack")
-
 /**
- * The newest pnpm 10 this machine's corepack keeps. pnpm 11 writes the time it checked the install into
- * `node_modules` before every script, which is not this test's subject. A machine that keeps none fails here and
- * says what to run.
+ * The newest pnpm 10 this machine's corepack keeps, which each case copies into a corepack cache of its own. pnpm 11
+ * writes the time it checked the install into `node_modules` before every script, which is not this test's subject.
  */
-const pnpm = (): { readonly version: string; readonly directory: string } => {
-  const versions = join(machineCache, "v1", "pnpm")
-  const version = (existsSync(versions) ? readdirSync(versions) : [])
-    .filter((entry) => /^10\.\d+\.\d+$/.test(entry) && existsSync(join(versions, entry, "bin", "pnpm.cjs")))
-    .sort((left, right) => left.localeCompare(right, "en", { numeric: true }))
-    .at(-1)
-  if (version === undefined) {
-    throw new Error(`corepack keeps no pnpm@10 in ${versions}: run \`corepack pnpm@10 --version\` to keep one`)
-  }
-  return { version, directory: join(versions, version) }
-}
+const kept = corepackRelease("pnpm", "pnpm@10", (release) => /^10\.\d+\.\d+$/.test(release))
+
+/** That release; on a machine with none, the case is skipped and says what to run. */
+const pnpm = (context: TestContext): Release => "missing" in kept ? skipBecause(context, kept.missing) : kept
 
 /** Every path under a directory with its kind, mode and bytes, in order: equal digests are equal trees. */
 const digest = (root: string): string => {
@@ -123,12 +103,10 @@ const which = (name: string): string => execFileSync("sh", ["-c", `command -v ${
  * system's programs, as this machine has them. With `jailed` false each is a directory of links to its programs
  * but bubblewrap, so no step is jailed.
  */
-const searchPath = (jailed: boolean): string => {
-  const shim = which("pnpm")
-  if (!realpathSync(shim).endsWith(join("corepack", "dist", "pnpm.js"))) {
-    throw new Error(`${shim} is not corepack's pnpm: run \`corepack enable\``)
-  }
-  const entries = [...new Set([dirname(shim), dirname(which("strace")), dirname(process.execPath), "/usr/bin", "/bin"])]
+const searchPath = (jailed: boolean, release: Release): string => {
+  const entries = [
+    ...new Set([dirname(release.program), dirname(which("strace")), dirname(process.execPath), "/usr/bin", "/bin"])
+  ]
   if (jailed) return [...entries, dirname(which("bwrap"))].join(":")
   return entries.map((entry) => {
     const without = keep(temporary("no-jail"))
@@ -181,9 +159,8 @@ const ways = [
 ]
 
 describe.each(ways)("pnpm run through corepack, $where", ({ jailed, runs }) => {
-  /** Replays the repository's two commits with `cache` as the person's corepack cache. */
-  const replay = async (cache: string) => {
-    const kept = pnpm()
+  /** Replays the repository's two commits with `cache` as the person's corepack cache and `kept`'s release. */
+  const replay = async (cache: string, kept: Release) => {
     const served = await registry(kept)
     try {
       const root = repository(kept.version, served.url)
@@ -191,7 +168,7 @@ describe.each(ways)("pnpm run through corepack, $where", ({ jailed, runs }) => {
       const outcome = await start(bin, ["--commits", "2", "--no-apply-check", "--no-trial", "--json"], root, {
         // The person's own corepack cache, in a home that is theirs.
         COREPACK_HOME: cache,
-        PATH: searchPath(jailed)
+        PATH: searchPath(jailed, kept)
       }).done
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
       const report = Schema.decodeUnknownSync(ReplayReport)(JSON.parse(outcome.stdout))
@@ -208,22 +185,23 @@ describe.each(ways)("pnpm run through corepack, $where", ({ jailed, runs }) => {
     }
   }
 
-  it.skipIf(!runs)("a pnpm the person's corepack keeps opens no network, and the step is reused", async () => {
-    const kept = pnpm()
+  it.skipIf(!runs)("a pnpm the person's corepack keeps opens no network, and the step is reused", async (context) => {
+    const kept = pnpm(context)
     const cache = keep(temporary("person-corepack"))
     cpSync(kept.directory, join(cache, "v1", "pnpm", kept.version), { recursive: true })
-    const { report, asked } = await replay(cache)
+    const { report, asked } = await replay(cache, kept)
     expect(asked).toEqual([])
     // The docs commit changes no file the step reads: it is answered from its record.
     expect(report.commits.at(-1)?.normal.counts).toEqual({ hit: 1, ran: 0, failed: 0, skipped: 0 })
   }, 900_000)
 
-  it.skipIf(!runs)("a pnpm it does not keep is fetched into the step's own home", async () => {
+  it.skipIf(!runs)("a pnpm it does not keep is fetched into the step's own home", async (context) => {
+    const kept = pnpm(context)
     const cache = keep(temporary("person-corepack"))
     mkdirSync(join(cache, "v1"))
-    const { asked } = await replay(cache)
+    const { asked } = await replay(cache, kept)
     // Fetched at each commit, in the baseline and in normal mode.
-    expect(asked.filter((url) => url === `/pnpm/-/pnpm-${pnpm().version}.tgz`).length).toBeGreaterThanOrEqual(2)
+    expect(asked.filter((url) => url === `/pnpm/-/pnpm-${kept.version}.tgz`).length).toBeGreaterThanOrEqual(2)
     expect(readdirSync(join(cache, "v1"))).toEqual([])
   }, 900_000)
 })

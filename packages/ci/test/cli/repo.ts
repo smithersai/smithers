@@ -19,6 +19,7 @@ import {
 import { tmpdir } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
+import type { TestContext } from "vitest"
 import { gitArguments } from "../../src/replay/Git.ts"
 
 /** A justfile whose CI is `ci`: it needs `test`, which needs `build`. */
@@ -267,6 +268,15 @@ export const alive = (pid: number): boolean => {
   } catch {
     return false
   }
+}
+
+/**
+ * Skips the running case because this host cannot give it what it needs, and says why: in the reporter's note,
+ * and on standard error, which a reporter prints whatever it shows of skipped cases.
+ */
+export const skipBecause = (context: TestContext, reason: string): never => {
+  process.stderr.write(`skipped: ${reason}\n`)
+  return context.skip(reason)
 }
 
 /** Waits until `holds`, looking ten times a second; rejects after `limitMs`. */

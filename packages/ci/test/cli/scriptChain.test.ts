@@ -15,15 +15,15 @@
  *   failure. It is never split, and `smithers-ci inventory` says why.
  *
  * What a step reads is recorded by `strace`, so the cases run on a Linux host
- * that has it.
+ * that has it. A manager corepack runs is given to the replay in a corepack
+ * home of the case's own, holding the release this machine's corepack keeps:
+ * a machine that keeps none skips its case and says what to run.
  */
 import { spawnSync } from "node:child_process"
-import { existsSync, readdirSync } from "node:fs"
-import { homedir } from "node:os"
-import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
-import { bin, commit, git, observes, remove, spawn, temporary } from "./repo.ts"
+import { corepackRelease, homeWith } from "./corepack.ts"
+import { bin, commit, git, observes, remove, skipBecause, spawn, temporary } from "./repo.ts"
 
 const made: Array<string> = []
 afterAll(() => made.forEach(remove))
@@ -159,37 +159,8 @@ const majorOf = (release: string): number => Number(/^\d+/.exec(release)?.[0] ??
 /** The second number of a release, `15` for `12.15.0`. */
 const minorOf = (release: string): number => Number(/^\d+\.(\d+)/.exec(release)?.[1] ?? Number.NaN)
 
-/**
- * The newest release of a corepack-run manager this machine's corepack keeps that `accepts` takes, as
- * `packageManager` names it. A repository that names one replays with no network: a step's corepack finds it in
- * its own home. A machine that keeps none fails the case and says what to install.
- */
-const kept = (name: string, corepack: NonNullable<Manager["corepack"]>): string => {
-  const caches = process.env["XDG_CACHE_HOME"] ?? join(homedir(), ".cache")
-  const versions = join(process.env["COREPACK_HOME"] ?? join(caches, "node", "corepack"), "v1", name)
-  const version = existsSync(versions)
-    ? readdirSync(versions).filter((entry) => !entry.startsWith(".") && corepack.accepts(entry)).sort(byRelease).at(-1)
-    : undefined
-  if (version === undefined) {
-    throw new Error(
-      `corepack keeps no ${corepack.wanted} in ${versions}: run \`corepack ${corepack.wanted} --version\` to keep one`
-    )
-  }
-  return `${name}@${version}`
-}
-
-/** Orders releases by their numbers, `9.6.0` before `12.15.0`. */
-const byRelease = (left: string, right: string): number => {
-  const numbers = (release: string) => (release.match(/^\d+(?:\.\d+)*/)?.[0] ?? "").split(".").map(Number)
-  const [a, b] = [numbers(left), numbers(right)]
-  for (let at = 0; at < Math.max(a.length, b.length); at++) {
-    if ((a[at] ?? 0) !== (b[at] ?? 0)) return (a[at] ?? 0) - (b[at] ?? 0)
-  }
-  return 0
-}
-
-/** The repository at its first commit. */
-const repository = (manager: Manager): string => {
+/** The repository at its first commit; `packageManager` names the release corepack runs, `pnpm@10.20.0`. */
+const repository = (manager: Manager, packageManager: string | undefined): string => {
   const root = temporary(`chain-${manager.label.replace(/\W+/g, "-")}`)
   made.push(root)
   git(root, "init", "--quiet", "--initial-branch=main")
@@ -199,7 +170,7 @@ const repository = (manager: Manager): string => {
       name: "fixture",
       version: "1.0.0",
       private: true,
-      ...(manager.corepack === undefined ? {} : { packageManager: kept(manager.name, manager.corepack) }),
+      ...(packageManager === undefined ? {} : { packageManager }),
       scripts: {
         // `yarn check` is Yarn's own command, so the script has another name.
         verify: `${manager.run} format && ${manager.run} spell && ${manager.run} types`,
@@ -221,14 +192,27 @@ const repository = (manager: Manager): string => {
 }
 
 describe.each(managers)("a repository whose CI runs a chain of scripts with $label", (manager) => {
-  it.skipIf(!observes || !installed(manager.name))(
+  it.skipIf(!observes || (manager.corepack === undefined && !installed(manager.name)))(
     "reruns only the scripts that read a changed file, and fails where the chain fails",
-    async () => {
-      const root = repository(manager)
+    async (context) => {
+      // A manager corepack runs: the newest release this machine keeps that the case is for, in a corepack home of
+      // the case's own. The replay opens no network for it, and reads no cache the case did not fill.
+      const release = manager.corepack === undefined
+        ? undefined
+        : corepackRelease(manager.name, manager.corepack.wanted, manager.corepack.accepts)
+      if (release !== undefined && "missing" in release) skipBecause(context, release.missing)
+      const own = release === undefined || "missing" in release ? undefined : release
+      let environment: NodeJS.ProcessEnv = process.env
+      if (own !== undefined) {
+        const parent = temporary("chain-corepack")
+        made.push(parent)
+        environment = { ...process.env, COREPACK_HOME: homeWith(parent, own) }
+      }
+      const root = repository(manager, own === undefined ? undefined : `${own.name}@${own.version}`)
       commit(root, "docs only", { "docs/readme.md": "# Fixture\n\nMore words.\n" })
       commit(root, "a misspelt word in the docs", { "docs/readme.md": "# Fixture\n\nMore of teh words.\n" })
 
-      const listed = await spawn(bin, ["inventory"], root)
+      const listed = await spawn(bin, ["inventory"], root, environment)
       expect(listed.code, listed.stderr).toBe(0)
       const lines = listed.stdout.split("\n")
       // The chain is listed as the repository wrote it, and the step that cannot be split says why.
@@ -238,7 +222,12 @@ describe.each(managers)("a repository whose CI runs a chain of scripts with $lab
       )
 
       // The newest commit fails on purpose, and its verdict is what is compared: nothing is left out.
-      const outcome = await spawn(bin, ["--commits", "3", "--no-apply-check", "--json", "--no-trial"], root)
+      const outcome = await spawn(
+        bin,
+        ["--commits", "3", "--no-apply-check", "--json", "--no-trial"],
+        root,
+        environment
+      )
       expect(outcome.stderr).not.toContain("reads are not observed")
       const report = JSON.parse(outcome.stdout) as ReplayReport
       const subjects = git(root, "log", "--reverse", "--format=%H %s", "-3").trim().split("\n")
