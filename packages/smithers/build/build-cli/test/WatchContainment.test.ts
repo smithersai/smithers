@@ -6,6 +6,7 @@ import { basename, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import * as ContainedProcess from "../src/internal/ContainedProcess.ts"
 import * as Watch from "../src/Watch.ts"
+import { processState } from "./helpers/ProcessState.ts"
 
 const fixtureEntry = {
   services: Watch.makeServices(),
@@ -263,6 +264,8 @@ describe.skipIf(process.platform === "win32")("watch process-group containment",
       let leaderPid = 0
       let completed = false
       let errors = ""
+      // What still answered when the cycle reported it was done, so a failure says which process and in what state.
+      let left = ""
       const result = await Watch.run({
         root,
         services: fixtureEntry.services,
@@ -285,6 +288,7 @@ describe.skipIf(process.platform === "win32")("watch process-group containment",
           errors += text
         },
         cycleCompleted: () => {
+          left = [descendant, leaderPid].filter((pid) => pid > 1 && alive(pid)).map(processState).join("; ")
           expect(descendant, errors).toBeGreaterThan(1)
           expect(alive(descendant)).toBe(false)
           expect(alive(leaderPid)).toBe(false)
@@ -293,7 +297,7 @@ describe.skipIf(process.platform === "win32")("watch process-group containment",
         }
       })
       expect(result).toEqual({ cycles: 1, exitCode: 1, stopped: true })
-      expect(completed).toBe(true)
+      expect(completed, left).toBe(true)
     }
   )
 

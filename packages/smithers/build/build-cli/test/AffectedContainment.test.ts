@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises"
 import { afterEach, describe, expect, it } from "vitest"
 import * as Affected from "../src/Affected.ts"
 import * as ContainedProcess from "../src/internal/ContainedProcess.ts"
+import { processState } from "./helpers/ProcessState.ts"
 
 const roots: Array<string> = []
 const pids: Array<number> = []
@@ -87,7 +88,7 @@ setInterval(() => {}, 1000);
     const pid = await waitPid(root, signal)
     pids.push(pid)
     await assertion
-    expect(alive(pid)).toBe(false)
+    expect(alive(pid), processState(pid)).toBe(false)
   })
 
   it("cancels mid-run, preserves the reason, and launches no later git command", async ({ signal }) => {
@@ -108,7 +109,7 @@ setInterval(() => {}, 1000);
     pids.push(pid)
     controller.abort(reason)
     await assertion
-    expect(alive(pid)).toBe(false)
+    expect(alive(pid), processState(pid)).toBe(false)
     expect(await Fs.readFile(join(root, "pid"), "utf8")).toBe(String(pid))
   })
 
