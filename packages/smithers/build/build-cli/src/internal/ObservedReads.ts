@@ -3214,8 +3214,10 @@ export const observe = (
         if (kind === undefined) {
           // Nothing is here, so nothing below it resolves any further.
           const end = NodePath.posix.normalize([candidate, ...queue].join("/"))
-          // The name asked for is still to walk, so it is the last of `queue`: what is left is its directory's end.
-          if (asked !== undefined && queue.length > 0) {
+          // While a name of the path asked is still to walk, the last of `queue` is the name asked for, and what is
+          // left is its directory's end. Once the walk is inside the target of that name's own link, `queue` holds only
+          // the target's names, and its end says nothing of the name's directory.
+          if (asked !== undefined && queue.length > pending) {
             const directory = end.slice(0, end.lastIndexOf("/"))
             missing.set(asked, directory)
             lostDirectories.add(directory)

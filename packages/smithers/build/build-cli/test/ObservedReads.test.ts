@@ -2876,6 +2876,28 @@ describe("what a run left behind", () => {
     })
   })
 
+  // A tool's bin directory holds a link whose target's directory is gone, beside the programs the run reads. Noting
+  // the missing directory under the link's own directory sent every later name there into the target's directory:
+  // click's tox steps read tool-cache/python/bin/virtualenv, and it was "removed while it ran" (sci-job-reach's
+  // bisect of bdcd716b0beb).
+  it("reads a name beside a link whose target's directory is gone", async () => {
+    const { observe, root, write } = await places()
+    await write(Path.join(root, "bin/real"), "a program")
+    await Fs.symlink("../gone/sub/target", Path.join(root, "bin/dangling"))
+    // The run made the target, read it through the link, and took its directory away again.
+    const observed = observe([
+      `100 mkdir("${root}/gone", 0777) = 0`,
+      `100 mkdir("${root}/gone/sub", 0777) = 0`,
+      `100 openat(AT_FDCWD<${root}>, "gone/sub/target", O_WRONLY|O_CREAT|O_EXCL, 0666) = 3`,
+      `100 newfstatat(AT_FDCWD<${root}>, "bin/dangling", {st_mode=S_IFREG|0644, st_size=0, ...}, 0) = 0`,
+      `100 unlink("${root}/gone/sub/target") = 0`,
+      `100 rmdir("${root}/gone/sub") = 0`,
+      `100 rmdir("${root}/gone") = 0`,
+      `100 openat(AT_FDCWD<${root}>, "bin/real", O_RDONLY) = 3`
+    ])
+    expect(observed.record.reads.map(([path]) => path)).toEqual(["bin/dangling", "bin/real"])
+  })
+
   // `npm ci` reads an entry of its cache index and writes it back with another time at every run. A CI job that
   // restores that cache from another run's save would find the entry changed at every commit.
   it("leaves out of what it read the cache a locked install writes outside the workspace", async () => {
