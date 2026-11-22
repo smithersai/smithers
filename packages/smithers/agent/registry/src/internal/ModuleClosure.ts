@@ -1042,6 +1042,20 @@ const walk = (
     yield* followBare("the entry", normalizedEntryPath, bare)
 
     // A real path that cannot be resolved cannot be shown to be inside the root.
+    const mdxDeclarationSpecifier = (path: Path.Path, file: string): string | undefined =>
+      file.endsWith(".mdx") ? `./${path.basename(file).slice(0, -".mdx".length)}.d.mdx.ts` : undefined
+
+    const enqueueMdxDeclaration = (file: string) =>
+      Effect.gen(function*() {
+        const declSpecifier = mdxDeclarationSpecifier(path, file)
+        if (declSpecifier === undefined) return
+        const declDirectory = path.dirname(file)
+        const declTarget = yield* resolve(fs, path, declDirectory, declSpecifier, memo, false)
+        if (declTarget !== undefined) {
+          pending.push({ from: file, directory: declDirectory, specifier: declSpecifier })
+        }
+      })
+
     const confined = (root: string, file: string) =>
       Effect.gen(function*() {
         if (memo.confined.has(file)) return memo.confined.get(file)!
@@ -1099,6 +1113,7 @@ const walk = (
         reportAbsolute(`"${recorded}"`, cached.absolute)
         reportBuiltins(cached.builtins)
         enqueue(resolved, path.dirname(resolved), cached.specifiers)
+        yield* enqueueMdxDeclaration(resolved)
         yield* followBare(`"${recorded}"`, resolved, cached.bare)
         continue
       }
@@ -1155,6 +1170,7 @@ const walk = (
       })
       found.set(recorded, { path: recorded, contentDigest })
       enqueue(resolved, path.dirname(resolved), specifiers.relative)
+      yield* enqueueMdxDeclaration(resolved)
       yield* followBare(`"${recorded}"`, resolved, specifiers.bare)
     }
 

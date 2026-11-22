@@ -567,6 +567,31 @@ const reserveSibling = (
     )
   })
 
+const mdxDeclarationPath = (file: string): string => `${file.slice(0, -".mdx".length)}.d.mdx.ts`
+
+const reserveMdxSiblingPair = (
+  fs: FileSystem.FileSystem,
+  prefix: string,
+  attempts = 8
+): Effect.Effect<{ readonly script: string; readonly declaration: string }, unknown> =>
+  Effect.gen(function*() {
+    loadSequence += 1
+    const now = yield* Clock.currentTimeMillis
+    const stem = `${prefix}${loadSequence.toString(36)}-${now.toString(36)}`
+    const script = `${stem}.mjs`
+    const declaration = `${stem}.d.mts`
+    const reserved = yield* fs.writeFile(script, new Uint8Array(0), { flag: "wx", mode: 0o600 }).pipe(
+      Effect.andThen(
+        fs.writeFile(declaration, new Uint8Array(0), { flag: "wx", mode: 0o600 }).pipe(
+          Effect.catch((cause) => fs.remove(script).pipe(Effect.ignore, Effect.andThen(Effect.fail(cause))))
+        )
+      ),
+      Effect.as({ script, declaration }),
+      Effect.catch((cause) => attempts > 1 ? reserveMdxSiblingPair(fs, prefix, attempts - 1) : Effect.fail(cause))
+    )
+    return reserved
+  })
+
 /**
  * How old a load sibling must be before a later load may remove it.
  *
@@ -582,7 +607,7 @@ const staleSiblingAgeMs = 10 * 60 * 1000
  * such as `smithers-agent-flow-helper.ts` out of the sweep, and the 8 or 9
  * digit stamp spans the epoch milliseconds of 1972 to 5188.
  */
-const loadSibling = /^smithers-[0-9a-f]{64}-[0-9a-z]+-([0-9a-z]{8,9})\.[A-Za-z0-9]+$/
+const loadSibling = /^smithers-[0-9a-f]{64}-[0-9a-z]+-([0-9a-z]{8,9})(?:\.d(?:\.vibe)?)?\.[A-Za-z0-9]+$/
 
 /**
  * Removes the load siblings a crash left in `directory`. Only a regular file
@@ -651,49 +676,84 @@ const importModule = (
     // Compiler project globs omit dotfiles. Visible private siblings keep the
     // measured entry and its VibeLang helpers in the host compiler's project.
     // Exclusive creation, measured bytes and scoped cleanup remain unchanged.
+    const pairedDeclarations = new Set<string>()
     for (const original of modules.keys()) {
+      if (original.endsWith(".mdx")) {
+        const decl = mdxDeclarationPath(original)
+        if (modules.has(decl)) pairedDeclarations.add(decl)
+      }
+    }
+    const releaseSibling = (sibling: string) =>
+      fs.remove(sibling).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("could not remove a module load sibling").pipe(
+            Effect.annotateLogs({ path: sibling, reason: String(cause) })
+          )
+        ),
+        Effect.andThen(
+          sibling.endsWith(".vibe")
+            ? Effect.forEach(
+              [".d.ts", ".d.vibe.ts"],
+              (suffix) => fs.remove(`${sibling.slice(0, -".vibe".length)}${suffix}`).pipe(Effect.ignore),
+              { discard: true }
+            )
+            : Effect.void
+        )
+      )
+    const verifyAndPermit = (original: string, reserved: string) =>
+      Effect.gen(function*() {
+        // The guard decides by real path. A module spelled beneath the source
+        // root but reached through a symbolic link that leaves it would run, and
+        // load its unmeasured neighbours, where the guard holds nothing.
+        if (
+          held !== undefined && beneath(platformPath, held, original) &&
+          !beneath(platformPath, heldReal!, yield* fs.realPath(reserved))
+        ) {
+          return yield* Effect.fail(
+            new LoadGuard.LoadGuardError({
+              path: original,
+              message:
+                `"${original}" is reached through a symbolic link that leaves the flow source root "${held}", where loads cannot be held to that root`
+            })
+          )
+        }
+        // A guard holding this source root for another flow lets the measured
+        // copy load, and stops letting it once the copy is removed.
+        if (Option.isSome(guard)) yield* guard.value.permit(reserved)
+      })
+    for (const original of modules.keys()) {
+      if (pairedDeclarations.has(original)) continue
       const directory = platformPath.dirname(original)
       yield* fs.makeDirectory(directory, { recursive: true })
       if (!swept.has(directory)) {
         swept.add(directory)
         yield* removeStaleSiblings(fs, platformPath, directory)
       }
+      const prefix = platformPath.join(directory, `smithers-${source.contentDigest}-`)
+      if (original.endsWith(".mdx") && pairedDeclarations.has(mdxDeclarationPath(original))) {
+        const declOriginal = mdxDeclarationPath(original)
+        const pair = yield* Effect.acquireRelease(
+          reserveMdxSiblingPair(fs, prefix),
+          ({ declaration, script }) => Effect.andThen(releaseSibling(script), releaseSibling(declaration))
+        )
+        yield* verifyAndPermit(original, pair.script)
+        yield* verifyAndPermit(declOriginal, pair.declaration)
+        siblings.set(original, pair.script)
+        siblings.set(declOriginal, pair.declaration)
+        continue
+      }
       const reserved = yield* Effect.acquireRelease(
         reserveSibling(
           fs,
-          platformPath.join(directory, `smithers-${source.contentDigest}-`),
+          prefix,
           original.endsWith(".mdx") ? ".mjs" : platformPath.extname(original) || ".mjs"
         ),
         // The module is already evaluated; a sibling that will not unlink
         // (EBUSY on Windows, a guard refusal) must not undo a successful
         // load. The next load in this directory sweeps it once it is stale.
-        (sibling) =>
-          fs.remove(sibling).pipe(
-            Effect.catch((cause) =>
-              Effect.logWarning("could not remove a module load sibling").pipe(
-                Effect.annotateLogs({ path: sibling, reason: String(cause) })
-              )
-            )
-          )
+        releaseSibling
       )
-      // The guard decides by real path. A module spelled beneath the source
-      // root but reached through a symbolic link that leaves it would run, and
-      // load its unmeasured neighbours, where the guard holds nothing.
-      if (
-        held !== undefined && beneath(platformPath, held, original) &&
-        !beneath(platformPath, heldReal!, yield* fs.realPath(reserved))
-      ) {
-        return yield* Effect.fail(
-          new LoadGuard.LoadGuardError({
-            path: original,
-            message:
-              `"${original}" is reached through a symbolic link that leaves the flow source root "${held}", where loads cannot be held to that root`
-          })
-        )
-      }
-      // A guard holding this source root for another flow lets the measured
-      // copy load, and stops letting it once the copy is removed.
-      if (Option.isSome(guard)) yield* guard.value.permit(reserved)
+      yield* verifyAndPermit(original, reserved)
       siblings.set(original, reserved)
     }
     for (const [original, module] of modules) {

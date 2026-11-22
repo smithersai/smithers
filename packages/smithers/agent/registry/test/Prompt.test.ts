@@ -207,6 +207,21 @@ export default Flow.make("mdx", {
     expect(render(jsxs(type, { children: [[], [null, false, undefined]] }))).toBe("")
   })
 
+  it("retains measured companion prompt declarations for strict VibeLang entries (#4833)", async () => {
+    const output = await new Promise<string>((resolve, reject) => {
+      execFile(
+        process.execPath,
+        ["--import", "vibelang/register", fileURLToPath(new URL("./fixtures/mdx-vibe-runner.mjs", import.meta.url))],
+        { encoding: "utf8", timeout: 120_000 },
+        (error, stdout, stderr) => {
+          if (error) reject(new Error(`${error.message}\nstdout: ${stdout}\nstderr: ${stderr}`))
+          else resolve(stdout)
+        }
+      )
+    })
+    expect(JSON.parse(output)).toEqual({ runtime: "vibe-mdx", assertions: "passed" })
+  }, 120_000)
+
   it("preserves list order and numbering under arbitrary array grouping", () => {
     fc.assert(
       fc.property(

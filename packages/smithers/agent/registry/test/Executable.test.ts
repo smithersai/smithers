@@ -1409,6 +1409,114 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       expect(left).toEqual(expect.arrayContaining([fresh, helper, short, future, folder]))
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
+  it.effect("stages a paired MDX declaration sibling, retries on declaration collision, and fails closed when reservation fails", () =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const promptMdx = "# Review\n\nInspect **{props.args}**.\n"
+      const promptDecl =
+        "import type { Component } from \"@smthrs/registry/Prompt\"\n\ndeclare const Instructions: Component<{ readonly args: string }>\nexport default Instructions\n"
+      const mdxFlow = (tag: string) =>
+        [
+          "import { Flow, Node } from \"@smthrs/flow\"",
+          "import * as Prompt from \"@smthrs/registry/Prompt\"",
+          "import * as Schema from \"effect/Schema\"",
+          "import Instructions from \"./prompt.mdx\"",
+          `export default Flow.make("${tag}", {`,
+          "  description: \"A flow importing a typed MDX prompt.\",",
+          "  payload: { input: Schema.Struct({ args: Schema.String }) },",
+          "  success: Schema.String,",
+          "  body: ({ input }) => Node.succeed(Prompt.render(Instructions(input)))",
+          "})"
+        ].join("\n")
+      const root = yield* project({
+        "package.json": JSON.stringify({ name: "mdx-fixture", type: "module" }) + "\n",
+        ".smithers/flows/mdx-decl/flow.ts": mdxFlow("test/mdx-decl"),
+        ".smithers/flows/mdx-decl/prompt.mdx": promptMdx,
+        ".smithers/flows/mdx-decl/prompt.d.mdx.ts": promptDecl,
+        ".smithers/flows/mdx-bare/flow.ts": mdxFlow("test/mdx-bare"),
+        ".smithers/flows/mdx-bare/prompt.mdx": promptMdx
+      })
+      const bareDescriptor = yield* descriptorIn(root, "mdx-bare")
+      const bareExec = yield* Executable.fromDescriptor(bareDescriptor, options())
+      expect(bareExec.descriptor.name).toBe("mdx-bare")
+
+      const declDescriptor = yield* descriptorIn(root, "mdx-decl")
+      const declDir = `${root}/.smithers/flows/mdx-decl`
+      let declAttempts = 0
+      const collideOnce = FileSystem.FileSystem.of({
+        ...fs,
+        writeFile: (target, data, writeOptions) =>
+          target.endsWith(".d.mts") && writeOptions?.flag === "wx" && ++declAttempts === 1
+            ? Effect.fail(PlatformError.systemError({
+              _tag: "AlreadyExists",
+              module: "FileSystem",
+              method: "writeFile",
+              pathOrDescriptor: target
+            }))
+            : fs.writeFile(target, data, writeOptions)
+      })
+      const declExec = yield* Executable.fromDescriptor(declDescriptor, options()).pipe(
+        Effect.provideService(FileSystem.FileSystem, collideOnce)
+      )
+      expect(declExec.descriptor.name).toBe("mdx-decl")
+      expect(declAttempts).toBe(2)
+      expect((yield* fs.readDirectory(declDir)).filter((name) => name.startsWith("smithers-"))).toEqual([])
+
+      const collideAlways = FileSystem.FileSystem.of({
+        ...fs,
+        writeFile: (target, data, writeOptions) =>
+          target.endsWith(".d.mts") && writeOptions?.flag === "wx"
+            ? Effect.fail(PlatformError.systemError({
+              _tag: "AlreadyExists",
+              module: "FileSystem",
+              method: "writeFile",
+              pathOrDescriptor: target
+            }))
+            : fs.writeFile(target, data, writeOptions)
+      })
+      const failure = yield* Effect.flip(
+        Executable.fromDescriptor(declDescriptor, options()).pipe(
+          Effect.provideService(FileSystem.FileSystem, collideAlways)
+        )
+      )
+      expect(failure.code).toBe("body_unavailable")
+      expect((yield* fs.readDirectory(declDir)).filter((name) => name.startsWith("smithers-"))).toEqual([])
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("removes VibeLang declaration sidecars left beside a released .vibe load sibling", () =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const root = yield* project({
+        ".smithers/flows/vibe-sidecar/flow.vibe": selfFlow("Node.succeed(\"ok\")")
+      })
+      const vibeDir = `${root}/.smithers/flows/vibe-sidecar`
+      const descriptor = yield* descriptorIn(root, "vibe-sidecar")
+      const emitted: Array<string> = []
+      const emitSidecars = FileSystem.FileSystem.of({
+        ...fs,
+        writeFile: (target, data, writeOptions) =>
+          Effect.gen(function*() {
+            yield* fs.writeFile(target, data, writeOptions)
+            if (target.endsWith(".vibe") && writeOptions === undefined) {
+              const stem = target.slice(0, -".vibe".length)
+              for (const suffix of [".d.ts", ".d.vibe.ts"]) {
+                const sidecar = `${stem}${suffix}`
+                emitted.push(sidecar)
+                yield* fs.writeFileString(sidecar, "export {}\n")
+              }
+            }
+          })
+      })
+      const failure = yield* Effect.flip(
+        Executable.fromDescriptor(descriptor, options()).pipe(
+          Effect.provideService(FileSystem.FileSystem, emitSidecars)
+        )
+      )
+      expect(["body_unavailable", "invalid_module"]).toContain(failure.code)
+      expect(emitted).toHaveLength(2)
+      expect((yield* fs.readDirectory(vibeDir)).filter((name) => name.startsWith("smithers-"))).toEqual([])
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
   it.effect("pins a NodeNext './x.js' import of x.ts and loads the module", () =>
     Effect.gen(function*() {
       const root = yield* project({
