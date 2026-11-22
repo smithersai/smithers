@@ -519,6 +519,168 @@ describe("the write-set guard measures a workspace without a local .git from the
   })
 })
 
+const hasJj = ChildProcess.spawnSync("jj", ["--version"], { stdio: "ignore" }).status === 0
+
+describe.skipIf(!hasJj)(
+  "the write-set guard censuses a non-colocated jj workspace through its backing git store (#4894)",
+  () => {
+    const runJj = (cwd: string, args: ReadonlyArray<string>): void => {
+      ChildProcess.execFileSync("jj", ["--no-pager", "--color=never", ...args], { cwd, stdio: "ignore" })
+    }
+
+    const writeFile = async (dir: string, relative: string, content: string): Promise<void> => {
+      const absolute = NodePath.join(dir, relative)
+      await Fs.mkdir(NodePath.dirname(absolute), { recursive: true })
+      await Fs.writeFile(absolute, content)
+    }
+
+    it("counts only gitignored files in a jj workspace add checkout, restores tracked/dirty/untracked changes, and finds tracked portals", async () => {
+      const base = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-jj-base-"))
+      const ws = NodePath.join(base, "secondary")
+      const mainRepo = NodePath.join(base, "main")
+      const portalTarget = NodePath.join(base, "outside-portal")
+      try {
+        await Fs.mkdir(mainRepo, { recursive: true })
+        await Fs.mkdir(portalTarget, { recursive: true })
+        await Fs.writeFile(NodePath.join(portalTarget, "note.txt"), "outside")
+        runJj(mainRepo, ["git", "init", "--colocate"])
+        runJj(mainRepo, ["config", "set", "--repo", "user.name", "Test User"])
+        runJj(mainRepo, ["config", "set", "--repo", "user.email", "test@example.com"])
+        await writeFile(mainRepo, ".gitignore", "dist/\n*.log\n")
+        for (let i = 0; i < 6; i += 1) {
+          await writeFile(mainRepo, `src/file-${i}.ts`, `export const n = ${i}\n`)
+        }
+        await Fs.symlink(portalTarget, NodePath.join(mainRepo, "src", "portal"))
+        runJj(mainRepo, ["describe", "-m", "initial"])
+        runJj(mainRepo, ["new"])
+        runJj(mainRepo, ["workspace", "add", ws])
+
+        // Confirm the secondary jj workspace has .jj and no .git.
+        expect(NodeFs.existsSync(NodePath.join(ws, ".jj"))).toBe(true)
+        expect(NodeFs.existsSync(NodePath.join(ws, ".git"))).toBe(false)
+
+        // Add a gitignored file and a pre-existing dirty edit to one tracked file.
+        await writeFile(ws, "dist/bundle.js", "built")
+        await writeFile(ws, "src/file-1.ts", "pre-dirty\n")
+        if (process.platform !== "win32") await Fs.chmod(NodePath.join(ws, "src", "file-0.ts"), 0o600)
+
+        // Ignored ceiling (2 entries) is strictly smaller than the 7+ tracked files:
+        // #4894 tripped this ceiling because tracked files were counted as ignored.
+        const ignored = await PackageTree.snapshotIgnored(ws, ".flows", { entries: 2, totalBytes: 1024 * 1024 })
+        const tree = await PackageTree.snapshotTree(ws, ".flows")
+        const portals = await PackageTree.snapshotPortals(ws, ".flows", ignored)
+        try {
+          expect([...ignored.entries.keys()].sort()).toEqual(["dist/bundle.js"])
+          expect(tree.trackedModes.has("src/file-0.ts")).toBe(true)
+          expect(portals.portals.map((portal) => portal.link)).toEqual(["src/portal"])
+
+          // Mutate a clean tracked file, a pre-dirty tracked file, create an
+          // untracked file, delete a tracked file, and mutate an ignored file.
+          await writeFile(ws, "src/file-0.ts", "overwritten\n")
+          if (process.platform !== "win32") await Fs.chmod(NodePath.join(ws, "src", "file-0.ts"), 0o644)
+          await writeFile(ws, "src/file-1.ts", "further-edited\n")
+          await Fs.rm(NodePath.join(ws, "src", "file-2.ts"))
+          await writeFile(ws, "src/untracked.ts", "new\n")
+          await writeFile(ws, "dist/extra.js", "ignored-new")
+
+          const changedTree = await PackageTree.changedSinceSnapshot(tree, ".flows")
+          expect(changedTree).toEqual(["src/file-0.ts", "src/file-1.ts", "src/file-2.ts", "src/untracked.ts"])
+          for (const path of changedTree) await PackageTree.revertPath(tree, path)
+
+          expect(await Fs.readFile(NodePath.join(ws, "src", "file-0.ts"), "utf8")).toBe("export const n = 0\n")
+          if (process.platform !== "win32") {
+            expect((await Fs.lstat(NodePath.join(ws, "src", "file-0.ts"))).mode & 0o777).toBe(0o600)
+          }
+          expect(await Fs.readFile(NodePath.join(ws, "src", "file-1.ts"), "utf8")).toBe("pre-dirty\n")
+          expect(await Fs.readFile(NodePath.join(ws, "src", "file-2.ts"), "utf8")).toBe("export const n = 2\n")
+          expect(NodeFs.existsSync(NodePath.join(ws, "src", "untracked.ts"))).toBe(false)
+
+          const changedIgnored = await PackageTree.changedIgnored(ignored, ".flows")
+          expect(changedIgnored).toEqual(["dist/extra.js"])
+          expect(await PackageTree.revertIgnored(ignored, "dist/extra.js")).toBe(true)
+          expect(NodeFs.existsSync(NodePath.join(ws, "dist", "extra.js"))).toBe(false)
+        } finally {
+          await PackageTree.releasePortals(portals)
+          await PackageTree.releaseIgnored(ignored)
+          await PackageTree.releaseSnapshot(tree)
+        }
+      } finally {
+        await Fs.rm(base, { recursive: true, force: true })
+      }
+    })
+
+    it("supports a primary non-colocated jj repository (.jj/repo directory) and falls back cleanly on conflicts or invalid git targets", async () => {
+      const base = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-jj-nocoloc-"))
+      try {
+        const repo = NodePath.join(base, "repo")
+        await Fs.mkdir(repo, { recursive: true })
+        runJj(repo, ["git", "init", "--no-colocate"])
+        runJj(repo, ["config", "set", "--repo", "user.name", "Test User"])
+        runJj(repo, ["config", "set", "--repo", "user.email", "test@example.com"])
+        await writeFile(repo, ".gitignore", "out/\n")
+        await writeFile(repo, "a.txt", "base\n")
+        await writeFile(repo, "out/gen.txt", "ignored\n")
+        runJj(repo, ["describe", "-m", "base"])
+        runJj(repo, ["new"])
+
+        expect(NodeFs.statSync(NodePath.join(repo, ".jj", "repo")).isDirectory()).toBe(true)
+        expect(NodeFs.existsSync(NodePath.join(repo, ".git"))).toBe(false)
+
+        const ignored = await PackageTree.snapshotIgnored(repo, ".flows", { entries: 1, totalBytes: 1024 * 1024 })
+        try {
+          expect([...ignored.entries.keys()]).toEqual(["out/gen.txt"])
+        } finally {
+          await PackageTree.releaseIgnored(ignored)
+        }
+
+        // Create a conflict at @ so jj reports a conflict and PackageTree falls back to filesystem census.
+        await writeFile(repo, "a.txt", "side-1\n")
+        runJj(repo, ["describe", "-m", "side 1"])
+        runJj(repo, ["bookmark", "create", "side1", "-r", "@"])
+        runJj(repo, ["new", "@-"])
+        await writeFile(repo, "a.txt", "side-2\n")
+        runJj(repo, ["describe", "-m", "side 2"])
+        runJj(repo, ["new", "@", "side1"])
+        const conflicted = await PackageTree.snapshotIgnored(repo, ".flows")
+        try {
+          expect(conflicted.entries.has("a.txt")).toBe(true)
+        } finally {
+          await PackageTree.releaseIgnored(conflicted)
+        }
+
+        // Invalid git_target (directory without HEAD/objects) falls back to filesystem census.
+        const broken = NodePath.join(base, "broken")
+        await writeFile(broken, ".jj/repo/store/git_target", "../not-git")
+        await Fs.mkdir(NodePath.join(broken, ".jj/repo/not-git"), { recursive: true })
+        await writeFile(broken, "only.txt", "x")
+        const brokenIgnored = await PackageTree.snapshotIgnored(broken, ".flows")
+        try {
+          expect([...brokenIgnored.entries.keys()]).toEqual(["only.txt"])
+        } finally {
+          await PackageTree.releaseIgnored(brokenIgnored)
+        }
+
+        // Valid git_target but unreadable jj working copy (jj exits non-zero) falls back cleanly.
+        const badJj = NodePath.join(base, "bad-jj")
+        await Fs.mkdir(badJj, { recursive: true })
+        const fakeGit = NodePath.join(base, "fake-git")
+        await Fs.mkdir(NodePath.join(fakeGit, "objects"), { recursive: true })
+        await Fs.writeFile(NodePath.join(fakeGit, "HEAD"), "ref: refs/heads/main\n")
+        await writeFile(badJj, ".jj/repo/store/git_target", fakeGit)
+        await writeFile(badJj, "only.txt", "y")
+        const badJjIgnored = await PackageTree.snapshotIgnored(badJj, ".flows")
+        try {
+          expect([...badJjIgnored.entries.keys()]).toEqual(["only.txt"])
+        } finally {
+          await PackageTree.releaseIgnored(badJjIgnored)
+        }
+      } finally {
+        await Fs.rm(base, { recursive: true, force: true })
+      }
+    })
+  }
+)
+
 describe("snapshot rollback preserves file permissions", () => {
   beforeEach(() => {
     ChildProcess.execFileSync("git", ["init", "--quiet", "."], { cwd: root, stdio: "ignore" })

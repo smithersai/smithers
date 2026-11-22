@@ -209,36 +209,35 @@ export const probeCommand = (
     )
   })
 
-/**
- * Runs git in a workspace and returns stdout, throwing on a non-zero exit.
- *
- * Output is streamed and decoded fatally, exactly as `Workspace`
- * decodes its own git output. A path is bytes on POSIX, and git prints those
- * bytes verbatim under `-z`. Decoding them leniently substitutes U+FFFD for
- * every byte that is not valid UTF-8, which silently renames the path: the
- * write-set guard then judges a name no file has, reports it out of set, and
- * "reverts" it with a removal that cannot fail because it targets nothing.
- * The real write stays in the tree while the node fails claiming otherwise.
- * A path this decoder cannot read is a loud failure instead.
- *
- * A local Git marker is required. Otherwise Git can walk out of a jj-only
- * workspace and census an unrelated ancestor checkout. Large valid inventories
- * are not limited by execFile's former 256 MiB capture ceiling; callers still
- * retain the returned text, and ignored-file stashes keep their own limits.
- *
- * @category git
- * @since 0.1.0
- */
-export const runGit = (root: string, args: ReadonlyArray<string>): Promise<string> =>
+interface JjGitContext {
+  readonly gitDir: string
+  readonly indexFile: string
+}
+
+const jjSnapshots = new WeakMap<TreeSnapshot, JjGitContext>()
+
+const spawnGit = (
+  root: string,
+  args: ReadonlyArray<string>,
+  gitContext?: JjGitContext
+): Promise<string> =>
   new Promise((resolve, reject) => {
-    if (!NodeFs.existsSync(NodePath.join(root, ".git"))) {
+    if (gitContext === undefined && !NodeFs.existsSync(NodePath.join(root, ".git"))) {
       reject(new Error(`git ${args[0]} failed: workspace has no local .git; refusing ancestor repository discovery`))
       return
     }
+    const gitArgs = gitContext === undefined
+      ? ["-C", root, ...args]
+      : ["--git-dir", gitContext.gitDir, "--work-tree", root, ...args]
+    const env = {
+      ...process.env,
+      GIT_CEILING_DIRECTORIES: NodePath.dirname(root),
+      ...(gitContext === undefined ? {} : { GIT_INDEX_FILE: gitContext.indexFile })
+    }
     const child = NodeChildProcess.spawn(
       "git",
-      ["-C", root, ...args],
-      { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_CEILING_DIRECTORIES: NodePath.dirname(root) } }
+      gitArgs,
+      { stdio: ["ignore", "pipe", "pipe"], env }
     )
     const decoder = new TextDecoder("utf-8", { fatal: true })
     const chunks: Array<string> = []
@@ -278,6 +277,28 @@ export const runGit = (root: string, args: ReadonlyArray<string>): Promise<strin
       }
     })
   })
+
+/**
+ * Runs git in a workspace and returns stdout, throwing on a non-zero exit.
+ *
+ * Output is streamed and decoded fatally, exactly as `Workspace`
+ * decodes its own git output. A path is bytes on POSIX, and git prints those
+ * bytes verbatim under `-z`. Decoding them leniently substitutes U+FFFD for
+ * every byte that is not valid UTF-8, which silently renames the path: the
+ * write-set guard then judges a name no file has, reports it out of set, and
+ * "reverts" it with a removal that cannot fail because it targets nothing.
+ * The real write stays in the tree while the node fails claiming otherwise.
+ * A path this decoder cannot read is a loud failure instead.
+ *
+ * A local Git marker is required. Otherwise Git can walk out of a jj-only
+ * workspace and census an unrelated ancestor checkout. Large valid inventories
+ * are not limited by execFile's former 256 MiB capture ceiling; callers still
+ * retain the returned text, and ignored-file stashes keep their own limits.
+ *
+ * @category git
+ * @since 0.1.0
+ */
+export const runGit = (root: string, args: ReadonlyArray<string>): Promise<string> => spawnGit(root, args)
 
 /**
  * Runs a resolved tool once at plan time and returns its stdout, throwing on
@@ -324,6 +345,95 @@ export const runCommand = (
  * is then empty, because every path is already the ignored census's.
  */
 const censusedByGit = (root: string): boolean => NodeFs.existsSync(NodePath.join(root, ".git"))
+
+/**
+ * Resolves the backing Git directory of a non-colocated jj checkout (`.jj`
+ * present, no `.git`), or undefined when the workspace is not a Git-backed jj
+ * repository. Supports both primary jj repos (`.jj/repo` directory) and
+ * secondary `jj workspace add` checkouts (`.jj/repo` pointer file).
+ */
+const resolveJjGitDir = (root: string): string | undefined => {
+  const jjDir = NodePath.join(root, ".jj")
+  const repoRef = NodePath.join(jjDir, "repo")
+  let jjRepo: string
+  try {
+    const stat = NodeFs.statSync(repoRef)
+    jjRepo = stat.isDirectory() ? repoRef : NodePath.resolve(jjDir, NodeFs.readFileSync(repoRef, "utf8").trim())
+  } catch {
+    return undefined
+  }
+  const storeDir = NodePath.join(jjRepo, "store")
+  try {
+    const gitDir = NodePath.resolve(storeDir, NodeFs.readFileSync(NodePath.join(storeDir, "git_target"), "utf8").trim())
+    return NodeFs.existsSync(NodePath.join(gitDir, "HEAD")) && NodeFs.existsSync(NodePath.join(gitDir, "objects"))
+      ? gitDir
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Resolves the current jj working-copy commit id without snapshotting or
+ * mutating `.jj`. Returns undefined when `jj` is unavailable or `@` has
+ * unresolved conflicts.
+ */
+const resolveJjCommit = async (root: string): Promise<string | undefined> => {
+  try {
+    const output = (
+      await runCommand(
+        "jj",
+        [
+          "--ignore-working-copy",
+          "--no-pager",
+          "--color=never",
+          "log",
+          "-r",
+          "@",
+          "-T",
+          "if(conflict, \"\", commit_id)",
+          "--no-graph"
+        ],
+        { cwd: root }
+      )
+    ).trim()
+    return /^[0-9a-f]{40,64}$/i.test(output) ? output : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Populates a private Git index from a non-colocated jj workspace's `@` commit
+ * so Git can census tracked, dirty, and ignored files without touching the
+ * shared repository's `.git/index` or reading its unrelated `HEAD`.
+ */
+const openJjGitContext = async (
+  root: string,
+  indexFile: string,
+  refresh: boolean
+): Promise<JjGitContext | undefined> => {
+  const gitDir = resolveJjGitDir(root)
+  if (gitDir === undefined) return undefined
+  const commit = await resolveJjCommit(root)
+  if (commit === undefined) return undefined
+  const context: JjGitContext = { gitDir, indexFile }
+  await spawnGit(root, ["read-tree", commit], context)
+  if (refresh) {
+    // `update-index --refresh` exits 1 when tracked files differ on disk;
+    // clean files still receive stat-cache entries so `diff-files` stays fast.
+    await spawnGit(root, ["update-index", "-q", "--refresh"], context).catch(() => {})
+  }
+  return context
+}
+
+const jjDirtyPaths = async (root: string, context: JjGitContext): Promise<Array<string>> => {
+  const [modified, untracked] = await Promise.all([
+    spawnGit(root, ["diff-files", "--name-only", "-z"], context),
+    spawnGit(root, ["ls-files", "--others", "--exclude-standard", "-z"], context)
+  ])
+  return [...new Set([...modified.split("\0"), ...untracked.split("\0")].filter((path) => path !== ""))]
+}
 
 /** `git status --porcelain -z` of the workspace, or no rows when git cannot census it. */
 const statusZ = (root: string, ignored: boolean = false): Promise<string> =>
@@ -463,12 +573,18 @@ export const snapshotTree = async (root: string, cacheDirectory: string, io: Tre
   // ({@link snapshotIgnored}), which carries its own ceilings: hashing the
   // whole ignored tree here, with the build artifacts among it, would be a
   // per-run cost out of all proportion to the dirty source set this measures.
-  const raw = await statusZ(root)
   const states = new Map<string, PathState>()
   const trackedModes = new Map<string, number>()
   const stashDirectory = await io.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-writeset-"))
   try {
-    const trackedPaths = censusedByGit(root) ? await runGit(root, ["ls-files", "-z"]) : ""
+    const jjGit = censusedByGit(root)
+      ? undefined
+      : await openJjGitContext(root, NodePath.join(stashDirectory, ".jj-index"), true)
+    const trackedPaths = censusedByGit(root)
+      ? await runGit(root, ["ls-files", "-z"])
+      : jjGit !== undefined
+      ? await spawnGit(root, ["ls-files", "-z"], jjGit)
+      : ""
     for (const path of trackedPaths.split("\0")) {
       if (path === "" || skipStatusPath(cacheDirectory, path)) continue
       const stats = await io.lstat(NodePath.join(root, path)).catch((cause: unknown) => {
@@ -477,19 +593,24 @@ export const snapshotTree = async (root: string, cacheDirectory: string, io: Tre
       })
       if (stats?.isFile()) trackedModes.set(path, stats.mode & 0o7777)
     }
-    for (const entry of parseStatusZ(raw)) {
-      if (skipStatusPath(cacheDirectory, entry.path)) continue
-      const absolute = NodePath.join(root, entry.path)
+    const dirtyPaths = jjGit !== undefined
+      ? await jjDirtyPaths(root, jjGit)
+      : parseStatusZ(await statusZ(root)).map((entry) => entry.path)
+    for (const path of dirtyPaths) {
+      if (skipStatusPath(cacheDirectory, path)) continue
+      const absolute = NodePath.join(root, path)
       const state = await statePath(absolute)
-      states.set(entry.path, state)
+      states.set(path, state)
       if (state.kind === "file") {
-        const stashFile = NodePath.join(stashDirectory, digestBytes(Buffer.from(entry.path, "utf8")))
+        const stashFile = NodePath.join(stashDirectory, digestBytes(Buffer.from(path, "utf8")))
         await io.copyFile(absolute, stashFile)
       } else if (state.kind === "link") {
         // Link state is fully described by its target text; nothing to stash.
       }
     }
-    return { root, states, trackedModes, stashDirectory }
+    const snapshot: TreeSnapshot = { root, states, trackedModes, stashDirectory }
+    if (jjGit !== undefined) jjSnapshots.set(snapshot, jjGit)
+    return snapshot
   } catch (cause) {
     // The caller never received a snapshot to release; retain the acquisition error.
     await io.rm(stashDirectory, { recursive: true, force: true }).catch(() => {})
@@ -508,11 +629,14 @@ export const changedSinceSnapshot = async (
   snapshot: TreeSnapshot,
   cacheDirectory: string
 ): Promise<ReadonlyArray<string>> => {
-  const raw = await statusZ(snapshot.root)
+  const jjGit = jjSnapshots.get(snapshot)
+  const dirtyPaths = jjGit !== undefined
+    ? await jjDirtyPaths(snapshot.root, jjGit)
+    : parseStatusZ(await statusZ(snapshot.root)).map((entry) => entry.path)
   const after = new Map<string, PathState>()
-  for (const entry of parseStatusZ(raw)) {
-    if (skipStatusPath(cacheDirectory, entry.path)) continue
-    after.set(entry.path, await statePath(NodePath.join(snapshot.root, entry.path)))
+  for (const path of dirtyPaths) {
+    if (skipStatusPath(cacheDirectory, path)) continue
+    after.set(path, await statePath(NodePath.join(snapshot.root, path)))
   }
   const changed = new Set<string>()
   for (const [path, state] of after) {
@@ -663,9 +787,14 @@ export const revertPath = async (
   await quarantinePath(quarantine, path)
   const before = snapshot.states.get(path)
   if (before === undefined) {
+    const jjGit = jjSnapshots.get(snapshot)
     // The path was clean before the tool ran: a tracked file goes back to
     // the index, a fresh untracked file is deleted.
-    const tracked = await runGit(snapshot.root, ["ls-files", "--stage", "-z", "--error-unmatch", "--", path]).then(
+    const tracked = await spawnGit(
+      snapshot.root,
+      ["ls-files", "--stage", "-z", "--error-unmatch", "--", path],
+      jjGit
+    ).then(
       (entries) => entries.split("\0").filter((entry) => entry.slice(entry.indexOf("\t") + 1) === path),
       () => undefined
     )
@@ -687,7 +816,7 @@ export const revertPath = async (
           path
         ]
         try {
-          await runGit(snapshot.root, ["checkout-index", "--ignore-skip-worktree-bits", ...checkoutArguments])
+          await spawnGit(snapshot.root, ["checkout-index", "--ignore-skip-worktree-bits", ...checkoutArguments], jjGit)
         } catch (cause) {
           // Older Git checks out skip-worktree entries without this option.
           // Retry only its unsupported-option diagnostic, never a checkout failure.
@@ -695,7 +824,7 @@ export const revertPath = async (
             !(cause instanceof Error) ||
             !/unknown option ['"`](?:--)?ignore-skip-worktree-bits['"`]/.test(cause.message)
           ) throw cause
-          await runGit(snapshot.root, ["checkout-index", ...checkoutArguments])
+          await spawnGit(snapshot.root, ["checkout-index", ...checkoutArguments], jjGit)
         }
         const staged = NodePath.join(directory, path)
         const stagedState = await io.lstat(staged)
@@ -1066,15 +1195,32 @@ const listIgnored = async (
   //
   // Without a local `.git` the whole tree is walked (see `censusedByGit`).
   const entries = new Map<string, IgnoredEntry>()
-  if (!censusedByGit(root)) {
-    await walkIgnored(root, cacheDirectory, "", entries, limits, hostTrees, lstat)
-    return entries
+  let ignoredPaths: Array<string>
+  if (censusedByGit(root)) {
+    ignoredPaths = parseStatusZ(await statusZ(root, true))
+      .filter((status) => status.status.startsWith("!!"))
+      .map((status) => status.path)
+  } else {
+    const indexDir = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-jj-ignored-"))
+    try {
+      const jjGit = await openJjGitContext(root, NodePath.join(indexDir, "index"), false)
+      if (jjGit === undefined) {
+        await walkIgnored(root, cacheDirectory, "", entries, limits, hostTrees, lstat)
+        return entries
+      }
+      const raw = await spawnGit(
+        root,
+        ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
+        jjGit
+      )
+      ignoredPaths = raw.split("\0").filter((entry) => entry !== "")
+    } finally {
+      await Fs.rm(indexDir, { recursive: true, force: true })
+    }
   }
-  const raw = await statusZ(root, true)
-  for (const status of parseStatusZ(raw)) {
-    if (!status.status.startsWith("!!")) continue
-    const directory = status.path.endsWith("/")
-    const path = directory ? status.path.slice(0, -1) : status.path
+  for (const rawPath of ignoredPaths) {
+    const directory = rawPath.endsWith("/")
+    const path = directory ? rawPath.slice(0, -1) : rawPath
     if (path === "" || skipStatusPath(cacheDirectory, path, hostTrees)) continue
     if (directory) {
       if (runtimeDirectory(path)) continue
@@ -1382,11 +1528,17 @@ const walkPortalTarget = async (realTarget: string): Promise<Map<string, PathSta
 }
 
 const listTrackedSymlinks = async (root: string): Promise<Array<string>> => {
-  // Without a local `.git` every link comes from the whole-tree census.
-  if (!censusedByGit(root)) return []
-  // Same rule as the ignored census: an unmeasured portal set is a disarmed
-  // guard, so the failure reaches the target rather than reading as no links.
-  const raw = await runGit(root, ["ls-files", "-s", "-z"])
+  let raw: string
+  if (censusedByGit(root)) {
+    // Same rule as the ignored census: an unmeasured portal set is a disarmed
+    // guard, so the failure reaches the target rather than reading as no links.
+    raw = await runGit(root, ["ls-files", "-s", "-z"])
+  } else {
+    const gitDir = resolveJjGitDir(root)
+    const commit = gitDir === undefined ? undefined : await resolveJjCommit(root)
+    if (gitDir === undefined || commit === undefined) return []
+    raw = await spawnGit(root, ["ls-tree", "-r", "-z", commit], { gitDir, indexFile: "" })
+  }
   const paths: Array<string> = []
   for (const part of raw.split("\0")) {
     if (part === "") continue
