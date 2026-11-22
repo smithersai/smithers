@@ -5,7 +5,7 @@
  * repository root, or `pnpm run benchmark` in `packages/ci`. It is no part of
  * the suite, as `Miss.benchmark.test.ts` says why.
  *
- * **Shape.** Two repositories, each one GitHub Actions job of one step, and
+ * **Shape.** Three repositories, each one GitHub Actions job of one step, and
  * three commits that each change `input.txt`, which the step reads: at every
  * counted commit the step runs again in normal mode, recorded.
  *
@@ -17,6 +17,9 @@
  *   of `go test` in google/go-cmp (6,494 files in 40 s of CPU) and of
  *   commander.js's `tsc -p tsconfig.js.json` (1,590 files in 10 s), measured
  *   with strace on 2026-11-21.
+ * - `dense` is the same program over 8,000 files, hashing each 250 times:
+ *   about 4,000 files a second of CPU, as a type check or a linter over an
+ *   installed tree reads.
  *
  * **Method.** Each replay replays the last two commits with the real reader,
  * generator and replay, and the repository's own `smthrs`, after one replay
@@ -57,9 +60,12 @@
  *    that has to run costs.
  * 3. In every pair normal mode's step uses at least 0.7 times the baseline's
  *    CPU time. It does the same work, recorded: less says the build did not
- *    count the step's processes, and then 2 says nothing about CPU. A known
- *    defect marks this broken (`cpuUncounted`): while the mark stands, 3 must
- *    fail, 2 is judged on wall time only, and the run prints why.
+ *    count the step's processes, and then 2 says nothing about CPU (as from
+ *    355f33e4d1f3 to 6e525e375a9c, when a step under a job's keeper was not
+ *    counted).
+ *
+ * `dense` is a known failure: its test is expected to fail, and turns red the
+ * day such a step holds the bound.
  *
  * **Limits.** One machine, shared: on the build server (48 threads, ten
  * agents' builds and tests beside it) the same baseline work took 3.0 to
@@ -71,8 +77,10 @@
  * `processes` at 1.04 to 1.17 wall and 1.10 to 1.16 CPU, `files` at 1.00 to
  * 1.13 wall and 1.10 to 1.22 CPU, while single pairs were over in up to 4 of
  * 10 within a round. A step that reads files faster than `files` costs more:
- * at 3,300 files a second of CPU (8,000 files in 2.5 s, as an install's type
- * check) the median was 1.42 to 1.55 CPU in each of four rounds. A machine
+ * `dense` was over the CPU bound in each of eight rounds (median 1.46 to 1.57
+ * CPU, 1.01 to 1.08 wall, load 18 to 155), and at 476 files a second of CPU
+ * (2,500 files, commander.js's `eslint .`) the median was 1.13 to 1.23 CPU in
+ * five rounds, inside the bound. A machine
  * that cannot record what a step reads (macOS, or Linux with neither
  * recorder) holds nothing here: the test is skipped there.
  */
@@ -107,6 +115,21 @@ const git = (root: string, ...args: ReadonlyArray<string>): string =>
     encoding: "utf8"
   })
 
+/** A Node program that reads `files` source files and hashes each `rounds` times. */
+const reader = (files: number, rounds: number): string =>
+  [
+    "import { createHash } from \"node:crypto\"",
+    "import { readFileSync } from \"node:fs\"",
+    "let sum = readFileSync(\"input.txt\", \"utf8\").length",
+    `for (let file = 0; file < ${files}; file += 1) {`,
+    "  let text = readFileSync(`src/file-${file}.txt`, \"utf8\")",
+    `  for (let round = 0; round < ${rounds}; round += 1) text = createHash("sha1").update(text).digest("hex")`,
+    "  sum += text.charCodeAt(0)",
+    "}",
+    "console.log(sum)",
+    ""
+  ].join("\n")
+
 /** The step of each fixture, and the files it reads beside `input.txt`. */
 const fixtures = {
   processes: {
@@ -124,22 +147,8 @@ const fixtures = {
     ].join("\n"),
     command: "sh step.sh"
   },
-  files: {
-    sources: 800,
-    script: [
-      "import { createHash } from \"node:crypto\"",
-      "import { readFileSync } from \"node:fs\"",
-      "let sum = readFileSync(\"input.txt\", \"utf8\").length",
-      "for (let file = 0; file < 800; file += 1) {",
-      "  let text = readFileSync(`src/file-${file}.txt`, \"utf8\")",
-      "  for (let round = 0; round < 4100; round += 1) text = createHash(\"sha1\").update(text).digest(\"hex\")",
-      "  sum += text.charCodeAt(0)",
-      "}",
-      "console.log(sum)",
-      ""
-    ].join("\n"),
-    command: "node step.mjs"
-  }
+  files: { sources: 800, script: reader(800, 4100), command: "node step.mjs" },
+  dense: { sources: 8000, script: reader(8000, 250), command: "node step.mjs" }
 } as const
 
 /** A repository with one job of one step, and three commits that each change what the step reads. */
@@ -160,7 +169,7 @@ const repository = (fixture: keyof typeof fixtures): string => {
       ""
     ].join("\n"),
     "input.txt": "1\n",
-    [fixture === "files" ? "step.mjs" : "step.sh"]: script
+    [fixture === "processes" ? "step.sh" : "step.mjs"]: script
   }
   for (let index = 0; index < sources; index += 1) {
     tree[`src/file-${index}.txt`] = `source ${index}\n${"x".repeat(2000)}\n`
@@ -251,17 +260,6 @@ const medianRatio = (pairs: ReadonlyArray<Pair>): Time => ({
 
 const load = (): number => Number(readFileSync("/proc/loadavg", "utf8").split(" ")[0])
 
-/**
- * Known broken (TEST-5): since 355f33e4d1f3 a step on a job's machine runs under the job's keeper, which the build
- * does not wait for, so normal mode's CPU leaves the step out (one run: 0.22 to 0.31 s against 2.93 to 3.44 s for
- * the files step). sci-left-running fixes it. While this mark stands the check that normal mode counts the step is
- * expected to fail, the CPU bound is not judged, and the benchmark turns red the day the check passes.
- */
-const cpuUncounted: { readonly commit: string; readonly owner: string } | undefined = {
-  commit: "355f33e4d1f3",
-  owner: "sci-left-running"
-}
-
 /** How many double replays a fixture runs: two counted commits each, so ten pairs. */
 const doubles = 5
 
@@ -271,6 +269,64 @@ const recordable = process.platform === "linux"
 const observer = fileURLToPath(
   new URL("../../../../node_modules/@smthrs/build-cli/native/out/linux-x64/smthrs-observe", import.meta.url)
 )
+
+/**
+ * The median ratios of a fixture's ten double pairs, with what was measured. Normal mode's step does the baseline's
+ * work, recorded: far less CPU than the baseline's says the build did not count the step's processes, and then the
+ * CPU bound says nothing.
+ */
+const cost = async (fixture: keyof typeof fixtures): Promise<{ readonly ratio: Time; readonly seen: string }> => {
+  const root = repository(fixture)
+  // Not timed: a smthrs run from source compiles itself here, as no installed one does.
+  await measure(root)
+  const pairs: Array<Pair> = []
+  const runs: Array<{ readonly load: ReadonlyArray<number>; readonly pairs: ReadonlyArray<Pair> }> = []
+  for (let double = 0; double < doubles; double += 1) {
+    const twice: Array<ReadonlyArray<Commit>> = []
+    for (let time = 0; time < 2; time += 1) {
+      const before = load()
+      const report = await measure(root)
+      expect(report.mismatches).toBe(0)
+      expect(report.commits).toHaveLength(2)
+      for (const commit of report.commits) {
+        expect(commit.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+        expect(commit.normal.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
+      }
+      runs.push({ load: [before, load()], pairs: report.commits.map(pairOf) })
+      twice.push(report.commits)
+    }
+    const [first, second] = twice as [ReadonlyArray<Commit>, ReadonlyArray<Commit>]
+    for (const [index, commit] of first.entries()) {
+      expect(second[index]!.commit).toBe(commit.commit)
+      pairs.push(lesser(pairOf(commit), pairOf(second[index]!)))
+    }
+  }
+  const ratio = medianRatio(pairs)
+  const at = (time: Time): string => `${Math.round(time.wall)} ms ${Math.round(time.cpu)} ms CPU`
+  const seen = [
+    ...runs.map((run, index) =>
+      `replay ${index + 1}, load ${run.load.join(" to ")}: ` +
+      run.pairs.map((pair) => `baseline ${at(pair.baseline)}, normal ${at(pair.normal)} (reads ${at(pair.reads)})`)
+        .join("; ")
+    ),
+    ...pairs.map((pair, index) =>
+      `pair ${index + 1}: ${(pair.normal.wall / pair.baseline.wall).toFixed(2)} wall, ` +
+      `${(pair.normal.cpu / pair.baseline.cpu).toFixed(2)} CPU`
+    ),
+    `median of ${pairs.length}: ${ratio.wall.toFixed(2)} wall, ${ratio.cpu.toFixed(2)} CPU`
+  ].join("\n")
+  const out = process.env["RECORD_COST_OUT"] ?? tmpdir()
+  mkdirSync(out, { recursive: true })
+  appendFileSync(
+    join(out, `record-cost-${fixture}.jsonl`),
+    `${JSON.stringify({ at: new Date().toISOString(), fixture, runs, pairs, median: ratio })}\n`
+  )
+  for (const pair of pairs) {
+    expect(pair.normal.cpu - pair.reads.cpu, `normal mode's CPU does not count the step\n${seen}`)
+      .toBeGreaterThanOrEqual(0.7 * pair.baseline.cpu)
+  }
+  return { ratio, seen }
+}
 
 describe.skipIf(!recordable)("a step that has to run, recorded", () => {
   it.runIf(process.arch === "x64")("is recorded with smthrs-observe, as the build records it on x86_64 Linux", () => {
@@ -287,71 +343,24 @@ describe.skipIf(!recordable)("a step that has to run, recorded", () => {
         fixture === "files" ? "reads many files" : "starts many processes"
       }`,
       async () => {
-        const root = repository(fixture)
-        // Not timed: a smthrs run from source compiles itself here, as no installed one does.
-        await measure(root)
-        const pairs: Array<Pair> = []
-        const runs: Array<{ readonly load: ReadonlyArray<number>; readonly pairs: ReadonlyArray<Pair> }> = []
-        for (let double = 0; double < doubles; double += 1) {
-          const twice: Array<ReadonlyArray<Commit>> = []
-          for (let time = 0; time < 2; time += 1) {
-            const before = load()
-            const report = await measure(root)
-            expect(report.mismatches).toBe(0)
-            expect(report.commits).toHaveLength(2)
-            for (const commit of report.commits) {
-              expect(commit.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
-              expect(commit.normal.counts).toEqual({ hit: 0, ran: 1, failed: 0, skipped: 0 })
-            }
-            runs.push({ load: [before, load()], pairs: report.commits.map(pairOf) })
-            twice.push(report.commits)
-          }
-          const [first, second] = twice as [ReadonlyArray<Commit>, ReadonlyArray<Commit>]
-          for (const [index, commit] of first.entries()) {
-            expect(second[index]!.commit).toBe(commit.commit)
-            pairs.push(lesser(pairOf(commit), pairOf(second[index]!)))
-          }
-        }
-        const ratio = medianRatio(pairs)
-        const at = (time: Time): string => `${Math.round(time.wall)} ms ${Math.round(time.cpu)} ms CPU`
-        const seen = [
-          ...runs.map((run, index) =>
-            `replay ${index + 1}, load ${run.load.join(" to ")}: ` +
-            run.pairs.map((pair) =>
-              `baseline ${at(pair.baseline)}, normal ${at(pair.normal)} (reads ${at(pair.reads)})`
-            )
-              .join("; ")
-          ),
-          ...pairs.map((pair, index) =>
-            `pair ${index + 1}: ${(pair.normal.wall / pair.baseline.wall).toFixed(2)} wall, ` +
-            `${(pair.normal.cpu / pair.baseline.cpu).toFixed(2)} CPU`
-          ),
-          `median of ${pairs.length}: ${ratio.wall.toFixed(2)} wall, ${ratio.cpu.toFixed(2)} CPU`
-        ].join("\n")
-        const out = process.env["RECORD_COST_OUT"] ?? tmpdir()
-        mkdirSync(out, { recursive: true })
-        appendFileSync(
-          join(out, `record-cost-${fixture}.jsonl`),
-          `${JSON.stringify({ at: new Date().toISOString(), fixture, runs, pairs, median: ratio })}\n`
-        )
-        // Normal mode's step does the baseline's work, recorded. Far less CPU than the baseline's says the build did not
-        // count the step's processes, and then the CPU bound says nothing.
-        const counted = pairs.every((pair) => pair.normal.cpu - pair.reads.cpu >= 0.7 * pair.baseline.cpu)
+        const { ratio, seen } = await cost(fixture)
         expect(ratio.wall, seen).toBeLessThanOrEqual(1.2)
-        if (cpuUncounted === undefined) {
-          expect(counted, `normal mode's CPU does not count the step\n${seen}`).toBe(true)
-          expect(ratio.cpu, seen).toBeLessThanOrEqual(1.3)
-        } else {
-          // Known broken: the check fails while the defect stands, and the day it passes the mark has to go.
-          expect(counted, `normal mode's CPU counts the step again: remove the mark for ${cpuUncounted.commit}`)
-            .toBe(false)
-          console.log(
-            `${fixture}: CPU bound not judged: CPU uncounted (since ${cpuUncounted.commit}, normal mode's CPU leaves ` +
-              `out the step; ${cpuUncounted.owner} fixes it)`
-          )
-        }
+        expect(ratio.cpu, seen).toBeLessThanOrEqual(1.3)
       },
       1_800_000
     )
   }
+
+  // A known failure: a step that reads 4,000 files a second of CPU, as a type check over an installed tree does, costs
+  // more than the bound. Measured on nyc-01, 2026-11-21, eight rounds at load 18 to 155: the median 1.01 to 1.08 wall
+  // and 1.46 to 1.57 CPU, every round over. This test turns red the day such a step holds the bound.
+  it.fails(
+    "costs at most 1.20 times its wall time and 1.30 times its CPU time when it reads 4,000 files a second of CPU",
+    async () => {
+      const { ratio, seen } = await cost("dense")
+      expect(ratio.wall, seen).toBeLessThanOrEqual(1.2)
+      expect(ratio.cpu, seen).toBeLessThanOrEqual(1.3)
+    },
+    1_800_000
+  )
 })
