@@ -257,7 +257,11 @@ export const start = (
   const done = new Promise<Outcome>((resolve) => {
     child.on("close", (code) => resolve({ code: code ?? -1, ...printed }))
   })
-  return { done, signal: (signal: "SIGINT" | "SIGTERM") => child.kill(signal) }
+  return {
+    done,
+    printed: (): Outcome => ({ code: -1, ...printed }),
+    signal: (signal: "SIGINT" | "SIGTERM") => child.kill(signal)
+  }
 }
 
 /** Whether a process with this id exists. */

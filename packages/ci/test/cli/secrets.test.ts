@@ -268,7 +268,11 @@ describe("smithers-ci started with tokens in its environment", () => {
 
     // Before any step runs, the process is one that was started without the tokens. It is the same process.
     expect(startedWith(pid)).toContain(canary)
-    await until(() => child.exitCode !== null || !startedWith(pid).includes(canary), "the program to start again")
+    // While the program is inside its own `execve` the system gives an empty environment: neither start's.
+    await until(() => {
+      const now = startedWith(pid)
+      return child.exitCode !== null || (now !== "" && !now.includes(canary))
+    }, "the program to start again")
     expect(child.exitCode).toBeNull()
     expect(startedWith(pid)).not.toBe("")
 

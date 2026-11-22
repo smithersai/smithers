@@ -12878,6 +12878,7 @@
         "replay/DiskSpace.d.ts": "38c004c02501e45e4aeddcffc016c24c2b7b37d5db454453f5dbaf19ad7cc3d8",
         "replay/Environment.d.ts": "3e1c07cf8628087764cdd82d3a5a781f37b1488e1730216a6a30f07868f24622",
         "replay/Failures.d.ts": "74aa924b0987b4c913d7d8ab5bc24c5fb9114258e3e46265fc888c51545852fe",
+        "replay/Git.d.ts": "fe877a77024e89088d5592577e08153588a795b6153e641c6886730b3b50bfd4",
         "replay/History.d.ts": "c36e69b029bd89ee304bd1566d517da1b557e42e2a018a43276bea9edd42655d",
         "replay/HomeTools.d.ts": "e10f9d9b5af9f1cf59851dbd3c09ae06b609ec0f05671c0ca24d1e33f64a6351",
         "replay/Jail.d.ts": "57f76ac5f9279232219d3c961d59e85ca3df223c24e2207c7e0eacb76760b3fd",

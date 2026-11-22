@@ -355,7 +355,10 @@ describe("a signal", () => {
       const started = (): boolean =>
         existsSync(join(temp, "started"))
         || replays().some((name) => made(name).some((way) => existsSync(join(temp, name, "tmp", way, "started"))))
-      await until(started, "the step to start", 250_000)
+      await until(started, "the step to start", 250_000).catch((error: Error) => {
+        running.signal("SIGTERM")
+        throw new Error(`${error.message}; the program printed:\n${running.printed().stderr}`)
+      })
       expect(named().some((line) => line.includes(`${token}.sh`))).toBe(true)
       expect(named().some((line) => line.includes(`${token}-child`))).toBe(true)
       running.signal(signal)

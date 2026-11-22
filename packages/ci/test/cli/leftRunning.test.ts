@@ -206,9 +206,18 @@ describe.runIf(keeps)("a job whose step leaves a server running for the next ste
         }
       )
       const record = JSON.parse(readFileSync(results, "utf8")) as {
-        readonly results: ReadonlyArray<{ readonly label: string; readonly status: string }>
+        readonly results: ReadonlyArray<
+          { readonly label: string; readonly status: string; readonly notReused?: string }
+        >
       }
-      return { code: ran.status, statuses: Object.fromEntries(record.results.map((each) => [each.label, each.status])) }
+      return {
+        code: ran.status,
+        statuses: Object.fromEntries(record.results.map((each) => [each.label, each.status])),
+        // Why a step that ran was not answered by an earlier result, as Smithers build says it.
+        notReused: record.results.flatMap((each) =>
+          each.notReused === undefined ? [] : [`${each.label}: ${each.notReused}`]
+        )
+      }
     }
     const [docs, bad, ok] = shas
     const first = run(docs!, 1)
@@ -227,7 +236,7 @@ describe.runIf(keeps)("a job whose step leaves a server running for the next ste
     expect(third.code).toBe(0)
     // Back to what the first run read: every step is answered by it, and no server starts.
     if (observes) {
-      expect(third.statuses).toMatchObject({
+      expect(third.statuses, third.notReused.join("\n")).toMatchObject({
         "//:ci.yml-split-1": "hit",
         "//:ci.yml-split-2": "hit",
         "//:ci.yml-daemon-1": "hit",
