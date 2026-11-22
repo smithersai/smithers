@@ -805,6 +805,42 @@ describe("smthrs-observe --keep, for a step whose job keeps what it leaves runni
     }
     expect(NodeFs.readFileSync(trace, "utf8")).toBe(own)
   }, 60_000)
+
+  // A shell's `trap` sets a handler with no SA_RESTART, and the supervisor seizes each process that does: its serving
+  // thread asks the main thread to, and waits holding the lock the main thread takes at every tick to write what the
+  // command left. Each waited for the other, and every recorded thread waited in its call for good: shadcn-ui/ui's
+  // tests, whose next server and vitest workers set handlers, made no progress for ten minutes.
+  supervised("follows what it left while that starts thousands of programs that set handlers", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "observe-keep-handlers-")))
+    temporary.push(root)
+    const trace = Path.join(root, "trace")
+    const shells = "for i in $(seq 500); do /bin/sh -c 'trap : USR1'; done"
+    const script = `(for j in 1 2 3 4; do (${shells}) & done; wait; touch ${root}/finished) > /dev/null 2>&1 & exit 0`
+    const started = Date.now()
+    const child = spawn(supervisor!, ["--keep", trace, "--", "sh", "-c", script], { detached: true, stdio: "ignore" })
+    child.unref()
+    try {
+      // Unrecorded, the 2,000 shells take about a second here; recorded, about as long.
+      while (!NodeFs.existsSync(Path.join(root, "finished"))) {
+        if (Date.now() - started > 60_000) throw new Error("what the command left made no progress")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      // Once nothing it followed is left, it answers every request, and ends.
+      const ended = () =>
+        NodeFs.existsSync(`${trace}.answered`) &&
+        NodeFs.readFileSync(`${trace}.answered`, "utf8").startsWith("9223372036854775807")
+      while (!ended()) {
+        if (Date.now() - started > 60_000) throw new Error("it did not end")
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+    } finally {
+      try {
+        process.kill(-child.pid!, "SIGKILL")
+      } catch {
+        // Ended already.
+      }
+    }
+  }, 120_000)
 })
 
 describe("smthrs-observe --reap, for a step whose job has nothing to keep what it leaves running", () => {

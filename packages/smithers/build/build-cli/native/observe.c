@@ -2216,6 +2216,19 @@ static void serveSeizes(void) {
   pthread_mutex_unlock(&seizing);
 }
 
+/*
+ * Takes serving_lock on the main thread. The serving thread holds it while it serves a call, and a call that sets a
+ * handler waits there for the main thread to seize the process (expose): the main thread seizes while it waits, or
+ * neither ever goes on, and every recorded thread waits in its call for good.
+ */
+static void lockServing(void) {
+  while (pthread_mutex_trylock(&serving_lock) != 0) {
+    serveSeizes();
+    struct timespec pause = {0, 50000};
+    nanosleep(&pause, NULL);
+  }
+}
+
 static int restartable(enum kind k) {
   return k == K_OPEN || k == K_LOOK || k == K_EXEC || k == K_CHDIR || k == K_MKDIR || k == K_REMOVE ||
          k == K_CHANGE || k == K_CHANGE_FD || k == K_RENAME || k == K_LINK || k == K_SYMLINK || k == K_FORK ||
@@ -3643,7 +3656,7 @@ static int writeWhole(const char *file, const char *text) {
  */
 static int writeStep(const char *file, int code) {
   settleBindings();
-  pthread_mutex_lock(&serving_lock);
+  lockServing();
   settlePast();
   struct lines taken = takeLines();
   pthread_mutex_unlock(&serving_lock);
@@ -3677,7 +3690,7 @@ static void writeKept(const char *file) {
     }
   }
   settleBindings();
-  pthread_mutex_lock(&serving_lock);
+  lockServing();
   settlePast();
   struct lines taken = takeLines();
   pthread_mutex_unlock(&serving_lock);
@@ -4050,7 +4063,7 @@ int main(int argc, char **argv) {
     sendStale();
     /* A connection asked again once its thread is past it: the copy of its socket is let go within a tick. */
     if (__atomic_load_n(&refusedCalls, __ATOMIC_ACQUIRE) != NULL) {
-      pthread_mutex_lock(&serving_lock);
+      lockServing();
       settleRefused(0, 0);
       pthread_mutex_unlock(&serving_lock);
     }
