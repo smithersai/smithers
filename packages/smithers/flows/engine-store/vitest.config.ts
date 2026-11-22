@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -44,7 +45,7 @@ export default defineConfig({
       // invocations destroy each other: one aborts with a removed-coverage-
       // directory error and the other enforces 100% against a partial
       // profile with every test passing (issues #115/#121).
-      reportsDirectory: join(tmpdir(), `flows-engine-store-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-engine-store-coverage-${randomUUID()}`),
       // Gate on production code only — without this, well-covered helpers
       // under test/ (e.g. test/contract/DurableEngineStateContract.ts)
       // dilute the denominator and give src regressions slack (issue #51).

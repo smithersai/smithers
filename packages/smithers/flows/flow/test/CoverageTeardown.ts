@@ -2,7 +2,8 @@
  * Vitest `globalSetup` that reclaims the scratch coverage report.
  *
  * `vitest.config.ts` writes each run's report under the OS temp directory,
- * scoped by pid so concurrent runs cannot destroy each other's report. Vitest
+ * named with a random UUID so concurrent runs cannot destroy each other's
+ * report, also runs in pid namespaces of their own, where the pid repeats. Vitest
  * writes the report before it tears down global setup, so this teardown runs
  * once the thresholds have been checked and removes the scratch tree. A report
  * directory anywhere else (`pnpm coverage` writes `coverage/`) is kept for the

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -19,7 +20,7 @@ export default defineConfig({
       // Every run enforces complete coverage of the target authoring surface.
       enabled: true,
       provider: "v8",
-      reportsDirectory: join(tmpdir(), `flows-targets-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-targets-coverage-${randomUUID()}`),
       include: ["src/**"],
       thresholds: {
         branches: 100,

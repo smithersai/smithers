@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -47,7 +48,7 @@ export default defineConfig({
       // Keep the coverage gate visible even when a behavioral test fails.
       reportOnFailure: true,
       provider: "v8",
-      reportsDirectory: join(tmpdir(), `mvp-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `mvp-coverage-${randomUUID()}`),
       include: [
         "ops/database/Connection.ts",
         "ops/database/Policy.ts",

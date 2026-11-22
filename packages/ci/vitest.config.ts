@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -80,7 +81,7 @@ export const suite = (part: {
         provider: "v8",
         // Per-process report directory so concurrent vitest runs do not destroy
         // each other's coverage scratch state (issues #115/#121).
-        reportsDirectory: join(tmpdir(), `flows-ci-coverage-${process.pid}`),
+        reportsDirectory: join(tmpdir(), `flows-ci-coverage-${randomUUID()}`),
         include: [...(part.coverage ?? ["src/**"])],
         exclude: [...coverageConfigDefaults.exclude, ...(part.coverageExclude ?? [])],
         // The files short of full coverage, each with every line it misses: a failed part keeps only 32 KB of output.

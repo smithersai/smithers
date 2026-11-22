@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -37,7 +38,7 @@ export default defineConfig({
       // invocations destroy each other: one aborts with a removed-coverage-
       // directory error and the other enforces 100% against a partial
       // profile with every test passing (issues #115/#121).
-      reportsDirectory: join(tmpdir(), `flows-database-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-database-coverage-${randomUUID()}`),
       include: ["src/**"],
       // `src/bun/**` imports `bun:sqlite`, which Node cannot load, so no suite
       // in this Node lane can execute it without a shim (issue #4504: the shim

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -43,7 +44,7 @@ export default defineConfig({
       // profile with every test passing (issues #115/#121). The globalSetup
       // above removes it after the run; `pnpm coverage` writes `coverage/`
       // instead so the report outlives the run.
-      reportsDirectory: join(tmpdir(), `flows-flow-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-flow-coverage-${randomUUID()}`),
       // Every production module, including the public barrel, is measured.
       include: ["src/**"],
       // The sibling package has its own gate; resolve it from this config so

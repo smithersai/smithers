@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -25,7 +26,7 @@ export default defineConfig({
       provider: "v8",
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
-      reportsDirectory: join(tmpdir(), `flows-integrations-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-integrations-coverage-${randomUUID()}`),
       include: ["src/**"],
       // Ratcheted to exactly what one storage backend reaches. Raise these
       // when a case closes; never lower them.

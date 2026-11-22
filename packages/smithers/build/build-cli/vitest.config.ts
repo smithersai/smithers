@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -35,7 +36,7 @@ export default defineConfig({
       reportOnFailure: true,
       autoAttachSubprocess: true,
       provider: "v8",
-      reportsDirectory: join(tmpdir(), `flows-build-cli-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-build-cli-coverage-${randomUUID()}`),
       include: ["src/**"],
       thresholds: {
         branches: 100,

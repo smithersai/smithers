@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -22,7 +23,7 @@ export default defineConfig({
       provider: "v8",
       autoAttachSubprocess: true,
       // One report directory per process, so concurrent runs never destroy each other's coverage scratch.
-      reportsDirectory: join(tmpdir(), `flows-views-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-views-coverage-${randomUUID()}`),
       // Include emitted realm scripts so V8 remaps their execution to src/.
       include: ["src/**/*.{ts,vibe}", "test-bundles/**/*.js"],
       excludeAfterRemap: true,

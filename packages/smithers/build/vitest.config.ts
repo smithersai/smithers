@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -23,7 +24,7 @@ export default defineConfig({
       // Keep these thresholds aligned with the repository's testing rule.
       enabled: true,
       provider: "v8",
-      reportsDirectory: join(tmpdir(), `flows-build-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-build-coverage-${randomUUID()}`),
       include: ["src/**"],
       // Nested packages have their own coverage gates. Absolute patterns keep
       // checkout ancestors such as `review-harness` out of exclusion matching.

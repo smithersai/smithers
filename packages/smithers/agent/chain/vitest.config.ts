@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -35,7 +36,7 @@ export default defineConfig({
       // invocations destroy each other: one aborts with a removed-coverage-
       // directory error and the other enforces 100% against a partial
       // profile with every test passing.
-      reportsDirectory: join(tmpdir(), `flows-chain-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-chain-coverage-${randomUUID()}`),
       include: ["src/**/*.{ts,vibe}"],
       // Accurate, enforceable floors measured against the committed suite.
       // Ratchet upward as tests land; never lower without a written

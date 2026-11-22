@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -35,7 +36,7 @@ export default defineConfig({
       // invocations destroy each other: one aborts with a removed-coverage-
       // directory error and the other enforces 100% against a partial
       // profile with every test passing (issues #115/#121).
-      reportsDirectory: join(tmpdir(), `flows-engine-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-engine-coverage-${randomUUID()}`),
       // Every production module, including the public barrel, is measured.
       include: ["src/**/*.{ts,vibe}"],
       // The suite must earn complete coverage in every category.

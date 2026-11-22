@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { randomUUID } from "node:crypto"
 import { existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { isAbsolute, join, relative, resolve, sep } from "node:path"
@@ -10,7 +11,7 @@ for (const [fails, preserve] of [[false, false], [true, false], [false, true]]) 
     const root = mkdtempSync(join(realpathSync(tmpdir()), "coverage-cleanup-"))
     const reportsDirectory = preserve
       ? join(root, "reports")
-      : join(tmpdir(), `flows-cleanup-contract-${fails}-coverage-${process.pid}`)
+      : join(tmpdir(), `flows-cleanup-contract-${fails}-coverage-${randomUUID()}`)
     const previousExitCode = process.exitCode
     let runner
     let wroteReports = false

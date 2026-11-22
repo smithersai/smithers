@@ -59781,6 +59781,55 @@
     }
   },
   {
+    "label": "//packages/repo-targets:coverageDirectories",
+    "package": "packages/repo-targets",
+    "name": "coverageDirectories",
+    "rule": "Shell.Diff",
+    "kinds": [
+      "run",
+      "lint"
+    ],
+    "cacheable": false,
+    "inputs": [],
+    "outputs": [],
+    "dependencies": [
+      "//packages/repo-targets:repositoryInputs"
+    ],
+    "source": {
+      "file": "packages/repo-targets/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/repo-targets:coverageDirectoriesUnit",
+    "package": "packages/repo-targets",
+    "name": "coverageDirectoriesUnit",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/contracts/check-coverage-directories.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/contracts/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/repo-targets/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/repo-targets:dependencyBoundaries",
     "package": "packages/repo-targets",
     "name": "dependencyBoundaries",

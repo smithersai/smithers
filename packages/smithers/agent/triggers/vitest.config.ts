@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -24,7 +25,7 @@ export default defineConfig({
       provider: "v8",
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
-      reportsDirectory: join(tmpdir(), `flows-triggers-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-triggers-coverage-${randomUUID()}`),
       include: ["src/**"],
       // The release policy specifies 100. The ratchet that sat here at
       // 68/67/81/80 is what let an untested scheduler ship: every durable

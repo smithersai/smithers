@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -24,7 +25,7 @@ export default defineConfig({
       reportOnFailure: true,
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
-      reportsDirectory: join(tmpdir(), `flows-std-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-std-coverage-${randomUUID()}`),
       include: ["src/**"],
       // Every source file is held to the same behavioral coverage gate.
       thresholds: {

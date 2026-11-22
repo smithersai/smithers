@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -32,7 +33,7 @@ export default defineConfig({
       provider: "v8",
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state.
-      reportsDirectory: join(tmpdir(), `flows-migrate-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-migrate-coverage-${randomUUID()}`),
       include: ["src/**"],
       // `src/flow/bin.ts` is the one statement `NodeRuntime.runMain(main)` and
       // stays in the denominator uncovered: a test can only reach it by

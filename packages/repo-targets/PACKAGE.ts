@@ -105,6 +105,30 @@ const conflictMarkersUnit = Smithers.NodeTest({
   deps: []
 })
 
+/**
+ * Fails on a vitest configuration that names its scratch coverage directory by
+ * the process id alone: runs in pid namespaces of their own share that name and
+ * remove each other's coverage files.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const coverageDirectories = Smithers.Shell.Diff({
+  shell: "node packages/repo-targets/contracts/check-coverage-directories.mjs",
+  data: [repositoryInputs],
+  changes: [],
+  timeout: "2m"
+})
+
+/** The coverage-directory check's own contract: both pid forms, the configurations it reads and its exit codes. */
+const coverageDirectoriesUnit = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//packages/repo-targets/contracts/check-coverage-directories.test.mjs")
+  ]),
+  srcs: contracts,
+  deps: []
+})
+
 /** Tracked files must resolve declared paths and exclude local build and agent state. */
 const trackedHygiene = Smithers.Shell.Diff({
   shell: "node packages/repo-targets/contracts/check-tracked-hygiene.mjs --projected-tree",
@@ -867,4 +891,4 @@ const mvpDocs = Smithers.NodeTest({
   deps: [repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, registryTestInputs, testSupport, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, registryTestInputs, testSupport, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, coverageDirectories, coverageDirectoriesUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })

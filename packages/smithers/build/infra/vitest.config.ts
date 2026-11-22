@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -20,7 +21,7 @@ export default defineConfig({
       // (the release policy): 100% on every default run.
       enabled: true,
       provider: "v8",
-      reportsDirectory: join(tmpdir(), `flows-build-infra-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-build-infra-coverage-${randomUUID()}`),
       // `alchemy.run.ts` only names the Cloudflare resources; every option
       // object and the stack program come from `deployment.ts`, so importing
       // the graph executes all of it and the suite can hold it to 100% too.

@@ -1,4 +1,5 @@
 // Vitest loads configuration from TypeScript files.
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -17,7 +18,7 @@ export default defineConfig({
       enabled: true,
       provider: "v8",
       include: ["src/**"],
-      reportsDirectory: join(tmpdir(), `flows-fuzz-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-fuzz-coverage-${randomUUID()}`),
       reporter: ["text", "json", "json-summary"],
       thresholds: { lines: 100, branches: 100, functions: 100, statements: 100 }
     }

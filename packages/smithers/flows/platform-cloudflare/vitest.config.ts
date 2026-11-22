@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -22,7 +23,7 @@ export default defineConfig({
     coverage: {
       enabled: true,
       provider: "v8",
-      reportsDirectory: join(tmpdir(), `flows-platform-cloudflare-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-platform-cloudflare-coverage-${randomUUID()}`),
       include: ["src/**/*.{ts,vibe}"],
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }
     }

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -19,7 +20,7 @@ export default defineConfig({
       enabled: true,
       provider: "v8",
       include: ["src/features/agent/memory.ts", "src/features/agent/memoryFlows.ts"],
-      reportsDirectory: join(tmpdir(), `mvp-memory-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `mvp-memory-coverage-${randomUUID()}`),
       thresholds: { lines: 100, branches: 100, functions: 100, statements: 100 }
     }
   }

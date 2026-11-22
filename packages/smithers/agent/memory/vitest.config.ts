@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -24,7 +25,7 @@ export default defineConfig({
       provider: "v8",
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
-      reportsDirectory: join(tmpdir(), `flows-memory-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-memory-coverage-${randomUUID()}`),
       include: ["src/**/*.{ts,vibe}"],
       // The SQLite/PostgreSQL matrix combines adapter-specific paths and enforces full coverage.
       // Single-adapter runs can miss backend-specific branches; use `pnpm coverage` for this gate.

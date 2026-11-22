@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -20,7 +21,7 @@ export default defineConfig({
       enabled: true,
       provider: "v8",
       // One report directory per process, so concurrent runs never destroy each other's coverage scratch.
-      reportsDirectory: join(tmpdir(), `flows-effect-tanstack-db-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-effect-tanstack-db-coverage-${randomUUID()}`),
       include: ["src/**/*.{ts,vibe}"],
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }
     }

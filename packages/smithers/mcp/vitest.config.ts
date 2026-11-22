@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -23,7 +24,7 @@ export default defineConfig({
       provider: "v8",
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
-      reportsDirectory: join(tmpdir(), `flows-mcp-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-mcp-coverage-${randomUUID()}`),
       include: ["src/**"],
       // Every source path is exercised by the deterministic stdio fixture, so
       // anything short of 100 is new untested code rather than a known gap.

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -34,7 +35,7 @@ export default defineConfig({
       // invocations destroy each other: one aborts with a removed-coverage-
       // directory error and the other enforces 100% against a partial
       // profile with every test passing (issues #115/#121).
-      reportsDirectory: join(tmpdir(), `flows-run-store-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-run-store-coverage-${randomUUID()}`),
       include: ["src/**"],
       thresholds: {
         branches: 100,

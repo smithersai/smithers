@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -19,7 +20,7 @@ export default defineConfig({
     coverage: {
       enabled: true,
       provider: "v8",
-      reportsDirectory: join(tmpdir(), `flows-repo-targets-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-repo-targets-coverage-${randomUUID()}`),
       include: ["src/**", "ci/**/*.ts"],
       thresholds: {
         branches: 100,
