@@ -843,6 +843,30 @@ describe("an observed test", () => {
     }
   })
 
+  tracedIt("gives no run an io_uring, and a step that needs one takes its plain run's verdict", async () => {
+    // The kernel takes a ring's requests from memory the step can change after any recorder read it: no run has one.
+    const needing = "python3 -c 'import ctypes, sys; libc = ctypes.CDLL(None, use_errno=True); " +
+      "sys.exit(0 if libc.syscall(425, 4, ctypes.create_string_buffer(120)) >= 0 else 1)'"
+    const { logs, run, summaries } = await fixture({ check: needing })
+    expect(await run()).toEqual({ check: "ran" })
+    // It fails recorded, passes plain, and the plain run is the verdict: nothing is stored, and the line names why.
+    expect(logs).toContain(
+      "//:check  failed while its reads were recorded, where it asked for io_uring, which a recorded step does not " +
+        "get; it runs again without the recording"
+    )
+    expect(summaries[0]!.results[0]!.notStored).toBe(
+      "it passed, but failed while its reads were recorded, where it asked for io_uring, which a recorded step does " +
+        "not get"
+    )
+    expect(await run()).toEqual({ check: "ran" })
+    expect(summaries[1]!.results[0]!.status).toBe("ran")
+    // node's libuv sets up rings at every start, and runs on without them: its step is stored.
+    const node = await fixture({ check: `${process.execPath} -e "require('fs').readFileSync('input.txt')"` })
+    expect(await node.run()).toEqual({ check: "ran" })
+    expect(node.summaries[0]!.results[0]!.notStored).toBeUndefined()
+    expect(await node.run()).toEqual({ check: "hit" })
+  })
+
   tracedIt("runs without the recording for a day after a run that reached outside it", async () => {
     const server = Net.createServer((socket) => socket.end())
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))

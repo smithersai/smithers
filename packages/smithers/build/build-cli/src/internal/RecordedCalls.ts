@@ -37,7 +37,10 @@
  * - `send`: sends to the address it names (`sendto`, `sendmsg`, `sendmmsg`), which reaches what is there as `connect`
  *   does; one that names no address sends where its socket is already connected.
  * - `fork`, `space`: starts a process or a thread, or gives one namespaces or a working directory of its own.
- * - `ring`, `ringEnter`: sets up or drives an io_uring.
+ * - `ring`: sets up an io_uring. The kernel takes a ring's requests from memory the run shares with it, where no
+ *   recorder reads them as the kernel takes them, so both recorders answer it `ENOSYS`, as a container's default
+ *   filter does, and a program falls back to the calls a trace shows.
+ * - `ringEnter`: drives or changes a ring, which then can only have come from outside the run: it stores nothing.
  * - `filter`, `handler`: filters the run's own calls; sets a signal handler.
  * - `none`: names no file (a call numbered past the oldest strace's table, which prints it by number).
  * - `refused`: names a file in a way no record can hold: a run that makes it stores nothing.
@@ -350,9 +353,11 @@ export const calls: ReadonlyArray<Call> = [
   { name: "fork", kind: "fork" },
   { name: "vfork", kind: "fork" },
   { name: "unshare", kind: "space" },
-  // io_uring: strace's own runs are refused one, so programs fall back to calls a trace shows.
+  // io_uring: refused to every run, so programs fall back to calls a trace shows (libuv, and so node, sets up rings
+  // at every start, and runs on without them).
   { name: "io_uring_setup", kind: "ring", number: 425 },
-  { name: "io_uring_enter", kind: "ringEnter", number: 426, only: "smthrs-observe" },
+  { name: "io_uring_enter", kind: "ringEnter", number: 426 },
+  { name: "io_uring_register", kind: "ringEnter", number: 427 },
   { name: "seccomp", kind: "filter", only: "smthrs-observe" },
   { name: "rt_sigaction", kind: "handler", only: "smthrs-observe" },
   // Calls numbered past what strace 6.8 knows, which take no path.
@@ -393,6 +398,16 @@ export const calls: ReadonlyArray<Call> = [
  * @since 1.0.0
  */
 export const cannotFollow = (form: string): string => `it reached a file in a way the recorder cannot follow: ${form}`
+
+/**
+ * Why a run that used an io_uring stores nothing: `call` is the call that set it up or drove it. No run sets one up
+ * (both recorders answer `io_uring_setup` with `ENOSYS`), so a ring is one the run was given.
+ *
+ * @category calls
+ * @since 1.0.0
+ */
+export const ringUsed = (call: string): string =>
+  `it used an io_uring (${call}), whose requests the kernel reads from memory the step can change after any recorder looked`
 
 /** Each call by its name.
  *

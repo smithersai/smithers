@@ -62,14 +62,14 @@
  * or aarch64): a seccomp filter hands each file-system call to it, only the
  * calling thread waits, and the call then goes on in the kernel as the run
  * made it. Elsewhere it is `strace` with a seccomp filter, which stops every
- * thread at each file-system call and when it starts and ends; `io_uring` is
- * refused to a run under strace, as it is in a container, and so is
- * `pidfd_open`: strace reaps a traced process that ended before its parent
+ * thread at each file-system call and when it starts and ends. Both refuse
+ * `io_uring` to a run, as a container does: the kernel takes a ring's requests
+ * from memory the run shares with it, which no recorder reads as the kernel
+ * takes it, and a program falls back to calls a trace shows. strace also
+ * refuses `pidfd_open`: strace reaps a traced process that ended before its parent
  * can, so a parent that a pidfd told the child ended would find it not ended
  * yet (tokio, and so uv, panics then), and refused one waits for its children
- * as on a kernel without pidfds. `smthrs-observe`
- * refuses nothing: a run that sets up a ring stores nothing, since a read
- * submitted through a ring is in no trace. A traced run ends when its command
+ * as on a kernel without pidfds. A traced run ends when its command
  * ends, and a process the command left running is stopped, as a sandbox
  * stops it.
  *
@@ -579,7 +579,18 @@ export interface Trace {
   readonly plainMade?: ReadonlySet<string> | undefined
   /** How many times `smthrs-observe` stopped a thread of the run for a signal; absent when none did. */
   readonly signalStops?: number | undefined
+  /** The run asked for an io_uring, which no recorded run gets: a step that cannot do without one fails recorded. */
+  readonly ringAsked?: true | undefined
 }
+
+/**
+ * Why a step that asked for an io_uring failed recorded and passed plain: what its line says after "failed while
+ * its reads were recorded".
+ *
+ * @category tracing
+ * @since 1.0.0
+ */
+export const ringRefused = "where it asked for io_uring, which a recorded step does not get"
 
 /**
  * The signal stops of a recorded run from which the build says so: each is a round trip to the recorder, and a
@@ -1340,6 +1351,7 @@ export const read = (
   const reachedThrough: Array<readonly [path: string, named: string, opened: string]> = []
   const rights = new Set<string>()
   let signalStops = 0
+  let ringAsked = false
   const walks: Array<Walk> = []
   /** Pairs of names a `RENAME_EXCHANGE` swapped. */
   const exchanged: Array<readonly [string, string]> = []
@@ -1840,7 +1852,11 @@ export const read = (
         return
       }
       case "io_uring_setup":
-        if (ok) refusals.add(cannotFollow("io_uring"))
+      case "io_uring_enter":
+      case "io_uring_register":
+        // Both recorders answer a ring's setup ENOSYS: the run went on without one.
+        if (name === "io_uring_setup" && errno === "ENOSYS") ringAsked = true
+        if (ok) refusals.add(RecordedCalls.ringUsed(name))
         return
     }
     // The rest by what the table says the call does.
@@ -2076,6 +2092,7 @@ export const read = (
     ...(exchanged.length === 0 ? {} : { exchanged }),
     ...(supervised ? { rights: [...rights] } : {}),
     ...(signalStops === 0 ? {} : { signalStops }),
+    ...(ringAsked ? { ringAsked: true as const } : {}),
     bound: listened,
     built,
     plainMade

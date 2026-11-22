@@ -3986,10 +3986,14 @@ const executeWith = (
             // smthrs-observe stops a run whose signals come faster than a recorded call completes, which would never
             // end recorded: the step runs again without the recording, as one that failed recorded does.
             const storm = Exit.isSuccess(parsed) && parsed.value.refusals.includes(ObservedReads.signalStorm)
+            // No recorded run gets an io_uring: a step that asked for one may have failed for want of it.
+            const ring = Exit.isSuccess(parsed) && parsed.value.ringAsked === true
+              ? `, ${ObservedReads.ringRefused}`
+              : ""
             log(
               storm
                 ? `${node.label}  its recording was ended: ${ObservedReads.signalStorm}; it runs again without it`
-                : `${node.label}  failed while its reads were recorded; it runs again without the recording`
+                : `${node.label}  failed while its reads were recorded${ring}; it runs again without the recording`
             )
             // What the failed run left running would stand in the way of what the plain run starts.
             if (job !== undefined && left.length > 0) {
@@ -4006,7 +4010,7 @@ const executeWith = (
               }).catch(() => undefined)
             )
             if (storm) unstored(node, `${ObservedReads.signalStorm}, so it ran without the recording`)
-            else unstored(node, failedObserved, `; the failed run's output is in ${attemptPath}`)
+            else unstored(node, `${failedObserved}${ring}`, `; the failed run's output is in ${attemptPath}`)
             return green("ran")
           }
           // A step that takes a signal every few tens of microseconds ends recorded, many times slower: say why.

@@ -32,7 +32,7 @@ NR = {
     "removexattr": (197, 14), "lremovexattr": (198, 15), "setxattrat": (463, 463), "removexattrat": (466, 466),
     "file_setattr": (469, 469), "fchmod": (91, 52), "fchown": (93, 55), "rename": (82, None), "renameat": (264, 38),
     "renameat2": (316, 276), "link": (86, None), "linkat": (265, 37), "symlink": (88, None), "symlinkat": (266, 36),
-    "fork": (57, None), "unshare": (272, 97), "dup": (32, 23), "pidfd_open": (434, 434), "copy_file_range": (326, 285), "io_uring_setup": (425, 425), "io_uring_enter": (426, 426),
+    "fork": (57, None), "unshare": (272, 97), "dup": (32, 23), "pidfd_open": (434, 434), "copy_file_range": (326, 285), "io_uring_setup": (425, 425), "io_uring_enter": (426, 426), "io_uring_register": (427, 427),
     "seccomp": (317, 277), "mseal": (462, 462), "listns": (470, 470), "rseq_slice_yield": (471, 471),
     "name_to_handle_at": (303, 264), "open_by_handle_at": (304, 265), "chroot": (161, 51), "pivot_root": (155, 41),
     "mount": (165, 40), "umount2": (166, 39), "setns": (308, 268), "open_tree": (428, 428), "move_mount": (429, 429),
@@ -186,12 +186,17 @@ def in_thread(body):
     return out[0]
 
 
-def ring_open(path, sqpoll=False):
-    """Opens a path through io_uring's OPENAT, as the recorder cannot see; None where the ring is refused."""
+def ring_open(path, sqpoll=False, given=False):
+    """Opens a path through io_uring's OPENAT, as the recorder cannot see; None where the ring is refused. given: on
+    the ring ring.py set up outside the run, at descriptor 9."""
     params = ctypes.create_string_buffer(120)
-    if sqpoll:
-        struct.pack_into("I", params, 8, 2)  # IORING_SETUP_SQPOLL
-    ring, e = call("io_uring_setup", 4, params)
+    if given:
+        ring = 9
+        params = ctypes.create_string_buffer(bytes.fromhex(os.environ["SMTHRS_PROBE_RING"]))
+    else:
+        if sqpoll:
+            struct.pack_into("I", params, 8, 2)  # IORING_SETUP_SQPOLL
+        ring, e = call("io_uring_setup", 4, params)
     if ring < 0:
         return None
     sq_entries, cq_entries = struct.unpack_from("II", params.raw, 0)
@@ -791,6 +796,9 @@ ways = {
     "acct": then_read(lambda: call("acct", "data/acct")),
     "uselib": then_read(lambda: call("uselib", "data/x.txt")),
     "bpf": then_read(lambda: call("bpf", 7, 0, 0)),
+    # A ring set up outside the run, given to it: an open through it, and a change to it (IORING_REGISTER_PERSONALITY).
+    "io_uring_enter-given": lambda: (lambda fd: fd is not None and good(fd_text(fd)))(ring_open("data/x.txt", given=True)),
+    "io_uring_register": then_read(lambda: call("io_uring_register", 9, 9, 0, 0)),
 }
 for how in ("opath", "fchdir", "in-root", "dotdot"):
     for name in ("statx", "faccessat2", "readlinkat", "getdents64"):
@@ -856,7 +864,25 @@ export interface Way {
   readonly form: string
   readonly change: Change
   readonly expected: Expected
+  /** What the way is given from outside the run: `ring`, an io_uring at descriptor 9 ({@link ringGiver}). */
+  readonly given?: "ring"
 }
+
+/**
+ * Sets up an io_uring and starts the rest of its arguments with it at descriptor 9, and the setup's parameters in
+ * `SMTHRS_PROBE_RING` as hex: `python3 ring.py <command...>`, outside the run it gives the ring to.
+ */
+export const ringGiver = String.raw`
+import ctypes, os, sys
+libc = ctypes.CDLL(None, use_errno=True)
+params = ctypes.create_string_buffer(120)
+ring = libc.syscall(ctypes.c_long(425), ctypes.c_long(4), params)
+if ring < 0:
+    sys.exit(77)
+os.dup2(ring, 9)
+os.environ["SMTHRS_PROBE_RING"] = params.raw.hex()
+os.execvp(sys.argv[1], sys.argv[1:])
+`
 
 const stored = "stored" as const
 const refused = (form: string): { readonly reason: string } => ({
@@ -1102,17 +1128,23 @@ export const ways: { readonly [way: string]: Way } = {
     change: x,
     expected: { strace: stored, observe: { reason: "it filtered its own system calls" } }
   },
-  "io_uring": {
+  // No run gets a ring: the probe falls back to an open the recorder follows.
+  "io_uring": { call: "io_uring_enter", form: "an open through io_uring", change: x, expected: stored },
+  "io_uring-sqpoll": { call: "io_uring_setup", form: "IORING_SETUP_SQPOLL", change: x, expected: stored },
+  // A ring the run did not set up was given to it: driving it or changing it stores nothing, named by the call.
+  "io_uring_enter-given": {
     call: "io_uring_enter",
-    form: "an open through io_uring",
+    form: "an open through a ring set up outside the run",
     change: x,
-    expected: { strace: stored, observe: refused("io_uring") }
+    given: "ring",
+    expected: { reason: "it used an io_uring (io_uring_enter), whose requests the kernel reads from memory" }
   },
-  "io_uring-sqpoll": {
-    call: "io_uring_setup",
-    form: "IORING_SETUP_SQPOLL",
+  "io_uring_register": {
+    call: "io_uring_register",
+    form: "a ring set up outside the run",
     change: x,
-    expected: { strace: stored, observe: refused("io_uring with a kernel thread of its own") }
+    given: "ring",
+    expected: { reason: "it used an io_uring (io_uring_register), whose requests the kernel reads from memory" }
   },
   "pidfd_open": { call: "pidfd_open", form: "a descriptor of a process", change: x, expected: stored },
   "openat-by-number": { call: "openat", form: "by its number through syscall(2)", change: x, expected: stored },
@@ -1132,7 +1164,7 @@ export const ways: { readonly [way: string]: Way } = {
     call: "io_uring_enter",
     form: "a STATX through io_uring",
     change: bad("data/size.txt"),
-    expected: { strace: stored, observe: refused("io_uring") }
+    expected: stored
   },
   "passed-descriptor": {
     call: "openat",

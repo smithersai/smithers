@@ -11,7 +11,8 @@
  *
  * The command runs under a seccomp filter whose listener this program holds. The kernel hands each watched call
  * to one of the supervisor's threads; only the calling thread waits, and the call then goes on in the kernel as
- * the command made it (`SECCOMP_USER_NOTIF_FLAG_CONTINUE`). The supervisor never makes a call for the command.
+ * the command made it (`SECCOMP_USER_NOTIF_FLAG_CONTINUE`). The supervisor never makes a call for the command. One
+ * call is answered instead of let go: `io_uring_setup`, with `ENOSYS`, as strace answers it.
  *
  * Each line names the call with every path made absolute from the directory the call starts from, read at that
  * stop from `/proc/<thread>/cwd` or `/proc/<thread>/fd/<n>`, and an answer read from the file system just before
@@ -189,8 +190,8 @@ enum kind {
   K_SEND,      /* sendto, sendmsg, sendmmsg: the addresses it sends to, which reach what is there as a connect does */
   K_SPACE,     /* unshare with a new namespace */
   K_FORK,      /* fork, vfork, clone, clone3: a process (a thread is its process's), or a new namespace */
-  K_RING,      /* io_uring_setup */
-  K_RING_ENTER,/* io_uring_enter: what the ring is told to do */
+  K_RING,      /* io_uring_setup: answered ENOSYS by this program, so the run never has a ring */
+  K_RING_ENTER,/* io_uring_enter, io_uring_register: a ring the run was given */
   K_FILTER,    /* seccomp: a filter of the run's own */
   K_HANDLER,   /* rt_sigaction: a handler that lets a signal cut a waiting call short */
   K_REFUSED,   /* a file named in a way no record can hold */
@@ -2746,6 +2747,9 @@ static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp
   return 1;
 }
 
+/* The error the call just served is answered with instead of going on (0: it goes on). */
+static int refusedWith;
+
 static void serve(const struct seccomp_notif *req) {
   pid_t tid = (pid_t)req->pid;
   uint64_t id = req->id;
@@ -3344,39 +3348,23 @@ static void serve(const struct seccomp_notif *req) {
       pthread_mutex_unlock(&lock);
       return;
     }
-    case K_RING: {
-      /* A ring whose kernel thread takes what it is told with no call: nothing it does is seen. */
-      uint32_t setup[3] = {0, 0, 0}; /* sq_entries, cq_entries, flags */
-      if (!bytesAt(tid, req->data.args[1], setup, sizeof setup) || (setup[2] & 2u /* IORING_SETUP_SQPOLL */)) {
-        refuse("io_uring with a kernel thread of its own");
-      }
-      return;
-    }
+    case K_RING:
+      /* A ring's requests are read by the kernel from memory the run shares with it, where this program cannot read
+       * them as the kernel does: the run gets none, as in a container's default filter, and programs fall back. The
+       * call is answered here, not let go, and its line says so: a step that fails without a ring is named. */
+      begin(&t, tgid, c->name);
+      printf_(&t, "%u, 0x%llx)", (unsigned)req->data.args[0], (unsigned long long)req->data.args[1]);
+      answer(&t, ENOSYS);
+      refusedWith = ENOSYS;
+      break;
     case K_RING_ENTER: {
-      /* What the ring is about to do, as the kernel lists it: a call that names a path is one no line holds. */
-      if (req->data.args[3] & 16u /* IORING_ENTER_REGISTERED_RING */) {
-        refuse("io_uring by a registered descriptor");
-        return;
-      }
-      char name[64], buffer[16384];
-      snprintf(name, sizeof name, "/proc/%d/fdinfo/%d", tid, (int)req->data.args[0]);
-      int fd = open(name, O_RDONLY | O_CLOEXEC);
-      if (fd < 0) return;
-      ssize_t n = read(fd, buffer, sizeof buffer - 1);
-      close(fd);
-      if (n <= 0) return;
-      buffer[n] = 0;
-      static const char *paths[] = {"opcode:OPENAT,", "opcode:OPENAT2,", "opcode:STATX,", "opcode:RENAMEAT,",
-                                    "opcode:UNLINKAT,", "opcode:MKDIRAT,", "opcode:SYMLINKAT,", "opcode:LINKAT,",
-                                    "opcode:GETXATTR,", "opcode:SETXATTR,", "opcode:FILES_UPDATE,"};
-      for (size_t i = 0; i < sizeof paths / sizeof paths[0]; i++) {
-        if (strstr(buffer, paths[i]) != NULL) {
-          refuse("io_uring");
-          return;
-        }
-      }
-      /* A list cut short by the buffer may hold more: what is not read is not known. */
-      if ((size_t)n == sizeof buffer - 1) refuse("io_uring with more requests than it reads");
+      /* RecordedCalls.ringUsed: a ring the run was given, since no run sets one up. */
+      char reason[256];
+      snprintf(reason, sizeof reason,
+               "it used an io_uring (%s), whose requests the kernel reads from memory the step can change after any "
+               "recorder looked",
+               c->name);
+      unrecorded(reason);
       return;
     }
     case K_FILTER:
@@ -3478,11 +3466,14 @@ static void *serving(void *unused) {
       continue;
     }
     pthread_mutex_lock(&serving_lock);
+    refusedWith = 0;
     serve(req);
+    int error = refusedWith;
     pthread_mutex_unlock(&serving_lock);
     memset(resp, 0, sizes.seccomp_notif_resp);
     resp->id = req->id;
-    resp->flags = SECCOMP_USER_NOTIF_FLAG_CONTINUE;
+    resp->flags = error == 0 ? SECCOMP_USER_NOTIF_FLAG_CONTINUE : 0;
+    resp->error = -error;
     /* A call whose thread ended or was interrupted meanwhile has no one to answer. */
     ioctl(listener, SECCOMP_IOCTL_NOTIF_SEND, resp);
   }

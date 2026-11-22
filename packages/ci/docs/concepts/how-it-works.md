@@ -317,7 +317,15 @@ opening it by a handle instead of a name, stores nothing and runs at every
 commit, and its line names the call:
 `not cached: it reached a file in a way the recorder cannot follow: open_by_handle_at`.
 Every other way a step reaches a file is followed as the kernel follows it,
-including a path held inside one directory, as container tools open files.
+including a path held inside one directory, as container tools open files. A
+step gets no io_uring, the kernel's queue of requests a program writes into
+memory it shares with the kernel, since no recorder reads them as the kernel
+takes them: asking for one is answered as on a kernel without it, as in a
+container. Node and the tools that use it then work as they do there, and their
+steps are stored. A step that cannot run without io_uring fails while recorded
+and passes without the recording: that run is its verdict, its line says it
+asked for io_uring, which a recorded step does not get, and it runs unrecorded
+for a day.
 
 A step that asks git about the commit, as `git describe` and `pre-commit` do,
 read `.git`, which every commit changes, so it runs at every commit. `cargo

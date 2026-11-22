@@ -14,6 +14,7 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import * as ObservedReads from "../src/internal/ObservedReads.ts"
+import * as RecordedCalls from "../src/internal/RecordedCalls.ts"
 import * as RecordStore from "../src/internal/RecordStore.ts"
 
 const temporary: Array<string> = []
@@ -1102,8 +1103,20 @@ describe("reading a trace", () => {
       .toEqual([])
     expect(read("100 mount(\"none\", \"/mnt\", \"tmpfs\", 0, NULL) = -1 EPERM (Operation not permitted)").refusals)
       .toEqual([])
+    // A ring stores nothing: no recorder reads its requests as the kernel takes them. Both refuse rings to a run, so
+    // one that works was given to it.
     expect(read("100 io_uring_setup(256, {flags=0, sq_thread_cpu=0}) = 4<anon_inode:[io_uring]>").refusals)
-      .toEqual([refused("io_uring")])
+      .toEqual([RecordedCalls.ringUsed("io_uring_setup")])
+    expect(read("100 io_uring_enter(4<anon_inode:[io_uring]>, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1").refusals)
+      .toEqual([
+        "it used an io_uring (io_uring_enter), whose requests the kernel reads from memory the step can change after any recorder looked"
+      ])
+    expect(read("100 io_uring_register(4<anon_inode:[io_uring]>, IORING_REGISTER_FILES, 0x7f, 1) = 0").refusals)
+      .toEqual([RecordedCalls.ringUsed("io_uring_register")])
+    expect(
+      read("100 io_uring_enter(0</dev/null>, 0, 0, 0, NULL, 0) = -1 EOPNOTSUPP (Operation not supported)").refusals
+    )
+      .toEqual([])
     // A namespace of its own, or a working directory or descriptors of its own.
     expect(read("100 unshare(CLONE_NEWUSER|CLONE_NEWNS) = 0").refusals).toEqual(["it made a namespace of its own"])
     expect(read("100 unshare(CLONE_NEWUSER) = -1 EPERM (Operation not permitted)").refusals).toEqual([])

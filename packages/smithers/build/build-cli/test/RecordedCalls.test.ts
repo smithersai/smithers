@@ -117,7 +117,13 @@ let made = 0
 const repository = (): string => {
   made += 1
   const root = Path.join(base, `ws-${made}`)
-  for (const [path, text] of [...KernelProbe.files, ["probe.py", KernelProbe.program] as const]) {
+  for (
+    const [path, text] of [
+      ...KernelProbe.files,
+      ["probe.py", KernelProbe.program] as const,
+      ["ring.py", KernelProbe.ringGiver] as const
+    ]
+  ) {
     const file = Path.join(root, path)
     NodeFs.mkdirSync(Path.dirname(file), { recursive: true })
     if (text.startsWith("-> ")) NodeFs.symlinkSync(text.slice(3), file)
@@ -136,15 +142,22 @@ const change = (root: string, [path, text]: KernelProbe.Change): void => {
   else NodeFs.writeFileSync(file, text)
 }
 
-const probe = (root: string, way: string): number =>
-  spawnSync("python3", ["probe.py", way], { cwd: root, stdio: "ignore", timeout: 60_000 }).status ?? -1
+/** The command a way runs: under {@link KernelProbe.ringGiver} when it is given a ring set up outside the run. */
+const given = (way: string, command: ReadonlyArray<string>): ReadonlyArray<string> =>
+  KernelProbe.ways[way]!.given === "ring" ? ["python3", "ring.py", ...command] : command
+
+const probe = (root: string, way: string): number => {
+  const [program, ...rest] = given(way, ["python3", "probe.py", way])
+  return spawnSync(program!, rest, { cwd: root, stdio: "ignore", timeout: 60_000 }).status ?? -1
+}
 
 /** What a recorder made of a way: its verdict, and whether the run it recorded exited as the plain run did. */
 const recorded = (way: string, observer: Recorder): { readonly exit: number; readonly verdict: string } => {
   const root = repository()
   const trace = Path.join(base, `trace-${made}`)
   const startedMs = ObservedReads.markStart(Path.join(base, `mark-${made}`))
-  const [program, ...rest] = ObservedReads.commandFor(observer, trace, ["python3", "probe.py", way])
+  // A ring given to the run is set up outside it: before the recorder starts.
+  const [program, ...rest] = given(way, ObservedReads.commandFor(observer, trace, ["python3", "probe.py", way]))
   const exit = spawnSync(program!, rest, { cwd: root, stdio: "ignore", timeout: 120_000 }).status ?? -1
   const lines = NodeFs.readFileSync(trace, "utf8").split("\n")
   const stored = ObservedReads.record(ObservedReads.read(() => lines, root), { root, ignore: [], startedMs })
