@@ -3,7 +3,7 @@ import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Action, type FlowRuntime } from "@smthrs/flow"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { TabChannel } from "@smthrs/platform-browser"
-import { type Context, Deferred, Effect, Exit, Layer, Logger, ManagedRuntime, Metric, Redacted, Ref, Scope, Stream } from "effect"
+import { Cause, type Context, Deferred, Effect, Exit, Layer, Logger, ManagedRuntime, Metric, Redacted, Ref, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
@@ -314,6 +314,7 @@ describe("sign-in on a tab", () => {
         AuthClient.of({
           session: Effect.succeed({ signedIn: true, login: "octocat", role: "admin" }),
           signOut: Effect.fail(new AuthUnreachable({})),
+          setHostedModel: (enabled) => Effect.succeed({ enabled }),
         }),
       ),
     )
@@ -556,6 +557,7 @@ describe("signing out wipes the device", () => {
         AuthClient.of({
           session: Effect.succeed({ signedIn: true, login: "octocat", role: "member" }),
           signOut: Effect.fail(new AuthUnreachable({ status: 503 })),
+          setHostedModel: (enabled) => Effect.succeed({ enabled }),
         }),
       ),
       device,
@@ -867,4 +869,102 @@ test("promptSignOut and cancelSignOut toggle the unsent-writes sign-out confirma
   expect(tab.session().confirmSignOut).toBe(true)
   tab.actions.cancelSignOut()
   expect(tab.session().confirmSignOut).toBe(false)
+})
+
+describe("Admin hosted-inference toggle", () => {
+  test("setHostedModel updates session.hostedModel, guards concurrent clicks, and surfaces failures", async () => {
+    const h = await signInHarness(server)
+    const b = browser(h)
+    await b.signIn()
+
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    let calls = 0
+    let failNext = false
+    const client = Layer.effect(AuthClient, Effect.map(AuthClient, (real) => AuthClient.of({
+      ...real,
+      setHostedModel: (enabled) => Effect.suspend(() => {
+        calls++
+        if (failNext) return Effect.fail(new AuthUnreachable({ status: 503, code: "status" }))
+        return Effect.promise(async () => {
+          await gate
+          return { enabled }
+        })
+      }),
+    }))).pipe(Layer.provide(realClient(b)))
+
+    const tab = await openTab(client)
+    await vi.waitFor(() => expect(tab.session().status).toBe("signed_in"))
+
+    tab.actions.setHostedModel(true)
+    tab.actions.setHostedModel(false) // ignored while first request is in flight
+    expect(tab.session().hostedModelSaving).toBe(true)
+    expect(calls).toBe(1)
+
+    release()
+    await vi.waitFor(() => expect(tab.session().hostedModelSaving).toBe(false))
+    expect(tab.session().hostedModel).toBe(true)
+    expect(tab.session().hostedModelError).toBe(false)
+
+    failNext = true
+    tab.actions.setHostedModel(false)
+    await vi.waitFor(() => expect(tab.session().hostedModelError).toBe(true))
+    expect(tab.session().hostedModelSaving).toBe(false)
+    expect(tab.session().hostedModel).toBe(true)
+  })
+
+  test("postHostedModel maps 200, non-200, malformed JSON, transport failure, and timeout", async () => {
+    const { postHostedModel } = await import("./api")
+    const runWith = (fetchFn: typeof fetch, within: "50 millis" | "2 seconds" = "2 seconds") =>
+      Effect.runPromiseExit(
+        postHostedModel(ORIGIN, within, true).pipe(
+          Effect.provide(FetchHttpClient.layer),
+          Effect.provideService(FetchHttpClient.Fetch, fetchFn),
+        ),
+      )
+
+    const ok = await runWith(async () => new Response(JSON.stringify({ enabled: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }))
+    expect(Exit.isSuccess(ok) && ok.value).toEqual({ enabled: true })
+
+    // Also exercise AuthClient.layer's setHostedModel binding end-to-end.
+    const viaLayer = await Effect.runPromise(
+      Effect.flatMap(AuthClient, (c) => c.setHostedModel(false)).pipe(
+        Effect.provide(AuthClient.layer({ origin: ORIGIN, within: "2 seconds" })),
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provideService(FetchHttpClient.Fetch, async () => new Response(JSON.stringify({ enabled: false }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })),
+      ),
+    )
+    expect(viaLayer).toEqual({ enabled: false })
+
+    const forbidden = await runWith(async () => new Response(JSON.stringify({ code: "forbidden" }), { status: 403 }))
+    expect(Exit.isFailure(forbidden) && Cause.squash(forbidden.cause)).toEqual(
+      new AuthUnreachable({ status: 403, code: "status" }),
+    )
+
+    const malformed = await runWith(async () => new Response(JSON.stringify({ nope: 1 }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }))
+    expect(Exit.isFailure(malformed) && Cause.squash(malformed.cause)).toEqual(
+      new AuthUnreachable({ status: 200, code: "malformed" }),
+    )
+
+    const down = await runWith(async () => { throw new TypeError("offline") })
+    expect(Exit.isFailure(down) && Cause.squash(down.cause)).toEqual(
+      new AuthUnreachable({ code: "unreachable" }),
+    )
+
+    const timedOut = await runWith(async (_url, init) => new Promise<Response>((_, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))
+    }), "50 millis")
+    expect(Exit.isFailure(timedOut) && Cause.squash(timedOut.cause)).toEqual(
+      new AuthUnreachable({ code: "timeout" }),
+    )
+  })
 })

@@ -1,7 +1,7 @@
 import { Context, Deferred, Effect, Layer, Queue, Stream } from "effect"
 import { runners } from "../../boundary"
 import { FlowDispatch } from "../../flows/dispatch"
-import { cancelSignOut, check, pressSignIn, promptSignOut, refresh, restore, signOut } from "./actions"
+import { cancelSignOut, check, pressSignIn, promptSignOut, refresh, restore, setHostedModel, signOut } from "./actions"
 import type { AuthClient } from "./api"
 import type { DeviceWipe } from "./device"
 import { AuthStore } from "./store"
@@ -31,6 +31,8 @@ export interface AuthActions {
   readonly cancelSignOut: () => void
   /** Asks ChatApi again who is signed in. */
   readonly reload: () => void
+  /** Turns the deployment's hosted fallback model on or off (Admin in person). */
+  readonly setHostedModel: (enabled: boolean) => void
 }
 
 export class Auth extends Context.Service<Auth, { readonly queries: AuthQueries; readonly actions: AuthActions }>()(
@@ -58,6 +60,7 @@ export class Auth extends Context.Service<Auth, { readonly queries: AuthQueries;
           promptSignOut: () => run(promptSignOut),
           cancelSignOut: () => run(cancelSignOut),
           reload: () => run(reload),
+          setHostedModel: (enabled) => run(setHostedModel(enabled)),
         },
       })
     }),

@@ -193,3 +193,24 @@ export const promptSignOut = change({ confirmSignOut: true })
 
 /** Cancels the unsent-writes sign-out confirmation. */
 export const cancelSignOut = change({ confirmSignOut: false })
+
+/** Sends the Admin hosted-inference toggle and updates the live session row when ChatApi answers. */
+const sendHostedModel = (enabled: boolean) =>
+  Effect.gen(function* () {
+    const client = yield* AuthClient
+    const sent = yield* Effect.result(client.setHostedModel(enabled))
+    if (sent._tag === "Failure") {
+      yield* change({ hostedModelSaving: false, hostedModelError: true })
+      return yield* Effect.logWarning("hosted model failed").pipe(Effect.annotateLogs(failed(sent.failure)))
+    }
+    yield* change({ hostedModel: sent.success.enabled, hostedModelSaving: false, hostedModelError: false })
+    yield* Effect.logInfo("hosted model updated").pipe(Effect.annotateLogs({ enabled: sent.success.enabled }))
+  }).pipe(Effect.annotateLogs({ feature: "auth" }))
+
+/** Admin hosted-inference toggle pressed: one update at a time. */
+export const setHostedModel = (enabled: boolean) =>
+  Effect.gen(function* () {
+    if ((yield* current).hostedModelSaving) return
+    yield* change({ hostedModelSaving: true, hostedModelError: false })
+    yield* Effect.forkIn(sendHostedModel(enabled), (yield* AuthStore).scope, { startImmediately: true })
+  })

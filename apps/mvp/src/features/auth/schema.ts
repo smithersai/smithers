@@ -24,6 +24,9 @@ export const SessionState = Schema.Union([
   }),
 ])
 
+/** What `POST /api/hosted-model` answers when an Admin toggles hosted inference. */
+export const HostedModelAnswer = Schema.Struct({ enabled: Schema.Boolean })
+
 /** The complete wire answer; device stale handling ships in rollout step 3. */
 export const SessionResponse = Schema.Union([SessionState, Schema.Struct({ credential: Schema.Literal("stale") })])
 
@@ -48,6 +51,10 @@ export const Session = Schema.Struct({
   roleConfirmed: Schema.optional(Schema.Boolean),
   available: Schema.Boolean,
   hostedModel: Schema.optional(Schema.Boolean),
+  /** True while an Admin's hosted-inference toggle is in flight. */
+  hostedModelSaving: Schema.optional(Schema.Boolean),
+  /** True when the last Admin hosted-inference toggle failed. */
+  hostedModelError: Schema.optional(Schema.Boolean),
   install: Schema.optional(Schema.String),
   signingOut: Schema.Boolean,
   /** True while asking confirmation before wiping unsent local writes on sign-out. */

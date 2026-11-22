@@ -1,7 +1,7 @@
 import { Context, Data, type Duration, Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
-import { SESSION_ROUTE, type SessionState as State, SIGN_OUT_ROUTE } from "./contract"
-import { SessionState } from "./schema"
+import { HOSTED_MODEL_ROUTE, SESSION_ROUTE, type SessionState as State, SIGN_OUT_ROUTE } from "./contract"
+import { HostedModelAnswer, SessionState } from "./schema"
 import { DeviceIdentityRefused } from "../../device/identity"
 
 /**
@@ -49,11 +49,33 @@ export const postSignOut = Effect.fn("auth.sign_out.post")(function* (origin: st
  * link the person follows, not a call. Tests of a ChatApi that fails provide a faulty one; every other test uses the
  * real one.
  */
+
+/** `POST /api/hosted-model`: an Admin in person turns the deployment's own model on or off. */
+export const postHostedModel = Effect.fn("auth.hosted_model.post")(function* (
+  origin: string,
+  within: Duration.Input,
+  enabled: boolean,
+) {
+  const client = yield* HttpClient.HttpClient
+  return yield* Effect.gen(function* () {
+    const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${origin}${HOSTED_MODEL_ROUTE}`), { enabled })
+    const response = yield* client.execute(request).pipe(
+      Effect.mapError(() => new AuthUnreachable({ code: "unreachable" })),
+    )
+    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    if (response.status !== 200) return yield* new AuthUnreachable({ status: response.status, code: "status" })
+    return yield* HttpClientResponse.schemaBodyJson(HostedModelAnswer)(response).pipe(
+      Effect.mapError(() => new AuthUnreachable({ status: 200, code: "malformed" })),
+    )
+  }).pipe(Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new AuthUnreachable({ code: "timeout" })) }))
+})
+
 export class AuthClient extends Context.Service<
   AuthClient,
   {
     readonly session: Effect.Effect<State, AuthUnreachable>
     readonly signOut: Effect.Effect<void, AuthUnreachable>
+    readonly setHostedModel: (enabled: boolean) => Effect.Effect<{ readonly enabled: boolean }, AuthUnreachable>
   }
 >()("@smthrs/mvp/auth/AuthClient") {
   /** The real client: ChatApi at `origin`, with `within` for each whole request. */
@@ -65,6 +87,7 @@ export class AuthClient extends Context.Service<
         return AuthClient.of({
           session: withClient(getSession(options.origin, options.within)),
           signOut: withClient(postSignOut(options.origin, options.within)),
+          setHostedModel: (enabled) => withClient(postHostedModel(options.origin, options.within, enabled)),
         })
       }),
     )

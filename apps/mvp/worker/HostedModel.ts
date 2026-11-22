@@ -1,8 +1,11 @@
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Config, Effect, Layer, Schema } from "effect"
+import { Cause, Clock, Config, Effect, Layer, Metric, Option, Schema } from "effect"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
-import { type Actor, CurrentActor } from "./Actor.ts"
+import { MAX_HOSTED_MODEL_BODY_BYTES } from "../src/features/auth/contract.ts"
+import { type Actor, CurrentActor, Sessions } from "./Actor.ts"
+import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import { NoInvocationKey, NotAllowed } from "./SetModel.ts"
 
@@ -114,3 +117,57 @@ export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E,
       })
     ),
   ).pipe(Layer.provideMerge(Action.layerImplementations))
+
+/** `POST /api/hosted-model` requests, by `status`. */
+export const requests = Metric.counter("smithers_hosted_model_requests", {
+  description: "POST /api/hosted-model requests, by status",
+  incremental: true,
+})
+
+const decodeChange = Schema.decodeUnknownEffect(Schema.fromJsonString(Changed))
+const noStore = { "cache-control": "no-store" }
+const refusal = (status: number, code: string) => HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
+
+/**
+ * `POST /api/hosted-model { enabled }`: an Admin acting in person toggles whether the deployment's own model answers
+ * (decision 0099). Non-POST is 405; unauthenticated is 401; delegated is 403 `person_only`; non-Admin is 403
+ * `forbidden`; bodies over {@link MAX_HOSTED_MODEL_BODY_BYTES} are 413; invalid JSON/payload is 400; DB failures 503.
+ */
+export const route = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const startedAt = yield* Clock.currentTimeMillis
+    const fields: Record<string, string | number | boolean> = {}
+    const response = yield* Effect.gen(function* () {
+      if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
+      const actor = yield* (yield* Sessions).resolve
+      if (Option.isNone(actor)) return refusal(401, "authentication")
+      const body = yield* readBounded(request, MAX_HOSTED_MODEL_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
+        Effect.result,
+      )
+      if (body._tag === "Failure") {
+        return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")
+      }
+      const change = yield* decodeChange(body.success).pipe(Effect.option)
+      if (Option.isNone(change)) return refusal(400, "invalid")
+      fields.enabled = change.value.enabled
+      const saved = yield* write(change.value, actor.value, crypto.randomUUID(), database).pipe(Effect.result)
+      if (saved._tag === "Failure") {
+        return saved.failure.reason === "delegated" ? refusal(403, "person_only") : refusal(403, "forbidden")
+      }
+      return HttpServerResponse.jsonUnsafe(saved.success, { headers: noStore })
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.sync(() => {
+          fields.errorCode = codeOf(Cause.squash(cause))
+          return refusal(503, "unavailable")
+        }),
+      ),
+    )
+    fields.status = response.status
+    fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+    yield* Metric.update(Metric.withAttributes(requests, { status: String(response.status) }), 1)
+    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    yield* Effect.logInfo("hosted_model.route").pipe(Effect.annotateLogs(fields))
+    return response
+  }).pipe(Effect.withSpan("hosted_model.route"))

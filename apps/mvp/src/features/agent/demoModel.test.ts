@@ -84,6 +84,7 @@ describe("demoModel (?agent=mock)", () => {
         const auth = yield* AuthClient
         const chat = yield* ChatClient
         yield* auth.signOut
+        expect(yield* auth.setHostedModel(false)).toEqual({ enabled: false })
         const s = yield* auth.session
         const r = yield* chat.ask({ id: "q1", answerId: "a1", text: "hi" })
         return [s, r] as const

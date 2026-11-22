@@ -6,6 +6,7 @@ import { MAX_GENERATED_BODY_BYTES, MAX_VIEW_BODY_BYTES } from "../src/features/v
 import { MAX_RUN_BODY_BYTES, MAX_CREDENTIAL_BODY_BYTES } from "../src/features/status/contract.ts"
 import { MAX_PREVIEW_BODY_BYTES } from "../src/features/web/contract.ts"
 import { MAX_ALERT_CHANNEL_BODY_BYTES, MAX_SANDBOX_LIMITS_BODY_BYTES } from "../src/features/spend/contract.ts"
+import { HOSTED_MODEL_ROUTE, MAX_HOSTED_MODEL_BODY_BYTES } from "../src/features/auth/contract.ts"
 import { MAX_FLOWS_BODY_BYTES } from "../src/features/flows-ui/contract.ts"
 import { MAX_TRACK_BODY_BYTES, MAX_SHARE_BODY_BYTES } from "../src/features/branch/contract.ts"
 import { MAX_ARCHIVE_BODY_BYTES } from "../src/features/conversations/contract.ts"
@@ -59,6 +60,7 @@ export const forRequest = (url: string) => Effect.gen(function* () {
   if (path === "/api/watches" || path === "/api/notifications/ack") return MAX_ATTENTION_BODY_BYTES
   if (path === "/api/alert-channels") return MAX_ALERT_CHANNEL_BODY_BYTES
   if (path === "/api/sandbox-limits") return MAX_SANDBOX_LIMITS_BODY_BYTES
+  if (path === HOSTED_MODEL_ROUTE) return MAX_HOSTED_MODEL_BODY_BYTES
   if (path.startsWith("/api/flows/") || path.startsWith("/api/flow-drafts/")) return MAX_FLOWS_BODY_BYTES
   if (path === "/api/branches") return MAX_TRACK_BODY_BYTES
   if (/^\/api\/branches\/[^/]+\/shares$/.test(path)) return MAX_SHARE_BODY_BYTES

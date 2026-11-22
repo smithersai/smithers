@@ -70,6 +70,12 @@ export const SIGN_OUT_ROUTE = "/api/auth/sign-out"
 /** Who this browser is signed in as: `GET`, answered with a {@link SessionState} as JSON. */
 export const SESSION_ROUTE = "/api/auth/session"
 
+/** Sets whether the deployment's own model answers (`POST { enabled }`, Admin in person only). */
+export const HOSTED_MODEL_ROUTE = "/api/hosted-model"
+
+/** The largest `POST /api/hosted-model` body, in bytes. */
+export const MAX_HOSTED_MODEL_BODY_BYTES = 256
+
 /** The search parameter the callback adds to the return path when sign-in failed: `?sign_in=failed`. */
 export const SIGN_IN_FAILED_PARAM = "sign_in"
 
@@ -264,10 +270,13 @@ export const AUTH_TELEMETRY = {
     "device wipe failed",
     "auth.session.get",
     "auth.sign_out.post",
+    "auth.hosted_model.post",
+    "hosted model updated",
+    "hosted model failed",
     "smithers_web_sign_in_presses",
     "smithers_web_sign_outs",
     "smithers_web_device_wipes",
   ],
   // `stage`, `reason` and `via` also carry the engine worker's owner check (src/device/identity.ts, FLOWS_TELEMETRY).
-  fields: ["signedIn", "status", "outcome", "stage", "reason", "via", "executionId", "durationMs", "smithers.auth.outcome", "errorCode", "feature"],
+  fields: ["signedIn", "status", "outcome", "stage", "reason", "via", "executionId", "durationMs", "smithers.auth.outcome", "errorCode", "feature", "enabled"],
 } as const

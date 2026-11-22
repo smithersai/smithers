@@ -14,3 +14,6 @@
 .sandbox-limits { display: flex; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }
 .sandbox-limits h2 { flex: 1 0 100%; margin: 0; }
 .sandbox-limits [data-slot="field"] { flex: 1 1 10rem; min-width: 0; }
+.hosted-model-settings { display: flex; flex-direction: column; gap: 0.75rem; }
+.hosted-model-settings p { margin: 0; }
+.hosted-model-settings-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }

@@ -573,7 +573,7 @@ test.each(["session update", "confirmation restore", "confirmation read", "confi
       Effect.provideService(AuthClient, AuthClient.of({ session: Effect.never, signOut: Effect.promise(async () => {
         await page.signOut(async () => new Response(null, { status: 204 }))
         answered = true
-      }) })),
+      }), setHostedModel: (enabled) => Effect.succeed({ enabled }) })),
       Effect.provide(DeviceWipe.layer(async () => { wiped++; await page.wipe() }, page.finishSignOut)),
     )
     yield* Effect.promise(() => until(() => expect(injected).toBe(true)))

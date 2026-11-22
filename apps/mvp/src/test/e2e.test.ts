@@ -28,7 +28,7 @@ test("?faults=session-503 refuses every session read, the engine worker's too, u
   const answer = { signedIn: false as const, available: true }
   const page = ManagedRuntime.make(
     faultyAuth(sessionDown("?faults=session-503")).pipe(
-      Layer.provide(Layer.succeed(AuthClient, AuthClient.of({ session: Effect.succeed(answer), signOut: Effect.void }))),
+      Layer.provide(Layer.succeed(AuthClient, AuthClient.of({ session: Effect.succeed(answer), signOut: Effect.void, setHostedModel: (enabled) => Effect.succeed({ enabled }) }))),
     ),
   )
   runtimes.push(page)

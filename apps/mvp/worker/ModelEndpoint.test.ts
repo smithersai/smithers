@@ -5,7 +5,7 @@
 import { Model, ModelError, type ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { Cause, ConfigProvider, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Redacted, Schema, Scope, Stream } from "effect"
+import { Option, Cause, ConfigProvider, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Redacted, Schema, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http"
@@ -815,6 +815,77 @@ describe("hosted inference", () => {
 
     expect(Exit.isFailure(ran.exit)).toBe(true)
     expect(await runtime.runPromise(HostedModel.enabled(false))).toBe(false)
+  })
+
+  test("POST /api/hosted-model toggles hosted inference for an Admin in person, refuses others, and validates input", async () => {
+    const post = (
+      h: Awaited<ReturnType<typeof harness>>,
+      body: string | null,
+      method = "POST",
+    ) =>
+      h.fetch("/api/hosted-model", {
+        method,
+        ...(body === null ? {} : { headers: { "content-type": "application/json" }, body }),
+      })
+
+    const adminH = await harness(runtime, answering, { actor: admin, config: { HOSTED_MODEL_ENABLED: "false" } })
+    const memberH = await harness(runtime, answering, { actor: member, config: { HOSTED_MODEL_ENABLED: "false" } })
+    const agentH = await harness(runtime, answering, { actor: agentForAdmin, config: { HOSTED_MODEL_ENABLED: "false" } })
+    const anonH = await harness(runtime, answering, { actor: undefined, config: { HOSTED_MODEL_ENABLED: "false" } })
+
+    expect((await post(adminH, null, "GET")).status).toBe(405)
+    expect((await post(anonH, JSON.stringify({ enabled: true }))).status).toBe(401)
+    expect((await post(adminH, "not-json")).status).toBe(400)
+    expect((await post(adminH, JSON.stringify({ enabled: "yes" }))).status).toBe(400)
+    expect((await post(adminH, JSON.stringify({ enabled: true, pad: "x".repeat(300) }))).status).toBe(413)
+
+    const delegated = await post(agentH, JSON.stringify({ enabled: true }))
+    expect(delegated.status).toBe(403)
+    expect(await delegated.json()).toEqual({ code: "person_only" })
+
+    const forbidden = await post(memberH, JSON.stringify({ enabled: true }))
+    expect(forbidden.status).toBe(403)
+    expect(await forbidden.json()).toEqual({ code: "forbidden" })
+
+    const turnedOn = await post(adminH, JSON.stringify({ enabled: true }))
+    expect(turnedOn.status).toBe(200)
+    expect(await turnedOn.json()).toEqual({ enabled: true })
+    expect((await call(memberH, ask("now enabled"))).status).toBe(200)
+
+    const turnedOff = await post(adminH, JSON.stringify({ enabled: false }))
+    expect(turnedOff.status).toBe(200)
+    expect(await turnedOff.json()).toEqual({ enabled: false })
+    expect((await call(memberH, ask("back off"))).status).toBe(409)
+  })
+
+  test("HostedModel.route handles oversized bodies, bad UTF-8, and Postgres failures directly", async () => {
+    const { HttpEffect } = await import("effect/http")
+    const { Sessions } = await import("./Actor.ts")
+    const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://nobody:nothing@127.0.0.1:1/none")))
+    const sessions = Layer.succeed(Sessions, Sessions.of({
+      resolve: Effect.succeed(Option.some(admin)),
+    }))
+    const handler = HttpEffect.toWebHandler(HostedModel.route(unreachable).pipe(Effect.provide(sessions)))
+
+    const tooLarge = await handler(new Request("http://chat.test/api/hosted-model", {
+      method: "POST",
+      body: "x".repeat(300),
+    }))
+    expect(tooLarge.status).toBe(413)
+
+    const badUtf8 = await handler(new Request("http://chat.test/api/hosted-model", {
+      method: "POST",
+      body: new Uint8Array([0xff, 0xfe]),
+    }))
+    expect(badUtf8.status).toBe(400)
+
+    const dbDown = await handler(new Request("http://chat.test/api/hosted-model", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    }))
+    expect(dbDown.status).toBe(503)
+    expect(await dbDown.json()).toEqual({ code: "unavailable" })
   })
 
   test("a setting Postgres can't read is a 503 provider_internal, never the deployment's model", async () => {

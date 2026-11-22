@@ -123,5 +123,6 @@ export const demoServices = Layer.merge(
   Layer.succeed(AuthClient, {
     session: Effect.succeed(DEMO_SESSION),
     signOut: Effect.void,
+    setHostedModel: (enabled) => Effect.succeed({ enabled }),
   }),
 )

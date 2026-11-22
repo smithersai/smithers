@@ -1,6 +1,7 @@
 import { Card, CardContent, EmptyState, PageBody, PageHeader } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
+import { HostedModelSettings } from "../../features/auth/components/HostedModelSettings"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { PersonalModelSettings } from "../../features/personal-model/components/PersonalModelSettings"
@@ -36,6 +37,15 @@ export function SettingsScreen() {
               <CardContent className="settings-screen-section">
                 <PersonalModelSettings canSave={canSave(session)} />
                 <a href="/api/auth/connections">GitHub connections</a>
+              </CardContent>
+            </Card>
+          )
+          : null}
+        {admin
+          ? (
+            <Card>
+              <CardContent className="settings-screen-section">
+                <HostedModelSettings />
               </CardContent>
             </Card>
           )

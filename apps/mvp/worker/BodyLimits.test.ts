@@ -30,3 +30,7 @@ test.each(["declared", "streamed"].flatMap((mode) => [4096, 4097].map((size) => 
     expect(await response.text()).toBe(size === 4096 ? "x".repeat(size) : '{"code":"too_large"}')
   },
 )
+
+test("POST /api/hosted-model has a 256-byte body limit", async () => {
+  expect(await Effect.runPromise(BodyLimits.forRequest("/api/hosted-model"))).toBe(256)
+})
