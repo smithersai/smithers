@@ -451,10 +451,15 @@ export const make = <E, R>(
     })
 
     /** Past expiry, give the durable check a bounded chance and read the resulting receipt, never the old snapshot. */
-    const renewRole = (configured: Configured, live: SessionStore.Live, lookup?: Effect.Effect<Option.Option<SessionStore.Live>, Actor.SessionsUnavailable, R>) => Effect.gen(function* () {
+    const renewRole = (
+      configured: Configured,
+      live: SessionStore.Live,
+      lookupStarted: bigint,
+      lookup?: Effect.Effect<Option.Option<SessionStore.Live>, Actor.SessionsUnavailable, R>,
+    ) => Effect.gen(function* () {
       const admitted = yield* admitRoleCheck(configured, live)
       if (!admitted || SessionStore.roleFresh(live.roleVerifiedAt, live.serverNow, configured.recheckAfterMs)) {
-        return Option.some(live)
+        return { live: Option.some(live), lookupStarted }
       }
       const checks = yield* RoleChecks
       if (checks.wait !== undefined) {
@@ -465,12 +470,16 @@ export const make = <E, R>(
             Effect.logWarning("auth.role_check").pipe(Effect.annotateLogs({ outcome: "wait_expired" })) }),
         )
       }
+      const nextStarted = yield* (yield* Clock.Clock).monotonicTimeNanos
       const next = yield* (lookup ?? SessionStore.findLiveById(live.home ?? live.id).pipe(
         Effect.provide(database), Effect.mapError(() => new Actor.SessionsUnavailable())))
-      return Option.map(next, (updated): SessionStore.Live => ({ ...live,
-        role: updated.role, roleCheckedAt: updated.roleCheckedAt, roleVerifiedAt: updated.roleVerifiedAt,
-        serverNow: updated.serverNow, expiresAt: updated.expiresAt,
-      }))
+      return {
+        live: Option.map(next, (updated): SessionStore.Live => ({ ...live,
+          role: updated.role, roleCheckedAt: updated.roleCheckedAt, roleVerifiedAt: updated.roleVerifiedAt,
+          serverNow: updated.serverNow, expiresAt: updated.expiresAt,
+        })),
+        lookupStarted: nextStarted,
+      }
     })
 
     const signWithIssuer = (keys: SessionKeys.SessionKeys, purpose: SessionKeys.Purpose, value: string, keyId?: string) =>
@@ -541,13 +550,15 @@ export const make = <E, R>(
         Effect.mapError(error => new Actor.SessionsUnavailable({ errorCode: codeOf(error) })),
       )
       const found = yield* lookup
-      const live = Option.isNone(found) ? found : yield* renewRole(configured, found.value, lookup)
-      if (Option.isNone(live)) {
+      const receipt = Option.isNone(found)
+        ? { live: found, lookupStarted }
+        : yield* renewRole(configured, found.value, lookupStarted, lookup)
+      if (Option.isNone(receipt.live)) {
         yield* recordCookieRejected
         if (yield* credentialStale(digest, away ? url.hostname : null, token.value.keyId)) { yield* recordStale; return yield* new CredentialStale() }
-        return { live, lookupStarted }
+        return receipt
       }
-      return { live, lookupStarted }
+      return receipt
     }).pipe(withSigningKeys)
 
     const guard = <E2, R2>(next: Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>) => Effect.gen(function* () {
@@ -1266,12 +1277,12 @@ export const make = <E, R>(
           const lookupStarted = yield* lookupClock.monotonicTimeNanos
           const found = yield* SessionStore.findLiveById(claims.sid!)
           if (Option.isNone(found) || found.value.personId !== claims.sub) return Option.none()
-          const renewed = yield* renewRole(setup.value, found.value)
-          if (Option.isNone(renewed)) return Option.none()
-          const live = renewed.value
+          const renewed = yield* renewRole(setup.value, found.value, lookupStarted)
+          if (Option.isNone(renewed.live)) return Option.none()
+          const live = renewed.live.value
           // Role-check admission may wait even for a still-fresh role. Bound this snapshot's lifetime just as
-          // cookie admission does, using elapsed monotonic time rather than the Worker's wall clock.
-          if (Number((yield* lookupClock.monotonicTimeNanos) - lookupStarted) / 1_000_000 >= live.expiresAt - live.serverNow) return Option.none()
+          // cookie admission does, using elapsed monotonic time from the lookup that produced this snapshot.
+          if (Number((yield* lookupClock.monotonicTimeNanos) - renewed.lookupStarted) / 1_000_000 >= live.expiresAt - live.serverNow) return Option.none()
           if (!SessionStore.roleFresh(live.roleVerifiedAt, live.serverNow, setup.value.recheckAfterMs)) {
             return yield* new Actor.SessionsUnavailable()
           }

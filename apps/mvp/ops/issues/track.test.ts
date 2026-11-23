@@ -202,6 +202,12 @@ describe("the lane helper", () => {
     expect(again.sent[0]!.url).toBe("https://smithers.test/api/repos/acme/widgets/writes/w-1/retry")
     const refused = recorder(() => [409, { code: "conflict" }])
     await expect(retryWrite(client(refused.fetch), { repo: "acme/widgets", writeId: "w-1", sleep })).rejects.toThrow("409 conflict")
+
+    // #4462: server/upstream refusals tell the caller how to retry; semantic refusals say they are final.
+    const retryableRefusal = recorder((_url, init) => (init.method === "POST" ? [202, {}] : [200, { status: "refused", number: null, failure: "not_allowed", cause: "github_status:403" }]))
+    await expect(relate(client(retryableRefusal.fetch), { repo: "acme/widgets", issue: 3, parent: "acme/plan#1", sleep })).rejects.toThrow("track.mjs retry --write")
+    const finalRefusal = recorder((_url, init) => (init.method === "POST" ? [202, {}] : [200, { status: "refused", number: null, failure: "has_parent", cause: "has_parent" }]))
+    await expect(relate(client(finalRefusal.fetch), { repo: "acme/widgets", issue: 3, parent: "acme/plan#1", sleep })).rejects.toThrow("this refusal is final")
   })
 
   test("a lane link is a session link with the token as a bearer", async () => {

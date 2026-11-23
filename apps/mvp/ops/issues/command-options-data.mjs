@@ -2,6 +2,14 @@
 // NoOptDefVal determines whether a flag consumes a value; usage prose and metavars do not.
 // https://github.com/cli/cli/tree/v2.94.0/pkg/cmd — no descriptions or private data retained.
 export const CREDENTIAL_OPTIONS = { curl: ["u", "user"], wget: ["u", "user"] }
+export const SUBCOMMAND_CREDENTIAL_OPTIONS = {
+  docker: {
+    global: { short: { D: false, h: false, v: false, c: "context", H: "host", l: "log-level" }, booleans: ["debug", "help", "tls", "tlsverify", "version"] },
+    subcommands: {
+      login: { short: { u: "username", p: "password" }, booleans: ["help", "password-stdin"], credentials: ["p", "password"] },
+    },
+  },
+}
 export const GH_OPTIONS = {
   "accessibility": {"short":{"w":false},"booleans":["help","web"]},
   "actions": {"short":{},"booleans":["help"]},

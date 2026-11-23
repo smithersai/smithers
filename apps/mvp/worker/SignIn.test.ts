@@ -1789,9 +1789,9 @@ describe("remaining sign-in branches (#5458)", () => {
         }),
       },
     })
+    const beforeMono = new Set((await sessionRows()).map((row) => row.id))
     const mSigned = await monoH.signInAs()
-    const rows = await sessionRows()
-    const mRow = rows.at(-1)!
+    const mRow = (await sessionRows()).find((row) => !beforeMono.has(row.id))!
     const app = await harness(runtime, () => Effect.die("unused") as never, { sessions: monoH.sessions })
     const issued = await app.fetch(credentialRoute("mono-bearer"), {
       method: "POST",
@@ -1800,30 +1800,6 @@ describe("remaining sign-in branches (#5458)", () => {
     })
     const { token } = await issued.json() as { token: string }
     await query(sql => sql`UPDATE sessions SET role_verified_at = now() - interval '2 hours', role_checked_at = now() - interval '2 hours' WHERE id = ${mRow.id}`)
-
-    // Cookie monotonic expiry returns None
-    const cookieExpired = await runtime.runPromise(
-      Effect.flatMap(ActorSessions, (s) => s.resolve).pipe(
-        Effect.provide(monoH.sessions),
-        Effect.updateService(Clock.Clock, monoClock),
-        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
-          headers: { cookie: cookie(mSigned.cookies) },
-        }))),
-      ),
-    )
-    expect(Option.isNone(cookieExpired)).toBe(true)
-
-    // Bearer monotonic expiry returns None
-    const bearerExpired = await runtime.runPromise(
-      Effect.flatMap(ActorSessions, (s) => s.resolve).pipe(
-        Effect.provide(monoH.sessions),
-        Effect.updateService(Clock.Clock, monoClock),
-        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
-          headers: { authorization: `Bearer ${token}` },
-        }))),
-      ),
-    )
-    expect(Option.isNone(bearerExpired)).toBe(true)
 
     // Bearer whose session is revoked during wait returns None (L1280)
     revokeOnWait = true
@@ -1847,5 +1823,100 @@ describe("remaining sign-in branches (#5458)", () => {
       ),
     )
     expect(Option.isNone(bearerRevoked)).toBe(true)
+
+    // #4468: elapsed time is measured from the lookup that produced the snapshot in use.
+    // A late role renewal whose wait takes longer than the remaining session lifetime must
+    // still admit a live session when the refreshed snapshot is live (cookie and bearer).
+    const lateH = await signInHarness(runtime, {
+      roleChecks: {
+        start: () => Effect.void,
+        wait: (id) => Effect.gen(function* () {
+          jumpMs += 10_000
+          yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+            sql`UPDATE sessions SET role_verified_at = now(), role_checked_at = now() WHERE id = ${id}`
+          ).pipe(Effect.provide(scratch.database))
+        }),
+      },
+    })
+    const beforeLate = new Set((await sessionRows()).map((row) => row.id))
+    const lateSigned = await lateH.signInAs()
+    const lateRow = (await sessionRows()).find((row) => !beforeLate.has(row.id))!
+    const lateApp = await harness(runtime, () => Effect.die("unused") as never, { sessions: lateH.sessions })
+    const lateIssued = await lateApp.fetch(credentialRoute("late-renew-bearer"), {
+      method: "POST",
+      headers: { cookie: cookie(lateSigned.cookies), [DEVICE_PERSON_HEADER]: lateRow.personId },
+      body: JSON.stringify({ flow: "watch/set" }),
+    })
+    const { token: lateToken } = await lateIssued.json() as { token: string }
+    await query(sql => sql`UPDATE sessions SET expires_at = now() + interval '5 seconds', role_verified_at = now() - interval '2 hours', role_checked_at = now() - interval '2 hours' WHERE id = ${lateRow.id}`)
+    const lateCookie = await runtime.runPromise(
+      Effect.flatMap(ActorSessions, (s) => s.resolve).pipe(
+        Effect.provide(lateH.sessions),
+        Effect.updateService(Clock.Clock, monoClock),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
+          headers: { cookie: cookie(lateSigned.cookies) },
+        }))),
+      ),
+    )
+    expect(Option.isSome(lateCookie)).toBe(true)
+
+    await query(sql => sql`UPDATE sessions SET expires_at = now() + interval '5 seconds', role_verified_at = now() - interval '2 hours', role_checked_at = now() - interval '2 hours' WHERE id = ${lateRow.id}`)
+    const lateBearer = await runtime.runPromise(
+      Effect.flatMap(ActorSessions, (s) => s.resolve).pipe(
+        Effect.provide(lateH.sessions),
+        Effect.updateService(Clock.Clock, monoClock),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
+          headers: { authorization: `Bearer ${lateToken}` },
+        }))),
+      ),
+    )
+    expect(Option.isSome(lateBearer)).toBe(true)
+
+    // Monotonic expiry AFTER the lookup that produced the snapshot still returns None (cookie & bearer).
+    // When role is fresh (within recheck window), admitRoleCheck runs start() without a second lookup,
+    // so elapsed monotonic time from that lookup exceeds expiresAt - serverNow.
+    const freshMonoH = await signInHarness(runtime, {
+      roleChecks: {
+        start: () => Effect.sync(() => { jumpMs += 40 * 24 * 60 * 60 * 1000 }),
+      },
+    })
+    const beforeFm = new Set((await sessionRows()).map((row) => row.id))
+    const fmSigned = await freshMonoH.signInAs()
+    const fmRow = (await sessionRows()).find((row) => !beforeFm.has(row.id))!
+    const fmApp = await harness(runtime, () => Effect.die("unused") as never, { sessions: freshMonoH.sessions })
+    const fmIssued = await fmApp.fetch(credentialRoute("fresh-mono-bearer"), {
+      method: "POST",
+      headers: { cookie: cookie(fmSigned.cookies), [DEVICE_PERSON_HEADER]: fmRow.personId },
+      body: JSON.stringify({ flow: "watch/set" }),
+    })
+    const { token: fmToken } = await fmIssued.json() as { token: string }
+    // Near the recheck margin: role is still fresh, so admitRoleCheck calls start() and keeps the original snapshot.
+    await query(sql => sql`UPDATE sessions SET role_verified_at = now() - interval '58 minutes', role_checked_at = now() - interval '58 minutes' WHERE id = ${fmRow.id}`)
+
+    // Cookie monotonic expiry returns None
+    const cookieExpired = await runtime.runPromise(
+      Effect.flatMap(ActorSessions, (s) => s.resolve).pipe(
+        Effect.provide(freshMonoH.sessions),
+        Effect.updateService(Clock.Clock, monoClock),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
+          headers: { cookie: cookie(fmSigned.cookies) },
+        }))),
+      ),
+    )
+    expect(Option.isNone(cookieExpired)).toBe(true)
+
+    // Bearer monotonic expiry returns None
+    await query(sql => sql`UPDATE sessions SET role_verified_at = now() - interval '58 minutes', role_checked_at = now() - interval '58 minutes' WHERE id = ${fmRow.id}`)
+    const bearerExpired = await runtime.runPromise(
+      Effect.flatMap(ActorSessions, (s) => s.resolve).pipe(
+        Effect.provide(freshMonoH.sessions),
+        Effect.updateService(Clock.Clock, monoClock),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://smithers.test/api/watches", {
+          headers: { authorization: `Bearer ${fmToken}` },
+        }))),
+      ),
+    )
+    expect(Option.isNone(bearerExpired)).toBe(true)
+
   })
 })

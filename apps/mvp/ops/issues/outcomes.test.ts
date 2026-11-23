@@ -76,3 +76,55 @@ test("an example breadcrumb cannot turn its tree identity private", async () => 
   expect(asked).toEqual([])
   expect(records[1]).toMatchObject({ ok: true, record: metadata })
 })
+
+test("bare untied pairs beside a non-GitHub URL in the same token get a lookup and 404 redacts them (#4469)", async () => {
+  for (const body of [
+    "[acme/internal-tool](https://example.org/docs)",
+    "[docs](https://example.org/docs),acme/internal-tool",
+    "call(acme/internal-tool,https://example.org/docs)",
+    "call(https://example.org/docs,acme/internal-tool)",
+    "[acme/internal-tool](https://github.com/smithersai/smithers)",
+  ]) {
+    const { asked, records } = await confirm([body], ["smithersai/smithers"])
+    expect(asked).toContain("acme/internal-tool")
+    expect(records[0]!.record.body).not.toContain("acme/internal-tool")
+    expect(records[0]!.record.body).toContain("[repo]")
+  }
+  // A public pair inside a Markdown link stays intact once confirmed.
+  const pub = await confirm(["[acme/public-tool](https://example.org/docs)"], ["acme/public-tool"])
+  expect(pub.asked).toEqual(["acme/public-tool"])
+  expect(pub.records[0]).toMatchObject({ ok: true, record: { body: "[acme/public-tool](https://example.org/docs)" } })
+
+  // Path segments (including commas in Markdown destinations) inside a non-GitHub URL are never looked up.
+  for (const body of ["See https://example.org/acme/internal-tool for docs.", "[docs](https://example.org/docs,acme/internal-tool)"]) {
+    const urlPath = await confirm([body])
+    expect(urlPath.asked).toEqual([])
+    expect(urlPath.records[0]).toMatchObject({ ok: true, record: { body } })
+  }
+})
+
+test("docker login password options carry credential roles and never publish passwords (#4469)", async () => {
+  for (const args of [
+    ["login", "-u", "alice", "-p", "example-pass"],
+    ["login", "-ualice", "-pexample-pass"],
+    ["login", "-u", "alice", "-p=example-pass"],
+    ["login", "--username", "alice", "--password", "example-pass"],
+    ["login", "--username=alice", "--password=example-pass"],
+    ["--context", "prod", "login", "-u", "alice", "-p", "example-pass"],
+    ["--debug", "login", "-p", "example-pass"],
+    ["-D", "login", "-u", "alice", "-p", "example-pass"],
+  ]) {
+    expect(commandArguments(["docker", ...args], 0).some((argument: { role: string }) => argument.role === "credential")).toBe(true)
+    const { asked, records } = await confirm([`docker ${args.join(" ")} registry.example.org`])
+    expect(asked).toEqual([])
+    expect(records[0]!.record.body).not.toContain("example-pass")
+  }
+  // docker run -p publishes a port, not a password — even when the image is named "login".
+  for (const args of [["run", "-p", "8080:80", "alpine"], ["run", "--rm", "-p", "8080:80", "login"], ["constructor", "--help"]]) {
+    expect(commandArguments(["docker", ...args], 0).some((argument: { role: string }) => argument.role === "credential")).toBe(false)
+    const cmd = `docker ${args.join(" ")}`
+    const portRun = await confirm([cmd])
+    expect(portRun.asked).toEqual([])
+    expect(portRun.records[0]).toMatchObject({ ok: true, record: { body: cmd } })
+  }
+})

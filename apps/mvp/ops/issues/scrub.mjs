@@ -872,7 +872,7 @@ const semanticStringsOf = (readings) => {
   for (const reading of readings) {
     if (!reading.grammar || reading.url) continue
     const commands = shellCommands(reading.text)
-    const contexts = commands.filter((command) => commandExecutable(command.map((word) => word.value)) >= 0 || command.some((word) => ["curl", "wget"].includes(executableName(word.value))))
+    const contexts = commands.filter((command) => commandExecutable(command.map((word) => word.value)) >= 0 || command.some((word) => ["curl", "wget", "docker"].includes(executableName(word.value))))
     const bindings = commands.flatMap((words) => words.filter((word) => /^(?:GH_REPO|GITHUB_REPOSITORY)=/i.test(word.value) && validRepository(argumentParts(word.value).value.replace(/[@#].*$/, ""))).map((word) => ({ ...word, text: word.value })))
     const words = [...contexts.flatMap((command) => command.redirects), ...bindings, ...commands.semantics.filter((word) => word.ansi || /^(?:GH_REPO|GITHUB_REPOSITORY)=/i.test(word.text) ||
       contexts.some((command) => command.some((argument) => word.start >= argument.start && word.end <= argument.end)))].map((word) => ({ ...word, literal: true }))
@@ -951,18 +951,37 @@ const referencesOf = (text, { owners, forced, urlField = false, configField = fa
     const tokens = urlField ? [{ index: 0, 0: reading.text }] : [...reading.text.matchAll(/\S+/g)]
     for (const { index, 0: token } of tokens) {
       const starts = [...token.matchAll(repositoryUrlStart)]
+      const urlRanges = []
       for (const start of starts) {
         const { index: urlStart, end: urlEnd, url } = tokenUrl(token, start.index, urlField || literal, transportHosts.has(reading.from[index + start.index]))
+        // Bound the URL range at an unmatched closing delimiter (or an argument comma inside a call),
+        // so a trailing pair like `[docs](https://example.org/docs),acme/internal-tool` stays outside.
+        let rangeEnd = urlEnd
+        if (!urlField) {
+          let parens = 0, brackets = 0
+          const inCall = /[\w$]\([^)]*$/.test(token.slice(0, urlStart))
+          for (let pos = urlStart; pos < urlEnd; pos++) {
+            const ch = token[pos]
+            if (ch === "(") parens++
+            else if (ch === ")") { if (parens === 0) { rangeEnd = pos; break }; parens-- }
+            else if (ch === "[") brackets++
+            else if (ch === "]") { if (brackets === 0) { rangeEnd = pos; break }; brackets-- }
+            else if (ch === ">" && token.slice(0, urlStart).includes("<")) { rangeEnd = pos; break }
+            else if (ch === "," && inCall && parens === 0 && brackets === 0) { rangeEnd = pos; break }
+          }
+        }
+        urlRanges.push([urlStart, rangeEnd])
         span = at(index + urlStart, index + urlEnd)
         if (insideSemanticString(span[0])) continue
         urlReferences(url, add, owners, ties, { literal })
       }
       // Tab, CR and LF removal is a URL reading only: it never joins prose.
       if (reading.url) continue
-      // Never reinterpret an authority or a URL path using the bare classifier.
-      if (starts.length === 0) {
-        for (const match of token.matchAll(BARE_PATH)) {
-          if (authorityOwner(reading, index + match.index, match[1].length)) continue
+      // Never reinterpret an authority or a URL path using the bare classifier; parts of the
+      // same token outside every URL span (such as a Markdown link label) still pass through it.
+      for (const match of token.matchAll(BARE_PATH)) {
+        if (urlRanges.some(([from, to]) => match.index < to && match.index + match[0].length > from)) continue
+        if (authorityOwner(reading, index + match.index, match[1].length)) continue
           if ((literal && (match.index !== 0 || match[0].length !== token.length)) || inCross(reading.text, index + match.index, index + match.index + match[1].length + 1 + match[2].length)) continue
           // A word's `_` joins a name only when the whole word is a path root (`node_modules/pkg`); otherwise
           // `x_owner/name` still names `owner/name`.
@@ -970,9 +989,8 @@ const referencesOf = (text, { owners, forced, urlField = false, configField = fa
           const word = /[A-Za-z0-9_]*_$/.exec(token.slice(0, match.index))?.[0]
           if (word !== undefined && PATH_ROOTS.has(`${word}${match[1]}`)) continue
           // A terminal period is prose punctuation: it stays outside the span.
-          span = at(index + match.index, index + match.index + match[0].replace(/\.+$/, "").length)
-          bareReferences(match, add, owners, token[match.index - 1] === "/")
-        }
+        span = at(index + match.index, index + match.index + match[0].replace(/\.+$/, "").length)
+        bareReferences(match, add, owners, token[match.index - 1] === "/")
       }
       for (const match of token.matchAll(OWNER_PAIR)) {
         if (authorityOwner(reading, index + match.index, match[1].length)) continue
@@ -1192,7 +1210,7 @@ const configurationLabels = (text, comments = shellCommands(text).comments) => {
 const configurationCredential = (text) => readingsOf(text).some((reading) => reading.grammar && !reading.url && shellCommands(reading.text).some((words) => {
   const values = words.map((word) => word.value)
   let executable = commandExecutable(values)
-  if (executable < 0) executable = values.findIndex((word) => ["curl", "wget"].includes(executableName(word)))
+  if (executable < 0) executable = values.findIndex((word) => ["curl", "wget", "docker"].includes(executableName(word)))
   return commandArguments(values, executable).some((argument) => argument.role === "credential" || (argument.option && credentialKey(argument.option)) || argument.values.some((operand) => {
     const { keys, value } = argumentParts(operand.text), header = /^([\w.-]+)\s*:\s*\S/.exec(value)
     return keys.some(credentialKey) || (/^--[\w-]+$/.test(operand.text) && credentialLabel(operand.text)) || (executable >= 0 && !/^(head|base)$/i.test(keys.at(-1) ?? "") && header && credentialLabel(header[1]))

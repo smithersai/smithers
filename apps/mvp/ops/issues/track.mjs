@@ -298,7 +298,16 @@ const watch = async (client, repo, writeId, sleep = (ms) => new Promise((r) => s
   for (let tries = 0; tries < 360; tries++) {
     const looked = await client.send({ repo, path: `/writes/${writeId}` })
     if (looked.status === 200 && looked.answer.status === "done") return { writeId, number: looked.answer.number, status: "done" }
-    if (looked.status === 200 && looked.answer.status !== "pending") throw new Refused(looked.answer.failure ?? "refused", `the write ${looked.answer.status}: ${looked.answer.failure ?? "no reason given"}${looked.answer.status === "failed" ? `; track.mjs retry --write ${writeId} runs it again` : ""}`, 1)
+    if (looked.status === 200 && looked.answer.status !== "pending") {
+      const cause = looked.answer.cause
+      const canRetry = looked.answer.status === "failed" || (
+        looked.answer.status === "refused" && typeof cause === "string" && (
+          cause.startsWith("github_status:") || cause === "installation" || cause === "allow_list" || cause === "revoked"
+        )
+      )
+      const hint = canRetry ? `; track.mjs retry --write ${writeId} runs it again` : "; this refusal is final"
+      throw new Refused(looked.answer.failure ?? "refused", `the write ${looked.answer.status}: ${looked.answer.failure ?? "no reason given"}${hint}`, 1)
+    }
     await sleep(5000)
   }
   throw new Refused("pending", `write ${writeId} is still pending; run the same command again to watch it`, 1)

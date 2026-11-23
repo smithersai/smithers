@@ -1,4 +1,4 @@
-import { GH_OPTIONS, CREDENTIAL_OPTIONS } from "./command-options-data.mjs"
+import { GH_OPTIONS, CREDENTIAL_OPTIONS, SUBCOMMAND_CREDENTIAL_OPTIONS } from "./command-options-data.mjs"
 
 // Values retain their original spelling. Compatibility normalization interprets option syntax only.
 const syntaxOf = (value) => {
@@ -35,6 +35,7 @@ const parseArguments = (values, executable, commandPath) => {
   const parsed = values.map((value) => ({ values: [{ text: value, offset: 0 }], role: "unbound", ambiguous: false }))
   if (executable < 0) return { parsed, path: "" }
   const tool = values[executable].normalize("NFKC").split(/[/\\]/).at(-1).toLowerCase().replace(/\.exe$/, ""), gh = tool === "gh"
+  const toolSpec = Object.hasOwn(SUBCOMMAND_CREDENTIAL_OPTIONS, tool) ? SUBCOMMAND_CREDENTIAL_OPTIONS[tool] : undefined
   let path = "", ended = false
   const child = (word) => {
     const next = [path, word].filter(Boolean).join(" ")
@@ -44,8 +45,20 @@ const parseArguments = (values, executable, commandPath) => {
     const raw = values[i], syntax = syntaxOf(raw), word = syntax.text
     if (ended) continue
     if (word === "--") { parsed[i] = { values: [], role: "syntax", ambiguous: false }; ended = true; continue }
-    if (!word.startsWith("-") || word === "-") { if (gh) path = child(word) ?? path; continue }
-    const schema = gh ? schemaOf(commandPath ?? path) : { short: Object.fromEntries((CREDENTIAL_OPTIONS[tool] ?? []).map((name) => [name, name])), booleans: new Set() }
+    if (!word.startsWith("-") || word === "-") {
+      if (gh) path = child(word) ?? path
+      else if (toolSpec && path === "") path = word.toLowerCase()
+      continue
+    }
+    const subKey = commandPath ?? path
+    const sub = toolSpec && Object.hasOwn(toolSpec.subcommands, subKey) ? toolSpec.subcommands[subKey] : undefined
+    const schema = gh
+      ? schemaOf(commandPath ?? path)
+      : sub
+      ? { short: { ...toolSpec.global.short, ...sub.short }, booleans: new Set([...toolSpec.global.booleans, ...sub.booleans]) }
+      : toolSpec
+      ? { short: toolSpec.global.short, booleans: new Set(toolSpec.global.booleans) }
+      : { short: Object.fromEntries((CREDENTIAL_OPTIONS[tool] ?? []).map((name) => [name, name])), booleans: new Set() }
     const operand = (at) => ({ text: raw.slice(syntax.end[at] ?? raw.length), offset: syntax.end[at] ?? raw.length })
     const detached = (name) => {
       parsed[i] = { values: [], role: "syntax", ambiguous: false, option: name }
@@ -88,7 +101,11 @@ export const commandArguments = (values, executable) => {
   const first = parseArguments(values, executable)
   // Local options may precede subcommands. Resolve their final schema before assigning roles.
   const { parsed, path } = first.path ? parseArguments(values, executable, first.path) : first
-  const credentials = CREDENTIAL_OPTIONS[values[executable]?.normalize("NFKC").split(/[/\\]/).at(-1).toLowerCase().replace(/\.exe$/, "")] ?? []
+  const tool = values[executable]?.normalize("NFKC").split(/[/\\]/).at(-1).toLowerCase().replace(/\.exe$/, "")
+  const toolCreds = tool !== undefined && Object.hasOwn(CREDENTIAL_OPTIONS, tool) ? CREDENTIAL_OPTIONS[tool] : []
+  const subSpec = tool !== undefined && Object.hasOwn(SUBCOMMAND_CREDENTIAL_OPTIONS, tool) ? SUBCOMMAND_CREDENTIAL_OPTIONS[tool].subcommands : undefined
+  const subCreds = subSpec && Object.hasOwn(subSpec, path) ? subSpec[path].credentials : []
+  const credentials = [...toolCreds, ...subCreds]
   for (const argument of parsed) if (credentials.includes(argument.option)) argument.role = "credential"
   if (path === "secret set") for (const argument of parsed) if (argument.option === "body") argument.role = "credential"
   return parsed

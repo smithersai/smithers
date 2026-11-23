@@ -1204,6 +1204,76 @@ describe("a failed write's way back", () => {
     expect(await row(write.writeId)).toMatchObject({ status: "done", failure: null, cause: null, github_status: null, number: 1 })
     expect(github.issues.size).toBe(1)
   })
+
+  test("refused writes caused by upstream or server conditions can be retried; semantic refusals stay final (#4462)", async () => {
+    expect(MachineWrite.isRetryableRefusal("github_status:403")).toBe(true)
+    expect(MachineWrite.isRetryableRefusal("github_status:404")).toBe(true)
+    expect(MachineWrite.isRetryableRefusal("installation")).toBe(true)
+    expect(MachineWrite.isRetryableRefusal("allow_list")).toBe(true)
+    expect(MachineWrite.isRetryableRefusal("revoked")).toBe(true)
+    expect(MachineWrite.isRetryableRefusal("has_parent")).toBe(false)
+    expect(MachineWrite.isRetryableRefusal("superseded")).toBe(false)
+    expect(MachineWrite.isRetryableRefusal("invalid")).toBe(false)
+    expect(MachineWrite.isRetryableRefusal("lane")).toBe(false)
+    expect(MachineWrite.isRetryableRefusal(null)).toBe(false)
+
+    const h = await githubHarness(runtime, { actor: null, allowed: new Set(["github/acme/plan"]) })
+    await issueToken()
+    await issueToken({ token: "smm_parent", repoId: "github/acme/plan" })
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/acme/plan', ${INSTALLATION_ID})`)
+    const github = scriptedGitHub()
+    // Seed child issue #1 on acme/widgets and parent issue #1 on acme/plan.
+    const child = create({ title: "Child issue" })
+    expect((await h.fetch(ROUTE, post(child))).status).toBe(202)
+    const d = await dispatcher(github)
+    await d.tick()
+    expect(await row(child.writeId)).toMatchObject({ status: "done", number: 1 })
+
+    // A cross-repo issue/relate refused with GitHub 403 before a token fix, then succeeding on retry.
+    let tokenFixed = false
+    const crossHttp = HttpClient.make((request, url) => {
+      if (request.method === "POST" && url.pathname === "/repos/acme/plan/issues/1/sub_issues") {
+        return Effect.succeed(HttpClientResponse.fromWeb(
+          request,
+          Response.json(tokenFixed ? { number: 1 } : { message: "Resource not accessible by integration" }, { status: tokenFixed ? 201 : 403 }),
+        ))
+      }
+      return github.http.execute(request)
+    })
+    const crossD = await dispatcher({ ...github, http: crossHttp })
+    const relate = { writeId: crypto.randomUUID(), op: "issue/relate", number: 1, parent: { repo: "acme/plan", number: 1 } }
+    expect((await h.fetch(ROUTE, post(relate))).status).toBe(202)
+    await crossD.next()
+    expect(await row(relate.writeId)).toMatchObject({ status: "refused", failure: "not_allowed", cause: "github_status:403", github_status: 403 })
+
+    // After the condition is fixed, POST .../writes/<id>/retry puts the same write id back in the queue and settles done.
+    tokenFixed = true
+    const retryRes = await h.fetch(`${ROUTE}/${relate.writeId}/retry`, post({}))
+    expect(retryRes.status).toBe(202)
+    expect(await row(relate.writeId)).toMatchObject({ status: "pending", failure: null, cause: null, github_status: null })
+    await crossD.next()
+    expect(await row(relate.writeId)).toMatchObject({ status: "done", failure: null, cause: null, github_status: null, number: 1 })
+
+    // Other server-side refusal causes (installation, allow_list, revoked) are also retryable.
+    for (const cause of ["installation", "allow_list", "revoked"] as const) {
+      const w = create({ title: `Retry ${cause}` })
+      expect((await h.fetch(ROUTE, post(w))).status).toBe(202)
+      await sql(runtime, `UPDATE machine_writes SET status = 'refused', failure = 'not_allowed', cause = '${cause}' WHERE id = '${w.writeId}'`)
+      expect((await h.fetch(`${ROUTE}/${w.writeId}/retry`, post({}))).status).toBe(202)
+      expect(await row(w.writeId)).toMatchObject({ status: "pending", failure: null, cause: null })
+    }
+
+    // Permanent semantic refusals and null-cause refusals still return 409 conflict.
+    for (const cause of ["has_parent", "superseded", "invalid", "lane", null] as const) {
+      const w = create({ title: `Final ${cause ?? "null"}` })
+      expect((await h.fetch(ROUTE, post(w))).status).toBe(202)
+      await sql(runtime, cause === null
+        ? `UPDATE machine_writes SET status = 'refused', failure = 'not_allowed', cause = NULL WHERE id = '${w.writeId}'`
+        : `UPDATE machine_writes SET status = 'refused', failure = 'not_allowed', cause = '${cause}' WHERE id = '${w.writeId}'`)
+      expect((await h.fetch(`${ROUTE}/${w.writeId}/retry`, post({}))).status).toBe(409)
+      expect(await row(w.writeId)).toMatchObject({ status: "refused" })
+    }
+  })
 })
 
 describe("recovery is the dispatcher's own", () => {

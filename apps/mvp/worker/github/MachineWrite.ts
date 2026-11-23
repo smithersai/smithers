@@ -219,20 +219,37 @@ export const statusOf = (id: string, repoId: string, machine: Machine) =>
   })
 
 /**
- * The deliberate way back from `failed`: the agent and lane that made the write put it at the back of the queue, under
- * the requesting token, which must be live, in scope for the write's op and hold room, as must its parent's repository,
- * which the deployment must still act on (`mayAct`).
+ * Whether a `refused` write's recorded cause came from an upstream or server condition that can be fixed and retried
+ * under the same write id. Semantic refusals (`has_parent`, `superseded`, `invalid`, `lane`) stay final.
+ */
+export const isRetryableRefusal = (cause: string | null): boolean =>
+  cause !== null && (
+    cause.startsWith("github_status:") ||
+    cause === "installation" ||
+    cause === "allow_list" ||
+    cause === "revoked"
+  )
+
+/**
+ * The deliberate way back from `failed` or a server/upstream `refused` write: the agent and lane that made the write
+ * put it at the back of the queue, under the requesting token, which must be live, in scope for the write's op and
+ * hold room, as must its parent's repository, which the deployment must still act on (`mayAct`).
  * It is still one issue: a tick finds its marker before it POSTs. A write already pending answers `pending`, so a request
  * whose start was lost can be made again.
  */
 export const retry = (id: string, repoId: string, machine: Machine, mayAct: (id: string) => boolean) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
-      const [write] = yield* sql<{ readonly op: string; readonly status: string; readonly payload: { readonly parent?: { readonly repo: string } } }>`
-        SELECT op, status, payload FROM machine_writes
+      const [write] = yield* sql<{ readonly op: string; readonly status: string; readonly cause: string | null; readonly payload: { readonly parent?: { readonly repo: string } } }>`
+        SELECT op, status, cause, payload FROM machine_writes
         WHERE id = ${id}::uuid AND repo_id = ${repoId} AND agent = ${machine.agent} AND lane = ${machine.lane}
         FOR UPDATE`
-      if (write === undefined || (write.status !== "failed" && write.status !== "pending")) return "conflict" as const
+      const retryable = write !== undefined && (
+        write.status === "failed" ||
+        write.status === "pending" ||
+        (write.status === "refused" && isRetryableRefusal(write.cause))
+      )
+      if (!retryable) return "conflict" as const
       if (!(yield* tokenHeld(machine.tokenSha256, repoId, write.op))) return "forbidden" as const
       if (!(yield* parentHeld(machine.agent, machine.lane, repoId, write.payload.parent?.repo))) return "forbidden" as const
       if (write.payload.parent !== undefined && !mayAct(repositoryOf(write.payload.parent.repo).id)) return "forbidden" as const
