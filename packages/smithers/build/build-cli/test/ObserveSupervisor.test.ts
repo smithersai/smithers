@@ -310,12 +310,17 @@ const bwrap = (() => {
   return found === "" ? undefined : found
 })()
 
+/** `pidfd_getfd`, numbered alike on x86_64 and aarch64. */
+const pidfdGetfd = 438
+/** `process_vm_readv`, which reads every path a call names from the caller's memory. */
+const processVmReadv = process.arch === "arm64" ? 270 : 310
+
 /**
- * A seccomp program that answers EPERM to `pidfd_getfd` (call 438 on x86_64
- * and aarch64) and lets every other call through, as Docker's default profile
- * does in a container without CAP_SYS_PTRACE.
+ * A seccomp program that answers EPERM to one call (`pidfd_getfd` unless
+ * another is named) and lets every other call through, as Docker's default
+ * profile does in a container without CAP_SYS_PTRACE.
  */
-const refusingPidfdGetfd = (): Buffer => {
+const refusingCall = (call: number): Buffer => {
   const instruction = (code: number, jt: number, jf: number, k: number) => {
     const bytes = Buffer.alloc(8)
     bytes.writeUInt16LE(code, 0)
@@ -326,18 +331,18 @@ const refusingPidfdGetfd = (): Buffer => {
   }
   return Buffer.concat([
     instruction(0x20, 0, 0, 0), // load the call's number
-    instruction(0x15, 0, 1, 438), // pidfd_getfd?
+    instruction(0x15, 0, 1, call), // the call refused?
     instruction(0x06, 0, 0, 0x00050000 | 1), // answer EPERM
     instruction(0x06, 0, 0, 0x7fff0000) // let it through
   ])
 }
 
 /** Runs `argv` under bubblewrap with that program loaded, the whole file system in sight. */
-const refusing = async (argv: ReadonlyArray<string>) => {
+const refusing = async (argv: ReadonlyArray<string>, call = pidfdGetfd) => {
   const base = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-refused-")))
   temporary.push(base)
   const filter = Path.join(base, "filter.bpf")
-  await Fs.writeFile(filter, refusingPidfdGetfd())
+  await Fs.writeFile(filter, refusingCall(call))
   const descriptor = NodeFs.openSync(filter, "r")
   try {
     const run = spawnSync(bwrap!, ["--dev-bind", "/", "/", "--seccomp", "3", "--", ...argv], {
@@ -1072,6 +1077,56 @@ describe("smthrs-observe --keep, for what a step left running after its trace wa
       }
     }
   }, 60_000)
+
+  // The loss was said through the reasons the recorder keeps, each written once. After a second failed write the
+  // reason was one it had written already, so nothing was new: while what the step left made no further call, the
+  // file was never written to again, and no request was answered for as long as the recorder ran.
+  supervised("says a second loss of kept lines too, though what the step left makes no further call", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "observe-keep-lost-again-")))
+    temporary.push(root)
+    await Fs.writeFile(Path.join(root, "later"), "2\n")
+    const trace = Path.join(root, "trace")
+    const kept = `${trace}.kept`
+    // What the step leaves waits in an open of each FIFO in turn, and makes no call while it waits.
+    const told = ["first", "second", "end"].map((name) => Path.join(root, name))
+    for (const fifo of told) expect(spawnSync("mkfifo", [fifo]).status).toBe(0)
+    const tell = (fifo: string) => Fs.writeFile(fifo, "\n")
+    await Fs.mkdir(kept)
+    const reads = `cat ${root}/later > /dev/null`
+    const script = `(read a < ${told[0]}; ${reads}; read b < ${told[1]}; ${reads}; read c < ${told[2]})` +
+      " > /dev/null 2>&1 & exit 0"
+    const child = spawn(supervisor!, ["--keep", trace, "--", "sh", "-c", script], { detached: true, stdio: "ignore" })
+    child.unref()
+    const lost = "+++ unrecorded: the recorder could not write every line of what the step left running +++"
+    const said = () => NodeFs.readFileSync(kept, "utf8").split(lost).length - 1
+    try {
+      await until(() => NodeFs.existsSync(`${trace}.status`), "no status")
+      // The first loss, said once the lines can be written.
+      await tell(told[0]!)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      expect(await ObservedReads.askFlush(trace, 1_000)).toBe(false)
+      await Fs.rmdir(kept)
+      expect(await ObservedReads.askFlush(trace, 10_000)).toBe(true)
+      expect(said()).toBe(1)
+      // The second: the file is a directory again while the lines of the second read are made.
+      await Fs.rename(kept, `${kept}.first`)
+      await Fs.mkdir(kept)
+      await tell(told[1]!)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      expect(await ObservedReads.askFlush(trace, 1_000)).toBe(false)
+      await Fs.rmdir(kept)
+      expect(await ObservedReads.askFlush(trace, 10_000)).toBe(true)
+      expect(said()).toBe(1)
+      await tell(told[2]!)
+      await until(() => keptEnded(trace), "it did not end")
+    } finally {
+      try {
+        process.kill(-child.pid!, "SIGKILL")
+      } catch {
+        // Ended already.
+      }
+    }
+  }, 60_000)
 })
 
 describe("smthrs-observe and a socket bound to a port the kernel chooses", () => {
@@ -1399,5 +1454,271 @@ describe("smthrs-observe and paths it makes whole", () => {
     const read = ObservedReads.read(() => lines, deep(base))
     expect(read.refusals).toEqual([])
     expect(read.outside).toEqual([])
+  })
+})
+
+describe("smthrs-observe and paths that reach /proc past a link", () => {
+  // Only a `proc` at depth one by the count of names was asked about, and the first one that did not lead to the
+  // root ended the search. A `..` after a link goes up from where the link leads, so the count says nothing: the
+  // path was looked at as written, in the recorder's own view, and the file the call read was in no line.
+  supervised("follows a link of the process reached past a `..` that goes up from where a link leads", async () => {
+    const { base, lines, run } = await record(
+      "rooted-links",
+      (at) => {
+        const up = at.split("/").filter((part) => part !== "").map(() => "..").join("/")
+        return [
+          "sh",
+          "-c",
+          // `deep/../../..` is the directory itself, whose own `proc` is no /proc; the names after it reach the root.
+          `cd sub && cat ${at}/deep/../../../proc/../${up}/proc/self/cwd/only && cat ${at}/one/../proc/self/cwd/only`
+        ]
+      },
+      async (at) => {
+        await Fs.mkdir(Path.join(at, "a", "b", "c"), { recursive: true })
+        await Fs.mkdir(Path.join(at, "proc"))
+        await Fs.mkdir(Path.join(at, "sub"))
+        await Fs.writeFile(Path.join(at, "sub", "only"), "only\n")
+        await Fs.symlink(Path.join(at, "a", "b", "c"), Path.join(at, "deep"))
+        // A link to a directory one name below the root: `one/..` is the root, three names deep by their count.
+        await Fs.symlink(`/${at.split("/")[1]!}`, Path.join(at, "one"))
+      }
+    )
+    expect(run.stdout).toBe("only\nonly\n")
+    const opens = lines.filter((line) => line.includes(" openat(") && line.includes("/only\""))
+    const read = `openat(AT_FDCWD, ${JSON.stringify(Path.join(base, "sub", "only"))}, O_RDONLY) = 0`
+    expect(opens.map((line) => line.replace(/^\d+ /, ""))).toEqual([read, read])
+    expect(lines.filter((line) => line.includes("unrecorded"))).toEqual([])
+  })
+
+  // A link of a process by its number was followed whoever the process was. Which file a process outside the run has
+  // open, or where it is, is in no line: the line named the file as if the run had found it by its own path, and a
+  // record held that file and never the other process's choice of it.
+  supervised("leaves a link of a process outside the run as the run named it, for the reader to refuse", async () => {
+    const outside = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-observe-outside-")))
+    temporary.push(outside)
+    await Fs.writeFile(Path.join(outside, "file"), "theirs\n")
+    const other = spawn("sleep", ["600"], { cwd: outside, stdio: "ignore" })
+    try {
+      const { base, lines, run } = await record(
+        "foreign",
+        () => ["sh", "-c", `cat /proc/${other.pid}/cwd/file && cat /proc/$$/cwd/file`],
+        (at) => Fs.writeFile(Path.join(at, "file"), "mine\n")
+      )
+      expect(run.stdout).toBe("theirs\nmine\n")
+      const opens = lines.filter((line) => line.includes(" openat(") && line.includes("/file\""))
+      expect(opens.map((line) => line.replace(/^\d+ /, ""))).toEqual([
+        `openat(AT_FDCWD, "/proc/${other.pid}/cwd/file", O_RDONLY) = 0`,
+        // A process of the run named by its number is followed as `/proc/self` is.
+        `openat(AT_FDCWD, ${JSON.stringify(Path.join(base, "file"))}, O_RDONLY) = 0`
+      ])
+      expect(lines.filter((line) => line.includes(JSON.stringify(Path.join(outside, "file"))))).toEqual([])
+      expect(ObservedReads.read(() => lines, base).refusals).toContain(
+        `it named /proc/${other.pid}/cwd/file, a file of a process outside the run`
+      )
+    } finally {
+      other.kill("SIGKILL")
+    }
+  })
+
+  // The recorder asks an openat2's question itself, from the same directory, and a reader walks the path again: a
+  // path through `/proc/self` led each of them where its own link leads. The line named a file in the recorder's
+  // working directory, or said the file was missing, while the call read one in the caller's.
+  supervised("refuses an openat2 with RESOLVE_* flags whose path goes through a link of a process", async () => {
+    const cached = String.raw`
+import ctypes, os, struct
+libc = ctypes.CDLL(None, use_errno=True)
+os.chdir("sub")
+for path, resolve in ((b"/proc/self/cwd/only", 0x20), (b"only", 0x08)):  # RESOLVE_CACHED, RESOLVE_BENEATH
+    fd = libc.syscall(437, -100, path, struct.pack("QQQ", os.O_RDONLY, 0, resolve), 24)
+    if fd >= 0: os.close(fd)
+`
+    const { base, lines } = await record(
+      "openat2-links",
+      (at) => ["python3", Path.join(at, "cached.py")],
+      async (at) => {
+        await Fs.mkdir(Path.join(at, "sub"))
+        await Fs.writeFile(Path.join(at, "sub", "only"), "only\n")
+        await Fs.writeFile(Path.join(at, "cached.py"), cached)
+      }
+    )
+    const sub = Path.join(base, "sub")
+    // The walk no link of a process is in is written as before, and the other is in no line but the refusal.
+    expect(lines.filter((line) => line.includes(" openat2(")).map((line) => line.replace(/^\d+ /, ""))).toEqual([
+      `openat2(AT_FDCWD<${sub}>, "only", {flags=O_RDONLY, resolve=RESOLVE_BENEATH}, 24) = 0<${sub}/only>`
+    ])
+    const refusal = "it reached a file in a way the recorder cannot follow: openat2 through a link of a process"
+    expect(lines.filter((line) => line.includes("unrecorded")).map((line) => line.replace(/^\d+ /, ""))).toEqual([
+      `+++ unrecorded: ${refusal} +++`
+    ])
+    expect(ObservedReads.read(() => lines, base).refusals).toContain(refusal)
+  })
+})
+
+describe("smthrs-observe and files under /dev/shm", () => {
+  const shared = (() => {
+    try {
+      NodeFs.accessSync("/dev/shm", NodeFs.constants.W_OK | NodeFs.constants.X_OK)
+      return true
+    } catch {
+      return false
+    }
+  })()
+
+  // All of `/dev` counted as the machine's state, never looked at: a file under `/dev/shm`, which holds files as any
+  // directory does, was written as found whether it was there or not.
+  it.skipIf(supervisor === undefined || process.getuid?.() === 0 || !shared)(
+    "looks at a file under /dev/shm as at any other, and at no device",
+    async () => {
+      const there = `/dev/shm/smthrs-observe-${process.pid}-there`
+      const missing = `/dev/shm/smthrs-observe-${process.pid}-missing`
+      await Fs.writeFile(there, "shared\n")
+      try {
+        const { lines, run } = await record(
+          "shm",
+          () => ["sh", "-c", `cat ${there}; cat ${missing} 2> /dev/null; cat /dev/null`]
+        )
+        expect(run.stdout).toBe("shared\n")
+        const answers = (path: string) =>
+          lines.filter((line) => line.includes(` openat(AT_FDCWD, ${JSON.stringify(path)}, O_RDONLY)`)).map(answerOf)
+        expect(answers(there)).toEqual(["0"])
+        expect(answers(missing)).toEqual(["ENOENT"])
+        expect(answers("/dev/null")).toEqual(["0"])
+        expect(lines.filter((line) => line.includes("unrecorded"))).toEqual([])
+      } finally {
+        await Fs.rm(there, { force: true })
+      }
+    }
+  )
+})
+
+describe("smthrs-observe and a process it may not read", () => {
+  const blind = "the recorder may not read the memory of a process of the run"
+
+  // A process that sets itself not dumpable is one whose memory the kernel lets no other process of its user read.
+  // Every failed read was taken for a bad address: the line said the call failed (`EFAULT`), which a reader takes
+  // as no file opened, and the call went on in the kernel and read its file.
+  supervised("says the run is unrecorded once a process hides its memory (PR_SET_DUMPABLE)", async () => {
+    const hiding = "import ctypes, sys; ctypes.CDLL(None).prctl(4, 0); sys.stdout.write(open(sys.argv[1]).read())"
+    const { base, lines, run } = await record(
+      "hidden",
+      (at) => ["python3", "-c", hiding, Path.join(at, "input")],
+      (at) => Fs.writeFile(Path.join(at, "input"), "input\n")
+    )
+    // The call read its file all the same, and no line names it.
+    expect(run.stdout).toBe("input\n")
+    const input = JSON.stringify(Path.join(base, "input"))
+    expect(lines.filter((line) => line.includes(" openat(") && line.includes(input))).toEqual([])
+    expect(lines.filter((line) => line.includes(`+++ unrecorded: ${blind} +++`)).length).toBe(1)
+    expect(ObservedReads.read(() => lines, base).refusals).toContain(blind)
+  })
+
+  // A machine that refuses the read outright (a container whose filter keeps process_vm_readv for CAP_SYS_PTRACE)
+  // passed the probe, which asked only for the filter and a copy of a descriptor.
+  refusable("says on probing that it cannot run where the machine refuses the read, and why", async () => {
+    const probe = await refusing([supervisor!, "--probe"], processVmReadv)
+    expect(probe.status, probe.stderr).toBe(126)
+    expect(probe.stderr.trim()).toBe(
+      "smthrs-observe cannot run here: this machine refuses process_vm_readv, which reads the paths a step names: " +
+        "Operation not permitted; a container allows it with CAP_SYS_PTRACE"
+    )
+    // Asked to record there all the same, it runs the command and says the run is unrecorded.
+    const run = await refusing([supervisor!, "trace", "--", "sh", "-c", "cat /dev/null; exit 3"], processVmReadv)
+    expect(run.status, run.stderr).toBe(3)
+    const lines = linesOf(Path.join(run.base, "trace")).filter((line) => line !== "")
+    expect(lines.filter((line) => line.includes(`+++ unrecorded: ${blind} +++`)).length).toBe(1)
+    expect(lines.at(-1)).toMatch(/^\d+ \+\+\+ complete \+\+\+$/)
+  })
+})
+
+/**
+ * A process namespace of the test's own, where the next process id can be chosen (`ns_last_pid`): the only way to
+ * give a process the id an earlier one had without starting four million between them.
+ */
+const namespaced = (() => {
+  const probe = spawnSync("unshare", [
+    "-Urpf",
+    "--mount-proc",
+    "sh",
+    "-c",
+    "echo 40 > /proc/sys/kernel/ns_last_pid && sh -c 'echo $$'"
+  ], { encoding: "utf8" })
+  return probe.status === 0 && probe.stdout.trim() === "41"
+})()
+
+/** Runs `script` with sh as the first process of a new process namespace; `$1` is the recorder, `$2` is `root`. */
+const inNamespace = (script: string, root: string) =>
+  spawnSync("unshare", ["-Urpf", "--mount-proc", "sh", "-c", script, "sh", supervisor!, root], {
+    encoding: "utf8",
+    timeout: 60_000
+  })
+
+describe("smthrs-observe and the id of a command that has ended", () => {
+  const reused = it.skipIf(supervisor === undefined || !namespaced)
+
+  // `--reap` passed each signal on to the command's id for as long as it ran, and it runs on after the command has
+  // ended, while what the command left is given its second: by then the id may be another process's.
+  reused("passes no signal on to the id of a command it has reaped (--reap)", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "observe-reap-reused-")))
+    temporary.push(root)
+    const script = [
+      // The command leaves a program running and ends: the recorder reaps it, and runs on for a second.
+      `"$1" --reap -- sh -c 'echo $$ > "$0/command"; sleep 30 & exit 0' "$2" &`,
+      "recorder=$!",
+      `while [ ! -s "$2/command" ]; do sleep 0.01; done`,
+      `read command < "$2/command"`,
+      "while kill -0 $command 2> /dev/null; do sleep 0.01; done",
+      // The next process made takes the command's id.
+      "echo $((command - 1)) > /proc/sys/kernel/ns_last_pid",
+      "sleep 20 &",
+      "other=$!",
+      "kill -TERM $recorder",
+      "sleep 0.3",
+      "kill -0 $other 2> /dev/null && alive=yes || alive=no",
+      "echo \"$command $other $alive\"",
+      "kill -KILL $other 2> /dev/null",
+      "wait"
+    ].join("\n")
+    const run = inNamespace(script, root)
+    expect(run.status, run.stderr).toBe(0)
+    const [command, other, alive] = run.stdout.trim().split(" ")
+    expect(other).toBe(command)
+    expect(alive).toBe("yes")
+  })
+
+  // A process the command left, given the command's id and left to the recorder when its parent ended, was taken
+  // for the command ending again: the step's sealed trace was replaced by the lines made since, and its exit
+  // status by that process's.
+  reused("seals a step once, though a process it left ends under the command's id (--keep)", async () => {
+    const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "observe-keep-reused-")))
+    temporary.push(root)
+    expect(spawnSync("mkfifo", [Path.join(root, "go")]).status).toBe(0)
+    // What the command leaves waits to be told, then leaves a process of its own that ends with 7 after it has.
+    const left = `(read told < "$0/go"; (sleep 0.3; exit 7) & exit 0) > /dev/null 2>&1 &`
+    const script = [
+      `"$1" --keep "$2/trace" -- sh -c 'echo $$ > "$0/command"; ${left} exit 0' "$2" &`,
+      "recorder=$!",
+      `while [ ! -s "$2/trace.status" ]; do sleep 0.01; done`,
+      `read command < "$2/command"`,
+      `cp "$2/trace" "$2/sealed"`,
+      `cp "$2/trace.status" "$2/sealed.status"`,
+      // The next process made, by what the command left, takes the command's id; nothing here makes one before.
+      "echo $((command - 1)) > /proc/sys/kernel/ns_last_pid",
+      `echo > "$2/go"`,
+      "wait $recorder",
+      "echo \"$? $command\""
+    ].join("\n")
+    const run = inNamespace(script, root)
+    expect(run.status, run.stderr).toBe(0)
+    const [status, command] = run.stdout.trim().split(" ")
+    // The recorder answers the command's exit, and the step's trace and status are as they were sealed.
+    expect(status).toBe("0")
+    const sealed = NodeFs.readFileSync(Path.join(root, "sealed"), "utf8")
+    expect(NodeFs.readFileSync(Path.join(root, "trace"), "utf8")).toBe(sealed)
+    expect(NodeFs.readFileSync(Path.join(root, "trace.status"), "utf8")).toBe(
+      NodeFs.readFileSync(Path.join(root, "sealed.status"), "utf8")
+    )
+    // What the command left did make a process with the command's id, and its lines are with those of what was left.
+    const kept = NodeFs.readFileSync(Path.join(root, "trace.kept"), "utf8")
+    expect(kept).toMatch(new RegExp(`^\\d+ clone\\(child_stack=NULL, flags=SIGCHLD\\) = ${command}$`, "m"))
   })
 })

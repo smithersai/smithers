@@ -873,6 +873,31 @@ static void settleBindings(pid_t stopped);
 
 /* ---- Reading the stopped thread ------------------------------------------------------------------------------ */
 
+/*
+ * A read of a thread's memory fails for an address the thread gave that is none of its own (`EFAULT`, `EIO`), which
+ * the kernel refuses the call for too, or for a thread that is gone (`ESRCH`), whose call never runs. Any other
+ * failure is the recorder's, not the call's: the kernel refuses the read (`EPERM`: the process set itself not
+ * dumpable with `prctl(PR_SET_DUMPABLE, 0)`, runs a program no one may read, or took another user's id where this
+ * program lacks CAP_SYS_PTRACE; `ENOSYS`: the machine has no such call). The call still goes on in the kernel and
+ * reads its file, and no line can name it: the run is unrecorded. The same holds for where a thread is and what its
+ * descriptors name (`/proc/<thread>/cwd`, `/proc/<thread>/fd/<n>`), which the kernel refuses with `EACCES`.
+ */
+static const char *blindMemory = "the recorder may not read the memory of a process of the run";
+static const char *blindLinks =
+  "the recorder may not read the working directory or the descriptors of a process of the run";
+
+/* Notes a read of a thread's memory that failed with `error`, where that says nothing of the address. */
+static void memoryRefused(int error) {
+  if (error != EFAULT && error != EIO && error != ESRCH) unrecorded(blindMemory);
+}
+
+/* Whether a readlink of a process's link failed because this program may not read it; notes it when so. */
+static int linkRefused(int error) {
+  if (error != EACCES && error != EPERM) return 0;
+  unrecorded(blindLinks);
+  return 1;
+}
+
 /* A zero-ended string at `address` in the thread's memory; 0 when it cannot be read. */
 static int stringAt(pid_t tid, uint64_t address, char *out, size_t capacity) {
   size_t got = 0;
@@ -882,6 +907,7 @@ static int stringAt(pid_t tid, uint64_t address, char *out, size_t capacity) {
     size_t want = page < capacity - 1 - got ? page : capacity - 1 - got;
     struct iovec local = {out + got, want}, remote = {(void *)(uintptr_t)(address + got), want};
     ssize_t n = process_vm_readv(tid, &local, 1, &remote, 1, 0);
+    if (n < 0) memoryRefused(errno);
     if (n <= 0) return 0;
     if (memchr(out + got, 0, (size_t)n) != NULL) return 1;
     got += (size_t)n;
@@ -891,10 +917,13 @@ static int stringAt(pid_t tid, uint64_t address, char *out, size_t capacity) {
 
 static int bytesAt(pid_t tid, uint64_t address, void *out, size_t length) {
   struct iovec local = {out, length}, remote = {(void *)(uintptr_t)address, length};
-  return process_vm_readv(tid, &local, 1, &remote, 1, 0) == (ssize_t)length;
+  ssize_t n = process_vm_readv(tid, &local, 1, &remote, 1, 0);
+  if (n < 0) memoryRefused(errno);
+  return n == (ssize_t)length;
 }
 
-/* Where a directory descriptor (or the working directory, for AT_FDCWD) of the thread is. 0 when it has none. */
+/* Where a directory descriptor (or the working directory, for AT_FDCWD) of the thread is. 0 when it has none, or
+ * when this program may not read it, which makes the run unrecorded (linkRefused). */
 static int placeOf(pid_t tid, int fd, char *out, size_t capacity) {
   char link[64];
   if (fd == AT_FDCWD)
@@ -902,6 +931,7 @@ static int placeOf(pid_t tid, int fd, char *out, size_t capacity) {
   else
     snprintf(link, sizeof link, "/proc/%d/fd/%d", tid, fd);
   ssize_t n = readlink(link, out, capacity - 1);
+  if (n < 0) linkRefused(errno);
   /* A name that fills the buffer may have been cut short. */
   if (n <= 0 || (size_t)n == capacity - 1) return 0;
   out[n] = 0;
@@ -945,16 +975,53 @@ static int numberOf(const char *part, size_t length, long *out) {
  * followed. The rest of the path goes on from where the link leads, so the line names the file the call reaches.
  * A link that leads to no file of the run (a pipe, a socket, a descriptor not open) leaves the path as it was,
  * under `/proc` or `/dev`, where no record looks. Answers 0 with `why` set when the path cannot be followed so: it
- * goes back up (`..`) inside `/proc` or `/dev`, or its link leads to a file that was removed.
+ * goes back up (`..`) inside `/proc` or `/dev`, or its link leads to a file that was removed. `*linked`, when asked
+ * for, is set where the path names such a link, followed or not.
+ *
+ * A link of a process named by its number is followed only for a process of the run (ofRun). One of a process the
+ * run did not start leads wherever that process is or has open, which no line of the trace shows: followed, the line
+ * would name the file as if the run had found it by its path, and a record would hold the file and never which file
+ * the other process chose. Its path is left as the run named it, under `/proc/<pid>`, and the reader refuses it.
  */
 static void rootedView(char *path);
 
-static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
+/*
+ * Whether a process is one of the run: this program is above it. The command is this program's child, and every
+ * process it leaves comes to this program when its parent ends (a child subreaper), so the parents of a process of
+ * the run lead here; those of any other process do not. A process that cannot be asked about is taken as not of the
+ * run.
+ */
+static int ofRun(pid_t process) {
+  pid_t self = getpid();
+  for (int hop = 0; hop < 4096 && process > 1; hop++) {
+    if (process == self) return hop > 0;
+    char name[64], buffer[1024];
+    snprintf(name, sizeof name, "/proc/%d/stat", process);
+    int fd = open(name, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+      starvedBy(errno);
+      return 0;
+    }
+    ssize_t n = read(fd, buffer, sizeof buffer - 1);
+    close(fd);
+    if (n <= 0) return 0;
+    buffer[n] = 0;
+    /* The program's name, which may hold any byte, ends at the last `)`; the state and the parent follow. */
+    char *end = strrchr(buffer, ')');
+    int parent = 0;
+    if (end == NULL || sscanf(end + 1, " %*c %d", &parent) != 1) return 0;
+    process = (pid_t)parent;
+  }
+  return 0;
+}
+
+static int stepViewed(pid_t tid, char *path, size_t capacity, const char **why, int *linked) {
   for (int hop = 0; hop < 40; hop++) {
     rootedView(path);
     const char *at = path;
     size_t n = partOf(&at);
     long process = -1, thread = -1, fd = -1;
+    int numbered = 0; /* the path names its process by number */
     const char *name = "fd";
     if (!partIs(at, n, "dev") && !partIs(at, n, "proc")) return 1;
     pid_t tgid = tgidOf(tid);
@@ -990,6 +1057,8 @@ static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
         break;
       } else if (!numberOf(at, n, &process)) {
         return 1;
+      } else {
+        numbered = 1;
       }
       at += n;
       n = partOf(&at);
@@ -1018,6 +1087,9 @@ static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
     } else {
       return 1;
     }
+    if (linked != NULL) *linked = 1;
+    /* A link of a process outside the run: left as the run named it. */
+    if (numbered && process != tgid && !ofRun((pid_t)process)) return 1;
     char link[96], target[PATH_MAX + 1], rest[PATH_MAX + 1];
     if (thread >= 0 && fd >= 0)
       snprintf(link, sizeof link, "/proc/%ld/task/%ld/fd/%ld", process, thread, fd);
@@ -1028,6 +1100,8 @@ static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
     else
       snprintf(link, sizeof link, "/proc/%ld/%s", process, name);
     ssize_t got = readlink(link, target, sizeof target - 1);
+    /* A link of the run this program may not read: the call may follow it all the same, so the run is unrecorded. */
+    if (got < 0) linkRefused(errno);
     /* No such process or descriptor: the call fails as the kernel answers it, and reads nothing. */
     if (got <= 0) return 1;
     /* A name that fills the buffer may have been cut short. */
@@ -1069,32 +1143,44 @@ static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
   return 0;
 }
 
+static int stepView(pid_t tid, char *path, size_t capacity, const char **why) {
+  return stepViewed(tid, path, capacity, why, NULL);
+}
+
 /*
  * A path that goes up to the root before it names `/proc` or `/dev` (`/tmp/../proc/self/fd/3`, or
  * `../../proc/self/cwd/x` from a working directory) reaches the same links of a process, and looked at as written it
  * would be followed in this program's view, not the caller's. Where the names before `proc` or `dev` lead back to
  * the root, which one look at them says (they hold a link where they do not), the path is written from the root, and
- * stepView follows it. A path with no `..` is left as it is, and so is one whose names lead elsewhere.
+ * stepView follows it. Each `proc` or `dev` after a `..` is asked about so, however deep the names before it seem:
+ * a `..` after a link goes up from where the link leads, so counting names says nothing (`/x/link/../proc` is
+ * `/proc` where `link` leads to `/a`), and names that do not lead to the root say nothing of a later `proc` that
+ * does. A path with no `..` is left as it is, and so is one whose names lead elsewhere. A path that starts in
+ * `/proc` or `/dev` is stepView's: its names are a process's links, which a look from here would follow as this
+ * program's own.
  */
 static void rootedView(char *path) {
   if (path[0] != '/' || strstr(path, "/..") == NULL) return;
-  int depth = 0, up = 0;
+  int up = 0, first = 1;
   const char *at = path;
   for (size_t n = partOf(&at); n > 0; at += n, n = partOf(&at)) {
+    int kernel = partIs(at, n, "dev") || partIs(at, n, "proc");
+    if (first && kernel) return;
+    first = 0;
     if (partIs(at, n, "..")) {
-      if (depth > 0) depth--;
       up = 1;
       continue;
     }
-    if (++depth != 1 || !up || !(partIs(at, n, "dev") || partIs(at, n, "proc"))) continue;
+    if (!up || !kernel) continue;
     char before[PATH_MAX + 1];
     size_t length = (size_t)(at - path);
     if (length >= sizeof before) return;
     memcpy(before, path, length);
     before[length] = 0;
     struct stat root, reached;
-    if (stat("/", &root) != 0 || stat(before, &reached) != 0) return;
-    if (root.st_dev != reached.st_dev || root.st_ino != reached.st_ino) return;
+    if (stat("/", &root) != 0) return;
+    /* These names lead elsewhere: a later `proc` or `dev` may still be reached from the root. */
+    if (stat(before, &reached) != 0 || root.st_dev != reached.st_dev || root.st_ino != reached.st_ino) continue;
     memmove(path + 1, at, strlen(at) + 1);
     return;
   }
@@ -1141,7 +1227,13 @@ static int pathOf(pid_t tid, const struct seccomp_notif *req, int dirIndex, int 
   return stepView(tid, out, capacity, why);
 }
 
+/*
+ * Whether a path is the machine's state and no file of the run: under `/proc`, `/dev` or `/sys`. `/dev/shm` is not:
+ * it holds files as any directory does (POSIX shared memory, and whatever a program writes there), which a step can
+ * read as it reads any other input (ObservedReads.pseudo).
+ */
 static int pseudo(const char *path) {
+  if (strncmp(path, "/dev/shm", 8) == 0 && (path[8] == 0 || path[8] == '/')) return 0;
   return strncmp(path, "/proc", 5) == 0 && (path[5] == 0 || path[5] == '/') ? 1
        : strncmp(path, "/dev", 4) == 0 && (path[4] == 0 || path[4] == '/')  ? 1
        : strncmp(path, "/sys", 4) == 0 && (path[4] == 0 || path[4] == '/')  ? 1
@@ -1382,7 +1474,13 @@ struct answered {
   int answer;     /* written: 0 or an errno */
   int settledBy;  /* how many of its names set it */
   int holders;
+  char *suffix;   /* what follows an answer of 0, or NULL: the file an openat2 with RESOLVE_* flags opens */
 };
+
+static void freeAnswered(struct answered *a) {
+  free(a->suffix);
+  free(a);
+}
 
 enum effect { MAKES, REMOVES };
 
@@ -1592,6 +1690,8 @@ static void answerAgain(struct answered *a, int value) {
   if (a->place < 0) return;
   struct text t = {0};
   answer(&t, value);
+  /* A line that says the call opened a file says which, as the line first written would have. */
+  if (value == 0 && a->suffix != NULL) puts_(&t, a->suffix);
   if (t.failed) __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
   else if (!setAnswer(a->taking, a->place, a->at, t.data)) unrecorded(lateAnswer);
   free(t.data);
@@ -1824,7 +1924,7 @@ static void resolveIn(struct group *g, struct change **order, struct ident *afte
 }
 
 static void freeChange(struct change *c) {
-  if (--c->line->holders == 0) free(c->line);
+  if (--c->line->holders == 0) freeAnswered(c->line);
   free(c->from);
   free(c);
 }
@@ -2331,13 +2431,15 @@ static void refusedEnded(struct refused *r) {
   free(r);
 }
 
-/* Each refused connection whose thread is past it (`all`: every one) is looked at again. */
+/* Each refused connection whose thread is past it (`all`: every one) is looked at again. The list is read and
+ * written with serving_lock held; the main thread also asks whether it holds anything before it takes the lock, so
+ * each store to the list is one that question may be asked beside (as `bindings`). */
 static void settleRefused(pid_t tid, int all) {
   if (refusedCalls == NULL) return;
   for (struct refused **at = &refusedCalls; *at != NULL;) {
     struct refused *r = *at;
     if (all || r->tid == tid || pastCall(r->tid, r->nr)) {
-      *at = r->next;
+      __atomic_store_n(at, r->next, __ATOMIC_RELEASE);
       refusedEnded(r);
     } else {
       at = &r->next;
@@ -2359,7 +2461,7 @@ static struct refused *refusedCall(pid_t tid, int nr, unsigned port, const char 
   r->port = port;
   if (path != NULL) memcpy(r->path, path, length + 1);
   r->next = refusedCalls;
-  refusedCalls = r;
+  __atomic_store_n(&refusedCalls, r, __ATOMIC_RELEASE);
   return r;
 }
 
@@ -2442,14 +2544,16 @@ static void unwatch(pid_t tgid) {
   pthread_mutex_unlock(&seizing);
 }
 
-/* Asks the main thread, which alone may trace, to watch a process: answered before the handler is set. */
+/* Asks the main thread, which alone may trace, to watch a process: answered before the handler is set. Once the
+ * run has ended (`stopping`) nothing is asked and no answer is waited for: the main thread serves no more requests,
+ * and the process, killed while its call waited here, has no handler to set (endSeizes). */
 static void expose(pid_t tgid) {
   pthread_mutex_lock(&seizing);
-  if (!isWatched(tgid)) {
+  if (!isWatched(tgid) && !__atomic_load_n(&stopping, __ATOMIC_ACQUIRE)) {
     seizeAsked = tgid;
     seizeServed = 0;
     pthread_kill(mainThread, SIGUSR2);
-    while (!seizeServed) pthread_cond_wait(&seized, &seizing);
+    while (!seizeServed && !__atomic_load_n(&stopping, __ATOMIC_ACQUIRE)) pthread_cond_wait(&seized, &seizing);
   }
   pthread_mutex_unlock(&seizing);
 }
@@ -2484,6 +2588,21 @@ static void serveSeizes(void) {
     seizeAsked = 0;
     pthread_cond_broadcast(&seized);
   }
+  pthread_mutex_unlock(&seizing);
+}
+
+/*
+ * The main thread, once the run has ended and `stopping` is set: a request to seize still waited for is answered
+ * with nothing seized, and none is waited for after. `stopping` is set before `seizing` is taken here, and expose
+ * reads it with `seizing` held: a serving thread either sees it and does not wait, or already waits and is woken.
+ * Without this the serving thread, at the handler of a process killed just then, waited for good for a main thread
+ * that had left its loop, and the main thread for the serving thread to end.
+ */
+static void endSeizes(void) {
+  pthread_mutex_lock(&seizing);
+  seizeServed = 1;
+  seizeAsked = 0;
+  pthread_cond_broadcast(&seized);
   pthread_mutex_unlock(&seizing);
 }
 
@@ -2798,6 +2917,28 @@ static void dropKept(pid_t tid) {
   pthread_mutex_unlock(&keeping);
 }
 
+/*
+ * A thread that started another program is let go (PTRACE_EVENT_EXEC), and no signal stop of it is seen after: none
+ * of its signals stays kept. One kept as thread `was` and not sent again yet is sent now to `now`, the thread the
+ * program runs as, so the program gets it as it would unrecorded; one sent already is the kernel's to deliver. Left
+ * kept, each would be held for good, and what it first said given to a later signal of the process, were it watched
+ * again.
+ */
+static void letGoKept(pid_t was, pid_t now) {
+  pthread_mutex_lock(&keeping);
+  for (struct kept **at = &keptSignals; *at != NULL;) {
+    struct kept *k = *at;
+    if (k->tid != was) {
+      at = &k->next;
+      continue;
+    }
+    if (!k->sent) syscall(SYS_tgkill, k->tgid, now, k->sig);
+    *at = k->next;
+    free(k);
+  }
+  pthread_mutex_unlock(&keeping);
+}
+
 /* ---- One stop ------------------------------------------------------------------------------------------------ */
 
 /* A process whose program was to change: a later stop shows whether it did. Its arguments are the ones the call
@@ -2838,11 +2979,20 @@ static void startedYet(pid_t tid, pid_t tgid) {
       pthread_mutex_lock(&lock);
       nextGeneration(tgid);
       pthread_mutex_unlock(&lock);
+      /* Its file was not there to ask at the call: it is asked now whether it wants rights the run does not give. A
+       * path that could not be kept is a program the record would not name. */
+      if (s->path != NULL) rights(s->path);
+      else __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
     }
-    struct text t = {0};
-    puts_(&t, s->line);
-    puts_(&t, " = 0");
-    keep(s->id, 3, &t);
+    if (s->line == NULL) {
+      /* No memory held the line: the one that says it started is lost, and the run says so. */
+      __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
+    } else {
+      struct text t = {0};
+      puts_(&t, s->line);
+      puts_(&t, " = 0");
+      keep(s->id, 3, &t);
+    }
   } else if (tid != s->tid && tgid != s->tid) {
     /* Another thread of the process stopped first: the program may still be starting. */
     pthread_mutex_lock(&lock);
@@ -2955,6 +3105,36 @@ static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp
   }
   /* The walk starts from the working directory: a thread that changes it meanwhile makes the run unrecorded. */
   if (dirfd == AT_FDCWD) fromCwd(tid, tgid, req->data.nr, base);
+  /*
+   * This program asks the walk's question itself below, and a reader walks the path again after the run. A path that
+   * reaches a link the kernel makes for a process (`/proc/self/cwd/x`, `/dev/fd/3`) leads, for either of them, where
+   * its own link leads and not the caller's, and followed here in the caller's view it would no longer be the walk
+   * the call makes: no line can hold it. What is otherwise under `/proc`, `/dev` or `/sys` is the machine's state,
+   * never looked at: its line names the path, as the walk would.
+   */
+  int machine = 0;
+  if (given[0] != 0) {
+    char whole[PATH_MAX + 1];
+    int rooted = given[0] == '/' && !(how->resolve & RESOLVE_IN_ROOT), linked = 0;
+    int length = rooted ? snprintf(whole, sizeof whole, "%s", given)
+                        : snprintf(whole, sizeof whole, "%s/%s", strcmp(base, "/") == 0 ? "" : base, given);
+    if (length < 0 || (size_t)length >= sizeof whole) {
+      close(from);
+      *why = "long";
+      return 0;
+    }
+    if (!stepViewed(tid, whole, sizeof whole, why, &linked)) {
+      close(from);
+      return 0;
+    }
+    if (linked) {
+      close(from);
+      refuse("openat2 through a link of a process");
+      return 1;
+    }
+    machine = pseudo(whole);
+    if (machine) snprintf(reachedFile, sizeof reachedFile, "%s", whole);
+  }
   struct how ours = {O_PATH | O_CLOEXEC | (how->flags & (O_NOFOLLOW | O_DIRECTORY)), 0,
                      how->resolve & ~(uint64_t)RESOLVE_CACHED};
   int unnamed = (how->flags & O_TMPFILE) == O_TMPFILE;
@@ -2962,8 +3142,10 @@ static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp
   int reading = (how->flags & (O_ACCMODE | O_CREAT | O_TRUNC)) == O_RDONLY && !unnamed;
   int error = 0, directory = 0, named = 0;
   struct ident before = {0};
-  int fd = (int)syscall(SYS_openat2, from, given, &ours, sizeof ours);
-  if (fd >= 0) {
+  int fd = machine ? -1 : (int)syscall(SYS_openat2, from, given, &ours, sizeof ours);
+  if (machine) {
+    named = 1;
+  } else if (fd >= 0) {
     struct stat st;
     if (!nameOf(fd, reachedFile, sizeof reachedFile) || fstat(fd, &st) != 0) {
       close(fd);
@@ -3068,7 +3250,17 @@ static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp
   resolveNames(t, how->resolve);
   puts_(t, "}, 24)");
   if (named && creates && (line = calloc(1, sizeof *line)) != NULL) {
-    *line = (struct answered){0, -1, t->length, error, 0, 0};
+    *line = (struct answered){0, -1, t->length, error, 0, 0, NULL};
+    /* The file the call opens follows an answer of 0, whenever that answer is written: a call that was to find the
+     * name there and made it after all (another thread removed it first) says which file it made. */
+    struct text opens = {0};
+    angledz(&opens, reachedFile);
+    if (opens.failed) {
+      __atomic_store_n(&dropped, 1, __ATOMIC_RELAXED);
+      free(opens.data);
+    } else {
+      line->suffix = opens.data;
+    }
     change = changing(tid, req->data.nr, reachedFile, MAKES, (how->flags & O_EXCL) != 0, &before, line);
     formOf(change, (how->flags & O_EXCL) ? F_EXCL : F_CREATE, S_IFREG);
   }
@@ -3101,7 +3293,7 @@ static int resolvedOpen(pid_t tid, pid_t tgid, uint64_t id, const struct seccomp
     line->place = place;
     line->taking = taking;
     opened(change);
-    if (line->holders == 0) free(line);
+    if (line->holders == 0) freeAnswered(line);
   }
   return 1;
 }
@@ -3619,7 +3811,7 @@ static void serve(const struct seccomp_notif *req) {
           struct change *binding_ = changing(tid, c->nr, full, MAKES, 1, &before, making);
           formOf(binding_, F_BIND, S_IFSOCK);
           opened(binding_);
-          if (making->holders == 0) free(making);
+          if (making->holders == 0) freeAnswered(making);
         }
       }
       /* A path there already is one the run found: the bind fails on it. One not there is the run's once bound. */
@@ -3789,7 +3981,7 @@ static void serve(const struct seccomp_notif *req) {
     }
   }
   if (t.data == NULL && !t.failed) {
-    if (line != NULL && line->holders == 0) free(line);
+    if (line != NULL && line->holders == 0) freeAnswered(line);
     return;
   }
   uint64_t taking = 0;
@@ -3812,7 +4004,7 @@ static void serve(const struct seccomp_notif *req) {
     line->taking = taking;
     opened(changes[0]);
     opened(changes[1]);
-    if (line->holders == 0) free(line);
+    if (line->holders == 0) freeAnswered(line);
   }
 }
 
@@ -4118,7 +4310,7 @@ static long answered;
 /*
  * Lines of what the step left that never reached `.kept`: the file could not be opened, or a write to it failed. They
  * are gone, so what follows the step is unrecorded, and stays so: the reason is written to `.kept` as soon as a write
- * there succeeds (`lostWritten`), and until then no request is answered. A reader that is told every line is on disk
+ * there succeeds (`lostWritten`), again after each later loss, and until then no request is answered. A reader that is told every line is on disk
  * either has them all or has the reason.
  */
 static int keptLost, lostWritten;
@@ -4155,18 +4347,22 @@ static int writeKept(const char *file) {
   pthread_mutex_unlock(&serving_lock);
   if (__atomic_load_n(&dropped, __ATOMIC_RELAXED)) unrecorded(droppedReason);
   if (__atomic_load_n(&starved, __ATOMIC_RELAXED)) unrecorded(starvedReason);
-  if (keptLost) unrecorded(lostReason);
   pthread_mutex_lock(&lock);
   int news = reasonCount > reasonsWritten || rightsCount > rightsWritten;
   pthread_mutex_unlock(&lock);
-  if (taken.count > 0 || news) {
+  /* Lines were lost and the file does not say so yet: it is written to even when nothing else is new. */
+  int owed = keptLost && !lostWritten;
+  if (taken.count > 0 || news || owed) {
     char keptFile[PATH_MAX + 32];
     snprintf(keptFile, sizeof keptFile, "%s.kept", file);
     FILE *out = fopen(keptFile, "ae");
     int ok = out != NULL, reasonsNow = reasonsWritten, rightsNow = rightsWritten;
     if (out != NULL) {
-      /* After a write that failed the file may end inside a line: what is written now starts on a line of its own. */
-      if (keptLost && !lostWritten) fputc('\n', out);
+      /* After a write that failed the file may end inside a line: what is written now starts on a line of its own.
+       * The loss is said here, each time lines are lost, and not among the reasons kept (unrecorded): those are each
+       * written once, so a second loss would never be said, and they hold only so many, so this one could find no
+       * place. */
+      if (owed) fprintf(out, "\n%d +++ unrecorded: %s +++\n", rootPid, lostReason);
       for (size_t i = 0; i < taken.count; i++) {
         if (taken.items[i].sub & LEFT_OUT) continue;
         fwrite(taken.items[i].text, 1, taken.items[i].length, out);
@@ -4179,11 +4375,11 @@ static int writeKept(const char *file) {
       starvedBy(errno);
     }
     if (ok) {
-      /* The reasons written include the one for lines lost before, when there was one. */
-      if (keptLost) lostWritten = 1;
+      /* What was written says that lines were lost before, when they were. */
+      if (owed) lostWritten = 1;
       reasonsWritten = reasonsNow;
       rightsWritten = rightsNow;
-    } else if (!keptLost || lostWritten) {
+    } else {
       /* These lines are lost, and the reasons with them are written again: the next write says so first. */
       keptLost = 1;
       lostWritten = 0;
@@ -4225,8 +4421,11 @@ static void endLeft(void) {
   closedir(d);
 }
 
-/* Whether this machine lets the recorder run: the filter, and a copy of a descriptor of the filtered process (how a
- * bound socket is read). Where it does not, one line on standard error says what it refused, and it answers 126. */
+/* Whether this machine lets the recorder run: the filter, a copy of a descriptor of the filtered process (how a
+ * bound socket is read), and a read of that process's memory (how every path a call names is read). Where it does
+ * not, one line on standard error says what it refused, and it answers 126. */
+static const char probed[] = "smthrs-observe reads this of the process it probes";
+
 static int probe(void) {
   int sv[2];
   if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) != 0) return 126;
@@ -4243,13 +4442,19 @@ static int probe(void) {
   }
   int said = -1;
   if (read(sv[0], &said, sizeof said) != (ssize_t)sizeof said) said = EIO;
-  int copied = 0;
+  int copied = 0, readable = 0;
   if (said == 0) {
     int pidfd = (int)syscall(SYS_pidfd_open, child, 0);
     int copy = pidfd < 0 ? -1 : (int)syscall(SYS_pidfd_getfd, pidfd, sv[1], 0);
     copied = copy >= 0 ? 0 : errno;
     if (copy >= 0) close(copy);
     if (pidfd >= 0) close(pidfd);
+    /* The child's memory is this program's own, copied: what is at `probed` there is what is at it here. */
+    char word[sizeof probed];
+    struct iovec local = {word, sizeof word}, remote = {(void *)(uintptr_t)probed, sizeof word};
+    errno = 0;
+    ssize_t n = process_vm_readv(child, &local, 1, &remote, 1, 0);
+    if (n != (ssize_t)sizeof word || memcmp(word, probed, sizeof word) != 0) readable = n < 0 ? errno : EIO;
   }
   (void)write(sv[0], "", 1);
   int status = 0;
@@ -4265,10 +4470,54 @@ static int probe(void) {
             strerror(copied));
     return 126;
   }
+  if (readable != 0) {
+    fprintf(stderr,
+            "smthrs-observe cannot run here: this machine refuses process_vm_readv, which reads the paths a step "
+            "names: %s; a container allows it with CAP_SYS_PTRACE\n",
+            strerror(readable));
+    return 126;
+  }
   return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 126;
 }
 
 static void wake(int sig) { (void)sig; }
+
+/* The most descriptors any process of the machine may have (`fs.nr_open`), or 0 when it cannot be read. */
+static rlim_t mostOpen(void) {
+  char text[64];
+  int fd = open("/proc/sys/fs/nr_open", O_RDONLY | O_CLOEXEC);
+  if (fd < 0) return 0;
+  ssize_t n = read(fd, text, sizeof text - 1);
+  close(fd);
+  if (n <= 0) return 0;
+  text[n] = 0;
+  return (rlim_t)strtoull(text, NULL, 10);
+}
+
+/*
+ * Raises this program's limit of descriptors to the most it may have, once the command's process is made: that
+ * process keeps the limit this program was given. Answers whether the limit was raised; `*given` is then the limit a
+ * process this program makes after (the command started again, where no listener could be taken) is given back.
+ *
+ * The kernel refuses (`EPERM`) any limit whose hard part is above `fs.nr_open`, even one that leaves the hard part as
+ * it is: where a machine gives an unlimited hard limit, the limit could not be raised at all, and a run that binds
+ * many sockets left this program without descriptors. There the limit is raised to `fs.nr_open`, which is as many as
+ * the kernel gives anyone. The hard part is lowered to it by that, and this program may not raise it again: `*given`
+ * then says `fs.nr_open` for its hard part, the most a process made after can be given back, and no fewer
+ * descriptors than it could have had.
+ */
+static int raiseLimit(struct rlimit *given) {
+  if (getrlimit(RLIMIT_NOFILE, given) != 0 || given->rlim_cur >= given->rlim_max) return 0;
+  struct rlimit most = {given->rlim_max, given->rlim_max};
+  if (setrlimit(RLIMIT_NOFILE, &most) == 0) return 1;
+  if (errno != EPERM) return 0;
+  rlim_t open_ = mostOpen();
+  if (open_ <= given->rlim_cur || open_ >= given->rlim_max) return 0;
+  most.rlim_cur = most.rlim_max = open_;
+  if (setrlimit(RLIMIT_NOFILE, &most) != 0) return 0;
+  given->rlim_max = open_;
+  return 1;
+}
 
 static volatile pid_t commandPid;
 static void forward(int sig) {
@@ -4305,8 +4554,11 @@ static int reap(char **command) {
   for (;;) {
     int status = 0;
     pid_t pid = waitpid(-1, &status, WNOHANG);
-    if (pid == child) {
+    /* Once the command is reaped its id is free: a process the command left, given that id later, is not the
+     * command, and a signal passed on to the id would reach whatever has it by then. */
+    if (pid == child && !rootDone) {
       code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+      commandPid = 0;
       rootDone = 1;
       clock_gettime(CLOCK_MONOTONIC, &deadline);
       deadline.tv_sec += 1;
@@ -4398,16 +4650,11 @@ int main(int argc, char **argv) {
   }
   const char *traceFile = argv[1];
   char **command = argv + 3;
-  /* This program holds descriptors of its own while the run goes on: it may have as many as it is allowed. The
-   * command starts with the limit this program was given (ownLimit). */
+  /* This program holds descriptors of its own while the run goes on: it may have as many as it is allowed. Its
+   * limit is raised once the command's process is made (raiseLimit), so the command starts with the limit this
+   * program was given. */
   struct rlimit given;
-  int limited = getrlimit(RLIMIT_NOFILE, &given) == 0;
-  if (limited && given.rlim_cur < given.rlim_max) {
-    struct rlimit most = {given.rlim_max, given.rlim_max};
-    if (setrlimit(RLIMIT_NOFILE, &most) != 0) limited = 0;
-  } else {
-    limited = 0;
-  }
+  int limited = 0;
   /* Every process the command leaves behind comes to this program when its parent ends. */
   prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0);
   int sv[2];
@@ -4431,12 +4678,12 @@ int main(int argc, char **argv) {
     if (read(sv[1], &c, 1) != 1) _exit(126);
     close(fd);
     close(sv[1]);
-    if (limited && setrlimit(RLIMIT_NOFILE, &given) != 0) _exit(126);
     execvp(command[0], command);
     fprintf(stderr, "smthrs-observe: %s: %s\n", command[0], strerror(errno));
     _exit(errno == ENOENT ? 127 : 126);
   }
   close(sv[1]);
+  limited = raiseLimit(&given);
   rootPid = child;
   commandPid = child;
   struct sigaction passOn;
@@ -4510,7 +4757,9 @@ int main(int argc, char **argv) {
     pid_t pid;
     while ((pid = waitpid(-1, &status, __WALL | WNOHANG)) > 0) {
       if (WIFEXITED(status) || WIFSIGNALED(status)) {
-        if (pid == child) {
+        /* Once the command is reaped its id is free, and a process it left may be given it: that one ending is not
+         * the command ending again, and seals no trace and answers no status. */
+        if (pid == child && !rootDone) {
           code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
           commandPid = 0;
           rootDone = 1;
@@ -4530,9 +4779,14 @@ int main(int argc, char **argv) {
         if (sig == SIGSTOP || sig == SIGTSTP || sig == SIGTTIN || sig == SIGTTOU) ptrace(PTRACE_LISTEN, pid, 0, 0);
         else ptrace(PTRACE_CONT, pid, 0, 0);
       } else if (event == PTRACE_EVENT_EXEC) {
-        /* A new program starts with every handler at its default: nothing to watch until it sets one. */
+        /* A new program starts with every handler at its default: nothing to watch until it sets one. The thread
+         * that started it runs on as the process's first, under that thread's id: the event says which it was. */
+        unsigned long was = 0;
+        if (ptrace(PTRACE_GETEVENTMSG, pid, 0, &was) != 0) was = 0;
         unwatch(pid);
         ptrace(PTRACE_DETACH, pid, 0, 0);
+        letGoKept(pid, pid);
+        if (was != 0 && (pid_t)was != pid) letGoKept((pid_t)was, pid);
       } else if (event == PTRACE_EVENT_EXIT) {
         /* A thread that starts to end is let go: once it ended, its parent reaps it, not this supervisor. */
         unwatch(pid);
@@ -4574,6 +4828,7 @@ int main(int argc, char **argv) {
   }
   /* No process of the run is left, so no call waits: the serving threads end. */
   __atomic_store_n(&stopping, 1, __ATOMIC_RELEASE);
+  endSeizes();
   for (int i = 0; i < threads; i++) pthread_kill(serving_[i], SIGUSR1);
   for (int i = 0; i < threads; i++) {
     /* A thread between two receives misses one signal: it is sent again until the thread ends. */
@@ -4585,6 +4840,7 @@ int main(int argc, char **argv) {
       soon.tv_nsec -= 1000000000;
     }
     while (pthread_timedjoin_np(serving_[i], NULL, &soon) != 0) {
+      endSeizes();
       pthread_kill(serving_[i], SIGUSR1);
       clock_gettime(CLOCK_REALTIME, &soon);
       soon.tv_nsec += 20000000;
