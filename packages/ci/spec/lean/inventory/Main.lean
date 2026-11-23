@@ -129,8 +129,8 @@ def encodeOption {α : Type} (encode : α → Json) : Option α → Json
 
 def strings (held : List String) : Json := Json.arr (held.map Json.str).toArray
 
-def encodeAssignment (assignment : Assignment) : Json :=
-  Json.arr (assignment.map fun (key, held) => Json.arr #[Json.str key, Json.str held]).toArray
+def encodeAssignment (types : Bool) (assignment : Assignment) : Json :=
+  Json.arr (assignment.map fun (key, held) => Json.arr #[Json.str key, Json.str (if types then held.1 else held.2)]).toArray
 
 def texts (json : Json) (name : String) : Except String (List String) := do
   (← items json name).mapM (·.getStr?)
@@ -180,11 +180,14 @@ def answer (request : Json) : Except String Json := do
       let (name, held) ← pair entry
       pure (← name.getStr?, ← held.getStr?)
     let matrix := expandMatrix (fun name held => secrets.contains (name, held)) raw
-    return Json.mkObj [("variants", Json.arr (matrix.variants.map encodeAssignment).toArray),
+    return Json.mkObj [("variants", Json.arr (matrix.variants.map (encodeAssignment false)).toArray),
+      ("types", Json.arr (matrix.variants.map (encodeAssignment true)).toArray),
       ("keys", strings matrix.keys), ("problem", encodeOption Json.str matrix.problem)]
   | "regexOf" => return encodeOption Json.str (regexOf (← text request "pattern"))
   | "filesOf" =>
-    return encodeOption (fun files => Json.mkObj [("take", strings files.take), ("leave", strings files.leave)])
+    return encodeOption (fun files => Json.mkObj <|
+      [("take", strings files.take), ("leave", strings files.leave)] ++
+      (if (files.order.dropWhile (· >= 0)).any (· >= 0) then [("order", toJson files.order)] else []))
       (filesOf (← texts request "patterns"))
   | "globMatches" =>
     let pattern ← text request "pattern"

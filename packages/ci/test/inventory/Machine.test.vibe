@@ -36,7 +36,7 @@ jobs:
   say:
     runs-on: ubuntu-latest
     steps:
-      - uses: acme/setup-echo@v1
+      - uses: taiki-e/install-action@echo
       - run: echo done
 `
 
@@ -71,7 +71,7 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("an inventory read f
       })
     })
 
-  it.effect("counts a tool only when its program is a file on PATH, and asks once while the program runs", () =>
+  it.effect("counts only executable files and refreshes their presence on each machine read", () =>
     effect {
       const fs = try FileSystem.FileSystem
       const path = try Path.Path
@@ -80,16 +80,54 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("an inventory read f
       const first = try onThisMachine(said, { host: "linux", path: box })
       const inventory = try read(try repository({ ".github/workflows/ci.yml": workflow }))
       const before = try onThisMachine(inventory, { host: "linux", path: box })
-      // What was learned holds for the run: a replay reads once for every commit and gets one answer.
+      // Between independent reads, tools can be removed and installed.
       try fs.remove(path.join(box, "go"))
       try fs.writeFileString(path.join(box, "ruby"), "#!/bin/sh\necho ruby 3.4.6\n")
       try fs.chmod(path.join(box, "ruby"), 0o755)
       const after = try onThisMachine(inventory, { host: "linux", path: box })
       try Effect.try(() => {
         expect(notReplayed(first)).toEqual([{ job: "ci.yml:say", reasons: [{ feature: missingTool, detail: "echo" }] }])
-        expect(after).toEqual(before)
-        expect(notReplayed(after).map((entry) => entry.job)).toEqual(["ci.yml:gems"])
+        expect(notReplayed(before).map((entry) => entry.job)).toEqual(["ci.yml:gems"])
+        expect(notReplayed(after).map((entry) => entry.job)).toEqual(["ci.yml:build"])
       })
+    })
+
+  it.effect("checks arbitrary program names for presence only and rejects paths in persisted inventories", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const inventory = try read(try repository({ ".github/workflows/ci.yml": builtin }))
+      const marker = path.join(try fs.makeTempDirectoryScoped(), "ran")
+      const bin = try toolbox({ echo: `script:echo called > ${marker}` })
+      const machine = { host: "linux", path: bin }
+      const present = try onThisMachine(inventory, machine)
+      const invalid = try onThisMachine({
+        ...inventory, toolchains: inventory.toolchains.map((entry) => ({ ...entry, name: "./echo" }))
+      }, machine)
+      const invoked = try fs.exists(marker)
+      try Effect.try(() => {
+        expect(notReplayed(present)).toEqual([])
+        expect(invoked).toBe(false)
+        expect(notReplayed(invalid)[0]?.reasons).toContainEqual({ feature: missingTool, detail: "./echo" })
+      })
+    })
+
+  it.effect("reads plugin versions and confines bounded version output to a neutral directory", () =>
+    effect {
+      const base = try read(try repository({ ".github/workflows/ci.yml": builtin }))
+      const tools = ["buildx", "compose", "node", "just", "zig", "java"]
+      const inventory = { ...base, toolchains: tools.map((name) => ({ ...base.toolchains[0]!, name, version: "9" })) }
+      const bin = try toolbox({
+        docker: 'script:case "$1 $2" in "buildx version") echo 1.2;; "compose version") echo 2.3;; esac',
+        node: 'script:if [ "$PWD" = / ]; then echo 3.4; fi',
+        zig: "version:0.15",
+        java: 'script:if [ "$1" = -version ]; then echo 21.0; fi',
+        just: "script:printf '%05000d' 0; echo v7.8"
+      })
+      const here = try onThisMachine(inventory, { host: "linux", path: bin })
+      try Effect.try(() => expect(here.toolVersions?.map((entry) => [entry.tool, entry.found])).toEqual([
+        ["buildx", "1.2"], ["compose", "2.3"], ["node", "3.4"], ["zig", "0.15"], ["java", "21.0"]
+      ]))
     })
 
   it.effect("reads for this machine: its own system, and the tools on its own PATH", () =>
@@ -107,8 +145,8 @@ jobs:
     runs-on: \${{ matrix.os }}
     strategy: { matrix: { os: [ubuntu-latest, macos-latest] } }
     steps:
-      - uses: acme/setup-no-such-tool-of-smithers-ci@v1
-        with: { version: 9 }
+      - uses: taiki-e/install-action@v2
+        with: { tool: no-such-tool-of-smithers-ci@9 }
       - run: "true"
 `
       })
@@ -139,13 +177,22 @@ jobs:
 
   it.effect("stops waiting for a program that does not print its version in time", () =>
     effect {
-      const inventory = try read(try repository({ ".github/workflows/ci.yml": workflow }))
-      const path = try toolbox({ ...tools, node: "script:exec /bin/sleep 3" })
+      const inventory = try read(try repository({ ".github/workflows/ci.yml": `
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 22.x }
+      - run: node build.js
+` }))
+      const path = try toolbox({ node: "script:/bin/sleep 3; echo v26.5.0" })
       const here = try onThisMachine(inventory, { host: "linux", path, patience: "200 millis" })
       try Effect.try(() => {
         // Node is on the machine, so its job runs; no version was read for it, so none is compared.
-        expect(here.toolVersions).toEqual([{ job: "ci.yml:build", tool: "go", asked: "1.23", found: "1.25.4" }])
-        expect(notReplayed(here).map((entry) => entry.job)).toEqual(["ci.yml:gems"])
+        expect(here.toolVersions).toBeUndefined()
+        expect(notReplayed(here)).toEqual([])
       })
     })
 })

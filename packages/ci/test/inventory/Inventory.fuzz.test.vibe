@@ -73,7 +73,7 @@ describe("matrix expansion", () => {
     property(Arbitrary.all([axisName, word]), 2202, ([key, label]) => {
       const axis = Object.fromEntries([[key, [{ label, enabled: false }]]])
       const expected = Object.fromEntries([[key + ".label", label], [key + ".enabled", "false"]])
-      expect(expandMatrix(axis)).toEqual({ variants: [expected], keys: new Set(Object.keys(expected)) })
+      expect(expandMatrix(axis)).toEqual({ variants: [expected], keys: new Set(Object.keys(expected)), typedVariants: [{ ...expected, [key + ".enabled"]: false }] })
       expect(expandMatrix({ [key]: [] }).variants).toEqual([])
       expect(expandMatrix({ [key]: [[label]] })).toMatchObject({ variants: [], problem: expect.any(String) })
     }))

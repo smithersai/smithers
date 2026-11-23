@@ -232,6 +232,28 @@ const keywords: ReadonlyMap<string, Value> = new Map<string, Value>([
 /** The operators by how tightly they bind, loosest first, as GitHub orders them. */
 const levels: ReadonlyArray<ReadonlyArray<Operator>> = [["||"], ["&&"], ["==", "!="], ["<", "<=", ">", ">="]]
 
+/**
+ * The root context names in an expression, including ones passed to functions whole.
+ *
+ * @category readers
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const contextNames = (text: string): ReadonlyArray<string> | undefined => {
+  try {
+    const tokens = tokenize(text)
+    return tokens.flatMap((token, index) => {
+      const name = token.text.toLowerCase()
+      return token.kind === "word" && tokens[index - 1]?.text !== "." && tokens[index + 1]?.text !== "(" &&
+          !keywords.has(name)
+        ? [name] :
+        []
+    })
+  } catch {
+    return undefined
+  }
+}
+
 /** Reads tokens into a tree. */
 const parse = (text: string): Node => {
   const tokens = tokenize(text)
@@ -525,10 +547,9 @@ const stopped = <A>(work: () => A): A | Exclude<Evaluated, { readonly kind: "ok"
   try {
     return work()
   } catch (stop) {
-    // Anything else thrown here is the stack running out on an expression nested thousands deep.
-    return stop instanceof Stop
-      ? stop.result as Exclude<Evaluated, { readonly kind: "ok" }>
-      : { kind: "problem", why: "it nests too deep to read" }
+    if (stop instanceof Stop) return stop.result as Exclude<Evaluated, { readonly kind: "ok" }>
+    if (stop instanceof RangeError) return { kind: "problem", why: "it nests too deep to read" }
+    throw stop
   }
 }
 

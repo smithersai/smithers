@@ -15,12 +15,16 @@ import { asScalar, isRecord } from "./Values.vibe"
  * @since 0.1.0
  */
 export interface Matrix {
+  /** The same rows with the original YAML scalar types, for evaluating expressions. */
+  readonly typedVariants?: ReadonlyArray<Record<string, Scalar>>
   readonly variants: ReadonlyArray<Record<string, string>>
   readonly keys: ReadonlySet<string>
   readonly problem?: string
 }
 
-type Assignment = ReadonlyMap<string, string>
+type Scalar = string | number | boolean | null
+
+type Assignment = ReadonlyMap<string, Scalar>
 
 /** GitHub refuses a matrix with more variants than this. */
 const maxVariants = 256
@@ -36,17 +40,17 @@ export const noMatrix: Matrix = { variants: [], keys: new Set() }
 const unreadable = (problem: string): Matrix => ({ ...noMatrix, problem })
 
 /** Adds one value under its name; a mapping's fields become `name.field`. */
-const flatten = (name: string, value: unknown, into: Map<string, string>): boolean => {
+const flatten = (name: string, value: unknown, into: Map<string, Scalar>): boolean => {
   const scalar = asScalar(value)
   if (scalar !== undefined) {
-    into.set(name, scalar)
+    into.set(name, value as Scalar)
     return !scalar.includes("${{")
   }
   return isRecord(value) && Object.entries(value).every(([key, item]) => flatten(`${name}.${key}`, item, into))
 }
 
 const readAssignment = (value: unknown): Assignment | undefined => {
-  const into = new Map<string, string>()
+  const into = new Map<string, Scalar>()
   return isRecord(value) && Object.entries(value).every(([key, item]) => flatten(key, item, into)) ? into : undefined
 }
 
@@ -63,7 +67,7 @@ const readAssignments = (value: unknown): ReadonlyArray<Assignment> | undefined 
 const readAxis = (name: string, values: unknown): ReadonlyArray<Assignment> | undefined => {
   if (!Array.isArray(values)) return undefined
   return allRead(values.map((value) => {
-    const into = new Map<string, string>()
+    const into = new Map<string, Scalar>()
     return flatten(name, value, into) ? into : undefined
   }))
 }
@@ -85,7 +89,7 @@ const fits = (original: Assignment, entry: Assignment): boolean =>
   })
 
 const holdsSecret = (variant: Assignment): boolean =>
-  [...variant].some(([key, value]) => isLiteralSecret(key.slice(key.lastIndexOf(".") + 1), value))
+  [...variant].some(([key, value]) => isLiteralSecret(key.slice(key.lastIndexOf(".") + 1), asScalar(value) as string))
 
 /**
  * Reads a matrix: every combination of its lists, less `exclude`, then
@@ -129,9 +133,13 @@ export const expandMatrix = (raw: unknown): Matrix => {
   }
 
   const variants = [...merged, ...added]
+  if (variants.length === 0) return unreadable("the matrix has no surviving combinations")
   if (variants.some(holdsSecret)) return unreadable("it holds a value named like a secret")
   return {
-    variants: variants.map((variant) => Object.fromEntries(variant)),
+    typedVariants: variants.map((variant) => Object.fromEntries(variant)),
+    variants: variants.map((variant) =>
+      Object.fromEntries([...variant].map(([key, held]) => [key, asScalar(held) as string]))
+    ),
     keys: new Set(variants.flatMap((variant) => [...variant.keys()]))
   }
 }

@@ -296,6 +296,8 @@ describe("actions/setup-python with cache: pip", () => {
       "cold",
       expect.stringMatching(/\nCache saved with key: setup-python-3\.13-pip-/)
     ])
+    // A primary requirements file wins even when a fallback manifest appears.
+    writeFileSync(join(repo.root, "pyproject.toml"), "[project]\\n")
     rmSync(join(repo.temp, ".cache", "pip"), { recursive: true })
     expect(run(repo, path)[1]?.output).toBe("wheel")
   })

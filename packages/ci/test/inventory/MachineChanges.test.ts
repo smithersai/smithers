@@ -18,6 +18,7 @@ import {
   markChanges,
   questionFor,
   questionsFor,
+  startedIn,
   withInstalled
 } from "../../src/inventory/MachineChanges.vibe"
 
@@ -99,7 +100,7 @@ describe("a command that changes the machine", () => {
     ["find . -name x -exec sudo rm {} ;", "runs sudo rm"],
     ["find . -execdir sudo rm {} +", "runs sudo rm"],
     ["find . -ok sudo rm", "runs sudo rm"],
-    ["cat <<EOF\nsudo ls\nEOF", "runs sudo ls"],
+
     ["s\\udo ls", "runs sudo ls"],
     ["'sudo' ls", "runs sudo ls"],
     ["\"sudo\" ls", "runs sudo ls"],
@@ -469,5 +470,35 @@ describe("an inventory on a machine", () => {
     const elsewhere = inventory([installs])
     expect(questionsFor(elsewhere, () => false)).toEqual([])
     expect(withInstalled(elsewhere, () => false, () => true).jobs).toEqual(elsewhere.jobs)
+  })
+})
+
+describe("shell token boundaries", () => {
+  it("ignores literal document data and retains commands after the delimiter", () => {
+    expect(startedIn("cat <<-'END'\n\tjust demo\n\tEND\nreport")).toEqual([
+      { name: "cat", args: [] },
+      { name: "report", args: [] }
+    ])
+    expect(startedIn("cat <<\"OTHER\"\nword\nOTHER")).toEqual([{ name: "cat", args: [] }])
+    expect(startedIn("cat <<END\nplain words \\x $(first) `second`\nEND").map((entry) => entry.name))
+      .toEqual(["cat", "first", "second"])
+    expect(startedIn("sh <<END\nreport\nEND").map((entry) => entry.name)).toEqual(["sh", "report"])
+  })
+
+  it("retains the command word after closing a descriptor or a quoted substitution", () => {
+    expect(startedIn(">&- report")).toEqual([{ name: "report", args: [] }])
+    expect(startedIn("echo ${VALUE:-'{'}; report").at(-1)?.name).toBe("report")
+    expect(startedIn("echo $(echo \")\"); report").at(-1)?.name).toBe("report")
+    expect(startedIn("coproc report { observe; }").map((entry) => entry.name)).toContain("observe")
+    expect(startedIn("coproc observe").map((entry) => entry.name)).toContain("observe")
+    expect(startedIn("function report { observe; }").map((entry) => entry.name)).toContain("observe")
+  })
+
+  it("restricts presence-only shortcuts to known install options", () => {
+    expect(installsOf("apt-get install --reinstall x")).toBeUndefined()
+    expect(installsOf("apt-get install x >log")).toBeUndefined()
+    expect(installsOf("pacman -S --overwrite x")).toBeUndefined()
+    expect(changesIn("dpkg --status --install")).toEqual([{ kind: "other", what: "dpkg" }])
+    expect(changesIn("dpkg --status-fd 1")).toEqual([{ kind: "other", what: "dpkg" }])
   })
 })

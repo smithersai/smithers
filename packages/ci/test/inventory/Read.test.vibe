@@ -72,6 +72,20 @@ const allSources = {
 }
 
 it.layer(NodeServices.layer)("read", (it) => {
+  it.effect("treats a child below a regular file as absent and reports a link loop", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const root = try repository({ ".smithers": "file" })
+      try fs.symlink(".nvmrc", path.join(root, ".nvmrc"))
+      const inventory = try read(root)
+      try Effect.try(() => {
+        expect((inventory.unsupported ?? []).some((entry) => entry.feature === smithersBuild)).toBe(false)
+        expect((inventory.unsupported ?? []).some((entry) => entry.detail.includes(".smithers/WORKSPACE"))).toBe(false)
+        expect((inventory.unsupported ?? []).some((entry) => entry.detail === ".nvmrc: it could not be read (BadResource)")).toBe(true)
+      })
+    })
+
   it.effect("reads all four sources of a real repository into a valid inventory", () =>
     effect {
       const root = try repository(allSources)
@@ -249,6 +263,62 @@ jobs:
       })
     })
 
+  it.effect("reports links outside the checkout and omits their tool pins, workflows and packages", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const root = try repository({ "package.json": '{"workspaces":["packages/*"]}' })
+      const other = try fs.makeTempDirectoryScoped()
+      try fs.writeFileString(path.join(other, "pin"), "22\n")
+      try fs.writeFileString(path.join(other, "package.json"), '{"scripts":{"extra":"echo external"}}')
+      try fs.makeDirectory(path.join(root, ".github"))
+      try fs.makeDirectory(path.join(root, "packages"))
+      try fs.symlink(other, path.join(root, ".github/workflows"))
+      try fs.symlink(other, path.join(root, "packages/linked"))
+      try fs.symlink(path.join(other, "pin"), path.join(root, ".nvmrc"))
+      try fs.symlink(path.join(other, "pin"), path.join(root, "WORKSPACE.ts"))
+      const inventory = try read(root)
+      try Effect.try(() => {
+        expect(inventory.jobs).toEqual([])
+        expect(inventory.toolchains).toEqual([])
+        expect(inventory.unsupported).toContainEqual({ feature: smithersBuild, detail: "WORKSPACE.ts" })
+        expect(inventory.unsupported?.filter((entry) => entry.feature === "unreadable-file").map((entry) => entry.detail))
+          .toEqual(["WORKSPACE.ts", ".github/workflows", "packages/linked", ".nvmrc"].map((file) => `${file}: its symbolic link leaves the checkout`))
+      })
+    })
+
+  it.effect("reads quoted local references and reports malformed workspace YAML and duplicate justfiles", () =>
+    effect {
+      const root = try repository({
+        ".github/workflows/ci.yml": 'on: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - "uses": "./local tool"\n',
+        "local tool/action.yml": "runs: { using: composite, steps: [{ run: echo local, shell: bash }] }",
+        "pnpm-workspace.yaml": "packages: [",
+        "Justfile": "a:\n  echo one\n", "justfile": "a:\n  echo two\n"
+      })
+      const result = try read(root)
+      try Effect.try(() => {
+        expect(result.jobs[0]?.steps[0]?.command).toBe("echo local")
+        expect(result.jobs.filter((job) => job.id === "justfile:a")).toHaveLength(0)
+        expect(result.unsupported?.[0]?.detail).toContain("Justfile, justfile")
+        expect(result.unsupported?.map((entry) => entry.feature)).toEqual(["unreadable-file", "malformed-file"])
+      })
+    })
+
+  it.effect("finds deep packages through overlapping globstars and keeps package turbo.jsonc", () =>
+    effect {
+      const directory = ["packages", ...Array<string>(15).fill("deep")].join("/")
+      const root = try repository({
+        "package.json": '{"workspaces":["packages/**/**","packages/**/deep/**"]}',
+        [`${directory}/package.json`]: '{"scripts":{"t":"echo ok"}}',
+        [`${directory}/turbo.jsonc`]: "{}"
+      })
+      const result = try read(root)
+      try Effect.try(() => {
+        expect(result.jobs.map((job) => job.id)).toEqual([`${directory}/package.json:t`])
+        expect(result.unsupported?.[0]?.detail).toContain(`${directory}/turbo.jsonc`)
+      })
+    })
+
   it.effect("records a file it cannot read", () =>
     effect {
       const fs = try FileSystem.FileSystem
@@ -280,17 +350,79 @@ jobs:
       })
     })
 
-  it.effect("reads on when a package's turbo.json cannot be checked", () =>
+  it.effect("reports filesystem failures alongside the sources it can read", () =>
     effect {
       const root = try repository({
-        "package.json": `{ "workspaces": ["packages/*"] }`,
-        "packages/a/package.json": `{ "scripts": { "t": "x" } }`
+        ".github/workflows/ci.yml": workflow,
+        "package.json": '{"workspaces":["packages/*"]}',
+        "packages/a/package.json": "{}",
+        ".nvmrc": "22",
+        ".ruby-version": "3"
       })
       const real = try FileSystem.FileSystem
-      const faulty = { ...real, exists: (file: string) => fail(denied(`exists ${file}`)) }
+      const faulty: FileSystem.FileSystem = {
+        ...real,
+        realPath: (file) => file.endsWith("/.") || file.endsWith(".nvmrc") ? fail(denied("realPath")) : real.realPath(file),
+        readDirectory: (file) => file.endsWith("/workflows") ? fail(denied("readDirectory")) : real.readDirectory(file),
+        stat: (file) => file.endsWith("/packages/a") ? fail(denied("stat")) : real.stat(file),
+        readFileString: (file) => file.endsWith(".ruby-version") ? fail(denied("readFileString")) : real.readFileString(file)
+      }
       provide FileSystem.FileSystem = faulty {
+        const inventory = try read(`${root}/.`)
+        try Effect.try(() => {
+          const details = inventory.unsupported?.map((entry) => entry.detail)
+          expect(details).toEqual(expect.arrayContaining([
+            ".github/workflows: it could not be listed (PermissionDenied)",
+            "packages/a: it could not be inspected (PermissionDenied)",
+            ".nvmrc: it could not be read (PermissionDenied)",
+            ".ruby-version: it could not be read (PermissionDenied)"
+          ]))
+        })
+      }
+    })
+
+  it.effect("keeps the distinction between a failed git query and an empty result", () =>
+    effect {
+      const root = try repository({ Makefile: "test:\n\techo ok\n" })
+      const current = try read(root)
+      const real = try ChildProcessSpawner
+      const faulty = makeSpawner((command) =>
+        command._tag === "StandardCommand" && command.args.some((arg) => arg === "ls-files" || arg === "status")
+          ? fail(denied("spawn"))
+          : real.spawn(command)
+      )
+      provide ChildProcessSpawner = faulty {
         const inventory = try read(root)
-        try Effect.try(() => expect(inventory.jobs.map((job) => job.id)).toEqual(["packages/a/package.json:t"]))
+        try Effect.try(() => {
+          expect(current.jobs.map((job) => job.name)).toEqual(["test"])
+          expect(inventory.jobs).toEqual([])
+          expect(inventory.unsupported).toEqual([
+            { feature: "unreadable-file", detail: ".: working-tree status could not be read" },
+            { feature: "unreadable-file", detail: "Makefile: tracked files could not be read" }
+          ])
+        })
+      }
+    })
+
+  it.effect("reports when a workspace pattern runs out of traversal budget", () =>
+    effect {
+      const root = try repository({ "package.json": '{"workspaces":["*/**"]}', "packages/a": "" })
+      const real = try FileSystem.FileSystem
+      const path = try Path.Path
+      const canonical = try real.realPath(root)
+      const directory = try real.stat(canonical)
+      const children = Array.from({ length: 5_100 }, (_, index) => `package-${index}`)
+      const child = (file: string) => /^package-\d+$/.test(path.basename(file))
+      const tree: FileSystem.FileSystem = {
+        ...real,
+        realPath: (file) => child(file) ? succeed(file) : real.realPath(file),
+        stat: (file) => child(file) ? succeed(directory) : real.stat(file),
+        readDirectory: (file) => file === canonical ? succeed(children) : child(file) ? succeed([]) : real.readDirectory(file)
+      }
+      provide FileSystem.FileSystem = tree {
+        const inventory = try read(root)
+        try Effect.try(() => expect(inventory.unsupported?.some((entry) => entry.feature === "workspace-pattern"
+          && entry.detail.includes("exceeded"))).toBe(true))
       }
     })
 

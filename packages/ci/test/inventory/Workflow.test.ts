@@ -619,7 +619,7 @@ on:
       base_sha: { type: string, default: "" }
       strict: { type: boolean, default: true }
       depth: { type: number }
-      plain:
+      plain: { type: string }
 env: { SCANNER: gitleaks }
 permissions: { contents: read }
 defaults: { run: { shell: bash } }
@@ -724,9 +724,9 @@ jobs:
     expect(reasons("ci.yml:gated/scan").at(-1)).toBe(
       "scan step 3 is left out: inputs.strict is false for a pull request to main"
     )
-    // A workflow that calls itself is read four deep and no further, and its own problems are kept on its jobs.
+    // A recursive call stops at the first repeated workflow, and its own problems are kept on its jobs.
     const deepest = jobs.filter((job) => job.id.startsWith("ci.yml:loop")).at(-1) as Job
-    expect(deepest.id).toBe("ci.yml:loop/again/again/again/again")
+    expect(deepest.id).toBe("ci.yml:loop/again")
     expect(details(deepest)).toEqual([
       "./.github/workflows/loop.yml is a reusable workflow; its jobs were not read",
       "the workflow sets DAYS from github.retention_days: github.retention_days is known only on GitHub"
@@ -929,11 +929,25 @@ jobs:
       - run: echo "\${{ matrix['node version'] }}"
 `)
     const job = jobOf(repo, "ci.yml:test")
-    expect(details(job)).toEqual([
-      "test step 2 depends on matrix['node version']: matrix key \"node version\" has a name whose value is not filled in here"
-    ])
-    const variant = { os: "linux", "node version": "18", "node.Version": "v20" }
-    expect(outputs(runJob(repo, job, variant))).toEqual(["linux v20 []"])
+    expect(details(job)[0]).toBe("test: matrix key \"node version\" has an unsupported name")
+    expect(job.matrix).toEqual([])
+    expect(job.steps).toEqual([])
+  })
+
+  it("selects each row's scalar type when another axis distinguishes identical text", () => {
+    const repo = withWorkflow(`
+on: push
+jobs:
+  test:
+    strategy: { matrix: { include: [{ label: text, enabled: "false" }, { label: boolean, enabled: false }] } }
+    steps:
+      - run: echo checked
+        if: matrix.enabled
+`)
+    const job = jobOf(repo, "ci.yml:test")
+    expect(features(job)).toEqual([])
+    expect(outputs(runJob(repo, job, job.matrix[0]))).toEqual(["checked"])
+    expect(outputs(runJob(repo, job, job.matrix[1]))).toEqual(["smithers-ci: not run, its condition is false"])
   })
 
   it("does not read a matrix of calls to a workflow as one call", () => {
@@ -977,9 +991,9 @@ jobs:
       jobOf(repo, id).unsupported.filter((entry) => entry.feature === "write-permission").map((entry) => entry.detail)
     expect(writes("ci.yml:writes/b")).toEqual([".github/workflows/plain.yml: b may write contents"])
     expect(writes("ci.yml:kept/b")).toEqual([])
-    expect(writes("ci.yml:narrowed/b")).toEqual([".github/workflows/asks.yml: b may write packages"])
-    // A called workflow cannot write what its calling job cannot.
-    expect(writes("ci.yml:reads/b")).toEqual([])
+    expect(writes("ci.yml:narrowed/b")).toEqual([])
+    // Omitting permissions leaves the caller's default unknown.
+    expect(writes("ci.yml:reads/b")).toEqual([".github/workflows/asks.yml: b may write packages"])
   })
 
   // "on.workflow_call.inputs": `false` for a boolean, `0` for a number and empty for a string given no value.
@@ -1268,7 +1282,7 @@ runs:
     expect(outputs(runJob(repo, jobOf(repo, "ci.yml:test"))).at(-1)).toBe("false <set> yes true")
   })
 
-  it("reads a list given to a called workflow's input as nothing", () => {
+  it("rejects an undeclared input before expanding a called workflow", () => {
     const repo = withWorkflow(
       "on: pull_request\njobs: { call: { uses: ./.github/workflows/called.yml, with: { list: [a], count: 3 } } }",
       {
@@ -1276,13 +1290,46 @@ runs:
           "on: { workflow_call: }\njobs: { b: { runs-on: ubuntu-latest, steps: [{ run: 'echo [${{ inputs.list }}] ${{ inputs.count }}' }] } }"
       }
     )
-    expect(jobOf(repo, "ci.yml:call/b").steps.map((step) => step.command)).toEqual(["echo [] 3"])
+    expect(details(jobOf(repo, "ci.yml:call"))).toEqual([
+      "call: undeclared workflow input list",
+      "call: undeclared workflow input count"
+    ])
+    expect(jobsOf(repo, file)).toHaveLength(1)
   })
 })
 
 describe("a step that only installs packages", () => {
   // `MachineChanges.withInstalled` leaves such a step out of a replay on a machine that has the packages. The
   // steps around it are written to run the same with it and without it.
+  it("persists composite inputs when an initial install step is omitted", () => {
+    const repo = withWorkflow(
+      `
+on: push
+jobs:
+  build:
+    steps:
+      - run: echo "LOCATION=docs" >> "$GITHUB_ENV"
+      - uses: ./
+        with: { place: "\${{ env.LOCATION }}" }
+`,
+      {
+        "action.yml": `
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: sudo apt-get install -y jq
+    - shell: bash
+      run: echo "\${{ inputs.place }}"
+`
+      }
+    )
+    const job = jobOf(repo, "ci.yml:build")
+    expect(job.steps).toHaveLength(3)
+    const alreadyInstalled = { ...job, steps: job.steps.filter((step) => installsOf(step.command) === undefined) }
+    expect(outputs(runJob(repo, alreadyInstalled))).toEqual(["", "docs"])
+  })
+
   it("has no place among the job's steps, so the job runs the same when it is left out", () => {
     const repo = withWorkflow(`
 on: pull_request

@@ -18,8 +18,8 @@
  */
 
 /**
- * The files to hash: those a path of which matches one of `take` and none of
- * `leave`. Both hold extended regular expressions over the whole path.
+ * The files to hash. The last matching inclusion or exclusion decides whether
+ * to hash a path. Both lists hold extended regular expressions over the whole path.
  *
  * @category models
  * @since 0.1.0
@@ -27,6 +27,8 @@
 export interface Files {
   readonly take: ReadonlyArray<string>
   readonly leave: ReadonlyArray<string>
+  /** Written order when a later inclusion can override an exclusion. Negative indexes count exclusions from -1. */
+  readonly order?: ReadonlyArray<number>
 }
 
 const special = /[.+^$(){}|\\]/
@@ -82,11 +84,12 @@ export const regexOf = (pattern: string): string | undefined => {
     const close = char === "[" ? path.indexOf("]", at + 1) : -1
     const charClass = close > 0 ? characterClassOf(path.slice(at + 1, close)) : undefined
     if (path.startsWith("**", at)) {
+      const atBoundary = at === 0 || path[at - 1] === "/"
       while (path[at + 1] === "*") at += 1
-      if (path[at + 1] === "/") {
+      if (atBoundary && path[at + 1] === "/") {
         regex += "(.*/)?"
         at += 1
-      } else regex += ".*"
+      } else regex += atBoundary && at + 1 === path.length ? ".*" : "[^/]*"
     } else if (char === "*") regex += "[^/]*"
     else if (char === "?") regex += "[^/]"
     else if (charClass === "slash") return undefined
@@ -110,11 +113,18 @@ export const regexOf = (pattern: string): string | undefined => {
 export const filesOf = (patterns: ReadonlyArray<string>): Files | undefined => {
   const take: Array<string> = []
   const leave: Array<string> = []
+  const order: Array<number> = []
+  let reincludes = false
   for (const line of patterns.flatMap((pattern) => pattern.split("\n")).map((entry) => entry.trim())) {
     if (line === "" || line.startsWith("#")) continue
     const regex = regexOf(line.replace(/^!/, ""))
     if (regex === undefined) return undefined
-    ;(line.startsWith("!") ? leave : take).push(regex)
+    if (line.startsWith("!")) order.push(-leave.push(regex))
+    else {
+      reincludes ||= leave.length > 0
+      order.push(take.length)
+      take.push(regex)
+    }
   }
-  return take.length === 0 ? undefined : { take, leave }
+  return take.length === 0 ? undefined : { take, leave, ...(reincludes ? { order } : {}) }
 }

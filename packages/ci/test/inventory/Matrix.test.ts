@@ -109,6 +109,9 @@ describe("expandMatrix", () => {
 
   it("refuses more variants than GitHub allows", () => {
     const values = Array.from({ length: 17 }, (_, index) => index)
+    expect(expandMatrix({ include: Array.from({ length: 257 }, (_, x) => ({ x })) }).problem).toBe(
+      "it has over 256 variants"
+    )
     expect(expandMatrix({ a: values, b: values }).problem).toBe("it has over 256 variants")
   })
 })

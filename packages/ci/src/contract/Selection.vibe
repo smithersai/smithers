@@ -12,6 +12,9 @@
 
 import * as Schema from "effect/Schema"
 
+const count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+const rate = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1))
+
 /**
  * What the model reads about one change and one target: the paper's best
  * feature set. `graphDistance` is `unreachable` when no path from a changed
@@ -22,11 +25,11 @@ import * as Schema from "effect/Schema"
  */
 export const Features = Schema.Struct({
   extensions: Schema.Array(Schema.String),
-  fileChanges: Schema.Struct({ d3: Schema.Int, d14: Schema.Int, d56: Schema.Int }),
-  failureRates: Schema.Struct({ d7: Schema.Finite, d14: Schema.Finite, d28: Schema.Finite, d56: Schema.Finite }),
+  fileChanges: Schema.Struct({ d3: count, d14: count, d56: count }),
+  failureRates: Schema.Struct({ d7: rate, d14: rate, d28: rate, d56: Schema.Finite }),
   project: Schema.String,
-  testCount: Schema.Int,
-  graphDistance: Schema.Int
+  testCount: count,
+  graphDistance: Schema.Int.check(Schema.isGreaterThanOrEqualTo(-1))
 })
 
 /**
@@ -54,7 +57,11 @@ export const Row = Schema.Struct({
   failed: Schema.Boolean,
   flaky: Schema.Boolean,
   at: Schema.optionalKey(Schema.Finite)
-})
+}).check(Schema.makeFilter((row) => {
+  const passes = row.attempts.includes(true)
+  const fails = row.attempts.includes(false)
+  return row.attempts.length > 0 && row.failed === !passes && row.flaky === (passes && fails)
+}, { expected: "outcome consistent with attempts" }))
 
 /**
  * A decoded `Row`.
@@ -149,7 +156,7 @@ export type Metrics = typeof Metrics.Type
  * @since 0.1.0
  */
 export const select = (scores: ReadonlyArray<Score>, settings: Settings): ReadonlyArray<string> => {
-  const ranked = [...scores].sort((a, b) => b.score - a.score || (a.target < b.target ? -1 : 1))
+  const ranked = [...scores].sort((a, b) => b.score - a.score || (a.target < b.target ? -1 : a.target > b.target ? 1 : 0))
   const chosen = new Set<string>()
   for (const [index, entry] of ranked.entries()) {
     if (entry.score >= settings.scoreCutoff || index < settings.countCutoff) chosen.add(entry.target)

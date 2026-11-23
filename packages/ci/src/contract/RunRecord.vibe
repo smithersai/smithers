@@ -10,6 +10,10 @@
  */
 
 import * as Schema from "effect/Schema"
+import { Shard } from "./Shard.vibe"
+
+const count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+const elapsed = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 
 /**
  * How one target settled. `hit` came from the cache, `ran` executed and
@@ -57,7 +61,7 @@ export type SkipReason = typeof SkipReason.Type
  */
 export const Attempt = Schema.Struct({
   passed: Schema.Boolean,
-  durationMs: Schema.Finite
+  durationMs: elapsed
 })
 
 /**
@@ -111,7 +115,7 @@ export const TargetResult = Schema.Struct({
   label: Schema.NonEmptyString,
   status: TargetStatus,
   key: Schema.String,
-  durationMs: Schema.Finite,
+  durationMs: elapsed,
   target: Schema.optionalKey(Schema.String),
   blockedBy: Schema.optionalKey(Schema.String),
   skipReason: Schema.optionalKey(SkipReason),
@@ -143,10 +147,10 @@ export type TargetResult = typeof TargetResult.Type
  * @since 0.1.0
  */
 export const StatusCounts = Schema.Struct({
-  hit: Schema.Int,
-  ran: Schema.Int,
-  failed: Schema.Int,
-  skipped: Schema.Int
+  hit: count,
+  ran: count,
+  failed: count,
+  skipped: count
 })
 
 /**
@@ -211,14 +215,14 @@ export const RunRecord = Schema.Struct({
   version: Schema.optionalKey(Schema.Int),
   verb: Schema.optionalKey(Schema.String),
   pattern: Schema.optionalKey(Schema.String),
-  jobs: Schema.optionalKey(Schema.Int),
-  durationMs: Schema.optionalKey(Schema.Finite),
+  jobs: Schema.optionalKey(count),
+  durationMs: Schema.optionalKey(elapsed),
   commit: Schema.optionalKey(Schema.String),
   mode: Schema.optionalKey(Mode),
   cache: Schema.optionalKey(Schema.Boolean),
   machine: Schema.optionalKey(Schema.String),
   parts: Schema.optionalKey(Parts),
-  shard: Schema.optionalKey(Schema.Struct({ index: Schema.Int, count: Schema.Int })),
+  shard: Schema.optionalKey(Shard),
   recorder: Schema.optionalKey(Recorder)
 })
 

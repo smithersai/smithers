@@ -13,11 +13,11 @@
 
 import { parseDocument } from "yaml"
 import type { Residual } from "./Expression.ts"
-import { asScalar, isRecord } from "./Values.vibe"
+import { actionInputs, asScalar, isRecord } from "./Values.vibe"
 
 /**
  * The variables a setup action sets for the steps after it, by the name
- * `Setup.ts` gives the tool it installs. A replay installs nothing and sets
+ * `Setup.vibe` gives the tool it installs. A replay installs nothing and sets
  * none of them, so a step that reads one is not what its CI runs.
  *
  * @category constants
@@ -39,7 +39,7 @@ export const setupVariables: ReadonlyMap<string, ReadonlyArray<string>> = new Ma
 
 /**
  * The cache actions. A replay keeps their caches in a store of its own
- * (`Cache.ts`). A cache step that names no path or no key restores nothing,
+ * (`Cache.vibe`). A cache step that names no path or no key restores nothing,
  * and its `cache-hit` output is empty, as after a miss.
  *
  * @category constants
@@ -69,11 +69,11 @@ export const checkoutProblems = (
   repository: string | undefined,
   read: (text: string) => string | Residual | undefined
 ): ReadonlyArray<string> => {
-  if (!isRecord(inputs)) return []
+  const normalized = actionInputs(inputs)
   const problems: Array<string> = []
   const given = (name: string): string | Residual | undefined => {
-    const scalar = asScalar(inputs[name])
-    if (inputs[name] === undefined) return ""
+    const scalar = asScalar(normalized[name])
+    if (normalized[name] === undefined) return ""
     return scalar === undefined ? undefined : read(scalar)
   }
   const other = given("repository")

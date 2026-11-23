@@ -51,6 +51,15 @@ export interface Machine {
 export const thisMachine = (): Machine => ({ host: process.platform })
 
 /**
+ * The caller's tool search path. Machine discovery uses it only to locate a candidate.
+ *
+ * @category accessors
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const machinePath = (machine: Machine): string => machine.path ?? process.env["PATH"] ?? ""
+
+/**
  * A tool found on the machine: the program that answers for it, and the
  * version it reports when it reports one.
  *
@@ -120,13 +129,15 @@ const older = (have: ReadonlyArray<number>, want: ReadonlyArray<number>): boolea
  * @throws {never}
  */
 export const differs = (asked: string, found: string): boolean => {
-  const match = /^\s*v?([\^~]?)(\d+(?:\.\d+)*)/.exec(asked)
+  const match = /^([\^~]?)v?(\d+(?:\.\d+)*)(?:(?:\.[xX*])+|t)?$/.exec(asked.trim())
   if (match === null) return false
   const want = (match[2] as string).split(".").map(Number)
   const have = found.split(".").map(Number)
-  const unlike = (count: number): boolean => want.slice(0, count).some((number, index) => number !== have[index])
+  const unlike = (count: number): boolean => want.slice(0, count).some((number, index) => number !== (have[index] ?? 0))
   if (match[1] === "") return unlike(want.length)
-  return unlike(match[1] === "^" ? 1 : 2) || older(have, want)
+  const nonzero = want.findIndex((part) => part !== 0)
+  const caret = nonzero === -1 ? want.length : nonzero + 1
+  return unlike(match[1] === "^" ? caret : 2) || older(have, want)
 }
 
 const systemNames: Readonly<Record<string, string>> = { linux: "Linux", darwin: "macOS", win32: "Windows" }
@@ -138,7 +149,8 @@ const systemNames: Readonly<Record<string, string>> = { linux: "Linux", darwin: 
  * @since 0.1.0
  * @throws {never}
  */
-export const systemName = (host: string): string => systemNames[host] ?? host
+export const systemName = (host: string): string =>
+  Object.hasOwn(systemNames, host) ? systemNames[host] as string : host
 
 const variantsOf = (job: Job): ReadonlyArray<Readonly<Record<string, string>>> =>
   job.matrix.length === 0 ? [{}] : job.matrix

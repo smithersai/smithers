@@ -11,6 +11,7 @@
  * @since 0.1.0
  */
 
+import { wildcard } from "./Wildcard.ts"
 import type { Host } from "../contract/Inventory.vibe"
 import { type Context, fields, unknown, value, variable } from "./Expression.ts"
 import { commitMark, parentMark } from "./Runner.ts"
@@ -47,19 +48,6 @@ export type Event = "pull_request" | "push" | "merge_group"
 /** The events a replay can stand for, the first that fits winning. */
 const events = ["pull_request", "push", "merge_group"] as const
 
-/** A branch filter as a pattern, or `undefined` for one written with `?`, `+` or `[`, which is not read here. */
-const branchPattern = (pattern: string): RegExp | undefined =>
-  /[?+[\]]/.test(pattern)
-    ? undefined
-    : new RegExp(
-      `^${
-        pattern.split("**").map((part) =>
-          part.split("*").map((text) => text.replace(/[.^$(){}|\\]/g, "\\$&")).join("[^/]*")
-        )
-          .join(".*")
-      }$`
-    )
-
 /**
  * Whether an event's `branches` and `branches-ignore` let it start a workflow
  * for a branch, as "Workflow syntax: on.<push|pull_request>.branches" reads
@@ -72,16 +60,19 @@ const branchPattern = (pattern: string): RegExp | undefined =>
 export const admits = (config: unknown, branch: string): boolean => {
   const filters = isRecord(config) ? config : {}
   const texts = (raw: unknown): ReadonlyArray<string> | undefined => raw === undefined ? undefined : asStrings(raw)
-  const matches = (pattern: string): boolean | undefined => branchPattern(pattern)?.test(branch)
   const ignored = texts(filters["branches-ignore"])
-  if (ignored !== undefined) return !ignored.some((pattern) => matches(pattern) === true)
-  const named = texts(filters["branches"])
+  const named = ignored ?? texts(filters["branches"])
   if (named === undefined) return true
-  let admitted = false
+  let admitted = ignored !== undefined
   for (const pattern of named) {
-    const found = matches(pattern.replace(/^!/, ""))
-    if (found === undefined) return true
-    if (found) admitted = !pattern.startsWith("!")
+    if (/[?+[\]]/.test(pattern)) return true
+    const plain = pattern.replace(/^!/, "")
+    const found = !plain.includes("*") ? plain === branch : wildcard(
+      plain.match(/\*\*|[\s\S]/gu)!, [...branch],
+      (token) => token.startsWith("*"),
+      (token, item) => token === "**" || (token === "*" ? item !== "/" : item === token)
+    )
+    if (found) admitted = pattern.startsWith("!") === (ignored !== undefined)
   }
   return admitted
 }

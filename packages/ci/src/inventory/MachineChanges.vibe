@@ -8,13 +8,13 @@
  * packages are already there, and `withInstalled` uses the answers.
  *
  * The reader errs toward finding a change. It sees through quotes, `$( )`,
- * subshells, `bash -c`, `eval`, `env`, `xargs` and `find -exec`, and reads the
- * text of a here-document as commands. What it cannot see, such as a script
+ * subshells, `bash -c`, `eval`, `env`, `xargs` and `find -exec`, and follows
+ * shell input and command substitutions in here-documents. What it cannot see, such as a script
  * that calls `sudo` inside, the replay's stand-ins for `sudo` stop at run time.
  *
  * A step is read as it runs in a replay, where `sudo` refuses: a script that
  * starts by asking `sudo -n true`, and ends when the answer is no, is that
- * question and nothing after it (`WithoutSudo.ts`).
+ * question and nothing after it (`WithoutSudo.vibe`).
  *
  * @since 0.1.0
  */
@@ -181,9 +181,9 @@ const families: ReadonlyMap<string, Family> = new Map<string, Family>([
 const flagTools: ReadonlyMap<string, RegExp> = new Map([
   [
     "dpkg",
-    /^(?:-[sLlSpIcWf]|--(?:status|list|listfiles|search|print-avail|info|contents|field|show|print-architecture|print-foreign-architectures|compare-versions|get-selections|version|help|audit|verify))/
+    /^(?:-[sLlSpIcWf]|--(?:status|list|listfiles|search|print-avail|info|contents|field|show|print-architecture|print-foreign-architectures|compare-versions|get-selections|version|help|audit|verify))$/
   ],
-  ["rpm", /^(?:-[A-Za-z]*q|--query|-V|--verify|--version|--help|--eval|-E|--showrc|-K|--checksig)/]
+  ["rpm", /^(?:-q[a-zA-Z]*|--query|-V|--verify|--version|--help|--eval|-E|--showrc|-K|--checksig)$/]
 ])
 
 /** The service managers, each with the words that only read. */
@@ -227,7 +227,7 @@ const runnerValueFlags: ReadonlyArray<string> = ["-u", "-C", "-S", "-I", "-E", "
 const shells: ReadonlySet<string> = new Set(["sh", "bash", "dash", "zsh", "ksh"])
 
 /** Words that may stand before a command. */
-const leading: ReadonlySet<string> = new Set(["if", "then", "elif", "else", "do", "while", "until", "!", "{", "time"])
+const leading: ReadonlySet<string> = new Set(["if", "then", "elif", "else", "do", "while", "until", "!", "{", "time", "coproc"])
 
 /** How deep commands inside commands are followed. */
 const maxDepth = 8
@@ -253,9 +253,17 @@ const verbOf = (
 
 /** The words that are no flags, without the values of flags that take one. */
 const operands = (args: ReadonlyArray<string>, valueFlags: ReadonlyArray<string>): ReadonlyArray<string> => {
-  const found = verbOf(args, valueFlags)
-  return found === undefined ? [] : [found.verb, ...operands(found.rest, valueFlags)]
+  const names: Array<string> = []
+  for (let at = 0; at < args.length; at++) {
+    const word = args[at] as string
+    if (valueFlags.includes(word)) at += 1
+    else if (!isFlag(word)) names.push(word)
+  }
+  return names
 }
+
+const presenceFlags = new Set(["-y", "--yes", "--assume-yes", "--no-install-recommends", "--no-cache"])
+const pacmanPresenceFlags = new Set(["-S", "--sync", "--needed", "--noconfirm"])
 
 const run = (what: string): Change => ({ kind: "other", what })
 
@@ -266,7 +274,8 @@ const ofFamily = (name: string, family: Family, args: ReadonlyArray<string>): Ch
   const packages = operands(found.rest, family.valueFlags)
   if (family.refreshes.includes(found.verb) && packages.length === 0) return { kind: "refresh", manager: name, what }
   if (!family.installs.includes(found.verb) || packages.length === 0) return run(what)
-  return { kind: "install", manager: name, packages, checkable: !found.rest.includes("--cask") }
+  const checkable = args.every((word) => !isFlag(word) || presenceFlags.has(word))
+  return { kind: "install", manager: name, packages, checkable }
 }
 
 const ofPacman = (args: ReadonlyArray<string>): Change | undefined => {
@@ -279,7 +288,10 @@ const ofPacman = (args: ReadonlyArray<string>): Change | undefined => {
   if (/[sigpl]/.test(operation.slice(1))) return undefined
   const packages = operands(args, [])
   if (/[uc]/.test(operation.slice(1))) return run(`pacman ${operation}`)
-  if (packages.length > 0) return { kind: "install", manager: "pacman", packages, checkable: true }
+  if (packages.length > 0) {
+    const checkable = args.every((word) => !isFlag(word) || pacmanPresenceFlags.has(word))
+    return { kind: "install", manager: "pacman", packages, checkable }
+  }
   return operation.includes("y") ? { kind: "refresh", manager: "pacman", what: "pacman -Sy" } : run("pacman -S")
 }
 
@@ -395,6 +407,7 @@ const classify = (
     const word = words[at] as string
     const assigned = assignmentOf(word)
     if (assigned !== undefined) scope = { ...scope, [assigned[0]]: assigned[1] }
+    else if (word === "function" || (word === "coproc" && words[at + 2] === "{")) at += 1
     // `$SUDO apt-get install x`: the variable is passed over, and what it runs is read.
     else if (!leading.has(word) && !word.startsWith("$")) break
   }
@@ -433,7 +446,7 @@ const classify = (
   const change = family !== undefined
     ? ofFamily(name, family, args)
     : flagged !== undefined
-    ? args.length === 0 || args.some((word) => flagged.test(word)) ? undefined : run(name)
+    ? args.length === 0 || (flagged.test(args[0] as string) && args.every((word) => !isFlag(word) || flagged.test(word))) ? undefined : run(name)
     : name === "pacman"
     ? ofPacman(args)
     : service !== undefined
@@ -448,9 +461,13 @@ const classify = (
 
 const closingOf = (text: string, start: number, open: string, close: string): number => {
   let depth = 0
+  let quote: string | undefined
   for (let at = start; at < text.length; at++) {
     const char = text[at]
-    if (char === "\\") at += 1
+    if (char === "\\" && quote !== "'") at += 1
+    else if (quote !== undefined) {
+      if (char === quote) quote = undefined
+    } else if (char === "'" || char === '"' || char === "`") quote = char
     else if (char === open) depth += 1
     else if (char === close && --depth === 0) return at
   }
@@ -462,9 +479,11 @@ const scan = (
   script: string,
   env: Readonly<Record<string, string>>,
   depth: number,
-  seen: Seen
+  seen: Seen,
+  data = false
 ): ReadonlyArray<Change> => {
   const found: Array<Change> = []
+  const documents: Array<{ mark: string; strip: boolean; expand: boolean; shell: boolean }> = []
   let words: Array<string> = []
   let word: string | undefined
   let redirected = false
@@ -513,7 +532,13 @@ const scan = (
   let at = 0
   while (at < script.length) {
     const char = script[at] as string
-    if (char === "\\") {
+    if (data) {
+      if (char === "\\") at += 2
+      else if (char === "$" && script[at + 1] === "(") at = dollar(at)
+      else if (char === "`") at = backtick(at)
+      else at += 1
+      word = undefined
+    } else if (char === "\\") {
       if (script[at + 1] !== "\n") add(script[at + 1] ?? "")
       at += 2
     } else if (char === "'") {
@@ -547,8 +572,18 @@ const scan = (
       // A number right before it names a stream, and the word after it is where the stream goes.
       if (word !== undefined && /^\d+$/.test(word)) word = undefined
       endWord()
+      const document = /^<<(-?)[ \t]*(?:'([^'\n]+)'|"([^"\n]+)"|(\\?)([\w.-]+))(?=[ \t\n;&|)]|$)/.exec(script.slice(at))
+      if (document !== null) {
+        const mark = (document[2] ?? document[3] ?? document[5]) as string
+        documents.push({
+          mark, strip: document[1] === "-", expand: document[4] === "",
+          shell: !["cat", "tee", "read"].includes(words[0] as string) || /^[^\n]*\|/.test(script.slice(at))
+        })
+        at += document[0].length
+        continue
+      }
       redirected = true
-      while (/[<>&|-]/.test(script[at] ?? "")) at += 1
+      while (/[<>&|]/.test(script[at] ?? "")) at += 1
       // `2>&1` has its target attached.
       if (/^\d+(?![^\s;|&()])/.test(script.slice(at))) {
         at += (/^\d+/.exec(script.slice(at)) as RegExpExecArray)[0].length
@@ -557,6 +592,23 @@ const scan = (
     } else if ("\n;&|()".includes(char)) {
       endCommand()
       at += 1
+      if (char === "\n") {
+        for (const doc of documents.splice(0)) {
+          const start = at
+          let end = at
+          while (at < script.length) {
+            end = at
+            const next = script.indexOf("\n", at)
+            const line = script.slice(at, next < 0 ? script.length : next)
+            at = next < 0 ? script.length : next + 1
+            if ((doc.strip ? line.replace(/^\t+/, "") : line) === doc.mark) break
+            end = at
+          }
+          if ((doc.shell || doc.expand) && depth < maxDepth) {
+            found.push(...scan(script.slice(start, end), env, depth + 1, seen, !doc.shell))
+          }
+        }
+      }
     } else if (/\s/.test(char)) {
       endWord()
       at += 1
@@ -726,10 +778,11 @@ const isBare = (item: Command): boolean =>
  * @since 0.1.0
  */
 export const installsOf = (command: string): ReadonlyArray<Install> | undefined => {
+  if (/[<>]/.test(command)) return undefined
   const list = commands(command)
   if (list === undefined || list.length === 0) return undefined
   const lone = list.length === 1 ? textsOf((list[0] as Command).words) : []
-  if (shells.has(lone[0] as string) && /^-[A-Za-z]*c[A-Za-z]*$/.test(lone[1] ?? "") && lone.length === 3) {
+  if (isBare(list[0] as Command) && shells.has(lone[0] as string) && /^-[A-Za-z]*c[A-Za-z]*$/.test(lone[1] ?? "") && lone.length === 3) {
     return installsOf(lone[2] as string)
   }
   const installs: Array<Install> = []

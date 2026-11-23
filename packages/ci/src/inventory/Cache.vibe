@@ -28,7 +28,7 @@
  * @since 0.1.0
  */
 
-import { asScalar, isRecord } from "./Values.vibe"
+import { actionInputs, asScalar } from "./Values.vibe"
 
 /**
  * The variables the two scripts read. A step's `with:` gives the first five;
@@ -99,6 +99,7 @@ const common = [
   `  done`,
   `}`,
   `__key=\${${variables.key}-}`,
+  `case $__key in *$'\\n'*|*$'\\r'*) echo "Key Validation Error: a key must be one line." >&2; exit 1;; esac`,
   // What an entry holds, in the step's log: how many files, directories and links, how many bytes, and from where.
   `__told() {`,
   `  __count=0; __bytes=0`,
@@ -136,10 +137,25 @@ export const restoreScript = [
   `[ -n "$__key" ] || { echo "Input required and not supplied: key" >&2; exit 1; }`,
   `case $__key in *,*) echo "Key Validation Error: $__key cannot contain commas." >&2; exit 1;; esac`,
   `[ \${#__key} -le 512 ] || { echo "Key Validation Error: $__key cannot be larger than 512 characters." >&2; exit 1; }`,
-  `echo "cache-primary-key=$__key" >> "$GITHUB_OUTPUT"`,
-  `printf 'smithers-ci-cache-path<<__SMITHERS_CI_CACHE__\\n%s\\n__SMITHERS_CI_CACHE__\\n' "\${${variables.path}-}" >> "$GITHUB_OUTPUT"`,
-  sorted(`echo "Cache not found for input keys: $__key"; exit 0`),
+  `__output() {`,
+  `  local name=$1 value=$2 line delimiter=__SMITHERS_CI_CACHE__`,
+  `  while IFS= read -r line; do`,
+  `    line=\${line%$'\\r'}`,
+  `    if [[ $line =~ ^__SMITHERS_CI_CACHE__(_*)$ ]] && [ \${#line} -ge \${#delimiter} ]; then delimiter=\${line}_; fi`,
+  `  done <<< "$value"`,
+  `  printf '%s<<%s\\n%s\\n%s\\n' "$name" "$delimiter" "$value" "$delimiter" >> "$GITHUB_OUTPUT"`,
+  `}`,
+  `__miss() {`,
+  `  if [[ \${SMITHERS_CI_CACHE_FAIL_ON_MISS-} == [Tt][Rr][Uu][Ee] ]]; then`,
+  `    echo "Failed to restore cache entry. Exiting as fail-on-cache-miss is set. Input key: $__key" >&2; exit 1`,
+  `  fi`,
+  `  echo "Cache not found for input keys: $__key"; exit 0`,
+  `}`,
+  `__output cache-primary-key "$__key"`,
+  `__output smithers-ci-cache-path "\${SMITHERS_CI_CACHE_PATH-}"`,
+  sorted("__miss"),
   `__found=; __entry=$__saved/$(printf %s "$__key" | __sum)`,
+  `if [ ! -f "$__entry/key" ]; then __entry=$__entry.ready; fi`,
   `if [ -f "$__entry/key" ]; then`,
   `  __found=$__key`,
   `elif [ -d "$__saved" ]; then`,
@@ -155,22 +171,17 @@ export const restoreScript = [
   `  done <<< "\${${variables.restoreKeys}-}"`,
   `fi`,
   `__unpack() { [ ! -f "$__entry/$1.tar" ] || tar -xpf "$__entry/$1.tar" -C "$2"; }`,
-  `if [ -n "$__found" ] && [ "\${${variables.lookupOnly}-}" != true ]; then`,
+  `if [ -n "$__found" ] && [[ \${${variables.lookupOnly}-} != [Tt][Rr][Uu][Ee] ]]; then`,
   `  if ! { __unpack work "$GITHUB_WORKSPACE" && __unpack home "$HOME" && __unpack temp "$RUNNER_TEMP"; }; then`,
   `    echo "::warning::Failed to restore: the cache $__found could not be unpacked"`,
   `    __found=`,
   `  fi`,
   `fi`,
   `if [ -z "$__found" ]; then`,
-  `  if [ "\${${variables.failOnMiss}-}" = true ]; then`,
-  `    echo "Failed to restore cache entry. Exiting as fail-on-cache-miss is set. Input key: $__key" >&2`,
-  `    exit 1`,
-  `  fi`,
-  `  echo "Cache not found for input keys: $__key"`,
-  `  exit 0`,
+  `  __miss`,
   `fi`,
-  `if [ "\${${variables.lookupOnly}-}" = true ]; then echo "Lookup only - skipping download"; else __told restored "$__found"; fi`,
-  `echo "cache-matched-key=$__found" >> "$GITHUB_OUTPUT"`,
+  `if [[ \${${variables.lookupOnly}-} == [Tt][Rr][Uu][Ee] ]]; then echo "Lookup only - skipping download"; else __told restored "$__found"; fi`,
+  `__output cache-matched-key "$__found"`,
   `if [ "$__found" = "$__key" ]; then echo "cache-hit=true"; else echo "cache-hit=false"; fi >> "$GITHUB_OUTPUT"`,
   `echo "Cache restored from key: $__found"`
 ].join("\n")
@@ -191,13 +202,15 @@ export const saveScript = [
   `  exit 0`,
   `fi`,
   sorted(`echo "smithers-ci: no cache is saved"; exit 0`),
-  `__entry=$__saved/$(printf %s "$__key" | __sum)`,
+  `__id=$(printf %s "$__key" | __sum); __final=$__saved/$__id`,
+  // Older writers filled the final directory in place. A live or interrupted legacy writer keeps its directory.
+  `if [ -d "$__final" ] && [ ! -f "$__final/key" ]; then __id=$__id.ready; __final=$__saved/$__id; fi`,
   `mkdir -p "$__saved"`,
-  `if ! mkdir "$__entry" 2>/dev/null; then`,
-  `  echo "Failed to save: Unable to reserve cache with key $__key, another job may be creating this cache."`,
-  `  exit 0`,
-  `fi`,
-  `trap '[ -f "$__entry/key" ] || rm -rf "$__entry"' EXIT`,
+  `__reserved() { echo "Failed to save: Unable to reserve cache with key $__key, another job may be creating this cache."; exit 0; }`,
+  `[ ! -d "$__final" ] || __reserved`,
+  `__stage=$(mktemp -d "$__saved/.saving.XXXXXX") || exit 1`,
+  `trap 'rm -rf -- "$__stage"' EXIT`,
+  `__entry=$__stage/$__id; mkdir "$__entry" || exit 1`,
   `__pack() {`,
   `  __name=$1; __from=$2; shift 2; __have=()`,
   `  for __path in "$@"; do`,
@@ -216,7 +229,8 @@ export const saveScript = [
   `  exit 0`,
   `fi`,
   `printf %s "$__key" > "$__entry/key"`,
-  `__told saved "$__key"`,
+  `mv -- "$__entry" "$__saved/" 2>/dev/null || { [ ! -f "$__final/key" ] || __reserved; exit 1; }`,
+  `__entry=$__final; __told saved "$__key"`,
   `echo "Cache saved with key: $__key"`
 ].join("\n")
 
@@ -251,8 +265,9 @@ const kinds: ReadonlyMap<string, CacheUse["kind"]> = new Map([
  * @since 0.1.0
  */
 export const cacheUse = (action: string, inputs: unknown): CacheUse | undefined => {
-  const kind = kinds.get(action)
-  const given = (name: string): string | undefined => isRecord(inputs) ? asScalar(inputs[name]) : undefined
+  const kind = kinds.get(action.toLowerCase())
+  const values = actionInputs(inputs)
+  const given = (name: string): string | undefined => asScalar(values[name])
   const path = given("path")
   const key = given("key")
   if (kind === undefined || path === undefined || key === undefined) return undefined

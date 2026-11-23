@@ -3,7 +3,7 @@
  * each CI job this machine cannot run marked, so it is left out and listed.
  *
  * It looks for the tools the CI's setup actions stand for, on `PATH`, and
- * asks each one found for its version, once while the program runs. It asks
+ * asks recognized binaries for their versions once per inventory. It asks
  * the package manager whether the packages a job installs are already there.
  * It installs nothing and changes nothing.
  *
@@ -15,9 +15,11 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Inventory, Job } from "../contract/Inventory.vibe"
 import type { ReadInventory } from "../contract/Parts.vibe"
 import { answers, type Question, questionsFor, withInstalled } from "./MachineChanges.vibe"
+import { validToolName } from "./Setup.vibe"
 import { read } from "./Read.vibe"
 import {
   type Found,
+  machinePath,
   type Machine,
   neededTools,
   onMachine,
@@ -30,18 +32,31 @@ import {
 /** How long a program may take to print its version. One that takes longer is on the machine, at no known version. */
 const patience = "30 seconds"
 
-/** Runs one line of shell with a program's name as `$1`, as a step's command is run, with nothing to read. */
-const shell = (machine: Machine, line: string, program: string) =>
-  ChildProcess.make("bash", ["-c", line, "smithers-ci", program], {
+/** With no explicit tool path, version probes execute only system installations. */
+const systemPath = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+
+/** Probes run outside the checkout without user startup hooks or repository configuration. */
+const shell = (machine: Machine, line: string, args: ReadonlyArray<string>) =>
+  ChildProcess.make("/bin/bash", ["--noprofile", "--norc", "-c", line, "smithers-ci", ...args], {
     stdin: "ignore",
-    ...(machine.path === undefined ? {} : { env: { PATH: machine.path }, extendEnv: true })
+    cwd: "/",
+    env: { PATH: machinePath(machine), PROBE_PATH: machine.path ?? systemPath, COREPACK_ENABLE_NETWORK: "0" },
+    extendEnv: false
   })
 
-/**
- * What was learned of each program, by `PATH` and name. A tool does not come or go while the program runs, and a
- * replay reads once for every commit: asking once keeps one answer for all of them.
- */
-const known = new Map<string, Found | "absent">()
+/** Execute only when the trusted search resolves to the same binary that is first on PATH. */
+const trusted = [
+  'actual=$(type -P "$1") || exit 1',
+  '[[ "$actual" = /* && "$actual" = "$(PATH="$PROBE_PATH" type -P "$1")" ]] || exit 1',
+  'export PATH="$PROBE_PATH"',
+  'shift'
+].join("\n")
+
+/** These binaries implement a read-only version query. Other names may be located but are never invoked. */
+const versioned = new Set([
+  "node", "go", "python", "python3", "ruby", "bun", "uv", "just", "zig", "cargo", "clang", "java", "dotnet",
+  "pnpm", "npm", "yarn", "terraform", "ghc", "Rscript", "xcodebuild", "rustc", "cmake", "nix", "brew", "deno"
+])
 
 /**
  * Whether a program is a file on the machine's `PATH`, or `undefined` when that could not be asked. A shell's own
@@ -49,59 +64,41 @@ const known = new Map<string, Found | "absent">()
  */
 effect function has(machine: Machine, program: string) {
   const spawner = try ChildProcessSpawner
-  const code = spawner.exitCode(shell(machine, `type -P "$1" >/dev/null 2>&1`, program)) catch () => undefined
+  const code = spawner.exitCode(shell(machine, `type -P "$1" >/dev/null 2>&1`, [program])) catch () => undefined
   return code === undefined ? undefined : Number(code) === 0
 }
 
-/** What a program prints when asked for its version, in either of the two ways programs are asked. */
-effect function printed(machine: Machine, program: string) {
+const versionFlag = new Map([
+  ["go", "version"], ["zig", "version"], ["java", "-version"], ["xcodebuild", "-version"]
+])
+
+/** The first 4 KiB of a trusted program's version response. */
+effect function printed(machine: Machine, program: string, tool: string) {
   const spawner = try ChildProcessSpawner
-  const asked = spawner.string(shell(machine, `"$1" --version 2>&1 || "$1" version 2>&1`, program), {
-    includeStderr: true
-  })
-  return timeout(asked, machine.patience ?? patience) catch () => ""
+  const line = trusted + "\n" + '"$actual" "$@" 2>&1 | /usr/bin/head -c 4096'
+  const args = program === "docker" ? [tool, "version"] : [versionFlag.get(program) ?? "--version"]
+  return timeout(spawner.string(shell(machine, line, [program, ...args])), machine.patience ?? patience) catch () => ""
 }
 
-/** The first of a tool's programs that is on the machine, with its version. */
+/** A new inventory samples this machine once per tool; a later inventory samples it again. */
 effect function find(machine: Machine, tool: string): (Found | undefined)!!ChildProcessSpawner {
+  if (!validToolName(tool)) return undefined
   for (const program of programsOf(tool)) {
-    const key = `${machine.path ?? ""}\n${program}`
-    const seen = known.get(key)
-    if (seen === "absent") continue
-    if (seen !== undefined) return seen
     const there = try has(machine, program)
-    // When the machine cannot be asked, the job runs and its own steps say whether the tool is there.
     if (there === undefined) return { program }
-    if (!there) {
-      known.set(key, "absent")
-      continue
-    }
-    const found = { program, version: versionIn(try printed(machine, program)) }
-    known.set(key, found)
-    return found
+    if (!there) continue
+    if (!versioned.has(program) && tool !== "buildx" && tool !== "compose") return { program }
+    return { program, version: versionIn(try printed(machine, program, tool)) }
   }
   return undefined
 }
 
-/** What the package manager said of each package, by `PATH` and question. Packages do not come or go during a run. */
-const asked = new Map<string, boolean>()
-
-/** Whether the machine has a package. A manager that is absent, fails or takes too long has not said yes. */
+/** Whether the package manager succeeded and confirmed that this package is present. */
 effect function installed(machine: Machine, question: Question) {
-  const key = `${machine.path ?? ""}\n${question.argv.join(" ")}\n${question.holds.join("\n")}`
-  const seen = asked.get(key)
-  if (seen !== undefined) return seen
   const spawner = try ChildProcessSpawner
-  // The output counts only when the program succeeded.
-  const line = `out=$("$@" 2>/dev/null) || exit 0; printf '%s\\n' "$out"`
-  const command = ChildProcess.make("bash", ["-c", line, "smithers-ci", ...question.argv], {
-    stdin: "ignore",
-    ...(machine.path === undefined ? {} : { env: { PATH: machine.path }, extendEnv: true })
-  })
-  const output = timeout(spawner.string(command), machine.patience ?? patience) catch () => ""
-  const answer = answers(question, output)
-  asked.set(key, answer)
-  return answer
+  const line = trusted + "\n" + 'set -o pipefail; out=$("$actual" "$@" 2>/dev/null | /usr/bin/head -c 65536) && printf "%s" "$out"'
+  const output = timeout(spawner.string(shell(machine, line, question.argv)), machine.patience ?? patience) catch () => ""
+  return answers(question, output)
 }
 
 /**

@@ -607,3 +607,12 @@ describe("what the review found", () => {
     expect(evaluate(deep, { context: () => undefined })).toEqual({ kind: "problem", why: "it nests too deep to read" })
   })
 })
+
+it("reports an argument to a status function before reading it", () => {
+  expect(
+    evaluate("success(true)", {
+      context: () => undefined,
+      status: { success: true, failure: false, always: true, cancelled: false }
+    })
+  ).toEqual({ kind: "problem", why: "success was given 1 values" })
+})

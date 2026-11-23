@@ -188,7 +188,7 @@ describe("a cache step", () => {
     expect(readFileSync(join(repo.root, "more", "file"), "utf8")).toBe("x\n")
   })
 
-  it("leaves alone an entry another job is still writing", () => {
+  it("retries an incomplete legacy entry without disturbing its writer", () => {
     const repo = withWorkflow(building, { "lock.txt": "one\n" })
     run(repo)
     const store = join(repo.temp, ".cache", "smithers-ci", "actions-cache")
@@ -199,9 +199,10 @@ describe("a cache step", () => {
     forget(repo)
     const outputs = run(repo)
     expect(outputs[0]).toMatch(/^Cache not found for input keys: /)
-    expect(outputs[2]).toMatch(
-      /^Failed to save: Unable to reserve cache with key build-[0-9a-f]{64}, another job may be/
-    )
+    expect(outputs[2]).toMatch(/Cache saved with key: build-[0-9a-f]{64}$/)
+    expect(existsSync(join(store, paths, entry, "key"))).toBe(false)
+    forget(repo)
+    expect(run(repo)[1]).toContain("hit=[true]")
   })
 
   it.each<[string, string, string]>([
@@ -468,6 +469,12 @@ jobs:
       - uses: actions/cache@v4
         with: { path: node_modules, key: "deps-\${{ secrets.CACHE_VERSION }}" }
       - run: echo build
+  strict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache/restore@v4
+        with: { path: node_modules, key: "deps-\${{ hashFiles('~/.npmrc') }}", fail-on-cache-miss: true }
+      - run: echo build
   bare:
     runs-on: ubuntu-latest
     steps:
@@ -478,11 +485,21 @@ jobs:
       - uses: actions/cache/save@v4
       - run: echo build
 `)
-    for (const id of ["outside", "secret", "bare"]) {
+    for (const id of ["outside", "secret"]) {
       const job = jobOf(repo, `ci.yml:${id}`)
       expect(job.steps).toHaveLength(1)
       expect(job.unsupported.map((entry) => entry.feature)).toEqual(job.unsupported.map(() => "host-action"))
     }
+    const reasons = (id: string) =>
+      jobOf(repo, `ci.yml:${id}`).unsupported.map((entry) => [entry.feature, entry.detail])
+    expect(reasons("bare")).toEqual([
+      ["uses", `${file}: actions/cache@v4 requires a cache path and key`],
+      ["uses", `${file}: actions/cache/save@v4 requires a cache path and key`]
+    ])
+    expect(reasons("strict")).toEqual([[
+      "uses",
+      `${file}: actions/cache/restore@v4 cannot reproduce a required cache restore`
+    ]])
     expect(run(repo, "ci.yml:outside")).toEqual(["install"])
   })
 })
@@ -522,7 +539,7 @@ describe("cacheUse", () => {
         [variables.lookupOnly]: "false"
       }
     })
-    expect(cacheUse("actions/cache/restore", { path: "a", key: "k" })).toEqual({
+    expect(cacheUse("ACTIONS/CACHE/RESTORE", { PATH: "a", Key: "k" })).toEqual({
       kind: "restore",
       env: { [variables.path]: "a", [variables.key]: "k" }
     })
@@ -600,6 +617,23 @@ describe("what a cache step restores", () => {
     })
     return { status: ran.status, output: `${ran.stdout}${ran.stderr}`.trim() }
   }
+
+  it("writes delimiter-shaped path lines as one output and refuses multiline cache keys", () => {
+    const home = place()
+    const store = place()
+    const file = join(home, "outputs")
+    const path = "first\n__SMITHERS_CI_CACHE__\nlast"
+    expect(script(restoreScript, home, store, { [variables.path]: path, GITHUB_OUTPUT: file }).status).toBe(0)
+    const output = readFileSync(file, "utf8")
+    const [, delimiter] = /smithers-ci-cache-path<<([^\n]+)/.exec(output)!
+    expect(output.endsWith(`smithers-ci-cache-path<<${delimiter}\n${path}\n${delimiter}\n`)).toBe(true)
+    for (const key of ["first\nsecond", "first\rsecond"]) {
+      expect(script(restoreScript, home, store, { [variables.key]: key })).toMatchObject({ status: 1 })
+    }
+    expect(
+      script(restoreScript, home, store, { [variables.path]: "unmatched/**", [variables.failOnMiss]: "true" }).status
+    ).toBe(1)
+  })
 
   /** Every entry under `root`, as a person compares two directories: kind, mode, size, time, link and content. */
   const entries = (root: string): ReadonlyArray<string> => {

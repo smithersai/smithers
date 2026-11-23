@@ -110,6 +110,9 @@ describe("admits", () => {
     // A filter written with `+`, `?` or `[` is not read here, so it keeps no branch out.
     [{ branches: ["v[0-9]+"] }, "main", true],
     [{ "branches-ignore": ["v?"] }, "v1", true],
+    [{ "branches-ignore": ["release/**", "!release/stable"] }, "release/stable", true],
+    [{ branches: "" }, "", true],
+    [{ branches: ["a*a*a*a*a*a*b"] }, "a".repeat(200), false],
     [{ branches: "main" }, "develop", false],
     [{ branches: "main" }, "main", true],
     [{ branches: [1] }, "develop", true]

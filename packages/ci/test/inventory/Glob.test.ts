@@ -15,6 +15,7 @@ describe("regexOf", () => {
     ["packages/*/go.sum", ["packages/a/go.sum"], ["packages/go.sum", "packages/a/b/go.sum"]],
     ["src/**", ["src/a", "src/a/b.ts"], ["srcx/a", "other/src/a"]],
     ["**/*.gradle*", ["build.gradle", "app/build.gradle.kts"], ["app/gradle/wrapper.jar"]],
+    ["foo**/bar", ["food/bar", "foo/bar"], ["foobar", "foo/x/bar"]],
     ["file?.txt", ["file1.txt"], ["file.txt", "file12.txt", "file/.txt"]],
     ["lock[0-9].txt", ["lock3.txt"], ["lockx.txt"]],
     ["lock[!0-9].txt", ["lockx.txt"], ["lock3.txt"]],
@@ -67,7 +68,8 @@ describe("filesOf", () => {
   it("takes the files of every pattern, and leaves out those a ! names", () => {
     expect(filesOf(["**/go.sum", "!vendor/**\n# a comment\n\n  go.work.sum  "])).toEqual({
       take: [regexOf("**/go.sum"), regexOf("go.work.sum")],
-      leave: [regexOf("vendor/**")]
+      leave: [regexOf("vendor/**")],
+      order: [0, -1, 1]
     })
   })
 
@@ -75,5 +77,8 @@ describe("filesOf", () => {
     expect(filesOf(["**/go.sum", "/etc/hosts"])).toBeUndefined()
     expect(filesOf(["!vendor/**"])).toBeUndefined()
     expect(filesOf([])).toBeUndefined()
+    expect(filesOf(["a[.-0]"])).toBeUndefined()
+    expect(filesOf(["a[/]"])).toBeUndefined()
+    expect(filesOf(["keep"])).toEqual({ take: [regexOf("keep")], leave: [] })
   })
 })

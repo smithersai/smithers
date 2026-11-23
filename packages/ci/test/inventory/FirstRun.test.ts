@@ -59,7 +59,7 @@ describe.concurrent("a first run that cannot measure anything", () => {
   })
 
   it("names the tool to install when the one job needs a tool this machine lacks, and exits 3", async () => {
-    const setup = "      - uses: acme/setup-no-such-tool-of-smithers-ci@v2\n        with: { version: 9.1 }"
+    const setup = "      - uses: taiki-e/install-action@v2\n        with: { tool: no-such-tool-of-smithers-ci@9.1 }"
     const runner = process.platform === "darwin" ? "macos-latest" : "ubuntu-latest"
     const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check"], repository(tests(runner, setup)))
     expect(outcome).toEqual({

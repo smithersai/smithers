@@ -10,6 +10,9 @@
 
 import * as Schema from "effect/Schema"
 
+const countOf = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
+const checkedCount = Schema.decodeUnknownSync(countOf)
+
 /**
  * One machine's share: shard `index` of `count`, counted from 0.
  *
@@ -18,8 +21,8 @@ import * as Schema from "effect/Schema"
  */
 export const Shard = Schema.Struct({
   index: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
-})
+  count: countOf
+}).check(Schema.makeFilter((shard) => shard.index < shard.count, { expected: "an index below the shard count" }))
 
 /**
  * A decoded `Shard`.
@@ -30,21 +33,27 @@ export const Shard = Schema.Struct({
 export type Shard = typeof Shard.Type
 
 /**
- * The shard a label belongs to among `count` shards: 32-bit FNV-1a over the
- * label's UTF-16 code units, modulo `count`. Pure, so every machine agrees
- * without talking to another.
+ * The unsigned 32-bit FNV-1a hash of a label's UTF-16 code units.
  *
  * @category accessors
  * @since 0.1.0
  */
-export const shardOf = (label: string, count: number): number => {
+export const fnv1a32 = (label: string): number => {
   let hash = 0x811c9dc5
   for (let index = 0; index < label.length; index++) {
     hash ^= label.charCodeAt(index)
     hash = Math.imul(hash, 0x01000193) >>> 0
   }
-  return hash % count
+  return hash
 }
+
+/**
+ * The shard a label belongs to, for a positive integer shard count.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export const shardOf = (label: string, count: number): number => fnv1a32(label) % checkedCount(count)
 
 /**
  * The labels of `labels` that belong to `shard`, in their given order.
@@ -52,8 +61,10 @@ export const shardOf = (label: string, count: number): number => {
  * @category accessors
  * @since 0.1.0
  */
-export const labelsOf = (labels: ReadonlyArray<string>, shard: Shard): ReadonlyArray<string> =>
-  labels.filter((label) => shardOf(label, shard.count) === shard.index)
+export const labelsOf = (labels: ReadonlyArray<string>, shard: Shard): ReadonlyArray<string> => {
+  const count = checkedCount(shard.count)
+  return labels.filter((label) => fnv1a32(label) % count === shard.index)
+}
 
 /**
  * The shard of every label when durations are known: the longest label goes
@@ -73,18 +84,26 @@ export const assign = (
     const duration = Object.hasOwn(durations, label) ? Number(durations[label]) : 0
     return Number.isFinite(duration) && duration > 0 ? duration : 0
   }
-  const loads = Array.from({ length: count }, () => 0)
-  const lightest = (): number => loads.reduce((best, load, index) => load < Number(loads[best]) ? index : best, 0)
+  const bins = checkedCount(count)
+  // Until every bin has a positive load, the next unused index is always the first lightest bin.
+  const loads: Array<number> = []
+  const lightest = (): number => loads.length < bins
+    ? loads.length
+    : loads.reduce((best, load, index) => load < loads[best]! ? index : best, 0)
   const ordered = [...new Set(labels)].sort((a, b) => weight(b) - weight(a) || (a < b ? -1 : 1))
   const assigned = new Map<string, number>()
   for (const label of ordered) {
     const duration = weight(label)
-    const index = duration > 0 ? lightest() : shardOf(label, count)
-    const least = loads[index]!
+    if (duration === 0) {
+      assigned.set(label, fnv1a32(label) % bins)
+      continue
+    }
+    const index = lightest()
+    const least = loads[index] ?? 0
     const next = least + duration
     // Only relative loads matter. Remove the common minimum if adding a job would overflow or disappear in rounding.
-    if (!Number.isFinite(next) || (duration > 0 && next === least)) {
-      for (let shard = 0; shard < count; shard++) loads[shard] = loads[shard]! - least
+    if (!Number.isFinite(next) || next === least) {
+      for (let shard = 0; shard < loads.length; shard++) loads[shard] = loads[shard]! - least
       loads[index] = duration
     } else {
       loads[index] = next

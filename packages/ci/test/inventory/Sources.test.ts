@@ -67,6 +67,7 @@ describe("readPackage", () => {
   })
 
   it("reads a package manager with no version and a package with no scripts", () => {
+    expect(readPackage("package.json", "{\"packageManager\":\"\"}", bun).toolchains).toEqual([])
     expect(readPackage("package.json", `{"packageManager":"npm"}`, bun)).toEqual({
       jobs: [],
       toolchains: [{ name: "npm", source: "package.json" }],
@@ -162,6 +163,8 @@ describe("workspace patterns", () => {
   })
 
   it("matches one path segment", () => {
+    expect(segmentMatcher("*a*a*a*a*a*b").test("a".repeat(200))).toBe(false)
+    expect(segmentMatcher("*").test("a/b")).toBe(false)
     expect(segmentMatcher("plugin-*.x").test("plugin-a.x")).toBe(true)
     expect(segmentMatcher("plugin-*.x").test("plugin-aax")).toBe(false)
   })
@@ -336,6 +339,14 @@ describe("secrets", () => {
     expect(isLiteralSecret("MAX_TOKENS", "100")).toBe(false)
     expect(isLiteralSecret("TOKENIZERS_PARALLELISM", "false")).toBe(false)
     expect(isLiteralSecret("PLAIN", token)).toBe(true)
+  })
+
+  it("keeps public release paths and scrubs the whole quoted assignment", () => {
+    expect(isLiteralSecret("ALERT_WEBHOOK_URL", "https://internal.example/custom/callback/abc")).toBe(true)
+    expect(isLiteralSecret("ALERT_WEBHOOK_URL", "relative/path")).toBe(false)
+    expect(isLiteralSecret("MIRROR", "https://example.org/download/release/v22.0.0/")).toBe(false)
+    expect(scrub("API_TOKEN=\"sample long phrase\" done")).toBe("[withheld] done")
+    expect(scrub("API_TOKEN='sample long phrase' done")).toBe("[withheld] done")
   })
 
   it("withholds the whole body of a private key", () => {

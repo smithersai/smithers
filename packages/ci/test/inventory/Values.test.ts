@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { readJustfile } from "../../src/inventory/Justfile.vibe"
 import { readMakefile } from "../../src/inventory/Makefile.vibe"
-import { isPlainCommand } from "../../src/inventory/Values.vibe"
+import { asStrings, isPlainCommand } from "../../src/inventory/Values.vibe"
 
 describe("isPlainCommand", () => {
   it("accepts a program with plain words", () => {
@@ -22,4 +22,10 @@ describe("isPlainCommand", () => {
     expect([justfile("zig build"), makefile("zig build")]).toEqual(["zig build", "zig build"])
     expect([justfile("echo hi"), makefile("echo hi")]).toEqual(["sh -cu 'echo hi'", "sh -c 'echo hi'"])
   })
+})
+
+it("requires plain commands to start with a program and string lists to contain only strings", () => {
+  expect(isPlainCommand("   ")).toBe(false)
+  expect(isPlainCommand(" echo ok")).toBe(false)
+  expect(asStrings(["ok", 2])).toBeUndefined()
 })

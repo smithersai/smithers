@@ -10,7 +10,14 @@ import InventorySpec.Json
 namespace InventorySpec
 
 /-- The values one variant sets, by name, in the order they were set. A name is there once. -/
-abbrev Assignment := List (String × String)
+abbrev Assignment := List (String × (String × String))
+
+/-- The type of a scalar alongside its printed form: the strings "false" and "2" keep their type. -/
+def scalarType : Value → String
+  | .str _ => "string"
+  | .num _ => "number"
+  | .bool _ => "boolean"
+  | _ => "null"
 
 /-- GitHub refuses a matrix with more variants than this. -/
 def maxVariants : Nat := 256
@@ -33,7 +40,7 @@ mutual
     | .arr _ _ => none
     | scalar =>
       match asScalar scalar with
-      | some text => if includes "${{".toList text.toList then none else some (setField into name text)
+      | some text => if includes "${{".toList text.toList then none else some (setField into name (scalarType scalar, text))
       | none => none
 
   /-- Adds the fields of a mapping, each under `name.field`. -/
@@ -143,7 +150,7 @@ def lastPart (key : String) : String :=
 
 /-- Whether a variant holds a value named like a secret. -/
 def holdsSecret (secret : String → String → Bool) (variant : Assignment) : Bool :=
-  variant.any fun (key, held) => secret (lastPart key) held
+  variant.any fun (key, held) => secret (lastPart key) held.2
 
 /-- The variants of a matrix written as a mapping, or why it cannot be read. -/
 def expandFields (secret : String → String → Bool) (fields : List (String × Value)) :
@@ -158,7 +165,8 @@ def expandFields (secret : String → String → Bool) (fields : List (String ×
       match applyInclude originals originals [] included with
       | .error why => .error why
       | .ok (merged, added) =>
-        if (merged ++ added).any (holdsSecret secret) then .error "it holds a value named like a secret"
+        if (merged ++ added).isEmpty then .error "the matrix has no surviving combinations"
+        else if (merged ++ added).any (holdsSecret secret) then .error "it holds a value named like a secret"
         else .ok (merged ++ added)
   | _, _ => .error "include or exclude holds a computed value"
 

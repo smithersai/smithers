@@ -106,7 +106,7 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("the packages a job 
       )
     })
 
-  it.effect("the same question is asked once while the program runs", () =>
+  it.effect("a new inventory samples the package database again", () =>
     effect {
       const fs = try FileSystem.FileSystem
       const { log, machine: here } = try machine()
@@ -115,13 +115,13 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("the packages a job 
       try onThisMachine(inventory, here)
       try onThisMachine(inventory, here)
       const calls = try fs.readFileString(log)
-      try Effect.try(() => expect(calls).toBe("dpkg -s zsh\n"))
+      try Effect.try(() => expect(calls).toBe("dpkg -s zsh\ndpkg -s zsh\n"))
     })
 
   it.effect("a tool of a job that runs after its installs are settled is looked for", () =>
     effect {
       const { machine: here } = try machine()
-      const setup = "      - uses: acme/setup-no-such-tool@v1"
+      const setup = "      - uses: taiki-e/install-action@no-such-tool"
       const root = try repository({
         ".github/workflows/ci.yml": workflow("sudo apt-get install zsh", setup)
       })

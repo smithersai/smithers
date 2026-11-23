@@ -33,6 +33,42 @@ const inventoryOf = (text: string, tracked: ReadonlyArray<string> = []): Invento
   jobs: read(text, tracked).jobs
 })
 
+describe("Make expansion limits", () => {
+  it("records an expansion blocker for repeated, deep and oversized variables", () => {
+    const deep = Array.from({ length: 75 }, (_, i) => "v" + i + " = $(v" + (i + 1) + ")").join("\n")
+    const exported = jobOf(deep + "\nv75 = ok\nexport v0 v75\nci:\n\ttrue")
+    expect(details(exported)).toContain("Makefile: ci exceeds the Make variable expansion limit")
+    expect(commands(exported)).toEqual([])
+    const invalid = jobOf("a := $(undefined)\nb := $(a)$(a)\nci:\n\techo $(b)")
+    expect(features(invalid)).toEqual(["variable"])
+    const shared = Array.from({ length: 16 }, (_, i) => "v" + i + " = $(v" + (i + 1) + ")$(v" + (i + 1) + ")").join(
+      "\n"
+    )
+    for (
+      const body of [
+        deep + "\nv75 = go",
+        shared + "\nv16 = z",
+        "v0 = " + "x".repeat(1024 * 1024 + 1),
+        "v0 := " + "x".repeat(600000) + "\nv1 = $(v0)$(v0)\nv0_copy = $(v1)"
+      ]
+    ) {
+      const variable = body.includes("v0_copy") ? "v0_copy" : "v0"
+      const job = jobOf(body + "\nci:\n\t@echo $(" + variable + ")\n")
+      expect(details(job).join(" ")).toContain("exceeds the Make variable expansion limit")
+      expect(job.steps).toEqual([])
+    }
+  })
+
+  it("bounds the number and depth of inlined sub-makes", () => {
+    expect(commands(jobOf("ci:\n\tmake inner\ninner: source.txt\n\tgo", "ci", ["source.txt"]))).toEqual(["go"])
+    const rules = Array.from({ length: 66 }, (_, i) => "r" + i + ":\n\tmake r" + (i + 1)).join("\n")
+    const deep = jobOf("ci:\n\tmake r0\n" + rules + "\nr66:\n\ttrue")
+    expect(details(deep)).toContain("Makefile: exceeds the recursive Make recipe limit")
+    const broad = jobOf("ci:\n" + "\tmake empty\n".repeat(4097) + "empty:\n")
+    expect(details(broad)).toContain("Makefile: exceeds the recursive Make recipe limit")
+  })
+})
+
 describe("readMakefile rules", () => {
   it("reads each rule as a job and the rules a rule lists as what it needs, in order", () => {
     const { jobs, toolchains, unsupported } = read(`.PHONY: ci lint test

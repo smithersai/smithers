@@ -192,23 +192,24 @@ describe("a step that only sends the job's results out", () => {
     expect(resultActions.every((entry) => entry.why.startsWith("it "))).toBe(true)
   })
 
-  it("is kept when an action that can fail on its report is given no inputs, and left out alone when its inputs are no mapping", () => {
+  it("is kept by default and refuses unreadable failure inputs", () => {
     expect(
       jobOf(main(`
       - uses: mikepenz/action-junit-report@v5
 `)).kept
     ).toEqual([{ uses: "mikepenz/action-junit-report@v5" }])
-    for (const extra of ["with: just text", "if: [a, b]"]) {
-      expect(
-        details(jobOf(main(`
+    expect(
+      blockers(jobOf(main(`
       - uses: codecov/codecov-action@v5
-        ${extra}
+        with: just text
+`)))[0]?.feature
+    ).toBe("uses")
+    expect(
+      details(jobOf(main(`
+      - uses: codecov/codecov-action@v5
+        if: [a, b]
 `))).at(-1)
-      ).toBe(
-        "unkept-result: main step 2: codecov/codecov-action@v5 is given a value that is not text; the workflow " +
-          "apply writes leaves this step out"
-      )
-    }
+    ).toContain("is given a value that is not text")
   })
 })
 

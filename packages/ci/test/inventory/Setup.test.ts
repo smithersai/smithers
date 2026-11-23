@@ -4,6 +4,19 @@ import { readSetup } from "../../src/inventory/Setup.vibe"
 const toolOf = (uses: string, inputs?: unknown) => readSetup(uses, inputs)?.tools
 
 describe("readSetup", () => {
+  it("validates every tool name and treats unmodeled action names as inventory hints", () => {
+    expect(readSetup("Taiki-E/Install-Action@v2", { Tool: "just, ../other" })).toMatchObject({
+      tools: [],
+      problem: expect.any(String)
+    })
+    expect(readSetup("taiki-e/install-action@./tool", {})).toMatchObject({ tools: [], problem: expect.any(String) })
+    expect(readSetup("acme/setup-node@v1", {})).toMatchObject({
+      tools: [{ name: "node" }],
+      problem: expect.any(String)
+    })
+    expect(readSetup("PNPM/action-setup@v4", { RUN_INSTALL: true })?.command).toBe("pnpm install")
+  })
+
   it("reads the tool from each form of a setup action's name", () => {
     const tools = (uses: string) => toolOf(uses)?.map((tool) => tool.name)
     expect(tools("actions/setup-node@v4")).toEqual(["node"])

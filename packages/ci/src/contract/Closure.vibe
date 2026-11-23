@@ -101,6 +101,8 @@ export const isComplete = (closure: Closure): boolean => closure.unresolved.leng
 export const isAffectedBy = (closure: Closure, changed: ReadonlyArray<string>): boolean => {
   if (!isComplete(closure)) return true
   const reached = new Set(closure.files.map((file) => file.path))
-  const under = (closure.directories ?? []).map((directory) => directory.endsWith("/") ? directory : `${directory}/`)
-  return changed.some((path) => reached.has(path) || under.some((directory) => path.startsWith(directory)))
+  const directories = (closure.directories ?? []).map((directory) => directory.replace(/\/$/, ""))
+  return changed.some((path) =>
+    reached.has(path) || directories.some((directory) => directory === "." || path === directory || path.startsWith(`${directory}/`))
+  )
 }

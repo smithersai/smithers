@@ -34,16 +34,16 @@ const daemonFlags: ReadonlyMap<string, (args: ReadonlyArray<string>) => boolean>
   ["ssh-agent", (args) => args.every((word) => word.startsWith("-") || word === "")]
 ])
 
-/** The commands with which a script waits for, or stops, what it put in the background. */
-const settles: ReadonlySet<string> = new Set(["wait", "kill", "pkill", "killall", "fg"])
-
 /** Where the closing `close` of the `open` at `start` is, past quotes and escapes, or the end of the text. */
 const closingOf = (text: string, start: number, open: string, close: string): number => {
   let depth = 0
+  let quote = ""
   for (let at = start; at < text.length; at++) {
     const char = text[at]
-    if (char === "\\") at += 1
-    else if (char === "'") at = Math.max(at, text.indexOf("'", at + 1))
+    if (char === "\\" && quote !== "'") at += 1
+    else if (quote !== "") {
+      if (char === quote) quote = ""
+    } else if (char === "'" || char === '"') quote = char
     else if (char === open) depth += 1
     else if (char === close && --depth === 0) return at
   }
@@ -58,6 +58,7 @@ const closingOf = (text: string, start: number, open: string, close: string): nu
  */
 const backgrounded = (script: string): ReadonlyArray<readonly [start: number, end: number]> => {
   const found: Array<readonly [number, number]> = []
+  const groups: Array<number> = []
   let start = 0
   let at = 0
   // The words that end the here-documents of the current line, read after it ends.
@@ -97,9 +98,11 @@ const backgrounded = (script: string): ReadonlyArray<readonly [start: number, en
       }
       separate(at)
     } else if (char === "(") {
-      // A group put in the background whole: `( server ) &`.
-      const end = closingOf(script, at, "(", ")")
-      at = end + 1
+      groups.push(start)
+      separate(++at)
+    } else if (char === ")") {
+      start = groups.pop() ?? start
+      at++
     } else if (char === "&") {
       const before = script[at - 1]
       const after = script[at + 1]
@@ -142,7 +145,7 @@ const nameOf = (text: string, env: Readonly<Record<string, string>>): string => 
 /**
  * The programs a step's command leaves running when it ends, each once in
  * the order met: a command it puts in the background with `&` and never
- * waits for or stops (no `wait`, `kill`, `pkill`, `killall` or `fg` after it),
+ * waits for or stops by job number or saved PID,
  * and a program started with a flag that keeps it running on its own, as
  * `redis-server --daemonize yes`, `mongod --fork`, `pg_ctl start` and
  * `ssh-agent` are.
@@ -151,15 +154,31 @@ const nameOf = (text: string, env: Readonly<Record<string, string>>): string => 
  * @since 0.1.0
  */
 export const leftRunningIn = (command: string, env: Readonly<Record<string, string>> = {}): ReadonlyArray<string> => {
-  const programs: Array<string> = []
-  for (const [start, end] of backgrounded(command)) {
-    const after = startedIn(command.slice(end + 1), env)
-    if (!after.some(({ name }) => settles.has(name))) programs.push(nameOf(command.slice(start, end), env))
+  const launches = backgrounded(command)
+  const live = new Map<number, string>()
+  const pids = new Map<string, number>()
+  for (const [index, [start, end]] of launches.entries()) {
+    const id = index + 1
+    live.set(id, nameOf(command.slice(start, end), env))
+    const next = launches[id]
+    const after = command.slice(end + 1, next?.[0])
+    const saved = /^\s*([A-Za-z_]\w*)=\$!(?=[\s;]|$)/.exec(after)
+    if (saved !== null) pids.set("$" + saved[1], id)
+    for (const { args, name } of startedIn(after, env)) {
+      if (name === "wait" && args.length === 0) live.clear()
+      else if (name === "wait" || name === "kill") {
+        for (const arg of args) {
+          const target = arg === "$!" ? id : /^%\d+$/.test(arg) ? Number(arg.slice(1)) : pids.get(arg)
+          if (target !== undefined) live.delete(target)
+        }
+      }
+    }
   }
+  const programs = new Set(live.values())
   for (const { args, name } of startedIn(command, env)) {
-    if (daemonFlags.get(name)?.(args) === true) programs.push(name)
+    if (daemonFlags.get(name)?.(args) === true) programs.add(name)
   }
-  return [...new Set(programs)]
+  return [...programs]
 }
 
 /** The longest a step's name is in a report: a command's first line is cut there. */

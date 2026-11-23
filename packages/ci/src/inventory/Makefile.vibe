@@ -74,7 +74,14 @@ interface Makefile {
   posix: boolean
 }
 
+const maxExpansion = 1024 * 1024
+const maxVisits = 4096
+const maxDepth = 64
+
 interface Scope {
+  depth: number
+  visits: number
+  exhausted: boolean
   readonly variables: ReadonlyMap<string, Variable>
   readonly automatic: ReadonlyMap<string, string>
   readonly active: Set<string>
@@ -84,10 +91,12 @@ interface Scope {
 const scopeOf = (
   variables: ReadonlyMap<string, Variable>,
   automatic: ReadonlyMap<string, string> = new Map()
-): Scope => ({ variables, automatic, active: new Set(), problems: [] })
+): Scope => ({ variables, automatic, active: new Set(), problems: [], depth: 0, visits: 0, exhausted: false })
 
 const fail = (scope: Scope, feature: string, reason: string): string => {
-  scope.problems.push({ feature, reason })
+  if (!scope.problems.some((entry) => entry.feature === feature && entry.reason === reason)) {
+    scope.problems.push({ feature, reason })
+  }
   return ""
 }
 
@@ -136,7 +145,7 @@ const reference = (scope: Scope, raw: string): string => {
   if (variable === undefined) {
     return name === "MAKE" ? "make" : fail(scope, "variable", `reads ${name}, which the file does not set`)
   }
-  scope.problems.push(...variable.problems)
+  for (const problem of variable.problems) fail(scope, problem.feature, problem.reason)
   if (scope.active.has(name)) return fail(scope, "variable", `reads ${name}, which refers to itself`)
   scope.active.add(name)
   const value = variable.recursive ? expand(scope, variable.text) : variable.text
@@ -146,6 +155,18 @@ const reference = (scope: Scope, raw: string): string => {
 
 /** Expands `text` as Make does. What cannot be expanded is added to the scope's problems. */
 const expand = (scope: Scope, text: string): string => {
+  if (scope.exhausted) return ""
+  if (scope.depth >= maxDepth || ++scope.visits > maxVisits || text.length > maxExpansion) {
+    scope.exhausted = true
+    return fail(scope, "variable", "exceeds the Make variable expansion limit")
+  }
+  scope.depth++
+  const result = expandText(scope, text)
+  scope.depth--
+  return result
+}
+
+const expandText = (scope: Scope, text: string): string => {
   let result = ""
   let index = 0
   while (index < text.length) {
@@ -169,6 +190,11 @@ const expand = (scope: Scope, text: string): string => {
       result += reference(scope, next)
       index += 2
     }
+    if (result.length > maxExpansion) {
+      scope.exhausted = true
+      return fail(scope, "variable", "exceeds the Make variable expansion limit")
+    }
+    if (scope.exhausted) return ""
   }
   return result
 }
@@ -572,14 +598,15 @@ const readRecipeLine = (reader: Reader, header: Header, line: string, number: nu
 const spreadScoped = (makefile: Makefile): void => {
   for (const name of makefile.scoped) {
     const seen = new Set<string>()
-    const visit = (target: string): void => {
+    const pending = [name]
+    while (pending.length > 0) {
+      const target = pending.pop() as string
       const rule = makefile.rules.get(target)
-      if (rule === undefined || seen.has(target)) return
+      if (rule === undefined || seen.has(target)) continue
       seen.add(target)
       rule.problems.push({ feature: "target-variable", reason: `runs with a variable set for ${name}` })
-      for (const prerequisite of [...rule.prerequisites, ...rule.orderOnly]) visit(prerequisite)
+      for (const prerequisite of [...rule.prerequisites, ...rule.orderOnly]) pending.push(prerequisite)
     }
-    visit(name)
   }
 }
 
@@ -643,6 +670,7 @@ const inShell = (shell: Shell, line: string): string =>
   shell.posixLike && isPlainCommand(line) ? line : `${shell.start} ${shellQuote(line)}`
 
 interface Context {
+  visits: number
   readonly makefile: Makefile
   /** Every tracked file and every directory holding one. */
   readonly present: ReadonlySet<string>
@@ -738,14 +766,18 @@ const runGoals = (
   running: ReadonlySet<string>
 ): void => {
   const seen = new Set<string>()
-  const visit = (name: string): void => {
+  const pending = [...goals].reverse().map((name) => ({ name, ready: false }))
+  while (pending.length > 0) {
+    const { name, ready } = pending.pop() as { name: string; ready: boolean }
     const rule = context.makefile.rules.get(name)
-    if (rule === undefined || seen.has(name)) return
-    seen.add(name)
-    for (const prerequisite of [...rule.prerequisites, ...rule.orderOnly]) visit(prerequisite)
-    readRuleSteps(context, job, rule, running)
+    if (rule === undefined) continue
+    if (ready) readRuleSteps(context, job, rule, running)
+    else if (!seen.has(name)) {
+      seen.add(name)
+      pending.push({ name, ready: true })
+      for (const next of [...rule.prerequisites, ...rule.orderOnly].reverse()) pending.push({ name: next, ready: false })
+    }
   }
-  goals.forEach(visit)
 }
 
 const prefixOf = (text: string): string => (/^[ \t@+-]*/.exec(text) as RegExpExecArray)[0]
@@ -797,6 +829,7 @@ const readOneShell = (recipe: RecipeContext, lines: ReadonlyArray<RecipeLine>): 
   const texts = lines.map((line) => fillIn(recipe, line, `${rule.name} line ${line.number}`))
   const known = texts.filter((text) => text !== undefined)
   if (known.length < texts.length) return
+  // GNU Make strips internal prefix characters for a POSIX shell, even inside a here-document.
   const script = known.map((text) => text.slice(prefixOf(text).length)).join("\n").trim()
   if (script === "") return
   const stated = inShell(shell, script)
@@ -815,6 +848,9 @@ const environmentOf = (makefile: Makefile, scope: Scope): ReadonlyMap<string, st
 
 /** Adds what running one rule's recipe does to `job`, with everything that keeps it from being stated. */
 const readRuleSteps = (context: Context, job: Draft, rule: Rule, running: ReadonlySet<string>): void => {
+  if (++context.visits > maxVisits || running.size >= maxDepth) {
+    return note(job, "malformed-job", "exceeds the recursive Make recipe limit")
+  }
   if (running.has(rule.name)) return note(job, "recursive-make", `${rule.name} runs Make on itself`)
   noteAll(job, rule.name, rule.problems)
   checkFiles(context, job, rule)
@@ -868,7 +904,7 @@ const readJob = (context: Context, file: string, rule: Rule): Draft => {
     needs: prerequisites.filter((name) => name !== rule.name && makefile.rules.has(name)).map(jobId)
   })
   for (const blocker of makefile.blockers) note(job, blocker.feature, blocker.reason)
-  if (makefile.blockers.length === 0) readRuleSteps(context, job, rule, new Set())
+  if (makefile.blockers.length === 0) readRuleSteps({ ...context, visits: 0 }, job, rule, new Set())
   return job
 }
 
@@ -886,7 +922,7 @@ const readJob = (context: Context, file: string, rule: Rule): Draft => {
  */
 export const readMakefile = (file: string, text: string, tracked: ReadonlyArray<string>): Parsed => {
   const makefile = parse(text)
-  const context: Context = { makefile, present: withDirectories(tracked) }
+  const context: Context = { makefile, visits: 0, present: withDirectories(tracked) }
   const jobs = [...makefile.rules.values()].map((rule) => readJob(context, file, rule))
   const runsMake = jobs.some((job) => job.steps.some((step) => /(?:^|[\s;&|('])make(?:\s|$)/.test(step.command)))
   const unsupported: ReadonlyArray<Unsupported> = makefile.blockers.map((blocker) => ({

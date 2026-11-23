@@ -21,6 +21,35 @@ const commands = (job: Job) =>
 const features = (job: Job) => job.unsupported.map((entry) => entry.feature)
 const inSh = (line: string) => `sh -cu ${shellQuote(line)}`
 
+describe("platform and script reading", () => {
+  it("selects duplicate recipes for the requested host and records the runner", () => {
+    const source = "[linux]\ncheck:\n  linux-check\n[macos]\ncheck:\n  mac-check\n[windows]\ncheck:\n  windows-check"
+    for (
+      const [host, runner, command] of [["darwin", "macos-latest", "mac-check"], [
+        "win32",
+        "windows-latest",
+        "windows-check"
+      ]]
+    ) {
+      const job = readJustfile("justfile", source, host).jobs[0]!
+      expect(job.runsOn).toBe(runner)
+      expect(commands(job)).toEqual([command])
+    }
+    const duplicate = readJustfile("justfile", "ci:\n  a\nci:\n  b").jobs[0]!
+    expect(features(duplicate)).toEqual(["duplicate-recipe"])
+    const other = readJustfile("justfile", source, "freebsd").jobs[0]!
+    expect(other.runsOn).toBeUndefined()
+    expect(other.unsupported[0]?.feature).toBe("platform")
+  })
+
+  it("recognizes escaped quotes and resolves multiline script interpolations", () => {
+    const source = "word := 'done'\n[doc(\"say \\\"hello\\\" #1\")]\n[script]\nci:\n  echo {{\n    word\n  }}"
+    expect(commands(jobOf(source, "ci"))).toEqual(["sh -eu -c 'echo done'"])
+    expect(features(jobOf("ci:\n  echo {{word", "ci"))).toContain("expression")
+    expect(commands(jobOf("ci x=\"say \\\"hello\\\" now\":\n  echo {{x}}", "ci"))).toEqual(["echo say \"hello\" now"])
+  })
+})
+
 describe("readJustfile recipes", () => {
   it("reads recipes, their lines and their dependencies", () => {
     const { jobs, toolchains } = read(`# a comment
@@ -259,7 +288,7 @@ both:
 `)
     expect(jobs.map((job) => job.name)).toEqual(["open", "both", "only-windows"])
     expect(commands(jobs[0] as Job)).toEqual(["xdg-open"])
-    expect(features(jobs[0] as Job)).toEqual(["duplicate-recipe"])
+    expect(features(jobs[0] as Job)).toEqual([])
     expect(commands(jobs[1] as Job)).toEqual(["run"])
     expect(jobs[2]?.steps).toEqual([])
     expect(features(jobs[2] as Job)).toEqual(["platform"])

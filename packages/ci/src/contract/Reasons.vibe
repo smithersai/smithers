@@ -26,7 +26,10 @@ export interface Reason {
 }
 
 /** What a detail says after the file it starts with. */
-const afterFile = (detail: string): string => detail.slice(detail.indexOf(": ") + 2)
+const afterFile = (detail: string): string => {
+  const separator = detail.indexOf(": ")
+  return separator === -1 ? detail : detail.slice(separator + 2)
+}
 
 const matched = (pattern: RegExp) => (detail: string): string | undefined => pattern.exec(afterFile(detail))?.[1]
 
@@ -132,7 +135,7 @@ export const reasons: Readonly<Record<string, Reason>> = {
     sentence: "needs {}, which is not replayed",
     slot: "JOB",
     none: "a job",
-    subject: (detail) => /needs (.+?), which is not replayed/.exec(detail)?.[1]
+    subject: (detail) => /needs (.+?), which is (?:not replayed|missing)/.exec(detail)?.[1]
   },
   "no-command": { sentence: "has no command to run: all its steps only prepare the CI machine" },
   "no-target": { sentence: "has a step Smithers CI could not turn into a build step" },
@@ -187,7 +190,7 @@ export const reasons: Readonly<Record<string, Reason>> = {
     sentence: "uses the action {}, which Smithers CI does not run",
     slot: "ACTION",
     none: "with no command",
-    subject: matched(/(?:^|[\s:])((?:\.{1,2}\/|docker:\/\/|[\w.-]+\/)[^\s:;,]*)/)
+    subject: matched(/(?:^|[\s:])(docker:\/\/[^\s;,]+|(?:\.{1,2}\/|[\w.-]+\/)[^\s:;,]*)/)
   },
   variable: { sentence: "reads a Make variable that has no value here" },
   vpath: { sentence: "uses Make's `vpath` search" },

@@ -8,7 +8,7 @@
  * downloads nothing. A job that starts on a new machine with an empty home has
  * to find that cache too, or it is slower than the CI it stands for.
  *
- * So such a step is the two commands of a cache step (`Cache.ts`), with the
+ * So such a step is the two commands of a cache step (`Cache.vibe`), with the
  * same store. The path is asked of the tool, as the action asks it:
  * `npm config get cache`, `go env GOMODCACHE`, `pip cache dir`. The key holds
  * the hash of the lockfile, or of the files `cache-dependency-path` names.
@@ -23,7 +23,7 @@
  */
 
 import { variables } from "./Cache.vibe"
-import { asScalar, isRecord } from "./Values.vibe"
+import { actionInputs, asScalar } from "./Values.vibe"
 
 /**
  * What a setup action's cache needs: the shell lines that ask the tool where
@@ -126,15 +126,16 @@ const goFile = (ref: string | undefined): string =>
  * @since 0.1.0
  */
 export const setupCache = (uses: string, inputs: unknown): SetupCache | undefined => {
-  const [action, ref] = uses.split("@") as [string, string | undefined]
-  const given = isRecord(inputs) ? inputs : {}
+  const [name, ref] = uses.split("@") as [string, string | undefined]
+  const action = name.toLowerCase()
+  const given = actionInputs(inputs)
   const asked = asScalar(given["cache"])
   const keyed = (name: string, lock: string): Pick<SetupCache, "key" | "lock"> => ({
     key: `${name}-\${{ runner.os }}-\${{ runner.arch }}-\${{ ${lock} }}`,
     lock: `\${{ ${lock} }}`
   })
   if (action === "actions/setup-node") {
-    const manager = asked === undefined ? undefined : node[asked]
+    const manager = asked !== undefined && Object.hasOwn(node, asked) ? node[asked] : undefined
     if (manager === undefined) return undefined
     return {
       paths: manager.paths,
@@ -162,11 +163,11 @@ export const setupCache = (uses: string, inputs: unknown): SetupCache | undefine
   }
   if (action === "actions/setup-python" && asked === "pip") {
     const version = versioned(asScalar(given["python-version"]) ?? asScalar(given["python-version-file"]))
-    // The action hashes these, and `**/pyproject.toml` when they match nothing. One hash of both finds the same files.
+    // The action hashes these, and `**/pyproject.toml` when they match nothing.
     const named = lockfiles(given, ["**/requirements.txt"])
     return {
       paths: "pip cache dir",
-      ...keyed(`setup-python-${version}-pip`, `hashFiles(${quoted([...named, "**/pyproject.toml"])})`),
+      ...keyed(`setup-python-${version}-pip`, `hashFiles(${quoted(named)}) || hashFiles('**/pyproject.toml')`),
       missing: {
         said: `No file in $GITHUB_WORKSPACE matched to [${
           echoed(named.join(","))
@@ -179,7 +180,7 @@ export const setupCache = (uses: string, inputs: unknown): SetupCache | undefine
 }
 
 /**
- * The lines that go before the restoring script of `Cache.ts`: they do what
+ * The lines that go before the restoring script of `Cache.vibe`: they do what
  * the action does when no lockfile was found, say `cache-hit` is `false` until
  * a cache is restored, as these actions do and `actions/cache` does not, and
  * ask the tool for its cache's place. A tool that cannot say gives no cache,

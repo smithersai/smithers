@@ -15,6 +15,9 @@ import { NotReplayed, ToolVersion, Unsupported } from "./Inventory.vibe"
 import { Mode, Parts, Recorder, StatusCounts, Verdict } from "./RunRecord.vibe"
 import { Metrics } from "./Selection.vibe"
 
+const count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+const elapsed = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
+
 /**
  * One step that failed: its name, why, and, when they are known, its exit code
  * and its command. `reason` is the first line of the step's error output, or
@@ -91,11 +94,11 @@ export type StepNotReused = typeof StepNotReused.Type
  */
 export const RunTotals = Schema.Struct({
   ok: Schema.Boolean,
-  wallMs: Schema.Finite,
-  workMs: Schema.Finite,
+  wallMs: elapsed,
+  workMs: elapsed,
   counts: StatusCounts,
   failures: Schema.optionalKey(Schema.Array(StepFailure)),
-  cpuMs: Schema.optionalKey(Schema.Finite),
+  cpuMs: Schema.optionalKey(elapsed),
   parts: Schema.optionalKey(Parts),
   notReused: Schema.optionalKey(Schema.Array(StepNotReused))
 })
@@ -156,7 +159,7 @@ export type Mismatch = typeof Mismatch.Type
 export const PredictedSafe = Schema.Struct({
   label: Schema.NonEmptyString,
   skipReason: Schema.Literal("predicted-safe"),
-  score: Schema.optionalKey(Schema.Finite),
+  score: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1))),
   reason: Schema.optionalKey(Schema.String)
 })
 
@@ -177,8 +180,8 @@ export type PredictedSafe = typeof PredictedSafe.Type
  * @since 0.1.0
  */
 export const ModelUse = Schema.Struct({
-  ms: Schema.Finite,
-  questions: Schema.optionalKey(Schema.Int)
+  ms: elapsed,
+  questions: Schema.optionalKey(count)
 })
 
 /**
@@ -201,7 +204,7 @@ export type ModelUse = typeof ModelUse.Type
  */
 export const ReplayCommit = Schema.Struct({
   commit: Schema.NonEmptyString,
-  changedFiles: Schema.Int,
+  changedFiles: count,
   baseline: RunTotals,
   normal: RunTotals,
   mismatches: Schema.Array(Mismatch),
@@ -250,9 +253,9 @@ export type NotReplayedCommit = typeof NotReplayedCommit.Type
  */
 export const FirstRun = Schema.Struct({
   commit: Schema.NonEmptyString,
-  baselineMs: Schema.Finite,
-  normalMs: Schema.optionalKey(Schema.Finite),
-  fastMs: Schema.optionalKey(Schema.Finite)
+  baselineMs: elapsed,
+  normalMs: Schema.optionalKey(elapsed),
+  fastMs: Schema.optionalKey(elapsed)
 })
 
 /**
@@ -273,8 +276,8 @@ export type FirstRun = typeof FirstRun.Type
  * @since 0.1.0
  */
 export const StartCost = Schema.Struct({
-  commitMs: Schema.Finite,
-  startMs: Schema.Finite
+  commitMs: elapsed,
+  startMs: elapsed
 })
 
 /**
@@ -439,26 +442,26 @@ export const ReplayReport = Schema.Struct({
   version: Schema.Literal(1),
   repository: Schema.NonEmptyString,
   commits: Schema.Array(ReplayCommit),
-  baselineWallMs: Schema.Finite,
-  normalWallMs: Schema.Finite,
+  baselineWallMs: elapsed,
+  normalWallMs: elapsed,
   speedup: Schema.Finite,
   speedupCommits: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-  jobs: Schema.optionalKey(Schema.Struct({ replayed: Schema.Int, total: Schema.Int })),
-  trialMs: Schema.optionalKey(Schema.Finite),
-  appliedMs: Schema.optionalKey(Schema.Finite),
-  reruns: Schema.optionalKey(Schema.Struct({ count: Schema.Int, ms: Schema.Finite })),
+  jobs: Schema.optionalKey(Schema.Struct({ replayed: count, total: count })),
+  trialMs: Schema.optionalKey(elapsed),
+  appliedMs: Schema.optionalKey(elapsed),
+  reruns: Schema.optionalKey(Schema.Struct({ count: count, ms: elapsed })),
   firstRun: Schema.optionalKey(FirstRun),
   startCost: Schema.optionalKey(StartCost),
   cold: Schema.optionalKey(Schema.NonEmptyString),
-  mismatches: Schema.Int,
-  fastWallMs: Schema.optionalKey(Schema.Finite),
-  baselineCpuMs: Schema.optionalKey(Schema.Finite),
-  normalCpuMs: Schema.optionalKey(Schema.Finite),
-  fastCpuMs: Schema.optionalKey(Schema.Finite),
+  mismatches: count,
+  fastWallMs: Schema.optionalKey(elapsed),
+  baselineCpuMs: Schema.optionalKey(elapsed),
+  normalCpuMs: Schema.optionalKey(elapsed),
+  fastCpuMs: Schema.optionalKey(elapsed),
   selection: Schema.optionalKey(Metrics),
   model: Schema.optionalKey(ModelUse),
   fastNotMeasured: Schema.optionalKey(Schema.NonEmptyString),
-  flaky: Schema.optionalKey(Schema.Int),
+  flaky: Schema.optionalKey(count),
   notReplayed: Schema.optionalKey(Schema.Array(NotReplayed)),
   notRead: Schema.optionalKey(Schema.Array(Unsupported)),
   notReplayedCommits: Schema.optionalKey(Schema.Array(NotReplayedCommit)),

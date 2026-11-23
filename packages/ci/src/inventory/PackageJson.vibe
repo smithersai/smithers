@@ -5,6 +5,7 @@
  * @since 0.1.0
  */
 
+import { wildcard } from "./Wildcard.ts"
 import { parse as parseYaml } from "yaml"
 import { longRunning, type Toolchain } from "../contract/Inventory.vibe"
 import { addStep, draft, fileProblem, note, type Parsed } from "./Draft.vibe"
@@ -69,7 +70,7 @@ const readToolchains = (file: string, manifest: Record<string, unknown>): Readon
   const tools: Array<Toolchain> = []
   const manager = manifest["packageManager"]
   if (typeof manager === "string") {
-    const [name, version] = manager.split("+")[0]?.split("@") as [string, string?]
+    const [name, version] = manager.split("+")[0]!.split("@") as [string, string?]
     if (name !== "") tools.push(version === undefined ? { name, source: file } : { name, source: file, version })
   }
   const engines = manifest["engines"]
@@ -142,12 +143,20 @@ export const readWorkspacePatterns = (
  */
 export interface WorkspaceGlobs {
   readonly include: ReadonlyArray<ReadonlyArray<string>>
-  readonly exclude: ReadonlyArray<RegExp>
+  readonly exclude: ReadonlyArray<Pick<RegExp, "test">>
   readonly unreadable: ReadonlyArray<string>
 }
 
-const segmentSource = (segment: string): string =>
-  segment.split("*").map((part) => part.replace(/[.+^$()|\\]/g, "\\$&")).join("[^/]*")
+const clean = (pattern: string): ReadonlyArray<string> =>
+  pattern.split("/").filter((segment) => segment !== "" && segment !== ".")
+
+/** A workspace segment's stars can consume anything inside one name. */
+const matchSegment = (segment: string, name: string): boolean =>
+  !segment.includes("*") ? segment === name : wildcard(
+    [...segment], [...name],
+    (token) => token === "*",
+    (token, ch) => token === "*" ? ch !== "/" : token === ch
+  )
 
 /**
  * A matcher for one path segment holding `*`.
@@ -155,26 +164,15 @@ const segmentSource = (segment: string): string =>
  * @category readers
  * @since 0.1.0
  */
-export const segmentMatcher = (segment: string): RegExp => new RegExp(`^${segmentSource(segment)}$`)
+export const segmentMatcher = (segment: string): Pick<RegExp, "test"> => ({ test: (name) => matchSegment(segment, name) })
 
-const clean = (pattern: string): ReadonlyArray<string> =>
-  pattern.split("/").filter((segment) => segment !== "" && segment !== ".")
-
-/** A matcher for a whole path. `**` also matches no directories at all. */
-const excludeMatcher = (parts: ReadonlyArray<string>): RegExp => {
-  if (parts.every((part) => part === "**")) return /^.*$/
-  let matcher = ""
-  let started = false
-  for (const part of parts) {
-    if (part === "**") {
-      matcher += started ? "(?:/.*)?" : "(?:.*/)?"
-    } else {
-      matcher += `${started ? "/" : ""}${segmentSource(part)}`
-      started = true
-    }
-  }
-  return new RegExp(`^${matcher}$`)
-}
+const excludeMatcher = (parts: ReadonlyArray<string>): Pick<RegExp, "test"> => ({
+  test: (path) => wildcard(
+    parts, path.split("/"),
+    (part) => part === "**",
+    (part, name) => part === "**" || matchSegment(part, name)
+  )
+})
 
 /**
  * Splits patterns into those to walk and those to subtract. A pattern using

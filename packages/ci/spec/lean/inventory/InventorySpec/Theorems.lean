@@ -489,13 +489,15 @@ theorem expandFields_length_le (secret : String → String → Bool) (fields : L
       · rename_i merged added hInclude
         split at hExpand
         · simp at hExpand
-        · simp only [Except.ok.injEq] at hExpand
-          rw [← hExpand, List.length_append]
-          refine applyInclude_length_le _ _ _ _ _ _ ?_ hInclude
-          have hCombined : combinations.length ≤ maxVariants :=
-            combine_length_le _ _ _ (by split <;> simp [maxVariants]) hCombine
-          simp only [List.length_nil, Nat.add_zero]
-          exact Nat.le_trans (applyExclude_length_le _ _) hCombined
+        · split at hExpand
+          · simp at hExpand
+          · simp only [Except.ok.injEq] at hExpand
+            rw [← hExpand, List.length_append]
+            refine applyInclude_length_le _ _ _ _ _ _ ?_ hInclude
+            have hCombined : combinations.length ≤ maxVariants :=
+              combine_length_le _ _ _ (by split <;> simp [maxVariants]) hCombine
+            simp only [List.length_nil, Nat.add_zero]
+            exact Nat.le_trans (applyExclude_length_le _ _) hCombined
   · simp at hExpand
 
 /-- Whatever is written, a matrix gives at most 256 variants. -/
@@ -557,9 +559,11 @@ theorem expandFields_cartesian (secret : String → String → Bool) (fields : L
   · rename_i combinations hCombine
     split at hExpand
     · simp at hExpand
-    · simp only [Except.ok.injEq] at hExpand
-      rw [← hExpand, List.append_nil, combine_length _ _ _ hCombine]
-      simp
+    · split at hExpand
+      · simp at hExpand
+      · simp only [Except.ok.injEq] at hExpand
+        rw [← hExpand, List.append_nil, combine_length _ _ _ hCombine]
+        simp
 
 /-! ## Globs -/
 

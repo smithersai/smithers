@@ -11,6 +11,7 @@
 
 import * as Brand from "effect/Brand"
 import * as Schema from "effect/Schema"
+import { variantKey as variantId } from "./TargetMap.vibe"
 import { reasonsSentence } from "./Reasons.vibe"
 
 /**
@@ -220,6 +221,9 @@ export const Job = Schema.Struct({
   steps: Schema.Array(Step),
   unsupported: Schema.Array(Unsupported),
   runsOn: Schema.optionalKey(Schema.String),
+  generated: Schema.optionalKey(Schema.Boolean),
+  // A partial trial filter keeps the excluded identities so a replay report can still name them.
+  omittedVariants: Schema.optionalKey(Schema.Array(Schema.Record(Schema.String, Schema.String))),
   runners: Schema.optionalKey(Schema.Array(Schema.String)),
   kept: Schema.optionalKey(Schema.Array(KeptStep)),
   unkept: Schema.optionalKey(Schema.Array(UnkeptStep))
@@ -500,7 +504,7 @@ export const runValues = (
   count: number
 ): Readonly<Record<(typeof runVariables)[number], string>> => ({
   GITHUB_RUN_ATTEMPT: "1",
-  GITHUB_RUN_ID: String(runIdBase + Number.parseInt(commit.slice(0, 9), 16)),
+  GITHUB_RUN_ID: String(runIdBase + (Number.parseInt(commit.slice(0, 9), 16) || 0)),
   GITHUB_RUN_NUMBER: String(count),
   GITHUB_SHA: commit,
   GITHUB_WORKFLOW_SHA: commit
@@ -526,7 +530,7 @@ export const givenTo = (
     ? given
     : Object.fromEntries(
       Object.entries(given).filter(([name]) =>
-        new RegExp(`\\$\\{?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Z0-9_])`).test(script)
+        new RegExp(`\\$\\{?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-zA-Z0-9_])`).test(script)
       )
     )
 
@@ -771,9 +775,6 @@ export interface FailedHere {
   readonly reason: string
 }
 
-const variantId = (variant: Readonly<Record<string, string>>): string =>
-  JSON.stringify(Object.entries(variant).sort(([a], [b]) => (a < b ? -1 : 1)))
-
 /**
  * An inventory without what failed here: a job that failed whole, or whose
  * every variant did, gets the feature {@link failsHere}, so {@link ci} leaves
@@ -787,15 +788,22 @@ const variantId = (variant: Readonly<Record<string, string>>): string =>
 export const withoutFailedHere = (inventory: Inventory, failed: ReadonlyArray<FailedHere>): Inventory => ({
   ...inventory,
   jobs: inventory.jobs.map((job) => {
-    const own = failed.filter((entry) => entry.job === job.id)
+    const variants = new Set(job.matrix.map(variantId))
+    const own = failed.filter((entry) =>
+      entry.job === job.id && (entry.variant === undefined || variants.has(variantId(entry.variant)))
+    )
     const [first] = own
     if (first === undefined) return job
     const gone = new Set(own.flatMap((entry) => entry.variant === undefined ? [] : [variantId(entry.variant)]))
-    const matrix = job.matrix.filter((variant) => !gone.has(variantId(variant)))
+    const survives = (variant: Readonly<Record<string, string>>): boolean => !gone.has(variantId(variant))
+    const matrix = job.matrix.filter(survives)
     const whole = own.find((entry) => entry.variant === undefined)
-    return whole === undefined && matrix.length > 0
-      ? { ...job, matrix }
-      : { ...job, unsupported: [...job.unsupported, { feature: failsHere, detail: (whole ?? first).reason }] }
+    if (whole !== undefined || matrix.length === 0) {
+      return { ...job, unsupported: [...job.unsupported, { feature: failsHere, detail: (whole ?? first).reason }] }
+    }
+    const runners = job.runners?.filter((_, index) => index < job.matrix.length && survives(job.matrix[index]!))
+    const omittedVariants = [...(job.omittedVariants ?? []), ...job.matrix.filter((variant) => !survives(variant))]
+    return { ...job, matrix, omittedVariants, ...(runners === undefined ? {} : { runners }) }
   })
 })
 
@@ -811,8 +819,12 @@ export const variantsFailedHere = (
   failed: ReadonlyArray<FailedHere>
 ): ReadonlyArray<NotReplayed> => {
   const kept = withoutFailedHere(inventory, failed)
-  return kept.jobs.flatMap((job) => {
-    const reasons = failed.filter((entry) => entry.job === job.id && entry.variant !== undefined)
+  return kept.jobs.flatMap((job, index) => {
+    const original = inventory.jobs[index]!
+    const variants = new Set([...original.matrix, ...(original.omittedVariants ?? [])].map(variantId))
+    const reasons = failed.filter((entry) =>
+      entry.job === job.id && entry.variant !== undefined && variants.has(variantId(entry.variant))
+    )
       .map((entry) => ({ feature: failsHere, detail: entry.reason }))
     return reasons.length === 0 || blockers(job).some((entry) => entry.feature === failsHere)
       ? []
@@ -866,14 +878,24 @@ export const treeOrder = (jobs: ReadonlyArray<Job>): ReadonlyMap<string, Readonl
   const byId = new Map(jobs.map((job) => [job.id, job]))
   const order = new Map<string, Array<string>>()
   const seen = new Set<string>()
-  const visit = (job: Job, tree: string): void => {
-    if (seen.has(job.id)) return
-    seen.add(job.id)
-    for (const id of job.needs) {
-      const need = byId.get(id)
-      if (need !== undefined && treeOf(need) === tree) visit(need, tree)
+  const visit = (first: Job, tree: string): void => {
+    const pending = [{ job: first, emit: false }]
+    const ids = order.get(tree) ?? []
+    order.set(tree, ids)
+    while (pending.length > 0) {
+      const { job, emit } = pending.pop()!
+      if (emit) {
+        ids.push(job.id)
+        continue
+      }
+      if (seen.has(job.id)) continue
+      seen.add(job.id)
+      pending.push({ job, emit: true })
+      for (let index = job.needs.length - 1; index >= 0; index--) {
+        const need = byId.get(job.needs[index]!)
+        if (need !== undefined && treeOf(need) === tree) pending.push({ job: need, emit: false })
+      }
     }
-    order.set(tree, [...(order.get(tree) ?? []), job.id])
   }
   // A run starts at the jobs nothing needs, such as a `ci` recipe; the rest are reached from them, or are in a cycle.
   const needed = new Set(jobs.flatMap((job) => job.needs))
@@ -934,8 +956,7 @@ export const hostActions: ReadonlyArray<string> = [
 /**
  * An action that only sends a job's results out: a later step of its job gets nothing from it, so a replay runs
  * the job without it and compares the job's verdict from the steps it ran. `fails` names the input that makes the
- * action fail on what it reports, when it has one: with that input true it can change the job's verdict, and the
- * step is read as any other action.
+ * action fail on what it reports. When set, only `safeValues` (by default, `false`) keep the action send-only.
  *
  * @category models
  * @since 0.1.0
@@ -944,6 +965,7 @@ export interface ResultAction {
   readonly action: string
   readonly why: string
   readonly fails?: string
+  readonly safeValues?: ReadonlyArray<string>
 }
 
 /**
@@ -954,11 +976,16 @@ export interface ResultAction {
  * @since 0.1.0
  */
 export const resultActions: ReadonlyArray<ResultAction> = [
-  { action: "actions/upload-artifact", why: "it stores files for other jobs and for people" },
+  {
+    action: "actions/upload-artifact",
+    why: "it stores files for other jobs and for people",
+    fails: "if-no-files-found",
+    safeValues: ["ignore", "warn"]
+  },
   { action: "actions/upload-artifact/merge", why: "it merges artifacts already stored" },
   { action: "actions/upload-pages-artifact", why: "it packs a site for a deploy job that runs after its own" },
-  { action: "codecov/codecov-action", why: "it sends coverage to Codecov" },
-  { action: "codecov/test-results-action", why: "it sends test results to Codecov" },
+  { action: "codecov/codecov-action", why: "it sends coverage to Codecov", fails: "fail_ci_if_error" },
+  { action: "codecov/test-results-action", why: "it sends test results to Codecov", fails: "fail_ci_if_error" },
   { action: "coverallsapp/github-action", why: "it sends coverage to Coveralls" },
   { action: "codacy/codacy-coverage-reporter-action", why: "it sends coverage to Codacy" },
   { action: "github/codeql-action/upload-sarif", why: "it sends findings to code scanning" },
@@ -1089,10 +1116,6 @@ export const expand = (text: string, variant: Readonly<Record<string, string>>):
     (whole, key: string) => Object.hasOwn(variant, key) ? String(variant[key]) : whole
   )
 
-// A variant by its values, whatever order its keys are in.
-const sameVariant = (variant: Readonly<Record<string, string>>): string =>
-  JSON.stringify(Object.keys(variant).sort().map((key) => [key, variant[key]]))
-
 /**
  * The runner one variant of a job runs on (`Job.runners`, else `Job.runsOn`
  * with the variant's values filled in), or `undefined` when the job names
@@ -1104,8 +1127,8 @@ const sameVariant = (variant: Readonly<Record<string, string>>): string =>
 export const runnerOf = (job: Job, variant: Readonly<Record<string, string>>): string | undefined => {
   const { matrix, runners, runsOn } = job
   if (runners !== undefined) {
-    const key = sameVariant(variant)
-    const at = matrix.findIndex((entry) => sameVariant(entry) === key)
+    const key = variantId(variant)
+    const at = matrix.findIndex((entry) => variantId(entry) === key)
     const found = runners[at]
     if (found !== undefined) return found
   }
@@ -1182,22 +1205,22 @@ export const generatedWorkflow = ".github/workflows/smithers-ci.yml"
  * @since 0.1.0
  */
 export const ciJobs = (inventory: Inventory): ReadonlyArray<Job> => {
-  const jobs = inventory.jobs.filter((job) => job.file !== generatedWorkflow)
+  const jobs = inventory.jobs.filter((job) => job.file !== generatedWorkflow || job.generated === false)
   const byId = new Map(jobs.map((job) => [job.id, job]))
   const triggered = jobs.filter((job) => job.triggers.some((trigger) => changeTriggers.includes(trigger)))
   const entries = jobs.filter((job) =>
     job.triggers.length === 0 && !job.file.includes("/") && job.id.slice(job.id.indexOf(":") + 1) === ciEntry
   )
   const kept = new Set<string>()
-  const keep = (job: Job): void => {
-    if (kept.has(job.id)) return
+  const pending = [...(triggered.length > 0 ? triggered : entries)]
+  for (const job of pending) {
+    if (kept.has(job.id)) continue
     kept.add(job.id)
     for (const id of job.needs) {
       const needed = byId.get(id)
-      if (needed !== undefined) keep(needed)
+      if (needed !== undefined) pending.push(needed)
     }
   }
-  for (const job of triggered.length > 0 ? triggered : entries) keep(job)
   return jobs.filter((job) => kept.has(job.id))
 }
 
@@ -1249,33 +1272,59 @@ export type NotReplayed = typeof NotReplayed.Type
 const sort = (
   inventory: Inventory
 ): { readonly kept: ReadonlyArray<Job>; readonly left: ReadonlyArray<NotReplayed> } => {
-  const byId = new Map(inventory.jobs.map((job) => [job.id, job]))
-  const reasons = new Map<string, ReadonlyArray<Unsupported>>()
-  const reasonsOf = (job: Job): ReadonlyArray<Unsupported> => {
-    const known = reasons.get(job.id)
-    if (known !== undefined) return known
-    // A job that needs itself is refused by the replay; here it only must not loop.
-    reasons.set(job.id, [])
-    const found = [
-      ...blockers(job),
-      ...job.needs.flatMap((id) => {
-        const need = byId.get(id)
-        return need === undefined || reasonsOf(need).length === 0
-          ? []
-          : [{ feature: needsLeftOut, detail: `${job.id} needs ${id}, which is not replayed` }]
-      })
-    ]
-    reasons.set(job.id, found)
-    return found
+  const jobs = ciJobs(inventory)
+  const byId = new Map(jobs.map((job) => [job.id, job]))
+  const dependents = new Map<string, Array<Job>>()
+  const pending = new Map<string, number>()
+  const ready: Array<Job> = []
+  const own = new Map(jobs.map((job) => [job.id, blockers(job)]))
+  const seen = new Set<string>()
+  for (const job of jobs) {
+    if (seen.has(job.id)) own.set(job.id, [{ feature: "malformed-job", detail: `${job.id} is defined more than once` }])
+    seen.add(job.id)
   }
+  for (const job of jobs) {
+    if (own.get(job.id)!.length > 0) continue
+    pending.set(job.id, job.needs.length)
+    if (job.needs.length === 0) ready.push(job)
+    for (const id of job.needs) {
+      const next = dependents.get(id)
+      if (next === undefined) dependents.set(id, [job])
+      else next.push(job)
+    }
+  }
+  // Only a job whose prerequisites have all become ready can unblock another.
+  // A missing or cyclic prerequisite never enters the queue.
+  for (const job of ready) {
+    for (const next of dependents.get(job.id) ?? []) {
+      const count = pending.get(next.id)! - 1
+      pending.set(next.id, count)
+      if (count === 0) ready.push(next)
+    }
+  }
+  const runnable = new Set(ready.map((job) => job.id))
+  const reasonsOf = (job: Job): ReadonlyArray<Unsupported> => [
+    ...own.get(job.id)!,
+    ...job.needs.filter((id) => !runnable.has(id)).map((id) => ({
+      feature: needsLeftOut,
+      detail: byId.has(id) ? `${job.id} needs ${id}, which is not replayed` : `${job.id} needs ${id}, which is missing`
+    }))
+  ]
   /** The nearest jobs with a step that a job waits for, looking through jobs that only group others. */
-  const waitsFor = (job: Job, seen: Set<string>): ReadonlyArray<string> =>
-    job.needs.flatMap((id) => {
-      const need = byId.get(id)
-      if (need === undefined || seen.has(id)) return []
+  const waitsFor = (job: Job): ReadonlyArray<string> => {
+    const seen = new Set<string>()
+    const pending = [...job.needs].reverse()
+    const result: Array<string> = []
+    while (pending.length > 0) {
+      const id = pending.pop()!
+      if (seen.has(id)) continue
       seen.add(id)
-      return need.steps.length > 0 ? [id] : waitsFor(need, seen)
-    })
+      const need = byId.get(id)!
+      if (need.steps.length > 0) result.push(id)
+      else for (let index = need.needs.length - 1; index >= 0; index--) pending.push(need.needs[index]!)
+    }
+    return result
+  }
   /** Why a job is listed as left out: its reasons, or that all it had was host actions. */
   const listedFor = (job: Job): ReadonlyArray<Unsupported> => {
     const found = reasonsOf(job)
@@ -1284,18 +1333,20 @@ const sort = (
       ? [{ feature: noCommand, detail: `${job.id} has no command to run` }]
       : []
   }
-  const jobs = ciJobs(inventory)
-  const kept = jobs.filter((job) => job.steps.length > 0 && reasonsOf(job).length === 0)
-  // The kept jobs of a shared tree take that tree's places in the order they run.
-  const order = treeOrder(jobs)
+  const kept = jobs.filter((job) => job.steps.length > 0 && runnable.has(job.id))
+  // A tree's jobs occupy their original slots in dependency order.
   const queues = new Map<string, Array<Job>>()
-  for (const [tree, ids] of order) {
-    queues.set(tree, kept.filter((job) => treeOf(job) === tree).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)))
+  for (const [tree, ids] of treeOrder(jobs)) {
+    const ordered = ids.map((id) => byId.get(id)!).filter((job) => runnable.has(job.id) && job.steps.length > 0)
+    queues.set(tree, ordered.reverse())
   }
-  const next = (job: Job): Job => queues.get(treeOf(job) ?? "")?.shift() ?? job
+  const next = (job: Job): Job => queues.get(treeOf(job) ?? "")?.pop() ?? job
   return {
-    kept: kept.map(next).map((job) => ({ ...job, needs: waitsFor(job, new Set()) })),
-    left: jobs.filter((job) => listedFor(job).length > 0).map((job) => ({ job: job.id, reasons: listedFor(job) }))
+    kept: kept.map(next).map((job) => ({ ...job, needs: waitsFor(job) })),
+    left: jobs.flatMap((job) => {
+      const reasons = listedFor(job)
+      return reasons.length === 0 ? [] : [{ job: job.id, reasons }]
+    })
   }
 }
 
@@ -1347,7 +1398,11 @@ export const withheldOf = (inventory: Inventory): ReadonlyArray<string> =>
  * @category accessors
  * @since 0.1.0
  */
-export const keptOnRunner = (job: Job): boolean => job.runsOn === undefined || hostOf(job.runsOn) === "linux"
+export const keptOnRunner = (job: Job): boolean =>
+  (job.matrix.length === 0 ? [{}] : job.matrix).every((variant) => {
+    const runner = runnerOf(job, variant)
+    return runner === undefined || (!unknownRunner(runner) && hostOf(runner) === "linux")
+  })
 
 /**
  * The inventory as a machine that keeps a job's programs until the job ends

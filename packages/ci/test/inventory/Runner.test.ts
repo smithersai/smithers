@@ -556,9 +556,7 @@ describe("write", () => {
     const glob = (take: ReadonlyArray<string>, leave: ReadonlyArray<string> = []): Residual =>
       named(`glob:${JSON.stringify({ take, leave })}`)
     const hashed = (...names: ReadonlyArray<string>): string =>
-      `[${
-        sha256(names.map((name) => `${sha256(files[name] as string).toString("hex")}  -\n`).join("")).toString("hex")
-      }]`
+      `[${createHash("sha256").update(Buffer.concat(names.map((name) => sha256(files[name]!)))).digest("hex")}]`
     const locks = "^(.*/)?lock\\.json(/.*)?$"
     pass({ first: true }, "true")
     expect(valueOf(glob([locks]))).toBe(hashed("lock.json", "pkg/a/lock.json", "pkg/b/lock.json", "vendor/x/lock.json"))
@@ -568,6 +566,14 @@ describe("write", () => {
     )
     expect(valueOf(glob(["^none(/.*)?$"]))).toBe("[]")
     expect(valueOf(glob([locks], ["^.*$"]))).toBe("[]")
+    const ordered = { take: [locks, "^pkg/a/lock"], leave: ["^pkg/"], order: [0, -1, 1] }
+    expect(valueOf(named(`glob:${JSON.stringify(ordered)}`))).toBe(
+      hashed("lock.json", "pkg/a/lock.json", "vendor/x/lock.json")
+    )
+    writeFileSync(join(at.repo, "line\nbreak"), "one file")
+    const literal = named(`hash:${JSON.stringify(["line\nbreak"])}`)
+    expect(valueOf(glob(["^line[^/]*break$"]))).toBe(valueOf(literal))
+    expect(valueOf(literal)).toBe(`[${createHash("sha256").update(sha256("one file")).digest("hex")}]`)
     // A file no pattern names changes nothing, and one that a pattern names changes the value.
     writeFileSync(join(at.repo, "pkg/a/other.txt"), "changed\n")
     expect(valueOf(glob([locks]))).toBe(hashed("lock.json", "pkg/a/lock.json", "pkg/b/lock.json", "vendor/x/lock.json"))
@@ -575,6 +581,17 @@ describe("write", () => {
     expect(valueOf(glob([locks]))).not.toBe(
       hashed("lock.json", "pkg/a/lock.json", "pkg/b/lock.json", "vendor/x/lock.json")
     )
+  })
+
+  it("preserves delimiter lines and quotes in a workflow name", () => {
+    const name = "A team's workflow\n__SMITHERS_CI_LIB__\nlast line"
+    expect(pass({ alone: true }, "printf %s \"$GITHUB_WORKFLOW\"", {
+      job: job({ variables: { GITHUB_WORKFLOW: name } })
+    })).toBe(name)
+  })
+
+  it("refuses an unrepresentable matrix axis before emitting a wrapper", () => {
+    expect(write(job({ matrixKeys: ["node version"] }), defaults, "true")).toHaveProperty("problem")
   })
 
   it("fills in matrix values and keeps each variant's state apart", () => {
@@ -781,6 +798,15 @@ describe("write", () => {
       expect(tempIn(at.repo, "/proc")).toBe(tempIn(at.repo, undefined))
     })
 
+    it("keeps interleaved workflow runs in the same checkout independent", () => {
+      const invocation = (id: string) => ({ env: { GITHUB_RUN_ID: id, GITHUB_RUN_ATTEMPT: "1", VALUE: id } })
+      const start = "printf \"HELD=%s\\n\" \"$VALUE\" >> \"$GITHUB_ENV\""
+      pass({ first: true, job: "build" }, start, invocation("21"))
+      pass({ first: true, job: "build" }, start, invocation("22"))
+      expect(pass({ before: ["STEP"] }, "printf %s \"$HELD\"", invocation("21"))).toBe("21")
+      expect(pass({ before: ["STEP"] }, "printf %s \"$HELD\"", invocation("22"))).toBe("22")
+    })
+
     it("removes the state of a checkout that is gone when the next job starts", () => {
       const gone = place(1)
       const temp = pass({ first: true }, `echo "$RUNNER_TEMP"`, { cwd: gone.repo }).trim()
@@ -861,6 +887,15 @@ describe("write", () => {
       expect(ran.status).toBe(1)
       expect(ran.stdout).toBe("")
       expect(mine()).toHaveLength(1)
+    })
+  })
+
+  it("diagnoses invalid runner variables independently of expression depth", () => {
+    expect(write(job(), { ...defaults, fills: [["value", named("future-kind")]] }, "true")).toEqual({
+      problem: "the expression names an unknown runner variable"
+    })
+    expect(write(job(), { ...defaults, fills: [["value", named("hash:invalid")]] }, "true")).toEqual({
+      problem: "the expression carries malformed runner data"
     })
   })
 
@@ -1333,6 +1368,28 @@ describe("write", () => {
       // Text is ordered without case, which a shell does not do.
       expect(valueAt(binary("<", os, literal("M")), at({ os: "linux", go: "17" }))).toBe("[true]")
       expect(valueAt(binary("<", os, literal("M")), at({ os: "mac", go: "17" }))).toBe("[false]")
+    })
+
+    it("compares typed operands with runtime text using their numeric values", () => {
+      for (
+        const [held, runtime, expected] of [
+          [20, "20", true],
+          [20, "0", false],
+          [20, "0x14", true],
+          [true, "1", true],
+          [false, "", true],
+          [true, "true", false],
+          ["20", "020", false]
+        ] as const
+      ) {
+        const variant = { n: String(held) }
+        const facts = job({ matrixKeys: ["n"], variants: [variant], typedVariants: [{ n: held }] })
+        const expression = binary("==", named("matrix:n", false, true), named("process:VALUE"))
+        expect(valueAt(expression, { ...at(variant, facts), env: { VALUE: runtime } })).toBe(`[${expected}]`)
+      }
+      const facts = job({ matrixKeys: ["constructor"], variants: [{}], typedVariants: [{}] })
+      const expression = binary("==", named("matrix:constructor", false, true), named("process:VALUE"))
+      expect(valueAt(expression, { ...at({ constructor: "" }, facts), env: { VALUE: "0" } })).toBe("[true]")
     })
 
     it("gives a key written as a number or a boolean that type, and keeps other text", () => {

@@ -36,7 +36,7 @@
  * @since 0.1.0
  */
 
-import { asScalar, isRecord } from "./Values.vibe"
+import { actionInputs, asScalar } from "./Values.vibe"
 
 /**
  * One tool a setup action puts on the machine. `version` is the text of the
@@ -105,6 +105,20 @@ const preparation = /-(?:dependencies|deps|env|environment|cache|config)$/
 const forms = [/^setup-(.+)$/, /^(.+)-setup$/, /^install-(.+)$/, /^(.+)-installer$/, /^(.+)-toolchain$/]
 
 const named = (tool: string): string => spellings.get(tool) ?? tool
+
+/** A repository can name a program, never a path or a shell option. */
+export const validToolName = (name: string): boolean => /^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(name)
+
+/** Actions whose tool-only substitution the inventory models. */
+const modeled = new Set([
+  ...otherNames.keys(),
+  "actions/setup-node", "actions/setup-python", "actions/setup-go", "actions/setup-java", "actions/setup-dotnet",
+  "ruby/setup-ruby", "astral-sh/setup-uv", "oven-sh/setup-bun", "pnpm/action-setup", "extractions/setup-just",
+  "docker/setup-buildx-action", "docker/setup-compose-action", "bufbuild/buf-setup-action", "snok/install-poetry",
+  "determinatesystems/nix-installer-action", "dtolnay/rust-toolchain", "r-lib/actions/setup-r", "supabase/setup-cli",
+  "actions-rust-lang/setup-rust-toolchain", "homebrew/actions/setup-homebrew", "hashicorp/setup-terraform",
+  "mlugg/setup-zig", "gradle/actions/setup-gradle"
+])
 
 /** The tool an action's name says it sets up, or `undefined` when its name says no such thing. */
 const toolOf = (action: string): string | undefined => {
@@ -212,11 +226,14 @@ const toolsOf = (action: string, name: string, inputs: Record<string, unknown>, 
  * @since 0.1.0
  */
 export const readSetup = (uses: string, inputs: unknown): Setup | undefined => {
-  const [action, ref] = uses.split("@") as [string, string | undefined]
+  const [path, ref] = uses.split("@") as [string, string | undefined]
+  const action = path.toLowerCase()
   if (action.startsWith(".") || action.includes(":") || !action.includes("/")) return undefined
   const name = toolOf(action)
   if (name === undefined) return undefined
-  const given = isRecord(inputs) ? inputs : {}
-  if (name === "") return { tools: listed(given, ref) }
-  return { tools: toolsOf(action, name, given, ref), ...alsoDoes(action, given) }
+  const given = actionInputs(inputs)
+  const tools = name === "" ? listed(given, ref) : toolsOf(action, name, given, ref)
+  if (tools.some((entry) => !validToolName(entry.name))) return { tools: [], problem: "names an invalid tool" }
+  if (!modeled.has(action)) return { tools, problem: "has unmodeled setup behavior" }
+  return { tools, ...alsoDoes(action, given) }
 }

@@ -47,6 +47,11 @@ describe("a command that leaves a program running", () => {
   it.each([
     ["python3 -m http.server 8767 --bind 127.0.0.1 --directory site > /dev/null 2>&1 &", ["python3"]],
     ["npm start &", ["npm"]],
+    ["( cd api && server & )", ["server"]],
+    ["first & second & wait %1", ["second"]],
+    ["first & second & wait $!", ["first"]],
+    ["first & wait 12345", ["first"]],
+    ["x=$(echo \")\" \")\") && app &", ["app"]],
     ["nohup ./bin/server --port 3000 > server.log 2>&1 &", ["server"]],
     ["PORT=3000 node server.js &\nsleep 1", ["node"]],
     ["(cd site && python3 -m http.server 8000) &", ["python3"]],

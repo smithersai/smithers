@@ -6,7 +6,7 @@
 
 import type { Toolchain } from "../contract/Inventory.vibe"
 
-const firstLine = (text: string): string | undefined => text.trim().split(/\s/)[0] || undefined
+const firstLine = (text: string): string | undefined => /\S+/.exec(text.replace(/#[^\n]*/g, ""))?.[0]
 
 const pattern = (expression: RegExp) => (text: string): string | undefined => expression.exec(text)?.[1]
 
@@ -26,7 +26,7 @@ const readers: ReadonlyMap<string, readonly [tool: string, read: (text: string) 
   ]],
   ["rust-toolchain.toml", ["rust", channel]],
   ["go.mod", ["go", pattern(/^go\s+(\S+)/m)]],
-  ["build.zig.zon", ["zig", pattern(/\.minimum_zig_version\s*=\s*"([^"]+)"/)]],
+  ["build.zig.zon", ["zig", (text) => /\.minimum_zig_version\s*=\s*"([^"]+)"/.exec(text.replace(/\/\/[^\n]*/g, ""))?.[1]]],
   ["flake.nix", ["nix", () => undefined]]
 ])
 
@@ -41,7 +41,7 @@ export const toolFiles: ReadonlyArray<string> = [...readers.keys(), ".tool-versi
 const readToolVersions = (text: string): ReadonlyArray<Toolchain> =>
   text.split("\n").flatMap((line) => {
     const [name, version] = line.replace(/#.*/, "").trim().split(/\s+/)
-    return name && version ? [{ name, source: ".tool-versions", version }] : []
+    return name && version && /^[\w.+-]+$/.test(name) && /^[\w.+-]+$/.test(version) ? [{ name, source: ".tool-versions", version }] : []
   })
 
 /**

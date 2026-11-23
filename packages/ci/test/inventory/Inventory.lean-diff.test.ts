@@ -935,17 +935,27 @@ const compareMatrix = async (raw: unknown): Promise<void> => {
     ...(raw === undefined ? {} : { raw: wire(raw) }),
     secrets: secretsOf(raw)
   }) as {
+    readonly types: ReadonlyArray<ReadonlyArray<readonly [string, string]>>
     readonly variants: ReadonlyArray<ReadonlyArray<readonly [string, string]>>
     readonly keys: ReadonlyArray<string>
     readonly problem: string | null
   }
   expect({
     raw,
+    types: (mine.typedVariants ?? []).map((variant) =>
+      sorted(Object.entries(variant).map(([key, held]) => [key, held === null ? "null" : typeof held]))
+    ),
     variants: mine.variants.map((variant) => sorted(Object.entries(variant))),
     keys: [...mine.keys],
     problem: mine.problem ?? null
   })
-    .toEqual({ raw, variants: theirs.variants.map(sorted), keys: theirs.keys, problem: theirs.problem })
+    .toEqual({
+      raw,
+      types: theirs.types.map(sorted),
+      variants: theirs.variants.map(sorted),
+      keys: theirs.keys,
+      problem: theirs.problem
+    })
   expect(mine.variants.length).toBeLessThanOrEqual(256)
   counts[mine.problem === undefined ? "expanded" : "refused"] += 1
 }
@@ -1090,7 +1100,12 @@ const compareFiles = async (patterns: ReadonlyArray<string>, paths: ReadonlyArra
   const takes = mine?.take.map((regex) => new RegExp(regex))
   const leaves = mine?.leave.map((regex) => new RegExp(regex)) ?? []
   const names = paths.map((path) =>
-    takes === undefined ? null : takes.some((regex) => regex.test(path)) && !leaves.some((regex) => regex.test(path))
+    takes === undefined ? null : mine?.order === undefined
+      ? takes.some((regex) => regex.test(path)) && !leaves.some((regex) => regex.test(path))
+      : mine.order.reduce(
+        (held, index) => (index >= 0 ? takes[index] : leaves[-index - 1])!.test(path) ? index >= 0 : held,
+        false
+      )
   )
   expect({ patterns, paths, names }).toEqual({
     patterns,

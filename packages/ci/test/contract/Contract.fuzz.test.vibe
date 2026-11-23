@@ -265,6 +265,14 @@ describe("every contract schema", () => {
   ])
 
   for (const [name, schema] of schemas) {
+    const samples = name === "Selection.Row"
+      ? Arbitrary.map(Arbitrary.all({
+        commit: Arbitrary.schema(Schema.NonEmptyString),
+        target: Arbitrary.schema(Schema.NonEmptyString),
+        features: Arbitrary.schema(SelectionFile.Features),
+        attempts: Arbitrary.array(boolean, { minLength: 1, maxLength: 8 })
+      }), (row) => ({ ...row, failed: !row.attempts.includes(true), flaky: row.attempts.includes(false) && row.attempts.includes(true) }))
+      : Arbitrary.schema(schema)
     const runs = large.has(name) ? 40 : 120
     const is = Schema.is(schema)
     const encode = Schema.encodeSync(schema)
@@ -273,7 +281,7 @@ describe("every contract schema", () => {
 
     prop(
       `${name}: a value is one, and comes back from its encoding and from JSON`,
-      Arbitrary.schema(schema),
+      samples,
       (value) => {
         const encoded = encode(value)
         const decoded = decode(encoded)
@@ -286,7 +294,7 @@ describe("every contract schema", () => {
 
     prop(
       `${name}: a spoiled document is refused with a schema error, or decodes to a value`,
-      Arbitrary.all({ value: Arbitrary.schema(schema), picks }),
+      Arbitrary.all({ value: samples, picks }),
       ({ picks, value }) => {
         const spoiled = spoil(parse(JSON.stringify(encode(value))), picks)
         const exit = decodeExit(spoiled)
@@ -299,7 +307,7 @@ describe("every contract schema", () => {
 
     prop(
       `${name}: keys it does not name are dropped, a prototype's among them`,
-      Arbitrary.schema(schema),
+      samples,
       (value) => {
         const encoded = encode(value)
         if (typeof encoded !== "object" || encoded === null) return true
@@ -334,6 +342,8 @@ describe("every contract schema", () => {
       ["no repository", refused(reportSchema, { ...report, repository: "" })],
       ["no commits", refused(reportSchema, { ...report, commits: undefined })],
       ["commits not a list", refused(reportSchema, { ...report, commits: { length: 0 } })],
+      ["elapsed time below zero", refused(reportSchema, { ...report, trialMs: -1 })],
+      ["a negative rerun count", refused(reportSchema, { ...report, reruns: { count: -1, ms: 0 } })],
       ["mismatches 0.5", refused(reportSchema, { ...report, mismatches: 0.5 })],
       ["mismatches past a safe integer", refused(reportSchema, { ...report, mismatches: 2 ** 53 })],
       ["speedupCommits -1", refused(reportSchema, { ...report, speedupCommits: -1 })],
@@ -472,9 +482,24 @@ describe("Selection", () => {
     testCount: 0,
     graphDistance: 0
   }
+  cases("selection rows agree with their attempts and have bounded measurements", () => {
+    const row = { commit: "head", target: "check", attempts: [true, false], failed: false, flaky: true, features }
+    const valid = Schema.is(SelectionFile.Row)
+    return [
+      ["mixed attempts", valid(row)],
+      ["contradictory failure", !valid({ ...row, failed: true })],
+      ["contradictory flakiness", !valid({ ...row, flaky: false })],
+      ["no attempts", !valid({ ...row, attempts: [] })],
+      ["unreachable", valid({ ...row, features: { ...features, graphDistance: -1 } })],
+      ["unknown distance", !valid({ ...row, features: { ...features, graphDistance: -2 } })],
+      ["negative count", !valid({ ...row, features: { ...features, testCount: -1 } })],
+      ["impossible rate", !valid({ ...row, features: { ...features, failureRates: { ...features.failureRates, d7: 1.1 } } })]
+    ]
+  })
+
   const row = Arbitrary.map(
     Arbitrary.all({ commit: pick(["c1", "c2", "c3", "__proto__"]), target: pick(names), failed: boolean }),
-    (entry): SelectionFile.Row => ({ ...entry, features, attempts: [], flaky: false })
+    (entry): SelectionFile.Row => ({ ...entry, features, attempts: [!entry.failed], flaky: false })
   )
   const rows = Arbitrary.array(row, { maxLength: 16 })
   const selected = Arbitrary.array(
@@ -583,7 +608,8 @@ describe("Closure", () => {
       ["under", ClosureFile.isAffectedBy(closure, ["src/deep/a.ts"])],
       ["under, with the slash", ClosureFile.isAffectedBy(closure, ["lib/a.ts"])],
       ["a longer name", !ClosureFile.isAffectedBy(closure, ["srcx/a.ts"])],
-      ["the directory's own name", !ClosureFile.isAffectedBy(closure, ["src"])],
+      ["the checkout root", ClosureFile.isAffectedBy({ ...closure, directories: ["./"] }, ["README"])],
+      ["the directory's own name", ClosureFile.isAffectedBy(closure, ["src"])],
       ["a parent", !ClosureFile.isAffectedBy(closure, ["../src/a.ts"])]
     ]
   })
@@ -797,6 +823,13 @@ describe("Command", () => {
       ["many lines", CommandFile.errorLine(new Error("a\n\tb\r\n  c")) === "a b c"]
     ]
   })
+
+  cases("diagnostics redact authentication without changing ordinary package names or URL paths", () => [
+    ["nested authentication fields", CommandFile.errorLine({ code: "failed", reason: { headers: { Authorization: "example" }, api_key: "opaque", path: "/tmp" } }) === "code: failed, reason: path: /tmp"],
+    ["a quoted password", CommandFile.errorLine('fetch https://u:pa"ss@host/path@name?filter=@value') === "fetch https://host/path@name?filter=@value"],
+    ["a package specifier", CommandFile.errorLine("missing npm:lib@2") === "missing npm:lib@2"],
+    ["an authorization header", CommandFile.errorLine("Authorization: Bearer placeholder") === "Authorization: Bearer [redacted]"]
+  ])
 
   const userinfo = "abcXYZ019-._~!$&'()*+,;=%:".split("")
   const word = (characters: ReadonlyArray<string>, most: number): Arbitrary.Arbitrary<string> =>
@@ -1048,6 +1081,7 @@ describe("Inventory", () => {
       const without = InventoryFile.withoutFailedHere(inventory, failed)
       const after = without.jobs[at] as InventoryFile.Job
       const variants = InventoryFile.variantsFailedHere(inventory, failed)
+      if (!whole && job.matrix.length === 0) return after === job && variants.length === 0
       const gone = after.unsupported.some((entry) =>
         entry.feature === InventoryFile.failsHere && entry.detail === "exit 1"
       )
@@ -1133,7 +1167,7 @@ describe("Inventory", () => {
       const given = { [name]: "v", OTHER_NAME: "w" }
       const written = `${before}${braces ? `\${${name}` : `$${name}`}${suffix}`
       const found = InventoryFile.givenTo(written, given)
-      const names = /^[A-Z0-9_]/.test(suffix)
+      const names = /^[a-zA-Z0-9_]/.test(suffix)
       return Object.hasOwn(found, name) === !names && !Object.hasOwn(found, "OTHER_NAME") &&
         InventoryFile.givenTo(`${InventoryFile.runnerEntry} ${written}`, given) === given &&
         Object.keys(InventoryFile.givenTo("true", given)).length === 0

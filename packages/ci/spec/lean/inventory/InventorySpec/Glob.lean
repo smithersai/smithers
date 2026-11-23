@@ -133,9 +133,19 @@ def normalize (pattern : List Nat) : List Nat := stripTrailing (stripLeading pat
 def leaves (path : List Nat) : Bool :=
   path.isEmpty || path.head? == some slash || path.head? == some 126 || (splitOn slash path).contains [46, 46]
 
+/-- A globstar crosses directories only when it forms a whole path segment. -/
+def wholeGlobstars : Bool → List GlobToken → List GlobToken
+  | _, [] => []
+  | boundary, .anyDirs :: more =>
+    (if boundary then [.anyDirs] else [.anyName, .literal slash]) ++ wholeGlobstars true more
+  | boundary, .anyPath :: more =>
+    (if boundary && more.isEmpty then .anyPath else .anyName) :: wholeGlobstars false more
+  | _, .literal unit :: more => .literal unit :: wholeGlobstars (unit == slash) more
+  | _, token :: more => token :: wholeGlobstars false more
+
 /-- The pieces of a pattern, or `none` for a pattern that names nothing inside the repository. -/
 def globOf (pattern : List Nat) : Option (List GlobToken) :=
-  if leaves (normalize pattern) then none else scanGlob 0 (normalize pattern)
+  if leaves (normalize pattern) then none else (scanGlob 0 (normalize pattern)).map (wholeGlobstars true)
 
 /-- Whether a code unit means something in a regular expression outside a set. -/
 def isSpecial (unit : Nat) : Bool :=
@@ -220,6 +230,7 @@ def globMatches (pattern path : String) : Option Bool :=
 structure Files (α : Type) where
   take : List α
   leave : List α
+  order : List Int := []
 
 /-- The lines of a list of patterns, each of which may hold several, without the space around them. -/
 def patternLines (patterns : List String) : List (List Char) :=
@@ -227,7 +238,7 @@ def patternLines (patterns : List String) : List (List Char) :=
 
 /-- The patterns of lines, as pieces. Empty lines and comments are passed over; a leading `!` leaves files out. -/
 def readLines : List (List Char) → Files (List GlobToken) → Option (Files (List GlobToken))
-  | [], files => some { take := files.take.reverse, leave := files.leave.reverse }
+  | [], files => some { take := files.take.reverse, leave := files.leave.reverse, order := files.order.reverse }
   | line :: rest, files =>
     if line.isEmpty || line.head? == some '#' then readLines rest files
     else
@@ -235,8 +246,8 @@ def readLines : List (List Char) → Files (List GlobToken) → Option (Files (L
       match globOf (utf16 (if left then line.drop 1 else line)) with
       | none => none
       | some tokens =>
-        readLines rest (if left then { files with leave := tokens :: files.leave }
-          else { files with take := tokens :: files.take })
+        readLines rest (if left then { files with leave := tokens :: files.leave, order := -(Int.ofNat files.leave.length + 1) :: files.order }
+          else { files with take := tokens :: files.take, order := Int.ofNat files.take.length :: files.order })
 
 /-- The files a list of patterns names, as pieces. -/
 def filesTokens (patterns : List String) : Option (Files (List GlobToken)) :=
@@ -251,12 +262,15 @@ them takes a file.
 def filesOf (patterns : List String) : Option (Files String) :=
   (filesTokens patterns).map fun files =>
     let regex (tokens : List GlobToken) : String := String.ofList (ofUtf16 (renderGlob tokens))
-    { take := files.take.map regex, leave := files.leave.map regex }
+    { take := files.take.map regex, leave := files.leave.map regex, order := files.order }
 
 /-- Whether a list of patterns names a path: one of `take` does and none of `leave`. -/
 def filesMatch (patterns : List String) (path : String) : Option Bool :=
   (filesTokens patterns).map fun files =>
     let units := utf16 path.toList
-    files.take.any (matchTokens · units) && !files.leave.any (matchTokens · units)
+    files.order.foldl (fun held index =>
+      let included := index >= 0
+      let rule := if included then files.take[index.toNat]? else files.leave[(-index - 1).toNat]?
+      if rule.any (matchTokens · units) then included else held) false
 
 end InventorySpec

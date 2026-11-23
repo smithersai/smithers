@@ -87,14 +87,19 @@ const harmlessAttributes = new Set([
   "private"
 ])
 const platforms = new Set(["android", "dragonfly", "freebsd", "linux", "macos", "netbsd", "openbsd", "unix", "windows"])
-const thisPlatform = new Set(["linux", "unix"])
+const platformRunners = new Map([["linux", "ubuntu-latest"], ["macos", "macos-latest"], ["windows", "windows-latest"]])
+const platformOf = (host: string): string => host === "darwin" ? "macos" : host === "win32" ? "windows" : host
 
-/** The string a literal holds, or `undefined` for anything `just` must evaluate. */
-const literal = (text: string): string | undefined =>
-  (/^'([^']*)'(?:\s+#.*)?$/.exec(text) ?? /^"([^"\\]*)"(?:\s+#.*)?$/.exec(text))?.[1]
+/** The quote and backslash escapes supported in a double-quoted literal. */
+const unescape = (text: string): string => text.replace(/\\(["\\])/g, "$1")
+
+const literal = (text: string): string | undefined => {
+  const match = /^(?:'([^']*)'|"((?:[^"\\]|\\["\\])*)")(?:\s+#.*)?$/.exec(text)
+  return match === null ? undefined : match[1] ?? unescape(match[2] as string)
+}
 
 const quotedStrings = (text: string): ReadonlyArray<string> =>
-  [...text.matchAll(/'([^']*)'|"([^"\\]*)"/g)].map((match) => (match[1] ?? match[2]) as string)
+  [...text.matchAll(/'([^']*)'|"((?:[^"\\]|\\["\\])*)"/g)].map((match) => match[1] ?? unescape(match[2] as string))
 
 /** Where unquoted text ends: at the first `stop` character outside quotes and parentheses, or the end. */
 const unquotedEnd = (text: string, stop: string, from = 0): number => {
@@ -103,7 +108,8 @@ const unquotedEnd = (text: string, stop: string, from = 0): number => {
   for (let index = from; index < text.length; index++) {
     const char = text.charAt(index)
     if (quote !== "") {
-      if (char === quote) quote = ""
+      if (quote === '"' && char === "\\") index++
+      else if (char === quote) quote = ""
     } else if (char === "'" || char === `"`) {
       quote = char
     } else if (char === "(") {
@@ -132,8 +138,9 @@ const scanWords = (text: string, stopAtColon: boolean) => {
   for (let index = 0; index < text.length; index++) {
     const char = text.charAt(index)
     if (quote !== "") {
-      if (char === quote) quote = ""
       word += char
+      if (quote === '"' && char === "\\") word += text.charAt(++index)
+      else if (char === quote) quote = ""
     } else if (char === "'" || char === `"`) {
       quote = char
       word += char
@@ -299,14 +306,27 @@ const parse = (text: string): Justfile => {
 
 const interpolate = (text: string, values: ReadonlyMap<string, string | undefined>) => {
   const unresolved: Array<string> = []
-  const resolved = text.replace(/\{\{\{\{|\{\{(.*?)\}\}/g, (whole, inner: string | undefined) => {
-    if (inner === undefined) return "{{"
-    const value = values.get(inner.trim())
-    if (value !== undefined) return value
-    unresolved.push(inner.trim())
-    return whole
-  })
-  return { text: resolved, unresolved }
+  let resolved = ""
+  let at = 0
+  for (let start = text.indexOf("{{"); start !== -1; start = text.indexOf("{{", at)) {
+    resolved += text.slice(at, start)
+    if (text.startsWith("{{{{", start)) {
+      resolved += "{{"
+      at = start + 4
+      continue
+    }
+    const end = text.indexOf("}}", start + 2)
+    if (end === -1) {
+      unresolved.push("an unclosed interpolation")
+      return { text: resolved, unresolved }
+    }
+    const name = text.slice(start + 2, end).trim()
+    const value = values.get(name)
+    if (value === undefined) unresolved.push(name)
+    else resolved += value
+    at = end + 2
+  }
+  return { text: resolved + text.slice(at), unresolved }
 }
 
 /**
@@ -382,7 +402,7 @@ const indentOf = (line: BodyLine): number => line.text.length - line.text.trimSt
 
 const inShell = (justfile: Justfile, line: string): string => {
   if (justfile.shell !== undefined) return `${justfile.shell} ${shellQuote(line)}`
-  return isPlainCommand(line) ? line : `sh -cu ${shellQuote(line)}`
+  return isPlainCommand(line.trimEnd()) ? line.trimEnd() : `sh -cu ${shellQuote(line)}`
 }
 
 const readLine = (context: RecipeContext, line: BodyLine): void => {
@@ -395,9 +415,11 @@ const readLine = (context: RecipeContext, line: BodyLine): void => {
   if (command !== undefined) addStep(job, { where, command: inShell(justfile, command.trimStart()), cwd, env })
 }
 
-const runsHere = (recipe: Recipe): boolean => {
+const runsHere = (recipe: Recipe, platform: string): boolean => {
   const named = recipe.attributes.filter((attribute) => platforms.has(attribute.name))
-  return named.length === 0 || named.some((attribute) => thisPlatform.has(attribute.name))
+  return named.length === 0 || named.some((attribute) =>
+    attribute.name === platform || (attribute.name === "unix" && platform !== "windows")
+  )
 }
 
 const readDependencies = (job: Draft, recipe: Recipe, aliases: ReadonlyMap<string, string>): ReadonlyArray<string> => {
@@ -441,8 +463,11 @@ const readBody = (context: RecipeContext, script: Attribute | undefined): void =
   }
 }
 
-const readRecipe = (justfile: Justfile, recipe: Recipe, file: string): Draft => {
-  const start = draft({ id: jobId(recipe.name), source, file, name: recipe.name })
+const readRecipe = (justfile: Justfile, recipe: Recipe, file: string, platform: string): Draft => {
+  const restricted = recipe.attributes.some((attribute) => platforms.has(attribute.name))
+  const runner = platformRunners.get(platform)
+  const start = draft({ id: jobId(recipe.name), source, file, name: recipe.name,
+    ...(restricted && runner !== undefined ? { runsOn: runner } : {}) })
   const job: Draft = { ...start, needs: readDependencies(start, recipe, justfile.aliases) }
   for (const setting of [...justfile.settings, ...justfile.blockers]) {
     note(job, "setting", `set ${setting} changes how recipes run`)
@@ -475,8 +500,8 @@ const readRecipe = (justfile: Justfile, recipe: Recipe, file: string): Draft => 
   for (const [name, value] of values) {
     if (value !== undefined && isLiteralSecret(name, value)) values.set(name, undefined)
   }
-  if (!runsHere(recipe)) {
-    note(job, "platform", `${recipe.name} does not run on Linux`)
+  if (!runsHere(recipe, platform)) {
+    note(job, "platform", `${recipe.name} does not run on ${platform}`)
   } else if (cwd === undefined) {
     note(job, "working-directory", `the directory of ${recipe.name} is outside the repository`)
   } else if (justfile.blockers.length === 0) {
@@ -487,24 +512,25 @@ const readRecipe = (justfile: Justfile, recipe: Recipe, file: string): Draft => 
 
 /**
  * Reads a Justfile. A recipe becomes one job. Of recipes with the same name
- * the first that runs on Linux is kept, or the last when the file allows
+ * the first that runs on the selected host is kept, or the last when the file allows
  * duplicates, as `just` does.
  *
  * @category readers
  * @since 0.1.0
  */
-export const readJustfile = (file: string, text: string): Parsed => {
+export const readJustfile = (file: string, text: string, host = "linux"): Parsed => {
+  const platform = platformOf(host)
   const justfile = parse(text)
   const jobs = new Map<string, Draft>()
   const ordered = [
-    ...justfile.recipes.filter((recipe) => runsHere(recipe)),
-    ...justfile.recipes.filter((recipe) => !runsHere(recipe))
+    ...justfile.recipes.filter((recipe) => runsHere(recipe, platform)),
+    ...justfile.recipes.filter((recipe) => !runsHere(recipe, platform))
   ]
   for (const recipe of ordered) {
     const existing = jobs.get(recipe.name)
-    if (existing === undefined || (justfile.allowDuplicates && runsHere(recipe))) {
-      jobs.set(recipe.name, readRecipe(justfile, recipe, file))
-    } else {
+    if (existing === undefined || (justfile.allowDuplicates && runsHere(recipe, platform))) {
+      jobs.set(recipe.name, readRecipe(justfile, recipe, file, platform))
+    } else if (runsHere(recipe, platform)) {
       note(existing, "duplicate-recipe", `${recipe.name} is defined more than once; the first was kept`)
     }
   }

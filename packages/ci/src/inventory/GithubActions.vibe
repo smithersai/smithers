@@ -17,6 +17,7 @@ import {
   changeTriggers,
   conditionFalse,
   expand,
+  generatedWorkflow,
   type Host,
   hostAction,
   hostActions,
@@ -61,6 +62,7 @@ import {
 import { addStep, type Draft, draft, fileProblem, note, type Parsed } from "./Draft.vibe"
 import {
   type Context,
+  contextNames,
   evaluate,
   fields,
   fill,
@@ -80,12 +82,12 @@ import {
 import { filesOf } from "./Glob.vibe"
 import { installsOf } from "./MachineChanges.vibe"
 import { expandMatrix, type Matrix, noMatrix } from "./Matrix.vibe"
-import { type JobFacts, quietTools, settled, type StepFacts, write } from "./Runner.ts"
+import { isTextResult, type JobFacts, quietTools, settled, type StepFacts, write } from "./Runner.ts"
 import { hasSecretValue, isLiteralSecret, isSecretName } from "./Secrets.vibe"
 import { readSetup, type Setup } from "./Setup.vibe"
 import { before as beforeSetupCache, lockVariable, setupCache } from "./SetupCache.vibe"
 import { readLimit, secondsOf, within as withinLimit } from "./TimeLimit.vibe"
-import { asScalar, asStrings, isRecord, normalizeDirectory } from "./Values.vibe"
+import { actionInputs, asScalar, asStrings, isRecord, normalizeDirectory } from "./Values.vibe"
 
 const source = "github-actions"
 
@@ -263,10 +265,7 @@ const matrixContext = (state: Shape): Context => {
   const under = (lower: string): Context | undefined => {
     const key = written.get(lower)
     if (key !== undefined) {
-      // A value is filled in per variant where its key is written, which reads only these characters.
-      return /^[\w.-]+$/.test(key)
-        ? variable(`matrix:${key}`, `matrix.${key}`, false, !textKeys.has(key))
-        : unknown(`matrix key ${JSON.stringify(key)} has a name whose value is not filled in here`)
+      return variable(`matrix:${key}`, `matrix.${key}`, false, !textKeys.has(key))
     }
     return [...written.keys()].some((other) => other.startsWith(`${lower}.`))
       ? fields((name) => under(`${lower}.${name}`))
@@ -325,7 +324,8 @@ const expressions = (
   const place = { job: state.key, workflow: state.workflow, actionPath: step?.scope.actionPath }
   const contexts = new Map<string, () => Context>([
     ["github", () => github(state.event, state.facts, place)],
-    ["vars", () => fields(() => undefined)],
+    ["vars", () =>
+      fields((key) => unknown(`vars.${key} is a repository variable, which the workflow file does not give`))],
     ["inputs", () => inputs],
     ["matrix", () => matrixContext(state)],
     ["strategy", () =>
@@ -462,6 +462,9 @@ const readCwd = (
   // `${{ github.workspace }}/dir` is a directory of the repository.
   const rooted = first !== undefined && typeof first !== "string" && first.residual.kind === "variable"
     && first.residual.variable.id === "workspace"
+  if (rooted && second !== undefined && (typeof second !== "string" || !second.startsWith("/"))) {
+    return { problem: "its directory is not rooted inside the workspace" }
+  }
   const parts = !rooted
     ? filled.parts
     : typeof second === "string"
@@ -531,7 +534,7 @@ const readTriggers = (on: unknown): Triggers => {
   })
   // GitHub runs a push with `tags` and no `branches` for tags only.
   const push = on["push"]
-  const tagsOnly = isRecord(push) && push["tags"] !== undefined
+  const tagsOnly = isRecord(push) && (push["tags"] !== undefined || push["tags-ignore"] !== undefined)
     && push["branches"] === undefined && push["branches-ignore"] === undefined
   const others = Object.keys(on).filter((event) => event !== "push" && changeTriggers.includes(event))
   return {
@@ -547,6 +550,13 @@ const writeScopes = (permissions: unknown): ReadonlyArray<string> => {
   if (!isRecord(permissions)) return []
   return Object.entries(permissions).flatMap(([scope, level]) => level === "write" ? [scope] : [])
 }
+
+/** A called workflow can reduce the caller's write permissions. */
+const limitedWrites = (asked: ReadonlyArray<string> | undefined, limit: ReadonlyArray<string> | undefined) =>
+  asked === undefined ? limit
+  : limit === undefined || limit.includes("every scope") ? asked
+  : asked.includes("every scope") ? limit
+  : asked.filter((scope) => limit.includes(scope))
 
 const readDefaults = (owner: Record<string, unknown>, parent: RunDefaults): RunDefaults => {
   const defaults = owner["defaults"]
@@ -645,7 +655,7 @@ const addRun = (
   // second and the rest with it or without it.
   const apart = installsOf(command) !== undefined
   const first = state.placed === 0
-  const keeps = state.keeps.splice(0)
+  const keeps = apart ? [...state.keeps] : state.keeps.splice(0)
   // Every step is told its job, the first one too: a runner gives `GITHUB_JOB` to every step, and a job's steps
   // are its own, as each job has a machine of its own on GitHub.
   const facts: StepFacts = {
@@ -726,6 +736,9 @@ const readRun = (context: StepContext, raw: Record<string, unknown>, run: string
   if (rawCwd === undefined) return note(job, "working-directory", `${where} has a directory that is not text`)
   const place = readCwd(rawCwd, state.matrix, reads)
   if ("problem" in place) return note(job, "working-directory", `${where}: ${place.problem}`)
+  if (place.directory !== undefined) {
+    note(job, "working-directory", `${where}: its working directory is decided while the job runs`)
+  }
   addRun(context, script.parts, start, place.cwd, place.directory)
 }
 
@@ -753,9 +766,10 @@ const readComposite = (context: StepContext, raw: Record<string, unknown>, uses:
   const { job } = state
   const directory = normalizeDirectory(uses)
   state.actions += 1
+  const prefix = directory === "" ? "" : `${directory}/`
   const text = directory === undefined || scope.depth >= 8 || state.actions > maxActions
     ? undefined
-    : state.facts.read?.(`${directory}/action.yml`) ?? state.facts.read?.(`${directory}/action.yaml`)
+    : state.facts.read?.(`${prefix}action.yml`) ?? state.facts.read?.(`${prefix}action.yaml`)
   if (text === undefined) return void note(job, "uses", `${uses} has no command to run`)
   const action = readAction(text)
   if ("problem" in action) return void note(job, "uses", `${uses}: ${action.problem}`)
@@ -805,17 +819,6 @@ const secretsIn = (inputs: unknown, scope: Expressions): ReadonlyArray<string> =
     return filled.kind === "secret" ? [filled.name] : []
   })
   return [...new Set(names)].filter((name) => name !== "GITHUB_TOKEN")
-}
-
-/**
- * Reads a cache step as the commands that keep its cache on this machine (`Cache.ts`): one that restores, where
- * the step stands, and for `actions/cache` one that saves, after the job's other steps. `undefined` for a step
- * with no `path` or no `key`, and for one whose inputs cannot be worked out here, such as a key that hashes the
- * files a pattern names: a replay runs nothing for it, and a cache that restores nothing is a miss.
- */
-const readCache = (context: StepContext, raw: Record<string, unknown>, uses: string): StepRecord | undefined => {
-  const use = cacheUse(uses.split("@")[0] as string, raw["with"])
-  return use === undefined ? undefined : keepCache(context, uses, use, "")
 }
 
 /**
@@ -874,7 +877,7 @@ const keepCache = (
 const readUses = (context: StepContext, raw: Record<string, unknown>, uses: string): StepRecord => {
   const { ran, reads, state, where } = context
   const { job } = state
-  const action = uses.split("@")[0] as string
+  const action = (uses.split("@")[0] as string).toLowerCase()
   const noOutput = unknown(`an output of ${uses}, which a replay does not run`)
   const notRun = fields(() => noOutput)
   if (uses.startsWith("./")) {
@@ -895,7 +898,7 @@ const readUses = (context: StepContext, raw: Record<string, unknown>, uses: stri
     // With a secret the action does what a tool on the machine cannot stand for, such as signing a tool in.
     const received = secretsIn(raw["with"], reads)
     if (received.length > 0) note(job, receivesSecret, `${where}: ${uses} receives ${received.join(", ")}`)
-    if (setup.problem !== undefined) note(job, "uses", `${where}: ${uses} ${setup.problem}`)
+    if (setup.problem !== undefined) note(job, "uses", `${uses} ${setup.problem} (${where})`)
     for (const entry of setup.tools) {
       for (const name of setupVariables.get(entry.name) ?? []) state.setupNames.add(name)
     }
@@ -916,12 +919,28 @@ const readUses = (context: StepContext, raw: Record<string, unknown>, uses: stri
     addRun({ ...context, name: context.name ?? uses }, [setup.command], ["bash", "-e"], "")
     return recordOf(ran, notRun, () => variable(`outcome:${context.key}`, `how ${where} ended`))
   }
-  if (!hostActions.includes(action)) {
+  if (!hostActions.includes(action) ||
+    (resultAction(uses) !== undefined && resultActionOf(uses, raw["with"]) === undefined)) {
     note(job, "uses", `${uses} has no command to run`)
     return recordOf({ kind: "problem", why: "" }, notRun, undefined)
   }
-  const kept = readCache(context, raw, uses)
-  if (kept !== undefined) return kept
+  if (cacheActions.includes(action)) {
+    const inputs = actionInputs(raw["with"])
+    const use = cacheUse(action, inputs)
+    if (use === undefined || [cacheVariables.path, cacheVariables.key].some((key) => use.env[key]!.trim() === "")) {
+      note(job, "uses", `${uses} requires a cache path and key`)
+      return recordOf(ran, notRun, undefined)
+    }
+    const failOnMiss = inputs["fail-on-cache-miss"]
+    const text = asScalar(failOnMiss)
+    const malformed = use.kind !== "save" && failOnMiss !== undefined && text === undefined
+    const kept = malformed ? undefined : keepCache(context, uses, use, "")
+    if (kept !== undefined) return kept
+    if (malformed || (text !== undefined && text.trim().toLowerCase() !== "false" && use.kind !== "save")) {
+      note(job, "uses", `${uses} cannot reproduce a required cache restore`)
+      return recordOf(ran, notRun, undefined)
+    }
+  }
   note(job, hostAction, `${uses} has no command to run`)
   if (action === "actions/checkout") {
     const read = (text: string): string | Residual | undefined => {
@@ -936,7 +955,7 @@ const readUses = (context: StepContext, raw: Record<string, unknown>, uses: stri
       note(job, "checkout", `${where} ${problem}`)
     }
   }
-  // A cache step with no path or no key restores nothing, and reports a miss.
+  // An optional cache whose inputs are unknown restores nothing and reports a miss.
   const outputs = cacheActions.includes(action) ? fields((name) => name === "cache-hit" ? value("") : noOutput) : notRun
   return recordOf(ran, outputs, undefined)
 }
@@ -948,8 +967,10 @@ const readUses = (context: StepContext, raw: Record<string, unknown>, uses: stri
 const resultActionOf = (uses: string, inputs: unknown) => {
   const found = resultAction(uses)
   if (found?.fails === undefined) return found
-  const given = isRecord(inputs) ? inputs[found.fails] : undefined
-  return given === undefined || given === false || given === "false" ? found : undefined
+  if (inputs !== undefined && !isRecord(inputs)) return undefined
+  const given = actionInputs(inputs)[found.fails]
+  const held = asScalar(given)?.trim().toLowerCase()
+  return given === undefined || (held !== undefined && (found.safeValues ?? ["false"]).includes(held)) ? found : undefined
 }
 
 /** Every text of a kept step that the workflow `apply` writes. */
@@ -970,11 +991,10 @@ const foreignContext = (text: string, bare: boolean): string | undefined => {
   const { pieces, rest } = split(text)
   const expressions = pieces.length === 0 && bare ? [rest] : pieces.map(([, expression]) => expression)
   for (const expression of expressions) {
-    const unquoted = expression.replace(/'(?:[^']|'')*'/g, "''")
-    for (const match of unquoted.matchAll(/(?<![\w.])([A-Za-z_][\w-]*)\s*(?=[.[])/g)) {
-      const name = (match[1] as string).toLowerCase()
-      if (!keptContexts.test(name)) return name
-    }
+    const names = contextNames(expression)
+    if (names === undefined) return "an unreadable expression"
+    const foreign = names.find((name) => !keptContexts.test(name))
+    if (foreign !== undefined) return foreign
   }
   return undefined
 }
@@ -1020,7 +1040,10 @@ const keepStep = (state: JobState, raw: Record<string, unknown>, uses: string, w
   if (inputs === undefined || env === undefined || [step.if, step.continueOnError, step.timeoutMinutes].includes("")) {
     return leftOut("is given a value that is not text")
   }
-  if (keptTexts(step).some(hasSecretValue)) return leftOut("holds a value shaped like a secret")
+  const named = [...Object.entries(inputs), ...Object.entries(env)]
+  if (named.some(([key, held]) => isLiteralSecret(key, held)) || keptTexts(step).some(hasSecretValue)) {
+    return leftOut("holds a value shaped like a secret")
+  }
   const foreign = [step.if ?? ""].map((text) => foreignContext(text, true)).find((name) => name !== undefined) ??
     keptTexts(step).slice(1).map((text) => foreignContext(text, false)).find((name) => name !== undefined)
   if (foreign !== undefined) return leftOut(`reads ${foreign}, which a step of the workflow apply writes does not have`)
@@ -1036,7 +1059,10 @@ const readStep = (state: JobState, scope: StepScope, raw: unknown, index: number
   const where = `${scope.where} step ${number}${stepName === undefined ? "" : ` (${stepName})`}`
   const id = typeof raw["id"] === "string" ? raw["id"] : undefined
   // A step with no id is named by its place. An id never starts with a dash, so the two never meet.
-  const key = `${scope.prefix}${id ?? `-${number}`}`.toUpperCase().replace(/[^A-Z0-9_.-]/g, "_")
+  if (id !== undefined && !/^[A-Za-z_][\w-]*$/.test(id)) {
+    return note(job, "malformed-step", `${where} has an invalid step id`)
+  }
+  const key = `${scope.prefix}${id ?? `-${number}`}`.toUpperCase()
   const outer = expressions(state, scope.inputs, { state, scope, env: scope.env })
   const uses = raw["uses"]
   // A step's own variables are set before its condition is read. Those of a step that uses an action a replay
@@ -1148,7 +1174,7 @@ const fillReferencedKeys = (job: Draft, matrix: Matrix): Draft => {
       step.command,
       step.cwd,
       // Every step read from a workflow has runner text.
-      String(step.runner).replace(/^__m=.*$/gm, ""),
+      String(step.runner).replace(/^__m=.*; __variant=.*$/gm, ""),
       ...Object.values(step.env)
     ]),
     ...(job.kept ?? []).flatMap(keptTexts)
@@ -1163,23 +1189,24 @@ const fillReferencedKeys = (job: Draft, matrix: Matrix): Draft => {
   }
 }
 
-/** The matrix keys whose value is text in every variant, read from the matrix as written. */
-const textKeysOf = (raw: unknown, matrix: Matrix): ReadonlySet<string> => {
-  // A matrix that was read has a list for each key, and mappings under `include`.
-  if (!isRecord(raw) || matrix.problem !== undefined) return new Set()
-  const { exclude: _exclude, include = [], ...lists } = raw as Record<string, ReadonlyArray<unknown>>
-  const written = new Map<string, Array<unknown>>()
-  const add = (key: string, held: unknown): void => void written.set(key, [...(written.get(key) ?? []), held])
-  for (const [key, values] of Object.entries(lists)) for (const held of values) add(key, held)
-  for (const entry of include as ReadonlyArray<Record<string, unknown>>) {
-    for (const [key, held] of Object.entries(entry)) add(key, held)
+/** String-only keys permit string operations even when another operand comes from the running job. */
+const textKeysOf = (matrix: Matrix): ReadonlySet<string> =>
+  new Set([...matrix.keys].filter((key) => matrix.typedVariants!.every((row) => typeof row[key] === "string")))
+
+/** The runner addresses a variant by its printed values, so it must identify the row's scalar types. */
+const matrixProblem = (matrix: Matrix): string | undefined => {
+  const keys = [...matrix.keys].sort()
+  const unsafe = keys.find((key) => !/^[\w.-]+$/.test(key))
+  if (unsafe !== undefined) return `matrix key ${JSON.stringify(unsafe)} has an unsupported name`
+  const seen = new Map<string, string>()
+  for (const row of matrix.typedVariants ?? []) {
+    const values = keys.map((key) => Object.hasOwn(row, key) ? row[key] : null)
+    const display = JSON.stringify(values.map(asScalar))
+    const typed = JSON.stringify(values)
+    if (seen.has(display) && seen.get(display) !== typed) return "different variant types have the same printed values"
+    seen.set(display, typed)
   }
-  return new Set(
-    [...written].filter(([key, values]) =>
-      values.every((held) => typeof held === "string") &&
-      matrix.variants.every((variant) => Object.hasOwn(variant, key))
-    ).map(([key]) => key)
-  )
+  return undefined
 }
 
 interface WorkflowContext {
@@ -1193,7 +1220,10 @@ interface WorkflowContext {
   readonly filters: ReadonlyArray<string>
   readonly release: string | undefined
   /** The scopes the workflow's `permissions` let every job write. */
-  readonly writes: ReadonlyArray<string>
+  readonly writes: ReadonlyArray<string> | undefined
+  readonly writeLimit?: ReadonlyArray<string> | undefined
+  readonly path: ReadonlySet<string>
+  readonly calls: { count: number; readonly files: Map<string, unknown> }
   readonly env: Env
   readonly inputs: Context
   readonly defaults: RunDefaults
@@ -1211,9 +1241,7 @@ interface WorkflowContext {
 const runnerScope = (scope: Expressions, variant?: Readonly<Record<string, Value>>): Expressions => ({
   ...scope,
   context: (name) =>
-    name === "vars"
-      ? fields((key) => unknown(`vars.${key} is a repository variable, which the workflow file does not give`))
-      : name === "matrix" && variant !== undefined
+    name === "matrix" && variant !== undefined
       ? fields((key) => {
         // GitHub reads a matrix key without case, and a nested value by a dotted key.
         const keys = Object.keys(variant)
@@ -1232,22 +1260,6 @@ const nested = (variant: Readonly<Record<string, Value>>, key: string): Readonly
     Object.entries(variant).flatMap(([held, found]) =>
       held.toLowerCase().startsWith(`${key}.`) ? [[held.slice(key.length + 1), found]] : []
     )
-  )
-
-const variantLiterals: Readonly<Record<string, Value>> = { true: true, false: false, null: null }
-
-/** A variant's values as an expression reads them: a value written as a number or a boolean is one. */
-const typedVariant = (variant: Readonly<Record<string, string>>, textKeys: ReadonlySet<string>) =>
-  Object.fromEntries(
-    Object.entries(variant).map(([key, held]): readonly [string, Value] => {
-      if (textKeys.has(key)) return [key, held]
-      const read: Value = Object.hasOwn(variantLiterals, held)
-        ? variantLiterals[held] as Value
-        : /^-?\d+(\.\d+)?$/.test(held)
-        ? Number(held)
-        : held
-      return [key, read]
-    })
   )
 
 /** The runner name a `runs-on` value gives: its labels joined, with what is known filled in. */
@@ -1284,7 +1296,7 @@ const readRunsOn = (
   raw: unknown,
   job: { readonly name: string },
   scope: Expressions,
-  shape: Pick<Shape, "matrix" | "textKeys">,
+  shape: Pick<Shape, "matrix">,
   problems: Array<[string, string]>
 ): Pick<Job, "runsOn" | "runners"> => {
   if (raw === undefined) return {}
@@ -1292,8 +1304,9 @@ const readRunsOn = (
   const read = readLabels(raw, job, runnerScope(scope), found)
   const { variants } = shape.matrix
   if (found.length > 0 && read.runsOn !== undefined && variants.length > 0) {
-    const runners = variants.map((variant) =>
-      readLabels(raw, job, runnerScope(scope, typedVariant(variant, shape.textKeys)), []).runsOn as string
+    const fallback = read.runsOn
+    const runners = shape.matrix.typedVariants!.map((variant) =>
+      readLabels(raw, job, runnerScope(scope, variant), []).runsOn ?? fallback
     )
     if (runners.some((runner) => !unknownRunner(runner))) return { runsOn: read.runsOn, runners }
   }
@@ -1304,42 +1317,61 @@ const readRunsOn = (
 /** True when a variable named like a secret takes its value from the matrix, which would hold it in plain text. */
 const matrixHoldsSecret = (raw: Record<string, unknown>, matrix: Matrix): boolean => {
   const steps: ReadonlyArray<unknown> = Array.isArray(raw["steps"]) ? raw["steps"] : []
-  return [raw["env"], ...steps.map((step) => (isRecord(step) ? step["env"] : undefined))].some((block) =>
+  const blocks = [raw["env"], ...steps.flatMap((step) => isRecord(step) ? [step["env"], step["with"]] : [])]
+  return matrix.keys.size > 0 && blocks.some((block) =>
     isRecord(block) && Object.entries(block).some(([name, value]) =>
       isSecretName(name) && typeof value === "string"
-      && matrixReferences(value).some((key) => matrix.keys.has(key))
+      && split(value).pieces.some(([, expression]) => contextNames(expression)?.includes("matrix"))
     )
   )
 }
 
 /** The values a calling job gives a workflow it calls, with the defaults the workflow declares. */
-const calledInputs = (declared: unknown, given: unknown, scope: Expressions): Context => {
+const calledInputs = (declared: unknown, given: unknown, scope: Expressions, holder: Draft): Context => {
+  const inputs = actionInputs(declared)
+  const values = actionInputs(given)
   const known = new Map<string, Context>()
-  const lower = (raw: unknown): ReadonlyMap<string, unknown> =>
-    new Map(isRecord(raw) ? Object.entries(raw).map(([name, held]) => [name.toLowerCase(), held] as const) : [])
-  const [inputs, values] = [lower(declared), lower(given)]
-  const read = (name: string, held: unknown): Context => {
-    if (typeof held !== "string") return value(typeof held === "number" || typeof held === "boolean" ? held : null)
-    const expression = whole(held)
-    const evaluated = expression === undefined ? undefined : evaluate(expression, scope)
-    // One expression keeps its type, as a workflow's typed input does.
-    if (evaluated?.kind === "ok") return { kind: "residual", residual: evaluated.residual }
-    return inputOf(name, held, scope)
+  const issue = (why: string): void => note(holder, "malformed-job", `${holder.name}: ${why}`)
+  if (given !== undefined && !isRecord(given)) issue("workflow inputs must be a mapping")
+  for (const name of Object.keys(values)) if (!Object.hasOwn(inputs, name)) issue(`undeclared workflow input ${name}`)
+  for (const [name, definition] of Object.entries(inputs)) {
+    const type = isRecord(definition) ? definition["type"] : undefined
+    if (!isRecord(definition) || (type !== "string" && type !== "boolean" && type !== "number")) {
+      issue(`workflow input ${name} needs a string, boolean or number type`)
+      continue
+    }
+    const supplied = Object.hasOwn(values, name)
+    if (!supplied && definition["required"] === true) {
+      issue(`missing required workflow input ${name}`)
+      continue
+    }
+    const fallback = type === "boolean" ? false : type === "number" ? 0 : ""
+    const held = supplied ? values[name] : definition["default"] ?? fallback
+    const text = typeof held === "string" ? whole(held) : undefined
+    const evaluated = text === undefined ? undefined : evaluate(text, scope)
+    if (evaluated?.kind === "ok" && evaluated.residual.kind !== "literal") {
+      if (type === "string" && isTextResult(evaluated.residual)) {
+        known.set(name, { kind: "residual", residual: evaluated.residual })
+      } else {
+        issue(`the type of workflow input ${name} is known only while the job runs`)
+      }
+      continue
+    }
+    if (evaluated?.kind === "secret" && type === "string") {
+      known.set(name, evaluated)
+      continue
+    }
+    const literal = evaluated?.kind === "ok" && evaluated.residual.kind === "literal" ? evaluated.residual.value : held
+    if ((evaluated !== undefined && evaluated.kind !== "ok") || typeof literal !== type) {
+      issue(`workflow input ${name} must be a ${type}`)
+    } else if (typeof literal === "string") {
+      known.set(name, evaluated === undefined ? inputOf(name, literal, scope)
+        : isLiteralSecret(name, literal) ? { kind: "secret", name } : value(literal))
+    } else {
+      known.set(name, value(literal as number | boolean))
+    }
   }
-  // "Workflow syntax: on.workflow_call.inputs": an input given no value and no default is `false` for a boolean,
-  // `0` for a number and empty for a string.
-  const unset = (input: unknown): Context => {
-    const type = isRecord(input) ? input["type"] : undefined
-    return value(type === "boolean" ? false : type === "number" ? 0 : "")
-  }
-  return fields((name) => {
-    const input = inputs.get(name)
-    if (input === undefined && !values.has(name)) return undefined
-    const written = values.has(name) ? values.get(name) : isRecord(input) ? input["default"] : undefined
-    const found = known.get(name) ?? (written === undefined || written === null ? unset(input) : read(name, written))
-    known.set(name, found)
-    return found
-  })
+  return fields((name) => known.get(name))
 }
 
 const readJob = (workflow: WorkflowContext, key: string, raw: unknown): ReadonlyArray<Draft> => {
@@ -1357,16 +1389,15 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
   const strategy = raw["strategy"]
   const rawMatrix = isRecord(strategy) ? strategy["matrix"] : undefined
   const expanded = expandMatrix(rawMatrix)
-  const matrix = matrixHoldsSecret(raw, expanded)
-    ? { ...noMatrix, problem: "a variable named like a secret reads it" }
-    : expanded
+  const problem = matrixHoldsSecret(raw, expanded) ? "a variable named like a secret reads it" : matrixProblem(expanded)
+  const matrix = problem === undefined ? expanded : { ...noMatrix, problem }
   const shape: Shape = {
     facts: workflow.facts,
     event: workflow.event,
     key,
     workflow: workflow.name,
     matrix,
-    textKeys: textKeysOf(rawMatrix, matrix)
+    textKeys: textKeysOf(matrix)
   }
   const before = expressions(shape, workflow.inputs)
   const job = draft({
@@ -1376,14 +1407,15 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
     name,
     needs: [...(needs ?? []).map((need) => `${prefix}${need}`), ...workflow.needs],
     triggers,
-    ...readRunsOn(raw["runs-on"], { name }, before, { matrix, textKeys: shape.textKeys }, problems)
+    ...readRunsOn(raw["runs-on"], { name }, before, { matrix }, problems)
   })
   for (const [feature, reason] of [...problems, ...workflow.called]) note(job, feature, reason)
   for (const filter of workflow.filters) note(job, triggerFilter, filter)
   if (workflow.release !== undefined) note(job, releaseTrigger, workflow.release)
   // A job's own `permissions` replace the workflow's.
-  const writes = raw["permissions"] === undefined ? workflow.writes : writeScopes(raw["permissions"])
-  if (writes.length > 0) note(job, writePermission, `${name} may write ${writes.join(", ")}`)
+  const requestedWrites = raw["permissions"] === undefined ? workflow.writes : writeScopes(raw["permissions"])
+  const writes = limitedWrites(requestedWrites, workflow.writeLimit)
+  if (writes !== undefined && writes.length > 0) note(job, writePermission, `${name} may write ${writes.join(", ")}`)
   if (matrix.problem !== undefined) note(job, "matrix", `${name}: ${matrix.problem}`)
   if (strategy !== undefined && !isRecord(strategy)) {
     note(job, "matrix", `${name}: its strategy is computed when the workflow runs`)
@@ -1428,6 +1460,7 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
       id,
       matrixKeys: [...matrix.keys].sort(),
       variants: matrix.variants,
+      typedVariants: matrix.typedVariants,
       variables: variables(workflow.event, workflow.facts, place),
       standIns: standIns(workflow.event, workflow.facts, place),
       event: eventFile(workflow.event, workflow.facts),
@@ -1470,7 +1503,10 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
   // A step's runner text holds its command, and each matrix value it names, in quotes, which a matrix value with a
   // quote would end. The line that names the job's state names every key.
   const quoted = job.steps.flatMap((step) => [step.command, step.cwd, String(step.runner)]).flatMap(matrixReferences)
-  if (matrix.variants.some((variant) => quoted.some((used) => variant[used]?.includes("'")))) {
+  const quotedValue = matrix.variants.some((variant) =>
+    quoted.some((used) => Object.hasOwn(variant, used) && (variant[used] as string).includes("'"))
+  )
+  if (quotedValue) {
     note(job, "shell", `${name} puts a matrix value holding a quote into a script`)
   }
   const results = {
@@ -1492,22 +1528,28 @@ const readCalled = (
   raw: Record<string, unknown>,
   uses: string,
   scope: Expressions,
-  writes: ReadonlyArray<string>
+  writes: ReadonlyArray<string> | undefined
 ): ReadonlyArray<Draft> | undefined => {
   // A matrix of calls runs the workflow once per variant, each with its own values: that is not read here.
   const path = uses.startsWith("./") && raw["strategy"] === undefined ? normalizeDirectory(uses) : undefined
-  const text = path === undefined || workflow.depth >= 4 ? undefined : workflow.facts.read?.(path)
-  const parsed = text === undefined ? undefined : parseYaml(text)
-  const called = parsed !== undefined && "value" in parsed ? leaveCacheEmpty(parsed.value) : undefined
-  const on = isRecord(called) ? called["on"] : undefined
-  const call = isRecord(on) ? on["workflow_call"] : undefined
-  if (
-    path === undefined || !isRecord(called) || !isRecord(called["jobs"]) || !isRecord(on) || !("workflow_call" in on)
-  ) {
+  if (path === undefined || workflow.depth >= 4 || workflow.path.has(path) || workflow.calls.count >= maxActions) {
     return undefined
   }
+  workflow.calls.count += 1
+  const files = workflow.calls.files
+  if (!files.has(path)) {
+    const text = workflow.facts.read?.(path)
+    const parsed = text === undefined ? undefined : parseYaml(text)
+    files.set(path, parsed !== undefined && "value" in parsed ? leaveCacheEmpty(parsed.value) : undefined)
+  }
+  const called = files.get(path)
+  if (!isRecord(called) || !isRecord(called["jobs"])) return undefined
+  const on = called["on"]
+  if (!readTriggers(on).triggers.includes("workflow_call")) return undefined
+  const call = isRecord(on) ? on["workflow_call"] : undefined
   const holder = draft({ id: job.id, source, file: path, name: job.name })
-  const inputs = calledInputs(isRecord(call) ? call["inputs"] : undefined, raw["with"], scope)
+  const inputs = calledInputs(isRecord(call) ? call["inputs"] : undefined, raw["with"], scope, holder)
+  if (holder.unsupported.length > 0) return inherit([job], holder)
   const context: WorkflowContext = {
     ...workflow,
     file: path,
@@ -1518,7 +1560,9 @@ const readCalled = (
     defaults: readDefaults(called, { shell: undefined, cwd: undefined }),
     // "Reusing workflows: Access and permissions": a called workflow can write what its calling job can and what
     // its own `permissions` keep of that, never more.
-    writes: called["permissions"] === undefined || writes.length === 0 ? writes : writeScopes(called["permissions"]),
+    writeLimit: writes,
+    writes: called["permissions"] === undefined ? writes : limitedWrites(writeScopes(called["permissions"]), writes),
+    path: new Set([...workflow.path, path]),
     needs: job.needs,
     // What keeps the calling job out keeps every job it calls out.
     called: job.unsupported.filter((entry) => entry.feature === "condition" || entry.feature === "malformed-job")
@@ -1590,7 +1634,9 @@ export const readWorkflow = (file: string, text: string, facts: Facts = {}): Par
     triggers,
     filters,
     release,
-    writes: writeScopes(workflow["permissions"]),
+    writes: workflow["permissions"] === undefined ? undefined : writeScopes(workflow["permissions"]),
+    path: new Set([file]),
+    calls: { count: 0, files: new Map() },
     env: withEnv(
       noEnv,
       workflow["env"],
@@ -1607,5 +1653,6 @@ export const readWorkflow = (file: string, text: string, facts: Facts = {}): Par
     depth: 0
   }
   const jobs = Object.entries(workflow["jobs"]).flatMap(([key, job]) => inherit(readJob(context, key, job), holder))
-  return { jobs, toolchains, unsupported: [] }
+  const handWritten = file === generatedWorkflow && !/^# Generated by smithers-ci\. Do not edit\.\r?(?:\n|$)/.test(text)
+  return { jobs: handWritten ? jobs.map((job) => ({ ...job, generated: false })) : jobs, toolchains, unsupported: [] }
 }

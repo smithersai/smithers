@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
   type Inventory,
   type Job,
@@ -7,9 +7,11 @@ import {
   selfHosted,
   type Toolchain
 } from "../../src/contract/Inventory.vibe"
+import { readToolFile } from "../../src/inventory/Toolchains.vibe"
 import {
   differs,
   type Found,
+  machinePath,
   neededTools,
   onMachine,
   programsOf,
@@ -61,6 +63,17 @@ describe("what answers for a tool", () => {
     expect(programsOf("nextest")).toEqual(["cargo-nextest"])
   })
 
+  it("reads tool pins outside comments and accepts only plain asdf names and versions", () => {
+    expect(readToolFile(".nvmrc", "# pinned for CI\n 22\n")[0]?.version).toBe("22")
+    expect(
+      readToolFile("build.zig.zon", "// .minimum_zig_version = \"old\"\n.{ .minimum_zig_version = \"0.15\" }")[0]
+        ?.version
+    ).toBe("0.15")
+    expect(readToolFile(".tool-versions", "./tool 1\nnode ref:main\nnode 22.0\n")).toEqual([
+      { name: "node", version: "22.0", source: ".tool-versions" }
+    ])
+  })
+
   it("reads the version out of what a program prints", () => {
     expect(versionIn("v26.5.0\n")).toBe("26.5.0")
     expect(versionIn("go version go1.25.4 linux/amd64")).toBe("1.25.4")
@@ -69,6 +82,15 @@ describe("what answers for a tool", () => {
     expect(versionIn("uv 0.9")).toBe("0.9")
     expect(versionIn("usage: tool [flags]")).toBeUndefined()
     expect(versionIn("")).toBeUndefined()
+  })
+
+  it("uses an empty lookup path in a process without PATH", () => {
+    vi.stubEnv("PATH", undefined)
+    try {
+      expect(machinePath({ host: "linux" })).toBe("")
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it("names this machine by its operating system", () => {
@@ -82,6 +104,11 @@ describe("what answers for a tool", () => {
 
 describe("differs", () => {
   it("compares the numbers a version asks for, and no more", () => {
+    expect(differs("18 || 20", "20.1")).toBe(false)
+    expect(differs("^0.0.3", "0.0.4")).toBe(true)
+    expect(differs("^0.2.3", "0.3.0")).toBe(true)
+    expect(differs("^0.0", "0.0.4")).toBe(false)
+    expect(differs("22.0.0", "22.0")).toBe(false)
     expect(differs("22", "26.5.0")).toBe(true)
     expect(differs("26", "26.5.0")).toBe(false)
     expect(differs("22.x", "22.11.0")).toBe(false)

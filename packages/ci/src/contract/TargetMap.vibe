@@ -84,6 +84,33 @@ export type TargetMap = typeof TargetMap.Type
 export const variantKey = (variant: Readonly<Record<string, string>>): string =>
   JSON.stringify(Object.entries(variant).sort(([a], [b]) => (a < b ? -1 : 1)))
 
+interface Index {
+  readonly labels: Map<string, Array<string>>
+  readonly machines: Map<string, string>
+}
+
+const indexes = new WeakMap<TargetMap, Index>()
+
+/** Index each immutable map on first use. Keys encode their boundaries even when an ID contains punctuation. */
+const indexed = (map: TargetMap): Index => {
+  const known = indexes.get(map)
+  if (known !== undefined) return known
+  const labels = new Map<string, Array<string>>()
+  const machines = new Map<string, string>()
+  for (const entry of map.targets) {
+    const variant = variantKey(entry.variant)
+    const stepKey = JSON.stringify([entry.job, entry.step, variant])
+    const found = labels.get(stepKey)
+    if (found === undefined) labels.set(stepKey, [entry.label])
+    else found.push(entry.label)
+    const jobKey = JSON.stringify([entry.job, variant])
+    if (entry.machine !== undefined && !machines.has(jobKey)) machines.set(jobKey, entry.machine)
+  }
+  const index = { labels, machines }
+  indexes.set(map, index)
+  return index
+}
+
 /**
  * The labels of every target that runs a step: one, or several when the
  * step was split. Empty when the generator made none for it.
@@ -97,10 +124,7 @@ export const labelsOf = (
   step: string,
   variant: Readonly<Record<string, string>>
 ): ReadonlyArray<string> => {
-  const key = variantKey(variant)
-  return map.targets
-    .filter((entry) => entry.job === job && entry.step === step && variantKey(entry.variant) === key)
-    .map((entry) => entry.label)
+  return indexed(map).labels.get(JSON.stringify([job, step, variantKey(variant)])) ?? []
 }
 
 /**
@@ -125,9 +149,5 @@ export const machineOf = (
   job: string,
   variant: Readonly<Record<string, string>>
 ): string | undefined => {
-  const key = variantKey(variant)
-  return map.targets.find((entry) =>
-    entry.job === job && variantKey(entry.variant) === key && entry.machine !== undefined
-  )
-    ?.machine
+  return indexed(map).machines.get(JSON.stringify([job, variantKey(variant)]))
 }

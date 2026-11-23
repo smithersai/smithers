@@ -1,12 +1,18 @@
 /** What failed here, taken out of an inventory: a job, a variant, or every variant of a job. */
 import { describe, expect, it } from "vitest"
 import {
+  ci,
   type FailedHere,
   failsHere,
   type Inventory,
   type Job,
+  keptOnRunner,
   notReplayed,
   reasonsText,
+  refusal,
+  runIdBase,
+  runnerOf,
+  runValues,
   variantsFailedHere,
   withoutFailedHere
 } from "../../src/contract/Inventory.vibe"
@@ -71,10 +77,62 @@ describe("what failed here, in an inventory", () => {
     ])
   })
 
+  it("retains the computed runner of each surviving variant", () => {
+    const variants = [one, two, { size: "3" }]
+    const job = {
+      ...jobOf("m", variants),
+      runsOn: "${{ matrix.label || 'ubuntu-latest' }}",
+      runners: ["ubuntu-latest", "macos-14", "ubuntu-24.04"]
+    }
+    expect(keptOnRunner(job)).toBe(false)
+    const remaining = withoutFailedHere(inventoryOf(job), [failed("m", "first", one)]).jobs[0]!
+    expect(remaining.matrix.map((variant) => runnerOf(remaining, variant))).toEqual(["macos-14", "ubuntu-24.04"])
+    const failures = [failed("m", "first", one), failed("m", "next", two)]
+    const repeated = withoutFailedHere(inventoryOf(remaining), failures)
+    expect(repeated.jobs[0]?.omittedVariants).toEqual([one, two])
+    expect(variantsFailedHere(repeated, failures)[0]?.reasons.map((entry) => entry.detail)).toEqual(["first", "next"])
+    const linux = withoutFailedHere(inventoryOf(job), [failed("m", "middle", two)]).jobs[0]!
+    expect(linux.runners).toEqual(["ubuntu-latest", "ubuntu-24.04"])
+    const legacy = { ...job, runners: [...job.runners, "unused"] }
+    expect(withoutFailedHere(inventoryOf(legacy), failures).jobs[0]?.runners).toEqual(["ubuntu-24.04"])
+    expect(keptOnRunner(linux)).toBe(true)
+    const historical = inventoryOf(jobOf("m"))
+    expect(withoutFailedHere(historical, [failed("m", "first", one)])).toEqual(historical)
+    expect(variantsFailedHere(historical, [failed("m", "first", one)])).toEqual([])
+  })
+
+  it("blocks missing and cyclic prerequisites throughout the graph in either job order", () => {
+    const needs = (id: string, ...parents: string[]) => ({ ...jobOf(id), needs: parents })
+    const jobs = [
+      needs("leaf", "a"),
+      needs("a", "b"),
+      needs("b", "a"),
+      needs("typo", "missing"),
+      needs("child", "typo"),
+      needs("ok")
+    ]
+    expect(refusal(inventoryOf(needs("typo", "missing")))).toContain("needs missing, which is not replayed")
+    for (const order of [jobs, [...jobs].reverse()]) {
+      const inventory = inventoryOf(...order)
+      expect(ci(inventory).jobs.map((job) => job.id)).toEqual(["ok"])
+      const left = new Map(notReplayed(inventory).map((job) => [job.job, job.reasons[0]?.detail]))
+      expect(left).toEqual(
+        new Map([
+          ["typo", "typo needs missing, which is missing"],
+          ["child", "child needs typo, which is not replayed"],
+          ["leaf", "leaf needs a, which is not replayed"],
+          ["a", "a needs b, which is not replayed"],
+          ["b", "b needs a, which is not replayed"]
+        ])
+      )
+    }
+  })
+
   it("ignores what this commit does not hold", () => {
     const inventory = inventoryOf(jobOf("a"))
     expect(withoutFailedHere(inventory, [failed("gone", "x")])).toEqual(inventory)
     expect(withoutFailedHere(inventory, [])).toEqual(inventory)
+    expect(runValues("unknown", 2).GITHUB_RUN_ID).toBe(String(runIdBase))
     expect(variantsFailedHere(inventory, [failed("gone", "x", one)])).toEqual([])
   })
 })

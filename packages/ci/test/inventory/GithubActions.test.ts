@@ -128,7 +128,7 @@ jobs: { test: { steps: [] } }
     expect(featuresFor("  push: { branches-ignore: [wip], tags: ['v*'] }")).toEqual(["trigger-filter"])
     expect(featuresFor("  push: { tags: ['v*'] }\n  pull_request:")).toEqual(["trigger-filter"])
     expect(featuresFor("  push: { tags: ['v*'] }\n  merge_group:")).toEqual(["trigger-filter"])
-    expect(featuresFor("  push: { tags-ignore: ['v*'] }")).toEqual(["trigger-filter"])
+    expect(featuresFor("  push: { tags-ignore: ['v*'] }")).toEqual(["trigger-filter", "release-trigger"])
     expect(featuresFor("  push: { paths: [src/**] }")).toEqual(["trigger-filter"])
     expect(featuresFor("  push:")).toEqual([])
   })
@@ -487,9 +487,11 @@ jobs:
     ])
     expect(job.steps[2]?.runner).toContain(`__ci_enter "$__v`)
     expect(details(job)).toEqual([
+      `${file}: test step 3: its working directory is decided while the job runs`,
       `${file}: test step 6: its directory /tmp is outside the repository`,
       `${file}: test step 7: its directory ../outside is outside the repository`,
       `${file}: test step 9: its directory comes from secret DIR`,
+      `${file}: test step 11: its working directory is decided while the job runs`,
       `${file}: test step 12: its directory comes from github.retention_days: github.retention_days is known only on GitHub`
     ])
   })
@@ -868,7 +870,7 @@ jobs:
       { feature: "host-action", detail: `${file}: ruby/setup-ruby@v1 has no command to run` },
       {
         feature: "uses",
-        detail: `${file}: docs step 1: ruby/setup-ruby@v1 installs gems in a way that was not read (bundler-cache)`
+        detail: `${file}: ruby/setup-ruby@v1 installs gems in a way that was not read (bundler-cache) (docs step 1)`
       }
     ])
   })

@@ -40,7 +40,7 @@ import {
   runnerEntry,
   stateVariable
 } from "../contract/Inventory.vibe"
-import { shardOf } from "../contract/Shard.vibe"
+import { fnv1a32 } from "../contract/Shard.vibe"
 import {
   finish,
   formatPieces,
@@ -52,6 +52,7 @@ import {
   type Variable,
   variablesOf
 } from "./Expression.ts"
+import type { Files } from "./Glob.vibe"
 
 /**
  * What a job's steps share: the job's name for its state directory, the
@@ -66,6 +67,7 @@ export interface JobFacts {
   readonly matrixKeys: ReadonlyArray<string>
   /** The job's matrix variants: what an expression over the matrix is worked out for. */
   readonly variants?: ReadonlyArray<Readonly<Record<string, string>>> | undefined
+  readonly typedVariants?: ReadonlyArray<Readonly<Record<string, Value>>> | undefined
   readonly variables: Readonly<Record<string, string>>
   /** The runner variables only GitHub can fill, each with a value of the right shape (`Contexts.standIns`). */
   readonly standIns?: Readonly<Record<string, string>> | undefined
@@ -198,8 +200,6 @@ class Refused {
  */
 export const quote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
 
-const marker = "__SMITHERS_CI_LIB__"
-
 /** The text Smithers build replaces, in a target's script, with the directory it keeps its cache in. */
 const cacheDirectoryToken = "{smthrs:cache-directory}"
 
@@ -227,8 +227,8 @@ const eventText = (event: string): string =>
 
 /**
  * The functions every step of a job shares. A value is held as text with a
- * tag: `s` for text, `t` for a value that is true and is not text, `f` for
- * one that is false and is not text (`null`, `false`, `0`).
+ * tag: `s` for text, `t` for true, `f` for false or null, and `n` followed by the
+ * exact numeric value for numbers whose displayed text may have been rounded.
  */
 const library = (job: JobFacts): string =>
   [
@@ -242,21 +242,35 @@ const library = (job: JobFacts): string =>
     `}`,
     `__ci_folded() { __ci_plain "$1$2"; __ci_upper "$1"; __a=$__u; __ci_upper "$2"; __b=$__u; }`,
     `__ci_same() { [ "$1" = "$2" ] && return 0; __ci_folded "$1" "$2"; [ "$__a" = "$__b" ]; }`,
-    `__ci_true() { [ "$1" = t ] || { [ "$1" = s ] && [ -n "$2" ]; }; }`,
-    // Text equals null when the number it spells is 0, and an empty text spells 0.
-    `__ci_zero_re='^[[:space:]]*([+-]?(0+\\.?0*|\\.0+)([eE][+-]?[0-9]+)?|0[xX]0+|0[oO]0+)?[[:space:]]*$'`,
-    `__ci_zero() { [[ $1 =~ $__ci_zero_re ]]; }`,
+    `__ci_true() { case $1 in s) [ -n "$2" ];; f|n0) return 1;; *) return 0;; esac; }`,
+    `__ci_number() {`,
+    `  case $1 in t) __number=1;; f) __number=0;; n*) __number=\${1#n};;`,
+    `    s) __number=$2; __number=\${__number#"\${__number%%[![:space:]]*}"}; __number=\${__number%"\${__number##*[![:space:]]}"}; __number=\${__number:-0};;`,
+    `  esac`,
+    `}`,
     `__ci_equal() {`,
-    `  if [ "$1" = s ] && [ "$3" = s ]; then __ci_same "$2" "$4"`,
-    `  elif [ "$1" = s ]; then __ci_zero "$2"`,
-    `  elif [ "$3" = s ]; then __ci_zero "$4"`,
-    `  else return 0; fi`,
+    `  if [ "$1" = s ] && [ "$3" = s ]; then __ci_same "$2" "$4"; return; fi`,
+    `  __ci_number "$1" "$2"; __left=$__number; __ci_number "$3" "$4"`,
+    `  CI_LEFT="$__left" CI_RIGHT="$__number" LC_ALL=C awk '`,
+    `    function number(x,    base,i,d,n) {`,
+    `      if (x ~ /^[+-]?([0-9]+[.]?[0-9]*|[.][0-9]+)([eE][+-]?[0-9]+)?$/) return x+0`,
+    `      if (x ~ /^0[xX][a-fA-F0-9]+$/) base=16; else if (x ~ /^0[oO][0-7]+$/) base=8; else exit 1`,
+    `      for (i=3; i<=length(x); i++) { d=index("0123456789abcdef",tolower(substr(x,i,1)))-1; n=n*base+d }`,
+    `      return n+0`,
+    `    }`,
+    `    BEGIN { exit !(number(ENVIRON["CI_LEFT"]) == number(ENVIRON["CI_RIGHT"])) }'`,
     `}`,
     `__ci_has() { case $1 in *"$2"*) return 0;; esac; __ci_folded "$1" "$2"; case $__a in *"$__b"*) return 0;; esac; return 1; }`,
     `__ci_starts() { case $1 in "$2"*) return 0;; esac; __ci_folded "$1" "$2"; case $__a in "$__b"*) return 0;; esac; return 1; }`,
     `__ci_ends() { case $1 in *"$2") return 0;; esac; __ci_folded "$1" "$2"; case $__a in *"$__b") return 0;; esac; return 1; }`,
     `__ci_read() { __v=; __t=f; [ -f "$1" ] || return 0; IFS= read -r -d '' __v < "$1"; __t=s; }`,
     `__ci_sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }`,
+    `__ci_finish_hash() {`,
+    `  [ -n "$__h" ] || return 0`,
+    `  __esc=$(set -o pipefail; printf %s "$__h" | sed 's/../\\\\x&/g') || __ci_fail "could not encode the file hashes"`,
+    `  __v=$(set -o pipefail; printf '%b' "$__esc" | __ci_sha) || __ci_fail "could not hash"`,
+    `  __v=\${__v%% *}`,
+    `}`,
     // hashFiles: the SHA-256 of each file's SHA-256, in the order written; empty when no file is there.
     `__ci_hash() {`,
     `  __v=; __t=s; __h=`,
@@ -267,23 +281,24 @@ const library = (job: JobFacts): string =>
     `    __d=$(__ci_sha < "$__root/$__f") || __ci_fail "could not hash $__f"`,
     `    __h=$__h\${__d%% *}`,
     `  done`,
-    `  [ -n "$__h" ] || return 0`,
-    `  __v=$(printf "$(printf %s "$__h" | sed 's/../\\\\x&/g')" | __ci_sha) || __ci_fail "could not hash"`,
-    `  __v=\${__v%% *}`,
+    `  __ci_finish_hash`,
     `}`,
-    // The files of the checkout whose path matches one of the expressions before `--` and none after it, hashed
+    // The files whose last matching expression includes them (+), or excludes them (-), hashed
     // in sorted order: the SHA-256 of their SHA-256s. Empty when there is none. A cache key is made of it, which
     // has to be the same from one run to the next and is never compared with GitHub's.
     `__ci_glob() {`,
-    `  __v=; __t=s; __take=(); __leave=()`,
-    `  while [ "$1" != -- ]; do __take+=(-e "$1"); shift; done`,
-    `  shift`,
-    `  for __f in "$@"; do __leave+=(-e "$__f"); done`,
-    `  __h=$(cd -- "$__root" && find . -type f ! -path './.git/*' | sed 's|^\\./||' | LC_ALL=C grep -E "\${__take[@]}" | LC_ALL=C sort)`,
-    `  [ "\${#__leave[@]}" -eq 0 ] || __h=$(printf '%s\\n' "$__h" | LC_ALL=C grep -v -E "\${__leave[@]}")`,
-    `  [ -n "$__h" ] || return 0`,
-    `  __v=$(cd -- "$__root" && printf '%s\\n' "$__h" | while IFS= read -r __f; do __ci_sha < "$__f"; done | __ci_sha) || __ci_fail "could not hash"`,
-    `  __v=\${__v%% *}`,
+    `  __v=; __t=s`,
+    `  __h=$(set -o pipefail; cd -- "$__root" || exit 1`,
+    `    find . -name .git -prune -o -type f -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' __f; do`,
+    `      __path=\${__f#./}; __include=-`,
+    `      for __rule in "$@"; do __pattern=\${__rule:1};`,
+    `        if [[ $__path =~ $__pattern ]]; then __include=\${__rule:0:1}; elif [ "$?" -eq 2 ]; then exit 1; fi`,
+    `      done`,
+    `      if [ "$__include" = + ]; then`,
+    `        __d=$(__ci_sha < "$__f") || exit 1; printf %s "\${__d%% *}"`,
+    `      fi`,
+    `    done) || __ci_fail "could not list or hash the files"`,
+    `  __ci_finish_hash`,
     `}`,
     // The variables a runner gives every step.
     `__ci_start() {`,
@@ -381,17 +396,17 @@ const library = (job: JobFacts): string =>
     `__ci_fill() {`,
     `  __rest=$__script; __script=`,
     `  while :; do`,
-    `    __at=; __before=`,
+    `    __at=; __prefix=`,
     `    for __i in "\${!__fk[@]}"; do`,
     `      case $__rest in`,
     `        *"\${__fk[__i]}"*)`,
     `          __head=\${__rest%%"\${__fk[__i]}"*}`,
-    `          if [ -z "$__at" ] || [ \${#__head} -lt \${#__before} ]; then __at=$__i; __before=$__head; fi;;`,
+    `          if [ -z "$__at" ] || [ \${#__head} -lt \${#__prefix} ]; then __at=$__i; __prefix=$__head; fi;;`,
     `      esac`,
     `    done`,
     `    [ -n "$__at" ] || break`,
-    `    __script=$__script$__before\${__fv[__at]}`,
-    `    __rest=\${__rest#"$__before\${__fk[__at]}"}`,
+    `    __script=$__script$__prefix\${__fv[__at]}`,
+    `    __rest=\${__rest#"$__prefix\${__fk[__at]}"}`,
     `  done`,
     `  __script=$__script$__rest`,
     `}`,
@@ -536,8 +551,10 @@ const loadOf = (found: Variable): string => {
   if (kind === "process") return `__v=\${${detail}-}; __t=s`
   if (kind === "hash") return `__ci_hash ${(JSON.parse(detail) as ReadonlyArray<string>).map(quote).join(" ")}`
   if (kind === "glob") {
-    const files = JSON.parse(detail) as { readonly take: ReadonlyArray<string>; readonly leave: ReadonlyArray<string> }
-    return `__ci_glob ${[...files.take, "--", ...files.leave].map(quote).join(" ")}`
+    const files = JSON.parse(detail) as Files
+    const order = files.order ?? [...files.take.keys(), ...files.leave.map((_, index) => -1 - index)]
+    const rules = order.map((index) => index < 0 ? "-" + files.leave[-index - 1] : "+" + files.take[index])
+    return `__ci_glob ${rules.map(quote).join(" ")}`
   }
   if (kind === "matrix") return `__v='\${{ matrix.${detail} }}'; __t=s`
   if (kind === "path") return `__v=$__root/${quote(detail)}; __t=s`
@@ -549,7 +566,9 @@ const loadOf = (found: Variable): string => {
     return `__v=$(git -C "$__root" rev-parse --verify --quiet 'HEAD^') || `
       + `__v=0000000000000000000000000000000000000000; __t=s`
   }
-  return `__v=$${shellNames.get(kind as string) as string}; __t=s`
+  const name = shellNames.get(kind as string)
+  if (name === undefined) throw new Refused("the expression names an unknown runner variable")
+  return `__v=$${name}; __t=s`
 }
 
 /** The variables a step reads from its runner's own shell variables. */
@@ -602,6 +621,8 @@ export const variableKinds: ReadonlyArray<string> = [
 interface Emitter {
   readonly lines: Array<string>
   readonly variants: ReadonlyArray<Readonly<Record<string, string>>>
+  readonly matrixKeys: ReadonlyArray<string>
+  readonly typedVariants?: JobFacts["typedVariants"]
   count: number
 }
 
@@ -615,8 +636,9 @@ const overMatrix = (node: Residual, emitter: Emitter): boolean => {
 
 /** A matrix value as GitHub holds it: a key written as a number or a boolean gives one, and a key a variant lacks is `null`. */
 const matrixValue = (found: Variable, variant: Readonly<Record<string, string>>): Value => {
-  const text = variant[found.id.slice(matrixPrefix.length)]
-  if (text === undefined) return null
+  const key = found.id.slice(matrixPrefix.length)
+  if (!Object.hasOwn(variant, key)) return null
+  const text = variant[key]!
   if (!found.typed) return text
   if (text === "true" || text === "false") return text === "true"
   return String(Number(text)) === text ? Number(text) : text
@@ -656,6 +678,16 @@ const kindsOf = (node: Residual): ReadonlyArray<Kind> => {
   const kept = node.operator === "&&" ? falsyKinds : truthyKinds
   return [...new Set([...kindsOf(node.left).filter((kind) => kept.includes(kind)), ...kindsOf(node.right)])]
 }
+
+/**
+ * Whether the residual can only return text or a missing value.
+ *
+ * @category shell
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const isTextResult = (node: Residual): boolean =>
+  kindsOf(node).every((kind) => kind === "text" || kind === "empty" || kind === "null")
 
 /**
  * Whether an expression still to finish is true whatever its variables hold: `x && false` is never true and
@@ -709,7 +741,9 @@ const compile = (node: Residual, emitter: Emitter): number => {
 }
 
 const assignment = (n: number, held: Value): string =>
-  `__v${n}=${quote(toText(held))}; __t${n}=${typeof held === "string" ? "s" : truthy(held) ? "t" : "f"}`
+  `__v${n}=${quote(toText(held))}; __t${n}=${
+    typeof held === "string" ? "s" : typeof held === "number" ? `n${held}` : truthy(held) ? "t" : "f"
+  }`
 
 /**
  * Writes an expression over the matrix as its answer for each variant, worked out here by GitHub's rules. The
@@ -718,20 +752,36 @@ const assignment = (n: number, held: Value): string =>
 const compileByVariant = (node: Residual, emitter: Emitter): number => {
   emitter.count += 1
   const n = emitter.count
-  const keys = [...new Set(variablesOf(node).map((found) => found.id.slice(matrixPrefix.length)))].sort()
+  const keys = emitter.matrixKeys
   const arms = new Map<string, Array<string>>()
-  for (const variant of emitter.variants) {
-    const finished = finish(node, (found) => matrixValue(found, variant))
+  for (const [index, variant] of emitter.variants.entries()) {
+    const typed = emitter.typedVariants?.[index]
+    const finished = finish(node, (found) => {
+      const key = found.id.slice(matrixPrefix.length)
+      return typed === undefined ? matrixValue(found, variant) : Object.hasOwn(typed, key) ? typed[key]! : null
+    })
     if (finished.kind === "problem") throw new Refused(finished.why)
     const held = finished.value
     if (typeof held === "object" && held !== null) {
       throw new Refused("a list or mapping is used with a value decided while the job runs")
     }
     const set = assignment(n, held)
-    arms.set(set, [...(arms.get(set) ?? []), quote(keys.map((key) => `|${key}=${variant[key] ?? ""}`).join(""))])
+    arms.set(set, [
+      ...(arms.get(set) ?? []),
+      quote(
+        keys.map((key) => {
+          const text = Object.hasOwn(variant, key) ? variant[key]! : ""
+          return `|${text.replaceAll("%", "%25").replaceAll("|", "%7C")}`
+        }).join("")
+      )
+    ])
   }
   emitter.lines.push(
-    `case ${quote(keys.map((key) => `|${key}=\${{ matrix.${key} }}`).join(""))} in`,
+    "__pattern=",
+    ...keys.map((key) =>
+      `__m='\${{ matrix.${key} }}'; [ "$__m" != '$''{{ matrix.${key} }}' ] || __m=; __m=\${__m//%/%25}; __pattern="$__pattern|\${__m//|/%7C}"`
+    ),
+    "case \"$__pattern\" in",
     ...[...arms].map(([set, patterns]) => `  ${patterns.join("|")}) ${set} ;;`),
     "esac"
   )
@@ -805,7 +855,7 @@ const python = (fail: (why: string) => string): ReadonlyArray<string> => [
   `if [ ! -x "$__py/pip3" ]; then`,
   `  __p=$(command -v python3 || command -v python) || ${fail("this job sets up Python, and this machine has none")}`,
   `  mkdir -p -- "$__py" && ln -sf -- "$__p" "$__py/python" && ln -sf -- "$__p" "$__py/python3" &&`,
-  `    printf '#!/bin/sh\\nexec %q -m pip "$@"\\n' "$__p" > "$__py/pip" && chmod +x -- "$__py/pip" &&`,
+  `    printf '#!/usr/bin/env bash\\nexec %q -m pip "$@"\\n' "$__p" > "$__py/pip" && chmod +x -- "$__py/pip" &&`,
   `    cp -- "$__py/pip" "$__py/pip3" || exit 1`,
   `fi`,
   `export PATH="$__py:$PATH"`
@@ -820,7 +870,16 @@ const python = (fail: (why: string) => string): ReadonlyArray<string> => [
  * @throws {never}
  */
 export const write = (job: JobFacts, step: StepFacts, command: string): Written => {
-  const emitter: Emitter = { lines: [], count: 0, variants: job.variants ?? [] }
+  if (job.matrixKeys.some((key) => !/^[\w.-]+$/.test(key))) {
+    return { problem: "a matrix key cannot be used in a runner expression" }
+  }
+  const emitter: Emitter = {
+    lines: [],
+    count: 0,
+    matrixKeys: job.matrixKeys,
+    variants: job.variants ?? [],
+    typedVariants: job.typedVariants
+  }
   // Each matrix value under its key, with its length, so two variants never share a state whatever they hold.
   const variant = job.matrixKeys.map((key) =>
     `__m='\${{ matrix.${key} }}'; __variant="$__variant|${key}=\${#__m}:$__m"`
@@ -866,8 +925,12 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       emitter.lines.push(`__limit=${step.limit}; __allowed=${quote(allowed)}`)
     }
   } catch (refused) {
-    // Anything else thrown here is the stack running out on an expression nested thousands deep.
-    return { problem: refused instanceof Refused ? refused.why : "it nests too deep to finish in a shell" }
+    if (refused instanceof Refused) return { problem: refused.why }
+    return {
+      problem: refused instanceof RangeError
+        ? "it nests too deep to finish in a shell"
+        : "the expression carries malformed runner data"
+    }
   }
   // A step that reads the commit, its parent or the run's own numbers says so: its verdict is that commit's and
   // no other's.
@@ -888,10 +951,10 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
     ...(step.python === true ? ["python"] : [])
   ])
   const mark = step.after ??
-    `${shardOf(work, 0x1_0000_0000).toString(36)}-${shardOf(`${work}\n`, 0x1_0000_0000).toString(36)}`
+    `${fnv1a32(work).toString(36)}-${fnv1a32(`${work}\n`).toString(36)}`
   /** The lines that name a directory of the state after the repository's place and `name`, shell words. */
   const named = (target: string, name: string): ReadonlyArray<string> => [
-    `__sum=$(printf %s "$__place|"${name}"$__variant" | cksum)`,
+    `__sum=$(printf %s "$__place|$__invocation|"${name}"$__variant" | cksum)`,
     `case \${__sum// /} in ''|*[!0-9]*) ${fail("cksum gave no checksum to name the job's state with")};; esac`,
     `${target}=$__base/\${__sum%% *}-\${__sum##* }`
   ]
@@ -914,9 +977,7 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
   /** The lines that say where the state's checkout is and write the functions every step of the job reads. */
   const library_ = [
     `printf %s "$__place" > "$__state/root.$$" && mv -f -- "$__state/root.$$" "$__state/root" || exit 1`,
-    `cat > "$__state/lib.sh" <<'${marker}'`,
-    shared,
-    marker
+    `printf '%s\\n' ${quote(shared)} > "$__state/lib.sh" || exit 1`
   ]
   const textOf = (alone: boolean): string =>
     [
@@ -970,9 +1031,12 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       // refuses a socket path longer than 107 bytes.
       `__base=/tmp; __place=$__root`,
       `if [ -n "\${${jobTemporaryVariable}-}" ] && [ -w "$${jobTemporaryVariable}" ]; then __place=; [ /tmp -ef "$${jobTemporaryVariable}" ] || __base=$${jobTemporaryVariable}; fi`,
+      // Private machines already isolate each invocation. On a shared machine, use the workflow run and
+      // attempt, or the local invoking process when the workflow host supplies neither.
+      `__invocation=; if [ -n "$__place" ]; then __id=GITHUB_RUN_''ID; __attempt=GITHUB_RUN_''ATTEMPT; __invocation=\${!__id:-$PPID}.\${!__attempt-}; fi`,
       `unset ${jobTemporaryVariable}; [ -w "$__base" ] || __base=\${TMPDIR:-/tmp}`,
       `__base=$__base/smithers-ci-runner-$(id -u)`,
-      `mkdir -p -m 700 -- "$__base" 2>/dev/null; [ -d "$__base" ] && [ -O "$__base" ] || ${
+      `mkdir -m 700 -- "$__base" 2>/dev/null; [ ! -L "$__base" ] && [ -d "$__base" ] && [ -O "$__base" ] && [ "$(find "$__base" -prune -perm 700 -print)" = "$__base" ] || ${
         fail("$__base is not a directory of this user")
       }`,
       ...(step.apart

@@ -11,8 +11,9 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { uncommittedChanges } from "../contract/Inventory.vibe"
 import type { Failure, ReadInventory } from "../contract/Parts.vibe"
-import { workspace } from "../native/Detect.vibe"
-import { found } from "../native/Workspace.vibe"
+import { applyRefuses } from "../contract/Command.vibe"
+import { found, isGenerated } from "../native/Workspace.vibe"
+import { parseYaml } from "./Actions.vibe"
 import { eventFilesOf, type Facts } from "./Contexts.vibe"
 import { assemble, fileProblem, type Parsed } from "./Draft.vibe"
 import { readWorkflow } from "./GithubActions.vibe"
@@ -28,8 +29,9 @@ import {
 } from "./PackageJson.vibe"
 import { repositoryName } from "./Repository.vibe"
 import { readToolFile, toolFiles } from "./Toolchains.vibe"
+import { thisMachine } from "./Tools.ts"
 import { readTurbo } from "./Turbo.vibe"
-import { normalizeDirectory } from "./Values.vibe"
+import { isRecord, normalizeDirectory } from "./Values.vibe"
 import { gitArguments } from "../replay/Git.vibe"
 
 /** Directories a workspace pattern never walks into. */
@@ -38,8 +40,8 @@ const skipped = (name: string) => name === "node_modules" || name.startsWith("."
 /** The files Make looks for, in the order it looks: it reads only the first it finds. */
 const makefileNames = ["GNUmakefile", "makefile", "Makefile"]
 
-/** How deep `**` follows directories, which also ends a symbolic link cycle. */
-const maxDepth = 12
+/** Bound each pattern by distinct directory/pattern states and record exhaustion. */
+const maxStates = 10_000
 
 type Loaded =
   | { readonly kind: "text"; readonly text: string }
@@ -50,6 +52,8 @@ interface Tree {
   readonly fs: FileSystem.FileSystem
   readonly path: Path.Path
   readonly root: string
+  readonly problems: Map<string, Parsed>
+  readonly children: Map<string, ReadonlyArray<string>>
 }
 
 const nothing: Parsed = { jobs: [], toolchains: [], unsupported: [] }
@@ -62,27 +66,62 @@ const notARepository = (root: string): Failure => ({
 
 effect function git(root: string, args: ReadonlyArray<string>) {
   const spawner = try ChildProcessSpawner
-  const output = spawner.string(ChildProcess.make("git", gitArguments(["-C", root, ...args]))) catch () => ""
-  return output.trim()
+  return scoped(effect {
+    const handle = try spawner.spawn(ChildProcess.make("git", gitArguments(["-C", root, ...args]), { stderr: "ignore" }))
+    const [text, code] = try all([Stream.mkString(Stream.decodeText(handle.stdout)), handle.exitCode], { concurrency: 2 })
+    return Number(code) === 0 ? text : undefined
+  }) catch () => undefined
+}
+
+const report = (tree: Tree, file: string, reason: string) => {
+  tree.problems.set(file, fileProblem(file, "unreadable-file", reason))
+}
+
+/** Resolve the entire path, including parent links, before opening its canonical target. */
+effect function resolve(tree: Tree, file: string) {
+  const full = tree.path.join(tree.root, file)
+  const real = tree.fs.realPath(full) catch (error) => {
+    // An ordinary file in an ancestor means the requested descendant cannot exist.
+    const cause = error.reason.cause
+    if (error.reason._tag !== "NotFound" && !(isRecord(cause) && cause["code"] === "ENOTDIR")) {
+      report(tree, file, `it could not be read (${error.reason._tag})`)
+    }
+    return undefined
+  }
+  if (real === undefined) return undefined
+  const relative = tree.path.relative(tree.root, real)
+  if (relative === ".." || relative.startsWith(`..${tree.path.sep}`) || tree.path.isAbsolute(relative)) {
+    report(tree, file, "its symbolic link leaves the checkout")
+    return undefined
+  }
+  return real
 }
 
 effect function load(tree: Tree, file: string): Loaded!! {
-  return map(tree.fs.readFileString(tree.path.join(tree.root, file)), (text): Loaded => ({ kind: "text", text }))
-    catch (error): Loaded =>
-      error.reason._tag === "NotFound"
-        ? { kind: "absent" }
-        : { kind: "problem", reason: `it could not be read (${error.reason._tag})` }
+  const target = try resolve(tree, file)
+  if (target === undefined) return { kind: "absent" }
+  return effect {
+    const info = try tree.fs.stat(target)
+    if (info.type !== "File") return { kind: "problem", reason: "it could not be read (not a regular file)" } as Loaded
+    return { kind: "text", text: try tree.fs.readFileString(target) } as Loaded
+  } catch (error): Loaded => ({ kind: "problem", reason: `it could not be read (${error.reason._tag})` })
 }
 
-/** The names in a directory, sorted. A directory that is missing has none. */
+/** The names in a directory, sorted. A missing directory has no names. */
 effect function list(tree: Tree, directory: string) {
-  const names = tree.fs.readDirectory(tree.path.join(tree.root, directory)) catch (): ReadonlyArray<string> => []
+  const target = try resolve(tree, directory)
+  if (target === undefined) return []
+  const names = tree.fs.readDirectory(target) catch (error) => {
+    report(tree, directory, `it could not be listed (${error.reason._tag})`)
+    return []
+  }
   return [...names].sort()
 }
 
 /** The text of a file that is only useful when present. */
 effect function optional(tree: Tree, file: string) {
   const loaded = try load(tree, file)
+  if (loaded.kind === "problem") report(tree, file, loaded.reason)
   return loaded.kind === "text" ? loaded.text : undefined
 }
 
@@ -98,45 +137,76 @@ effect function readWith(tree: Tree, file: string, read: (text: string) => Parse
 }
 
 effect function isDirectory(tree: Tree, directory: string) {
-  const info = tree.fs.stat(tree.path.join(tree.root, directory)) catch () => undefined
+  const target = try resolve(tree, directory)
+  // Do not visit a physical directory twice under distinct symlink aliases.
+  if (target !== tree.path.join(tree.root, directory)) return false
+  const info = tree.fs.stat(target) catch (error) => {
+    report(tree, directory, `it could not be inspected (${error.reason._tag})`)
+    return undefined
+  }
   return info?.type === "Directory"
 }
 
 const under = (directory: string, name: string) => (directory === "" ? name : `${directory}/${name}`)
 
 effect function children(tree: Tree, directory: string): ReadonlyArray<string>!! {
+  const cached = tree.children.get(directory)
+  if (cached !== undefined) return cached
   const found: Array<string> = []
   for (const name of try list(tree, directory)) {
     const child = under(directory, name)
     if (!skipped(name) && try isDirectory(tree, child)) found.push(child)
   }
+  tree.children.set(directory, found)
   return found
 }
 
-/** The directories under `directory` that match the rest of a pattern. */
-effect function walk(
-  tree: Tree,
-  directory: string,
-  pattern: ReadonlyArray<string>,
-  depth: number
-): ReadonlyArray<string>!! {
-  if (pattern.length === 0) return [directory]
-  if (depth > maxDepth) return []
-  const head = pattern[0] as string
-  const rest = pattern.slice(1)
+/** Visit each (directory, remaining pattern) once, including overlapping globstars. */
+effect function walk(tree: Tree, pattern: ReadonlyArray<string>): ReadonlyArray<string>!! {
+  const parts = pattern.filter((segment, index) => segment !== "**" || pattern[index - 1] !== "**")
+  const pending: Array<readonly [string, number]> = [["", 0]]
+  const seen = new Set<string>()
   const found: Array<string> = []
-  if (head === "**") {
-    found.push(...try walk(tree, directory, rest, depth))
-    for (const child of try children(tree, directory)) found.push(...try walk(tree, child, pattern, depth + 1))
-  } else if (head.includes("*")) {
-    const matcher = segmentMatcher(head)
-    for (const child of try children(tree, directory)) {
-      if (matcher.test(child.slice(child.lastIndexOf("/") + 1))) found.push(...try walk(tree, child, rest, depth + 1))
+  while (pending.length > 0) {
+    const [directory, at] = pending.pop() as readonly [string, number]
+    const key = `${at}/${directory}`
+    if (seen.has(key)) continue
+    if (seen.size >= maxStates) {
+      const source = pattern.join("/")
+      tree.problems.set(source, fileProblem("package.json", "workspace-pattern", `pattern ${source} exceeded ${maxStates} directory states`))
+      return []
     }
-  } else if (try isDirectory(tree, under(directory, head))) {
-    found.push(...try walk(tree, under(directory, head), rest, depth + 1))
+    seen.add(key)
+    const head = parts[at]
+    if (head === undefined) found.push(directory)
+    else if (head.includes("*")) {
+      const recursive = head === "**"
+      if (recursive) pending.push([directory, at + 1])
+      const matcher = segmentMatcher(head)
+      for (const child of try children(tree, directory)) {
+        if (matcher.test(child.slice(child.lastIndexOf("/") + 1))) pending.push([child, recursive ? at : at + 1])
+      }
+    } else {
+      const child = under(directory, head)
+      if (try isDirectory(tree, child)) pending.push([child, at + 1])
+    }
   }
   return found
+}
+
+const usesOf = (text: string): ReadonlyArray<string> => {
+  const parsed = parseYaml(text)
+  if ("problem" in parsed || !isRecord(parsed.value)) return []
+  const { jobs, runs } = parsed.value
+  const local: Array<string> = []
+  const collect = (item: unknown) => {
+    if (isRecord(item) && typeof item["uses"] === "string" && item["uses"].startsWith("./")) local.push(item["uses"])
+  }
+  for (const entry of [...Object.values(isRecord(jobs) ? jobs : {}), runs]) {
+    collect(entry)
+    if (isRecord(entry) && Array.isArray(entry["steps"])) entry["steps"].forEach(collect)
+  }
+  return local
 }
 
 /**
@@ -145,13 +215,17 @@ effect function walk(
  */
 effect function readLocal(tree: Tree, texts: ReadonlyArray<string>) {
   const found = new Map<string, string>()
+  const visited = new Set<string>()
   const pending = [...texts]
   for (let at = 0; at < pending.length; at++) {
-    for (const match of (pending[at] as string).matchAll(/\buses:\s*["']?\.\/([^\s"'#]+)/g)) {
-      const path = normalizeDirectory(match[1] as string)
-      const files = path === undefined ? [] : /\.ya?ml$/.test(path) ? [path] : [`${path}/action.yml`, `${path}/action.yaml`]
+    for (const uses of usesOf(pending[at] as string)) {
+      const path = normalizeDirectory(uses)
+      if (path === undefined) continue
+      const files = /\.ya?ml$/.test(path) ? [path] : [under(path, "action.yml"), under(path, "action.yaml")]
       for (const file of files) {
-        const text = found.has(file) ? undefined : try optional(tree, file)
+        if (visited.has(file)) continue
+        visited.add(file)
+        const text = try optional(tree, file)
         if (text !== undefined) {
           found.set(file, text)
           pending.push(text)
@@ -168,8 +242,8 @@ effect function readLocal(tree: Tree, texts: ReadonlyArray<string>) {
  */
 effect function defaultBranch(root: string) {
   const remote = try git(root, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])
-  const branch = remote === "" ? try git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]) : remote.slice(remote.indexOf("/") + 1)
-  return branch === "" ? undefined : branch
+  const branch = remote === undefined ? try git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]) : remote.slice(remote.indexOf("/") + 1)
+  return branch?.trim()
 }
 
 /** What is known of the repository besides its files: its name, and the branch a replayed commit is on. */
@@ -192,28 +266,33 @@ effect function readWorkflows(tree: Tree, repository: string) {
   return loaded.map(([file, found]) => parsedOf(file, found, (text) => readWorkflow(file, text, facts)))
 }
 
-effect function readPackages(tree: Tree, rootText: string | undefined, runner: Runner) {
+effect function readPackages(tree: Tree, rootPackage: Loaded, runner: Runner) {
+  const rootText = rootPackage.kind === "text" ? rootPackage.text : undefined
   const pnpm = try optional(tree, "pnpm-workspace.yaml")
   const globs = readGlobs(readWorkspacePatterns(rootText, pnpm))
   const parts: Array<Parsed> = []
+  if (pnpm !== undefined && "problem" in parseYaml(pnpm)) {
+    parts.push(fileProblem("pnpm-workspace.yaml", "malformed-file", "its workspace YAML could not be read"))
+  }
   const packageFile = "package.json"
-  parts.push(try readWith(tree, packageFile, (text) => readPackage(packageFile, text, runner)))
+  parts.push(parsedOf(packageFile, rootPackage, (text) => readPackage(packageFile, text, runner)))
   for (const pattern of globs.unreadable) {
     parts.push(fileProblem(packageFile, "workspace-pattern", `pattern ${pattern} was not read`))
   }
   const directories = new Set<string>()
   for (const pattern of globs.include) {
-    for (const directory of try walk(tree, "", pattern, 0)) {
+    for (const directory of try walk(tree, pattern)) {
       if (directory !== "" && !globs.exclude.some((exclude) => exclude.test(directory))) directories.add(directory)
     }
   }
   for (const directory of [...directories].sort()) {
     const file = `${directory}/package.json`
     parts.push(try readWith(tree, file, (text) => readPackage(file, text, runner)))
-    const hasTurbo = tree.fs.exists(tree.path.join(tree.root, directory, "turbo.json")) catch () => false
-    if (hasTurbo) {
-      const turbo = `${directory}/turbo.json`
-      parts.push(fileProblem(turbo, "package-turbo", "its changes to the root tasks were not read"))
+    for (const name of ["turbo.json", "turbo.jsonc"]) {
+      const turbo = `${directory}/${name}`
+      if (try resolve(tree, turbo) !== undefined) {
+        parts.push(fileProblem(turbo, "package-turbo", "its changes to the root tasks were not read"))
+      }
     }
   }
   return parts
@@ -231,37 +310,48 @@ effect function readPackages(tree: Tree, rootText: string | undefined, runner: R
 export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProcessSpawner> = effect function (root) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
-  const commit = try git(root, ["rev-parse", "--verify", "HEAD"])
-  if (commit === "") throw notARepository(root)
+  const commit = (try git(root, ["rev-parse", "--verify", "HEAD"]))?.trim()
+  if (!commit) throw notARepository(root)
   const remote = try git(root, ["remote", "get-url", "origin"])
   const changes = try git(root, ["--no-optional-locks", "status", "--porcelain"])
-  const tree: Tree = { fs, path, root }
+  const canonical = fs.realPath(root) catch () => path.resolve(root)
+  const tree: Tree = { fs, path, root: canonical, problems: new Map(), children: new Map() }
   const rootFiles = try list(tree, "")
 
   // The files are read from the working tree, which may not be what `commit` holds.
-  const parts: Array<Parsed> = changes === ""
-    ? []
-    : [{ ...nothing, unsupported: [{ feature: uncommittedChanges, detail: `the working tree differs from ${commit}` }] }]
-  const own = try workspace(root)
-  if (own !== undefined) parts.push({ ...nothing, unsupported: [found(own)] })
-  const repository = repositoryName(remote, path.basename(path.resolve(root)))
-  parts.push(...try readWorkflows(tree, repository))
-  for (const name of rootFiles) {
-    if (/^\.?justfile$/i.test(name)) {
-      parts.push(try readWith(tree, name, (text) => readJustfile(name, text)))
+  const parts: Array<Parsed> = []
+  if (changes === undefined) parts.push(fileProblem(".", "unreadable-file", "working-tree status could not be read"))
+  else if (changes !== "") parts.push({ ...nothing, unsupported: [{ feature: uncommittedChanges, detail: `the working tree differs from ${commit}` }] })
+  for (const file of applyRefuses) {
+    const loaded = try load(tree, file)
+    if (tree.problems.has(file) || loaded.kind === "problem" || (loaded.kind === "text" && !isGenerated(loaded.text))) {
+      parts.push({ ...nothing, unsupported: [found(file)] })
+      break
     }
+  }
+  const repository = repositoryName(remote?.trim() ?? "", path.basename(path.resolve(root)))
+  parts.push(...try readWorkflows(tree, repository))
+  const justfiles = rootFiles.filter((name) => /^\.?justfile$/i.test(name))
+  const [justfile] = justfiles
+  if (justfiles.length > 1) {
+    // Just reports MultipleCandidates before opening any of these files.
+    parts.push(fileProblem(".", "unreadable-file", `Just cannot select a Justfile among ${justfiles.join(", ")}`))
+  } else if (justfile !== undefined) {
+    parts.push(try readWith(tree, justfile, (text) => readJustfile(justfile, text, thisMachine().host)))
   }
 
   const makefile = makefileNames.find((name) => rootFiles.includes(name))
   if (makefile !== undefined) {
     // Make skips a recipe or replaces it depending on which files exist.
     const tracked = try git(root, ["ls-files", "-z"])
-    parts.push(try readWith(tree, makefile, (text) => readMakefile(makefile, text, tracked.split("\0"))))
+    if (tracked === undefined) parts.push(fileProblem(makefile, "unreadable-file", "tracked files could not be read"))
+    else parts.push(try readWith(tree, makefile, (text) => readMakefile(makefile, text, tracked.split("\0"))))
   }
 
-  const manifest = try optional(tree, "package.json")
+  const rootPackage = try load(tree, "package.json")
+  const manifest = rootPackage.kind === "text" ? rootPackage.text : undefined
   const runner = chooseRunner(manifest, rootFiles)
-  parts.push(...try readPackages(tree, manifest, runner))
+  parts.push(...try readPackages(tree, rootPackage, runner))
   for (const name of ["turbo.json", "turbo.jsonc"]) {
     parts.push(try readWith(tree, name, (text) => readTurbo(name, text, runner)))
   }
@@ -269,7 +359,7 @@ export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProces
     const text = rootFiles.includes(name) ? try optional(tree, name) : undefined
     if (text !== undefined) parts.push({ ...nothing, toolchains: readToolFile(name, text) })
   }
-  const inventory = assemble(repository, commit, parts)
+  const inventory = assemble(repository, commit, [...parts, ...tree.problems.values()])
   // A runner starts a workflow for an event and gives every step the event's file. A replay writes that file for
   // each commit, from what is known of each event here.
   if (!inventory.jobs.some((job) => job.source === "github-actions")) return inventory
