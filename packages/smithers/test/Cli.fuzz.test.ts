@@ -68,7 +68,15 @@ describe("@smthrs/cli Argv, Arguments, Output, IssueTodoDraft, CliError, RemoteU
         title: Schema.Literals(["Fix auth bug", "   Trimmed title  ", "", "   "]),
         prompt: Schema.Literals(["Do the fix cleanly.", "", "   "]),
         acceptance: Schema.Array(Schema.Literals(["tests pass", "  lint passes ", ""])).check(Schema.isMaxLength(3)),
-        wireMode: Schema.Literals(["valid", "withReasoning", "incomplete", "trailingAfterDone", "toolCallFrame", "badJson", "missingRunId"])
+        wireMode: Schema.Literals([
+          "valid",
+          "withReasoning",
+          "incomplete",
+          "trailingAfterDone",
+          "toolCallFrame",
+          "badJson",
+          "missingRunId"
+        ])
       })
     )
     const report = await Effect.runPromise(
@@ -106,13 +114,15 @@ describe("@smthrs/cli Argv, Arguments, Output, IssueTodoDraft, CliError, RemoteU
               }
             }
             const wire = frames.join("\n")
-            const fieldsValid = title.trim().length > 0 && prompt.trim().length > 0 && acceptance.every((a) => a.trim().length > 0)
+            const fieldsValid = title.trim().length > 0 && prompt.trim().length > 0 &&
+              acceptance.every((a) => a.trim().length > 0)
             const shouldSucceed = (wireMode === "valid" || wireMode === "withReasoning") && fieldsValid
 
             try {
               const draft = IssueTodoDraft.readIssueTodoDraft(wire)
               if (!shouldSucceed) return false
-              return draft.title === title.trim() && draft.prompt === prompt.trim() && draft.acceptance.length === acceptance.length
+              return draft.title === title.trim() && draft.prompt === prompt.trim() &&
+                draft.acceptance.length === acceptance.length
             } catch (err) {
               if (shouldSucceed) return false
               return err instanceof CliError.Refused || err instanceof SyntaxError

@@ -34,6 +34,7 @@ mkdir -p workspace && echo "the note" > workspace/note.txt
 ```
 
 Why these three packages?
+
 - `@smthrs/flows`: the platform-independent engine and authoring APIs (imports no `node:*` code). In published `1.0.0-rc.16`, `NodeRuntime` is imported from `@smthrs/flows/NodeRuntime`.
 - `@smthrs/platform-node`: the Node host and SQLite driver.
 - `effect@4.0.5`: imported directly by your code (the published `rc.16` cohort requires `effect@4.0.5`).

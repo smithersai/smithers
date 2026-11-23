@@ -211,7 +211,12 @@ describe("@smthrs/rpc comprehensive fuzz invariants", () => {
         ]),
         proto: Schema.Literals(ConfiguredModel.MODEL_PROTOCOLS),
         host: Schema.Literals(["local", "cloud"]),
-        origin: Schema.Literals(["https://api.openai.com/v1", "http://127.0.0.1:8080/v1", "http://evil.example/v1", "ftp://bad"]),
+        origin: Schema.Literals([
+          "https://api.openai.com/v1",
+          "http://127.0.0.1:8080/v1",
+          "http://evil.example/v1",
+          "ftp://bad"
+        ]),
         secret: Schema.Literals(["sk-secret-value-12345678", "Bearer_token_abcdef_987654", "short"])
       })
     )
@@ -258,7 +263,11 @@ describe("@smthrs/rpc comprehensive fuzz invariants", () => {
             if (listings.length === 0) return false
             const custom = ConfiguredModel.customModelCredentials(env)
             if (!custom.some((c) => c.name === "CUSTOM_ONE")) return false
-            if (!ConfiguredModel.modelCredentialEnvName("CUSTOM_ONE").startsWith(ConfiguredModel.MODEL_CREDENTIAL_ENV_PREFIX)) {
+            if (
+              !ConfiguredModel.modelCredentialEnvName("CUSTOM_ONE").startsWith(
+                ConfiguredModel.MODEL_CREDENTIAL_ENV_PREFIX
+              )
+            ) {
               return false
             }
 
@@ -367,7 +376,11 @@ describe("@smthrs/rpc comprehensive fuzz invariants", () => {
             if (SubagentCard.headerLine(hdr).length === 0) return false
             SubagentCard.earlierBatches([sub, sub], open)
             SubagentCard.earlierLine(2)
-            SubagentCard.finished(sub.title, status === "done" || status === "failed" || status === "cancelled" ? status : "done", "1s")
+            SubagentCard.finished(
+              sub.title,
+              status === "done" || status === "failed" || status === "cancelled" ? status : "done",
+              "1s"
+            )
             SubagentCard.toast(sub, 1000 + now)
             return true
           }),

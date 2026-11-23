@@ -4,12 +4,12 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Input from "../src/Input.ts"
 import * as FactoryPolicy from "../src/FactoryPolicy.ts"
+import * as Input from "../src/Input.ts"
 import * as Owners from "../src/Owners.ts"
 import * as PackageJson from "../src/PackageJson.ts"
-import * as RemoteCache from "../src/RemoteCache.ts"
 import * as Reference from "../src/Reference.ts"
+import * as RemoteCache from "../src/RemoteCache.ts"
 import * as SafeFs from "../src/SafeFs.ts"
 import * as Secret from "../src/Secret.ts"
 import * as Smithers from "../src/Smithers.ts"
@@ -234,7 +234,10 @@ describe("@smthrs/targets Input path/ref security, Owners, Secret, Reference, Ve
             // RemoteCache.normalizeEndpoint must reject credentials, non-http(s), empty, and malformed URLs
             try {
               const norm = RemoteCache.normalizeEndpoint(endpoint)
-              if (endpoint === "" || endpoint === "not-a-url" || endpoint.startsWith("ftp://") || endpoint.includes("user:pass@")) return false
+              if (
+                endpoint === "" || endpoint === "not-a-url" || endpoint.startsWith("ftp://") ||
+                endpoint.includes("user:pass@")
+              ) return false
               if (!norm.startsWith("http://") && !norm.startsWith("https://")) return false
             } catch {
               if (endpoint === "https://cache.smithers.sh") return false

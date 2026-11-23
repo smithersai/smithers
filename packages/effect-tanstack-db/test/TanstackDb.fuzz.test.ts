@@ -255,7 +255,10 @@ describe("@smthrs/effect-tanstack-db comprehensive fuzz invariants", () => {
               if (firstChanges.length < 1) return false
 
               let observedCount = 0
-              yield* LiveQuery.observeSync(ordered, () => Effect.sync(() => { observedCount++ }))
+              yield* LiveQuery.observeSync(ordered, () =>
+                Effect.sync(() => {
+                  observedCount++
+                }))
               if (observedCount < 1) return false
 
               // Join + findOne + Query.or / lt / lte / gt / eq / isUndefined / caseWhen
@@ -394,7 +397,9 @@ describe("@smthrs/effect-tanstack-db comprehensive fuzz invariants", () => {
 
                 if (writeFails) {
                   refuseWrites = true
-                  const badTx = yield* col.update(rows[0]!.id, (d) => { d.count = 999 })
+                  const badTx = yield* col.update(rows[0]!.id, (d) => {
+                    d.count = 999
+                  })
                   const res = yield* Effect.result(badTx.persisted)
                   refuseWrites = false
                   if (res._tag !== "Failure") return false
@@ -523,7 +528,15 @@ describe("@smthrs/effect-tanstack-db comprehensive fuzz invariants", () => {
         family: Schema.Boolean,
         memberName: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-z0-9_-]{1,8}$/))),
         includeUnmigratable: Schema.Boolean,
-        outboxAction: Schema.Literals(["current", "upgradeUnstamped", "upgradeStamped", "renamed", "retired", "unmigratable", "corrupt"])
+        outboxAction: Schema.Literals([
+          "current",
+          "upgradeUnstamped",
+          "upgradeStamped",
+          "renamed",
+          "retired",
+          "unmigratable",
+          "corrupt"
+        ])
       })
     )
     const report = await Effect.runPromise(
@@ -539,8 +552,7 @@ describe("@smthrs/effect-tanstack-db comprehensive fuzz invariants", () => {
                 Migrations.step(RowV1, RowV2, (r) =>
                   r.count < 0
                     ? new Migrations.Unmigratable({ reason: "negative_count" })
-                    : { ...r, label: "migrated" }
-                )
+                    : { ...r, label: "migrated" })
               ],
               getKey: (r) => r.id
             })
@@ -553,8 +565,7 @@ describe("@smthrs/effect-tanstack-db comprehensive fuzz invariants", () => {
                 Migrations.step(RowV1, RowV2, (r) =>
                   r.count < 0
                     ? new Migrations.Unmigratable({ reason: "bad_payload" })
-                    : { ...r, label: "upgraded" }
-                )
+                    : { ...r, label: "upgraded" })
               ]
             })
 
@@ -679,7 +690,9 @@ describe("@smthrs/effect-tanstack-db comprehensive fuzz invariants", () => {
             const outboxDecoded3 = decodeOutboxValue(outboxEncoded, 3)
             const outboxDecoded2 = decodeOutboxValue(outboxEncoded, 2)
             const outboxDecodedU = decodeOutboxValue(richVal, undefined)
-            if (outboxDecoded3 === undefined || outboxDecoded2 === undefined || outboxDecodedU === undefined) return false
+            if (outboxDecoded3 === undefined || outboxDecoded2 === undefined || outboxDecodedU === undefined) {
+              return false
+            }
 
             const complexSchema = Schema.Struct({
               a: Schema.String,
@@ -842,14 +855,15 @@ describe("@smthrs/effect-tanstack-db comprehensive fuzz invariants", () => {
                 yield* sealedWrite.admitted
               }
 
-              const offlineDetector: Outbox.Online = scenario === "withdraw" || scenario === "handoffOk" || scenario === "handoffFail"
-                ? {
-                  subscribe: () => () => undefined,
-                  notifyOnline: () => undefined,
-                  isOnline: () => false,
-                  dispose: () => undefined
-                }
-                : online
+              const offlineDetector: Outbox.Online =
+                scenario === "withdraw" || scenario === "handoffOk" || scenario === "handoffFail"
+                  ? {
+                    subscribe: () => () => undefined,
+                    notifyOnline: () => undefined,
+                    isOnline: () => false,
+                    dispose: () => undefined
+                  }
+                  : online
 
               if (scenario === "ok" || scenario === "joinExisting") {
                 yield* Queue.offer(outcomes, "ok")
@@ -960,7 +974,8 @@ describe("@smthrs/effect-tanstack-db comprehensive fuzz invariants", () => {
               if (isFollower) {
                 if (txRes._tag !== "Failure" || txRes.failure._tag !== "NotAdmitted") return false
                 const wRes = yield* Effect.result(outbox.withdraw(row.id))
-                return wRes._tag === "Failure" && wRes.failure._tag === "NotWithdrawn" && wRes.failure.reason === "follower"
+                return wRes._tag === "Failure" && wRes.failure._tag === "NotWithdrawn" &&
+                  wRes.failure.reason === "follower"
               }
               if (txRes._tag !== "Success") return false
               const write = txRes.success
@@ -981,7 +996,8 @@ describe("@smthrs/effect-tanstack-db comprehensive fuzz invariants", () => {
               if (scenario === "ok") {
                 yield* write.settled
                 const goneWithdraw = yield* Effect.result(outbox.withdraw("no-such-key"))
-                return sent.length === 1 && goneWithdraw._tag === "Failure" && goneWithdraw.failure._tag === "NotWithdrawn"
+                return sent.length === 1 && goneWithdraw._tag === "Failure" &&
+                  goneWithdraw.failure._tag === "NotWithdrawn"
               }
 
               if (scenario === "retryThenOk" || scenario === "heldThenOk") {
@@ -1010,7 +1026,12 @@ describe("@smthrs/effect-tanstack-db comprehensive fuzz invariants", () => {
               if (scenario === "handoffOk") {
                 yield* write.admitted
                 let accepted = false
-                yield* outbox.handoff(row.id, Effect.sync(() => { accepted = true }))
+                yield* outbox.handoff(
+                  row.id,
+                  Effect.sync(() => {
+                    accepted = true
+                  })
+                )
                 const parked = yield* outbox.parked
                 return accepted && parked.length === 0 && sent.length === 0
               }
@@ -1057,8 +1078,12 @@ describe("@smthrs/effect-tanstack-db comprehensive fuzz invariants", () => {
               const l2 = yield* Outbox.lockLeader({ lock, name: "outbox" }).pipe(Scope.provide(s2))
               let l1Changes = 0
               let l2Changes = 0
-              const off1 = l1.onLeadershipChange(() => { l1Changes++ })
-              const off2 = l2.onLeadershipChange(() => { l2Changes++ })
+              const off1 = l1.onLeadershipChange(() => {
+                l1Changes++
+              })
+              const off2 = l2.onLeadershipChange(() => {
+                l2Changes++
+              })
               const got1 = yield* Effect.promise(() => l1.requestLeadership())
               const got2 = yield* Effect.promise(() => l2.requestLeadership())
               if (!got1 || got2 || !l1.isLeader() || l2.isLeader()) return false

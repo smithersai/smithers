@@ -3,20 +3,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Fuzz, FuzzSimulation } from "@smthrs/fuzz"
 import * as PlanEffects from "@smthrs/plan/Effects"
 import * as Node from "@smthrs/plan/Node"
-import {
-  Arbitrary,
-  Cause,
-  Duration,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Logger,
-  Option,
-  Result,
-  Schema,
-  Stream
-} from "effect"
+import { Arbitrary, Cause, Duration, Effect, Exit, Fiber, Layer, Logger, Option, Result, Schema, Stream } from "effect"
 import { PersistedQueue } from "effect/persistence"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
@@ -768,9 +755,7 @@ describe("@smthrs/flow fuzz", () => {
           const layer = Layer.mergeAll(
             Offer.toLayer((p) => DurableQueue.process(Q, p)),
             Interpreter.layer(QFlow),
-            DurableQueue.worker(Q, ({ n }) =>
-              v.shouldFail ? Effect.fail("worker-failed") : Effect.succeed(n * 3)
-            )
+            DurableQueue.worker(Q, ({ n }) => v.shouldFail ? Effect.fail("worker-failed") : Effect.succeed(n * 3))
           ).pipe(
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(layerMemory),
@@ -902,7 +887,8 @@ describe("@smthrs/flow fuzz", () => {
               required: ["name", "count"]
             }
             expect(HumanTask.validateSchema(schema)).toBeUndefined()
-            expect(HumanTask.validate({ name: v.text, count: v.num, ok: v.flag }, { kind: "json", schema })).toBeUndefined()
+            expect(HumanTask.validate({ name: v.text, count: v.num, ok: v.flag }, { kind: "json", schema }))
+              .toBeUndefined()
             expect(HumanTask.validate({ name: v.text }, { kind: "json", schema })).toBeDefined()
             expect(HumanTask.validate({ name: 42, count: v.num }, { kind: "json", schema })).toBeDefined()
           }
@@ -910,12 +896,16 @@ describe("@smthrs/flow fuzz", () => {
           // HumanTask.validateSchema edge cases
           switch (v.badSchemaKind) {
             case "valid-obj":
-              expect(HumanTask.validateSchema({ type: "object", properties: { a: { type: "number" } } })).toBeUndefined()
+              expect(HumanTask.validateSchema({ type: "object", properties: { a: { type: "number" } } }))
+                .toBeUndefined()
               break
             case "valid-arr":
               expect(HumanTask.validateSchema({ type: "array", items: { type: "string" } })).toBeUndefined()
-              expect(HumanTask.validate(["a", "b"], { kind: "json", schema: { type: "array", items: { type: "string" } } })).toBeUndefined()
-              expect(HumanTask.validate([1], { kind: "json", schema: { type: "array", items: { type: "string" } } })).toBeDefined()
+              expect(
+                HumanTask.validate(["a", "b"], { kind: "json", schema: { type: "array", items: { type: "string" } } })
+              ).toBeUndefined()
+              expect(HumanTask.validate([1], { kind: "json", schema: { type: "array", items: { type: "string" } } }))
+                .toBeDefined()
               break
             case "valid-enum":
               expect(HumanTask.validateSchema({ enum: ["x", 1, null, true] })).toBeUndefined()
@@ -924,7 +914,8 @@ describe("@smthrs/flow fuzz", () => {
               break
             case "valid-nullable":
               expect(HumanTask.validateSchema({ type: "string", nullable: true })).toBeUndefined()
-              expect(HumanTask.validate(null, { kind: "json", schema: { type: "string", nullable: true } })).toBeUndefined()
+              expect(HumanTask.validate(null, { kind: "json", schema: { type: "string", nullable: true } }))
+                .toBeUndefined()
               break
             case "bad-keyword":
               expect(HumanTask.validateSchema({ type: "string", pattern: "^a$" })).toBeDefined()
@@ -1084,21 +1075,24 @@ describe("@smthrs/flow fuzz", () => {
                 yield* submit(1, "yes")
                 yield* yieldTurns
                 const polled = yield* HTFlow.poll(execId)
-                expect(Option.isSome(polled) && polled.value._tag === "Complete" && Exit.isSuccess(polled.value.exit)).toBe(true)
+                expect(Option.isSome(polled) && polled.value._tag === "Complete" && Exit.isSuccess(polled.value.exit))
+                  .toBe(true)
               } else if (v.scenario === "humantask-reask-then-ok") {
                 yield* submit(1, "bad-choice")
                 yield* yieldTurns
                 yield* submit(2, "no")
                 yield* yieldTurns
                 const polled = yield* HTFlow.poll(execId)
-                expect(Option.isSome(polled) && polled.value._tag === "Complete" && Exit.isSuccess(polled.value.exit)).toBe(true)
+                expect(Option.isSome(polled) && polled.value._tag === "Complete" && Exit.isSuccess(polled.value.exit))
+                  .toBe(true)
               } else {
                 yield* submit(1, "bad-1")
                 yield* yieldTurns
                 yield* submit(2, "bad-2")
                 yield* yieldTurns
                 const polled = yield* HTFlow.poll(execId)
-                expect(Option.isSome(polled) && polled.value._tag === "Complete" && Exit.isFailure(polled.value.exit)).toBe(true)
+                expect(Option.isSome(polled) && polled.value._tag === "Complete" && Exit.isFailure(polled.value.exit))
+                  .toBe(true)
               }
             }).pipe(Effect.provide(layer))
             return true
@@ -1112,8 +1106,16 @@ describe("@smthrs/flow fuzz", () => {
               idempotencyKey: ({ id }) => id,
               body: (p) => RAct.call(p)
             })
-            const a1 = Action.make({ name: `race/${v.id}/a1`, success: Schema.String, execute: Effect.succeed("first") })
-            const a2 = Action.make({ name: `race/${v.id}/a2`, success: Schema.String, execute: Effect.succeed("second") })
+            const a1 = Action.make({
+              name: `race/${v.id}/a1`,
+              success: Schema.String,
+              execute: Effect.succeed("first")
+            })
+            const a2 = Action.make({
+              name: `race/${v.id}/a2`,
+              success: Schema.String,
+              execute: Effect.succeed("second")
+            })
             const layer = layerWired(
               Interpreter.layer(RFlow).pipe(
                 Layer.provideMerge(RAct.toLayer(() => Action.raceAll(`r-${v.id}`, [a1, a2])))
@@ -1169,12 +1171,15 @@ describe("@smthrs/flow fuzz", () => {
           yield* Effect.gen(function*() {
             const eff = v.scenario === "externaljob-run-fast" || v.scenario === "externaljob-run-handoff"
               ? Job.run({ value: v.id }, { executionId: `ej-${v.id}`, operations })
-              : Effect.flatMap(FlowRuntime.FlowRuntime, (rt) =>
-                rt.execute(Job, { payload: { value: v.id }, executionId: `ej-${v.id}` })
+              : Effect.flatMap(
+                FlowRuntime.FlowRuntime,
+                (rt) => rt.execute(Job, { payload: { value: v.id }, executionId: `ej-${v.id}` })
               )
             const fib = yield* Effect.forkChild(Effect.exit(eff))
             for (let t = 0; t < 60; t++) {
-              if (fib.pollUnsafe() !== undefined) break
+              if (fib.pollUnsafe() !== undefined) {
+                break
+              }
               yield* Effect.yieldNow
               yield* TestClock.adjust(Duration.millis(25))
             }
@@ -1306,8 +1311,10 @@ describe("@smthrs/flow fuzz", () => {
 
             const layer = layerWired(Interpreter.layer(UnwiredJob))
             const exit = yield* Effect.flatMap(FlowRuntime.FlowRuntime, (rt) =>
-              rt.execute(UnwiredJob, { payload: { value: v.id }, executionId: `unw-${v.id}` })
-            ).pipe(Effect.exit, Effect.provide(layer))
+              rt.execute(UnwiredJob, { payload: { value: v.id }, executionId: `unw-${v.id}` })).pipe(
+                Effect.exit,
+                Effect.provide(layer)
+              )
             expect(Exit.isFailure(exit)).toBe(true)
             if (Exit.isFailure(exit)) {
               expect(Interpreter.refusalCode(exit.cause)).toEqual(Option.some("unresolved_action"))
@@ -1321,7 +1328,8 @@ describe("@smthrs/flow fuzz", () => {
               payload: { n: Schema.Number },
               success: Schema.Number,
               error: Schema.String,
-              idempotencyKey: ({ n }) => `d-${n}`,
+              idempotencyKey: ({ n }) =>
+                `d-${n}`,
               body: ({ n }) => StepA.call({ n })
             })
             const layer = layerWired(

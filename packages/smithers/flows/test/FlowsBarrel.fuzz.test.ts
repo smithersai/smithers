@@ -161,7 +161,8 @@ describe("@smthrs/flows barrel & Runtime.validate/layer/make fuzz invariants", (
 
               const out = yield* Effect.flatMap(
                 Flows.FlowRuntime.FlowRuntime,
-                (fr) => fr.execute(flow, { executionId: `fuzz-${input}-${withCacheEnv ? 1 : 0}`, payload: { n: input } })
+                (fr) =>
+                  fr.execute(flow, { executionId: `fuzz-${input}-${withCacheEnv ? 1 : 0}`, payload: { n: input } })
               ).pipe(Effect.provide(rtLayer))
               if (out !== input * 2) return false
               const built = yield* Flows.Runtime.make(

@@ -106,7 +106,8 @@ describe("@smthrs/integrations comprehensive crypto, cookie, OAuth, source-store
             const recomputed = yield* Core.Pkce.deriveCodeChallenge(pair.codeVerifier)
             if (recomputed !== pair.codeChallenge) return false
 
-            const isInsecure = scheme !== "https" && !(scheme === "http" && (host === "localhost" || host === "127.0.0.1"))
+            const isInsecure = scheme !== "https" &&
+              !(scheme === "http" && (host === "localhost" || host === "127.0.0.1"))
             const isReserved = Core.AuthorizationUrl.RESERVED_PARAMS.includes(extraKey)
             const authRes = yield* Effect.result(
               Effect.try(() =>
@@ -145,7 +146,9 @@ describe("@smthrs/integrations comprehensive crypto, cookie, OAuth, source-store
             const doc = { a: { b: { c: 42, s: "hi" } } }
             if (Core.JsonPath.readInteger(doc, "a.b.c") !== 42) return false
             if (Core.JsonPath.readString(doc, "a.b.s") !== "hi") return false
-            if (Core.JsonPath.readHeader({ headers: { "X-Hub-Signature-256": "abc" } }, "x-hub-signature-256") !== "abc") {
+            if (
+              Core.JsonPath.readHeader({ headers: { "X-Hub-Signature-256": "abc" } }, "x-hub-signature-256") !== "abc"
+            ) {
               return false
             }
 
@@ -271,8 +274,10 @@ describe("@smthrs/integrations comprehensive crypto, cookie, OAuth, source-store
             const memCur = yield* Core.CursorStore.makeMemory
             yield* memCur.set("k", "v1")
             if ((yield* memCur.get("k")) !== "v1") return false
-            if (!Core.Connection.containersAllowed({ containers: [grantContainer] }, recordContainer) &&
-              (grantContainer === "*" || grantContainer === recordContainer)) {
+            if (
+              !Core.Connection.containersAllowed({ containers: [grantContainer] }, recordContainer) &&
+              (grantContainer === "*" || grantContainer === recordContainer)
+            ) {
               return false
             }
 
@@ -356,43 +361,57 @@ describe("@smthrs/integrations comprehensive crypto, cookie, OAuth, source-store
             if (commitAllowed !== pathSafe) return false
 
             // Pull request head MUST belong to login & branchPrefix
-            if (!DelegationPolicy.permits([grant], "alice", {
-              kind: "pull.create",
-              repository: "smithersai/smithers",
-              head: "alice:proposals/fix-1",
-              base: "main",
-              title: "t",
-              body: "b"
-            })) return false
-            if (DelegationPolicy.permits([grant], "alice", {
-              kind: "pull.create",
-              repository: "smithersai/smithers",
-              head: "bob:proposals/fix-1",
-              base: "main",
-              title: "t",
-              body: "b"
-            })) return false
+            if (
+              !DelegationPolicy.permits([grant], "alice", {
+                kind: "pull.create",
+                repository: "smithersai/smithers",
+                head: "alice:proposals/fix-1",
+                base: "main",
+                title: "t",
+                body: "b"
+              })
+            ) return false
+            if (
+              DelegationPolicy.permits([grant], "alice", {
+                kind: "pull.create",
+                repository: "smithersai/smithers",
+                head: "bob:proposals/fix-1",
+                base: "main",
+                title: "t",
+                body: "b"
+              })
+            ) return false
 
             // Label ops MUST require labelPrefix
-            if (!DelegationPolicy.permits([grant], "alice", {
-              kind: "label.create",
-              repository: "smithersai/smithers",
-              name: "site:bug",
-              color: "ffffff"
-            })) return false
-            if (DelegationPolicy.permits([grant], "alice", {
-              kind: "label.create",
-              repository: "smithersai/smithers",
-              name: "admin",
-              color: "ffffff"
-            })) return false
+            if (
+              !DelegationPolicy.permits([grant], "alice", {
+                kind: "label.create",
+                repository: "smithersai/smithers",
+                name: "site:bug",
+                color: "ffffff"
+              })
+            ) return false
+            if (
+              DelegationPolicy.permits([grant], "alice", {
+                kind: "label.create",
+                repository: "smithersai/smithers",
+                name: "admin",
+                color: "ffffff"
+              })
+            ) return false
 
             // Read target & publicRead MUST block secrets/traversal/leading-zero IDs
             const rt = DelegationPolicy.readTarget([grant], "alice", readPath)
             if ((readPath.includes("secrets") || readPath.includes("..")) && rt !== undefined) return false
-            const reads: ReadonlyArray<DelegationPolicy.Read> = [{ repository: "smithersai/smithers", repositoryId: 42 }]
+            const reads: ReadonlyArray<DelegationPolicy.Read> = [{
+              repository: "smithersai/smithers",
+              repositoryId: 42
+            }]
             const pr = DelegationPolicy.publicRead(reads, readPath)
-            if ((readPath.includes("secrets") || readPath.includes("..") || readPath.includes("/042/")) && pr !== undefined) {
+            if (
+              (readPath.includes("secrets") || readPath.includes("..") || readPath.includes("/042/")) &&
+              pr !== undefined
+            ) {
               return false
             }
             if (DelegationPolicy.liveDelegation("active", expires, now) !== (expires > now)) return false
@@ -473,9 +492,9 @@ describe("@smthrs/integrations comprehensive crypto, cookie, OAuth, source-store
             const repoOk = GitHub.Repository.isRepo(repo)
             const pathRes = yield* GitHub.Repository.requireRepositoryPath(owner, repo).pipe(Effect.result)
             if (ownerOk && repoOk) {
-              if (pathRes._tag !== "Success" || pathRes.success !== `${owner}/${repo}`) { throw new Error("FAIL_AT_" + 1) }
+              if (pathRes._tag !== "Success" || pathRes.success !== `${owner}/${repo}`) throw new Error("FAIL_AT_" + 1)
             } else {
-              if (pathRes._tag !== "Failure") { throw new Error("FAIL_AT_" + 2) }
+              if (pathRes._tag !== "Failure") throw new Error("FAIL_AT_" + 2)
             }
 
             const fakeHttp = HttpClient.make((req) => {
@@ -485,16 +504,26 @@ describe("@smthrs/integrations comprehensive crypto, cookie, OAuth, source-store
               if (status === 403 && rateLimited403) headers.set("x-ratelimit-remaining", "0")
               if (status === 302) headers.set("location", "https://evil.example.com/steal")
               if (fullUrl.includes("per_page=1") && status === 200) {
-                headers.set("link", "<https://api.github.com/repos/octocat/smithers/issues?page=7&per_page=1>; rel=\"last\"")
-                return Effect.succeed(HttpClientResponse.fromWeb(req, new Response(JSON.stringify([{ id: 1 }]), { status: 200, headers })))
+                headers.set(
+                  "link",
+                  "<https://api.github.com/repos/octocat/smithers/issues?page=7&per_page=1>; rel=\"last\""
+                )
+                return Effect.succeed(
+                  HttpClientResponse.fromWeb(req, new Response(JSON.stringify([{ id: 1 }]), { status: 200, headers }))
+                )
               }
               if (fullUrl.includes("per_page=2") && status === 200) {
                 if (nextOrigin === "same" && !fullUrl.includes("&page=2")) {
-                  headers.set("link", "<https://api.github.com/repos/octocat/smithers/issues?per_page=2&page=2>; rel=\"next\"")
+                  headers.set(
+                    "link",
+                    "<https://api.github.com/repos/octocat/smithers/issues?per_page=2&page=2>; rel=\"next\""
+                  )
                 } else if (nextOrigin === "evil") {
                   headers.set("link", "<https://evil.example.com/steal?page=2>; rel=\"next\"")
                 }
-                return Effect.succeed(HttpClientResponse.fromWeb(req, new Response(JSON.stringify([{ id: 1 }]), { status: 200, headers })))
+                return Effect.succeed(
+                  HttpClientResponse.fromWeb(req, new Response(JSON.stringify([{ id: 1 }]), { status: 200, headers }))
+                )
               }
               if (status === 204) {
                 return Effect.succeed(HttpClientResponse.fromWeb(req, new Response(null, { status: 204, headers })))
@@ -510,7 +539,10 @@ describe("@smthrs/integrations comprehensive crypto, cookie, OAuth, source-store
               return Effect.succeed(
                 HttpClientResponse.fromWeb(
                   req,
-                  new Response(JSON.stringify({ permission: "admin", role_name: "admin", user: { id: 7 } }), { status, headers })
+                  new Response(JSON.stringify({ permission: "admin", role_name: "admin", user: { id: 7 } }), {
+                    status,
+                    headers
+                  })
                 )
               )
             })
@@ -520,44 +552,57 @@ describe("@smthrs/integrations comprehensive crypto, cookie, OAuth, source-store
               {}
             ).pipe(Effect.provideService(HttpClient.HttpClient, fakeHttp))
 
-            const reqRes = yield* client.request(method, "/repos/octocat/smithers/issues", method === "GET" ? undefined : { title: "hi" }).pipe(Effect.result)
+            const reqRes = yield* client.request(
+              method,
+              "/repos/octocat/smithers/issues",
+              method === "GET" ? undefined : { title: "hi" }
+            ).pipe(Effect.result)
             if (status === 200 || status === 204) {
-              if (reqRes._tag !== "Success") { throw new Error("FAIL_AT_" + 3) }
+              if (reqRes._tag !== "Success") throw new Error("FAIL_AT_" + 3)
             } else {
-              if (reqRes._tag !== "Failure") { throw new Error("FAIL_AT_" + 4) }
+              if (reqRes._tag !== "Failure") throw new Error("FAIL_AT_" + 4)
               const err = reqRes.failure
-              if (err.message.includes(secretToken)) { throw new Error("FAIL_AT_" + 5) }
-              if (JSON.stringify(err.details ?? {}).includes(secretToken)) { throw new Error("FAIL_AT_" + 6) }
-              const details = err.details as { readonly retryable?: boolean; readonly outcomeUnknown?: boolean } | undefined
+              if (err.message.includes(secretToken)) throw new Error("FAIL_AT_" + 5)
+              if (JSON.stringify(err.details ?? {}).includes(secretToken)) throw new Error("FAIL_AT_" + 6)
+              const details = err.details as
+                | { readonly retryable?: boolean; readonly outcomeUnknown?: boolean }
+                | undefined
               if (status === 429 || (status === 403 && rateLimited403)) {
-                if (err.reason !== "rate-limited" && details?.retryable !== true) { throw new Error("FAIL_AT_" + 7) }
+                if (err.reason !== "rate-limited" && details?.retryable !== true) throw new Error("FAIL_AT_" + 7)
               }
               if (status >= 500 && method !== "GET") {
-                if (details?.retryable === true) { throw new Error("FAIL_AT_" + 8) }
+                if (details?.retryable === true) throw new Error("FAIL_AT_" + 8)
               }
             }
 
             if (status === 200) {
-              const paged = yield* client.paginate("/repos/octocat/smithers/issues", { perPage: 2, maxPages: 3, withNext: true }).pipe(Effect.result)
+              const paged = yield* client.paginate("/repos/octocat/smithers/issues", {
+                perPage: 2,
+                maxPages: 3,
+                withNext: true
+              }).pipe(Effect.result)
               if (nextOrigin === "evil") {
-                if (paged._tag !== "Failure") { throw new Error("FAIL_AT_" + 9) }
+                if (paged._tag !== "Failure") throw new Error("FAIL_AT_" + 9)
               } else {
-                if (paged._tag !== "Success") { throw new Error("FAIL_AT_" + 10) }
-                if (nextOrigin === "same" && paged.success.items.length !== 2) { throw new Error("FAIL_AT_" + 11) }
-                if (nextOrigin === "none" && paged.success.items.length !== 1) { throw new Error("FAIL_AT_" + 12) }
+                if (paged._tag !== "Success") throw new Error("FAIL_AT_" + 10)
+                if (nextOrigin === "same" && paged.success.items.length !== 2) throw new Error("FAIL_AT_" + 11)
+                if (nextOrigin === "none" && paged.success.items.length !== 1) throw new Error("FAIL_AT_" + 12)
               }
 
               const cnt = yield* client.count("/repos/octocat/smithers/issues").pipe(Effect.result)
-              if (cnt._tag !== "Success" || cnt.success.total !== 7) { throw new Error("FAIL_AT_" + 13) }
+              if (cnt._tag !== "Success" || cnt.success.total !== 7) throw new Error("FAIL_AT_" + 13)
 
               const permRes = yield* GitHub.Collaborators.permission("octocat", "smithers", login).pipe(
                 Effect.provideService(GitHub.GitHubClient.GitHubClient, client),
                 Effect.result
               )
               if (GitHub.Collaborators.LOGIN_PATTERN.test(login)) {
-                if (permRes._tag !== "Success" || Option.isNone(permRes.success) || permRes.success.value.permission !== "admin") { throw new Error("FAIL_AT_" + 14) }
+                if (
+                  permRes._tag !== "Success" || Option.isNone(permRes.success) ||
+                  permRes.success.value.permission !== "admin"
+                ) throw new Error("FAIL_AT_" + 14)
               } else {
-                if (permRes._tag !== "Failure") { throw new Error("FAIL_AT_" + 15) }
+                if (permRes._tag !== "Failure") throw new Error("FAIL_AT_" + 15)
               }
             }
 
@@ -566,7 +611,9 @@ describe("@smthrs/integrations comprehensive crypto, cookie, OAuth, source-store
               ...(retryAfter !== "" ? { "retry-after": retryAfter } : {}),
               ...(rateLimited403 ? { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1700000100" } : {})
             })
-            GitHub.GitHubClient.isRateLimitResponse(status, rlHeaders, { message: rateLimited403 ? "secondary rate limit" : "nope" })
+            GitHub.GitHubClient.isRateLimitResponse(status, rlHeaders, {
+              message: rateLimited403 ? "secondary rate limit" : "nope"
+            })
             GitHub.GitHubClient.retryAfterMs(rlHeaders, 1_700_000_000_000)
             GitHub.GitHubClient.nextPageUrl("<https://api.github.com/a?page=2>; rel=\"next\"")
             GitHub.GitHubClient.lastPageNumber("<https://api.github.com/a?page=9>; rel=\"last\"")

@@ -21,9 +21,6 @@ import * as ContainerSandbox from "../src/ContainerSandbox/index.ts"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
 import * as HttpSandbox from "../src/HttpSandbox/index.ts"
 import * as HttpProtocol from "../src/HttpSandbox/protocol.ts"
-import * as JustBashSandbox from "../src/JustBashSandbox/index.ts"
-import * as ProviderConformance from "../src/ProviderConformance/index.ts"
-import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import {
   CiJob,
   RemoteChildProcessSpawner,
@@ -43,7 +40,10 @@ import { parentOf } from "../src/internal/guestPath.ts"
 import { machineName } from "../src/internal/machineName.ts"
 import { rootedAt } from "../src/internal/rootedPath.ts"
 import { sessionSlug } from "../src/internal/sessionSlug.ts"
+import * as JustBashSandbox from "../src/JustBashSandbox/index.ts"
+import * as ProviderConformance from "../src/ProviderConformance/index.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import { platform } from "./helpers/containedPlatform.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "120"))
@@ -89,8 +89,7 @@ describe("@smthrs/sandbox fuzz invariants", () => {
         arb,
         (input) =>
           Effect.sync(() => {
-            const validResize =
-              input.cols >= 1 &&
+            const validResize = input.cols >= 1 &&
               input.cols <= TerminalProtocol.maxCols &&
               input.rows >= 1 &&
               input.rows <= TerminalProtocol.maxRows
@@ -270,12 +269,11 @@ describe("@smthrs/sandbox fuzz invariants", () => {
             )
             if (text !== safeOut || Number(code) !== input.exitCode) return false
 
-            const pingProvider: SandboxHealth.PingProvider =
-              input.healthKind === "healthy"
-                ? { ping: Effect.void }
-                : input.healthKind === "refusing"
-                ? { ping: Effect.fail(new ProviderError({ code: input.errCode, message: "refused" })) }
-                : { ping: Effect.never }
+            const pingProvider: SandboxHealth.PingProvider = input.healthKind === "healthy"
+              ? { ping: Effect.void }
+              : input.healthKind === "refusing"
+              ? { ping: Effect.fail(new ProviderError({ code: input.errCode, message: "refused" })) }
+              : { ping: Effect.never }
 
             const state = yield* SandboxHealth.probe(pingProvider, { deadline: "25 millis" })
             if (input.healthKind === "healthy") {
@@ -372,113 +370,117 @@ describe("@smthrs/sandbox fuzz invariants", () => {
     assertPassed(report)
   })
 
-  it("DirectorySandbox, SandboxTools, and HttpSandbox (client <-> serve) roundtrip files, tools, and reject path escapes", async () => {
-    const services = await Effect.runPromise(
-      Effect.gen(function*() {
-        const fs = yield* FileSystem.FileSystem
-        const spawner = yield* ChildProcessSpawner
-        return { fs, spawner }
-      }).pipe(Effect.provide(platform))
-    )
-
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        fileName: Schema.Literals(["a.txt", "sub/b.txt", "dir/c.md"]),
-        content: Schema.String.pipe(Schema.check(Schema.isMaxLength(48))),
-        escapePath: Schema.Literals(["../escape.txt", "/etc/passwd", "sub/../../escape.txt"]),
-        viaHttp: Schema.Boolean
-      })
-    )
-
-    const dirExecutions = Math.min(executions, 14)
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (input) =>
-          Effect.gen(function*() {
-            const iterDir = nodeFs.mkdtempSync(join(tempRoot, "dir-sb-"))
-            try {
-              const safeContent = decoder.decode(encoder.encode(input.content.replace(/\0/g, "x")))
-              const dirProvider = DirectorySandbox.make({
-                ...services,
-                root: join(iterDir, "machines"),
-                persistence: "sticky"
-              })
-              const callsDirectory = join(iterDir, "calls")
-              nodeFs.mkdirSync(callsDirectory, { recursive: true })
-
-              const provider = input.viaHttp
-                ? (() => {
-                  const token = "fuzz-secret-token"
-                  const handler = HttpSandbox.serve({ provider: dirProvider, token })
-                  const client = HttpClient.make((req) =>
-                    Effect.gen(function*() {
-                      const bodyBuf = req.body._tag === "Uint8Array" ? req.body.body : undefined
-                      const webReq = new Request(req.url, {
-                        method: req.method,
-                        headers: req.headers,
-                        ...(bodyBuf !== undefined ? { body: new Uint8Array(bodyBuf) } : {})
-                      })
-                      const webRes = yield* handler(webReq)
-                      return HttpClientResponse.fromWeb(req, webRes)
-                    })
-                  )
-                  return HttpSandbox.make({ url: "http://sandbox.local", token, client })
-                })()
-                : dirProvider
-
-              return yield* Effect.scoped(
-                Effect.gen(function*() {
-                  const session = yield* provider.acquire("k-tool")
-                  execFileSync("git", ["init", "-q"], { cwd: session.workdir })
-                  execFileSync("git", ["config", "user.email", "f@e.com"], { cwd: session.workdir })
-                  execFileSync("git", ["config", "user.name", "F"], { cwd: session.workdir })
-
-                  const opts = { callId: "c1", callsDirectory }
-                  const wRes = yield* SandboxTools.execute(
-                    session,
-                    { tool: "write", path: input.fileName, content: safeContent },
-                    opts
-                  )
-                  if (wRes.tool !== "write") return false
-
-                  const rRes = yield* SandboxTools.execute(
-                    session,
-                    { tool: "read", path: input.fileName },
-                    opts
-                  )
-                  if (rRes.tool !== "read" || rRes.content !== safeContent) return false
-
-                  const lRes = yield* SandboxTools.execute(session, { tool: "list" }, opts)
-                  if (lRes.tool !== "list" || lRes.entries.length === 0) return false
-
-                  const stRes = yield* SandboxTools.execute(session, { tool: "status" }, opts)
-                  if (stRes.tool !== "status") return false
-                  const dfRes = yield* SandboxTools.execute(session, { tool: "diff" }, opts)
-                  if (dfRes.tool !== "diff") return false
-
-                  const escExit = yield* Effect.exit(
-                    SandboxTools.execute(session, { tool: "read", path: input.escapePath }, opts)
-                  )
-                  if (!Exit.isFailure(escExit)) return false
-
-                  const runRes = yield* SandboxTools.execute(
-                    session,
-                    { tool: "run", command: "echo hello-fuzz" },
-                    { callId: "c2", callsDirectory }
-                  )
-                  return runRes.tool === "run" && runRes.exitCode === 0 && runRes.stdout.includes("hello-fuzz")
-                })
-              )
-            } finally {
-              nodeFs.rmSync(iterDir, { recursive: true, force: true })
-            }
-          }),
-        { seed: seed + 4, executions: dirExecutions }
+  it(
+    "DirectorySandbox, SandboxTools, and HttpSandbox (client <-> serve) roundtrip files, tools, and reject path escapes",
+    async () => {
+      const services = await Effect.runPromise(
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          const spawner = yield* ChildProcessSpawner
+          return { fs, spawner }
+        }).pipe(Effect.provide(platform))
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          fileName: Schema.Literals(["a.txt", "sub/b.txt", "dir/c.md"]),
+          content: Schema.String.pipe(Schema.check(Schema.isMaxLength(48))),
+          escapePath: Schema.Literals(["../escape.txt", "/etc/passwd", "sub/../../escape.txt"]),
+          viaHttp: Schema.Boolean
+        })
+      )
+
+      const dirExecutions = Math.min(executions, 14)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (input) =>
+            Effect.gen(function*() {
+              const iterDir = nodeFs.mkdtempSync(join(tempRoot, "dir-sb-"))
+              try {
+                const safeContent = decoder.decode(encoder.encode(input.content.replace(/\0/g, "x")))
+                const dirProvider = DirectorySandbox.make({
+                  ...services,
+                  root: join(iterDir, "machines"),
+                  persistence: "sticky"
+                })
+                const callsDirectory = join(iterDir, "calls")
+                nodeFs.mkdirSync(callsDirectory, { recursive: true })
+
+                const provider = input.viaHttp
+                  ? (() => {
+                    const token = "fuzz-secret-token"
+                    const handler = HttpSandbox.serve({ provider: dirProvider, token })
+                    const client = HttpClient.make((req) =>
+                      Effect.gen(function*() {
+                        const bodyBuf = req.body._tag === "Uint8Array" ? req.body.body : undefined
+                        const webReq = new Request(req.url, {
+                          method: req.method,
+                          headers: req.headers,
+                          ...(bodyBuf !== undefined ? { body: new Uint8Array(bodyBuf) } : {})
+                        })
+                        const webRes = yield* handler(webReq)
+                        return HttpClientResponse.fromWeb(req, webRes)
+                      })
+                    )
+                    return HttpSandbox.make({ url: "http://sandbox.local", token, client })
+                  })()
+                  : dirProvider
+
+                return yield* Effect.scoped(
+                  Effect.gen(function*() {
+                    const session = yield* provider.acquire("k-tool")
+                    execFileSync("git", ["init", "-q"], { cwd: session.workdir })
+                    execFileSync("git", ["config", "user.email", "f@e.com"], { cwd: session.workdir })
+                    execFileSync("git", ["config", "user.name", "F"], { cwd: session.workdir })
+
+                    const opts = { callId: "c1", callsDirectory }
+                    const wRes = yield* SandboxTools.execute(
+                      session,
+                      { tool: "write", path: input.fileName, content: safeContent },
+                      opts
+                    )
+                    if (wRes.tool !== "write") return false
+
+                    const rRes = yield* SandboxTools.execute(
+                      session,
+                      { tool: "read", path: input.fileName },
+                      opts
+                    )
+                    if (rRes.tool !== "read" || rRes.content !== safeContent) return false
+
+                    const lRes = yield* SandboxTools.execute(session, { tool: "list" }, opts)
+                    if (lRes.tool !== "list" || lRes.entries.length === 0) return false
+
+                    const stRes = yield* SandboxTools.execute(session, { tool: "status" }, opts)
+                    if (stRes.tool !== "status") return false
+                    const dfRes = yield* SandboxTools.execute(session, { tool: "diff" }, opts)
+                    if (dfRes.tool !== "diff") return false
+
+                    const escExit = yield* Effect.exit(
+                      SandboxTools.execute(session, { tool: "read", path: input.escapePath }, opts)
+                    )
+                    if (!Exit.isFailure(escExit)) return false
+
+                    const runRes = yield* SandboxTools.execute(
+                      session,
+                      { tool: "run", command: "echo hello-fuzz" },
+                      { callId: "c2", callsDirectory }
+                    )
+                    return runRes.tool === "run" && runRes.exitCode === 0 && runRes.stdout.includes("hello-fuzz")
+                  })
+                )
+              } finally {
+                nodeFs.rmSync(iterDir, { recursive: true, force: true })
+              }
+            }),
+          { seed: seed + 4, executions: dirExecutions }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
 
   it("CiJob graph validation, HttpProtocol status mapping, CloudflareSandbox.selectInstance, CommandSandbox, ContainerSandbox, and SandboxCommand", async () => {
     const arb = Arbitrary.schema(
@@ -721,120 +723,124 @@ describe("@smthrs/sandbox fuzz invariants", () => {
     assertPassed(report)
   }, 60_000)
 
-  it("SandboxTools detached start/observe/collect/cancel & checkpoint/restore plus ProviderConformance/SandboxConformance", async () => {
-    const services = await Effect.runPromise(
-      Effect.gen(function*() {
-        const fs = yield* FileSystem.FileSystem
-        const spawner = yield* ChildProcessSpawner
-        return { fs, spawner }
-      }).pipe(Effect.provide(platform))
-    )
-
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        mode: Schema.Literals(["detached_ok", "checkpoint_restore", "provider_conformance", "sandbox_conformance"]),
-        tag: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(16))),
-        breakOutput: Schema.Boolean
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (input) =>
-          Effect.gen(function*() {
-            const safeTag = input.tag.replace(/[^a-zA-Z0-9_-]/g, "t") || "t"
-
-            if (input.mode === "provider_conformance") {
-              const provider = RemoteChildProcessSpawner.TestRemote.make({
-                session: "conf-s",
-                scripts: {
-                  greet: { stdout: input.breakOutput ? "wrong" : "hello" },
-                  boom: { exitCode: 3 },
-                  serve: { pending: true },
-                  cat: { stdout: "sandbox-conformance-stdin" }
-                }
-              })
-              const violations = yield* ProviderConformance.check(provider, {
-                writes: "greet",
-                output: "hello",
-                fails: "boom",
-                failureCode: 3,
-                runs: "serve",
-                stopsWithin: "50 millis"
-              })
-              return input.breakOutput ? violations.length > 0 : violations.length === 0
-            }
-
-            if (input.mode === "sandbox_conformance") {
-              const provider = Sandbox.TestSession.make({
-                scripts: {
-                  "printf hello": { stdout: "hello" },
-                  "exit 3": { exitCode: 3 },
-                  "sleep 60": { pending: true },
-                  cat: { stdout: "sandbox-conformance-stdin" }
-                }
-              })
-              const violations = yield* SandboxConformance.check(provider, {
-                commands: {
-                  writes: "printf hello",
-                  output: "hello",
-                  fails: "exit 3",
-                  failureCode: 3,
-                  runs: "sleep 60",
-                  stopsWithin: "50 millis"
-                }
-              })
-              return Array.isArray(violations)
-            }
-
-            const iterDir = nodeFs.mkdtempSync(join(tempRoot, "sbcmd-"))
-            try {
-              const dirProv = DirectorySandbox.make({
-                ...services,
-                root: join(iterDir, "machines"),
-                persistence: "sticky"
-              })
-              const callsDir = join(iterDir, "calls")
-              nodeFs.mkdirSync(callsDir, { recursive: true })
-              return yield* Effect.scoped(
-                Effect.gen(function*() {
-                  const sess = yield* dirProv.acquire("det-1")
-                  execFileSync("git", ["init", "-q"], { cwd: sess.workdir })
-                  execFileSync("git", ["config", "user.email", "f@e.com"], { cwd: sess.workdir })
-                  execFileSync("git", ["config", "user.name", "F"], { cwd: sess.workdir })
-                  nodeFs.writeFileSync(join(sess.workdir, "f.txt"), "base\n")
-                  execFileSync("git", ["add", "."], { cwd: sess.workdir })
-                  execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: sess.workdir })
-
-                  if (input.mode === "checkpoint_restore") {
-                    nodeFs.writeFileSync(join(sess.workdir, "f.txt"), `dirty-${safeTag}\n`)
-                    const cp = yield* SandboxTools.checkpoint(sess)
-                    execFileSync("git", ["checkout", "--", "f.txt"], { cwd: sess.workdir })
-                    yield* SandboxTools.restore(sess, cp)
-                    const restored = nodeFs.readFileSync(join(sess.workdir, "f.txt"), "utf8")
-                    return restored === `dirty-${safeTag}\n`
-                  }
-
-                  const cmds = SandboxCommand.onSession(sess, callsDir)
-                  const started = yield* cmds.start({ tool: "run", command: `echo ${safeTag}` }, `call-${safeTag}`)
-                  if (started.pid <= 0) return false
-                  for (let i = 0; i < 40; i++) {
-                    const obs = yield* cmds.observe(`call-${safeTag}`)
-                    if (obs.state === "finished") break
-                    yield* Effect.sleep("10 millis")
-                  }
-                  const collected = yield* cmds.collect(`call-${safeTag}`)
-                  return collected.exitCode === 0 && collected.stdout.includes(safeTag)
-                })
-              )
-            } finally {
-              nodeFs.rmSync(iterDir, { recursive: true, force: true })
-            }
-          }),
-        { seed: seed + 7, executions: Math.min(executions, 14) }
+  it(
+    "SandboxTools detached start/observe/collect/cancel & checkpoint/restore plus ProviderConformance/SandboxConformance",
+    async () => {
+      const services = await Effect.runPromise(
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          const spawner = yield* ChildProcessSpawner
+          return { fs, spawner }
+        }).pipe(Effect.provide(platform))
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          mode: Schema.Literals(["detached_ok", "checkpoint_restore", "provider_conformance", "sandbox_conformance"]),
+          tag: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(16))),
+          breakOutput: Schema.Boolean
+        })
+      )
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (input) =>
+            Effect.gen(function*() {
+              const safeTag = input.tag.replace(/[^a-zA-Z0-9_-]/g, "t") || "t"
+
+              if (input.mode === "provider_conformance") {
+                const provider = RemoteChildProcessSpawner.TestRemote.make({
+                  session: "conf-s",
+                  scripts: {
+                    greet: { stdout: input.breakOutput ? "wrong" : "hello" },
+                    boom: { exitCode: 3 },
+                    serve: { pending: true },
+                    cat: { stdout: "sandbox-conformance-stdin" }
+                  }
+                })
+                const violations = yield* ProviderConformance.check(provider, {
+                  writes: "greet",
+                  output: "hello",
+                  fails: "boom",
+                  failureCode: 3,
+                  runs: "serve",
+                  stopsWithin: "50 millis"
+                })
+                return input.breakOutput ? violations.length > 0 : violations.length === 0
+              }
+
+              if (input.mode === "sandbox_conformance") {
+                const provider = Sandbox.TestSession.make({
+                  scripts: {
+                    "printf hello": { stdout: "hello" },
+                    "exit 3": { exitCode: 3 },
+                    "sleep 60": { pending: true },
+                    cat: { stdout: "sandbox-conformance-stdin" }
+                  }
+                })
+                const violations = yield* SandboxConformance.check(provider, {
+                  commands: {
+                    writes: "printf hello",
+                    output: "hello",
+                    fails: "exit 3",
+                    failureCode: 3,
+                    runs: "sleep 60",
+                    stopsWithin: "50 millis"
+                  }
+                })
+                return Array.isArray(violations)
+              }
+
+              const iterDir = nodeFs.mkdtempSync(join(tempRoot, "sbcmd-"))
+              try {
+                const dirProv = DirectorySandbox.make({
+                  ...services,
+                  root: join(iterDir, "machines"),
+                  persistence: "sticky"
+                })
+                const callsDir = join(iterDir, "calls")
+                nodeFs.mkdirSync(callsDir, { recursive: true })
+                return yield* Effect.scoped(
+                  Effect.gen(function*() {
+                    const sess = yield* dirProv.acquire("det-1")
+                    execFileSync("git", ["init", "-q"], { cwd: sess.workdir })
+                    execFileSync("git", ["config", "user.email", "f@e.com"], { cwd: sess.workdir })
+                    execFileSync("git", ["config", "user.name", "F"], { cwd: sess.workdir })
+                    nodeFs.writeFileSync(join(sess.workdir, "f.txt"), "base\n")
+                    execFileSync("git", ["add", "."], { cwd: sess.workdir })
+                    execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: sess.workdir })
+
+                    if (input.mode === "checkpoint_restore") {
+                      nodeFs.writeFileSync(join(sess.workdir, "f.txt"), `dirty-${safeTag}\n`)
+                      const cp = yield* SandboxTools.checkpoint(sess)
+                      execFileSync("git", ["checkout", "--", "f.txt"], { cwd: sess.workdir })
+                      yield* SandboxTools.restore(sess, cp)
+                      const restored = nodeFs.readFileSync(join(sess.workdir, "f.txt"), "utf8")
+                      return restored === `dirty-${safeTag}\n`
+                    }
+
+                    const cmds = SandboxCommand.onSession(sess, callsDir)
+                    const started = yield* cmds.start({ tool: "run", command: `echo ${safeTag}` }, `call-${safeTag}`)
+                    if (started.pid <= 0) return false
+                    for (let i = 0; i < 40; i++) {
+                      const obs = yield* cmds.observe(`call-${safeTag}`)
+                      if (obs.state === "finished") break
+                      yield* Effect.sleep("10 millis")
+                    }
+                    const collected = yield* cmds.collect(`call-${safeTag}`)
+                    return collected.exitCode === 0 && collected.stdout.includes(safeTag)
+                  })
+                )
+              } finally {
+                nodeFs.rmSync(iterDir, { recursive: true, force: true })
+              }
+            }),
+          { seed: seed + 7, executions: Math.min(executions, 14) }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
 })

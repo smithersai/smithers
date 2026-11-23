@@ -585,7 +585,8 @@ describe("@smthrs/effect-electric comprehensive fuzz security & sync invariants"
             const gatePubSub = yield* PubSub.unbounded<boolean>({ replay: 1 })
             yield* PubSub.publish(gatePubSub, false)
             const baseSource: ShapeSource.Source = {
-              request: () => Effect.succeed(new Response("[{\"headers\":{\"control\":\"up-to-date\"}}]", { status: 200 }))
+              request: () =>
+                Effect.succeed(new Response("[{\"headers\":{\"control\":\"up-to-date\"}}]", { status: 200 }))
             }
             const gatedSource = ShapeSource.gated(baseSource, Stream.fromPubSub(gatePubSub))
             const gatedFiber = yield* gatedSource.request(url, {}).pipe(Effect.forkChild)
@@ -810,14 +811,27 @@ describe("@smthrs/effect-electric comprehensive fuzz security & sync invariants"
                 shape: { url: "https://electric.test/v1/shape", params: { table: "notes" } },
                 syncMode: mode === "progressive" ? "progressive" : "eager",
                 retry,
-                onInsert: ({ rows }) => Effect.sync(() => { insertedRows = [...rows] }),
-                onUpdate: ({ rows }) => Effect.sync(() => { updatedRows = [...rows] }),
-                onDelete: ({ rows }) => Effect.sync(() => { deletedRows = [...rows] })
+                onInsert: ({ rows }) =>
+                  Effect.sync(() => {
+                    insertedRows = [...rows]
+                  }),
+                onUpdate: ({ rows }) =>
+                  Effect.sync(() => {
+                    updatedRows = [...rows]
+                  }),
+                onDelete: ({ rows }) =>
+                  Effect.sync(() => {
+                    deletedRows = [...rows]
+                  })
               }).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
 
               const events: Array<ElectricCollection.SyncEvent> = []
               yield* col.sync.pipe(
-                Stream.runForEach((e) => Effect.sync(() => { events.push(e) })),
+                Stream.runForEach((e) =>
+                  Effect.sync(() => {
+                    events.push(e)
+                  })
+                ),
                 Effect.forkScoped({ startImmediately: true })
               )
 
@@ -885,7 +899,9 @@ describe("@smthrs/effect-electric comprehensive fuzz security & sync invariants"
 
                 col.tanstack.insert({ id: "local-1", text: "new", n: 99 })
                 yield* Effect.sleep("10 millis")
-                col.tanstack.update("id-0", (draft) => { draft.text = "updated" })
+                col.tanstack.update("id-0", (draft) => {
+                  draft.text = "updated"
+                })
                 yield* Effect.sleep("10 millis")
                 col.tanstack.delete("id-0")
                 yield* Effect.sleep("10 millis")

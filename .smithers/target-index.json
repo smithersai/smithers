@@ -60288,6 +60288,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/repo-targets:sources-packages-fuzz",
       "//packages/repo-targets:sources-packages-smithers-agent-harness",
       "//packages/repo-targets:sources-packages-smithers-agent-model",
       "//packages/repo-targets:sources-packages-smithers-agent-registry",
@@ -64377,6 +64378,35 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/contracts/test-script-wiring.test.mjs"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/repo-targets/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/repo-targets:sources-packages-fuzz",
+    "package": "packages/repo-targets",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
+        "exclude": []
       }
     ],
     "outputs": [],
@@ -70944,6 +70974,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/agent/harness-detect:sources-packages-fuzz",
       "//packages/smithers/agent/harness-detect:sources-packages-rpc",
       "//packages/smithers/agent/harness-detect:sources-packages-smithers-flows-canonical"
     ],
@@ -71003,6 +71034,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/agent/harness-detect:lib",
+      "//packages/smithers/agent/harness-detect:sources-packages-fuzz",
       "//packages/smithers/agent/harness-detect:sources-packages-rpc",
       "//packages/smithers/agent/harness-detect:sources-packages-smithers-flows-canonical"
     ],
@@ -71176,6 +71208,7 @@
       "packages/smithers/agent/harness-detect/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/agent/harness-detect:sources-packages-fuzz",
       "//packages/smithers/agent/harness-detect:sources-packages-rpc",
       "//packages/smithers/agent/harness-detect:sources-packages-smithers-flows-canonical"
     ],
@@ -71226,6 +71259,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/agent/harness-detect:sources-packages-fuzz",
       "//packages/smithers/agent/harness-detect:sources-packages-rpc",
       "//packages/smithers/agent/harness-detect:sources-packages-smithers-flows-canonical"
     ],
@@ -71286,6 +71320,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/harness-detect/src/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/harness-detect/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness-detect:sources-packages-fuzz",
+    "package": "packages/smithers/agent/harness-detect",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -71422,6 +71485,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/agent/harness-detect:lib",
+      "//packages/smithers/agent/harness-detect:sources-packages-fuzz",
       "//packages/smithers/agent/harness-detect:sources-packages-rpc",
       "//packages/smithers/agent/harness-detect:sources-packages-smithers-flows-canonical"
     ],
@@ -72104,6 +72168,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/agent/harness:sources-packages-fuzz",
       "//packages/smithers/agent/harness:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/harness:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/harness:sources-packages-smithers-flows-artifacts",
@@ -72176,6 +72241,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/agent/harness:lib",
+      "//packages/smithers/agent/harness:sources-packages-fuzz",
       "//packages/smithers/agent/harness:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/harness:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/harness:sources-packages-smithers-flows-artifacts",
@@ -72420,6 +72486,7 @@
       "packages/smithers/agent/harness/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/agent/harness:sources-packages-fuzz",
       "//packages/smithers/agent/harness:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/harness:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/harness:sources-packages-smithers-flows-artifacts",
@@ -72483,6 +72550,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/agent/harness:sources-packages-fuzz",
       "//packages/smithers/agent/harness:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/harness:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/harness:sources-packages-smithers-flows-artifacts",
@@ -72631,6 +72699,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/harness/src/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/harness/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness:sources-packages-fuzz",
+    "package": "packages/smithers/agent/harness",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -73154,6 +73251,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/agent/harness:lib",
+      "//packages/smithers/agent/harness:sources-packages-fuzz",
       "//packages/smithers/agent/harness:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/harness:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/harness:sources-packages-smithers-flows-artifacts",
@@ -73219,6 +73317,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/agent/integrations:sources-packages-errors",
+      "//packages/smithers/agent/integrations:sources-packages-fuzz",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-std",
@@ -73306,6 +73405,7 @@
     "dependencies": [
       "//packages/smithers/agent/integrations:lib",
       "//packages/smithers/agent/integrations:sources-packages-errors",
+      "//packages/smithers/agent/integrations:sources-packages-fuzz",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-std",
@@ -73565,6 +73665,7 @@
     ],
     "dependencies": [
       "//packages/smithers/agent/integrations:sources-packages-errors",
+      "//packages/smithers/agent/integrations:sources-packages-fuzz",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-std",
@@ -73643,6 +73744,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/agent/integrations:sources-packages-errors",
+      "//packages/smithers/agent/integrations:sources-packages-fuzz",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-std",
@@ -73865,6 +73967,35 @@
       {
         "kind": "glob",
         "pattern": "packages/errors/{tsconfig,jsconfig,vibe.config}.json",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/integrations/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/integrations:sources-packages-fuzz",
+    "package": "packages/smithers/agent/integrations",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -74788,6 +74919,7 @@
     "dependencies": [
       "//packages/smithers/agent/integrations:lib",
       "//packages/smithers/agent/integrations:sources-packages-errors",
+      "//packages/smithers/agent/integrations:sources-packages-fuzz",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/integrations:sources-packages-smithers-agent-std",
@@ -75853,6 +75985,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/agent/model-host:sources-packages-errors",
+      "//packages/smithers/agent/model-host:sources-packages-fuzz",
       "//packages/smithers/agent/model-host:sources-packages-rpc",
       "//packages/smithers/agent/model-host:sources-packages-smithers",
       "//packages/smithers/agent/model-host:sources-packages-smithers-agent",
@@ -75959,6 +76092,7 @@
       "//packages/rpc:check",
       "//packages/smithers/agent/model-host:lib",
       "//packages/smithers/agent/model-host:sources-packages-errors",
+      "//packages/smithers/agent/model-host:sources-packages-fuzz",
       "//packages/smithers/agent/model-host:sources-packages-rpc",
       "//packages/smithers/agent/model-host:sources-packages-smithers",
       "//packages/smithers/agent/model-host:sources-packages-smithers-agent",
@@ -76293,6 +76427,7 @@
     "dependencies": [
       "//packages/rpc:check",
       "//packages/smithers/agent/model-host:sources-packages-errors",
+      "//packages/smithers/agent/model-host:sources-packages-fuzz",
       "//packages/smithers/agent/model-host:sources-packages-rpc",
       "//packages/smithers/agent/model-host:sources-packages-smithers",
       "//packages/smithers/agent/model-host:sources-packages-smithers-agent",
@@ -76395,6 +76530,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/agent/model-host:sources-packages-errors",
+      "//packages/smithers/agent/model-host:sources-packages-fuzz",
       "//packages/smithers/agent/model-host:sources-packages-rpc",
       "//packages/smithers/agent/model-host:sources-packages-smithers",
       "//packages/smithers/agent/model-host:sources-packages-smithers-agent",
@@ -76600,6 +76736,35 @@
       {
         "kind": "glob",
         "pattern": "packages/errors/{tsconfig,jsconfig,vibe.config}.json",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/model-host/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/model-host:sources-packages-fuzz",
+    "package": "packages/smithers/agent/model-host",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -78048,6 +78213,7 @@
       "//packages/rpc:check",
       "//packages/smithers/agent/model-host:lib",
       "//packages/smithers/agent/model-host:sources-packages-errors",
+      "//packages/smithers/agent/model-host:sources-packages-fuzz",
       "//packages/smithers/agent/model-host:sources-packages-rpc",
       "//packages/smithers/agent/model-host:sources-packages-smithers",
       "//packages/smithers/agent/model-host:sources-packages-smithers-agent",
@@ -78150,6 +78316,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/agent/model:sources-packages-fuzz",
       "//packages/smithers/agent/model:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/model:sources-packages-smithers-agent-std",
       "//packages/smithers/agent/model:sources-packages-smithers-control",
@@ -78234,6 +78401,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/agent/model:lib",
+      "//packages/smithers/agent/model:sources-packages-fuzz",
       "//packages/smithers/agent/model:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/model:sources-packages-smithers-agent-std",
       "//packages/smithers/agent/model:sources-packages-smithers-control",
@@ -78608,6 +78776,7 @@
       "packages/smithers/agent/model/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/agent/model:sources-packages-fuzz",
       "//packages/smithers/agent/model:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/model:sources-packages-smithers-agent-std",
       "//packages/smithers/agent/model:sources-packages-smithers-control",
@@ -78683,6 +78852,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/agent/model:sources-packages-fuzz",
       "//packages/smithers/agent/model:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/model:sources-packages-smithers-agent-std",
       "//packages/smithers/agent/model:sources-packages-smithers-control",
@@ -78925,6 +79095,35 @@
       {
         "kind": "file",
         "path": "packages/smithers/agent/model/scripts/provider-live.sh"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/model/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/model:sources-packages-fuzz",
+    "package": "packages/smithers/agent/model",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
+        "exclude": []
       }
     ],
     "outputs": [],
@@ -79785,6 +79984,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/agent/model:lib",
+      "//packages/smithers/agent/model:sources-packages-fuzz",
       "//packages/smithers/agent/model:sources-packages-smithers-agent-registry",
       "//packages/smithers/agent/model:sources-packages-smithers-agent-std",
       "//packages/smithers/agent/model:sources-packages-smithers-control",
@@ -80772,6 +80972,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/agent/registry:sources-packages-fuzz",
       "//packages/smithers/agent/registry:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/registry:sources-packages-smithers-agent-std",
       "//packages/smithers/agent/registry:sources-packages-smithers-control",
@@ -80858,6 +81059,7 @@
       "//packages/smithers/agent/registry:issueSweepSources",
       "//packages/smithers/agent/registry:lib",
       "//packages/smithers/agent/registry:migratedFixture",
+      "//packages/smithers/agent/registry:sources-packages-fuzz",
       "//packages/smithers/agent/registry:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/registry:sources-packages-smithers-agent-std",
       "//packages/smithers/agent/registry:sources-packages-smithers-control",
@@ -81106,6 +81308,7 @@
     "dependencies": [
       "//packages/smithers/agent/registry:issueSweepSources",
       "//packages/smithers/agent/registry:migratedFixture",
+      "//packages/smithers/agent/registry:sources-packages-fuzz",
       "//packages/smithers/agent/registry:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/registry:sources-packages-smithers-agent-std",
       "//packages/smithers/agent/registry:sources-packages-smithers-control",
@@ -81181,6 +81384,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/agent/registry:sources-packages-fuzz",
       "//packages/smithers/agent/registry:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/registry:sources-packages-smithers-agent-std",
       "//packages/smithers/agent/registry:sources-packages-smithers-control",
@@ -81285,6 +81489,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/registry/src/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/registry/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/registry:sources-packages-fuzz",
+    "package": "packages/smithers/agent/registry",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -82153,6 +82386,7 @@
       "//packages/smithers/agent/registry:issueSweepSources",
       "//packages/smithers/agent/registry:lib",
       "//packages/smithers/agent/registry:migratedFixture",
+      "//packages/smithers/agent/registry:sources-packages-fuzz",
       "//packages/smithers/agent/registry:sources-packages-smithers-agent-model",
       "//packages/smithers/agent/registry:sources-packages-smithers-agent-std",
       "//packages/smithers/agent/registry:sources-packages-smithers-control",
@@ -92224,6 +92458,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/build/targets:sources-packages-fuzz",
       "//packages/smithers/build/targets:sources-packages-smithers-agent-harness",
       "//packages/smithers/build/targets:sources-packages-smithers-agent-model",
       "//packages/smithers/build/targets:sources-packages-smithers-agent-registry",
@@ -92860,6 +93095,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/build/targets/src/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/build/targets/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/build/targets:sources-packages-fuzz",
+    "package": "packages/smithers/build/targets",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -93900,6 +94164,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/build:sources-packages-fuzz",
       "//packages/smithers/build:sources-packages-smithers-flows-canonical",
       "//packages/smithers/build:sources-packages-smithers-flows-capability",
       "//packages/smithers/build:sources-packages-smithers-flows-crypto",
@@ -94048,6 +94313,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/build:lib",
+      "//packages/smithers/build:sources-packages-fuzz",
       "//packages/smithers/build:sources-packages-smithers-flows-canonical",
       "//packages/smithers/build:sources-packages-smithers-flows-capability",
       "//packages/smithers/build:sources-packages-smithers-flows-crypto",
@@ -94230,6 +94496,7 @@
       "packages/smithers/build/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/build:sources-packages-fuzz",
       "//packages/smithers/build:sources-packages-smithers-flows-canonical",
       "//packages/smithers/build:sources-packages-smithers-flows-capability",
       "//packages/smithers/build:sources-packages-smithers-flows-crypto",
@@ -94461,6 +94728,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/build/scripts/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/build/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/build:sources-packages-fuzz",
+    "package": "packages/smithers/build",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -98476,6 +98772,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/core:sources-packages-fuzz",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-capability",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-crypto",
@@ -98573,6 +98870,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/core:lib",
+      "//packages/smithers/flows/core:sources-packages-fuzz",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-capability",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-crypto",
@@ -98929,6 +99227,7 @@
       "packages/smithers/flows/core/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/flows/core:sources-packages-fuzz",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-capability",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-crypto",
@@ -98986,6 +99285,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/core:sources-packages-fuzz",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-capability",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-crypto",
@@ -99155,6 +99455,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/core/src/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/core/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/core:sources-packages-fuzz",
+    "package": "packages/smithers/flows/core",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -99494,6 +99823,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/core:lib",
+      "//packages/smithers/flows/core:sources-packages-fuzz",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-capability",
       "//packages/smithers/flows/core:sources-packages-smithers-flows-crypto",
@@ -100139,7 +100469,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers/flows/database:sources-packages-fuzz"
+    ],
     "source": {
       "file": "packages/smithers/flows/database/PACKAGE.ts"
     }
@@ -100230,7 +100562,8 @@
     ],
     "outputs": [],
     "dependencies": [
-      "//packages/smithers/flows/database:lib"
+      "//packages/smithers/flows/database:lib",
+      "//packages/smithers/flows/database:sources-packages-fuzz"
     ],
     "source": {
       "file": "packages/smithers/flows/database/PACKAGE.ts"
@@ -100304,7 +100637,8 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/database:check",
-      "//packages/smithers/flows/database:lib"
+      "//packages/smithers/flows/database:lib",
+      "//packages/smithers/flows/database:sources-packages-fuzz"
     ],
     "source": {
       "file": "packages/smithers/flows/database/PACKAGE.ts"
@@ -100421,7 +100755,9 @@
       "packages/smithers/flows/database/dist/cjs",
       "packages/smithers/flows/database/dist/esm"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers/flows/database:sources-packages-fuzz"
+    ],
     "source": {
       "file": "packages/smithers/flows/database/PACKAGE.ts"
     }
@@ -100464,7 +100800,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers/flows/database:sources-packages-fuzz"
+    ],
     "source": {
       "file": "packages/smithers/flows/database/PACKAGE.ts"
     }
@@ -100650,6 +100988,35 @@
     }
   },
   {
+    "label": "//packages/smithers/flows/database:sources-packages-fuzz",
+    "package": "packages/smithers/flows/database",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/database/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/flows/database:test",
     "package": "packages/smithers/flows/database",
     "name": "test",
@@ -100772,6 +101139,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/engine-store:sources-packages-fuzz",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-std",
@@ -100856,6 +101224,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/engine-store:lib",
+      "//packages/smithers/flows/engine-store:sources-packages-fuzz",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-std",
@@ -100988,6 +101357,7 @@
     "dependencies": [
       "//packages/smithers/flows/engine-store:check",
       "//packages/smithers/flows/engine-store:lib",
+      "//packages/smithers/flows/engine-store:sources-packages-fuzz",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-std",
@@ -101170,6 +101540,7 @@
       "packages/smithers/flows/engine-store/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/flows/engine-store:sources-packages-fuzz",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-std",
@@ -101245,6 +101616,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/engine-store:sources-packages-fuzz",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/engine-store:sources-packages-smithers-agent-std",
@@ -101448,6 +101820,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/engine-store/scripts/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/engine-store/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/engine-store:sources-packages-fuzz",
+    "package": "packages/smithers/flows/engine-store",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -103468,6 +103869,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/flow:sources-packages-fuzz",
       "//packages/smithers/flows/flow:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/flow:sources-packages-smithers-flows-capability",
       "//packages/smithers/flows/flow:sources-packages-smithers-flows-crypto",
@@ -104075,6 +104477,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/flow/src/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/flow/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/flow:sources-packages-fuzz",
+    "package": "packages/smithers/flows/flow",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -104739,6 +105170,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/jj:sources-packages-fuzz",
       "//packages/smithers/flows/jj:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/jj:sources-packages-smithers-flows-capability"
     ],
@@ -104798,6 +105230,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/jj:lib",
+      "//packages/smithers/flows/jj:sources-packages-fuzz",
       "//packages/smithers/flows/jj:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/jj:sources-packages-smithers-flows-capability"
     ],
@@ -105028,6 +105461,7 @@
       "packages/smithers/flows/jj/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/flows/jj:sources-packages-fuzz",
       "//packages/smithers/flows/jj:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/jj:sources-packages-smithers-flows-capability"
     ],
@@ -105078,6 +105512,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/jj:sources-packages-fuzz",
       "//packages/smithers/flows/jj:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/jj:sources-packages-smithers-flows-capability"
     ],
@@ -105233,6 +105668,35 @@
     }
   },
   {
+    "label": "//packages/smithers/flows/jj:sources-packages-fuzz",
+    "package": "packages/smithers/flows/jj",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/jj/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/flows/jj:sources-packages-smithers-flows-canonical",
     "package": "packages/smithers/flows/jj",
     "name": "sources-packages-smithers-flows-canonical",
@@ -105361,6 +105825,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/jj:lib",
+      "//packages/smithers/flows/jj:sources-packages-fuzz",
       "//packages/smithers/flows/jj:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/jj:sources-packages-smithers-flows-capability"
     ],
@@ -110939,6 +111404,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/plan-store:sources-packages-fuzz",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-crypto",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-database",
@@ -111001,6 +111467,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/plan-store:lib",
+      "//packages/smithers/flows/plan-store:sources-packages-fuzz",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-crypto",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-database",
@@ -111197,6 +111664,7 @@
       "packages/smithers/flows/plan-store/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/flows/plan-store:sources-packages-fuzz",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-crypto",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-database",
@@ -111250,6 +111718,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/plan-store:sources-packages-fuzz",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-crypto",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-database",
@@ -111313,6 +111782,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/plan-store/src/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/plan-store/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/plan-store:sources-packages-fuzz",
+    "package": "packages/smithers/flows/plan-store",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -111539,6 +112037,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/plan-store:lib",
+      "//packages/smithers/flows/plan-store:sources-packages-fuzz",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-canonical",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-crypto",
       "//packages/smithers/flows/plan-store:sources-packages-smithers-flows-database",
@@ -112316,6 +112815,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/platform-browser:sources-packages-fuzz",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent-harness",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent-memory",
@@ -112473,6 +112973,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/platform-browser:lib",
+      "//packages/smithers/flows/platform-browser:sources-packages-fuzz",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent-harness",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent-memory",
@@ -112696,6 +113197,7 @@
       "packages/smithers/flows/platform-browser/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/flows/platform-browser:sources-packages-fuzz",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent-harness",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent-memory",
@@ -112776,6 +113278,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/platform-browser:sources-packages-fuzz",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent-harness",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent-memory",
@@ -112941,6 +113444,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/platform-browser/src/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/platform-browser/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/platform-browser:sources-packages-fuzz",
+    "package": "packages/smithers/flows/platform-browser",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -113947,6 +114479,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/platform-browser:lib",
+      "//packages/smithers/flows/platform-browser:sources-packages-fuzz",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent-harness",
       "//packages/smithers/flows/platform-browser:sources-packages-smithers-agent-memory",
@@ -114028,6 +114561,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/platform-bun:sources-packages-fuzz",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-std",
@@ -114148,6 +114682,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/platform-bun:lib",
+      "//packages/smithers/flows/platform-bun:sources-packages-fuzz",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-std",
@@ -114367,6 +114902,7 @@
       "packages/smithers/flows/platform-bun/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/flows/platform-bun:sources-packages-fuzz",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-std",
@@ -114443,6 +114979,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/platform-bun:sources-packages-fuzz",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-std",
@@ -114564,6 +115101,35 @@
       {
         "kind": "file",
         "path": "packages/smithers/flows/platform-bun/README.md"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/platform-bun/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/platform-bun:sources-packages-fuzz",
+    "package": "packages/smithers/flows/platform-bun",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
+        "exclude": []
       }
     ],
     "outputs": [],
@@ -115453,6 +116019,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/platform-bun:lib",
+      "//packages/smithers/flows/platform-bun:sources-packages-fuzz",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/platform-bun:sources-packages-smithers-agent-std",
@@ -115530,6 +116097,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/platform-cloudflare:sources-packages-fuzz",
       "//packages/smithers/flows/platform-cloudflare:sources-packages-smithers-flows",
       "//packages/smithers/flows/platform-cloudflare:sources-packages-smithers-flows-artifacts",
       "//packages/smithers/flows/platform-cloudflare:sources-packages-smithers-flows-canonical",
@@ -115608,6 +116176,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/platform-cloudflare:lib",
+      "//packages/smithers/flows/platform-cloudflare:sources-packages-fuzz",
       "//packages/smithers/flows/platform-cloudflare:sources-packages-smithers-flows",
       "//packages/smithers/flows/platform-cloudflare:sources-packages-smithers-flows-artifacts",
       "//packages/smithers/flows/platform-cloudflare:sources-packages-smithers-flows-canonical",
@@ -115961,6 +116530,7 @@
       "packages/smithers/flows/platform-cloudflare/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/flows/platform-cloudflare:sources-packages-fuzz",
       "//packages/smithers/flows/platform-cloudflare:sources-packages-smithers-flows",
       "//packages/smithers/flows/platform-cloudflare:sources-packages-smithers-flows-artifacts",
       "//packages/smithers/flows/platform-cloudflare:sources-packages-smithers-flows-canonical",
@@ -116030,6 +116600,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/platform-cloudflare:sources-packages-fuzz",
       "//packages/smithers/flows/platform-cloudflare:sources-packages-smithers-flows",
       "//packages/smithers/flows/platform-cloudflare:sources-packages-smithers-flows-artifacts",
       "//packages/smithers/flows/platform-cloudflare:sources-packages-smithers-flows-canonical",
@@ -116203,6 +116774,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/platform-cloudflare/src/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/platform-cloudflare/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/platform-cloudflare:sources-packages-fuzz",
+    "package": "packages/smithers/flows/platform-cloudflare",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -116927,6 +117527,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/platform-node:sources-packages-fuzz",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-std",
@@ -117011,6 +117612,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/platform-node:lib",
+      "//packages/smithers/flows/platform-node:sources-packages-fuzz",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-std",
@@ -117267,6 +117869,7 @@
       "packages/smithers/flows/platform-node/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/flows/platform-node:sources-packages-fuzz",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-std",
@@ -117342,6 +117945,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/platform-node:sources-packages-fuzz",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-std",
@@ -117502,6 +118106,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/platform-node/src/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/platform-node/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/platform-node:sources-packages-fuzz",
+    "package": "packages/smithers/flows/platform-node",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -118363,6 +118996,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/platform-node:lib",
+      "//packages/smithers/flows/platform-node:sources-packages-fuzz",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/platform-node:sources-packages-smithers-agent-std",
@@ -119199,6 +119833,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/sandbox:sources-packages-fuzz",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-std",
@@ -119315,6 +119950,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/sandbox:lib",
+      "//packages/smithers/flows/sandbox:sources-packages-fuzz",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-std",
@@ -119534,6 +120170,7 @@
       "packages/smithers/flows/sandbox/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/flows/sandbox:sources-packages-fuzz",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-std",
@@ -119610,6 +120247,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/sandbox:sources-packages-fuzz",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-std",
@@ -119877,6 +120515,35 @@
       {
         "kind": "file",
         "path": "packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/sandbox/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/sandbox:sources-packages-fuzz",
+    "package": "packages/smithers/flows/sandbox",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
+        "exclude": []
       }
     ],
     "outputs": [],
@@ -120766,6 +121433,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/sandbox:lib",
+      "//packages/smithers/flows/sandbox:sources-packages-fuzz",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-model",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-registry",
       "//packages/smithers/flows/sandbox:sources-packages-smithers-agent-std",
@@ -124494,6 +125162,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows:sources-packages-fuzz",
       "//packages/smithers/flows:sources-packages-smithers-agent-harness",
       "//packages/smithers/flows:sources-packages-smithers-agent-model",
       "//packages/smithers/flows:sources-packages-smithers-agent-registry",
@@ -124584,6 +125253,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows:lib",
+      "//packages/smithers/flows:sources-packages-fuzz",
       "//packages/smithers/flows:sources-packages-smithers-agent-harness",
       "//packages/smithers/flows:sources-packages-smithers-agent-model",
       "//packages/smithers/flows:sources-packages-smithers-agent-registry",
@@ -124846,6 +125516,7 @@
       "packages/smithers/flows/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/flows:sources-packages-fuzz",
       "//packages/smithers/flows:sources-packages-smithers-agent-harness",
       "//packages/smithers/flows:sources-packages-smithers-agent-model",
       "//packages/smithers/flows:sources-packages-smithers-agent-registry",
@@ -124927,6 +125598,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows:sources-packages-fuzz",
       "//packages/smithers/flows:sources-packages-smithers-agent-harness",
       "//packages/smithers/flows:sources-packages-smithers-agent-model",
       "//packages/smithers/flows:sources-packages-smithers-agent-registry",
@@ -125141,6 +125813,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/flows/test/examples/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows:sources-packages-fuzz",
+    "package": "packages/smithers/flows",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -126181,6 +126882,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows:lib",
+      "//packages/smithers/flows:sources-packages-fuzz",
       "//packages/smithers/flows:sources-packages-smithers-agent-harness",
       "//packages/smithers/flows:sources-packages-smithers-agent-model",
       "//packages/smithers/flows:sources-packages-smithers-agent-registry",
@@ -126263,6 +126965,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/gateway:sources-packages-fuzz",
       "//packages/smithers/gateway:sources-packages-smithers-agent-model",
       "//packages/smithers/gateway:sources-packages-smithers-agent-registry",
       "//packages/smithers/gateway:sources-packages-smithers-agent-std",
@@ -126348,6 +127051,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/gateway:lib",
+      "//packages/smithers/gateway:sources-packages-fuzz",
       "//packages/smithers/gateway:sources-packages-smithers-agent-model",
       "//packages/smithers/gateway:sources-packages-smithers-agent-registry",
       "//packages/smithers/gateway:sources-packages-smithers-agent-std",
@@ -126590,6 +127294,7 @@
       "packages/smithers/gateway/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/gateway:sources-packages-fuzz",
       "//packages/smithers/gateway:sources-packages-smithers-agent-model",
       "//packages/smithers/gateway:sources-packages-smithers-agent-registry",
       "//packages/smithers/gateway:sources-packages-smithers-agent-std",
@@ -126666,6 +127371,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/gateway:sources-packages-fuzz",
       "//packages/smithers/gateway:sources-packages-smithers-agent-model",
       "//packages/smithers/gateway:sources-packages-smithers-agent-registry",
       "//packages/smithers/gateway:sources-packages-smithers-agent-std",
@@ -127020,6 +127726,35 @@
       {
         "kind": "file",
         "path": "packages/smithers/control/src/SqlControlRuntime.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/gateway/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/gateway:sources-packages-fuzz",
+    "package": "packages/smithers/gateway",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
+        "exclude": []
       }
     ],
     "outputs": [],
@@ -127909,6 +128644,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/gateway:lib",
+      "//packages/smithers/gateway:sources-packages-fuzz",
       "//packages/smithers/gateway:sources-packages-smithers-agent-model",
       "//packages/smithers/gateway:sources-packages-smithers-agent-registry",
       "//packages/smithers/gateway:sources-packages-smithers-agent-std",
@@ -127986,6 +128722,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/mcp:sources-packages-fuzz",
       "//packages/smithers/mcp:sources-packages-smithers-agent",
       "//packages/smithers/mcp:sources-packages-smithers-agent-harness",
       "//packages/smithers/mcp:sources-packages-smithers-agent-memory",
@@ -128076,6 +128813,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/mcp:lib",
+      "//packages/smithers/mcp:sources-packages-fuzz",
       "//packages/smithers/mcp:sources-packages-smithers-agent",
       "//packages/smithers/mcp:sources-packages-smithers-agent-harness",
       "//packages/smithers/mcp:sources-packages-smithers-agent-memory",
@@ -128300,6 +129038,7 @@
       "packages/smithers/mcp/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/mcp:sources-packages-fuzz",
       "//packages/smithers/mcp:sources-packages-smithers-agent",
       "//packages/smithers/mcp:sources-packages-smithers-agent-harness",
       "//packages/smithers/mcp:sources-packages-smithers-agent-memory",
@@ -128381,6 +129120,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/mcp:sources-packages-fuzz",
       "//packages/smithers/mcp:sources-packages-smithers-agent",
       "//packages/smithers/mcp:sources-packages-smithers-agent-harness",
       "//packages/smithers/mcp:sources-packages-smithers-agent-memory",
@@ -128518,6 +129258,35 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/mcp/test/examples/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/mcp/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/mcp:sources-packages-fuzz",
+    "package": "packages/smithers/mcp",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
         "exclude": []
       }
     ],
@@ -129558,6 +130327,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/mcp:lib",
+      "//packages/smithers/mcp:sources-packages-fuzz",
       "//packages/smithers/mcp:sources-packages-smithers-agent",
       "//packages/smithers/mcp:sources-packages-smithers-agent-harness",
       "//packages/smithers/mcp:sources-packages-smithers-agent-memory",
@@ -129639,7 +130409,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers/migrate:sources-packages-fuzz"
+    ],
     "source": {
       "file": "packages/smithers/migrate/PACKAGE.ts"
     }
@@ -129695,7 +130467,8 @@
     ],
     "outputs": [],
     "dependencies": [
-      "//packages/smithers/migrate:lib"
+      "//packages/smithers/migrate:lib",
+      "//packages/smithers/migrate:sources-packages-fuzz"
     ],
     "source": {
       "file": "packages/smithers/migrate/PACKAGE.ts"
@@ -129871,7 +130644,9 @@
       "packages/smithers/migrate/dist/cjs",
       "packages/smithers/migrate/dist/esm"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers/migrate:sources-packages-fuzz"
+    ],
     "source": {
       "file": "packages/smithers/migrate/PACKAGE.ts"
     }
@@ -129918,7 +130693,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers/migrate:sources-packages-fuzz"
+    ],
     "source": {
       "file": "packages/smithers/migrate/PACKAGE.ts"
     }
@@ -130061,6 +130838,35 @@
     }
   },
   {
+    "label": "//packages/smithers/migrate:sources-packages-fuzz",
+    "package": "packages/smithers/migrate",
+    "name": "sources-packages-fuzz",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/fuzz/package.json"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/fuzz/{tsconfig,jsconfig,vibe.config}.json",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/migrate/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/migrate:test",
     "package": "packages/smithers/migrate",
     "name": "test",
@@ -130128,7 +130934,8 @@
     ],
     "outputs": [],
     "dependencies": [
-      "//packages/smithers/migrate:lib"
+      "//packages/smithers/migrate:lib",
+      "//packages/smithers/migrate:sources-packages-fuzz"
     ],
     "source": {
       "file": "packages/smithers/migrate/PACKAGE.ts"

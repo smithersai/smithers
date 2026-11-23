@@ -92,7 +92,16 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
       Schema.Struct({
         scheme: Schema.Literals(["https", "http", "ftp", "javascript"]),
         host: Schema.Literals(["api.openai.com", "api.anthropic.com", "localhost", "127.0.0.1", "example.com:8443"]),
-        pathSeg: Schema.Literals(["v1/messages", "v1/../secret", "v1/%2e%2e/secret", "v1/%2e/ok", "v1/responses", "v1\\..\\secret", "v1/.\t./secret", "v1/.\n./secret"]),
+        pathSeg: Schema.Literals([
+          "v1/messages",
+          "v1/../secret",
+          "v1/%2e%2e/secret",
+          "v1/%2e/ok",
+          "v1/responses",
+          "v1\\..\\secret",
+          "v1/.\t./secret",
+          "v1/.\n./secret"
+        ]),
         queryKey: Schema.Literals(["", "api_key", "token", "key", "secret", "access_token", "version"]),
         queryVal: Schema.Literals(["", "abc123", "2026-01-01"]),
         userinfo: Schema.Literals(["", "user:pass@"])
@@ -111,7 +120,10 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
 
             const isUnsafeScheme = scheme !== "https" && scheme !== "http"
             const hasUserinfo = userinfo.length > 0
-            const hasTraversal = pathSeg.split(/[/\\]/).some((s) => { const d = s.replace(/[\t\r\n]/g, "").replace(/%2e/gi, "."); return d === "." || d === ".."; })
+            const hasTraversal = pathSeg.split(/[/\\]/).some((s) => {
+              const d = s.replace(/[\t\r\n]/g, "").replace(/%2e/gi, ".")
+              return d === "." || d === ".."
+            })
             const hasCredParam = ["api_key", "token", "key", "secret", "access_token"].includes(queryKey)
 
             if ((isUnsafeScheme || hasUserinfo || hasTraversal || hasCredParam) && Result.isSuccess(res)) {
@@ -203,8 +215,22 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
         outputTokens: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 100_000 }))),
         cachedInputTokens: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 50_000 }))),
         status: Schema.Literals([200, 400, 401, 402, 403, 404, 408, 413, 422, 429, 500, 502, 503, 504, 529]),
-        code: Schema.Literals(["", "out_of_credit", "rate_limit_exceeded", "context_length_exceeded", "invalid_api_key", "overloaded_error"]),
-        msg: Schema.Literals(["ok", "context length exceeded", "insufficient_quota", "rate limit", "server error", "credit balance is too low"]),
+        code: Schema.Literals([
+          "",
+          "out_of_credit",
+          "rate_limit_exceeded",
+          "context_length_exceeded",
+          "invalid_api_key",
+          "overloaded_error"
+        ]),
+        msg: Schema.Literals([
+          "ok",
+          "context length exceeded",
+          "insufficient_quota",
+          "rate limit",
+          "server error",
+          "credit balance is too low"
+        ]),
         source: Schema.Literals(["provider", "opaque"]),
         protocol: Schema.Literals(["anthropic-messages", "openai-responses", "openai-responses-chatgpt"]),
         native: Schema.Boolean
@@ -230,7 +256,10 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
 
             const errCode = classifyHttpStatus(status, code || undefined, msg, source)
             if ((status === 401 || status === 403) && errCode !== "authentication") return false
-            if (status === 429 && code !== "invalid_api_key" && code !== "out_of_credit" && msg !== "insufficient_quota" && msg !== "credit balance is too low" && errCode !== "rate_limited") return false
+            if (
+              status === 429 && code !== "invalid_api_key" && code !== "out_of_credit" &&
+              msg !== "insufficient_quota" && msg !== "credit balance is too low" && errCode !== "rate_limited"
+            ) return false
 
             const err = new ModelError.ModelError({ code: errCode, message: msg, httpStatus: status })
             const desc = FailureCopy.describe(err, modelId)
@@ -270,8 +299,16 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
 
   it("ToolStream state machine accumulates fragmented JSON tool calls and flushes cleanly", async () => {
     const arbOp = Schema.Union([
-      Schema.Struct({ tag: Schema.Literal("start"), id: Schema.Literals(["c1", "c2", "c3"]), name: Schema.Literals(["read", "write", "search"]) }),
-      Schema.Struct({ tag: Schema.Literal("delta"), id: Schema.Literals(["c1", "c2", "c3"]), frag: Schema.Literals(["{", "\"a\":1", ",\"b\":\"x\"", "}", "bad{"]) }),
+      Schema.Struct({
+        tag: Schema.Literal("start"),
+        id: Schema.Literals(["c1", "c2", "c3"]),
+        name: Schema.Literals(["read", "write", "search"])
+      }),
+      Schema.Struct({
+        tag: Schema.Literal("delta"),
+        id: Schema.Literals(["c1", "c2", "c3"]),
+        frag: Schema.Literals(["{", "\"a\":1", ",\"b\":\"x\"", "}", "bad{"])
+      }),
       Schema.Struct({ tag: Schema.Literal("end"), id: Schema.Literals(["c1", "c2", "c3"]) }),
       Schema.Struct({ tag: Schema.Literal("flush") })
     ])
@@ -319,15 +356,52 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
   it("ModelEvent.settledMessage merges interleaved streams, resets on retry, and locks first settle", async () => {
     const arbEv = Schema.Union([
       Schema.Struct({ type: Schema.Literal("text-start"), id: Schema.Literals(["t1", "t2"]) }),
-      Schema.Struct({ type: Schema.Literal("text-delta"), id: Schema.Literals(["t1", "t2"]), text: Schema.Literals(["hi ", "world", "!"]) }),
-      Schema.Struct({ type: Schema.Literal("thinking-start"), id: Schema.Literals(["th1"]), signature: Schema.Literals(["sig1"]) }),
-      Schema.Struct({ type: Schema.Literal("thinking-delta"), id: Schema.Literals(["th1"]), text: Schema.Literals(["hmm ", "ok"]) }),
-      Schema.Struct({ type: Schema.Literal("tool-call-start"), id: Schema.Literals(["tc1"]), name: Schema.Literals(["read"]) }),
-      Schema.Struct({ type: Schema.Literal("tool-call-delta"), id: Schema.Literals(["tc1"]), arguments: Schema.Literals(["{", "\"a\":1", "}"]) }),
-      Schema.Struct({ type: Schema.Literal("tool-call-end"), id: Schema.Literals(["tc1"]), arguments: Schema.Literals(["{\"a\":1}"]) }),
-      Schema.Struct({ type: Schema.Literal("usage"), inputTokens: Schema.Literals([10, 20]), outputTokens: Schema.Literals([5, 15]) }),
-      Schema.Struct({ type: Schema.Literal("retry"), attempt: Schema.Literals([1, 2]), reason: Schema.Literals(["transport"]), delayMs: Schema.Literals([100]) }),
-      Schema.Struct({ type: Schema.Literal("settle"), stopReason: Schema.Literals(["stop", "tool-calls", "length"]), responseId: Schema.Literals(["resp_1", "resp_2"]) })
+      Schema.Struct({
+        type: Schema.Literal("text-delta"),
+        id: Schema.Literals(["t1", "t2"]),
+        text: Schema.Literals(["hi ", "world", "!"])
+      }),
+      Schema.Struct({
+        type: Schema.Literal("thinking-start"),
+        id: Schema.Literals(["th1"]),
+        signature: Schema.Literals(["sig1"])
+      }),
+      Schema.Struct({
+        type: Schema.Literal("thinking-delta"),
+        id: Schema.Literals(["th1"]),
+        text: Schema.Literals(["hmm ", "ok"])
+      }),
+      Schema.Struct({
+        type: Schema.Literal("tool-call-start"),
+        id: Schema.Literals(["tc1"]),
+        name: Schema.Literals(["read"])
+      }),
+      Schema.Struct({
+        type: Schema.Literal("tool-call-delta"),
+        id: Schema.Literals(["tc1"]),
+        arguments: Schema.Literals(["{", "\"a\":1", "}"])
+      }),
+      Schema.Struct({
+        type: Schema.Literal("tool-call-end"),
+        id: Schema.Literals(["tc1"]),
+        arguments: Schema.Literals(["{\"a\":1}"])
+      }),
+      Schema.Struct({
+        type: Schema.Literal("usage"),
+        inputTokens: Schema.Literals([10, 20]),
+        outputTokens: Schema.Literals([5, 15])
+      }),
+      Schema.Struct({
+        type: Schema.Literal("retry"),
+        attempt: Schema.Literals([1, 2]),
+        reason: Schema.Literals(["transport"]),
+        delayMs: Schema.Literals([100])
+      }),
+      Schema.Struct({
+        type: Schema.Literal("settle"),
+        stopReason: Schema.Literals(["stop", "tool-calls", "length"]),
+        responseId: Schema.Literals(["resp_1", "resp_2"])
+      })
     ])
     const report = await Effect.runPromise(
       Fuzz.run(
@@ -395,11 +469,18 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
               if (Result.isFailure(bodyRes)) return false
               const st0 = p.stream.initial(req)
               const frames = [
-                JSON.stringify({ type: "message_start", message: { id: "msg_1", usage: { input_tokens: 10, output_tokens: 0 } } }),
+                JSON.stringify({
+                  type: "message_start",
+                  message: { id: "msg_1", usage: { input_tokens: 10, output_tokens: 0 } }
+                }),
                 JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }),
                 JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ok" } }),
                 JSON.stringify({ type: "content_block_stop", index: 0 }),
-                JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 4 } }),
+                JSON.stringify({
+                  type: "message_delta",
+                  delta: { stop_reason: "end_turn" },
+                  usage: { output_tokens: 4 }
+                }),
                 JSON.stringify({ type: "message_stop" })
               ]
               let st = st0
@@ -420,8 +501,15 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
               if (Result.isFailure(bodyRes)) return false
               let st = p.stream.initial(req)
               const frames = [
-                JSON.stringify({ id: "cmpl_1", choices: [{ index: 0, delta: { role: "assistant", content: "hi" }, finish_reason: null }] }),
-                JSON.stringify({ id: "cmpl_1", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 8, completion_tokens: 2, total_tokens: 10 } })
+                JSON.stringify({
+                  id: "cmpl_1",
+                  choices: [{ index: 0, delta: { role: "assistant", content: "hi" }, finish_reason: null }]
+                }),
+                JSON.stringify({
+                  id: "cmpl_1",
+                  choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+                  usage: { prompt_tokens: 8, completion_tokens: 2, total_tokens: 10 }
+                })
               ]
               const out: Array<ModelEvent.ModelEvent> = []
               for (const f of frames) {
@@ -441,8 +529,21 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
               let st = p.stream.initial(req)
               const frames = [
                 JSON.stringify({ type: "response.created", response: { id: "resp_1" } }),
-                JSON.stringify({ type: "response.output_text.delta", item_id: "item_1", output_index: 0, content_index: 0, delta: "hello" }),
-                JSON.stringify({ type: "response.completed", response: { id: "resp_1", status: "completed", usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 } } })
+                JSON.stringify({
+                  type: "response.output_text.delta",
+                  item_id: "item_1",
+                  output_index: 0,
+                  content_index: 0,
+                  delta: "hello"
+                }),
+                JSON.stringify({
+                  type: "response.completed",
+                  response: {
+                    id: "resp_1",
+                    status: "completed",
+                    usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 }
+                  }
+                })
               ]
               const out: Array<ModelEvent.ModelEvent> = []
               for (const f of frames) {
@@ -570,7 +671,9 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
             const sanitize = yield* Auth.withRedaction(Auth.bearer(Redacted.make("secret-tok-999")))(
               RequestExecutor.errorSanitizer(sampleHttpReq)
             )
-            const sanitized = sanitize(new ModelError.ModelError({ code: "transport", message: "leaked secret-tok-999 here" }))
+            const sanitized = sanitize(
+              new ModelError.ModelError({ code: "transport", message: "leaked secret-tok-999 here" })
+            )
             if (sanitized.message.includes("secret-tok-999")) return false
 
             const routeRes = Route.anthropic({ apiKey: Redacted.make("sk-ant-test-key") })
@@ -592,7 +695,10 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
             })
             const evLayer = Evaluator.layerScripted(() => ({
               ok: { probability: prob },
-              choice: { choice: choiceKey, probabilities: { a: choiceKey === "a" ? 0.9 : 0.1, b: choiceKey === "b" ? 0.9 : 0.1 } },
+              choice: {
+                choice: choiceKey,
+                probabilities: { a: choiceKey === "a" ? 0.9 : 0.1, b: choiceKey === "b" ? 0.9 : 0.1 }
+              },
               score: { score: scoreVal, probabilities: { "0": 0.1, "1": 0.1, "2": 0.8 } }
             }))
             const reading = yield* cls.read({ text: replyText }).pipe(Effect.provide(evLayer))
@@ -600,7 +706,10 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
             if (reading.answers.choice.value !== choiceKey) return false
             if (reading.answers.score.value !== scoreVal) return false
             if (Classifier.confidence(reading.answers.ok) <= 0) return false
-            if (typeof Evaluator.publicMessage(new Evaluator.EvaluatorError({ code: "unreachable", message: "down" })) !== "string") return false
+            if (
+              typeof Evaluator.publicMessage(new Evaluator.EvaluatorError({ code: "unreachable", message: "down" })) !==
+                "string"
+            ) return false
             const backupEv = EvaluatorBackup.fromModel(fakeModel, "claude-opus-4-6")
             if (typeof backupEv.evaluate !== "function") return false
             return true
@@ -632,13 +741,17 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
                 if (outcome === "http_401") {
                   return HttpClientResponse.fromWeb(
                     httpReq,
-                    new Response(JSON.stringify({ error: { type: "authentication_error", message: "bad key" } }), { status: 401 })
+                    new Response(JSON.stringify({ error: { type: "authentication_error", message: "bad key" } }), {
+                      status: 401
+                    })
                   )
                 }
                 if (outcome === "http_429") {
                   return HttpClientResponse.fromWeb(
                     httpReq,
-                    new Response(JSON.stringify({ error: { type: "rate_limit_error", message: "slow" } }), { status: 429 })
+                    new Response(JSON.stringify({ error: { type: "rate_limit_error", message: "slow" } }), {
+                      status: 429
+                    })
                   )
                 }
                 if (outcome === "http_500") {
@@ -649,22 +762,57 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
                 }
                 const sse = provider === "anthropic"
                   ? [
-                    JSON.stringify({ type: "message_start", message: { id: "m1", usage: { input_tokens: 4, output_tokens: 0 } } }),
-                    JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }),
-                    JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: safeText } }),
+                    JSON.stringify({
+                      type: "message_start",
+                      message: { id: "m1", usage: { input_tokens: 4, output_tokens: 0 } }
+                    }),
+                    JSON.stringify({
+                      type: "content_block_start",
+                      index: 0,
+                      content_block: { type: "text", text: "" }
+                    }),
+                    JSON.stringify({
+                      type: "content_block_delta",
+                      index: 0,
+                      delta: { type: "text_delta", text: safeText }
+                    }),
                     JSON.stringify({ type: "content_block_stop", index: 0 }),
-                    JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 3 } }),
+                    JSON.stringify({
+                      type: "message_delta",
+                      delta: { stop_reason: "end_turn" },
+                      usage: { output_tokens: 3 }
+                    }),
                     JSON.stringify({ type: "message_stop" })
                   ].map((d) => `data: ${d}\n\n`).join("")
                   : provider === "openai"
                   ? [
                     JSON.stringify({ type: "response.created", response: { id: "r1" } }),
-                    JSON.stringify({ type: "response.output_text.delta", item_id: "i1", output_index: 0, content_index: 0, delta: safeText }),
-                    JSON.stringify({ type: "response.completed", response: { id: "r1", status: "completed", usage: { input_tokens: 4, output_tokens: 3, total_tokens: 7 } } })
+                    JSON.stringify({
+                      type: "response.output_text.delta",
+                      item_id: "i1",
+                      output_index: 0,
+                      content_index: 0,
+                      delta: safeText
+                    }),
+                    JSON.stringify({
+                      type: "response.completed",
+                      response: {
+                        id: "r1",
+                        status: "completed",
+                        usage: { input_tokens: 4, output_tokens: 3, total_tokens: 7 }
+                      }
+                    })
                   ].map((d) => `data: ${d}\n\n`).join("")
                   : [
-                    JSON.stringify({ id: "c1", choices: [{ index: 0, delta: { role: "assistant", content: safeText }, finish_reason: null }] }),
-                    JSON.stringify({ id: "c1", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 } })
+                    JSON.stringify({
+                      id: "c1",
+                      choices: [{ index: 0, delta: { role: "assistant", content: safeText }, finish_reason: null }]
+                    }),
+                    JSON.stringify({
+                      id: "c1",
+                      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+                      usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 }
+                    })
                   ].map((d) => `data: ${d}\n\n`).join("")
                 return HttpClientResponse.fromWeb(
                   httpReq,
@@ -725,12 +873,21 @@ describe("@smthrs/model comprehensive security, framing, protocol, proxy & evalu
               stream: () =>
                 Stream.fromIterable<ModelEvent.ModelEvent>([
                   { type: "text-start", id: "t0" },
-                  { type: "text-delta", id: "t0", text: JSON.stringify({ answers: { ok: { type: "boolean", probability: 0.9 } } }) },
+                  {
+                    type: "text-delta",
+                    id: "t0",
+                    text: JSON.stringify({ answers: { ok: { type: "boolean", probability: 0.9 } } })
+                  },
                   { type: "text-end", id: "t0" },
                   { type: "settle", stopReason: "stop" }
                 ])
             })
-            const backup = EvaluatorBackup.withFallback(Evaluator.Evaluator.of({ evaluate: () => Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "down" })) }), EvaluatorBackup.fromModel(jsonModel, "claude-opus-4-6"))
+            const backup = EvaluatorBackup.withFallback(
+              Evaluator.Evaluator.of({
+                evaluate: () => Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "down" }))
+              }),
+              EvaluatorBackup.fromModel(jsonModel, "claude-opus-4-6")
+            )
             const evalRes = yield* Effect.result(
               backup.evaluate({
                 state: { text: safeText },

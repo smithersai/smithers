@@ -44,7 +44,10 @@ describe("@smthrs/migrate AST scanners, Zod/Prompt translators, Options path sec
         ({ spec, version, promptText }) =>
           Effect.sync(() => {
             const isOld = Migrate.Detect.isOldSpecifier(spec)
-            if (spec === "@smthrs/flow" || spec === "@smthrs/agent" || spec === "effect" || spec === "react" || spec === "./local.ts") {
+            if (
+              spec === "@smthrs/flow" || spec === "@smthrs/agent" || spec === "effect" || spec === "react" ||
+              spec === "./local.ts"
+            ) {
               if (isOld) return false
             }
             if (spec === "smthrs" || spec === "smithers-orchestrator" || spec.startsWith("@smithers/")) {
@@ -52,7 +55,10 @@ describe("@smthrs/migrate AST scanners, Zod/Prompt translators, Options path sec
             }
             const pkgClass = Migrate.Detect.classifyPackage(spec, version)
             if (spec === "smithers-orchestrator" && pkgClass === undefined) return false
-            if (spec === "@smthrs/flow" && (version.startsWith("1.") || version === "workspace:*") && pkgClass !== undefined) return false
+            if (
+              spec === "@smthrs/flow" && (version.startsWith("1.") || version === "workspace:*") &&
+              pkgClass !== undefined
+            ) return false
 
             const pClass = Migrate.Detect.classifyPrompt(promptText)
             const pHint = Migrate.PromptHints.classify(promptText)
@@ -212,7 +218,9 @@ describe("@smthrs/migrate AST scanners, Zod/Prompt translators, Options path sec
                   JSON.stringify({
                     name: "fuzz-proj",
                     version: "0.1.0",
-                    dependencies: hasOldPkg ? { "smithers-orchestrator": "^0.9.0", zod: "^3.23.0" } : { "@smthrs/flow": "1.0.0" }
+                    dependencies: hasOldPkg
+                      ? { "smithers-orchestrator": "^0.9.0", zod: "^3.23.0" }
+                      : { "@smthrs/flow": "1.0.0" }
                   })
                 )
                 if (hasJsxWorkflow) {
@@ -225,7 +233,9 @@ describe("@smthrs/migrate AST scanners, Zod/Prompt translators, Options path sec
                     `export default smithers((ctx) => <Workflow name="demo"><Task id="t1" output={Out}>hi</Task></Workflow>)`
                   ].join("\n")
                   FsSync.writeFileSync(Path.join(dir, "workflows/demo.tsx"), wfCode)
-                  const invFile = Migrate.Inventory.scanFile("workflows/demo.tsx", wfCode, { factories: new Set(["createSmithers"]) })
+                  const invFile = Migrate.Inventory.scanFile("workflows/demo.tsx", wfCode, {
+                    factories: new Set(["createSmithers"])
+                  })
                   if (invFile.length === 0) return false
                 }
                 if (hasPromptMdx) {
@@ -247,7 +257,10 @@ describe("@smthrs/migrate AST scanners, Zod/Prompt translators, Options path sec
                 if (repGateRes._tag !== "Success" && repGateRes._tag !== "Failure") return false
 
                 if (scanned.units.length > 0) {
-                  const checks = yield* Migrate.Checks.run(dir, scanned.units[0]!, [], { sources: new Map(), digests: new Map() })
+                  const checks = yield* Migrate.Checks.run(dir, scanned.units[0]!, [], {
+                    sources: new Map(),
+                    digests: new Map()
+                  })
                   if (!Array.isArray(checks)) return false
                 }
                 return true

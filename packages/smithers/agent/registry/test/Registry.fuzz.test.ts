@@ -1,17 +1,14 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Flow } from "@smthrs/flow"
-import { Node } from "@smthrs/plan"
-import * as LoadGuard from "../src/LoadGuard.ts"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
+import { Flow } from "@smthrs/flow"
 import { Fuzz } from "@smthrs/fuzz"
+import { Node } from "@smthrs/plan"
 import { Arbitrary, Effect, FileSystem, Layer, Logger, Option, Path, Result, Schema } from "effect"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import { describe, expect, it } from "vitest"
-import * as NodeLoadGuard from "../src/node/NodeLoadGuard.ts"
-import * as PromptJsx from "../src/Prompt/jsx-runtime.ts"
 import {
   Descriptor,
   Disclosure,
@@ -23,6 +20,9 @@ import {
   Prompt,
   Registry
 } from "../src/index.ts"
+import * as LoadGuard from "../src/LoadGuard.ts"
+import * as NodeLoadGuard from "../src/node/NodeLoadGuard.ts"
+import * as PromptJsx from "../src/Prompt/jsx-runtime.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "120"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261123")
@@ -113,7 +113,14 @@ describe("@smthrs/registry comprehensive markdown, disclosure, pack & filesystem
         minor: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 9 }))),
         patch: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 9 }))),
         op: Schema.Literals(["^", "~", ">=", "", "*", "invalid"]),
-        relPath: Schema.Literals(["flows/a/SKILL.md", "../escape.md", "/abs.md", "a\\b.md", "a\0b.md", "flows/b/flow.ts"]),
+        relPath: Schema.Literals([
+          "flows/a/SKILL.md",
+          "../escape.md",
+          "/abs.md",
+          "a\\b.md",
+          "a\0b.md",
+          "flows/b/flow.ts"
+        ]),
         mdxText: Schema.Literals(["# Hello\n\nWorld", "Simple paragraph", "List:\n- one\n- two"])
       })
     )
@@ -134,7 +141,8 @@ describe("@smthrs/registry comprehensive markdown, disclosure, pack & filesystem
               requires: { smithers: ">=0.1.0" },
               flows: [relPath]
             })
-            const isBadPath = relPath.includes("..") || relPath.startsWith("/") || relPath.includes("\\") || relPath.includes("\0")
+            const isBadPath = relPath.includes("..") || relPath.startsWith("/") || relPath.includes("\\") ||
+              relPath.includes("\0")
             if (isBadPath && Result.isSuccess(manifestRes)) return false
             if (Result.isSuccess(manifestRes)) {
               const filesA = [
@@ -197,7 +205,12 @@ describe("@smthrs/registry comprehensive markdown, disclosure, pack & filesystem
                 yield* Effect.promise(() =>
                   fs.writeFile(
                     path.join(packDir, "pack.json"),
-                    JSON.stringify({ name: "fuzz-pack", version: "1.0.0", requires: { smithers: ">=0.1.0" }, flows: ["flows/pflow/SKILL.md"] })
+                    JSON.stringify({
+                      name: "fuzz-pack",
+                      version: "1.0.0",
+                      requires: { smithers: ">=0.1.0" },
+                      flows: ["flows/pflow/SKILL.md"]
+                    })
                   )
                 )
                 yield* Effect.promise(() =>
@@ -247,7 +260,9 @@ describe("@smthrs/registry comprehensive markdown, disclosure, pack & filesystem
 
                   if (tamperAfterDiscover) {
                     const targetFile = path.join(flowsDir, first.name, "SKILL.md")
-                    yield* Effect.promise(() => fs.writeFile(targetFile, "---\nname: tampered\ndescription: x\n---\nTAMPERED"))
+                    yield* Effect.promise(() =>
+                      fs.writeFile(targetFile, "---\nname: tampered\ndescription: x\n---\nTAMPERED")
+                    )
                     const loadRes = yield* Effect.result(reg.loadBody(first.name))
                     if (Result.isSuccess(loadRes)) return false
                   } else {
@@ -353,7 +368,9 @@ describe("@smthrs/registry comprehensive markdown, disclosure, pack & filesystem
               const rendered = PromptJsx.render(doc)
               if (rendered.length === 0 || !rendered.includes("---")) return false
               if (rendered !== PromptJsx.render(doc)) return false
-              if (!rendered.includes("[link](") || rendered.includes("](" + href + " ") && /[\s<>()]/.test(href)) return false
+              if (!rendered.includes("[link](") || rendered.includes("](" + href + " ") && /[\s<>()]/.test(href)) {
+                return false
+              }
 
               const fnComp = (p: PromptJsx.Props): PromptJsx.Content =>
                 PromptJsx.jsx("blockquote", { children: p.children })
@@ -393,7 +410,9 @@ describe("@smthrs/registry comprehensive markdown, disclosure, pack & filesystem
                 if (fromDesc.descriptor.name !== flowName) return false
 
                 // Unknown delegate must be refused cleanly
-                const badRes = yield* Executable.fromDescriptor(fromReg.descriptor, { delegates: [] }).pipe(Effect.result)
+                const badRes = yield* Executable.fromDescriptor(fromReg.descriptor, { delegates: [] }).pipe(
+                  Effect.result
+                )
                 if (Result.isSuccess(badRes)) return false
 
                 // ExecutionSnapshot filesystem store
@@ -420,7 +439,9 @@ describe("@smthrs/registry comprehensive markdown, disclosure, pack & filesystem
               } finally {
                 yield* Effect.promise(() => fs.rm(dir, { recursive: true, force: true }))
               }
-            }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer, Logger.layer([])))),
+            }).pipe(
+              Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer, Logger.layer([])))
+            ),
           { seed: seed + 10, executions: Math.min(executions, 25) }
         )
       )

@@ -1,9 +1,7 @@
 import * as NodePath from "@effect/platform-node/NodePath"
-import { ProcessLedger } from "@smthrs/kernel"
-import * as Net from "node:net"
-import * as ProcessReaper from "../src/ProcessReaper.ts"
 import { Action, Flow, Interpreter } from "@smthrs/flows"
 import { Fuzz } from "@smthrs/fuzz"
+import { ProcessLedger } from "@smthrs/kernel"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import { Destination } from "@smthrs/kernel/HttpClient"
@@ -14,6 +12,7 @@ import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as nodeFs from "node:fs"
 import * as Http from "node:http"
+import * as Net from "node:net"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -34,6 +33,7 @@ import * as ProcessCleanup from "../src/internal/ProcessCleanup.ts"
 import * as ProcSnapshot from "../src/internal/ProcSnapshot.ts"
 import * as RegularFile from "../src/internal/RegularFile.ts"
 import * as OwnerPrivate from "../src/OwnerPrivate.ts"
+import * as ProcessReaper from "../src/ProcessReaper.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "120"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261123")
@@ -401,167 +401,178 @@ describe("@smthrs/platform-node fuzz invariants", () => {
     assertPassed(report)
   })
 
-  it("FetchTransport.observe, EgressHttpClient, NodeGarbageCollector, ScopedProcess, OwnerPrivate, and TestNodeRuntime", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        mode: Schema.Literals([
-          "fetch_200",
-          "fetch_500",
-          "egress_get",
-          "egress_pin_mismatch",
-          "scoped_process",
-          "owner_private",
-          "gc_collect",
-          "test_node_runtime"
-        ]),
-        tag: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(16))),
-        exitCode: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 3 })))
-      })
-    )
+  it(
+    "FetchTransport.observe, EgressHttpClient, NodeGarbageCollector, ScopedProcess, OwnerPrivate, and TestNodeRuntime",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          mode: Schema.Literals([
+            "fetch_200",
+            "fetch_500",
+            "egress_get",
+            "egress_pin_mismatch",
+            "scoped_process",
+            "owner_private",
+            "gc_collect",
+            "test_node_runtime"
+          ]),
+          tag: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(16))),
+          exitCode: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 3 })))
+        })
+      )
 
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (input) =>
-          Effect.gen(function*() {
-            const safeTag = input.tag.replace(/[^a-zA-Z0-9_-]/g, "a") || "t"
-            const origin = `http://127.0.0.1:${originPort}`
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (input) =>
+            Effect.gen(function*() {
+              const safeTag = input.tag.replace(/[^a-zA-Z0-9_-]/g, "a") || "t"
+              const origin = `http://127.0.0.1:${originPort}`
 
-            if (input.mode === "fetch_200" || input.mode === "fetch_500") {
-              const observer = FetchTransport.observe(origin)
-              try {
-                const attempt = observer.begin()
-                const path = input.mode === "fetch_500" ? "/500" : `/${safeTag}`
-                const res = yield* Effect.promise(() => fetch(`${origin}${path}`))
-                yield* Effect.promise(() => res.text())
-                const fields = attempt.fields()
-                observer.close()
-                observer.close()
-                return typeof fields["transport.phase"] === "string" || Object.keys(fields).length > 0
-              } finally {
-                observer.close()
+              if (input.mode === "fetch_200" || input.mode === "fetch_500") {
+                const observer = FetchTransport.observe(origin)
+                try {
+                  const attempt = observer.begin()
+                  const path = input.mode === "fetch_500" ? "/500" : `/${safeTag}`
+                  const res = yield* Effect.promise(() => fetch(`${origin}${path}`))
+                  yield* Effect.promise(() => res.text())
+                  const fields = attempt.fields()
+                  observer.close()
+                  observer.close()
+                  return typeof fields["transport.phase"] === "string" || Object.keys(fields).length > 0
+                } finally {
+                  observer.close()
+                }
               }
-            }
 
-            if (input.mode === "egress_get") {
-              const body = yield* Effect.provide(
-                Effect.gen(function*() {
-                  const client = yield* HttpClient.HttpClient
-                  const res = yield* client.execute(HttpClientRequest.get(`${origin}/${safeTag}`))
-                  return yield* res.text
-                }),
-                EgressHttpClient.layer({})
-              )
-              return body === `ok:/${safeTag}`
-            }
-
-            if (input.mode === "egress_pin_mismatch") {
-              // Mismatched Destination origin MUST refuse request before dialing
-              const exit = yield* Effect.exit(
-                Effect.provide(
+              if (input.mode === "egress_get") {
+                const body = yield* Effect.provide(
                   Effect.gen(function*() {
                     const client = yield* HttpClient.HttpClient
-                    return yield* client.execute(HttpClientRequest.get(`${origin}/${safeTag}`))
-                  }).pipe(
-                    Effect.provideService(Destination, {
-                      origin: "http://other.example:80",
-                      addresses: ["127.0.0.1"]
-                    })
-                  ),
+                    const res = yield* client.execute(HttpClientRequest.get(`${origin}/${safeTag}`))
+                    return yield* res.text
+                  }),
                   EgressHttpClient.layer({})
                 )
-              )
-              return Exit.isFailure(exit)
-            }
+                return body === `ok:/${safeTag}`
+              }
 
-            if (input.mode === "scoped_process") {
-              return yield* Effect.scoped(
-                Effect.gen(function*() {
-                  const handle = yield* ScopedProcess.spawn({
-                    command: "sh",
-                    args: ["-c", `printf '%s' '${safeTag}'; exit ${input.exitCode}`]
-                  })
-                  const chunks = yield* Stream.runCollect(handle.stdout)
-                  const code = yield* handle.exitCode
-                  const st = yield* ScopedProcess.status(handle)
-                  const out = decoder.decode(Uint8Array.from(Array.from(chunks).flatMap((c) => Array.from(c))))
-                  return out === safeTag && Number(code) === input.exitCode && st !== undefined
-                })
-              )
-            }
-
-            if (input.mode === "owner_private") {
-              const seen: Array<AtomicProtocol.HostRequest> = []
-              const svc = OwnerPrivate.make(
-                (req) =>
-                  Effect.sync(() => {
-                    seen.push(req)
-                  }),
-                (path, cause) => PlatformError.systemError({ _tag: "PermissionDenied", module: "OwnerPrivate", method: "pin", pathOrDescriptor: path, description: String(cause) })
-              )
-              const target = join(tempRoot, `priv-${safeTag}`)
-              const pinned = yield* svc.directory(tempRoot, target)
-              yield* svc.write(tempRoot, join(target, "a.bin"), new Uint8Array([1, 2, 3]))
-              yield* svc.append(join(tempRoot, "log.txt"), safeTag)
-              const beforeEscape = seen.length
-              const escExit = yield* Effect.exit(svc.directory(tempRoot, join(tempRoot, "..", "escape")))
-              return pinned.startsWith(tempRoot) && Exit.isFailure(escExit) && seen.length === beforeEscape
-            }
-
-            if (input.mode === "gc_collect") {
-              yield* Effect.provide(
-                Effect.flatMap(MicrosandboxSandbox.GarbageCollector, (gc) => gc.collect),
-                NodeGarbageCollector.layer
-              )
-              return true
-            }
-
-            const dbFile = join(tempRoot, `tnr-${safeTag}-${Math.random().toString(36).slice(2, 8)}.sqlite`)
-            try {
-              const StepAct = Action.make("pnode-fuzz/Step", {
-                payload: { v: Schema.String },
-                success: Schema.String
-              })
-              const FuzzFlow = Flow.make("pnode-fuzz/Flow", {
-                payload: { v: Schema.String },
-                success: Schema.String,
-                body: ({ v }) => StepAct.call({ v })
-              })
-              const res = yield* FuzzFlow.execute(
-                { v: safeTag },
-                { executionId: `exec-${safeTag}` }
-              ).pipe(
-                Effect.provide(
-                  Layer.mergeAll(
-                    StepAct.toLayer(({ v }) => Effect.succeed(`ran:${v}`)),
-                    Interpreter.layer(FuzzFlow)
-                  ).pipe(
-                    Layer.provideMerge(Action.layerImplementations),
-                    Layer.provideMerge(TestNodeRuntime.durableEngine(dbFile, "fuzz-host"))
+              if (input.mode === "egress_pin_mismatch") {
+                // Mismatched Destination origin MUST refuse request before dialing
+                const exit = yield* Effect.exit(
+                  Effect.provide(
+                    Effect.gen(function*() {
+                      const client = yield* HttpClient.HttpClient
+                      return yield* client.execute(HttpClientRequest.get(`${origin}/${safeTag}`))
+                    }).pipe(
+                      Effect.provideService(Destination, {
+                        origin: "http://other.example:80",
+                        addresses: ["127.0.0.1"]
+                      })
+                    ),
+                    EgressHttpClient.layer({})
                   )
                 )
-              )
-              void NodeHost.layer
-              void KernelFileSystem
-              void GrantStore
-              void Workspace
-              void FileSystem
-              return res === `ran:${safeTag}`
-            } finally {
-              for (const suffix of ["", "-wal", "-shm"]) {
-                try {
-                  nodeFs.rmSync(`${dbFile}${suffix}`, { force: true })
-                } catch {}
+                return Exit.isFailure(exit)
               }
-            }
-          }),
-        { seed: seed + 4, executions: Math.min(executions, 30) }
-      )
-    )
-    assertPassed(report)
-  }, 60_000)
 
-it("AtomicFileSystem guarded layer roundtrips workspace ops and blocks symlink/path escapes", async () => {
+              if (input.mode === "scoped_process") {
+                return yield* Effect.scoped(
+                  Effect.gen(function*() {
+                    const handle = yield* ScopedProcess.spawn({
+                      command: "sh",
+                      args: ["-c", `printf '%s' '${safeTag}'; exit ${input.exitCode}`]
+                    })
+                    const chunks = yield* Stream.runCollect(handle.stdout)
+                    const code = yield* handle.exitCode
+                    const st = yield* ScopedProcess.status(handle)
+                    const out = decoder.decode(Uint8Array.from(Array.from(chunks).flatMap((c) => Array.from(c))))
+                    return out === safeTag && Number(code) === input.exitCode && st !== undefined
+                  })
+                )
+              }
+
+              if (input.mode === "owner_private") {
+                const seen: Array<AtomicProtocol.HostRequest> = []
+                const svc = OwnerPrivate.make(
+                  (req) =>
+                    Effect.sync(() => {
+                      seen.push(req)
+                    }),
+                  (path, cause) =>
+                    PlatformError.systemError({
+                      _tag: "PermissionDenied",
+                      module: "OwnerPrivate",
+                      method: "pin",
+                      pathOrDescriptor: path,
+                      description: String(cause)
+                    })
+                )
+                const target = join(tempRoot, `priv-${safeTag}`)
+                const pinned = yield* svc.directory(tempRoot, target)
+                yield* svc.write(tempRoot, join(target, "a.bin"), new Uint8Array([1, 2, 3]))
+                yield* svc.append(join(tempRoot, "log.txt"), safeTag)
+                const beforeEscape = seen.length
+                const escExit = yield* Effect.exit(svc.directory(tempRoot, join(tempRoot, "..", "escape")))
+                return pinned.startsWith(tempRoot) && Exit.isFailure(escExit) && seen.length === beforeEscape
+              }
+
+              if (input.mode === "gc_collect") {
+                yield* Effect.provide(
+                  Effect.flatMap(MicrosandboxSandbox.GarbageCollector, (gc) => gc.collect),
+                  NodeGarbageCollector.layer
+                )
+                return true
+              }
+
+              const dbFile = join(tempRoot, `tnr-${safeTag}-${Math.random().toString(36).slice(2, 8)}.sqlite`)
+              try {
+                const StepAct = Action.make("pnode-fuzz/Step", {
+                  payload: { v: Schema.String },
+                  success: Schema.String
+                })
+                const FuzzFlow = Flow.make("pnode-fuzz/Flow", {
+                  payload: { v: Schema.String },
+                  success: Schema.String,
+                  body: ({ v }) => StepAct.call({ v })
+                })
+                const res = yield* FuzzFlow.execute(
+                  { v: safeTag },
+                  { executionId: `exec-${safeTag}` }
+                ).pipe(
+                  Effect.provide(
+                    Layer.mergeAll(
+                      StepAct.toLayer(({ v }) => Effect.succeed(`ran:${v}`)),
+                      Interpreter.layer(FuzzFlow)
+                    ).pipe(
+                      Layer.provideMerge(Action.layerImplementations),
+                      Layer.provideMerge(TestNodeRuntime.durableEngine(dbFile, "fuzz-host"))
+                    )
+                  )
+                )
+                void NodeHost.layer
+                void KernelFileSystem
+                void GrantStore
+                void Workspace
+                void FileSystem
+                return res === `ran:${safeTag}`
+              } finally {
+                for (const suffix of ["", "-wal", "-shm"]) {
+                  try {
+                    nodeFs.rmSync(`${dbFile}${suffix}`, { force: true })
+                  } catch {}
+                }
+              }
+            }),
+          { seed: seed + 4, executions: Math.min(executions, 30) }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
+
+  it("AtomicFileSystem guarded layer roundtrips workspace ops and blocks symlink/path escapes", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
         subDir: Schema.Literals(["a", "b/c", "nested"]),
@@ -711,8 +722,7 @@ it("AtomicFileSystem guarded layer roundtrips workspace ops and blocks symlink/p
             void ProcessReaper.groupSnapshotFor("linux")
             void ProcessReaper.groupSnapshotFor("darwin")
 
-            const unsafeToKill =
-              input.samePgidAsSelf ||
+            const unsafeToKill = input.samePgidAsSelf ||
               input.targetInvalid ||
               !input.ownGroupKnown ||
               input.ownerAlive !== "dead" ||
@@ -725,9 +735,11 @@ it("AtomicFileSystem guarded layer roundtrips workspace ops and blocks symlink/p
               return killed.length === 0 && decided.length === 1 && decided[0]!.killed === false
             }
             if (input.killOutcome === "failed") {
-              return killed.length === 1 && decided[0]!.killed === false && decided[0]!.refusal === "kill-failed" && reapedRows.length === 0
+              return killed.length === 1 && decided[0]!.killed === false && decided[0]!.refusal === "kill-failed" &&
+                reapedRows.length === 0
             }
-            return killed.length === 1 && killed[0] === rec.pid && decided[0]!.killed === true && reapedRows.length === 1
+            return killed.length === 1 && killed[0] === rec.pid && decided[0]!.killed === true &&
+              reapedRows.length === 1
           }),
         { seed: seed + 6, executions }
       )
@@ -743,7 +755,13 @@ it("AtomicFileSystem guarded layer roundtrips workspace ops and blocks symlink/p
 
     const arb = Arbitrary.schema(
       Schema.Struct({
-        mode: Schema.Literals(["connect_allowed", "connect_denied", "connect_noauth", "egress_proxy_env", "resolve_local"])
+        mode: Schema.Literals([
+          "connect_allowed",
+          "connect_denied",
+          "connect_noauth",
+          "egress_proxy_env",
+          "resolve_local"
+        ])
       })
     )
 

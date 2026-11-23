@@ -146,7 +146,11 @@ describe("@smthrs/build Runtime, PackageManager & Install fuzz invariants", () =
           manager: Schema.Literals(["pnpm", "bun"]),
           lockContent: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80)),
           pkgName: Schema.Literals(["app-a", "pkg-b", "svc-c"]),
-          npmrc: Schema.Literals(["", "registry=https://registry.npmjs.org/\n", "//registry.npmjs.org/:_authToken=secret123\n"]),
+          npmrc: Schema.Literals([
+            "",
+            "registry=https://registry.npmjs.org/\n",
+            "//registry.npmjs.org/:_authToken=secret123\n"
+          ]),
           pnpmfileKind: Schema.Literals(["none", "mjs", "cjs"]),
           os: Schema.Literals(["linux", "darwin"])
         })
@@ -166,22 +170,34 @@ describe("@smthrs/build Runtime, PackageManager & Install fuzz invariants", () =
                   : lockContent.replace(/[\uD800-\uDFFF]/g, "x")
                 FsSync.writeFileSync(Path.join(dir, lockName), safeLock, "utf8")
                 if (npmrc !== "") FsSync.writeFileSync(Path.join(dir, ".npmrc"), npmrc, "utf8")
-                if (pnpmfileKind === "mjs") FsSync.writeFileSync(Path.join(dir, ".pnpmfile.mjs"), "export default {}", "utf8")
-                if (pnpmfileKind === "cjs") FsSync.writeFileSync(Path.join(dir, ".pnpmfile.cjs"), "module.exports = {}", "utf8")
-                if (manager === "bun") FsSync.writeFileSync(Path.join(dir, "bunfig.toml"), "[install]\nexact = true\n", "utf8")
+                if (pnpmfileKind === "mjs") {
+                  FsSync.writeFileSync(Path.join(dir, ".pnpmfile.mjs"), "export default {}", "utf8")
+                }
+                if (pnpmfileKind === "cjs") {
+                  FsSync.writeFileSync(Path.join(dir, ".pnpmfile.cjs"), "module.exports = {}", "utf8")
+                }
+                if (manager === "bun") {
+                  FsSync.writeFileSync(Path.join(dir, "bunfig.toml"), "[install]\nexact = true\n", "utf8")
+                }
 
                 const d1 = yield* PackageManager.packageJsonDigest(dir)
                 const d2 = yield* PackageManager.packageJsonDigest(dir)
-                if (d1 !== d2) return false
+                if (d1 !== d2) {
+                  return false
+                }
 
                 const ld1 = yield* PackageManager.lockfileDigest(dir, lockName)
                 const ld2 = yield* PackageManager.lockfileDigest(dir, lockName)
-                if (ld1 !== ld2) return false
+                if (ld1 !== ld2) {
+                  return false
+                }
 
                 const ndRes = yield* PackageManager.npmrcDigest(dir).pipe(Effect.result)
                 let nd: PackageManager.Digest | null = null
                 if (npmrc.includes("secret123")) {
-                  if (Result.isSuccess(ndRes)) return false
+                  if (Result.isSuccess(ndRes)) {
+                    return false
+                  }
                 } else {
                   if (Result.isFailure(ndRes)) return false
                   nd = ndRes.success
@@ -252,7 +268,10 @@ describe("@smthrs/build Runtime, PackageManager & Install fuzz invariants", () =
     try {
       await Fs.writeFile(Path.join(tmpRoot, "package.json"), JSON.stringify({ name: "fuzz-app", version: "1.0.0" }))
       await Fs.writeFile(Path.join(tmpRoot, "pnpm-lock.yaml"), "lockfileVersion: 9.0\n")
-      await Fs.writeFile(Path.join(tmpRoot, "bun.lock"), JSON.stringify({ lockfileVersion: 1, workspaces: { "": { name: "fuzz-app" } } }))
+      await Fs.writeFile(
+        Path.join(tmpRoot, "bun.lock"),
+        JSON.stringify({ lockfileVersion: 1, workspaces: { "": { name: "fuzz-app" } } })
+      )
       const arb = Arbitrary.schema(
         Schema.Struct({
           manager: Schema.Literals(["pnpm", "bun"]),
@@ -275,10 +294,20 @@ describe("@smthrs/build Runtime, PackageManager & Install fuzz invariants", () =
                 { projectRoot: tmpRoot, requirement: manager === "pnpm" ? ">=10.0.0" : ">=1.4.1" },
                 plat
               )
-              const deps = Layer.mergeAll(rtLayer, pmLayer, NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer, Logger.layer([]))
+              const deps = Layer.mergeAll(
+                rtLayer,
+                pmLayer,
+                NodeFileSystem.layer,
+                NodePath.layer,
+                NodeCrypto.layer,
+                Logger.layer([])
+              )
               const noopMeasure = yield* Install.executeMeasure().pipe(Effect.provide(deps), Effect.result)
               if (Result.isSuccess(noopMeasure)) {
-                const noopFetch = yield* Install.executeFetch({ content: noopMeasure.success }).pipe(Effect.provide(deps), Effect.result)
+                const noopFetch = yield* Install.executeFetch({ content: noopMeasure.success }).pipe(
+                  Effect.provide(deps),
+                  Effect.result
+                )
                 if (Result.isSuccess(noopFetch)) return false
               }
 
@@ -286,12 +315,31 @@ describe("@smthrs/build Runtime, PackageManager & Install fuzz invariants", () =
               const verOut = enc.encode(manager === "pnpm" ? "11.0.0\n" : "1.4.1\n")
               const livePmLayer = (manager === "pnpm"
                 ? PackageManager.layerPnpm({ projectRoot: tmpRoot, executable: "pnpm", requirement: ">=10.0.0" })
-                : PackageManager.layerBun({ projectRoot: tmpRoot, executable: "bun", requirement: ">=1.4.1" })
-              ).pipe(Layer.provide(Layer.mergeAll(rtLayer, fakeSpawner(verOut, 0), NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)))
-              const liveDeps = Layer.mergeAll(rtLayer, livePmLayer, NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer, Logger.layer([]))
+                : PackageManager.layerBun({ projectRoot: tmpRoot, executable: "bun", requirement: ">=1.4.1" })).pipe(
+                  Layer.provide(
+                    Layer.mergeAll(
+                      rtLayer,
+                      fakeSpawner(verOut, 0),
+                      NodeFileSystem.layer,
+                      NodePath.layer,
+                      NodeCrypto.layer
+                    )
+                  )
+                )
+              const liveDeps = Layer.mergeAll(
+                rtLayer,
+                livePmLayer,
+                NodeFileSystem.layer,
+                NodePath.layer,
+                NodeCrypto.layer,
+                Logger.layer([])
+              )
               const content = yield* Install.executeMeasure().pipe(Effect.provide(liveDeps))
               const store = yield* Install.executeFetch({ content }).pipe(Effect.provide(liveDeps))
-              const linkRes = yield* Install.executeLink({ content, store }).pipe(Effect.provide(liveDeps), Effect.result)
+              const linkRes = yield* Install.executeLink({ content, store }).pipe(
+                Effect.provide(liveDeps),
+                Effect.result
+              )
               return store.manager === manager && (Result.isSuccess(linkRes) || Result.isFailure(linkRes))
             }),
           { seed: seed + 3, executions: Math.min(executions, 20) }

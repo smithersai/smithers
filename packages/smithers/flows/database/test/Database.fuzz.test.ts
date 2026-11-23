@@ -1,10 +1,9 @@
-import * as net from "node:net"
-import * as SlowNetwork from "../src/test/SlowNetwork.ts"
 import { Fuzz, FuzzSimulation } from "@smthrs/fuzz"
 import { Arbitrary, Duration, Effect, Layer, Logger, Result, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import { mkdtempSync, rmSync } from "node:fs"
+import * as net from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -18,6 +17,7 @@ import * as WriteTally from "../src/internal/WriteTally.ts"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
 import * as PostgresDatabase from "../src/postgres/PostgresDatabase.ts"
 import * as QualifiedRead from "../src/postgres/QualifiedRead.ts"
+import * as SlowNetwork from "../src/test/SlowNetwork.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 import * as TestSchemas from "../src/TestSchemas.ts"
 
@@ -120,7 +120,9 @@ describe("@smthrs/database fuzz", () => {
           expect(SqliteOpen.probeTarget(":memory:")).toBe(":memory:")
           expect(SqliteOpen.isLockedError(new Error("database is busy"))).toBe(true)
           expect(SqliteOpen.isLockedError(new Error("database is locked"))).toBe(true)
-          expect(SqliteOpen.isLockedError(Object.assign(new Error("database is locked"), { syscall: "open" }))).toBe(false)
+          expect(SqliteOpen.isLockedError(Object.assign(new Error("database is locked"), { syscall: "open" }))).toBe(
+            false
+          )
           expect(SqliteOpen.isLockedError(new Error("other"))).toBe(false)
 
           // QualifiedRead.qualify
@@ -419,7 +421,9 @@ describe("@smthrs/database fuzz", () => {
           const jsonStr = JSON.stringify({ [v.jsonKey]: v.jsonVal })
           yield* sql`INSERT INTO ${sql(tbl)} (n, payload) VALUES (${v.val}, ${jsonStr})`
 
-          const rows = yield* sql<{ n: number; extracted: string; mx: number }>`SELECT n, ${Database.Dialect.jsonText(sql, sql`payload`, `$.${v.jsonKey}`)} AS extracted, ${Database.Dialect.greatest(sql)}(n, 0) AS mx FROM ${sql(tbl)}`
+          const rows = yield* sql<{ n: number; extracted: string; mx: number }>`SELECT n, ${
+            Database.Dialect.jsonText(sql, sql`payload`, `$.${v.jsonKey}`)
+          } AS extracted, ${Database.Dialect.greatest(sql)}(n, 0) AS mx FROM ${sql(tbl)}`
           expect(rows.length).toBe(1)
           expect(rows[0]!.n).toBe(v.val)
           expect(rows[0]!.extracted).toBe(v.jsonVal)
@@ -925,7 +929,11 @@ describe("@smthrs/database fuzz", () => {
               yield* Effect.gen(function*() {
                 const sql = yield* SqlClient.SqlClient
                 yield* Database.Migrations.run([
-                  { namespace: v.prefix, idOffset: 0, migrations: { "0001_init": sql`CREATE TABLE kv (k TEXT)`.pipe(Effect.asVoid) } }
+                  {
+                    namespace: v.prefix,
+                    idOffset: 0,
+                    migrations: { "0001_init": sql`CREATE TABLE kv (k TEXT)`.pipe(Effect.asVoid) }
+                  }
                 ])
                 yield* sql`INSERT INTO kv VALUES ('ok')`
               }).pipe(Effect.provide(NodeDatabase.layer({ filename })))
@@ -972,10 +980,13 @@ describe("@smthrs/database fuzz", () => {
           const prevDb = process.env.DATABASE_URL
           const prevSchema = process.env.SMITHERS_POSTGRES_SCHEMA
           try {
-            if (backend) process.env.SMITHERS_BACKEND = backend; else delete process.env.SMITHERS_BACKEND
-            if (envUrl) process.env.SMITHERS_POSTGRES_URL = envUrl; else delete process.env.SMITHERS_POSTGRES_URL
+            if (backend) process.env.SMITHERS_BACKEND = backend
+            else delete process.env.SMITHERS_BACKEND
+            if (envUrl) process.env.SMITHERS_POSTGRES_URL = envUrl
+            else delete process.env.SMITHERS_POSTGRES_URL
             delete process.env.DATABASE_URL
-            if (envSchema) process.env.SMITHERS_POSTGRES_SCHEMA = envSchema; else delete process.env.SMITHERS_POSTGRES_SCHEMA
+            if (envSchema) process.env.SMITHERS_POSTGRES_SCHEMA = envSchema
+            else delete process.env.SMITHERS_POSTGRES_SCHEMA
 
             const isPg = PostgresSelection.isUrl(filename)
             if (isPg !== (filename.startsWith("postgres://") || filename.startsWith("postgresql://"))) return false
@@ -994,10 +1005,14 @@ describe("@smthrs/database fuzz", () => {
               if (code !== "postgres_url_missing" && code !== "postgres_url_invalid") return false
             }
           } finally {
-            if (prevBackend === undefined) delete process.env.SMITHERS_BACKEND; else process.env.SMITHERS_BACKEND = prevBackend
-            if (prevPg === undefined) delete process.env.SMITHERS_POSTGRES_URL; else process.env.SMITHERS_POSTGRES_URL = prevPg
-            if (prevDb === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = prevDb
-            if (prevSchema === undefined) delete process.env.SMITHERS_POSTGRES_SCHEMA; else process.env.SMITHERS_POSTGRES_SCHEMA = prevSchema
+            if (prevBackend === undefined) delete process.env.SMITHERS_BACKEND
+            else process.env.SMITHERS_BACKEND = prevBackend
+            if (prevPg === undefined) delete process.env.SMITHERS_POSTGRES_URL
+            else process.env.SMITHERS_POSTGRES_URL = prevPg
+            if (prevDb === undefined) delete process.env.DATABASE_URL
+            else process.env.DATABASE_URL = prevDb
+            if (prevSchema === undefined) delete process.env.SMITHERS_POSTGRES_SCHEMA
+            else process.env.SMITHERS_POSTGRES_SCHEMA = prevSchema
           }
 
           // Exercise SlowNetwork.proxy over a real loopback TCP echo server

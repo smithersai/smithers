@@ -284,8 +284,7 @@ describe("@smthrs/chain fuzz invariants", () => {
                   name: "probe",
                   capabilities: emptyClaims ? [] : [claim],
                   slot: { chain: "", link: 0, ordinal: 0 }
-                })
-              ).pipe(Effect.provide(layer))
+                })).pipe(Effect.provide(layer))
             )
 
             if (policyMode === "allow-all") return Result.isSuccess(res)
@@ -293,10 +292,12 @@ describe("@smthrs/chain fuzz invariants", () => {
               return Result.isFailure(res) && res.failure.code === "authorize_unavailable"
             }
             if (policyMode === "deny-all") {
-              return Result.isFailure(res) && (res.failure.code === "denied" || res.failure.code === "approval_required")
+              return Result.isFailure(res) &&
+                (res.failure.code === "denied" || res.failure.code === "approval_required")
             }
             if (emptyClaims) {
-              return Result.isFailure(res) && (res.failure.code === "approval_required" || res.failure.code === "denied")
+              return Result.isFailure(res) &&
+                (res.failure.code === "approval_required" || res.failure.code === "denied")
             }
             if (policyMode === "allow-read-deny-write" && claim === "fs:write:/etc/passwd") {
               return Result.isFailure(res) && res.failure.code === "denied"
@@ -546,7 +547,11 @@ describe("@smthrs/chain fuzz invariants", () => {
               scenario === "steering-drain" ? ["hurry up", "stay safe"] : []
             )
 
-            const runOnce = (initial: ReadonlyArray<Event.Event>, envVal: unknown, auth: Layer.Layer<Authorize.Authorize>) =>
+            const runOnce = (
+              initial: ReadonlyArray<Event.Event>,
+              envVal: unknown,
+              auth: Layer.Layer<Authorize.Authorize>
+            ) =>
               Effect.gen(function*() {
                 const outcome = yield* Chain.run({
                   goal: "fuzz goal",
@@ -687,7 +692,8 @@ describe("@smthrs/chain fuzz invariants", () => {
             const cyclic: Record<string, unknown> = {}
             cyclic.self = cyclic
             const encBad = QuickJsRunner.encodeSettlement("x", cyclic)
-            return decodedOk.refusal === undefined && decodedBad.refusal !== undefined && encBad.includes("cannot be encoded")
+            return decodedOk.refusal === undefined && decodedBad.refusal !== undefined &&
+              encBad.includes("cannot be encoded")
           }),
         { seed: seed + 4, executions: Math.min(executions, 60) }
       )
@@ -797,7 +803,9 @@ describe("@smthrs/chain fuzz invariants", () => {
                 Effect.provide(ModelAuthor.layer({ modelId: "test:model" }).pipe(Layer.provide(modelLayer)))
               )
             )
-            if (modelFails ? Result.isSuccess(authorRes) : Result.isFailure(authorRes)) throw new Error(`authorRes mismatch: ${JSON.stringify(authorRes)}`)
+            if (modelFails ? Result.isSuccess(authorRes) : Result.isFailure(authorRes)) {
+              throw new Error(`authorRes mismatch: ${JSON.stringify(authorRes)}`)
+            }
             if (Author.contextOf({ context: ["a", { b: 1 }] }).length !== 2) throw new Error("contextOf mismatch")
 
             // 3. RegistryCatalog projection
@@ -831,7 +839,9 @@ describe("@smthrs/chain fuzz invariants", () => {
               prompt: (rendered) => Effect.succeed(`ran:${rendered}`)
             }).pipe(Effect.provide(regLayer))
             const fEntry = cat.lookup("f")
-            if (fEntry === undefined || RegistryCatalog.declarationDigest(desc) === "") throw new Error("fEntry missing")
+            if (fEntry === undefined || RegistryCatalog.declarationDigest(desc) === "") {
+              throw new Error("fEntry missing")
+            }
             const fRes = yield* Effect.result(fEntry.handler({ args: "hi" }))
             if (Result.isFailure(fRes)) throw new Error(`fRes failed: ${JSON.stringify(fRes)}`)
 

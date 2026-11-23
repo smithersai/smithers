@@ -253,7 +253,13 @@ describe("@smthrs/effect-code-storage CodeStorage ES256 client fuzz invariants",
               }
               if (op === "createRepo") {
                 return Effect.succeed(
-                  HttpClientResponse.fromWeb(req, new Response(JSON.stringify({ repo_name: repo }), { status: status === 204 ? 201 : status, headers }))
+                  HttpClientResponse.fromWeb(
+                    req,
+                    new Response(JSON.stringify({ repo_name: repo }), {
+                      status: status === 204 ? 201 : status,
+                      headers
+                    })
+                  )
                 )
               }
               if (op === "deleteRepo" || op === "pullUpstream") {
@@ -337,7 +343,10 @@ describe("@smthrs/effect-code-storage CodeStorage ES256 client fuzz invariants",
               return Effect.succeed(
                 HttpClientResponse.fromWeb(
                   req,
-                  new Response(JSON.stringify({ target_branch: "feat", commit_sha: "a".repeat(40) }), { status: 200, headers })
+                  new Response(JSON.stringify({ target_branch: "feat", commit_sha: "a".repeat(40) }), {
+                    status: 200,
+                    headers
+                  })
                 )
               )
             })
@@ -354,28 +363,27 @@ describe("@smthrs/effect-code-storage CodeStorage ES256 client fuzz invariants",
                 const remote = yield* cs.gitRemote(repo)
                 return remote.url.includes("acme.code.storage") && remote.authorization !== undefined
               }
-              const call: Effect.Effect<unknown, CodeStorage.CodeStorageError> =
-                op === "createRepo"
-                  ? cs.createRepo({ name: repo, defaultBranch: "main" })
-                  : op === "deleteRepo"
-                  ? cs.deleteRepo(repo)
-                  : op === "pullUpstream"
-                  ? cs.pullUpstream(repo)
-                  : op === "listFiles"
-                  ? cs.listFiles(repo, { ref: "main", recursive: true })
-                  : op === "readFile"
-                  ? cs.readFile(repo, { path: "README.md", maxBytes: 1024 })
-                  : op === "streamFile"
-                  ? cs.streamFile(repo, { path: "README.md" }).pipe(
-                      Effect.flatMap((s) => Stream.runDrain(s.stream))
-                    )
-                  : op === "listCommits"
-                  ? cs.listCommits(repo, { ref: "main", limit: 10 })
-                  : op === "listBranches"
-                  ? cs.listBranches(repo, { limit: 10 })
-                  : op === "listTags"
-                  ? cs.listTags(repo, { limit: 10 })
-                  : cs.createBranch(repo, { branch: "feat", from: "main" })
+              const call: Effect.Effect<unknown, CodeStorage.CodeStorageError> = op === "createRepo"
+                ? cs.createRepo({ name: repo, defaultBranch: "main" })
+                : op === "deleteRepo"
+                ? cs.deleteRepo(repo)
+                : op === "pullUpstream"
+                ? cs.pullUpstream(repo)
+                : op === "listFiles"
+                ? cs.listFiles(repo, { ref: "main", recursive: true })
+                : op === "readFile"
+                ? cs.readFile(repo, { path: "README.md", maxBytes: 1024 })
+                : op === "streamFile"
+                ? cs.streamFile(repo, { path: "README.md" }).pipe(
+                  Effect.flatMap((s) => Stream.runDrain(s.stream))
+                )
+                : op === "listCommits"
+                ? cs.listCommits(repo, { ref: "main", limit: 10 })
+                : op === "listBranches"
+                ? cs.listBranches(repo, { limit: 10 })
+                : op === "listTags"
+                ? cs.listTags(repo, { limit: 10 })
+                : cs.createBranch(repo, { branch: "feat", from: "main" })
 
               const res = yield* Effect.result(call)
               if (!sawBearer) return false

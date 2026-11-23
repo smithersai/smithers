@@ -137,8 +137,7 @@ describe("@smthrs/evals comprehensive fuzz invariants", () => {
             const binding = Binding.make({ scorer: exactScorer, appliesTo: target })
             if (mode === "validJsonl" || mode === "bomAndBlanks") {
               const lines = Array.from({ length: caseCount }, (_, i) =>
-                JSON.stringify({ name: `case-${i}`, input: i, expected: i })
-              )
+                JSON.stringify({ name: `case-${i}`, input: i, expected: i }))
               const text = (mode === "bomAndBlanks" ? "\uFEFF\n  \n" : "") + lines.join("\n\n") + "\n"
               const suite = yield* Suite.fromJsonLines(text, {
                 name: "jsonl-suite",
@@ -324,7 +323,11 @@ describe("@smthrs/evals comprehensive fuzz invariants", () => {
             const binding = mode === "inlineSampledOut"
               ? Binding.make({ scorer: exactScorer, appliesTo: target, sampling: "none" })
               : mode === "inlineBadSampling"
-              ? Binding.make({ scorer: exactScorer, appliesTo: target, sampling: { ratio: 2, seed: "s" } as Sampling.Sampling })
+              ? Binding.make({
+                scorer: exactScorer,
+                appliesTo: target,
+                sampling: { ratio: 2, seed: "s" } as Sampling.Sampling
+              })
               : mode === "inlineScorerFail" || mode === "inlineScorerDie"
               ? Binding.make({ scorer: flakyScorer, appliesTo: target })
               : Binding.make({ scorer: exactScorer, appliesTo: target })
@@ -409,7 +412,10 @@ describe("@smthrs/evals comprehensive fuzz invariants", () => {
               return res.observations.every((o) => o.kind === "inconclusive")
             }
 
-            const makeObservation = (job: Runner.ScoreJob, overrides: Record<string, unknown> = {}): Runner.ScoreObservation => ({
+            const makeObservation = (
+              job: Runner.ScoreJob,
+              overrides: Record<string, unknown> = {}
+            ): Runner.ScoreObservation => ({
               ...job.observation,
               kind: "score",
               score: 0.9,
@@ -470,7 +476,9 @@ describe("@smthrs/evals comprehensive fuzz invariants", () => {
             } else if (mode === "protocolUnsafeKey") {
               customScorer = {
                 runBatch: (jobs) =>
-                  Effect.succeed(jobs.map((j) => makeObservation(j, { scorerKey: "bad\nkey", targetStepKey: "bad\rstep" })))
+                  Effect.succeed(
+                    jobs.map((j) => makeObservation(j, { scorerKey: "bad\nkey", targetStepKey: "bad\rstep" }))
+                  )
               }
             } else if (mode === "customBadScore") {
               customScorer = {
@@ -482,7 +490,8 @@ describe("@smthrs/evals comprehensive fuzz invariants", () => {
               }
             } else if (mode === "customInconclusiveNoReason") {
               customScorer = {
-                runBatch: (jobs) => Effect.succeed(jobs.map((j) => makeObservation(j, { kind: "inconclusive", reason: "" })))
+                runBatch: (jobs) =>
+                  Effect.succeed(jobs.map((j) => makeObservation(j, { kind: "inconclusive", reason: "" })))
               }
             }
 
@@ -585,7 +594,9 @@ describe("@smthrs/evals comprehensive fuzz invariants", () => {
 
             // Baseline error paths: corrupt JSON, bad version, out-of-range score
             const badLoad1 = yield* Effect.result(Baseline.load("{bad"))
-            const badLoad2 = yield* Effect.result(Baseline.load(JSON.stringify({ version: 99, suite: "demo", records: [] })))
+            const badLoad2 = yield* Effect.result(
+              Baseline.load(JSON.stringify({ version: 99, suite: "demo", records: [] }))
+            )
             const badScore = yield* Effect.result(Baseline.make({ suite: "demo", records: [{ ...r1, score: 1.5 }] }))
             if (Result.isSuccess(badLoad1) || Result.isSuccess(badLoad2) || Result.isSuccess(badScore)) return false
 

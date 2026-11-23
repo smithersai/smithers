@@ -117,7 +117,10 @@ describe("@smthrs/plan-store fuzz", () => {
               if (existing === undefined) {
                 const unrecorded = yield* getBase(planId, 0)
                 const grown = yield* Plan.append(unrecorded, [
-                  draft(`extra-${step}`, { body: { seedVal: op.seedVal }, inputs: [{ _tag: "Pending", from: "child" }] })
+                  draft(`extra-${step}`, {
+                    body: { seedVal: op.seedVal },
+                    inputs: [{ _tag: "Pending", from: "child" }]
+                  })
                 ])
                 const res = yield* Effect.result(store.append(grown))
                 expect(Result.isFailure(res)).toBe(true)
@@ -125,7 +128,10 @@ describe("@smthrs/plan-store fuzz", () => {
               } else if (op.stale && existing.current.generation > 0) {
                 // Append against stale base generation -> must fail with constraint
                 const staleGrown = yield* Plan.append(existing.base, [
-                  draft(`stale-${step}`, { body: { seedVal: op.seedVal }, inputs: [{ _tag: "Pending", from: "child" }] })
+                  draft(`stale-${step}`, {
+                    body: { seedVal: op.seedVal },
+                    inputs: [{ _tag: "Pending", from: "child" }]
+                  })
                 ])
                 const res = yield* Effect.result(store.append(staleGrown))
                 expect(Result.isFailure(res)).toBe(true)
@@ -449,7 +455,7 @@ describe("@smthrs/plan-store fuzz", () => {
               expect(Result.isFailure(rBusy) && rBusy.failure.code === "persistence_failed").toBe(true)
 
               const constraintSql = Layer.succeed(SqlClient.SqlClient, {
-                ...sql,
+                ...sql
                 // Proxy template tag to return SqlError with ConstraintError
               } as never)
               void constraintSql

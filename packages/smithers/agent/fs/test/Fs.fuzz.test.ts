@@ -4,8 +4,8 @@ import { Fuzz } from "@smthrs/fuzz"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Arbitrary, Effect, Layer, Logger, Option, Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Boundary from "../src/internal/Boundary.ts"
 import { Command, CommandTree, Directive, FileRouter, FlowInvoker, FsError, Incur, Route } from "../src/index.ts"
+import * as Boundary from "../src/internal/Boundary.ts"
 import { hiddenRecordRoot, hiddenRuntimeRoot, routerRoot } from "./fixtureRoots.ts"
 import { invalidModule, recordedImports, recordedModule, refinedModule, visibleModule } from "./modules.ts"
 
@@ -472,7 +472,18 @@ describe("@smthrs/fs Command, FlowInvoker, FileRouter & Incur fuzz invariants", 
   it("Boundary.admitJson, admitDecoded, inspectRecord, inspectOption & stringArray refuse getters, NULs, surrogates & bounds violations", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        kind: Schema.Literals(["plain", "getter", "nul", "surrogate", "sparse", "over_items", "option_some", "option_none", "not_option", "proxy"]),
+        kind: Schema.Literals([
+          "plain",
+          "getter",
+          "nul",
+          "surrogate",
+          "sparse",
+          "over_items",
+          "option_some",
+          "option_none",
+          "not_option",
+          "proxy"
+        ]),
         items: Schema.Array(Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(16)))).pipe(
           Schema.check(Schema.isMaxLength(4))
         )
@@ -496,7 +507,10 @@ describe("@smthrs/fs Command, FlowInvoker, FileRouter & Incur fuzz invariants", 
               return !res.ok && !ran
             }
             if (kind === "nul") {
-              const res = Boundary.stringArray(["ok", "bad" + String.fromCharCode(0) + "val"], { maxItems: 5, maxLength: 32 })
+              const res = Boundary.stringArray(["ok", "bad" + String.fromCharCode(0) + "val"], {
+                maxItems: 5,
+                maxLength: 32
+              })
               return !res.ok
             }
             if (kind === "surrogate") {
@@ -523,10 +537,19 @@ describe("@smthrs/fs Command, FlowInvoker, FileRouter & Incur fuzz invariants", 
               return !Boundary.inspectOption({ _tag: "Some", value: 1 }).ok
             }
             if (kind === "proxy") {
-              const p = new Proxy({}, { getOwnPropertyDescriptor() { throw new Error("trap") } })
+              const p = new Proxy({}, {
+                getOwnPropertyDescriptor() {
+                  throw new Error("trap")
+                }
+              })
               return !Boundary.inspectRecord(p, ["a"]).ok
             }
-            const clean = items.map((s) => Array.from(s, (ch) => { const c = ch.charCodeAt(0); return c === 0 || (c >= 0xd800 && c <= 0xdfff) ? "x" : ch; }).join("")).filter((s) => s.length > 0)
+            const clean = items.map((s) =>
+              Array.from(s, (ch) => {
+                const c = ch.charCodeAt(0)
+                return c === 0 || (c >= 0xd800 && c <= 0xdfff) ? "x" : ch
+              }).join("")
+            ).filter((s) => s.length > 0)
             const r = Boundary.stringArray(clean, { maxItems: 4, maxLength: 32 })
             if (!r.ok || r.value.length !== clean.length) return false
             const j = Boundary.admitDecoded({ a: clean, n: 42 })

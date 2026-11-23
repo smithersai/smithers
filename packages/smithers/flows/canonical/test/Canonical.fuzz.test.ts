@@ -362,7 +362,18 @@ describe("@smthrs/canonical deep sortCollections, ReadonlyMap & BoundedJson edge
   it("Canonical decode/encode refuses cycles, non-finite numbers, throwing toJSON & malformed JSON documents", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        kind: Schema.Literals(["cycle", "nan", "inf", "neg_inf", "bigint", "symbol", "throwing_tojson", "unstringifiable_throw", "bad_json", "lone_surrogate"]),
+        kind: Schema.Literals([
+          "cycle",
+          "nan",
+          "inf",
+          "neg_inf",
+          "bigint",
+          "symbol",
+          "throwing_tojson",
+          "unstringifiable_throw",
+          "bad_json",
+          "lone_surrogate"
+        ]),
         key: Schema.Literals(["a", "b", "c"])
       })
     )
@@ -385,9 +396,23 @@ describe("@smthrs/canonical deep sortCollections, ReadonlyMap & BoundedJson edge
             else if (kind === "neg_inf") input = { [key]: Number.NEGATIVE_INFINITY }
             else if (kind === "bigint") input = { [key]: 123n }
             else if (kind === "symbol") input = Symbol("x")
-            else if (kind === "throwing_tojson") input = { toJSON() { throw new Error("boom") } }
-            else if (kind === "unstringifiable_throw") input = { toJSON() { throw { toString() { throw new Error("no") } } } }
-            else input = { [key]: "\ud800" }
+            else if (kind === "throwing_tojson") {
+              input = {
+                toJSON() {
+                  throw new Error("boom")
+                }
+              }
+            } else if (kind === "unstringifiable_throw") {
+              input = {
+                toJSON() {
+                  throw {
+                    toString() {
+                      throw new Error("no")
+                    }
+                  }
+                }
+              }
+            } else input = { [key]: "\ud800" }
             const dec = Schema.decodeUnknownResult(Canonical)(input)
             return Result.isFailure(dec)
           }),

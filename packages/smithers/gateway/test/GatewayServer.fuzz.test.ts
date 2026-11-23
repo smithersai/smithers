@@ -55,7 +55,10 @@ describe("@smthrs/gateway GatewayServer ingress, ticket replay, body bounds, RPC
             const routed = GatewayServer.routedPath(rawPath)
             if (routed !== routed.toLowerCase()) return false
             if (routed.length > 1 && routed.endsWith("/") && !rawPath.includes("%ZZ")) return false
-            if (rawPath === "/RPC/" || rawPath === "//rpc//" || rawPath === "/rpc?foo=1#bar" || rawPath === "/rpc;jsessionid=123" || rawPath === "/%72pc") {
+            if (
+              rawPath === "/RPC/" || rawPath === "//rpc//" || rawPath === "/rpc?foo=1#bar" ||
+              rawPath === "/rpc;jsessionid=123" || rawPath === "/%72pc"
+            ) {
               if (routed !== "/rpc") return false
             }
             if (rawPath === "http://127.0.0.1:8080/projections/ws/?ticket=abc") {
@@ -76,11 +79,17 @@ describe("@smthrs/gateway GatewayServer ingress, ticket replay, body bounds, RPC
               : new Error("socket reset")
             const refusal = GatewayServer.bodyRefusal("/rpc", maxBytes, err)
             if (isLimitErr) {
-              if (!GatewayServer.exceededBodyLimit(err) || refusal.status !== 413 || refusal.error.code !== "request_too_large") {
+              if (
+                !GatewayServer.exceededBodyLimit(err) || refusal.status !== 413 ||
+                refusal.error.code !== "request_too_large"
+              ) {
                 return false
               }
             } else {
-              if (GatewayServer.exceededBodyLimit(err) || refusal.status !== 400 || refusal.error.code !== "malformed_request") {
+              if (
+                GatewayServer.exceededBodyLimit(err) || refusal.status !== 400 ||
+                refusal.error.code !== "malformed_request"
+              ) {
                 return false
               }
             }

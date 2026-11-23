@@ -22,10 +22,10 @@ import {
   isGitLockContention,
   isJjError,
   Jj,
-  JjErrorCause,
-  JjErrorCode,
   jjError,
+  JjErrorCause,
   jjErrorCause,
+  JjErrorCode,
   layerNoop,
   make as makeJj,
   makeNoop,
@@ -567,9 +567,11 @@ describe("@smthrs/jj fuzz invariants", () => {
 
             let patch = `diff --git a/${src} b/${dst}\n`
             if (input.kind === "add") {
-              patch += `new file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/${dst}\n@@ -0,0 +1,1 @@\n+${safeHunk}\n`
+              patch +=
+                `new file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/${dst}\n@@ -0,0 +1,1 @@\n+${safeHunk}\n`
             } else if (input.kind === "delete") {
-              patch += `deleted file mode 100644\nindex 1111111..0000000\n--- a/${src}\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-${safeHunk}\n`
+              patch +=
+                `deleted file mode 100644\nindex 1111111..0000000\n--- a/${src}\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-${safeHunk}\n`
             } else if (input.kind === "rename") {
               patch += `rename from ${src}\nrename to ${dst}\n`
             } else if (input.kind === "copy") {
@@ -577,7 +579,8 @@ describe("@smthrs/jj fuzz invariants", () => {
             } else if (input.kind === "binary") {
               patch += `Binary files a/${src} and b/${dst} differ\n`
             } else {
-              patch += `index 1111111..2222222 100644\n--- a/${src}\n+++ b/${dst}\n@@ -1,2 +1,2 @@\n-diff --git a/fake b/fake\n+${safeHunk}\n`
+              patch +=
+                `index 1111111..2222222 100644\n--- a/${src}\n+++ b/${dst}\n@@ -1,2 +1,2 @@\n-diff --git a/fake b/fake\n+${safeHunk}\n`
             }
 
             const once = quoteGitPatchPaths(patch, metadata)
@@ -849,7 +852,9 @@ describe("@smthrs/jj fuzz invariants", () => {
                 view().setUint32(0x354, dataBytes.length + 16, true)
                 if (sys.fd_pread!(fd, 0x350, 1, 0n, 0x360) !== Errno.success) return false
                 const nread = view().getUint32(0x360, true)
-                if (decoder.decode(new Uint8Array(memory.buffer, 0x2000, nread)) !== decoder.decode(dataBytes)) return false
+                if (
+                  decoder.decode(new Uint8Array(memory.buffer, 0x2000, nread)) !== decoder.decode(dataBytes)
+                ) return false
                 if (sys.fd_datasync!(fd) !== Errno.success) return false
                 if (sys.fd_sync!(fd) !== Errno.success) return false
                 if (sys.fd_filestat_set_size!(fd, 0n) !== Errno.success) return false

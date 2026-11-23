@@ -1,4 +1,3 @@
-import * as Evaluator from "@smthrs/model/Evaluator"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import { Rule } from "@smthrs/capability/Permission"
 import * as Credential from "@smthrs/control/Credential"
@@ -7,6 +6,7 @@ import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as HttpClient from "@smthrs/kernel/HttpClient"
 import { ResolveHost } from "@smthrs/kernel/HttpClient"
 import * as Workspace from "@smthrs/kernel/Workspace"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Arbitrary, Effect, FileSystem, Layer, Path, Redacted, Result, Schema } from "effect"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { describe, expect, it } from "vitest"
@@ -338,7 +338,8 @@ describe("@smthrs/std fuzz invariants", () => {
             if (!Ignore.ignored([scope], "/debug.log", "debug.log", false, rel)) return false
             if (Ignore.ignored([scope], "/keep.log", "keep.log", false, rel)) return false
 
-            const html = `<h1>${word}</h1><p>hello &amp; <a href="https://example.com">link</a></p><ul><li>item</li></ul><pre><code>x = 1</code></pre><script>evil()</script>`
+            const html =
+              `<h1>${word}</h1><p>hello &amp; <a href="https://example.com">link</a></p><ul><li>item</li></ul><pre><code>x = 1</code></pre><script>evil()</script>`
             const plain = Html.toText(html)
             const md = Html.toMarkdown(html)
             if (!plain.includes(word) || plain.includes("evil()") || !md.includes(word)) return false
@@ -385,7 +386,9 @@ describe("@smthrs/std fuzz invariants", () => {
             // Relocate precheck
             const relocCheck = Relocate.precheck("read", { path: "/workspace/a.ts" })
             const relocUnk = Relocate.precheck("unknown_flow", {})
-            return (relocCheck === undefined || "_tag" in relocCheck) && (relocUnk === undefined || "_tag" in relocUnk) && Manifest.names.length > 0 && Explore.flow.flows.length === 4
+            return (relocCheck === undefined || "_tag" in relocCheck) &&
+              (relocUnk === undefined || "_tag" in relocUnk) && Manifest.names.length > 0 &&
+              Explore.flow.flows.length === 4
           }),
         { seed: seed + 1, executions: Math.min(executions, 80) }
       )
@@ -487,8 +490,7 @@ describe("@smthrs/std fuzz invariants", () => {
                   results: [{ title: "Doc", url: "https://example.com/doc", text: "hello world" }]
                 }),
                 { status, headers: { "content-type": "application/json" } }
-              )
-            )
+              ))
             const exaLayer = ExaWebSearch.layer("test-exa").pipe(
               Layer.provide(Layer.merge(credLayer, exaNet))
             )
@@ -616,7 +618,15 @@ describe("@smthrs/std fuzz invariants", () => {
 
             const trNoop = yield* Effect.result(
               TestRun.run({}).pipe(
-                Effect.provide(Layer.mergeAll(fsLayer, TestRunner.layerNoop, Checkpoints.layerNoop, Container.layerNoop, Evaluator.layerUnavailable()))
+                Effect.provide(
+                  Layer.mergeAll(
+                    fsLayer,
+                    TestRunner.layerNoop,
+                    Checkpoints.layerNoop,
+                    Container.layerNoop,
+                    Evaluator.layerUnavailable()
+                  )
+                )
               )
             )
             if (Result.isSuccess(trNoop)) return false

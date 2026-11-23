@@ -60,7 +60,9 @@ describe("@smthrs/platform-bun BunFileReplacement, BunDesktop, BunHost & BunRunt
               } finally {
                 FsSync.rmSync(dir, { recursive: true, force: true })
               }
-            }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer, Logger.layer([])))),
+            }).pipe(
+              Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer, Logger.layer([])))
+            ),
           { seed, executions: Math.min(executions, 60) }
         )
       )
@@ -108,15 +110,19 @@ describe("@smthrs/platform-bun BunFileReplacement, BunDesktop, BunHost & BunRunt
                   openExternal: () => openExternalOk,
                   openFileDialog: async () => [...dialogPaths]
                 }
-              } as unknown as Parameters<typeof BunDesktop.layerWith>[0]["load"] extends Effect.Effect<infer A, any, any> ? A : never
+              } as unknown as Parameters<typeof BunDesktop.layerWith>[0]["load"] extends
+                Effect.Effect<infer A, any, any> ? A : never
 
               const layer = BunDesktop.layerWith({ load: Effect.succeed(fakeNative) })
               const res = yield* Effect.gen(function*() {
                 const win = yield* BunDesktop.DesktopWindow
                 if (win.resources !== "/res") return false
-                yield* win.open("https://app.smithers.sh/home", withFrame
-                  ? { title: "Smithers", frame: { x: 0, y: 0, width: 800, height: 600 } }
-                  : { title: "Smithers" })
+                yield* win.open(
+                  "https://app.smithers.sh/home",
+                  withFrame
+                    ? { title: "Smithers", frame: { x: 0, y: 0, width: 800, height: 600 } }
+                    : { title: "Smithers" }
+                )
                 if (navRules[0] !== "^*" || navRules[1] !== "https://app.smithers.sh/*") return false
 
                 const extUrl = `${scheme}://${userinfo}example.com/docs`

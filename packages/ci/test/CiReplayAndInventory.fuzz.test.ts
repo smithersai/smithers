@@ -116,7 +116,9 @@ describe("@smthrs/ci replay, process table, CPU meter, failure classifier & expr
             ].join("\n")
             const psEntries = ProcessTable.fromPs(psText)
             const tree = ProcessTable.treeOf(psEntries, rootPid)
-            if (!tree.pids.includes(rootPid) || !tree.pids.includes(childPid) || !tree.pids.includes(grandPid)) return false
+            if (
+              !tree.pids.includes(rootPid) || !tree.pids.includes(childPid) || !tree.pids.includes(grandPid)
+            ) return false
             if (tree.pids.includes(99999)) return false
 
             const meter = Cpu.meterOf(rootPid)

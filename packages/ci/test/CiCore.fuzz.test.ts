@@ -123,7 +123,8 @@ describe("@smthrs/ci core parsers, security scrubbing, shell/YAML & replay helpe
         ({ secretVal, varName, glob, recipe, timeoutMin, osList, nodeList }) =>
           Effect.sync(() => {
             // Secrets scrubbing MUST remove known token prefixes
-            const hasKnown = secretVal.startsWith("ghp_") || secretVal.startsWith("AKIA") || secretVal.startsWith("sk-ant-")
+            const hasKnown = secretVal.startsWith("ghp_") || secretVal.startsWith("AKIA") ||
+              secretVal.startsWith("sk-ant-")
             const scrubbed = Secrets.scrub({ msg: `leaked ${secretVal}`, nested: [secretVal] })
             if (hasKnown && !Secrets.hasSecretValue(secretVal)) return false
             if (hasKnown && scrubbed.msg.includes(secretVal)) return false
@@ -278,7 +279,10 @@ describe("@smthrs/ci core parsers, security scrubbing, shell/YAML & replay helpe
                 ]
               } as never
             )
-            if (dists.get("//packages/c:lib") !== 0 || dists.get("//packages/b:build") !== 1 || dists.get("//packages/a:test") !== 2) return false
+            if (
+              dists.get("//packages/c:lib") !== 0 || dists.get("//packages/b:build") !== 1 ||
+              dists.get("//packages/a:test") !== 2
+            ) return false
 
             // Measure.lowerBound statistical bounds [0, 1]
             const c = Math.min(caught, total)
@@ -306,7 +310,11 @@ describe("@smthrs/ci core parsers, security scrubbing, shell/YAML & replay helpe
                 {
                   commit: "abcdef1234567890",
                   baseline: { passed: true, wallMs: ms + 1000, counts: { ran: 2, cached: 0, skipped: 0, failed: 0 } },
-                  normal: { passed: true, wallMs: Math.max(100, Math.floor(ms / 2)), counts: { ran: 1, cached: 1, skipped: 0, failed: 0 } },
+                  normal: {
+                    passed: true,
+                    wallMs: Math.max(100, Math.floor(ms / 2)),
+                    counts: { ran: 1, cached: 1, skipped: 0, failed: 0 }
+                  },
                   mismatches: [],
                   verdict: "match" as const
                 }

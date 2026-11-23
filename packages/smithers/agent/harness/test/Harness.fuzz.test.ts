@@ -26,15 +26,7 @@ import {
   UnresolvedFailure,
   VariablesPanel
 } from "../src/index.ts"
-import {
-  descriptor,
-  emits,
-  of,
-  pattern,
-  prose,
-  run as runCellTurn,
-  window as baseWindow
-} from "./fixtures/cellTurn.ts"
+import { descriptor, emits, of, pattern, prose, run as runCellTurn, window as baseWindow } from "./fixtures/cellTurn.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "120"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261123")
@@ -46,7 +38,10 @@ const assertPassed = (report: Parameters<typeof Fuzz.formatReport>[0]): void => 
 }
 
 const codexRollout = readFileSync(new URL("./fixtures/external/codex-0.160/rollout.jsonl", import.meta.url), "utf8")
-const claudeSession = readFileSync(new URL("./fixtures/external/claude-code-2.1/session.jsonl", import.meta.url), "utf8")
+const claudeSession = readFileSync(
+  new URL("./fixtures/external/claude-code-2.1/session.jsonl", import.meta.url),
+  "utf8"
+)
 
 describe("@smthrs/harness fuzz invariants", () => {
   it("CellValidation, Cell, DoneText, StructuredOutput, Tokens & TruncatedOutput invariants", async () => {
@@ -109,7 +104,9 @@ describe("@smthrs/harness fuzz invariants", () => {
               ? JSON.stringify({ ok: "not-bool", count: "nope" })
               : "plain prose with no braces"
 
-            const decoded = Effect.runSync(Effect.result(StructuredOutput.decode(OutSchema, rawReply, { corrections: 0, limit: 2 })))
+            const decoded = Effect.runSync(
+              Effect.result(StructuredOutput.decode(OutSchema, rawReply, { corrections: 0, limit: 2 }))
+            )
             const cands = StructuredOutput.candidates(rawReply)
             const balanced = StructuredOutput.lastBalanced(rawReply)
             if (jsonKind === "valid-plain" || jsonKind === "valid-fenced" || jsonKind === "valid-trailing") {
@@ -121,7 +118,9 @@ describe("@smthrs/harness fuzz invariants", () => {
               const dig = StructuredOutput.issuesDigest(decoded.failure)
               if (corr.length === 0 || dig.length === 0) return false
             }
-            if (StructuredOutput.instructions(OutSchema).length === 0 || StructuredOutput.digest(OutSchema).length === 0) {
+            if (
+              StructuredOutput.instructions(OutSchema).length === 0 || StructuredOutput.digest(OutSchema).length === 0
+            ) {
               return false
             }
 
@@ -194,7 +193,10 @@ describe("@smthrs/harness fuzz invariants", () => {
               win = ContextWindow.appendTurn(win, ModelRequest.Message.assistant(`assistant turn ${i}`))
             }
             const afterDigest = ContextWindow.prefixDigest(win, 1)
-            if (Result.isFailure(initialDigest) || Result.isFailure(afterDigest) || initialDigest.success !== afterDigest.success) {
+            if (
+              Result.isFailure(initialDigest) || Result.isFailure(afterDigest) ||
+              initialDigest.success !== afterDigest.success
+            ) {
               throw new Error("prefixDigest changed")
             }
 
@@ -446,7 +448,11 @@ describe("@smthrs/harness fuzz invariants", () => {
             if (of(res.events, "discipline-armed").length !== 1) return false
 
             const okJournal = Transcript.validateJournal([
-              { seq: 1, eventType: "control.agent.turn", payload: { journalVersion: Transcript.journalVersion } } as any,
+              {
+                seq: 1,
+                eventType: "control.agent.turn",
+                payload: { journalVersion: Transcript.journalVersion }
+              } as any,
               { seq: 2, eventType: "other.event", payload: {} } as any
             ])
             const badJournal = Transcript.validateJournal([

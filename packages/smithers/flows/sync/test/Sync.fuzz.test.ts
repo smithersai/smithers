@@ -286,7 +286,15 @@ describe("@smthrs/sync BranchProjection CRDT convergence fuzz invariants", () =>
             branchId: s.branchId,
             seq: s.seq,
             messages: s.messages,
-            commands: s.commands.map((c) => ({ seq: c.seq, commandId: c.commandId, participantId: c.participantId, capabilityId: c.capabilityId, name: c.name, args: c.args, target: c.target })),
+            commands: s.commands.map((c) => ({
+              seq: c.seq,
+              commandId: c.commandId,
+              participantId: c.participantId,
+              capabilityId: c.capabilityId,
+              name: c.name,
+              args: c.args,
+              target: c.target
+            })),
             fields: [...s.fields].sort((a, b) => a.target.localeCompare(b.target))
           })
         if (norm(projA) !== norm(projB)) return false

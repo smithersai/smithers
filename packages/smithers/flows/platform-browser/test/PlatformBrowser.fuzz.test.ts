@@ -2,7 +2,20 @@ import { SQLITE_IOERR, SQLITE_OK, SQLITE_OPEN_WAL } from "@journeyapps/wa-sqlite
 import { ImmutableCache } from "@smthrs/artifacts"
 import { Fuzz, FuzzSimulation } from "@smthrs/fuzz"
 import { TerminalProtocol } from "@smthrs/sandbox"
-import { Arbitrary, Cause, Deferred, Effect, Exit, Fiber, FileSystem, Layer, Option, Queue, Schema, Stream } from "effect"
+import {
+  Arbitrary,
+  Cause,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  FileSystem,
+  Layer,
+  Option,
+  Queue,
+  Schema,
+  Stream
+} from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Socket from "effect/socket/Socket"
@@ -61,120 +74,124 @@ describe("@smthrs/platform-browser fuzz invariants", () => {
     }
   })
 
-  it("BrowserFileSystem, BrowserChildProcessSpawner, BrowserServices, and BrowserHost over ZenFS + just-bash", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        dirName: Schema.Literals(["alpha", "beta", "sub/nested"]),
-        fileName: Schema.Literals(["a.txt", "data.bin", "note-1.md"]),
-        payload: Schema.Array(Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 255 })))).pipe(
-          Schema.check(Schema.isMaxLength(64))
-        ),
-        text: Schema.String.pipe(Schema.check(Schema.isMaxLength(32))),
-        exitCode: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 5 })))
-      })
-    )
-
-    const fsExecutions = Math.min(executions, 24)
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (input) =>
-          Effect.gen(function*() {
-            const mount = yield* Effect.promise(() => ZenFsMount.mount())
-            const servicesLayer = BrowserServices.layer({
-              bash: mount.bash,
-              fs: mount.fs.promises
-            })
-            const bytes = Uint8Array.from(input.payload)
-            const safeText = decoder.decode(encoder.encode(input.text.replace(/[\0\r\n'\\$"`]/g, "x")))
-            const dirPath = `/${input.dirName}`
-            const filePath = `${dirPath}/${input.fileName}`
-
-            const ok = yield* Effect.provide(
-              Effect.gen(function*() {
-                const fs = yield* FileSystem.FileSystem
-                yield* fs.makeDirectory(dirPath, { recursive: true })
-                yield* fs.writeFile(filePath, bytes)
-                if (!(yield* fs.exists(filePath))) return false
-                const readBack = yield* fs.readFile(filePath)
-                if (readBack.length !== bytes.length) return false
-                for (let i = 0; i < bytes.length; i++) {
-                  if (readBack[i] !== bytes[i]) return false
-                }
-                const info = yield* fs.stat(filePath)
-                if (info.type !== "File" || Number(info.size) !== bytes.length) return false
-
-                const real = yield* fs.realPath(filePath)
-                if (!real.endsWith(input.fileName)) return false
-
-                const entries = yield* fs.readDirectory(dirPath)
-                if (!entries.includes(input.fileName)) return false
-                const recEntries = yield* fs.readDirectory("/", { recursive: true })
-                if (recEntries.length === 0) return false
-
-                const copyPath = `${dirPath}/copy.bin`
-                const copyExit = yield* Effect.exit(fs.copyFile(filePath, copyPath))
-                if (!Exit.isFailure(copyExit)) return false
-                yield* fs.writeFile(copyPath, bytes)
-                const renamedPath = `${dirPath}/renamed.bin`
-                yield* fs.rename(copyPath, renamedPath)
-                if (!(yield* fs.exists(renamedPath))) return false
-
-                const truncExit = yield* Effect.exit(fs.truncate(renamedPath, 0))
-                if (!Exit.isFailure(truncExit)) return false
-
-                const streamed = yield* Stream.runCollect(fs.stream(filePath))
-                const streamedLen = Array.from(streamed).reduce((a, c) => a + c.length, 0)
-                if (streamedLen !== bytes.length) return false
-
-                const missingExit = yield* Effect.exit(fs.readFile(`${dirPath}/missing-file`))
-                if (!Exit.isFailure(missingExit)) return false
-
-                yield* fs.remove(renamedPath)
-                if (yield* fs.exists(renamedPath)) return false
-
-                const spawner = yield* ChildProcessSpawner
-                const cmdOut = yield* Effect.scoped(
-                  Effect.gen(function*() {
-                    const proc = yield* spawner.spawn(
-                      ChildProcess.make("sh", ["-c", `printf '%s' '${safeText}'; exit ${input.exitCode}`])
-                    )
-                    const outChunks = yield* Stream.runCollect(proc.stdout)
-                    const code = yield* proc.exitCode
-                    const textOut = decoder.decode(
-                      Uint8Array.from(Array.from(outChunks).flatMap((c) => Array.from(c)))
-                    )
-                    return { textOut, code }
-                  })
-                )
-                if (cmdOut.textOut !== safeText || Number(cmdOut.code) !== input.exitCode) return false
-                return true
-              }),
-              servicesLayer
-            )
-            if (!ok) return false
-
-            const hostLayer = BrowserHost.layer({
-              bash: mount.bash,
-              fs: mount.fs.promises,
-              jj: { fs: mount.fs, wasm: new Uint8Array(0) }
-            })
-            const hostOk = yield* Effect.provide(
-              Effect.gen(function*() {
-                const fs = yield* FileSystem.FileSystem
-                return yield* fs.exists(filePath)
-              }),
-              hostLayer
-            )
-            void BrowserFileSystem.make
-            void BrowserChildProcessSpawner.make
-            return hostOk
-          }),
-        { seed, executions: fsExecutions }
+  it(
+    "BrowserFileSystem, BrowserChildProcessSpawner, BrowserServices, and BrowserHost over ZenFS + just-bash",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          dirName: Schema.Literals(["alpha", "beta", "sub/nested"]),
+          fileName: Schema.Literals(["a.txt", "data.bin", "note-1.md"]),
+          payload: Schema.Array(Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 255 })))).pipe(
+            Schema.check(Schema.isMaxLength(64))
+          ),
+          text: Schema.String.pipe(Schema.check(Schema.isMaxLength(32))),
+          exitCode: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 5 })))
+        })
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+
+      const fsExecutions = Math.min(executions, 24)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (input) =>
+            Effect.gen(function*() {
+              const mount = yield* Effect.promise(() => ZenFsMount.mount())
+              const servicesLayer = BrowserServices.layer({
+                bash: mount.bash,
+                fs: mount.fs.promises
+              })
+              const bytes = Uint8Array.from(input.payload)
+              const safeText = decoder.decode(encoder.encode(input.text.replace(/[\0\r\n'\\$"`]/g, "x")))
+              const dirPath = `/${input.dirName}`
+              const filePath = `${dirPath}/${input.fileName}`
+
+              const ok = yield* Effect.provide(
+                Effect.gen(function*() {
+                  const fs = yield* FileSystem.FileSystem
+                  yield* fs.makeDirectory(dirPath, { recursive: true })
+                  yield* fs.writeFile(filePath, bytes)
+                  if (!(yield* fs.exists(filePath))) return false
+                  const readBack = yield* fs.readFile(filePath)
+                  if (readBack.length !== bytes.length) return false
+                  for (let i = 0; i < bytes.length; i++) {
+                    if (readBack[i] !== bytes[i]) return false
+                  }
+                  const info = yield* fs.stat(filePath)
+                  if (info.type !== "File" || Number(info.size) !== bytes.length) return false
+
+                  const real = yield* fs.realPath(filePath)
+                  if (!real.endsWith(input.fileName)) return false
+
+                  const entries = yield* fs.readDirectory(dirPath)
+                  if (!entries.includes(input.fileName)) return false
+                  const recEntries = yield* fs.readDirectory("/", { recursive: true })
+                  if (recEntries.length === 0) return false
+
+                  const copyPath = `${dirPath}/copy.bin`
+                  const copyExit = yield* Effect.exit(fs.copyFile(filePath, copyPath))
+                  if (!Exit.isFailure(copyExit)) return false
+                  yield* fs.writeFile(copyPath, bytes)
+                  const renamedPath = `${dirPath}/renamed.bin`
+                  yield* fs.rename(copyPath, renamedPath)
+                  if (!(yield* fs.exists(renamedPath))) return false
+
+                  const truncExit = yield* Effect.exit(fs.truncate(renamedPath, 0))
+                  if (!Exit.isFailure(truncExit)) return false
+
+                  const streamed = yield* Stream.runCollect(fs.stream(filePath))
+                  const streamedLen = Array.from(streamed).reduce((a, c) => a + c.length, 0)
+                  if (streamedLen !== bytes.length) return false
+
+                  const missingExit = yield* Effect.exit(fs.readFile(`${dirPath}/missing-file`))
+                  if (!Exit.isFailure(missingExit)) return false
+
+                  yield* fs.remove(renamedPath)
+                  if (yield* fs.exists(renamedPath)) return false
+
+                  const spawner = yield* ChildProcessSpawner
+                  const cmdOut = yield* Effect.scoped(
+                    Effect.gen(function*() {
+                      const proc = yield* spawner.spawn(
+                        ChildProcess.make("sh", ["-c", `printf '%s' '${safeText}'; exit ${input.exitCode}`])
+                      )
+                      const outChunks = yield* Stream.runCollect(proc.stdout)
+                      const code = yield* proc.exitCode
+                      const textOut = decoder.decode(
+                        Uint8Array.from(Array.from(outChunks).flatMap((c) => Array.from(c)))
+                      )
+                      return { textOut, code }
+                    })
+                  )
+                  if (cmdOut.textOut !== safeText || Number(cmdOut.code) !== input.exitCode) return false
+                  return true
+                }),
+                servicesLayer
+              )
+              if (!ok) return false
+
+              const hostLayer = BrowserHost.layer({
+                bash: mount.bash,
+                fs: mount.fs.promises,
+                jj: { fs: mount.fs, wasm: new Uint8Array(0) }
+              })
+              const hostOk = yield* Effect.provide(
+                Effect.gen(function*() {
+                  const fs = yield* FileSystem.FileSystem
+                  return yield* fs.exists(filePath)
+                }),
+                hostLayer
+              )
+              void BrowserFileSystem.make
+              void BrowserChildProcessSpawner.make
+              return hostOk
+            }),
+          { seed, executions: fsExecutions }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
 
   it("BrowserCache layer & readAsset handle hits, misses, quotas, and network/http/body failures", async () => {
     const arb = Arbitrary.schema(
@@ -491,7 +508,14 @@ describe("@smthrs/platform-browser fuzz invariants", () => {
         ),
         text: Schema.String.pipe(Schema.check(Schema.isMaxLength(32))),
         sqlPrefix: Schema.Literals(["", "   ", "/* comment */ ", "-- line\n", "\t\n "]),
-        sqlVerb: Schema.Literals(["VACUUM", "vacuum", "Vacuum main", "SELECT 1", "INSERT INTO t VALUES (1)", "VACUUM_NOT"])
+        sqlVerb: Schema.Literals([
+          "VACUUM",
+          "vacuum",
+          "Vacuum main",
+          "SELECT 1",
+          "INSERT INTO t VALUES (1)",
+          "VACUUM_NOT"
+        ])
       })
     )
 
@@ -504,7 +528,15 @@ describe("@smthrs/platform-browser fuzz invariants", () => {
             const msgs: ReadonlyArray<Protocol.Message> = [
               { _tag: "Poll", client: input.reqId, id: 1, flow: "f", executionId: input.execId },
               { _tag: "Cancel", client: input.reqId, id: 2, flow: "f", executionId: input.execId },
-              { _tag: "Signal", client: input.reqId, id: 3, flow: "f", executionId: input.execId, name: "ev", value: safeText },
+              {
+                _tag: "Signal",
+                client: input.reqId,
+                id: 3,
+                flow: "f",
+                executionId: input.execId,
+                name: "ev",
+                value: safeText
+              },
               { _tag: "Replied", client: input.reqId, id: 4, result: { n: input.num } },
               { _tag: "Refused", client: input.reqId, id: 5, error: safeText },
               { _tag: "Leader" },
@@ -545,8 +577,8 @@ describe("@smthrs/platform-browser fuzz invariants", () => {
 
             const sql = `${input.sqlPrefix}${input.sqlVerb}`
             const isVac = Statements.isVacuum(sql)
-            const expectedVac =
-              input.sqlVerb === "VACUUM" || input.sqlVerb === "vacuum" || input.sqlVerb === "Vacuum main"
+            const expectedVac = input.sqlVerb === "VACUUM" || input.sqlVerb === "vacuum" ||
+              input.sqlVerb === "Vacuum main"
             if (isVac !== expectedVac) return false
 
             const err = Statements.failed(new Error(safeText), "query failed", "execute")
@@ -558,88 +590,92 @@ describe("@smthrs/platform-browser fuzz invariants", () => {
     assertPassed(report)
   })
 
-  it("TypeScriptWorkspace & BrowserLanguageServer serve symbols, hover, definition, and diagnostics over MessageChannel", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        lines: Schema.Array(
-          Schema.String.pipe(Schema.check(Schema.isMaxLength(20)))
-        ).pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(6))),
-        eol: Schema.Literals(["\n", "\r\n", "\r"]),
-        offsetSeed: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 500 }))),
-        rawPath: Schema.Literals(["a/b/../c.ts", "/./x//y.ts", "../../escape.ts", "src/main.ts"]),
-        symName: Schema.Literals(["alpha", "beta", "gamma", "delta"])
-      })
-    )
-
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (input) =>
-          Effect.scoped(
-            Effect.gen(function*() {
-              const cleanLines = input.lines.map((l) => l.replace(/[\r\n]/g, "a"))
-              const text = cleanLines.join(input.eol)
-              const starts = TypeScriptWorkspace.lineStarts(text)
-              if (starts.length !== cleanLines.length) return false
-
-              let offset = text.length === 0 ? 0 : input.offsetSeed % (text.length + 1)
-              if (offset > 0 && text[offset - 1] === "\r" && text[offset] === "\n") {
-                offset--
-              }
-              const pos = TypeScriptWorkspace.positionAt(starts, offset)
-              const back = TypeScriptWorkspace.offsetAt(text, starts, pos)
-              if (back !== offset) return false
-
-              const norm = TypeScriptWorkspace.normalize(input.rawPath)
-              if (!norm.startsWith("/") || norm.includes("/../") || norm.includes("/./")) return false
-              if (!TypeScriptWorkspace.uriOf(norm).startsWith("file://")) return false
-
-              const files: Record<string, string> = {
-                "src/lib.ts": `export const ${input.symName}: number = 42\n`,
-                "src/main.ts": `import { ${input.symName} } from "./lib"\nexport const res = ${input.symName} + 1\n`
-              }
-              const channel = new MessageChannel()
-              channel.port2.start()
-              yield* Effect.addFinalizer(() =>
-                Effect.sync(() => {
-                  channel.port1.close()
-                  channel.port2.close()
-                })
-              )
-              yield* Effect.forkScoped(
-                BrowserLanguageServer.program({
-                  typescript: ts,
-                  lib: async () => undefined,
-                  port: channel.port1 as unknown as BrowserLanguageServer.ServeOptions["port"] & object
-                })
-              )
-              const lsp = yield* BrowserLanguageServer.make({
-                worker: () => ({
-                  postMessage: (m) => channel.port2.postMessage(m),
-                  terminate: () => channel.port2.close(),
-                  addEventListener: (type: "message" | "error", listener: (ev: never) => void) => {
-                    if (type === "message") channel.port2.addEventListener("message", listener as never)
-                  }
-                }),
-                workspace: {
-                  paths: Object.keys(files),
-                  read: (p) => Effect.succeed(files[p])
-                }
-              })
-              const syms = yield* lsp.documentSymbols("/src/lib.ts")
-              if (!Array.isArray(syms) || syms.length === 0) return false
-              const hover = yield* lsp.hover({ path: "/src/main.ts", line: 1, character: 20 })
-              void hover
-              const defs = yield* lsp.definition({ path: "/src/main.ts", line: 1, character: 20 })
-              const diags = yield* lsp.diagnostics("/src/main.ts")
-              return Array.isArray(defs) && diags !== undefined && diags !== null
-            })
-          ),
-        { seed: seed + 5, executions: Math.min(executions, 10) }
+  it(
+    "TypeScriptWorkspace & BrowserLanguageServer serve symbols, hover, definition, and diagnostics over MessageChannel",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          lines: Schema.Array(
+            Schema.String.pipe(Schema.check(Schema.isMaxLength(20)))
+          ).pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(6))),
+          eol: Schema.Literals(["\n", "\r\n", "\r"]),
+          offsetSeed: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 500 }))),
+          rawPath: Schema.Literals(["a/b/../c.ts", "/./x//y.ts", "../../escape.ts", "src/main.ts"]),
+          symName: Schema.Literals(["alpha", "beta", "gamma", "delta"])
+        })
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (input) =>
+            Effect.scoped(
+              Effect.gen(function*() {
+                const cleanLines = input.lines.map((l) => l.replace(/[\r\n]/g, "a"))
+                const text = cleanLines.join(input.eol)
+                const starts = TypeScriptWorkspace.lineStarts(text)
+                if (starts.length !== cleanLines.length) return false
+
+                let offset = text.length === 0 ? 0 : input.offsetSeed % (text.length + 1)
+                if (offset > 0 && text[offset - 1] === "\r" && text[offset] === "\n") {
+                  offset--
+                }
+                const pos = TypeScriptWorkspace.positionAt(starts, offset)
+                const back = TypeScriptWorkspace.offsetAt(text, starts, pos)
+                if (back !== offset) return false
+
+                const norm = TypeScriptWorkspace.normalize(input.rawPath)
+                if (!norm.startsWith("/") || norm.includes("/../") || norm.includes("/./")) return false
+                if (!TypeScriptWorkspace.uriOf(norm).startsWith("file://")) return false
+
+                const files: Record<string, string> = {
+                  "src/lib.ts": `export const ${input.symName}: number = 42\n`,
+                  "src/main.ts": `import { ${input.symName} } from "./lib"\nexport const res = ${input.symName} + 1\n`
+                }
+                const channel = new MessageChannel()
+                channel.port2.start()
+                yield* Effect.addFinalizer(() =>
+                  Effect.sync(() => {
+                    channel.port1.close()
+                    channel.port2.close()
+                  })
+                )
+                yield* Effect.forkScoped(
+                  BrowserLanguageServer.program({
+                    typescript: ts,
+                    lib: async () => undefined,
+                    port: channel.port1 as unknown as BrowserLanguageServer.ServeOptions["port"] & object
+                  })
+                )
+                const lsp = yield* BrowserLanguageServer.make({
+                  worker: () => ({
+                    postMessage: (m) => channel.port2.postMessage(m),
+                    terminate: () => channel.port2.close(),
+                    addEventListener: (type: "message" | "error", listener: (ev: never) => void) => {
+                      if (type === "message") channel.port2.addEventListener("message", listener as never)
+                    }
+                  }),
+                  workspace: {
+                    paths: Object.keys(files),
+                    read: (p) => Effect.succeed(files[p])
+                  }
+                })
+                const syms = yield* lsp.documentSymbols("/src/lib.ts")
+                if (!Array.isArray(syms) || syms.length === 0) return false
+                const hover = yield* lsp.hover({ path: "/src/main.ts", line: 1, character: 20 })
+                void hover
+                const defs = yield* lsp.definition({ path: "/src/main.ts", line: 1, character: 20 })
+                const diags = yield* lsp.diagnostics("/src/main.ts")
+                return Array.isArray(defs) && diags !== undefined && diags !== null
+              })
+            ),
+          { seed: seed + 5, executions: Math.min(executions, 10) }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
 
   it("WalBuffer.bufferWalWrites matches unbuffered file semantics byte-for-byte across random write/read/sync/truncate ops", async () => {
     const arb = Arbitrary.schema(
@@ -797,164 +833,174 @@ describe("@smthrs/platform-browser fuzz invariants", () => {
     assertPassed(report)
   })
 
-  it("BrowserSqlite, SharedSqlite, BrowserEngine, and BrowserRuntime execute transactions & durable flows over wa-sqlite", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        vals: Schema.Array(Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 500 })))).pipe(
-          Schema.check(Schema.isMinLength(1), Schema.isMaxLength(4))
-        ),
-        rollbackLast: Schema.Boolean
-      })
-    )
+  it(
+    "BrowserSqlite, SharedSqlite, BrowserEngine, and BrowserRuntime execute transactions & durable flows over wa-sqlite",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          vals: Schema.Array(Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 500 })))).pipe(
+            Schema.check(Schema.isMinLength(1), Schema.isMaxLength(4))
+          ),
+          rollbackLast: Schema.Boolean
+        })
+      )
 
-    const sqliteExecutions = Math.min(executions, 6)
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (input) =>
-          Effect.scoped(
-            Effect.gen(function*() {
-              // 1. Direct BrowserSqlite via MemorySqlite.open
-              const db = yield* MemorySqlite.open
-              yield* Effect.provide(
-                Effect.gen(function*() {
-                  const sql = yield* SqlClient.SqlClient
-                  yield* sql`CREATE TABLE t (v INTEGER NOT NULL)`
-                  for (let i = 0; i < input.vals.length; i++) {
-                    const v = input.vals[i]!
-                    if (input.rollbackLast && i === input.vals.length - 1) {
-                      yield* Effect.exit(
-                        sql.withTransaction(Effect.andThen(sql`INSERT INTO t (v) VALUES (${v})`, Effect.fail("abort")))
-                      )
-                    } else {
-                      yield* sql.withTransaction(sql`INSERT INTO t (v) VALUES (${v})`)
+      const sqliteExecutions = Math.min(executions, 6)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (input) =>
+            Effect.scoped(
+              Effect.gen(function*() {
+                // 1. Direct BrowserSqlite via MemorySqlite.open
+                const db = yield* MemorySqlite.open
+                yield* Effect.provide(
+                  Effect.gen(function*() {
+                    const sql = yield* SqlClient.SqlClient
+                    yield* sql`CREATE TABLE t (v INTEGER NOT NULL)`
+                    for (let i = 0; i < input.vals.length; i++) {
+                      const v = input.vals[i]!
+                      if (input.rollbackLast && i === input.vals.length - 1) {
+                        yield* Effect.exit(
+                          sql.withTransaction(
+                            Effect.andThen(sql`INSERT INTO t (v) VALUES (${v})`, Effect.fail("abort"))
+                          )
+                        )
+                      } else {
+                        yield* sql.withTransaction(sql`INSERT INTO t (v) VALUES (${v})`)
+                      }
                     }
-                  }
-                  const rows = yield* sql<{ readonly v: number }>`SELECT v FROM t ORDER BY rowid`
-                  const expectedLen = input.rollbackLast ? input.vals.length - 1 : input.vals.length
-                  if (rows.length !== expectedLen) {
-                    return yield* Effect.fail("row-mismatch")
-                  }
-                }),
-                MemorySqlite.over(db)
-              )
-
-              // 2. End-to-end BrowserRuntime leader + BrowserEngine tab + SharedSqlite tab
-              const name = Engines.name()
-              const engineDb = yield* MemorySqlite.open
-              const pool = yield* MemorySqlite.pool
-              yield* Engines.leader(name, Engines.engineWithApp(name, engineDb, Engines.steps(), pool))
-              const tab = yield* Engines.tab(name)
-              const sharedTab = yield* Engines.sharedTab(name)
-              yield* sharedTab.execute("CREATE TABLE items (n INTEGER NOT NULL)")
-              yield* sharedTab.execute("INSERT INTO items (n) VALUES (?)", [input.vals[0]!])
-              const sharedRows = yield* sharedTab.execute("SELECT n FROM items")
-              if (sharedRows.length !== 1) return false
-
-              const execId = `pb-exec-${input.vals[0]}`
-              yield* tab.start(Steps, { executionId: execId, payload: { prefix: "fuzz" } })
-              const inspected = yield* tab.inspect(execId)
-              return inspected !== null
-            })
-          ),
-        { seed: seed + 7, executions: sqliteExecutions }
-      )
-    )
-    assertPassed(report)
-  }, 60_000)
-
-  it("TerminalSocket bridges binary/resize/control frames over loopback WebSocket and terminates cleanly on final close", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        access: Schema.Literals(["write", "read"]),
-        payload: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(32))),
-        cols: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 20, maximum: 200 }))),
-        rows: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 5, maximum: 60 })))
-      })
-    )
-
-    const wsExecutions = Math.min(executions, 8)
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (input) =>
-          Effect.scoped(
-            Effect.gen(function*() {
-              const safePayload = decoder.decode(encoder.encode(input.payload))
-              const peers = yield* Queue.unbounded<{
-                readonly peer: Peer
-                readonly frames: Queue.Queue<{ readonly binary: boolean; readonly text: string }, Cause.Done>
-              }>()
-              const server = yield* Effect.acquireRelease(
-                Effect.callback<WebSocketServer>((resume) => {
-                  const s = new WebSocketServer({ host: "127.0.0.1", port: 0 })
-                  s.on("listening", () => resume(Effect.succeed(s)))
-                }),
-                (s) =>
-                  Effect.callback<void>((resume) => {
-                    for (const c of s.clients) c.terminate()
-                    s.close(() => resume(Effect.void))
-                  })
-              )
-              server.on("connection", (peer) => {
-                const frames = Effect.runSync(
-                  Queue.unbounded<{ readonly binary: boolean; readonly text: string }, Cause.Done>()
+                    const rows = yield* sql<{ readonly v: number }>`SELECT v FROM t ORDER BY rowid`
+                    const expectedLen = input.rollbackLast ? input.vals.length - 1 : input.vals.length
+                    if (rows.length !== expectedLen) {
+                      return yield* Effect.fail("row-mismatch")
+                    }
+                  }),
+                  MemorySqlite.over(db)
                 )
-                peer.on("message", (data, binary) => {
-                  Queue.offerUnsafe(frames, { binary, text: Buffer.from(data as Buffer).toString("utf8") })
-                })
-                peer.on("close", () => Queue.endUnsafe(frames))
-                Queue.offerUnsafe(peers, { peer, frames })
+
+                // 2. End-to-end BrowserRuntime leader + BrowserEngine tab + SharedSqlite tab
+                const name = Engines.name()
+                const engineDb = yield* MemorySqlite.open
+                const pool = yield* MemorySqlite.pool
+                yield* Engines.leader(name, Engines.engineWithApp(name, engineDb, Engines.steps(), pool))
+                const tab = yield* Engines.tab(name)
+                const sharedTab = yield* Engines.sharedTab(name)
+                yield* sharedTab.execute("CREATE TABLE items (n INTEGER NOT NULL)")
+                yield* sharedTab.execute("INSERT INTO items (n) VALUES (?)", [input.vals[0]!])
+                const sharedRows = yield* sharedTab.execute("SELECT n FROM items")
+                if (sharedRows.length !== 1) return false
+
+                const execId = `pb-exec-${input.vals[0]}`
+                yield* tab.start(Steps, { executionId: execId, payload: { prefix: "fuzz" } })
+                const inspected = yield* tab.inspect(execId)
+                return inspected !== null
               })
-              const { port } = server.address() as { readonly port: number }
-              const url = `ws://127.0.0.1:${port}/terminal`
-
-              const gotOut = yield* Deferred.make<Uint8Array>()
-              const conn = yield* TerminalSocket.connect(url, {
-                onOutput: (bytes) => {
-                  Deferred.doneUnsafe(gotOut, Exit.succeed(bytes))
-                }
-              }).pipe(Effect.provide(TerminalSocket.layerWebSocket))
-              const { frames, peer } = yield* Queue.take(peers)
-
-              // Wait until ready status is reached
-              const readyFiber = yield* conn.status.pipe(
-                Stream.filter((st) => st._tag === "Open"),
-                Stream.take(1),
-                Stream.runDrain,
-                Effect.forkChild
-              )
-              peer.send(TerminalProtocol.encodeServerControl({ type: "ready", access: input.access }))
-              yield* Fiber.join(readyFiber)
-
-              // Client sends binary input + resize (dropped when read-only, forwarded when write)
-              yield* conn.send(encoder.encode(safePayload))
-              yield* conn.resize(input.cols, input.rows)
-
-              if (input.access === "write") {
-                const f1 = yield* Queue.take(frames)
-                const f2 = yield* Queue.take(frames)
-                if (!f1.binary || f1.text !== safePayload) return false
-                const rDec = TerminalProtocol.decodeClientControl(f2.text)
-                if (rDec?.type !== "resize" || rDec.cols !== input.cols || rDec.rows !== input.rows) return false
-              }
-
-              // Server sends output bytes -> client receives them
-              peer.send(Buffer.from(safePayload, "utf8"))
-              const outBytes = yield* Deferred.await(gotOut)
-              if (decoder.decode(outBytes) !== safePayload) return false
-
-              // Server sends ended + close 1000
-              peer.send(TerminalProtocol.encodeServerControl({ type: "ended", reason: "closed" }))
-              peer.close(TerminalProtocol.CloseCode.ended)
-              void Deferred
-              void Socket
-              return true
-            })
-          ),
-        { seed: seed + 8, executions: wsExecutions }
+            ),
+          { seed: seed + 7, executions: sqliteExecutions }
+        )
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+      assertPassed(report)
+    },
+    60_000
+  )
+
+  it(
+    "TerminalSocket bridges binary/resize/control frames over loopback WebSocket and terminates cleanly on final close",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          access: Schema.Literals(["write", "read"]),
+          payload: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(32))),
+          cols: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 20, maximum: 200 }))),
+          rows: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 5, maximum: 60 })))
+        })
+      )
+
+      const wsExecutions = Math.min(executions, 8)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (input) =>
+            Effect.scoped(
+              Effect.gen(function*() {
+                const safePayload = decoder.decode(encoder.encode(input.payload))
+                const peers = yield* Queue.unbounded<{
+                  readonly peer: Peer
+                  readonly frames: Queue.Queue<{ readonly binary: boolean; readonly text: string }, Cause.Done>
+                }>()
+                const server = yield* Effect.acquireRelease(
+                  Effect.callback<WebSocketServer>((resume) => {
+                    const s = new WebSocketServer({ host: "127.0.0.1", port: 0 })
+                    s.on("listening", () => resume(Effect.succeed(s)))
+                  }),
+                  (s) =>
+                    Effect.callback<void>((resume) => {
+                      for (const c of s.clients) c.terminate()
+                      s.close(() => resume(Effect.void))
+                    })
+                )
+                server.on("connection", (peer) => {
+                  const frames = Effect.runSync(
+                    Queue.unbounded<{ readonly binary: boolean; readonly text: string }, Cause.Done>()
+                  )
+                  peer.on("message", (data, binary) => {
+                    Queue.offerUnsafe(frames, { binary, text: Buffer.from(data as Buffer).toString("utf8") })
+                  })
+                  peer.on("close", () => Queue.endUnsafe(frames))
+                  Queue.offerUnsafe(peers, { peer, frames })
+                })
+                const { port } = server.address() as { readonly port: number }
+                const url = `ws://127.0.0.1:${port}/terminal`
+
+                const gotOut = yield* Deferred.make<Uint8Array>()
+                const conn = yield* TerminalSocket.connect(url, {
+                  onOutput: (bytes) => {
+                    Deferred.doneUnsafe(gotOut, Exit.succeed(bytes))
+                  }
+                }).pipe(Effect.provide(TerminalSocket.layerWebSocket))
+                const { frames, peer } = yield* Queue.take(peers)
+
+                // Wait until ready status is reached
+                const readyFiber = yield* conn.status.pipe(
+                  Stream.filter((st) => st._tag === "Open"),
+                  Stream.take(1),
+                  Stream.runDrain,
+                  Effect.forkChild
+                )
+                peer.send(TerminalProtocol.encodeServerControl({ type: "ready", access: input.access }))
+                yield* Fiber.join(readyFiber)
+
+                // Client sends binary input + resize (dropped when read-only, forwarded when write)
+                yield* conn.send(encoder.encode(safePayload))
+                yield* conn.resize(input.cols, input.rows)
+
+                if (input.access === "write") {
+                  const f1 = yield* Queue.take(frames)
+                  const f2 = yield* Queue.take(frames)
+                  if (!f1.binary || f1.text !== safePayload) return false
+                  const rDec = TerminalProtocol.decodeClientControl(f2.text)
+                  if (rDec?.type !== "resize" || rDec.cols !== input.cols || rDec.rows !== input.rows) return false
+                }
+
+                // Server sends output bytes -> client receives them
+                peer.send(Buffer.from(safePayload, "utf8"))
+                const outBytes = yield* Deferred.await(gotOut)
+                if (decoder.decode(outBytes) !== safePayload) return false
+
+                // Server sends ended + close 1000
+                peer.send(TerminalProtocol.encodeServerControl({ type: "ended", reason: "closed" }))
+                peer.close(TerminalProtocol.CloseCode.ended)
+                void Deferred
+                void Socket
+                return true
+              })
+            ),
+          { seed: seed + 8, executions: wsExecutions }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
 })

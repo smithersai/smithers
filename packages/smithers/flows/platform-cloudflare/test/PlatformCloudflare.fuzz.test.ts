@@ -1,10 +1,10 @@
-import { Flow } from "@smthrs/flow"
-import { Node } from "@smthrs/plan"
 import { ImmutableCache } from "@smthrs/artifacts"
 import * as Dialect from "@smthrs/database/Dialect"
 import { OwnerIdentity } from "@smthrs/engine-store"
+import { Flow } from "@smthrs/flow"
 import { Fuzz, FuzzSimulation } from "@smthrs/fuzz"
 import * as Jj from "@smthrs/jj"
+import { Node } from "@smthrs/plan"
 import { TerminalProtocol } from "@smthrs/sandbox"
 import { Arbitrary, Cause, Clock, Effect, Exit, Fiber, Layer, Metric, Option, Schema } from "effect"
 import * as FileSystem from "effect/FileSystem"
@@ -331,8 +331,7 @@ describe("@smthrs/platform-cloudflare fuzz invariants", () => {
               })
             )
 
-            const shouldFail =
-              (input.failPhase === "start" && !input.initiallyRunning) ||
+            const shouldFail = (input.failPhase === "start" && !input.initiallyRunning) ||
               input.failPhase === "timeout" ||
               (input.failPhase === "intercept" && input.interceptCount > 0)
 
@@ -347,7 +346,10 @@ describe("@smthrs/platform-cloudflare fuzz invariants", () => {
             } else {
               if (wakeExit.value !== "started") return false
               const first = calls[0]
-              if (first === undefined || first._tag !== "start" || (first.options as { readonly enableInternet?: boolean }).enableInternet !== false) return false
+              if (
+                first === undefined || first._tag !== "start" ||
+                (first.options as { readonly enableInternet?: boolean }).enableInternet !== false
+              ) return false
               if (calls[1]?._tag !== "timeout") return false
               const registered = calls.slice(2)
               if (registered.length !== intercepts.length) return false
@@ -450,7 +452,11 @@ describe("@smthrs/platform-cloudflare fuzz invariants", () => {
         rows: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 5, maximum: 80 }))),
         inputLen: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 64 }))),
         outLen: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 128 }))),
-        badControl: Schema.Literals(["{not-json", "{\"type\":\"unknown\"}", "{\"type\":\"resize\",\"cols\":-1,\"rows\":0}"]),
+        badControl: Schema.Literals([
+          "{not-json",
+          "{\"type\":\"unknown\"}",
+          "{\"type\":\"resize\",\"cols\":-1,\"rows\":0}"
+        ]),
         exitCode: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 2 })))
       })
     )
@@ -460,8 +466,7 @@ describe("@smthrs/platform-cloudflare fuzz invariants", () => {
         arb,
         (input) =>
           Effect.gen(function*() {
-            const shell = (argv: ReadonlyArray<string>) =>
-              argv[1] === "attach-session" ? ("interactive" as const) : 0
+            const shell = (argv: ReadonlyArray<string>) => argv[1] === "attach-session" ? ("interactive" as const) : 0
             const memory = MemoryContainer.make(shell)
             const viewer = MemoryContainer.socket()
 
@@ -474,7 +479,8 @@ describe("@smthrs/platform-cloudflare fuzz invariants", () => {
                 cols: input.cols,
                 rows: input.rows
               })
-              return r.outcome === "unsupported" && r.closeCode === TerminalProtocol.CloseCode.unsupported && memory.commands.length === 0
+              return r.outcome === "unsupported" && r.closeCode === TerminalProtocol.CloseCode.unsupported &&
+                memory.commands.length === 0
             }
 
             if (input.mode === "ensure_session") {
@@ -515,7 +521,7 @@ describe("@smthrs/platform-cloudflare fuzz invariants", () => {
             }
 
             const payload = Uint8Array.from({ length: input.inputLen }, (_, i) => (i + 65) & 0xff)
-            if (input.access === "write") { yield* Effect.yieldNow }
+            if (input.access === "write") yield* Effect.yieldNow
             viewer.emit("message", TerminalProtocol.encodeResize(input.cols + 1, input.rows + 1))
             viewer.emit("message", payload)
 
@@ -625,126 +631,130 @@ describe("@smthrs/platform-cloudflare fuzz invariants", () => {
     assertPassed(report)
   })
 
-  it("ExecutionObject & CloudflareRuntime drive durable flows over ObjectDatabase with start, conflict, alarm, cancel, and retention", async () => {
-    const arb = Arbitrary.schema(
-      Schema.Struct({
-        question: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(24))),
-        scenario: Schema.Literals([
-          "complete",
-          "idle_before_start",
-          "intent_conflict",
-          "cancel_before_alarm",
-          "settled_retry",
-          "with_retention",
-          "admission_refused"
-        ])
-      })
-    )
-
-    const engineExecutions = Math.min(executions, 20)
-    const report = await Effect.runPromise(
-      Fuzz.run(
-        arb,
-        (input) =>
-          Effect.gen(function*() {
-            const memStorage = MemoryStorage.make()
-            const dbStore = SqliteStorage.make()
-            const database = ObjectDatabase.layer(dbStore.storage)
-            const recorded: Array<string> = []
-            const safeQ = new TextDecoder().decode(new TextEncoder().encode(input.question.replace(/\0/g, "_")))
-            const execId = `exec-${Math.abs(safeQ.length * 97 + 13)}`
-
-            let settledAttempts = 0
-            const settledDown = () => input.scenario === "settled_retry" && settledAttempts === 1
-
-            const runtimeFor = (intent: ExecutionObject.Intent) =>
-              CloudflareRuntime.layer(
-                {
-                  hostId: "do-fuzz-1",
-                  executionId: intent.executionId,
-                  flow: intent.flow,
-                  ...(input.scenario === "with_retention" ? { retention: { olderThanMs: 0, limit: 10 } } : {})
-                },
-                AnswerFlow.registration((label) =>
-                  Effect.sync(() => {
-                    recorded.push(label)
-                    return `done:${label}`
-                  })
-                )
-              ).pipe(Layer.provide(database))
-
-            const router: ExecutionObject.Router = {
-              start: () => Effect.void,
-              wake: () => Effect.void
-            }
-
-            const obj = ExecutionObject.make(memStorage.storage, {
-              flows: [AnswerFlow.Answer],
-              runtime: runtimeFor,
-              router,
-              canStart: input.scenario === "admission_refused" ? () => Effect.succeed(false) : undefined,
-              settled: () =>
-                Effect.suspend(() => {
-                  settledAttempts++
-                  return settledDown() ? Effect.fail("transient-db-down") : Effect.void
-                })
-            })
-
-            if (input.scenario === "idle_before_start") {
-              const idle = yield* obj.alarm()
-              return idle._tag === "Idle"
-            }
-
-            const startIntent = yield* ExecutionObject.intent(AnswerFlow.Answer, {
-              executionId: execId,
-              payload: { question: safeQ, pauseMs: 0 }
-            })
-
-            yield* obj.start(startIntent)
-            // Duplicate start with same intent is idempotent
-            yield* obj.start(startIntent)
-
-            if (input.scenario === "intent_conflict") {
-              const otherIntent = yield* ExecutionObject.intent(AnswerFlow.Answer, {
-                executionId: execId,
-                payload: { question: `${safeQ}-different`, pauseMs: 0 }
-              })
-              const conflictExit = yield* Effect.exit(obj.start(otherIntent))
-              if (!Exit.isFailure(conflictExit)) return false
-              const err = Cause.squash(conflictExit.cause)
-              return err instanceof ExecutionObject.IntentConflict
-            }
-
-            if (input.scenario === "admission_refused") {
-              const out = yield* obj.alarm()
-              return out._tag === "Forgotten" || out._tag === "Idle" || out._tag === "Settled"
-            }
-
-            if (input.scenario === "cancel_before_alarm") {
-              yield* obj.cancel()
-              const outcome = yield* obj.alarm()
-              return outcome._tag === "Settled" || outcome._tag === "Forgotten" || outcome._tag === "Idle"
-            }
-
-            let outcome = yield* obj.alarm()
-            for (let i = 0; i < 4 && (outcome._tag === "Parked" || outcome._tag === "Yielded"); i++) {
-              outcome = yield* obj.alarm()
-            }
-
-            if (input.scenario === "settled_retry") {
-              if (outcome._tag !== "Retrying") return false
-              if (memStorage.alarm() === null) return false
-              const retryOut = yield* obj.alarm()
-              return retryOut._tag === "Settled" && settledAttempts >= 2
-            }
-
-            return outcome._tag === "Settled" && recorded.includes(`ask:${safeQ}`)
-          }),
-        { seed: seed + 7, executions: engineExecutions }
+  it(
+    "ExecutionObject & CloudflareRuntime drive durable flows over ObjectDatabase with start, conflict, alarm, cancel, and retention",
+    async () => {
+      const arb = Arbitrary.schema(
+        Schema.Struct({
+          question: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(24))),
+          scenario: Schema.Literals([
+            "complete",
+            "idle_before_start",
+            "intent_conflict",
+            "cancel_before_alarm",
+            "settled_retry",
+            "with_retention",
+            "admission_refused"
+          ])
+        })
       )
-    )
-    assertPassed(report)
-  }, 60_000)
+
+      const engineExecutions = Math.min(executions, 20)
+      const report = await Effect.runPromise(
+        Fuzz.run(
+          arb,
+          (input) =>
+            Effect.gen(function*() {
+              const memStorage = MemoryStorage.make()
+              const dbStore = SqliteStorage.make()
+              const database = ObjectDatabase.layer(dbStore.storage)
+              const recorded: Array<string> = []
+              const safeQ = new TextDecoder().decode(new TextEncoder().encode(input.question.replace(/\0/g, "_")))
+              const execId = `exec-${Math.abs(safeQ.length * 97 + 13)}`
+
+              let settledAttempts = 0
+              const settledDown = () => input.scenario === "settled_retry" && settledAttempts === 1
+
+              const runtimeFor = (intent: ExecutionObject.Intent) =>
+                CloudflareRuntime.layer(
+                  {
+                    hostId: "do-fuzz-1",
+                    executionId: intent.executionId,
+                    flow: intent.flow,
+                    ...(input.scenario === "with_retention" ? { retention: { olderThanMs: 0, limit: 10 } } : {})
+                  },
+                  AnswerFlow.registration((label) =>
+                    Effect.sync(() => {
+                      recorded.push(label)
+                      return `done:${label}`
+                    })
+                  )
+                ).pipe(Layer.provide(database))
+
+              const router: ExecutionObject.Router = {
+                start: () => Effect.void,
+                wake: () => Effect.void
+              }
+
+              const obj = ExecutionObject.make(memStorage.storage, {
+                flows: [AnswerFlow.Answer],
+                runtime: runtimeFor,
+                router,
+                canStart: input.scenario === "admission_refused" ? () => Effect.succeed(false) : undefined,
+                settled: () =>
+                  Effect.suspend(() => {
+                    settledAttempts++
+                    return settledDown() ? Effect.fail("transient-db-down") : Effect.void
+                  })
+              })
+
+              if (input.scenario === "idle_before_start") {
+                const idle = yield* obj.alarm()
+                return idle._tag === "Idle"
+              }
+
+              const startIntent = yield* ExecutionObject.intent(AnswerFlow.Answer, {
+                executionId: execId,
+                payload: { question: safeQ, pauseMs: 0 }
+              })
+
+              yield* obj.start(startIntent)
+              // Duplicate start with same intent is idempotent
+              yield* obj.start(startIntent)
+
+              if (input.scenario === "intent_conflict") {
+                const otherIntent = yield* ExecutionObject.intent(AnswerFlow.Answer, {
+                  executionId: execId,
+                  payload: { question: `${safeQ}-different`, pauseMs: 0 }
+                })
+                const conflictExit = yield* Effect.exit(obj.start(otherIntent))
+                if (!Exit.isFailure(conflictExit)) return false
+                const err = Cause.squash(conflictExit.cause)
+                return err instanceof ExecutionObject.IntentConflict
+              }
+
+              if (input.scenario === "admission_refused") {
+                const out = yield* obj.alarm()
+                return out._tag === "Forgotten" || out._tag === "Idle" || out._tag === "Settled"
+              }
+
+              if (input.scenario === "cancel_before_alarm") {
+                yield* obj.cancel()
+                const outcome = yield* obj.alarm()
+                return outcome._tag === "Settled" || outcome._tag === "Forgotten" || outcome._tag === "Idle"
+              }
+
+              let outcome = yield* obj.alarm()
+              for (let i = 0; i < 4 && (outcome._tag === "Parked" || outcome._tag === "Yielded"); i++) {
+                outcome = yield* obj.alarm()
+              }
+
+              if (input.scenario === "settled_retry") {
+                if (outcome._tag !== "Retrying") return false
+                if (memStorage.alarm() === null) return false
+                const retryOut = yield* obj.alarm()
+                return retryOut._tag === "Settled" && settledAttempts >= 2
+              }
+
+              return outcome._tag === "Settled" && recorded.includes(`ask:${safeQ}`)
+            }),
+          { seed: seed + 7, executions: engineExecutions }
+        )
+      )
+      assertPassed(report)
+    },
+    60_000
+  )
 
   it("ExecutionObject concurrent start & wake calls are idempotent under FuzzSimulation", async () => {
     const arb = Arbitrary.schema(
@@ -766,9 +776,9 @@ describe("@smthrs/platform-cloudflare fuzz invariants", () => {
             })
             const now = yield* Clock.currentTimeMillis
             const startCalls = Array.from({ length: input.nStarters }, () =>
-              ExecutionObject.start(mem.storage, startIntent, Effect.void)
-            )
-            const wakeCalls = Array.from({ length: input.nWakers }, () => ExecutionObject.wake(mem.storage))
+              ExecutionObject.start(mem.storage, startIntent, Effect.void))
+            const wakeCalls = Array.from({ length: input.nWakers }, () =>
+              ExecutionObject.wake(mem.storage))
 
             const [starts, wakes] = yield* Effect.all(
               [

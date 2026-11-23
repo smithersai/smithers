@@ -7,6 +7,7 @@ import { Arbitrary, Effect, Layer, Logger, Option, Redacted, Result, Schema, Str
 import { TestClock } from "effect/testing"
 import * as NodeCrypto from "node:crypto"
 import { describe, expect, it } from "vitest"
+import * as ClaimDecision from "../src/ClaimDecision.ts"
 import {
   CatchUp,
   Channel,
@@ -22,7 +23,6 @@ import {
   TriggerStore,
   Webhook
 } from "../src/index.ts"
-import * as ClaimDecision from "../src/ClaimDecision.ts"
 import * as TestTriggers from "../src/test/TestTriggers.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "800" : "200"))
@@ -94,14 +94,22 @@ describe("@smthrs/triggers comprehensive fuzz invariants", () => {
             if (running && overlap === "supersede" && decision !== "supersede") return false
             if (Overlap.pendingAfter({ running, due: 1000, pending: 500 }) !== 1000) return false
 
-            const sched = yield* Schedule.make({ cron: "0 * * * *", timezone: "UTC", overlap, catchUp: policy, maxCatchUp })
+            const sched = yield* Schedule.make({
+              cron: "0 * * * *",
+              timezone: "UTC",
+              overlap,
+              catchUp: policy,
+              maxCatchUp
+            })
             if (sched.overlap !== overlap) return false
 
             const onPush = On.push({ branches: ["main"] })
             const onPr = On.pullRequest({ branches: ["main"] })
             const onMan = On.manual()
             const onCron = On.cron("0 * * * *", { timezone: "UTC" })
-            if (onPush._tag !== "Push" || onPr._tag !== "PullRequest" || onMan._tag !== "Manual" || onCron._tag !== "Cron") {
+            if (
+              onPush._tag !== "Push" || onPr._tag !== "PullRequest" || onMan._tag !== "Manual" || onCron._tag !== "Cron"
+            ) {
               return false
             }
 
@@ -152,7 +160,19 @@ describe("@smthrs/triggers comprehensive fuzz invariants", () => {
     const report = await Effect.runPromise(
       Fuzz.run(
         arb,
-        ({ overlap, enabled, hasActive, activeIsReservation, leaseExpired, hasPending, existingOutcome, revisionMatches, occurrence }) =>
+        (
+          {
+            overlap,
+            enabled,
+            hasActive,
+            activeIsReservation,
+            leaseExpired,
+            hasPending,
+            existingOutcome,
+            revisionMatches,
+            occurrence
+          }
+        ) =>
           Effect.sync(() => {
             const now = 10_000_000
             const activeRunId = hasActive

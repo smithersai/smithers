@@ -458,22 +458,40 @@ describe("@smthrs/gateway fuzz", () => {
           }
 
           if (v.withEngineNodes) {
-            const sched = mkEngineWrap(seq++, v.runId, "flows.engine.node-scheduled", {
-              nodeId: "n1",
-              kind: "ActionCall",
-              action: "build",
-              attempt: 1
-            }, 0, v.runId)
-            const settl = mkEngineWrap(seq++, v.runId, "flows.engine.node-settled", {
-              nodeId: "n1",
-              kind: "ActionCall",
-              action: "build",
-              outcome: "built",
-              attempts: 1,
-              result: { preview: "\"ok\"", bytes: 4, truncated: false }
-            }, 0, v.runId)
-            events.push(mkControlEvent(sched.sequence!, v.runId, sched.kind!, sched.payload as Schema.Json, sched.occurredAt!))
-            events.push(mkControlEvent(settl.sequence!, v.runId, settl.kind!, settl.payload as Schema.Json, settl.occurredAt!))
+            const sched = mkEngineWrap(
+              seq++,
+              v.runId,
+              "flows.engine.node-scheduled",
+              {
+                nodeId: "n1",
+                kind: "ActionCall",
+                action: "build",
+                attempt: 1
+              },
+              0,
+              v.runId
+            )
+            const settl = mkEngineWrap(
+              seq++,
+              v.runId,
+              "flows.engine.node-settled",
+              {
+                nodeId: "n1",
+                kind: "ActionCall",
+                action: "build",
+                outcome: "built",
+                attempts: 1,
+                result: { preview: "\"ok\"", bytes: 4, truncated: false }
+              },
+              0,
+              v.runId
+            )
+            events.push(
+              mkControlEvent(sched.sequence!, v.runId, sched.kind!, sched.payload as Schema.Json, sched.occurredAt!)
+            )
+            events.push(
+              mkControlEvent(settl.sequence!, v.runId, settl.kind!, settl.payload as Schema.Json, settl.occurredAt!)
+            )
           }
 
           const summary = GatewayProjection.runSummary(run, events, 6000)
@@ -701,13 +719,21 @@ describe("@smthrs/gateway fuzz", () => {
               seq: 2,
               eventType: "flows.engine.node-scheduled",
               emittedAtMs: 1002,
-              payload: { text: JSON.stringify({ nodeId: "n0", kind: "ActionCall", attempt: 1 }), bytes: 10, clipped: false }
+              payload: {
+                text: JSON.stringify({ nodeId: "n0", kind: "ActionCall", attempt: 1 }),
+                bytes: 10,
+                clipped: false
+              }
             },
             {
               seq: 3,
               eventType: "flows.engine.node-settled",
               emittedAtMs: 1003,
-              payload: { text: JSON.stringify({ nodeId: "n0", outcome: "built", attempts: 1 }), bytes: 10, clipped: false }
+              payload: {
+                text: JSON.stringify({ nodeId: "n0", outcome: "built", attempts: 1 }),
+                bytes: 10,
+                clipped: false
+              }
             },
             {
               seq: 4,
@@ -777,7 +803,17 @@ describe("@smthrs/gateway fuzz", () => {
         runId: SafeId,
         flowId: SafeId,
         kinds: Schema.Array(AgentKind).check(Schema.isMinLength(2), Schema.isMaxLength(16)),
-        callCategory: Schema.Literals(["read", "edit", "write", "patch", "command", "tests", "matches", "paths", "entries"]),
+        callCategory: Schema.Literals([
+          "read",
+          "edit",
+          "write",
+          "patch",
+          "command",
+          "tests",
+          "matches",
+          "paths",
+          "entries"
+        ]),
         frameLimit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 })),
         durationMs: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 400_000 })),
         status: Schema.Literals(["running", "completed", "failed"])
@@ -798,7 +834,12 @@ describe("@smthrs/gateway fuzz", () => {
             switch (k) {
               case "turn-opened":
                 turn += 1
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.turn-opened", payload: { runId: v.runId, turn, frame: turn } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.turn-opened",
+                  payload: { runId: v.runId, turn, frame: turn }
+                })
                 break
               case "model-settled":
                 records.push({
@@ -850,68 +891,178 @@ describe("@smthrs/gateway fuzz", () => {
                 break
               }
               case "cell-printed":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.cell-printed", payload: { runId: v.runId, turn: Math.max(1, turn), text: "hello" } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.cell-printed",
+                  payload: { runId: v.runId, turn: Math.max(1, turn), text: "hello" }
+                })
                 break
               case "cell-produced":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.cell-produced", payload: { runId: v.runId, turn: Math.max(1, turn), code: "1+1" } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.cell-produced",
+                  payload: { runId: v.runId, turn: Math.max(1, turn), code: "1+1" }
+                })
                 break
               case "cell-rejected":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.cell-rejected-in-frame", payload: { runId: v.runId, turn: Math.max(1, turn), reason: "syntax" } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.cell-rejected-in-frame",
+                  payload: { runId: v.runId, turn: Math.max(1, turn), reason: "syntax" }
+                })
                 break
               case "cell-settled":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.cell-settled", payload: { runId: v.runId, turn: Math.max(1, turn), ok: true } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.cell-settled",
+                  payload: { runId: v.runId, turn: Math.max(1, turn), ok: true }
+                })
                 break
               case "checkpoint":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.checkpoint-minted", payload: { runId: v.runId, turn: Math.max(1, turn), id: "cp-1", memory: [{ key: "k1", value: "v1" }] } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.checkpoint-minted",
+                  payload: { runId: v.runId, turn: Math.max(1, turn), id: "cp-1", memory: [{ key: "k1", value: "v1" }] }
+                })
                 break
               case "claim-demanded":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.claim-demanded", payload: { runId: v.runId, turn: Math.max(1, turn), reason: "prove claim" } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.claim-demanded",
+                  payload: { runId: v.runId, turn: Math.max(1, turn), reason: "prove claim" }
+                })
                 break
               case "mutation-observed":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.mutation-observed", payload: { runId: v.runId, turn: Math.max(1, turn), path: "a.ts" } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.mutation-observed",
+                  payload: { runId: v.runId, turn: Math.max(1, turn), path: "a.ts" }
+                })
                 break
               case "narrowed-demanded":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.narrowed-demanded", payload: { runId: v.runId, turn: Math.max(1, turn) } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.narrowed-demanded",
+                  payload: { runId: v.runId, turn: Math.max(1, turn) }
+                })
                 break
               case "narrow-only-demanded":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.narrow-only-demanded", payload: { runId: v.runId, turn: Math.max(1, turn) } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.narrow-only-demanded",
+                  payload: { runId: v.runId, turn: Math.max(1, turn) }
+                })
                 break
               case "permission-required":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.permission-required", payload: { runId: v.runId, turn: Math.max(1, turn), capability: "fs:write" } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.permission-required",
+                  payload: { runId: v.runId, turn: Math.max(1, turn), capability: "fs:write" }
+                })
                 break
               case "read-only-demanded":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.read-only-demanded", payload: { runId: v.runId, turn: Math.max(1, turn) } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.read-only-demanded",
+                  payload: { runId: v.runId, turn: Math.max(1, turn) }
+                })
                 break
               case "read-only-demand-issued":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.read-only-demand-issued", payload: { runId: v.runId, turn: Math.max(1, turn) } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.read-only-demand-issued",
+                  payload: { runId: v.runId, turn: Math.max(1, turn) }
+                })
                 break
               case "repeat-demanded":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.repeat-demanded", payload: { runId: v.runId, turn: Math.max(1, turn) } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.repeat-demanded",
+                  payload: { runId: v.runId, turn: Math.max(1, turn) }
+                })
                 break
               case "steering-drained":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.steering-drained", payload: { runId: v.runId, turn: Math.max(1, turn), messages: [{ text: "stay focused" }] } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.steering-drained",
+                  payload: { runId: v.runId, turn: Math.max(1, turn), messages: [{ text: "stay focused" }] }
+                })
                 break
               case "sufficiency-observed":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.sufficiency-observed", payload: { runId: v.runId, turn: Math.max(1, turn), sufficient: true } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.sufficiency-observed",
+                  payload: { runId: v.runId, turn: Math.max(1, turn), sufficient: true }
+                })
                 break
               case "suspended":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.suspended", payload: { runId: v.runId, turn: Math.max(1, turn), reason: "paused" } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.suspended",
+                  payload: { runId: v.runId, turn: Math.max(1, turn), reason: "paused" }
+                })
                 break
               case "unmoved-demanded":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.unmoved-demanded", payload: { runId: v.runId, turn: Math.max(1, turn) } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.unmoved-demanded",
+                  payload: { runId: v.runId, turn: Math.max(1, turn) }
+                })
                 break
               case "unresolved-demanded":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.unresolved-demanded", payload: { runId: v.runId, turn: Math.max(1, turn) } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.unresolved-demanded",
+                  payload: { runId: v.runId, turn: Math.max(1, turn) }
+                })
                 break
               case "approval-flow":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.approval.requested", payload: { runId: v.runId, approvalId: `ap-${seq}`, reason: "check" } })
-                records.push({ sequence: seq++, occurredAt: ts + 20, kind: "control.approval.approved", payload: { runId: v.runId, approvalId: `ap-${seq - 1}` } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.approval.requested",
+                  payload: { runId: v.runId, approvalId: `ap-${seq}`, reason: "check" }
+                })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts + 20,
+                  kind: "control.approval.approved",
+                  payload: { runId: v.runId, approvalId: `ap-${seq - 1}` }
+                })
                 break
               case "agent-resolved":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.agent.resolved", payload: { runId: v.runId, output: "resolved!" } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.agent.resolved",
+                  payload: { runId: v.runId, output: "resolved!" }
+                })
                 break
               case "run-completed":
-                records.push({ sequence: seq++, occurredAt: ts, kind: "control.run.completed", payload: { runId: v.runId, output: "complete!" } })
+                records.push({
+                  sequence: seq++,
+                  occurredAt: ts,
+                  kind: "control.run.completed",
+                  payload: { runId: v.runId, output: "complete!" }
+                })
                 break
             }
           }
@@ -1060,7 +1211,9 @@ describe("@smthrs/gateway fuzz", () => {
           expect(GatewaySchema.rowSchemaFor({ _tag: "approvals" })).toBe(GatewayProjection.ApprovalRow)
 
           // Subscribe to 1 frame (snapshot)
-          const subFrames = yield* Stream.runCollect(Stream.take(projections.subscribe({ _tag: "run-summary", runId }), 1))
+          const subFrames = yield* Stream.runCollect(
+            Stream.take(projections.subscribe({ _tag: "run-summary", runId }), 1)
+          )
           expect(subFrames.length).toBe(1)
 
           // RuntimeBridge observe + monitor

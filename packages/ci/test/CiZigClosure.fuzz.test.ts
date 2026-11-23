@@ -23,8 +23,12 @@ describe("@smthrs/ci closure/zig ZON parser, binary Protocol, binary Manifest, S
           ""
         ]),
         rawZon: Schema.String.check(Schema.isMaxLength(60)),
-        rawBytes: Schema.Array(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 255 }))).check(Schema.isMaxLength(64)),
-        steps: Schema.Array(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 10 }))).check(Schema.isMaxLength(5)),
+        rawBytes: Schema.Array(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 255 }))).check(
+          Schema.isMaxLength(64)
+        ),
+        steps: Schema.Array(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 10 }))).check(
+          Schema.isMaxLength(5)
+        ),
         hashPath: Schema.Literals([
           "zig-cache/o/0123456789abcdef0123456789abcdef/out",
           "c/fedcba9876543210fedcba9876543210/file.o",

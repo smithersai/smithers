@@ -2,8 +2,8 @@ import { Fuzz } from "@smthrs/fuzz"
 import { Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import { AgentTurnJournal, ConfiguredModel, ContextPreflight, type NativeAgent } from "@smthrs/rpc"
 import { Arbitrary, ConfigProvider, Effect, Layer, Redacted, Result, Schema, Stream } from "effect"
-import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { HttpEffect } from "effect/http"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import { inertCallbackTransport } from "../src/CallbackTransport.ts"
@@ -252,8 +252,10 @@ describe("@smthrs/model-host fuzz invariants", () => {
             const madeHost = yield* Effect.result(
               HostModel.make(binding).pipe(Effect.provide(ConfigProvider.layer(cfgProvider)))
             )
-            if (protocol === "evaluation" || credMode === "missing" || credMode === "stored" ||
-              (protocol === "openai-responses-chatgpt" && credMode === "bad-chatgpt")) {
+            if (
+              protocol === "evaluation" || credMode === "missing" || credMode === "stored" ||
+              (protocol === "openai-responses-chatgpt" && credMode === "bad-chatgpt")
+            ) {
               if (Result.isSuccess(madeHost)) return false
             } else if (Result.isFailure(madeHost)) {
               return false
@@ -263,7 +265,10 @@ describe("@smthrs/model-host fuzz invariants", () => {
             let refusedCode: number | undefined
             const fakeFetch: typeof globalThis.fetch = Object.assign(
               async () =>
-                new Response("ok", { status: redirectStatus, headers: redirectStatus >= 300 ? { location: "https://evil.test" } : {} }),
+                new Response("ok", {
+                  status: redirectStatus,
+                  headers: redirectStatus >= 300 ? { location: "https://evil.test" } : {}
+                }),
               { preconnect() {} }
             )
             const guarded = refusingRedirects(fakeFetch, (code) => {
@@ -301,15 +306,22 @@ describe("@smthrs/model-host fuzz invariants", () => {
               env
             })
             const resolved = yield* Effect.result(resolver(makeGrant() as any))
-            if (protocol === "evaluation" || credMode === "missing" || credMode === "stored" ||
-              (protocol === "openai-responses-chatgpt" && credMode === "bad-chatgpt")) {
+            if (
+              protocol === "evaluation" || credMode === "missing" || credMode === "stored" ||
+              (protocol === "openai-responses-chatgpt" && credMode === "bad-chatgpt")
+            ) {
               if (Result.isSuccess(resolved)) return false
             } else if (Result.isFailure(resolved)) {
               return false
             }
 
             // ModelProbe catalog
-            const probe = createModelProbe({ env, egress, ...(stored === undefined ? {} : { credentials: stored }), fetch: fakeFetch })
+            const probe = createModelProbe({
+              env,
+              egress,
+              ...(stored === undefined ? {} : { credentials: stored }),
+              fetch: fakeFetch
+            })
             const probeCat = probe.catalog()
             const answers = modelAnswersOf(
               { q1: { kind: "yes-no", prompt: "ok?" } as any },
@@ -361,7 +373,13 @@ describe("@smthrs/model-host fuzz invariants", () => {
               })
 
               diag.record(event, phase, {
-                status: statusKey === "200" ? 200 : statusKey === "500" ? 500 : statusKey === "nan" ? Number.NaN : Number.POSITIVE_INFINITY,
+                status: statusKey === "200"
+                  ? 200
+                  : statusKey === "500"
+                  ? 500
+                  : statusKey === "nan"
+                  ? Number.NaN
+                  : Number.POSITIVE_INFINITY,
                 marker: "forged-marker",
                 turnId: "forged-turn",
                 secretField: "sk-ant-do-not-log",
@@ -381,7 +399,9 @@ describe("@smthrs/model-host fuzz invariants", () => {
               }
               if (lines.length === 0 || lines.length > capAt) return false
               for (const line of lines) {
-                if (line.includes("sk-ant-do-not-log") || line.includes("forged-marker") || line.includes("forged-turn")) {
+                if (
+                  line.includes("sk-ant-do-not-log") || line.includes("forged-marker") || line.includes("forged-turn")
+                ) {
                   return false
                 }
                 const parsed = JSON.parse(line) as Record<string, unknown>
@@ -468,7 +488,10 @@ describe("@smthrs/model-host fuzz invariants", () => {
                   modelId: "backup"
                 }
               ],
-              (idx) => Effect.sync(() => { fallbackIndices.push(idx) })
+              (idx) =>
+                Effect.sync(() => {
+                  fallbackIndices.push(idx)
+                })
             )
             const fbReq = providerRequest(
               { runId: "r1", instructions: "sys", messages: [{ role: "user", content: "hi" }] },
@@ -488,7 +511,10 @@ describe("@smthrs/model-host fuzz invariants", () => {
                 makeModel(primaryMode),
                 { runId: "r1", instructions: "sys", messages: [{ role: "user", content: "hi" }] },
                 { modelId: "primary", credential: "sk-secret-999" },
-                (frame) => Effect.sync(() => { frames.push(frame) })
+                (frame) =>
+                  Effect.sync(() => {
+                    frames.push(frame)
+                  })
               )
             )
             if (primaryMode === "ok") {
@@ -539,7 +565,14 @@ describe("@smthrs/model-host fuzz invariants", () => {
                 JSON.stringify({
                   type: "input",
                   version: 1,
-                  value: { prompt: "p", author: "a", branch: "main", state: "synced", tokenBudget: 1000, wikiOnly: false }
+                  value: {
+                    prompt: "p",
+                    author: "a",
+                    branch: "main",
+                    state: "synced",
+                    tokenBudget: 1000,
+                    wikiOnly: false
+                  }
                 }) + "\n" + JSON.stringify({ type: "end", recent: 9, candidates: 9 }) + "\n",
                 { headers: { "content-type": "application/x-ndjson" } }
               )
@@ -548,7 +581,14 @@ describe("@smthrs/model-host fuzz invariants", () => {
                   {
                     type: "input",
                     version: 1,
-                    value: { prompt: "p", author: "a", branch: "main", state: "synced", tokenBudget: 1000, wikiOnly: false }
+                    value: {
+                      prompt: "p",
+                      author: "a",
+                      branch: "main",
+                      state: "synced",
+                      tokenBudget: 1000,
+                      wikiOnly: false
+                    }
                   },
                   { type: "recent", value: { title: "t", text: "x" } },
                   {
@@ -682,11 +722,13 @@ describe("@smthrs/model-host fuzz invariants", () => {
                 messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }]
               })
 
-            const resp = await handler(new Request(`http://host.test${path}`, {
-              method: "POST",
-              headers,
-              body: bodyStr
-            }))
+            const resp = await handler(
+              new Request(`http://host.test${path}`, {
+                method: "POST",
+                headers,
+                body: bodyStr
+              })
+            )
 
             if (authHeader !== "Bearer valid-secret") {
               return resp.status === 401
@@ -704,21 +746,30 @@ describe("@smthrs/model-host fuzz invariants", () => {
     // Exercise DurableChatProducer + HostTools (sourceReader, sourceLister, apiCaller, runHostTurn) directly
     const grant = makeGrant() as any
     const readResp = await Effect.runPromise(
-      sourceReader("http://callback.test/", grant, async () =>
-        new Response(JSON.stringify({ repository: "r", path: "a.ts", content: "hi", truncated: false, totalBytes: 2 }), {
-          status: 200,
-          headers: { "content-type": "application/json" }
-        })
+      sourceReader(
+        "http://callback.test/",
+        grant,
+        async () =>
+          new Response(
+            JSON.stringify({ repository: "r", path: "a.ts", content: "hi", truncated: false, totalBytes: 2 }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" }
+            }
+          )
       )("a.ts")
     )
     expect("file" in readResp || "code" in readResp).toBe(true)
 
     const listResp = await Effect.runPromise(
-      sourceLister("http://callback.test/", grant, async () =>
-        new Response(JSON.stringify({ repository: "r", path: "", entries: [], truncated: false }), {
-          status: 200,
-          headers: { "content-type": "application/json" }
-        })
+      sourceLister(
+        "http://callback.test/",
+        grant,
+        async () =>
+          new Response(JSON.stringify({ repository: "r", path: "", entries: [], truncated: false }), {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          })
       )("")
     )
     expect("directory" in listResp || "code" in listResp).toBe(true)
@@ -741,7 +792,10 @@ describe("@smthrs/model-host fuzz invariants", () => {
         okModel,
         grant,
         { modelId: "test-model" },
-        (frame) => Effect.sync(() => { hostFrames.push(frame) }),
+        (frame) =>
+          Effect.sync(() => {
+            hostFrames.push(frame)
+          }),
         {
           read: () => Effect.succeed({ code: "not_found" }),
           list: () => Effect.succeed({ code: "not_found" }),
@@ -815,7 +869,10 @@ describe("@smthrs/model-host fuzz invariants", () => {
               toolModel,
               grantWithSource,
               { modelId: "test-model" },
-              (frame) => Effect.sync(() => { frames.push(frame) }),
+              (frame) =>
+                Effect.sync(() => {
+                  frames.push(frame)
+                }),
               {
                 read: (path) =>
                   path === "README.md"
@@ -850,8 +907,24 @@ describe("@smthrs/model-host fuzz invariants", () => {
               ? {}
               : { SMITHERS_MODEL_KEY_LAB: "sk-probe-secret-1234", SMITHERS_MODEL_KEY_LAB_ORIGIN: origin }
             const sseBody = [
-              `data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", created: 1, model: "lab", choices: [{ index: 0, delta: { content: "ok" }, finish_reason: null }] })}\n\n`,
-              `data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", created: 1, model: "lab", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`,
+              `data: ${
+                JSON.stringify({
+                  id: "c",
+                  object: "chat.completion.chunk",
+                  created: 1,
+                  model: "lab",
+                  choices: [{ index: 0, delta: { content: "ok" }, finish_reason: null }]
+                })
+              }\n\n`,
+              `data: ${
+                JSON.stringify({
+                  id: "c",
+                  object: "chat.completion.chunk",
+                  created: 1,
+                  model: "lab",
+                  choices: [{ index: 0, delta: {}, finish_reason: "stop" }]
+                })
+              }\n\n`,
               "data: [DONE]\n\n"
             ].join("")
             const probeFetch: typeof globalThis.fetch = Object.assign(

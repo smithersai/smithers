@@ -1,7 +1,7 @@
+import { Sha256 } from "@smthrs/crypto"
 import * as DurableFlow from "@smthrs/flow/Flow"
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Context, Effect, Logger, Option, Result, Schema } from "effect"
-import { Sha256 } from "@smthrs/crypto"
 import { describe, expect, it } from "vitest"
 import * as Core from "../src/index.ts"
 
@@ -91,7 +91,9 @@ describe("@smthrs/core fuzz", () => {
       arb,
       (v) =>
         Effect.sync(() => {
-          expect(Option.isNone(Core.Annotations.getOption(Core.Annotations.empty, Core.Annotations.Priority))).toBe(true)
+          expect(Option.isNone(Core.Annotations.getOption(Core.Annotations.empty, Core.Annotations.Priority))).toBe(
+            true
+          )
           expect(Option.getOrUndefined(Core.Annotations.getOption(Core.Annotations.empty, RefService))).toBe(42)
 
           const placementVal = v.placement === "sandbox"
@@ -319,19 +321,33 @@ describe("@smthrs/core fuzz", () => {
           const placed = lowered.pipe(Core.Flow.within(Core.Placement.remote()))
           expect(Option.isSome(Core.Annotations.getOption(placed.annotations, Core.Annotations.Placement))).toBe(true)
           const placedFirst = Core.Flow.within(lowered, Core.Placement.local())
-          expect(Option.isSome(Core.Annotations.getOption(placedFirst.annotations, Core.Annotations.Placement))).toBe(true)
+          expect(Option.isSome(Core.Annotations.getOption(placedFirst.annotations, Core.Annotations.Placement))).toBe(
+            true
+          )
 
           const annotated = placed.pipe(
             Core.Flow.annotate(Core.Annotations.Priority, 7),
             Core.Flow.annotate(DurableFlow.Capabilities, ["fs:read"]),
-            Core.Flow.annotate(Core.Annotations.Effects, Core.Effects.make({ reads: ["r"], writes: ["w"], mode: "hermetic", onConflict: "serialize", tier: "compensable" }))
+            Core.Flow.annotate(
+              Core.Annotations.Effects,
+              Core.Effects.make({
+                reads: ["r"],
+                writes: ["w"],
+                mode: "hermetic",
+                onConflict: "serialize",
+                tier: "compensable"
+              })
+            )
           )
           expect(annotated.capabilities).toEqual(["fs:read"])
           expect(annotated.effects?.tier).toBe("compensable")
-          expect(Option.getOrUndefined(Core.Annotations.getOption(annotated.annotations, Core.Annotations.Priority))).toBe(7)
+          expect(Option.getOrUndefined(Core.Annotations.getOption(annotated.annotations, Core.Annotations.Priority)))
+            .toBe(7)
 
           const annotatedFirst = Core.Flow.annotate(lowered, CustomService, "tag")
-          expect(Option.getOrUndefined(Core.Annotations.getOption(annotatedFirst.annotations, CustomService))).toBe("tag")
+          expect(Option.getOrUndefined(Core.Annotations.getOption(annotatedFirst.annotations, CustomService))).toBe(
+            "tag"
+          )
 
           const withCollabs = annotated.pipe(Core.Flow.withFlows(["collab-a", lowered]))
           expect(withCollabs.flows?.length).toBe(2)
@@ -548,7 +564,10 @@ describe("@smthrs/core fuzz", () => {
       arb,
       (v) =>
         Effect.sync(() => {
-          const expectCode = (res: Result.Result<unknown, Core.Markdown.MarkdownError>, code: Core.Markdown.MarkdownErrorCode) => {
+          const expectCode = (
+            res: Result.Result<unknown, Core.Markdown.MarkdownError>,
+            code: Core.Markdown.MarkdownErrorCode
+          ) => {
             expect(Result.isFailure(res)).toBe(true)
             if (Result.isFailure(res)) {
               expect(res.failure.code).toBe(code)
@@ -566,7 +585,10 @@ describe("@smthrs/core fuzz", () => {
               expectCode(Core.Markdown.parseSkill(`---\nname: [unclosed\n---\n${v.noise}`), "skill_invalid_frontmatter")
               break
             case "non-mapping":
-              expectCode(Core.Markdown.parseSkill(`---\n- item1\n- item2\n---\n${v.noise}`), "skill_invalid_frontmatter")
+              expectCode(
+                Core.Markdown.parseSkill(`---\n- item1\n- item2\n---\n${v.noise}`),
+                "skill_invalid_frontmatter"
+              )
               break
             case "non-scalar-key":
               expectCode(Core.Markdown.parseSkill(`---\n? [a, b]\n: val\n---\n${v.noise}`), "skill_invalid_frontmatter")
@@ -607,22 +629,34 @@ describe("@smthrs/core fuzz", () => {
               expectCode(Core.Markdown.validateSkillFrontmatter({ description: "ok" }), "skill_missing_name")
               break
             case "blank-name":
-              expectCode(Core.Markdown.validateSkillFrontmatter({ name: "   ", description: "ok" }), "skill_missing_name")
+              expectCode(
+                Core.Markdown.validateSkillFrontmatter({ name: "   ", description: "ok" }),
+                "skill_missing_name"
+              )
               break
             case "invalid-name-type":
               expectCode(Core.Markdown.validateSkillFrontmatter({ name: 123, description: "ok" }), "skill_invalid_name")
               break
             case "invalid-name-chars":
-              expectCode(Core.Markdown.validateSkillFrontmatter({ name: "Bad_Name", description: "ok" }), "skill_invalid_name")
+              expectCode(
+                Core.Markdown.validateSkillFrontmatter({ name: "Bad_Name", description: "ok" }),
+                "skill_invalid_name"
+              )
               break
             case "missing-desc":
               expectCode(Core.Markdown.validateSkillFrontmatter({ name: "abc" }), "skill_missing_description")
               break
             case "blank-desc":
-              expectCode(Core.Markdown.validateSkillFrontmatter({ name: "abc", description: " \t " }), "skill_missing_description")
+              expectCode(
+                Core.Markdown.validateSkillFrontmatter({ name: "abc", description: " \t " }),
+                "skill_missing_description"
+              )
               break
             case "invalid-desc-type":
-              expectCode(Core.Markdown.validateSkillFrontmatter({ name: "abc", description: ["x"] }), "skill_invalid_description")
+              expectCode(
+                Core.Markdown.validateSkillFrontmatter({ name: "abc", description: ["x"] }),
+                "skill_invalid_description"
+              )
               break
             case "invalid-desc-long":
               expectCode(
@@ -655,7 +689,11 @@ describe("@smthrs/core fuzz", () => {
               break
             case "invalid-compat-long":
               expectCode(
-                Core.Markdown.validateSkillFrontmatter({ name: "abc", description: "ok", compatibility: "a".repeat(501) }),
+                Core.Markdown.validateSkillFrontmatter({
+                  name: "abc",
+                  description: "ok",
+                  compatibility: "a".repeat(501)
+                }),
                 "skill_invalid_compatibility"
               )
               break

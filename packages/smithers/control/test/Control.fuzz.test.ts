@@ -4,8 +4,8 @@ import * as NodeSocket from "@effect/platform-node/NodeSocket"
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Fuzz } from "@smthrs/fuzz"
-import * as Evaluator from "@smthrs/model/Evaluator"
 import { Journal, JournalEvent } from "@smthrs/journal"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Arbitrary, Effect, Exit, Fiber, Layer, Logger, Option, Redacted, Result, Schema, Stream } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import { HttpRouter, HttpServer, HttpServerRequest } from "effect/http"
@@ -328,7 +328,9 @@ describe("@smthrs/control Monitor, Lineage, Steering, Health, JevSessionChecker,
               forked: hasFork,
               roundOrdinal: hasPrev ? 2 : 0
             })
-            if (origin !== undefined && origin !== "child" && origin !== "fork" && origin !== "continuation") return false
+            if (origin !== undefined && origin !== "child" && origin !== "fork" && origin !== "continuation") {
+              return false
+            }
             const ev: ControlSchema.ControlEvent = {
               runId: "r1",
               sequence: 1,
@@ -353,8 +355,24 @@ describe("@smthrs/control Monitor, Lineage, Steering, Health, JevSessionChecker,
   it("Health, JevSessionChecker, ControlFacts.fold, and Cancellation.attribute obey all state/freshness/attribution invariants", async () => {
     const arb = Arbitrary.schema(
       Schema.Struct({
-        state: Schema.Literals(["accepted", "running", "parked", "waiting-approval", "completed", "failed", "cancelled"]),
-        baseHealth: Schema.Literals(["healthy", "stalled", "wedged-node", "failing", "runaway-loop", "awaiting-human", "unknown"]),
+        state: Schema.Literals([
+          "accepted",
+          "running",
+          "parked",
+          "waiting-approval",
+          "completed",
+          "failed",
+          "cancelled"
+        ]),
+        baseHealth: Schema.Literals([
+          "healthy",
+          "stalled",
+          "wedged-node",
+          "failing",
+          "runaway-loop",
+          "awaiting-human",
+          "unknown"
+        ]),
         activity: Schema.Literals(["working", "idle", "needs-input", "unknown"]),
         confidence: Schema.Number.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
         evalMode: Schema.Literals(["ok", "invented", "unreachable", "timeout", "refused", "invalid_answer"]),
@@ -435,7 +453,12 @@ describe("@smthrs/control Monitor, Lineage, Steering, Health, JevSessionChecker,
               state,
               events: [],
               sinceCursor: 0,
-              session: { alive: state === "running", exitCode: state === "completed" ? 0 : null, outputCursor: 4, outputTail: "hello" }
+              session: {
+                alive: state === "running",
+                exitCode: state === "completed" ? 0 : null,
+                outputCursor: 4,
+                outputTail: "hello"
+              }
             }
             const evObs = yield* Health.evaluate(
               resolvedSession,
@@ -476,7 +499,11 @@ describe("@smthrs/control Monitor, Lineage, Steering, Health, JevSessionChecker,
               },
               {
                 kind: "control.run.completed",
-                payload: ControlFacts.runFact({ ...runSnap, status: "completed", updatedAt: 5 }) as unknown as ControlSchema.ControlEvent["payload"],
+                payload: ControlFacts.runFact({
+                  ...runSnap,
+                  status: "completed",
+                  updatedAt: 5
+                }) as unknown as ControlSchema.ControlEvent["payload"],
                 sequence: 2,
                 runId: "r1",
                 occurredAt: 5
@@ -496,7 +523,10 @@ describe("@smthrs/control Monitor, Lineage, Steering, Health, JevSessionChecker,
               },
               {
                 kind: "control.approval.approved",
-                payload: ControlFacts.approvalDecisionFact("req-1", target) as unknown as ControlSchema.ControlEvent["payload"],
+                payload: ControlFacts.approvalDecisionFact(
+                  "req-1",
+                  target
+                ) as unknown as ControlSchema.ControlEvent["payload"],
                 sequence: 4,
                 runId: "r1",
                 occurredAt: 7
@@ -841,7 +871,9 @@ describe("@smthrs/control durable & full-stack fuzz invariants", () => {
                       }
                       case "list": {
                         const r = yield* Effect.result(control.list({ _tag: cmd.kind } as Control.ListInput))
-                        trace.push(Result.isFailure(r) ? `listErr:${cmd.kind}:${r.failure._tag}` : `list:${r.success._tag}`)
+                        trace.push(
+                          Result.isFailure(r) ? `listErr:${cmd.kind}:${r.failure._tag}` : `list:${r.success._tag}`
+                        )
                         break
                       }
                     }
@@ -860,7 +892,9 @@ describe("@smthrs/control durable & full-stack fuzz invariants", () => {
                     )
                     const events = yield* control.watch({ runId, follow: false }).pipe(Stream.runCollect)
                     if (events.length > 0 && events[0]?.cursor !== undefined) {
-                      yield* control.watch({ runId, follow: false, afterCursor: events[0].cursor }).pipe(Stream.runCollect)
+                      yield* control.watch({ runId, follow: false, afterCursor: events[0].cursor }).pipe(
+                        Stream.runCollect
+                      )
                     }
                     const badWatch = yield* Effect.result(
                       control.watch({ runId, follow: false, afterSequence: 1, afterCursor: { sequence: 1 } }).pipe(
@@ -898,7 +932,9 @@ describe("@smthrs/control durable & full-stack fuzz invariants", () => {
                     if (Result.isSuccess(resSeq)) {
                       yield* runtime.clearResume(runId, resSeq.success)
                     }
-                    yield* Effect.result(control.list({ _tag: "runs", filters: { runId, flowId: "system/test" }, limit: 1 }))
+                    yield* Effect.result(
+                      control.list({ _tag: "runs", filters: { runId, flowId: "system/test" }, limit: 1 })
+                    )
                     yield* Effect.result(control.list({ _tag: "plans", filters: { flowId: "system/test" }, limit: 1 }))
                     yield* Effect.result(control.list({ _tag: "executions", runId, executionIds: [runId] }))
                     yield* Effect.result(control.run({ _tag: "Resume", runId, idempotencyKey: "run-resume-1" }))
@@ -906,7 +942,9 @@ describe("@smthrs/control durable & full-stack fuzz invariants", () => {
                     yield* Effect.result(runtime.registerFiber(runId, bgFiber))
                     yield* Effect.result(runtime.interrupt(runId))
                     // Retry after run has been settled/cancelled!
-                    yield* Effect.result(control.run({ _tag: "Retry", runId, step: "step-1", idempotencyKey: "run-retry-1" }))
+                    yield* Effect.result(
+                      control.run({ _tag: "Retry", runId, step: "step-1", idempotencyKey: "run-retry-1" })
+                    )
                   }
 
                   yield* runtime.pagePlanIds({ limit: 5 })
@@ -1011,7 +1049,9 @@ describe("@smthrs/control durable & full-stack fuzz invariants", () => {
               })
 
             const sqlTrace = yield* Effect.scoped(
-              Effect.flatMap(SqlCredentialStore.make, runWith).pipe(Effect.provide(Layer.mergeAll(TestDatabase.layer, silentLogger)))
+              Effect.flatMap(SqlCredentialStore.make, runWith).pipe(
+                Effect.provide(Layer.mergeAll(TestDatabase.layer, silentLogger))
+              )
             )
             const memTrace = yield* runWith(CredentialStore.makeMemory()).pipe(Effect.provide(silentLogger))
 
@@ -1157,7 +1197,9 @@ describe("@smthrs/control durable & full-stack fuzz invariants", () => {
                       idempotencyKey: `rpc-sig:${receipt.runId}`
                     })
                   )
-                  yield* Effect.result(client.resume({ runId: receipt.runId, idempotencyKey: `rpc-res:${receipt.runId}` }))
+                  yield* Effect.result(
+                    client.resume({ runId: receipt.runId, idempotencyKey: `rpc-res:${receipt.runId}` })
+                  )
                   yield* Effect.result(client.list({ _tag: "plans" }))
                   yield* Effect.result(client.list({ _tag: "flows" }))
                   const denyCard = yield* client.plan({ flowId: "system/test", input: { deny: true } })
@@ -1342,7 +1384,15 @@ describe("@smthrs/control durable & full-stack fuzz invariants", () => {
       Schema.Struct({
         alive: Schema.Boolean,
         tailMode: Schema.Literals(["none", "short", "over4k"]),
-        verdict: Schema.Literals(["working", "idle", "needs-input", "invented", "lowConf", "errUnreachable", "errTimeout"]),
+        verdict: Schema.Literals([
+          "working",
+          "idle",
+          "needs-input",
+          "invented",
+          "lowConf",
+          "errUnreachable",
+          "errTimeout"
+        ]),
         waitKind: Schema.Literals(["human", "plain", "none"])
       })
     )
@@ -1392,12 +1442,20 @@ describe("@smthrs/control durable & full-stack fuzz invariants", () => {
                   state: "running",
                   events: [],
                   sinceCursor: 0,
-                  session: { alive, exitCode: alive ? null : 0, outputCursor: 1, ...(tail === undefined ? {} : { outputTail: tail }) }
+                  session: {
+                    alive,
+                    exitCode: alive ? null : 0,
+                    outputCursor: 1,
+                    ...(tail === undefined ? {} : { outputTail: tail })
+                  }
                 },
                 undefined
               )
             )
-            if (alive && tail !== undefined && (verdict === "invented" || verdict === "errUnreachable" || verdict === "errTimeout")) {
+            if (
+              alive && tail !== undefined &&
+              (verdict === "invented" || verdict === "errUnreachable" || verdict === "errTimeout")
+            ) {
               if (Result.isSuccess(probeRes)) return false
             }
 
@@ -1432,7 +1490,9 @@ describe("@smthrs/control durable & full-stack fuzz invariants", () => {
             )
             if (Exit.isSuccess(roLaunch)) return false
             yield* Effect.exit(roExec.requestCancel({ runId: "r1" }))
-            yield* Effect.exit(roExec.deliverSignal({ runId: "r1", commandId: "c1", signal: { name: "s", payload: {} } }))
+            yield* Effect.exit(
+              roExec.deliverSignal({ runId: "r1", commandId: "c1", signal: { name: "s", payload: {} } })
+            )
             yield* Effect.exit(roExec.resumeRun({ runId: "r1" }))
             yield* Effect.exit(roExec.settleCancelledPark({ runId: "r1" }))
             yield* Effect.result(obsExec.settleCancelledPark({ runId: "r1" }))
@@ -1487,7 +1547,13 @@ describe("@smthrs/control durable & full-stack fuzz invariants", () => {
                 }),
                 c.steer({
                   runId: "r",
-                  message: { messageId: "m", runId: "r", principal: { id: "a", kind: "local", stampedAt: 1 }, createdAt: 1, body: "x" },
+                  message: {
+                    messageId: "m",
+                    runId: "r",
+                    principal: { id: "a", kind: "local", stampedAt: 1 },
+                    createdAt: 1,
+                    body: "x"
+                  },
                   idempotencyKey: "k"
                 }),
                 c.signal({ runId: "r", signal: { name: "n", payload: {} }, idempotencyKey: "k" }),

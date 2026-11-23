@@ -1,8 +1,8 @@
+import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Layer, Logger, Option, Result, Schema } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { describe, expect, it } from "vitest"
-import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { CacheStore, CombinedCacheStore, Migrations, RemoteCacheStore } from "../src/index.ts"
 import * as SqlCacheStore from "../src/internal/SqlCacheStore.ts"
 import * as TestCacheStore from "../src/test/TestCacheStore.ts"
@@ -63,7 +63,9 @@ describe("@smthrs/step-cache comprehensive SQLite, Combined & Remote fuzz invari
             const store = yield* CacheStore.CacheStore
             const head = new Map<string, RefRow>()
             const ledger = new Map<string, { readonly val: number; readonly ts: number }>()
-            const candidates: Array<{ readonly keyDigest: string; readonly recordedRunId: string; readonly recordedEventSeq: number }> = []
+            const candidates: Array<
+              { readonly keyDigest: string; readonly recordedRunId: string; readonly recordedEventSeq: number }
+            > = []
 
             for (const op of ops) {
               if (op._tag === "put") {
@@ -156,7 +158,10 @@ describe("@smthrs/step-cache comprehensive SQLite, Combined & Remote fuzz invari
             }
 
             // Exercise rebuildHeads on deduplicated recorded candidates (and duplicate rejection)
-            const dedup = new Map<string, { readonly keyDigest: string; readonly recordedRunId: string; readonly recordedEventSeq: number }>()
+            const dedup = new Map<
+              string,
+              { readonly keyDigest: string; readonly recordedRunId: string; readonly recordedEventSeq: number }
+            >()
             for (const c of candidates) dedup.set(c.keyDigest, c)
             const rebuilt = yield* SqlCacheStore.rebuildHeads(dedup.values())
             if (rebuilt < 0) return false
@@ -177,7 +182,14 @@ describe("@smthrs/step-cache comprehensive SQLite, Combined & Remote fuzz invari
             const badSweep = yield* Effect.result(store.sweepExpired(-1))
             if (Result.isSuccess(badSweep)) return false
             return true
-          }).pipe(Effect.provide(Layer.mergeAll(CacheStore.layer.pipe(Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.layer))), Logger.layer([])))),
+          }).pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                CacheStore.layer.pipe(Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.layer))),
+                Logger.layer([])
+              )
+            )
+          ),
         { seed, executions }
       )
     )

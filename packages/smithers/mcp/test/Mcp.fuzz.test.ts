@@ -1,5 +1,5 @@
-import * as Cell from "@smthrs/harness/Cell"
 import { Fuzz, FuzzSimulation } from "@smthrs/fuzz"
+import * as Cell from "@smthrs/harness/Cell"
 import { Arbitrary, Effect, Logger, Option, Redacted, Result, Schema, Stream } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientError from "effect/http/HttpClientError"
@@ -11,8 +11,8 @@ import * as JsonLimits from "../src/internal/JsonLimits.ts"
 import * as Limits from "../src/internal/Limits.ts"
 import * as Rpc from "../src/internal/Rpc.ts"
 import * as Transport from "../src/internal/Transport.ts"
-import { fakeServer, respondToEcho } from "./fixtures/FakeServer.ts"
 import { provideSpawner } from "./fixtures/FakeProcess.ts"
+import { fakeServer, respondToEcho } from "./fixtures/FakeServer.ts"
 
 const baseExecutions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "1000" : "150"))
 const pureExecutions = Math.max(24, Math.min(baseExecutions, 180))
@@ -118,7 +118,17 @@ describe("@smthrs/mcp fuzz", () => {
           expect(decoded.server).toBe(v.server)
 
           // Limits
-          const badInt = v.badIntKind === "zero" ? 0 : v.badIntKind === "neg" ? -1 : v.badIntKind === "frac" ? 1.5 : v.badIntKind === "nan" ? Number.NaN : v.badIntKind === "inf" ? Number.POSITIVE_INFINITY : 10
+          const badInt = v.badIntKind === "zero"
+            ? 0
+            : v.badIntKind === "neg"
+            ? -1
+            : v.badIntKind === "frac"
+            ? 1.5
+            : v.badIntKind === "nan"
+            ? Number.NaN
+            : v.badIntKind === "inf"
+            ? Number.POSITIVE_INFINITY
+            : 10
           expect(Limits.isPositiveInteger(badInt)).toBe(badInt === 10)
           const checked = yield* Effect.result(Limits.checkPositiveIntegers(v.server, [["timeoutMs", badInt]]))
           if (badInt === 10) expect(Result.isSuccess(checked)).toBe(true)
@@ -254,7 +264,9 @@ describe("@smthrs/mcp fuzz", () => {
           expect(Rpc.parse("[]")).toBeUndefined()
           const badVer = Rpc.parse(JSON.stringify({ jsonrpc: "1.0", id: 1, result: {} }))
           if (badVer !== undefined) expect(Rpc.classify(badVer)._tag).toBe("Malformed")
-          const invalidReply = Rpc.parse(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {}, error: { code: -1, message: "x" } }))
+          const invalidReply = Rpc.parse(
+            JSON.stringify({ jsonrpc: "2.0", id: 1, result: {}, error: { code: -1, message: "x" } })
+          )
           if (invalidReply !== undefined) {
             expect(Rpc.replyOf(invalidReply)._tag).toBe("Malformed")
           }
@@ -330,7 +342,9 @@ describe("@smthrs/mcp fuzz", () => {
                       description: "Adds numbers",
                       inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } } },
                       ...(v.structured
-                        ? { outputSchema: { type: "object", properties: { sum: { type: "number" } }, required: ["sum"] } }
+                        ? {
+                          outputSchema: { type: "object", properties: { sum: { type: "number" } }, required: ["sum"] }
+                        }
                         : {})
                     }],
                     nextCursor: "page-2"
@@ -532,7 +546,9 @@ describe("@smthrs/mcp fuzz", () => {
               }
               if (request.method === "tools/call") {
                 if (v.fault === "invalid-call-content") return { content: "not-array" }
-                if (v.fault === "missing-structured-content") return { content: [{ type: "text", text: "1" }], structuredContent: "not-an-object" }
+                if (v.fault === "missing-structured-content") {
+                  return { content: [{ type: "text", text: "1" }], structuredContent: "not-an-object" }
+                }
                 return respondToEcho(request)
               }
               return undefined
@@ -685,9 +701,10 @@ describe("@smthrs/mcp fuzz", () => {
             ? "http://127.0.0.1:8080/mcp"
             : "https://mcp.example.test/mcp"
 
-          const authProvider = (v.mode === "auth-https-ok" || v.mode === "auth-loopback-ok" || v.mode === "auth-http-refused")
-            ? { token: Effect.succeed(Redacted.make("secret-tok")) }
-            : undefined
+          const authProvider =
+            (v.mode === "auth-https-ok" || v.mode === "auth-loopback-ok" || v.mode === "auth-http-refused")
+              ? { token: Effect.succeed(Redacted.make("secret-tok")) }
+              : undefined
 
           const res = yield* Effect.scoped(
             Effect.gen(function*() {
@@ -716,7 +733,11 @@ describe("@smthrs/mcp fuzz", () => {
           const shouldSucceed = v.mode === "json-ok" || v.mode === "sse-ok" || v.mode === "auth-https-ok" ||
             v.mode === "auth-loopback-ok" || v.mode === "session-delete-on-close"
           if (Result.isSuccess(res) !== shouldSucceed) {
-            throw new Error(`mode=${v.mode} expected=${shouldSucceed} got=${Result.isFailure(res) ? res.failure.code + ":" + res.failure.message : "success"} diags=${JSON.stringify(httpDiags)}`)
+            throw new Error(
+              `mode=${v.mode} expected=${shouldSucceed} got=${
+                Result.isFailure(res) ? res.failure.code + ":" + res.failure.message : "success"
+              } diags=${JSON.stringify(httpDiags)}`
+            )
           }
           if (v.mode === "session-delete-on-close") {
             expect(sawDelete).toBe(true)
@@ -834,21 +855,23 @@ describe("@smthrs/mcp fuzz", () => {
                   expect(bindings.length).toBe(1)
                   expect(bindings[0]!.descriptor.name).toBe(`${v.prefix}/add`)
                   const desc = bindings[0]!.descriptor
-                  const out = yield* bindings[0]!.run(new Cell.Call({
-                    flowName: desc.name,
-                    input: { a: v.a, b: v.b },
-                    capabilities: desc.capabilities,
-                    effects: desc.effects,
-                    placement: Option.none(),
-                    identity: new Cell.CallIdentity({
-                      session: "mcp-fuzz",
-                      frame: 0,
-                      cell: "cell-0",
-                      ordinal: 0,
-                      declaration: Cell.declarationDigest(desc),
-                      layers: []
+                  const out = yield* bindings[0]!.run(
+                    new Cell.Call({
+                      flowName: desc.name,
+                      input: { a: v.a, b: v.b },
+                      capabilities: desc.capabilities,
+                      effects: desc.effects,
+                      placement: Option.none(),
+                      identity: new Cell.CallIdentity({
+                        session: "mcp-fuzz",
+                        frame: 0,
+                        cell: "cell-0",
+                        ordinal: 0,
+                        declaration: Cell.declarationDigest(desc),
+                        layers: []
+                      })
                     })
-                  }))
+                  )
                   expect(out).toBeDefined()
                   return out
                 }),
@@ -876,7 +899,11 @@ describe("@smthrs/mcp fuzz", () => {
                 status: 200,
                 contentType: "application/json",
                 headers: { "mcp-session-id": "bad session" },
-                body: JSON.stringify({ jsonrpc: "2.0", id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} } } })
+                body: JSON.stringify({
+                  jsonrpc: "2.0",
+                  id,
+                  result: { protocolVersion: "2025-06-18", capabilities: { tools: {} } }
+                })
               }
             }
             if (v.scenario === "http-session-404" && body?.method === "tools/list") {
@@ -893,14 +920,24 @@ describe("@smthrs/mcp fuzz", () => {
                 `data: ${JSON.stringify({ jsonrpc: "2.0", id: "srv-2", method: "unknown/req" })}\n\n`,
                 `data: ${JSON.stringify(reply)}\n\n`
               ].join("")
-              return { status: 200, contentType: "text/event-stream", headers: { "mcp-session-id": "s1" }, body: events }
+              return {
+                status: 200,
+                contentType: "text/event-stream",
+                headers: { "mcp-session-id": "s1" },
+                body: events
+              }
             }
             if (v.scenario === "sse-uncorrelated-error" && body?.method === "tools/list") {
               const events = [
                 `data: ${JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "uncorr" } })}\n\n`,
                 `data: ${JSON.stringify(reply)}\n\n`
               ].join("")
-              return { status: 200, contentType: "text/event-stream", headers: { "mcp-session-id": "s1" }, body: events }
+              return {
+                status: 200,
+                contentType: "text/event-stream",
+                headers: { "mcp-session-id": "s1" },
+                body: events
+              }
             }
             if (v.scenario === "sse-wrong-id" && body?.method === "tools/list") {
               return {

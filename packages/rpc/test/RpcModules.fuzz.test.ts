@@ -129,7 +129,9 @@ describe("@smthrs/rpc stack, agent context, commands, tool result, roles, worksp
             AgentCommands.decodeCommandsCall(raw)
             const validList = AgentCommands.decodeCommandsCall(JSON.stringify({ action: "list" }))
             if ("failure" in validList || validList.action !== "list") return false
-            const validRun = AgentCommands.decodeCommandsCall(JSON.stringify({ action: "execute", name: "/" + cmdName, args: "a=1" }))
+            const validRun = AgentCommands.decodeCommandsCall(
+              JSON.stringify({ action: "execute", name: "/" + cmdName, args: "a=1" })
+            )
             if ("failure" in validRun || validRun.action !== "execute" || validRun.name !== cmdName) return false
             if (!AgentCommands.unknownToolResult(cmdName).includes(cmdName)) return false
             if (!AgentCommands.unknownCommandResult(cmdName).includes(cmdName)) return false
@@ -147,7 +149,17 @@ describe("@smthrs/rpc stack, agent context, commands, tool result, roles, worksp
     const arb = Arbitrary.schema(
       Schema.Struct({
         status: Schema.Literals(["requested", "queued", "running", "waiting", "parked", "done", "failed", "cancelled"]),
-        action: Schema.Literals(["stop", "retry", "model", "wait", "steer", "thinking", "resume", "inspect", "approval"]),
+        action: Schema.Literals([
+          "stop",
+          "retry",
+          "model",
+          "wait",
+          "steer",
+          "thinking",
+          "resume",
+          "inspect",
+          "approval"
+        ]),
         liveModelSwitch: Schema.Boolean,
         hasWaitAction: Schema.Boolean,
         wsId: Schema.Literals(["ws_0123456789abcdef", "0123456789abcdef", "../bad", "", "not-hex-16chars!"]),

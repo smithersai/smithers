@@ -208,7 +208,9 @@ describe("@smthrs/agent fuzz invariants", () => {
                   })
                 )
             })
-            const ctxWin = yield* Effect.result(SeatResolver.contextWindowResolver(liveResolver)("anthropic:claude-fable-5"))
+            const ctxWin = yield* Effect.result(
+              SeatResolver.contextWindowResolver(liveResolver)("anthropic:claude-fable-5")
+            )
             if (Result.isFailure(ctxWin) || ctxWin.success <= 0) return false
 
             const judgeResp = yield* Effect.flatMap(Evaluator.Evaluator, (ev) =>
@@ -232,23 +234,20 @@ describe("@smthrs/agent fuzz invariants", () => {
                   }),
                   binary: Evaluator.BooleanQuestion.make({ type: "boolean", instructions: "binary?" })
                 }
-              })
-            ).pipe(Effect.provide(ScriptedJudge.layerAll))
+              })).pipe(Effect.provide(ScriptedJudge.layerAll))
 
             const mineResp = yield* Effect.flatMap(Evaluator.Evaluator, (ev) =>
               ev.evaluate({
                 state: { text: taskText },
                 questions: { durable_0: Evaluator.BooleanQuestion.make({ type: "boolean", instructions: "durable?" }) }
-              })
-            ).pipe(Effect.provide(ScriptedJudge.layerAll))
+              })).pipe(Effect.provide(ScriptedJudge.layerAll))
 
             const unknownResp = yield* Effect.result(
               Effect.flatMap(Evaluator.Evaluator, (ev) =>
                 ev.evaluate({
                   state: { task: "fuzz" },
                   questions: { q1: Evaluator.BooleanQuestion.make({ type: "boolean", instructions: "ok?" }) }
-                })
-              ).pipe(Effect.provide(ScriptedJudge.layerAll))
+                })).pipe(Effect.provide(ScriptedJudge.layerAll))
             )
 
             return (
@@ -463,7 +462,11 @@ describe("@smthrs/agent fuzz invariants", () => {
               update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi" } }
             })
             if (Option.isNone(msgText) || msgText.value !== "hi") return false
-            if (Option.isSome(Acp.messageText({ sessionId: "s1", kind: "tool_call", update: { sessionUpdate: "tool_call" } }))) {
+            if (
+              Option.isSome(
+                Acp.messageText({ sessionId: "s1", kind: "tool_call", update: { sessionUpdate: "tool_call" } })
+              )
+            ) {
               return false
             }
             const uOpt = Acp.usage({
@@ -533,7 +536,14 @@ describe("@smthrs/agent fuzz invariants", () => {
             const decl = declaredEffort({ frontmatter: eff === undefined ? {} : { effort: eff } })
             if (decl !== eff) return false
 
-            const cid = callId({ session: "s1", frame: retryIdx, cell: "c1", ordinal: 0, declaration: "d1", layers: ["l1"] })
+            const cid = callId({
+              session: "s1",
+              frame: retryIdx,
+              cell: "c1",
+              ordinal: 0,
+              declaration: "d1",
+              layers: ["l1"]
+            })
             if (cid.length === 0) return false
 
             const insp = {
@@ -551,12 +561,21 @@ describe("@smthrs/agent fuzz invariants", () => {
 
             const waitApp = waitingAnnotation("waiting-approval", [{ dueAtMs: 5000 }], undefined)
             const waitTimer = waitingAnnotation("waiting-timer", [{ dueAtMs: 5000 }, { dueAtMs: 3000 }], undefined)
-            const waitEvent = waitingAnnotation("waiting-approval", [], { reason: "event", token: "tok-1", request: { ok: true } })
+            const waitEvent = waitingAnnotation("waiting-approval", [], {
+              reason: "event",
+              token: "tok-1",
+              request: { ok: true }
+            })
             if (waitApp.reason !== "approval" || waitTimer.reason !== "timer" || waitTimer.wakeAt !== 3000) return false
             if (waitEvent.reason !== "event" || waitEvent.token !== "tok-1") return false
 
             const collected: Array<unknown> = []
-            const sink = EventSink.make({ emit: (ev) => Effect.sync(() => { collected.push(ev) }) })
+            const sink = EventSink.make({
+              emit: (ev) =>
+                Effect.sync(() => {
+                  collected.push(ev)
+                })
+            })
             yield* sink.emit({ _tag: "run-started", session: "s1" } as any)
             if (collected.length !== 1) return false
 
@@ -655,9 +674,11 @@ describe("@smthrs/agent fuzz invariants", () => {
                     params: ModelRequest.GenerationParams.make()
                   }),
                   retryPolicy: RetryPolicy.make({ maxAttempts: 2, initialMs: 1, maxMs: 5, factor: 2, jitterRatio: 0 }),
-                  onEvent: (ev) => Effect.sync(() => { eventsSeen.push(ev) })
-                })
-              )
+                  onEvent: (ev) =>
+                    Effect.sync(() => {
+                      eventsSeen.push(ev)
+                    })
+                }))
 
               const res = yield* Effect.result(engine.execute(flow, { executionId: id, payload: {} }))
               if (Result.isFailure(res)) return false
@@ -715,7 +736,9 @@ describe("@smthrs/agent fuzz invariants", () => {
               const cellSource = scenario === "direct-done"
                 ? `ctx.done(${JSON.stringify(payloadText)})`
                 : scenario === "call-then-done"
-                ? `const items = await ctx.call("fs/list", { path: "." }); ctx.done(items[0] + ":" + ${JSON.stringify(payloadText)})`
+                ? `const items = await ctx.call("fs/list", { path: "." }); ctx.done(items[0] + ":" + ${
+                  JSON.stringify(payloadText)
+                })`
                 : scenario === "denied-call"
                 ? `try { await ctx.call("fs/write", { path: "x.txt", text: "no" }); ctx.done("should-not") } catch (e) { ctx.done("caught") }`
                 : `await ctx.call("fs/list", { path: "." })`
@@ -785,7 +808,11 @@ describe("@smthrs/agent fuzz invariants", () => {
                     : undefined,
                   maxFrames: scenario === "max-frames" ? 1 : 3
                 }).pipe(
-                  Stream.runForEach((ev) => Effect.sync(() => { events.push(ev) })),
+                  Stream.runForEach((ev) =>
+                    Effect.sync(() => {
+                      events.push(ev)
+                    })
+                  ),
                   Effect.provide(Layer.merge(Agent.layerDefaults, ScriptedJudge.layerAll))
                 )
               }).pipe(
@@ -794,15 +821,21 @@ describe("@smthrs/agent fuzz invariants", () => {
               )
 
               yield* engine.register(flow, () =>
-                Effect.onExit(runBody, (exit) => Effect.asVoid(Deferred.succeed(settled, exit)))
-              ).pipe(Scope.provide(scope))
+                Effect.onExit(runBody, (exit) => Effect.asVoid(Deferred.succeed(settled, exit)))).pipe(
+                  Scope.provide(scope)
+                )
 
               yield* engine.execute(flow, { executionId: id, payload: {}, discard: true })
               const exit = yield* Deferred.await(settled)
 
               if (scenario === "denied-call") {
-                if (executed.includes("fs/write")) return false
-                return Exit.isFailure(exit) || events.some((e) => e._tag === "cell-call-settled" || e._tag === "turn-closed")
+                if (executed.includes("fs/write")) {
+                  return false
+                }
+                return Exit.isFailure(exit) ||
+                  events.some((e) =>
+                    e._tag === "cell-call-settled" || e._tag === "turn-closed"
+                  )
               }
               if (Exit.isFailure(exit)) return false
               const resolved = events.find((e) => e._tag === "resolved")

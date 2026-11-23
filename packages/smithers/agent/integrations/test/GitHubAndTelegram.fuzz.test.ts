@@ -18,7 +18,12 @@ import * as TelegramSource from "../src/telegram/Source.ts"
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "120"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261123")
 
-const jsonResp = (req: HttpClientRequest.HttpClientRequest, status: number, body: unknown, headers: Record<string, string> = {}) =>
+const jsonResp = (
+  req: HttpClientRequest.HttpClientRequest,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {}
+) =>
   HttpClientResponse.fromWeb(
     req,
     new Response(JSON.stringify(body), {
@@ -77,7 +82,9 @@ describe("@smthrs/integrations GitHub REST, ReadCache, PublicRead, Proxy, RateLi
 
             // 5. Full in-memory REST client exercising Issues, Pulls, Refs, Contents, Statuses
             const b64Content = Buffer.from("hello from fuzz\n", "utf8").toString("base64")
-            const markedBody = Issues.WRITE_ID_PATTERN.test(writeId) ? Issues.withWriteMarker(cleanBody, writeId) : cleanBody
+            const markedBody = Issues.WRITE_ID_PATTERN.test(writeId)
+              ? Issues.withWriteMarker(cleanBody, writeId)
+              : cleanBody
             const sampleIssue = {
               id: 1000 + issueNum,
               node_id: "I_kwDO123",
@@ -227,7 +234,9 @@ describe("@smthrs/integrations GitHub REST, ReadCache, PublicRead, Proxy, RateLi
               const page = yield* Issues.listAllIssuesPage(owner, repo, {})
               if (page.items.length !== 1) return false
               yield* Issues.addLabels(owner, repo, issueNum, ["bug"])
-              const lblRes = yield* Issues.createLabel(owner, repo, { name: "triage", color: labelColor }).pipe(Effect.result)
+              const lblRes = yield* Issues.createLabel(owner, repo, { name: "triage", color: labelColor }).pipe(
+                Effect.result
+              )
               if (Issues.LABEL_COLOR_PATTERN.test(labelColor) !== Result.isSuccess(lblRes)) return false
 
               if (Issues.WRITE_ID_PATTERN.test(writeId)) {
@@ -259,7 +268,10 @@ describe("@smthrs/integrations GitHub REST, ReadCache, PublicRead, Proxy, RateLi
 
               const fileRes = yield* Contents.getText(owner, repo, filePath).pipe(Effect.result)
               if (filePath === "README.md" || filePath === "src/index.ts") {
-                if (!Result.isSuccess(fileRes) || Option.isNone(fileRes.success) || fileRes.success.value.text !== "hello from fuzz\n") {
+                if (
+                  !Result.isSuccess(fileRes) || Option.isNone(fileRes.success) ||
+                  fileRes.success.value.text !== "hello from fuzz\n"
+                ) {
                   return false
                 }
               } else {
@@ -394,7 +406,9 @@ describe("@smthrs/integrations GitHub REST, ReadCache, PublicRead, Proxy, RateLi
           "/repos/acme/app/issues",
           "/repos/acme/app/pulls/1",
           "/users/octocat",
-          "/_smithers/health", "/_smithers/admission?repo=acme/app&writes=2", "/_smithers/unknown",
+          "/_smithers/health",
+          "/_smithers/admission?repo=acme/app&writes=2",
+          "/_smithers/unknown",
           "/repos/only-owner"
         ]),
         remaining: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 5000 }))),
@@ -498,7 +512,9 @@ describe("@smthrs/integrations GitHub REST, ReadCache, PublicRead, Proxy, RateLi
             const expectedName = isEdited ? TelegramSource.EDITED_MESSAGE_EVENT : TelegramSource.MESSAGE_EVENT
             if (events[0]!.eventName !== expectedName) return false
             if (events[0]!.correlationId !== TelegramSource.chatCorrelationId(chatId)) return false
-            if (threadId !== null && events[1]!.correlationId !== TelegramSource.threadCorrelationId(chatId, threadId)) {
+            if (
+              threadId !== null && events[1]!.correlationId !== TelegramSource.threadCorrelationId(chatId, threadId)
+            ) {
               return false
             }
             // Empty/unrelated update produces zero events
