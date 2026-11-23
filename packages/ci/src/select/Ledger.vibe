@@ -114,14 +114,21 @@ export const layerFile = (directory: string) =>
         if (added.length === 0) return
         const lines = added.map((observation) => `${JSON.stringify(observation)}\n`).join("")
         try Effect.mapError(
-          effect {
+          scoped(effect {
             try fs.makeDirectory(directory, { recursive: true })
-            try fs.writeFileString(rowsFile, lines, { flag: "a" })
-          },
+            const file = try fs.open(rowsFile, { flag: "a+" })
+            const { size } = try file.stat
+            const last = new Uint8Array(1)
+            if (size > 0n) try file.read(last, { position: size - 1n })
+            // A complete final entry may have no newline. Keep it separate from the first new entry.
+            const separator = size > 0n && last[0] !== 10 ? "\n" : ""
+            try file.writeAll(new TextEncoder().encode(separator + lines))
+          }),
           unreadable(rowsFile)
         )
       },
       plan: effect (commit: string) => {
+        if (!commit.isWellFormed()) throw failure("invalid-document", "The plan's commit is not well-formed Unicode")
         const file = path.join(directory, "plans", `${encodeURIComponent(commit)}.json`)
         const held = try text(file)
         if (held === undefined) return undefined

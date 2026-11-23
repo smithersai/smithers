@@ -1,0 +1,116 @@
+import { describe, expect, it } from "@effect/vitest"
+import * as Arbitrary from "effect/Arbitrary"
+import { assign, labelsOf, shardOf } from "../../src/contract/Shard.vibe"
+
+const integer = (minimum: number, maximum: number) =>
+  Arbitrary.schema(Schema.Int.check(Schema.isBetween({ minimum, maximum })))
+const label = Arbitrary.schema(Schema.Union([
+  Schema.String,
+  Schema.Literals(["", "__proto__", "constructor", "😺", "\u0000", "same", "e\u0301", "é"])
+]))
+const weight = Arbitrary.schema(Schema.Union([
+  Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 80 })),
+  Schema.Literals([0, 1, 0.125, 2 ** 42, -3])
+]))
+
+const check = <A>(arb: Arbitrary.Arbitrary<A>, seed: number, predicate: (value: A) => void) => effect {
+  const outcome = try Arbitrary.checkEffect(arb, (value) => Effect.try(() => {
+    predicate(value)
+    return true
+  }), { runs: 220, seed })
+  try Effect.try(() => expect(outcome._tag, Arbitrary.formatCheckFailure(outcome)).toBe("Passed"))
+}
+
+// Independent FNV-1a reference with two 16-bit limbs; each product fits exactly in a double.
+const hash = (label: string) => {
+  let value = 2166136261
+  for (let i = 0; i < label.length; i++) {
+    const xor = value ^ label.charCodeAt(i)
+    value = ((xor & 65535) * 16777619 + (xor >>> 16) * 403 * 65536) >>> 0
+  }
+  return value
+}
+
+const loadsOf = (jobs: ReadonlyArray<number>, count: number) => {
+  const names = jobs.map((_, i) => String(i))
+  const placed = assign(names, count, Object.fromEntries(names.map((name, i) => [name, jobs[i]!])))
+  const loads = Array<number>(count).fill(0)
+  jobs.forEach((job, i) => {
+    const index = placed.get(String(i))!
+    loads[index] = loads[index]! + job
+  })
+  return loads
+}
+
+// Enumerate unlabeled bins for small instances. Equal current loads have identical continuations.
+const optimum = (jobs: ReadonlyArray<number>, count: number): number => {
+  const loads = Array<number>(count).fill(0)
+  let best = jobs.reduce((sum, job) => sum + job, 0)
+  const search = (i: number) => {
+    if (i === jobs.length) {
+      best = Math.min(best, Math.max(...loads))
+      return
+    }
+    const visited = new Set<number>()
+    for (const [bin, before] of loads.entries()) {
+      if (visited.has(before) || before + jobs[i]! >= best) continue
+      visited.add(before)
+      loads[bin] = before + jobs[i]!
+      search(i + 1)
+      loads[bin] = before
+    }
+  }
+  search(0)
+  return best
+}
+
+describe("shard assignment properties", () => {
+  it.live("hash partitions preserve every occurrence in input order, including UTF-16 edge cases", () =>
+    check(Arbitrary.all({ labels: Arbitrary.array(label, { maxLength: 40 }), count: integer(1, 20) }), 8401,
+      ({ labels, count }) => {
+        const shards = Array.from({ length: count }, (_, index) => labelsOf(labels, { index, count }))
+        expect(shards.flat().sort()).toEqual([...labels].sort())
+        shards.forEach((items, index) => expect(items).toEqual(labels.filter((item) => hash(item) % count === index)))
+      }))
+
+  it.live("weighted partitions are disjoint, independent of enumeration, and bounded by average plus one job", () =>
+    check(Arbitrary.all({
+      entries: Arbitrary.array(Arbitrary.all({ name: label, duration: weight, known: Arbitrary.schema(Schema.Boolean) }), { maxLength: 48 }),
+      count: integer(1, 20)
+    }), 8402, ({ entries, count }) => {
+      const names = entries.map((e) => e.name)
+      const durations = Object.fromEntries(entries.filter((e) => e.known).map((e) => [e.name, e.duration]))
+      const placed = assign(names, count, durations)
+      expect([...placed.keys()].sort()).toEqual([...new Set(names)].sort())
+      expect([...assign([...names].reverse(), count, durations)]).toEqual([...placed])
+      const loads = Array<number>(count).fill(0)
+      let largest = 0
+      for (const [name, index] of placed) {
+        expect(Number.isInteger(index) && index >= 0 && index < count).toBe(true)
+        const duration = Object.hasOwn(durations, name) ? Math.max(0, durations[name]!) : 0
+        if (duration === 0) expect(index).toBe(hash(name) % count)
+        loads[index] = loads[index]! + duration
+        largest = Math.max(largest, duration)
+      }
+      expect(Math.max(...loads) - Math.min(...loads)).toBeLessThanOrEqual(largest)
+    }))
+
+  it.live("the LPT makespan satisfies Graham's bound against exhaustive optimal schedules", () =>
+    check(Arbitrary.all({ jobs: Arbitrary.array(integer(0, 20), { maxLength: 8 }), count: integer(1, 5) }), 8403,
+      ({ jobs, count }) => {
+        const best = optimum(jobs, count)
+        expect(Math.max(...loadsOf(jobs, count)) * 3 * count).toBeLessThanOrEqual((4 * count - 1) * best)
+      }))
+
+  it.live("covers a nonoptimal LPT schedule, overflow-size ties and unmeasurable durations", () => Effect.try(() => {
+    expect(loadsOf([3, 3, 2, 2, 2], 2).sort()).toEqual([5, 7])
+    expect(optimum([3, 3, 2, 2, 2], 2)).toBe(6)
+    const labels = ["a", "b", "c", "d", "e", "f"]
+    const enormous = Object.fromEntries(labels.map((name) => [name, Number.MAX_VALUE]))
+    expect([...assign(labels, 2, enormous).values()]).toEqual([0, 1, 0, 1, 0, 1])
+    expect([...assign(labels.slice(0, 4), 2, { a: 2 ** 54, b: 2 ** 54, c: 1, d: 1 }).values()]).toEqual([0, 1, 0, 1])
+    const invalid = { a: NaN, b: Infinity, c: -Infinity, d: -1, e: 0 }
+    for (const [name, bin] of assign(labels, 3, invalid)) expect(bin).toBe(shardOf(name, 3))
+  }))
+})
+

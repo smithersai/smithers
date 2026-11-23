@@ -268,7 +268,9 @@ export const skipReason = (fact: Reading["fact"], features: Features): string | 
     case "churn":
       return features.fileChanges.d56 === 0 ? skipReasons.churn : undefined
     case "kind": {
-      const named = features.extensions.filter((extension) => extension !== noExtension)
+      const named = features.extensions.filter((extension) => extension !== noExtension).map((extension) =>
+        extension.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, (char) => "\\u" + char.charCodeAt(0).toString(16).padStart(4, "0"))
+      )
       const kinds = [
         ...(named.length === 0 ? [] : [`${named.join(", ")} files`]),
         ...(features.extensions.includes(noExtension) ? ["files with no extension"] : [])

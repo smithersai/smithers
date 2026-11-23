@@ -196,7 +196,8 @@ export const graphDistances = (
   plan: Plan | undefined
 ): ReadonlyMap<string, number> => {
   const labels = [...new Set([...targets, ...(plan?.targets ?? []).map((target) => target.label)])]
-  const projects = [...new Set(labels.map(projectOf))].sort((a, b) => b.length - a.length)
+  const specificity = (project: string): number => project === "." ? 0 : project.length
+  const projects = [...new Set(labels.map(projectOf))].sort((a, b) => specificity(b) - specificity(a))
   const owners = new Set(files.flatMap((file) => projects.find((project) => inside(project, file)) ?? []))
   const dependents = new Map<string, Array<string>>()
   for (const target of plan?.targets ?? []) {

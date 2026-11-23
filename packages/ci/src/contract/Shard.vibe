@@ -78,8 +78,17 @@ export const assign = (
   const ordered = [...new Set(labels)].sort((a, b) => weight(b) - weight(a) || (a < b ? -1 : 1))
   const assigned = new Map<string, number>()
   for (const label of ordered) {
-    const index = weight(label) > 0 ? lightest() : shardOf(label, count)
-    loads[index] = Number(loads[index]) + weight(label)
+    const duration = weight(label)
+    const index = duration > 0 ? lightest() : shardOf(label, count)
+    const least = loads[index]!
+    const next = least + duration
+    // Only relative loads matter. Remove the common minimum if adding a job would overflow or disappear in rounding.
+    if (!Number.isFinite(next) || (duration > 0 && next === least)) {
+      for (let shard = 0; shard < count; shard++) loads[shard] = loads[shard]! - least
+      loads[index] = duration
+    } else {
+      loads[index] = next
+    }
     assigned.set(label, index)
   }
   return assigned

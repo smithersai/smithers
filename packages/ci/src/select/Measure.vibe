@@ -85,7 +85,7 @@ export interface Split {
  * @since 0.1.0
  */
 export const split = (observations: ReadonlyArray<Observation>): Split => {
-  const to = observations.reduce((newest, observation) => Math.max(newest, observation.at), 0)
+  const to = observations.reduce((newest, observation) => Math.max(newest, observation.at), observations[0]?.at ?? 0)
   const from = to - testDays * day
   return {
     from,
@@ -161,12 +161,13 @@ export const measure = (
 /**
  * The lowest recall a measurement supports at 95% confidence, by Wilson's
  * one-sided bound: `caught` of `total`. A small `total` supports little, and
- * that is the limit a small history puts on a recall claim.
+ * that is the limit a small history puts on a recall claim. With no observations the lower bound is zero.
  *
  * @category measuring
  * @since 0.1.0
  */
 export const lowerBound = (caught: number, total: number): number => {
+  if (caught === 0) return 0
   const z = 1.6448536269514722
   const share = caught / total
   const centre = share + (z * z) / (2 * total)
@@ -181,8 +182,9 @@ export const lowerBound = (caught: number, total: number): number => {
  * sweeps the count cutoff with the score cutoff at 1, as the paper's figures
  * 6 and 7 do. `weekly` is the highest swept score cutoff whose test recall
  * reaches {@link weekly}. `calibrated` is the paper's calibration to
- * {@link bar}: the highest swept score cutoff whose test recall passes, then
- * the lowest swept count cutoff that, with it, passes the change recall. With
+ * {@link bar}: the highest swept score cutoff that passes test recall on its own
+ * and can reach change recall with a swept count cutoff, using the lowest such count.
+ * A check or calibration that the supplied scores cannot support is omitted. With
  * no failure in the rows, `recall` says why no recall is reported, and there
  * is no weekly check and no calibration.
  *
@@ -227,19 +229,16 @@ export const report = (rows: ReadonlyArray<Selection.Row>, scores: ReadonlyArray
   if (start.metrics.failures === 0) {
     return { ...counted, recall: "refused: no entry failed, so there is no failure to recall" }
   }
-  // A score cutoff of 0 selects every target, so each search below finds a point.
-  const passing = byScore.find((point) => point.metrics.testRecall! > bar.testRecall)!
-  let calibrated = passing
-  for (const countCutoff of countCutoffs) {
-    calibrated = measure(rows, scores, { scoreCutoff: passing.settings.scoreCutoff, countCutoff })
-    if (calibrated.metrics.changeRecall! > bar.changeRecall) break
+  const weeklyPoint = byScore.find((point) => point.metrics.testRecall! >= weekly.testRecall)
+  const measured = { ...counted, recall: "measured" as const, ...(weeklyPoint === undefined ? {} : { weekly: weeklyPoint }) }
+  for (const point of byScore) {
+    if (point.metrics.testRecall! <= bar.testRecall) continue
+    for (const countCutoff of countCutoffs) {
+      const calibrated = measure(rows, scores, { scoreCutoff: point.settings.scoreCutoff, countCutoff })
+      if (calibrated.metrics.changeRecall! > bar.changeRecall) return { ...measured, calibrated }
+    }
   }
-  return {
-    ...counted,
-    recall: "measured",
-    weekly: byScore.find((point) => point.metrics.testRecall! >= weekly.testRecall)!,
-    calibrated
-  }
+  return measured
 }
 
 const whole = (count: number): string => count.toLocaleString("en-US")
@@ -286,16 +285,17 @@ export const render = (name: string, measured: Report): string => {
     ...measured.byCount.map(line),
     ""
   ]
-  if (measured.weekly === undefined || measured.calibrated === undefined) {
-    return [...lines, `Recall ${measured.recall}.`].join("\n")
-  }
-  return [
-    ...lines,
+  if (measured.recall !== "measured") return [...lines, `Recall ${measured.recall}.`].join("\n")
+  if (measured.weekly !== undefined) lines.push(
     `Weekly check: at a test recall of at least ${weekly.testRecall} with count cutoff 0, the selection rate must be below ${weekly.selectionRate}: ${
       measured.weekly.metrics.selectionRate < weekly.selectionRate ? "passed" : "not passed"
     }`,
     line(measured.weekly),
-    "",
+    ""
+  )
+  if (measured.calibrated === undefined) return [...lines, "No swept settings reached both calibration bars."].join("\n")
+  return [
+    ...lines,
     `Calibrated to test recall above ${bar.testRecall} and change recall above ${bar.changeRecall}`,
     line(measured.calibrated),
     `Failed changes: ${

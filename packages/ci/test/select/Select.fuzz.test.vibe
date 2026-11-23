@@ -1,0 +1,379 @@
+import { describe, expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Evaluator } from "@smthrs/model"
+import type { State } from "../../src/select/Scoring.vibe"
+import * as Arbitrary from "effect/Arbitrary"
+import * as Eval from "../../src/select/Eval.vibe"
+import { unavailable } from "../../src/select/Failure.vibe"
+import * as Select from "../../src/select/index.vibe"
+import * as Measure from "../../src/select/Measure.vibe"
+import { directory, live, plan, record, repository, result, row, seen } from "./support.vibe"
+
+const { Features, Ledger, Repository, Scoring } = Select
+const { day } = Features
+const now = Date.UTC(2026, 10, 14)
+const integer = (minimum: number, maximum: number) =>
+  Arbitrary.schema(Schema.Int.check(Schema.isBetween({ minimum, maximum })))
+const bit = Arbitrary.schema(Schema.Boolean)
+const path = Arbitrary.schema(Schema.Literals([
+  "README", ".hidden", "a/tests/x.TS", "a/b/deep/subdir/spec.😺", "aa/file.spec.JS", "a/odd\nname.md", "a/b/plain"
+]))
+const files = Arbitrary.array(path, { maxLength: 6 })
+const age = Arbitrary.all({
+  days: Arbitrary.schema(Schema.Literals([-100000, -1, 0, 1, 3, 7, 14, 28, 56, 100000])),
+  ms: integer(-1, 1)
+})
+const entry = Arbitrary.all({ age, files, failed: bit, other: bit, replay: bit })
+const historyCase = Arbitrary.all({
+  files, history: Arbitrary.array(entry, { maxLength: 25 }),
+  attempts: Arbitrary.array(bit, { maxLength: 5 }), failed: bit
+})
+
+const check = <A, E, R>(
+  arb: Arbitrary.Arbitrary<A>, seed: number, property: (value: A) => Effect.Effect<boolean, E, R>, runs = 180
+) => effect {
+  const outcome = try Arbitrary.checkEffect(arb, property, { runs, seed })
+  try Effect.try(() => expect(outcome._tag, Arbitrary.formatCheckFailure(outcome)).toBe("Passed"))
+}
+
+const scored = Arbitrary.all({
+  examples: Arbitrary.array(Arbitrary.all({ group: integer(0, 3), bucket: integer(0, 8), failed: bit }), { maxLength: 35 }),
+  threshold: integer(0, 8), k: integer(0, 10)
+})
+
+describe("predictive selection properties", () => {
+  it.live("rows match earlier same-target outcomes and touched-commit counts at every window boundary", () =>
+    live(check(historyCase, 7101, (input) => effect {
+      const history = input.history.map((e) => ({ at: now - e.age.days * day - e.age.ms, files: e.files }))
+      const target = "//a:test"
+      const past = input.history.map((e, i) => seen(history[i]!.at, e.replay ? "head" : String(i), e.other ? "//b:test" : target, e.failed))
+      const change = { at: now, files: input.files, tree: [...new Set(input.files)], history }
+      const run = record("head", [result(target, input.failed ? "failed" : "ran", input.attempts), result("//b:test", "hit"), result("//:lint", "skipped")])
+      provide Layer.merge(Layer.succeed(Repository.Repository, { change: () => succeed(change) }), Ledger.layerMemory({ observations: past })) {
+        const built = try Select.rows(".", run)
+        const replay = try Select.rows(".", run)
+        const held = try (try Ledger.Ledger).observations()
+        return try Effect.try(() => {
+          expect(replay).toEqual(built)
+          expect(built).toHaveLength(1)
+          const sample = built[0]!
+          expect(held.filter((o) => o.row.commit === "head" && o.row.target === target)).toEqual([{ at: now, row: sample }])
+          const attempts = input.attempts.length ? input.attempts : [!input.failed]
+          expect([sample.attempts, sample.failed, sample.flaky]).toEqual([
+            attempts, attempts.every((passed) => !passed), attempts.includes(true) && attempts.includes(false)
+          ])
+          const counts = [3, 14, 56].map((days) => history.filter((c) =>
+            c.at >= now - days * day && c.at < now && input.files.some((f) => c.files.includes(f))).length)
+          expect(sample.features.fileChanges).toEqual({ d3: counts[0], d14: counts[1], d56: counts[2] })
+          const rates = [7, 14, 28, 56].map((days) => {
+            const earlier = past.filter((o) => o.at >= now - days * day && o.at < now && o.row.commit !== "head" && o.row.target === target)
+            return earlier.filter((o) => o.row.failed).length / Math.max(1, earlier.length)
+          })
+          expect(sample.features.failureRates).toEqual({ d7: rates[0], d14: rates[1], d28: rates[2], d56: rates[3] })
+          expect(sample.features.testCount).toBe(change.tree.filter((p) => ["a/tests/x.TS", "a/b/deep/subdir/spec.😺"].includes(p)).length)
+          const suffix: Record<string, string> = { "a/tests/x.TS": ".ts", "a/b/deep/subdir/spec.😺": ".😺", "aa/file.spec.JS": ".js", "a/odd\nname.md": ".md" }
+          expect(sample.features.extensions).toEqual([...new Set(input.files.map((f) => suffix[f] ?? "(none)"))].sort())
+          return true
+        })
+      }
+    })))
+
+  it.live("shortest dependency distances start at the deepest owning project, including cycles and root targets", () =>
+    check(Arbitrary.all({ files, edges: Arbitrary.array(Arbitrary.all([integer(0, 3), integer(0, 3)]), { maxLength: 18 }) }), 7102,
+      ({ files, edges }) => Effect.try(() => {
+        const labels = ["//:test", "//a:test", "//a/b:test", "//aa:test"]
+        const graph = plan(Object.fromEntries(labels.map((label, i) => [label, edges.filter(([to]) => to === i).map(([, from]) => labels[from]!)])))
+        const owner = (file: string) => file.startsWith("a/b/") ? 2 : file.startsWith("aa/") ? 3 : file.startsWith("a/") ? 1 : 0
+        const distances = labels.map((_, i) => files.some((file) => owner(file) === i) ? 0 : Infinity)
+        for (let pass = 1; pass < labels.length; pass++) {
+          for (const [to, from] of edges) distances[to] = Math.min(distances[to]!, distances[from]! + 1)
+        }
+        for (const order of [labels, [...labels].reverse()]) {
+          const actual = Features.graphDistances(files, order, graph)
+          expect(labels.map((l) => actual.get(l))).toEqual(distances.map((n) => Number.isFinite(n) ? n : -1))
+        }
+        return true
+      })))
+
+  it.live("cutoff and top-K agree with per-commit ranks and measured target and change recall", () =>
+    check(scored, 7103, ({ examples, threshold, k }) => Effect.try(() => {
+      // Target names recur across commits; a decision for one change must never select its namesake in another.
+      const totals = [0, 0, 0, 0]
+      const scores = examples.map((e) => {
+        const index = totals[e.group]!
+        totals[e.group] = index + 1
+        return { commit: String(e.group), target: "t" + index, score: e.bucket / 8 }
+      })
+      const identity = (r: { commit: string; target: string }) => JSON.stringify([r.commit, r.target])
+      const rows = scores.map((s, i) => row(s.commit, s.target, examples[i]!.failed))
+      const base = { scoreCutoff: threshold / 8, countCutoff: k }
+      let strict = new Set<string>()
+      let strictRecall = 0
+      for (const settings of [base, { ...base, scoreCutoff: Math.max(0, (threshold - 1) / 8) }, { ...base, countCutoff: k + 1 }]) {
+        const chosen = scores.filter((s) => s.score >= settings.scoreCutoff || scores.filter((p) =>
+          p.commit === s.commit && (p.score > s.score || (p.score === s.score && p.target < s.target))).length < settings.countCutoff)
+        const expected = new Set(chosen.map(identity))
+        const selected = Measure.selected([...scores].reverse(), settings)
+        for (const commit of new Set(scores.map((s) => s.commit))) {
+          expect(selected.get(commit)).toEqual(chosen.filter((s) => s.commit === commit).map((s) => s.target).sort())
+        }
+        const failures = rows.filter((r) => r.failed)
+        const caught = failures.filter((r) => expected.has(identity(r)))
+        const changes = new Set(failures.map((r) => r.commit)).size
+        const metrics = Measure.measure(rows, scores, settings).metrics
+        expect(metrics).toEqual({
+          rows: rows.length, selected: chosen.length, failures: failures.length, failedChanges: changes,
+          selectionRate: chosen.length / Math.max(1, rows.length),
+          ...(changes ? { testRecall: caught.length / failures.length, changeRecall: new Set(caught.map((r) => r.commit)).size / changes } : {})
+        })
+        if (settings === base) {
+          strict = expected
+          strictRecall = metrics.testRecall ?? 0
+        }
+        expect([...strict].every((t) => expected.has(t))).toBe(true)
+        expect(metrics.testRecall ?? 0).toBeGreaterThanOrEqual(strictRecall)
+      }
+      return true
+    })))
+
+  it.live("eval grading and confidence bounds stay finite for zero, missing and mixed failures", () =>
+    check(scored, 7104, ({ examples }) => effect {
+      const rows = examples.map((e, i) => row("c", String(i), e.failed))
+      const output = examples.map((e, i) => ({ commit: "c", target: String(i), score: e.bucket / 8 }))
+      const input = { input: { rows }, output }
+      const caught = try Eval.caught.score(input)
+      const skipped = try Eval.skipped.score(input)
+      const report = Measure.report(rows, output)
+      return try Effect.try(() => {
+        expect(caught.score).toBe(report.start.metrics.testRecall ?? 1)
+        expect(skipped.score).toBe(1 - report.start.metrics.selectionRate)
+        expect(skipped.score >= 0 && skipped.score <= 1).toBe(true)
+        const total = examples.length
+        const lower = Measure.lowerBound(report.failures, total)
+        expect(lower).toBeGreaterThanOrEqual(0)
+        expect(lower).toBeLessThanOrEqual(total ? report.failures / total : 0)
+        return true
+      })
+    }))
+
+  it.live("scores retain row identity through distinct-feature batching and keep model diagnostics private", () =>
+    check(scored, 7105, ({ examples }) => Effect.try(() => {
+      const rows = examples.map((e, i) => row(String(e.group), "target" + i, e.failed, { testCount: e.bucket, project: String(e.group) }))
+      const batches = Scoring.batches(rows)
+      expect(Scoring.batches([...rows].reverse())).toEqual(batches)
+      const pairs = new Set(examples.map((e) => e.group + "/" + e.bucket))
+      expect(batches.flat().map((f) => f.project + "/" + f.testCount).sort()).toEqual([...pairs].sort())
+      expect(batches.every((batch) => batch.length <= Scoring.batchSize)).toBe(true)
+      const answered = batches.map((batch) => batch.map((f) => ({ score: f.testCount / 8, fact: "size" as const })))
+      expect(Scoring.scoresOf(rows, batches, answered)).toEqual(rows.map((r) => ({
+        commit: r.commit, target: r.target, score: r.features.testCount / 8
+      })))
+      const message = "private diagnostic " + JSON.stringify(examples)
+      for (const code of ["unconfigured", "refused", "timeout", "unreachable", "other"]) {
+        const failure = { _tag: "ClassifierError", code, message, status: examples.length % 2 ? 429 : 503 }
+        expect(unavailable(failure)).not.toContain(message)
+      }
+      return true
+    })))
+})
+
+
+const key = Arbitrary.schema(Schema.Literals(["c", "t", "__proto__", "constructor", "a/b", "a\nb", "a,\"b", "😺", "\u0000"]))
+const writes = Arbitrary.array(Arbitrary.all({ commit: key, target: key, at: integer(-3, 3), failed: bit }), { maxLength: 14 })
+
+describe("selection storage and history properties", () => {
+  it.live("split and sample keep whole commits at their actual times even before the epoch", () =>
+    check(Arbitrary.all({ days: Arbitrary.array(integer(-40, 12), { maxLength: 20 }), limit: integer(0, 12) }), 7106,
+      ({ days, limit }) => Effect.try(() => {
+        const observations = days.flatMap((d, i) => [seen(d * day, String(i), "a"), seen(d * day, String(i), "b")])
+        const split = Measure.split(observations)
+        const newest = days.length ? Math.max(...days) * day : 0
+        expect(split.to).toBe(newest)
+        expect(split.test).toEqual(observations.filter((o) => o.at > newest - 7 * day))
+        expect(split.history).toEqual(observations.filter((o) => o.at <= newest - 7 * day))
+        const sampled = Measure.sample(split.test, limit)
+        const kept = new Set(sampled.map((o) => o.row.commit))
+        expect(kept.size).toBe(Math.min(limit, split.test.length / 2))
+        expect(sampled).toEqual(split.test.filter((o) => kept.has(o.row.commit)))
+        expect([...Measure.sample([...split.test].reverse(), limit)].reverse()).toEqual(sampled)
+        return true
+      })))
+
+  it.live("file and memory ledgers implement ordered last-write-wins and reject a damaged physical line", () =>
+    check(Arbitrary.all({ first: writes, second: writes, cut: integer(1, 30), schemaError: bit }), 7107, (input) => live(effect {
+      const root = try directory()
+      const fs = try FileSystem.FileSystem
+      const file = root + "/rows.jsonl"
+      const batches = [input.first, input.second, input.second].map((batch) =>
+        batch.map((e) => seen(e.at, e.commit, e.target, e.failed)))
+      const appended = batches.flat()
+      const expected = appended.filter((o, i) => !appended.slice(i + 1).some((p) =>
+        o.row.commit === p.row.commit && o.row.target === p.row.target))
+      for (const layer of [Ledger.layerMemory(), Ledger.layerFile(root)]) {
+        provide layer {
+          const ledger = try Ledger.Ledger
+          for (const batch of batches) try ledger.record(batch)
+          const actual = try ledger.observations()
+          try Effect.try(() => expect(actual).toEqual(expected))
+        }
+      }
+      provide Ledger.layerFile(root) {
+        const ledger = try Ledger.Ledger
+        const reopened = try ledger.observations()
+        const serialized = appended.length ? try fs.readFileString(file) : ""
+        const broken = input.schemaError ? '{"at":1,"row":{}}' : JSON.stringify(seen(1, "c", "t")).slice(0, -input.cut)
+        try fs.writeFileString(file, serialized + "\n \t\n" + broken + "\n" + JSON.stringify(seen(2, "c", "t")))
+        const error = try flip(ledger.observations())
+        return try Effect.try(() => {
+          expect(reopened).toEqual(expected)
+          expect(serialized.split("\n").filter(Boolean).map((line) => JSON.parse(line))).toEqual(appended)
+          expect(error).toEqual({ part: "select", code: "invalid-document",
+            message: "Line " + (appended.length + 3) + " of " + file + " is not a ledger entry" })
+          return true
+        })
+      }
+    }), 150))
+
+  it.live("keeps unusual file names exact through the repository tree, diff and history", () => live(effect {
+    const names = ['a/x"\n.TS', "a/\\tail", "a/\u0001", "\nfirst", "a/😺"]
+    const files = (text: string) => Object.fromEntries(names.map((name) => [name, text]))
+    const steps = [
+      { at: now - 2 * day, files: files("1") },
+      { at: now - 90 * day, files: {} },
+      { at: now - day, files: {} },
+      { at: now, files: files("2") }
+    ]
+    const fixture = try repository(steps)
+    provide Repository.layerGit {
+      const reader = try Repository.Repository
+      const first = try reader.change(fixture.root, fixture.commits[0]!)
+      const last = try reader.change(fixture.root, fixture.commits[3]!)
+      try Effect.try(() => {
+        expect([...first.tree].sort()).toEqual([...names].sort())
+        expect([...last.files].sort()).toEqual([...names].sort())
+        expect(last.history.map((h) => ({ at: h.at, files: [...h.files].sort() }))).toEqual([
+          { at: now - day, files: [] }, { at: now - 2 * day, files: [...names].sort() }
+        ])
+      })
+    }
+  }))
+
+  it.live("preserves a first-week history whose lower cutoff precedes the Unix epoch", () => live(effect {
+    const { root, commits } = try repository([{ at: 1000, files: { "x": "1" } }, { at: 2000, files: { "x": "2" } }])
+    provide Repository.layerGit {
+      const change = try (try Repository.Repository).change(root, commits[1]!)
+      try Effect.try(() => expect(change.history).toEqual([{ at: 1000, files: ["x"] }]))
+    }
+  }))
+
+  it.live("covers the smallest root-owner, empty-confidence and pre-epoch regressions", () => Effect.try(() => {
+    expect([...Features.graphDistances(["a/x"], ["//:t", "//a:t"], undefined).values()]).toEqual([-1, 0])
+    expect(Measure.lowerBound(0, 0)).toBe(0)
+    expect(Measure.split([seen(-1, "c", "t")]).to).toBe(-1)
+  }))
+})
+
+
+describe("selection regressions", () => {
+  it.live("published skip reasons stay on one line for measured extensions with control characters", () =>
+    check(Arbitrary.all({
+      head: Arbitrary.schema(Schema.String), tail: Arbitrary.schema(Schema.String),
+      separator: Arbitrary.schema(Schema.Literals(["\n", "\r", "\t", "\u0085", "\u2028", "\u2029"]))
+    }), 7109, ({ head, tail, separator }) => Effect.try(() => {
+      const extensions = Features.extensionsOf(["x." + head.replace(/[./]/g, "") + separator + tail.replace(/[./]/g, "")])
+      const reason = Scoring.skipReason("kind", row("c", "t", false, { extensions }).features)
+      expect(reason).toBeDefined()
+      expect(reason).not.toMatch(/[\p{Cc}\p{Zl}\p{Zp}]/u)
+      return true
+    })))
+
+  it.live("renders a measured newline as a visible escape", () => Effect.try(() => {
+    expect(Scoring.skipReason("kind", row("c", "t", false, { extensions: [".\n"] }).features))
+      .toBe("Only .\\u000a files changed.")
+  }))
+
+  it.live("inclusive lower window boundaries count earlier runs for all-red and all-green histories", () => Effect.try(() => {
+    const offsets = [0, 1, 7 * day, 7 * day + 1, 14 * day, 14 * day + 1, 28 * day, 28 * day + 1, 56 * day, 56 * day + 1]
+    for (const failed of [false, true]) {
+      const past = offsets.map((offset, i) => seen(now - offset, String(i), "t", failed))
+      // One green observation inside every window makes each denominator visible.
+      const rates = Features.failureRates(now, [...past.reverse(), seen(now - 1, "green", "t")])
+      const n = Number(failed)
+      expect(rates).toEqual({ d7: 2 * n / 3, d14: 4 * n / 5, d28: 6 * n / 7, d56: 8 * n / 9 })
+      expect(Features.failureRates(now, past)).toEqual({ d7: n, d14: n, d28: n, d56: n })
+    }
+  }))
+
+  it.live("public scoring reuses distinct measurements across changes and request order", () =>
+    check(scored, 7108, ({ examples }) => effect {
+      const judge = Evaluator.layerScripted((request) => {
+        const state = request.state as typeof State.Type
+        return Object.fromEntries(state.items.flatMap((item) => [
+          ["fails" + item.item, { probability: item.testsInTarget / 8 }],
+          ["why" + item.item, { choice: "size" }]
+        ]))
+      })
+      const rows = examples.map((e, i) => row(String(e.group), String(i), e.failed, { testCount: e.bucket }))
+      provide Layer.mergeAll(FlowEngine.layerMemory, WebCrypto.layer, judge, Select.Score.layerAsked, Select.Score.layerKept) {
+        const first = try Select.score(rows)
+        const later = rows.map((r) => ({ ...r, commit: "later" })).reverse()
+        const second = try Select.score(later)
+        const asked = try Select.asked
+        return try Effect.try(() => {
+          expect(first).toEqual(rows.map((r) => ({ commit: r.commit, target: r.target, score: r.features.testCount / 8 })))
+          expect(second).toEqual(later.map((r) => ({ commit: r.commit, target: r.target, score: r.features.testCount / 8 })))
+          expect(asked).toBe(new Set(examples.map((e) => e.bucket)).size)
+          return true
+        })
+      }
+    }, 150))
+
+  it.live("calibration reaches both recall bars when top 100 misses an entire failing change", () => Effect.try(() => {
+    const rows = [
+      ...Array.from({ length: 20 }, (_, i) => row("many failures", String(i), true)),
+      ...Array.from({ length: 100 }, (_, i) => row("one failure", String(i))),
+      row("one failure", "z", true)
+    ]
+    const scores = rows.map((r) => ({ commit: r.commit, target: r.target, score: r.target === "z" ? 0.01 : 1 }))
+    const calibrated = Measure.report(rows, scores).calibrated!
+    expect(calibrated.metrics.testRecall).toBeGreaterThan(Measure.bar.testRecall)
+    expect(calibrated.metrics.changeRecall).toBeGreaterThan(Measure.bar.changeRecall)
+    expect(calibrated.settings).toEqual({ scoreCutoff: 0.01, countCutoff: 0 })
+  }))
+
+  it.live("publishes only recall bars supported by the available scores", () => Effect.try(() => {
+    const rows = Array.from({ length: 10 }, (_, i) => row("c", String(i), true))
+    for (const n of [0, 9]) {
+      const scores = rows.slice(0, n).map((r) => ({ commit: r.commit, target: r.target, score: 1 }))
+      const measured = Measure.report(rows, scores)
+      expect(measured.calibrated).toBeUndefined()
+      expect(measured.weekly?.metrics.testRecall).toBe(n ? 0.9 : undefined)
+      const text = Measure.render("partial", measured)
+      expect(text.includes("Weekly check:")).toBe(n > 0)
+      expect(text).toContain("No swept settings reached both calibration bars.")
+    }
+  }))
+
+  it.live("appends to a complete last JSON object with no final newline", () => live(effect {
+    const root = try directory()
+    const fs = try FileSystem.FileSystem
+    const previous = seen(0, "one", "label")
+    const next = seen(1, "two", "label")
+    try fs.writeFileString(root + "/rows.jsonl", JSON.stringify(previous))
+    provide Ledger.layerFile(root) {
+      const ledger = try Ledger.Ledger
+      try ledger.record([next])
+      const rows = try ledger.observations()
+      try Effect.try(() => expect(rows).toEqual([previous, next]))
+    }
+  }))
+
+  it.live("a commit that has no representable plan filename returns a typed error", () => live(effect {
+    const root = try directory()
+    provide Ledger.layerFile(root) {
+      const failed = try flip((try Ledger.Ledger).plan("\ud800"))
+      try Effect.try(() => expect(failed.code).toEqual("invalid-document"))
+    }
+  }))
+})
