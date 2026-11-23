@@ -122,7 +122,10 @@ export const expandMatrix = (raw: unknown): Matrix => {
       for (const key of [...variant.keys()]) if (roots.has(rootOf(key))) variant.delete(key)
       for (const [key, value] of entry) variant.set(key, value)
     }
-    if (joined.length === 0) added.push(entry)
+    if (joined.length === 0) {
+      if (merged.length + added.length >= maxVariants) return unreadable(`it has over ${maxVariants} variants`)
+      added.push(entry)
+    }
   }
 
   const variants = [...merged, ...added]

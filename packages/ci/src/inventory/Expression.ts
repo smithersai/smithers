@@ -570,6 +570,7 @@ const evaluateNode = (node: Node, scope: Scope): Residual => {
   }
   const call = (name: string, args: ReadonlyArray<Node>): Residual => {
     if (statusNames.includes(name as keyof Status)) {
+      if (args.length !== 0) throw problem(`${name} was given ${args.length} values`)
       if (scope.status === undefined) throw problem(`${name}() has no meaning here`)
       return literal(scope.status[name as keyof Status])
     }

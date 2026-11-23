@@ -1,0 +1,136 @@
+import { describe, expect, it } from "@effect/vitest"
+import * as Arbitrary from "effect/Arbitrary"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+import { evaluate, fill, finish, type Scope, split, value, variable, whole } from "../../src/inventory/Expression.ts"
+import { settled } from "../../src/inventory/Runner.ts"
+
+const property = <A>(arb: Arbitrary.Arbitrary<A>, seed: number, check: (input: A) => void) => effect {
+  const result = try Arbitrary.checkEffect(arb, (input) => Effect.try(() => {
+    check(input)
+    return true
+  }), { seed, runs: 200 })
+  try Effect.try(() => {
+    if (result._tag !== "Passed") expect.fail(Arbitrary.formatCheckFailure(result))
+  })
+}
+
+const pieces = Arbitrary.schema(Schema.Literals(["", "x", "ß", "É", "🪶", "'", "}}", "${{", "\t", "\n", "\u0000", "\\"]))
+const text = Arbitrary.map(Arbitrary.array(pieces, { maxLength: 12 }), (parts) => parts.join(""))
+const bool = Arbitrary.schema(Schema.Boolean)
+const none: Scope = { context: () => undefined }
+const quoted = (s: string) => "'" + s.replaceAll("'", "''") + "'"
+const wrapped = (s: string) => "${{ " + s + " }}"
+const literal = (expression: string, expected: unknown, scope = none) =>
+  expect(evaluate(expression, scope)).toEqual({ kind: "ok", residual: { kind: "literal", value: expected } })
+
+describe("expression properties", () => {
+  it.live("agrees with boolean precedence, De Morgan and left-to-right short circuit", () =>
+    property(Arbitrary.all([bool, bool, bool]), 1201, ([a, b, c]) => {
+      literal(`${a} || ${b} && !${c}`, a || (b && !c))
+      literal(`!(${a} && ${b})`, !a || !b)
+      literal(`!${a} || !${b}`, !(a && b))
+      literal(a ? "true || unread" : "false && unread", a, {
+        context: () => expect.fail("evaluated the unreachable operand")
+      })
+    }))
+
+  it.live("quotes and interpolates arbitrary text exactly once", () =>
+    property(Arbitrary.all([text, text]), 1202, ([a, b]) => {
+      const first = wrapped(quoted(a))
+      const second = wrapped(quoted(b))
+      const template = `a${first}:${second}z`
+      expect(split(template)).toEqual({ pieces: [["a", quoted(a), first], [":", quoted(b), second]], rest: "z" })
+      expect(whole(first)).toBe(quoted(a))
+      expect(whole(template)).toBeUndefined()
+      expect(fill(template, none)).toEqual({ kind: "ok", parts: [`a${a}:${b}z`] })
+    }))
+
+  it.live("round-trips JSON through the expression grammar and preserves join and format boundaries", () =>
+    property(Arbitrary.all([Arbitrary.array(text, { maxLength: 6 }), text]), 1203, ([items, separator]) => {
+      const array = `fromJSON(${quoted(JSON.stringify(items))})`
+      literal(`fromJSON(toJSON(${array}))`, items)
+      literal(`join(${array}, ${quoted(separator)})`, items.join(separator))
+      literal(`format('{{{0}}}', ${quoted(separator)})`, "{" + separator + "}")
+      literal(`contains(${array}, ${quoted(items[0] ?? "")})`, items.length > 0)
+      literal(`contains(${array}, 'missing-ascii-item')`, false)
+      literal(`startsWith(${quoted(separator)}, ${quoted(separator + "x")})`, false)
+      literal(`endsWith(${quoted(separator)}, ${quoted("x" + separator)})`, false)
+      literal(`startsWith(${quoted("É" + separator)}, 'é')`, true)
+      literal(`endsWith(${quoted(separator + "É")}, 'é')`, true)
+    }))
+
+  it.live("finishing a deferred expression agrees with early binding and the runner's condition verdict", () =>
+    property(Arbitrary.all([text, Arbitrary.array(Arbitrary.schema(Schema.Literals([
+      "!", "&& false", "|| true", "&& x", "|| x", "== ''", "!= 'X'"
+    ])), { maxLength: 10 })]), 1204, ([input, operations]) => {
+      let expression = "x"
+      for (const op of operations) expression = op === "!" ? `!(${expression})` : `(${expression}) ${op}`
+      const late = evaluate(expression, { context: () => variable("x", "x", true) })
+      if (late.kind !== "ok") return expect.fail("expected a deferred expression")
+      expect(settled({ kind: "binary", operator: "&&", left: late.residual, right: { kind: "literal", value: false } }))
+        .toBe(false)
+      expect(settled({ kind: "binary", operator: "||", left: late.residual, right: { kind: "literal", value: true } }))
+        .toBe(true)
+      const predicted = settled(late.residual)
+      for (const x of [null, "", "X", input]) {
+        const early = evaluate(expression, { context: () => value(x) })
+        if (early.kind !== "ok" || early.residual.kind !== "literal") {
+          return expect.fail("expected a closed expression")
+        }
+        const actual = early.residual.value
+        expect(finish(late.residual, () => x)).toEqual({ kind: "ok", value: actual })
+        if (predicted !== undefined) expect(predicted).toBe(Boolean(actual))
+      }
+    }))
+
+  it.live("returns a repeatable value or a diagnostic for token fragments and preserves every template character", () =>
+    property(Arbitrary.array(Arbitrary.schema(Schema.Literals([
+      "(", ")", "[", "]", "!", "x", "true", ".", "0", "==", "||", "&&", "'", "''", "${{", "}}", "\n", "\u0000", "雪"
+    ])), { maxLength: 48 }), 1205, (tokens) => {
+      const source = tokens.join("")
+      const result = evaluate(source, none)
+      expect(evaluate(source, none)).toEqual(result)
+      if (result.kind === "problem") expect(result.why).toMatch(/\S/)
+      else expect(result.kind === "ok" && result.residual.kind === "literal").toBe(true)
+      const { pieces, rest } = split(source)
+      expect(pieces.map(([before, , written]) => before + written).join("") + rest).toBe(source)
+    }))
+
+  it.live("reads only the mapping's own keys and preserves hashFiles argument order", () =>
+    property(Arbitrary.all([text, text]), 1206, ([key, contents]) => {
+      const scope: Scope = {
+        context: () => value(Object.fromEntries([[key, contents]])),
+        hashFiles: (patterns) => value(patterns)
+      }
+      literal(`m[${quoted(key)}]`, contents, scope)
+      for (const name of ["constructor", "__proto__", "prototype"]) {
+        literal(`m.${name}`, key.toLowerCase() === name ? contents : null, scope)
+      }
+      literal(`hashFiles(${quoted(key)}, ${quoted(contents)})`, [key, contents], scope)
+    }))
+
+  it.live("status predicates take no arguments even when the scope supplies their values", () =>
+    property(Arbitrary.all([bool, bool, bool, bool, text]), 1207, ([success, always, cancelled, failure, arg]) => {
+      const status = { success, always, cancelled, failure }
+      const scope = { ...none, status }
+      for (const [name, result] of Object.entries(status)) {
+        literal(name + "()", result, scope)
+        expect(evaluate(name + "(" + quoted(arg) + ")", scope)).toMatchObject({ kind: "problem" })
+      }
+    }))
+
+  it.live("distinguishes malformed expressions, nested valid terms and numeric extremes", () => effect {
+    try Effect.try(() => {
+      for (const source of ["'", "x[", "((true)", "${{ ${{ false }} }}", "fromJSON('[')", "format('{1}', 0)"]) {
+        expect(evaluate(source, none)).toMatchObject({ kind: "problem", why: expect.any(String) })
+      }
+      literal("(".repeat(64) + "true" + ")".repeat(64), true)
+      literal("obj" + "['item']".repeat(64), null, { context: () => value({ item: {} }) })
+      literal("NaN == NaN", false)
+      literal("1e999 == Infinity", true)
+      literal("missing", null, { context: () => value(null) })
+      expect(evaluate("missing", none).kind).toBe("problem")
+    })
+  })
+})

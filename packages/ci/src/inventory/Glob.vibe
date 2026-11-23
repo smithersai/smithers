@@ -33,7 +33,7 @@ const special = /[.+^$(){}|\\]/
 
 const escapeClassChar = (ch: string): string => (ch === "\\" ? "\\\\" : ch)
 
-const characterClassOf = (body: string): string | undefined => {
+const characterClassOf = (body: string): string | "slash" | undefined => {
   const negated = body.startsWith("!") || body.startsWith("^")
   const rest = negated ? body.slice(1) : body
   if (rest.length === 0) return undefined
@@ -47,14 +47,19 @@ const characterClassOf = (body: string): string | undefined => {
     if (i + 2 < rest.length && rest[i + 1] === "-") {
       const hi = rest[i + 2] as string
       if (ch.charCodeAt(0) > hi.charCodeAt(0)) return undefined
+      if (!negated && ch.charCodeAt(0) <= 47 && hi.charCodeAt(0) >= 47) return "slash"
       out += `${escapeClassChar(ch)}-${escapeClassChar(hi)}`
       i += 3
       lastWasRange = true
     } else {
+      if (!negated && ch === "/") return "slash"
       out += escapeClassChar(ch)
       i += 1
       lastWasRange = false
     }
+  }
+  if (negated) {
+    out = out.endsWith("-") ? `${out.slice(0, -1)}/-` : `${out}/`
   }
   return `[${out}]`
 }
@@ -62,7 +67,7 @@ const characterClassOf = (body: string): string | undefined => {
 /**
  * The regular expression of one pattern, or `undefined` for a pattern that
  * names nothing inside the repository: an absolute path, `~`, or a path
- * through `..`.
+ * through `..`. Sets that could match a directory separator are also refused.
  *
  * @category reading
  * @since 0.1.0
@@ -75,16 +80,16 @@ export const regexOf = (pattern: string): string | undefined => {
     const char = path[at] as string
     const close = char === "[" ? path.indexOf("]", at + 1) : -1
     const charClass = close > 0 ? characterClassOf(path.slice(at + 1, close)) : undefined
-    if (path.startsWith("**/", at)) {
-      regex += "(.*/)?"
-      at += 2
-    } else if (path.startsWith("**", at)) {
-      regex += ".*"
-      at += 1
+    if (path.startsWith("**", at)) {
+      while (path[at + 1] === "*") at += 1
+      if (path[at + 1] === "/") {
+        regex += "(.*/)?"
+        at += 1
+      } else regex += ".*"
     } else if (char === "*") regex += "[^/]*"
     else if (char === "?") regex += "[^/]"
+    else if (charClass === "slash") return undefined
     else if (charClass !== undefined) {
-      // A set of characters, as written: `[!a]` leaves out as `[^a]` does.
       regex += charClass
       at = close
     } else regex += special.test(char) || char === "[" || char === "]" ? `\\${char}` : char

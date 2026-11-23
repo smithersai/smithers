@@ -1,0 +1,288 @@
+import { describe, expect, it } from "@effect/vitest"
+import * as Arbitrary from "effect/Arbitrary"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+import { Job, Toolchain, Unsupported } from "../../src/contract/Inventory.vibe"
+import { parseYaml } from "../../src/inventory/Actions.vibe"
+import { readWorkflow } from "../../src/inventory/GithubActions.vibe"
+import { filesOf, regexOf } from "../../src/inventory/Glob.vibe"
+import { readJustfile } from "../../src/inventory/Justfile.vibe"
+import { readMakefile } from "../../src/inventory/Makefile.vibe"
+import { expandMatrix } from "../../src/inventory/Matrix.vibe"
+import { chooseRunner, readPackage } from "../../src/inventory/PackageJson.vibe"
+import { readTurbo } from "../../src/inventory/Turbo.vibe"
+
+const property = <A>(arb: Arbitrary.Arbitrary<A>, seed: number, check: (input: A) => void) => effect {
+  const result = try Arbitrary.checkEffect(arb, (input) => Effect.try(() => {
+    check(input)
+    return true
+  }), { seed, runs: 200 })
+  try Effect.try(() => {
+    if (result._tag !== "Passed") expect.fail(Arbitrary.formatCheckFailure(result))
+  })
+}
+
+const letters = Arbitrary.schema(Schema.Literals(["a", "b", "c", "x", "y", "z"]))
+const word = Arbitrary.map(Arbitrary.array(letters, { minLength: 1, maxLength: 8 }), (chars) => chars.join(""))
+const bool = Arbitrary.schema(Schema.Boolean)
+const runner = { run: "pnpm run", exec: "pnpm exec" }
+const workflowFile = ".github/workflows/check.yml"
+const parsed = Schema.is(Schema.Struct({
+  jobs: Schema.Array(Job),
+  toolchains: Schema.Array(Toolchain),
+  unsupported: Schema.Array(Unsupported)
+}))
+const axisName = Arbitrary.schema(Schema.Literals(["", "__proto__", "constructor", "prototype", "name"]))
+const literalChar = Arbitrary.schema(Schema.Literals([
+  "a", "é", ".", "+", "(", ")", "^", "$", "\\", "{", "}", "|", "[", "]", "*", "?"
+]))
+const indexes = (length: number) => Array.from({ length }, (_, i) => i)
+const matcher = (pattern: string) => {
+  const source = regexOf(pattern)
+  if (source === undefined) return expect.fail(`refused pattern ${pattern}`)
+  return new RegExp(source)
+}
+
+describe("matrix expansion", () => {
+  it.live("preserves ordered Cartesian multiplicities and applies excludes before includes", () =>
+    property(Arbitrary.all({
+      os: Arbitrary.array(letters, { minLength: 1, maxLength: 6 }),
+      versions: Arbitrary.array(letters, { minLength: 1, maxLength: 5 }),
+      omit: letters,
+      mark: letters
+    }), 2201, ({ os, versions, omit, mark }) => {
+      const axes = { os, version: versions }
+      const product = os.flatMap((o) => versions.map((v) => ({ os: o, version: v })))
+      expect(expandMatrix(axes).variants).toEqual(product)
+      const kept = product.filter((v) => v.os !== omit)
+      const matrix = {
+        ...axes,
+        exclude: [{ os: omit }],
+        include: [{ os: mark, flag: "first" }, { os: mark, flag: "second" }, { os: "extra" }]
+      }
+      const expected = kept.map((v) => v.os === mark ? { ...v, flag: "second" } : v)
+      const added = kept.some((v) => v.os === mark) ? [] : matrix.include.slice(0, 2)
+      const variants = [...expected, ...added, { os: "extra" }]
+      const result = expandMatrix(matrix)
+      expect(result.variants).toEqual(variants)
+      expect(result.keys).toEqual(new Set(variants.flatMap(Object.keys)))
+      expect(expandMatrix(matrix)).toEqual(result)
+    }))
+
+  it.live("flattens object axes and retains ordinary own keys, including empty names", () =>
+    property(Arbitrary.all([axisName, word]), 2202, ([key, label]) => {
+      const axis = Object.fromEntries([[key, [{ label, enabled: false }]]])
+      const expected = Object.fromEntries([[key + ".label", label], [key + ".enabled", "false"]])
+      expect(expandMatrix(axis)).toEqual({ variants: [expected], keys: new Set(Object.keys(expected)) })
+      expect(expandMatrix({ [key]: [] }).variants).toEqual([])
+      expect(expandMatrix({ [key]: [[label]] })).toMatchObject({ variants: [], problem: expect.any(String) })
+    }))
+
+  it.live("counts unmatched includes towards the 256-variant limit", () => effect {
+    try Effect.try(() => {
+      for (const base of [0, 1, 255, 256]) {
+        for (const total of [256, 257]) {
+          const versions = indexes(base)
+          const include = indexes(total - base).map((i) => ({ version: i + base }))
+          const result = expandMatrix({ version: versions, include })
+          if (total <= 256) {
+            expect(result.variants).toEqual(indexes(total).map((version) => ({ version: String(version) })))
+          } else {
+            expect(result.problem).toBe("it has over 256 variants")
+            expect(result.variants).toHaveLength(0)
+            expect(result.keys.size).toBe(0)
+          }
+        }
+      }
+      const versions = indexes(256)
+      const replaced = expandMatrix({ version: versions, exclude: [{ version: 0 }], include: [{ version: 256 }] })
+      expect(replaced.variants).toHaveLength(256)
+    })
+  })
+})
+
+describe("cache path patterns", () => {
+  it.live("treats literal ERE punctuation as text and accepts directory descendants", () =>
+    property(Arbitrary.array(literalChar, { maxLength: 12 }), 2203, (parts) => {
+      const literal = "x" + parts.join("") + ".txt"
+      const escaped = "x" + parts.map((ch) => ["[", "*", "?"].includes(ch) ? "[" + ch + "]" : ch).join("") + ".txt"
+      for (const pattern of [escaped, "./" + escaped + "/"]) {
+        const match = matcher(pattern)
+        expect(match.test(literal)).toBe(true)
+        expect(match.test(literal + "/child")).toBe(true)
+        expect(match.test(literal + "x")).toBe(false)
+      }
+    }))
+
+  it.live("matches exactly one directory with * and zero or more with **/", () =>
+    property(Arbitrary.array(word, { maxLength: 8 }), 2204, (dirs) => {
+      const path = ["root", ...dirs, "lock"].join("/")
+      expect(matcher("root/*/lock").test(path)).toBe(dirs.length === 1)
+      expect(matcher("root/**/lock").test(path)).toBe(true)
+      expect(matcher("root/?/lock").test(path)).toBe(dirs.length === 1 && dirs[0]?.length === 1)
+      expect(filesOf(["root/**/lock\n# ignore", "!root/vendor/**"])).toEqual({
+        take: [regexOf("root/**/lock")], leave: [regexOf("root/vendor/**")]
+      })
+      expect(filesOf(["root/**/lock", [...dirs, "..", "lock"].join("/")])).toBeUndefined()
+    }))
+
+  it.live("compiles a run of stars to one wildcard", () =>
+    property(Arbitrary.array(letters, { maxLength: 64 }), 2211, (chars) => {
+      const stars = "*".repeat(chars.length + 2)
+      expect(regexOf(stars + "lock")).toBe(regexOf("**lock"))
+      expect(regexOf("src/" + stars + "/lock")).toBe(regexOf("src/**/lock"))
+    }))
+
+  it.live("refuses invalid ranges and classes that can match the directory separator", () => effect {
+    try Effect.try(() => {
+      for (const pattern of ["[.-0]", "[/]"]) {
+        expect(regexOf(pattern)).toBeUndefined()
+        expect(filesOf(["lock", pattern])).toBeUndefined()
+      }
+      expect(matcher("[z-a]").test("[z-a]")).toBe(true)
+      const match = matcher("[!a-]lock")
+      for (const ch of ["a", "-", "/"]) expect(match.test(ch + "lock")).toBe(false)
+      expect(match.test("zlock")).toBe(true)
+    })
+  })
+
+  it.live("keeps negated character classes within a path segment", () =>
+    property(word, 2205, (name) => {
+      const match = matcher(`${name}[!0-9]lock`)
+      expect(match.test(name + "xlock")).toBe(true)
+      expect(match.test(name + "0lock")).toBe(false)
+      expect(match.test(name + "/lock")).toBe(false)
+    }))
+})
+
+describe("inventory readers", () => {
+  it.live("round-trips JSON-compatible YAML and parses acyclic aliases by value", () =>
+    property(Arbitrary.all([word, bool, Arbitrary.array(word, { maxLength: 6 })]), 2206, ([key, flag, labels]) => {
+      const item = { flag, labels, empty: null, punctuation: "雪: # {} []" }
+      expect(parseYaml(JSON.stringify({ [key]: item }))).toEqual({ value: { [key]: item } })
+      expect(parseYaml(`first: &item ${JSON.stringify(item)}\nsecond: *item\n`)).toEqual({ value: { first: item, second: item } })
+      const duplicate = `${key}: true\n${key}: false\n`
+      expect(parseYaml(duplicate)).toMatchObject({ problem: expect.stringMatching(/DUPLICATE_KEY/) })
+      expect(readWorkflow(workflowFile, duplicate)).toMatchObject({ jobs: [], unsupported: [{ feature: "malformed-file" }] })
+    }))
+
+  it.live("validates every reader's result against inventory schemas for generated file fragments", () =>
+    property(Arbitrary.array(Arbitrary.schema(Schema.Literals([
+      "jobs:", "steps:", "\n  - run: ", "ci:", "\n\ttool ", "scripts", "true", "null", "'", "\"", "{}", "[]", "#",
+      "$(v)", "=", ":=", "[", ":", "*absent", "\r\n", "---\n", " &item ", "雪", "\n", "1", "\u0000"
+    ])), { maxLength: 24 }), 2207, (parts) => {
+      const source = parts.join("")
+      for (const read of [
+        () => readWorkflow(workflowFile, source), () => readJustfile("justfile", source),
+        () => readMakefile("Makefile", source, []), () => readTurbo("turbo.json", source, runner),
+        () => readPackage("package.json", source, runner)
+      ]) {
+        const result = read()
+        expect(parsed(result)).toBe(true)
+        expect(read()).toEqual(result)
+      }
+    }))
+
+  it.live("preserves workflow needs, permission overrides, step conditions, env and artifact placement", () =>
+    property(Arbitrary.all([word, bool, bool, bool]), 2208, ([label, runs, writable, override]) => {
+      const name = `build: ${label} '雪'`
+      const document = {
+        on: "push",
+        permissions: { contents: writable ? "write" : "read" },
+        env: { COLOR: "outer", BASE: label },
+        jobs: {
+          prior: { needs: "check", "runs-on": "ubuntu-latest", steps: [] },
+          check: {
+            name, needs: ["prior"], "runs-on": "ubuntu-latest", env: { COLOR: "middle" },
+            ...(override ? { permissions: {} } : {}),
+            steps: [
+              { name, if: String(runs), run: "tool test", env: { COLOR: "inner" } },
+              { uses: "actions/upload-artifact@v4", with: { name: label, path: "out", "retention-days": 3 } },
+              null
+            ]
+          }
+        }
+      }
+      const result = readWorkflow(workflowFile, JSON.stringify(document))
+      expect(parsed(result)).toBe(true)
+      const [prior, check] = result.jobs
+      expect(prior?.needs).toEqual(["check.yml:check"])
+      expect(check?.needs).toEqual(["check.yml:prior"])
+      expect(check?.name).toBe(name)
+      expect(check?.triggers).toEqual(["push"])
+      const features = check?.unsupported.map((x) => x.feature)
+      expect(features).toContain("malformed-step")
+      expect(features?.includes("write-permission")).toBe(writable && !override)
+      expect(features?.includes("condition-false")).toBe(!runs)
+      expect(check?.steps.map((s) => [s.id, s.name, s.command, s.env["COLOR"], s.env["BASE"]])).toEqual(
+        runs ? [["check.yml:check:1", name, "tool test", "inner", label]] : []
+      )
+      expect(check?.kept).toEqual([{
+        uses: "actions/upload-artifact@v4", ...(runs ? { after: "check.yml:check:1" } : {}),
+        with: { name: label, path: "out", "retention-days": "3" }
+      }])
+    }))
+
+  it.live("preserves generated recipe graphs, commands and dependency order across Make and Just", () =>
+    property(Arbitrary.array(word, { minLength: 1, maxLength: 6 }), 2209, (words) => {
+      const names = words.map((w, i) => `task${i}_${w}`)
+      for (const kind of ["justfile", "makefile"]) {
+        const lines = names.flatMap((name, i) => [
+          `${name}: ${names.slice(0, i).join(" ")}`,
+          (kind === "makefile" ? "\t" : "    ") + `tool ${name}`
+        ])
+        const read = (crlf: string) => kind === "makefile"
+          ? readMakefile("Makefile", lines.join(crlf), []) : readJustfile("justfile", lines.join(crlf))
+        const result = read("\n")
+        expect(read("\r\n")).toEqual(result)
+        expect(result.jobs.map((j) => [j.id, j.needs, j.steps.map((s) => s.command), j.unsupported])).toEqual(
+          names.map((name, i) => [kind + ":" + name, names.slice(0, i).map((n) => kind + ":" + n), ["tool " + name], []])
+        )
+      }
+    }))
+
+  it.live("reads script types, package directories and Turbo's local dependencies in declaration order", () =>
+    property(Arbitrary.array(Arbitrary.all([word, bool]), { minLength: 1, maxLength: 8 }), 2210, (rows) => {
+      const names = rows.map(([w], i) => `task:${i}-${w}`)
+      const scripts = Object.fromEntries(rows.map(([, valid], i) => [names[i], valid ? "tool test" : 17]))
+      const jobs = readPackage("packages/a/package.json", JSON.stringify({ scripts }), runner).jobs
+      expect(jobs.map((j) => j.name)).toEqual(names)
+      for (const [i, job] of jobs.entries()) {
+        if (rows[i]?.[1]) {
+          expect(job.steps.map((s) => [s.command, s.cwd])).toEqual([["pnpm run " + job.name, "packages/a"]])
+        } else {
+          expect(job.steps).toEqual([])
+          expect(job.unsupported.map((x) => x.feature)).toEqual(["malformed-script"])
+        }
+      }
+      const tasks = Object.fromEntries(names.map((n, i) => [n, { dependsOn: ["^build", ...names.slice(0, i)] }]))
+      const expected = names.map((n, i) => [n, names.slice(0, i).map((dep) => "turbo.json:" + dep), "pnpm exec turbo run " + n])
+      for (const key of ["pipeline", "tasks"]) {
+        const file = `{// config\n"${key}":${JSON.stringify(tasks)},}`
+        expect(readTurbo("turbo.json", file, runner).jobs.map((j) => [j.name, j.needs, j.steps[0]?.command])).toEqual(expected)
+      }
+    }))
+
+  it.live("keeps unnamed toolchain entries out of the typed package inventory", () =>
+    property(word, 2212, (version) => {
+      const manifest = { packageManager: "", engines: { "": version, node: version } }
+      const result = readPackage("package.json", JSON.stringify(manifest), runner)
+      expect(parsed(result)).toBe(true)
+      expect(result.toolchains).toEqual([{ name: "node", version, source: "package.json" }])
+    }))
+
+  it.live("withholds a literal secret in matrix axes and include entries", () =>
+    property(Arbitrary.all([word, bool]), 2213, ([suffix, inAxis]) => {
+      const assignment = { api_token: "fixture-" + suffix }
+      const raw = inAxis ? { options: [assignment] } : { include: [assignment] }
+      expect(expandMatrix(raw)).toEqual({ variants: [], keys: new Set(), problem: "it holds a value named like a secret" })
+    }))
+
+  it.live("uses the lockfile when a manifest names an unrecognized package manager", () => effect {
+    try Effect.try(() => {
+      for (const name of ["other", "constructor", "__proto__", "toString"]) {
+        expect(chooseRunner(JSON.stringify({ packageManager: name + "@1" }), ["pnpm-lock.yaml"])).toEqual(runner)
+      }
+    })
+  })
+})

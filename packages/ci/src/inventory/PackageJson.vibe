@@ -51,7 +51,7 @@ export const chooseRunner = (manifest: string | undefined, rootFiles: ReadonlyAr
     ? declared["packageManager"].split("@")[0] as string
     : ""
   const locked = lockfiles.find(([file]) => rootFiles.includes(file))?.[1]
-  return runners[field] ?? runners[locked ?? "npm"] as Runner
+  return runners[Object.hasOwn(runners, field) ? field : locked ?? "npm"] as Runner
 }
 
 const readManifest = (text: string): unknown => {
@@ -70,12 +70,12 @@ const readToolchains = (file: string, manifest: Record<string, unknown>): Readon
   const manager = manifest["packageManager"]
   if (typeof manager === "string") {
     const [name, version] = manager.split("+")[0]?.split("@") as [string, string?]
-    tools.push(version === undefined ? { name, source: file } : { name, source: file, version })
+    if (name !== "") tools.push(version === undefined ? { name, source: file } : { name, source: file, version })
   }
   const engines = manifest["engines"]
   if (isRecord(engines)) {
     for (const [name, version] of Object.entries(engines)) {
-      if (typeof version === "string") tools.push({ name, source: file, version })
+      if (name !== "" && typeof version === "string") tools.push({ name, source: file, version })
     }
   }
   const dev = manifest["devDependencies"]
