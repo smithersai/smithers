@@ -1,3 +1,13 @@
+---
+title: Stranded commits audit and landing ledger
+status: done
+area: process
+owner: Claude Opus (stranded-audit)
+updated: 2026-11-01
+links:
+  - stranded-commits-smithers.md
+---
+
 # Stranded commits
 
 Owner: Claude Opus, lane `stranded-audit`. Requested by the lead on 2026-11-01

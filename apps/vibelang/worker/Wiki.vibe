@@ -54,7 +54,7 @@ export effect function wikiWriteKey(repo: Repository, actor: string, request: Wi
   return try (try Digest.Digest).digestHex(Digest.sha256, new TextEncoder().encode(logical))
 }
 
-const StoredDraft = Schema.Struct({ page: Schema.String, text: Schema.String })
+const StoredDraft = Schema.Struct({ page: Schema.String, text: Schema.String, blob: Schema.optionalKey(Schema.Literal(1)) })
 
 /** The GitHub host: reads are public observations; writes are the authenticated person's own commits and review changes. */
 export effect function githubWikiHost(repo: WikiRepository = wikiRepository, storage?: Storage, fresh: () => boolean = () => false): WikiHost.Shape!never!(WikiAuthority | HttpClient.HttpClient) {
@@ -65,10 +65,22 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
   const reads = try Effect.serviceOption(PublicReads)
   let edits: WikiEdits = emptyWikiEdits
   let touched = false
-  effect function loadDraft(person: string, page: string) {
+  effect function loadDraft(person: string, page: string): ({ readonly page: string; readonly text: string } | undefined)!WikiFailure {
     if (storage === undefined || person === "") return undefined
-    const stored = try promise(() => storage.get(`wiki/draft/${person}/${page}`))
-    return Schema.decodeUnknownOption(StoredDraft)(stored).pipe(Option.getOrUndefined)
+    const stored = try storageCall(() => storage.get(`wiki/draft/${person}/${page}`))
+    const decoded = Schema.decodeUnknownOption(StoredDraft)(stored).pipe(Option.getOrUndefined)
+    if (decoded === undefined) return undefined
+    const text = decoded.blob === 1 ? try decodeWikiText(storage, decoded.text) : decoded.text
+    return { page: decoded.page, text }
+  }
+  effect function saveDraft(person: string, page: string, text: string): void!WikiFailure {
+    if (storage === undefined) return
+    if (jsonBytes(text) <= WIKI_DRAFT_INLINE_LIMIT) {
+      try storageCall(() => storage.put(`wiki/draft/${person}/${page}`, { page, text }))
+      return
+    }
+    const encoded = try encodeWikiText(storage, text, true, WIKI_DRAFT_INLINE_LIMIT)
+    try storageCall(() => storage.put(`wiki/draft/${person}/${page}`, { page, text: encoded.value, blob: 1 }))
   }
   effect function readSource(path: string, ref = repo.branch) {
     const file = try GitHub.Contents.getText(repo.owner, repo.name, path, { ref }).pipe(Effect.mapError(wikiFailureOf))
@@ -103,7 +115,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
           if (current === undefined || !sameActor(current.id, actor.id) || !wikiPermission(current.role, request.op) || !wikiSubmissionAllowed(request.op, kindOf(current))) throw new WikiFailure({ reason: "forbidden" })
           if (current.connection === undefined || Option.isNone(delegate)) {
             // As when the person arrived without a credential: keep the reviewed text until they reconnect.
-            if (storage !== undefined && !touched) try promise(() => storage.put(`wiki/draft/${actor.id}/${request.page}`, { page: request.page, text: request.text }))
+            if (!touched) try saveDraft(actor.id, request.page, request.text)
             throw new WikiFailure({ reason: "connect" })
           }
           if (authority.authorize !== undefined) try authority.authorize(request.op)
@@ -131,12 +143,12 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
           const drafter = Option.getOrThrow(writer)
           const file = try readSource(path)
           const drafted = try drafter.draft({ page: request.page, source: file.text, ask: request.text })
-          if (storage !== undefined) try promise(() => storage.put(`wiki/draft/${actor.id}/${request.page}`, { page: drafted.page, text: drafted.text }))
+          try saveDraft(actor.id, request.page, drafted.text)
           return { ...edits, draft: { page: drafted.page, text: drafted.text } }
         }
         if (actor.connection === undefined) {
           // Retain the person's reviewed text across the explicit credential connection; no GitHub write has begun.
-          if (storage !== undefined) try promise(() => storage.put(`wiki/draft/${actor.id}/${request.page}`, { page: request.page, text: request.text }))
+          try saveDraft(actor.id, request.page, request.text)
           throw new WikiFailure({ reason: "connect", ...(fresh() ? { unwritten: true } : {}) })
         }
         const current = try authorized(readSource(path))
@@ -217,18 +229,159 @@ function roleOf(actor: Principal | undefined): Role { return actorRole(actor !==
 function kindOf(actor: Principal | undefined): "person" | "agent" { return actorKind(actor?.kind !== undefined, actor?.kind ?? "person") }
 function keyOf(actor: Principal | undefined): string { return executionActor(actor !== undefined, actor?.id ?? "") }
 
+
+const WIKI_BLOB_THRESHOLD = 256 * 1024
+const WIKI_STATE_TOTAL_LIMIT = 1024 * 1024
+const WIKI_STATE_COMPACT_THRESHOLD = 16 * 1024
+const WIKI_DRAFT_INLINE_LIMIT = 64 * 1024
+const WIKI_BLOB_CHUNK = 32 * 1024
+const WIKI_BLOB_PREFIX = "\u0000blob:"
+const WIKI_LIT_PREFIX = "\u0000lit:"
+const WIKI_BLOB_KEY = "wiki/blob/"
+const WIKI_BLOB_REQ_MARKER = "wiki/blob-req/"
+const WIKI_BLOB_RES_MARKER = "wiki/blob-res/"
+
+function storageCall<A>(run: () => Promise<A>): A!WikiFailure {
+  return Effect.tryPromise({ try: run, catch: () => new WikiFailure({ reason: "unavailable" }) })
+}
+
+function jsonBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength
+}
+
+effect function digestWikiBytes(bytes: Uint8Array): string!! {
+  provide Digest.layerWebCrypto {
+    return try (try Digest.Digest).digestHex(Digest.sha256, bytes)
+  }
+}
+
+/**
+ * Keeps durable journal rows strictly within SqlJournal's 2,031,616-byte entry bound (measured on JSON-encoded bytes,
+ * so control-character escaping cannot inflate past the cap) even when editing multi-MB wiki pages like 0018-proofs.md.
+ * Encoding is versioned per execution via storage markers so legacy unversioned receipts replay and retry verbatim
+ * without false mismatches or literal-sentinel aliasing.
+ */
+effect function encodeWikiText(storage: Storage, value: string, persist: boolean, threshold = WIKI_BLOB_THRESHOLD): { readonly value: string; readonly encoded: boolean }!WikiFailure {
+  if (jsonBytes(value) <= threshold) {
+    return value.startsWith("\u0000")
+      ? { value: `${WIKI_LIT_PREFIX}${value}`, encoded: true }
+      : { value, encoded: false }
+  }
+  const digest = try digestWikiBytes(new TextEncoder().encode(value))
+  if (persist) {
+    const markerKey = `${WIKI_BLOB_KEY}${digest}`
+    const existing = try storageCall(() => storage.get(markerKey))
+    if (typeof existing !== "number") {
+      const entries: Array<readonly [string, string]> = []
+      let start = 0
+      while (start < value.length) {
+        let end = Math.min(value.length, start + WIKI_BLOB_CHUNK)
+        if (end < value.length) {
+          const code = value.charCodeAt(end - 1)
+          if (code >= 0xd800 && code <= 0xdbff) end += 1
+        }
+        entries.push([`${markerKey}/${String(entries.length).padStart(6, "0")}`, value.slice(start, end)])
+        start = end
+      }
+      for (let at = 0; at < entries.length; at += 100) {
+        const batch = Object.fromEntries(entries.slice(at, at + 100))
+        try storageCall(() => storage.put(batch))
+      }
+      try storageCall(() => storage.put(markerKey, entries.length))
+    }
+  }
+  return { value: `${WIKI_BLOB_PREFIX}${digest}`, encoded: true }
+}
+
+effect function decodeWikiText(storage: Storage, value: string): string!WikiFailure {
+  if (!value.startsWith("\u0000")) return value
+  if (value.startsWith(WIKI_LIT_PREFIX)) return value.slice(WIKI_LIT_PREFIX.length)
+  if (!value.startsWith(WIKI_BLOB_PREFIX)) throw new WikiFailure({ reason: "unavailable" })
+  const digest = value.slice(WIKI_BLOB_PREFIX.length)
+  const markerKey = `${WIKI_BLOB_KEY}${digest}`
+  const count = try storageCall(() => storage.get(markerKey))
+  if (typeof count !== "number" || !Number.isInteger(count) || count < 0) throw new WikiFailure({ reason: "unavailable" })
+  const listed = try storageCall(() => storage.list({ prefix: `${markerKey}/` }))
+  const parts: Array<string> = []
+  for (let index = 0; index < count; index += 1) {
+    const chunk = listed.get(`${markerKey}/${String(index).padStart(6, "0")}`)
+    if (typeof chunk !== "string") throw new WikiFailure({ reason: "unavailable" })
+    parts.push(chunk)
+  }
+  return parts.join("")
+}
+
+effect function dehydrateWikiRequest(storage: Storage, request: WikiRequest, persist: boolean): { readonly value: WikiRequest; readonly encoded: boolean }!WikiFailure {
+  const base = try encodeWikiText(storage, request.base, persist)
+  const text = try encodeWikiText(storage, request.text, persist)
+  return { value: { ...request, base: base.value, text: text.value }, encoded: base.encoded || text.encoded }
+}
+
+effect function hydrateWikiRequest(storage: Storage, request: WikiRequest): WikiRequest!WikiFailure {
+  const base = try decodeWikiText(storage, request.base)
+  const text = try decodeWikiText(storage, request.text)
+  return { ...request, base, text }
+}
+
+effect function dehydrateWikiState(storage: Storage, state: typeof WikiState.Type): { readonly value: typeof WikiState.Type; readonly encoded: boolean }!WikiFailure {
+  const spillWith = effect (threshold: number, input: typeof WikiState.Type) => {
+    let encoded = false
+    const nextPages: Array<typeof WikiState.Type["pages"][number]> = []
+    for (const page of input.pages) {
+      const result = try encodeWikiText(storage, page.source, true, threshold)
+      if (result.encoded) encoded = true
+      nextPages.push({ ...page, source: result.value })
+    }
+    let nextDraft = input.draft
+    if (input.draft !== undefined) {
+      const result = try encodeWikiText(storage, input.draft.text, true, threshold)
+      if (result.encoded) encoded = true
+      nextDraft = { ...input.draft, text: result.value }
+    }
+    return { value: nextDraft === undefined ? { ...input, pages: nextPages } : { ...input, pages: nextPages, draft: nextDraft }, encoded }
+  }
+  const first = try spillWith(WIKI_BLOB_THRESHOLD, state)
+  if (jsonBytes(first.value) <= WIKI_STATE_TOTAL_LIMIT) return first
+  const compacted = try spillWith(WIKI_STATE_COMPACT_THRESHOLD, state)
+  if (jsonBytes(compacted.value) <= WIKI_STATE_TOTAL_LIMIT) return compacted
+  const minimal = try spillWith(0, state)
+  if (jsonBytes(minimal.value) > WIKI_STATE_TOTAL_LIMIT) throw new WikiFailure({ reason: "unavailable" })
+  return minimal
+}
+
+effect function hydrateWikiState(storage: Storage, state: typeof WikiState.Type): typeof WikiState.Type!WikiFailure {
+  const nextPages: Array<typeof WikiState.Type["pages"][number]> = []
+  for (const page of state.pages) {
+    nextPages.push({ ...page, source: try decodeWikiText(storage, page.source) })
+  }
+  const nextDraft = state.draft === undefined ? undefined : { ...state.draft, text: try decodeWikiText(storage, state.draft.text) }
+  return nextDraft === undefined ? { ...state, pages: nextPages } : { ...state, pages: nextPages, draft: nextDraft }
+}
+
 /** The same durable execution for HTTP, CLI/MCP and a delegated chat tool. */
 export effect function executeWiki(hostId: string, storage: Storage, input: WikiRequest, repo: WikiRepository = wikiRepository) {
   const payload = try Schema.decodeUnknownEffect(WikiRequest)(input).pipe(Effect.mapError(() => new WikiFailure({ reason: "invalid", unwritten: true })))
   if (!requestKey(payload.key)) throw new WikiFailure({ reason: "invalid" })
+  if (payload.op === "read" && (payload.base !== "" || payload.text !== "")) throw new WikiFailure({ reason: "invalid", unwritten: true })
   const authority = try WikiAuthority
   const actor = try authority.current()
   if (authority.authorize !== undefined) try authority.authorize(payload.op)
   try authorizeWiki(roleOf(actor), payload.op, kindOf(actor))
   const flow = wikiEditFlows.find((f) => f._tag === `vibelang/wiki/${payload.op}`)!
   let fresh = false
+  let hydrateReq = false
+  let activeTarget = ""
   const injected = try Effect.serviceOption(WikiHost)
-  const host = Option.isSome(injected) ? injected.value : try githubWikiHost(repo, storage, () => fresh)
+  const innerHost = Option.isSome(injected) ? injected.value : try githubWikiHost(repo, storage, () => fresh)
+  const host: WikiHost.Shape = {
+    perform: effect (request) => {
+      const hydrated = hydrateReq ? try hydrateWikiRequest(storage, request) : request
+      const state = try innerHost.perform(hydrated)
+      const dehydrated = try dehydrateWikiState(storage, state)
+      if (dehydrated.encoded) try storageCall(() => storage.put(`${WIKI_BLOB_RES_MARKER}${activeTarget}`, 1))
+      return dehydrated.value
+    },
+  }
   const executionId = try wikiExecutionId(keyOf(actor), payload.op, payload.key)
   if (payload.recovery !== undefined && !requestKey(payload.recovery)) throw new WikiFailure({ reason: "invalid" })
   const { recovery, ...original } = payload
@@ -241,13 +394,26 @@ export effect function executeWiki(hostId: string, storage: Storage, input: Wiki
   fresh = observed.fresh
   const failed = retriesSettledFailure(recovery !== undefined, observed.failed)
   const target = failed ? try wikiRecoveryId(executionId, recovery!) : executionId
+  activeTarget = target
+  const reqMarkerKey = `${WIKI_BLOB_REQ_MARKER}${executionId}`
+  let journaled = original
+  if (observed.fresh) {
+    if (!editable(pages, payload.page)) throw new WikiFailure({ reason: "missing", unwritten: true })
+    const dehydrated = try dehydrateWikiRequest(storage, original, true)
+    journaled = dehydrated.value
+    hydrateReq = dehydrated.encoded
+    if (dehydrated.encoded) try storageCall(() => storage.put(reqMarkerKey, 1))
+  } else {
+    hydrateReq = (try storageCall(() => storage.get(reqMarkerKey))) === 1
+    if (hydrateReq) journaled = (try dehydrateWikiRequest(storage, original, false)).value
+  }
   const result = try scoped(Effect.provide(effect {
     const engine = try FlowRuntime.FlowRuntime
     if (joinsReceipt(observed.fresh, failed)) {
       const inspection = try RunInspection.RunInspection
       const recorded = try inspection.payload(executionId)
       const decoded = Schema.decodeUnknownOption(WikiRequest)(recorded.payload)
-      if (Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)) throw new WikiFailure({ reason: "invalid" })
+      if (Option.isNone(decoded) || Object.entries(journaled).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)) throw new WikiFailure({ reason: "invalid" })
     }
     if (failed) {
       const known = engine.poll(flow, target).pipe(Effect.as(true)) catch () => false
@@ -257,14 +423,14 @@ export effect function executeWiki(hostId: string, storage: Storage, input: Wiki
         const inspection = try RunInspection.RunInspection
         const recorded = try inspection.payload(executionId)
         const decoded = Schema.decodeUnknownOption(WikiRequest)(recorded.payload)
-        if (Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)) throw new WikiFailure({ reason: "invalid" })
+        if (Option.isNone(decoded) || Object.entries(journaled).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)) throw new WikiFailure({ reason: "invalid" })
         const source = try inspection.inspect(executionId)
         const step = source.steps.find((item) => item.action === `${flow._tag}/perform`)
         if (step === undefined) throw new WikiFailure({ reason: "unavailable" })
         try retryFrom(flow, { source: executionId, step: step.nodeId, executionId: target })
       }
     }
-    return try engine.execute(flow, { executionId: target, payload: original })
+    return try engine.execute(flow, { executionId: target, payload: journaled })
   }, runtime(target))).pipe(
     Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: "unavailable" })),
     // The read flow's engine deadline (0015) settles it as a defect, journaled as an Error named by its tag; the person sees "unavailable" and Retry.
@@ -272,7 +438,9 @@ export effect function executeWiki(hostId: string, storage: Storage, input: Wiki
       ? Effect.logWarning("vibelang.wiki.deadline").pipe(Effect.annotateLogs({ op: payload.op }), Effect.andThen(Metric.update(Metric.withAttributes(Metric.counter("vibelang_wiki_deadline", { incremental: true }), { op: payload.op }), 1)), Effect.andThen(Effect.fail(new WikiFailure({ reason: "unavailable", code: "unavailable" }))))
       : Effect.die(defect)),
   )
-  return { ...result, role: roleOf(actor) }
+  const resEncoded = (try storageCall(() => storage.get(`${WIKI_BLOB_RES_MARKER}${target}`))) === 1
+  const hydrated = resEncoded ? try hydrateWikiState(storage, result) : result
+  return { ...hydrated, role: roleOf(actor) }
 }
 
 /** Unconfigured sign-in still leaves the repository's public wiki readable, through `reads` when given. */

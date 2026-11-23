@@ -1,3 +1,13 @@
+---
+title: Stranded commits classification for ~/smithers
+status: done
+area: process
+owner: Claude Opus (stranded-audit)
+updated: 2026-11-01
+links:
+  - stranded-commits.md
+---
+
 # Stranded commits: ~/smithers
 
 Part of [stranded commits](stranded-commits.md): method, classes and the landing ledger are there.

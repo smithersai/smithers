@@ -118,9 +118,93 @@ it.live("the largest actual wiki page fits the bounded edit request", () => scop
     const { origin } = try served({ will })
     const id = "decisions/0018-proofs"
     const source = pages.find(page => page.id === id)!.source
-    const answer = try call(origin, { method: "POST", path: "/api/wiki", cookie: "session=will", body: { op: "save", page: id, base: source, text: source + "\nReviewed.\n", key: "large-page" } })
-    try Effect.try(() => { expect(source.length).toBeGreaterThan(262_144); expect(answer.status).toBe(200); expect(answer.state?.review).toMatch(/\/pull\/[0-9]+$/) })
+    const read = try call(origin, { method: "GET", path: `/api/wiki?page=${encodeURIComponent(id)}` })
+    const request = { op: "save", page: id, base: source, text: source + "\nReviewed.\n", key: "large-page" }
+    const answer = try call(origin, { method: "POST", path: "/api/wiki", cookie: "session=will", body: request })
+    const replay = try call(origin, { method: "POST", path: "/api/wiki", cookie: "session=will", body: request })
+    const tampered = try call(origin, { method: "POST", path: "/api/wiki", cookie: "session=will", body: { ...request, text: source + "\nTampered.\n" } })
+    const literalPrefix = try call(origin, { method: "POST", path: "/api/wiki", cookie: "session=will", body: { op: "save", page: "roadmap", base: roadmap.source, text: "\u0000blob:0000000000000000000000000000000000000000000000000000000000000000\n" + roadmap.source, key: "literal-sentinel" } })
+    // Control characters expand 6x in JSON (\u0001): 60 KiB raw (< 256 KiB) becomes 360 KiB JSON-escaped (> 256 KiB) and must spill.
+    const controlHeavy = try call(origin, { method: "POST", path: "/api/wiki", cookie: "session=will", body: { op: "save", page: "roadmap", base: roadmap.source, text: roadmap.source + "\n" + "\u0001".repeat(60 * 1024), key: "control-heavy" } })
+    // Public read requests never carry base/text or spill blobs into Durable Object storage.
+    const readWithPayload = try call(origin, { method: "POST", path: "/api/wiki", body: { op: "read", page: "roadmap", base: source, text: source, key: "public-read-abuse" } })
+    try Effect.try(() => {
+      expect(source.length).toBeGreaterThan(262_144)
+      expect(read.status).toBe(200)
+      expect(read.state?.pages.find(page => page.id === id)?.source).toBe(source)
+      expect(answer.status).toBe(200)
+      expect(answer.state?.review).toMatch(/\/pull\/[0-9]+$/)
+      expect(replay.status).toBe(200)
+      expect(replay.state?.review).toBe(answer.state?.review)
+      expect(tampered.status).toBe(400)
+      expect(tampered.reason).toBe("invalid")
+      expect(literalPrefix.status).toBe(200)
+      expect(controlHeavy.status).toBe(200)
+      expect(readWithPayload.status).toBe(400)
+      expect(readWithPayload.reason).toBe("invalid")
+    })
   }
+}))
+
+import { HttpClientResponse, HttpServerResponse } from "effect/http"
+it.live("retains and hydrates a multi-megabyte draft, spills JSON-expanded text below 256 KiB, and replays legacy receipts", () => scoped(effect {
+  const storage = try Effect.try(() => objectStorage()) as unknown as Storage & { readonly kv: Map<string, unknown> }
+  const { connection: _connection, ...unconnected } = will
+  const large = pages.find(page => page.id === "decisions/0018-proofs")!.source
+  const rejectedRead = try Effect.result(executeWiki("read-abuse", storage, { op: "read", page: "roadmap", base: large, text: large, key: "read-abuse" }).pipe(
+    Effect.provideService(WikiAuthority, { current: () => Effect.succeed(undefined) }), Effect.provide(FetchHttpClient.layer),
+  ))
+  const rejectedMissing = try Effect.result(executeWiki("missing-abuse", storage, { op: "save", page: "decisions/9999-nope", base: large, text: large, key: "missing-abuse" }).pipe(
+    Effect.provideService(WikiAuthority, { current: () => Effect.succeed(will) }), Effect.provide(FetchHttpClient.layer),
+  ))
+  const blobKeysAfterRefusals = [...storage.kv.keys()].filter((key) => key.startsWith("wiki/blob/"))
+  const retainedText = large + "\nRetain large edit.\n"
+  const outcome = try Effect.result(executeWiki("unconnected-large-wiki", storage, { op: "save", page: "decisions/0018-proofs", base: large, text: retainedText, key: "connect-large-edit" }).pipe(
+    Effect.provideService(WikiAuthority, { current: () => Effect.succeed(unconnected) }), Effect.provide(FetchHttpClient.layer),
+  ))
+  const storedDraft = try promise(() => storage.get(`wiki/draft/${will.id}/decisions/0018-proofs`)) as { readonly page?: string; readonly text?: string; readonly blob?: number } | undefined
+  // Read back the chunked draft through githubWikiHost and assert byte-for-byte hydration.
+  const stubContents = HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({ type: "file", sha: "rev-1", content: "IyBzdHViCg==", encoding: "base64" })))))
+  const readWithDraft = try executeWiki("read-draft-back", storage, { op: "read", page: "decisions/0018-proofs", base: "", text: "", key: "read-draft-back" }).pipe(
+    Effect.provideService(WikiAuthority, { current: () => Effect.succeed(unconnected) }), Effect.provideService(HttpClient.HttpClient, stubContents),
+  )
+  // Verify raw text < 256 KiB (60 KiB of \u0001 -> 360 KiB JSON) spills into wiki/blob/.
+  const store = try makeWikiStore()
+  const host = try fixtureWikiHost(() => Effect.succeed(will), store)
+  const blobsBeforeCtrl = [...storage.kv.keys()].filter((key) => key.startsWith("wiki/blob/")).length
+  const ctrlText = roadmap.source + "\n" + "\u0001".repeat(60 * 1024)
+  const ctrlSaved = try executeWiki("ctrl-spill", storage, { op: "save", page: "roadmap", base: roadmap.source, text: ctrlText, key: "ctrl-spill-key" }).pipe(
+    Effect.provideService(WikiAuthority, { current: () => Effect.succeed(will) }), Effect.provideService(WikiHost, host), Effect.provide(FetchHttpClient.layer),
+  )
+  const blobsAfterCtrl = [...storage.kv.keys()].filter((key) => key.startsWith("wiki/blob/")).length
+  // Verify an unmarked (legacy) receipt without wiki/blob-req/* replays verbatim and rejects changed text.
+  const legacyReq = { op: "save" as const, page: "roadmap", base: roadmap.source, text: roadmap.source + "\nLegacy.\n", key: "legacy-key" }
+  const legacyFirst = try executeWiki("legacy-host", storage, legacyReq).pipe(
+    Effect.provideService(WikiAuthority, { current: () => Effect.succeed(will) }), Effect.provideService(WikiHost, host), Effect.provide(FetchHttpClient.layer),
+  )
+  const reqMarkersForLegacy = [...storage.kv.keys()].filter((key) => key.startsWith("wiki/blob-req/") && key.includes("legacy-key"))
+  const legacyReplay = try executeWiki("legacy-host", storage, legacyReq).pipe(
+    Effect.provideService(WikiAuthority, { current: () => Effect.succeed(will) }), Effect.provideService(WikiHost, host), Effect.provide(FetchHttpClient.layer),
+  )
+  const legacyTampered = try Effect.result(executeWiki("legacy-host", storage, { ...legacyReq, text: roadmap.source + "\nChanged.\n" }).pipe(
+    Effect.provideService(WikiAuthority, { current: () => Effect.succeed(will) }), Effect.provideService(WikiHost, host), Effect.provide(FetchHttpClient.layer),
+  ))
+  try Effect.try(() => {
+    expect(rejectedRead).toMatchObject({ _tag: "Failure", failure: { reason: "invalid", unwritten: true } })
+    expect(rejectedMissing).toMatchObject({ _tag: "Failure", failure: { reason: "missing", unwritten: true } })
+    expect(blobKeysAfterRefusals).toEqual([])
+    expect(outcome).toMatchObject({ _tag: "Failure", failure: { reason: "connect", unwritten: true } })
+    expect(storedDraft?.page).toBe("decisions/0018-proofs")
+    expect(storedDraft?.blob).toBe(1)
+    expect(storedDraft?.text?.startsWith("\u0000blob:")).toBe(true)
+    expect(readWithDraft.draft).toEqual({ page: "decisions/0018-proofs", text: retainedText })
+    expect(ctrlText.length).toBeLessThan(262_144)
+    expect(ctrlSaved.review).toMatch(/\/pull\/[0-9]+$/)
+    expect(blobsAfterCtrl).toBeGreaterThan(blobsBeforeCtrl)
+    expect(reqMarkersForLegacy).toEqual([])
+    expect(legacyReplay.review).toBe(legacyFirst.review)
+    expect(legacyTampered).toMatchObject({ _tag: "Failure", failure: { reason: "invalid" } })
+  })
 }))
 
 it.live("an agent principal can draft but cannot submit even with a maintainer's role", () => scoped(effect {
