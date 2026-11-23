@@ -104,7 +104,9 @@ describe("@smthrs/cli ProductApi, Backend Client, Session, History, HostService 
               const pathValues = Object.fromEntries(
                 op.parameters.filter((p) => p.in === "path").map((p) => [p.name, makeSample(p)])
               )
-              const queryParams = op.parameters.filter((p) => p.in === "query" && (p.required === true || includeOptionalQuery))
+              const queryParams = op.parameters.filter((p) =>
+                p.in === "query" && (p.required === true || includeOptionalQuery)
+              )
               const queryValues = Object.fromEntries(queryParams.map((p) => [p.name, makeSample(p)]))
               const headers = Object.fromEntries(
                 op.parameters.filter((p) => p.in === "header" && p.required === true).map((p) => [p.name, "hdr-val"])
@@ -285,7 +287,10 @@ describe("@smthrs/cli ProductApi, Backend Client, Session, History, HostService 
                 SMITHERS_TOKEN: "tok_test_123456"
               })
               const cid = sess.credentialIdentity("https://smithers.sh")
-              assertInv(typeof cid === "string" && !cid.includes("tok_test_123456"), "credentialIdentity hides raw token")
+              assertInv(
+                typeof cid === "string" && !cid.includes("tok_test_123456"),
+                "credentialIdentity hides raw token"
+              )
 
               // CatalogRequest
               try {
@@ -312,7 +317,11 @@ describe("@smthrs/cli ProductApi, Backend Client, Session, History, HostService 
               const validKeys = SSH.hostKeys([{ algorithm: "ssh-ed25519", public_key: "AAAAC3NzaC1lZDI1NTE5AAAAIA==" }])
               assertInv(validKeys.length === 1, "SSH.hostKeys accepts valid key")
               let badKeyRefused = false
-              try { SSH.hostKeys(["invalid"]) } catch (e) { badKeyRefused = e instanceof CliError.Refused }
+              try {
+                SSH.hostKeys(["invalid"])
+              } catch (e) {
+                badKeyRefused = e instanceof CliError.Refused
+              }
               assertInv(badKeyRefused, "SSH.hostKeys refuses malformed key")
               const ep = Copy.copyEndpoint(remotePath)
               assertInv(typeof ep.path === "string", "Copy.copyEndpoint")
@@ -324,7 +333,9 @@ describe("@smthrs/cli ProductApi, Backend Client, Session, History, HostService 
               assertInv(typeof parsedRev === "object", "Local.parseRevision")
               assertInv(typeof Commands.commandPath(cmdName) === "string", "Commands.commandPath")
               assertInv(
-                typeof Destination.targetsInstall({ args: {}, options: { repo: "octo/app" } }, { environment: { HOME: tmpHome } }) === "boolean",
+                typeof Destination.targetsInstall({ args: {}, options: { repo: "octo/app" } }, {
+                  environment: { HOME: tmpHome }
+                }) === "boolean",
                 "Destination.targetsInstall"
               )
               const wsBody = Workspaces.workspaceBody({ name: "dev", image: "ubuntu", cpu: "4" })
@@ -448,7 +459,11 @@ describe("@smthrs/cli ProductApi, Backend Client, Session, History, HostService 
             const stText = HostService.startText({ state: "running", origin: "http://127.0.0.1:4000" })
             assertInv(typeof stText === "string", "HostService.startText")
 
-            try { HostService.maintenance("backup") } catch (e) { assertInv(e instanceof CliError.Refused || e instanceof Error, "HostService.maintenance platform guard") }
+            try {
+              HostService.maintenance("backup")
+            } catch (e) {
+              assertInv(e instanceof CliError.Refused || e instanceof Error, "HostService.maintenance platform guard")
+            }
 
             try {
               HostService.validateAddress({ bind: bindAddr, origins: [origin] })
@@ -495,7 +510,9 @@ describe("@smthrs/cli ProductApi, Backend Client, Session, History, HostService 
     const origin = `http://127.0.0.1:${addr.port}`
 
     try {
-      const httpHandlers: Array<{ name: string; fn: Resources.Handler; args: ClientModule.Values; opts: ClientModule.Values }> = [
+      const httpHandlers: Array<
+        { name: string; fn: Resources.Handler; args: ClientModule.Values; opts: ClientModule.Values }
+      > = [
         { name: "admin audit", fn: Admin.admin["admin audit"]!, args: {}, opts: { host: origin } },
         { name: "admin runs", fn: Admin.admin["admin runs"]!, args: {}, opts: { host: origin } },
         { name: "admin sessions", fn: Admin.admin["admin sessions"]!, args: {}, opts: { host: origin } },
@@ -503,22 +520,72 @@ describe("@smthrs/cli ProductApi, Backend Client, Session, History, HostService 
         { name: "admin workspaces", fn: Admin.admin["admin workspaces"]!, args: {}, opts: { host: origin } },
         { name: "admin analytics", fn: Admin.admin["admin analytics"]!, args: {}, opts: { host: origin } },
         { name: "repo list", fn: Repositories.repositories["repo list"]!, args: {}, opts: { host: origin } },
-        { name: "repo view", fn: Repositories.repositories["repo view"]!, args: { repo: "octo/app" }, opts: { host: origin } },
-        { name: "issue list", fn: Resources.resources["issue list"]!, args: {}, opts: { host: origin, repo: "octo/app" } },
-        { name: "issue view", fn: Resources.resources["issue view"]!, args: { number: "1" }, opts: { host: origin, repo: "octo/app" } },
-        { name: "issue create", fn: Resources.resources["issue create"]!, args: {}, opts: { host: origin, repo: "octo/app", title: "bug", body: "desc" } },
-        { name: "label list", fn: Resources.resources["label list"]!, args: {}, opts: { host: origin, repo: "octo/app" } },
-        { name: "secret list", fn: Resources.resources["secret list"]!, args: {}, opts: { host: origin, repo: "octo/app" } },
-        { name: "variable list", fn: Resources.resources["variable list"]!, args: {}, opts: { host: origin, repo: "octo/app" } },
-        { name: "webhook list", fn: Resources.resources["webhook list"]!, args: {}, opts: { host: origin, repo: "octo/app" } },
-        { name: "wiki list", fn: Resources.resources["wiki list"]!, args: {}, opts: { host: origin, repo: "octo/app" } },
+        {
+          name: "repo view",
+          fn: Repositories.repositories["repo view"]!,
+          args: { repo: "octo/app" },
+          opts: { host: origin }
+        },
+        {
+          name: "issue list",
+          fn: Resources.resources["issue list"]!,
+          args: {},
+          opts: { host: origin, repo: "octo/app" }
+        },
+        {
+          name: "issue view",
+          fn: Resources.resources["issue view"]!,
+          args: { number: "1" },
+          opts: { host: origin, repo: "octo/app" }
+        },
+        {
+          name: "issue create",
+          fn: Resources.resources["issue create"]!,
+          args: {},
+          opts: { host: origin, repo: "octo/app", title: "bug", body: "desc" }
+        },
+        {
+          name: "label list",
+          fn: Resources.resources["label list"]!,
+          args: {},
+          opts: { host: origin, repo: "octo/app" }
+        },
+        {
+          name: "secret list",
+          fn: Resources.resources["secret list"]!,
+          args: {},
+          opts: { host: origin, repo: "octo/app" }
+        },
+        {
+          name: "variable list",
+          fn: Resources.resources["variable list"]!,
+          args: {},
+          opts: { host: origin, repo: "octo/app" }
+        },
+        {
+          name: "webhook list",
+          fn: Resources.resources["webhook list"]!,
+          args: {},
+          opts: { host: origin, repo: "octo/app" }
+        },
+        {
+          name: "wiki list",
+          fn: Resources.resources["wiki list"]!,
+          args: {},
+          opts: { host: origin, repo: "octo/app" }
+        },
         { name: "notification list", fn: Resources.resources["notification list"]!, args: {}, opts: { host: origin } },
         { name: "ssh-key list", fn: Resources.resources["ssh-key list"]!, args: {}, opts: { host: origin } },
         { name: "org list", fn: Resources.resources["org list"]!, args: {}, opts: { host: origin } },
         { name: "workspace list", fn: Workspaces.workspaces["workspace list"]!, args: {}, opts: { host: origin } },
         { name: "egress list", fn: Egress.egress["egress list"]!, args: {}, opts: { host: origin, repo: "octo/app" } },
         { name: "stack list", fn: Stack.stacks["stack list"]!, args: {}, opts: { host: origin, repo: "octo/app" } },
-        { name: "history list", fn: BackendHistory.history["history"]!, args: {}, opts: { host: origin, repo: "octo/app" } },
+        {
+          name: "history list",
+          fn: BackendHistory.history["history"]!,
+          args: {},
+          opts: { host: origin, repo: "octo/app" }
+        },
         { name: "runs list", fn: Runs.runs["run list"]!, args: {}, opts: { host: origin, repo: "octo/app" } },
         { name: "search repos", fn: Misc.misc["search repos"]!, args: { query: "smithers" }, opts: { host: origin } }
       ].filter((h) => typeof h.fn === "function")
@@ -547,7 +614,9 @@ describe("@smthrs/cli ProductApi, Backend Client, Session, History, HostService 
 
               // Direct Client.request against real loopback HTTP server
               responseStatus = status
-              responseBody = status >= 400 ? { error: "boom", message: "boom", code: "err_code" } : { ok: true, items: [] }
+              responseBody = status >= 400
+                ? { error: "boom", message: "boom", code: "err_code" }
+                : { ok: true, items: [] }
               if (status >= 400) {
                 let err: unknown
                 try {
@@ -601,7 +670,9 @@ describe("@smthrs/cli ProductApi, Backend Client, Session, History, HostService 
                 }
               }
 
-              const getCatalogCmd = Catalog.catalogCommands.find((c) => c.http?.method === "GET" && !c.http.path.includes("{"))
+              const getCatalogCmd = Catalog.catalogCommands.find((c) =>
+                c.http?.method === "GET" && !c.http.path.includes("{")
+              )
               if (getCatalogCmd) {
                 try {
                   await Catalog.dispatchCatalog(client, getCatalogCmd, {})

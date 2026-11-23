@@ -35,7 +35,7 @@ describe("McpRemote", () => {
     stderr.on("data", (c) => stderrChunks.push(c.toString("utf8")))
 
     try {
-      const fetchImpl: typeof globalThis.fetch = async (input, init) => {
+      const fetchImpl = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
         if (url.endsWith("/.well-known/oauth-authorization-server")) {
           return Response.json({
@@ -118,7 +118,7 @@ describe("McpRemote", () => {
     output.on("data", (c) => outChunks.push(c.toString("utf8")))
 
     const seen: Array<{ url: string; auth: string | null; method: string }> = []
-    const fetchImpl: typeof globalThis.fetch = async (url, init) => {
+    const fetchImpl = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
       const headers = init?.headers as Record<string, string>
       const body = JSON.parse(String(init?.body)) as { id?: unknown; method?: string }
       seen.push({ url: String(url), auth: headers["authorization"] ?? null, method: body.method ?? "" })

@@ -140,9 +140,11 @@ it("runs monitor records a beat in the project's control journal", async () => {
   expect(result.code, result.stdout + result.stderr).toBe(0)
   expect(JSON.parse(result.stdout)).toMatchObject({ runId: "run-1", beats: [{ beat: 0 }] })
   edit(root, "control", (db) => {
-    expect(db.prepare(
-      "SELECT event_type FROM flows_journal_events WHERE run_id = ? AND event_type = ?"
-    ).get("run-1", "control.monitor.beat")).toMatchObject({ event_type: "control.monitor.beat" })
+    expect(
+      db.prepare(
+        "SELECT event_type FROM flows_journal_events WHERE run_id = ? AND event_type = ?"
+      ).get("run-1", "control.monitor.beat")
+    ).toMatchObject({ event_type: "control.monitor.beat" })
   })
 }, 120_000)
 

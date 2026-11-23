@@ -104,7 +104,9 @@ describe("@smthrs/cli Suggest, Operator, History, Evaluation, Token & Unified CL
             if (pkgMgr === "npm") files["package-lock.json"] = "{}"
             if (pkgMgr === "bun") files["bun.lock"] = ""
             if (hasLint) files["eslint.config.js"] = "export default []\n"
-            if (hasCi) files[".github/workflows/ci.yml"] = "name: CI\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n"
+            if (hasCi) {
+              files[".github/workflows/ci.yml"] = "name: CI\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n"
+            }
             if (hasGithub) files[".git/config"] = "[remote \"origin\"]\n\turl = https://github.com/octo/fuzz-repo.git\n"
             if (hasFlows) files[".smithers/flows/review/flow.ts"] = "export default {}\n"
             if (hasPackageTs) files["PACKAGE.ts"] = "export default {}\n"
@@ -255,7 +257,14 @@ describe("@smthrs/cli Suggest, Operator, History, Evaluation, Token & Unified CL
               assertInv(StoreCopy.postgres("postgres://localhost/db") !== undefined, "StoreCopy.postgres")
 
               // 5. Evaluation.artifactOf / runOf / runPath
-              const obs = { kind: "score" as const, case: "c1", scorer: "exact", stepKey: "k1", at: "2026-11-23T00:00:00Z", score: 1 }
+              const obs = {
+                kind: "score" as const,
+                case: "c1",
+                scorer: "exact",
+                stepKey: "k1",
+                at: "2026-11-23T00:00:00Z",
+                score: 1
+              }
               const runResult = {
                 runId: "eval-run-1",
                 suite: "smoke",
@@ -264,7 +273,10 @@ describe("@smthrs/cli Suggest, Operator, History, Evaluation, Token & Unified CL
               }
               const artifact = Evaluation.artifactOf(runResult as never)
               const roundtripped = Evaluation.runOf(artifact)
-              assertInv(roundtripped.runId === "eval-run-1" && roundtripped.suite === "smoke", "Evaluation artifact roundtrip")
+              assertInv(
+                roundtripped.runId === "eval-run-1" && roundtripped.suite === "smoke",
+                "Evaluation artifact roundtrip"
+              )
               try {
                 const rp = Evaluation.runPath(tmpRoot, runId)
                 assertInv(rp.startsWith(tmpRoot), "Evaluation.runPath confined to root")
@@ -364,7 +376,10 @@ describe("@smthrs/cli Suggest, Operator, History, Evaluation, Token & Unified CL
                 const secFile = Path.join(dir, "secret.txt")
                 FsSync.writeFileSync(secFile, `${secretVal}\n`)
                 const red = Credentials.readSecret({ secretFile: secFile }, dir)
-                assertInv(String(red).includes("redacted") || typeof red === "object", "Credentials.readSecret returns Redacted")
+                assertInv(
+                  String(red).includes("redacted") || typeof red === "object",
+                  "Credentials.readSecret returns Redacted"
+                )
 
                 // 3. Operator Integrations.readIntegrations on temp dir
                 const ints = Integrations.readIntegrations(dir, ".smithers/integrations.json", {

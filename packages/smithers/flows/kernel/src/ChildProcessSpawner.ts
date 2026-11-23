@@ -33,6 +33,7 @@ import * as CommandLine from "./CommandLine.ts"
 import { GrantStore } from "./GrantStore.ts"
 import * as Containment from "./internal/Containment.ts"
 import { makeCommandCapability } from "./internal/makeCapability.ts"
+import { attachServiceAttenuator } from "./internal/ServiceAttenuation.ts"
 import * as ProcessConfinement from "./ProcessConfinement.ts"
 import * as Rooted from "./Rooted.ts"
 import { Workspace } from "./Workspace.ts"
@@ -419,144 +420,146 @@ export const layerWith = (options: Options): Layer.Layer<
             })
           }
         })
-      const checkStage = (stage: ChildProcess.StandardCommand) =>
-        Effect.gen(function*() {
-          const judged = yield* judge(stage)
-          yield* checkResolved(stage, judged.rendered)
-          // The grant decision can suspend: an attended request waits for a
-          // human. What was authorized is the directory the cwd resolved to at
-          // check time, so it must still resolve there when the decision
-          // arrives, and the child starts in that resolved directory. A symlink
-          // swapped in during the wait is refused, never followed.
-          const settled = yield* judge(stage)
-          if (settled.resolvedCwd !== judged.resolvedCwd || settled.rendered !== judged.rendered) {
-            return yield* refuseMoved(judged.rendered)
-          }
-          return ChildProcess.setCwd(stage, judged.resolvedCwd)
-        })
-      const refuseMoved = (rendered: string) =>
-        makeCommandCapability("proc:spawn", rendered).pipe(
-          Effect.flatMap((capability) =>
-            Effect.fail(permissionDenied(capability, "cwd no longer names the directory that was authorized"))
-          ),
-          Effect.mapError((error) =>
-            toPlatformError({
-              module: "ChildProcessSpawner",
-              method: "spawn",
-              pathOrDescriptor: rendered,
-              error
-            })
-          )
-        )
-      const checkResolved = (stage: ChildProcess.StandardCommand, rendered: string) => {
-        const environment = environmentNames(stage)
-        return makeCommandCapability("proc:spawn", rendered).pipe(
-          Effect.flatMap((capability) =>
-            grants.check(capability, {
-              ...(capability.resource === rendered ? {} : { commandLine: rendered }),
-              cwd: stage.options.cwd,
-              ...(environment === undefined ? {} : { env: environment })
-            })
-          ),
-          Effect.mapError((error) =>
-            toPlatformError({
-              module: "ChildProcessSpawner",
-              method: "spawn",
-              pathOrDescriptor: rendered,
-              error
-            })
-          )
-        )
-      }
-      // Checks every stage left to right and returns the command with each
-      // stage's cwd replaced by the directory that was authorized.
-      const check = (command: ChildProcess.Command): Effect.Effect<ChildProcess.Command, PlatformError> =>
-        ChildProcess.isStandardCommand(command)
-          ? checkStage(command)
-          : Effect.gen(function*() {
-            const left = yield* check(command.left)
-            const right = yield* check(command.right)
-            return ChildProcess.pipeTo(left, right, command.options)
+      return attachServiceAttenuator(grants, (grants) => {
+        const checkStage = (stage: ChildProcess.StandardCommand) =>
+          Effect.gen(function*() {
+            const judged = yield* judge(stage)
+            yield* checkResolved(stage, judged.rendered)
+            // The grant decision can suspend: an attended request waits for a
+            // human. What was authorized is the directory the cwd resolved to at
+            // check time, so it must still resolve there when the decision
+            // arrives, and the child starts in that resolved directory. A symlink
+            // swapped in during the wait is refused, never followed.
+            const settled = yield* judge(stage)
+            if (settled.resolvedCwd !== judged.resolvedCwd || settled.rendered !== judged.rendered) {
+              return yield* refuseMoved(judged.rendered)
+            }
+            return ChildProcess.setCwd(stage, judged.resolvedCwd)
           })
-      const confine = (
-        command: ChildProcess.Command
-      ): Effect.Effect<
-        ChildProcess.Command,
-        PlatformError,
-        Scope.Scope
-      > =>
-        Option.match(confinement, {
-          onNone: () =>
-            Effect.fail(systemError({
-              _tag: "NotFound",
-              module: "ProcessConfinement",
-              method: "confine",
-              description:
-                "process confinement is required; use ProcessConfinement.layerNoop to explicitly run unconfined"
-            })),
-          onSome: (service) =>
-            Effect.gen(function*() {
-              const profile = yield* ProcessConfinement.profile(grants, root, path).pipe(
-                Effect.mapError((error) => toPlatformError({ module: "ChildProcessSpawner", method: "spawn", error }))
-              )
-              const wrap = (
-                command: ChildProcess.Command
-              ): Effect.Effect<
-                ChildProcess.Command,
-                PlatformError,
-                Scope.Scope
-              > =>
-                command._tag === "StandardCommand"
-                  ? service.confine(command, profile)
-                  : Effect.gen(function*() {
-                    const left = yield* wrap(command.left)
-                    const right = yield* wrap(command.right)
-                    return ChildProcess.pipeTo(right, command.options)(left)
-                  })
-              return yield* wrap(command)
+        const refuseMoved = (rendered: string) =>
+          makeCommandCapability("proc:spawn", rendered).pipe(
+            Effect.flatMap((capability) =>
+              Effect.fail(permissionDenied(capability, "cwd no longer names the directory that was authorized"))
+            ),
+            Effect.mapError((error) =>
+              toPlatformError({
+                module: "ChildProcessSpawner",
+                method: "spawn",
+                pathOrDescriptor: rendered,
+                error
+              })
+            )
+          )
+        const checkResolved = (stage: ChildProcess.StandardCommand, rendered: string) => {
+          const environment = environmentNames(stage)
+          return makeCommandCapability("proc:spawn", rendered).pipe(
+            Effect.flatMap((capability) =>
+              grants.check(capability, {
+                ...(capability.resource === rendered ? {} : { commandLine: rendered }),
+                cwd: stage.options.cwd,
+                ...(environment === undefined ? {} : { env: environment })
+              })
+            ),
+            Effect.mapError((error) =>
+              toPlatformError({
+                module: "ChildProcessSpawner",
+                method: "spawn",
+                pathOrDescriptor: rendered,
+                error
+              })
+            )
+          )
+        }
+        // Checks every stage left to right and returns the command with each
+        // stage's cwd replaced by the directory that was authorized.
+        const check = (command: ChildProcess.Command): Effect.Effect<ChildProcess.Command, PlatformError> =>
+          ChildProcess.isStandardCommand(command)
+            ? checkStage(command)
+            : Effect.gen(function*() {
+              const left = yield* check(command.left)
+              const right = yield* check(command.right)
+              return ChildProcess.pipeTo(left, right, command.options)
             })
-        })
-      return Containment.inherit(
-        spawner,
-        makeSpawner(
-          Effect.fn("ChildProcessSpawner.spawn")((command: ChildProcess.Command) =>
-            Effect.try({
-              try: () => snapshotCommand(command),
-              catch: () =>
-                systemError({
-                  _tag: "InvalidData",
-                  module: "ChildProcessSpawner",
-                  method: "spawn",
-                  description: "command must be an immutable supported process description"
-                })
-            }).pipe(
-              Effect.filterOrFail(
-                (snapshot) => !CommandLine.stages(snapshot).some(shellsProtectedArgument),
-                () =>
+        const confine = (
+          command: ChildProcess.Command
+        ): Effect.Effect<
+          ChildProcess.Command,
+          PlatformError,
+          Scope.Scope
+        > =>
+          Option.match(confinement, {
+            onNone: () =>
+              Effect.fail(systemError({
+                _tag: "NotFound",
+                module: "ProcessConfinement",
+                method: "confine",
+                description:
+                  "process confinement is required; use ProcessConfinement.layerNoop to explicitly run unconfined"
+              })),
+            onSome: (service) =>
+              Effect.gen(function*() {
+                const profile = yield* ProcessConfinement.profile(grants, root, path).pipe(
+                  Effect.mapError((error) => toPlatformError({ module: "ChildProcessSpawner", method: "spawn", error }))
+                )
+                const wrap = (
+                  command: ChildProcess.Command
+                ): Effect.Effect<
+                  ChildProcess.Command,
+                  PlatformError,
+                  Scope.Scope
+                > =>
+                  command._tag === "StandardCommand"
+                    ? service.confine(command, profile)
+                    : Effect.gen(function*() {
+                      const left = yield* wrap(command.left)
+                      const right = yield* wrap(command.right)
+                      return ChildProcess.pipeTo(right, command.options)(left)
+                    })
+                return yield* wrap(command)
+              })
+          })
+        return Containment.inherit(
+          spawner,
+          makeSpawner(
+            Effect.fn("ChildProcessSpawner.spawn")((command: ChildProcess.Command) =>
+              Effect.try({
+                try: () => snapshotCommand(command),
+                catch: () =>
                   systemError({
                     _tag: "InvalidData",
                     module: "ChildProcessSpawner",
                     method: "spawn",
-                    description: "a protected argument cannot pass through a shell; pass the secret in env instead"
+                    description: "command must be an immutable supported process description"
                   })
-              ),
-              Effect.map((snapshot) => Rooted.command(snapshot, rooted)),
-              Effect.flatMap((rooted) =>
-                check(rooted).pipe(
-                  Effect.flatMap((authorized) =>
-                    confine(replaceEnvironment(
-                      authorized,
-                      options.platform ??
-                        (globalThis as { readonly process?: { readonly platform?: string } }).process?.platform
-                    ))
-                  ),
-                  Effect.flatMap(spawner.spawn)
+              }).pipe(
+                Effect.filterOrFail(
+                  (snapshot) => !CommandLine.stages(snapshot).some(shellsProtectedArgument),
+                  () =>
+                    systemError({
+                      _tag: "InvalidData",
+                      module: "ChildProcessSpawner",
+                      method: "spawn",
+                      description: "a protected argument cannot pass through a shell; pass the secret in env instead"
+                    })
+                ),
+                Effect.map((snapshot) => Rooted.command(snapshot, rooted)),
+                Effect.flatMap((rooted) =>
+                  check(rooted).pipe(
+                    Effect.flatMap((authorized) =>
+                      confine(replaceEnvironment(
+                        authorized,
+                        options.platform ??
+                          (globalThis as { readonly process?: { readonly platform?: string } }).process?.platform
+                      ))
+                    ),
+                    Effect.flatMap(spawner.spawn)
+                  )
                 )
               )
             )
           )
         )
-      )
+      })
     })
   )
 

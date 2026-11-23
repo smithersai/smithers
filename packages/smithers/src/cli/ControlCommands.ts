@@ -738,7 +738,9 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
               return yield* new CliError.UnsupportedError({ message: "The run journal is unavailable" })
             }
             const summary = yield* RunReads.summary(yield* Control.Control, c.args.run)
-            if (summary === undefined) return yield* unknownRun(c.args.run)
+            if (summary === undefined) {
+              return yield* unknownRun(c.args.run)
+            }
             return yield* Monitor.run({
               runId: c.args.run,
               monitorId: randomUUID(),
@@ -748,7 +750,9 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
               autoHeal: c.options.autoHeal ? ["stalled", "wedged-node", "failing", "runaway-loop"] : []
             }).pipe(Effect.provideService(Journal.Journal, journal.value))
           })
-          if (!c.options.autoHeal) return Bridge.query(monitor, c.options, runtime)
+          if (!c.options.autoHeal) {
+            return Bridge.query(monitor, c.options, runtime)
+          }
           return Bridge.launch(monitor, c.options, {
             ...runtime,
             ...await prepareHistoryRun(c.args.run, c.options, runtime)

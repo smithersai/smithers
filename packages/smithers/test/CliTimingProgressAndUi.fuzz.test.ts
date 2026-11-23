@@ -302,7 +302,9 @@ describe("@smthrs/cli RunTiming, RunProgress, RunActivity, RunHistory, Forensics
     const report = await Effect.runPromise(
       Fuzz.run(
         arb,
-        ({ frames, withCompaction, withRetry, withFailure, withNativeFacts, withApproval, finalStatus, progressMode }) =>
+        (
+          { frames, withCompaction, withRetry, withFailure, withNativeFacts, withApproval, finalStatus, progressMode }
+        ) =>
           Effect.gen(function*() {
             const runId = "run-fuzz-1"
             const events = buildSyntheticStream({
@@ -477,7 +479,12 @@ describe("@smthrs/cli RunTiming, RunProgress, RunActivity, RunHistory, Forensics
             assertInv(typeof pol.audience === "string", "Presentation.policy")
             const nextActs = Presentation.nextActions({ runId: "r-1", status: "running" })
             assertInv(Array.isArray(nextActs), "Presentation.nextActions")
-            const envWrapped = yield* Effect.promise(() => Presentation.withErrorEnvelope(() => {}, async (out) => { out("{\"ok\":true}\n"); return { ok: true } }))
+            const envWrapped = yield* Effect.promise(() =>
+              Presentation.withErrorEnvelope(() => {}, async (out) => {
+                out("{\"ok\":true}\n")
+                return { ok: true }
+              })
+            )
             assertInv(typeof envWrapped === "object", "Presentation.withErrorEnvelope")
 
             // Ui
@@ -493,7 +500,9 @@ describe("@smthrs/cli RunTiming, RunProgress, RunActivity, RunHistory, Forensics
               { level: "fail", name: "fail", detail: flag }
             ])
             assertInv(Ui.levelWord("ok").trim() === "ok", "Ui.levelWord")
-            const checklist = Ui.renderChecklist("Checks", [{ level: "ok", name: "x", detail: "y" }], { interactive: false })
+            const checklist = Ui.renderChecklist("Checks", [{ level: "ok", name: "x", detail: "y" }], {
+              interactive: false
+            })
             assertInv(checklist.includes("x"), "Ui.renderChecklist")
 
             // Compatibility, Unsupported, Verb
@@ -570,9 +579,15 @@ describe("@smthrs/cli RunTiming, RunProgress, RunActivity, RunHistory, Forensics
             assertInv(typeof Providers.isDecisionSeat(seat) === "boolean", "Providers.isDecisionSeat")
             const desc = Providers.describeSeat(seat)
             assertInv(desc === undefined || typeof desc.label === "string", "Providers.describeSeat")
-            assertInv(Providers.providerKey(["OPENAI_API_KEY"], { OPENAI_API_KEY: "k" }) !== undefined, "Providers.providerKey")
+            assertInv(
+              Providers.providerKey(["OPENAI_API_KEY"], { OPENAI_API_KEY: "k" }) !== undefined,
+              "Providers.providerKey"
+            )
             assertInv(typeof Agents.codexConfigString(secretText) === "string", "Agents.codexConfigString")
-            assertInv(typeof Agents.manualInstructions([Agents.agents[0]!.id], {}) === "string", "Agents.manualInstructions")
+            assertInv(
+              typeof Agents.manualInstructions([Agents.agents[0]!.id], {}) === "string",
+              "Agents.manualInstructions"
+            )
             assertInv(typeof Init.isValidName(flowName) === "boolean", "Init.isValidName")
             if (Init.isValidName(flowName)) {
               const tmpl = Init.template(flowName, { seat: "openai:gpt-5", variable: "OPENAI_API_KEY", resolved: true })
@@ -623,8 +638,20 @@ describe("@smthrs/cli RunTiming, RunProgress, RunActivity, RunHistory, Forensics
                 if (withLegacyDb) {
                   FsSync.mkdirSync(Path.join(dir, ".smithers"), { recursive: true })
                   const db = new DatabaseSync(Path.join(dir, ".smithers", "smithers.db"))
-                  db.exec("CREATE TABLE _smithers_runs (run_id TEXT, workflow_name TEXT, workflow_path TEXT, status TEXT, heartbeat_at_ms INTEGER, runtime_owner_id TEXT, parent_run_id TEXT, pause_requested_at_ms INTEGER, cancel_requested_at_ms INTEGER)")
-                  db.prepare("INSERT INTO _smithers_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run("old-1", "wf", null, "running", Date.now(), null, null, null, null)
+                  db.exec(
+                    "CREATE TABLE _smithers_runs (run_id TEXT, workflow_name TEXT, workflow_path TEXT, status TEXT, heartbeat_at_ms INTEGER, runtime_owner_id TEXT, parent_run_id TEXT, pause_requested_at_ms INTEGER, cancel_requested_at_ms INTEGER)"
+                  )
+                  db.prepare("INSERT INTO _smithers_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+                    "old-1",
+                    "wf",
+                    null,
+                    "running",
+                    Date.now(),
+                    null,
+                    null,
+                    null,
+                    null
+                  )
                   db.close()
                 }
 
@@ -632,7 +659,8 @@ describe("@smthrs/cli RunTiming, RunProgress, RunActivity, RunHistory, Forensics
                 const legacyPaths = Project.legacyState(dir)
                 const igStatus = Init.ensureIgnored(dir)
                 assertInv(
-                  igStatus === "created" || igStatus === "updated" || igStatus === "unchanged" || igStatus === "skipped",
+                  igStatus === "created" || igStatus === "updated" || igStatus === "unchanged" ||
+                    igStatus === "skipped",
                   "Init.ensureIgnored"
                 )
                 const scaffolded = Init.scaffold(dir, flowName, { HOME: dir, OPENAI_API_KEY: "test-key" }, { vibe })
@@ -673,7 +701,10 @@ describe("@smthrs/cli RunTiming, RunProgress, RunActivity, RunHistory, Forensics
                   updatedAt: new Date().toISOString()
                 })
                 const readBack = McpRemote.readStoredToken(tokPath, normOrigin, normRepo)
-                assertInv(readBack?.token === "sma_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "McpRemote token roundtrip")
+                assertInv(
+                  readBack?.token === "sma_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "McpRemote token roundtrip"
+                )
 
                 // OperatorTokenFile permissions (0600!)
                 const opFile = Path.join(dir, "op.token")
@@ -696,7 +727,10 @@ describe("@smthrs/cli RunTiming, RunProgress, RunActivity, RunHistory, Forensics
                 framer.write("{\"jsonrpc\":\"2.0\",\"id\":1}\n")
                 framer.end()
                 await done
-                assertInv((outChunks.join("") + frames.join("")).includes("\"jsonrpc\""), "McpStdio.input forwards framed JSON")
+                assertInv(
+                  (outChunks.join("") + frames.join("")).includes("\"jsonrpc\""),
+                  "McpStdio.input forwards framed JSON"
+                )
 
                 return true
               } finally {

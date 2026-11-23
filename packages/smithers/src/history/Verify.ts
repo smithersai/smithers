@@ -334,7 +334,11 @@ const one = (
         if (terminal(before.status)) {
           if (all) return { runId, status: before.status } satisfies Settled
           return yield* Effect.fail(
-            refused("user", "run_settled", `Run ${runId} is already ${before.status} and cannot be resumed to verify replay`)
+            refused(
+              "user",
+              "run_settled",
+              `Run ${runId} is already ${before.status} and cannot be resumed to verify replay`
+            )
           )
         }
         const receipt = yield* (yield* Control.Control).resume({
@@ -343,9 +347,13 @@ const one = (
           allowCodeDrift: true
         })
         if (receipt._tag === "Terminal") {
-          if (all) return { runId, status: receipt.status } satisfies Settled
+          if (all && terminal(receipt.status)) return { runId, status: receipt.status } satisfies Settled
           return yield* Effect.fail(
-            refused("user", "run_settled", `Run ${runId} is already ${receipt.status} and cannot be resumed to verify replay`)
+            refused(
+              "user",
+              "run_settled",
+              `Run ${runId} is already ${receipt.status} and cannot be resumed to verify replay`
+            )
           )
         }
         yield* settled(runId, before.updatedAt).pipe(

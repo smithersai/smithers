@@ -214,8 +214,11 @@ export const cancel = (runId: string) =>
  * @since 1.0.0
  */
 export const pause = (runId: string, reason?: string) =>
-  Effect.flatMap(ControlService.Control, (control) =>
-    control.pause({ runId, reason, idempotencyKey: `cli:pause:${randomUUID()}` }).pipe(Effect.tap(reportTerminal)))
+  Effect.flatMap(
+    ControlService.Control,
+    (control) =>
+      control.pause({ runId, reason, idempotencyKey: `cli:pause:${randomUUID()}` }).pipe(Effect.tap(reportTerminal))
+  )
 
 /**
  * Deliver a signal with a payload-specific mutation key.

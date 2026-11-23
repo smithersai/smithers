@@ -130,7 +130,10 @@ describe("@smthrs/cli Runner, ClaudeMirror, Internals & Commands fuzz invariants
               )
               assertInv(ws.length === 1 && ws[0]!.tasks.length === 1, "Workstreams.project")
               const renderedStatus = RunnerCmd.renderStatus(ws)
-              assertInv(renderedStatus.includes("ws-1") || renderedStatus.includes("Core Work"), "RunnerCmd.renderStatus")
+              assertInv(
+                renderedStatus.includes("ws-1") || renderedStatus.includes("Core Work"),
+                "RunnerCmd.renderStatus"
+              )
 
               // 4. Tree.cpuOf, RunnerHost.authorizationLost, RunnerSession.spawnFailureOf, StatusPage
               const cpu = Tree.cpuOf("12.5\n3.0\nbad\n")
@@ -236,7 +239,9 @@ describe("@smthrs/cli Runner, ClaudeMirror, Internals & Commands fuzz invariants
             "key sk-ant-api03-1234567890abcdefghij1234567890"
           ]),
           codexJson: Schema.Literals([
-            JSON.stringify({ tokens: { access_token: "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjIwMDAwMDAwMDB9.sig", refresh_token: "ref_123" } }),
+            JSON.stringify({
+              tokens: { access_token: "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjIwMDAwMDAwMDB9.sig", refresh_token: "ref_123" }
+            }),
             JSON.stringify({ OPENAI_API_KEY: "sk-test" }),
             "{invalid json",
             ""
@@ -258,8 +263,14 @@ describe("@smthrs/cli Runner, ClaudeMirror, Internals & Commands fuzz invariants
               const safe = Failure.terminalSafe(rawText)
               assertInv(!safe.includes("\u001b") && !safe.includes("\x07"), "terminalSafe strips escapes/control chars")
               assertInv(typeof Failure.terminalSafeLines(rawText) === "string", "terminalSafeLines")
-              assertInv(typeof Failure.terminalSafeJson(JSON.stringify({ a: rawText })) === "string", "terminalSafeJson")
-              assertInv(typeof Failure.terminalSafeValue({ a: rawText, b: [1, rawText] }) === "object", "terminalSafeValue")
+              assertInv(
+                typeof Failure.terminalSafeJson(JSON.stringify({ a: rawText })) === "string",
+                "terminalSafeJson"
+              )
+              assertInv(
+                typeof Failure.terminalSafeValue({ a: rawText, b: [1, rawText] }) === "object",
+                "terminalSafeValue"
+              )
               assertInv(typeof Failure.causeLine(rawText) === "string", "causeLine")
               const taggedErr = new CliError.Refused({ fault: "user", code: "denied", message: rawText })
               assertInv(Failure.isTagged(taggedErr) && Failure.tagOf(taggedErr) === "/cli/Refused", "isTagged/tagOf")
@@ -310,7 +321,10 @@ describe("@smthrs/cli Runner, ClaudeMirror, Internals & Commands fuzz invariants
                 { operation: "fuzz", subject: "events" },
                 { maxEvents: 2, maxBytes: 1024, maxEventBytes: 512 }
               ).pipe(Effect.result)
-              assertInv(collected._tag === "Success" || collected._tag === "Failure", "BoundedEvents.collect enforces limits")
+              assertInv(
+                collected._tag === "Success" || collected._tag === "Failure",
+                "BoundedEvents.collect enforces limits"
+              )
 
               // 6. SourceRevision.objectId & read (with injected Reader)
               const normOid = SourceRevision.objectId(oid)
@@ -331,7 +345,10 @@ describe("@smthrs/cli Runner, ClaudeMirror, Internals & Commands fuzz invariants
                 ["park", "refuse"].includes(NativeEquipment.askPolicy({ SMITHERS_ASK_POLICY: "refuse" })),
                 "NativeEquipment.askPolicy"
               )
-              assertInv(Effect.isEffect(NativeEquipment.accountPoolDefaultModel({})), "accountPoolDefaultModel returns Effect")
+              assertInv(
+                Effect.isEffect(NativeEquipment.accountPoolDefaultModel({})),
+                "accountPoolDefaultModel returns Effect"
+              )
               const trigDecl = ApprovalScope.triggerDeclaration("trig-1")
               assertInv(typeof trigDecl === "object", "ApprovalScope.triggerDeclaration")
               assertInv(
@@ -428,7 +445,9 @@ describe("@smthrs/cli Runner, ClaudeMirror, Internals & Commands fuzz invariants
 
               // 2. Settlement pure helpers
               const isSettled = Settlement.settled(kind)
-              if (kind === "control.run.completed" || kind === "control.run.failed" || kind === "control.run.cancelled") {
+              if (
+                kind === "control.run.completed" || kind === "control.run.failed" || kind === "control.run.cancelled"
+              ) {
                 assertInv(isSettled, `Settlement.settled true for ${kind}`)
               }
               const decErr = Settlement.declined("run-1", undefined)

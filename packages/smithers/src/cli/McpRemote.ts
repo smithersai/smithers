@@ -216,7 +216,7 @@ export interface McpLoginOptions {
   readonly storePath?: string | undefined
   readonly env?: Record<string, string | undefined> | undefined
   readonly stderr?: { readonly write: (chunk: string) => unknown } | undefined
-  readonly fetchImpl?: typeof globalThis.fetch | undefined
+  readonly fetchImpl?: ((input: string | URL | Request, init?: RequestInit) => Promise<Response>) | undefined
   readonly openBrowser?: ((url: string) => void) | undefined
   readonly onAuthorizeUrl?: ((url: string) => void) | undefined
 }
@@ -244,7 +244,7 @@ interface AuthServerMetadata {
 
 const discoverAuthServer = async (
   origin: string,
-  fetchImpl: typeof globalThis.fetch
+  fetchImpl: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 ): Promise<AuthServerMetadata> => {
   const fallback: AuthServerMetadata = {
     authorization_endpoint: `${origin}/api/mcp/oauth/authorize`,
@@ -504,7 +504,7 @@ export interface McpServeOptions {
   readonly input?: Readable | undefined
   readonly output?: Writable | undefined
   readonly stderr?: { readonly write: (chunk: string) => unknown } | undefined
-  readonly fetchImpl?: typeof globalThis.fetch | undefined
+  readonly fetchImpl?: ((input: string | URL | Request, init?: RequestInit) => Promise<Response>) | undefined
   readonly signal?: AbortSignal | undefined
 }
 

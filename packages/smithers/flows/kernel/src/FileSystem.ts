@@ -35,6 +35,7 @@ import * as Batch from "./FileSystemBatch.ts"
 import { GrantStore } from "./GrantStore.ts"
 import { makeCapability } from "./internal/makeCapability.ts"
 import { restrictsContent } from "./internal/restrictsContent.ts"
+import { attachServiceAttenuator } from "./internal/ServiceAttenuation.ts"
 import { Workspace } from "./Workspace.ts"
 
 export * from "./FileSystemBatch.ts"
@@ -1071,712 +1072,722 @@ export const layer: Layer.Layer<
      * wildcard segment is matched in. A pattern without a wildcard names one
      * path, which the grant check decides exactly.
      */
-    const globContent = (method: string, resource: string): Effect.Effect<void, PlatformError.PlatformError> => {
-      const parts = segmentsBelow(path, logicalRoot, resource)
-      const wildcard = parts.findIndex((part) => wildcardSegment.test(part))
-      return wildcard < 0
-        ? Effect.void
-        : grants.policy.pipe(
-          Effect.mapError(refuse(method, resource)),
-          Effect.flatMap((policy) =>
-            restrictsContent(policy, "fs:read", path.join(logicalRoot, ...parts.slice(0, wildcard)), path.sep)
-              ? deny("fs:read", method, resource, "a deny or ask rule may select paths this pattern can match")
+    return attachServiceAttenuator(grants, (grants): EffectFileSystem.FileSystem => {
+      const globContent = (method: string, resource: string): Effect.Effect<void, PlatformError.PlatformError> => {
+        const parts = segmentsBelow(path, logicalRoot, resource)
+        const wildcard = parts.findIndex((part) => wildcardSegment.test(part))
+        return wildcard < 0
+          ? Effect.void
+          : grants.policy.pipe(
+            Effect.mapError(refuse(method, resource)),
+            Effect.flatMap((policy) =>
+              restrictsContent(policy, "fs:read", path.join(logicalRoot, ...parts.slice(0, wildcard)), path.sep)
+                ? deny("fs:read", method, resource, "a deny or ask rule may select paths this pattern can match")
+                : Effect.void
+            )
+          )
+      }
+      const guard = (
+        action: "fs:read" | "fs:write",
+        value: string,
+        glob = false
+      ): Effect.Effect<string, PlatformError.PlatformError> => {
+        const method = action === "fs:read" ? "read" : "write"
+        return resolvedResource(action, method, value, glob).pipe(
+          Effect.flatMap((resource) =>
+            (glob ? globContent(method, resource) : Effect.void).pipe(
+              Effect.andThen(
+                makeCapability(action, resource).pipe(
+                  Effect.flatMap((capability) => grants.check(capability)),
+                  Effect.mapError(refuse(method, resource)),
+                  // The grant decision can suspend — an attended request waiting for
+                  // a human, a journal-backed store doing IO. What was authorized is
+                  // the resource the path named at check time, so the path must
+                  // still name it when the decision arrives: a symlink or rename
+                  // swapped in during the wait is refused, never followed.
+                  Effect.andThen(resolvedResource(action, method, value, glob)),
+                  Effect.flatMap((settled) =>
+                    settled === resource
+                      ? Effect.succeed(resource)
+                      : deny(action, method, resource, "path no longer names the resource that was authorized")
+                  )
+                )
+              )
+            )
+          )
+        )
+      }
+      /**
+       * `rename`, recursive `remove` and `copy` act on everything under a
+       * directory while the grant check names the directory alone, and a rule
+       * such as `deny fs:read /workspace/secrets/**` does not select
+       * `/workspace/secrets`. So when `value` is a directory, the operation is
+       * refused if a deny or ask rule may select anything under one of the
+       * authorized `operands`. A path that names nothing has no content; one
+       * that cannot be inspected is treated as a directory.
+       */
+      const directoryContent = (
+        host: AtomicFileSystem,
+        method: string,
+        value: string,
+        operands: ReadonlyArray<readonly ["fs:read" | "fs:write", string]>
+      ): Effect.Effect<void, PlatformError.PlatformError> =>
+        pinned(host, root)({ operation: "stat", path: normalize(value) }).pipe(
+          Effect.match({
+            onFailure: (error) => error.reason._tag !== "NotFound",
+            onSuccess: (info) => info.type === "Directory"
+          }),
+          Effect.flatMap((directory) =>
+            directory
+              ? grants.policy.pipe(
+                Effect.mapError(refuse(method, normalize(value))),
+                Effect.flatMap((policy) => {
+                  const restricted = operands.find(([action, resource]) =>
+                    restrictsContent(policy, action, resource, path.sep)
+                  )
+                  return restricted === undefined
+                    ? Effect.void
+                    : deny(
+                      restricted[0],
+                      method,
+                      restricted[1],
+                      "a deny or ask rule may select content under this directory"
+                    )
+                })
+              )
               : Effect.void
           )
         )
-    }
-    const guard = (
-      action: "fs:read" | "fs:write",
-      value: string,
-      glob = false
-    ): Effect.Effect<string, PlatformError.PlatformError> => {
-      const method = action === "fs:read" ? "read" : "write"
-      return resolvedResource(action, method, value, glob).pipe(
-        Effect.flatMap((resource) =>
-          (glob ? globContent(method, resource) : Effect.void).pipe(
-            Effect.andThen(
-              makeCapability(action, resource).pipe(
-                Effect.flatMap((capability) => grants.check(capability)),
-                Effect.mapError(refuse(method, resource)),
-                // The grant decision can suspend — an attended request waiting for
-                // a human, a journal-backed store doing IO. What was authorized is
-                // the resource the path named at check time, so the path must
-                // still name it when the decision arrives: a symlink or rename
-                // swapped in during the wait is refused, never followed.
-                Effect.andThen(resolvedResource(action, method, value, glob)),
-                Effect.flatMap((settled) =>
-                  settled === resource
-                    ? Effect.succeed(resource)
-                    : deny(action, method, resource, "path no longer names the resource that was authorized")
-                )
-              )
-            )
-          )
+      const read = (value: string) => guard("fs:read", value)
+      const write = (value: string) => guard("fs:write", value)
+      const atomicUnavailable = (
+        action: "fs:read" | "fs:write",
+        value: string,
+        method: string
+      ): Effect.Effect<never, PlatformError.PlatformError> =>
+        deny(
+          action,
+          method,
+          normalize(value),
+          unconfinedDescription
         )
-      )
-    }
-    /**
-     * `rename`, recursive `remove` and `copy` act on everything under a
-     * directory while the grant check names the directory alone, and a rule
-     * such as `deny fs:read /workspace/secrets/**` does not select
-     * `/workspace/secrets`. So when `value` is a directory, the operation is
-     * refused if a deny or ask rule may select anything under one of the
-     * authorized `operands`. A path that names nothing has no content; one
-     * that cannot be inspected is treated as a directory.
-     */
-    const directoryContent = (
-      host: AtomicFileSystem,
-      method: string,
-      value: string,
-      operands: ReadonlyArray<readonly ["fs:read" | "fs:write", string]>
-    ): Effect.Effect<void, PlatformError.PlatformError> =>
-      pinned(host, root)({ operation: "stat", path: normalize(value) }).pipe(
-        Effect.match({
-          onFailure: (error) => error.reason._tag !== "NotFound",
-          onSuccess: (info) => info.type === "Directory"
-        }),
-        Effect.flatMap((directory) =>
-          directory
-            ? grants.policy.pipe(
-              Effect.mapError(refuse(method, normalize(value))),
-              Effect.flatMap((policy) => {
-                const restricted = operands.find(([action, resource]) =>
-                  restrictsContent(policy, action, resource, path.sep)
-                )
-                return restricted === undefined
-                  ? Effect.void
-                  : deny(
-                    restricted[0],
-                    method,
-                    restricted[1],
-                    "a deny or ask rule may select content under this directory"
-                  )
+      /** Everything an operation must pass before the host is asked to act. */
+      type Checks = (host: AtomicFileSystem) => Effect.Effect<unknown, PlatformError.PlatformError>
+      const atomicChecked = <R extends AtomicRequest>(
+        action: "fs:read" | "fs:write",
+        value: string,
+        method: string,
+        checks: Checks,
+        request: R
+      ): Effect.Effect<AtomicResult<R>, PlatformError.PlatformError> =>
+        atomic === undefined
+          ? atomicUnavailable(action, value, method)
+          : checks(atomic).pipe(Effect.andThen(pinned(atomic, root)(request)))
+      const atomicOne = <R extends AtomicRequest>(
+        action: "fs:read" | "fs:write",
+        value: string,
+        method: string,
+        request: R
+      ): Effect.Effect<AtomicResult<R>, PlatformError.PlatformError> =>
+        atomicChecked(action, value, method, () => guard(action, value, request.operation === "glob"), request)
+      const isolatedChecked = <A>(
+        action: "fs:read" | "fs:write",
+        value: string,
+        method: string,
+        checks: Checks,
+        use: (isolated: EffectFileSystem.FileSystem) => Effect.Effect<A, PlatformError.PlatformError>
+      ): Effect.Effect<A, PlatformError.PlatformError> =>
+        atomic?.isolated === undefined
+          ? atomicUnavailable(action, value, method)
+          : checks(atomic).pipe(Effect.andThen(use(atomic.isolated)))
+      const isolatedOne = <A>(
+        action: "fs:read" | "fs:write",
+        value: string,
+        method: string,
+        use: (isolated: EffectFileSystem.FileSystem) => Effect.Effect<A, PlatformError.PlatformError>
+      ): Effect.Effect<A, PlatformError.PlatformError> =>
+        isolatedChecked(action, value, method, () => guard(action, value), use)
+      const isolatedTwo = <A>(
+        first: readonly ["fs:read" | "fs:write", string],
+        second: readonly ["fs:read" | "fs:write", string],
+        method: string,
+        use: (isolated: EffectFileSystem.FileSystem) => Effect.Effect<A, PlatformError.PlatformError>
+      ): Effect.Effect<A, PlatformError.PlatformError> =>
+        isolatedChecked(
+          first[0],
+          first[1],
+          method,
+          () => guard(first[0], first[1]).pipe(Effect.andThen(guard(second[0], second[1]))),
+          use
+        )
+      const temp = (directory: string | undefined) =>
+        directory === undefined
+          ? write(path.resolve(workspace.root, "..", systemTemporaryDirectoryName))
+          : write(directory)
+      const snapshotOptions = <T>(value: T): T => {
+        if (Array.isArray(value)) return Object.freeze(value.map(snapshotOptions)) as T
+        if (typeof value !== "object" || value === null) return value
+        const snapshot: Record<string, unknown> = {}
+        for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+          if (!descriptor.enumerable) continue
+          if (!("value" in descriptor)) throw new TypeError("filesystem options must contain only data properties")
+          snapshot[name] = snapshotOptions(descriptor.value)
+        }
+        return Object.freeze(snapshot) as T
+      }
+      const normalizeTempOptions = <T extends { readonly directory?: string | undefined }>(options: T | undefined) =>
+        options?.directory === undefined ? options : { ...options, directory: normalize(options.directory) }
+      const openChecks = (value: string, flag: EffectFileSystem.OpenFlag) => {
+        const readable = readableOpenFlags.has(flag)
+        const writable = writableOpenFlags.has(flag)
+        return readable && writable ?
+          read(value).pipe(Effect.andThen(write(value))) :
+          writable ?
+          write(value) :
+          read(value)
+      }
+      const descriptorRefusal = (action: "fs:read" | "fs:write", value: string) =>
+        deny(
+          action,
+          action === "fs:read" ? "read" : "write",
+          normalize(value),
+          "descriptor no longer names the resource at its authorized path"
+        )
+      /**
+       * Confirms an open descriptor still names the resource its authorization
+       * bound: the `device:inode` identity fstat'd at open time must be what the
+       * authorized path names right now. Rechecking the pathname alone would
+       * re-authorize the CURRENT occupant of the path and then delegate to the
+       * OLD descriptor — after a rename that descriptor can name an inode
+       * outside the workspace even though the replacement path is still allowed.
+       * A host that reports no inode identity is an isolated volume whose
+       * attestation is the boundary; there is no descriptor evidence to verify.
+       */
+      const verifyDescriptor = (
+        host: EffectFileSystem.FileSystem,
+        action: "fs:read" | "fs:write",
+        value: string,
+        identity: Option.Option<string>
+      ): Effect.Effect<void, PlatformError.PlatformError> =>
+        Option.match(identity, {
+          onNone: () => Effect.void,
+          onSome: (bound) =>
+            host.stat(normalize(value)).pipe(
+              Effect.matchEffect({
+                onFailure: () => descriptorRefusal(action, value),
+                onSuccess: (info) =>
+                  Option.match(identityOf(info), {
+                    onNone: () => descriptorRefusal(action, value),
+                    onSome: (current) => current === bound ? Effect.void : descriptorRefusal(action, value)
+                  })
               })
             )
-            : Effect.void
+        })
+      const wrapFile = (
+        host: EffectFileSystem.FileSystem,
+        file: EffectFileSystem.File,
+        value: string,
+        identity: Option.Option<string>
+      ): EffectFileSystem.File => {
+        const readable = Effect.suspend(() =>
+          read(value).pipe(Effect.andThen(verifyDescriptor(host, "fs:read", value, identity)))
         )
-      )
-    const read = (value: string) => guard("fs:read", value)
-    const write = (value: string) => guard("fs:write", value)
-    const atomicUnavailable = (
-      action: "fs:read" | "fs:write",
-      value: string,
-      method: string
-    ): Effect.Effect<never, PlatformError.PlatformError> =>
-      deny(
-        action,
-        method,
-        normalize(value),
-        unconfinedDescription
-      )
-    /** Everything an operation must pass before the host is asked to act. */
-    type Checks = (host: AtomicFileSystem) => Effect.Effect<unknown, PlatformError.PlatformError>
-    const atomicChecked = <R extends AtomicRequest>(
-      action: "fs:read" | "fs:write",
-      value: string,
-      method: string,
-      checks: Checks,
-      request: R
-    ): Effect.Effect<AtomicResult<R>, PlatformError.PlatformError> =>
-      atomic === undefined
-        ? atomicUnavailable(action, value, method)
-        : checks(atomic).pipe(Effect.andThen(pinned(atomic, root)(request)))
-    const atomicOne = <R extends AtomicRequest>(
-      action: "fs:read" | "fs:write",
-      value: string,
-      method: string,
-      request: R
-    ): Effect.Effect<AtomicResult<R>, PlatformError.PlatformError> =>
-      atomicChecked(action, value, method, () => guard(action, value, request.operation === "glob"), request)
-    const isolatedChecked = <A>(
-      action: "fs:read" | "fs:write",
-      value: string,
-      method: string,
-      checks: Checks,
-      use: (isolated: EffectFileSystem.FileSystem) => Effect.Effect<A, PlatformError.PlatformError>
-    ): Effect.Effect<A, PlatformError.PlatformError> =>
-      atomic?.isolated === undefined
-        ? atomicUnavailable(action, value, method)
-        : checks(atomic).pipe(Effect.andThen(use(atomic.isolated)))
-    const isolatedOne = <A>(
-      action: "fs:read" | "fs:write",
-      value: string,
-      method: string,
-      use: (isolated: EffectFileSystem.FileSystem) => Effect.Effect<A, PlatformError.PlatformError>
-    ): Effect.Effect<A, PlatformError.PlatformError> =>
-      isolatedChecked(action, value, method, () => guard(action, value), use)
-    const isolatedTwo = <A>(
-      first: readonly ["fs:read" | "fs:write", string],
-      second: readonly ["fs:read" | "fs:write", string],
-      method: string,
-      use: (isolated: EffectFileSystem.FileSystem) => Effect.Effect<A, PlatformError.PlatformError>
-    ): Effect.Effect<A, PlatformError.PlatformError> =>
-      isolatedChecked(
-        first[0],
-        first[1],
-        method,
-        () => guard(first[0], first[1]).pipe(Effect.andThen(guard(second[0], second[1]))),
-        use
-      )
-    const temp = (directory: string | undefined) =>
-      directory === undefined
-        ? write(path.resolve(workspace.root, "..", systemTemporaryDirectoryName))
-        : write(directory)
-    const snapshotOptions = <T>(value: T): T => {
-      if (Array.isArray(value)) return Object.freeze(value.map(snapshotOptions)) as T
-      if (typeof value !== "object" || value === null) return value
-      const snapshot: Record<string, unknown> = {}
-      for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
-        if (!descriptor.enumerable) continue
-        if (!("value" in descriptor)) throw new TypeError("filesystem options must contain only data properties")
-        snapshot[name] = snapshotOptions(descriptor.value)
-      }
-      return Object.freeze(snapshot) as T
-    }
-    const normalizeTempOptions = <T extends { readonly directory?: string | undefined }>(options: T | undefined) =>
-      options?.directory === undefined ? options : { ...options, directory: normalize(options.directory) }
-    const openChecks = (value: string, flag: EffectFileSystem.OpenFlag) => {
-      const readable = readableOpenFlags.has(flag)
-      const writable = writableOpenFlags.has(flag)
-      return readable && writable ?
-        read(value).pipe(Effect.andThen(write(value))) :
-        writable ?
-        write(value) :
-        read(value)
-    }
-    const descriptorRefusal = (action: "fs:read" | "fs:write", value: string) =>
-      deny(
-        action,
-        action === "fs:read" ? "read" : "write",
-        normalize(value),
-        "descriptor no longer names the resource at its authorized path"
-      )
-    /**
-     * Confirms an open descriptor still names the resource its authorization
-     * bound: the `device:inode` identity fstat'd at open time must be what the
-     * authorized path names right now. Rechecking the pathname alone would
-     * re-authorize the CURRENT occupant of the path and then delegate to the
-     * OLD descriptor — after a rename that descriptor can name an inode
-     * outside the workspace even though the replacement path is still allowed.
-     * A host that reports no inode identity is an isolated volume whose
-     * attestation is the boundary; there is no descriptor evidence to verify.
-     */
-    const verifyDescriptor = (
-      host: EffectFileSystem.FileSystem,
-      action: "fs:read" | "fs:write",
-      value: string,
-      identity: Option.Option<string>
-    ): Effect.Effect<void, PlatformError.PlatformError> =>
-      Option.match(identity, {
-        onNone: () => Effect.void,
-        onSome: (bound) =>
-          host.stat(normalize(value)).pipe(
-            Effect.matchEffect({
-              onFailure: () => descriptorRefusal(action, value),
-              onSuccess: (info) =>
-                Option.match(identityOf(info), {
-                  onNone: () => descriptorRefusal(action, value),
-                  onSome: (current) => current === bound ? Effect.void : descriptorRefusal(action, value)
-                })
-            })
-          )
-      })
-    const wrapFile = (
-      host: EffectFileSystem.FileSystem,
-      file: EffectFileSystem.File,
-      value: string,
-      identity: Option.Option<string>
-    ): EffectFileSystem.File => {
-      const readable = Effect.suspend(() =>
-        read(value).pipe(Effect.andThen(verifyDescriptor(host, "fs:read", value, identity)))
-      )
-      const writable = Effect.suspend(() =>
-        write(value).pipe(Effect.andThen(verifyDescriptor(host, "fs:write", value, identity)))
-      )
-      return {
-        [EffectFileSystem.FileTypeId]: EffectFileSystem.FileTypeId,
-        stat: Effect.fn("FileSystem.File.stat")(() => readable.pipe(Effect.andThen(file.stat)))(),
-        seek: Effect.fn("FileSystem.File.seek")(file.seek),
-        sync: Effect.fn("FileSystem.File.sync")(() => writable.pipe(Effect.andThen(file.sync)))(),
-        read: Effect.fn("FileSystem.File.read")((buffer) => readable.pipe(Effect.andThen(file.read(buffer)))),
-        readAlloc: Effect.fn("FileSystem.File.readAlloc")((size) =>
-          readable.pipe(Effect.andThen(file.readAlloc(size)))
-        ),
-        truncate: Effect.fn("FileSystem.File.truncate")((length) =>
-          writable.pipe(Effect.andThen(file.truncate(length)))
-        ),
-        write: Effect.fn("FileSystem.File.write")((buffer) => writable.pipe(Effect.andThen(file.write(buffer)))),
-        writeAll: Effect.fn("FileSystem.File.writeAll")((buffer) =>
-          writable.pipe(Effect.andThen(file.writeAll(buffer)))
+        const writable = Effect.suspend(() =>
+          write(value).pipe(Effect.andThen(verifyDescriptor(host, "fs:write", value, identity)))
         )
+        return {
+          [EffectFileSystem.FileTypeId]: EffectFileSystem.FileTypeId,
+          stat: Effect.fn("FileSystem.File.stat")(() => readable.pipe(Effect.andThen(file.stat)))(),
+          seek: Effect.fn("FileSystem.File.seek")(file.seek),
+          sync: Effect.fn("FileSystem.File.sync")(() => writable.pipe(Effect.andThen(file.sync)))(),
+          read: Effect.fn("FileSystem.File.read")((buffer) => readable.pipe(Effect.andThen(file.read(buffer)))),
+          readAlloc: Effect.fn("FileSystem.File.readAlloc")((size) =>
+            readable.pipe(Effect.andThen(file.readAlloc(size)))
+          ),
+          truncate: Effect.fn("FileSystem.File.truncate")((length) =>
+            writable.pipe(Effect.andThen(file.truncate(length)))
+          ),
+          write: Effect.fn("FileSystem.File.write")((buffer) => writable.pipe(Effect.andThen(file.write(buffer)))),
+          writeAll: Effect.fn("FileSystem.File.writeAll")((buffer) =>
+            writable.pipe(Effect.andThen(file.writeAll(buffer)))
+          )
+        }
       }
-    }
-    // `EffectFileSystem.make` brands the implementation with Effect's own
-    // (non-exported) type id. The five operations `make` would derive from
-    // the primitives are overridden below with guarded delegates to the host
-    // implementation, so delegation semantics do not change.
-    const guarded: EffectFileSystem.FileSystem = {
-      ...EffectFileSystem.make({
-        access: Effect.fn("FileSystem.access")((value, options) => {
-          const captured = snapshotOptions(options)
-          return isolatedOne("fs:read", value, "access", (host) => host.access(normalize(value), captured))
-        }),
-        copy: Effect.fn("FileSystem.copy")((from, to, options) => {
-          const captured = snapshotOptions(options)
-          return isolatedChecked(
-            "fs:read",
-            from,
-            "copy",
-            (host) =>
-              Effect.gen(function*() {
-                const source = yield* read(from)
-                const target = yield* write(to)
-                yield* directoryContent(host, "copy", from, [["fs:read", source], ["fs:write", target]])
-              }),
-            (host) => host.copy(normalize(from), normalize(to), captured)
-          )
-        }),
-        copyFile: Effect.fn("FileSystem.copyFile")((from, to) =>
-          isolatedTwo(
-            ["fs:read", from],
-            ["fs:write", to],
-            "copyFile",
-            (host) => host.copyFile(normalize(from), normalize(to))
-          )
-        ),
-        chmod: Effect.fn("FileSystem.chmod")((value, mode) =>
-          atomicOne("fs:write", value, "chmod", { operation: "chmod", path: normalize(value), options: { mode } })
-        ),
-        chown: Effect.fn("FileSystem.chown")((value, uid, gid) =>
-          atomicOne("fs:write", value, "chown", {
-            operation: "chown",
-            path: normalize(value),
-            options: { uid, gid }
-          })
-        ),
-        link: Effect.fn("FileSystem.link")((from, to) =>
-          isolatedTwo(["fs:read", from], ["fs:write", to], "link", (host) => host.link(normalize(from), normalize(to)))
-        ),
-        makeDirectory: Effect.fn("FileSystem.makeDirectory")((value, options) => {
-          const captured = snapshotOptions(options)
-          return atomicOne("fs:write", value, "makeDirectory", {
-            operation: "makeDirectory",
-            path: normalize(value),
-            options: captured
-          })
-        }),
-        makeTempDirectory: Effect.fn("FileSystem.makeTempDirectory")((options) => {
-          const captured = snapshotOptions(options)
-          return (
-            atomic?.isolated === undefined
-              ? atomicUnavailable(
-                "fs:write",
-                captured?.directory ?? `../${systemTemporaryDirectoryName}`,
-                "makeTempDirectory"
-              )
-              : temp(captured?.directory).pipe(
-                Effect.andThen(atomic.isolated.makeTempDirectory(normalizeTempOptions(captured)))
-              )
-          )
-        }),
-        makeTempDirectoryScoped: Effect.fn("FileSystem.makeTempDirectoryScoped")((options) => {
-          const captured = snapshotOptions(options)
-          return (
-            atomic?.isolated === undefined
-              ? atomicUnavailable(
-                "fs:write",
-                captured?.directory ?? `../${systemTemporaryDirectoryName}`,
-                "makeTempDirectoryScoped"
-              )
-              : temp(captured?.directory).pipe(
-                Effect.andThen(atomic.isolated.makeTempDirectoryScoped(normalizeTempOptions(captured)))
-              )
-          )
-        }),
-        makeTempFile: Effect.fn("FileSystem.makeTempFile")((options) => {
-          const captured = snapshotOptions(options)
-          return (
-            atomic?.isolated === undefined
-              ? atomicUnavailable(
-                "fs:write",
-                captured?.directory ?? `../${systemTemporaryDirectoryName}`,
-                "makeTempFile"
-              )
-              : temp(captured?.directory).pipe(
-                Effect.andThen(atomic.isolated.makeTempFile(normalizeTempOptions(captured)))
-              )
-          )
-        }),
-        makeTempFileScoped: Effect.fn("FileSystem.makeTempFileScoped")((options) => {
-          const captured = snapshotOptions(options)
-          return (
-            atomic?.isolated === undefined
-              ? atomicUnavailable(
-                "fs:write",
-                captured?.directory ?? `../${systemTemporaryDirectoryName}`,
-                "makeTempFileScoped"
-              )
-              : temp(captured?.directory).pipe(
-                Effect.andThen(atomic.isolated.makeTempFileScoped(normalizeTempOptions(captured)))
-              )
-          )
-        }),
-        open: Effect.fn("FileSystem.open")((value, options) => {
-          const captured = snapshotOptions(options)
-          const flag = captured?.flag ?? "r"
-          const isolated = atomic?.isolated
-          return isolated === undefined
-            ? atomicUnavailable("fs:read", value, "open")
-            : openChecks(value, flag).pipe(
-              Effect.andThen(isolated.open(normalize(value), captured)),
-              // fstat the handle the moment it exists: the authorization the
-              // open checks granted binds to THIS resource identity, and every
-              // later handle operation verifies the authorized path still
-              // names it before delegating to the descriptor.
-              Effect.flatMap((file) =>
-                file.stat.pipe(
-                  Effect.map((info) => wrapFile(isolated, file, value, identityOf(info)))
-                )
-              )
+      // `EffectFileSystem.make` brands the implementation with Effect's own
+      // (non-exported) type id. The five operations `make` would derive from
+      // the primitives are overridden below with guarded delegates to the host
+      // implementation, so delegation semantics do not change.
+      const guarded: EffectFileSystem.FileSystem = {
+        ...EffectFileSystem.make({
+          access: Effect.fn("FileSystem.access")((value, options) => {
+            const captured = snapshotOptions(options)
+            return isolatedOne("fs:read", value, "access", (host) => host.access(normalize(value), captured))
+          }),
+          copy: Effect.fn("FileSystem.copy")((from, to, options) => {
+            const captured = snapshotOptions(options)
+            return isolatedChecked(
+              "fs:read",
+              from,
+              "copy",
+              (host) =>
+                Effect.gen(function*() {
+                  const source = yield* read(from)
+                  const target = yield* write(to)
+                  yield* directoryContent(host, "copy", from, [["fs:read", source], ["fs:write", target]])
+                }),
+              (host) => host.copy(normalize(from), normalize(to), captured)
             )
-        }),
-        readDirectory: Effect.fn("FileSystem.readDirectory")((value, options) => {
-          const captured = snapshotOptions(options)
-          return atomicOne("fs:read", value, "readDirectory", {
-            operation: "readDirectory",
-            path: normalize(value),
-            options: captured
-          })
-        }),
-        readFile: Effect.fn("FileSystem.readFile")((value) =>
-          atomicOne("fs:read", value, "readFile", {
-            operation: "readFile",
-            path: normalize(value)
-          })
-        ),
-        readLink: Effect.fn("FileSystem.readLink")((value) =>
-          atomicOne("fs:read", value, "readLink", {
-            operation: "readLink",
-            path: normalize(value)
-          })
-        ),
-        realPath: Effect.fn("FileSystem.realPath")((value) =>
-          atomicOne("fs:read", value, "realPath", {
-            operation: "realPath",
-            path: normalize(value)
-          })
-        ),
-        remove: Effect.fn("FileSystem.remove")((value, options) => {
-          const captured = snapshotOptions(options)
-          return atomicChecked(
-            "fs:write",
-            value,
-            "remove",
-            (host) =>
-              write(value).pipe(
-                Effect.flatMap((resource) =>
-                  captured?.recursive === true
-                    ? directoryContent(host, "remove", value, [["fs:write", resource]])
-                    : Effect.void
+          }),
+          copyFile: Effect.fn("FileSystem.copyFile")((from, to) =>
+            isolatedTwo(
+              ["fs:read", from],
+              ["fs:write", to],
+              "copyFile",
+              (host) => host.copyFile(normalize(from), normalize(to))
+            )
+          ),
+          chmod: Effect.fn("FileSystem.chmod")((value, mode) =>
+            atomicOne("fs:write", value, "chmod", { operation: "chmod", path: normalize(value), options: { mode } })
+          ),
+          chown: Effect.fn("FileSystem.chown")((value, uid, gid) =>
+            atomicOne("fs:write", value, "chown", {
+              operation: "chown",
+              path: normalize(value),
+              options: { uid, gid }
+            })
+          ),
+          link: Effect.fn("FileSystem.link")((from, to) =>
+            isolatedTwo(
+              ["fs:read", from],
+              ["fs:write", to],
+              "link",
+              (host) => host.link(normalize(from), normalize(to))
+            )
+          ),
+          makeDirectory: Effect.fn("FileSystem.makeDirectory")((value, options) => {
+            const captured = snapshotOptions(options)
+            return atomicOne("fs:write", value, "makeDirectory", {
+              operation: "makeDirectory",
+              path: normalize(value),
+              options: captured
+            })
+          }),
+          makeTempDirectory: Effect.fn("FileSystem.makeTempDirectory")((options) => {
+            const captured = snapshotOptions(options)
+            return (
+              atomic?.isolated === undefined
+                ? atomicUnavailable(
+                  "fs:write",
+                  captured?.directory ?? `../${systemTemporaryDirectoryName}`,
+                  "makeTempDirectory"
                 )
-              ),
-            { operation: "remove", path: normalize(value), options: captured }
-          )
-        }),
-        // A rename makes the source readable under its new name, so it needs
-        // `fs:read` on the source as well as `fs:write` on both names.
-        rename: Effect.fn("FileSystem.rename")((from, to) =>
-          atomicChecked(
-            "fs:write",
-            from,
-            "rename",
-            (host) =>
-              Effect.gen(function*() {
-                const source = yield* read(from)
-                yield* write(from)
-                const target = yield* write(to)
-                yield* directoryContent(host, "rename", from, [
-                  ["fs:read", source],
-                  ["fs:write", source],
-                  ["fs:write", target]
-                ])
-              }),
-            { operation: "rename", from: normalize(from), to: normalize(to) }
-          )
-        ),
-        stat: Effect.fn("FileSystem.stat")((value) =>
-          atomicOne("fs:read", value, "stat", {
-            operation: "stat",
-            path: normalize(value)
-          })
-        ),
-        lstat: Effect.fn("FileSystem.lstat")((value) =>
-          // Descriptor-relative stat never follows links and refuses them.
-          // An isolated volume supports links, so use its actual lstat.
-          atomic?.isolated === undefined
-            ? atomicOne("fs:read", value, "lstat", {
+                : temp(captured?.directory).pipe(
+                  Effect.andThen(atomic.isolated.makeTempDirectory(normalizeTempOptions(captured)))
+                )
+            )
+          }),
+          makeTempDirectoryScoped: Effect.fn("FileSystem.makeTempDirectoryScoped")((options) => {
+            const captured = snapshotOptions(options)
+            return (
+              atomic?.isolated === undefined
+                ? atomicUnavailable(
+                  "fs:write",
+                  captured?.directory ?? `../${systemTemporaryDirectoryName}`,
+                  "makeTempDirectoryScoped"
+                )
+                : temp(captured?.directory).pipe(
+                  Effect.andThen(atomic.isolated.makeTempDirectoryScoped(normalizeTempOptions(captured)))
+                )
+            )
+          }),
+          makeTempFile: Effect.fn("FileSystem.makeTempFile")((options) => {
+            const captured = snapshotOptions(options)
+            return (
+              atomic?.isolated === undefined
+                ? atomicUnavailable(
+                  "fs:write",
+                  captured?.directory ?? `../${systemTemporaryDirectoryName}`,
+                  "makeTempFile"
+                )
+                : temp(captured?.directory).pipe(
+                  Effect.andThen(atomic.isolated.makeTempFile(normalizeTempOptions(captured)))
+                )
+            )
+          }),
+          makeTempFileScoped: Effect.fn("FileSystem.makeTempFileScoped")((options) => {
+            const captured = snapshotOptions(options)
+            return (
+              atomic?.isolated === undefined
+                ? atomicUnavailable(
+                  "fs:write",
+                  captured?.directory ?? `../${systemTemporaryDirectoryName}`,
+                  "makeTempFileScoped"
+                )
+                : temp(captured?.directory).pipe(
+                  Effect.andThen(atomic.isolated.makeTempFileScoped(normalizeTempOptions(captured)))
+                )
+            )
+          }),
+          open: Effect.fn("FileSystem.open")((value, options) => {
+            const captured = snapshotOptions(options)
+            const flag = captured?.flag ?? "r"
+            const isolated = atomic?.isolated
+            return isolated === undefined
+              ? atomicUnavailable("fs:read", value, "open")
+              : openChecks(value, flag).pipe(
+                Effect.andThen(isolated.open(normalize(value), captured)),
+                // fstat the handle the moment it exists: the authorization the
+                // open checks granted binds to THIS resource identity, and every
+                // later handle operation verifies the authorized path still
+                // names it before delegating to the descriptor.
+                Effect.flatMap((file) =>
+                  file.stat.pipe(
+                    Effect.map((info) => wrapFile(isolated, file, value, identityOf(info)))
+                  )
+                )
+              )
+          }),
+          readDirectory: Effect.fn("FileSystem.readDirectory")((value, options) => {
+            const captured = snapshotOptions(options)
+            return atomicOne("fs:read", value, "readDirectory", {
+              operation: "readDirectory",
+              path: normalize(value),
+              options: captured
+            })
+          }),
+          readFile: Effect.fn("FileSystem.readFile")((value) =>
+            atomicOne("fs:read", value, "readFile", {
+              operation: "readFile",
+              path: normalize(value)
+            })
+          ),
+          readLink: Effect.fn("FileSystem.readLink")((value) =>
+            atomicOne("fs:read", value, "readLink", {
+              operation: "readLink",
+              path: normalize(value)
+            })
+          ),
+          realPath: Effect.fn("FileSystem.realPath")((value) =>
+            atomicOne("fs:read", value, "realPath", {
+              operation: "realPath",
+              path: normalize(value)
+            })
+          ),
+          remove: Effect.fn("FileSystem.remove")((value, options) => {
+            const captured = snapshotOptions(options)
+            return atomicChecked(
+              "fs:write",
+              value,
+              "remove",
+              (host) =>
+                write(value).pipe(
+                  Effect.flatMap((resource) =>
+                    captured?.recursive === true
+                      ? directoryContent(host, "remove", value, [["fs:write", resource]])
+                      : Effect.void
+                  )
+                ),
+              { operation: "remove", path: normalize(value), options: captured }
+            )
+          }),
+          // A rename makes the source readable under its new name, so it needs
+          // `fs:read` on the source as well as `fs:write` on both names.
+          rename: Effect.fn("FileSystem.rename")((from, to) =>
+            atomicChecked(
+              "fs:write",
+              from,
+              "rename",
+              (host) =>
+                Effect.gen(function*() {
+                  const source = yield* read(from)
+                  yield* write(from)
+                  const target = yield* write(to)
+                  yield* directoryContent(host, "rename", from, [
+                    ["fs:read", source],
+                    ["fs:write", source],
+                    ["fs:write", target]
+                  ])
+                }),
+              { operation: "rename", from: normalize(from), to: normalize(to) }
+            )
+          ),
+          stat: Effect.fn("FileSystem.stat")((value) =>
+            atomicOne("fs:read", value, "stat", {
               operation: "stat",
               path: normalize(value)
             })
-            : isolatedOne("fs:read", value, "lstat", (host) => host.lstat(normalize(value)))
-        ),
-        symlink: Effect.fn("FileSystem.symlink")((from, to) =>
-          isolatedOne("fs:write", to, "symlink", (host) => host.symlink(from, normalize(to)))
-        ),
-        truncate: Effect.fn("FileSystem.truncate")((value, length) =>
-          isolatedOne("fs:write", value, "truncate", (host) => host.truncate(normalize(value), length))
-        ),
-        utimes: Effect.fn("FileSystem.utimes")((value, atime, mtime) =>
-          isolatedOne("fs:write", value, "utimes", (host) => host.utimes(normalize(value), atime, mtime))
-        ),
-        watch: (value, options) => {
-          const captured = snapshotOptions(options)
-          return Stream.unwrap(
-            Effect.fn("FileSystem.watch")(() =>
-              Effect.suspend(() =>
-                atomic?.isolated === undefined
-                  ? atomicUnavailable("fs:read", value, "watch")
-                  : read(value).pipe(Effect.map(() => atomic.isolated!.watch(normalize(value), captured)))
-              )
-            )()
-          )
-        },
-        writeFile: Effect.fn("FileSystem.writeFile")((value, data, options) => {
-          const captured = snapshotOptions(options)
-          const bytes = data.slice()
-          // An isolated host shares this address space, so the detached
-          // snapshot crosses no serialization boundary: hand it straight to
-          // the delegate rather than base64 round-tripping it through the
-          // serializable request shape.
-          if (atomic?.isolated !== undefined) {
-            return isolatedOne(
-              "fs:write",
-              value,
-              "writeFile",
-              (host) => host.writeFile(normalize(value), bytes, captured)
-            )
-          }
-          // A serialized executor frames the base64 payload as one JS string.
-          // Refuse what its runtime cannot represent before encoding, so an
-          // oversized artifact is a typed BadArgument and not a defect out of
-          // the encoder.
-          const limit = atomic?.contentLimit
-          if (limit !== undefined && bytes.byteLength > limit) {
-            return Effect.fail(PlatformError.badArgument({
-              module: "FileSystem",
-              method: "writeFile",
-              description:
-                `writeFile payload of ${bytes.byteLength} bytes exceeds the ${limit} byte limit advertised by the host`
-            }))
-          }
-          return atomicOne("fs:write", value, "writeFile", {
-            operation: "writeFile",
-            path: normalize(value),
-            data: Base64.encode(bytes),
-            options: captured
-          })
-        }),
-        readDirectoryEntries: (value) =>
-          Effect.map(guarded.readDirectory(value), (names) => names.map((name) => ({ name, type: "Unknown" as const })))
-      }),
-      glob: Effect.fn("FileSystem.glob")((pattern, options) => {
-        const captured = snapshotOptions(options)
-        const root = captured?.root === undefined ? workspace.root : normalize(captured.root)
-        const normalizedPattern = normalizeFrom(root, pattern)
-        return atomicOne("fs:read", normalizedPattern, "glob", {
-          operation: "glob",
-          pattern: normalizedPattern,
-          root,
-          options: captured === undefined ? undefined : { exclude: captured.exclude ?? [] }
-        })
-      }),
-      exists: Effect.fn("FileSystem.exists")((value) =>
-        atomicOne("fs:read", value, "exists", {
-          operation: "exists",
-          path: normalize(value)
-        })
-      ),
-      readFileString: Effect.fn("FileSystem.readFileString")((value, encoding) =>
-        atomicOne("fs:read", value, "readFileString", {
-          operation: "readFileString",
-          path: normalize(value),
-          encoding
-        })
-      ),
-      sink: (value, options) => {
-        const captured = snapshotOptions(options)
-        return (
-          Sink.unwrap(
-            Effect.fn("FileSystem.sink")(
-              () =>
+          ),
+          lstat: Effect.fn("FileSystem.lstat")((value) =>
+            // Descriptor-relative stat never follows links and refuses them.
+            // An isolated volume supports links, so use its actual lstat.
+            atomic?.isolated === undefined
+              ? atomicOne("fs:read", value, "lstat", {
+                operation: "stat",
+                path: normalize(value)
+              })
+              : isolatedOne("fs:read", value, "lstat", (host) => host.lstat(normalize(value)))
+          ),
+          symlink: Effect.fn("FileSystem.symlink")((from, to) =>
+            isolatedOne("fs:write", to, "symlink", (host) => host.symlink(from, normalize(to)))
+          ),
+          truncate: Effect.fn("FileSystem.truncate")((value, length) =>
+            isolatedOne("fs:write", value, "truncate", (host) => host.truncate(normalize(value), length))
+          ),
+          utimes: Effect.fn("FileSystem.utimes")((value, atime, mtime) =>
+            isolatedOne("fs:write", value, "utimes", (host) => host.utimes(normalize(value), atime, mtime))
+          ),
+          watch: (value, options) => {
+            const captured = snapshotOptions(options)
+            return Stream.unwrap(
+              Effect.fn("FileSystem.watch")(() =>
                 Effect.suspend(() =>
                   atomic?.isolated === undefined
-                    ? atomicUnavailable("fs:write", value, "sink")
-                    : write(value).pipe(Effect.map(() => atomic.isolated!.sink(normalize(value), captured)))
+                    ? atomicUnavailable("fs:read", value, "watch")
+                    : read(value).pipe(Effect.map(() => atomic.isolated!.watch(normalize(value), captured)))
                 )
-            )()
-          )
-        )
-      },
-      stream: (value, options) => {
-        const captured = snapshotOptions(options)
-        return (
-          Stream.unwrap(
-            Effect.fn("FileSystem.stream")(() =>
-              Effect.suspend(() =>
-                atomic?.isolated === undefined
-                  ? atomicUnavailable("fs:read", value, "stream")
-                  : read(value).pipe(Effect.map(() => atomic.isolated!.stream(normalize(value), captured)))
+              )()
+            )
+          },
+          writeFile: Effect.fn("FileSystem.writeFile")((value, data, options) => {
+            const captured = snapshotOptions(options)
+            const bytes = data.slice()
+            // An isolated host shares this address space, so the detached
+            // snapshot crosses no serialization boundary: hand it straight to
+            // the delegate rather than base64 round-tripping it through the
+            // serializable request shape.
+            if (atomic?.isolated !== undefined) {
+              return isolatedOne(
+                "fs:write",
+                value,
+                "writeFile",
+                (host) => host.writeFile(normalize(value), bytes, captured)
               )
-            )()
+            }
+            // A serialized executor frames the base64 payload as one JS string.
+            // Refuse what its runtime cannot represent before encoding, so an
+            // oversized artifact is a typed BadArgument and not a defect out of
+            // the encoder.
+            const limit = atomic?.contentLimit
+            if (limit !== undefined && bytes.byteLength > limit) {
+              return Effect.fail(PlatformError.badArgument({
+                module: "FileSystem",
+                method: "writeFile",
+                description:
+                  `writeFile payload of ${bytes.byteLength} bytes exceeds the ${limit} byte limit advertised by the host`
+              }))
+            }
+            return atomicOne("fs:write", value, "writeFile", {
+              operation: "writeFile",
+              path: normalize(value),
+              data: Base64.encode(bytes),
+              options: captured
+            })
+          }),
+          readDirectoryEntries: (value) =>
+            Effect.map(
+              guarded.readDirectory(value),
+              (names) => names.map((name) => ({ name, type: "Unknown" as const }))
+            )
+        }),
+        glob: Effect.fn("FileSystem.glob")((pattern, options) => {
+          const captured = snapshotOptions(options)
+          const root = captured?.root === undefined ? workspace.root : normalize(captured.root)
+          const normalizedPattern = normalizeFrom(root, pattern)
+          return atomicOne("fs:read", normalizedPattern, "glob", {
+            operation: "glob",
+            pattern: normalizedPattern,
+            root,
+            options: captured === undefined ? undefined : { exclude: captured.exclude ?? [] }
+          })
+        }),
+        exists: Effect.fn("FileSystem.exists")((value) =>
+          atomicOne("fs:read", value, "exists", {
+            operation: "exists",
+            path: normalize(value)
+          })
+        ),
+        readFileString: Effect.fn("FileSystem.readFileString")((value, encoding) =>
+          atomicOne("fs:read", value, "readFileString", {
+            operation: "readFileString",
+            path: normalize(value),
+            encoding
+          })
+        ),
+        sink: (value, options) => {
+          const captured = snapshotOptions(options)
+          return (
+            Sink.unwrap(
+              Effect.fn("FileSystem.sink")(
+                () =>
+                  Effect.suspend(() =>
+                    atomic?.isolated === undefined
+                      ? atomicUnavailable("fs:write", value, "sink")
+                      : write(value).pipe(Effect.map(() => atomic.isolated!.sink(normalize(value), captured)))
+                  )
+              )()
+            )
           )
-        )
-      },
-      writeFileString: Effect.fn("FileSystem.writeFileString")((value, data, options) => {
-        const captured = snapshotOptions(options)
-        return atomicOne("fs:write", value, "writeFileString", {
-          operation: "writeFileString",
-          path: normalize(value),
-          data,
-          options: captured
+        },
+        stream: (value, options) => {
+          const captured = snapshotOptions(options)
+          return (
+            Stream.unwrap(
+              Effect.fn("FileSystem.stream")(() =>
+                Effect.suspend(() =>
+                  atomic?.isolated === undefined
+                    ? atomicUnavailable("fs:read", value, "stream")
+                    : read(value).pipe(Effect.map(() => atomic.isolated!.stream(normalize(value), captured)))
+                )
+              )()
+            )
+          )
+        },
+        writeFileString: Effect.fn("FileSystem.writeFileString")((value, data, options) => {
+          const captured = snapshotOptions(options)
+          return atomicOne("fs:write", value, "writeFileString", {
+            operation: "writeFileString",
+            path: normalize(value),
+            data,
+            options: captured
+          })
         })
-      })
-    }
-    // Every path operation of the guarded surface is already one
-    // descriptor-relative request against this root (or refuses), so machinery
-    // composed over it may use it as its confined view.
-    Object.assign(guarded, { [ConfinedFileSystemTypeId]: logicalRoot })
-    if (atomic === undefined || atomic.batchLimits === undefined) {
-      return guarded
-    } else {
-      const limits = atomic.batchLimits
-      const executeBatch: Batch.FileSystemBatch["execute"] = Effect.fn("FileSystem.batch")(function*(requests) {
-        if (requests.length === 0 || requests.length > Math.min(limits.size, Batch.maxBatchSize)) {
-          return yield* Effect.fail(
-            PlatformError.badArgument({
+      }
+      // Every path operation of the guarded surface is already one
+      // descriptor-relative request against this root (or refuses), so machinery
+      // composed over it may use it as its confined view.
+      Object.assign(guarded, { [ConfinedFileSystemTypeId]: logicalRoot })
+      if (atomic === undefined || atomic.batchLimits === undefined) {
+        return guarded
+      } else {
+        const limits = atomic.batchLimits
+        const executeBatch: Batch.FileSystemBatch["execute"] = Effect.fn("FileSystem.batch")(function*(requests) {
+          if (requests.length === 0 || requests.length > Math.min(limits.size, Batch.maxBatchSize)) {
+            return yield* Effect.fail(
+              PlatformError.badArgument({
+                module: "FileSystem",
+                method: "batch",
+                description: `batch must contain 1 to ${Math.min(limits.size, Batch.maxBatchSize)} operations`
+              })
+            )
+          }
+          if (Option.isNone(rootIdentity)) {
+            return yield* atomicUnavailable("fs:read", logicalRoot, "batch")
+          }
+          // Snapshot before any asynchronous root or permission checks.
+          const captured = snapshotOptions(requests).map((request) => ({
+            ...request,
+            path: request.operation === "glob"
+              ? normalizeFrom(normalize(request.root), request.path)
+              : normalize(request.path),
+            ...(request.operation === "glob" ? { root: normalize(request.root) } : {})
+          }))
+          const rootChanged = (cause: unknown) =>
+            PlatformError.systemError({
+              _tag: "Busy",
               module: "FileSystem",
               method: "batch",
-              description: `batch must contain 1 to ${Math.min(limits.size, Batch.maxBatchSize)} operations`
+              pathOrDescriptor: logicalRoot,
+              description: "batch root no longer names the authorized descriptor",
+              cause
             })
-          )
-        }
-        if (Option.isNone(rootIdentity)) {
-          return yield* atomicUnavailable("fs:read", logicalRoot, "batch")
-        }
-        // Snapshot before any asynchronous root or permission checks.
-        const captured = snapshotOptions(requests).map((request) => ({
-          ...request,
-          path: request.operation === "glob"
-            ? normalizeFrom(normalize(request.root), request.path)
-            : normalize(request.path),
-          ...(request.operation === "glob" ? { root: normalize(request.root) } : {})
-        }))
-        const rootChanged = (cause: unknown) =>
-          PlatformError.systemError({
-            _tag: "Busy",
-            module: "FileSystem",
-            method: "batch",
-            pathOrDescriptor: logicalRoot,
-            description: "batch root no longer names the authorized descriptor",
-            cause
-          })
-        // A vanished workspace is a lost boundary, not N absent files. Check
-        // before canonical resource resolution could turn it into per-path
-        // NotFound results. Check the logical path as well: a workspace alias
-        // may be retargeted while its old canonical directory still exists.
-        // The helper separately checks the canonical root through no-follow
-        // handles, binding both names to the same captured descriptor.
-        const expectedRoot = rootIdentity.value
-        const verifyRoot = () =>
-          identifyRoot(atomic, fileSystem, logicalRoot).pipe(
-            Effect.mapError(rootChanged),
-            Effect.flatMap((current) =>
-              Option.isSome(current) && current.value === expectedRoot
-                ? Effect.void
-                : Effect.fail(rootChanged(
-                  new FileSystemFault({
-                    code: "workspace_identity_changed",
-                    message: "workspace descriptor identity changed"
-                  })
-                ))
+          // A vanished workspace is a lost boundary, not N absent files. Check
+          // before canonical resource resolution could turn it into per-path
+          // NotFound results. Check the logical path as well: a workspace alias
+          // may be retargeted while its old canonical directory still exists.
+          // The helper separately checks the canonical root through no-follow
+          // handles, binding both names to the same captured descriptor.
+          const expectedRoot = rootIdentity.value
+          const verifyRoot = () =>
+            identifyRoot(atomic, fileSystem, logicalRoot).pipe(
+              Effect.mapError(rootChanged),
+              Effect.flatMap((current) =>
+                Option.isSome(current) && current.value === expectedRoot
+                  ? Effect.void
+                  : Effect.fail(rootChanged(
+                    new FileSystemFault({
+                      code: "workspace_identity_changed",
+                      message: "workspace descriptor identity changed"
+                    })
+                  ))
+              )
             )
-          )
-        yield* verifyRoot()
-        // Resolve in bounded groups while retaining request-order grant
-        // decisions. Quota/once grants therefore retain their ordering, and
-        // native metadata latency need not serialize every member twice.
-        const resources = yield* resolvedResources(captured)
-        const admitted: Array<Batch.BatchRequest> = []
-        const indexes: Array<number> = []
-        const entries: Array<Batch.BatchEntry> = []
-        const granted: Array<
-          { readonly request: Batch.BatchRequest; readonly index: number; readonly resource: string }
-        > = []
-        for (const [index, request] of captured.entries()) {
-          const resource = resources[index]!
-          const checked = Result.isFailure(resource) ? Result.fail(resource.failure) : yield* Effect.result(
-            (request.operation === "glob" ? globContent("read", resource.success) : Effect.void).pipe(
-              Effect.andThen(
-                makeCapability("fs:read", resource.success).pipe(
-                  Effect.flatMap((capability) => grants.check(capability)),
-                  Effect.mapError(refuse("read", resource.success))
+          yield* verifyRoot()
+          // Resolve in bounded groups while retaining request-order grant
+          // decisions. Quota/once grants therefore retain their ordering, and
+          // native metadata latency need not serialize every member twice.
+          const resources = yield* resolvedResources(captured)
+          const admitted: Array<Batch.BatchRequest> = []
+          const indexes: Array<number> = []
+          const entries: Array<Batch.BatchEntry> = []
+          const granted: Array<
+            { readonly request: Batch.BatchRequest; readonly index: number; readonly resource: string }
+          > = []
+          for (const [index, request] of captured.entries()) {
+            const resource = resources[index]!
+            const checked = Result.isFailure(resource) ? Result.fail(resource.failure) : yield* Effect.result(
+              (request.operation === "glob" ? globContent("read", resource.success) : Effect.void).pipe(
+                Effect.andThen(
+                  makeCapability("fs:read", resource.success).pipe(
+                    Effect.flatMap((capability) => grants.check(capability)),
+                    Effect.mapError(refuse("read", resource.success))
+                  )
                 )
               )
             )
-          )
-          if (Result.isFailure(checked)) {
-            entries.push({ index, path: request.path, result: Result.fail(checked.failure) })
-          } else granted.push({ request, index, resource: Result.getOrThrow(resource) })
-        }
-        const current = granted.length === 0
-          ? []
-          : yield* resolvedResources(granted.map(({ request }) => request))
-        const settled = yield* Effect.forEach(granted, ({ resource }, position) => {
-          const now = current[position]!
-          return Effect.result(
-            Result.isFailure(now)
-              ? Effect.fail(now.failure)
-              : now.success === resource
-              ? Effect.void
-              : deny("fs:read", "read", resource, "path no longer names the resource that was authorized")
-          )
-        })
-        for (const [position, member] of granted.entries()) {
-          const checked = settled[position]!
-          if (Result.isFailure(checked)) {
-            entries.push({ index: member.index, path: member.request.path, result: Result.fail(checked.failure) })
-          } else {
-            admitted.push(member.request)
-            indexes.push(member.index)
+            if (Result.isFailure(checked)) {
+              entries.push({ index, path: request.path, result: Result.fail(checked.failure) })
+            } else granted.push({ request, index, resource: Result.getOrThrow(resource) })
           }
-        }
-        yield* verifyRoot()
-        if (admitted.length > 0) {
-          const measured = yield* atomic.execute({
-            operation: "batch",
-            boundaryRoot,
-            logicalRoot,
-            rootIdentity: rootIdentity.value,
-            requests: admitted
+          const current = granted.length === 0
+            ? []
+            : yield* resolvedResources(granted.map(({ request }) => request))
+          const settled = yield* Effect.forEach(granted, ({ resource }, position) => {
+            const now = current[position]!
+            return Effect.result(
+              Result.isFailure(now)
+                ? Effect.fail(now.failure)
+                : now.success === resource
+                ? Effect.void
+                : deny("fs:read", "read", resource, "path no longer names the resource that was authorized")
+            )
           })
-          for (const entry of measured.entries) {
-            entries.push({
-              index: indexes[entry.index]!,
-              path: entry.path,
-              result: publicValue(entry.path, entry.result)
-            })
+          for (const [position, member] of granted.entries()) {
+            const checked = settled[position]!
+            if (Result.isFailure(checked)) {
+              entries.push({ index: member.index, path: member.request.path, result: Result.fail(checked.failure) })
+            } else {
+              admitted.push(member.request)
+              indexes.push(member.index)
+            }
           }
-        }
-        entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : a.index - b.index)
-        return { rootIdentity: rootIdentity.value, entries }
-      })
-      return Object.assign(guarded, {
-        [Batch.FileSystemBatchTypeId]: {
-          maxSize: Math.min(limits.size, Batch.maxBatchSize),
-          maxResponseBytes: limits.response,
-          execute: executeBatch
-        }
-      })
-    }
+          yield* verifyRoot()
+          if (admitted.length > 0) {
+            const measured = yield* atomic.execute({
+              operation: "batch",
+              boundaryRoot,
+              logicalRoot,
+              rootIdentity: rootIdentity.value,
+              requests: admitted
+            })
+            for (const entry of measured.entries) {
+              entries.push({
+                index: indexes[entry.index]!,
+                path: entry.path,
+                result: publicValue(entry.path, entry.result)
+              })
+            }
+          }
+          entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : a.index - b.index)
+          return { rootIdentity: rootIdentity.value, entries }
+        })
+        return Object.assign(guarded, {
+          [Batch.FileSystemBatchTypeId]: {
+            maxSize: Math.min(limits.size, Batch.maxBatchSize),
+            maxResponseBytes: limits.response,
+            execute: executeBatch
+          }
+        })
+      }
+    })
   })
 )

@@ -53,6 +53,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as UrlParams from "effect/http/UrlParams"
 import { GrantStore, type Service as GrantService } from "./GrantStore.ts"
 import { makeCapability } from "./internal/makeCapability.ts"
+import { attachServiceAttenuator } from "./internal/ServiceAttenuation.ts"
 
 const snapshotRawBody = (value: unknown): unknown => {
   if (value instanceof globalThis.Uint8Array) return value.slice()
@@ -547,41 +548,43 @@ export const layerWith = (options: { readonly modelIdentity: ModelIdentity }): L
             catch: () => invalidRequest(request)
           })
       )
-      const guarded = EffectHttpClient.transform(
-        snapshotted,
-        (execute, request) =>
-          Effect.withFiber((fiber) =>
-            capabilityFor(request, admittedModel(request, fiber.getRef(Claim), options.modelIdentity)).pipe(
-              Effect.flatMap((capability) => {
-                const admission = fiber.getRef(Admission)
-                if (
-                  admission !== undefined && admissions.has(admission) && !admission.consumed &&
-                  admission.store === grants
-                  && admission.capability.action === capability.action &&
-                  admission.capability.resource === capability.resource
-                ) {
-                  admission.consumed = true
-                  return Effect.void
-                }
-                return grants.check(capability)
-              }),
-              Effect.mapError((error: PermissionError) => toHttpClientError({ request, error })),
-              Effect.andThen(Effect.updateContext(execute, manualRedirects))
+      return attachServiceAttenuator(grants, (grants) => {
+        const guarded = EffectHttpClient.transform(
+          snapshotted,
+          (execute, request) =>
+            Effect.withFiber((fiber) =>
+              capabilityFor(request, admittedModel(request, fiber.getRef(Claim), options.modelIdentity)).pipe(
+                Effect.flatMap((capability) => {
+                  const admission = fiber.getRef(Admission)
+                  if (
+                    admission !== undefined && admissions.has(admission) && !admission.consumed &&
+                    admission.store === grants &&
+                    admission.capability.action === capability.action &&
+                    admission.capability.resource === capability.resource
+                  ) {
+                    admission.consumed = true
+                    return Effect.void
+                  }
+                  return grants.check(capability)
+                }),
+                Effect.mapError((error: PermissionError) => toHttpClientError({ request, error })),
+                Effect.andThen(Effect.updateContext(execute, manualRedirects))
+              )
             )
-          )
-      )
-      const followed = EffectHttpClient.followRedirects(guarded)
-      const result = EffectHttpClient.makeWith(
-        (request) =>
-          Effect.withFiber((fiber) =>
-            // Read caller policy before the guard forces manual transport.
-            Context.getOrUndefined(fiber.context, FetchHttpClient.RequestInit)?.redirect === "manual"
-              ? guarded.postprocess(request)
-              : followed.postprocess(request)
-          ),
-        guarded.preprocess
-      )
-      return supportsDestinationPinning(client) ? withDestinationPinning(result) : result
+        )
+        const followed = EffectHttpClient.followRedirects(guarded)
+        const result = EffectHttpClient.makeWith(
+          (request) =>
+            Effect.withFiber((fiber) =>
+              // Read caller policy before the guard forces manual transport.
+              Context.getOrUndefined(fiber.context, FetchHttpClient.RequestInit)?.redirect === "manual"
+                ? guarded.postprocess(request)
+                : followed.postprocess(request)
+            ),
+          guarded.preprocess
+        )
+        return supportsDestinationPinning(client) ? withDestinationPinning(result) : result
+      })
     })
   )
 
