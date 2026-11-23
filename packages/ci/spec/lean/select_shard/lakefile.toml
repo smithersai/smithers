@@ -1,0 +1,10 @@
+name = "select_shard"
+version = "0.1.0"
+defaultTargets = ["SelectShardSpec", "select-shard-spec"]
+
+[[lean_lib]]
+name = "SelectShardSpec"
+
+[[lean_exe]]
+name = "select-shard-spec"
+root = "Main"
