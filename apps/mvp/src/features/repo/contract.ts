@@ -83,7 +83,7 @@ export const REFUSALS = [
   "rate_limited",
   "github_unavailable",
   "unavailable",
-  "not_configured",
+  "not_configured"
 ] as const
 export type Refusal = (typeof REFUSALS)[number]
 
@@ -103,7 +103,7 @@ export const cloneExecutionId = (id: string, cloneId: string): string => `repo-c
 
 /** Whether `path` is a file path RepoApi reads: relative, bounded, with no empty, `.` or `..` segment. */
 export const isFilePath = (path: string): boolean => {
-  if (path.length === 0 || path.length > MAX_PATH_LENGTH) return false
+  if (path.length === 0 || path.length > MAX_PATH_LENGTH || path.includes("\0")) return false
   const segments = path.split("/")
   return segments.length <= MAX_PATH_SEGMENTS && segments.every((s) => s !== "" && s !== "." && s !== "..")
 }
@@ -139,7 +139,8 @@ export const ABOUT_CONTRIBUTORS = 12
 export const ABOUT_ROOT_ENTRIES = 1000
 
 /** Where the Smithers GitHub App is installed, by the App's `slug`. */
-export const installUrl = (slug: string): string => `https://github.com/apps/${encodeURIComponent(slug)}/installations/new`
+export const installUrl = (slug: string): string =>
+  `https://github.com/apps/${encodeURIComponent(slug)}/installations/new`
 
 /** One page of branches or tags from Code Storage. */
 export const REFS_PAGE_SIZE = 100
@@ -250,7 +251,7 @@ export const FAILURE_COPY: Readonly<Record<Failure, string>> = {
   not_found: NOT_FOUND,
   empty: "Empty repository",
   unavailable: "Couldn't clone",
-  timed_out: "Clone timed out",
+  timed_out: "Clone timed out"
 }
 
 /** What a refused clone shows, by reason; `size_unknown` adds the time GitHub gives the size again. */
@@ -259,7 +260,7 @@ export const CAPACITY_COPY: Readonly<Record<CapacityReason, string>> = {
   storage: "Imports paused",
   reads: "Imports paused",
   too_large: "Too large to import",
-  size_unknown: "Can't check its size until",
+  size_unknown: "Can't check its size until"
 }
 
 /** How far a running clone has come: RepoApi took it, Code Storage is fetching it from GitHub, or its files are being listed. */
@@ -270,7 +271,7 @@ export type CloneStage = (typeof CLONE_STAGES)[number]
 export const CLONE_STAGE_COPY: Readonly<Record<CloneStage, string>> = {
   requested: "Requested",
   fetching: "Fetching",
-  indexing: "Indexing",
+  indexing: "Indexing"
 }
 
 /** The feed row of repository `id`'s clone (worker/CloneFeed.ts): one per person who asked, `clone:<id>`. */
@@ -308,7 +309,9 @@ export const cloneDetail = (ref: string | null): string | null => {
   }
   if (kind === "failed") return FAILURE_COPY[value as Failure] ?? FAILURE_COPY.unavailable
   if (kind === "capacity") {
-    return value === "size_unknown" ? "Can't check its size" : CAPACITY_COPY[value as CapacityReason] ?? CAPACITY_COPY.paused
+    return value === "size_unknown"
+      ? "Can't check its size"
+      : CAPACITY_COPY[value as CapacityReason] ?? CAPACITY_COPY.paused
   }
   return null
 }
@@ -386,7 +389,7 @@ export const REPO_TELEMETRY = {
     "execute_tool repo/read",
     "execute_tool repo/refs",
     "execute_tool repo/copy",
-    "execute_tool repo/clone",
+    "execute_tool repo/clone"
   ],
   fields: [
     "outcome",
@@ -403,8 +406,8 @@ export const REPO_TELEMETRY = {
     "reason",
     "errorCode",
     "smithers.repo.kind",
-    "smithers.repo.copy",
-  ],
+    "smithers.repo.copy"
+  ]
 } as const
 
 /** The mirror has not received the requested GitHub commit yet. */

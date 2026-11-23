@@ -1,0 +1,41 @@
+[package]
+name = "smithers-ffi-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "1", features = ["derive"] }
+base64 = "0.22"
+libfuzzer-sys = "0.4"
+serde_json = "1"
+tempfile = "3"
+yrs = { version = "=0.27.4", features = ["small-client"] }
+smithers-ffi = { path = ".." }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "live_document_decode"
+path = "fuzz_targets/live_document_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wiki_document_ffi"
+path = "fuzz_targets/wiki_document_ffi.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "c_abi_repo_ops"
+path = "fuzz_targets/c_abi_repo_ops.rs"
+test = false
+doc = false
+bench = false

@@ -7,6 +7,7 @@
 [workspace]
 resolver = "3"
 members = ["packages/smithers/flows/jj-wasm", "packages/smithers-ffi"]
+exclude = ["packages/smithers/flows/jj-wasm/fuzz", "packages/smithers-ffi/fuzz"]
 
 [workspace.dependencies]
 # Both browser flows and the repository service use the same jj store format.

@@ -90,6 +90,9 @@ importers:
       '@smthrs/flows':
         specifier: workspace:*
         version: link:packages/smithers/flows
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:packages/fuzz
       '@smthrs/journal':
         specifier: workspace:*
         version: link:packages/smithers/flows/journal
@@ -647,6 +650,9 @@ importers:
       '@smthrs/evals':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/evals
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../packages/fuzz
       '@smthrs/platform-node':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/platform-node
@@ -937,6 +943,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../packages/fuzz
       '@smthrs/testing':
         specifier: workspace:*
         version: link:../../packages/testing
@@ -1306,6 +1315,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -1387,6 +1399,9 @@ importers:
       '@smthrs/flow':
         specifier: 1.0.0-rc.18
         version: link:../smithers/flows/flow
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -1460,6 +1475,9 @@ importers:
       '@smthrs/database':
         specifier: workspace:*
         version: link:../smithers/flows/database
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../fuzz
       '@tanstack/browser-db-sqlite-persistence':
         specifier: 0.2.36
         version: 0.2.36(patch_hash=1d7ca6796dd79e259c8f8efc2752c1416adf268a7ef1099709d22e922d1bbed4)(@journeyapps/wa-sqlite@1.7.2)(typescript@5.9.3)
@@ -1532,6 +1550,9 @@ importers:
       '@journeyapps/wa-sqlite':
         specifier: 1.7.2
         version: 1.7.2
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../fuzz
       '@tanstack/browser-db-sqlite-persistence':
         specifier: 0.2.36
         version: 0.2.36(patch_hash=1d7ca6796dd79e259c8f8efc2752c1416adf268a7ef1099709d22e922d1bbed4)(@journeyapps/wa-sqlite@1.7.2)(typescript@5.9.3)
@@ -1608,6 +1629,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -1794,6 +1818,9 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
     devDependencies:
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -2317,6 +2344,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -2408,6 +2438,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -2803,6 +2836,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -3049,6 +3085,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -3292,6 +3331,9 @@ importers:
       '@smthrs/flow':
         specifier: workspace:*
         version: link:../../flows/flow
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/kernel':
         specifier: 1.0.0-rc.18
         version: link:../../flows/kernel
@@ -3477,6 +3519,9 @@ importers:
       '@smthrs/engine':
         specifier: 1.0.0-rc.18
         version: link:../../flows/engine
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -3953,6 +3998,9 @@ importers:
       '@smthrs/engine-store':
         specifier: 1.0.0-rc.18
         version: link:../flows/engine-store
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../fuzz
       '@smthrs/jj':
         specifier: 1.0.0-rc.18
         version: link:../flows/jj
@@ -4186,6 +4234,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -4246,6 +4297,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -4310,6 +4364,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -4458,6 +4515,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -4624,6 +4684,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -4976,6 +5039,9 @@ importers:
       '@smthrs/flow':
         specifier: 1.0.0-rc.18
         version: link:../flow
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -5058,6 +5124,9 @@ importers:
       '@smthrs/database':
         specifier: 1.0.0-rc.18
         version: link:../database
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -5131,6 +5200,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -5204,6 +5276,9 @@ importers:
       '@smthrs/engine':
         specifier: 1.0.0-rc.18
         version: link:../engine
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/platform-node':
         specifier: 1.0.0-rc.18
         version: link:../platform-node
@@ -5301,6 +5376,9 @@ importers:
       '@opentelemetry/sdk-trace-web':
         specifier: 2.11.0
         version: 2.11.0(@opentelemetry/api@1.9.1)
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -5368,6 +5446,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -5441,6 +5522,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -6101,6 +6185,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -6252,6 +6339,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -6319,6 +6409,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -6398,6 +6491,9 @@ importers:
       '@smthrs/engine-store':
         specifier: 1.0.0-rc.18
         version: link:../engine-store
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/time-travel':
         specifier: 1.0.0-rc.18
         version: link:../time-travel
@@ -6495,6 +6591,9 @@ importers:
       '@smthrs/flow':
         specifier: 1.0.0-rc.18
         version: link:../flow
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@smthrs/kernel':
         specifier: 1.0.0-rc.18
         version: link:../kernel
@@ -6920,6 +7019,9 @@ importers:
       '@smthrs/database':
         specifier: 1.0.0-rc.18
         version: link:../flows/database
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -7263,6 +7365,9 @@ importers:
       '@jitl/quickjs-wasmfile-release-sync':
         specifier: 0.32.0
         version: 0.32.0
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../../fuzz
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

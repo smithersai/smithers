@@ -36,3 +36,11 @@ plain test run. Real I/O and native promises escape that driver; inject determin
 `FuzzCorpus.fileCorpus` is also exported from the `@smthrs/testing` root for standalone campaigns. It uses Node's
 filesystem with atomic rename. `Fuzz` and `FuzzSimulation` themselves come from `@smthrs/fuzz` and run on every
 platform; no Node API enters that package. See [the package guide](https://github.com/smithersai/smithers/blob/main/packages/fuzz/docs/README.md).
+
+## V8 coverage-guided feedback
+
+Set `EFFECT_FUZZ_V8_COVERAGE=1` during a fuzz session (`EFFECT_FUZZ=1`) to attach Node.js V8 precise basic-block
+coverage as an additional `Fuzz.Feedback` source alongside `Fuzz.spans`, or set it to a comma-separated list of path
+substrings (for example `EFFECT_FUZZ_V8_COVERAGE=packages/smithers/flows/`). For standalone campaigns, acquire the
+scoped feedback source directly with `FuzzV8Coverage.make()` from `@smthrs/testing` (or
+`@smthrs/testing/FuzzV8Coverage`).

@@ -1,0 +1,39 @@
+[package]
+name = "flows-jj-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = "0.4"
+serde_json = "1"
+tempfile = "3"
+flows-jj = { path = ".." }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "abi_json"
+path = "fuzz_targets/abi_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ops_state_machine"
+path = "fuzz_targets/ops_state_machine.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diff_and_status"
+path = "fuzz_targets/diff_and_status.rs"
+test = false
+doc = false
+bench = false

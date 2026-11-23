@@ -73,7 +73,8 @@
     "./pins/Race": "./src/pins/Race.ts",
     "./pins/Replay": "./src/pins/Replay.ts",
     "./ProcessTable": "./src/ProcessTable.ts",
-    "./TurnLog": "./src/TurnLog.ts"
+    "./TurnLog": "./src/TurnLog.ts",
+    "./FuzzV8Coverage": "./src/FuzzV8Coverage.ts"
   },
   "bin": {
     "smthrs-model-server": "./bin/smthrs-model-server.mjs"
@@ -441,6 +442,16 @@
         "require": {
           "types": "./dist/cjs/TurnLog.d.ts",
           "default": "./dist/cjs/TurnLog.js"
+        }
+      },
+      "./FuzzV8Coverage": {
+        "import": {
+          "types": "./dist/esm/FuzzV8Coverage.d.ts",
+          "default": "./dist/esm/FuzzV8Coverage.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FuzzV8Coverage.d.ts",
+          "default": "./dist/cjs/FuzzV8Coverage.js"
         }
       }
     }

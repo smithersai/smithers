@@ -106,3 +106,6 @@ export * as TerminalRecording from "./TerminalRecording.ts"
 
 /** Filesystem corpus tooling for feedback-guided fuzz suites. */
 export * as FuzzCorpus from "./internal/fuzz.ts"
+
+/** V8 precise-coverage feedback adapter for `@smthrs/fuzz` on Node.js. */
+export * as FuzzV8Coverage from "./FuzzV8Coverage.ts"

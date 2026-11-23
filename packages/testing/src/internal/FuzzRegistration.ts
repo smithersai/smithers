@@ -10,6 +10,7 @@ import { Arbitrary, Clock, Effect, Layer, Scheduler, type Schema } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import * as TestConsole from "effect/testing/TestConsole"
 import { it as vitestIt, type TestAPI, type TestContext, type TestOptions } from "vitest"
+import * as FuzzV8Coverage from "../FuzzV8Coverage.ts"
 import * as InternalFuzz from "./fuzz.ts"
 
 /**
@@ -65,7 +66,10 @@ const makeArbitrary = (inputs: InternalFuzz.Arbitraries): Arbitrary.Arbitrary<an
  * @since 0.1.0
  * @category constructors
  */
-export const makeMethods = (test: TestAPI = vitestIt) => {
+export const makeMethods = (
+  test: TestAPI = vitestIt,
+  createV8Session: () => FuzzV8Coverage.InspectorSession = FuzzV8Coverage.createNodeSession
+) => {
   const register = (
     name: string,
     inputs: InternalFuzz.Arbitraries,
@@ -74,6 +78,7 @@ export const makeMethods = (test: TestAPI = vitestIt) => {
   ) => {
     const { fuzz, id, revision, ...vitestOptions } = options ?? {}
     const session = InternalFuzz.session(process.env, name)
+    const v8Options = session === undefined ? undefined : FuzzV8Coverage.fromEnv(process.env)
     const timeout = session === undefined || vitestOptions.timeout !== undefined
       ? vitestOptions :
       { ...vitestOptions, timeout: InternalFuzz.sessionTimeout({ ...fuzz, ...session }) }
@@ -84,7 +89,16 @@ export const makeMethods = (test: TestAPI = vitestIt) => {
         revision: revision ?? "1"
       })
       const store = InternalFuzz.fileCorpus(InternalFuzz.corpusDirectories(ctx.task.file.filepath, process.cwd()))
-      const fuzzed = InternalFuzz.runFuzz(target, store, fuzz, session, (message) => Effect.logInfo(message))
+      const fuzzed = v8Options === undefined
+        ? InternalFuzz.runFuzz(target, store, fuzz, session, (message) => Effect.logInfo(message))
+        : Effect.flatMap(
+          FuzzV8Coverage.make(v8Options).pipe(Effect.provideService(FuzzV8Coverage.Inspector, createV8Session)),
+          (v8) => {
+            const baseFeedback = fuzz?.feedback ?? [Fuzz.spans]
+            const withV8: Fuzz.Options = { ...fuzz, feedback: [...baseFeedback, v8] }
+            return InternalFuzz.runFuzz(target, store, withV8, session, (message) => Effect.logInfo(message))
+          }
+        )
       const smoke = Fuzz.run(makeArbitrary(inputs), values, { executions: 100, execution: fuzz?.execution }).pipe(
         Effect.flatMap((report) => {
           const failure = Fuzz.formatReport(report)

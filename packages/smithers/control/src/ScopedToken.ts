@@ -223,7 +223,9 @@ export const verify = (key: string, token: string, now: number): Effect.Effect<C
       return refused("A valid scoped token is required")
     }
     const signature = Base64Url.decode(parts[2]!)
-    if (Result.isFailure(signature)) return refused("A valid scoped token is required")
+    if (Result.isFailure(signature) || Base64Url.encode(signature.success) !== parts[2]!) {
+      return refused("A valid scoped token is required")
+    }
     return subtle().pipe(
       Effect.flatMap((crypto) =>
         Effect.promise(async () => {

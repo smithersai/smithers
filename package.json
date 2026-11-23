@@ -45,7 +45,12 @@
     "test": "pnpm --recursive --if-present run test",
     "test:design-mock": "node --test .specs/design/mock/player.test.mjs .specs/design/mock/src/sites/reporting.test.mjs",
     "test:jsdoc": "node --test eslint.jsdoc.test.mjs",
-    "lint:jsdoc": "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0"
+    "lint:jsdoc": "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0",
+    "fuzz": "node scripts/fuzz-repo.mjs",
+    "fuzz:v8": "node scripts/fuzz-repo.mjs --v8",
+    "fuzz:coverage": "node scripts/fuzz-repo.mjs --coverage",
+    "fuzz:rust": "node scripts/fuzz-repo.mjs --rust",
+    "fuzz:rust:libfuzzer": "node scripts/fuzz-repo.mjs --rust --libfuzzer-seconds=30"
   },
   "engines": {
     "node": ">=26.4.0",
@@ -99,7 +104,8 @@
     "vibelang-unplugin": "0.0.13",
     "vite": "^8.2.2",
     "ws": "8.22.0",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "@smthrs/fuzz": "workspace:*"
   },
   "overrides": {
     "@types/bun": "1.4.4",

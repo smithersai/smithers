@@ -251,7 +251,8 @@
     "typescript-eslint": "8.69.0",
     "vibelang": "0.0.13",
     "vibelang-vite": "0.0.13",
-    "vitest": "5.0.0"
+    "vitest": "5.0.0",
+    "@smthrs/fuzz": "workspace:*"
   },
   "peerDependencies": {
     "@opentelemetry/api": ">=1.9.1 <1.10.0",

@@ -251,6 +251,7 @@
     "@smthrs/kernel": "1.0.0-rc.18",
     "@smthrs/platform-node": "1.0.0-rc.18",
     "@smthrs/flow": "workspace:*",
-    "@smthrs/plan": "workspace:*"
+    "@smthrs/plan": "workspace:*",
+    "@smthrs/fuzz": "workspace:*"
   }
 }
