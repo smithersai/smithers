@@ -103,6 +103,74 @@ describe("BenchReport", () => {
     expect(table).toContain("//packages/b:bench")
     expect(table).toContain("cached")
   })
+
+  it("loads baselines, computes deltas, flags regressions, and renders the DELTA column", () => {
+    const baseline = BenchReport.loadBaseline({
+      version: 1,
+      results: [
+        {
+          label: "//packages/a:bench",
+          status: "ran",
+          benchmarks: [
+            { suite: "core", name: "big-win", hz: 100, meanMs: 10 },
+            { suite: "core", name: "medium-win", hz: 200, meanMs: 5 },
+            { suite: "core", name: "small-win", hz: 100, meanMs: 10 },
+            { suite: "core", name: "steady", hz: 100, meanMs: 10 },
+            { suite: "core", name: "regressed", hz: 100, meanMs: 10 },
+            { name: "latency-only", meanMs: 20 }
+          ]
+        }
+      ]
+    })
+    expect(baseline).toHaveLength(1)
+    expect(BenchReport.loadBaseline(baseline)).toEqual(baseline)
+    expect(() => BenchReport.loadBaseline({ invalid: true })).toThrow(/baseline/i)
+
+    const current: ReadonlyArray<BenchReport.TargetBenchmarks> = [
+      {
+        label: "//packages/a:bench",
+        status: "ran",
+        benchmarks: [
+          { suite: "core", name: "big-win", hz: 1200, meanMs: 0.83 },
+          { suite: "core", name: "medium-win", hz: 400, meanMs: 2.5 },
+          { suite: "core", name: "small-win", hz: 120, meanMs: 8.3 },
+          { suite: "core", name: "steady", hz: 101, meanMs: 9.9 },
+          { suite: "core", name: "regressed", hz: 75, meanMs: 13.3 },
+          { name: "latency-only", meanMs: 10 },
+          { suite: "core", name: "brand-new", hz: 500, meanMs: 2 }
+        ]
+      }
+    ]
+
+    const deltas = BenchReport.compare(current, baseline)
+    expect(deltas.map((delta) => [delta.benchmark, delta.status])).toEqual([
+      ["core :: big-win", "faster"],
+      ["core :: medium-win", "faster"],
+      ["core :: small-win", "faster"],
+      ["core :: steady", "same"],
+      ["core :: regressed", "slower"],
+      ["latency-only", "faster"],
+      ["core :: brand-new", "new"]
+    ])
+    expect(deltas.find((delta) => delta.benchmark === "latency-only")?.speedupRatio).toBe(2)
+
+    expect(BenchReport.regressions(deltas, 20).map((delta) => delta.benchmark)).toEqual(["core :: regressed"])
+    expect(BenchReport.regressions(deltas, 25)).toEqual([])
+
+    const table = BenchReport.format(current, Ansi.none, baseline)
+    expect(table).toBeDefined()
+    expect(table).toContain("DELTA")
+    expect(table).toContain("+12.0x")
+    expect(table).toContain("+2.00x")
+    expect(table).toContain("+20.0%")
+    expect(table).toContain("~+1.0%")
+    expect(table).toContain("-25.0%")
+    expect(table).toContain("new")
+
+    const colored = BenchReport.format(current, Ansi.colors, baseline)
+    expect(colored).toBeDefined()
+    expect(Ansi.strip(colored!)).toBe(table)
+  })
 })
 
 describe("Affected.changedPaths jj workspace support", () => {

@@ -82,34 +82,54 @@ effect function inspect<A>(read: () => A): A!FsError {
 }
 
 const routeReferences = effect (input: ReadonlyArray<Route.Route>): ReadonlyArray<Route.Route>!FsError => {
-  const ordinary = try inspect(() => Array.isArray(input) && Object.getPrototypeOf(input) === Array.prototype)
-  if (!ordinary) throw new FsError({
-    code: "invalid_route",
-    method: "CommandTree.make",
-    description: "Routes must be supplied as an ordinary dense array"
+  const result = try inspect((): { readonly ok: true; readonly value: ReadonlyArray<Route.Route> } | { readonly ok: false; readonly error: FsError } => {
+    if (!Array.isArray(input) || Object.getPrototypeOf(input) !== Array.prototype) {
+      return {
+        ok: false,
+        error: new FsError({
+          code: "invalid_route",
+          method: "CommandTree.make",
+          description: "Routes must be supplied as an ordinary dense array"
+        })
+      }
+    }
+    const length = input.length
+    if (length > maximumRoutes) {
+      return {
+        ok: false,
+        error: resourceLimit("CommandTree.make", `A command tree may contain at most ${maximumRoutes} routes`)
+      }
+    }
+    if (Reflect.ownKeys(input).length !== length + 1) {
+      return {
+        ok: false,
+        error: new FsError({
+          code: "invalid_route",
+          method: "CommandTree.make",
+          description: "Routes must be supplied as an ordinary dense array"
+        })
+      }
+    }
+    const output = new Array<Route.Route>(length)
+    for (let index = 0; index < length; index++) {
+      const descriptor = Object.getOwnPropertyDescriptor(input, String(index))
+      if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+        return {
+          ok: false,
+          error: new FsError({
+            code: "invalid_route",
+            method: "CommandTree.make",
+            description: "Routes must be supplied as enumerable data properties",
+            path: `$[${index}]`
+          })
+        }
+      }
+      output[index] = descriptor.value as Route.Route
+    }
+    return { ok: true, value: Object.freeze(output) }
   })
-  const length = try inspect(() => input.length)
-  if (length > maximumRoutes) {
-    throw resourceLimit("CommandTree.make", `A command tree may contain at most ${maximumRoutes} routes`)
-  }
-  const keys = try inspect(() => Reflect.ownKeys(input))
-  if (keys.length !== length + 1) throw new FsError({
-    code: "invalid_route",
-    method: "CommandTree.make",
-    description: "Routes must be supplied as an ordinary dense array"
-  })
-  const output: Array<Route.Route> = []
-  for (let index = 0; index < length; index++) {
-    const descriptor = try inspect(() => Object.getOwnPropertyDescriptor(input, String(index)))
-    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) throw new FsError({
-      code: "invalid_route",
-      method: "CommandTree.make",
-      description: "Routes must be supplied as enumerable data properties",
-      path: `$[${index}]`
-    })
-    output.push(descriptor.value as Route.Route)
-  }
-  return Object.freeze(output)
+  if (!result.ok) throw result.error
+  return result.value
 }
 
 const freezeTree = (root: MutableTree): CommandTree => {

@@ -456,3 +456,43 @@ describe("difference", () => {
     ).toBe("node_modules unit tool: a, b were written")
   })
 })
+
+describe("identifyAsync", () => {
+  it("matches synchronous identify byte-for-byte across worker threads on cold, warm, and mutated trees", async () => {
+    const root = await tree()
+    for (let i = 0; i < 12; i++) {
+      await write(root, `.pnpm/pkg-${String(i).padStart(2, "0")}@1.0.0/index.js`, `export const n = ${i}\n`)
+    }
+    const syncId = InstalledTree.identify(root)
+    const mem = InstalledTree.empty()
+    const coldAsync = await InstalledTree.identifyAsync(root, mem)
+    expect(coldAsync).toEqual(syncId)
+
+    // Pre-populate remembered rows via settled sync clock, then verify warm worker fast path hits.
+    const settledMem = InstalledTree.empty()
+    InstalledTree.identify(root, settledMem, settled)
+    expect(settledMem.rows.size).toBe(syncId.units)
+    const warmAsync = await InstalledTree.identifyAsync(root, settledMem)
+    expect(warmAsync).toEqual(syncId)
+
+    // Mutate one unit and verify worker detects the mismatch and rehashes cleanly.
+    await write(root, ".pnpm/pkg-05@1.0.0/index.js", "export const n = 999\n")
+    const mutatedSync = InstalledTree.identify(root)
+    const mutatedAsync = await InstalledTree.identifyAsync(root, settledMem)
+    expect(mutatedAsync).toEqual(mutatedSync)
+    expect(mutatedAsync.digest).not.toBe(syncId.digest)
+  })
+
+  it("enforces entry and depth limits identically in worker threads", async () => {
+    const root = await tree()
+    for (let i = 0; i < 12; i++) {
+      await write(root, `.pnpm/pkg-${String(i).padStart(2, "0")}@1.0.0/a/b/c/index.js`, `export const n = ${i}\n`)
+    }
+    await expect(
+      InstalledTree.identifyAsync(root, InstalledTree.empty(), InstalledTree.defaultIo, { entries: 10, depth: 128 })
+    ).rejects.toThrow(/more than 10 entries/)
+    await expect(
+      InstalledTree.identifyAsync(root, InstalledTree.empty(), InstalledTree.defaultIo, { entries: 1000, depth: 2 })
+    ).rejects.toThrow(/deeper than 2 directories/)
+  })
+})

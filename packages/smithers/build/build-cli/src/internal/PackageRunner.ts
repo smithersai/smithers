@@ -1978,16 +1978,34 @@ const executeWith = (
      * (another process is writing it, or it is gone) is a changed tree: the
      * answer says so, and the green target stays green.
      */
+    let runnerInstalledMemory: Promise<InstalledTree.Remembered> | undefined
+    const latestTreeChecks = new Map<
+      string,
+      { readonly startedAt: bigint; readonly promise: Promise<InstalledTree.Identity> }
+    >()
+    const verifyTreeAfter = async (real: string, finishedAt: bigint): Promise<InstalledTree.Identity> => {
+      const existing = latestTreeChecks.get(real)
+      if (existing !== undefined && existing.startedAt >= finishedAt) {
+        return existing.promise
+      }
+      runnerInstalledMemory ??= InstalledTree.load(InstalledTree.path(root, cacheDirectory))
+      const remembered = await runnerInstalledMemory
+      const startedAt = process.hrtime.bigint()
+      const promise = InstalledTree.identifyAsync(real, remembered)
+      latestTreeChecks.set(real, { startedAt, promise })
+      return promise
+    }
+
     const installedTreeChange = (node: PackageNode): Effect.Effect<string | undefined, unknown> =>
       joined(async () => {
-        const remembered = await InstalledTree.load(InstalledTree.path(root, cacheDirectory))
+        const finishedAt = process.hrtime.bigint()
         const rows: Array<Record<string, unknown>> = []
         collectTagged(node.keyMaterial.inputs, "InstalledTree", rows, new Set())
         for (const row of rows) {
           const tree = String(row["path"])
           try {
             const real = NodeFs.realpathSync(NodePath.join(root, ...tree.split("/")))
-            const now = InstalledTree.identify(real, remembered)
+            const now = await verifyTreeAfter(real, finishedAt)
             if (now.digest === row["digest"]) continue
             // A node planned again after an installation keys a later
             // measurement than this plan holds; comparing against the plan's

@@ -143,8 +143,12 @@ describe("Route boundary", () => {
     }), { _tag: "None" })
     expect((try failureOf(Route.snapshot({ ...base, input: hostileRef as never }))).code).toBe("invalid_route")
 
+    expect((try failureOf(Route.snapshot({ ...base, name: "" as never }))).code).toBe("invalid_route")
+    expect((try failureOf(Route.snapshot({ ...base, output: { _tag: "Bogus" } as never }))).code).toBe("invalid_route")
+
     for (
       const effects of [
+        null,
         { ...base.effects, reads: [""] },
         { ...base.effects, writes: [1] },
         { ...base.effects, mode: "other" },

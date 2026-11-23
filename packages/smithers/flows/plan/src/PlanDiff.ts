@@ -68,9 +68,23 @@ export interface PlanDiff {
 const stable = (value: unknown): string => {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "undefined"
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`
-  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left < right ? -1 : 1)
-  return `{${entries.map(([name, entry]) => `${JSON.stringify(name)}:${stable(entry)}`).join(",")}}`
+  const record = value as Record<string, unknown>
+  const keys = Object.keys(record).sort()
+  let out = "{"
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]!
+    if (i > 0) out += ","
+    out += `${JSON.stringify(key)}:${stable(record[key])}`
+  }
+  return out + "}"
 }
+
+/** Fast check for primitives whose JSON-mirror identity is direct equality. */
+const isSimplePrimitive = (value: unknown): boolean =>
+  value === null ||
+  typeof value === "string" ||
+  typeof value === "boolean" ||
+  (typeof value === "number" && Number.isFinite(value))
 
 /**
  * A planned value compares as the reference an AST stores for it, so the same
@@ -84,60 +98,42 @@ const plannedReference = (_value: unknown, reference: Planned.Reference) => ({
   path: reference.path
 })
 
-/** @private */
-type ComparisonToken = string | symbol
-
 /**
  * Projects compared fields through the key's JSON semantics. A refused value
- * receives an identity token scoped to its node and field, so the same value
- * remains equal to itself without equating two distinct refused values.
+ * compares equal only to itself (`Object.is`), never equating two distinct
+ * refused values or a refused value with a valid one.
  *
  * @private
  */
-const fieldComparison = () => {
-  const refused = new Map<unknown, Map<string, symbol>>()
-  const token = (input: unknown, nodeId: string, field: string): ComparisonToken => {
-    try {
-      return stable(jsonMirror(input, plannedReference))
-    } catch {
-      const address = JSON.stringify([nodeId, field])
-      let fields = refused.get(input)
-      if (fields === undefined) {
-        fields = new Map()
-        refused.set(input, fields)
-      }
-      let sentinel = fields.get(address)
-      if (sentinel === undefined) {
-        sentinel = Symbol(address)
-        fields.set(address, sentinel)
-      }
-      return sentinel
-    }
+const sameField = (previous: unknown, next: unknown): boolean => {
+  if (Object.is(previous, next)) return true
+  if (isSimplePrimitive(previous) && isSimplePrimitive(next)) return previous === next
+  try {
+    return stable(jsonMirror(previous, plannedReference)) === stable(jsonMirror(next, plannedReference))
+  } catch {
+    return false
   }
-  return (previous: unknown, next: unknown, nodeId: string, field: string): boolean =>
-    token(previous, nodeId, field) === token(next, nodeId, field)
 }
 
 /** @private */
 const changedFields = (
   previous: Plan.PlanNode,
   next: Plan.PlanNode,
-  rekeyedDependencies: ReadonlySet<string>,
-  sameField: ReturnType<typeof fieldComparison>
+  rekeyedDependencies: ReadonlySet<string>
 ): ReadonlyArray<string> => {
   const changed: Array<string> = []
   // StepKey.materialBody is the identity list this attribution must mirror.
   // Inputs, layers, and capabilities complete fromKeyMaterial's hashed value,
   // and material.kind selects the key namespace (content versus tier-bearing
   // plan declaration), so a tier-only move still re-keys and is blamed here.
-  if (!sameField(previous.material.version, next.material.version, next.id, "version")) changed.push("version")
+  if (!sameField(previous.material.version, next.material.version)) changed.push("version")
   if (previous.material.kind !== next.material.kind) changed.push("kind")
-  if (!sameField(previous.material.body, next.material.body, next.id, "body")) changed.push("body")
-  if (!sameField(previous.material.nondeterministic, next.material.nondeterministic, next.id, "nondeterministic")) {
+  if (!sameField(previous.material.body, next.material.body)) changed.push("body")
+  if (!sameField(previous.material.nondeterministic, next.material.nondeterministic)) {
     changed.push("nondeterministic")
   }
-  if (!sameField(previous.material.effects, next.material.effects, next.id, "effects")) changed.push("effects")
-  if (!sameField(previous.material.placement, next.material.placement, next.id, "placement")) {
+  if (!sameField(previous.material.effects, next.material.effects)) changed.push("effects")
+  if (!sameField(previous.material.placement, next.material.placement)) {
     changed.push("placement")
   }
   const width = Math.max(previous.material.inputs.length, next.material.inputs.length)
@@ -145,14 +141,14 @@ const changedFields = (
     const before = previous.material.inputs[index]
     const after = next.material.inputs[index]
     const field = `input[${index}]`
-    if (before === undefined || after === undefined || !sameField(before, after, next.id, field)) {
+    if (before === undefined || after === undefined || !sameField(before, after)) {
       changed.push(field)
       continue
     }
     if (after._tag !== "Literal" && rekeyedDependencies.has(after.from)) changed.push(field)
   }
-  if (!sameField(previous.material.layers, next.material.layers, next.id, "layers")) changed.push("layers")
-  if (!sameField(previous.material.capabilities, next.material.capabilities, next.id, "capabilities")) {
+  if (!sameField(previous.material.layers, next.material.layers)) changed.push("layers")
+  if (!sameField(previous.material.capabilities, next.material.capabilities)) {
     changed.push("capabilities")
   }
   return changed
@@ -217,7 +213,6 @@ export const diff = (previous: Plan.Plan, next: Plan.Plan): PlanDiff => {
   const added: Array<string> = []
   const rekeyed: Array<Rekeyed> = []
   const unchanged: Array<string> = []
-  const sameField = fieldComparison()
   for (const node of next.nodes) {
     const original = pairs.get(node)
     if (original === undefined) {
@@ -232,7 +227,7 @@ export const diff = (previous: Plan.Plan, next: Plan.Plan): PlanDiff => {
       id: node.id,
       from: original.key,
       to: node.key,
-      changed: changedFields(original, node, rekeyedIds, sameField)
+      changed: changedFields(original, node, rekeyedIds)
     })
   }
   return {

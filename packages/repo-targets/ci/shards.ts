@@ -37,16 +37,34 @@ const testWork = new Map(packageLanePatterns.map((pattern) => [pattern, cost(pat
 const weight = (pattern: string): number => Math.max(1, work.get(pattern)! + testWork.get(pattern)!)
 
 /** How far apart the shards are in one measure; a heaviest shard of one selection cannot be split, so it is left out. */
-const spreadOf = (layout: ReadonlyArray<ReadonlyArray<string>>, measure: ReadonlyMap<string, number>): number => {
-  const costs = layout.map((patterns) => patterns.reduce((sum, pattern) => sum + measure.get(pattern)!, 0))
-  const heaviest = costs.indexOf(Math.max(...costs))
-  const compared = layout[heaviest]!.length === 1 ? costs.filter((_, index) => index !== heaviest) : costs
-  return Math.max(...compared) - Math.min(...compared)
+const spreadOfSums = (sums: ReadonlyArray<number>, counts: ReadonlyArray<number>): number => {
+  let maxVal = -Infinity
+  let heaviest = 0
+  for (let i = 0; i < sums.length; i++) {
+    const v = sums[i]!
+    if (v > maxVal) {
+      maxVal = v
+      heaviest = i
+    }
+  }
+  const skipHeaviest = counts[heaviest] === 1
+  let lo = Infinity
+  let hi = -Infinity
+  for (let i = 0; i < sums.length; i++) {
+    if (skipHeaviest && i === heaviest) continue
+    const v = sums[i]!
+    if (v < lo) lo = v
+    if (v > hi) hi = v
+  }
+  return hi - lo
 }
 
 /** The wider of the two spreads, each against its bound in CiShards.test.ts: 3 minutes of all work, 4 of tests. */
-const unevenness = (layout: ReadonlyArray<ReadonlyArray<string>>): number =>
-  Math.max(spreadOf(layout, work) / 180_000, spreadOf(layout, testWork) / 240_000)
+const unevennessSums = (
+  workSums: ReadonlyArray<number>,
+  testSums: ReadonlyArray<number>,
+  counts: ReadonlyArray<number>
+): number => Math.max(spreadOfSums(workSums, counts) / 180_000, spreadOfSums(testSums, counts) / 240_000)
 
 /**
  * Longest-first scheduling evens one weight, a selection's work in both lanes, and can still leave one lane's work
@@ -54,30 +72,95 @@ const unevenness = (layout: ReadonlyArray<ReadonlyArray<string>>): number =>
  * or two are swapped, between two shards while that narrows the wider spread; each step narrows it, so it ends.
  */
 const evened = (start: ReadonlyArray<ReadonlyArray<string>>): ReadonlyArray<ReadonlyArray<string>> => {
-  let layout = start.map((patterns) => [...patterns])
+  const layout = start.map((patterns) => [...patterns])
+  const shardCount = layout.length
+  const workSums = layout.map((patterns) => patterns.reduce((sum, pattern) => sum + work.get(pattern)!, 0))
+  const testSums = layout.map((patterns) => patterns.reduce((sum, pattern) => sum + testWork.get(pattern)!, 0))
+  const counts = layout.map((patterns) => patterns.length)
   while (true) {
-    let best: { readonly score: number; readonly layout?: Array<Array<string>> } = { score: unevenness(layout) }
-    for (const [from, source] of layout.entries()) {
+    let bestScore = unevennessSums(workSums, testSums, counts)
+    let bestFrom = -1
+    let bestTo = -1
+    let bestMovedIndex = -1
+    let bestBackIndex = -1
+    for (let from = 0; from < shardCount; from++) {
+      const source = layout[from]!
       if (source.length < 2) continue
-      for (const to of layout.keys()) {
+      for (let to = 0; to < shardCount; to++) {
         if (to === from) continue
-        for (const moved of source) {
-          for (const back of [undefined, ...layout[to]!]) {
-            const next = layout.map((patterns) => [...patterns])
-            next[from] = next[from]!.filter((pattern) => pattern !== moved)
-            next[to]!.push(moved)
-            if (back !== undefined) {
-              next[to] = next[to]!.filter((pattern) => pattern !== back)
-              next[from]!.push(back)
-            }
-            const score = unevenness(next)
-            if (score < best.score - 1e-9) best = { score, layout: next }
+        const target = layout[to]!
+        for (let mIdx = 0; mIdx < source.length; mIdx++) {
+          const moved = source[mIdx]!
+          const mw = work.get(moved)!
+          const mt = testWork.get(moved)!
+          // Candidate 1: move `moved` from `from` -> `to` without swap
+          workSums[from] = workSums[from]! - mw
+          workSums[to] = workSums[to]! + mw
+          testSums[from] = testSums[from]! - mt
+          testSums[to] = testSums[to]! + mt
+          counts[from] = counts[from]! - 1
+          counts[to] = counts[to]! + 1
+          const moveScore = unevennessSums(workSums, testSums, counts)
+          if (moveScore < bestScore - 1e-9) {
+            bestScore = moveScore
+            bestFrom = from
+            bestTo = to
+            bestMovedIndex = mIdx
+            bestBackIndex = -1
           }
+          // Candidate 2: swap `moved` with each `back` in `target`
+          counts[from] = counts[from]! + 1
+          counts[to] = counts[to]! - 1
+          for (let bIdx = 0; bIdx < target.length; bIdx++) {
+            const back = target[bIdx]!
+            const bw = work.get(back)!
+            const bt = testWork.get(back)!
+            workSums[from] = workSums[from]! + bw
+            workSums[to] = workSums[to]! - bw
+            testSums[from] = testSums[from]! + bt
+            testSums[to] = testSums[to]! - bt
+            const swapScore = unevennessSums(workSums, testSums, counts)
+            if (swapScore < bestScore - 1e-9) {
+              bestScore = swapScore
+              bestFrom = from
+              bestTo = to
+              bestMovedIndex = mIdx
+              bestBackIndex = bIdx
+            }
+            workSums[from] = workSums[from]! - bw
+            workSums[to] = workSums[to]! + bw
+            testSums[from] = testSums[from]! - bt
+            testSums[to] = testSums[to]! + bt
+          }
+          workSums[from] = workSums[from]! + mw
+          workSums[to] = workSums[to]! - mw
+          testSums[from] = testSums[from]! + mt
+          testSums[to] = testSums[to]! - mt
         }
       }
     }
-    if (best.layout === undefined) return layout.map((patterns) => patterns.sort())
-    layout = best.layout
+    if (bestFrom === -1) return layout.map((patterns) => patterns.sort())
+    const moved = layout[bestFrom]!.splice(bestMovedIndex, 1)[0]!
+    const mw = work.get(moved)!
+    const mt = testWork.get(moved)!
+    workSums[bestFrom] = workSums[bestFrom]! - mw
+    workSums[bestTo] = workSums[bestTo]! + mw
+    testSums[bestFrom] = testSums[bestFrom]! - mt
+    testSums[bestTo] = testSums[bestTo]! + mt
+    if (bestBackIndex >= 0) {
+      const back = layout[bestTo]!.splice(bestBackIndex, 1)[0]!
+      const bw = work.get(back)!
+      const bt = testWork.get(back)!
+      layout[bestFrom]!.push(back)
+      workSums[bestFrom] = workSums[bestFrom]! + bw
+      workSums[bestTo] = workSums[bestTo]! - bw
+      testSums[bestFrom] = testSums[bestFrom]! + bt
+      testSums[bestTo] = testSums[bestTo]! - bt
+    } else {
+      counts[bestFrom] = counts[bestFrom]! - 1
+      counts[bestTo] = counts[bestTo]! + 1
+    }
+    layout[bestTo]!.push(moved)
   }
 }
 

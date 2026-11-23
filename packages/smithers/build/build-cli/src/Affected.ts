@@ -451,6 +451,7 @@ export function select(
     const pattern = glob(Input.resolvePath(packagePath, input.pattern))
     // Use the matcher's parsed alternatives, including literal patterns,
     // braces and extglobs. A fully literal pattern names a file, not a dir.
+    let compiled: ((path: string) => boolean) | undefined
     return pattern.set.some((alternative) => {
       const segments: Array<string> = []
       for (const part of alternative) {
@@ -459,15 +460,21 @@ export function select(
       }
       if (segments.length === alternative.length) segments.pop()
       const found = globLinks(segments.join("/"))
-      return found === undefined || found.some(compileInput(input, packagePath, glob))
+      if (found === undefined) return true
+      if (found.length === 0) return false
+      compiled ??= compileInput(input, packagePath, glob)
+      return found.some(compiled)
     })
   }
   const entries = new Map<Target.AnyTarget, {
     readonly metadata: Target.Metadata
     readonly packagePath: string
+    readonly packagePrefix: string | undefined
     readonly ambient: boolean
-    readonly ownsPath: (path: string) => boolean
+    readonly compiledInputs: () => ReadonlyArray<(path: string) => boolean>
+    readonly ownsPackage: (path: string) => boolean
     readonly declaredPath: (path: string) => boolean
+    readonly ownsPath: (path: string) => boolean
   }>()
   const entry = (target: Target.AnyTarget) => {
     let value = entries.get(target)
@@ -475,16 +482,33 @@ export function select(
     const metadata = Target.metadata(target)
     const packagePath = index.ownerOf(target) ?? ""
     const packagePrefix = packagePath === "" ? undefined : `${packagePath}/`
-    const inputs = metadata.inputs.map((input) => compileInput(input, inputPackage(metadata, packagePath), glob))
+    let inputs: ReadonlyArray<(path: string) => boolean> | undefined
+    const compiledInputs = (): ReadonlyArray<(path: string) => boolean> => {
+      if (inputs === undefined) {
+        const inputPkg = inputPackage(metadata, packagePath)
+        inputs = metadata.inputs.map((input) => compileInput(input, inputPkg, glob))
+      }
+      return inputs
+    }
+    const ownsPackage = (path: string): boolean => packagePrefix !== undefined && path.startsWith(packagePrefix)
+    const declaredPath = (path: string): boolean => {
+      const list = compiledInputs()
+      for (let i = 0; i < list.length; i++) {
+        if (list[i]!(path)) return true
+      }
+      return false
+    }
     value = {
       metadata,
       packagePath,
+      packagePrefix,
       ambient: metadata.inputs.some(ambientInput),
-      declaredPath: (path) => inputs.some((input) => input(path)),
+      compiledInputs,
+      ownsPackage,
+      declaredPath,
       // Membership catches new files, implicit compiler inputs and config lookups.
       // Each (target, path) pair is asked once: rows hold distinct targets and paths are deduplicated.
-      ownsPath: (path) =>
-        packagePrefix !== undefined && path.startsWith(packagePrefix) || inputs.some((input) => input(path))
+      ownsPath: (path) => ownsPackage(path) || declaredPath(path)
     }
     entries.set(target, value)
     return value
@@ -527,8 +551,21 @@ export function select(
     implementationRoots.some((directory) => path === directory || path.startsWith(`${directory}/`))
   )
   // An unowned file may be an ambient input; conservatively invalidate the graph.
-  const ownership = normalized.length === 0 ? [] : rows.map((row) => entry(row.target))
-  const unknown = normalized.filter((path) => !ownership.some((value) => value.ownsPath(path)))
+  // Check fast package-prefix ownership first so we never compile globs for
+  // unrelated targets when a changed file belongs to a known package.
+  const packagePrefixes = normalized.length === 0
+    ? []
+    : [...new Set(rows.map((row) => index.ownerOf(row.target) ?? "").filter((pkg) => pkg !== ""))]
+      .map((pkg) => `${pkg}/`)
+  const unknown = normalized.filter((path) => {
+    for (let i = 0; i < packagePrefixes.length; i++) {
+      if (path.startsWith(packagePrefixes[i]!)) return false
+    }
+    for (let i = 0; i < rows.length; i++) {
+      if (entry(rows[i]!.target).declaredPath(path)) return false
+    }
+    return true
+  })
   const conservative = global.length + unknown.length > 0
   const globalInputs = [...new Set([...global, ...unknown])].sort()
   const envelope = { pattern: patterns.join(" "), files: normalized, conservative, globalInputs }

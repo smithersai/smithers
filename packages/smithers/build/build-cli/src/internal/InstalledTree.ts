@@ -33,7 +33,9 @@ import * as Data from "effect/Data"
 import { createHash, randomBytes } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
+import * as Os from "node:os"
 import * as NodePath from "node:path"
+import { Worker } from "node:worker_threads"
 import { byCodeUnit } from "./Text.ts"
 
 /** A tree too deep or too large to measure. */
@@ -456,6 +458,320 @@ export const identify = (
     count += 1
   }
   return { digest: hash.digest("hex"), units: count, files, byUnit }
+}
+
+interface WorkerTask {
+  readonly unit: string
+  readonly knownFingerprint: string | undefined
+}
+
+type WorkerUnitOutcome =
+  | {
+    readonly hit: true
+    readonly fingerprint: string
+    readonly latest: bigint
+    readonly entriesCount: number
+  }
+  | {
+    readonly hit: false
+    readonly fingerprint: string
+    readonly digest: string
+    readonly files: number
+    readonly latest: bigint
+    readonly settled: boolean
+    readonly entriesCount: number
+  }
+
+interface WorkerResponse {
+  readonly id: number
+  readonly results?: ReadonlyArray<WorkerUnitOutcome>
+  readonly error?: { readonly refused: boolean; readonly message: string; readonly code?: string }
+}
+
+interface PoolWorker {
+  readonly worker: Worker
+  readonly pending: Map<
+    number,
+    {
+      readonly resolve: (results: ReadonlyArray<WorkerUnitOutcome>) => void
+      readonly reject: (cause: unknown) => void
+    }
+  >
+}
+
+const workerScript = `
+import { parentPort } from "node:worker_threads";
+import * as NodeFs from "node:fs";
+import * as NodePath from "node:path";
+import { createHash } from "node:crypto";
+
+const readBuffer = Buffer.allocUnsafe(1024 * 1024);
+const hrOrigin = process.hrtime.bigint();
+const wallOrigin = BigInt(Date.now()) * 1_000_000n;
+const nowNs = () => process.hrtime.bigint() - hrOrigin + wallOrigin;
+
+const scanUnit = (unitRoot, knownFingerprint, limits, settledNs) => {
+  const fpHash = createHash("sha256");
+  const collectRecords = knownFingerprint === undefined;
+  const records = collectRecords ? [] : undefined;
+  let latest = 0n;
+  let maxMod = 0n;
+  let entriesCount = 0;
+  let filesCount = 0;
+
+  const visit = (absolute, relative, depth) => {
+    if (depth > limits.depth) {
+      const err = new Error("installed tree is deeper than " + limits.depth + " directories: " + absolute);
+      err.refused = true;
+      throw err;
+    }
+    entriesCount += 1;
+    if (entriesCount > limits.entries) {
+      const err = new Error("installed tree holds more than " + limits.entries + " entries");
+      err.refused = true;
+      throw err;
+    }
+    const stats = NodeFs.lstatSync(absolute, { bigint: true });
+    if (stats.ctimeNs > latest) latest = stats.ctimeNs;
+    if (stats.mtimeNs > maxMod) maxMod = stats.mtimeNs;
+    if (stats.ctimeNs > maxMod) maxMod = stats.ctimeNs;
+    if (stats.isSymbolicLink()) {
+      const target = NodeFs.readlinkSync(absolute);
+      fpHash.update(
+        "link\\0" + relative + "\\0" + stats.mode + "\\0" + stats.size + "\\0" +
+        stats.dev + "\\0" + stats.ino + "\\0" + stats.mtimeNs + "\\0" + stats.ctimeNs + "\\0" + target + "\\n"
+      );
+      if (records !== undefined) records.push({ path: relative, kind: "link", executable: "", target });
+    } else if (stats.isDirectory()) {
+      fpHash.update("d\\0" + relative + "\\0" + stats.mode + "\\n");
+      if (records !== undefined) records.push({ path: relative, kind: "directory", executable: "", target: "" });
+      const names = NodeFs.readdirSync(absolute).sort();
+      for (let i = 0; i < names.length; i++) {
+        const name = names[i];
+        visit(NodePath.join(absolute, name), relative === "" ? name : relative + "/" + name, depth + 1);
+      }
+    } else {
+      const isFile = stats.isFile();
+      const kind = isFile ? "file" : "other";
+      if (isFile) filesCount += 1;
+      fpHash.update(
+        kind + "\\0" + relative + "\\0" + stats.mode + "\\0" + stats.size + "\\0" +
+        stats.dev + "\\0" + stats.ino + "\\0" + stats.mtimeNs + "\\0" + stats.ctimeNs + "\\0\\n"
+      );
+      if (records !== undefined) {
+        records.push({
+          path: relative,
+          kind,
+          executable: isFile ? ((stats.mode & 0o111n) === 0n ? "-" : "x") : "",
+          target: ""
+        });
+      }
+    }
+  };
+
+  visit(unitRoot, "", 0);
+  const fingerprint = fpHash.digest("hex");
+  if (knownFingerprint !== undefined && fingerprint === knownFingerprint) {
+    return { hit: true, fingerprint, latest, entriesCount };
+  }
+  if (records === undefined) {
+    return scanUnit(unitRoot, undefined, limits, settledNs);
+  }
+  const readAt = nowNs();
+  const contentHash = createHash("sha256");
+  for (let i = 0; i < records.length; i++) {
+    const rec = records[i];
+    if (rec.kind === "file") {
+      const fileHash = createHash("sha256");
+      const abs = rec.path === "" ? unitRoot : NodePath.join(unitRoot, rec.path);
+      const fd = NodeFs.openSync(abs, NodeFs.constants.O_RDONLY | NodeFs.constants.O_NOFOLLOW);
+      try {
+        for (;;) {
+          const count = NodeFs.readSync(fd, readBuffer, 0, readBuffer.length, null);
+          if (count === 0) break;
+          fileHash.update(readBuffer.subarray(0, count));
+        }
+      } finally {
+        NodeFs.closeSync(fd);
+      }
+      contentHash.update("file\\0" + rec.path + "\\0" + rec.executable + "\\0" + fileHash.digest("hex") + "\\n");
+    } else {
+      contentHash.update(rec.kind + "\\0" + rec.path + "\\0" + rec.target + "\\n");
+    }
+  }
+  return {
+    hit: false,
+    fingerprint,
+    digest: contentHash.digest("hex"),
+    files: filesCount,
+    latest,
+    settled: maxMod + settledNs < readAt,
+    entriesCount
+  };
+};
+
+parentPort.on("message", ({ id, directory, tasks, limits, settledNs }) => {
+  try {
+    const results = new Array(tasks.length);
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      const unitRoot = NodePath.join(directory, ...task.unit.split("/"));
+      results[i] = scanUnit(unitRoot, task.knownFingerprint, limits, settledNs);
+    }
+    parentPort.postMessage({ id, results });
+  } catch (cause) {
+    parentPort.postMessage({
+      id,
+      error: {
+        refused: Boolean(cause && cause.refused),
+        message: cause instanceof Error ? cause.message : String(cause),
+        code: cause && typeof cause.code === "string" ? cause.code : undefined
+      }
+    });
+  }
+});
+`
+
+const workerUrl = new URL(`data:text/javascript;base64,${Buffer.from(workerScript, "utf8").toString("base64")}`)
+let pool: Array<PoolWorker> | undefined
+let nextRequestId = 1
+
+const spawnPoolWorker = (): PoolWorker => {
+  const worker = new Worker(workerUrl)
+  worker.unref()
+  const entry: PoolWorker = { worker, pending: new Map() }
+  worker.on("message", (msg: WorkerResponse) => {
+    const waiter = entry.pending.get(msg.id)
+    if (waiter === undefined) return
+    entry.pending.delete(msg.id)
+    if (entry.pending.size === 0) worker.unref()
+    if (msg.error !== undefined) {
+      if (msg.error.refused) {
+        waiter.reject(new InstalledTreeRefused({ message: msg.error.message }))
+      } else {
+        const err = new Error(msg.error.message) as NodeJS.ErrnoException
+        if (msg.error.code !== undefined) err.code = msg.error.code
+        waiter.reject(err)
+      }
+      return
+    }
+    waiter.resolve(msg.results!)
+  })
+  const failAll = (cause: unknown): void => {
+    if (pool !== undefined) {
+      const idx = pool.indexOf(entry)
+      if (idx >= 0) pool.splice(idx, 1)
+    }
+    for (const waiter of entry.pending.values()) waiter.reject(cause)
+    entry.pending.clear()
+  }
+  worker.on("error", failAll)
+  worker.on("exit", (code) => {
+    if (entry.pending.size > 0) failAll(new Error(`installed-tree worker exited unexpectedly with code ${code}`))
+  })
+  return entry
+}
+
+const getPool = (needed: number): ReadonlyArray<PoolWorker> => {
+  const targetSize = Math.min(needed, Math.min(8, Math.max(2, Os.availableParallelism())))
+  if (pool === undefined) pool = []
+  while (pool.length < targetSize) pool.push(spawnPoolWorker())
+  return pool.slice(0, targetSize)
+}
+
+/**
+ * Measures one installed tree asynchronously across worker threads when running
+ * against the host filesystem with enough units to benefit from parallelism.
+ *
+ * Produces the exact same {@link Identity}, entry limits, and cache updates as
+ * {@link identify}, falling back to synchronous execution for small trees or
+ * custom {@link Io} implementations.
+ *
+ * @category measuring
+ * @since 1.0.0
+ */
+export const identifyAsync = async (
+  directory: string,
+  remembered: Remembered = empty(),
+  io: Io = defaultIo,
+  limits: Limits = defaultLimits
+): Promise<Identity> => {
+  if (io !== defaultIo) return identify(directory, remembered, io, limits)
+  const unitNames = units(directory, io)
+  if (unitNames.length <= 8) return identify(directory, remembered, io, limits)
+
+  const workers = getPool(unitNames.length)
+  const batches: Array<Array<WorkerTask>> = Array.from({ length: workers.length }, () => [])
+  const batchIndices: Array<Array<number>> = Array.from({ length: workers.length }, () => [])
+  const unitRoots = new Array<string>(unitNames.length)
+  for (let i = 0; i < unitNames.length; i++) {
+    const unit = unitNames[i]!
+    const root = NodePath.join(directory, ...unit.split("/"))
+    unitRoots[i] = root
+    const known = remembered.rows.get(root)
+    const bucket = i % workers.length
+    batches[bucket]!.push({ unit, knownFingerprint: known?.fingerprint })
+    batchIndices[bucket]!.push(i)
+  }
+
+  const outcomes = new Array<WorkerUnitOutcome>(unitNames.length)
+  await Promise.all(
+    workers.map((pw, bucket) => {
+      const tasks = batches[bucket]!
+      if (tasks.length === 0) return Promise.resolve()
+      const id = nextRequestId++
+      pw.worker.ref()
+      return new Promise<void>((resolve, reject) => {
+        pw.pending.set(id, {
+          resolve: (results) => {
+            const indices = batchIndices[bucket]!
+            for (let j = 0; j < results.length; j++) outcomes[indices[j]!] = results[j]!
+            resolve()
+          },
+          reject
+        })
+        pw.worker.postMessage({ id, directory, tasks, limits, settledNs: settledNanoseconds })
+      })
+    })
+  )
+
+  let totalEntries = 0
+  for (let i = 0; i < outcomes.length; i++) {
+    totalEntries += outcomes[i]!.entriesCount
+    if (totalEntries > limits.entries) {
+      throw new InstalledTreeRefused({ message: `installed tree holds more than ${limits.entries} entries` })
+    }
+  }
+
+  const hash = createHash("sha256")
+  const byUnit = new Map<string, Unit>()
+  let files = 0
+  for (let i = 0; i < unitNames.length; i++) {
+    const unit = unitNames[i]!
+    const root = unitRoots[i]!
+    const outcome = outcomes[i]!
+    const known = remembered.rows.get(root)
+    let row: Row
+    if (outcome.hit && known !== undefined && known.fingerprint === outcome.fingerprint) {
+      row = known
+    } else if (!outcome.hit) {
+      row = { fingerprint: outcome.fingerprint, digest: outcome.digest, files: outcome.files }
+      if (outcome.settled) {
+        remembered.rows.set(root, row)
+        remembered.changed = true
+      } else if (known !== undefined) {
+        remembered.rows.delete(root)
+        remembered.changed = true
+      }
+    } else {
+      // Defensive fallback if `remembered.rows` mutated concurrently mid-scan.
+      return identify(directory, remembered, io, limits)
+    }
+    hash.update(`${unit}\0${row.digest}\n`)
+    byUnit.set(unit, { digest: row.digest, latest: outcome.latest })
+    files += row.files
+  }
+  return { digest: hash.digest("hex"), units: unitNames.length, files, byUnit }
 }
 
 /** The newest status change among a unit's entries. */

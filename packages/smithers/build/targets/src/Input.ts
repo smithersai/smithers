@@ -1288,15 +1288,17 @@ const walk = async (
         )
       ) continue
     }
-    if (isIgnored(next, child, directory)) continue
     if (directory) {
       if (prune && !included.match(child, true)) continue
+      if (isIgnored(next, child, true)) continue
       directories.push(child)
     } else if (entry.isFile()) {
       if (prune && !included.match(child)) continue
+      if (isIgnored(next, child, false)) continue
       addFile(scan, child)
     } else if (entry.isSymbolicLink()) {
       if (prune && !included.match(child)) continue
+      if (isIgnored(next, child, false)) continue
       links.push(child)
     }
   }

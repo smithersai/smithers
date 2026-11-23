@@ -134,192 +134,226 @@ export type Output<N extends Name> = N extends keyof Manifest
 const invalidRoute = (path: string, description = "Route metadata violates the command contract"): FsError =>
   new FsError({ code: "invalid_route", method: "Route.snapshot", description, path })
 
-const text = effect (
+const routeRequiredFields: ReadonlyArray<string> = [
+  "name",
+  "segments",
+  "kind",
+  "sourcePath",
+  "description",
+  "input",
+  "output",
+  "capabilities",
+  "effects",
+  "modelInvocable",
+  "placement",
+  "ui"
+]
+const effectRequiredFields: ReadonlyArray<string> = ["reads", "writes", "mode", "onConflict", "tier"]
+const schemaAllowedKeys: ReadonlySet<string> = new Set(["_tag", "path", "field", "document"])
+
+type SyncCheck<A> = { readonly ok: true; readonly value: A } | { readonly ok: false; readonly error: FsError }
+
+const failRoute = (path: string, description?: string): { readonly ok: false; readonly error: FsError } => ({
+  ok: false,
+  error: invalidRoute(path, description)
+})
+
+const readTextSync = (
   value: unknown,
-  options: { path: string; maximum: number; empty?: boolean | undefined }
-): string!FsError => {
-  if (
-    typeof value !== "string" || (options.empty !== true && value.length === 0) ||
-    value.length > options.maximum || value.includes("\0") || !(try inspect(() => Boundary.isWellFormedText(value), options.path))
-  ) throw invalidRoute(options.path)
-  return value
-}
-
-const fields = effect (
-  value: unknown,
-  required: ReadonlyArray<string>,
-  optional: ReadonlyArray<string> = []
-): Readonly<Record<string, unknown>>!FsError => {
-  const admitted = try inspect(() => Boundary.inspectRecord(value, required, optional), "$")
-  if (!admitted.ok) throw invalidRoute(admitted.path)
-  return admitted.value
-}
-
-effect function inspect<A>(read: () => A, path: string): A!FsError {
-  return try Effect.try({ try: read, catch: () => invalidRoute(path) })
-}
-
-const schemaFields = effect (
-  input: unknown,
-  required: ReadonlyArray<string>,
-  optional: ReadonlyArray<string> = []
-): Readonly<Record<string, unknown>>!FsError => {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) throw invalidRoute("$")
-  const prototype = try inspect(() => Object.getPrototypeOf(input), "$")
-  const known = try inspect(() => input instanceof Descriptor.SchemaRefMarkdownArgs ||
-    input instanceof Descriptor.SchemaRefMarkdownOutput || input instanceof Descriptor.SchemaRefNone ||
-    input instanceof Descriptor.SchemaRefModule || input instanceof Descriptor.SchemaRefInline, "$")
-  if (!known && prototype !== Object.prototype && prototype !== null) throw invalidRoute("$")
-  const allowed = new Set([...required, ...optional])
-  const keys = try inspect(() => Reflect.ownKeys(input), "$")
-  if (keys.some((key) => typeof key === "symbol" || !allowed.has(key))) throw invalidRoute("$")
-  const output: Record<string, unknown> = Object.create(null) as Record<string, unknown>
-  for (const key of required) {
-    const descriptor = try inspect(() => Object.getOwnPropertyDescriptor(input, key), "$")
-    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) throw invalidRoute(`$.${key}`)
-    output[key] = descriptor.value
-  }
-  for (const key of optional) {
-    const descriptor = try inspect(() => Object.getOwnPropertyDescriptor(input, key), "$")
-    if (descriptor === undefined) continue
-    if (!("value" in descriptor) || !descriptor.enumerable) throw invalidRoute(`$.${key}`)
-    output[key] = descriptor.value
-  }
-  return Object.freeze(output)
-}
-
-const inspectOption = effect (input: unknown, path: string): Option.Option<unknown>!FsError => {
-  const admitted = try inspect(() => Boundary.inspectOption(input), path)
-  if (!admitted.ok) throw invalidRoute(`${path}${admitted.path.slice(1)}`)
-  return admitted.value
-}
-
-const optionText = effect (
-  input: unknown,
   path: string,
   maximum: number
-): Option.Option<string>!FsError => {
-  const option = try inspectOption(input, path)
-  if (Option.isNone(option)) return Option.none()
-  return Option.some(try text(option.value, { path, maximum }))
+): SyncCheck<string> => {
+  if (
+    typeof value !== "string" || value.length === 0 ||
+    value.length > maximum || value.includes("\0") || !Boundary.isWellFormedText(value)
+  ) return failRoute(path)
+  return { ok: true, value }
 }
 
-const optionPlacement = effect (input: unknown): Option.Option<Descriptor.Placement>!FsError => {
-  const option = try inspectOption(input, "$.placement")
-  if (Option.isNone(option)) return Option.none()
-  const placement = option.value
-  if (!(placement is "client" or "local" or "sandbox" or "remote")) throw invalidRoute("$.placement")
-  return Option.some(placement)
+const readSchemaFieldsSync = (input: unknown): SyncCheck<Readonly<Record<string, unknown>>> => {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return failRoute("$")
+  const prototype = Object.getPrototypeOf(input)
+  const known = input instanceof Descriptor.SchemaRefMarkdownArgs ||
+    input instanceof Descriptor.SchemaRefMarkdownOutput || input instanceof Descriptor.SchemaRefNone ||
+    input instanceof Descriptor.SchemaRefModule || input instanceof Descriptor.SchemaRefInline
+  if (!known && prototype !== Object.prototype && prototype !== null) return failRoute("$")
+  const keys = Reflect.ownKeys(input)
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]!
+    if (typeof key === "symbol" || !schemaAllowedKeys.has(key)) return failRoute("$")
+  }
+  const output: Record<string, unknown> = Object.create(null) as Record<string, unknown>
+  const tagDesc = Object.getOwnPropertyDescriptor(input, "_tag")
+  if (tagDesc === undefined || !("value" in tagDesc) || !tagDesc.enumerable) return failRoute("$._tag")
+  output["_tag"] = tagDesc.value
+  for (const key of ["path", "field", "document"]) {
+    const descriptor = Object.getOwnPropertyDescriptor(input, key)
+    if (descriptor === undefined) continue
+    if (!("value" in descriptor) || !descriptor.enumerable) return failRoute(`$.${key}`)
+    output[key] = descriptor.value
+  }
+  return { ok: true, value: output }
 }
 
-const schemaRef = effect (input: unknown, path: string): Descriptor.SchemaRef!FsError => {
-  const tagged = try schemaFields(input, ["_tag"], ["path", "field", "document"])
+const readOptionSync = (input: unknown, path: string): SyncCheck<Option.Option<unknown>> => {
+  const admitted = Boundary.inspectOption(input)
+  if (!admitted.ok) return failRoute(`${path}${admitted.path.slice(1)}`)
+  return { ok: true, value: admitted.value }
+}
+
+const readOptionTextSync = (input: unknown, path: string, maximum: number): SyncCheck<Option.Option<string>> => {
+  const option = readOptionSync(input, path)
+  if (!option.ok) return option
+  if (Option.isNone(option.value)) return { ok: true, value: Option.none() }
+  const checked = readTextSync(option.value.value, path, maximum)
+  if (!checked.ok) return checked
+  return { ok: true, value: Option.some(checked.value) }
+}
+
+const readOptionPlacementSync = (input: unknown): SyncCheck<Option.Option<Descriptor.Placement>> => {
+  const option = readOptionSync(input, "$.placement")
+  if (!option.ok) return option
+  if (Option.isNone(option.value)) return { ok: true, value: Option.none() }
+  const placement = option.value.value
+  if (!(placement is "client" or "local" or "sandbox" or "remote")) return failRoute("$.placement")
+  return { ok: true, value: Option.some(placement) }
+}
+
+const readSchemaRefSync = (input: unknown, path: string): SyncCheck<Descriptor.SchemaRef> => {
+  const taggedResult = readSchemaFieldsSync(input)
+  if (!taggedResult.ok) return taggedResult
+  const tagged = taggedResult.value
   switch (tagged._tag) {
     case "MarkdownArgs":
-      return new Descriptor.SchemaRefMarkdownArgs({})
+      return { ok: true, value: new Descriptor.SchemaRefMarkdownArgs({}) }
     case "MarkdownOutput":
-      return new Descriptor.SchemaRefMarkdownOutput({})
+      return { ok: true, value: new Descriptor.SchemaRefMarkdownOutput({}) }
     case "None":
-      return new Descriptor.SchemaRefNone({})
+      return { ok: true, value: new Descriptor.SchemaRefNone({}) }
     case "Module": {
-      const source = try text(tagged.path, { path: `${path}.path`, maximum: maximumPathLength })
-      if (!(tagged.field is "input" or "output")) throw invalidRoute(`${path}.field`)
-      return new Descriptor.SchemaRefModule({ path: source, field: tagged.field })
+      const source = readTextSync(tagged.path, `${path}.path`, maximumPathLength)
+      if (!source.ok) return source
+      if (!(tagged.field is "input" or "output")) return failRoute(`${path}.field`)
+      return { ok: true, value: new Descriptor.SchemaRefModule({ path: source.value, field: tagged.field }) }
     }
     case "Inline": {
-      const admitted = try inspect(() => Boundary.admitJson(tagged.document), path)
-      if (!admitted.ok) throw invalidRoute(`${path}.document${admitted.path.slice(1)}`)
-      return new Descriptor.SchemaRefInline({ document: admitted.value })
+      const admitted = Boundary.admitJson(tagged.document)
+      if (!admitted.ok) return failRoute(`${path}.document${admitted.path.slice(1)}`)
+      return { ok: true, value: new Descriptor.SchemaRefInline({ document: admitted.value }) }
     }
     default:
-      throw invalidRoute(`${path}._tag`)
+      return failRoute(`${path}._tag`)
   }
 }
 
-const effectDeclaration = effect (input: unknown): Descriptor.EffectDeclaration!FsError => {
-  const data = try fields(input, ["reads", "writes", "mode", "onConflict", "tier"])
-  const reads = try inspect(() => Boundary.stringArray(data.reads, {
+const readEffectDeclarationSync = (input: unknown): SyncCheck<Descriptor.EffectDeclaration> => {
+  const admitted = Boundary.inspectRecord(input, effectRequiredFields, [])
+  if (!admitted.ok) return failRoute(admitted.path)
+  const data = admitted.value
+  const reads = Boundary.stringArray(data.reads, {
     maxItems: maximumCapabilities,
     maxLength: maximumPathLength
-  }), "$")
-  const writes = try inspect(() => Boundary.stringArray(data.writes, {
-    maxItems: maximumCapabilities,
-    maxLength: maximumPathLength
-  }), "$")
-  if (!reads.ok) throw invalidRoute(`$.effects.reads${reads.path.slice(1)}`)
-  if (!writes.ok) throw invalidRoute(`$.effects.writes${writes.path.slice(1)}`)
-  if (!(data.mode is "hermetic" or "expected")) throw invalidRoute("$.effects.mode")
-  if (!(data.onConflict is "serialize" or "lane" or "fail")) throw invalidRoute("$.effects.onConflict")
-  if (!(data.tier is "sealed" or "compensable" or "irreversible")) throw invalidRoute("$.effects.tier")
-  return Object.freeze({
-    reads: reads.value,
-    writes: writes.value,
-    mode: data.mode,
-    onConflict: data.onConflict,
-    tier: data.tier
   })
+  const writes = Boundary.stringArray(data.writes, {
+    maxItems: maximumCapabilities,
+    maxLength: maximumPathLength
+  })
+  if (!reads.ok) return failRoute(`$.effects.reads${reads.path.slice(1)}`)
+  if (!writes.ok) return failRoute(`$.effects.writes${writes.path.slice(1)}`)
+  if (!(data.mode is "hermetic" or "expected")) return failRoute("$.effects.mode")
+  if (!(data.onConflict is "serialize" or "lane" or "fail")) return failRoute("$.effects.onConflict")
+  if (!(data.tier is "sealed" or "compensable" or "irreversible")) return failRoute("$.effects.tier")
+  return {
+    ok: true,
+    value: Object.freeze({
+      reads: reads.value,
+      writes: writes.value,
+      mode: data.mode,
+      onConflict: data.onConflict,
+      tier: data.tier
+    })
+  }
 }
 
 const isAbsolutePath = (value: string): boolean =>
   value.startsWith("file:///") || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)
 
-// Foreign inspection is bounded by hatches; validation fails with FsError.
-const copyRoute = effect (input: Route): Route!FsError => {
-  const data = try fields(input, [
-    "name",
-    "segments",
-    "kind",
-    "sourcePath",
-    "description",
-    "input",
-    "output",
-    "capabilities",
-    "effects",
-    "modelInvocable",
-    "placement",
-    "ui"
-  ])
-  const segments = try inspect(() => Boundary.stringArray(data.segments, {
+// Single synchronous boundary hatch for hostile proxies: preserves every FsError
+// while avoiding ~25 nested Effect.try frames per route.
+const copyRouteSync = (input: Route): SyncCheck<Route> => {
+  const admitted = Boundary.inspectRecord(input, routeRequiredFields, [])
+  if (!admitted.ok) return failRoute(admitted.path)
+  const data = admitted.value
+  const segments = Boundary.stringArray(data.segments, {
     maxItems: maximumRouteDepth,
     maxLength: maximumSegmentLength
-  }), "$")
+  })
   if (
     !segments.ok || segments.value.length === 0 ||
     segments.value.some((segment) => segment === "." || segment === ".." || segment.includes("/"))
   ) {
-    throw invalidRoute(segments.ok ? "$.segments" : `$.segments${segments.path.slice(1)}`)
+    return failRoute(segments.ok ? "$.segments" : `$.segments${segments.path.slice(1)}`)
   }
   // A directory name arrives decomposed on macOS and composed from a
   // browser or an agent, so one canonical form decides route identity.
   const normalized = Object.freeze(segments.value.map((segment) => segment.normalize("NFC")))
-  const name = (try text(data.name, { path: "$.name", maximum: maximumRouteNameLength })).normalize("NFC")
+  const nameChecked = readTextSync(data.name, "$.name", maximumRouteNameLength)
+  if (!nameChecked.ok) return nameChecked
+  const name = nameChecked.value.normalize("NFC")
   if (name !== normalized.join("/")) {
-    throw invalidRoute("$.name", "Route name must equal its slash-joined segments")
+    return failRoute("$.name", "Route name must equal its slash-joined segments")
   }
-  if (!(data.kind is "module" or "markdown" or "skill")) throw invalidRoute("$.kind")
-  const sourcePath = try text(data.sourcePath, { path: "$.sourcePath", maximum: maximumPathLength })
-  if (!isAbsolutePath(sourcePath)) throw invalidRoute("$.sourcePath", "Route source paths must be absolute")
-  const capabilities = try inspect(() => Boundary.stringArray(data.capabilities, {
+  if (!(data.kind is "module" or "markdown" or "skill")) return failRoute("$.kind")
+  const sourcePathChecked = readTextSync(data.sourcePath, "$.sourcePath", maximumPathLength)
+  if (!sourcePathChecked.ok) return sourcePathChecked
+  const sourcePath = sourcePathChecked.value
+  if (!isAbsolutePath(sourcePath)) return failRoute("$.sourcePath", "Route source paths must be absolute")
+  const capabilities = Boundary.stringArray(data.capabilities, {
     maxItems: maximumCapabilities,
     maxLength: maximumPathLength
-  }), "$")
-  if (!capabilities.ok) throw invalidRoute(`$.capabilities${capabilities.path.slice(1)}`)
-  if (typeof data.modelInvocable !== "boolean") throw invalidRoute("$.modelInvocable")
-
-  return Object.freeze({
-    name,
-    segments: normalized,
-    kind: data.kind,
-    sourcePath,
-    description: try optionText(data.description, "$.description", maximumPathLength),
-    input: try schemaRef(data.input, "$.input"),
-    output: try schemaRef(data.output, "$.output"),
-    capabilities: capabilities.value,
-    effects: try effectDeclaration(data.effects),
-    modelInvocable: data.modelInvocable,
-    placement: try optionPlacement(data.placement),
-    ui: try optionText(data.ui, "$.ui", maximumPathLength)
   })
+  if (!capabilities.ok) return failRoute(`$.capabilities${capabilities.path.slice(1)}`)
+  if (typeof data.modelInvocable !== "boolean") return failRoute("$.modelInvocable")
+
+  const description = readOptionTextSync(data.description, "$.description", maximumPathLength)
+  if (!description.ok) return description
+  const inputRef = readSchemaRefSync(data.input, "$.input")
+  if (!inputRef.ok) return inputRef
+  const outputRef = readSchemaRefSync(data.output, "$.output")
+  if (!outputRef.ok) return outputRef
+  const effects = readEffectDeclarationSync(data.effects)
+  if (!effects.ok) return effects
+  const placement = readOptionPlacementSync(data.placement)
+  if (!placement.ok) return placement
+  const ui = readOptionTextSync(data.ui, "$.ui", maximumPathLength)
+  if (!ui.ok) return ui
+
+  return {
+    ok: true,
+    value: Object.freeze({
+      name,
+      segments: normalized,
+      kind: data.kind,
+      sourcePath,
+      description: description.value,
+      input: inputRef.value,
+      output: outputRef.value,
+      capabilities: capabilities.value,
+      effects: effects.value,
+      modelInvocable: data.modelInvocable,
+      placement: placement.value,
+      ui: ui.value
+    })
+  }
+}
+
+const copyRoute = effect (input: Route): Route!FsError => {
+  const checked = try Effect.try({
+    try: () => copyRouteSync(input),
+    catch: () => invalidRoute("$")
+  })
+  if (!checked.ok) throw checked.error
+  return checked.value
 }
 
 /**

@@ -138,6 +138,15 @@ const lifecycleOptions = shardedOptions.extend({
   )
 })
 
+const benchCompareOptions = {
+  compare: z.string().optional().describe(
+    "Compare measured benchmarks against a baseline --results-file JSON and display per-benchmark deltas"
+  ),
+  failOnRegression: z.number().positive().max(100).optional().describe(
+    "With --compare, fail the run when any benchmark drops more than this percentage below baseline (e.g. 15)"
+  )
+}
+
 const ciOptions = lifecycleOptions.extend({
   timings: z.array(z.string()).optional().describe(
     "A --results-file of an earlier run whose durations weigh the --remote split; repeatable, later files win"
@@ -1342,8 +1351,11 @@ const writeResults = async (
 /** The results path, resolved like `--known-red` against the workspace. */
 interface ReceiptOptions {
   readonly workspace: string
+  readonly plan?: boolean | undefined
   readonly knownRed?: string | undefined
   readonly resultsFile?: string | undefined
+  readonly compare?: string | undefined
+  readonly failOnRegression?: number | undefined
 }
 
 const resultsPath = (options: ReceiptOptions): string | undefined =>
@@ -1375,6 +1387,27 @@ const executeCommand = async <A extends Outcome>(
   body: (reporter: Reporter.Reporter) => Promise<A>
 ): Promise<A | undefined> => {
   const options = context.options
+  if (options.failOnRegression !== undefined && options.compare === undefined) {
+    return context.error({
+      code,
+      exitCode: 1,
+      message: "--fail-on-regression requires --compare <baseline-file>"
+    })
+  }
+  let baseline: ReadonlyArray<BenchReport.TargetBenchmarks> | undefined
+  if (options.compare !== undefined && options.plan !== true) {
+    const compareFile = NodePath.resolve(options.workspace, options.compare)
+    try {
+      const content = await NodeFs.readFile(compareFile, "utf8")
+      baseline = BenchReport.loadBaseline(JSON.parse(content))
+    } catch (cause) {
+      return context.error({
+        code,
+        exitCode: 1,
+        message: `compare baseline ${compareFile}: ${Diagnostic.describe(cause)}`
+      })
+    }
+  }
   Parts.commandBegan()
   const resultsFile = resultsPath(options)
   // Open (create) the results file before any target runs, so an existing one refuses up front.
@@ -1394,7 +1427,7 @@ const executeCommand = async <A extends Outcome>(
   let value: A | undefined
   let receiptFailure: string | undefined
   try {
-    value = await executeWithResults(context, config, code, body, options, results)
+    value = await executeWithResults(context, config, code, body, options, results, baseline)
   } finally {
     receiptFailure = await closeReceipt(results, config)
   }
@@ -1410,7 +1443,8 @@ const executeWithResults = async <A extends Outcome>(
   code: string,
   body: (reporter: Reporter.Reporter) => Promise<A>,
   options: ReceiptOptions,
-  results: FileHandle | undefined
+  results: FileHandle | undefined,
+  baseline: ReadonlyArray<BenchReport.TargetBenchmarks> | undefined
 ): Promise<A | undefined> => {
   const reporter = reporterFor(context, config)
   let outcome: A
@@ -1430,17 +1464,46 @@ const executeWithResults = async <A extends Outcome>(
     outcome
   const lines = "knownRed" in judged ? KnownRed.describe((judged as KnownRed.JudgedSummary).knownRed) : []
   if (lines.length > 0) terminalsOf(config).stderr.write(`${lines.join("\n")}\n`)
-  if (policyFor(context, config).progress !== "silent") {
+  const policy = policyFor(context, config)
+  if (policy.progress !== "silent") {
     const { stderr } = terminalsOf(config)
     const palette = rendererFor(context, config, "stderr") === "plain"
       ? Ansi.none
       : Ansi.palette(environmentOf(config), stderr.isTTY)
-    const benchTable = BenchReport.format(judged.results, palette)
+    const benchTable = BenchReport.format(judged.results, palette, baseline)
     if (benchTable !== undefined) stderr.write(`\n${benchTable}\n`)
   }
   if (results !== undefined) {
     const failed = await writeResults(results, judged, config)
     if (failed !== undefined) return context.error({ code, exitCode: 1, message: failed })
+  }
+  if (baseline !== undefined && options.failOnRegression !== undefined && judged.ok) {
+    const regressed = BenchReport.regressions(
+      BenchReport.compare(judged.results, baseline),
+      options.failOnRegression
+    )
+    if (regressed.length > 0) {
+      const detail = regressed
+        .map((delta) => `${delta.target} (${delta.benchmark}: -${delta.regressionPercent!.toFixed(1)}%)`)
+        .join(", ")
+      const message = `${regressed.length} benchmark${
+        regressed.length === 1 ? "" : "s"
+      } regressed by more than ${options.failOnRegression}%: ${detail}`
+      const people = forPeople(context, config) && policy.progress !== "silent"
+      if (people) {
+        terminalsOf(config).stderr.write(`\n${message}\n`)
+        if (config.exit !== undefined) {
+          config.exit(1)
+          return undefined
+        }
+      }
+      return context.error({
+        code: "bench_regression",
+        exitCode: 1,
+        message,
+        retryable: false
+      })
+    }
   }
   return settle(context, config, judged as unknown as A)
 }
@@ -1821,7 +1884,8 @@ const makeCommands = (config: RuntimeConfig) =>
           "Git head revision; defaults to the working tree including untracked files"
         ),
         files: z.array(z.string()).optional().describe("Explicit changed paths instead of Git discovery"),
-        list: z.boolean().default(false).describe("List selected roots and reasons without executing")
+        list: z.boolean().default(false).describe("List selected roots and reasons without executing"),
+        ...benchCompareOptions
       }),
       async run(context) {
         try {
@@ -2152,7 +2216,7 @@ const makeCommands = (config: RuntimeConfig) =>
       description: "Execute benchmark targets and report measured throughput and latency",
       mcp: { annotations: { readOnlyHint: false } },
       args: patternsArgument,
-      options: lifecycleOptions,
+      options: lifecycleOptions.extend(benchCompareOptions),
       alias: executionAlias,
       run: (context) =>
         executeCommand(

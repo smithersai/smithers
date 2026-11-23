@@ -9,9 +9,11 @@ import { packagePatterns, packageShards, shardJobId, shardStep, workspaceShards,
 
 // Workspace selections cross package boundaries as explicit files. Expansion
 // retains the shared ignore, repository, symlink and host-state rules.
+const workspaceWalks = Input.makeWalkCache()
 const workspaceFiles = async (patterns: ReadonlyArray<string>) =>
   (await Promise.all(patterns.map((pattern) => Input.expandGlob(import.meta.dirname, "", `//${pattern}`, {
-    packageScoped: false
+    packageScoped: false,
+    walks: workspaceWalks
   })))).flat().sort().map((path) => Smithers.file(`//${path}`))
 const workspaceSources = await workspaceFiles([
   "packages/*/src/**/*.ts", "packages/*/*/src/**/*.ts", "packages/*/*/*/src/**/*.ts"

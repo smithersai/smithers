@@ -2159,7 +2159,7 @@ const visit = async (
       let identity = context.installedTrees.get(real)
       if (identity === undefined) {
         try {
-          identity = InstalledTree.identify(real, context.installedMemory)
+          identity = await InstalledTree.identifyAsync(real, context.installedMemory)
         } catch (cause) {
           identity = Diagnostic.describe(cause)
         }

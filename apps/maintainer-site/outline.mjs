@@ -31,28 +31,69 @@ export function outlineOf(ts, source, fileName = "file.ts") {
 
 function comments(ts, file, at) {
   const text = file.text
-  const ranges = new Map()
-  const jsxText = []
-  const add = (list) => {
-    for (const range of list ?? []) ranges.set(range.pos, range.end)
+  const S = ts.SyntaxKind
+  // Collect every literal/JSX-text span from the real AST (without calling
+  // `node.getChildren(file)`, which re-lexes every node). Any `//` or `/*`
+  // outside these spans is a genuine comment, including comments inside
+  // `${...}` template expressions and trailing comments on punctuation tokens.
+  const excluded = []
+  const collectExcluded = (node) => {
+    const kind = node.kind
+    if (
+      kind === S.StringLiteral ||
+      kind === S.NoSubstitutionTemplateLiteral ||
+      kind === S.TemplateHead ||
+      kind === S.TemplateMiddle ||
+      kind === S.TemplateTail ||
+      kind === S.RegularExpressionLiteral ||
+      kind === S.JsxText
+    ) {
+      excluded.push([node.getStart(file), node.end])
+      return
+    }
+    ts.forEachChild(node, collectExcluded)
   }
-  const visit = (node) => {
-    if (node.kind >= ts.SyntaxKind.FirstJSDocNode && node.kind <= ts.SyntaxKind.LastJSDocNode) return
-    const children = node.getChildren(file)
-    if (children.length) return children.forEach(visit)
-    if (node.kind === ts.SyntaxKind.JsxText) return jsxText.push([node.pos, node.end])
-    add(ts.getLeadingCommentRanges(text, node.pos))
-    add(ts.getTrailingCommentRanges(text, node.end))
+  collectExcluded(file)
+  excluded.sort((a, b) => a[0] - b[0])
+
+  const ranges = []
+  const length = text.length
+  let exIndex = 0
+  let pos = 0
+  while (pos < length) {
+    while (exIndex < excluded.length && excluded[exIndex][1] <= pos) exIndex++
+    if (exIndex < excluded.length && pos >= excluded[exIndex][0]) {
+      pos = excluded[exIndex][1]
+      continue
+    }
+    const nextSlash = text.indexOf("/", pos)
+    if (nextSlash === -1) break
+    while (exIndex < excluded.length && excluded[exIndex][1] <= nextSlash) exIndex++
+    if (exIndex < excluded.length && nextSlash >= excluded[exIndex][0]) {
+      pos = excluded[exIndex][1]
+      continue
+    }
+    const nextChar = text.charCodeAt(nextSlash + 1)
+    if (nextChar === 47) { // `//`
+      const end = text.indexOf("\n", nextSlash + 2)
+      const stop = end === -1 ? length : end
+      ranges.push([nextSlash, stop])
+      pos = stop
+    } else if (nextChar === 42) { // `/*`
+      const close = text.indexOf("*/", nextSlash + 2)
+      const stop = close === -1 ? length : close + 2
+      ranges.push([nextSlash, stop])
+      pos = stop
+    } else {
+      pos = nextSlash + 1
+    }
   }
-  visit(file)
-  // JSX text is content: `<p>// x</p>` reads as a comment trailing the `>` to the scanner, but it is text.
-  for (const [pos, end] of jsxText) for (const start of ranges.keys()) if (start >= pos && start < end) ranges.delete(start)
 
   // Each comment, split per line.
   const perLine = new Map()
-  for (const [pos, end] of [...ranges].sort((a, b) => a[0] - b[0])) {
-    const start = at(pos)
-    const stop = at(end)
+  for (const [startPos, endPos] of ranges) {
+    const start = at(startPos)
+    const stop = at(endPos)
     for (let line = start.line; line <= stop.line; line++) {
       const from = line === start.line ? start.col : 0
       const to = line === stop.line ? stop.col : Infinity
