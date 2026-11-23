@@ -3,19 +3,20 @@ import * as AlertPolicy from "../src/AlertPolicy.ts"
 import type * as Notification from "../src/Notification.ts"
 import * as NotificationState from "../src/NotificationState.ts"
 
-const notifications: ReadonlyArray<Notification.Notification> = Array.from({ length: 64 }, (_, i) => ({
-  _tag: i % 3 === 0 ? "human-steer" : "human-followup",
-  id: `notif-${i}`,
-  targetLineageId: "lineage-main",
-  delivery: i % 3 === 0 ? "steer" : "queue",
-  provenance: {
-    sourceRunId: "run-parent",
-    sourceLineageId: "lineage-main",
-    sourceTurn: i,
-    sourceActor: "user:alice"
-  },
-  payload: { message: `Instruction ${i}`, priority: i % 3 }
-}) as Notification.Notification)
+const notifications: ReadonlyArray<Notification.Notification> = Array.from({ length: 64 }, (_, i) =>
+  ({
+    _tag: i % 3 === 0 ? "human-steer" : "human-followup",
+    id: `notif-${i}`,
+    targetLineageId: "lineage-main",
+    delivery: i % 3 === 0 ? "steer" : "queue",
+    provenance: {
+      sourceRunId: "run-parent",
+      sourceLineageId: "lineage-main",
+      sourceTurn: i,
+      sourceActor: "user:alice"
+    },
+    payload: { message: `Instruction ${i}`, priority: i % 3 }
+  }) as Notification.Notification)
 
 const policy: AlertPolicy.Policy = {
   rules: {

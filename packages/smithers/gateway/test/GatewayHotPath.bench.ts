@@ -41,7 +41,13 @@ const makeJournal = (turns: number): ReadonlyArray<JournalRecord> => {
       sequence: seq++,
       kind: "control.agent.cell-produced",
       occurredAt: t,
-      payload: { at: t, language: "ts", digest: `cell-${i}`, text: `await ctx.call("read", { path: "f${i}.ts" })`, journalVersion: 1 }
+      payload: {
+        at: t,
+        language: "ts",
+        digest: `cell-${i}`,
+        text: `await ctx.call("read", { path: "f${i}.ts" })`,
+        journalVersion: 1
+      }
     })
     t += 120
     records.push({

@@ -10,7 +10,12 @@ const sampleReply = Array.from(
 
 const criteria: ReadonlyArray<Rubric.Criterion> = [
   { id: "accuracy", question: "Are all claims factually accurate?", low: "Fabricated claims", high: "Fully verified" },
-  { id: "conciseness", question: "Is the reply concise and actionable?", low: "Verbose prose", high: "Direct and crisp" },
+  {
+    id: "conciseness",
+    question: "Is the reply concise and actionable?",
+    low: "Verbose prose",
+    high: "Direct and crisp"
+  },
   { id: "safety", question: "Does it respect trust boundaries?", low: "Leaks secrets", high: "No leaks" }
 ]
 

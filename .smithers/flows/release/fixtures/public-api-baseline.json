@@ -672,6 +672,16 @@
             "default": "./dist/cjs/Audience.js"
           }
         },
+        "./BenchReport": {
+          "import": {
+            "types": "./dist/esm/BenchReport.d.ts",
+            "default": "./dist/esm/BenchReport.js"
+          },
+          "require": {
+            "types": "./dist/cjs/BenchReport.d.ts",
+            "default": "./dist/cjs/BenchReport.js"
+          }
+        },
         "./Cache": {
           "import": {
             "types": "./dist/esm/Cache.d.ts",
@@ -1162,14 +1172,15 @@
         "Ansi.d.ts": "122c4a1b7234c6977bd15e31623167f4b5f925c087920c0f7a6c0db0f16513b2",
         "AnvilExec.d.ts": "e8c495e4516d31e3beb8f6a656fabddb1074c24d5f6201db500c631a323eada9",
         "Audience.d.ts": "aa7bec3095390508fc2906aa3d091387d0a6d343e3c690b9b4c80cc388aa19c4",
+        "BenchReport.d.ts": "c040cde842cc2a1b23b0d2536337959da89214daab5f071afef8633f6506d636",
         "Cache.d.ts": "aa611b52fc3233785d5282b96c2916e928876b20544a0fd240338d3fc42746e4",
         "CacheAdmin.d.ts": "7ea44500142b444530bf50684a9d2b6baa5cd318e45e06eed34199bf3923d4c6",
-        "Cli.d.ts": "4fec0537a99ff2216e49c67857857b32780be97ae70f30ee5dec880fe0e10c3d",
+        "Cli.d.ts": "22f731a9f5c1fb4dab9f7e59b8fac46391201e63708dba0683154818de1afb2b",
         "Diagnostic.d.ts": "1fe2b24da2728997b9398369924ff673444993218e8d9ac7e612d6c5c80bbca7",
         "DockerExec.d.ts": "77f9ab75d4336d6b59a57e13fe834032a311a148da3a8f1f587df1ee0a82a367",
         "Entry.d.ts": "0b75767463668c0ab2141fa08e5bb8e7c4b8a337daf3d888813a5c028c7696a1",
         "Environment.d.ts": "d36de6176189a31f239b8a74253c27a3e765ed9f24007d7a030733a9c019941b",
-        "Executor.d.ts": "6819fc82dcfebdfc2a991fe3f587986ad1a43c1b09bd50b291a9370bd125a7ce",
+        "Executor.d.ts": "bc1bfe300eb0b016b7efa5e4d553d8f5b05e77b09f671b67fe029a2c1a633fbc",
         "FactoryLoader.d.ts": "0fea5965b2aa2b6c109f935a85f0a727f321edfb5d2c6d9fba68d7fd42c02dc4",
         "FactoryProjectionExec.d.ts": "5ee0dc18819c47bb0a9f121f4ce5111539da7a96b5660da588cf8bcc60e3f9de",
         "FetchExec.d.ts": "d5bd2912cce337194b92bda9b1619405493a4124d5fea90f81952494afacc6b6",
@@ -5282,7 +5293,7 @@
         "UnresolvedFailure.d.ts": "64538246e2ac2e6782a8fb506976ca35ff44be8ead0c12a6240b8028e63e7f23",
         "VariablesPanel.d.ts": "2566cbfeeb5d8eb424a9a532efbc44841bbc66fbb7e67a6027b351b868d865ee",
         "index.d.ts": "572cc06d72e0ae4c44b5303fc7d8d06cae8957e305647333448224497289404c",
-        "internal/RealmFlowBundle.d.ts": "a034af935af9de41fc211968bdeba8cc3c99635f455270d57fb92faf6aa91680",
+        "internal/RealmFlowBundle.d.ts": "22270ee76d72e667bd00a3140405f3d3fc4ed90817f40f82cf0d050e6bbb4005",
         "internal/bytes.d.ts": "f793204413d35e3b53c0eaa985f3108b1e8db876faa076dd5547683ad2b3c26e",
         "internal/cellPrompt.d.ts": "d9a252ad7854fa636fb82a3aaff266e1ebc90b53074505d4e11356a953ab8f80",
         "internal/compactable.d.ts": "5cd6a239000459f6a6feff83d86323f019681ee462ac38fecf45fc8f9ef35ca6",
@@ -11459,6 +11470,16 @@
             "default": "./dist/cjs/NodeArtifact.js"
           }
         },
+        "./NodeBench": {
+          "import": {
+            "types": "./dist/esm/NodeBench.d.ts",
+            "default": "./dist/esm/NodeBench.js"
+          },
+          "require": {
+            "types": "./dist/cjs/NodeBench.d.ts",
+            "default": "./dist/cjs/NodeBench.js"
+          }
+        },
         "./NodeBinary": {
           "import": {
             "types": "./dist/esm/NodeBinary.d.ts",
@@ -11829,6 +11850,16 @@
             "default": "./dist/cjs/Vitest.js"
           }
         },
+        "./VitestBench": {
+          "import": {
+            "types": "./dist/esm/VitestBench.d.ts",
+            "default": "./dist/esm/VitestBench.js"
+          },
+          "require": {
+            "types": "./dist/cjs/VitestBench.d.ts",
+            "default": "./dist/cjs/VitestBench.js"
+          }
+        },
         "./VitestCoverage": {
           "import": {
             "types": "./dist/esm/VitestCoverage.d.ts",
@@ -11898,7 +11929,7 @@
         "Foundry.d.ts": "2db7ca728e2a6c3a3f9ad1778c19f62d39fb2fb036602a62ffb80dc189be858b",
         "GeneratedFile.d.ts": "7e0d0a78b8f26c11dce83a55e39d0577dd47efedcc4e873b2ec131576277e058",
         "GitTarget.d.ts": "86f4504b3e9aa665d10eb028adc9ceeeb1d63d97fd19ff19e52fda6d210204a7",
-        "GithubCiGen.d.ts": "e99280ce173239e2c55b8c35ab421b7204f683873391635b8486eaa6048a5125",
+        "GithubCiGen.d.ts": "376d0716b9c49c6ce05db278f3ac758170a98cf1f8f1b5c5ec4958727687fb22",
         "GithubTarget.d.ts": "41fdf7ff142a1e881b2e7985ff498a95572d0231079f083be1080741a19b5c14",
         "GithubWorkflow.d.ts": "34ef711bbaf401d601d5ed7db639b0d82cea31e72c3e9e0b76a6eb3b53fc7241",
         "Go.d.ts": "f9ccb834be65e0e266b25f3ebf892ff122e75f639e7329ed168dfed8f2d18d98",
@@ -11919,6 +11950,7 @@
         "NewPackage.d.ts": "9d83ef436e5d55efa29191c01c6c523488d654d9756c01e2d37a10dc7d3d67cc",
         "Nix.d.ts": "98f3cd359b49e4da11033f423ea4741cbc9faef8e65bf9917b5830f3dacea8a8",
         "NodeArtifact.d.ts": "ff5c4d6b7df8007accc886bc24bed319399075abb7f27e85a3ca3b9ffdd94b69",
+        "NodeBench.d.ts": "ff342c6bf4219feb14ba36ada0d175ef494d98a4e23cea2512bdae100f6216d0",
         "NodeBinary.d.ts": "77946216930d0c87ea40a8eafd23c121cd34b9150464e373c4df0e4bed931b81",
         "NodeTest.d.ts": "3ac811c46a5d2b04ce4baeb56b3515e9b4e97877b5a0a6d69757f6c0c3996d50",
         "NpmPublish.d.ts": "11ec571edc0c2c351b1ecf5e9aa40aa26c9f478070e569023f365a3b9d30eb33",
@@ -11943,11 +11975,11 @@
         "SecurityReview.d.ts": "33ef9ef128ef4b1e99524c3cf3cce12dbc6f2770da0e392b5b24a1a394554af2",
         "Shell.d.ts": "eb8764f6102e883af34adf9755d113ef2aba3ead9ac9c46e784f06110d0e07ba",
         "Skills.d.ts": "ad8f76ce74e555e7cf23a99771786f97191e064bf90270d020d0318282d89731",
-        "Smithers.d.ts": "2d0d3b63976381f0ec553e63d7edd4e8e5b23a569731b34b325b8f7a2048037c",
+        "Smithers.d.ts": "9b20a3f61e3b0e68eb29c58c94e088a9387fc010bb1f0cbfb7031c956055250a",
         "SortPackageJson.d.ts": "c947c969e96ede1214b23d20a2ed79ed2258b86d33bfbe8da3ad6762ec28231b",
         "Stamp.d.ts": "7def0b8ff615d2750837c5551c642446b74033320d8749009a2d5ff9c6220487",
-        "Target.d.ts": "ebdbd4723f7f90617a28673496b1e0d93284b0fdf5bfaff78fb572648aae27ad",
-        "TargetIndex.d.ts": "30b0f3c85cff0226fee5396d3e7e466f8534dd1c84466ad8e097c0355dcac481",
+        "Target.d.ts": "e2700c03b4c9605d8cd367d331ec86ac819ee92b083abcb4a40c6b7fb4b658a9",
+        "TargetIndex.d.ts": "f78cadb93b35b33f803d5d8f35a351630449e079f7ecc4e13ea7964cb5318c9a",
         "ToolBuild.d.ts": "6373e247738bf1c60a7a28134048e85c96156093f7fb934b623e0557a37bbff8",
         "ToolRun.d.ts": "4a979d0a3be870ad37a71bb7850546dd52ca3c628ac4dc029ebf71cdfc0fa800",
         "Toolchain.d.ts": "67c1856df6ceebfd72d25cd155553cf039f57f060499381081038dcebd1c9866",
@@ -11955,8 +11987,9 @@
         "Tsconfig.d.ts": "0cf63ab1298b3edc6ffeac19fa6225ec39abdcc8bdd7fc5e59a9cf9ecf2d8617",
         "Typecheck.d.ts": "2229cd88b021f34b11528b955a2eceeb3a508a64e8953f270821ca90f87a1191",
         "TypedocDocumentation.d.ts": "a92810e5f932da777b33bcb3592ec188f5eaa9c7e733d0b5edb1ff9992ccdb7c",
-        "Verb.d.ts": "eec9bc2a8c1096591b959f107d44b4c6fe0066ceba7ea311e314ee70de309f6c",
+        "Verb.d.ts": "b90a5cb77447dd3e9dbd0a63e38d48fffe100ee8091ff59957e805bbe382af7e",
         "Vitest.d.ts": "d7edef027f07248a407c9d2d397a1645c2328cae58b5ae1f4df196fb092683ec",
+        "VitestBench.d.ts": "f25ef5fb7ad774ef0da5a10caae0465d274c4421099ba5311f075cf42010c3a7",
         "VitestCoverage.d.ts": "1c9a8449ccbeb7d29a63b5861cccc77b45507650ad580445edee10e78270caa7",
         "VitestWatch.d.ts": "879822fbfacdb9e922bcbf53145edd87bd4ecfc430433229abea9d2b79653598",
         "WorkspaceDeclaration.d.ts": "cba19567f4ffd11aa8d736ceefb6072487e6fb4a23c07e794bc16f209f85267b",

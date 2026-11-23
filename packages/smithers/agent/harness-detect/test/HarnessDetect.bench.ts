@@ -1,10 +1,5 @@
 import { describe, test } from "vitest"
-import {
-  decodeJwtClaims,
-  detectHarnessesWith,
-  parseVersionLine,
-  sanitizeDisplayText
-} from "../src/index.ts"
+import { decodeJwtClaims, detectHarnessesWith, parseVersionLine, sanitizeDisplayText } from "../src/index.ts"
 import type { HarnessHost } from "../src/index.ts"
 
 const sampleJwt = `eyJhbGciOiJSUzI1NiJ9.${

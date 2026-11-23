@@ -308,7 +308,13 @@ describe("@smthrs/kernel security & command-line fuzz invariants", () => {
         isOutage: Schema.Boolean,
         idx: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: outages.length - 1 }))),
         prefix: Schema.String.pipe(Schema.check(Schema.isMaxLength(20))),
-        benign: Schema.Literals(["syntax error", "file not found", "HTTP 404 Not Found", "HTTP 400 Bad Request", "exit 1"])
+        benign: Schema.Literals([
+          "syntax error",
+          "file not found",
+          "HTTP 404 Not Found",
+          "HTTP 400 Bad Request",
+          "exit 1"
+        ])
       })
     )
     await runFuzz(
@@ -356,31 +362,100 @@ describe("@smthrs/kernel Path, Workspace, Rooted, TestGrantStore, and BatchContr
             copyFile: (a, b) => record(`${a}->${b}`),
             chmod: (p) => record(p),
             chown: (p) => record(p),
-            glob: (_pat, opts) => Effect.sync(() => { observed.push(opts?.root ?? ""); return [] }),
-            exists: (p) => Effect.sync(() => { observed.push(p); return true }),
+            glob: (_pat, opts) =>
+              Effect.sync(() => {
+                observed.push(opts?.root ?? "")
+                return []
+              }),
+            exists: (p) =>
+              Effect.sync(() => {
+                observed.push(p)
+                return true
+              }),
             link: (a, b) => record(`${a}->${b}`),
             makeDirectory: (p) => record(p),
-            makeTempDirectory: (o) => Effect.sync(() => { observed.push(o?.directory ?? "<sys>"); return "/tmp/d" }),
-            makeTempDirectoryScoped: (o) => Effect.sync(() => { observed.push(o?.directory ?? "<sys>"); return "/tmp/d" }),
-            makeTempFile: (o) => Effect.sync(() => { observed.push(o?.directory ?? "<sys>"); return "/tmp/f" }),
-            makeTempFileScoped: (o) => Effect.sync(() => { observed.push(o?.directory ?? "<sys>"); return "/tmp/f" }),
-            open: (p) => Effect.sync(() => { observed.push(p); return {} as EffectFileSystem.File }),
-            readDirectory: (p) => Effect.sync(() => { observed.push(p); return [] }),
-            readDirectoryEntries: (p) => Effect.sync(() => { observed.push(p); return [] }),
-            readFile: (p) => Effect.sync(() => { observed.push(p); return new Uint8Array() }),
-            readFileString: (p) => Effect.sync(() => { observed.push(p); return "" }),
-            readLink: (p) => Effect.sync(() => { observed.push(p); return "target" }),
-            realPath: (p) => Effect.sync(() => { observed.push(p); return p }),
+            makeTempDirectory: (o) =>
+              Effect.sync(() => {
+                observed.push(o?.directory ?? "<sys>")
+                return "/tmp/d"
+              }),
+            makeTempDirectoryScoped: (o) =>
+              Effect.sync(() => {
+                observed.push(o?.directory ?? "<sys>")
+                return "/tmp/d"
+              }),
+            makeTempFile: (o) =>
+              Effect.sync(() => {
+                observed.push(o?.directory ?? "<sys>")
+                return "/tmp/f"
+              }),
+            makeTempFileScoped: (o) =>
+              Effect.sync(() => {
+                observed.push(o?.directory ?? "<sys>")
+                return "/tmp/f"
+              }),
+            open: (p) =>
+              Effect.sync(() => {
+                observed.push(p)
+                return {} as EffectFileSystem.File
+              }),
+            readDirectory: (p) =>
+              Effect.sync(() => {
+                observed.push(p)
+                return []
+              }),
+            readDirectoryEntries: (p) =>
+              Effect.sync(() => {
+                observed.push(p)
+                return []
+              }),
+            readFile: (p) =>
+              Effect.sync(() => {
+                observed.push(p)
+                return new Uint8Array()
+              }),
+            readFileString: (p) =>
+              Effect.sync(() => {
+                observed.push(p)
+                return ""
+              }),
+            readLink: (p) =>
+              Effect.sync(() => {
+                observed.push(p)
+                return "target"
+              }),
+            realPath: (p) =>
+              Effect.sync(() => {
+                observed.push(p)
+                return p
+              }),
             remove: (p) => record(p),
             rename: (a, b) => record(`${a}->${b}`),
-            sink: (p) => { observed.push(p); return Sink.drain },
-            stat: (p) => Effect.sync(() => { observed.push(p); return {} as EffectFileSystem.File.Info }),
-            lstat: (p) => Effect.sync(() => { observed.push(p); return {} as EffectFileSystem.File.Info }),
-            stream: (p) => { observed.push(p); return Stream.empty },
+            sink: (p) => {
+              observed.push(p)
+              return Sink.drain
+            },
+            stat: (p) =>
+              Effect.sync(() => {
+                observed.push(p)
+                return {} as EffectFileSystem.File.Info
+              }),
+            lstat: (p) =>
+              Effect.sync(() => {
+                observed.push(p)
+                return {} as EffectFileSystem.File.Info
+              }),
+            stream: (p) => {
+              observed.push(p)
+              return Stream.empty
+            },
             symlink: (target, linkPath) => record(`sym:${target}->${linkPath}`),
             truncate: (p) => record(p),
             utimes: (p) => record(p),
-            watch: (p) => { observed.push(p); return Stream.empty },
+            watch: (p) => {
+              observed.push(p)
+              return Stream.empty
+            },
             writeFile: (p) => record(p),
             writeFileString: (p) => record(p)
           })
@@ -394,8 +469,7 @@ describe("@smthrs/kernel Path, Workspace, Rooted, TestGrantStore, and BatchContr
           const maybeContained = contained
             ? yield* HostChildProcessSpawner.pipe(
               Effect.provide(ContainedSpawner.layer({}, (c, sp) =>
-                Effect.map(sp(c), (handle) => ({ handle, activate: Effect.void, settled: Effect.succeed(true) }))
-              )),
+                Effect.map(sp(c), (handle) => ({ handle, activate: Effect.void, settled: Effect.succeed(true) })))),
               Effect.provideService(HostChildProcessSpawner, rawSpawner),
               Effect.provide(ProcessLedger.layerMemory({ hostId: "r", ownerPid: 1 }))
             )
@@ -405,11 +479,19 @@ describe("@smthrs/kernel Path, Workspace, Rooted, TestGrantStore, and BatchContr
             const p = yield* EffectPath.Path
             const fs = yield* EffectFileSystem.FileSystem
             const sp = yield* HostChildProcessSpawner
-            if (ContainedSpawner.isContained(sp) !== contained) return false
-            if (p.resolve(rel) !== p.resolve(root, rel)) return false
-            if (p.relative(rel, abs) !== p.relative(p.resolve(root, rel), abs)) return false
+            if (ContainedSpawner.isContained(sp) !== contained) {
+              return false
+            }
+            if (p.resolve(rel) !== p.resolve(root, rel)) {
+              return false
+            }
+            if (p.relative(rel, abs) !== p.relative(p.resolve(root, rel), abs)) {
+              return false
+            }
             const fileUrl = yield* p.toFileUrl(rel)
-            if (!fileUrl.href.includes(rootSeg)) return false
+            if (!fileUrl.href.includes(rootSeg)) {
+              return false
+            }
 
             yield* fs.access(rel)
             yield* fs.copy(rel, abs)
@@ -450,7 +532,11 @@ describe("@smthrs/kernel Path, Workspace, Rooted, TestGrantStore, and BatchContr
               : ChildProcess.make("a")
             yield* sp.spawn(cmd)
 
-            if (!observed.some((entry) => entry === `sym:../relative-target->${p.resolve(root, rel)}`)) return false
+            if (
+              !observed.some((entry) =>
+                entry === `sym:../relative-target->${p.resolve(root, rel)}`
+              )
+            ) return false
             if (!spawnedCwds.every((c) => c !== undefined && c.startsWith(root))) return false
             return true
           }).pipe(
@@ -550,7 +636,9 @@ describe("@smthrs/kernel Path, Workspace, Rooted, TestGrantStore, and BatchContr
           if (mode === "atomicNoBatch") {
             FileSystem.withAtomicFileSystem(fs, { execute: () => Effect.die("unused") })
           } else if (mode === "batchDefaultId" || mode === "batchCustomId") {
-            const batchExec: FileSystem.AtomicFileSystem["execute"] = <R extends FileSystem.AtomicRequest>(request: R) => {
+            const batchExec: FileSystem.AtomicFileSystem["execute"] = <R extends FileSystem.AtomicRequest>(
+              request: R
+            ) => {
               if (request.operation !== "batch") return Effect.die("unexpected")
               const entries: Array<FileSystem.BatchEntry> = [
                 {
@@ -628,7 +716,13 @@ describe("@smthrs/kernel ProcessConfinement, restrictsContent & pattern validati
           Schema.check(Schema.isMinLength(1), Schema.isMaxLength(6))
         ),
         capAction: Schema.Literals(["fs:read", "fs:write", "proc:spawn", "net:get"]),
-        capRes: Schema.Literals(["/workspace/a.txt", "/workspace/sub/x.txt", "/outside/a.txt", "rm *.tmp", "/workspace"]),
+        capRes: Schema.Literals([
+          "/workspace/a.txt",
+          "/workspace/sub/x.txt",
+          "/outside/a.txt",
+          "rm *.tmp",
+          "/workspace"
+        ]),
         scope: Schema.Literals(["run", "remembered"])
       })
     )
@@ -651,7 +745,14 @@ describe("@smthrs/kernel ProcessConfinement, restrictsContent & pattern validati
           // Explicitly cover valid non-fs:write grant pattern
           const readCap = Capability.make("fs:read", "/workspace/a.txt")
           const readPat = new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/**" })
-          if (!GrantStore.isValidGrantPattern(readPat, readCap, Capability.tierOf(readCap, { workspaceRoot: "/workspace" }), "/workspace")) {
+          if (
+            !GrantStore.isValidGrantPattern(
+              readPat,
+              readCap,
+              Capability.tierOf(readCap, { workspaceRoot: "/workspace" }),
+              "/workspace"
+            )
+          ) {
             return false
           }
 
@@ -664,7 +765,10 @@ describe("@smthrs/kernel ProcessConfinement, restrictsContent & pattern validati
             if ((pat.resource.includes("*") || pat.resource.includes("?")) && pat.resource === cap.resource) {
               if (GrantStore.isValidGrantPattern(pat, cap, tier, "/workspace")) return false
             }
-            if (capAction === "fs:write" && tier === "irreversible" && (pat.resource.includes("*") || pat.resource.includes("?"))) {
+            if (
+              capAction === "fs:write" && tier === "irreversible" &&
+              (pat.resource.includes("*") || pat.resource.includes("?"))
+            ) {
               if (GrantStore.isValidGrantPattern(pat, cap, tier, "/workspace")) return false
             }
             if (pat.action === "fs:write" && (pat.resource === "**" || pat.resource === "/outside/**")) {
@@ -678,7 +782,16 @@ describe("@smthrs/kernel ProcessConfinement, restrictsContent & pattern validati
   })
 
   it("ProcessConfinement.profile and restrictsContent are sound across arbitrary policies, ceilings, and budget-exceeding wildcards", async () => {
-    const ruleActionSchema = Schema.Literals(["*", "fs:*", "fs:read", "fs:write", "net:*", "net:get", "net:post", "net:private"])
+    const ruleActionSchema = Schema.Literals([
+      "*",
+      "fs:*",
+      "fs:read",
+      "fs:write",
+      "net:*",
+      "net:get",
+      "net:post",
+      "net:private"
+    ])
     const ruleSchema = Schema.Struct({
       effect: Schema.Literals(["allow", "deny", "ask"]),
       action: ruleActionSchema,
@@ -869,16 +982,34 @@ describe("@smthrs/kernel GrantStore fuzz & simulation invariants", () => {
               attended,
               ...(hasRunId ? { runId: "run-\uD83D\uDE00" } : {}),
               ...(hasPlanDigest ? { planDigest: "plan-1" } : {}),
-              rules: [new Permission.Rule({ effect: "deny", pattern: new Capability.CapabilityPattern({ action: "fs:write", resource: "/workspace/denied.txt" }) })],
-              runRules: [
-                new Permission.Rule({ effect: "ask", pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/masked.txt" }) }),
-                {
-                  rule: new Permission.Rule({ effect: "allow", pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/seeded.txt" }) }),
-                  ceiling: [[new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/seeded.txt" })]]
-                },
-                new Permission.Rule({ effect: "allow", pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/bare.txt" }) })
+              rules: [
+                new Permission.Rule({
+                  effect: "deny",
+                  pattern: new Capability.CapabilityPattern({ action: "fs:write", resource: "/workspace/denied.txt" })
+                })
               ],
-              envelopeSignatures: seedLegacySig ? [legacySig, "{bad-json", `{"planDigest":"p","scope":"run","patterns":["bad"]}`] : [],
+              runRules: [
+                new Permission.Rule({
+                  effect: "ask",
+                  pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/masked.txt" })
+                }),
+                {
+                  rule: new Permission.Rule({
+                    effect: "allow",
+                    pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/seeded.txt" })
+                  }),
+                  ceiling: [[
+                    new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/seeded.txt" })
+                  ]]
+                },
+                new Permission.Rule({
+                  effect: "allow",
+                  pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/bare.txt" })
+                })
+              ],
+              envelopeSignatures: seedLegacySig
+                ? [legacySig, "{bad-json", `{"planDigest":"p","scope":"run","patterns":["bad"]}`]
+                : [],
               ...(envelopeScope === "empty"
                 ? { envelope: { planDigest: "plan-1", patterns: [] } }
                 : hasPlanDigest
@@ -892,12 +1023,15 @@ describe("@smthrs/kernel GrantStore fuzz & simulation invariants", () => {
                     yield* Deferred.await(persistGate)
                   }
                   if (persistFail) {
-                    return yield* Effect.fail(new Permission.GrantStoreError({ code: "journal_failed", message: "disk full" }))
+                    return yield* Effect.fail(
+                      new Permission.GrantStoreError({ code: "journal_failed", message: "disk full" })
+                    )
                   }
                 })
             })
           )
-          const constructionNeedsPersist = hasPlanDigest && envelopeScope !== "empty" && !(seedLegacySig && envelopeScope === "run")
+          const constructionNeedsPersist = hasPlanDigest && envelopeScope !== "empty" &&
+            !(seedLegacySig && envelopeScope === "run")
           if (persistFail && constructionNeedsPersist) {
             return Result.isFailure(makeRes) && makeRes.failure.code === "journal_failed"
           }
@@ -917,7 +1051,10 @@ describe("@smthrs/kernel GrantStore fuzz & simulation invariants", () => {
           if (pol.groups.length !== 4) return false
 
           if (!attended) {
-            const metaObj: Record<string, unknown> = { nested: [1, true, null, "ok-\uD83D\uDE00", { k: 2 }], omitted: undefined }
+            const metaObj: Record<string, unknown> = {
+              nested: [1, true, null, "ok-\uD83D\uDE00", { k: 2 }],
+              omitted: undefined
+            }
             Object.defineProperty(metaObj, "hidden", { enumerable: false, value: 99 })
             const reqErr = yield* Effect.flip(store.check(cap, metaObj))
             if (reqErr._tag !== "@smthrs/capability/PermissionRequired") return false
@@ -995,7 +1132,10 @@ describe("@smthrs/kernel GrantStore fuzz & simulation invariants", () => {
               }
               yield* Fiber.interrupt(waiter)
             } else if (cancelWaiterDuringPersist) {
-              if ((resolution === "once" || resolution === "deny") && (Result.isSuccess(replyRes) || replyRes.failure.code !== "request_not_found")) {
+              if (
+                (resolution === "once" || resolution === "deny") &&
+                (Result.isSuccess(replyRes) || replyRes.failure.code !== "request_not_found")
+              ) {
                 yield* Fiber.interrupt(uncoveredWaiter)
                 return false
               }
@@ -1096,37 +1236,88 @@ describe("@smthrs/kernel GrantStore fuzz & simulation invariants", () => {
       Schema.Struct({
         badMeta: badMetaKind,
         badMake: badMakeKind,
-        capacityCase: Schema.Literals(["none", "replyRunFull", "replyRemFull", "envOverRules", "envOverSigs", "closeWhileWaiter", "closeDuringReplyPersist", "closeDuringEnvPersist"])
+        capacityCase: Schema.Literals([
+          "none",
+          "replyRunFull",
+          "replyRemFull",
+          "envOverRules",
+          "envOverSigs",
+          "closeWhileWaiter",
+          "closeDuringReplyPersist",
+          "closeDuringEnvPersist"
+        ])
       })
     )
     await runFuzz(
       arb,
       ({ badMeta, badMake, capacityCase }) =>
         Effect.gen(function*() {
-          const r = new Permission.Rule({ effect: "allow", pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/**" }) })
-          const badWriteRule = new Permission.Rule({ effect: "allow", pattern: new Capability.CapabilityPattern({ action: "fs:write", resource: "**" }) })
-          const makeOpts: GrantStore.MakeOptions =
-            badMake === "emptyRunId" ? { runId: "" }
-            : badMake === "nullPlanDigest" ? { planDigest: "bad\0id" }
-            : badMake === "loneSurrogateRunId" ? { runId: "a\uD800b" }
-            : badMake === "badRulesLen" ? { rules: Array.from({ length: GrantStore.maximumRules + 1 }, () => r) }
-            : badMake === "badNestedRulesLen" ? { rules: [Array.from({ length: 600 }, () => r), Array.from({ length: 500 }, () => r)] }
-            : badMake === "badRunRulesLen" ? { runRules: Array.from({ length: GrantStore.maximumRules + 1 }, () => r) }
-            : badMake === "badCombinedRulesLen" ? { rules: Array.from({ length: 600 }, () => r), runRules: Array.from({ length: 500 }, () => r) }
-            : badMake === "badSignaturesLen" ? { envelopeSignatures: Array.from({ length: GrantStore.maximumRules + 1 }, (_, i) => `s${i}`) }
-            : badMake === "badSignatureItem" ? { envelopeSignatures: [""] }
-            : badMake === "oversizedLegacySig" ? { envelopeSignatures: [`{${"a".repeat(GrantStore.maximumEventBytes + 10)}`] }
-            : badMake === "badRememberedEnvelope" ? { rules: [[], [badWriteRule]] }
-            : badMake === "badRunRuleEnvelope" ? { runRules: [badWriteRule] }
-            : badMake === "badEnvelopeNotArray" ? { planDigest: "p", envelope: { planDigest: "p", patterns: "nope" as unknown as ReadonlyArray<Capability.CapabilityPattern> } }
-            : badMake === "badEnvelopeScope" ? { planDigest: "p", envelope: { planDigest: "p", patterns: [r.pattern], scope: "bad" as "run" } }
-            : badMake === "badEnvelopeMissingPlan" ? { envelope: { planDigest: "p", patterns: [r.pattern] } }
-            : badMake === "badEnvelopeBadPlan" ? { planDigest: "p", envelope: { planDigest: "", patterns: [r.pattern] } }
-            : badMake === "badEnvelopeMismatch" ? { planDigest: "p1", envelope: { planDigest: "p2", patterns: [r.pattern] } }
-            : badMake === "badEnvelopePattern" ? { planDigest: "p", envelope: { planDigest: "p", patterns: [badWriteRule.pattern] } }
-            : badMake === "constructionEnvelopeOverRules" ? { planDigest: "p", rules: Array.from({ length: GrantStore.maximumRules }, () => r), envelope: { planDigest: "p", patterns: [r.pattern] } }
-            : badMake === "constructionEnvelopeOverSigs" ? { planDigest: "p", envelopeSignatures: Array.from({ length: GrantStore.maximumRules }, (_, i) => `s-${i}`), envelope: { planDigest: "p", patterns: [r.pattern] } }
-            : { planDigest: "p", envelope: { planDigest: "p", patterns: Array.from({ length: GrantStore.maximumEnvelopePatterns + 1 }, () => r.pattern) } }
+          const r = new Permission.Rule({
+            effect: "allow",
+            pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/**" })
+          })
+          const badWriteRule = new Permission.Rule({
+            effect: "allow",
+            pattern: new Capability.CapabilityPattern({ action: "fs:write", resource: "**" })
+          })
+          const makeOpts: GrantStore.MakeOptions = badMake === "emptyRunId" ?
+            { runId: "" }
+            : badMake === "nullPlanDigest" ?
+            { planDigest: "bad\0id" }
+            : badMake === "loneSurrogateRunId" ?
+            { runId: "a\uD800b" }
+            : badMake === "badRulesLen" ?
+            { rules: Array.from({ length: GrantStore.maximumRules + 1 }, () => r) }
+            : badMake === "badNestedRulesLen" ?
+            { rules: [Array.from({ length: 600 }, () => r), Array.from({ length: 500 }, () => r)] }
+            : badMake === "badRunRulesLen" ?
+            { runRules: Array.from({ length: GrantStore.maximumRules + 1 }, () => r) }
+            : badMake === "badCombinedRulesLen" ?
+            { rules: Array.from({ length: 600 }, () => r), runRules: Array.from({ length: 500 }, () => r) }
+            : badMake === "badSignaturesLen" ?
+            { envelopeSignatures: Array.from({ length: GrantStore.maximumRules + 1 }, (_, i) => `s${i}`) }
+            : badMake === "badSignatureItem" ?
+            { envelopeSignatures: [""] }
+            : badMake === "oversizedLegacySig" ?
+            { envelopeSignatures: [`{${"a".repeat(GrantStore.maximumEventBytes + 10)}`] }
+            : badMake === "badRememberedEnvelope" ?
+            { rules: [[], [badWriteRule]] }
+            : badMake === "badRunRuleEnvelope" ?
+            { runRules: [badWriteRule] }
+            : badMake === "badEnvelopeNotArray" ?
+            {
+              planDigest: "p",
+              envelope: { planDigest: "p", patterns: "nope" as unknown as ReadonlyArray<Capability.CapabilityPattern> }
+            }
+            : badMake === "badEnvelopeScope" ?
+            { planDigest: "p", envelope: { planDigest: "p", patterns: [r.pattern], scope: "bad" as "run" } }
+            : badMake === "badEnvelopeMissingPlan" ?
+            { envelope: { planDigest: "p", patterns: [r.pattern] } }
+            : badMake === "badEnvelopeBadPlan" ?
+            { planDigest: "p", envelope: { planDigest: "", patterns: [r.pattern] } }
+            : badMake === "badEnvelopeMismatch" ?
+            { planDigest: "p1", envelope: { planDigest: "p2", patterns: [r.pattern] } }
+            : badMake === "badEnvelopePattern" ?
+            { planDigest: "p", envelope: { planDigest: "p", patterns: [badWriteRule.pattern] } }
+            : badMake === "constructionEnvelopeOverRules" ?
+            {
+              planDigest: "p",
+              rules: Array.from({ length: GrantStore.maximumRules }, () => r),
+              envelope: { planDigest: "p", patterns: [r.pattern] }
+            }
+            : badMake === "constructionEnvelopeOverSigs" ?
+            {
+              planDigest: "p",
+              envelopeSignatures: Array.from({ length: GrantStore.maximumRules }, (_, i) => `s-${i}`),
+              envelope: { planDigest: "p", patterns: [r.pattern] }
+            }
+            : {
+              planDigest: "p",
+              envelope: {
+                planDigest: "p",
+                patterns: Array.from({ length: GrantStore.maximumEnvelopePatterns + 1 }, () => r.pattern)
+              }
+            }
           const makeErr = yield* Effect.flip(GrantStore.make(makeOpts))
           if (makeErr.code !== "invalid_resolution") return false
 
@@ -1174,7 +1365,9 @@ describe("@smthrs/kernel GrantStore fuzz & simulation invariants", () => {
             return [] as unknown as Record<string, unknown>
           }
           const metaErr = yield* Effect.flip(store.check(Capability.make("fs:read", "/workspace/a"), buildBadMeta()))
-          if (metaErr._tag !== "@smthrs/capability/GrantStoreError" || metaErr.code !== "invalid_resolution") return false
+          if (metaErr._tag !== "@smthrs/capability/GrantStoreError" || metaErr.code !== "invalid_resolution") {
+            return false
+          }
 
           // Capacity & close-during-persist cases
           if (capacityCase === "replyRunFull" || capacityCase === "replyRemFull" || capacityCase === "envOverRules") {
@@ -1187,10 +1380,14 @@ describe("@smthrs/kernel GrantStore fuzz & simulation invariants", () => {
               const err = yield* Effect.flip(fullStore.grantEnvelope({ planDigest: "p", patterns: [r.pattern] }))
               if (err.code !== "invalid_resolution") return false
             } else {
-              const w = yield* fullStore.check(Capability.make("fs:write", "/workspace/a")).pipe(Effect.forkChild({ startImmediately: true }))
+              const w = yield* fullStore.check(Capability.make("fs:write", "/workspace/a")).pipe(
+                Effect.forkChild({ startImmediately: true })
+              )
               yield* Effect.yieldNow
               const [req] = yield* fullStore.list
-              const err = yield* Effect.flip(fullStore.reply(req!.requestId, capacityCase === "replyRunFull" ? "run" : "remembered"))
+              const err = yield* Effect.flip(
+                fullStore.reply(req!.requestId, capacityCase === "replyRunFull" ? "run" : "remembered")
+              )
               yield* Fiber.interrupt(w)
               if (err.code !== "invalid_resolution") return false
             }
@@ -1205,7 +1402,10 @@ describe("@smthrs/kernel GrantStore fuzz & simulation invariants", () => {
           } else if (capacityCase === "closeWhileWaiter") {
             const innerScope = yield* Scope.make()
             const s = yield* GrantStore.make({ attended: true, planDigest: "p" }).pipe(Scope.provide(innerScope))
-            const w = yield* s.check(Capability.make("fs:write", "/workspace/x")).pipe(Effect.result, Effect.forkChild({ startImmediately: true }))
+            const w = yield* s.check(Capability.make("fs:write", "/workspace/x")).pipe(
+              Effect.result,
+              Effect.forkChild({ startImmediately: true })
+            )
             yield* Effect.yieldNow
             yield* Scope.close(innerScope, Exit.void)
             const wr = yield* Fiber.join(w)
@@ -1220,10 +1420,16 @@ describe("@smthrs/kernel GrantStore fuzz & simulation invariants", () => {
               persist: () => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(gate)))
             }).pipe(Scope.provide(innerScope))
             if (capacityCase === "closeDuringReplyPersist") {
-              const w = yield* s.check(Capability.make("fs:write", "/workspace/x")).pipe(Effect.result, Effect.forkChild({ startImmediately: true }))
+              const w = yield* s.check(Capability.make("fs:write", "/workspace/x")).pipe(
+                Effect.result,
+                Effect.forkChild({ startImmediately: true })
+              )
               yield* Effect.yieldNow
               const [req] = yield* s.list
-              const rf = yield* s.reply(req!.requestId, "once").pipe(Effect.result, Effect.forkChild({ startImmediately: true }))
+              const rf = yield* s.reply(req!.requestId, "once").pipe(
+                Effect.result,
+                Effect.forkChild({ startImmediately: true })
+              )
               yield* Deferred.await(entered)
               yield* Scope.close(innerScope, Exit.void)
               yield* Deferred.succeed(gate, undefined)
@@ -1231,7 +1437,10 @@ describe("@smthrs/kernel GrantStore fuzz & simulation invariants", () => {
               yield* Fiber.join(w)
               if (Result.isSuccess(rr) || rr.failure.code !== "store_closed") return false
             } else {
-              const ef = yield* s.grantEnvelope({ planDigest: "p", patterns: [r.pattern] }).pipe(Effect.result, Effect.forkChild({ startImmediately: true }))
+              const ef = yield* s.grantEnvelope({ planDigest: "p", patterns: [r.pattern] }).pipe(
+                Effect.result,
+                Effect.forkChild({ startImmediately: true })
+              )
               yield* Deferred.await(entered)
               yield* Scope.close(innerScope, Exit.void)
               yield* Deferred.succeed(gate, undefined)
@@ -1305,9 +1514,13 @@ describe("@smthrs/kernel GrantStore fuzz & simulation invariants", () => {
           }
 
           const waiter = yield* store.check(cap).pipe(Effect.forkChild)
-          const f1 = yield* store.grantEnvelope({ planDigest: "sim-plan", patterns: [pat], scope }).pipe(Effect.forkChild)
+          const f1 = yield* store.grantEnvelope({ planDigest: "sim-plan", patterns: [pat], scope }).pipe(
+            Effect.forkChild
+          )
           yield* Deferred.await(started)
-          const f2 = yield* store.grantEnvelope({ planDigest: "sim-plan", patterns: [pat], scope }).pipe(Effect.forkChild)
+          const f2 = yield* store.grantEnvelope({ planDigest: "sim-plan", patterns: [pat], scope }).pipe(
+            Effect.forkChild
+          )
           yield* Effect.sleep("5 millis")
 
           if (mode === "waitInterruptRetry") {
@@ -1413,7 +1626,9 @@ describe("@smthrs/kernel JournalGrantStore fuzz & simulation invariants", () => 
                 planDigest: reopenSamePlan ? "plan-A" : "plan-B",
                 attended: false,
                 rules: [[new Permission.Rule({ effect: "ask", pattern: envPat })]],
-                ...(envelopeScope !== "none" ? { envelope: { patterns: [envPat], scope: envelopeScope === "remembered" ? "remembered" : "run" } } : {})
+                ...(envelopeScope !== "none"
+                  ? { envelope: { patterns: [envPat], scope: envelopeScope === "remembered" ? "remembered" : "run" } }
+                  : {})
               })
             ),
             Effect.provide(Workspace.layer(reopenSameWorkspace ? "/workspace" : "/other-ws"))
@@ -1485,20 +1700,29 @@ describe("@smthrs/kernel JournalGrantStore fuzz & simulation invariants", () => 
             planDigest: "d",
             attended: false
           }
-          if (fault === "badRunId" || fault === "badPolicyRunId" || fault === "badSourceId" || fault === "badPlanDigest" || fault === "sameIds" || fault === "surrogateId") {
-            const opts =
-              fault === "badRunId" ? { ...baseOpts, runId: "" }
-              : fault === "badPolicyRunId" ? { ...baseOpts, policyRunId: "a\0b" }
-              : fault === "badSourceId" ? { ...baseOpts, sourceId: "\uDC00" }
-              : fault === "badPlanDigest" ? { ...baseOpts, planDigest: "x".repeat(GrantStore.maximumIdentityLength + 1) }
-              : fault === "surrogateId" ? { ...baseOpts, runId: "a\uD800b" }
+          if (
+            fault === "badRunId" || fault === "badPolicyRunId" || fault === "badSourceId" ||
+            fault === "badPlanDigest" || fault === "sameIds" || fault === "surrogateId"
+          ) {
+            const opts = fault === "badRunId" ?
+              { ...baseOpts, runId: "" }
+              : fault === "badPolicyRunId" ?
+              { ...baseOpts, policyRunId: "a\0b" }
+              : fault === "badSourceId" ?
+              { ...baseOpts, sourceId: "\uDC00" }
+              : fault === "badPlanDigest" ?
+              { ...baseOpts, planDigest: "x".repeat(GrantStore.maximumIdentityLength + 1) }
+              : fault === "surrogateId" ?
+              { ...baseOpts, runId: "a\uD800b" }
               : { ...baseOpts, policyRunId: "r" }
             const err = yield* Effect.flip(JournalGrantStore.make(opts).pipe(Effect.provide(TestJournal.layer())))
             return err._tag === "@smthrs/capability/GrantStoreError" && err.code === "invalid_resolution"
           }
 
           if (fault === "journalReadFail") {
-            const err = yield* Effect.flip(JournalGrantStore.make(baseOpts).pipe(Effect.provide(JournalModule.layerNoop())))
+            const err = yield* Effect.flip(
+              JournalGrantStore.make(baseOpts).pipe(Effect.provide(JournalModule.layerNoop()))
+            )
             return err.code === "journal_failed"
           }
 
@@ -1514,7 +1738,10 @@ describe("@smthrs/kernel JournalGrantStore fuzz & simulation invariants", () => 
             return err.code === "journal_failed"
           }
 
-          if (fault === "emptyPagePolicy" || fault === "stalledSeqPolicy" || fault === "emptyPageRun" || fault === "stalledSeqRun") {
+          if (
+            fault === "emptyPagePolicy" || fault === "stalledSeqPolicy" || fault === "emptyPageRun" ||
+            fault === "stalledSeqRun"
+          ) {
             const target = fault.endsWith("Policy") ? "p" : "r"
             const mkEntry = (seq: number) =>
               new JournalEvent.Entry({
@@ -1561,8 +1788,7 @@ describe("@smthrs/kernel JournalGrantStore fuzz & simulation invariants", () => 
                   })
                 ),
                 meta: undefined
-              })
-            )
+              }))
             const journal = JournalModule.makeNoop({
               entries: (o) => {
                 if (o.runId !== "p") return Effect.succeed({ entries: [], hasMore: false })
@@ -1653,20 +1879,34 @@ describe("@smthrs/kernel JournalGrantStore fuzz & simulation invariants", () => 
 
             if (fault === "legacyRunV1") yield* put("r", "flows.kernel.grant.run.v1", {})
             else if (fault === "corruptPayload") yield* put("p", "flows.kernel.grant.remembered.v1", { bad: true })
-            else if (fault === "typeMismatch") yield* put("p", "flows.kernel.grant.remembered.v1", encodeEv(envEv("remembered", [validPat])))
-            else if (fault === "unsafeRemembered") yield* put("p", "flows.kernel.grant.remembered.v1", encodeEv(remEv(unsafePat)))
-            else if (fault === "unsafeRememberedOtherRoot") {
+            else if (fault === "typeMismatch") {
+              yield* put("p", "flows.kernel.grant.remembered.v1", encodeEv(envEv("remembered", [validPat])))
+            } else if (fault === "unsafeRemembered") {
+              yield* put("p", "flows.kernel.grant.remembered.v1", encodeEv(remEv(unsafePat)))
+            } else if (fault === "unsafeRememberedOtherRoot") {
               yield* put(
                 "p",
                 "flows.kernel.grant.remembered.v1",
-                encodeEv(remEv(new Capability.CapabilityPattern({ action: "fs:write", resource: "/other/b/**" }), Capability.make("fs:write", "/other/a/x.txt")))
+                encodeEv(
+                  remEv(
+                    new Capability.CapabilityPattern({ action: "fs:write", resource: "/other/b/**" }),
+                    Capability.make("fs:write", "/other/a/x.txt")
+                  )
+                )
               )
-            } else if (fault === "unsafeRememberedEnv") yield* put("p", "flows.kernel.grant.envelope.v1", encodeEv(envEv("remembered", [unsafePat])))
-            else if (fault === "runInPolicy") yield* put("p", "flows.kernel.grant.run.v2", encodeEv(runEv(validPat)))
-            else if (fault === "runIdMismatch") yield* put("r", "flows.kernel.grant.run.v2", encodeEv(runEv(validPat, "other-run")))
-            else if (fault === "unsafeRunGrant") yield* put("r", "flows.kernel.grant.run.v2", encodeEv(runEv(unsafePat)))
-            else if (fault === "unsafeRunEnv") yield* put("r", "flows.kernel.grant.envelope.v1", encodeEv(envEv("run", [unsafePat])))
-            else if (fault === "rememberedInRun") yield* put("r", "flows.kernel.grant.remembered.v1", encodeEv(remEv(validPat)))
+            } else if (fault === "unsafeRememberedEnv") {
+              yield* put("p", "flows.kernel.grant.envelope.v1", encodeEv(envEv("remembered", [unsafePat])))
+            } else if (fault === "runInPolicy") {
+              yield* put("p", "flows.kernel.grant.run.v2", encodeEv(runEv(validPat)))
+            } else if (fault === "runIdMismatch") {
+              yield* put("r", "flows.kernel.grant.run.v2", encodeEv(runEv(validPat, "other-run")))
+            } else if (fault === "unsafeRunGrant") {
+              yield* put("r", "flows.kernel.grant.run.v2", encodeEv(runEv(unsafePat)))
+            } else if (fault === "unsafeRunEnv") {
+              yield* put("r", "flows.kernel.grant.envelope.v1", encodeEv(envEv("run", [unsafePat])))
+            } else if (fault === "rememberedInRun") {
+              yield* put("r", "flows.kernel.grant.remembered.v1", encodeEv(remEv(validPat)))
+            }
 
             const err = yield* Effect.flip(JournalGrantStore.make(baseOpts))
             return err.code === "invalid_resolution"
@@ -1697,17 +1937,49 @@ describe("@smthrs/kernel Jj decorator fuzz invariants", () => {
             realPath: (p) => Effect.sync(() => p === "/workspace/wt-link" ? destTarget : p)
           })
           const baseImpl = {
-            status: () => Effect.sync(() => { log.push("call:status"); return "ok" }),
-            diff: () => Effect.sync(() => { log.push("call:diff"); return "diff" }),
-            snapshot: () => Effect.sync(() => { log.push("call:snapshot"); return { commitId: "c", changeId: "ch" } }),
-            restore: () => Effect.sync(() => { log.push("call:restore") }),
-            workspaceAdd: () => Effect.sync(() => { log.push("call:workspaceAdd") }),
-            workspaceForget: () => Effect.sync(() => { log.push("call:workspaceForget") }),
+            status: () =>
+              Effect.sync(() => {
+                log.push("call:status")
+                return "ok"
+              }),
+            diff: () =>
+              Effect.sync(() => {
+                log.push("call:diff")
+                return "diff"
+              }),
+            snapshot: () =>
+              Effect.sync(() => {
+                log.push("call:snapshot")
+                return { commitId: "c", changeId: "ch" }
+              }),
+            restore: () =>
+              Effect.sync(() => {
+                log.push("call:restore")
+              }),
+            workspaceAdd: () =>
+              Effect.sync(() => {
+                log.push("call:workspaceAdd")
+              }),
+            workspaceForget: () =>
+              Effect.sync(() => {
+                log.push("call:workspaceForget")
+              }),
             ...(withOptional
               ? {
-                root: () => Effect.sync(() => { log.push("call:root"); return "/workspace" }),
-                revert: () => Effect.sync(() => { log.push("call:revert"); return { reverted: [] } }),
-                opRestore: () => Effect.sync(() => { log.push("call:opRestore") })
+                root: () =>
+                  Effect.sync(() => {
+                    log.push("call:root")
+                    return "/workspace"
+                  }),
+                revert: () =>
+                  Effect.sync(() => {
+                    log.push("call:revert")
+                    return { reverted: [] }
+                  }),
+                opRestore: () =>
+                  Effect.sync(() => {
+                    log.push("call:opRestore")
+                  })
               }
               : {})
           }
@@ -1795,13 +2067,29 @@ describe("@smthrs/kernel HttpClient fuzz invariants", () => {
         redirectMode: Schema.Literals(["none", "followAllowed", "followDenied", "manual"]),
         usePreflight: Schema.Boolean,
         preflightDenied: Schema.Boolean,
-        bodyKind: Schema.Literals(["empty", "rawBytes", "rawBuf", "rawParams", "rawBlob", "rawNull", "rawStr", "rawNum", "rawBool", "rawInvalid", "uint8", "formData", "stream"]),
+        bodyKind: Schema.Literals([
+          "empty",
+          "rawBytes",
+          "rawBuf",
+          "rawParams",
+          "rawBlob",
+          "rawNull",
+          "rawStr",
+          "rawNum",
+          "rawBool",
+          "rawInvalid",
+          "uint8",
+          "formData",
+          "stream"
+        ]),
         pinned: Schema.Boolean
       })
     )
     await runFuzz(
       arb,
-      ({ method, scheme, trailingDot, port, modelCall, redirectMode, usePreflight, preflightDenied, bodyKind, pinned }) =>
+      (
+        { method, scheme, trailingDot, port, modelCall, redirectMode, usePreflight, preflightDenied, bodyKind, pinned }
+      ) =>
         Effect.gen(function*() {
           const checks: Array<Capability.Capability> = []
           const calls: Array<string> = []
@@ -1826,7 +2114,11 @@ describe("@smthrs/kernel HttpClient fuzz invariants", () => {
             Effect.sync(() => {
               calls.push(request.url)
               if (redirectMode !== "none" && request.url.toLowerCase().includes("first.test")) {
-                return { status: 302, headers: { location: "https://second.test/next" }, request } as unknown as HttpClientResponse.HttpClientResponse
+                return {
+                  status: 302,
+                  headers: { location: "https://second.test/next" },
+                  request
+                } as unknown as HttpClientResponse.HttpClientResponse
               }
               return { status: 200, headers: {}, request } as unknown as HttpClientResponse.HttpClientResponse
             })
@@ -1878,7 +2170,8 @@ describe("@smthrs/kernel HttpClient fuzz invariants", () => {
             const res = yield* Effect.result(wrapped)
 
             if (usePreflight && preflightDenied) {
-              return Result.isFailure(res) && Option.isSome(HttpClient.fromHttpClientError(res.failure)) && calls.length === 0
+              return Result.isFailure(res) && Option.isSome(HttpClient.fromHttpClientError(res.failure)) &&
+                calls.length === 0
             }
 
             const invalidBody = method !== "GET" && method !== "HEAD" && bodyKind === "rawInvalid"
@@ -1886,7 +2179,11 @@ describe("@smthrs/kernel HttpClient fuzz invariants", () => {
               return Result.isFailure(res) && Option.isNone(HttpClient.fromHttpClientError(res.failure))
             }
 
-            const expectedAction = modelCall ? "model:call" : (method === "GET" || method === "HEAD") ? "net:get" : "net:post"
+            const expectedAction = modelCall
+              ? "model:call"
+              : (method === "GET" || method === "HEAD")
+              ? "net:get"
+              : "net:post"
             const expectedHost = `first.test${port}`
             const expectedBase = scheme === "https:" ? expectedHost : `${scheme}//${expectedHost}`
             const expectedRes = modelCall ? `${expectedBase}/m/1` : expectedBase
@@ -2155,9 +2452,12 @@ describe("@smthrs/kernel ProcessLedger, ContainedSpawner, Pipeline & ChildProces
               yield* j.emitDurableUnfenced(
                 new JournalEvent.Input({
                   runId: ProcessLedger.hostRunId("h-fault"),
-                  sourceId: (fault === "invalidSnapProducer" ? "other" : ProcessLedger.sourceId) as JournalEvent.SourceId,
+                  sourceId:
+                    (fault === "invalidSnapProducer" ? "other" : ProcessLedger.sourceId) as JournalEvent.SourceId,
                   eventType: snapType,
-                  payload: fault === "invalidSnapPayload" ? {} : { through: fault === "invalidSnapCursor" ? 999 : 0, records: [] }
+                  payload: fault === "invalidSnapPayload"
+                    ? {}
+                    : { through: fault === "invalidSnapCursor" ? 999 : 0, records: [] }
                 })
               )
             } else if (fault === "malformedEntry") {
@@ -2222,13 +2522,24 @@ describe("@smthrs/kernel ProcessLedger, ContainedSpawner, Pipeline & ChildProces
               Effect.gen(function*() {
                 const name = cmd._tag === "StandardCommand" ? cmd.command : "pipe"
                 const pid = nextPid++
-                yield* Effect.addFinalizer(() => Effect.sync(() => { events.push(`fin:${name}`) }))
-                const killErr = PlatformError.systemError({ _tag: "Unknown", module: "ChildProcess", method: "kill", description: name })
+                yield* Effect.addFinalizer(() =>
+                  Effect.sync(() => {
+                    events.push(`fin:${name}`)
+                  })
+                )
+                const killErr = PlatformError.systemError({
+                  _tag: "Unknown",
+                  module: "ChildProcess",
+                  method: "kill",
+                  description: name
+                })
                 return makeFakeHandle(pid, {
                   kill: () =>
                     Effect.suspend(() => {
                       events.push(`kill:${name}`)
-                      if ((fault === "killRightFail" && name === "right") || (fault === "killLeftFail" && name === "left")) {
+                      if (
+                        (fault === "killRightFail" && name === "right") || (fault === "killLeftFail" && name === "left")
+                      ) {
                         return Effect.fail(killErr)
                       }
                       return Effect.void
@@ -2239,7 +2550,9 @@ describe("@smthrs/kernel ProcessLedger, ContainedSpawner, Pipeline & ChildProces
                   getOutputFd: (fd) => Stream.make(new TextEncoder().encode(`fd${fd}:${name}`)),
                   unref: Effect.sync(() => {
                     events.push(`unref:${name}`)
-                    return Effect.sync(() => { events.push(`reref:${name}`) })
+                    return Effect.sync(() => {
+                      events.push(`reref:${name}`)
+                    })
                   })
                 })
               })
@@ -2263,7 +2576,14 @@ describe("@smthrs/kernel ProcessLedger, ContainedSpawner, Pipeline & ChildProces
                 return {
                   handle,
                   activate: fault === "activateFail"
-                    ? Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "ChildProcess", method: "spawn", description: "missing" }))
+                    ? Effect.fail(
+                      PlatformError.systemError({
+                        _tag: "NotFound",
+                        module: "ChildProcess",
+                        method: "spawn",
+                        description: "missing"
+                      })
+                    )
                     : Effect.void,
                   settled: Effect.succeed(verified)
                 }
@@ -2342,7 +2662,20 @@ describe("@smthrs/kernel ProcessLedger, ContainedSpawner, Pipeline & ChildProces
     )
     await runFuzz(
       arb,
-      ({ platform, extendEnv, envMode, redactedWithShell, withConfinement, policyFail, swapCwdDuringCheck, withFs, piped, longArg }) =>
+      (
+        {
+          platform,
+          extendEnv,
+          envMode,
+          redactedWithShell,
+          withConfinement,
+          policyFail,
+          swapCwdDuringCheck,
+          withFs,
+          piped,
+          longArg
+        }
+      ) =>
         Effect.gen(function*() {
           let cwdTarget = "/workspace/sub"
           const fakeFs = EffectFileSystem.makeNoop({
@@ -2377,10 +2710,12 @@ describe("@smthrs/kernel ProcessLedger, ContainedSpawner, Pipeline & ChildProces
             Layer.provide(Layer.succeed(GrantStore.GrantStore, store))
           )
 
-          const envObj: Record<string, string | undefined> | undefined =
-            envMode === "none" ? undefined
-            : envMode === "empty" ? { UNSET: undefined }
-            : envMode === "custom" ? { CUSTOM: "val" }
+          const envObj: Record<string, string | undefined> | undefined = envMode === "none" ?
+            undefined
+            : envMode === "empty" ?
+            { UNSET: undefined }
+            : envMode === "custom" ?
+            { CUSTOM: "val" }
             : Object.fromEntries(Array.from({ length: 70 }, (_, i) => [`V_${i}`, "1"]))
 
           const args = redactedWithShell
@@ -2467,8 +2802,22 @@ describe("@smthrs/kernel ProcessLedger, ContainedSpawner, Pipeline & ChildProces
               Object.defineProperty(o, "command", { enumerable: true, get: () => "echo" })
               return o as unknown as ChildProcess.Command
             }
-            if (badShape === "badArgs") return { _tag: "StandardCommand", command: "echo", args: [123], options: {} } as unknown as ChildProcess.Command
-            if (badShape === "badOpts") return { _tag: "StandardCommand", command: "echo", args: [], options: null } as unknown as ChildProcess.Command
+            if (badShape === "badArgs") {
+              return {
+                _tag: "StandardCommand",
+                command: "echo",
+                args: [123],
+                options: {}
+              } as unknown as ChildProcess.Command
+            }
+            if (badShape === "badOpts") {
+              return {
+                _tag: "StandardCommand",
+                command: "echo",
+                args: [],
+                options: null
+              } as unknown as ChildProcess.Command
+            }
             if (badShape === "badEnvGetter") {
               const e: Record<string, unknown> = {}
               Object.defineProperty(e, "HIDDEN", { enumerable: false, value: "ignored" })
@@ -2511,11 +2860,21 @@ describe("@smthrs/kernel ProcessLedger, ContainedSpawner, Pipeline & ChildProces
               return { _tag: "PipedCommand", left: null, right: null, options: {} } as unknown as ChildProcess.Command
             }
             if (badShape === "badPipeOptsNull") {
-              return { _tag: "PipedCommand", left: ChildProcess.make("a"), right: ChildProcess.make("b"), options: null } as unknown as ChildProcess.Command
+              return {
+                _tag: "PipedCommand",
+                left: ChildProcess.make("a"),
+                right: ChildProcess.make("b"),
+                options: null
+              } as unknown as ChildProcess.Command
             }
             const opts: Record<string, unknown> = {}
             Object.defineProperty(opts, "from", { enumerable: true, get: () => "stdout" })
-            return { _tag: "PipedCommand", left: ChildProcess.make("a"), right: ChildProcess.make("b"), options: opts } as unknown as ChildProcess.Command
+            return {
+              _tag: "PipedCommand",
+              left: ChildProcess.make("a"),
+              right: ChildProcess.make("b"),
+              options: opts
+            } as unknown as ChildProcess.Command
           }
 
           const spawnerLayer = ChildProcessSpawner.layer.pipe(
@@ -2635,22 +2994,48 @@ describe("@smthrs/kernel FileSystem & HostServices fuzz invariants", () => {
           }
           if (!threwDouble) return false
 
-          const dieExit1 = yield* Effect.exit(isolated[FileSystem.AtomicFileSystemTypeId].execute({ operation: "resolve", path: "/workspace/a" }))
-          const dieExit2 = yield* Effect.exit(isolated[FileSystem.AtomicFileSystemTypeId].execute({ operation: "batch", requests: [] }))
-          const dieExit3 = yield* Effect.exit(isolated[FileSystem.AtomicFileSystemTypeId].execute({ operation: "bogus" } as never))
+          const dieExit1 = yield* Effect.exit(
+            isolated[FileSystem.AtomicFileSystemTypeId].execute({ operation: "resolve", path: "/workspace/a" })
+          )
+          const dieExit2 = yield* Effect.exit(
+            isolated[FileSystem.AtomicFileSystemTypeId].execute({ operation: "batch", requests: [] })
+          )
+          const dieExit3 = yield* Effect.exit(
+            isolated[FileSystem.AtomicFileSystemTypeId].execute({ operation: "bogus" } as never)
+          )
           if (!Exit.isFailure(dieExit1) || !Exit.isFailure(dieExit2) || !Exit.isFailure(dieExit3)) return false
 
           const rules = allowGrants
             ? [
-              new Permission.Rule({ effect: "allow", pattern: new Capability.CapabilityPattern({ action: "*", resource: "**" }) }),
+              new Permission.Rule({
+                effect: "allow",
+                pattern: new Capability.CapabilityPattern({ action: "*", resource: "**" })
+              }),
               ...(restrictDir
                 ? [
-                  new Permission.Rule({ effect: "deny", pattern: new Capability.CapabilityPattern({ action: "fs:write", resource: "/workspace/dir/secret/**" }) }),
-                  new Permission.Rule({ effect: "deny", pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/dir/secret/**" }) })
+                  new Permission.Rule({
+                    effect: "deny",
+                    pattern: new Capability.CapabilityPattern({
+                      action: "fs:write",
+                      resource: "/workspace/dir/secret/**"
+                    })
+                  }),
+                  new Permission.Rule({
+                    effect: "deny",
+                    pattern: new Capability.CapabilityPattern({
+                      action: "fs:read",
+                      resource: "/workspace/dir/secret/**"
+                    })
+                  })
                 ]
                 : [])
             ]
-            : [new Permission.Rule({ effect: "deny", pattern: new Capability.CapabilityPattern({ action: "*", resource: "**" }) })]
+            : [
+              new Permission.Rule({
+                effect: "deny",
+                pattern: new Capability.CapabilityPattern({ action: "*", resource: "**" })
+              })
+            ]
 
           const store = yield* GrantStore.make({ attended: false, rules })
 
@@ -2702,7 +3087,41 @@ describe("@smthrs/kernel FileSystem & HostServices fuzz invariants", () => {
             const rSink = yield* Effect.result(Stream.run(Stream.make(new Uint8Array([1])), fs.sink("a.txt")))
 
             if (!allowGrants) {
-              const all = [rAccess, rCopy, rCopyFile, rChmod, rChown, rLink, rMkdir, rTmpD, rTmpDS, rTmpF, rTmpFS, rReadDir, rReadDirE, rReadFile, rReadStr, rReadLink, rRealPath, rRemove, rRemoveNonRec, rRename, rRenameFile, rStat, rLstat, rSymlink, rTruncate, rUtimes, rWrite, rWriteStr, rGlob, rExists, rWatch, rStream, rSink]
+              const all = [
+                rAccess,
+                rCopy,
+                rCopyFile,
+                rChmod,
+                rChown,
+                rLink,
+                rMkdir,
+                rTmpD,
+                rTmpDS,
+                rTmpF,
+                rTmpFS,
+                rReadDir,
+                rReadDirE,
+                rReadFile,
+                rReadStr,
+                rReadLink,
+                rRealPath,
+                rRemove,
+                rRemoveNonRec,
+                rRename,
+                rRenameFile,
+                rStat,
+                rLstat,
+                rSymlink,
+                rTruncate,
+                rUtimes,
+                rWrite,
+                rWriteStr,
+                rGlob,
+                rExists,
+                rWatch,
+                rStream,
+                rSink
+              ]
               return all.every((r) => r._tag === "Failure")
             }
 
@@ -2746,10 +3165,27 @@ describe("@smthrs/kernel FileSystem & HostServices fuzz invariants", () => {
       Schema.Struct({
         noFollow: Schema.Boolean,
         windows: Schema.Boolean,
-        resolveCase: Schema.Literals(["ok", "symlinkInside", "symlinkEscape", "symlinkLoop", "outsideBoundary", "resolveErr", "toctouSwap"]),
+        resolveCase: Schema.Literals([
+          "ok",
+          "symlinkInside",
+          "symlinkEscape",
+          "symlinkLoop",
+          "outsideBoundary",
+          "resolveErr",
+          "toctouSwap"
+        ]),
         hardLinked: Schema.Boolean,
         globPattern: Schema.Literals(["src/a.txt", "src/*.txt", "src/@(a|b).txt", "secrets/*.txt"]),
-        batchFault: Schema.Literals(["none", "empty", "tooLarge", "rootChanged", "missingIdentity", "resolveMismatch", "allDenied", "defaultIdentifyRoot"])
+        batchFault: Schema.Literals([
+          "none",
+          "empty",
+          "tooLarge",
+          "rootChanged",
+          "missingIdentity",
+          "resolveMismatch",
+          "allDenied",
+          "defaultIdentifyRoot"
+        ])
       })
     )
     await runFuzz(
@@ -2765,7 +3201,14 @@ describe("@smthrs/kernel FileSystem & HostServices fuzz invariants", () => {
           const resolveFn = (p: string): Effect.Effect<FileSystem.Resolution, PlatformError.PlatformError> =>
             Effect.suspend((): Effect.Effect<FileSystem.Resolution, PlatformError.PlatformError> => {
               if (resolveCase === "resolveErr") {
-                return Effect.fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "fs", method: "resolve", description: "cannot inspect" }))
+                return Effect.fail(
+                  PlatformError.systemError({
+                    _tag: "PermissionDenied",
+                    module: "fs",
+                    method: "resolve",
+                    description: "cannot inspect"
+                  })
+                )
               }
               if (resolveCase === "outsideBoundary") {
                 return Effect.succeed({ path: windows ? "D:\\other\\x" : "/other/x", target: null })
@@ -2802,7 +3245,9 @@ describe("@smthrs/kernel FileSystem & HostServices fuzz invariants", () => {
             realPath: (p) =>
               Effect.suspend(() => {
                 if (p === root) return Effect.succeed(boundaryRoot)
-                if (resolveCase === "symlinkLoop") return Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "fs", method: "realPath" }))
+                if (resolveCase === "symlinkLoop") {
+                  return Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "fs", method: "realPath" }))
+                }
                 if (resolveCase === "toctouSwap" && swapped) return Effect.succeed(`${p}.moved`)
                 if (p.includes("missing") || p === "/" || p === "C:\\") {
                   return Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "fs", method: "realPath" }))
@@ -2867,9 +3312,14 @@ describe("@smthrs/kernel FileSystem & HostServices fuzz invariants", () => {
               : { identifyRoot: () => Effect.sync(() => rootId) }),
             contentLimit: 4,
             batchLimits: { size: 4, response: 1024 },
-            execute: <R extends FileSystem.AtomicRequest>(request: R): Effect.Effect<FileSystem.AtomicResult<R>, PlatformError.PlatformError> => {
+            execute: <R extends FileSystem.AtomicRequest>(
+              request: R
+            ): Effect.Effect<FileSystem.AtomicResult<R>, PlatformError.PlatformError> => {
               if (request.operation === "resolve") {
-                return resolveFn(request.path) as unknown as Effect.Effect<FileSystem.AtomicResult<R>, PlatformError.PlatformError>
+                return resolveFn(request.path) as unknown as Effect.Effect<
+                  FileSystem.AtomicResult<R>,
+                  PlatformError.PlatformError
+                >
               }
               if (request.operation === "batch") {
                 return Effect.map(
@@ -2890,7 +3340,10 @@ describe("@smthrs/kernel FileSystem & HostServices fuzz invariants", () => {
                       return Effect.succeed({
                         index,
                         path: member.path,
-                        result: Result.succeed({ operation: "resolve" as const, resolution: { path: member.path, target: null } })
+                        result: Result.succeed({
+                          operation: "resolve" as const,
+                          resolution: { path: member.path, target: null }
+                        })
                       })
                     }
                     return Effect.succeed({
@@ -2912,7 +3365,10 @@ describe("@smthrs/kernel FileSystem & HostServices fuzz invariants", () => {
                 readLink: "b",
                 glob: [joinP(root, "src", "a.txt")]
               }
-              return Effect.succeed(answers[request.operation]) as unknown as Effect.Effect<FileSystem.AtomicResult<R>, PlatformError.PlatformError>
+              return Effect.succeed(answers[request.operation]) as unknown as Effect.Effect<
+                FileSystem.AtomicResult<R>,
+                PlatformError.PlatformError
+              >
             }
           })
 
@@ -2966,19 +3422,27 @@ describe("@smthrs/kernel FileSystem & HostServices fuzz invariants", () => {
             if (!refused.every((r) => r._tag === "Failure")) return false
           } else {
             const confErr = yield* Effect.flip(
-              FileSystem.confined(atomicHost, root).pipe(Effect.provide(windows ? NodePath.layerWin32 : EffectPath.layer))
+              FileSystem.confined(atomicHost, root).pipe(
+                Effect.provide(windows ? NodePath.layerWin32 : EffectPath.layer)
+              )
             )
             if (confErr.reason._tag !== "PermissionDenied") return false
           }
 
           const secretsDeny = new Permission.Rule({
             effect: "deny",
-            pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: `${joinP(root, "secrets")}${sep}**` })
+            pattern: new Capability.CapabilityPattern({
+              action: "fs:read",
+              resource: `${joinP(root, "secrets")}${sep}**`
+            })
           })
           const baseStore = yield* GrantStore.make({
             attended: false,
             rules: [
-              new Permission.Rule({ effect: "allow", pattern: new Capability.CapabilityPattern({ action: "*", resource: "**" }) }),
+              new Permission.Rule({
+                effect: "allow",
+                pattern: new Capability.CapabilityPattern({ action: "*", resource: "**" })
+              }),
               secretsDeny
             ]
           }).pipe(Effect.provide(Workspace.layer(root)))
@@ -3007,7 +3471,10 @@ describe("@smthrs/kernel FileSystem & HostServices fuzz invariants", () => {
             swapped = false
             const readRes = yield* Effect.result(fs.readFile("src/a.txt"))
             const shouldFailRead = batchFault === "allDenied" ||
-              (noFollow && ["symlinkEscape", "symlinkLoop", "outsideBoundary", "resolveErr", "toctouSwap"].includes(resolveCase)) ||
+              (noFollow &&
+                ["symlinkEscape", "symlinkLoop", "outsideBoundary", "resolveErr", "toctouSwap"].includes(
+                  resolveCase
+                )) ||
               (!noFollow && (hardLinked || resolveCase === "symlinkLoop" || resolveCase === "toctouSwap"))
             if (shouldFailRead && Result.isSuccess(readRes)) return false
             if (!shouldFailRead && Result.isFailure(readRes)) return false
@@ -3068,7 +3535,15 @@ describe("@smthrs/kernel FileSystem & HostServices fuzz invariants", () => {
           const fs = FileSystem.withIsolatedFileSystem(
             EffectFileSystem.makeNoop({
               realPath: (p) => Effect.succeed(p),
-              stat: () => Effect.succeed({ type: "File", dev: 1n, ino: Option.some(1n), nlink: Option.some(1n) } as unknown as EffectFileSystem.File.Info),
+              stat: () =>
+                Effect.succeed(
+                  {
+                    type: "File",
+                    dev: 1n,
+                    ino: Option.some(1n),
+                    nlink: Option.some(1n)
+                  } as unknown as EffectFileSystem.File.Info
+                ),
               exists: () => Effect.succeed(true)
             })
           )

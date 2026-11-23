@@ -36,18 +36,22 @@ const parsedFlow = Option.getOrThrow(
 
 const flowBody = MarkdownFlow.loadBody(sampleSkill, "/workspace/.smithers/flows/review-pr")
 
-const fiftyDescriptors: ReadonlyArray<Descriptor.FlowDescriptor> = Array.from({ length: 50 }, (_, i) =>
-  Option.getOrThrow(
-    MarkdownFlow.fromMarkdown({
-      text: `---\nname: flow-${i}\ndescription: Execute durable workflow step ${i} across workspace\n---\nRun task ${i}.`,
-      path: `/workspace/.smithers/flows/flow-${i}/SKILL.md`,
-      baseDirectory: `/workspace/.smithers/flows/flow-${i}`,
-      naming: "frontmatter",
-      name: Option.some(`flow-${i}`),
-      dirBasename: `flow-${i}`,
-      provenance
-    }).descriptor
-  ))
+const fiftyDescriptors: ReadonlyArray<Descriptor.FlowDescriptor> = Array.from(
+  { length: 50 },
+  (_, i) =>
+    Option.getOrThrow(
+      MarkdownFlow.fromMarkdown({
+        text:
+          `---\nname: flow-${i}\ndescription: Execute durable workflow step ${i} across workspace\n---\nRun task ${i}.`,
+        path: `/workspace/.smithers/flows/flow-${i}/SKILL.md`,
+        baseDirectory: `/workspace/.smithers/flows/flow-${i}`,
+        naming: "frontmatter",
+        name: Option.some(`flow-${i}`),
+        dirBasename: `flow-${i}`,
+        provenance
+      }).descriptor
+    )
+)
 
 describe("registry hot paths", () => {
   test("MarkdownFlow.fromMarkdown", async ({ bench }) => {

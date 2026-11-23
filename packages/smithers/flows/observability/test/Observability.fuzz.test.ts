@@ -918,8 +918,8 @@ describe("@smthrs/observability fuzz invariants", () => {
               ).pipe(Effect.provide(fakeHttp))
             )
 
-            const expectFail = endpoint === "ftp://bad.example.com" ||
-              (endpoint === "http://remote.example.com" && withAuthHeader)
+            const expectFail = endpoint === "ftp://bad.example.com"
+              || (endpoint === "http://remote.example.com" && withAuthHeader)
             if (expectFail) {
               if (Result.isSuccess(otlpRes)) return false
             } else {

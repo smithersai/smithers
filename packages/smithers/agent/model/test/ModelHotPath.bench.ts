@@ -28,7 +28,9 @@ const canonicalPayload = {
 const encoder = new TextEncoder()
 const sseChunks: ReadonlyArray<Uint8Array> = Array.from({ length: 100 }, (_, i) =>
   encoder.encode(
-    `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `token-${i} ` } })}\n\n`
+    `event: content_block_delta\ndata: ${
+      JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `token-${i} ` } })
+    }\n\n`
   ))
 
 const sampleUsage = ModelEvent.Usage.make({

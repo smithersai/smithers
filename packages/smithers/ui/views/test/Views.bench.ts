@@ -5,9 +5,10 @@ import { comparison, components, ticTacToe } from "./fixtures/modules.ts"
 
 const opts = { time: 120, warmupTime: 30 }
 
-const runtimeScript = "(() => { const root = document.body; window.addEventListener('message', () => {}); })()\n".repeat(
-  16
-)
+const runtimeScript = "(() => { const root = document.body; window.addEventListener('message', () => {}); })()\n"
+  .repeat(
+    16
+  )
 const stylesText = ":root { --bg: #fff; --fg: #111; } body { margin: 0; font-family: system-ui; }\n".repeat(12)
 const validNonce = "A1b2C3d4E5f6G7h8I9j0K1l2M3n4"
 
