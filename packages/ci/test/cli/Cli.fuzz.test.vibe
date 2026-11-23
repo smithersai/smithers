@@ -1,0 +1,200 @@
+import { describe, expect, it } from "@effect/vitest"
+import * as Arbitrary from "effect/Arbitrary"
+import { cli, type Parts, RunningUser } from "../../src/cli/Cli.vibe"
+import { layer, modelEnvironment } from "../../src/cli/Host.vibe"
+import { nodeProgram, smthrsCommand, smthrsWithToken } from "../../src/cli/Install.ts"
+import { caches, machine, runtime, split } from "../../src/cli/Restart.ts"
+import { exitCodes } from "../../src/contract/Command.vibe"
+import type { Inventory } from "../../src/contract/Inventory.vibe"
+import type { Failure, ReplayRequest } from "../../src/contract/Parts.vibe"
+import { recorder } from "./repo.ts"
+
+const words = <const T extends string>(...values: Array<T>) => Arbitrary.schema(Schema.Literals(values))
+const integer = (minimum: number, maximum: number) =>
+  Arbitrary.schema(Schema.Int.check(Schema.isBetween({ minimum, maximum })))
+
+effect function check<A, E>(arb: Arbitrary.Arbitrary<A>, seed: number, predicate: (a: A) => boolean!E) {
+  const outcome = try Arbitrary.checkEffect(arb, predicate, { runs: 160, seed })
+  try Effect.try(() => expect(outcome._tag, Arbitrary.formatCheckFailure(outcome)).toBe("Passed"))
+}
+
+const ids = ["ci:test", "build/sub:unit", "two words"]
+const inventory: Inventory = {
+  version: 1, repository: "fixture", commit: "abc", toolchains: [],
+  jobs: ids.map((id) => ({
+    id, source: "justfile", file: "Justfile", name: id, needs: [], triggers: [], matrix: [], steps: [], unsupported: []
+  }))
+}
+const unavailable: Failure = { part: "inventory", code: "unsupported", message: "fixture has no inventory" }
+const host = layer({})
+
+/** Stop arbitrary commands at their first inventory read. For replay config tests capture the request at dispatch. */
+effect function invoke(argv: ReadonlyArray<string>, replay = false) {
+  const sink = try Effect.try(recorder)
+  let reads = 0
+  const requests: Array<ReplayRequest> = []
+  const parts: Parts<never> = {
+    read: () => {
+      reads += 1
+      return replay ? Effect.succeed(inventory) : Effect.fail(unavailable)
+    },
+    run: (request) => {
+      requests.push(request)
+      return Effect.succeed({
+        version: 1, repository: "fixture", commits: [], baselineWallMs: 0, normalWallMs: 0, speedup: 1, mismatches: 0
+      })
+    },
+    decompose: () => Effect.die("unexpected decompose"),
+    files: () => Effect.die("unexpected generate"),
+    rows: () => Effect.die("unexpected selection"),
+    score: () => Effect.succeed([]),
+    html: () => "", text: () => "report"
+  }
+  const program = cli(argv, "/fixture", parts)
+    |> Effect.provideService(%, RunningUser, { isRoot: () => false })
+    |> Effect.provideService(%, Console.Console, sink.service)
+    |> Effect.provide(%, host)
+  const code = try program
+  return try Effect.try(() => ({ code, reads, requests, stdout: sink.stdout(), stderr: sink.stderr() }))
+}
+
+const token = Arbitrary.schema(Schema.Union([
+  Schema.Literals([
+    "replay", "inventory", "apply", "--help", "-h", "--", "--shard", "--shards", "--timeout", "--mode", "--job",
+    "--jobs", "--commits", "--cache", "--json", "", "0", "1", "-1", "both", "a/b:c", "\n", "\u0000"
+  ]),
+  Schema.String
+]))
+const malformed: ReadonlyArray<ReadonlyArray<string>> = [
+  ["--commits"], ["--commits", "0"], ["--commits", "9".repeat(512)], ["--jobs", "-1"], ["--reruns", "-1"],
+  ["--stall-minutes", "0"], ["--mode", "slow"], ["--shard", "1"], ["--shards", "2"], ["--timeout", "10"],
+  ["--mode", "normal", "--mode", "both"], ["--", "unused"], ["--targets", " , "], ["--out", ""],
+  ["--cache", ""], ["--cache", "file:///unused"], ["--cache", "https://reader:fixture-value@cache.invalid"]
+]
+
+describe("CLI properties", () => {
+  it.live("arbitrary argument vectors either reject before dispatch or reach the inventory boundary once", () =>
+    check(Arbitrary.array(token, { maxLength: 10 }), 2101, effect (argv) => {
+      const result = try invoke(argv)
+      if (result.code === exitCodes.ok) {
+        return result.reads === 0 && result.stdout.includes("smithers-ci") && result.stderr === ""
+      }
+      if (result.reads === 1) return result.code === exitCodes.unsupported && result.stderr.includes(unavailable.message)
+      return result.reads === 0 && result.code === exitCodes.usage && result.stdout === ""
+        && result.stderr.includes("--help") && result.stderr.trimEnd().split("\n").length === 1
+    }))
+
+  it.live("rejects malformed flags before reading, with one diagnostic", effect () => {
+    for (const args of malformed) {
+      const result = try invoke(["replay", ...args])
+      try Effect.try(() => {
+        expect(result.code, JSON.stringify(args)).toBe(exitCodes.usage)
+        expect(result.reads).toBe(0)
+        expect(result.stdout).toBe("")
+        expect(result.stderr.trimEnd().split("\n")).toHaveLength(1)
+        expect(result.stderr).toContain("--help")
+        expect(result.stderr).not.toContain("fixture-value")
+      })
+    }
+  })
+
+  it.live("translates independent replay flags and cache URLs to exactly one request", () =>
+    check(Arbitrary.all({
+      commits: integer(1, 10000), jobs: integer(1, 200), reruns: integer(0, 8),
+      mode: words("both", "fast", "normal"), cold: Arbitrary.schema(Schema.Boolean),
+      reverse: Arbitrary.schema(Schema.Boolean), slug: words("a%20b", "%CE%B1", "v1/cache", "user@path")
+    }), 2102, effect ({ commits, jobs, reruns, mode, cold, reverse, slug }) => {
+      const cache = `https://cache.invalid/${slug}`
+      const flags = [
+        ["--mode", mode], ["--jobs", String(jobs)], ["--commits", String(commits)],
+        ["--cache", cache], ["--reruns", String(reruns)], ["--targets", " //a/..., , //b:c "]
+      ]
+      if (cold) flags.push(["--cold"])
+      const result = try invoke(["replay", ...(reverse ? flags.reverse() : flags).flat()], true)
+      return try Effect.try(() => {
+        expect(result.code, result.stderr).toBe(exitCodes.ok)
+        expect(result.requests).toEqual([{
+          root: "/fixture", commits, jobs, reruns, cache, modes: mode === "both" ? ["normal", "fast"] : [mode],
+          targets: ["//a/...", "//b:c"], warm: !cold, trial: true, applied: true, stallMinutes: 10
+        }])
+        return true
+      })
+    }))
+
+  it.live("keeps executable and package paths as independent argv entries", () =>
+    check(Arbitrary.all({
+      directory: words("suite", "two words", "α.package", ".v1"),
+      node: words("/node", "/node runtime/node", "/ü/node"),
+      suffix: integer(0, 5000)
+    }), 2106, ({ directory, node, suffix }) => Effect.try(() => {
+      const base = `/${directory}/${suffix}`
+      const resolve = (specifier: string) => `${base}/${specifier}`
+      const cli = `${base}/@smthrs/cli/bin/smithers.mjs`
+      expect(nodeProgram(undefined, {}, node)).toBe(node)
+      expect(smthrsCommand(resolve, node)).toEqual([node, cli])
+      expect(smthrsWithToken(resolve, node)).toEqual([node, `${base}/smithers-ci/bin/smthrs-with-token.mjs`, cli])
+      return true
+    })))
+
+  it.live("passes repeated known selectors in order and refuses unknown or fast-mode selections", () =>
+    check(Arbitrary.all({ selected: Arbitrary.array(words(...ids, "", "other", "space /:α", "a\nb"), { minLength: 1, maxLength: 5 }),
+      mode: words("both", "normal", "fast") }), 2103, effect ({ selected, mode }) => {
+      const result = try invoke(["replay", "--mode", mode, ...selected.flatMap((id) => ["--job", id])], true)
+      const valid = mode === "normal" && selected.every((id) => ids.includes(id))
+      return try Effect.try(() => {
+        expect(result.code, result.stderr).toBe(valid ? exitCodes.ok : exitCodes.usage)
+        expect(result.requests.map((request) => request.only)).toEqual(valid ? [selected] : [])
+        if (!valid) expect(result.stderr.trimEnd().split("\n")).toHaveLength(1)
+        return true
+      })
+    }))
+
+  it.live("prints a multiline unknown job selector on one diagnostic line", effect () => {
+    const result = try invoke(["replay", "--job", "a\nb"], true)
+    try Effect.try(() => {
+      expect(result.code).toBe(exitCodes.usage)
+      expect(result.requests).toEqual([])
+      expect(result.stderr).toBe("smithers-ci: --job a b names no job of this CI; its jobs are ci:test, build/sub:unit, two words\n")
+    })
+  })
+
+  it("retains an empty value on the withheld environment's own __proto__ entry", () => {
+    const { withheld } = split({ ["__proto__"]: "" }, "win32")
+    expect(Object.entries(withheld)).toEqual([["__proto__", ""]])
+  })
+
+  it.live("enforces the numeric bounds for each replay flag before dispatch", () =>
+    check(Arbitrary.all({
+      flag: words("--commits", "--jobs", "--reruns", "--stall-minutes"),
+      value: integer(-500, 500)
+    }), 2105, effect ({ flag, value }) => {
+      const result = try invoke(["replay", flag, String(value)])
+      const allowed = flag === "--reruns" ? value >= 0 : value >= 1
+      return try Effect.try(() => {
+        expect(result.reads).toBe(allowed ? 1 : 0)
+        expect(result.code).toBe(allowed ? exitCodes.unsupported : exitCodes.usage)
+        return true
+      })
+    }))
+
+  it.live("partitions defined environment entries without losing names or changing their values", () =>
+    check(Arbitrary.all({ platform: words("win32", "linux"),
+      pairs: Arbitrary.array(Arbitrary.all([words("HOME", "Path", "TERM", "ZIG_GLOBAL_CACHE_DIR", "SMITHERS_CACHE_TOKEN",
+        "http_proxy", "private", "constructor", "__proto__"), Arbitrary.schema(Schema.UndefinedOr(Schema.String))]), { maxLength: 12 })
+    }), 2104, ({ platform, pairs }) => Effect.try(() => {
+      const env = Object.fromEntries(pairs)
+      const { short, withheld } = split(env, platform)
+      const model = modelEnvironment(env)
+      for (const [key, value] of Object.entries(env)) {
+        const canonical = platform === "win32" ? key.toUpperCase() : key
+        const kept = [...machine, ...runtime, ...caches].includes(canonical)
+        expect(Object.hasOwn(short, key)).toBe(value !== undefined && kept)
+        expect(Object.hasOwn(withheld, key)).toBe(value !== undefined && !kept)
+        if (value !== undefined) expect((kept ? short : withheld)[key]).toBe(value)
+        const given = ["HOME", "PATH", "TERM", "HTTP_PROXY"].includes(key.toUpperCase())
+        expect(Object.hasOwn(model, key)).toBe(given)
+        if (given) expect(model[key]).toBe(value)
+      }
+      return true
+    })))
+})

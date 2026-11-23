@@ -117,7 +117,8 @@ export const split = (
 ): { readonly short: Record<string, string>; readonly withheld: Record<string, string> } => {
   const names = new Set([...machine, ...runtime, ...caches])
   const short: Record<string, string> = {}
-  const withheld: Record<string, string> = {}
+  // An environment can contain any name, including an own "__proto__" entry.
+  const withheld: Record<string, string> = Object.create(null)
   for (const [name, value] of Object.entries(environment)) {
     if (value === undefined) continue
     const kept = names.has(platform === "win32" ? name.toUpperCase() : name)

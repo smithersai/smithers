@@ -137,6 +137,9 @@ const hasCredential = (value: string): boolean => /^[a-z][a-z0-9+.-]*:\/\/[^/?#]
  */
 const withoutCredential = (text: string): string => text.replace(/(\b[a-z][a-z0-9+.-]*:\/*)[^\s"]*@/gi, "$1")
 
+/** Parser and selector errors both echo arguments and are presented on one line. */
+const usageMessage = (message: string): string => withoutCredential(message.replace(/\s+/g, " ").trim())
+
 const atLeastOne = (): string => "1 or more"
 
 /** A flag's help from contract 7, with its default when it has a value. */
@@ -441,7 +444,7 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
   effect function refusesJobs(input: ReplayInput, read: Inventory) {
     const why = jobRefusal(input, read)
     if (why === undefined) return false
-    try Console.error(`${Surface.name}: ${why}`)
+    try Console.error(`${Surface.name}: ${usageMessage(why)}`)
     try settle(Surface.exitCodes.usage)
     return true
   }
@@ -637,7 +640,7 @@ function commandOf<R>(root: string, directory: string, parts: Parts<R>, status: 
 }
 
 const reasonsOf = (errors: ReadonlyArray<{ readonly message: string }>): string =>
-  withoutCredential(errors.map((error) => error.message.replace(/\s+/g, " ").trim()).join("; "))
+  errors.map((error) => usageMessage(error.message)).join("; ")
 
 /**
  * Help goes to standard output. A usage error is one line on standard error

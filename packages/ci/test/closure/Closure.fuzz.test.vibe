@@ -1,0 +1,224 @@
+import { beforeAll, describe, expect, it } from "@effect/vitest"
+import * as Arbitrary from "effect/Arbitrary"
+import { Draft, Graph, Manifest, ofFiles, Protocol, Zon } from "../../src/closure/zig/index.ts"
+import { type Closure, isAffectedBy, isComplete } from "../../src/contract/Closure.vibe"
+import { host } from "./zig/support.vibe"
+
+const integer = (minimum: number, maximum: number) =>
+  Arbitrary.schema(Schema.Int.check(Schema.isBetween({ minimum, maximum })))
+const words = <const T extends string>(...values: Array<T>) => Arbitrary.schema(Schema.Literals(values))
+const byte = integer(0, 255)
+
+effect function check<A>(arb: Arbitrary.Arbitrary<A>, seed: number, predicate: (a: A) => void) {
+  const outcome = try Arbitrary.checkEffect(arb, (a) => Effect.try(() => {
+    predicate(a)
+    return true
+  }), { runs: 200, seed })
+  try Effect.try(() => expect(outcome._tag, Arbitrary.formatCheckFailure(outcome)).toBe("Passed"))
+}
+
+/** Read the same configuration shape Zig prints. Step indices refer to positions, so permute edges, never positions. */
+const graphOf = (rows: ReadonlyArray<ReadonlyArray<number>>) => Graph.read({
+  steps: rows.map((deps, i) => ({ name: `step ${i}`, extended: { flags: { tag: "compile" } }, deps }))
+})!
+
+const reachable = (graph: Graph.Graph, start: number) => Graph.reach(graph, start).map((step) => step.index)
+
+/** Boolean transitive closure, independent of the work-list algorithm under test. */
+const matrixOf = (rows: ReadonlyArray<ReadonlyArray<number>>) => {
+  const matrix = rows.map((row, i) => rows.map((_, j) => i === j || row.includes(j)))
+  for (let k = 0; k < rows.length; k++) {
+    for (const row of matrix) {
+      if (!row[k]) continue
+      for (let j = 0; j < rows.length; j++) row[j] ||= matrix[k]![j]!
+    }
+  }
+  return matrix
+}
+
+const leaf = words("main.zig", "space name.zig", ".hidden", "δ.zig", "file..name", "e\u0301.zig")
+const digest = Arbitrary.array(byte, { minLength: 16, maxLength: 16 })
+const hex = (bytes: ReadonlyArray<number>) => bytes.map((b) => b.toString(16).padStart(2, "0")).join("")
+// Zig 0.17.1's hasher_init key. Feed the hash primitive the specified bytes independently of outputDigest.
+const zigCacheKey = Uint8Array.of(2, 233, 250, 254, 224, 149, 129, 85, 245, 90, 21, 203, 74, 244, 0, 9)
+const encode = (s: string) => new TextEncoder().encode(s)
+
+const frame = (tag: number, body: Uint8Array) => {
+  const header = new Uint8Array(8)
+  const view = new DataView(header.buffer)
+  view.setUint32(0, tag, true)
+  view.setUint32(4, body.length, true)
+  return Protocol.join([header, body])
+}
+
+describe("Zig closure properties", () => {
+  it.live("matches transitive closure through cycles, missing indices and repeated or reordered edges", () =>
+    check(Arbitrary.flatMap(integer(1, 12), (size) => Arbitrary.all({
+      rows: Arbitrary.array(Arbitrary.array(integer(-1, size), { maxLength: 16 }), { minLength: size, maxLength: size }),
+      start: integer(0, size - 1), target: integer(0, size - 1)
+    })), 3101, ({ rows, start, target }) => {
+      const graph = graphOf(rows)
+      const matrix = matrixOf(rows)
+      const expected = matrix[start]!.flatMap((seen, i) => seen ? [i] : [])
+      expect(reachable(graph, start)).toEqual(expected)
+      expect(reachable(graphOf(rows.map((row) => [...row].reverse())), start)).toEqual(expected)
+      const closedAgain = new Set(expected.flatMap((i) => reachable(graph, i)))
+      expect(closedAgain).toEqual(new Set(expected))
+      const extended = graphOf(rows.map((row, i) => i === start ? [...row, target] : row))
+      expect(reachable(extended, start)).toEqual(matrix[start]!.flatMap((seen, i) => seen || matrix[target]![i] ? [i] : []))
+    }))
+
+  it("reaches each member of a dense cycle exactly once and follows a new edge out of it", () => {
+    const indices = Array.from({ length: 32 }, (_, i) => i)
+    const rows = [...indices.map(() => [...indices]), []]
+    expect(reachable(graphOf(rows), 0)).toEqual(indices)
+    rows[31]!.push(32)
+    expect(reachable(graphOf(rows), 0)).toEqual([...indices, 32])
+  })
+
+  it.live("canonicalizes equivalent project paths and sorts files, directories and missing inputs", effect () => {
+    provide Path.layer {
+      const path = try Path.Path
+      try check(Arbitrary.array(Arbitrary.all({ leaf, parent: words("lib", "src", "子"), directory: Arbitrary.schema(Schema.Boolean),
+        readable: Arbitrary.schema(Schema.Boolean) }), { maxLength: 18 }), 3102, (items) => {
+        const place = { path, root: "/project", directory: "/project/build", version: "0.17.1" }
+        const digests = new Map(items.filter((item) => item.readable).map((item) => [`${item.parent}/${item.leaf}`, "digest"]))
+        const close = (ordered: typeof items) => {
+          const draft = Draft.make("test")
+          for (const item of ordered) {
+            const relative = `../${item.parent}/./${item.leaf}`
+            Draft.admit(place, draft, "test", { prefix: "build-root", path: relative, directory: item.directory })
+            Draft.admit(place, draft, "test", { prefix: "cwd", path: path.resolve(place.directory, relative), directory: item.directory })
+          }
+          Draft.admit(place, draft, "test", { prefix: "cwd", path: "/project-sibling/input", directory: false })
+          return Draft.close("zig", draft, digests)
+        }
+        const result = close(items)
+        const names = (directory: boolean) => {
+          const paths = items.filter((item) => item.directory === directory).map((item) => `${item.parent}/${item.leaf}`)
+          return [...new Set(paths)].sort()
+        }
+        expect(result.packages).toEqual(["host"])
+        expect(result.files.map((f) => f.path)).toEqual(names(false).filter((name) => digests.has(name)))
+        expect(result.directories ?? []).toEqual(names(true))
+        const missing = names(false).filter((name) => !digests.has(name))
+        expect(result.unresolved).toEqual(missing.map((from) => ({ from, specifier: "the file cannot be read" })))
+        expect(close([...items].reverse())).toEqual(result)
+      })
+    }
+  })
+
+  it.live("round-trips binary cache manifests and associates outputs only with their derived digest", () =>
+    check(Arbitrary.all({ name: digest, records: Arbitrary.array(Arbitrary.all({ leaf, digest, prefix: integer(0, 4),
+      directory: Arbitrary.schema(Schema.Boolean) }), { maxLength: 6 }) }), 3103, ({ name, records }) => {
+      const manifest = hex(name)
+      const chunks = records.map((record) => Protocol.join([
+        new Uint8Array(24),
+        Uint8Array.from(record.digest),
+        Uint8Array.of(4 * record.prefix + Number(record.directory)),
+        encode(record.leaf),
+        Uint8Array.of(0)
+      ]))
+      const binary = Protocol.join([...chunks, Uint8Array.of(0)])
+      const inputs = Manifest.decode(binary)
+      expect(inputs).toEqual(records.map((r) => ({ path: r.leaf, prefix: Manifest.prefixes[r.prefix],
+        directory: r.directory, digest: Uint8Array.from(r.digest) })))
+      expect(Manifest.decode(binary.subarray(0, -1))).toBeUndefined()
+      const key = Manifest.outputDigest(manifest, inputs!)
+      const payload = Uint8Array.from([...name, ...records.flatMap((record) => record.digest)])
+      expect(key).toBe(hex([...Manifest.sipHash128(zigCacheKey, payload)]))
+      expect(key).toMatch(/^[a-f0-9]{32}$/)
+      expect(Manifest.outputDigest(manifest, inputs!.map((i) => ({ ...i, path: "renamed" })))).toBe(key)
+      const store = new Map([[key, inputs!]])
+      expect(Draft.listed(store, `o/${key}/artifact`)).toBe(inputs)
+      expect(Draft.listed(store, `c/${key}`)).toBe(inputs)
+      for (const invalid of [manifest + "/", manifest + "\n", "", "../" + manifest, manifest.slice(1), "g" + manifest.slice(1)]) {
+        expect(Manifest.isName(invalid)).toBe(false)
+      }
+      expect(Manifest.isName(manifest)).toBe(true)
+      expect(Draft.listed(store, `o/${key}0/artifact`)).toBeUndefined()
+    }))
+
+  it.live("decodes complete compiler and build frames up to the first partial frame, also at nonzero byte offsets", () =>
+    check(Arbitrary.all({ files: Arbitrary.array(leaf, { minLength: 1, maxLength: 6 }), cut: byte,
+      noise: Arbitrary.array(byte, { maxLength: 30 }) }), 3104, ({ files, cut, noise }) => {
+      const body = Protocol.join(files.flatMap((f, index) => [Uint8Array.of(...(index === 0 ? [] : [0]), 5), encode(f)]))
+      const inputs = frame(6, body)
+      const completed = frame(0x80000004, new Uint8Array())
+      const ignored = frame(42, Uint8Array.from(noise))
+      const full = Protocol.join([Uint8Array.of(238), ignored, inputs, completed]).subarray(1)
+      expect(Protocol.decodeCompile(full).inputs).toEqual(files.map((path) => ({ prefix: "build-root", path })))
+      expect(Protocol.decodeBuild(full).completed).toBe(true)
+      expect(Protocol.decodeBuild(full.subarray(0, full.length - 1 - cut % 8)).completed).toBe(false)
+      const partial = Protocol.join([ignored, inputs.subarray(0, cut % inputs.length)])
+      expect(Protocol.decodeCompile(partial).inputs).toBeUndefined()
+    }))
+
+  it.live("preserves ZON tuple strings in order and locates trailing syntax errors", () =>
+    check(Arbitrary.array(leaf, { maxLength: 18 }), 3105, (names) => {
+      const source = ".{ // files\n" + names.map((name) => JSON.stringify(name)).join(", ") + " }"
+      expect(Zon.parse(source)).toEqual({ ok: true, value: names })
+      const invalid = Zon.parse(source + " ?")
+      expect(invalid).toMatchObject({ ok: false, offset: source.length + 1 })
+    }))
+
+  // Known Draft.admit regression. A fix makes this expected failure turn red.
+  it.fails("keeps repository files whose name begins with two dots", () => {
+    const path = Effect.runSync(Effect.provide(Path.Path, Path.layer))
+    const place = { path, root: "/p", directory: "/p", version: "0.17.1" }
+    const draft = Draft.make("test")
+    Draft.admit(place, draft, "test", { prefix: "build-root", path: "..a", directory: false })
+    expect([...draft.files]).toEqual(["..a"])
+  })
+
+  // Known Draft.close regression. Both diagnostics must survive deduplication.
+  it.fails("preserves distinct open imports with embedded line breaks in either field", () => {
+    const draft = Draft.make("test")
+    const entries = [{ from: "a", specifier: "\nb" }, { from: "a\n", specifier: "b" }]
+    draft.unresolved.push(...entries)
+    expect(Draft.close("zig", draft, new Map()).unresolved).toEqual(entries)
+  })
+})
+
+/** Compile a seeded tree and a minimal symlink fixture once. Setup failures fail the entire block. */
+describe("the compiler-reported files of a generated Zig project", () => {
+  let closures: ReadonlyArray<Closure>
+  let children: Array<string>
+  beforeAll(async () => {
+    const fixture = scoped(effect {
+      const fs = try FileSystem.FileSystem
+      const root = try fs.makeTempDirectoryScoped({ prefix: "ci-fuzz-zig-" })
+      const names = try Arbitrary.sampleEffect(Arbitrary.array(leaf, { minLength: 6, maxLength: 6 }), { seed: 3106, count: 1 })
+      children = names[0]!.map((name, i) => `lib/${i}-${name}.zig`)
+      try fs.makeDirectory(root + "/lib")
+      try fs.writeFileString(root + "/shared.zig", "pub const n: u32 = 1;\n")
+      try fs.symlink("shared.zig", root + "/alias.zig")
+      try fs.writeFileString(root + "/link.zig", 'test { _ = @import("alias.zig").n; }\n')
+      for (const child of children) {
+        try fs.writeFileString(root + "/" + child, 'pub const n = @import("../shared.zig").n;\n')
+      }
+      const imports = children.map((child) => `    _ = @import("${child}").n;`).join("\n")
+      try fs.writeFileString(root + "/main.zig", `test {\n${imports}\n}\n`)
+      try fs.writeFileString(root + "/missing.zig", 'test { _ = @import("absent.zig").n; }\n')
+      return try ofFiles({ root }, ["main.zig", "missing.zig", "link.zig"])
+    })
+    closures = await runPromise(Effect.provide(fixture, host))
+  })
+
+  it("names exactly the imported project files and treats a missing module as incomplete", () => {
+    const [ok, missing, linked] = closures
+    expect(ok!.unresolved).toEqual([])
+    expect(isComplete(ok!)).toBe(true)
+    expect(ok!.files.map((file) => file.path)).toEqual([...children, "main.zig", "shared.zig"].sort())
+    expect(isAffectedBy(ok!, ["unused.zig"])).toBe(false)
+    expect(missing!.unresolved.some(({ from }) => from === "absent.zig")).toBe(true)
+    expect(isAffectedBy(missing!, ["unused.zig"])).toBe(true)
+    expect(linked!.unresolved).toEqual([])
+    expect(isAffectedBy(linked!, ["alias.zig"])).toBe(true)
+  })
+
+  // The compiler names the link. Editing its target also changes the bytes read.
+  it.fails("invalidates an entry importing a symlink when its target changes", () => {
+    expect(isAffectedBy(closures[2]!, ["shared.zig"])).toBe(true)
+  })
+})
