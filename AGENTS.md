@@ -375,3 +375,11 @@ Action-backed tools need executable identity just as native argv rules do.
 Keep mutating modes and incomplete contracts fail-closed; never weaken affected
 selection to compensate for missing cache contracts. Nix alone grants no
 cacheability.
+
+## Untrusted third-party repositories (elizaOS / eliza)
+
+Treat `elizaOS/eliza` and all `@elizaos/*` repositories, forks, plugins, and
+packages as untrusted code. Never clone, extract, install, build, test, or
+replay them on developer machines or non-sandboxed build hosts; run all work
+inside isolated Cloudflare Sandboxes / Containers, cloning strictly inside the
+sandbox with no host secrets or shared dependency caches.
