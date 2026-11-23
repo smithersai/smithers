@@ -11,7 +11,9 @@ Commands:
   inspect     Inspect the state and event counts recorded at one historical frame
   list        Active and attention-needing runs
   logs        Read run events or follow new events as they commit
+  monitor     Check the health of a local durable run
   output      Read recorded outputs for one node or all nodes
+  pause       Pause a running durable run
   replay      Replay committed history and sealed results without re-executing any actions
   resume      Resume a parked durable run
   retry       Retry a settled run from a step as a new run

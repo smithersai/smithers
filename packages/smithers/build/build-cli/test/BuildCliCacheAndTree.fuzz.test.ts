@@ -146,10 +146,10 @@ describe("@smthrs/build-cli Cache, OutputCas, PackageTree, CacheAdmin, CacheEvid
                   warn: () => {},
                   ...(withRemote
                     ? {
-                        endpoint,
-                        readToken: () => "fuzz-tok",
-                        writeToken: () => "fuzz-tok"
-                      }
+                      endpoint,
+                      readToken: () => "fuzz-tok",
+                      writeToken: () => "fuzz-tok"
+                    }
                     : {})
                 })
               )
@@ -348,9 +348,7 @@ describe("@smthrs/build-cli Cache, OutputCas, PackageTree, CacheAdmin, CacheEvid
                   output: ["boom"]
                 })
               )
-              const failed = yield* Effect.promise(() =>
-                CacheEvidence.attemptFailed(wsRoot, ".flows", declId, writer)
-              )
+              const failed = yield* Effect.promise(() => CacheEvidence.attemptFailed(wsRoot, ".flows", declId, writer))
               if (!failed) throw new Error("attemptFailed false after remember")
               const rec = CacheEvidence.record([["src/a.ts", PackageTree.digestBytes(Buffer.from("x"))]], { ok: true })
               const decRec = CacheEvidence.decode(rec)

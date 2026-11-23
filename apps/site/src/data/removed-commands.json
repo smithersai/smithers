@@ -142,8 +142,8 @@
       "kind": "verb",
       "anchor": "hijack",
       "name": "hijack",
-      "group": "Hijack and pause",
-      "reason": "not available; use `smthrs runs steer|signal|cancel|resume` and `smthrs approvals approve|deny`",
+      "group": "Run control",
+      "reason": "use `smthrs runs steer|signal|cancel|pause|resume` or `smthrs approvals approve|deny`",
       "subcommands": [],
       "spellings": [
         "smthrs hijack"
@@ -151,21 +151,10 @@
     },
     {
       "kind": "verb",
-      "anchor": "pause",
-      "name": "pause",
-      "group": "Hijack and pause",
-      "reason": "not available; use `smthrs runs steer|signal|cancel|resume` and `smthrs approvals approve|deny`",
-      "subcommands": [],
-      "spellings": [
-        "smthrs pause"
-      ]
-    },
-    {
-      "kind": "verb",
       "anchor": "gateway",
       "name": "gateway",
       "group": "Old gateway and UI hosting",
-      "reason": "replaced by `smthrs serve`; the terminal monitor is deleted",
+      "reason": "use `smthrs serve` for hosting or `smthrs runs monitor` to check a run",
       "subcommands": [
         "status",
         "stop"
@@ -180,7 +169,7 @@
       "anchor": "ui",
       "name": "ui",
       "group": "Old gateway and UI hosting",
-      "reason": "replaced by `smthrs serve`; the terminal monitor is deleted",
+      "reason": "use `smthrs serve` for hosting or `smthrs runs monitor` to check a run",
       "subcommands": [],
       "spellings": [
         "smthrs ui"
@@ -191,7 +180,7 @@
       "anchor": "gui",
       "name": "gui",
       "group": "Old gateway and UI hosting",
-      "reason": "replaced by `smthrs serve`; the terminal monitor is deleted",
+      "reason": "use `smthrs serve` for hosting or `smthrs runs monitor` to check a run",
       "subcommands": [],
       "spellings": [
         "smthrs gui"
@@ -235,21 +224,10 @@
       "anchor": "optimize",
       "name": "optimize",
       "group": "Evaluation and optimization",
-      "reason": "use `smthrs eval list|run|baseline|compare`; automatic optimization remains unavailable",
+      "reason": "use `@smthrs/evals/Optimize` with a candidate proposer and evaluator",
       "subcommands": [],
       "spellings": [
         "smthrs optimize"
-      ]
-    },
-    {
-      "kind": "verb",
-      "anchor": "scores",
-      "name": "scores",
-      "group": "Evaluation and optimization",
-      "reason": "use `smthrs eval list|run|baseline|compare`; automatic optimization remains unavailable",
-      "subcommands": [],
-      "spellings": [
-        "smthrs scores"
       ]
     },
     {
@@ -708,7 +686,7 @@
       "anchor": "ui",
       "name": "serve",
       "parent": "up",
-      "reason": "replaced by `smthrs serve`; the terminal monitor is deleted",
+      "reason": "use `smthrs serve` for hosting or `smthrs runs monitor` to check a run",
       "spellings": [
         "smthrs up --serve"
       ]
@@ -718,7 +696,7 @@
       "anchor": "ui",
       "name": "interactive",
       "parent": "up",
-      "reason": "replaced by `smthrs serve`; the terminal monitor is deleted",
+      "reason": "use `smthrs serve` for hosting or `smthrs runs monitor` to check a run",
       "spellings": [
         "smthrs up --interactive"
       ]
@@ -728,7 +706,7 @@
       "anchor": "ui",
       "name": "supervise",
       "parent": "up",
-      "reason": "replaced by `smthrs serve`; the terminal monitor is deleted",
+      "reason": "use `smthrs serve` for hosting or `smthrs runs monitor` to check a run",
       "spellings": [
         "smthrs up --supervise"
       ]
@@ -738,7 +716,7 @@
       "anchor": "ui",
       "name": "herdr",
       "parent": "up",
-      "reason": "replaced by `smthrs serve`; the terminal monitor is deleted",
+      "reason": "use `smthrs serve` for hosting or `smthrs runs monitor` to check a run",
       "spellings": [
         "smthrs up --herdr"
       ]
@@ -748,7 +726,7 @@
       "anchor": "ui",
       "name": "monitor",
       "parent": "up",
-      "reason": "replaced by `smthrs serve`; the terminal monitor is deleted",
+      "reason": "use `smthrs serve` for hosting or `smthrs runs monitor` to check a run",
       "spellings": [
         "smthrs up --monitor"
       ]
@@ -758,7 +736,7 @@
       "anchor": "ui",
       "name": "report",
       "parent": "up",
-      "reason": "replaced by `smthrs serve`; the terminal monitor is deleted",
+      "reason": "use `smthrs serve` for hosting or `smthrs runs monitor` to check a run",
       "spellings": [
         "smthrs up --report"
       ]
@@ -900,7 +878,6 @@
     "openapi",
     "optimize",
     "packs",
-    "pause",
     "plan-admission",
     "release",
     "remove",
@@ -910,7 +887,6 @@
     "revert",
     "rewind",
     "run-data",
-    "scores",
     "share",
     "snapshot-hook",
     "snapshots",
@@ -947,7 +923,6 @@
     "timeline",
     "worktrees",
     "hijack",
-    "pause",
     "gateway",
     "ui",
     "gui",
@@ -955,7 +930,6 @@
     "supervisor",
     "top",
     "optimize",
-    "scores",
     "chat",
     "chat-create",
     "what",

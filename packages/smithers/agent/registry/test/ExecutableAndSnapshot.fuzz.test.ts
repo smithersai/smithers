@@ -9,13 +9,7 @@ import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import { describe, expect, it } from "vitest"
-import {
-  Descriptor,
-  Discovery,
-  Executable,
-  ExecutionSnapshot,
-  Registry
-} from "../src/index.ts"
+import { Descriptor, Discovery, Executable, ExecutionSnapshot, Registry } from "../src/index.ts"
 
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "120"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261123")
@@ -56,7 +50,9 @@ describe("@smthrs/registry Executable module closures, tamper refusal, Execution
                     fs.writeFile(helperPath, `import { leaf } from "./sub.ts"\nexport const value = leaf\n`)
                   )
                 } else {
-                  yield* Effect.promise(() => fs.writeFile(helperPath, `export const value = ${JSON.stringify(safeVal)}\n`))
+                  yield* Effect.promise(() =>
+                    fs.writeFile(helperPath, `export const value = ${JSON.stringify(safeVal)}\n`)
+                  )
                 }
 
                 const entrySrc = [
@@ -113,7 +109,8 @@ describe("@smthrs/registry Executable module closures, tamper refusal, Execution
                       : Effect.succeed({ default: flowImpl })
                 }).pipe(Effect.result)
 
-                const tampered = tamperTarget === "entry" || tamperTarget === "helper" || (tamperTarget === "lockfile" && hasLockfile)
+                const tampered = tamperTarget === "entry" || tamperTarget === "helper" ||
+                  (tamperTarget === "lockfile" && hasLockfile)
                 if (tampered || badExport === "missing_default") {
                   return Result.isFailure(loadResult)
                 }

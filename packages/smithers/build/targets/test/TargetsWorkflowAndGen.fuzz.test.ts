@@ -418,7 +418,8 @@ describe("@smthrs/targets workflow, CI generation, docs, factory, home & manifes
               ? { frontmatterKeys: ["updated"] }
               : { sections: ["Changelog"] }
 
-            const textToNorm = `---\ntitle: Demo\nupdated: 2026-11-23\n---\n\n# Guide\n\n${safeA}\n\n## Changelog\n\n- entry\n`
+            const textToNorm =
+              `---\ntitle: Demo\nupdated: 2026-11-23\n---\n\n# Guide\n\n${safeA}\n\n## Changelog\n\n- entry\n`
             const norm1 = DocsCheck.normalize(textToNorm, ignore)
             const norm2 = DocsCheck.normalize(norm1, ignore)
             if (norm1 !== norm2) return false
@@ -658,8 +659,7 @@ describe("@smthrs/targets workflow, CI generation, docs, factory, home & manifes
               )
               if (catalogRows.length !== 2) return false
 
-              const incompatibleMirror =
-                (changes === "land" && mirror !== "push") ||
+              const incompatibleMirror = (changes === "land" && mirror !== "push") ||
                 (changes === "send-upstream" && mirror === "push")
               let policy: Factory.GithubPolicy
               if (incompatibleMirror) {

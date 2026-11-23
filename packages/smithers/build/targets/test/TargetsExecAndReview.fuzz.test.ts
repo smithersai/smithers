@@ -95,7 +95,10 @@ describe("@smthrs/targets Exec, Sandbox, SecretProxy, LlmLint/JevLint/SecurityRe
               if (!Exec.isExecutableFile(process.execPath)) throw new Error("isExec true")
               if (Exec.isExecutableFile(NodePath.join(tmpRoot, "missing-bin"))) throw new Error("isExec false")
 
-              const confinement = { mechanism: { _tag: platform === "linux" ? "bubblewrap" : "seatbelt" }, network: "none" }
+              const confinement = {
+                mechanism: { _tag: platform === "linux" ? "bubblewrap" : "seatbelt" },
+                network: "none"
+              }
               const destVal = withDestinations ? ["https://api.github.com"] : undefined
               const isRefused = ExecDestinationPolicy.refused(destVal, confinement, 0)
               const valExit = yield* Effect.exit(
@@ -606,9 +609,7 @@ describe("@smthrs/targets Exec, Sandbox, SecretProxy, LlmLint/JevLint/SecurityRe
               if (Filegroup.sources(Target.metadata(fg).attrs as Filegroup.Attrs, ctx).length !== 1) {
                 throw new Error("fg sources")
               }
-              const expanded = yield* Effect.promise(() =>
-                Filegroup.expand(tmpRoot, [Input.glob(`${subDir}/*.txt`)])
-              )
+              const expanded = yield* Effect.promise(() => Filegroup.expand(tmpRoot, [Input.glob(`${subDir}/*.txt`)]))
               if (expanded.length !== fileCount) throw new Error("fg expand: " + expanded.length)
 
               const baseCmd = Shell.Test({ shell: "true" })
@@ -644,7 +645,9 @@ describe("@smthrs/targets Exec, Sandbox, SecretProxy, LlmLint/JevLint/SecurityRe
               const kCmd = JobKeeper.keeper(process.execPath)
               if (kCmd[0] !== process.execPath || kCmd[1] !== "-e") throw new Error("kCmd: " + JSON.stringify(kCmd))
               const cCmd = JobKeeper.client(process.execPath, tmpRoot, ["echo", "hi"])
-              if (!cCmd.includes(process.execPath) || !cCmd.includes("--")) throw new Error("cCmd: " + JSON.stringify(cCmd))
+              if (!cCmd.includes(process.execPath) || !cCmd.includes("--")) {
+                throw new Error("cCmd: " + JSON.stringify(cCmd))
+              }
               const nsCmd = JobKeeper.namespaced("/usr/bin/bwrap", ["--ro-bind", "/usr", "/usr"], kCmd)
               if (nsCmd[0] !== "/usr/bin/bwrap" || !nsCmd.includes("--unshare-pid")) {
                 throw new Error("nsCmd: " + JSON.stringify(nsCmd))

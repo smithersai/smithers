@@ -2161,7 +2161,8 @@ describe("EngineChildren.cancel", () => {
           ControlService.Control,
           ControlService.make({
             ...control,
-            cancel: (input) => Effect.sync(() => keys.push(input.idempotencyKey)).pipe(Effect.andThen(control.cancel(input)))
+            cancel: (input) =>
+              Effect.sync(() => keys.push(input.idempotencyKey)).pipe(Effect.andThen(control.cancel(input)))
           })
         )
       )
@@ -2291,7 +2292,12 @@ describe("EngineChildren.cancel", () => {
         yield* answering(() => Effect.succeed<Receipt>({ _tag: "Accepted", receiptId: "receipt-a" })),
         yield* answering(() => Effect.succeed<Receipt>({ _tag: "AlreadyApplied", receiptId: "receipt-0" })),
         yield* answering(() =>
-          Effect.succeed<Receipt>({ _tag: "Parked", receiptId: "receipt-1", planId: "plan-1", status: "waiting-approval" })
+          Effect.succeed<Receipt>({
+            _tag: "Parked",
+            receiptId: "receipt-1",
+            planId: "plan-1",
+            status: "waiting-approval"
+          })
         ),
         yield* answering(() => Effect.succeed<Receipt>({ _tag: "Conflict", message: "different request" })),
         yield* answering((input) => Effect.fail(new RunNotFound({ runId: input.runId }))),
@@ -2301,7 +2307,8 @@ describe("EngineChildren.cancel", () => {
       ]
       yield* store.create(child, JSON.stringify({ version: 1, flowName: Worker._tag, payload: {} }))
       yield* runtime.register(Parent, () =>
-        Effect.forEach(ports, (port) => cancelled(port, { child })).pipe(Effect.map((answers) => answers.join("\n"))))
+        Effect.forEach(ports, (port) =>
+          cancelled(port, { child })).pipe(Effect.map((answers) => answers.join("\n"))))
 
       const answers = (yield* runtime.execute(Parent, { executionId: "cancel-receipts", payload: {} })).split("\n")
 

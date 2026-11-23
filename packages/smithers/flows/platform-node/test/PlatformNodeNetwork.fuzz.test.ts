@@ -22,7 +22,14 @@ describe("@smthrs/platform-node EgressHttpClient & FetchTransport fuzz invariant
     try {
       const arb = Arbitrary.schema(
         Schema.Struct({
-          proxyKind: Schema.Literals(["none", "valid_http", "invalid_scheme", "invalid_path", "bad_percent", "wildcard_no_proxy"]),
+          proxyKind: Schema.Literals([
+            "none",
+            "valid_http",
+            "invalid_scheme",
+            "invalid_path",
+            "bad_percent",
+            "wildcard_no_proxy"
+          ]),
           useLowercase: Schema.Boolean,
           targetKind: Schema.Literals(["loopback", "remote_invalid_proxy"])
         })
@@ -45,8 +52,8 @@ describe("@smthrs/platform-node EgressHttpClient & FetchTransport fuzz invariant
                 env["NO_PROXY"] = "*"
               }
 
-              const isInvalidProxy =
-                proxyKind === "invalid_scheme" || proxyKind === "invalid_path" || proxyKind === "bad_percent"
+              const isInvalidProxy = proxyKind === "invalid_scheme" || proxyKind === "invalid_path" ||
+                proxyKind === "bad_percent"
 
               if (targetKind === "loopback") {
                 // Loopback MUST ALWAYS succeed directly regardless of HTTP_PROXY (even invalid or unreachable proxy!)

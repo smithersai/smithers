@@ -95,7 +95,12 @@ describe("@smthrs/sandbox CiJob, linuxBatch & SandboxMerge fuzz invariants", () 
           Schema.isMaxLength(4)
         ),
         mode: Schema.Literals([0o100644, 0o040755, 0o120777, 0o010644, 0o020666, 0o060660, 0o140755, 0]),
-        stderr: Schema.Literals(["stat: cannot stat '/x': No such file or directory", "No such file or directory", "Permission denied", ""]),
+        stderr: Schema.Literals([
+          "stat: cannot stat '/x': No such file or directory",
+          "No such file or directory",
+          "Permission denied",
+          ""
+        ]),
         changeKey: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64))
       })
     )

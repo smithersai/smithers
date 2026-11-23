@@ -150,8 +150,10 @@ const current: Effect.Effect<CapabilitySet>
 
 The current fiber's ceiling. A fiber that never passed through `attenuate`
 allows every capability, because unrestricted authority is the identity element
-of `intersect`. The backing reference is module-private, so no caller can
-replace the ambient set with a wider one.
+of `intersect`. `current` is a derived effect backed by a module-private
+`Symbol` slot, an opaque minted seal, and active fiber frames, so callers
+cannot widen, strip, or spoof the ceiling via forged references or context
+replacement.
 
 ### CapabilitySet.attenuate
 
@@ -162,7 +164,10 @@ const attenuate: (
 ```
 
 Runs the effect with the parent ceiling **intersected** with one more any-of
-group. This is the only way authority moves, and it only narrows.
+group. Patterns are snapshotted eagerly when called, and compliant services in
+`Context` (including `GrantStore`) are closure-attenuated in place so even
+detached fibers with stripped contexts stay within the ceiling. This is the
+only way authority moves, and it only narrows.
 
 ## GrantStore
 
@@ -270,6 +275,7 @@ A bulk approval. `scope` defaults to `"run"`.
 ```ts
 interface MakeOptions {
   readonly attended?: boolean | undefined
+  readonly bindCeiling?: boolean | undefined
   readonly rules?: ReadonlyArray<Rule> | ReadonlyArray<ReadonlyArray<Rule>> | undefined
   readonly runRules?:
     | ReadonlyArray<
@@ -287,7 +293,10 @@ interface MakeOptions {
 }
 ```
 
-`attended` defaults to `true`. A flat `rules` value is the configured policy; a
+`attended` defaults to `true`. `bindCeiling` defaults to `false`; setting it to
+`true` binds checks, `policy`, `list`, `reply`, and `grantEnvelope` to the
+ceiling active when `make` runs, even when the returned store is used from a
+wider or stripped caller. A flat `rules` value is the configured policy; a
 nested one has configured policy first and replayed remembered grants after.
 `envelopeSignatures` names envelopes that are already durable, so a matching
 construction envelope activates without being persisted again.
@@ -325,7 +334,25 @@ const makeNoop: Service
 const layerNoop: Layer.Layer<GrantStore>
 ```
 
-An explicit allow-all seam for tests and boot paths. Not a production policy.
+A ceiling-enforcing allow-all seam for tests and boot paths: it skips
+permission rules while still checking the ambient and closure-bound capability
+ceiling. Not a production policy.
+
+### GrantStore.attenuated and GrantStore.bindCeiling
+
+```ts
+const attenuated: (service: Service, ceiling: CapabilitySet) => Service
+const bindCeiling: <A, E, R>(
+  effect: Effect.Effect<A, E, R>
+) => Effect.Effect<A, E, R | GrantStore>
+```
+
+`attenuated` returns a frozen view of `service` whose ceiling is bound in a
+closure. Checks, `policy`, `list`, `reply`, and `grantEnvelope` all stay within
+the bound on every fiber (including detached fibers with stripped contexts).
+Unverified `ceiling` values fail closed to empty authority. `bindCeiling`
+rebinds the ambient `GrantStore` in `Context` to an `attenuated` view of the
+calling fiber's current ceiling.
 
 ### GrantStore.canonicalEnvelopePatterns
 

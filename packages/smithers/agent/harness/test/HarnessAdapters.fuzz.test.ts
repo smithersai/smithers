@@ -13,8 +13,8 @@ import type * as NotificationModel from "@smthrs/notifications/Notification"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Registry from "@smthrs/registry/Registry"
-import { TestClock } from "effect/testing"
 import { Arbitrary, Context, Deferred, Effect, Layer, Option, Result, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -46,9 +46,9 @@ import {
   Tokens,
   UnresolvedFailure
 } from "../src/index.ts"
-import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Marks from "../src/internal/compactionMarks.ts"
 import * as SchemaSignature from "../src/internal/schemaSignature.ts"
+import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import { descriptor, emits, of, pattern, prose, run as runCellTurn, window as baseWindow } from "./fixtures/cellTurn.ts"
 import type * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
@@ -203,7 +203,9 @@ describe("@smthrs/harness deep adapter & gate fuzz invariants", () => {
             })
 
             const provided = FlowBinding.provide(binding, Context.empty())
-            if (Descriptor.declarationDigest(provided.descriptor) !== Descriptor.declarationDigest(binding.descriptor)) {
+            if (
+              Descriptor.declarationDigest(provided.descriptor) !== Descriptor.declarationDigest(binding.descriptor)
+            ) {
               return false
             }
 
@@ -240,7 +242,9 @@ describe("@smthrs/harness deep adapter & gate fuzz invariants", () => {
               const callRes = yield* Effect.result(
                 entry.run(mkCall("fuzz_flow", sampleInput, Descriptor.declarationDigest(binding.descriptor)))
               )
-              if (outcomeKind === "ok" && (Result.isFailure(callRes) || callRes.success.outcome !== "success")) return false
+              if (
+                outcomeKind === "ok" && (Result.isFailure(callRes) || callRes.success.outcome !== "success")
+              ) return false
               if (outcomeKind === "permission" && Result.isSuccess(callRes)) return false
             }
 
@@ -257,8 +261,7 @@ describe("@smthrs/harness deep adapter & gate fuzz invariants", () => {
               implementations: new Map<string, CellCalls.Implementation>([
                 [
                   "list",
-                  (_call) =>
-                    Effect.succeed(new Cell.CallResult({ outcome: "success", value: ["a.ts", "b.ts"] }))
+                  (_call) => Effect.succeed(new Cell.CallResult({ outcome: "success", value: ["a.ts", "b.ts"] }))
                 ]
               ]),
               prompt: (prompt) =>
@@ -372,7 +375,11 @@ describe("@smthrs/harness deep adapter & gate fuzz invariants", () => {
             if (extracted.length === 0) return false
             const redacted = Intake.redact(payload, new Set(extracted.map((t) => t.id)))
             if (typeof redacted !== "object" || redacted === null) return false
-            const screened = yield* Effect.result(Intake.screen("org/repo", payload).pipe(Effect.provide(evalMode === "unconfigured" ? Evaluator.layerUnavailable() : evalLayer)))
+            const screened = yield* Effect.result(
+              Intake.screen("org/repo", payload).pipe(
+                Effect.provide(evalMode === "unconfigured" ? Evaluator.layerUnavailable() : evalLayer)
+              )
+            )
             if (evalMode === "ok" && Result.isFailure(screened)) return false
             if (evalMode !== "ok" && Result.isSuccess(screened)) return false
 
@@ -434,8 +441,13 @@ describe("@smthrs/harness deep adapter & gate fuzz invariants", () => {
               if (unprov.code !== "claim_unproven") return false
             }
             const unjudgedErr = CompletionClaim.unjudged("unreachable", "offline", claimText)
-            if (unjudgedErr.code !== "completion_unjudged" || CompletionClaim.refusedIn(unjudgedErr.message) === undefined || CompletionClaim.demand().length === 0) return false
-            if (CompletionClaim.quote({ a: 1 }).length === 0 || CompletionClaim.prose(claimText).length === 0) return false
+            if (
+              unjudgedErr.code !== "completion_unjudged" ||
+              CompletionClaim.refusedIn(unjudgedErr.message) === undefined || CompletionClaim.demand().length === 0
+            ) return false
+            if (CompletionClaim.quote({ a: 1 }).length === 0 || CompletionClaim.prose(claimText).length === 0) {
+              return false
+            }
 
             const evidence: CompletionClaim.Evidence = {
               task: Judgement.task("Fix parser bug"),
@@ -633,7 +645,12 @@ describe("@smthrs/harness deep adapter & gate fuzz invariants", () => {
               tokens: [30_000, 30_000, 30_000]
             })
             if (Result.isFailure(marksRes)) return false
-            const pins = Marks.pins(win.segments, 3, [undefined, { frame: 0, person: true, mutated: false, checks: ["vitest"] }, undefined], ["vitest"])
+            const pins = Marks.pins(win.segments, 3, [undefined, {
+              frame: 0,
+              person: true,
+              mutated: false,
+              checks: ["vitest"]
+            }, undefined], ["vitest"])
             if (Marks.unpinned(pins).length < 0) return false
 
             // 3. Monitor & Supervisor
@@ -688,7 +705,9 @@ describe("@smthrs/harness deep adapter & gate fuzz invariants", () => {
             }
 
             const skillMons = Monitor.skills(snap)
-            const activeMons = Result.isSuccess(validated) ? [...validated.success, ...skillMons, Monitor.useJev()] : [...baseMonitors, Monitor.useJev()]
+            const activeMons = Result.isSuccess(validated)
+              ? [...validated.success, ...skillMons, Monitor.useJev()]
+              : [...baseMonitors, Monitor.useJev()]
             const qs = Monitor.questions(activeMons, snap)
             const supEval = Evaluator.layerScripted((req) =>
               Object.fromEntries(
@@ -848,7 +867,10 @@ export default Flow.make("calc", {
         ({ mode, n }) =>
           Effect.gen(function*() {
             const runStep = (input: RealmFlow.Input) =>
-              RealmFlow.step(input).pipe(Effect.provide(Layer.merge(QuickJSSandbox.layerVariantLive, TestClock.layer())), Effect.result)
+              RealmFlow.step(input).pipe(
+                Effect.provide(Layer.merge(QuickJSSandbox.layerVariantLive, TestClock.layer())),
+                Effect.result
+              )
 
             if (mode === "pure") {
               const res = yield* runStep({
@@ -1007,13 +1029,20 @@ export default Flow.make("calc", {
               const evalLayer = Evaluator.layerScripted((req) => {
                 const ids = Object.keys(req.questions)
                 if (ids.includes("complete")) {
-                  return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
+                  return {
+                    complete: { probability: 0.99 },
+                    overclaims: { probability: 0.01 },
+                    invented: { probability: 0.01 }
+                  }
                 }
                 if (ids.includes("unnecessary_0")) {
                   const items = (req.state as { readonly items: ReadonlyArray<Relevance.Item> }).items
                   const withheld = new Set(["mcp.search", "AGENTS.md#1"])
                   return Object.fromEntries(
-                    items.map((item, idx) => [`unnecessary_${idx}`, { probability: withheld.has(item.id) ? 0.95 : 0.2 }])
+                    items.map((
+                      item,
+                      idx
+                    ) => [`unnecessary_${idx}`, { probability: withheld.has(item.id) ? 0.95 : 0.2 }])
                   )
                 }
                 if (ids.includes("remove_0")) {
@@ -1023,7 +1052,13 @@ export default Flow.make("calc", {
                   Object.entries(req.questions).map(([id, q]) => [
                     id,
                     q.type === "boolean"
-                      ? { probability: id === "on_target" ? 0.95 : id === `${Supervisor.monitorPrefix}no_test_edits` ? 0.9 : 0.05 }
+                      ? {
+                        probability: id === "on_target"
+                          ? 0.95
+                          : id === `${Supervisor.monitorPrefix}no_test_edits`
+                          ? 0.9
+                          : 0.05
+                      }
                       : q.type === "score"
                       ? { score: 0 }
                       : { choice: "none" }
@@ -1097,8 +1132,16 @@ export default Flow.make("calc", {
                 if (ids.includes("complete")) {
                   claimAttempt += 1
                   return claimAttempt === 1
-                    ? { complete: { probability: 0.1 }, overclaims: { probability: 0.92 }, invented: { probability: 0.92 } }
-                    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
+                    ? {
+                      complete: { probability: 0.1 },
+                      overclaims: { probability: 0.92 },
+                      invented: { probability: 0.92 }
+                    }
+                    : {
+                      complete: { probability: 0.99 },
+                      overclaims: { probability: 0.01 },
+                      invented: { probability: 0.01 }
+                    }
                 }
                 return Object.fromEntries(ids.map((id) => [id, { probability: 0.95 }]))
               })
@@ -1379,18 +1422,17 @@ export default Flow.make("calc", {
               passing: true
             })
             if (cBroad !== undefined && cNarrow !== undefined) {
-            const led = NarrowedCheck.remember([], [cBroad])
-            const found = NarrowedCheck.find({ ledger: led, frame: [cNarrow], digest: "tree-b" })
-            if (found !== undefined && NarrowedCheck.demand(found).length === 0) return false
-            const foundOnly = NarrowedCheck.findOnly({
-              ledger: NarrowedCheck.remember(led, [cNarrow]),
-              before: [cBroad.signature],
-              frame: [cNarrow],
-              taught: NarrowedCheck.terms({ task: "run tests" })
-            })
-            if (foundOnly !== undefined && NarrowedCheck.demandOnly(foundOnly).length === 0) return false
+              const led = NarrowedCheck.remember([], [cBroad])
+              const found = NarrowedCheck.find({ ledger: led, frame: [cNarrow], digest: "tree-b" })
+              if (found !== undefined && NarrowedCheck.demand(found).length === 0) return false
+              const foundOnly = NarrowedCheck.findOnly({
+                ledger: NarrowedCheck.remember(led, [cNarrow]),
+                before: [cBroad.signature],
+                frame: [cNarrow],
+                taught: NarrowedCheck.terms({ task: "run tests" })
+              })
+              if (foundOnly !== undefined && NarrowedCheck.demandOnly(foundOnly).length === 0) return false
             }
-
 
             const rendered = Notifications.text({
               _tag: "human-steer",

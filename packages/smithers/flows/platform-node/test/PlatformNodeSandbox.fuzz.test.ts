@@ -47,7 +47,14 @@ describe("@smthrs/platform-node ProcessSandbox, DestinationProxy, ProcessReaper 
           writeMode: Schema.Literals(["normal", "dotdot_escape", "symlink_escape", "workspace_root"]),
           readOnlySubdir: Schema.Boolean,
           extraRead: Schema.Literals(["none", "sub", "escape"]),
-          denialKind: Schema.Literals(["eacces_read", "erofs_write", "mkdir_denied", "escape_link", "outside_ws", "clean"])
+          denialKind: Schema.Literals([
+            "eacces_read",
+            "erofs_write",
+            "mkdir_denied",
+            "escape_link",
+            "outside_ws",
+            "clean"
+          ])
         })
       )
 
@@ -75,7 +82,9 @@ describe("@smthrs/platform-node ProcessSandbox, DestinationProxy, ProcessReaper 
                 platform,
                 executable: (name) => {
                   if (name === "bwrap" && hasBwrap) return "/usr/bin/bwrap"
-                  if ((name === "sandbox-exec" || name === "/usr/bin/sandbox-exec") && hasSandboxExec) return "/usr/bin/sandbox-exec"
+                  if (
+                    (name === "sandbox-exec" || name === "/usr/bin/sandbox-exec") && hasSandboxExec
+                  ) return "/usr/bin/sandbox-exec"
                   if (name === "docker" && hasDocker) return "/usr/bin/docker"
                   if (name === "node") return process.execPath
                   return undefined
@@ -95,10 +104,15 @@ describe("@smthrs/platform-node ProcessSandbox, DestinationProxy, ProcessReaper 
                   if (ProcessSandbox.isUnenforceable(selected) || selected._tag !== "docker") return false
                 }
               } else if (platform === "linux") {
-                if (hasBwrap && network !== "loopback" && (ProcessSandbox.isUnenforceable(selected) || selected._tag !== "bubblewrap")) return false
+                if (
+                  hasBwrap && network !== "loopback" &&
+                  (ProcessSandbox.isUnenforceable(selected) || selected._tag !== "bubblewrap")
+                ) return false
                 if ((!hasBwrap || network === "loopback") && !ProcessSandbox.isUnenforceable(selected)) return false
               } else if (platform === "darwin") {
-                if (hasSandboxExec && (ProcessSandbox.isUnenforceable(selected) || selected._tag !== "seatbelt")) return false
+                if (
+                  hasSandboxExec && (ProcessSandbox.isUnenforceable(selected) || selected._tag !== "seatbelt")
+                ) return false
                 if (!hasSandboxExec && !ProcessSandbox.isUnenforceable(selected)) return false
               } else {
                 if (!ProcessSandbox.isUnenforceable(selected)) return false
@@ -137,21 +151,19 @@ describe("@smthrs/platform-node ProcessSandbox, DestinationProxy, ProcessReaper 
                 if (wp !== undefined) return false
               }
 
-              const writeTarget =
-                writeMode === "normal"
-                  ? "out"
-                  : writeMode === "dotdot_escape"
-                    ? "../outside/pwn"
-                    : writeMode === "symlink_escape"
-                      ? "escape-link/pwn"
-                      : "."
+              const writeTarget = writeMode === "normal"
+                ? "out"
+                : writeMode === "dotdot_escape"
+                ? "../outside/pwn"
+                : writeMode === "symlink_escape"
+                ? "escape-link/pwn"
+                : "."
 
-              const readTargets =
-                extraRead === "none"
-                  ? []
-                  : extraRead === "sub"
-                    ? ["src"]
-                    : ["escape-link"]
+              const readTargets = extraRead === "none"
+                ? []
+                : extraRead === "sub"
+                ? ["src"]
+                : ["escape-link"]
 
               const planned = ProcessSandbox.plan(
                 {
@@ -235,27 +247,33 @@ describe("@smthrs/platform-node ProcessSandbox, DestinationProxy, ProcessReaper 
                 if (!args.includes("HOME=/tmp/home")) return false
                 if (args.some((a) => a.startsWith("PATH=") || a === `HOME=${homeDir}`)) return false
                 if (!args.includes("FOO=bar")) return false
-                const wrapped = ProcessSandbox.wrap(planned, ["echo", "ok"], { PATH: "/usr/bin", FOO: "bar" }, hostFacts)
+                const wrapped = ProcessSandbox.wrap(
+                  planned,
+                  ["echo", "ok"],
+                  { PATH: "/usr/bin", FOO: "bar" },
+                  hostFacts
+                )
                 if (wrapped.containerName === undefined || !wrapped.containerName.startsWith("smithers-")) return false
               }
 
-              const sampleText =
-                denialKind === "eacces_read"
-                  ? `EACCES: permission denied, open '${path.join(workspaceRoot, ".env")}'`
-                  : denialKind === "erofs_write"
-                    ? `EROFS: read-only file system, open '${path.join(workspaceRoot, "out", "locked", "f.txt")}'`
-                    : denialKind === "mkdir_denied"
-                      ? `mkdir: '${path.join(workspaceRoot, "ungranted")}': Permission denied`
-                      : denialKind === "escape_link"
-                        ? `cannot open '${path.join(workspaceRoot, "escape-link", "secret.txt")}'`
-                        : denialKind === "outside_ws"
-                          ? `EACCES: permission denied, open '${path.join(outside, "secret.txt")}'`
-                          : "all good, no errors"
+              const sampleText = denialKind === "eacces_read"
+                ? `EACCES: permission denied, open '${path.join(workspaceRoot, ".env")}'`
+                : denialKind === "erofs_write"
+                ? `EROFS: read-only file system, open '${path.join(workspaceRoot, "out", "locked", "f.txt")}'`
+                : denialKind === "mkdir_denied"
+                ? `mkdir: '${path.join(workspaceRoot, "ungranted")}': Permission denied`
+                : denialKind === "escape_link"
+                ? `cannot open '${path.join(workspaceRoot, "escape-link", "secret.txt")}'`
+                : denialKind === "outside_ws"
+                ? `EACCES: permission denied, open '${path.join(outside, "secret.txt")}'`
+                : "all good, no errors"
               const diag = ProcessSandbox.diagnose(planned, sampleText)
               if (denialKind === "outside_ws" || denialKind === "clean") {
                 if (diag !== undefined) return false
               } else {
-                if (diag === undefined || !diag.includes(`sandbox: ${planned.mechanism._tag}, network ${network}`)) return false
+                if (
+                  diag === undefined || !diag.includes(`sandbox: ${planned.mechanism._tag}, network ${network}`)
+                ) return false
                 if (denialKind === "escape_link" && !diag.includes("resolves to")) return false
               }
               return true
@@ -385,8 +403,7 @@ describe("@smthrs/platform-node ProcessSandbox, DestinationProxy, ProcessReaper 
 
             if (decided.length !== 1) return false
             const entry = decided[0]!
-            const isOwnGroup =
-              recordPid === ownerPid ||
+            const isOwnGroup = recordPid === ownerPid ||
               recordPgid === ownerPid ||
               (ownGroup !== null && (recordPid === ownGroup || recordPgid === ownGroup))
             if (isOwnGroup) {
@@ -562,27 +579,39 @@ describe("@smthrs/platform-node ProcessSandbox, DestinationProxy, ProcessReaper 
                 Effect.promise(async () => {
                   lastHeaders = {}
                   if (kind === "missing_auth") {
-                    const resp = await rawHttpOverUnix(`GET http://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`)
+                    const resp = await rawHttpOverUnix(
+                      `GET http://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`
+                    )
                     return resp.startsWith("HTTP/1.1 407 ")
                   }
                   if (kind === "wrong_auth") {
-                    const resp = await rawHttpOverUnix(`GET http://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: Basic Zm9vOmJhcg==\r\nConnection: close\r\n\r\n`)
+                    const resp = await rawHttpOverUnix(
+                      `GET http://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: Basic Zm9vOmJhcg==\r\nConnection: close\r\n\r\n`
+                    )
                     return resp.startsWith("HTTP/1.1 407 ")
                   }
                   if (kind === "bad_url") {
-                    const resp = await rawHttpOverUnix(`GET /relative-path HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`)
+                    const resp = await rawHttpOverUnix(
+                      `GET /relative-path HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`
+                    )
                     return resp.startsWith("HTTP/1.1 400 ")
                   }
                   if (kind === "disallowed_host") {
-                    const resp = await rawHttpOverUnix(`GET http://evil.example.com/ HTTP/1.1\r\nHost: evil.example.com\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`)
+                    const resp = await rawHttpOverUnix(
+                      `GET http://evil.example.com/ HTTP/1.1\r\nHost: evil.example.com\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`
+                    )
                     return resp.startsWith("HTTP/1.1 403 ")
                   }
                   if (kind === "userinfo_url") {
-                    const resp = await rawHttpOverUnix(`GET http://user:pass@127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`)
+                    const resp = await rawHttpOverUnix(
+                      `GET http://user:pass@127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`
+                    )
                     return resp.startsWith("HTTP/1.1 403 ")
                   }
                   if (kind === "https_plain_get") {
-                    const resp = await rawHttpOverUnix(`GET https://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`)
+                    const resp = await rawHttpOverUnix(
+                      `GET https://127.0.0.1:${port}/ HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: ${authOk}\r\nConnection: close\r\n\r\n`
+                    )
                     return resp.startsWith("HTTP/1.1 403 ")
                   }
                   if (kind === "allowed_get") {
@@ -596,14 +625,20 @@ describe("@smthrs/platform-node ProcessSandbox, DestinationProxy, ProcessReaper 
                     return true
                   }
                   if (kind === "connect_missing_auth") {
-                    const resp = await rawHttpOverUnix(`CONNECT 127.0.0.1:${port} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n\r\n`)
+                    const resp = await rawHttpOverUnix(
+                      `CONNECT 127.0.0.1:${port} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n\r\n`
+                    )
                     return resp.startsWith("HTTP/1.1 407 ")
                   }
                   if (kind === "connect_disallowed") {
-                    const resp = await rawHttpOverUnix(`CONNECT evil.example.com:443 HTTP/1.1\r\nHost: evil.example.com:443\r\nProxy-Authorization: ${authOk}\r\n\r\n`)
+                    const resp = await rawHttpOverUnix(
+                      `CONNECT evil.example.com:443 HTTP/1.1\r\nHost: evil.example.com:443\r\nProxy-Authorization: ${authOk}\r\n\r\n`
+                    )
                     return resp.startsWith("HTTP/1.1 403 ")
                   }
-                  const resp = await rawHttpOverUnix(`CONNECT 127.0.0.1:${port}/extra HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nProxy-Authorization: ${authOk}\r\n\r\n`)
+                  const resp = await rawHttpOverUnix(
+                    `CONNECT 127.0.0.1:${port}/extra HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nProxy-Authorization: ${authOk}\r\n\r\n`
+                  )
                   return resp.startsWith("HTTP/1.1 403 ")
                 }),
               { seed: seed + 4, executions: Math.min(executions, 40) }

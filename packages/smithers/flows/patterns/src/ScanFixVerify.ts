@@ -336,7 +336,12 @@ export const run = <I, Issue, Fix, Verification, E, R, E2 = E, R2 = R, E3 = E, R
       const issues = yield* scan({ input, iteration })
       if (!Array.isArray(issues)) return yield* Effect.fail(invalidScan(iteration))
       if (issues.length === 0 || iteration > maxRetries) {
-        return { iterations: Math.min(iteration, maxRetries), remaining: issues, resolved: issues.length === 0, verifications }
+        return {
+          iterations: Math.min(iteration, maxRetries),
+          remaining: issues,
+          resolved: issues.length === 0,
+          verifications
+        }
       }
       const fixes = yield* Effect.forEach(
         issues.slice(0, maxIssues),

@@ -9,8 +9,8 @@ import { describe, expect, it } from "vitest"
 import * as Affected from "../src/Affected.ts"
 import * as BenchReport from "../src/BenchReport.ts"
 import type * as Executor from "../src/Executor.ts"
-import * as GithubRender from "../src/GithubRender.ts"
 import * as GitHooks from "../src/GitHooks.ts"
+import * as GithubRender from "../src/GithubRender.ts"
 import * as CoreRuleSelection from "../src/internal/CoreRuleSelection.ts"
 import * as FsUtil from "../src/internal/Fs.ts"
 import * as FullDisk from "../src/internal/FullDisk.ts"
@@ -287,7 +287,8 @@ describe("@smthrs/build-cli graph, policy, resolver, affected, owners, CI render
             if (!FullDisk.isFull(fullSpace)) throw new Error("FullDisk.isFull")
             FullDisk.sizeOf(1024 * 1024 * 5)
             FullDisk.fullLine("/tmp/machines", fullSpace, 2, 1024, 512)
-            const statSample = "123 (node) R 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42"
+            const statSample =
+              "123 (node) R 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42"
             Parts.waitedCpuMs(statSample)
             const clocks = Parts.clocksOf(() => statSample)
             const led = Parts.ledger(clocks)
@@ -562,7 +563,9 @@ export const Package = S.Package({
               const closure = yield* Effect.promise(() =>
                 Resolver.computeClosure({ config: resCfg, entries: [entryFile] })
               )
-              if (!closure.result.files.some((f) => f.path === entryFile)) throw new Error("computeClosure missing entry")
+              if (!closure.result.files.some((f) => f.path === entryFile)) {
+                throw new Error("computeClosure missing entry")
+              }
               if (entryFile === "packages/app/src/main.ts") {
                 if (!closure.result.files.some((f) => f.path === "packages/lib/src/util.ts")) {
                   throw new Error("computeClosure missed transitive path alias import")

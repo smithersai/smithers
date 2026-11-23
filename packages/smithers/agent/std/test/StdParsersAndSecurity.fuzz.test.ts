@@ -86,8 +86,7 @@ describe("@smthrs/std Tar, Html, IpAddress, Url, ApplyPatch, Ignore, TestReport 
             if (mapped6 && fam !== 6) return false
             if (!mapped6 && fam !== 4) return false
 
-            const isPrivateV4 =
-              octA === 0 ||
+            const isPrivateV4 = octA === 0 ||
               octA === 10 ||
               octA === 127 ||
               (octA === 100 && octB >= 64 && octB <= 127) ||
@@ -126,7 +125,10 @@ describe("@smthrs/std Tar, Html, IpAddress, Url, ApplyPatch, Ignore, TestReport 
             ) {
               return false
             }
-            if ((rawIp === "8.8.8.8" || rawIp === "1.1.1.1" || rawIp === "2606:4700:4700::1111") && !IpAddress.isPublic(rawIp)) {
+            if (
+              (rawIp === "8.8.8.8" || rawIp === "1.1.1.1" || rawIp === "2606:4700:4700::1111") &&
+              !IpAddress.isPublic(rawIp)
+            ) {
               return false
             }
 
@@ -228,7 +230,8 @@ describe("@smthrs/std Tar, Html, IpAddress, Url, ApplyPatch, Ignore, TestReport 
         ({ htmlChunk, tag, origLines, replaceLine, chunkSize, ignoreRule, candidate, isDir, cmd }) =>
           Effect.sync(() => {
             // Html.toText & Html.toMarkdown strip <script>/<style> bodies and never throw
-            const doc = `<html><head><script>alert("xss_secret_payload")</script><style>body{color:red}</style></head><body><${tag} href="https://example.com">${htmlChunk}</${tag}></body></html>`
+            const doc =
+              `<html><head><script>alert("xss_secret_payload")</script><style>body{color:red}</style></head><body><${tag} href="https://example.com">${htmlChunk}</${tag}></body></html>`
             const txt = Html.toText(doc)
             const md = Html.toMarkdown(doc)
             if (typeof txt !== "string" || typeof md !== "string") return false
@@ -264,13 +267,21 @@ describe("@smthrs/std Tar, Html, IpAddress, Url, ApplyPatch, Ignore, TestReport 
 
             // Ignore parser + matcher determinism
             const scope = Ignore.parse("/work", `*.log\n${ignoreRule}\n`)
-            const ig = Ignore.ignored([scope], `/work/${candidate}`, candidate.split("/").pop()!, isDir, NodePath.posix.relative)
+            const ig = Ignore.ignored(
+              [scope],
+              `/work/${candidate}`,
+              candidate.split("/").pop()!,
+              isDir,
+              NodePath.posix.relative
+            )
             if (ignoreRule === "!important.log" && candidate === "important.log" && ig !== false) return false
             if (ignoreRule === "dist/" && candidate === "dist" && !isDir && ig !== false) return false
             if (ignoreRule === "dist/" && candidate === "dist" && isDir && ig !== true) return false
 
             // TestReport parse/read/attribute invariants
-            const baseRep = TestReport.parse("FAIL test/a.test.ts\n ✓ ok\n × broken_1\nTests  1 failed | 1 passed (2)\n")
+            const baseRep = TestReport.parse(
+              "FAIL test/a.test.ts\n ✓ ok\n × broken_1\nTests  1 failed | 1 passed (2)\n"
+            )
             const curRep = TestReport.read({
               stdout: "FAIL test/a.test.ts\n × broken_1\n × broken_2\nTests  2 failed | 0 passed (2)\n",
               stderr: ""

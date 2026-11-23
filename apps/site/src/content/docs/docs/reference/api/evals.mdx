@@ -110,7 +110,7 @@ Four rules decide what a comparison reports, and none of them are obvious:
 | Code                  | Raised when                                                                                                                                | Who fixes it              |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |
 | `invalid_suite`       | The suite declaration is wrong: a name, a case, a concurrency, a fixture line, non-cloneable case data, or an undecidable sampling policy. | The suite author          |
-| `invalid_run_options` | `Runner.run`'s own options are wrong: an empty `runId`, or an `at` that is not a canonical UTC instant.                                    | The caller                |
+| `invalid_run_options` | Runner or optimizer options are invalid, such as an empty `runId` or a noncanonical UTC `at`.                                              | The caller                |
 | `invalid_baseline`    | The committed baseline is unreadable, holds a record the schema rejects, or belongs to another suite.                                      | Regenerate the baseline   |
 | `invalid_tolerance`   | A comparison tolerance is not a finite non-negative number.                                                                                | The caller                |
 | `invalid_trials`      | A `Trials` count, or `Runner.run`'s `trials` or `k`, is outside its bounds.                                                                | The caller                |
@@ -118,14 +118,17 @@ Four rules decide what a comparison reports, and none of them are obvious:
 | `ambiguous_score_job` | Two jobs share a step key and scorer, so an order-only runner cannot attribute their results to cases.                                     | The suite or batch runner |
 | `scorer_protocol`     | A batch runner returned the wrong number of observations, or observations identifying jobs other than the ones it was given.               | The batch runner          |
 | `scorer_unavailable`  | No batch runner was available, or a correlated runner reported a failed durable write.                                                     | The wiring                |
+| `no_scores`           | A prompt candidate produced no scored observations.                                                                                        | The suite or executor     |
+| `target_not_reached`  | The optimizer exhausted its budget below the target with `onMaxReached: "fail"`.                                                           | The caller                |
 
 Most failures carry a `path` locating the offending value: `cases[1].input`,
 `records[3].score`, `options.at`, `runBatch[0]`. A case whose target failed keeps
 the executor's own path when it named one and is located at `cases['<name>']`
-otherwise, so a failed case is always locatable. Only two failures carry no path:
-one about an artifact as a whole (`Baseline` is not JSON, or is not an object)
-and one about the absence of a runner (`scorer_unavailable`). A failed durable
-write also uses `scorer_unavailable`, with a `runBatchCorrelated[N]` path.
+otherwise, so a failed case is always locatable. A failed durable observation
+write uses `scorer_unavailable` with a `runBatchCorrelated[N]` path. The path can
+be omitted when a baseline artifact fails to parse as JSON or is a non-object,
+when a batch runner is unavailable, or when a failure concerns the whole
+optimization run.
 
 ## The batch protocol
 
@@ -615,6 +618,24 @@ const aggregate = (cases: Readonly<Record<string, ReadonlyArray<boolean>>>, k: n
   run passed. A case with fewer than `k` runs is summarized at `k = n`, and no
   cases aggregate to zeros. A case with no runs throws `invalid_trials`.
 
+### Optimize
+
+`Optimize.run(options)` evaluates successive prompts with `Runner.run` over
+the same suite. Pass a prompt-specific executor factory and an Effectful
+proposer. The proposer receives the best and current scores and prompts, the
+current run, and a snapshot of the chronological history. Iterations start at
+one and use run IDs of the form `<runIdPrefix>-<iteration>`.
+
+Every scored observation contributes equally to the mean. Inconclusive
+observations are skipped. A candidate with no scored observations fails with
+`no_scores`. The earliest candidate wins a tie.
+
+The result includes the best prompt, its score and run, and all evaluated
+attempts. It is tagged `Converged` once a candidate meets `targetScore`.
+By default, reaching `maxIterations` returns an `Exhausted` result.
+Set `onMaxReached: "fail"` with a target to fail with `target_not_reached`
+on exhaustion. Proposer errors propagate unchanged.
+
 ## Export index
 
 | Export                          | Category      | Summary                                                                         |
@@ -681,6 +702,15 @@ const aggregate = (cases: Readonly<Record<string, ReadonlyArray<boolean>>>, k: n
 | `Trials.passHatK`               | statistics    | The chance all `k` of `n` recorded runs pass.                                   |
 | `Trials.summarize`              | statistics    | Summarizes one case's run outcomes at `k`.                                      |
 | `Trials.aggregate`              | statistics    | Summarizes every case at `k` and averages over cases.                           |
+
+| Export                      | Category | Description                                                    |
+| --------------------------- | -------- | -------------------------------------------------------------- |
+| `Optimize.CandidateAttempt` | models   | One candidate's iteration, prompt, score, and run.             |
+| `Optimize.Options`          | models   | Suite, executor factory, proposer, and stopping policy.        |
+| `Optimize.ProposeContext`   | models   | Best and current candidate state available to the proposer.    |
+| `Optimize.Result`           | models   | The best candidate and complete history.                       |
+| `Optimize.meanScore`        | scoring  | Mean of scored observations, or undefined when there are none. |
+| `Optimize.run`              | runners  | Evaluate and propose prompts within a fixed budget.            |
 
 ## A worked suite
 

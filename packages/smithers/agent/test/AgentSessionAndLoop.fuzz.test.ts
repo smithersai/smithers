@@ -7,8 +7,8 @@ import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
 import { FlowEngine } from "@smthrs/engine"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
-import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
+import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Fuzz } from "@smthrs/fuzz"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -262,7 +262,9 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
           : Effect.flatMap(Registry.makeNoop().get(name), () => Effect.die("unreachable")),
       getOption: (name) => Effect.succeed(Option.fromNullishOr(allDescs.get(name))),
       loadBody: () =>
-        Effect.succeed(new Descriptor.FlowBodyPrompt({ text: "Keep the note log tidy.", baseDirectory: "/flows/agents/notes" }))
+        Effect.succeed(
+          new Descriptor.FlowBodyPrompt({ text: "Keep the note log tidy.", baseDirectory: "/flows/agents/notes" })
+        )
     })
 
     const memoryFlows: ReadonlyArray<ControlRuntime.MemoryFlow> = [...allDescs.values()].map((d) => ({
@@ -342,7 +344,11 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
             const autoEval = Evaluator.layerScripted((req) => {
               const keys = Object.keys(req.questions)
               if (keys.includes("complete")) {
-                return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
+                return {
+                  complete: { probability: 0.99 },
+                  overclaims: { probability: 0.01 },
+                  invented: { probability: 0.01 }
+                }
               }
               return Object.fromEntries(
                 Object.entries(req.questions).map(([id, q]) => [
@@ -391,12 +397,15 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
                   Agent.layer,
                   SeatResolver.layer({
                     resolve: (id) =>
-                      Effect.succeed(Seat.make({ id, modelId: "test-model", model, route, contextWindowTokens: 200_000 })),
+                      Effect.succeed(
+                        Seat.make({ id, modelId: "test-model", model, route, contextWindowTokens: 200_000 })
+                      ),
                     routedAs: scenario === "role-seat-routed"
                       ? (name) => name === "coding/plan" ? { phase: "plan" } : undefined
                       : undefined
                   }),
-                  scenario === "auto-seat-routed" || scenario === "role-seat-routed" || scenario === "judged-memory-instructions"
+                  scenario === "auto-seat-routed" || scenario === "role-seat-routed" ||
+                    scenario === "judged-memory-instructions"
                     ? autoEval
                     : ScriptedJudge.layer,
                   scenario === "seatless-refuse" ? Layer.empty : SeatRouter.layer(routerCatalog)
@@ -425,7 +434,9 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
                 owner: { hostId: `fuzz-sess-${runCounter}` },
                 isAlive: () => Effect.succeed(false),
                 requestResume: (runId) =>
-                  Effect.suspend(() => resumes === undefined ? Effect.void : Effect.ignore(resumes.requestResume(runId)))
+                  Effect.suspend(() =>
+                    resumes === undefined ? Effect.void : Effect.ignore(resumes.requestResume(runId))
+                  )
               },
               StepBoundary.layer,
               WorkspaceSandbox.layerFileSystem(),
@@ -468,7 +479,9 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
               if (scenario === "seatless-refuse") {
                 return Result.isFailure(runRes) || runRes.success._tag !== "Accepted"
               }
-              if (Result.isFailure(runRes) || runRes.success._tag !== "Accepted" || runRes.success.runId === undefined) {
+              if (
+                Result.isFailure(runRes) || runRes.success._tag !== "Accepted" || runRes.success.runId === undefined
+              ) {
                 return false
               }
               const runId = runRes.success.runId
@@ -585,7 +598,9 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
 
             const seatsLayer = SeatResolver.layer({
               resolve: (id) =>
-                Effect.succeed(Seat.make({ id, modelId: Seat.modelIdOf(id), model, route, contextWindowTokens: 200_000 }))
+                Effect.succeed(
+                  Seat.make({ id, modelId: Seat.modelIdOf(id), model, route, contextWindowTokens: 200_000 })
+                )
             })
 
             const layers = Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)).pipe(
@@ -604,7 +619,9 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
             if (mode === "stall-max-frames") {
               if (Result.isSuccess(res)) return false
             } else {
-              if (Result.isFailure(res) || res.success.approved !== approved || res.success.count !== count) return false
+              if (Result.isFailure(res) || res.success.approved !== approved || res.success.count !== count) {
+                return false
+              }
             }
 
             // Budget policy, reserve, admitReading, record, check (USD + tokens + latency)
@@ -619,7 +636,8 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
             const vRead = yield* b.admitReading(`read-${execNum}`)
             yield* b.record(stepKey, { inputTokens: 80, outputTokens: 40, costUsd: 0.001 }).pipe(Effect.ignore)
             const vReplay = yield* b.check(stepKey)
-            return vCheck._tag !== undefined && vRes._tag !== undefined && vRead._tag !== undefined && vReplay._tag === "proceed"
+            return vCheck._tag !== undefined && vRes._tag !== undefined && vRead._tag !== undefined &&
+              vReplay._tag === "proceed"
           }).pipe(Effect.orDie),
         { seed: seed + 21, executions: Math.min(executions, 25) }
       )
@@ -769,7 +787,10 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
             )
             mkdirSync(join(root, "src"), { recursive: true })
             writeFileSync(join(root, "src", "parser.ts"), "export const parse = (s: string) => s.trim()\n")
-            writeFileSync(join(root, "package.json"), JSON.stringify({ name: "sample", dependencies: { effect: "4.0.0" } }))
+            writeFileSync(
+              join(root, "package.json"),
+              JSON.stringify({ name: "sample", dependencies: { effect: "4.0.0" } })
+            )
 
             const evalLayer = Evaluator.layerScripted((req) =>
               Object.fromEntries(Object.keys(req.questions).map((k) => [k, { probability: keepProb }]))
@@ -813,7 +834,8 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
 
               // MemorySnapshotRecorder
               const rec = MemorySnapshotRecorder.make(EngineLike.makeNoop())
-              return declared !== undefined && extractedPaths.length >= 1 && norm === "src/parser.ts" && badNorm === null && (Result.isSuccess(judged) || Result.isFailure(judged)) && rec !== undefined
+              return declared !== undefined && extractedPaths.length >= 1 && norm === "src/parser.ts" &&
+                badNorm === null && (Result.isSuccess(judged) || Result.isFailure(judged)) && rec !== undefined
             }).pipe(Effect.provide(Layer.mergeAll(memLayer, NodeServices.layer)), Effect.scoped, Effect.orDie)
           }),
         { seed: seed + 23, executions: Math.min(executions, 20) }
@@ -874,7 +896,10 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
             )
 
             return yield* Effect.gen(function*() {
-              const engine = yield* EngineStore.make({ owner: { hostId: "fuzz-children" }, journalSource: "fuzz-children" })
+              const engine = yield* EngineStore.make({
+                owner: { hostId: "fuzz-children" },
+                journalSource: "fuzz-children"
+              })
               const runStore = yield* RunStore.RunStore
 
               yield* engine.register(Worker, (p) => Effect.succeed(`done:${p.msg}`))
@@ -891,8 +916,7 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
                   yield* awaitRunRowStatus(runStore, spawned.child, "completed")
                   const waited = yield* children.await({ child: spawned.child })
                   return String(waited.output)
-                }).pipe(Effect.provideService(FlowRuntime.FlowRuntime, engine), Effect.orDie)
-              )
+                }).pipe(Effect.provideService(FlowRuntime.FlowRuntime, engine), Effect.orDie))
 
               const out = yield* engine.execute(Parent, { executionId: "parent-run-1", payload: {} })
               return typeof out === "string" && out.length > 0
@@ -932,7 +956,10 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
             const fittedSmall = SeatRouter.fit(planned, phase, ["sonnet"])
             if (fitted === undefined) return false
             void fittedSmall
-            const vText = SeatRouter.variantText([{ id: "sonnet", description: "fast", system: ["Be crisp."] }], "sonnet")
+            const vText = SeatRouter.variantText(
+              [{ id: "sonnet", description: "fast", system: ["Be crisp."] }],
+              "sonnet"
+            )
             const mPrompt = SeatRouter.mergePrompt("Build parser", [["opus", "Plan A"]], ["sol"])
             if (vText === undefined || vText.length === 0 || mPrompt.length === 0) return false
 
@@ -1051,7 +1078,10 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
               summary: "done",
               usage: { costUsd: 0.1 }
             }
-            const rows = new Map<string, { script: Array<AgentRunner.Outcome | "running">; standing: AgentRunner.Standing }>()
+            const rows = new Map<
+              string,
+              { script: Array<AgentRunner.Outcome | "running">; standing: AgentRunner.Standing }
+            >()
             const jobsSvc = AgentRunner.AgentJobs.of({
               start: (_task, key) =>
                 Effect.sync(() => {
@@ -1084,7 +1114,10 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
                 }),
               cancel: (key) =>
                 Effect.sync(() => {
-                  rows.set(key, { script: [], standing: { _tag: "Ended", outcome: { _tag: "Cancelled", processTreeGone: true } } })
+                  rows.set(key, {
+                    script: [],
+                    standing: { _tag: "Ended", outcome: { _tag: "Cancelled", processTreeGone: true } }
+                  })
                 })
             })
 
@@ -1127,7 +1160,9 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
             }).pipe(Effect.provide(extLayer))
 
             if (Exit.isFailure(extRes)) return false
-            if ((extOutcome === "done" || extOutcome === "retry-then-done") && Result.isFailure(extRes.value)) return false
+            if (
+              (extOutcome === "done" || extOutcome === "retry-then-done") && Result.isFailure(extRes.value)
+            ) return false
             if ((extOutcome === "failed" || extOutcome === "cancelled") && Result.isSuccess(extRes.value)) return false
             return true
           }),
@@ -1248,7 +1283,13 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
               files: { ".smithers/flows/promoted-flow/flow.ts": "export default ({ name: \"promoted-flow\" })" }
             })
             if (wRes === undefined || lsRes === undefined || pShow === undefined || pWrite === undefined) return false
-            void eRes; void gRes; void grRes; void bRes; void tRes; void jRes; void aRes
+            void eRes
+            void gRes
+            void grRes
+            void bRes
+            void tRes
+            void jRes
+            void aRes
 
             // Budget with memoryLedger, daily cap, usd, tokens, latency, onExceeded variants
             const ledger = Budget.memoryLedger()
@@ -1270,7 +1311,8 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
             const v2 = yield* Effect.result(Effect.scoped(b.reserve("k2")))
             const vRead = yield* Effect.result(b.admitReading("r2"))
             if (v1._tag === undefined) return false
-            void v2; void vRead
+            void v2
+            void vRead
 
             // MemoryMine.write & MemoryMine.settle over real TestMemory
             const memLayer = TestMemory.layer
@@ -1334,7 +1376,19 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
               // 1. Budget.policyFromEnvelope + raise + raisedBy
               const baseBudget = { tokens: 1_000, usd: 0.5, milliseconds: 30_000, onExceeded }
               const envPolicy = Budget.policyFromEnvelope({ capabilities: [], flows: [], budget: baseBudget })
-              const raised = raiseDelta > 0 ? Budget.raise(baseBudget, new Budget.BudgetExceeded({ scope: "tokens", onExceeded, used: 1_000, max: 1_000, next: 1_000 + raiseDelta, message: "budget exceeded" })) : baseBudget
+              const raised = raiseDelta > 0
+                ? Budget.raise(
+                  baseBudget,
+                  new Budget.BudgetExceeded({
+                    scope: "tokens",
+                    onExceeded,
+                    used: 1_000,
+                    max: 1_000,
+                    next: 1_000 + raiseDelta,
+                    message: "budget exceeded"
+                  })
+                )
+                : baseBudget
               const policy: Budget.Policy = {
                 tokens: { max: 400, onExceeded },
                 usd: { max: 0.05, onExceeded },
@@ -1369,7 +1423,15 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
                   const u2 = yield* b2.usageOf(runId)
                   const replayCheck = yield* b2.check("s1")
                   const trace = yield* StepTrace.make(journal)
-                  const stepObj = { executionId: runId, stepId: "a".repeat(64), attempt: 1, action: "agent/test", ask: 0 as const, retry: 1, scope: "main" }
+                  const stepObj = {
+                    executionId: runId,
+                    stepId: "a".repeat(64),
+                    attempt: 1,
+                    action: "agent/test",
+                    ask: 0 as const,
+                    retry: 1,
+                    scope: "main"
+                  }
                   yield* trace.emit(
                     new AgentEvent.Resolved({
                       eventType: AgentEvent.eventType.resolved,
@@ -1377,10 +1439,10 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
                     }),
                     stepObj
                   ).pipe(Effect.ignore)
-                  void raised; void over
+                  void raised
+                  void over
                   return u1.tokens > 0 && u2.tokens === u1.tokens && replayCheck._tag === "proceed"
-                }).pipe(Effect.orDie)
-              )
+                }).pipe(Effect.orDie))
               const flowOk = yield* rt.execute(BudgetFlow, { executionId: runId, payload: {} })
               if (!flowOk) return false
 
@@ -1430,7 +1492,8 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
                 namespace: "repo/fuzz",
                 query: "SQLite checkpoints"
               })
-              void remOut; void recOut
+              void remOut
+              void recOut
 
               // StepTrace already exercised inside BudgetFlow above
 
@@ -1471,7 +1534,11 @@ describe("@smthrs/agent session, action, memory, children & adapter fuzz invaria
               void pending
 
               return true
-            }).pipe(Effect.provide(Layer.mergeAll(journalLayer, memLayer, FlowEngine.layerMemory, NodeCrypto.layer)), Effect.scoped, Effect.orDie)
+            }).pipe(
+              Effect.provide(Layer.mergeAll(journalLayer, memLayer, FlowEngine.layerMemory, NodeCrypto.layer)),
+              Effect.scoped,
+              Effect.orDie
+            )
           }),
         { seed: seed + 27, executions: Math.min(executions, 12) }
       )

@@ -306,7 +306,6 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
-
 const bench = Smithers.VitestBench({
   benches: [Smithers.glob("test/**/*.bench.{ts,vibe}")],
   sources: [

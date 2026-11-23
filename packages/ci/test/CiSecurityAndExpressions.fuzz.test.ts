@@ -26,7 +26,20 @@ describe("@smthrs/ci Expression, Jail, Environment & Failures fuzz invariants", 
           Schema.Null
         ]),
         op: Schema.Literals(["==", "!=", "<", "<=", ">", ">=", "&&", "||"]),
-        fnKind: Schema.Literals(["contains", "startsWith", "endsWith", "format", "join", "toJSON", "fromJSON", "hashFiles", "success", "always", "failure", "cancelled"]),
+        fnKind: Schema.Literals([
+          "contains",
+          "startsWith",
+          "endsWith",
+          "format",
+          "join",
+          "toJSON",
+          "fromJSON",
+          "hashFiles",
+          "success",
+          "always",
+          "failure",
+          "cancelled"
+        ]),
         dynamic: Schema.Boolean,
         rawExpr: Schema.String.check(Schema.isMaxLength(64))
       })
@@ -43,7 +56,11 @@ describe("@smthrs/ci Expression, Jail, Environment & Failures fuzz invariants", 
               context: (name) => {
                 if (name === "inputs") {
                   return Expression.fields((field) => {
-                    if (field === "a") return dynamic ? Expression.variable("v-a", "inputs.a") : Expression.value(safeLhs)
+                    if (field === "a") {
+                      return dynamic
+                        ? Expression.variable("v-a", "inputs.a")
+                        : Expression.value(safeLhs)
+                    }
                     if (field === "b") return Expression.value(safeRhs)
                     if (field === "arr") return Expression.value([safeLhs, safeRhs])
                     if (field === "json") return Expression.value(JSON.stringify({ x: safeLhs }))
@@ -77,7 +94,12 @@ describe("@smthrs/ci Expression, Jail, Environment & Failures fuzz invariants", 
                 ...scope,
                 context: (name) =>
                   name === "inputs"
-                    ? Expression.fields((field) => (field === "a" ? Expression.value(safeLhs) : field === "b" ? Expression.value(safeRhs) : undefined))
+                    ? Expression.fields((field) => (field === "a"
+                      ? Expression.value(safeLhs)
+                      : field === "b"
+                      ? Expression.value(safeRhs)
+                      : undefined)
+                    )
                     : undefined
               }
               const staticRes = Expression.evaluate(exprText, staticScope)
@@ -88,24 +110,23 @@ describe("@smthrs/ci Expression, Jail, Environment & Failures fuzz invariants", 
               if (!Array.isArray(vars)) return false
             }
 
-            const fnExpr =
-              fnKind === "contains"
-                ? "contains(inputs.arr, inputs.b)"
-                : fnKind === "startsWith"
-                  ? "startsWith(inputs.a, inputs.b)"
-                  : fnKind === "endsWith"
-                    ? "endsWith(inputs.a, inputs.b)"
-                    : fnKind === "format"
-                      ? "format('v={0},b={1}', inputs.a, inputs.b)"
-                      : fnKind === "join"
-                        ? "join(inputs.arr, ',')"
-                        : fnKind === "toJSON"
-                          ? "toJSON(inputs.arr)"
-                          : fnKind === "fromJSON"
-                            ? "fromJSON(inputs.json)"
-                            : fnKind === "hashFiles"
-                              ? "hashFiles('package.json')"
-                              : `${fnKind}()`
+            const fnExpr = fnKind === "contains"
+              ? "contains(inputs.arr, inputs.b)"
+              : fnKind === "startsWith"
+              ? "startsWith(inputs.a, inputs.b)"
+              : fnKind === "endsWith"
+              ? "endsWith(inputs.a, inputs.b)"
+              : fnKind === "format"
+              ? "format('v={0},b={1}', inputs.a, inputs.b)"
+              : fnKind === "join"
+              ? "join(inputs.arr, ',')"
+              : fnKind === "toJSON"
+              ? "toJSON(inputs.arr)"
+              : fnKind === "fromJSON"
+              ? "fromJSON(inputs.json)"
+              : fnKind === "hashFiles"
+              ? "hashFiles('package.json')"
+              : `${fnKind}()`
             const fnEval = Expression.evaluate(fnExpr, scope)
             if (typeof fnEval.kind !== "string") return false
 
@@ -176,17 +197,17 @@ describe("@smthrs/ci Expression, Jail, Environment & Failures fuzz invariants", 
 
             const jailCfg: Jail.Jail | undefined = hasJail
               ? {
-                  bwrap: "/usr/bin/bwrap",
-                  masks: [
-                    { path: `${homeDir}/.ssh`, directory: true },
-                    { path: `${homeDir}/.npmrc`, directory: false }
-                  ],
-                  tmp: "/tmp/replay-tmp",
-                  temporary: temps,
-                  visible: ["/usr/bin"],
-                  filter: "/tmp/seccomp.bpf",
-                  scope: hasScope ? "/usr/bin/perl" : undefined
-                }
+                bwrap: "/usr/bin/bwrap",
+                masks: [
+                  { path: `${homeDir}/.ssh`, directory: true },
+                  { path: `${homeDir}/.npmrc`, directory: false }
+                ],
+                tmp: "/tmp/replay-tmp",
+                temporary: temps,
+                visible: ["/usr/bin"],
+                filter: "/tmp/seccomp.bpf",
+                scope: hasScope ? "/usr/bin/perl" : undefined
+              }
               : undefined
 
             const cmd = Jail.jailed(jailCfg, ["/tmp/work"], ["/tmp/work/node_modules"], ["echo", "hello"])
@@ -227,7 +248,10 @@ describe("@smthrs/ci Expression, Jail, Environment & Failures fuzz invariants", 
               tmp: "/tmp/place/tmp",
               guard: "/tmp/place/guard"
             }
-            const daemonEnv = Environment.daemonEnvironment(allowDocker, dockerHost === null ? {} : { DOCKER_HOST: dockerHost })
+            const daemonEnv = Environment.daemonEnvironment(
+              allowDocker,
+              dockerHost === null ? {} : { DOCKER_HOST: dockerHost }
+            )
             if (!allowDocker && "DOCKER_HOST" in daemonEnv) return false
             if (allowDocker && dockerHost !== null && daemonEnv["DOCKER_HOST"] !== dockerHost) return false
 
@@ -288,8 +312,8 @@ describe("@smthrs/ci Expression, Jail, Environment & Failures fuzz invariants", 
             const stderr = hasErrorKeyword
               ? `${ansiPrefix}Error: ${rawStderr}${ansiSuffix}`
               : exitCode === 127
-                ? "sh: 1: nonexistent_tool_xyz: not found"
-                : `${ansiPrefix}${rawStderr}${ansiSuffix}`
+              ? "sh: 1: nonexistent_tool_xyz: not found"
+              : `${ansiPrefix}${rawStderr}${ansiSuffix}`
 
             const cleaned = Failures.readable(stderr)
             if (cleaned.includes("\u001b[")) return false

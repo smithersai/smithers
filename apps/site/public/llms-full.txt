@@ -2432,10 +2432,10 @@ The recoverable topology issues recorded during the build, such as a missing con
 
 ### `HumanTask.Kind`
 
-- **Type:** `"ask" | "confirm" | "select" | "json"` as a type, and `Schema.Literals(["ask", "confirm", "select", "json"])` as a schema
+- **Type:** `"ask" | "confirm" | "select" | "rank" | "json"` as a type, and `Schema.Literals(["ask", "confirm", "select", "rank", "json"])` as a schema
 - **Since:** `0.1.0`
 
-The shape a person is asked for. `ask` wants prose, `confirm` wants a boolean, `select` wants one of the options the task names, and `json` wants a value the task's JSON Schema accepts.
+The shape a person is asked for. `ask` wants prose, `confirm` wants a boolean, `select` wants one of the options the task names, `rank` wants every one of those options exactly once in the person's order, and `json` wants a value the task's JSON Schema accepts.
 
 ### `HumanTask.HumanTaskFailed`
 
@@ -2562,14 +2562,28 @@ The largest encoded prompt.
 - **Type:** `256`
 - **Since:** `1.0.0`
 
-The largest option list on one select question.
+The largest option list on one select or rank question.
 
 ### `HumanTask.maxOptionBytes`
 
 - **Type:** `4 * 1024`
 - **Since:** `1.0.0`
 
-The largest encoded select option.
+The largest encoded select or rank option, and the largest encoded principal.
+
+### `HumanTask.maxAllowedPrincipals`
+
+- **Type:** `64`
+- **Since:** `1.0.0`
+
+The most principals one question may narrow its answerers to.
+
+### `HumanTask.isPrincipalAllowed`
+
+- **Signature:** `isPrincipalAllowed(principal: string, allowedPrincipals?: ReadonlyArray<string>): boolean`
+- **Since:** `1.0.0`
+
+Whether a question's own allow-list lets `principal` answer it. Returns `true` when `allowedPrincipals` is `undefined`, and otherwise exact string membership. The check narrows and never widens: a host requires its own authorization and this check before it calls `HumanTask.answer`, which is never told who is calling and does not enforce the list.
 
 ### `HumanTask.maxAttemptBudget`
 
@@ -12165,12 +12179,18 @@ when a yieldable error instance is required.
 also exported by `@smthrs/kernel/CapabilitySet`. `current` reads the fiber's
 ceiling. `attenuate(patterns)(effect)` intersects one any-of group;
 `attenuateGroups(groups)(effect)` intersects every group, including persisted
-ceilings during recovery. Neither can widen the current authority. An empty
-outer array inherits; an empty group denies all capabilities. `fromPatterns`,
-`fromGroups`, `intersect`, `allows`, `equals`, and `none` operate on the same
-immutable values. `within(inner, outer)` conservatively proves that `inner`
-allows nothing `outer` rejects; it answers `false` when it cannot prove it, so
-unrestricted authority is within only unrestricted authority.
+ceilings during recovery. Neither can widen the current authority, and both
+snapshot their inputs eagerly when called. An empty outer array inherits; an
+empty group denies all capabilities. `fromPatterns`, `fromGroups`, `intersect`,
+`allows`, `equals`, and `none` operate on deeply frozen, module-authenticated
+values; unverified objects fail closed (`allows`/`equals`/`within` return
+`false`, `intersect` returns `none`). `within(inner, outer)` conservatively
+proves that `inner` allows nothing `outer` rejects; it answers `false` when it
+cannot prove it, so unrestricted authority is within only unrestricted
+authority. The ambient ceiling uses a private `Symbol` key, an opaque minted
+seal, active fiber frames, and monotone service attenuation so forged
+references, context stripping, and `ctx.mapUnsafe` tampering cannot widen an
+attenuated scope.
 
 ---
 
@@ -13806,27 +13826,35 @@ and authentication failures.
 | Export      | Kind      | Signature                                                                                                                                              |
 | ----------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `Control`   | class     | `Context.Service<Control, Service>` at key `/control/Control`                                                                                          |
-| `Service`   | interface | The ten operations in the following table                                                                                                              |
+| `Service`   | interface | The eleven operations in the following table                                                                                                           |
 | `make`      | function  | `(implementation: Service) => Service`                                                                                                                 |
 | `layerNoop` | layer     | `Layer<Control>`. Every operation fails `Unavailable`, naming the verb as `feature` and the constant `control-runtime-engine-integration` as `ticket`. |
 
 ### Service
 
-| Operation | Signature                                                                                                                                                                                                                                                  | Returns                                                                                                       |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `plan`    | `(input: PlanInput) => Effect<PlanCard, FlowNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                                                | The reviewable card, whether or not this call created it.                                                     |
-| `run`     | `(input: RunInput) => Effect<Receipt, RunNotFound \| PlanNotFound \| PlanDenied \| PlanDigestMismatch \| EnvelopeMismatch \| ClaimLost \| CodeDrift \| InvalidInput \| LaunchFailed \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>` | `Accepted`, `AlreadyApplied`, `Conflict`, or `Parked` for a plan; a resume answers as `resume` does.          |
-| `approve` | `(input: ApprovalInput) => Effect<Receipt, PlanDigestMismatch \| EnvelopeMismatch \| AlreadyResolved \| PlanNotFound \| RunNotFound \| CodeDrift \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                    | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                      |
-| `deny`    | same as `approve`                                                                                                                                                                                                                                          | same as `approve`.                                                                                            |
-| `steer`   | `(input: SteerInput) => Effect<Receipt, NotificationError \| RunNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                            | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                      |
-| `signal`  | `(input: SignalInput) => Effect<Receipt, RunNotFound \| NoMatchingWait \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                              | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                      |
-| `cancel`  | `(input: RunMutationInput) => Effect<Receipt, RunNotFound \| ClaimLost \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                              | `Accepted`, `Conflict`, or `Terminal`. Re-executes matching requests; preserves recorded conflicts.           |
-| `resume`  | `(input: RunMutationInput) => Effect<Receipt, RunNotFound \| ClaimLost \| CodeDrift \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                 | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                      |
-| `list`    | `(input: ListRequest) => Effect<ListResponse, ControlError>`                                                                                                                                                                                               | A bounded page of flows, runs, triggers, or trigger fires, or exact run-scoped native execution observations. |
-| `watch`   | `(filter: WatchFilter) => Stream<ControlEvent, ControlError>`                                                                                                                                                                                              | Committed journal entries, plus the deltas the plane derives.                                                 |
+| Operation | Signature                                                                                                                                                                                                                                                  | Returns                                                                                                        |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `plan`    | `(input: PlanInput) => Effect<PlanCard, FlowNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                                                | The reviewable card, whether or not this call created it.                                                      |
+| `run`     | `(input: RunInput) => Effect<Receipt, RunNotFound \| PlanNotFound \| PlanDenied \| PlanDigestMismatch \| EnvelopeMismatch \| ClaimLost \| CodeDrift \| InvalidInput \| LaunchFailed \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>` | `Accepted`, `AlreadyApplied`, `Conflict`, or `Parked` for a plan; a resume answers as `resume` does.           |
+| `approve` | `(input: ApprovalInput) => Effect<Receipt, PlanDigestMismatch \| EnvelopeMismatch \| AlreadyResolved \| PlanNotFound \| RunNotFound \| CodeDrift \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                    | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                       |
+| `deny`    | same as `approve`                                                                                                                                                                                                                                          | same as `approve`.                                                                                             |
+| `steer`   | `(input: SteerInput) => Effect<Receipt, NotificationError \| RunNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                            | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                       |
+| `signal`  | `(input: SignalInput) => Effect<Receipt, RunNotFound \| NoMatchingWait \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                              | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                       |
+| `cancel`  | `(input: RunMutationInput) => Effect<Receipt, RunNotFound \| ClaimLost \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                              | `Accepted`, `Conflict`, or `Terminal`. Re-executes matching requests; preserves recorded conflicts.            |
+| `pause`   | `(input: PauseInput) => Effect<Receipt, RunNotFound \| ClaimLost \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                                    | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`. Parks a running run without cancelling or failing it. |
+| `resume`  | `(input: RunMutationInput) => Effect<Receipt, RunNotFound \| ClaimLost \| CodeDrift \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                 | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                                       |
+| `list`    | `(input: ListRequest) => Effect<ListResponse, ControlError>`                                                                                                                                                                                               | A bounded page of flows, runs, triggers, or trigger fires, or exact run-scoped native execution observations.  |
+| `watch`   | `(filter: WatchFilter) => Stream<ControlEvent, ControlError>`                                                                                                                                                                                              | Committed journal entries, plus the deltas the plane derives.                                                  |
 
-There is no `pause`. An operator park is written through
-`ControlRuntime.writeStatus(runId, fence, "parked")`.
+`pause` parks a run this process is running. The executor parks the execution
+first, then the control row moves to `parked` with no `waitingReason` and the
+journal records `control.run.paused` (the stamped principal and the reason)
+followed by `control.run.parked`. `resume` restarts the run. A run that is
+already parked or waiting fails `InvalidInput`, a run another process holds
+fails `ClaimLost`, and a composition with no executor, or one whose executor
+has no `pause`, fails `Unavailable`. A refused pause changes nothing. A repeat
+of the same key and intent answers `AlreadyApplied`, and a settled run answers
+`Terminal` first.
 
 ### Inputs
 
@@ -13838,6 +13866,7 @@ There is no `pause`. An operator park is written through
 | `SteerInput`       | `{ runId: RunId; message: SteerMessage; idempotencyKey: IdempotencyKey }`.                                                                                                                                    |
 | `SignalInput`      | `{ runId: RunId; signal: SignalPayload; idempotencyKey: IdempotencyKey; principal?: Principal }`.                                                                                                             |
 | `RunMutationInput` | `{ runId: RunId; idempotencyKey: IdempotencyKey; reason?: string; principal?: Principal; allowCodeDrift?: boolean; reader?: Principal }`. `reason` is recorded on the journal entry the mutation writes.      |
+| `PauseInput`       | `{ runId: RunId; idempotencyKey: IdempotencyKey; reason?: string; principal?: Principal }`. `reason` is recorded on the `control.run.paused` journal entry.                                                   |
 
 `ApprovalTarget` is re-exported from `ControlSchema` for convenience.
 
@@ -14017,7 +14046,8 @@ grant fact may replace that target; matching decisions still close the wait.
 
 `PlanInputSchema`, `RunInputSchema`, `ApprovalInputSchema`,
 `SteerInputSchema`, `SignalInputSchema`, `RunMutationInputSchema`,
-`ReasonedMutationInputSchema`, and `CancelInputSchema` are the wire forms.
+`ReasonedMutationInputSchema`, `CancelInputSchema`, and `PauseInputSchema` are
+the wire forms.
 `PlanInputSchema` takes `Schema.Json` where the local contract takes `unknown`.
 `ReasonedMutationInputSchema` adds `reason` and omits `principal`, because the
 server stamps the identity it authenticated. `CancelInputSchema` is a named
@@ -14132,15 +14162,15 @@ terminal transition, and translates conflicts into typed failures.
 
 ### Service
 
-| Group             | Members                                                                                                                                                                         |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plans             | `plan(input: PlanInput) => Effect<PlanOutcome, FlowNotFound \| InvalidInput \| PersistenceError>`, `getPlan(planId)`, `listPlanIds`                                             |
-| Approvals         | `authorizeApproval(request)`, `lookupApproval(target)`, `registerApproval(nodeTarget)`, `resolveApproval(token, decision, principal, scope?)`                                   |
-| Runs              | `launch(planId, digest, envelope) => Effect<LaunchResult, ...>`, `getRun(runId)`, `queryRuns({ filters?, cursor?, limit })`, `listRuns`, `listFlows`                            |
-| Signal history    | `deliveredSignals(runId)`                                                                                                                                                       |
-| Resume delegation | `requestResume(runId) => Effect<number, ...>`, `pendingResumes`, `clearResume(runId, sequence)`                                                                                 |
-| Ownership         | `registerFiber(runId, fiber)`, `interrupt(runId, settle?)`, `resume(runId, options?)`, `claimFence(runId)`, `releasePending(runId, fence)`, `writeStatus(runId, fence, status)` |
-| Identity          | `stampPrincipal(submitted?)`, `lookupMutation(key, fingerprint)`, `recordMutation(key, fingerprint, receipt)`                                                                   |
+| Group             | Members                                                                                                                                                                                         |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plans             | `plan(input: PlanInput) => Effect<PlanOutcome, FlowNotFound \| InvalidInput \| PersistenceError>`, `getPlan(planId)`, `listPlanIds`                                                             |
+| Approvals         | `authorizeApproval(request)`, `lookupApproval(target)`, `registerApproval(nodeTarget)`, `resolveApproval(token, decision, principal, scope?)`                                                   |
+| Runs              | `launch(planId, digest, envelope) => Effect<LaunchResult, ...>`, `getRun(runId)`, `queryRuns({ filters?, cursor?, limit })`, `listRuns`, `listFlows`                                            |
+| Signal history    | `deliveredSignals(runId)`                                                                                                                                                                       |
+| Resume delegation | `requestResume(runId) => Effect<number, ...>`, `pendingResumes`, `clearResume(runId, sequence)`                                                                                                 |
+| Ownership         | `registerFiber(runId, fiber)`, `interrupt(runId, settle?)`, `pause(runId)`, `resume(runId, options?)`, `claimFence(runId)`, `releasePending(runId, fence)`, `writeStatus(runId, fence, status)` |
+| Identity          | `stampPrincipal(submitted?)`, `lookupMutation(key, fingerprint)`, `recordMutation(key, fingerprint, receipt)`                                                                                   |
 
 `queryRuns` accepts `RunQuery`: optional `flowId`, `status`, `terminal`,
 `parentRunId`, `lineageId`, `since` (inclusive creation epoch ms), `until`
@@ -14316,6 +14346,7 @@ engine observations. Mutation methods remain refused.
 | `requestCancel`       | `(input: CancelRequest) => Effect<CancelRecord, PersistenceError>`                                                                                            |
 | `deliverSignal`       | `(input: Signal) => Effect<SignalDelivery, PersistenceError>`                                                                                                 |
 | `resumeRun`           | `(input: ResumeRequest) => Effect<ResumeUptake, PersistenceError>`                                                                                            |
+| `pause`               | Optional `(runId: RunId, reason?: string) => Effect<void, ControlError>`. Parks an active execution without cancelling or failing it. Since 1.0.0.            |
 | `settleCancelledPark` | `(input: CancelRequest) => Effect<void, PersistenceError>`                                                                                                    |
 
 ### Models
@@ -14382,22 +14413,22 @@ than the page needs. `TriggersRequest` and `FiresRequest` are the two
 
 The schema-backed RPC projection of the service.
 
-| Export                | Kind      | Meaning                                                                                                                                                           |
-| --------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ControlRpcs`         | group     | Ten procedures: `Plan`, `Run`, `Approve`, `Deny`, `Steer`, `Signal`, `Cancel`, `Resume`, `List`, and the streaming `Watch`. Carries the `ControlAuth` middleware. |
-| `ControlPrincipal`    | class     | The authenticated principal, provided to every handler. Key `/control/ControlPrincipal`.                                                                          |
-| `ControlAuth`         | class     | The middleware boundary. Key `/control/ControlAuth`, error `Unauthorized`.                                                                                        |
-| `Call`                | interface | `{ rpc: string; payload: unknown }`: the frame a boundary is authenticating, absent at a transport edge.                                                          |
-| `Authenticator`       | interface | `{ authenticate: (headers: Record<string, string>, call?: Call) => Effect<Principal, Unauthorized> }`                                                             |
-| `BearerAuthOptions`   | interface | `{ token: string; principal: Omit<Principal, "stampedAt">; now?: () => number }`                                                                                  |
-| `bearerCredential`    | function  | `(headers) => string \| undefined`. The bearer a request carries, or nothing.                                                                                     |
-| `bearerAuthenticator` | function  | `(options: BearerAuthOptions) => Authenticator`. Constant-time comparison; missing, malformed, empty, and incorrect credentials all fail closed identically.      |
-| `anyAuthenticator`    | function  | `(authenticators: ReadonlyArray<Authenticator>) => Authenticator`. The first to accept answers; none accepting fails with the last refusal.                       |
-| `layerAuth`           | layer     | `(authenticator: Authenticator) => Layer<ControlAuth>`                                                                                                            |
-| `layerBearerAuth`     | layer     | `(options: BearerAuthOptions) => Layer<ControlAuth>`                                                                                                              |
-| `layerNoopAuth`       | layer     | `(principal?: Principal) => Layer<ControlAuth>`. Authenticates nothing.                                                                                           |
-| `ControlDefect`       | schema    | The defect schema of every procedure. Encodes every defect as `{ name: "Error", message: defectMessage }`; decodes like `Schema.Defect()`.                        |
-| `defectMessage`       | constant  | `"Something went wrong on our side. Not your fault."`                                                                                                             |
+| Export                | Kind      | Meaning                                                                                                                                                                       |
+| --------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ControlRpcs`         | group     | Eleven procedures: `Plan`, `Run`, `Approve`, `Deny`, `Steer`, `Signal`, `Cancel`, `Pause`, `Resume`, `List`, and the streaming `Watch`. Carries the `ControlAuth` middleware. |
+| `ControlPrincipal`    | class     | The authenticated principal, provided to every handler. Key `/control/ControlPrincipal`.                                                                                      |
+| `ControlAuth`         | class     | The middleware boundary. Key `/control/ControlAuth`, error `Unauthorized`.                                                                                                    |
+| `Call`                | interface | `{ rpc: string; payload: unknown }`: the frame a boundary is authenticating, absent at a transport edge.                                                                      |
+| `Authenticator`       | interface | `{ authenticate: (headers: Record<string, string>, call?: Call) => Effect<Principal, Unauthorized> }`                                                                         |
+| `BearerAuthOptions`   | interface | `{ token: string; principal: Omit<Principal, "stampedAt">; now?: () => number }`                                                                                              |
+| `bearerCredential`    | function  | `(headers) => string \| undefined`. The bearer a request carries, or nothing.                                                                                                 |
+| `bearerAuthenticator` | function  | `(options: BearerAuthOptions) => Authenticator`. Constant-time comparison; missing, malformed, empty, and incorrect credentials all fail closed identically.                  |
+| `anyAuthenticator`    | function  | `(authenticators: ReadonlyArray<Authenticator>) => Authenticator`. The first to accept answers; none accepting fails with the last refusal.                                   |
+| `layerAuth`           | layer     | `(authenticator: Authenticator) => Layer<ControlAuth>`                                                                                                                        |
+| `layerBearerAuth`     | layer     | `(options: BearerAuthOptions) => Layer<ControlAuth>`                                                                                                                          |
+| `layerNoopAuth`       | layer     | `(principal?: Principal) => Layer<ControlAuth>`. Authenticates nothing.                                                                                                       |
+| `ControlDefect`       | schema    | The defect schema of every procedure. Encodes every defect as `{ name: "Error", message: defectMessage }`; decodes like `Schema.Defect()`.                                    |
+| `defectMessage`       | constant  | `"Something went wrong on our side. Not your fault."`                                                                                                                         |
 
 `List` and `Watch` declare the whole `ControlError` union rather than restating
 its members.
@@ -19077,7 +19108,7 @@ Four rules decide what a comparison reports, and none of them are obvious:
 | Code                  | Raised when                                                                                                                                | Who fixes it              |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |
 | `invalid_suite`       | The suite declaration is wrong: a name, a case, a concurrency, a fixture line, non-cloneable case data, or an undecidable sampling policy. | The suite author          |
-| `invalid_run_options` | `Runner.run`'s own options are wrong: an empty `runId`, or an `at` that is not a canonical UTC instant.                                    | The caller                |
+| `invalid_run_options` | Runner or optimizer options are invalid, such as an empty `runId` or a noncanonical UTC `at`.                                              | The caller                |
 | `invalid_baseline`    | The committed baseline is unreadable, holds a record the schema rejects, or belongs to another suite.                                      | Regenerate the baseline   |
 | `invalid_tolerance`   | A comparison tolerance is not a finite non-negative number.                                                                                | The caller                |
 | `invalid_trials`      | A `Trials` count, or `Runner.run`'s `trials` or `k`, is outside its bounds.                                                                | The caller                |
@@ -19085,14 +19116,17 @@ Four rules decide what a comparison reports, and none of them are obvious:
 | `ambiguous_score_job` | Two jobs share a step key and scorer, so an order-only runner cannot attribute their results to cases.                                     | The suite or batch runner |
 | `scorer_protocol`     | A batch runner returned the wrong number of observations, or observations identifying jobs other than the ones it was given.               | The batch runner          |
 | `scorer_unavailable`  | No batch runner was available, or a correlated runner reported a failed durable write.                                                     | The wiring                |
+| `no_scores`           | A prompt candidate produced no scored observations.                                                                                        | The suite or executor     |
+| `target_not_reached`  | The optimizer exhausted its budget below the target with `onMaxReached: "fail"`.                                                           | The caller                |
 
 Most failures carry a `path` locating the offending value: `cases[1].input`,
 `records[3].score`, `options.at`, `runBatch[0]`. A case whose target failed keeps
 the executor's own path when it named one and is located at `cases['<name>']`
-otherwise, so a failed case is always locatable. Only two failures carry no path:
-one about an artifact as a whole (`Baseline` is not JSON, or is not an object)
-and one about the absence of a runner (`scorer_unavailable`). A failed durable
-write also uses `scorer_unavailable`, with a `runBatchCorrelated[N]` path.
+otherwise, so a failed case is always locatable. A failed durable observation
+write uses `scorer_unavailable` with a `runBatchCorrelated[N]` path. The path can
+be omitted when a baseline artifact fails to parse as JSON or is a non-object,
+when a batch runner is unavailable, or when a failure concerns the whole
+optimization run.
 
 ## The batch protocol
 
@@ -19582,6 +19616,24 @@ const aggregate = (cases: Readonly<Record<string, ReadonlyArray<boolean>>>, k: n
   run passed. A case with fewer than `k` runs is summarized at `k = n`, and no
   cases aggregate to zeros. A case with no runs throws `invalid_trials`.
 
+### Optimize
+
+`Optimize.run(options)` evaluates successive prompts with `Runner.run` over
+the same suite. Pass a prompt-specific executor factory and an Effectful
+proposer. The proposer receives the best and current scores and prompts, the
+current run, and a snapshot of the chronological history. Iterations start at
+one and use run IDs of the form `<runIdPrefix>-<iteration>`.
+
+Every scored observation contributes equally to the mean. Inconclusive
+observations are skipped. A candidate with no scored observations fails with
+`no_scores`. The earliest candidate wins a tie.
+
+The result includes the best prompt, its score and run, and all evaluated
+attempts. It is tagged `Converged` once a candidate meets `targetScore`.
+By default, reaching `maxIterations` returns an `Exhausted` result.
+Set `onMaxReached: "fail"` with a target to fail with `target_not_reached`
+on exhaustion. Proposer errors propagate unchanged.
+
 ## Export index
 
 | Export                          | Category      | Summary                                                                         |
@@ -19648,6 +19700,15 @@ const aggregate = (cases: Readonly<Record<string, ReadonlyArray<boolean>>>, k: n
 | `Trials.passHatK`               | statistics    | The chance all `k` of `n` recorded runs pass.                                   |
 | `Trials.summarize`              | statistics    | Summarizes one case's run outcomes at `k`.                                      |
 | `Trials.aggregate`              | statistics    | Summarizes every case at `k` and averages over cases.                           |
+
+| Export                      | Category | Description                                                    |
+| --------------------------- | -------- | -------------------------------------------------------------- |
+| `Optimize.CandidateAttempt` | models   | One candidate's iteration, prompt, score, and run.             |
+| `Optimize.Options`          | models   | Suite, executor factory, proposer, and stopping policy.        |
+| `Optimize.ProposeContext`   | models   | Best and current candidate state available to the proposer.    |
+| `Optimize.Result`           | models   | The best candidate and complete history.                       |
+| `Optimize.meanScore`        | scoring  | Mean of scored observations, or undefined when there are none. |
+| `Optimize.run`              | runners  | Evaluate and propose prompts within a fixed budget.            |
 
 ## A worked suite
 
@@ -25283,7 +25344,7 @@ declare const layer: (
 | `overflow`         | `OverflowPolicy`     | required            | what a full admission queue does                                                                             |
 | `batchSize`        | `number`             | `min(capacity, 64)` | entries the queued writer commits per transaction; `stream` reads pages of `min(batchSize, maxEntriesLimit)` |
 | `sourceEventCache` | `number`             | `4096`              | upper bound on the in-process producer-idempotency index                                                     |
-| `maxEntryBytes`    | `number`             | unset               | largest single entry, in UTF-8 bytes of encoded `payload` plus `meta`                                        |
+| `maxEntryBytes`    | `number`             | `2,031,616`         | largest single entry, in UTF-8 bytes of encoded `payload` plus `meta`                                        |
 | `redact`           | `Redaction.Redactor` | `Redaction.make()`  | scrub applied before encoding                                                                                |
 | `compaction`       | `CompactionPolicy`   | unset               | automatic checkpoint-and-compact policy                                                                      |
 
@@ -25293,14 +25354,23 @@ Once a run's committed entry count reaches `entryThreshold`, the journal asks
 a checkpoint at that sequence, and compacts below it. A capture is interrupted
 after 30 seconds, and a failed or refused attempt is logged at warning, damped
 for `entryThreshold` further committed entries, and never surfaced to the emit
-that triggered it. The policy drives the internal unfenced channel, so it needs
-no owner.
+that triggered it. Every committed entry counts toward the threshold. The
+attempt runs only after a write an owner's fence admitted (`emitDurable`, or a
+flushed `emitDeferred` entry), under that owner's fence. `emitLossy` and
+`emitDurableUnfenced` never trigger it, and an owner that lost or released the
+run is refused with `fence_lost`.
 
 `capacity` bounds entries, never bytes. `maxEntryBytes` is checked after
 encoding and before any sequence is allocated, so an entry over the bound fails
-`invalid_event` and leaves no gap. It is unset by default because a running
-engine may legitimately write large payloads and a cap introduced under one
-would refuse writes that used to succeed.
+`invalid_event` and leaves no gap. It defaults to
+`SqlJournal.defaultMaxEntryBytes`, 2 MiB less 64 KiB (2,031,616 bytes). A sync
+server serves an entry in a frame of at most 2 MiB and measures the whole
+encoded entry, so the 64 KiB is room for the entry's envelope: an entry the
+journal admits always fits a default sync frame. An entry over a frame can be
+served to no follower, which is why the journal refuses it at the write. A
+host that raises `maxFrameBytes` on its sync server and clients raises
+`maxEntryBytes` with it and keeps the same margin. There is no unbounded
+setting.
 
 `sourceEventCache` bounds a cache, never the authority: the database unique
 constraint on `(run_id, source_id, source_seq)` stays authoritative, so a miss
@@ -25412,7 +25482,7 @@ The scrub applied to every `payload` and `meta` before persistence.
 | `Rule`                | `{ id, pattern, replace?, rewrite? }`            | one textual rule; `rewrite` for a value a regex cannot bound            |
 | `Options`             | `{ rules?, onTooDeep? }`                         | `onTooDeep` is `"throw"` (default) or `"name"`                          |
 | `defaultRules`        | `ReadonlyArray<Rule>`                            | the built-in credential shapes                                          |
-| `diagnosticRules`     | `ReadonlyArray<Rule>`                            | `defaultRules` plus the spellings too broad for a durable row           |
+| `diagnosticRules`     | `ReadonlyArray<Rule>`                            | `defaultRules` read further: longer values, any `-p`, any Bearer token  |
 | `redactDiagnostic`    | `(value: unknown) => unknown`                    | `redact` with `diagnosticRules`, naming a too-deep value                |
 | `lineRedactor`        | `(rules?: ReadonlyArray<Rule>) => LineRedactor`  | redacts a stream line by line, holding a value open across lines        |
 | `LineRedactor`        | `{ line, flush }`                                | `line` returns the lines safe to emit; `flush` ends the stream          |
@@ -25742,16 +25812,16 @@ Reads below a run's compaction floor fail with `compacted`. See
 
 ## Resource limits
 
-| Limit                                | Value                                                                  |
-| ------------------------------------ | ---------------------------------------------------------------------- |
-| admission queue and `changes` buffer | `capacity` entries                                                     |
-| one entry                            | `maxEntryBytes` UTF-8 bytes of `payload` plus `meta`, unset by default |
-| run ids, source ids, event types     | 1,024 UTF-16 code units                                                |
-| `Seq`, `SourceSeq`                   | below `Number.MAX_SAFE_INTEGER`                                        |
-| one `entries` page                   | `maxEntriesLimit`, 10,000 entries                                      |
-| producer-idempotency index           | `sourceEventCache` entries, default 4,096                              |
-| redaction traversal                  | `maxDepth`, 256 container edges                                        |
-| binary view walk                     | `binaryWalkLimit`, 65,536 bytes or own members                         |
+| Limit                                | Value                                                                      |
+| ------------------------------------ | -------------------------------------------------------------------------- |
+| admission queue and `changes` buffer | `capacity` entries                                                         |
+| one entry                            | `maxEntryBytes` UTF-8 bytes of `payload` plus `meta`, 2,031,616 by default |
+| run ids, source ids, event types     | 1,024 UTF-16 code units                                                    |
+| `Seq`, `SourceSeq`                   | below `Number.MAX_SAFE_INTEGER`                                            |
+| one `entries` page                   | `maxEntriesLimit`, 10,000 entries                                          |
+| producer-idempotency index           | `sourceEventCache` entries, default 4,096                                  |
+| redaction traversal                  | `maxDepth`, 256 container edges                                            |
+| binary view walk                     | `binaryWalkLimit`, 65,536 bytes or own members                             |
 
 A payload deeper than `Redaction.maxDepth` fails `invalid_event` rather than
 overflowing the stack, and the canonical encoder carries the same ceiling for a
@@ -26018,8 +26088,10 @@ const current: Effect.Effect<CapabilitySet>
 
 The current fiber's ceiling. A fiber that never passed through `attenuate`
 allows every capability, because unrestricted authority is the identity element
-of `intersect`. The backing reference is module-private, so no caller can
-replace the ambient set with a wider one.
+of `intersect`. `current` is a derived effect backed by a module-private
+`Symbol` slot, an opaque minted seal, and active fiber frames, so callers
+cannot widen, strip, or spoof the ceiling via forged references or context
+replacement.
 
 ### CapabilitySet.attenuate
 
@@ -26030,7 +26102,10 @@ const attenuate: (
 ```
 
 Runs the effect with the parent ceiling **intersected** with one more any-of
-group. This is the only way authority moves, and it only narrows.
+group. Patterns are snapshotted eagerly when called, and compliant services in
+`Context` (including `GrantStore`) are closure-attenuated in place so even
+detached fibers with stripped contexts stay within the ceiling. This is the
+only way authority moves, and it only narrows.
 
 ## GrantStore
 
@@ -26138,6 +26213,7 @@ A bulk approval. `scope` defaults to `"run"`.
 ```ts
 interface MakeOptions {
   readonly attended?: boolean | undefined
+  readonly bindCeiling?: boolean | undefined
   readonly rules?: ReadonlyArray<Rule> | ReadonlyArray<ReadonlyArray<Rule>> | undefined
   readonly runRules?:
     | ReadonlyArray<
@@ -26155,7 +26231,10 @@ interface MakeOptions {
 }
 ```
 
-`attended` defaults to `true`. A flat `rules` value is the configured policy; a
+`attended` defaults to `true`. `bindCeiling` defaults to `false`; setting it to
+`true` binds checks, `policy`, `list`, `reply`, and `grantEnvelope` to the
+ceiling active when `make` runs, even when the returned store is used from a
+wider or stripped caller. A flat `rules` value is the configured policy; a
 nested one has configured policy first and replayed remembered grants after.
 `envelopeSignatures` names envelopes that are already durable, so a matching
 construction envelope activates without being persisted again.
@@ -26193,7 +26272,25 @@ const makeNoop: Service
 const layerNoop: Layer.Layer<GrantStore>
 ```
 
-An explicit allow-all seam for tests and boot paths. Not a production policy.
+A ceiling-enforcing allow-all seam for tests and boot paths: it skips
+permission rules while still checking the ambient and closure-bound capability
+ceiling. Not a production policy.
+
+### GrantStore.attenuated and GrantStore.bindCeiling
+
+```ts
+const attenuated: (service: Service, ceiling: CapabilitySet) => Service
+const bindCeiling: <A, E, R>(
+  effect: Effect.Effect<A, E, R>
+) => Effect.Effect<A, E, R | GrantStore>
+```
+
+`attenuated` returns a frozen view of `service` whose ceiling is bound in a
+closure. Checks, `policy`, `list`, `reply`, and `grantEnvelope` all stay within
+the bound on every fiber (including detached fibers with stripped contexts).
+Unverified `ceiling` values fail closed to empty authority. `bindCeiling`
+rebinds the ambient `GrantStore` in `Context` to an `attenuated` view of the
+calling fiber's current ceiling.
 
 ### GrantStore.canonicalEnvelopePatterns
 
@@ -28371,8 +28468,8 @@ See the [`@smthrs/patterns` reference](/docs/reference/api/patterns/) and its [d
 These are the answers that surprise callers most often.
 
 - `listNotes` defaults `status` to `"accepted"`. Pending and rejected notes are hidden unless you ask for them by name or pass `"any"`.
-- A message id is unique within its thread, not globally. The same id in two threads is two messages. A same-thread retry whose `role`, `text`, or `at` differs fails with `idempotency_conflict` and a path to the first field that differs.
-- `appendMessage` creates a missing thread for you, in the `global` namespace under the id `history`. Call `createThread` first when the thread belongs somewhere else.
+- A note id and a thread id are unique within their namespace, and a message id within its thread. The same note id in two namespaces is two notes, and the same message id in two threads is two messages. `getNote`, `setNoteStatus`, `supersede`, and every thread and message call name the namespace and never reach another one. A same-thread retry whose `role`, `text`, or `at` differs fails with `idempotency_conflict` and a path to the first field that differs.
+- `appendMessage` creates a missing thread for you, in the namespace the append names. Call `createThread` first to give the thread a title or metadata.
 - `maxTokens` is a UTF-8 byte ceiling over the serialized result array, not a token count. Bytes conservatively bound tokens without committing the package to one model's tokenizer. `Source.Input.maxBytes` is a separate ceiling on the rendered snapshot.
 - `capRecallResults` drops rows with empty text before it fills the budget.
 - Fact values are stored as JSON, so the value `getFact` returns is the value `JSON.stringify` produced: `NaN` and `Infinity` become `null`, `undefined`, function, and symbol members disappear, and sparse arrays collapse. The value is serialized once at API entry, and the stored JSON, the search text, the retained tags, and any vector projection all come from that one snapshot.
@@ -28512,7 +28609,7 @@ The `mode`, `onConflict`, and `tier` values in the two effect declarations below
 | `limitHistory`         | `(options) => Effect<TokenLimiterResult, MemoryError, MemoryStore>`         | Deletes the oldest messages in every thread until each thread fits the approximate budget `maxTokens * charsPerToken` characters.                                                                                                                                                                                                                                                                                                                                                                                       |
 | `SummarizerInput`      | interface                                                                   | `{ threadId, messages, rendered }`: the old messages and their rendered `role: text` lines.                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `Summarizer`           | interface                                                                   | `{ summarize(input): Effect<string, E, R> }`: the injected summarization route.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `CompactionOptions`    | interface                                                                   | `{ summarizer, threadId?, keepRecent?, maxMessagesPerSummary?, makeSummaryId? }`; `keepRecent` defaults to 2, `maxMessagesPerSummary` to 1024 and must be at least 2.                                                                                                                                                                                                                                                                                                                                                   |
+| `CompactionOptions`    | interface                                                                   | `{ summarizer, thread?, keepRecent?, maxMessagesPerSummary?, makeSummaryId? }`; `thread` is `{ namespace, threadId }`; `keepRecent` defaults to 2, `maxMessagesPerSummary` to 1024 and must be at least 2.                                                                                                                                                                                                                                                                                                              |
 | `CompactionResult`     | interface                                                                   | `{ compactedThreads: number, deletedMessages: number }`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `compact`              | `(options) => Effect<CompactionResult, E \| MemoryError, R \| MemoryStore>` | Summarizes old history in windows of at most `maxMessagesPerSummary` messages, each atomically replaced by one summary that the next window folds in. Default summary ids begin with `\u0001summary-` so tied timestamps keep summaries before ordinary message ids; custom ids must preserve that order for later passes. The summarizer runs before each write transaction; interruption before a commit leaves that window's sources intact. `deletedMessages` counts every deleted row, including folded summaries. |
 
@@ -28539,20 +28636,22 @@ Model types, all plain interfaces unless noted:
 | `Thread`                 | `{ id, namespace, title?, metadata?, createdAtMs, updatedAtMs }`.                                                                     |
 | `CreateThreadInput`      | `{ id?, namespace, title?, metadata? }`.                                                                                              |
 | `ListThreadsInput`       | `{ namespace? }`.                                                                                                                     |
-| `GetThreadInput`         | `{ threadId }`.                                                                                                                       |
-| `DeleteThreadInput`      | `{ threadId }`.                                                                                                                       |
+| `GetThreadInput`         | `{ namespace, threadId }`.                                                                                                            |
+| `DeleteThreadInput`      | `{ namespace, threadId }`.                                                                                                            |
 | `Message`                | `{ threadId, id, role, text, at }`.                                                                                                   |
-| `AppendMessageInput`     | `Message`: an idempotent append, with the id unique within its thread.                                                                |
-| `AppendMessageOnceInput` | `Message` with optional `at` in Unix epoch milliseconds; a first write chooses the timestamp atomically.                              |
-| `ListMessagesInput`      | `{ threadId, limit?, cursor? }`.                                                                                                      |
+| `AppendMessageInput`     | `Message` plus `namespace`: an idempotent append, with the id unique within its thread.                                               |
+| `AppendMessageOnceInput` | `Message` plus `namespace`, with optional `at` in Unix epoch milliseconds; a first write chooses the timestamp atomically.            |
+| `ListMessagesInput`      | `{ namespace, threadId, limit?, cursor? }`.                                                                                           |
+| `DeleteMessagesInput`    | `{ namespace, threadId, ids }`.                                                                                                       |
+| `ThreadRef`              | `{ namespace, threadId }`: a thread's identity.                                                                                       |
 | `MessageCursor`          | `{ at, id }`: a stable exclusive cursor for ordered pagination.                                                                       |
 | `MessageStats`           | `{ messages, codePoints, bytes }`: one thread's size bounds; its JavaScript string length lies between `codePoints` and `bytes`.      |
-| `GetNoteInput`           | `{ id }`.                                                                                                                             |
+| `GetNoteInput`           | `{ namespace, id }`.                                                                                                                  |
 | `NoteStatus`             | schema and type: `"pending"`, `"accepted"`, `"rejected"`; the only mutable state on an append-only note.                              |
 | `Note`                   | `{ namespace, id, text, tags, provenance, status, createdAtMs, statusAtMs?, acceptedTodo? }`.                                         |
 | `PutNoteInput`           | `{ namespace, id, text, tags, provenance, status?, supersedes? }`; `supersedes` persists in the same write transaction.               |
-| `SetNoteStatusInput`     | `{ id, status, acceptedTodo? }`.                                                                                                      |
-| `SupersedeInput`         | `{ supersederId, targetId }`.                                                                                                         |
+| `SetNoteStatusInput`     | `{ namespace, id, status, acceptedTodo? }`.                                                                                           |
+| `SupersedeInput`         | `{ namespace, supersederId, targetId }`.                                                                                              |
 | `NamespaceInput`         | `Namespace \| string`: a structured namespace or a bank name; explicit prefixes keep their lifetime, unprefixed banks are flow-local. |
 | `StatusFilter`           | `NoteStatus \| "any" \| ReadonlyArray<NoteStatus>`.                                                                                   |
 | `ListNotesInput`         | `{ namespace, prefix?, limit?, tagGroups?, status?, includeSuperseded? }`.                                                            |
@@ -28561,7 +28660,7 @@ Model types, all plain interfaces unless noted:
 | `EnableFtsInput`         | `Namespace.Kind`.                                                                                                                     |
 | `SearchFtsInput`         | `SearchRowsInput` plus `query`.                                                                                                       |
 | `FtsRow`                 | `SearchRow` plus `rank` (raw SQLite BM25) and `score`.                                                                                |
-| `CompactMessagesInput`   | `{ threadId, summary: Message, sourceMessages: ReadonlyArray<Message> }`.                                                             |
+| `CompactMessagesInput`   | `{ namespace, threadId, summary: Message, sourceMessages: ReadonlyArray<Message> }`.                                                  |
 
 `Note.statusAtMs` records the last real status transition; an identical retry preserves it. `setNoteStatus` accepts a non-empty `acceptedTodo` only with `status: "accepted"`. Once a note is bound to a TODO, changing its status or binding it to another TODO fails with `idempotency_conflict`. Repeating `status: "accepted"` with the same TODO or with no `acceptedTodo` is a no-op.
 
@@ -28575,25 +28674,25 @@ The service tag is `MemoryStore`, `Context.Service` tag `flows/memory/MemoryStor
 | `listFacts`          | `(ListFactsInput) => Effect<Fact[]>`              | Ordered by key, excluding expired facts; optional key `prefix` and `limit`.                                                                                      |
 | `listAllFacts`       | `Effect<Fact[]>`                                  | Every unexpired fact, ordered by namespace and key.                                                                                                              |
 | `createThread`       | `(CreateThreadInput) => Effect<Thread>`           | Generates an id when omitted. Idempotent on identical creation data; a conflict fails `idempotency_conflict`.                                                    |
-| `getThread`          | `(GetThreadInput) => Effect<Thread \| undefined>` | Exact read by id.                                                                                                                                                |
+| `getThread`          | `(GetThreadInput) => Effect<Thread \| undefined>` | Exact read by namespace and id.                                                                                                                                  |
 | `listThreads`        | `(ListThreadsInput?) => Effect<Thread[]>`         | All threads, or one namespace's, ordered by creation.                                                                                                            |
-| `deleteThread`       | `(DeleteThreadInput) => Effect<boolean>`          | Deletes the thread and all its messages.                                                                                                                         |
-| `appendMessage`      | `(AppendMessageInput) => Effect<void>`            | Creates a missing thread in the `global` namespace under the id `history`. An identical retry is a no-op; a differing one fails `idempotency_conflict`.          |
+| `deleteThread`       | `(DeleteThreadInput) => Effect<boolean>`          | Deletes the thread and all its messages. A thread of another namespace is not found.                                                                             |
+| `appendMessage`      | `(AppendMessageInput) => Effect<void>`            | Creates a missing thread in the namespace it names. An identical retry is a no-op; a differing one fails `idempotency_conflict`.                                 |
 | `appendMessageOnce`  | `(AppendMessageOnceInput) => Effect<Message>`     | Returns the stored message. Omitted timestamps reuse the first insertion's time, including overlapping retries; explicit timestamp, role or text conflicts fail. |
 | `listMessages`       | `(ListMessagesInput) => Effect<Message[]>`        | Ordered by `(at, id)`; paginate with the exclusive `cursor`.                                                                                                     |
 | `countMessages`      | `(ListMessagesInput) => Effect<number>`           | Counts one thread's messages.                                                                                                                                    |
-| `messageStats`       | `({ threadId }) => Effect<MessageStats>`          | One SQL aggregate: message count, summed code points, and summed stored bytes, without reading message bodies.                                                   |
+| `messageStats`       | `(GetThreadInput) => Effect<MessageStats>`        | One SQL aggregate: message count, summed code points, and summed stored bytes, without reading message bodies.                                                   |
 | `putNote`            | `(PutNoteInput) => Effect<Note>`                  | Append-only insert; `status` defaults to `accepted`. An identical re-put is a no-op; a differing one fails `supersede_conflict`.                                 |
-| `getNote`            | `(GetNoteInput) => Effect<Note \| undefined>`     | Exact read by globally unique id.                                                                                                                                |
-| `setNoteStatus`      | `(SetNoteStatusInput) => Effect<void>`            | The status gate. An unknown id fails `not_found`.                                                                                                                |
-| `supersede`          | `(SupersedeInput) => Effect<void>`                | Adds a supersession edge. Both notes must exist and share a namespace; violations fail `supersede_conflict`.                                                     |
+| `getNote`            | `(GetNoteInput) => Effect<Note \| undefined>`     | Exact read by namespace and id.                                                                                                                                  |
+| `setNoteStatus`      | `(SetNoteStatusInput) => Effect<void>`            | The status gate. An id unknown in the namespace fails `not_found`.                                                                                               |
+| `supersede`          | `(SupersedeInput) => Effect<void>`                | Adds a supersession edge. Both notes must exist in the namespace; violations fail `supersede_conflict`.                                                          |
 | `listNotes`          | `(ListNotesInput) => Effect<Note[]>`              | Authoritative note read; `status` defaults to `accepted`, superseded notes hide unless `includeSuperseded`.                                                      |
 | `enableFts`          | `(kind: EnableFtsInput) => Effect<void>`          | Lazily enables FTS5 for one namespace kind and backfills it once; a kind that is already enabled is left as is, so calling it on every boot is cheap.            |
 | `searchFts`          | `(SearchFtsInput) => Effect<FtsRow[]>`            | Direct FTS5 recall, `limit` defaulting to 20. A disabled kind fails `fts_not_enabled`.                                                                           |
 | `searchRows`         | `(SearchRowsInput) => Effect<SearchRow[]>`        | Merged newest-first facts and notes for recall bindings; a bounded read never under-fills.                                                                       |
 | `deleteExpiredFacts` | `Effect<number>`                                  | Deletes expired facts with their projections, in bounded chunks.                                                                                                 |
-| `listThreadIds`      | `Effect<string[]>`                                | Every thread id, ordered by creation.                                                                                                                            |
-| `deleteMessages`     | `({ threadId, ids }) => Effect<number>`           | Deletes the named messages, in bounded chunks.                                                                                                                   |
+| `listThreadRefs`     | `Effect<ThreadRef[]>`                             | Every thread's `{ namespace, threadId }`, ordered by creation.                                                                                                   |
+| `deleteMessages`     | `(DeleteMessagesInput) => Effect<number>`         | Deletes the named messages, in bounded chunks.                                                                                                                   |
 | `compactMessages`    | `(CompactMessagesInput) => Effect<number>`        | Inserts the summary and deletes the sources in one durable write. A summary id that already exists fails `idempotency_conflict`.                                 |
 
 `compactMessages` captures the full `sourceMessages` rows and verifies them inside the write transaction before inserting or deleting. Missing or changed sources fail with `compaction_conflict`. An existing summary id fails with `idempotency_conflict`, including identical retries.
@@ -28971,8 +29070,9 @@ whole file. It returns `undefined` for everything else, and the agent works
 from the rule instead. Compilable is kept literally: a step id that would
 start with a digit is prefixed (`1st` becomes `Step1st`), every key, tag, and
 seat is quoted, a step group whose ids would fold to one identifier (`a-b`
-and `a_b`) is refused, and a `Timer` duration is emitted as a number of
-milliseconds or a duration string and refused when it is an expression.
+and `a_b`) is refused, and a literal `Timer` becomes `Sleep.action.call` with
+relative `millis` or an epoch deadline in `until`. Timer expressions require a
+guided rewrite. Recurring schedules move to `@smthrs/triggers`.
 
 `Mapping.byConstruct(name)` resolves a row for every catalog name. The table
 below is `Mapping.rows` rendered, so it cannot fall behind the code.
@@ -29002,7 +29102,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `Aspects`                                | `Sandbox.Limits and Envelope.budget`                                                         | `@smthrs/harness/Sandbox, @smthrs/control/ControlSchema`                        | guided    |
 | `BackpressurePlanning`                   | none                                                                                         | none                                                                            | unsafe    |
 | `Branch`                                 | `Node.branch({ if, then, else })`                                                            | `@smthrs/plan/Node`                                                             | automatic |
-| `CheckSuite`                             | `MapReduce.make({ map, reduce })`                                                            | `@smthrs/patterns/MapReduce`                                                    | guided    |
+| `CheckSuite`                             | `CheckSuite.make or CheckSuite.run`                                                          | `@smthrs/patterns/CheckSuite`                                                   | guided    |
 | `ClassifyAndRoute`                       | `Node.branch`                                                                                | `@smthrs/plan/Node`                                                             | guided    |
 | `ClaudeCodeAgent`                        | `An operator decision: subscription auth through the flows harness, or an API seat`          | `@smthrs/harness, @smthrs/agent/SeatResolver`                                   | guided    |
 | `CodexAgent`                             | `An operator decision: subscription auth through the flows harness, or an API seat`          | `@smthrs/harness, @smthrs/agent/SeatResolver`                                   | guided    |
@@ -29054,25 +29154,25 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `MemoryService`                          | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `MemoryTrellis`                          | `MemoryTrellis`                                                                              | `@smthrs/memory/MemoryTrellis`                                                  | guided    |
 | `MergeQueue`                             | `MergeQueue.make`                                                                            | `@smthrs/patterns/MergeQueue`                                                   | guided    |
-| `Monitor`                                | none                                                                                         | none                                                                            | unsafe    |
+| `Monitor`                                | `Monitor.classify, Monitor.run, or Monitor.attach`                                           | `@smthrs/control/Monitor`                                                       | guided    |
 | `NanocodexAgent`                         | `A seat resolved by SeatResolver from the model this agent already names`                    | `@smthrs/agent/SeatResolver, @smthrs/model/Route`                               | guided    |
 | `OmpAgent`                               | `A seat resolved by SeatResolver from the model this agent already names`                    | `@smthrs/agent/SeatResolver, @smthrs/model/Route`                               | guided    |
 | `OpenAIAgent`                            | `A seat resolved by SeatResolver from the model this agent already names`                    | `@smthrs/agent/SeatResolver, @smthrs/model/Route`                               | guided    |
 | `OpenClawAgent`                          | `A seat resolved by SeatResolver from the model this agent already names`                    | `@smthrs/agent/SeatResolver, @smthrs/model/Route`                               | guided    |
 | `OpenCodeAgent`                          | `An operator decision: subscription auth through the flows harness, or an API seat`          | `@smthrs/harness, @smthrs/agent/SeatResolver`                                   | guided    |
-| `Optimizer`                              | `Optimizer.make`                                                                             | `@smthrs/patterns/Optimizer`                                                    | guided    |
+| `Optimizer`                              | `Optimizer.make, Optimizer.run, or Optimize.run`                                             | `@smthrs/patterns/Optimizer, @smthrs/evals/Optimize`                            | guided    |
 | `Panel`                                  | `Panel.make({ panelists, moderator })`                                                       | `@smthrs/patterns/Panel`                                                        | guided    |
 | `Parallel`                               | `Node.all({ ... })`                                                                          | `@smthrs/plan/Node`                                                             | automatic |
 | `PiAgent`                                | `A seat resolved by SeatResolver from the model this agent already names`                    | `@smthrs/agent/SeatResolver, @smthrs/model/Route`                               | guided    |
-| `Poller`                                 | `Recursion.recurse around Sleep.action`                                                      | `@smthrs/patterns/Recursion, @smthrs/flow/Sleep`                                | guided    |
+| `Poller`                                 | `Poll.make`                                                                                  | `@smthrs/flow/Poll`                                                             | guided    |
 | `PoolAgent`                              | `A seat resolved by SeatResolver from the model this agent already names`                    | `@smthrs/agent/SeatResolver, @smthrs/model/Route`                               | guided    |
 | `Ralph`                                  | `Recursion.recurse`                                                                          | `@smthrs/patterns/Recursion`                                                    | guided    |
 | `ReviewLoop`                             | `ReviewLoop.run(input, { maxRounds, produce, review, revise })`                              | `@smthrs/patterns/ReviewLoop`                                                   | guided    |
 | `Runbook`                                | `Runbook.make`                                                                               | `@smthrs/patterns/Runbook`                                                      | automatic |
-| `Saga`                                   | `Node.catch plus CompensationHandlers`                                                       | `@smthrs/plan/Node, @smthrs/time-travel/CompensationHandlers`                   | guided    |
-| `SagaStep`                               | `Node.catch plus CompensationHandlers`                                                       | `@smthrs/plan/Node, @smthrs/time-travel/CompensationHandlers`                   | guided    |
+| `Saga`                                   | `Saga.make or Saga.run with CompensationHandlers`                                            | `@smthrs/patterns/Saga, @smthrs/time-travel/CompensationHandlers`               | guided    |
+| `SagaStep`                               | `Saga.make or Saga.run with CompensationHandlers`                                            | `@smthrs/patterns/Saga, @smthrs/time-travel/CompensationHandlers`               | guided    |
 | `Sandbox`                                | `WorkspaceSandbox, RemoteChildProcessSpawner, or std Container`                              | `@smthrs/engine-store/WorkspaceSandbox, @smthrs/sandbox, @smthrs/std/Container` | guided    |
-| `ScanFixVerify`                          | `ReviewLoop.run`                                                                             | `@smthrs/patterns/ReviewLoop`                                                   | guided    |
+| `ScanFixVerify`                          | `ScanFixVerify.make or ScanFixVerify.run`                                                    | `@smthrs/patterns/ScanFixVerify`                                                | guided    |
 | `Sequence`                               | `Node.bindPlanned`                                                                           | `@smthrs/plan/Node`                                                             | automatic |
 | `Sidecar`                                | `Sidecar.make`                                                                               | `@smthrs/patterns/Sidecar`                                                      | guided    |
 | `Signal`                                 | `WaitFor.action over DurableDeferred`                                                        | `@smthrs/flow/WaitFor`                                                          | automatic |
@@ -29088,7 +29188,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `TUI`                                    | none                                                                                         | none                                                                            | unsafe    |
 | `Task`                                   | `Action.make(tag, { payload, success }) with .toLayer, or AgentAction.make for a model step` | `@smthrs/flow/Action, @smthrs/agent/AgentAction`                                | automatic |
 | `Task.browser`                           | none                                                                                         | none                                                                            | unsafe    |
-| `Timer`                                  | `Sleep.action`                                                                               | `@smthrs/flow/Sleep`                                                            | automatic |
+| `Timer`                                  | `Sleep.action`                                                                               | `@smthrs/flow/Sleep, @smthrs/triggers`                                          | automatic |
 | `TokenLimiter`                           | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `Trellis`                                | `Trellis.make`                                                                               | `@smthrs/patterns/Trellis`                                                      | guided    |
 | `TryCatchFinally`                        | `Node.catch and Flow.addFinalizer`                                                           | `@smthrs/plan/Node, @smthrs/flow/Flow`                                          | guided    |
@@ -29097,7 +29197,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `VibeAgent`                              | `A seat resolved by SeatResolver from the model this agent already names`                    | `@smthrs/agent/SeatResolver, @smthrs/model/Route`                               | guided    |
 | `WaitForEvent`                           | `WaitFor.action over DurableDeferred`                                                        | `@smthrs/flow/WaitFor`                                                          | automatic |
 | `Workflow`                               | `Flow.make(tag, { description, capabilities, effects, payload, success, error, body })`      | `@smthrs/flow/Flow`                                                             | automatic |
-| `Worktree`                               | none                                                                                         | none                                                                            | unsafe    |
+| `Worktree`                               | `JjWorkspaceSandbox.make`                                                                    | `@smthrs/sandbox/JjWorkspaceSandbox`                                            | guided    |
 | `activeNodes`                            | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
 | `activeRuns`                             | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
 | `agentProducesCheckpoint`                | `A seat resolved by SeatResolver`                                                            | `@smthrs/agent/SeatResolver`                                                    | guided    |
@@ -29135,17 +29235,17 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `createMemoryLayer`                      | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `createMemoryStore`                      | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `createOmpCapabilityRegistry`            | `A seat resolved by SeatResolver`                                                            | `@smthrs/agent/SeatResolver`                                                    | guided    |
-| `createOpenApiTool`                      | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | guided    |
-| `createOpenApiToolSync`                  | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | guided    |
-| `createOpenApiTools`                     | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | guided    |
-| `createOpenApiToolsSync`                 | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | guided    |
+| `createOpenApiTool`                      | `OpenApi.fromSpec`                                                                           | `@smthrs/integrations/OpenApi`                                                  | guided    |
+| `createOpenApiToolSync`                  | `OpenApi.fromSpec`                                                                           | `@smthrs/integrations/OpenApi`                                                  | guided    |
+| `createOpenApiTools`                     | `OpenApi.fromSpec`                                                                           | `@smthrs/integrations/OpenApi`                                                  | guided    |
+| `createOpenApiToolsSync`                 | `OpenApi.fromSpec`                                                                           | `@smthrs/integrations/OpenApi`                                                  | guided    |
 | `createScorer`                           | `@smthrs/scorers, @smthrs/evals`                                                             | `@smthrs/scorers, @smthrs/evals`                                                | guided    |
 | `createServeApp`                         | none                                                                                         | none                                                                            | unsafe    |
 | `createSmithers`                         | `Flow.make(tag, { payload, success, error, body })`                                          | `@smthrs/flow/Flow`                                                             | automatic |
-| `createSmithersCloudflare`               | none                                                                                         | none                                                                            | unsafe    |
+| `createSmithersCloudflare`               | `CloudflareRuntime.layer and ExecutionObject`                                                | `@smthrs/platform-cloudflare`                                                   | guided    |
 | `createSmithersObservabilityLayer`       | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
 | `createSmithersOtelLayer`                | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
-| `createSmithersPostgres`                 | none                                                                                         | none                                                                            | unsafe    |
+| `createSmithersPostgres`                 | `PostgresDatabase or SMITHERS_BACKEND=postgres`                                              | `@smthrs/database`                                                              | guided    |
 | `createSmithersRuntimeLayer`             | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
 | `createVirtualClock`                     | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `ctx.boundStale`                         | none                                                                                         | none                                                                            | guided    |
@@ -29161,9 +29261,9 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `ctx.requireTableName`                   | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |
 | `ctx.resolveRow`                         | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |
 | `ctx.resolveTableName`                   | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |
-| `ctx.resolveWorktreePath`                | none                                                                                         | none                                                                            | unsafe    |
+| `ctx.resolveWorktreePath`                | `Sandbox.Session.workdir`                                                                    | `@smthrs/sandbox`                                                               | guided    |
 | `ctx.runId`                              | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |
-| `ctx.worktreePath`                       | none                                                                                         | none                                                                            | unsafe    |
+| `ctx.worktreePath`                       | `Sandbox.Session.workdir`                                                                    | `@smthrs/sandbox`                                                               | guided    |
 | `db.<member>`                            | none                                                                                         | none                                                                            | unsafe    |
 | `dbQueryDuration`                        | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
 | `dbRetries`                              | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
@@ -29237,9 +29337,9 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `isSmithersError`                        | `The tagged errors each package declares`                                                    | `@smthrs/kernel`                                                                | guided    |
 | `isolatedCloneEnvironment`               | `@smthrs/jj`                                                                                 | `@smthrs/jj`                                                                    | guided    |
 | `knownSmithersErrorCodes`                | `The tagged errors each package declares`                                                    | `@smthrs/kernel`                                                                | guided    |
-| `latencyScorer`                          | `@smthrs/scorers, @smthrs/evals`                                                             | `@smthrs/scorers, @smthrs/evals`                                                | guided    |
+| `latencyScorer`                          | `Scorers.latency`                                                                            | `@smthrs/scorers/Scorers`                                                       | guided    |
 | `listGitRefs`                            | `@smthrs/jj`                                                                                 | `@smthrs/jj`                                                                    | guided    |
-| `listOperations`                         | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | guided    |
+| `listOperations`                         | `OpenApi.fromSpec`                                                                           | `@smthrs/integrations/OpenApi`                                                  | guided    |
 | `listRuns`                               | `Control.list`                                                                               | `@smthrs/control/Control`                                                       | guided    |
 | `llmJudge`                               | `@smthrs/scorers, @smthrs/evals`                                                             | `@smthrs/scorers, @smthrs/evals`                                                | guided    |
 | `loadOutputs`                            | none                                                                                         | none                                                                            | unsafe    |
@@ -29267,9 +29367,9 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `nodesFailed`                            | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
 | `nodesFinished`                          | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
 | `nodesStarted`                           | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
-| `openApiToolCallErrorsTotal`             | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | guided    |
-| `openApiToolCallsTotal`                  | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | guided    |
-| `openApiToolDuration`                    | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | guided    |
+| `openApiToolCallErrorsTotal`             | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
+| `openApiToolCallsTotal`                  | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
+| `openApiToolDuration`                    | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
 | `openSmithersBackend`                    | none                                                                                         | none                                                                            | unsafe    |
 | `openSmithersStore`                      | none                                                                                         | none                                                                            | unsafe    |
 | `outputs.<key>`                          | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |
@@ -29289,7 +29389,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `resolveSmithersBackendChoice`           | none                                                                                         | none                                                                            | unsafe    |
 | `resolveSmithersBackendPreference`       | none                                                                                         | none                                                                            | unsafe    |
 | `resolveSmithersObservabilityOptions`    | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
-| `resolveWorktreePath`                    | none                                                                                         | none                                                                            | unsafe    |
+| `resolveWorktreePath`                    | `Sandbox.Session.workdir`                                                                    | `@smthrs/sandbox`                                                               | guided    |
 | `revertToAttempt`                        | `TimeTravel.rewind`                                                                          | `@smthrs/time-travel/TimeTravel`                                                | guided    |
 | `revertToJjPointer`                      | `@smthrs/jj`                                                                                 | `@smthrs/jj`                                                                    | guided    |
 | `runJj`                                  | `@smthrs/jj`                                                                                 | `@smthrs/jj`                                                                    | guided    |
@@ -29310,40 +29410,42 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `sandboxTransportDurationMs`             | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
 | `scenario`                               | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `schedulerQueueDepth`                    | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
-| `schemaAdherenceScorer`                  | `@smthrs/scorers, @smthrs/evals`                                                             | `@smthrs/scorers, @smthrs/evals`                                                | guided    |
+| `schemaAdherenceScorer`                  | `Scorers.schemaAdherence`                                                                    | `@smthrs/scorers/Scorers`                                                       | guided    |
 | `scriptedAgent`                          | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `settleDelegationV2Envelope`             | none                                                                                         | none                                                                            | unsafe    |
 | `signalRun`                              | `Control.signal`                                                                             | `@smthrs/control/Control`                                                       | guided    |
 | `simulate`                               | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `smithers`                               | `Flow.make(tag, { payload, success, error, body })`                                          | `@smthrs/flow/Flow`                                                             | guided    |
 | `smithers add`                           | none                                                                                         | none                                                                            | unsafe    |
-| `smithers approve`                       | none                                                                                         | none                                                                            | unsafe    |
+| `smithers approve`                       | `smthrs approvals approve`                                                                   | `@smthrs/cli`                                                                   | guided    |
 | `smithers ask-human`                     | none                                                                                         | none                                                                            | unsafe    |
 | `smithers cancel`                        | `smthrs runs cancel <run>`                                                                   | `@smthrs/cli`                                                                   | guided    |
-| `smithers cron`                          | none                                                                                         | none                                                                            | unsafe    |
-| `smithers deny`                          | none                                                                                         | none                                                                            | unsafe    |
+| `smithers cron`                          | `smthrs triggers`                                                                            | `@smthrs/cli`                                                                   | guided    |
+| `smithers deny`                          | `smthrs approvals deny`                                                                      | `@smthrs/cli`                                                                   | guided    |
 | `smithers docs`                          | none                                                                                         | none                                                                            | unsafe    |
 | `smithers docs-full`                     | none                                                                                         | none                                                                            | unsafe    |
-| `smithers eval`                          | none                                                                                         | none                                                                            | unsafe    |
-| `smithers fork`                          | none                                                                                         | none                                                                            | unsafe    |
+| `smithers eval`                          | `smthrs eval run`                                                                            | `@smthrs/cli`                                                                   | guided    |
+| `smithers fork`                          | `smthrs runs fork`                                                                           | `@smthrs/cli`                                                                   | guided    |
 | `smithers gateway`                       | none                                                                                         | none                                                                            | unsafe    |
 | `smithers graph`                         | none                                                                                         | none                                                                            | unsafe    |
 | `smithers hijack`                        | none                                                                                         | none                                                                            | unsafe    |
 | `smithers human`                         | none                                                                                         | none                                                                            | unsafe    |
 | `smithers init`                          | none                                                                                         | none                                                                            | unsafe    |
-| `smithers inspect`                       | none                                                                                         | none                                                                            | unsafe    |
+| `smithers inspect`                       | `smthrs runs inspect`                                                                        | `@smthrs/cli`                                                                   | guided    |
 | `smithers listeners`                     | none                                                                                         | none                                                                            | unsafe    |
 | `smithers migrate`                       | none                                                                                         | none                                                                            | unsafe    |
-| `smithers optimize`                      | none                                                                                         | none                                                                            | unsafe    |
-| `smithers pause`                         | none                                                                                         | none                                                                            | unsafe    |
+| `smithers monitor`                       | `smthrs runs monitor`                                                                        | `@smthrs/cli`                                                                   | guided    |
+| `smithers optimize`                      | `Optimize.run`                                                                               | `@smthrs/evals/Optimize`                                                        | guided    |
+| `smithers pause`                         | `smthrs runs pause`                                                                          | `@smthrs/cli`                                                                   | guided    |
 | `smithers ps`                            | `smthrs runs list`                                                                           | `@smthrs/cli`                                                                   | guided    |
-| `smithers replay`                        | none                                                                                         | none                                                                            | unsafe    |
+| `smithers replay`                        | `smthrs runs replay`                                                                         | `@smthrs/cli`                                                                   | guided    |
 | `smithers restore`                       | none                                                                                         | none                                                                            | unsafe    |
 | `smithers retry-task`                    | none                                                                                         | none                                                                            | unsafe    |
 | `smithers revert`                        | none                                                                                         | none                                                                            | unsafe    |
-| `smithers rewind`                        | none                                                                                         | none                                                                            | unsafe    |
+| `smithers rewind`                        | `smthrs runs rewind`                                                                         | `@smthrs/cli`                                                                   | guided    |
+| `smithers scores`                        | `smthrs eval scores`                                                                         | `@smthrs/cli`                                                                   | guided    |
 | `smithers share`                         | none                                                                                         | none                                                                            | unsafe    |
-| `smithers signal`                        | none                                                                                         | none                                                                            | unsafe    |
+| `smithers signal`                        | `smthrs runs signal`                                                                         | `@smthrs/cli`                                                                   | guided    |
 | `smithers snapshots`                     | none                                                                                         | none                                                                            | unsafe    |
 | `smithers timeline`                      | none                                                                                         | none                                                                            | unsafe    |
 | `smithers ui`                            | none                                                                                         | none                                                                            | unsafe    |
@@ -29354,11 +29456,11 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `smithers.config.ts`                     | `Verification commands`                                                                      | none                                                                            | automatic |
 | `smithersMetrics`                        | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
 | `smithersScorers`                        | `@smthrs/scorers, @smthrs/evals`                                                             | `@smthrs/scorers, @smthrs/evals`                                                | guided    |
-| `smthrs/aws`                             | none                                                                                         | none                                                                            | unsafe    |
-| `smthrs/browser`                         | none                                                                                         | none                                                                            | unsafe    |
-| `smthrs/cloudflare`                      | none                                                                                         | none                                                                            | unsafe    |
+| `smthrs/aws`                             | `AwsSandbox`                                                                                 | `@smthrs/sandbox`                                                               | guided    |
+| `smthrs/browser`                         | `@smthrs/platform-browser`                                                                   | `@smthrs/platform-browser`                                                      | guided    |
+| `smthrs/cloudflare`                      | `CloudflareSandbox`                                                                          | `@smthrs/sandbox`                                                               | guided    |
 | `smthrs/control-plane`                   | none                                                                                         | none                                                                            | unsafe    |
-| `smthrs/daytona`                         | none                                                                                         | none                                                                            | unsafe    |
+| `smthrs/daytona`                         | `DaytonaSandbox`                                                                             | `@smthrs/sandbox`                                                               | guided    |
 | `smthrs/evals`                           | `@smthrs/evals`                                                                              | `@smthrs/evals`                                                                 | guided    |
 | `smthrs/gateway-client`                  | none                                                                                         | none                                                                            | unsafe    |
 | `smthrs/gateway-react`                   | none                                                                                         | none                                                                            | unsafe    |
@@ -29367,16 +29469,16 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `smthrs/jsx-dev-runtime`                 | none                                                                                         | none                                                                            | automatic |
 | `smthrs/jsx-runtime`                     | none                                                                                         | none                                                                            | automatic |
 | `smthrs/memory`                          | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
-| `smthrs/microsandbox`                    | none                                                                                         | none                                                                            | unsafe    |
-| `smthrs/openapi`                         | none                                                                                         | none                                                                            | unsafe    |
+| `smthrs/microsandbox`                    | `MicrosandboxSandbox`                                                                        | `@smthrs/sandbox`                                                               | guided    |
+| `smthrs/openapi`                         | `@smthrs/integrations/OpenApi`                                                               | `@smthrs/integrations/OpenApi`                                                  | guided    |
 | `smthrs/sandbox`                         | `@smthrs/sandbox`                                                                            | `@smthrs/sandbox`                                                               | guided    |
 | `smthrs/scorers`                         | `@smthrs/scorers`                                                                            | `@smthrs/scorers`                                                               | guided    |
 | `smthrs/server`                          | none                                                                                         | none                                                                            | unsafe    |
-| `smthrs/telegram`                        | none                                                                                         | none                                                                            | unsafe    |
+| `smthrs/telegram`                        | `@smthrs/notifications/Channels`                                                             | `@smthrs/notifications/Channels`                                                | guided    |
 | `smthrs/testing`                         | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `smthrs/tools`                           | `@smthrs/std`                                                                                | `@smthrs/std`                                                                   | guided    |
 | `smthrs/ui`                              | none                                                                                         | none                                                                            | unsafe    |
-| `smthrs/vercel`                          | none                                                                                         | none                                                                            | unsafe    |
+| `smthrs/vercel`                          | `VercelSandbox`                                                                              | `@smthrs/sandbox`                                                               | guided    |
 | `smthrs/xstate`                          | none                                                                                         | none                                                                            | unsafe    |
 | `startServer`                            | none                                                                                         | none                                                                            | unsafe    |
 | `syncZodTableSchema`                     | none                                                                                         | none                                                                            | unsafe    |
@@ -31302,7 +31404,7 @@ fence. Text before or after the JSON still fails `invalid_answer`.
 | `layerUnavailable()`                                                                                                                                     | layer                     | Fails every request as `unreachable`; a classifier outage fixture, and the binding for a host composed to drive no run, never a completion-capable host's default.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `Question`, `RawAnswer`, `RawAnswers`                                                                                                                    | schemas                   | The wire shapes. A boolean answer is `{ type: "boolean", probability }`, a choice `{ type: "choice", choice, probabilities? }`, a score `{ type: "score", score, probabilities? }`. The question schema enforces 2 to 255 choice options and at least 2 distinct score rungs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `EvaluatorErrorCode`                                                                                                                                     | schema                    | `unconfigured` (no gateway key and no subscription judge, a credential the provider rejected, or a refused or pending `model:call` grant; a policy fault), `unreachable` (no response), `refused` (a status other than 200, 400 or 422, kept in `status`), `empty` (a 200 whose body carried no answers or could not be read), `timeout` (this call's deadline), `invalid_answer`, `invalid_question` (a 400 or 422, or a rejected question).                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `EvaluatorError`                                                                                                                                         | error                     | `{ code, status?, resetAtEpochMillis?, message, usage? }`. Evaluation failures, including missing subscriptions, are typed. `usage` is what a reading that failed after it was metered paid.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `EvaluatorError`                                                                                                                                         | error                     | `{ code, status?, resetAtEpochMillis?, message, usage?, permission? }`. Evaluation failures, including missing subscriptions, are typed. `usage` is what a reading that failed after it was metered paid. `permission` is the kernel's `PermissionRequired`, `PermissionDenied` or `GrantStoreError` when the judge's `model:call` grant was pending or refused (code `unconfigured`); an attended host shows the grant prompt from it, then asks again.                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `defaultBaseUrl`, `defaultModel`, `defaultTimeoutMs`, `defaultAttempts`, `retryBackoffMs`, `maxResponseBytes`, `protocolVersion`, `specificationVersion` | constants                 | The gateway defaults, the 1 MiB answer cap, and the protocol versions sent as `ai-gateway-protocol-version` (`0.0.1`) and `ai-evaluation-model-specification-version` (`4`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 The wire protocol is the AI SDK gateway provider's own, as recorded on
@@ -35759,6 +35861,7 @@ provides faulty ones and an app can share one instance.
 | `BrowserRuntime.layerHost({ name, sqlite }, registerFlows)`                                                       | worker | `layer` over `BrowserSqlite.layer`: `engine.db` on a pool in the OPFS directory `smithers/<name>`, and the shared `app.db` beside it on a connection of its own.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `BrowserRuntime.layer(options, registerFlows)`                                                                    | worker | `@smthrs/flows`' `Runtime.layer` over an injected `SqlClient`, with the run catalog, the run reads (`RunInspection`, rendering through `options.flows` when given) and the engine host: WebCrypto, the owner identity, `Path`, fetch, a refusing `Jj`, and `RunInspection` for registered flows.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `BrowserRuntime.Services`, `Host`, `Options`, `HostOptions`, `ServeOptions`, `RunOptions`, `Prepare`, `Authorize` | worker | The types the functions above take and provide. `Prepare` is `{ epoch, success, run }`: what the leader runs on the app's database before serving it. `Authorize` is `(database) => Effect<void, unknown>`: the activation check.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `BrowserRuntime.PrepareFailed`                                                                                    | worker | Why the leader refuses a tab's statement: the preparation failed. A `run` fails with one marked `permanent: true` to fence the whole epoch; any other failure, the next leader tries again.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `BrowserRuntime.leaderships`, `wakes`, `preparations`, `requests`, `statements`                                   | worker | Counters: leaders; unfinished runs by `outcome`; preparations of the app's database by `outcome`; requests by `request` and `outcome`; shared-database statements by `outcome`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `BrowserSqlite.layerSqlite({ build, directory })`                                                                 | worker | The `Sqlite` service: the wa-sqlite `build`, loaded lazily, with the OPFS pool `directory` registered as its VFS, held until the scope closes. The pool is `exclusive`: each database it opens keeps a write-ahead log under an exclusive lock.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `BrowserSqlite.Build`, `Factory`                                                                                  | worker | The build as lazy imports: `module` imports `wa-sqlite.mjs`, `wasm` loads `wa-sqlite.wasm`. The package itself never imports the build.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -43890,7 +43993,24 @@ changes the `scorerKey`. `agreement` measures a judge against human labels.
 Import `Scorers` from `@smthrs/scorers`, or the `@smthrs/scorers/Scorers` subpath.
 `exact()` compares string `output` and string `groundTruth` after trimming edges
 and collapsing whitespace; `contains()` checks case-sensitive containment.
-Non-text input is inconclusive. `rubric` is the existing `Rubric.make` contract.
+Non-text input is inconclusive.
+
+`latency({ maxMs, warnMs? })` reads milliseconds from numeric `context` or
+`context.latencyMs`. The score is 1 through `warnMs` and falls linearly to 0
+at `maxMs` when the thresholds differ. If they coincide, the score is 1
+through `maxMs`. Latency above `maxMs` scores 0. The result includes
+`meta.latencyMs` and `meta.maxMs`. Missing, negative or non-finite latency
+is inconclusive. `maxMs` must be finite and positive. `warnMs` defaults to
+`maxMs` and must be between 0 and `maxMs`, inclusive.
+
+`schemaAdherence(schema, { id?, name?, version? })` decodes `output` with an
+Effect schema whose decoder requires no services. Successful decoding scores 1.
+A schema issue scores 0 with a concise reason. The scorer key includes the
+encoded and decoded schema representations and any supplied identity options.
+Set a distinct `id` or `version` for custom decoder behavior that shares the
+same structural representation.
+
+`rubric` is the existing `Rubric.make` contract.
 
 `testsPass({ command, sandbox, timeoutMs? })` runs the declared command through
 an already acquired `@smthrs/sandbox` session. It drains both output streams and
@@ -43916,16 +44036,20 @@ enters the scorer identity.
 
 ### Scorers export index
 
-| Export                     | Kind      | Category | Summary                                                                      |
-| -------------------------- | --------- | -------- | ---------------------------------------------------------------------------- |
-| `Scorers.exact`            | const     | scorers  | Normalized text equality: trims edges and collapses whitespace.              |
-| `Scorers.contains`         | const     | scorers  | Case-sensitive containment of ground-truth text.                             |
-| `Scorers.rubric`           | const     | scorers  | The existing model-agnostic 1 to 5 rubric scorer.                            |
-| `Scorers.TestsPassOptions` | interface | models   | A declared command and already acquired sandbox session.                     |
-| `Scorers.testsPass`        | const     | scorers  | Grades sandbox command exit; launch and transport failure stay inconclusive. |
-| `Scorers.DiffOptions`      | interface | models   | An inclusive nonnegative diff budget.                                        |
-| `Scorers.diffSize`         | const     | scorers  | Added plus removed lines against an inclusive cap.                           |
-| `Scorers.touchedFiles`     | const     | scorers  | Distinct file paths against an inclusive cap.                                |
+| Export                           | Kind      | Category | Summary                                                                      |
+| -------------------------------- | --------- | -------- | ---------------------------------------------------------------------------- |
+| `Scorers.exact`                  | const     | scorers  | Normalized text equality: trims edges and collapses whitespace.              |
+| `Scorers.contains`               | const     | scorers  | Case-sensitive containment of ground-truth text.                             |
+| `Scorers.LatencyOptions`         | interface | models   | Latency thresholds in milliseconds.                                          |
+| `Scorers.latency`                | const     | scorers  | Grades latency measured in the scorer context.                               |
+| `Scorers.SchemaAdherenceOptions` | interface | models   | Identity and name overrides for schema adherence.                            |
+| `Scorers.schemaAdherence`        | const     | scorers  | Grades whether output decodes with an Effect schema.                         |
+| `Scorers.rubric`                 | const     | scorers  | The existing model-agnostic 1 to 5 rubric scorer.                            |
+| `Scorers.TestsPassOptions`       | interface | models   | A declared command and already acquired sandbox session.                     |
+| `Scorers.testsPass`              | const     | scorers  | Grades sandbox command exit; launch and transport failure stay inconclusive. |
+| `Scorers.DiffOptions`            | interface | models   | An inclusive nonnegative diff budget.                                        |
+| `Scorers.diffSize`               | const     | scorers  | Added plus removed lines against an inclusive cap.                           |
+| `Scorers.touchedFiles`           | const     | scorers  | Distinct file paths against an inclusive cap.                                |
 
 ---
 
@@ -45354,8 +45478,13 @@ order instead let a producer that stayed one page ahead take every slot of every
 page, so `done` never became true and a bootstrapping follower never reached the
 runs behind it. The frame ceiling is a page budget rather than a verdict on the
 read, so a page whose entries sum past it reports `done: false`; only a SINGLE
-entry whose own encoded size exceeds the ceiling is refused with
-`frame_too_large`, because no page can ever carry it.
+entry whose own encoded size exceeds the ceiling is refused, because no page
+can ever carry it. What it refuses is its own run. A run-scoped read fails with
+`frame_too_large`. A workspace read stops serving that run below the entry and
+serves every other run: the page keeps the entries it holds, the run's cursor
+stays where it was, and the run does not hold `done` at `false`. A workspace
+subscription does the same and does not read that run again. The server logs a
+warning that names the run, the sequence and the size.
 
 Cursors are unique per run. A request that names one run twice is refused with
 `invalid_request` on both `read` and `subscribe`, because the read position and

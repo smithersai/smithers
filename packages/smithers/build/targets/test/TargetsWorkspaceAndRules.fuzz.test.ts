@@ -222,7 +222,9 @@ describe("@smthrs/targets WorkspaceDeclaration, AgentTarget, Cargo/Go/Docker/Nix
               maxRounds: rounds
             })
             if (!Target.isTarget(aLint) || !Target.isTarget(aDiff) || !Target.isTarget(aPr)) return false
-            if (plannedCalls(aLint).length === 0 || plannedCalls(aDiff).length === 0 || plannedCalls(aPr).length === 0) {
+            if (
+              plannedCalls(aLint).length === 0 || plannedCalls(aDiff).length === 0 || plannedCalls(aPr).length === 0
+            ) {
               return false
             }
             if (AgentTarget.targetIdentity(aLint).length === 0) return false
@@ -435,7 +437,10 @@ describe("@smthrs/targets WorkspaceDeclaration, AgentTarget, Cargo/Go/Docker/Nix
               deps: [],
               cwd: "."
             })
-            const csVer = ChangesetsTarget.Version({ config: Input.file(".changeset/config.json"), changes: ["CHANGELOG.md"] })
+            const csVer = ChangesetsTarget.Version({
+              config: Input.file(".changeset/config.json"),
+              changes: ["CHANGELOG.md"]
+            })
             const npmPackT = NpmTarget.Pack({ manifest: Input.file("package.json") })
             const csPub = ChangesetsTarget.Publish({
               config: Input.file(".changeset/config.json"),
@@ -650,8 +655,7 @@ describe("@smthrs/targets WorkspaceDeclaration, AgentTarget, Cargo/Go/Docker/Nix
               plannedValue(t, (call) =>
                 call.action === "smithers-build/filegroup"
                   ? [{ path: "src/a.ts", digest: "a".repeat(64) }]
-                  : call
-              )
+                  : call)
             }
 
             const cloned = ManifestJson.cloneObject({ a: 1, b: [true, "x"], c: { nested: null } })

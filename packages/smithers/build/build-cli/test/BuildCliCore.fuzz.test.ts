@@ -67,7 +67,9 @@ describe("@smthrs/build-cli core CLI, labels, reporters, diagnostics, workspace 
     const report = await Effect.runPromise(
       Fuzz.run(
         arb,
-        ({ pkg, targetName, labelInput, uiMode, isTTY, noColor, forceColor, columns, durationMs, verbose, remoteUrl }) =>
+        (
+          { pkg, targetName, labelInput, uiMode, isTTY, noColor, forceColor, columns, durationMs, verbose, remoteUrl }
+        ) =>
           Effect.sync(() => {
             const formatted = Label.format(pkg, targetName)
             const parsedFmt = Label.parse(formatted, pkg)
@@ -196,7 +198,9 @@ describe("@smthrs/build-cli core CLI, labels, reporters, diagnostics, workspace 
               { from: "//:build", to: "//packages/a:build", kind: "data" }
             ]
             if (!GraphOutput.packageText(graphRows, graphEdges).includes("//:build")) throw new Error("graphText")
-            if (!GraphOutput.packageMermaid(graphRows, graphEdges).includes("flowchart")) throw new Error("graphMermaid")
+            if (!GraphOutput.packageMermaid(graphRows, graphEdges).includes("flowchart")) {
+              throw new Error("graphMermaid")
+            }
             const qText = Query.text({
               query: "//...",
               targets: [

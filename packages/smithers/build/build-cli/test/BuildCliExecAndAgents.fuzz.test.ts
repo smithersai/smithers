@@ -139,7 +139,9 @@ describe("@smthrs/build-cli AgentSession, ServiceSupervisor, Fetch, Docker, Nix,
             NixExec.satisfies(version, req)
 
             // MemoryBackend pure helpers
-            const cmds = MemoryBackend.parseMemoryHelpCommands("Commands:\n  get   Get key\n  set   Set key\n  list  List\n  rm    Remove\n")
+            const cmds = MemoryBackend.parseMemoryHelpCommands(
+              "Commands:\n  get   Get key\n  set   Set key\n  list  List\n  rm    Remove\n"
+            )
             if (!cmds.includes("get")) throw new Error("parseMemoryHelpCommands")
             MemoryBackend.assertMemoryCliCommand("get")
             MemoryBackend.pathLocator({ PATH: "/usr/bin" })
@@ -175,7 +177,9 @@ describe("@smthrs/build-cli AgentSession, ServiceSupervisor, Fetch, Docker, Nix,
             if (mEnv["HOME"] !== mach.home) throw new Error("Machine.environment")
             Machine.homeLinks([{ path: ".gitconfig", target: "/home/u/.gitconfig" }])
             Machine.remover(mach.directory)
-            const scrubbedCfg = Machine.withoutCredentials("[url \"https://tok@github.com\"]\n  insteadOf = https://github.com\n")
+            const scrubbedCfg = Machine.withoutCredentials(
+              "[url \"https://tok@github.com\"]\n  insteadOf = https://github.com\n"
+            )
             if (scrubbedCfg.includes("tok@")) throw new Error("withoutCredentials leaked token")
             Machine.sharedRefusal("m1", "m2", "conflict")
             Machine.tmpBinds(mach, [])
@@ -373,7 +377,10 @@ describe("@smthrs/build-cli AgentSession, ServiceSupervisor, Fetch, Docker, Nix,
         `---\nname: demo\ndescription: Demo flow\n---\n# Demo\n`
       )
       const factoryDecl = S.Factory({ summary: "fuzz" })
-      const loadedFac = FactoryLoader.validateFactoryModule({ factory: factoryDecl }, NodePath.join(tmpRoot, "FACTORY.ts"))
+      const loadedFac = FactoryLoader.validateFactoryModule(
+        { factory: factoryDecl },
+        NodePath.join(tmpRoot, "FACTORY.ts")
+      )
       expect(loadedFac.factory).toBeDefined()
       const discoveredFlows = await Effect.runPromise(
         FactoryProjectionExec.discoverFlows(tmpRoot, ".smithers/flows").pipe(Effect.provide(nodeFsLayer))
@@ -496,9 +503,9 @@ describe("@smthrs/build-cli AgentSession, ServiceSupervisor, Fetch, Docker, Nix,
                   passFirstRound
                     ? [[{ gate: "//:test", status: "green", detail: "green" }]]
                     : [
-                        [{ gate: "//:test", status: "red", detail: "red round 1" }],
-                        [{ gate: "//:test", status: "green", detail: "green round 2" }]
-                      ]
+                      [{ gate: "//:test", status: "red", detail: "red round 1" }],
+                      [{ gate: "//:test", status: "green", detail: "green round 2" }]
+                    ]
                 )
                 const verdicts = useFileStore
                   ? AgentSession.makeFileVerdictStore(verdictDir)
@@ -512,8 +519,8 @@ describe("@smthrs/build-cli AgentSession, ServiceSupervisor, Fetch, Docker, Nix,
                   dataFiles: ["src/target.ts"],
                   prOpener: withPrOpener
                     ? {
-                        open: () => Effect.succeed("https://github.com/acme/repo/pull/42")
-                      }
+                      open: () => Effect.succeed("https://github.com/acme/repo/pull/42")
+                    }
                     : AgentSession.unavailablePrOpener
                 }
                 return rt

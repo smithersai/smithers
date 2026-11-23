@@ -16,7 +16,12 @@ import * as Sync from "../src/github/Sync.ts"
 const executions = Number(process.env.EFFECT_FUZZ_EXECUTIONS ?? (process.env.EFFECT_FUZZ ? "500" : "120"))
 const seed = Number(process.env.EFFECT_FUZZ_SEED ?? "20261123")
 
-const jsonResp = (req: HttpClientRequest.HttpClientRequest, status: number, body: unknown, headers: Record<string, string> = {}) =>
+const jsonResp = (
+  req: HttpClientRequest.HttpClientRequest,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {}
+) =>
   HttpClientResponse.fromWeb(
     req,
     new Response(JSON.stringify(body), {
@@ -165,7 +170,9 @@ describe("@smthrs/integrations OAuthToken, Auth, AuthBroker, GitDatabase, Sync, 
               Effect.sync(() => {
                 const p = url.pathname
                 if (p === "/login/oauth/access_token") {
-                  if (req.body._tag === "Uint8Array" && new TextDecoder().decode(req.body.body).includes("device_code")) {
+                  if (
+                    req.body._tag === "Uint8Array" && new TextDecoder().decode(req.body.body).includes("device_code")
+                  ) {
                     if (deviceOutcome === "ok") {
                       return jsonResp(req, 200, { access_token: "ghu_dev", token_type: "bearer" })
                     }
@@ -335,7 +342,9 @@ describe("@smthrs/integrations OAuthToken, Auth, AuthBroker, GitDatabase, Sync, 
                     id: 500 + issueNum,
                     body: "sync comment",
                     user: { id: 1, login: "octocat" },
-                    html_url: `https://github.com/smithersai/smithers/issues/${issueNum}#issuecomment-${500 + issueNum}`,
+                    html_url: `https://github.com/smithersai/smithers/issues/${issueNum}#issuecomment-${
+                      500 + issueNum
+                    }`,
                     issue_url: `https://api.github.com/repos/smithersai/smithers/issues/${issueNum}`,
                     created_at: "2026-10-01T00:00:00Z",
                     updated_at: "2026-10-01T00:00:00Z"
@@ -412,10 +421,18 @@ describe("@smthrs/integrations OAuthToken, Auth, AuthBroker, GitDatabase, Sync, 
                   return jsonResp(req, 201, { sha: "b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0" })
                 }
                 if (p.includes("/git/blobs/") && req.method === "GET") {
-                  return jsonResp(req, 200, { content: Buffer.from("blob-text").toString("base64"), encoding: "base64", sha })
+                  return jsonResp(req, 200, {
+                    content: Buffer.from("blob-text").toString("base64"),
+                    encoding: "base64",
+                    sha
+                  })
                 }
                 if (p.includes("/git/trees/") && req.method === "GET") {
-                  return jsonResp(req, 200, { sha, truncated: false, tree: [{ path: "a.txt", mode: "100644", type: "blob", sha }] })
+                  return jsonResp(req, 200, {
+                    sha,
+                    truncated: false,
+                    tree: [{ path: "a.txt", mode: "100644", type: "blob", sha }]
+                  })
                 }
                 if (p.endsWith("/git/trees") && req.method === "POST") {
                   return jsonResp(req, 201, { sha })
@@ -430,7 +447,14 @@ describe("@smthrs/integrations OAuthToken, Auth, AuthBroker, GitDatabase, Sync, 
                   return jsonResp(req, 200, { ref: "refs/heads/main", object: { sha, type: "commit" } })
                 }
                 if (p.endsWith("/repos/smithersai/smithers")) {
-                  return jsonResp(req, 200, { id: repoId, name: "smithers", full_name: "smithersai/smithers", default_branch: "main", owner: { login: "smithersai" }, private: false })
+                  return jsonResp(req, 200, {
+                    id: repoId,
+                    name: "smithers",
+                    full_name: "smithersai/smithers",
+                    default_branch: "main",
+                    owner: { login: "smithersai" },
+                    private: false
+                  })
                 }
                 return jsonResp(req, 404, { message: "not found" })
               })
@@ -455,7 +479,10 @@ describe("@smthrs/integrations OAuthToken, Auth, AuthBroker, GitDatabase, Sync, 
               if (!ip.includes(String(issueNum))) return false
               const got = yield* IssueChanges.get("smithersai", "smithers", issueNum)
               if (got.number !== issueNum) return false
-              const upd = yield* IssueChanges.update("smithersai", "smithers", issueNum, { labels: ["bug"], state: "open" })
+              const upd = yield* IssueChanges.update("smithersai", "smithers", issueNum, {
+                labels: ["bug"],
+                state: "open"
+              })
               if (upd.number !== issueNum) return false
               yield* IssueChanges.link("smithersai", "smithers", issueNum, 999)
               const asg = yield* IssueChanges.assignees("smithersai", "smithers")
@@ -481,7 +508,10 @@ describe("@smthrs/integrations OAuthToken, Auth, AuthBroker, GitDatabase, Sync, 
               if (blobText !== "blob-text") return false
               const newBlob = yield* repo.writeBlob("hello")
               if (newBlob !== "b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0") return false
-              yield* repo.updateRefs({ operation: "fuzz-op-1", updates: [{ ref: "refs/heads/main", before: sha, after: sha }] })
+              yield* repo.updateRefs({
+                operation: "fuzz-op-1",
+                updates: [{ ref: "refs/heads/main", before: sha, after: sha }]
+              })
 
               // Sync adapter issues + comments phases
               const adapter = Sync.make({

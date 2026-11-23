@@ -138,7 +138,10 @@ describe("@smthrs/migrate AST, Archive, Checkpoint, Lock, Verify, Command, Cli &
 
             // CliScripts
             const rw = CliScripts.rewrite(script, (p) => Units.flowName(p))
-            assertInv(typeof rw.after === "string" && (rw.unsupported === undefined || typeof rw.unsupported === "string"), "CliScripts shape")
+            assertInv(
+              typeof rw.after === "string" && (rw.unsupported === undefined || typeof rw.unsupported === "string"),
+              "CliScripts shape"
+            )
             if (script === "vitest run") assertInv(rw.after === "vitest run", "non-smithers script untouched")
 
             // Archive pure rewrites
@@ -172,7 +175,10 @@ describe("@smthrs/migrate AST, Archive, Checkpoint, Lock, Verify, Command, Cli &
             const rewrittenPkg = Archive.rewritten("package.json", manifestInput, {}, "dependencies")
             assertInv(rewrittenPkg !== undefined && typeof rewrittenPkg.text === "string", "Archive.rewritten pkg")
             const rewrittenProjPkg = Archive.rewritten("package.json", manifestInput, {}, "project")
-            assertInv(rewrittenProjPkg !== undefined && typeof rewrittenProjPkg.text === "string", "Archive.rewritten proj")
+            assertInv(
+              rewrittenProjPkg !== undefined && typeof rewrittenProjPkg.text === "string",
+              "Archive.rewritten proj"
+            )
 
             if (!commentBody.includes("unterminated")) {
               const rewrittenTs = Archive.rewriteTsconfig(commentBody)
@@ -320,7 +326,10 @@ describe("@smthrs/migrate AST, Archive, Checkpoint, Lock, Verify, Command, Cli &
               TMPDIR: "/tmp"
             })
             const envBack = Options.scanEnvironment(state)
-            assertInv(envBack.SMITHERS_HOME === "/tmp/sm-home" && envBack.HOME === "/tmp/home", "scanEnvironment roundtrip")
+            assertInv(
+              envBack.SMITHERS_HOME === "/tmp/sm-home" && envBack.HOME === "/tmp/home",
+              "scanEnvironment roundtrip"
+            )
 
             // Path validation invariants
             if (reportDir === "../escape" || reportDir === ".git") {
@@ -392,14 +401,13 @@ describe("@smthrs/migrate AST, Archive, Checkpoint, Lock, Verify, Command, Cli &
             assertInv(prompt.includes("workflow:demo"), "unitPrompt includes unit id")
 
             // Layers provider / seat / grant rules
-            const env: Record<string, string> =
-              providerEnv === "anthropic"
-                ? { ANTHROPIC_API_KEY: "test-key" }
-                : providerEnv === "openai"
-                ? { OPENAI_API_KEY: "test-key" }
-                : providerEnv === "openrouter"
-                ? { OPENROUTER_API_KEY: "test-key" }
-                : {}
+            const env: Record<string, string> = providerEnv === "anthropic"
+              ? { ANTHROPIC_API_KEY: "test-key" }
+              : providerEnv === "openai"
+              ? { OPENAI_API_KEY: "test-key" }
+              : providerEnv === "openrouter"
+              ? { OPENROUTER_API_KEY: "test-key" }
+              : {}
             const prov = Layers.configuredProvider(env)
             if (providerEnv === "none") assertInv(prov === undefined, "no provider key -> undefined")
             else assertInv(prov === providerEnv, `configuredProvider === ${providerEnv}`)
@@ -525,7 +533,10 @@ describe("@smthrs/migrate AST, Archive, Checkpoint, Lock, Verify, Command, Cli &
                   `))`
                 ].join("\n")
                 FsSync.writeFileSync(Path.join(dir, "workflows", "demo.tsx"), wfSource)
-                FsSync.writeFileSync(Path.join(dir, "workflows", "hello.mdx"), "# Hello {{name}}\nCheck {props.repo}.\n")
+                FsSync.writeFileSync(
+                  Path.join(dir, "workflows", "hello.mdx"),
+                  "# Hello {{name}}\nCheck {props.repo}.\n"
+                )
 
                 // Real SQLite database or corrupt db
                 const dbPath = Path.join(dir, ".smithers", "smithers.db")
@@ -598,16 +609,15 @@ describe("@smthrs/migrate AST, Archive, Checkpoint, Lock, Verify, Command, Cli &
                 // Write target 1.0 flow with controlled defect variants and run Checks
                 const targetRel = ".smithers/flows/demo/flow.ts"
                 const targetAbs = Path.join(dir, targetRel)
-                const targetContent =
-                  flowBroken === "clean"
-                    ? goldenFlow
-                    : flowBroken === "oldImport"
-                    ? `import { Task } from "smithers-orchestrator"\nexport default Task\n`
-                    : flowBroken === "todoMarker"
-                    ? `${goldenFlow}\n// ${Checks.marker}: finish later\n`
-                    : flowBroken === "asAny"
-                    ? `${goldenFlow}\nconst leaked = 1 as any\nvoid leaked\n`
-                    : `${goldenFlow}\nconst el = <div />\nvoid el\n`
+                const targetContent = flowBroken === "clean"
+                  ? goldenFlow
+                  : flowBroken === "oldImport"
+                  ? `import { Task } from "smithers-orchestrator"\nexport default Task\n`
+                  : flowBroken === "todoMarker"
+                  ? `${goldenFlow}\n// ${Checks.marker}: finish later\n`
+                  : flowBroken === "asAny"
+                  ? `${goldenFlow}\nconst leaked = 1 as any\nvoid leaked\n`
+                  : `${goldenFlow}\nconst el = <div />\nvoid el\n`
                 FsSync.writeFileSync(targetAbs, targetContent)
 
                 const digestEntries = yield* Checkpoint.digest(dir, roots)
@@ -779,7 +789,11 @@ describe("@smthrs/migrate AST, Archive, Checkpoint, Lock, Verify, Command, Cli &
                   outline: unitOutlines[0]!,
                   failure: MigrateError.make("agent-failed", "synthetic fuzz failure")
                 })
-                assertInv(artifactPath === unitOutlines[0]!.id && FsSync.existsSync(Path.join(dir, MigrateFlow.unitArtifact(opts, unitOutlines[0]!.id))), "settle writes artifact")
+                assertInv(
+                  artifactPath === unitOutlines[0]!.id &&
+                    FsSync.existsSync(Path.join(dir, MigrateFlow.unitArtifact(opts, unitOutlines[0]!.id))),
+                  "settle writes artifact"
+                )
                 const readBack = yield* MigrateFlow.readUnitReport(opts, unitOutlines[0]!.id)
                 assertInv(readBack !== undefined && readBack.status === "failed", "readUnitReport matches")
                 const rep = Scan.toReport(scanned, "apply", "2026-11-23T00:00:00.000Z")
@@ -827,7 +841,10 @@ describe("@smthrs/migrate AST, Archive, Checkpoint, Lock, Verify, Command, Cli &
               // Exec.tail + Exec.run
               const tailed = Exec.tail("x".repeat(20_000), 100)
               assertInv(tailed.includes("earlier bytes omitted") && tailed.length < 250, "Exec.tail truncates cleanly")
-              const execRes = yield* Exec.run(verifyPass ? "node -e \"process.stdout.write(String(123))\"" : "node -e \"process.exit(2)\"", { cwd: dir }).pipe(Effect.provide(unconfinedNode))
+              const execRes = yield* Exec.run(
+                verifyPass ? "node -e \"process.stdout.write(String(123))\"" : "node -e \"process.exit(2)\"",
+                { cwd: dir }
+              ).pipe(Effect.provide(unconfinedNode))
               if (verifyPass) assertInv(execRes.exitCode === 0, "Exec.run exitCode 0")
               else assertInv(execRes.exitCode !== 0, `Exec.run nonzero exitCode: ${execRes.exitCode}`)
 
@@ -912,7 +929,9 @@ describe("@smthrs/migrate AST, Archive, Checkpoint, Lock, Verify, Command, Cli &
                   const unit = /# Unit `([^`]+)`/.exec(asked)?.[1] ?? "unknown"
                   const result = {
                     unit,
-                    changedFiles: unit === "workflow:simple-workflow" ? [".smithers/flows/simple-workflow/flow.ts"] : [],
+                    changedFiles: unit === "workflow:simple-workflow"
+                      ? [".smithers/flows/simple-workflow/flow.ts"]
+                      : [],
                     decisions: [],
                     unresolved: [],
                     unsupported: [],
@@ -926,7 +945,9 @@ describe("@smthrs/migrate AST, Archive, Checkpoint, Lock, Verify, Command, Cli &
                     ].join("\n")
                   }
                   return [
-                    `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(goldenFlow)} })`,
+                    `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${
+                      JSON.stringify(goldenFlow)
+                    } })`,
                     Layers.done(result)
                   ].join("\n")
                 }
